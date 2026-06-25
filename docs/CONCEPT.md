@@ -79,6 +79,7 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 | Platforms | **Android-first**, iOS from same codebase later | Zimbabwe is ~85–90% Android |
 | Launch geography | **One Harare corridor** (e.g. CBD + Avenues + Borrowdale/Msasa) | Concentrate supply & ETAs |
 | Timeline | **≤ 1 month** to pilot + Play Store | iOS TestFlight only if time allows |
+| Live tracking | **Initiator tracking window, accept → rate** | One window follows the rider: accepted → items/note confirmed → ride started → collected → en route → delivered → rate. **Live location from acceptance**, **rider confirms (confirm-only)**, **rating required to close**. See §5c |
 
 ---
 
@@ -101,7 +102,7 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 
 **In scope (must ship):**
 - Phone-number auth (OTP); **one app with customer ↔ rider role toggle**.
-- Customer: create delivery (pickup pin, dropoff pin, item description + photo, size category), see **suggested price**, **adjust it up/down**, **broadcast**, view **interested riders (accept/counter) with price/rating/ETA**, **select a rider**, pay **delivery fee in cash to rider** (Paynow optional), live tracking, rating.
+- Customer: create delivery (pickup pin, dropoff pin, item description + photo, size category), see **suggested price**, **adjust it up/down**, **broadcast**, view **interested riders (accept/counter) with price/rating/ETA**, **select a rider**, pay **delivery fee in cash to rider** (Paynow optional), **live tracking window** (accept → confirm → start → collect → en route → delivered → rate, with live map; §5c), rating.
 - Rider: go online/offline, **see open broadcasts nearby & accept or counter (one round)**, status transitions, share live location, daily earnings, **prepaid commission balance + top-up** (commission off during pilot).
 - **Offer loop engine:** order → `open_for_offers` → collect rider accepts/counters within a window → show to customer → **customer selects** → assign; on no offers, **expire + prompt re-broadcast**.
 - Admin web dashboard: **monitor orders & riders, support stuck orders** (no manual dispatch in the normal flow).
@@ -134,14 +135,16 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 ### Data model (sketch)
 - `profiles` (id, role: customer/rider/merchant/admin, name, phone)
 - `riders` (profile_id, vehicle_info, id_verified, is_online, current_lat, current_lng, **commission_balance**, updated_at)
-- `orders` (id, order_type[`parcel`], customer_id, rider_id, pickup{lat,lng,landmark,contact}, dropoff{...}, item_desc, item_photo_url, declared_value, size, distance_km, **suggested_fare** (system), **proposed_fare** (customer's broadcast price), **agreed_fare** (selected offer), currency, fee_method[`cash`|`paynow`], commission, delivery_otp, status, timestamps)
+- `orders` (id, order_type[`parcel`], customer_id, rider_id, pickup{lat,lng,landmark,contact}, dropoff{...}, item_desc, **note** (customer's pickup/handling instructions the rider confirms), item_photo_url, declared_value, size, distance_km, **suggested_fare** (system), **proposed_fare** (customer's broadcast price), **agreed_fare** (selected offer), currency, fee_method[`cash`|`paynow`], commission, delivery_otp, status, **confirmed_at**, **pickup_started_at**, **collected_at**, timestamps)
 - `offers` (id, order_id, rider_id, **type[`accept`|`counter`]**, offered_fare, eta_minutes, status[`pending`|`selected`|`declined`|`expired`], at) — the bidding loop; `accept` means offered_fare = customer's proposed_fare, `counter` means a different amount
-- `order_events` (order_id, status, at) — status history
+- `order_events` (order_id, status, **lat, lng** (rider position at the event, when relevant), at) — status history; the **append-only feed the initiator's tracking timeline renders from** (§5c)
 - `rider_ledger` (rider_id, order_id, type[`commission`|`topup`], amount, currency, paynow_ref, balance_after, at) — the cash/commission backbone
 - `ratings` (order_id, by, score, comment)
 
 ### Order status flow
-`requested → open_for_offers → assigned → picked_up → en_route → delivered (OTP verified) → completed` (plus `cancelled` and `expired`). The customer sets `proposed_fare` (from the adjustable `suggested_fare`) and broadcasts → `open_for_offers`. Nearby riders submit `offers` (`accept` at the proposed price or a `counter`); all `pending` offers are shown to the customer, who **selects one** → that offer becomes `selected`, its fare becomes `agreed_fare`, `rider_id` is set, status → `assigned`. If the offer window lapses with no offers (or the customer doesn't select), status → `expired` and the customer is prompted to nudge the price and re-broadcast. Delivery fee is paid **in cash to the rider** at handover (or Paynow if opted in); platform commission (zero during pilot) is deducted from the rider's balance on `completed`.
+`requested → open_for_offers → assigned → confirmed → en_route_pickup → picked_up → en_route_dropoff → delivered (OTP verified) → completed` (plus `cancelled` and `expired`). The customer sets `proposed_fare` (from the adjustable `suggested_fare`) and broadcasts → `open_for_offers`. Nearby riders submit `offers` (`accept` at the proposed price or a `counter`); all `pending` offers are shown to the customer, who **selects one** → that offer becomes `selected`, its fare becomes `agreed_fare`, `rider_id` is set, status → `assigned`. If the offer window lapses with no offers (or the customer doesn't select), status → `expired` and the customer is prompted to nudge the price and re-broadcast. Delivery fee is paid **in cash to the rider** at handover (or Paynow if opted in); platform commission (zero during pilot) is deducted from the rider's balance on `completed`.
+
+The two post-assignment states — **`confirmed`** (rider has reviewed and confirmed the item description + customer note) and **`en_route_pickup`** (rider has tapped "start ride" and is travelling to the pickup) — exist so the **initiator** (the customer who created the transaction) gets a continuous, legible view of the rider's progress from acceptance to handover. **Live rider location streams from `assigned` through `delivered`**, so the customer sees the bike the moment they select a rider. The single old `en_route` is split into **`en_route_pickup`** (rider → sender) and **`en_route_dropoff`** (rider → receiver) so the tracking window can show *which leg* the rider is on. See §5c.
 
 ---
 
@@ -156,6 +159,68 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 5. **One identity, expandable roles** — customer / rider / merchant / admin from day one.
 
 > Cost: a few enum columns + one stub table. Benefit: verticals are additive, not a rewrite.
+
+---
+
+## 5c. Live tracking & journey window (initiator view)
+
+> **Decision (Office Hours):** once a rider is selected, the **initiator** (the customer who created the
+> transaction) gets a single **tracking window** that follows the rider through the whole journey —
+> acceptance → item/note confirmation → ride start with live position → items collected → en route →
+> delivered → rate. It is the customer's home screen for an active order, replacing the offer-selection list
+> the moment a rider is assigned.
+
+### Why it matters
+In a **cash, low-trust** market the customer has handed a stranger their parcel and is waiting on a delivery
+they've already agreed to pay for. A legible, real-time "where is my bike" view is the single biggest **trust
+and anxiety-reducer** for the initiator, and it's what makes the two-way rating at the end feel earned. It
+reuses the **same Supabase Realtime channel** already built for the offer loop and rider location — no new
+infrastructure.
+
+### The journey, as the initiator sees it
+A vertical **stepper/timeline** at the top (each step lights up as it happens, stamped with a time), a **live
+map** in the middle once the rider is moving, and a **rider card** (name, photo, rating, bike reg, call
+button) throughout. The steps map 1:1 to order statuses:
+
+| # | Initiator sees | Order status | What happened | Map |
+|---|---|---|---|---|
+| 1 | **Ride accepted** | `assigned` | Customer selected this rider from the offer list; `agreed_fare` locked. **Live location starts streaming immediately.** | **live**, rider's position |
+| 2 | **Items & note confirmed** | `confirmed` | Rider has read the `item_desc` + customer `note` and tapped **Confirm details**. `confirmed_at` set. | **live**, rider's position |
+| 3 | **Ride started — rider on the way to pickup** | `en_route_pickup` | Rider tapped **Start ride** and is travelling to the sender. `pickup_started_at` set. | **live**, rider → sender, ETA to pickup |
+| 4 | **Items collected** | `picked_up` | Rider confirms parcel in hand; **photo at pickup** captured. `collected_at` set. | rider at pickup pin |
+| 5 | **On the way to drop-off** | `en_route_dropoff` | Rider riding to the receiver; **live location continues**. | **live**, rider → receiver, ETA to drop-off |
+| 6 | **Delivered** | `delivered` | Receiver gives the **delivery OTP**; rider enters it → verified handover. | rider at drop-off pin |
+| 7 | **Rate your rider** | `completed` | Order closes; **two-way rating** prompt opens. The initiator **must rate to close the order** (and the rider rates the customer). | — |
+
+> Steps **2** and **4** are explicit **rider confirmations** the initiator can see ("the rider has confirmed
+> the items / has them in hand"), which is exactly the reassurance the request calls for. At step 2 the rider
+> can **only confirm** — if something is wrong (item larger than described, can't take it), the path is to
+> **cancel the order** (per the cancellation policy, §9), not to renegotiate inline; this keeps the offer loop
+> strictly one round.
+
+### How it works (mechanism)
+- **State machine.** Each transition writes an `order_events` row (`status`, optional `lat/lng`, `at`). The
+  tracking window renders its timeline straight from this **append-only feed**, so history and live state come
+  from one source of truth.
+- **Live position.** From the moment the rider is selected (`assigned`) through `delivered`, the rider app
+  pushes its GPS to `riders.current_lat/lng` on a **throttled** interval (data is expensive — §3.4); the
+  initiator subscribes via **Supabase Realtime** and the map marker animates between updates. The customer
+  sees the bike right away, not just once it starts moving. Location streaming is **scoped to the active
+  order** and **stops at `delivered`** (privacy + battery + data).
+- **ETA.** Google Maps Platform gives ETA to the current target (pickup pin, then drop-off pin); shown on the
+  map and in the active step.
+- **Notifications.** Each step also fires a **push (SMS fallback)** to the initiator — "Rider confirmed your
+  items", "Rider has collected your parcel", "Delivered" — so they don't have to keep the window open (§3.10).
+- **Rating gate.** The rating prompt is unlocked **only at `completed`**, tied to the `ratings` table; the
+  order can't be rated before delivery is OTP-verified. The initiator's rating is **required to close the
+  order** — the order stays in a "needs rating" state until submitted — which maximises rating coverage from
+  day one (the rider's rating of the customer is likewise prompted).
+
+### Scope discipline (MVP)
+- **Ship:** the 7-step timeline, live map from acceptance through delivery, rider card with call button,
+  per-step push/SMS, **rating required at completion**.
+- **Defer (fast-follow):** in-app chat, route polyline replay/history, share-a-live-link with a third party,
+  predictive "rider is 2 min away" geofenced alerts. The MVP shows **position + status + ETA**, nothing heavier.
 
 ---
 
@@ -185,7 +250,7 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 **Week 3 — Fulfilment + cash backbone + live tracking**
 - Rider: status transitions, **live location sharing**, earnings view.
 - **`rider_ledger`** + Paynow top-up flow (commission 0% at pilot but plumbed).
-- **Delivery OTP** handover, customer-side realtime tracking, two-way ratings, cancellation/no-show policy.
+- **Delivery OTP** handover, **initiator tracking window** (7-step timeline + live map, §5c), two-way ratings (**required to close**), cancellation/no-show policy.
 
 **Week 4 — Pilot, harden, ship**
 - Real orders through the app in the corridor; fix top breakages; tune offer-window length & broadcast radius on real supply.
@@ -212,13 +277,14 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 - **Brand & language:** is "Lynia" the final consumer name? English first; Shona/Ndebele later?
 - **Launch corridor:** which specific Harare suburbs go first (drives rider recruitment + demand seeding)?
 - **SMS gateway:** which local aggregator for OTP/notifications?
-- **Cancellation/no-show enforcement** in a cash model (hard to charge fees) — policy TBD.
+- **Cancellation/no-show enforcement** in a cash model (hard to charge fees) — policy TBD. Includes the **rider-can't-take-it case** at the item-confirm step (§5c step 2): since confirm is confirm-only, a rider problem cancels the order — define who bears it and how the customer is re-served (re-broadcast prompt).
 
 ---
 
 ## 10. Next steps (gstack flow)
 
 - ✅ **Think → Office Hours** (this doc).
+- ✅ **Office Hours follow-up** — added the **initiator live-tracking window** (§5c): live location from acceptance, rider confirm-only at item check, rating required to close.
 - ⬜ **Plan → `/plan-ceo-review`** — pressure-test the business/economics.
 - ⬜ **Plan → `/plan-eng-review`** — validate architecture & data model.
 - ⬜ **Build** — scaffold the Expo app + Supabase backend + admin dashboard.
