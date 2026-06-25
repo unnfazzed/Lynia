@@ -4,20 +4,27 @@
 > **Now (MVP):** a fully-formed on-demand **motorbike courier / Express** — pick an item up here,
 > deliver it there, by bike. The Express *is* the superapp's spine; verticals layer on later.
 > **Payments reality:** Zimbabwe is **cash-based and low-trust**. Lynia is a **matchmaker, not a payment
-> processor** — the rider transports the item and never handles money for the goods (cash-economy model,
-> inDrive-inspired). **Matching is automatic** (Uber/Bolt-style auto-dispatch), not a bidding marketplace.
-> References: Grab Express (point-to-point parcel), Uber/Bolt (auto-dispatch), inDrive (cash, no rider float).
+> processor** — the rider transports the item and never handles money for the goods.
+> **Matching is the inDrive model**: the **customer names the price** (system-suggested, adjustable), riders
+> **accept or counter**, and the **customer picks the rider** — a price-negotiated bidding marketplace.
+> References: Grab Express (point-to-point parcel), **inDrive** (customer-priced, cash-economy marketplace).
 > Output of a gstack-style **Office Hours** session. Status: **conceptualisation locked, ready for build.**
 
 ---
 
 ## 1. What Lynia is (MVP)
 
-A two-sided, on-demand logistics marketplace with **automatic dispatch** (no bidding, no manual matching):
+A two-sided, on-demand logistics marketplace on the **inDrive (customer-priced bidding) model**:
 
-- **Customers** request a delivery: set pickup + dropoff pins, describe the item (+ photo), and see a **fixed fare** (base + per-km) up front. The system finds a rider automatically; the customer just tracks them live.
-- **Riders** (motorbike) go online and receive **nearby job alerts at the fixed fare**; the **first to accept** gets the job, then picks up and delivers, updating status along the way.
-- **The system dispatches automatically.** An order **broadcasts to all nearby online riders at once**; **first to accept wins**. If no one accepts in the time window, the system **auto-raises the fare, widens the radius, and re-broadcasts** — no human in the loop. Admin only **monitors & supports**.
+**The core flow:**
+1. **Customer** enters pickup + dropoff pins (+ item description/photo) and sees a **system-suggested price**.
+2. Customer can **notch the price up or down** (the suggestion is a guide, not a floor) and **broadcasts the request**.
+3. **Nearby riders** receive the broadcast and either **accept the offered price** or **counter-offer** their own (one round each — no haggling back and forth).
+4. **All interested riders** (those who accepted *and* those who countered) are **displayed to the customer** with price, rating, and ETA.
+5. The **customer selects the rider** they want → the job is assigned and they track the rider live.
+
+- **Riders** (motorbike) go online, see open broadcasts nearby, **accept or counter**, and once selected pick up and deliver, updating status along the way.
+- **No manual dispatch.** If a broadcast draws **no interested riders** in the time window, it **expires** and the customer is prompted to **nudge the price up and re-broadcast** — fully automatic, no human in the loop. Admin only **monitors & supports**.
 
 Both customer and rider live in **one app with a role toggle** (fastest to ship).
 
@@ -61,9 +68,11 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 | Rider & money | **Rider handles the item, never goods money** | Goods $ settled sender↔receiver offline; buy-for-me removed |
 | Monetization | **Cash-first, commission from rider balance** | Customer pays delivery fee in cash to rider; Lynia takes commission from rider's prepaid balance; Paynow optional |
 | Build approach | **Straight to cross-platform app** | Skipping the WhatsApp ops MVP (founder's call) |
-| Pricing model | **Fixed fare set by the system** | App computes base + per-km; rider accepts or ignores — no bidding, no customer selection |
-| Matching / dispatch | **Automatic — broadcast, first-to-accept** | Order broadcasts to all nearby online riders at once; first to accept is auto-assigned; **no manual dispatch** |
-| Thin-supply fallback | **Auto-bump + re-broadcast (automatic)** | No takers in the window → system raises the fare, widens the radius, re-broadcasts (capped), then tells the customer if none available |
+| Matching model | **inDrive: customer-priced bidding marketplace** | System suggests → customer adjusts → broadcast → riders accept/counter → customer selects |
+| Pricing | **Customer names the price (system-suggested, adjustable)** | Suggestion = base + per-km guide; customer notches up/down; **soft suggestion, no hard floor** — riders simply won't accept lowballs |
+| Rider response | **Accept or counter — one round each** | Rider accepts the offered price or counters once; **no back-and-forth haggling** |
+| Selection | **Customer always selects** | Every interested rider (accept *or* counter) is shown with price/rating/ETA; customer picks — even exact-accepts go to the list |
+| No-offers fallback | **Expire + customer re-broadcasts (automatic)** | No interested riders in the window → expire, prompt customer to nudge price & re-broadcast; **no manual dispatch** |
 | Commission (pilot) | **Zero / near-zero to seed supply** | Turn on commission once riders earn daily; avoids choking recruitment |
 | App packaging | **One app, role toggle** (customer ↔ rider) | Fastest to ship in a month; single Expo codebase |
 | Demand wedge | **General "send anything"** | Broad use case, but launch confined to one corridor |
@@ -80,10 +89,11 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 3. **Addressing.** No reliable street addresses → rely on **GPS pin + landmark text + phone number**, never typed addresses.
 4. **Data cost.** Mobile data is expensive → keep the app light, cache maps, throttle background location.
 5. **Trust & safety.** Rider verification (ID + bike reg), item **photo at pickup**, **delivery OTP** at handover, two-way ratings, a **declared-value cap** (pilot: max ~US$100–150/item), and a **prohibited-items list** (cash, illegal/hazardous goods, live animals, anything above cap). Liability for safe handling sits with the rider; platform liability capped in T&Cs.
-6. **Thin supply / no acceptance (key dispatch risk).** With a fixed fare and no bidding, a job can sit unaccepted if no rider is nearby or the fare is too low for the trip. **Mitigation:** automatic **fare auto-bump + radius expansion + re-broadcast** (capped), corridor-concentrated supply, and rider incentives during the pilot; if still no taker, fail gracefully and notify the customer rather than leaving the order hanging.
-7. **Timeline.** A polished dispatch marketplace is a 3–6 month build. One month = a **brutally scoped** Android MVP in one corridor. Scope discipline is the whole game.
-8. **Superapp scope creep.** The "superapp" vision will tempt catalogs/merchant onboarding/multi-vertical UI into month one. **Mitigation:** ship only Express now; capture the future solely as cheap data "seams" (§5b), never as features.
-9. **Comms cost / reach.** Data is expensive and not all users stay online → **SMS fallback** for OTP and critical notifications (push when online, SMS otherwise); offline-tolerant order creation. Fast, reliable rider job alerts are critical to auto-dispatch — push is the primary channel.
+6. **Bidding-model complexity (biggest build item).** The customer-priced offer loop — suggest → adjust → broadcast → accept/counter → display interested riders → select — is the core build (offers table, `open_for_offers` state, rider accept/counter screen, customer selection screen). **Mitigation:** build the offer loop first and keep it strictly **one round** (no haggle-back) to bound complexity.
+7. **Lowball / no-offers (pricing risk).** With no hard floor, customers may underprice and get no riders. **Mitigation:** a clear, honest suggested price; an empty-broadcast UX that **prompts a price nudge + re-broadcast**; optionally surface "riders usually accept around $X" hints once there's data.
+8. **Timeline.** A polished bidding marketplace is a 3–6 month build. One month = a **brutally scoped** Android MVP in one corridor. Scope discipline is the whole game.
+9. **Superapp scope creep.** The "superapp" vision will tempt catalogs/merchant onboarding/multi-vertical UI into month one. **Mitigation:** ship only Express now; capture the future solely as cheap data "seams" (§5b), never as features.
+10. **Comms cost / reach.** Data is expensive and not all users stay online → **SMS fallback** for OTP and critical notifications (push when online, SMS otherwise); offline-tolerant order creation. Fast rider broadcast alerts are critical — push is the primary channel.
 
 ---
 
@@ -91,17 +101,18 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 
 **In scope (must ship):**
 - Phone-number auth (OTP); **one app with customer ↔ rider role toggle**.
-- Customer: create delivery (pickup pin, dropoff pin, item description + photo, size category), see the **fixed fare (base + per-km)** up front, get **auto-matched to a rider**, pay **delivery fee in cash to rider** (Paynow optional), live tracking, rating.
-- Rider: go online/offline, **receive nearby job alerts at the fixed fare & tap Accept** (first-to-accept wins), status transitions, share live location, daily earnings, **prepaid commission balance + top-up** (commission off during pilot).
-- **Auto-dispatch engine:** broadcast order to nearby online riders → first-accept assigns → on timeout, **auto-bump fare + widen radius + re-broadcast** (capped) → expire & notify customer if no taker.
-- Admin web dashboard: **monitor orders & riders, support/intervene on stuck orders** (break-glass only — not part of normal matching).
-- Pricing engine: base + per-km (Google distance) = the fixed fare; defined auto-bump increments.
+- Customer: create delivery (pickup pin, dropoff pin, item description + photo, size category), see **suggested price**, **adjust it up/down**, **broadcast**, view **interested riders (accept/counter) with price/rating/ETA**, **select a rider**, pay **delivery fee in cash to rider** (Paynow optional), live tracking, rating.
+- Rider: go online/offline, **see open broadcasts nearby & accept or counter (one round)**, status transitions, share live location, daily earnings, **prepaid commission balance + top-up** (commission off during pilot).
+- **Offer loop engine:** order → `open_for_offers` → collect rider accepts/counters within a window → show to customer → **customer selects** → assign; on no offers, **expire + prompt re-broadcast**.
+- Admin web dashboard: **monitor orders & riders, support stuck orders** (no manual dispatch in the normal flow).
+- Pricing engine: base + per-km (Google distance) as the **suggested** price; customer-adjustable, soft (no hard floor).
 - Trust: rider verification (ID + bike reg), **item photo at pickup**, **delivery OTP** at handover, two-way ratings, **declared-value cap + prohibited-items list**.
-- Notifications: **push when online, SMS fallback** for OTP & critical updates; **low-latency rider job alerts**.
+- Notifications: **push when online, SMS fallback** for OTP & critical updates; **low-latency rider broadcast alerts**.
 
 **Out of scope (removed or fast-follow):**
-- ❌ **Bidding / rider fare offers / customer rider-selection** — replaced by automatic fixed-fare dispatch.
-- ❌ **Manual dispatch as a product path** — matching is automatic; admin override is break-glass only.
+- ❌ **Back-and-forth haggling** — rider response is one round (accept or single counter); customer selects.
+- ❌ **Hard price floor / customer-side price caps** — suggestion is soft; market decides.
+- ❌ **Manual / admin dispatch as a product path** — no-offers is handled by expire + re-broadcast.
 - ❌ **Buy-for-me relay / rider float** — removed (cash, low-trust market).
 - ❌ **Goods payment between sender & receiver** — settled offline, never in the app.
 - Merchant verticals + Cash-on-Delivery (the commerce fast-follow), multi-city, scheduled deliveries, in-app chat, promotions/referrals, advanced fraud tooling, full iOS launch.
@@ -113,24 +124,24 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 | Layer | Choice | Why |
 |---|---|---|
 | App (one app, role toggle) | **React Native + Expo (EAS)** | Single codebase + single build, customer ↔ rider toggle, Android now + iOS later |
-| Backend | **Supabase** (Postgres + Auth + Realtime + Storage) | Realtime = live tracking + dispatch alerts; fastest path to MVP |
-| Dispatch logic | **Supabase Edge Functions / Postgres** (broadcast, timeout, auto-bump) | Server-side matching: pick nearby online riders, broadcast, first-accept lock, re-broadcast on timeout |
+| Backend | **Supabase** (Postgres + Auth + Realtime + Storage) | Realtime = live tracking + offer/broadcast updates; fastest path to MVP |
+| Offer loop logic | **Supabase Realtime + Postgres** (broadcast, offers, window/expiry) | Push broadcasts to nearby riders; collect accepts/counters; expire on timeout |
 | Maps / routing | **Google Maps Platform** | Best data coverage in Zimbabwe; geocoding, distance, ETA |
 | Payments | **Cash-first** + **Paynow** (optional, for rider top-ups & opt-in fee payment) | Cash to rider, commission from rider balance; Paynow covers EcoCash/OneMoney/InnBucks/Zipit/Visa |
 | Admin dashboard | **Next.js** on the same Supabase backend | Monitoring & support tool (not a dispatch console) |
-| Notifications | **Expo Notifications / FCM** + **SMS gateway** (fallback) | Push when online (primary for job alerts); SMS for OTP & critical updates |
+| Notifications | **Expo Notifications / FCM** + **SMS gateway** (fallback) | Push when online (primary for broadcast alerts); SMS for OTP & critical updates |
 
 ### Data model (sketch)
 - `profiles` (id, role: customer/rider/merchant/admin, name, phone)
 - `riders` (profile_id, vehicle_info, id_verified, is_online, current_lat, current_lng, **commission_balance**, updated_at)
-- `orders` (id, order_type[`parcel`], customer_id, rider_id, pickup{lat,lng,landmark,contact}, dropoff{...}, item_desc, item_photo_url, declared_value, size, distance_km, **fare** (system-set), **fare_bumps** (count), currency, fee_method[`cash`|`paynow`], commission, delivery_otp, status, timestamps)
-- `dispatch_attempts` (id, order_id, rider_id, broadcast_round, sent_at, response[`accepted`|`ignored`|`expired`], responded_at) — the auto-dispatch log: who was alerted, who accepted, which round
+- `orders` (id, order_type[`parcel`], customer_id, rider_id, pickup{lat,lng,landmark,contact}, dropoff{...}, item_desc, item_photo_url, declared_value, size, distance_km, **suggested_fare** (system), **proposed_fare** (customer's broadcast price), **agreed_fare** (selected offer), currency, fee_method[`cash`|`paynow`], commission, delivery_otp, status, timestamps)
+- `offers` (id, order_id, rider_id, **type[`accept`|`counter`]**, offered_fare, eta_minutes, status[`pending`|`selected`|`declined`|`expired`], at) — the bidding loop; `accept` means offered_fare = customer's proposed_fare, `counter` means a different amount
 - `order_events` (order_id, status, at) — status history
 - `rider_ledger` (rider_id, order_id, type[`commission`|`topup`], amount, currency, paynow_ref, balance_after, at) — the cash/commission backbone
 - `ratings` (order_id, by, score, comment)
 
 ### Order status flow
-`requested → searching → assigned → picked_up → en_route → delivered (OTP verified) → completed` (plus `cancelled` and `expired`). During `searching` the system **broadcasts the order at the fixed fare to nearby online riders**; the **first rider to accept** locks the job (`assigned`, `rider_id` set). If the acceptance window lapses with no taker, the system **bumps `fare`, increments `fare_bumps`, widens the radius, and re-broadcasts** (a new `broadcast_round`), up to a cap; if still unmatched it moves to `expired` and notifies the customer. Delivery fee is paid **in cash to the rider** at handover (or Paynow if opted in); platform commission (zero during pilot) is deducted from the rider's balance on `completed`.
+`requested → open_for_offers → assigned → picked_up → en_route → delivered (OTP verified) → completed` (plus `cancelled` and `expired`). The customer sets `proposed_fare` (from the adjustable `suggested_fare`) and broadcasts → `open_for_offers`. Nearby riders submit `offers` (`accept` at the proposed price or a `counter`); all `pending` offers are shown to the customer, who **selects one** → that offer becomes `selected`, its fare becomes `agreed_fare`, `rider_id` is set, status → `assigned`. If the offer window lapses with no offers (or the customer doesn't select), status → `expired` and the customer is prompted to nudge the price and re-broadcast. Delivery fee is paid **in cash to the rider** at handover (or Paynow if opted in); platform commission (zero during pilot) is deducted from the rider's balance on `completed`.
 
 ---
 
@@ -150,26 +161,26 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 
 ## 6. Unit economics (framework — validate with real orders)
 
-- **Fixed fare** = base + (per-km rate × distance), shown in **USD** and set by the system. No bidding — the rider sees and accepts the same fare. Auto-bump may raise it in defined increments only when no rider accepts.
-- **Cash-first flow:** customer pays the fare **in cash to the rider** at handover. Lynia's commission per completed delivery is **deducted from the rider's prepaid balance** (`rider_ledger`); riders **top up via Paynow/EcoCash**.
+- **Suggested price** = base + (per-km rate × distance), shown in **USD** as a guide. The **customer sets the proposed price** (notch up/down, no hard floor); riders **accept it or counter**, and the **agreed fare** is the selected offer's amount.
+- **Cash-first flow:** customer pays the agreed fare **in cash to the rider** at handover. Lynia's commission per completed delivery is **deducted from the rider's prepaid balance** (`rider_ledger`); riders **top up via Paynow/EcoCash**.
 - **Pilot commission = 0% (or token)** to seed supply. Target **~15–20%** once liquidity is proven — track take-rate vs. rider top-up friction.
 - **No platform float to reconcile:** Lynia never holds the delivery transaction or the goods money — it only tracks rider commission balances. This is what makes the cash economy workable.
 
-*Placeholder to test: fixed base $1.50 + $0.50/km, auto-bump +$0.50 per re-broadcast (cap +$1.50), commission 0% at pilot → ~18% later — replace with corridor-validated numbers.*
+*Placeholder to test: suggested base $1.50 + $0.50/km, commission 0% at pilot → ~18% later — replace with corridor-validated numbers.*
 
 ---
 
 ## 7. One-month plan (revised for straight-to-app)
 
 **Week 1 — Foundations + parallel recruitment**
-- Scaffold: Expo app shell (**role toggle**), Supabase schema (incl. `dispatch_attempts`, `rider_ledger`), Next.js admin app, repo CI.
-- Customer happy-path skeleton: auth, set pickup/dropoff pins, **fixed-fare quote**.
+- Scaffold: Expo app shell (**role toggle**), Supabase schema (incl. `offers`, `rider_ledger`), Next.js admin app, repo CI.
+- Customer happy-path skeleton: auth, set pickup/dropoff pins, **suggested + adjustable price**.
 - Open Paynow merchant account (for **rider top-ups**); register the business; draft rider agreement + declared-value/prohibited-items policy.
 - **Recruit 5–15 riders** in the launch corridor.
 
-**Week 2 — The auto-dispatch engine (core differentiator)**
-- Create order → `searching` → **broadcast to nearby online riders** → **first-accept assigns** → on timeout **auto-bump + widen radius + re-broadcast** (capped) → `expired` + notify if none.
-- Rider job-alert screen (Accept), item photo upload; push + **SMS** wired; low-latency alert path.
+**Week 2 — The offer loop (core differentiator)**
+- Broadcast → `open_for_offers` → **riders accept/counter (one round)** → **interested riders displayed** → **customer selects** → assigned.
+- No-offers expire + **re-broadcast prompt**; item photo upload; push + **SMS** wired.
 
 **Week 3 — Fulfilment + cash backbone + live tracking**
 - Rider: status transitions, **live location sharing**, earnings view.
@@ -177,7 +188,7 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 - **Delivery OTP** handover, customer-side realtime tracking, two-way ratings, cancellation/no-show policy.
 
 **Week 4 — Pilot, harden, ship**
-- Real orders through the app in the corridor; fix top breakages; tune dispatch radius/timeout/bump params on real supply.
+- Real orders through the app in the corridor; fix top breakages; tune offer-window length & broadcast radius on real supply.
 - **Google Play** submission. iOS TestFlight if time allows.
 
 ---
@@ -186,7 +197,7 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 
 - Orders/day and week-over-week growth in the corridor.
 - Delivery completion rate (target ≥ 90%).
-- **Match rate & time-to-accept** (share of orders matched on first broadcast; median seconds to a rider accepting).
+- **Offer-loop health:** offers per broadcast, time-to-first-offer, share of broadcasts that get ≥1 offer, customer selection time, re-broadcast rate.
 - Median pickup ETA and total delivery time.
 - Rider utilization (jobs per online hour).
 - Repeat-customer rate.
@@ -196,7 +207,7 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 
 ## 9. Open decisions (pending — to resolve in Plan stage)
 
-- **Dispatch tuning:** acceptance-window length, broadcast radius, auto-bump increment & cap, max re-broadcast rounds — start with placeholders, calibrate on real corridor supply.
+- **Offer-loop tuning:** broadcast radius, offer-window length, max offers shown, offer/selection expiry timers — start with placeholders, calibrate on real corridor supply.
 - **Legal / regulatory:** business registration, ZIMRA tax, motorbike commercial-use rules, rider licensing & insurance, goods/rider liability, data privacy. Verify with a local advisor before *public* launch (not a blocker for a closed pilot).
 - **Brand & language:** is "Lynia" the final consumer name? English first; Shona/Ndebele later?
 - **Launch corridor:** which specific Harare suburbs go first (drives rider recruitment + demand seeding)?
