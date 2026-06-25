@@ -1,0 +1,2 @@
+# gstack is installed per-developer, not vendored into the repo.
+.claude/skills/gstack/
