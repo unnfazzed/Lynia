@@ -27,6 +27,7 @@ Harare corridor. Two architecture decisions changed during this review:
 | D4 | Cold-start | **Rely on inDrive liquidity model** (supply-only) | founder's call; residual first-week rider-retention risk tracked |
 | D5 | Offer selection | **Customer always selects** (no instant-match auto-assign) | preserves locked rule |
 | D6 | Trust holes | **Rating auto-close + no-show penalty = P1 build tasks** | |
+| D7 | Cloud strategy | **Azure primary, GCP documented fallback; portability is a hard constraint** | validate both clouds' billing at T0; switchable in days, not a rewrite |
 
 ## Revised architecture (own backend on Azure)
 
@@ -45,10 +46,13 @@ Harare corridor. Two architecture decisions changed during this review:
   (+PostGIS)         (jobs+WS pub)  (photos)     (secrets)
             │
   external: Google Maps · KYC vendor · WhatsApp BSP
-  Azure Notification Hubs → FCM/APNs · SMS gateway
-  Application Insights (logs/metrics/traces) · GitHub Actions (CI/CD)
-  Next.js admin → Azure Static Web Apps
+  FCM/APNs (push, portable) · SMS gateway
+  OpenTelemetry → cloud monitor (logs/metrics/traces) · GitHub Actions (CI/CD)
+  Next.js admin → static host
 ```
+
+> Portability note: push uses **FCM directly** (not Azure Notification Hubs) and observability uses
+> **OpenTelemetry** (not the App Insights SDK), so monitoring/push are not Azure-locked. See Cloud strategy.
 
 **Supabase → Azure / own-stack mapping**
 
@@ -62,6 +66,38 @@ Harare corridor. Two architecture decisions changed during this review:
 | Auto REST + RLS | explicit REST API + JWT authorization in middleware | (built in app — the "full control" part) |
 
 Decision: **Container Apps, not AKS** — Kubernetes ops are overkill for a pilot.
+
+## Cloud strategy — Azure primary, GCP fallback (D7)
+
+The own-backend choice already makes the stack portable; we make that explicit so an Azure failure
+(billing/eligibility from Zimbabwe, credits not landing, region issue) is a switch, not a rewrite. The
+few Azure-only pieces are deliberately pushed out to portable equivalents: **FCM direct** (not Notification
+Hubs), **OpenTelemetry** (not the App Insights SDK), storage/secrets/push behind thin app-level adapters,
+one Docker image, and standard PostgreSQL + PostGIS + Redis on the critical path (no proprietary extensions).
+
+**Azure → GCP equivalence (the fallback map):**
+
+| Concern | Azure (primary) | GCP (fallback) | Portable boundary |
+|---|---|---|---|
+| Container host | Container Apps | Cloud Run | Docker image + env config |
+| Postgres (+PostGIS) | Azure DB for PostgreSQL Flexible Server | Cloud SQL for PostgreSQL | connection string only |
+| Redis (jobs + WS pub/sub) | Azure Cache for Redis | Memorystore for Redis | client config only |
+| Object storage | Azure Blob Storage | Cloud Storage | storage adapter interface |
+| Secrets | Azure Key Vault | Secret Manager | secrets adapter / env injection |
+| Push | FCM direct | FCM direct (Firebase) | same SDK on both |
+| Observability | OTel → Azure Monitor | OTel → Cloud Monitoring | swap exporter only |
+| Static admin | Azure Static Web Apps | Firebase Hosting / Cloud Run | Next.js build, deploy target only |
+| CI/CD | GitHub Actions | GitHub Actions | unchanged |
+
+**Switch trigger (decision gate at T0):** if Azure Founders Hub eligibility/billing from Zimbabwe fails
+or credits don't land, switch to GCP (Google for Startups Cloud; apply to Accelerator: Africa for the
+larger tier). The decision is made at the spike, before any build commits to one cloud.
+
+**Carried into future reviews:** `/plan-eng-review` must treat portability as an architecture constraint
+(enforce the cloud adapters, single Docker image, standard Postgres/PostGIS/Redis) and wire the portability
+exit-test (T13) as a CI check; flag any Azure-only service on the critical path. `/ship` keeps one IaC
+definition parameterized by cloud. If T0 flips the choice to GCP, update the "primary" label here and re-run
+`/plan-eng-review` against the GCP targets.
 
 ## Review findings (HOLD SCOPE — 11 sections)
 
@@ -128,7 +164,7 @@ requested ─▶ open_for_offers ─┬─(customer selects, ATOMIC guarded UPDA
 
 | ID | P | Task | Verify |
 |----|---|------|--------|
-| T0 | P1 (pre-build spike) | Vendor + billing spikes: real ZIM ID through each KYC sandbox, start WhatsApp BSP onboarding, verify Azure Founders Hub billing from Zimbabwe | one ID verified, one test OTP delivered, Azure credits active |
+| T0 | P1 (pre-build spike) | Vendor + billing spikes: real ZIM ID through each KYC sandbox, start WhatsApp BSP onboarding, verify billing/eligibility from Zimbabwe on **both Azure Founders Hub and Google for Startups** (D7) | one ID verified, one test OTP delivered, ≥1 cloud's credits active with the other confirmed as fallback |
 | T1 | P1 | Atomic offer-selection transition (guarded UPDATE / SELECT FOR UPDATE) + offer-liveness check | concurrent double-select assigns exactly one rider |
 | T2 | P1 | Server-side offer-expiry job (BullMQ on Redis) | window lapses → `expired` with no client open |
 | T3 | P1 | Order auto-close timeout (rating deadlock, D6a) | unrated order auto-closes; completion metric stays clean |
@@ -141,6 +177,7 @@ requested ─▶ open_for_offers ─┬─(customer selects, ATOMIC guarded UPDA
 | T10 | P2 | PostGIS nearby-rider query + indexes | broadcast reaches riders within radius; query uses index |
 | T11 | P2 | GPS-drop / permission-revoked handling on tracking | revoking location shows "paused", not a frozen map |
 | T12 | P2 | Empty-state UX (no offers / no riders online) | both states render a designed screen; run `/plan-design-review` |
+| T13 | P1 (portability, D7) | Isolate cloud-specific code behind adapters (storage/secrets/push-FCM/OTel), one Docker image, standard Postgres/PostGIS/Redis only | exit-test: API boots against GCP (Cloud Run + Cloud SQL + Memorystore + Cloud Storage) with config-only changes |
 
 ## TODOs (next phase)
 
@@ -156,5 +193,5 @@ requested ─▶ open_for_offers ─┬─(customer selects, ATOMIC guarded UPDA
 - ⬜ **Plan → `/plan-design-review`** — offer list, tracker, and empty-state screens.
 - ⬜ **Build** — scaffold the Expo app + own NestJS/Azure backend + admin dashboard.
 
-**Verdict:** CEO review complete under HOLD SCOPE. Scope held; backend changed to an own NestJS API on
-Azure (Founders Hub). No unresolved decisions.
+**Verdict:** CEO review complete under HOLD SCOPE. Scope held; backend is an own NestJS API on Azure
+(Founders Hub) primary with a portable GCP fallback (D7). No unresolved decisions.
