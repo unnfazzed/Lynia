@@ -61,7 +61,7 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 | Monetization | **Cash-first, inDrive-style commission** | Customer pays delivery fee in cash to rider; Lynia takes commission from rider's prepaid balance; Paynow optional |
 | Build approach | **Straight to cross-platform app** | Skipping the WhatsApp ops MVP (founder's call) |
 | Pricing model | **Suggested fare + rider offers; customer picks rider** | App suggests base+per-km; riders counter with their fare (inDrive "offers"); customer selects |
-| Matching / dispatch | **Rider-offer marketplace; manual admin dispatch as fallback** | Customer selection IS the match; admin assigns only when no offers / to override |
+| Matching / dispatch | **inDrive-style offer marketplace; manual admin dispatch as fallback** | Order posts to marketplace → riders post their fare amounts → customer selects the offer; admin assigns only when no offers / to override |
 | Commission (pilot) | **Zero / near-zero to seed supply** | Turn on commission once riders earn daily; avoids choking recruitment |
 | App packaging | **One app, role toggle** (customer ↔ rider) | Fastest to ship in a month; single Expo codebase |
 | Demand wedge | **General "send anything"** | Broad use case, but launch confined to one corridor |
@@ -193,7 +193,6 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 - **Brand & language:** is "Lynia" the final consumer name? English first; Shona/Ndebele later?
 - **Launch corridor:** which specific Harare suburbs go first (drives rider recruitment + demand seeding)?
 - **SMS gateway:** which local aggregator for OTP/notifications?
-- **Confirm matching reconciliation:** rider-offer marketplace as primary match + manual admin dispatch as fallback (assumed from Office Hours — confirm).
 - **Cancellation/no-show enforcement** in a cash model (hard to charge fees) — policy TBD.
 
 ---
