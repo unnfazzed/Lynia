@@ -1,6 +1,8 @@
 # Lynia — Concept & One-Month Execution Plan
 
-> On-demand **motorbike courier** for Zimbabwe. Pick an item up here, deliver it there — by bike.
+> **Vision:** a Zimbabwean **superapp** — order groceries, medicals, and food online.
+> **Now (MVP):** a fully-formed on-demand **motorbike courier / Express** — pick an item up here,
+> deliver it there, by bike. The Express *is* the superapp's spine; verticals layer on later.
 > References: Grab Express (point-to-point parcel), Chowdeck Relay (buy-for-me).
 > Output of a gstack-style **Office Hours** session. Status: **conceptualisation locked, ready for build.**
 
@@ -15,6 +17,26 @@ A two-sided, on-demand logistics marketplace:
 - **Dispatch (us)** monitors and assigns via a simple web dashboard.
 
 **Launch model: A — point-to-point parcel courier.** The sender already has the item; the rider only transports it. No rider cash float, no purchasing risk. (The "buy-for-me" relay model is an explicit **fast-follow**, not in the one-month MVP.)
+
+---
+
+## 1b. Superapp vision & sequencing
+
+Lynia's endgame is a **superapp** (groceries + medicals + food). Every successful superapp
+(Grab, Gojek, WeChat, Careem) started as **one thing done exceptionally**, then layered verticals
+onto a shared **spine**. Lynia's spine, built by a fully-formed Express:
+
+> **① one identity · ② one wallet/payments · ③ one logistics & rider fleet · ④ one location/address book.**
+
+**The ladder (each rung reuses the one below):**
+1. **Express / parcel** (month 1 MVP) — rider *transports* an item. Builds the entire spine.
+2. **"Buy-for-me" relay** (fast-follow) — rider *purchases* on the customer's behalf. The bridge to
+   commerce: adds in-app purchasing + wallet/float, *no merchant integration yet*.
+3. **Merchant-integrated verticals** — **pharmacy → grocery → food** (proposed order; settle in Plan
+   stage). Each adds a catalog on top of relay's purchasing rails.
+
+**Discipline:** month one ships **only Express**. The superapp vision changes how we *name and shape
+the data*, not *what we ship now*. Design the seams, don't build the rooms (see §5b).
 
 ---
 
@@ -39,6 +61,7 @@ A two-sided, on-demand logistics marketplace:
 4. **Data cost.** Mobile data is expensive → keep the app light, cache maps, throttle background location.
 5. **Trust & safety.** Rider vetting, item photos, ratings, and a cancellation/no-show policy from day 1.
 6. **Timeline.** A polished two-app marketplace is a 3–6 month build. One month = a **brutally scoped** Android MVP in one corridor. Scope discipline is the whole game.
+7. **Superapp scope creep (new).** The "superapp" vision will tempt catalogs/merchant onboarding/multi-vertical UI into month one. **Mitigation:** ship only Express now; capture the future solely as cheap data "seams" (§5b), never as features.
 
 ---
 
@@ -79,6 +102,20 @@ A two-sided, on-demand logistics marketplace:
 
 ### Order status flow
 `requested → quoted → paid|awaiting_cod → searching_rider → assigned → picked_up → en_route → delivered → completed` (plus `cancelled`).
+
+---
+
+## 5b. Superapp "seams" baked into the MVP (cheap now, saves a rewrite)
+
+Low-cost data decisions so grocery/pharmacy/food plug in later as **additive order types**, not migrations:
+
+1. **Generic `orders`** with an `order_type` enum — `parcel` at launch; `relay`, `merchant` reserved. Use **line-items**, not a single hard-coded item field.
+2. **Ledger-friendly `payments`** — design so it can become a wallet/ledger later; don't build the wallet now.
+3. **Stubbed `merchants`** table + optional `merchant_id` on orders (unused at launch).
+4. **Saved `addresses`** (address book) per user — needed for repeat grocery/food anyway.
+5. **One identity, expandable roles** — customer / rider / merchant / admin from day one.
+
+> Cost: a few enum columns + one stub table. Benefit: verticals are additive, not a rewrite.
 
 ---
 
