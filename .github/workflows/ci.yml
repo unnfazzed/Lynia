@@ -50,6 +50,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @lynia/shared build # int specs import shared runtime values (e.g. ACTIVE_RIDE_STATUSES)
       - run: pnpm --filter @lynia/api prisma:generate
       - run: pnpm --filter @lynia/api migrate:deploy
       - name: Assert offer-loop constraints applied (ET2/ET6)
