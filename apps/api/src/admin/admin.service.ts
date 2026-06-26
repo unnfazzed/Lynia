@@ -114,6 +114,7 @@ export class AdminService {
         proposedFare: true,
         agreedFare: true,
         distanceKm: true,
+        customerId: true,
         riderId: true,
         cancelledBy: true,
         cancelReason: true,
@@ -127,7 +128,8 @@ export class AdminService {
       agreedFare: o.agreedFare?.toString() ?? null,
       distanceKm: o.distanceKm,
       riderId: o.riderId,
-      cancelledBy: o.cancelledBy,
+      // Authoritative role of who cancelled — don't make the UI re-derive it from raw ids.
+      cancelledByRole: o.cancelledBy === o.riderId ? "rider" : o.cancelledBy === o.customerId ? "customer" : null,
       cancelReason: o.cancelReason,
       createdAt: o.createdAt.toISOString(),
     }));

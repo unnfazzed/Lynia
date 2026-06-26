@@ -56,30 +56,30 @@ describe("OrderLifecycleService.advance", () => {
 });
 
 describe("OrderLifecycleService.confirmDelivery", () => {
-  const base = (over: Record<string, unknown> = {}) => ({
-    status: "en_route_dropoff",
-    riderId: "r1",
-    otpHash: tokens.hash("123456"),
-    deliveryOtpAttempts: 0,
-    ...over,
-  });
+  // confirmDelivery reads the row via a FOR UPDATE $queryRaw (snake_case columns).
+  const row = (over: Record<string, unknown> = {}) => [
+    { status: "en_route_dropoff", rider_id: "r1", otp_hash: tokens.hash("123456"), delivery_otp_attempts: 0, ...over },
+  ];
 
   it("409s when the order is not ready for delivery", async () => {
-    const { svc } = build({ order: { findUnique: async () => base({ status: "picked_up" }) } });
+    const { svc } = build({ $queryRaw: async () => row({ status: "picked_up" }) });
     await expect(svc.confirmDelivery("o1", "r1", "123456")).rejects.toThrow(/not ready/i);
   });
 
   it("locks after too many wrong attempts", async () => {
-    const { svc } = build({ order: { findUnique: async () => base({ deliveryOtpAttempts: 5 }) } });
+    const { svc } = build({ $queryRaw: async () => row({ delivery_otp_attempts: 5 }) });
     await expect(svc.confirmDelivery("o1", "r1", "123456")).rejects.toThrow(/too many attempts/i);
   });
 
   it("rejects a wrong code and increments the attempt counter", async () => {
     let incremented = false;
     const { svc } = build({
+      $queryRaw: async () => row({ otp_hash: tokens.hash("111111") }),
       order: {
-        findUnique: async () => base({ otpHash: tokens.hash("111111") }),
-        update: async () => { incremented = true; return {}; },
+        update: async (a: { data?: Record<string, unknown> }) => {
+          if (a.data?.deliveryOtpAttempts) incremented = true;
+          return {};
+        },
       },
     });
     await expect(svc.confirmDelivery("o1", "r1", "222222")).rejects.toThrow(/incorrect/i);
@@ -88,10 +88,8 @@ describe("OrderLifecycleService.confirmDelivery", () => {
 
   it("accepts the correct code and marks the order delivered", async () => {
     const { svc, emits } = build({
-      order: {
-        findUnique: async () => base(),
-        updateMany: async () => ({ count: 1 }),
-      },
+      $queryRaw: async () => row(),
+      order: { update: async () => ({}) },
       orderEvent: { create: async () => ({}) },
     });
     expect(await svc.confirmDelivery("o1", "r1", "123456")).toEqual({ orderId: "o1", status: "delivered" });
@@ -150,6 +148,21 @@ describe("OrderLifecycleService.completeOrder (auto-close)", () => {
     const { svc, emits } = build({ order: { updateMany: async () => ({ count: 0 }) } });
     expect(await svc.completeOrder("o1")).toEqual({ completed: false });
     expect(emits).toEqual([]);
+  });
+});
+
+describe("OrderLifecycleService.reconcileStaleDeliveries", () => {
+  it("closes every stale delivered order (the Redis-independent backstop)", async () => {
+    const { svc } = build({
+      order: {
+        findMany: async () => [{ id: "o1" }, { id: "o2" }],
+        updateMany: async () => ({ count: 1 }),
+        findUnique: async () => ({ riderId: "r1" }),
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: { update: async () => ({}) },
+    });
+    expect(await svc.reconcileStaleDeliveries()).toEqual({ closed: 2 });
   });
 });
 

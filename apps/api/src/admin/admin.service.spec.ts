@@ -71,6 +71,7 @@ describe("AdminService.listOrders", () => {
               proposedFare: { toString: () => "2.50" },
               agreedFare: null,
               distanceKm: 1.5,
+              customerId: "c1",
               riderId: "r1",
               cancelledBy: "r1",
               cancelReason: "cannot make it",
@@ -83,6 +84,6 @@ describe("AdminService.listOrders", () => {
     const svc = new AdminService(prisma as unknown as PrismaService);
     const rows = await svc.listOrders("cancelled");
     expect(where).toEqual({ status: "cancelled" });
-    expect(rows[0]).toMatchObject({ id: "o1", status: "cancelled", proposedFare: "2.50", agreedFare: null, cancelReason: "cannot make it" });
+    expect(rows[0]).toMatchObject({ id: "o1", status: "cancelled", proposedFare: "2.50", agreedFare: null, cancelledByRole: "rider", cancelReason: "cannot make it" });
   });
 });

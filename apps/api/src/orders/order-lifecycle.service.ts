@@ -35,6 +35,8 @@ const COOLDOWN_MS = 2 * 60 * 60 * 1000;
 /** How long after delivery a customer has to rate before the order auto-closes (so completion
  *  metrics never stall on an un-rated order — D6a / T3). Pilot value; tune on real behaviour. */
 export const RATING_WINDOW_MS = 6 * 60 * 60 * 1000;
+/** How often the DB reconciler sweeps for orphaned delivered orders (Redis-independent backstop). */
+const RECONCILE_INTERVAL_MS = 15 * 60 * 1000;
 const QUEUE_NAME = "rating-autoclose";
 
 type ForwardStatus = keyof typeof FORWARD;
@@ -79,26 +81,65 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     private readonly gateway: TrackingGateway,
   ) {}
 
+  private sweep?: ReturnType<typeof setInterval>;
+
   onModuleInit(): void {
     const url = this.env.REDIS_URL;
-    if (!url) {
-      this.logger.warn("REDIS_URL not set — rating auto-close disabled (delivered orders won't auto-complete)");
-      return;
+    if (url) {
+      const connection = connectionFromUrl(url);
+      this.queue = new Queue(QUEUE_NAME, { connection });
+      this.worker = new Worker(QUEUE_NAME, async (job) => this.completeOrder(job.data.orderId as string), {
+        connection,
+      });
+      this.worker.on("failed", (job, err) =>
+        this.logger.error(`auto-close job ${job?.id ?? "?"} failed: ${err.message}`),
+      );
+      this.logger.log("Rating auto-close worker started");
+    } else {
+      this.logger.warn("REDIS_URL not set — relying on the DB reconciler to auto-close delivered orders");
     }
-    const connection = connectionFromUrl(url);
-    this.queue = new Queue(QUEUE_NAME, { connection });
-    this.worker = new Worker(QUEUE_NAME, async (job) => this.completeOrder(job.data.orderId as string), {
-      connection,
-    });
-    this.worker.on("failed", (job, err) =>
-      this.logger.error(`auto-close job ${job?.id ?? "?"} failed: ${err.message}`),
-    );
-    this.logger.log("Rating auto-close worker started");
+
+    // DB-driven reconciler (does NOT depend on Redis). Closes any delivered order past the rating
+    // window even if the per-order job was never enqueued or was lost — the self-healing backstop
+    // for a crash between commit and schedule, or a Redis outage. Runs at boot and on an interval.
+    void this.reconcileStaleDeliveries();
+    this.sweep = setInterval(() => void this.reconcileStaleDeliveries(), RECONCILE_INTERVAL_MS);
+    this.sweep.unref?.();
   }
 
   async onModuleDestroy(): Promise<void> {
+    if (this.sweep) clearInterval(this.sweep);
     await this.worker?.close();
     await this.queue?.close();
+  }
+
+  /** Close every delivered-but-unrated order older than the rating window. Idempotent via completeOrder. */
+  async reconcileStaleDeliveries(): Promise<{ closed: number }> {
+    const cutoff = new Date(Date.now() - RATING_WINDOW_MS);
+    const stale = await this.prisma.order.findMany({
+      where: { status: "delivered", deliveredAt: { lt: cutoff } },
+      select: { id: true },
+      take: 500,
+    });
+    let closed = 0;
+    for (const o of stale) {
+      try {
+        if ((await this.completeOrder(o.id)).completed) closed++;
+      } catch (err) {
+        this.logger.error(`reconcile failed for order ${o.id}: ${(err as Error).message}`);
+      }
+    }
+    if (closed > 0) this.logger.log(`Reconciler auto-closed ${closed} stale delivered order(s)`);
+    return { closed };
+  }
+
+  /** Best-effort live status push (ET4). Never fails a committed transition — emits are notifications. */
+  private safeEmit(orderId: string, status: string): void {
+    try {
+      this.gateway.emitOrderStatus(orderId, status);
+    } catch (err) {
+      this.logger.warn(`status emit failed for order ${orderId}: ${(err as Error).message}`);
+    }
   }
 
   /** Rider advances the trip one forward step (the non-OTP, non-completion edges). */
@@ -129,41 +170,42 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       await tx.orderEvent.create({ data: { orderId, status: to } });
     });
 
-    this.gateway.emitOrderStatus(orderId, to);
+    this.safeEmit(orderId, to);
     return { orderId, status: to };
   }
 
   /** Rider confirms the handover with the recipient's delivery code → `delivered`. */
   async confirmDelivery(orderId: string, riderId: string, code: string): Promise<LifecycleResult> {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      select: { status: true, riderId: true, otpHash: true, deliveryOtpAttempts: true },
+    // Serialize attempts with a row lock so the count gate, the otp compare, and the increment are
+    // point-in-time consistent: no concurrent-guess bypass of the 5-attempt cap, and no rotate race
+    // (a rotate must wait for the lock). The wrong-code increment is RETURNED (committed), not
+    // thrown, so it persists; only the error cases (which have nothing to persist) roll back.
+    const expectedHash = this.tokens.hash(code);
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        Array<{ status: string; rider_id: string | null; otp_hash: string | null; delivery_otp_attempts: number }>
+      >`SELECT status, rider_id, otp_hash, delivery_otp_attempts FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      const o = rows[0];
+      if (!o) throw new NotFoundException("Order not found");
+      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (o.status !== "en_route_dropoff") throw new ConflictException("Order is not ready for delivery");
+      if (o.delivery_otp_attempts >= DELIVERY_OTP_MAX_ATTEMPTS) {
+        throw new ForbiddenException("Too many attempts — ask the customer to re-issue the code");
+      }
+
+      const ok = !!o.otp_hash && this.tokens.safeEqualHex(expectedHash, o.otp_hash);
+      if (!ok) {
+        await tx.order.update({ where: { id: orderId }, data: { deliveryOtpAttempts: { increment: 1 } } });
+        return { ok: false as const };
+      }
+      // Row is locked and validated en_route_dropoff — safe to flip directly.
+      await tx.order.update({ where: { id: orderId }, data: { status: "delivered", deliveredAt: new Date() } });
+      await tx.orderEvent.create({ data: { orderId, status: "delivered" } });
+      return { ok: true as const };
     });
-    if (!order) throw new NotFoundException("Order not found");
-    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
-    if (order.status !== "en_route_dropoff") throw new ConflictException("Order is not ready for delivery");
-    if (order.deliveryOtpAttempts >= DELIVERY_OTP_MAX_ATTEMPTS) {
-      throw new ForbiddenException("Too many attempts — ask the customer to re-issue the code");
-    }
 
-    const ok = !!order.otpHash && this.tokens.safeEqualHex(this.tokens.hash(code), order.otpHash);
-    if (!ok) {
-      // Increment OUTSIDE any rolled-back tx so the counter actually persists.
-      await this.prisma.order.update({
-        where: { id: orderId },
-        data: { deliveryOtpAttempts: { increment: 1 } },
-      });
-      throw new UnauthorizedException("Incorrect delivery code");
-    }
-
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: "en_route_dropoff", riderId },
-      data: { status: "delivered", deliveredAt: new Date() },
-    });
-    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-    await this.prisma.orderEvent.create({ data: { orderId, status: "delivered" } });
-
-    this.gateway.emitOrderStatus(orderId, "delivered");
+    if (!outcome.ok) throw new UnauthorizedException("Incorrect delivery code");
+    this.safeEmit(orderId, "delivered");
     await this.scheduleAutoClose(orderId);
     return { orderId, status: "delivered" };
   }
@@ -180,7 +222,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       if (order.status !== "delivered") throw new ConflictException("Order is not awaiting a rating");
 
       const claimed = await tx.order.updateMany({
-        where: { id: orderId, status: "delivered" },
+        where: { id: orderId, status: "delivered", customerId },
         data: { status: "completed", completedAt: new Date() },
       });
       if (claimed.count === 0) throw new ConflictException("Order already completed");
@@ -204,7 +246,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    this.gateway.emitOrderStatus(orderId, "completed");
+    this.safeEmit(orderId, "completed");
     return { orderId, status: "completed" };
   }
 
@@ -262,7 +304,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       };
     });
 
-    this.gateway.emitOrderStatus(orderId, "cancelled");
+    this.safeEmit(orderId, "cancelled");
     return result;
   }
 
@@ -284,7 +326,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       }
       return true;
     });
-    if (done) this.gateway.emitOrderStatus(orderId, "completed");
+    if (done) this.safeEmit(orderId, "completed");
     return { completed: done };
   }
 
@@ -316,12 +358,12 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   }
 }
 
-/** A delivery code is meaningful while the trip is in flight (assigned through delivered). */
+/** A delivery code is meaningful only while the trip is in flight and the code is still unconsumed
+ *  (assigned through en_route_dropoff). Once `delivered`, the handover is done — no rotation. */
 const ACTIVE_FOR_CODE = new Set([
   "assigned",
   "confirmed",
   "en_route_pickup",
   "picked_up",
   "en_route_dropoff",
-  "delivered",
 ]);

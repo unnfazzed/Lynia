@@ -8,7 +8,7 @@ interface Order {
   agreedFare: string | null;
   distanceKm: number | null;
   riderId: string | null;
-  cancelledBy: string | null;
+  cancelledByRole: "rider" | "customer" | null;
   cancelReason: string | null;
   createdAt: string;
 }
@@ -80,7 +80,7 @@ export default async function OrdersPage({
                   <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums" }}>${o.agreedFare ?? o.proposedFare}</td>
                   <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums" }}>{o.distanceKm != null ? `${o.distanceKm} km` : "—"}</td>
                   <td style={{ padding: "6px 4px", color: tokens.color.muted }}>
-                    {o.cancelReason ? `cancelled (${o.cancelledBy === o.riderId ? "rider" : "customer"}): ${o.cancelReason}` : "—"}
+                    {o.cancelReason ? `cancelled${o.cancelledByRole ? ` (${o.cancelledByRole})` : ""}: ${o.cancelReason}` : "—"}
                   </td>
                 </tr>
               ))}

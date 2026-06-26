@@ -202,4 +202,37 @@ describe("delivery lifecycle", () => {
 
     await expect(riders.setOnline(rider, true)).rejects.toThrow(/cooldown/i);
   });
+
+  it("concurrent advance of the same step assigns exactly one winner (guarded CAS)", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId } = await assign(customer, rider);
+
+    const results = await Promise.allSettled([
+      lifecycle.advance(orderId, rider, "confirmed"),
+      lifecycle.advance(orderId, rider, "confirmed"),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+    expect(await statusOf(orderId)).toBe("confirmed");
+  });
+
+  it("serializes OTP attempts so concurrent wrong guesses cannot bypass the lockout", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId, deliveryCode } = await assign(customer, rider);
+    for (const to of ["confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] as const) {
+      await lifecycle.advance(orderId, rider, to);
+    }
+
+    const wrong = deliveryCode === "000000" ? "111111" : "000000";
+    const tries = await Promise.allSettled(
+      Array.from({ length: 8 }, () => lifecycle.confirmDelivery(orderId, rider, wrong)),
+    );
+    expect(tries.every((t) => t.status === "rejected")).toBe(true);
+
+    const after = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { deliveryOtpAttempts: true } });
+    expect(after.deliveryOtpAttempts).toBe(5); // exactly the cap — the FOR UPDATE lock prevents over-counting/bypass
+    expect(await statusOf(orderId)).toBe("en_route_dropoff"); // never wrongly delivered
+  });
 });
