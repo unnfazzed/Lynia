@@ -1,4 +1,4 @@
-import type { CancelRequest, CreateOrderRequest, OrderStatus, RateRequest } from "@lynia/shared";
+import type { AdvanceStatusRequest, CancelRequest, CreateOrderRequest, OrderStatus, RateRequest, Waypoint } from "@lynia/shared";
 import { apiFetch } from "./client";
 
 export interface CreateOrderResult {
@@ -31,6 +31,35 @@ export function createOrder(body: CreateOrderRequest): Promise<CreateOrderResult
 
 export function getOrder(orderId: string): Promise<OrderSnapshot> {
   return apiFetch<OrderSnapshot>(`/orders/${orderId}`);
+}
+
+// --- Rider-facing reads + lifecycle drive ---
+
+export interface OpenOrder {
+  id: string;
+  pickup: Waypoint;
+  dropoff: Waypoint;
+  itemDesc: string;
+  suggestedFare: string;
+  proposedFare: string;
+  distanceKm: number | null;
+  createdAt: string;
+}
+
+export function getOpenOrders(): Promise<OpenOrder[]> {
+  return apiFetch<OpenOrder[]>("/orders/open");
+}
+
+export function getActiveOrder(): Promise<OrderSnapshot | null> {
+  return apiFetch<OrderSnapshot | null>("/orders/mine/active");
+}
+
+export function advanceStatus(orderId: string, to: AdvanceStatusRequest["to"]): Promise<{ orderId: string; status: OrderStatus }> {
+  return apiFetch(`/orders/${orderId}/status`, { method: "POST", body: { to } });
+}
+
+export function confirmDelivery(orderId: string, code: string): Promise<{ orderId: string; status: "delivered" }> {
+  return apiFetch(`/orders/${orderId}/deliver`, { method: "POST", body: { code } });
 }
 
 export function rateOrder(orderId: string, body: RateRequest): Promise<{ orderId: string; status: "completed" }> {
