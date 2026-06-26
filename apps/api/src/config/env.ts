@@ -10,6 +10,13 @@ export const envSchema = z.object({
   STORAGE_BUCKET: z.string().default("lynia-media"),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   OTEL_SERVICE_NAME: z.string().default("lynia-api"),
+  // --- Auth (lane B) ---
+  JWT_SIGNING_SECRET: z.string().min(16).default("dev-insecure-secret-change-me-please"),
+  ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
+  OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  // E4: WhatsApp default, SMS behind a flag (schedule insurance vs BSP delay).
+  OTP_CHANNEL: z.enum(["whatsapp", "sms"]).default("whatsapp"),
 });
 
 export type Env = z.infer<typeof envSchema>;
