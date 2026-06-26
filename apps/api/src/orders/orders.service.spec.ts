@@ -96,3 +96,62 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBeNull();
   });
 });
+
+describe("OrdersService.listOpen", () => {
+  it("lists open orders for riders, serializing fares", async () => {
+    let where: unknown;
+    const prisma = {
+      order: {
+        findMany: async (args: { where: unknown }) => {
+          where = args.where;
+          return [
+            {
+              id: "o1",
+              pickup: { point: { lat: -17.83, lng: 31.05 } },
+              dropoff: { point: { lat: -17.82, lng: 31.06 } },
+              itemDesc: "Documents",
+              suggestedFare: { toString: () => "2.40" },
+              proposedFare: { toString: () => "2.50" },
+              distanceKm: 1.5,
+              createdAt: new Date("2026-06-26T00:00:00Z"),
+            },
+          ];
+        },
+      },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
+    const rows = await svc.listOpen();
+    expect(where).toEqual({ status: "open_for_offers" });
+    expect(rows[0]).toMatchObject({ id: "o1", itemDesc: "Documents", suggestedFare: "2.40", proposedFare: "2.50", distanceKm: 1.5 });
+  });
+});
+
+describe("OrdersService.activeForRider", () => {
+  it("returns null when the rider has no active order", async () => {
+    const prisma = { order: { findFirst: async () => null } };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
+    expect(await svc.activeForRider("rider-1")).toBeNull();
+  });
+
+  it("returns the active order snapshot when one exists", async () => {
+    const snap = {
+      id: "o1",
+      status: "assigned",
+      agreedFare: null,
+      proposedFare: 2.5,
+      customerId: "cust-1",
+      riderId: "rider-1",
+      customer: { phone: "+263771111111" },
+      rider: { profileId: "rider-1", currentLat: null, currentLng: null, updatedAt: null, profile: { phone: "+263782000000" } },
+      events: [],
+    };
+    const prisma = {
+      order: { findFirst: async () => ({ id: "o1" }), findUnique: async () => snap },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
+    const res = await svc.activeForRider("rider-1");
+    expect(res).toMatchObject({ id: "o1", status: "assigned" });
+    // rider sees the customer's phone in the active window
+    expect(res?.counterpartyPhone).toBe("+263771111111");
+  });
+});

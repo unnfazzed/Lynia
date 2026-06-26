@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import { MakeOfferRequest } from "@lynia/shared";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { OffersService } from "./offers.service";
@@ -7,7 +8,10 @@ import { OffersService } from "./offers.service";
 // orderId comes from the path, so the body omits it.
 const MakeOfferBody = MakeOfferRequest.omit({ orderId: true });
 
+// Guarded: make-offer attributes the offer to the caller (rider) and the list exposes rider PII —
+// both must be the authenticated user, not a spoofable x-user-id header.
 @Controller("orders/:orderId/offers")
+@UseGuards(JwtAuthGuard)
 export class OffersController {
   constructor(private readonly offers: OffersService) {}
 

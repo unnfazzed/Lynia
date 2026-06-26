@@ -20,6 +20,20 @@ export class OrdersController {
     return this.orders.create(body, customerId);
   }
 
+  // Static routes MUST precede the :orderId param route, or "open"/"mine" get parsed as an order id.
+
+  /** Open orders a rider can bid on. */
+  @Get("open")
+  open() {
+    return this.orders.listOpen();
+  }
+
+  /** The caller's current active job as a rider (or null). */
+  @Get("mine/active")
+  activeJob(@CurrentUser() riderId: string) {
+    return this.orders.activeForRider(riderId);
+  }
+
   @Get(":orderId")
   get(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() callerId: string) {
     return this.orders.getSnapshot(orderId, callerId);
