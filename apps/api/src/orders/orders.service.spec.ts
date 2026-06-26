@@ -1,0 +1,59 @@
+import type { CreateOrderRequest } from "@lynia/shared";
+import { describe, expect, it } from "vitest";
+import type { OfferExpiryService } from "../matching/offer-expiry.service";
+import { PrismaService } from "../prisma/prisma.service";
+import { OrdersService } from "./orders.service";
+
+const orderInput: CreateOrderRequest = {
+  pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" },
+  dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues", contactPhone: "+263772222222" },
+  itemDescription: "Documents",
+  declaredValue: 10,
+  proposedFare: 2.5,
+};
+
+describe("OrdersService.create", () => {
+  it("opens the order for offers and schedules window expiry", async () => {
+    let created: Record<string, unknown> | undefined;
+    let scheduledId: string | undefined;
+    const prisma = {
+      order: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          created = args.data;
+          return { id: "ord-1", status: "open_for_offers", proposedFare: { toString: () => "2.50" } };
+        },
+      },
+    };
+    const expiry = { schedule: async (id: string) => { scheduledId = id; } } as unknown as OfferExpiryService;
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry);
+
+    const res = await svc.create(orderInput, "cust-1");
+
+    expect(res).toEqual({ id: "ord-1", status: "open_for_offers", proposedFare: "2.50" });
+    expect(scheduledId).toBe("ord-1");
+    expect(created).toMatchObject({
+      customerId: "cust-1",
+      status: "open_for_offers",
+      suggestedFare: 2.5,
+      proposedFare: 2.5,
+      itemDesc: "Documents",
+    });
+    // suggested fare mirrors the customer's proposal until the pricing engine lands
+    expect(created!.suggestedFare).toBe(created!.proposedFare);
+  });
+});
+
+describe("OrdersService.getSnapshot", () => {
+  it("404s when the order is missing", async () => {
+    const prisma = { order: { findUnique: async () => null } };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
+    await expect(svc.getSnapshot("missing")).rejects.toThrow(/order not found/i);
+  });
+
+  it("returns the order snapshot when found", async () => {
+    const snap = { id: "ord-1", status: "assigned", agreedFare: null, proposedFare: 2.5, rider: null, events: [] };
+    const prisma = { order: { findUnique: async () => snap } };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
+    expect(await svc.getSnapshot("ord-1")).toBe(snap);
+  });
+});
