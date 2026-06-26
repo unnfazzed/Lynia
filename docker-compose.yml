@@ -1,0 +1,26 @@
+# Local dev infrastructure — no Azure needed.
+#   pnpm db:up && pnpm db:migrate && pnpm db:seed && pnpm dev
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: lynia
+      POSTGRES_PASSWORD: lynia
+      POSTGRES_DB: lynia
+    ports:
+      - "5432:5432"
+    volumes:
+      - lynia_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lynia"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  lynia_pg:

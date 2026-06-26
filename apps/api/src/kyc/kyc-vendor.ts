@@ -5,6 +5,8 @@
 export interface KycSubmission {
   ref: string;
   status: "pending";
+  /** Verification link the rider opens to complete the check (vendor-hosted flow). */
+  url?: string;
 }
 
 export interface KycVendor {

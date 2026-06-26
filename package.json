@@ -10,7 +10,11 @@
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "dev": "turbo run dev"
+    "dev": "turbo run dev",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @lynia/api migrate:deploy",
+    "db:seed": "pnpm --filter @lynia/api seed"
   },
   "devDependencies": {
     "turbo": "^2.3.3",
