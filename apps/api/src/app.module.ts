@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AuthModule } from "./auth/auth.module";
 import { PushModule } from "./adapters/push/push.module";
 import { SecretsModule } from "./adapters/secrets/secrets.module";
 import { StorageModule } from "./adapters/storage/storage.module";
@@ -18,11 +19,13 @@ import { PrismaModule } from "./prisma/prisma.module";
     SecretsModule,
     PushModule,
     HealthModule,
+    // Lane B — auth (OTP + JWT/refresh sessions).
+    AuthModule,
     // Lane C — the offer loop.
     MatchingModule,
     OrdersModule,
     OffersModule,
-    // Lanes B/D add: AuthModule, TrackingModule.
+    // Lane D adds: TrackingModule.
   ],
 })
 export class AppModule {}
