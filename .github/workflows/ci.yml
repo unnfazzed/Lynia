@@ -60,3 +60,5 @@ jobs:
           q "SELECT 1 FROM pg_indexes WHERE tablename='riders' AND indexdef ILIKE '%gist%';" | grep -qx 1
           q "SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='otp_hash';" | grep -qx 1
           echo "✓ one_active_ride, GiST geog index, and otp_hash all present"
+      - name: Offer-loop concurrency tests (ET1/ET2/ET3)
+        run: pnpm --filter @lynia/api test:int
