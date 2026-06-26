@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { Queue, Worker } from "bullmq";
-import IORedis, { type Redis } from "ioredis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MatchingService } from "./matching.service";
@@ -10,16 +9,24 @@ const QUEUE_NAME = "offer-expiry";
 /** Offer window length (CONCEPT §9 — placeholder; tune on real corridor supply). */
 export const OFFER_WINDOW_MS = 90_000;
 
-interface ExpiryJob {
-  orderId: string;
+/** Plain ioredis options (structurally typed) so BullMQ owns its connections — avoids
+ *  cross-version ioredis instance mismatches between the api and bullmq's bundled copy. */
+function connectionFromUrl(url: string) {
+  const u = new URL(url);
+  return {
+    host: u.hostname,
+    port: u.port ? Number(u.port) : 6379,
+    username: u.username || undefined,
+    password: u.password || undefined,
+    maxRetriesPerRequest: null,
+  };
 }
 
 @Injectable()
 export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OfferExpiryService.name);
-  private queue?: Queue<ExpiryJob>;
-  private worker?: Worker<ExpiryJob>;
-  private connections: Redis[] = [];
+  private queue?: Queue;
+  private worker?: Worker;
 
   constructor(
     @Inject(ENV) private readonly env: Env,
@@ -27,21 +34,18 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    if (!this.env.REDIS_URL) {
+    const url = this.env.REDIS_URL;
+    if (!url) {
       this.logger.warn("REDIS_URL not set — offer expiry is disabled (orders will not auto-expire)");
       return;
     }
-    const mkConn = (): Redis => {
-      const c = new IORedis(this.env.REDIS_URL as string, { maxRetriesPerRequest: null });
-      this.connections.push(c);
-      return c;
-    };
+    const connection = connectionFromUrl(url);
 
-    this.queue = new Queue<ExpiryJob>(QUEUE_NAME, { connection: mkConn() });
-    this.worker = new Worker<ExpiryJob>(
+    this.queue = new Queue(QUEUE_NAME, { connection });
+    this.worker = new Worker(
       QUEUE_NAME,
-      async (job) => this.matching.expireOrder(job.data.orderId),
-      { connection: mkConn() },
+      async (job) => this.matching.expireOrder(job.data.orderId as string),
+      { connection },
     );
     this.worker.on("failed", (job, err) =>
       this.logger.error(`expiry job ${job?.id ?? "?"} failed: ${err.message}`),
@@ -65,6 +69,5 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     await this.worker?.close();
     await this.queue?.close();
-    for (const c of this.connections) c.disconnect();
   }
 }
