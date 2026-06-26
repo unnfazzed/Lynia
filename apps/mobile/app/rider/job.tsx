@@ -26,8 +26,9 @@ export default function RiderJob(): React.ReactElement {
   const order = jobQ.data ?? null;
   const orderId = order?.id ?? null;
 
-  // Stream GPS while the job is in flight (not once delivered).
-  useRiderLocationStream(order && order.status !== "delivered" ? orderId : null);
+  // Stream GPS only while the ride is genuinely active — stops on delivered AND cancelled/completed
+  // (don't blocklist a single terminal state, or a cancelled job keeps broadcasting the rider's GPS).
+  useRiderLocationStream(order && ACTIVE.includes(order.status) ? orderId : null);
 
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
   const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Something went wrong.");
@@ -43,7 +44,15 @@ export default function RiderJob(): React.ReactElement {
       setCode("");
       refresh();
     },
-    onError: fail,
+    onError: (e) => {
+      // 403 = the 5-attempt lockout; the customer must re-issue the code. 401 = wrong code, retry.
+      if (e instanceof ApiError && e.status === 403) {
+        setError("Too many attempts — ask the customer to re-issue the delivery code.");
+      } else {
+        fail(e);
+      }
+      refresh();
+    },
   });
   const cancelM = useMutation({ mutationFn: () => cancelOrder(orderId!), onSuccess: refresh, onError: fail });
 

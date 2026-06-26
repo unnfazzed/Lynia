@@ -25,6 +25,9 @@ export class OffersService {
     });
     if (!rider) throw new ForbiddenException("Not a rider");
     if (rider.kycStatus !== "verified") throw new ForbiddenException("Rider is not verified yet");
+    // Enforce the online invariant the gating comment claims (was selected but never checked) — an
+    // offline/cooled-down rider's offer is un-selectable anyway and just pollutes the customer's list.
+    if (!rider.isOnline) throw new ForbiddenException("Go online to make offers");
 
     try {
       const offer = await this.prisma.offer.create({

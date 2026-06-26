@@ -64,8 +64,11 @@ export async function apiFetch<T>(path: string, opts: RequestOpts = {}): Promise
     const text = await res.text().catch(() => "");
     throw new ApiError(res.status, friendlyMessage(res.status, text));
   }
+  // Parse via text so an empty body (e.g. /orders/mine/active with no job) doesn't throw — it
+  // yields undefined, and a literal "null" parses to null, both of which callers treat as "none".
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 /**

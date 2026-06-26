@@ -30,7 +30,8 @@ export default function BecomeRiderScreen(): React.ReactElement {
     try {
       await completeProfile({ firstName: firstName.trim(), lastName: lastName.trim(), idNumber: idNumber.trim() });
       const res = await becomeRider({ bikeReg: bikeReg.trim(), photoUrl: photoUrl.trim() });
-      if (res.verificationUrl) {
+      // Only open an https URL — defense in depth against a bad/compromised vendor URL.
+      if (res.verificationUrl && res.verificationUrl.startsWith("https://")) {
         await Linking.openURL(res.verificationUrl).catch(() => undefined);
       }
       setPending(

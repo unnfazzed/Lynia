@@ -1,4 +1,4 @@
-import type { AdvanceStatusRequest, CancelRequest, CreateOrderRequest, OrderStatus, RateRequest, Waypoint } from "@lynia/shared";
+import type { AdvanceStatusRequest, CancelRequest, CreateOrderRequest, LatLng, OrderStatus, RateRequest } from "@lynia/shared";
 import { apiFetch } from "./client";
 
 export interface CreateOrderResult {
@@ -35,10 +35,11 @@ export function getOrder(orderId: string): Promise<OrderSnapshot> {
 
 // --- Rider-facing reads + lifecycle drive ---
 
+// contactPhone is redacted server-side until assignment (§5d) — riders see point + landmark only.
 export interface OpenOrder {
   id: string;
-  pickup: Waypoint;
-  dropoff: Waypoint;
+  pickup: { point: LatLng; landmark: string };
+  dropoff: { point: LatLng; landmark: string };
   itemDesc: string;
   suggestedFare: string;
   proposedFare: string;

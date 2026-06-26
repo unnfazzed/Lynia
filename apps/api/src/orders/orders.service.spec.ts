@@ -124,6 +124,32 @@ describe("OrdersService.listOpen", () => {
     expect(where).toEqual({ status: "open_for_offers" });
     expect(rows[0]).toMatchObject({ id: "o1", itemDesc: "Documents", suggestedFare: "2.40", proposedFare: "2.50", distanceKm: 1.5 });
   });
+
+  it("redacts contactPhone from pickup/dropoff — a browsing rider gets point + landmark only (§5d)", async () => {
+    const prisma = {
+      order: {
+        findMany: async () => [
+          {
+            id: "o1",
+            pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" },
+            dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues", contactPhone: "+263772222222" },
+            itemDesc: "Documents",
+            suggestedFare: { toString: () => "2.40" },
+            proposedFare: { toString: () => "2.50" },
+            distanceKm: 1.5,
+            createdAt: new Date("2026-06-26T00:00:00Z"),
+          },
+        ],
+      },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
+    const rows = await svc.listOpen();
+    expect(rows[0]!.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" });
+    expect(rows[0]!.dropoff).toEqual({ point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" });
+    expect(rows[0]!.pickup).not.toHaveProperty("contactPhone");
+    expect(rows[0]!.dropoff).not.toHaveProperty("contactPhone");
+    expect(JSON.stringify(rows[0])).not.toContain("+263");
+  });
 });
 
 describe("OrdersService.activeForRider", () => {
