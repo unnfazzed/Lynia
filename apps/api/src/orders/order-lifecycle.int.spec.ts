@@ -6,8 +6,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
+import { StubKycVendor } from "../kyc/kyc-vendor";
 import { MatchingService } from "../matching/matching.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { RiderService } from "../riders/rider.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { OrderLifecycleService } from "./order-lifecycle.service";
 
@@ -17,6 +19,7 @@ const matching = new MatchingService(prisma, tokens);
 const gateway = { emitOrderStatus: () => undefined } as unknown as TrackingGateway;
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
 const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway);
+const riders = new RiderService(prisma, {} as Env, new StubKycVendor());
 
 async function clean(): Promise<void> {
   await prisma.orderEvent.deleteMany({});
@@ -165,5 +168,38 @@ describe("delivery lifecycle", () => {
     // delivered/completed leave one_active_ride, so the same rider can take a new order.
     const second = await assign(customer, rider);
     expect(await statusOf(second.orderId)).toBe("assigned");
+  });
+
+  it("a customer cancel frees the order and the rider", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId } = await assign(customer, rider);
+
+    const res = await lifecycle.cancel(orderId, customer, "changed plans");
+    expect(res).toMatchObject({ status: "cancelled", cancelledBy: "customer" });
+    expect(await statusOf(orderId)).toBe("cancelled");
+
+    // cancelled leaves one_active_ride → the rider can be assigned again.
+    const next = await assign(customer, rider);
+    expect(await statusOf(next.orderId)).toBe("assigned");
+  });
+
+  it("three rider cancels trigger a cooldown that blocks going online", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    for (let i = 0; i < 3; i++) {
+      const { orderId } = await assign(customer, rider);
+      await lifecycle.cancel(orderId, rider, "cannot make it");
+    }
+
+    const r = await prisma.rider.findUniqueOrThrow({
+      where: { profileId: rider },
+      select: { cancelStrikes: true, cooldownUntil: true, isOnline: true },
+    });
+    expect(r.cancelStrikes).toBe(0); // reset at the limit
+    expect(r.cooldownUntil).not.toBeNull();
+    expect(r.isOnline).toBe(false); // forced offline
+
+    await expect(riders.setOnline(rider, true)).rejects.toThrow(/cooldown/i);
   });
 });

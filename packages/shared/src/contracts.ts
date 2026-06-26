@@ -64,6 +64,12 @@ export const RateRequest = z.object({
 });
 export type RateRequest = z.infer<typeof RateRequest>;
 
+/** Either party cancels an in-flight order. A rider-initiated cancel counts as a no-show strike. */
+export const CancelRequest = z.object({
+  reason: z.string().max(280).optional(),
+});
+export type CancelRequest = z.infer<typeof CancelRequest>;
+
 export const ApiError = z.object({
   statusCode: z.number(),
   code: z.string(),
