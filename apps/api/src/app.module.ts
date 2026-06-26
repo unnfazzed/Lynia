@@ -4,6 +4,9 @@ import { SecretsModule } from "./adapters/secrets/secrets.module";
 import { StorageModule } from "./adapters/storage/storage.module";
 import { ConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
+import { MatchingModule } from "./matching/matching.module";
+import { OffersModule } from "./offers/offers.module";
+import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
 
 @Module({
@@ -15,7 +18,11 @@ import { PrismaModule } from "./prisma/prisma.module";
     SecretsModule,
     PushModule,
     HealthModule,
-    // Lanes B/C/D add: AuthModule, OrdersModule, OffersModule, MatchingModule, TrackingModule.
+    // Lane C — the offer loop.
+    MatchingModule,
+    OrdersModule,
+    OffersModule,
+    // Lanes B/D add: AuthModule, TrackingModule.
   ],
 })
 export class AppModule {}
