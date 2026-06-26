@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { type CreateOrderRequest, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type CreateOrderRequest, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -47,6 +47,47 @@ export class OrdersService {
       suggestedFare: order.suggestedFare.toString(),
       distanceKm: order.distanceKm,
     };
+  }
+
+  /** Open orders a rider can bid on. The rider app sorts/filters by distance (haversine) client-side. */
+  async listOpen() {
+    const orders = await this.prisma.order.findMany({
+      where: { status: "open_for_offers" },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        pickup: true,
+        dropoff: true,
+        itemDesc: true,
+        suggestedFare: true,
+        proposedFare: true,
+        distanceKm: true,
+        createdAt: true,
+      },
+    });
+    return orders.map((o) => ({
+      id: o.id,
+      pickup: o.pickup,
+      dropoff: o.dropoff,
+      itemDesc: o.itemDesc,
+      suggestedFare: o.suggestedFare.toString(),
+      proposedFare: o.proposedFare.toString(),
+      distanceKm: o.distanceKm,
+      createdAt: o.createdAt.toISOString(),
+    }));
+  }
+
+  /** The rider's current active job (assigned through en_route_dropoff), or null — so they can find
+   *  and drive it after assignment or an app restart. Returns the same snapshot shape as getSnapshot. */
+  async activeForRider(riderId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { riderId, status: { in: ACTIVE_RIDE_STATUSES } },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+    if (!order) return null;
+    return this.getSnapshot(order.id, riderId);
   }
 
   /**
