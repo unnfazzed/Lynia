@@ -1,4 +1,4 @@
-import type { OfferType } from "@lynia/shared";
+import type { MakeOfferRequest, OfferType } from "@lynia/shared";
 import { apiFetch } from "./client";
 
 export interface OfferRow {
@@ -30,4 +30,16 @@ export function listOffers(orderId: string): Promise<OfferRow[]> {
 
 export function selectOffer(orderId: string, offerId: string): Promise<SelectResult> {
   return apiFetch<SelectResult>(`/orders/${orderId}/offers/${offerId}/select`, { method: "POST" });
+}
+
+export interface MakeOfferResult {
+  id: string;
+  type: OfferType;
+  offeredFare: string;
+  etaMinutes: number;
+  status: string;
+}
+
+export function makeOffer(orderId: string, body: Omit<MakeOfferRequest, "orderId">): Promise<MakeOfferResult> {
+  return apiFetch<MakeOfferResult>(`/orders/${orderId}/offers`, { method: "POST", body });
 }
