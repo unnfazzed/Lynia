@@ -22,6 +22,7 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /** Great-circle distance between two points (Haversine), in kilometres. */
 export function haversineKm(a: LatLng, b: LatLng): number {
+  if (![a.lat, a.lng, b.lat, b.lng].every(Number.isFinite)) return 0;
   const dLat = toRad(b.lat - a.lat);
   const dLng = toRad(b.lng - a.lng);
   const h =
@@ -32,8 +33,8 @@ export function haversineKm(a: LatLng, b: LatLng): number {
 
 /** Suggested fare (USD, 2dp) for a trip of the given distance — floored at FARE.minUsd. */
 export function suggestFare(distanceKm: number): number {
-  const raw = FARE.baseUsd + FARE.perKmUsd * Math.max(0, distanceKm);
-  return round2(Math.max(FARE.minUsd, raw));
+  const km = Number.isFinite(distanceKm) ? Math.max(0, distanceKm) : 0;
+  return round2(Math.max(FARE.minUsd, FARE.baseUsd + FARE.perKmUsd * km));
 }
 
 /** Distance (km) + suggested fare for a pickup→dropoff pair, both rounded to 2dp. */

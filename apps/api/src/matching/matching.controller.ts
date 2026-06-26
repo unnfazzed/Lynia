@@ -1,8 +1,12 @@
-import { Controller, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Controller, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { MatchingService, type SelectResult } from "./matching.service";
 
+// Guarded: selection assigns the order and returns the one-time delivery code — only the
+// authenticated customer may call it (without this, x-user-id spoofing hijacks orders + steals the OTP).
 @Controller("orders/:orderId/offers/:offerId")
+@UseGuards(JwtAuthGuard)
 export class MatchingController {
   constructor(private readonly matching: MatchingService) {}
 

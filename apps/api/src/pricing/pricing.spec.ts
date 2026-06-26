@@ -34,6 +34,11 @@ describe("suggestFare", () => {
     // base 1.5 + 0.6 * 3.333 = 3.4998 -> 3.5
     expect(suggestFare(3.333)).toBe(3.5);
   });
+
+  it("never returns NaN for bad input", () => {
+    expect(suggestFare(NaN)).toBe(FARE.minUsd);
+    expect(haversineKm({ lat: NaN, lng: 0 }, { lat: 1, lng: 1 })).toBe(0);
+  });
 });
 
 describe("quoteFare", () => {

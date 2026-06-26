@@ -5,7 +5,10 @@ import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { OrdersService } from "./orders.service";
 
+// Guarded at the class level: create attributes the order to the caller, and the snapshot reveals
+// the counterparty phone in-window (§5d) — both must be the authenticated user, not a spoofable header.
 @Controller("orders")
+@UseGuards(JwtAuthGuard)
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
@@ -17,9 +20,7 @@ export class OrdersController {
     return this.orders.create(body, customerId);
   }
 
-  // Authenticated: the snapshot reveals the counterparty phone in-window, scoped to the caller (§5d).
   @Get(":orderId")
-  @UseGuards(JwtAuthGuard)
   get(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() callerId: string) {
     return this.orders.getSnapshot(orderId, callerId);
   }
