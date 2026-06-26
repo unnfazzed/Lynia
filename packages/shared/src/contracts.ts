@@ -45,6 +45,25 @@ export const SelectOfferRequest = z.object({
 });
 export type SelectOfferRequest = z.infer<typeof SelectOfferRequest>;
 
+/** Rider advances the trip one step (the OTP-gated `delivered` step uses ConfirmDeliveryRequest). */
+export const AdvanceStatusRequest = z.object({
+  to: z.enum(["confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]),
+});
+export type AdvanceStatusRequest = z.infer<typeof AdvanceStatusRequest>;
+
+/** Rider confirms the handover with the recipient's 6-digit delivery code → `delivered`. */
+export const ConfirmDeliveryRequest = z.object({
+  code: z.string().regex(/^\d{6}$/),
+});
+export type ConfirmDeliveryRequest = z.infer<typeof ConfirmDeliveryRequest>;
+
+/** Customer rates the rider after delivery; this also closes the order (`completed`). */
+export const RateRequest = z.object({
+  score: z.number().int().min(1).max(5),
+  comment: z.string().max(500).optional(),
+});
+export type RateRequest = z.infer<typeof RateRequest>;
+
 export const ApiError = z.object({
   statusCode: z.number(),
   code: z.string(),

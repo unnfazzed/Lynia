@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import { CreateOrderRequest } from "@lynia/shared";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { OrdersService } from "./orders.service";
@@ -16,8 +17,10 @@ export class OrdersController {
     return this.orders.create(body, customerId);
   }
 
+  // Authenticated: the snapshot reveals the counterparty phone in-window, scoped to the caller (§5d).
   @Get(":orderId")
-  get(@Param("orderId", ParseUUIDPipe) orderId: string) {
-    return this.orders.getSnapshot(orderId);
+  @UseGuards(JwtAuthGuard)
+  get(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() callerId: string) {
+    return this.orders.getSnapshot(orderId, callerId);
   }
 }

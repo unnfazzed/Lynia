@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { type CreateOrderRequest, quoteFare } from "@lynia/shared";
+import { type CreateOrderRequest, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { PrismaService } from "../prisma/prisma.service";
+
+const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
 
 @Injectable()
 export class OrdersService {
@@ -49,9 +51,10 @@ export class OrdersService {
 
   /**
    * Order snapshot — the REST source of truth the tracking client reads on (re)connect (ET4),
-   * carrying status, last rider position, and the append-only event timeline.
+   * carrying status, last rider position, and the append-only event timeline. The counterparty's
+   * real phone is revealed only to a party on the order and only inside the reveal window (§5d).
    */
-  async getSnapshot(orderId: string) {
+  async getSnapshot(orderId: string, callerId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       select: {
@@ -59,8 +62,17 @@ export class OrdersService {
         status: true,
         agreedFare: true,
         proposedFare: true,
+        customerId: true,
+        riderId: true,
+        customer: { select: { phone: true } },
         rider: {
-          select: { profileId: true, currentLat: true, currentLng: true, updatedAt: true },
+          select: {
+            profileId: true,
+            currentLat: true,
+            currentLng: true,
+            updatedAt: true,
+            profile: { select: { phone: true } },
+          },
         },
         events: {
           select: { status: true, lat: true, lng: true, createdAt: true },
@@ -69,6 +81,30 @@ export class OrdersService {
       },
     });
     if (!order) throw new NotFoundException("Order not found");
-    return order;
+
+    const isCustomer = order.customerId === callerId;
+    const isRider = order.riderId === callerId;
+    const revealed = REVEAL.has(order.status);
+    // Only a party on the order, only during the active window, sees the other side's phone.
+    let counterpartyPhone: string | null = null;
+    if (revealed && isCustomer) counterpartyPhone = order.rider?.profile.phone ?? null;
+    else if (revealed && isRider) counterpartyPhone = order.customer.phone;
+
+    return {
+      id: order.id,
+      status: order.status,
+      agreedFare: order.agreedFare,
+      proposedFare: order.proposedFare,
+      rider: order.rider
+        ? {
+            profileId: order.rider.profileId,
+            currentLat: order.rider.currentLat,
+            currentLng: order.rider.currentLng,
+            updatedAt: order.rider.updatedAt,
+          }
+        : null,
+      events: order.events,
+      counterpartyPhone,
+    };
   }
 }

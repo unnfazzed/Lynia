@@ -90,4 +90,16 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection {
     });
     return { ok: true };
   }
+
+  /**
+   * Push an order's status change to everyone watching it (ET4). Best-effort PUSH — the REST
+   * snapshot stays the source of truth, so this never throws into a caller's transaction.
+   */
+  emitOrderStatus(orderId: string, status: string): void {
+    this.server?.to(orderRoom(orderId)).emit("order:status", {
+      orderId,
+      status,
+      at: new Date().toISOString(),
+    });
+  }
 }

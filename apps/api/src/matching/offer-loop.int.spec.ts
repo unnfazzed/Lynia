@@ -4,11 +4,14 @@
  * actually prevent double-assignment under concurrent selection.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { Env } from "../config/env";
+import { TokenService } from "../auth/token.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { MatchingService } from "./matching.service";
 
 const prisma = new PrismaService();
-const matching = new MatchingService(prisma);
+const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
+const matching = new MatchingService(prisma, tokens);
 
 async function clean(): Promise<void> {
   await prisma.orderEvent.deleteMany({});

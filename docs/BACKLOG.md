@@ -51,6 +51,15 @@ is deliberately simple: a flat `base + perKm·distance` over **straight-line** d
   via the existing `POST /admin/riders/:id/kyc`), rider management, order drill-down, live tracking view.
   _Trigger:_ first real Didit riders onboarding (the manual KYC backstop needs a UI).
 
+## Delivery lifecycle
+
+- **Two-sided rating (rider → customer).** The lifecycle ships customer → rider only (rider reputation
+  drives selection). A rider rating the customer would catch bad-recipient behaviour. _Trigger:_ enough
+  trips to make customer reputation meaningful; pairs with T4 no-show data.
+- **Out-of-band delivery-code delivery.** The recipient's handover code is shown to the customer once (at
+  selection) and relayed by them today. _Trigger:_ SMS/WhatsApp wired (currently deferred) — then send the
+  code straight to the dropoff `contactPhone`.
+
 ## Testing
 
 - **Tier-2 geo integration test.** Raw PostGIS queries `nearbyRiders` / `updateRiderLocation`

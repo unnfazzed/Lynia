@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { TokenService } from "../auth/token.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 /** Rider must have a heartbeat newer than this to be selectable (ET3 liveness). */
@@ -10,13 +11,18 @@ export interface SelectResult {
   riderId: string;
   agreedFare: string;
   status: "assigned";
+  /** One-time delivery code the customer relays to the recipient; the rider enters it at handover. */
+  deliveryCode: string;
 }
 
 @Injectable()
 export class MatchingService {
   private readonly logger = new Logger(MatchingService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tokens: TokenService,
+  ) {}
 
   /**
    * Customer selects an offer. The assignment is a guarded compare-and-swap (ET1): the order
@@ -51,10 +57,20 @@ export class MatchingService {
           throw new ConflictException("Rider just became unavailable, pick another");
         }
 
+        // Mint the delivery handover code now; store only its hash (ET7). The plaintext is
+        // returned to the selecting customer once and never persisted or re-exposed.
+        const deliveryCode = this.tokens.randomOtp();
+
         // Guarded CAS — first writer wins (ET1).
         const claimed = await tx.order.updateMany({
           where: { id: orderId, status: "open_for_offers" },
-          data: { status: "assigned", riderId: offer.riderId, agreedFare: offer.offeredFare },
+          data: {
+            status: "assigned",
+            riderId: offer.riderId,
+            agreedFare: offer.offeredFare,
+            otpHash: this.tokens.hash(deliveryCode),
+            deliveryOtpAttempts: 0,
+          },
         });
         if (claimed.count === 0) throw new ConflictException("Order was just taken, pick another");
 
@@ -70,6 +86,7 @@ export class MatchingService {
           riderId: offer.riderId,
           agreedFare: offer.offeredFare.toString(),
           status: "assigned" as const,
+          deliveryCode,
         };
       });
     } catch (err) {
