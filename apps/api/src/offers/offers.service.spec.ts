@@ -43,6 +43,14 @@ describe("OffersService.makeOffer", () => {
     await expect(s.makeOffer(offerInput, "rider-1")).rejects.toThrow(/not verified/i);
   });
 
+  it("403s when the rider is offline", async () => {
+    const s = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers" }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: false }) },
+    });
+    await expect(s.makeOffer(offerInput, "rider-1")).rejects.toThrow(/go online/i);
+  });
+
   it("409s on the one-round-per-rider unique violation (P2002)", async () => {
     const dup = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
     const s = svc({

@@ -6,6 +6,12 @@ import { PrismaService } from "../prisma/prisma.service";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
 
+/** Strip a stored Waypoint down to what a browsing rider may see — point + landmark, no contactPhone. */
+function publicWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown } {
+  const o = (w ?? {}) as { point?: unknown; landmark?: unknown };
+  return { point: o.point ?? null, landmark: o.landmark ?? null };
+}
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -68,8 +74,10 @@ export class OrdersService {
     });
     return orders.map((o) => ({
       id: o.id,
-      pickup: o.pickup,
-      dropoff: o.dropoff,
+      // Redact contactPhone — a pre-assignment rider has no business with the customer's/recipient's
+      // phone. That's exactly what the OTP-gated §5d reveal window (getSnapshot) controls.
+      pickup: publicWaypoint(o.pickup),
+      dropoff: publicWaypoint(o.dropoff),
       itemDesc: o.itemDesc,
       suggestedFare: o.suggestedFare.toString(),
       proposedFare: o.proposedFare.toString(),

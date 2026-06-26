@@ -20,6 +20,7 @@ export default function RiderHome(): React.ReactElement {
   const [selected, setSelected] = useState<OpenOrder | null>(null);
   const [fare, setFare] = useState("");
   const [eta, setEta] = useState("");
+  const [bidIds, setBidIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     void (async () => {
@@ -46,9 +47,15 @@ export default function RiderHome(): React.ReactElement {
   });
 
   // Heartbeat: keep the rider selectable (ET3 liveness) while online by refreshing lastHeartbeatAt.
+  // If a beat fails (e.g. a cooldown forced us offline server-side), reflect it instead of lying.
   useEffect(() => {
     if (!online) return;
-    const t = setInterval(() => void setOnline(true).catch(() => undefined), 20_000);
+    const t = setInterval(() => {
+      void setOnline(true).catch(() => {
+        setOnlineState(false);
+        setError("You were taken offline (cooldown or a connection issue). Tap Go online to retry.");
+      });
+    }, 20_000);
     return () => clearInterval(t);
   }, [online]);
 
@@ -60,6 +67,7 @@ export default function RiderHome(): React.ReactElement {
   });
 
   const ranked = (openQ.data ?? [])
+    .filter((o) => !bidIds.has(o.id)) // hide orders we've already bid on (one round per rider)
     .map((o) => ({ o, km: loc ? haversineKm(loc, o.pickup.point) : null }))
     .sort((a, b) => (a.km ?? Number.MAX_SAFE_INTEGER) - (b.km ?? Number.MAX_SAFE_INTEGER));
 
@@ -68,13 +76,18 @@ export default function RiderHome(): React.ReactElement {
   const canOffer = selected != null && fareNum != null && fareNum > 0 && etaNum != null && etaNum > 0;
 
   const offerM = useMutation({
-    mutationFn: () => makeOffer(selected!.id, { type: "accept", offeredFare: fareNum!, etaMinutes: Math.round(etaNum!) }),
+    mutationFn: () => {
+      // Accept = take the customer's price; any other fare is a counter.
+      const type = fareNum === Number(selected!.proposedFare) ? "accept" : "counter";
+      return makeOffer(selected!.id, { type, offeredFare: fareNum!, etaMinutes: Math.round(etaNum!) });
+    },
     onSuccess: () => {
+      if (selected) setBidIds((prev) => new Set(prev).add(selected.id));
       setSelected(null);
       setFare("");
       setEta("");
       setError(null);
-      void qc.invalidateQueries({ queryKey: ["activeJob"] });
+      void qc.invalidateQueries({ queryKey: ["openOrders"] });
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't send the offer."),
   });
