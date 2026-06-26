@@ -9,6 +9,7 @@ import { MatchingModule } from "./matching/matching.module";
 import { OffersModule } from "./offers/offers.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { TrackingModule } from "./tracking/tracking.module";
 
 @Module({
   imports: [
@@ -25,7 +26,8 @@ import { PrismaModule } from "./prisma/prisma.module";
     MatchingModule,
     OrdersModule,
     OffersModule,
-    // Lane D adds: TrackingModule.
+    // Lane D — live tracking (Socket.IO gateway + nearby-rider geo).
+    TrackingModule,
   ],
 })
 export class AppModule {}
