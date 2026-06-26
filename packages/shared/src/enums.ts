@@ -47,6 +47,15 @@ export const ACTIVE_RIDE_STATUSES: OrderStatus[] = [
   OrderStatus.EN_ROUTE_DROPOFF,
 ];
 
+/** Statuses in which the customer may still cancel (before the parcel is collected). Server-enforced
+ *  in the order lifecycle; clients import this for the cancel affordance so the two can't drift. */
+export const CUSTOMER_CANCELLABLE_STATUSES: OrderStatus[] = [
+  OrderStatus.OPEN_FOR_OFFERS,
+  OrderStatus.ASSIGNED,
+  OrderStatus.CONFIRMED,
+  OrderStatus.EN_ROUTE_PICKUP,
+];
+
 /** The single window during which the counterparty's real phone is revealed (CONCEPT §5d). */
 export const PHONE_REVEAL_STATUSES: OrderStatus[] = [
   ...ACTIVE_RIDE_STATUSES,

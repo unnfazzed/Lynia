@@ -9,6 +9,7 @@ import {
   type OnModuleInit,
   UnauthorizedException,
 } from "@nestjs/common";
+import { CUSTOMER_CANCELLABLE_STATUSES } from "@lynia/shared";
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
@@ -27,7 +28,7 @@ const FORWARD = {
 
 const DELIVERY_OTP_MAX_ATTEMPTS = 5;
 /** A customer may bail before the parcel is collected; a rider may bail any time before delivery. */
-const CUSTOMER_CANCELLABLE = new Set(["open_for_offers", "assigned", "confirmed", "en_route_pickup"]);
+const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
 const RIDER_CANCELLABLE = new Set(["assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]);
 /** Repeated rider cancels earn a cooldown that blocks going online (T4 no-show penalty). */
 const CANCEL_STRIKE_LIMIT = 3;

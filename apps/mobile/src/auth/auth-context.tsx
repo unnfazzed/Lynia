@@ -21,10 +21,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   useEffect(() => {
     configureApi({
       getSession: () => ref.current,
-      onTokens: (s) => {
+      onTokens: async (s) => {
         ref.current = s;
         setSession(s);
-        void saveSession(s);
+        await saveSession(s); // awaited so the rotated refresh token is durable before any retry
       },
       onSignOut: () => {
         ref.current = null;

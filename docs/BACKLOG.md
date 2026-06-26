@@ -60,6 +60,19 @@ is deliberately simple: a flat `base + perKm·distance` over **straight-line** d
   selection) and relayed by them today. _Trigger:_ SMS/WhatsApp wired (currently deferred) — then send the
   code straight to the dropoff `contactPhone`.
 
+## Mobile app
+
+- **HTTPS for device builds.** The API must be served over HTTPS for a standalone build — Android 9+ and
+  iOS ATS block cleartext `http://`. _Trigger:_ first on-device/EAS build (works over `http` LAN in Expo Go
+  today). Pairs with the cloud provisioning (T0).
+- **Native map + tap-to-pin (Phase 3).** Pickup/dropoff are typed coordinates today; a `react-native-maps`
+  picker needs a dev build (not Expo Go). _Trigger:_ device-testing phase.
+- **Reanimated/gesture-handler + FlatList.** Add the canonical Expo Router native deps when Phase 2 nav
+  grows (not required by the current native `<Stack>`); switch the offers list to `FlatList` if offer
+  counts grow. _Trigger:_ Phase 2 build on a device.
+- **a11y + background socket.** `hitSlop`/labels on all touch targets; close the tracking socket on
+  `AppState` background to save battery/data on constrained devices. _Trigger:_ device QA pass.
+
 ## Testing
 
 - **Tier-2 geo integration test.** Raw PostGIS queries `nearbyRiders` / `updateRiderLocation`

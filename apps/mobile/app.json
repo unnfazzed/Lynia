@@ -7,12 +7,12 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "platforms": ["android", "ios"],
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      ["expo-location", { "locationWhenInUsePermission": "Lynia uses your location to set the pickup point." }]
+    ],
     "android": {
       "package": "zw.co.lynia"
-    },
-    "extra": {
-      "apiUrl": "http://localhost:3000"
     }
   }
 }
