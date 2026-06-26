@@ -7,8 +7,12 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "platforms": ["android", "ios"],
+    "plugins": ["expo-router"],
     "android": {
       "package": "zw.co.lynia"
+    },
+    "extra": {
+      "apiUrl": "http://localhost:3000"
     }
   }
 }

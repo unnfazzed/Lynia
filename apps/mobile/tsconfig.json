@@ -13,5 +13,5 @@
       "@lynia/shared": ["../../packages/shared/src/index.ts"]
     }
   },
-  "include": ["index.ts", "App.tsx", "src/**/*.ts", "src/**/*.tsx"]
+  "include": ["expo-env.d.ts", "app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "src/**/*.tsx"]
 }
