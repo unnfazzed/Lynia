@@ -91,6 +91,21 @@ describe("RiderService.setOnline", () => {
     const s = svc(prisma, {});
     expect(await s.setOnline("p1", false)).toEqual({ online: false });
   });
+
+  it("blocks going online while on a no-show cooldown", async () => {
+    const future = new Date(Date.now() + 60_000);
+    const s = svc({ rider: { findUnique: async () => ({ kycStatus: "verified", cooldownUntil: future }) } }, {});
+    await expect(s.setOnline("p1", true)).rejects.toThrow(/cooldown/i);
+  });
+
+  it("allows going online once the cooldown has passed", async () => {
+    const past = new Date(Date.now() - 60_000);
+    const s = svc(
+      { rider: { findUnique: async () => ({ kycStatus: "verified", cooldownUntil: past }), update: async () => ({}) } },
+      {},
+    );
+    expect(await s.setOnline("p1", true)).toEqual({ online: true });
+  });
 });
 
 describe("RiderService.applyKycResult", () => {

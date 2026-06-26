@@ -60,11 +60,14 @@ export class RiderService {
   async setOnline(profileId: string, online: boolean): Promise<{ online: boolean }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
-      select: { kycStatus: true },
+      select: { kycStatus: true, cooldownUntil: true },
     });
     if (!rider) throw new ForbiddenException("Not a rider");
     if (online && !canGoOnline(rider.kycStatus)) {
       throw new ForbiddenException("Rider is not verified yet");
+    }
+    if (online && rider.cooldownUntil && rider.cooldownUntil > new Date()) {
+      throw new ForbiddenException("On cooldown after repeated cancellations — try again later");
     }
     await this.prisma.rider.update({
       where: { profileId },

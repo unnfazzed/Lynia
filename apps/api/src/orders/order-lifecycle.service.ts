@@ -26,6 +26,12 @@ const FORWARD = {
 } as const;
 
 const DELIVERY_OTP_MAX_ATTEMPTS = 5;
+/** A customer may bail before the parcel is collected; a rider may bail any time before delivery. */
+const CUSTOMER_CANCELLABLE = new Set(["open_for_offers", "assigned", "confirmed", "en_route_pickup"]);
+const RIDER_CANCELLABLE = new Set(["assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]);
+/** Repeated rider cancels earn a cooldown that blocks going online (T4 no-show penalty). */
+const CANCEL_STRIKE_LIMIT = 3;
+const COOLDOWN_MS = 2 * 60 * 60 * 1000;
 /** How long after delivery a customer has to rate before the order auto-closes (so completion
  *  metrics never stall on an un-rated order — D6a / T3). Pilot value; tune on real behaviour. */
 export const RATING_WINDOW_MS = 6 * 60 * 60 * 1000;
@@ -35,6 +41,12 @@ type ForwardStatus = keyof typeof FORWARD;
 export interface LifecycleResult {
   orderId: string;
   status: string;
+}
+export interface CancelResult {
+  orderId: string;
+  status: "cancelled";
+  cancelledBy: "customer" | "rider";
+  cooldownUntil: Date | null;
 }
 
 /** Plain ioredis options so BullMQ owns its connections (mirrors offer-expiry.service.ts). */
@@ -194,6 +206,64 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
     this.gateway.emitOrderStatus(orderId, "completed");
     return { orderId, status: "completed" };
+  }
+
+  /**
+   * Either party cancels an in-flight order (T4). The customer may cancel before the parcel is
+   * collected; the rider may cancel any time before delivery. A rider-initiated cancel is a no-show
+   * strike — every CANCEL_STRIKE_LIMIT strikes forces the rider offline on a cooldown.
+   */
+  async cancel(orderId: string, callerId: string, reason?: string): Promise<CancelResult> {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { status: true, customerId: true, riderId: true },
+      });
+      if (!order) throw new NotFoundException("Order not found");
+
+      const isCustomer = order.customerId === callerId;
+      const isRider = order.riderId === callerId;
+      if (!isCustomer && !isRider) throw new ForbiddenException("Not your order");
+      const allowed = isCustomer ? CUSTOMER_CANCELLABLE : RIDER_CANCELLABLE;
+      if (!allowed.has(order.status)) throw new ConflictException(`Cannot cancel a ${order.status} order`);
+
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, status: order.status },
+        data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: callerId, cancelReason: reason ?? null },
+      });
+      if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+      await tx.orderEvent.create({ data: { orderId, status: "cancelled" } });
+      // Release any offers still pending against this order.
+      await tx.offer.updateMany({ where: { orderId, status: "pending" }, data: { status: "declined" } });
+
+      let cooldownUntil: Date | null = null;
+      if (isRider && order.riderId) {
+        const rider = await tx.rider.findUnique({
+          where: { profileId: order.riderId },
+          select: { cancelStrikes: true },
+        });
+        const strikes = (rider?.cancelStrikes ?? 0) + 1;
+        if (strikes >= CANCEL_STRIKE_LIMIT) {
+          // Hit the limit: reset the counter, force offline, start the cooldown.
+          cooldownUntil = new Date(Date.now() + COOLDOWN_MS);
+          await tx.rider.update({
+            where: { profileId: order.riderId },
+            data: { cancelStrikes: 0, cooldownUntil, isOnline: false },
+          });
+        } else {
+          await tx.rider.update({ where: { profileId: order.riderId }, data: { cancelStrikes: strikes } });
+        }
+      }
+      return {
+        orderId,
+        status: "cancelled" as const,
+        cancelledBy: (isRider ? "rider" : "customer") as "customer" | "rider",
+        cooldownUntil,
+      };
+    });
+
+    this.gateway.emitOrderStatus(orderId, "cancelled");
+    return result;
   }
 
   /** Auto-close a delivered-but-unrated order so completion metrics don't stall (T3). Idempotent. */

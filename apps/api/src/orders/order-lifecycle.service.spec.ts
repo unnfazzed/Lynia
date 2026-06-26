@@ -173,3 +173,62 @@ describe("OrderLifecycleService.rotateDeliveryCode", () => {
     await expect(svc.rotateDeliveryCode("o1", "other")).rejects.toThrow(/not your order/i);
   });
 });
+
+describe("OrderLifecycleService.cancel", () => {
+  const order = (over: Record<string, unknown> = {}) => ({ status: "assigned", customerId: "c1", riderId: "r1", ...over });
+  const cancellable = (extra: Record<string, unknown> = {}) => ({
+    order: { findUnique: async () => order(), updateMany: async () => ({ count: 1 }) },
+    orderEvent: { create: async () => ({}) },
+    offer: { updateMany: async () => ({ count: 0 }) },
+    ...extra,
+  });
+
+  it("403s for a third party", async () => {
+    const { svc } = build({ order: { findUnique: async () => order() } });
+    await expect(svc.cancel("o1", "stranger")).rejects.toThrow(/not your order/i);
+  });
+
+  it("lets the customer cancel before pickup", async () => {
+    const { svc, emits } = build(cancellable());
+    const res = await svc.cancel("o1", "c1", "changed my mind");
+    expect(res).toMatchObject({ status: "cancelled", cancelledBy: "customer", cooldownUntil: null });
+    expect(emits).toEqual([["o1", "cancelled"]]);
+  });
+
+  it("blocks a customer cancel once the parcel is collected", async () => {
+    const { svc } = build({ order: { findUnique: async () => order({ status: "picked_up" }) } });
+    await expect(svc.cancel("o1", "c1")).rejects.toThrow(/cannot cancel a picked_up/i);
+  });
+
+  it("counts a rider cancel as a strike (below the limit)", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc } = build(
+      cancellable({
+        rider: {
+          findUnique: async () => ({ cancelStrikes: 0 }),
+          update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+        },
+      }),
+    );
+    const res = await svc.cancel("o1", "r1");
+    expect(res.cancelledBy).toBe("rider");
+    expect(res.cooldownUntil).toBeNull();
+    expect(riderData).toMatchObject({ cancelStrikes: 1 });
+  });
+
+  it("puts the rider on cooldown and forces them offline at the strike limit", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc } = build(
+      cancellable({
+        rider: {
+          findUnique: async () => ({ cancelStrikes: 2 }), // → 3, the limit
+          update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+        },
+      }),
+    );
+    const res = await svc.cancel("o1", "r1");
+    expect(res.cooldownUntil).toBeInstanceOf(Date);
+    expect(riderData).toMatchObject({ cancelStrikes: 0, isOnline: false });
+    expect(riderData!.cooldownUntil).toBeInstanceOf(Date);
+  });
+});

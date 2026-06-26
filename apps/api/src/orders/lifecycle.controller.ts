@@ -1,5 +1,5 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
-import { AdvanceStatusRequest, ConfirmDeliveryRequest, RateRequest } from "@lynia/shared";
+import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, RateRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
@@ -46,5 +46,15 @@ export class LifecycleController {
   @Post("delivery-code/rotate")
   rotate(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() customerId: string) {
     return this.lifecycle.rotateDeliveryCode(orderId, customerId);
+  }
+
+  /** Either party cancels an in-flight order (a rider cancel is a no-show strike). */
+  @Post("cancel")
+  cancel(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(CancelRequest)) body: CancelRequest,
+    @CurrentUser() callerId: string,
+  ) {
+    return this.lifecycle.cancel(orderId, callerId, body.reason);
   }
 }

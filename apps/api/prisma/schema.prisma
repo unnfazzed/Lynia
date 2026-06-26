@@ -98,6 +98,8 @@ model Rider {
   tripsCount      Int       @default(0) @map("trips_count")
   ratingAvg       Float     @default(0) @map("rating_avg")
   ratingCount     Int       @default(0) @map("rating_count")
+  cancelStrikes   Int       @default(0) @map("cancel_strikes")
+  cooldownUntil   DateTime? @map("cooldown_until")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   orders Order[] @relation("riderOrders")
@@ -136,6 +138,9 @@ model Order {
   collectedAt         DateTime?   @map("collected_at")
   deliveredAt         DateTime?   @map("delivered_at")
   completedAt         DateTime?   @map("completed_at")
+  cancelledAt         DateTime?   @map("cancelled_at")
+  cancelledBy         String?     @map("cancelled_by") @db.Uuid
+  cancelReason        String?     @map("cancel_reason")
   createdAt           DateTime    @default(now()) @map("created_at")
   updatedAt           DateTime    @updatedAt @map("updated_at")
 
