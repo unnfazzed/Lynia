@@ -4,7 +4,7 @@ import { API_URL } from "../config";
 /** Hooks the AuthProvider registers so the client can read/rotate tokens without a circular import. */
 interface ApiHooks {
   getSession: () => Session | null;
-  onTokens: (s: Session) => void;
+  onTokens: (s: Session) => Promise<void>;
   onSignOut: () => void;
 }
 let hooks: ApiHooks | null = null;
@@ -29,6 +29,11 @@ interface RequestOpts {
   auth?: boolean;
 }
 
+// Single-flight: concurrent 401s (the order screen runs two 4s pollers) share ONE refresh. The
+// backend rotates refresh tokens — without this, the second request would refresh with a token the
+// first just revoked and get a false sign-out.
+let inflightRefresh: Promise<Session | null> | null = null;
+
 export async function apiFetch<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   const { method = "GET", body, auth = true } = opts;
   const session = hooks?.getSession() ?? null;
@@ -45,11 +50,9 @@ export async function apiFetch<T>(path: string, opts: RequestOpts = {}): Promise
 
   let res = await send(session?.accessToken);
 
-  // One transparent refresh on 401, then retry; on failure, sign out.
   if (res.status === 401 && auth && session?.refreshToken) {
-    const refreshed = await tryRefresh(session.refreshToken);
+    const refreshed = await refreshSession(session.refreshToken);
     if (refreshed) {
-      hooks?.onTokens(refreshed);
       res = await send(refreshed.accessToken);
     } else {
       hooks?.onSignOut();
@@ -65,7 +68,22 @@ export async function apiFetch<T>(path: string, opts: RequestOpts = {}): Promise
   return (await res.json()) as T;
 }
 
-async function tryRefresh(refreshToken: string): Promise<Session | null> {
+/**
+ * Refresh the session, coalescing concurrent callers and tolerating rotation: if another request
+ * already rotated the token under us, return the current session instead of refreshing again.
+ */
+async function refreshSession(staleToken: string): Promise<Session | null> {
+  const current = hooks?.getSession();
+  if (current && current.refreshToken !== staleToken) return current; // someone else already rotated
+  if (!inflightRefresh) {
+    inflightRefresh = doRefresh(staleToken).finally(() => {
+      inflightRefresh = null;
+    });
+  }
+  return inflightRefresh;
+}
+
+async function doRefresh(refreshToken: string): Promise<Session | null> {
   try {
     const res = await fetch(`${API_URL}/auth/refresh`, {
       method: "POST",
@@ -76,7 +94,15 @@ async function tryRefresh(refreshToken: string): Promise<Session | null> {
     const data = (await res.json()) as { accessToken: string; refreshToken: string; expiresIn: number };
     const current = hooks?.getSession();
     if (!current) return null;
-    return { ...current, accessToken: data.accessToken, refreshToken: data.refreshToken, expiresIn: data.expiresIn };
+    const next: Session = {
+      ...current,
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      expiresIn: data.expiresIn,
+    };
+    // Persist BEFORE returning so a crash can't lose the rotated (single-use) refresh token.
+    await hooks?.onTokens(next);
+    return next;
   } catch {
     return null;
   }

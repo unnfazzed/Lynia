@@ -1,15 +1,17 @@
-import { ACTIVE_RIDE_STATUSES, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
-import { cancelOrder, getOrder, rateOrder } from "../../src/api/orders";
-import { useOrderSocket } from "../../src/realtime/use-order-socket";
+import { cancelOrder, getOrder, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
+import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
 import { offersKey, orderKey } from "../../src/query/client";
+import { useOrderSocket } from "../../src/realtime/use-order-socket";
 import { Button, Card, ErrorText, Heading, Screen, StatusPill, Sub } from "../../src/ui";
 
-const CUSTOMER_CANCELLABLE = new Set(["open_for_offers", "assigned", "confirmed", "en_route_pickup"]);
+const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
+const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
 
 export default function OrderScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -19,14 +21,30 @@ export default function OrderScreen(): React.ReactElement {
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
   const [score, setScore] = useState(5);
 
+  // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash).
+  useEffect(() => {
+    let alive = true;
+    void loadDeliveryCode(orderId).then((c) => {
+      if (alive && c) setDeliveryCode(c);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [orderId]);
+
   const orderQ = useQuery({
     queryKey: orderKey(orderId),
     queryFn: () => getOrder(orderId),
     enabled: orderId !== "",
-    refetchInterval: (q) => (q.state.data?.status === "open_for_offers" ? 4000 : false),
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      if (s === "open_for_offers") return 4000;
+      if (s !== undefined && ACTIVE.includes(s)) return 10_000; // self-heal if the WS drops
+      return false;
+    },
   });
   const status = orderQ.data?.status;
-  const isActive = status !== undefined && (ACTIVE_RIDE_STATUSES as string[]).includes(status);
+  const isActive = status !== undefined && ACTIVE.includes(status);
 
   useOrderSocket(isActive || status === "delivered" ? orderId : null);
 
@@ -41,7 +59,15 @@ export default function OrderScreen(): React.ReactElement {
     mutationFn: (offerId: string) => selectOffer(orderId, offerId),
     onSuccess: (res) => {
       setDeliveryCode(res.deliveryCode);
+      void saveDeliveryCode(orderId, res.deliveryCode);
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
+    },
+  });
+  const rotateM = useMutation({
+    mutationFn: () => rotateDeliveryCode(orderId),
+    onSuccess: (res) => {
+      setDeliveryCode(res.deliveryCode);
+      void saveDeliveryCode(orderId, res.deliveryCode);
     },
   });
   const rateM = useMutation({
@@ -71,10 +97,9 @@ export default function OrderScreen(): React.ReactElement {
 
   const order = orderQ.data;
   const fare = order.agreedFare ?? order.proposedFare;
-  const mutationError =
-    (selectM.error ?? rateM.error ?? cancelM.error) instanceof Error
-      ? (selectM.error ?? rateM.error ?? cancelM.error)?.message
-      : null;
+  const firstError = selectM.error ?? rotateM.error ?? rateM.error ?? cancelM.error;
+  const mutationError = firstError instanceof Error ? firstError.message : null;
+  const hasPosition = order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null;
 
   return (
     <Screen>
@@ -116,7 +141,7 @@ export default function OrderScreen(): React.ReactElement {
             <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: 4 }}>Agreed fare ${fare}</Text>
             {order.rider ? (
               <Text style={{ fontSize: 13, color: tokens.color.muted }}>
-                Rider position: {order.rider.currentLat != null ? `${order.rider.currentLat.toFixed(4)}, ${order.rider.currentLng?.toFixed(4)}` : "waiting for GPS"}
+                Rider position: {hasPosition ? `${order.rider.currentLat?.toFixed(4)}, ${order.rider.currentLng?.toFixed(4)}` : "waiting for GPS"}
               </Text>
             ) : null}
             {order.counterpartyPhone ? (
@@ -128,6 +153,9 @@ export default function OrderScreen(): React.ReactElement {
                 • {e.status.replace(/_/g, " ")}
               </Text>
             ))}
+            {isActive ? (
+              <Button label="Re-issue delivery code" variant="ghost" onPress={() => rotateM.mutate()} loading={rotateM.isPending} />
+            ) : null}
           </Card>
         ) : null}
 
@@ -136,7 +164,7 @@ export default function OrderScreen(): React.ReactElement {
             <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: tokens.space.sm }}>Rate your rider</Text>
             <View style={{ flexDirection: "row", gap: 8, marginBottom: tokens.space.sm }}>
               {[1, 2, 3, 4, 5].map((n) => (
-                <Pressable key={n} onPress={() => setScore(n)}>
+                <Pressable key={n} onPress={() => setScore(n)} hitSlop={8}>
                   <Text style={{ fontSize: 28, color: n <= score ? tokens.color.highlight : tokens.color.line }}>★</Text>
                 </Pressable>
               ))}

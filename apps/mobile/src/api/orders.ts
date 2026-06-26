@@ -37,6 +37,10 @@ export function rateOrder(orderId: string, body: RateRequest): Promise<{ orderId
   return apiFetch(`/orders/${orderId}/rating`, { method: "POST", body });
 }
 
+export function rotateDeliveryCode(orderId: string): Promise<{ deliveryCode: string }> {
+  return apiFetch(`/orders/${orderId}/delivery-code/rotate`, { method: "POST" });
+}
+
 export function cancelOrder(
   orderId: string,
   body: CancelRequest = {},
