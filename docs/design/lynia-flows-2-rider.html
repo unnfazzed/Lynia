@@ -1,0 +1,190 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lynia flows · Rider</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="flows.css">
+</head><body>
+
+<div class="board-head">
+  <h1>Lynia — flows 2 / 3 · The rider side</h1>
+  <p>Specced in the pre-Phase-3 consultation and calibrated to the as-built <b>app/rider/*</b> screens (DT8–DT9). Same component language as the customer side — the online toggle is the one primary CTA; the broadcast board mirrors the offer card; the active job renders the §5c stepper from the rider's view.</p>
+  <div class="swatches">
+    <span class="sw"><i style="background:#1E7A46"></i>online / go</span>
+    <span class="sw"><i style="background:#C0392B"></i>cooldown / lockout</span>
+    <span class="sw">heartbeat ~20s · one offer round per order · OTP hand-off</span>
+  </div>
+</div>
+
+<!-- ============ BAND ④ — ONBOARDING & HOME ============ -->
+<div class="band">
+  <div class="hd"><h2>④ Rider — onboarding &amp; home</h2><span>KYC → online → bid · app/rider/become · app/rider/index</span></div>
+  <div class="grid">
+
+    <!-- Become / KYC -->
+    <div class="frame"><div class="cap"><b>Rider</b> · Become / KYC <span class="tag alt">app/rider/become.tsx</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:30</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">R</div></div>
+        <div class="scrolly">
+          <h2 class="t">Become a rider</h2><p class="sub">Verify your ID &amp; register your bike to start accepting deliveries.</p>
+          <div class="card"><label class="fl">Identity</label>
+            <div class="field"><span class="ic">👤</span><span>Rugare</span></div>
+            <div class="field"><span class="ic">👤</span><span>Chibanda</span></div>
+            <div class="field"><span class="ic">🪪</span><span>National ID 63-1234567A12</span></div></div>
+          <div class="card"><label class="fl">Bike</label>
+            <div class="field"><span class="ic">🏍</span><span>ABZ 1234</span></div>
+            <div class="field"><span class="ph">https://… photo URL</span></div></div>
+          <button class="btn">Submit for verification</button>
+          <p class="note">Didit checks your ID &amp; selfie. Opens once in your browser.</p>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Rider home / board -->
+    <div class="frame"><div class="cap"><b>Rider</b> · Home — online + board <span class="tag alt">app/rider/index.tsx</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:41</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">R</div></div>
+        <div class="scrolly">
+          <div class="toggle"><div class="st">You're online<small>Borrowdale corridor · 4 nearby</small></div><div class="switch"></div></div>
+          <div style="font-size:13px;font-weight:800;margin:-2px 4px 0">Nearby requests</div>
+          <div class="bcast"><div class="hd"><div class="leg">CBD <span>→</span> Avenues</div><div class="muted-pill tnum">4 min ago</div></div>
+            <div class="det"><span class="tnum">3.1 km</span><span>Parcel · small</span><span>OTP on drop</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between"><div class="offered tnum">$2.50</div><div class="muted-pill">asking</div></div>
+            <div class="secrow"><button class="btn">Accept $2.50</button><button class="btn acc-sec">Counter</button></div></div>
+          <div class="bcast"><div class="hd"><div class="leg">Msasa <span>→</span> Borrowdale</div><div class="muted-pill tnum">just now</div></div>
+            <div class="det"><span class="tnum">6.4 km</span><span>Parcel · medium</span><span>OTP on drop</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between"><div class="offered tnum">$3.20</div><div class="muted-pill">asking</div></div></div>
+        </div>
+        <div class="foot"><a class="on"><span class="i">🏍</span>Requests</a><a><span class="i">📋</span>Trips</a><a><span class="i">💵</span>Earnings</a><a><span class="i">👤</span>Profile</a></div>
+      </div></div>
+    </div>
+
+    <!-- Offer compose -->
+    <div class="frame"><div class="cap"><b>Rider</b> · Make an offer <span class="tag">accept / counter</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:41</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">R</div></div>
+        <div class="scrolly">
+          <div class="bcast" style="border-color:var(--accent)"><div class="hd"><div class="leg">CBD <span>→</span> Avenues</div><div class="muted-pill tnum">3.1 km</div></div>
+            <div class="det"><span>Documents · small</span><span>Eastgate Mall</span></div></div>
+          <div><label class="fl">Your fare (USD)</label>
+            <div class="price"><div><div class="lab">Customer asking $2.50</div><div class="val tnum">$2.50</div></div>
+              <div class="stepbtns"><button>–</button><button>+</button></div></div></div>
+          <div class="seg"><div class="on">Accept $2.50</div><div>Counter</div></div>
+          <div><label class="fl">ETA to pickup (min)</label><div class="field tnum"><span class="ic">⏱</span><span>10</span></div></div>
+          <button class="btn">Send offer</button>
+          <p class="note">One round per order — your bid is final for this request.</p>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ BAND ⑤ — ACTIVE JOB ============ -->
+<div class="band">
+  <div class="hd"><h2>⑤ Rider — active job lifecycle</h2><span>§5c stepper (rider view) · OTP hand-off · app/rider/job</span></div>
+  <div class="grid">
+
+    <!-- Active job stepper rider view -->
+    <div class="frame"><div class="cap"><b>Rider</b> · Active job <span class="tag">§5c rider view</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:46</span><span>📶 🔋</span></div>
+        <div class="map" style="flex:none;height:116px"><div class="route"></div><div class="bike" style="left:42%;top:48%">🏍</div><div class="pin go" style="left:26%;top:34%"><div class="b go">Pickup</div><div class="s"></div></div></div>
+        <div class="track">
+          <div class="ridercard"><div class="rphoto">T</div><div style="flex:1"><div class="nm">Sender · Tatenda</div><div class="meta tnum">Eastgate Mall · reveal active</div></div><div class="callbtn">📞</div></div>
+          <div class="farechip"><span class="k">Agreed fare</span><span class="v tnum">$2.50</span></div>
+          <div style="height:12px"></div>
+          <div class="step done"><div class="rail"><div class="nub">✓</div><div class="line"></div></div><div class="body"><div class="lab">You're assigned</div><div class="ts tnum">9:42</div></div></div>
+          <div class="step done"><div class="rail"><div class="nub">✓</div><div class="line"></div></div><div class="body"><div class="lab">Details confirmed</div><div class="ts tnum">9:43</div></div></div>
+          <div class="step now"><div class="rail"><div class="nub">●</div><div class="line"></div></div><div class="body"><div class="lab">Heading to pickup</div><div class="ts tnum">live · sharing GPS</div></div></div>
+          <div class="step todo"><div class="rail"><div class="nub">4</div><div class="line"></div></div><div class="body"><div class="lab">Mark collected (+ photo)</div></div></div>
+          <div class="step todo"><div class="rail"><div class="nub">5</div></div><div class="body"><div class="lab">Head to drop-off</div></div></div>
+          <button class="btn" style="margin-top:4px">Mark parcel collected</button>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Delivery OTP -->
+    <div class="frame"><div class="cap"><b>Rider</b> · Delivery hand-off <span class="tag">OTP</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>10:01</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">R</div></div>
+        <div class="scrolly">
+          <div class="card acc"><div class="statusline">On the way to drop-off — recipient ahead</div>
+            <div class="farechip"><span class="k">Agreed fare</span><span class="v tnum">$2.50</span></div></div>
+          <div class="card"><div style="font-size:14px;font-weight:800">Confirm hand-off</div>
+            <p class="sub">Ask the recipient for the 6-digit delivery code.</p>
+            <div class="otp tnum"><div class="box">8</div><div class="box">0</div><div class="box">4</div><div class="box f">|</div><div class="box"></div><div class="box"></div></div>
+            <button class="btn">Confirm delivery</button></div>
+          <p class="note">5 wrong tries locks it — ask the customer to re-issue the code.</p>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Delivered / free -->
+    <div class="frame"><div class="cap"><b>Rider</b> · Delivered — free <span class="tag">step 6</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>10:02</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">R</div></div>
+        <div class="empty"><div class="illus">🎉</div><h2>Delivered — nice work</h2>
+          <p>The customer is rating you now. You're free for the next job.</p>
+          <div class="card" style="width:100%;margin-top:6px"><div class="farechip"><span class="k">Earned this trip</span><span class="v tnum">$2.50</span></div>
+            <div class="note" style="text-align:left">Logged to your trip record. Settlement is cash, outside the app (pilot).</div></div>
+          <div class="acts"><button class="btn">Back to requests</button></div></div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ BAND ⑥ — RIDER STATES ============ -->
+<div class="band">
+  <div class="hd"><h2>⑥ Rider — edge states</h2><span>empty · gated · cooldown · DT9</span></div>
+  <div class="grid">
+
+    <!-- No open orders -->
+    <div class="frame"><div class="cap"><b>Empty</b> · No open orders <span class="tag">online</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>14:20</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">R</div></div>
+        <div class="scrolly" style="flex:none"><div class="toggle"><div class="st">You're online<small>First in line nearby</small></div><div class="switch"></div></div></div>
+        <div class="empty" style="padding-top:8px"><div class="illus">📭</div><h2>No open orders near you right now</h2>
+          <p>You're online and first in line — stay put, requests come through fast.</p>
+          <p class="note" style="margin-top:8px">Busiest near you: 7–9am &amp; 5–7pm.</p></div>
+      </div></div>
+    </div>
+
+    <!-- Not verified gate -->
+    <div class="frame"><div class="cap"><b>Gated</b> · Not yet verified <span class="tag">KYC</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:35</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">R</div></div>
+        <div class="empty"><div class="illus">🪪</div><h2>Finish verification to start bidding</h2>
+          <p>Your Didit check is still pending. Riders go online only once verified.</p>
+          <div class="card" style="width:100%"><div class="srow" style="border:0;padding:6px 4px"><span class="ico">🪪</span><span class="lab">ID &amp; selfie</span><span class="kyc-badge" style="background:#FFF7E6;color:#8A6D00">Pending</span></div></div>
+          <div class="acts"><button class="btn">Resume verification</button><button class="btn ghost">Refresh status</button></div></div>
+      </div></div>
+    </div>
+
+    <!-- Cooldown / forced offline -->
+    <div class="frame"><div class="cap"><b>Error</b> · Cooldown / offline <span class="tag">ET3</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>18:05</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">R</div></div>
+        <div class="scrolly">
+          <div class="toggle off"><div class="st">You're offline<small>Tap to go back online</small></div><div class="switch off"></div></div>
+          <div class="card" style="border-color:var(--danger);background:#FBECEA"><div style="font-size:13px;font-weight:800;color:var(--danger)">Taken offline</div>
+            <p class="sub" style="color:#7A2A22">A cooldown (or a connection drop) took you offline. This happens after repeated cancels/no-shows. Try again shortly.</p></div>
+          <button class="btn">Go online</button>
+          <p class="note">Reliability keeps you selectable — the liveness check ranks active riders first.</p>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+</body></html>
