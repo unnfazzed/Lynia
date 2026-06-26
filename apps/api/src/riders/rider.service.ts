@@ -1,0 +1,92 @@
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { KycStatus } from "@lynia/shared";
+import { ENV } from "../config/config.module";
+import type { Env } from "../config/env";
+import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
+import { PrismaService } from "../prisma/prisma.service";
+
+type Kyc = "pending" | "verified" | "failed";
+
+/** A rider may go online only once KYC has passed (CONCEPT §5d gating). Pure for unit tests. */
+export function canGoOnline(kycStatus: string): boolean {
+  return kycStatus === KycStatus.VERIFIED;
+}
+
+@Injectable()
+export class RiderService {
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(ENV) private readonly env: Env,
+    @Inject(KYC_VENDOR) private readonly vendor: KycVendor,
+  ) {}
+
+  /** Low-friction signup completion: name + national ID (CONCEPT §5d). */
+  async completeProfile(
+    profileId: string,
+    data: { firstName: string; lastName: string; idNumber: string },
+  ): Promise<{ ok: true }> {
+    await this.prisma.profile.update({ where: { id: profileId }, data });
+    return { ok: true };
+  }
+
+  /** Upgrade a customer to a rider; submit to KYC (auto) or leave pending for review (manual). */
+  async becomeRider(
+    profileId: string,
+    data: { bikeReg: string; photoUrl: string },
+  ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"] }> {
+    const existing = await this.prisma.rider.findUnique({
+      where: { profileId },
+      select: { profileId: true },
+    });
+    if (existing) throw new ConflictException("Already registered as a rider");
+
+    let kycRef: string | null = null;
+    if (this.env.KYC_MODE === "auto") {
+      kycRef = (await this.vendor.submit(profileId)).ref;
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.profile.update({ where: { id: profileId }, data: { role: "rider" } }),
+      this.prisma.rider.create({
+        data: { profileId, bikeReg: data.bikeReg, photoUrl: data.photoUrl, kycStatus: "pending", kycRef },
+      }),
+    ]);
+    return { kycStatus: "pending", mode: this.env.KYC_MODE };
+  }
+
+  async setOnline(profileId: string, online: boolean): Promise<{ online: boolean }> {
+    const rider = await this.prisma.rider.findUnique({
+      where: { profileId },
+      select: { kycStatus: true },
+    });
+    if (!rider) throw new ForbiddenException("Not a rider");
+    if (online && !canGoOnline(rider.kycStatus)) {
+      throw new ForbiddenException("Rider is not verified yet");
+    }
+    await this.prisma.rider.update({
+      where: { profileId },
+      data: { isOnline: online, lastHeartbeatAt: online ? new Date() : undefined },
+    });
+    return { online };
+  }
+
+  /** Vendor callback result → flip the rider's KYC status. */
+  async applyKycResult(kycRef: string, status: "verified" | "failed"): Promise<{ updated: number }> {
+    const res = await this.prisma.rider.updateMany({
+      where: { kycRef },
+      data: { kycStatus: status, idVerified: status === "verified" },
+    });
+    return { updated: res.count };
+  }
+
+  /** Manual-review backstop (T7) — admin override when no vendor supports a ZIM ID. */
+  async adminSetKyc(profileId: string, status: Kyc): Promise<{ profileId: string; kycStatus: Kyc }> {
+    const rider = await this.prisma.rider.findUnique({ where: { profileId }, select: { profileId: true } });
+    if (!rider) throw new NotFoundException("Rider not found");
+    await this.prisma.rider.update({
+      where: { profileId },
+      data: { kycStatus: status, idVerified: status === "verified" },
+    });
+    return { profileId, kycStatus: status };
+  }
+}

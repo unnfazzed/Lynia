@@ -17,6 +17,10 @@ export const envSchema = z.object({
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
   // E4: WhatsApp default, SMS behind a flag (schedule insurance vs BSP delay).
   OTP_CHANNEL: z.enum(["whatsapp", "sms"]).default("whatsapp"),
+  // --- KYC (lane E) ---
+  // auto = submit to the vendor; manual = leave pending for admin review (T7 backstop).
+  KYC_MODE: z.enum(["auto", "manual"]).default("auto"),
+  KYC_CALLBACK_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

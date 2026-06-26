@@ -2,6 +2,7 @@ import { Global, Module } from "@nestjs/common";
 import IORedis from "ioredis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { AdminGuard } from "./admin.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
@@ -16,6 +17,7 @@ import { TokenService } from "./token.service";
     AuthService,
     TokenService,
     JwtAuthGuard,
+    AdminGuard,
     { provide: OTP_SENDER, inject: [ENV], useFactory: (env: Env) => selectOtpSender(env) },
     {
       provide: OTP_STORE,
@@ -24,6 +26,6 @@ import { TokenService } from "./token.service";
         env.REDIS_URL ? new RedisOtpStore(new IORedis(env.REDIS_URL)) : new InMemoryOtpStore(),
     },
   ],
-  exports: [TokenService, JwtAuthGuard],
+  exports: [TokenService, JwtAuthGuard, AdminGuard],
 })
 export class AuthModule {}
