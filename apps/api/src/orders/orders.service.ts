@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import type { CreateOrderRequest } from "@lynia/shared";
+import { type CreateOrderRequest, quoteFare } from "@lynia/shared";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -13,6 +13,9 @@ export class OrdersService {
 
   /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */
   async create(input: CreateOrderRequest, customerId: string) {
+    // Distance-based anchor the customer sees alongside their own proposal (CONCEPT §1).
+    const { distanceKm, suggestedFare } = quoteFare(input.pickup.point, input.dropoff.point);
+
     const order = await this.prisma.order.create({
       data: {
         customerId,
@@ -23,19 +26,25 @@ export class OrdersService {
         note: input.note ?? null,
         itemPhotoUrl: input.itemPhotoUrl ?? null,
         declaredValue: input.declaredValue,
-        // Pricing engine lands later; for now the suggested fare is the customer's proposal.
-        suggestedFare: input.proposedFare,
+        distanceKm,
+        suggestedFare,
         proposedFare: input.proposedFare,
         status: "open_for_offers",
         events: { create: { status: "open_for_offers" } },
       },
-      select: { id: true, status: true, proposedFare: true },
+      select: { id: true, status: true, proposedFare: true, suggestedFare: true, distanceKm: true },
     });
 
     // Server-side window expiry (ET1). No-op if Redis isn't configured.
     await this.expiry.schedule(order.id);
 
-    return { id: order.id, status: order.status, proposedFare: order.proposedFare.toString() };
+    return {
+      id: order.id,
+      status: order.status,
+      proposedFare: order.proposedFare.toString(),
+      suggestedFare: order.suggestedFare.toString(),
+      distanceKm: order.distanceKm,
+    };
   }
 
   /**
