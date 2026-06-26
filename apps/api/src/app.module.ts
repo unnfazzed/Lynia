@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
 import { PushModule } from "./adapters/push/push.module";
 import { SecretsModule } from "./adapters/secrets/secrets.module";
@@ -31,6 +32,8 @@ import { TrackingModule } from "./tracking/tracking.module";
     TrackingModule,
     // Lane E — KYC + rider onboarding.
     RidersModule,
+    // Lane F — admin read API for the monitor dashboard.
+    AdminModule,
   ],
 })
 export class AppModule {}
