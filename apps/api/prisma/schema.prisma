@@ -128,13 +128,16 @@ model Order {
   agreedFare      Decimal?    @map("agreed_fare") @db.Decimal(10, 2)
   currency        String      @default("USD")
   // Hashed delivery OTP — never store plaintext (ET7).
-  otpHash         String?     @map("otp_hash")
-  status          OrderStatus @default(requested)
-  confirmedAt     DateTime?   @map("confirmed_at")
-  pickupStartedAt DateTime?   @map("pickup_started_at")
-  collectedAt     DateTime?   @map("collected_at")
-  createdAt       DateTime    @default(now()) @map("created_at")
-  updatedAt       DateTime    @updatedAt @map("updated_at")
+  otpHash             String?     @map("otp_hash")
+  deliveryOtpAttempts Int         @default(0) @map("delivery_otp_attempts")
+  status              OrderStatus @default(requested)
+  confirmedAt         DateTime?   @map("confirmed_at")
+  pickupStartedAt     DateTime?   @map("pickup_started_at")
+  collectedAt         DateTime?   @map("collected_at")
+  deliveredAt         DateTime?   @map("delivered_at")
+  completedAt         DateTime?   @map("completed_at")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
 
   offers Offer[]
   events OrderEvent[]

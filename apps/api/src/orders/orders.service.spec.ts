@@ -53,16 +53,46 @@ describe("OrdersService.create", () => {
 });
 
 describe("OrdersService.getSnapshot", () => {
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    id: "ord-1",
+    status: "assigned",
+    agreedFare: null,
+    proposedFare: 2.5,
+    customerId: "cust-1",
+    riderId: "rider-1",
+    customer: { phone: "+263771111111" },
+    rider: { profileId: "rider-1", currentLat: null, currentLng: null, updatedAt: null, profile: { phone: "+263782000000" } },
+    events: [],
+    ...overrides,
+  });
+  const svc = (snap: unknown) =>
+    new OrdersService(
+      { order: { findUnique: async () => snap } } as unknown as PrismaService,
+      {} as OfferExpiryService,
+    );
+
   it("404s when the order is missing", async () => {
-    const prisma = { order: { findUnique: async () => null } };
-    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
-    await expect(svc.getSnapshot("missing")).rejects.toThrow(/order not found/i);
+    await expect(svc(null).getSnapshot("missing", "cust-1")).rejects.toThrow(/order not found/i);
   });
 
-  it("returns the order snapshot when found", async () => {
-    const snap = { id: "ord-1", status: "assigned", agreedFare: null, proposedFare: 2.5, rider: null, events: [] };
-    const prisma = { order: { findUnique: async () => snap } };
-    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
-    expect(await svc.getSnapshot("ord-1")).toBe(snap);
+  it("reveals the rider's phone to the customer during the active window", async () => {
+    const snap = await svc(row()).getSnapshot("ord-1", "cust-1");
+    expect(snap.counterpartyPhone).toBe("+263782000000");
+    expect(snap.rider).toMatchObject({ profileId: "rider-1" });
+  });
+
+  it("reveals the customer's phone to the assigned rider", async () => {
+    const snap = await svc(row()).getSnapshot("ord-1", "rider-1");
+    expect(snap.counterpartyPhone).toBe("+263771111111");
+  });
+
+  it("hides phones outside the reveal window", async () => {
+    const snap = await svc(row({ status: "open_for_offers" })).getSnapshot("ord-1", "cust-1");
+    expect(snap.counterpartyPhone).toBeNull();
+  });
+
+  it("never leaks a phone to a third party", async () => {
+    const snap = await svc(row()).getSnapshot("ord-1", "stranger");
+    expect(snap.counterpartyPhone).toBeNull();
   });
 });
