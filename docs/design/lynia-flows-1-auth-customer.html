@@ -1,0 +1,235 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lynia flows · Auth + Customer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="flows.css">
+</head><body>
+
+<div class="board-head">
+  <h1>Lynia — flows 1 / 3 · Auth &amp; the customer journey</h1>
+  <p>Plan-driven mockups from <b>docs/DESIGN.md</b> + <b>CONCEPT.md</b> (§5c/§5d). Clean-utility direction, warm accent, light + sunlight-contrast, Manrope, tabular fares. Frames 340&nbsp;px (Android-first). A faithful build reference, not pixel-final.</p>
+  <div class="swatches">
+    <span class="sw"><i style="background:#1E7A46"></i>accent #1E7A46</span>
+    <span class="sw"><i style="background:#F2B705"></i>recommended #F2B705</span>
+    <span class="sw"><i style="background:#14181B"></i>ink #14181B</span>
+    <span class="sw"><i style="background:#F6F7F8;border:1px solid #2A3034"></i>surface #F6F7F8</span>
+    <span class="sw">Manrope · tabular numerals · 50px CTAs · 44px+ targets</span>
+  </div>
+</div>
+
+<!-- ============ BAND A — AUTH & ONBOARDING ============ -->
+<div class="band">
+  <div class="hd"><h2>① Auth &amp; onboarding</h2><span>app/index · app/phone · app/verify · role routing</span></div>
+  <div class="grid">
+
+    <!-- Splash -->
+    <div class="frame"><div class="cap"><b>Splash</b> · session check <span class="tag alt">app/index.tsx</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:40</span><span>📶 🔋</span></div>
+        <div class="empty">
+          <div class="brand" style="font-size:30px"><span class="dot" style="width:40px;height:40px;border-radius:12px;font-size:22px">L</span>Lynia</div>
+          <p style="margin-top:10px">Parcels across the city — you set the price, riders bid.</p>
+          <div class="spin" style="margin-top:20px;width:22px;height:22px"></div>
+        </div>
+        <div class="note" style="padding-bottom:14px">Checking your session…</div>
+      </div></div>
+    </div>
+
+    <!-- Phone -->
+    <div class="frame"><div class="cap"><b>Phone</b> · request OTP <span class="tag alt">app/phone.tsx</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:40</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div></div>
+        <div class="scrolly" style="justify-content:center">
+          <h2 class="t">Enter your phone</h2>
+          <p class="sub">We'll send a 6-digit code on WhatsApp to verify it's you.</p>
+          <div><label class="fl">Phone number</label>
+            <div class="field"><span class="ic">🇿🇼</span><span>+263 77 123 4567</span></div></div>
+          <button class="btn">Send code</button>
+          <p class="note">By continuing you agree to the rider &amp; sender terms.</p>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Verify -->
+    <div class="frame"><div class="cap"><b>Verify</b> · enter code <span class="tag alt">app/verify.tsx</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:41</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div></div>
+        <div class="scrolly" style="justify-content:center">
+          <h2 class="t">Enter the code</h2>
+          <p class="sub">Sent to +263 77 123 4567. <b style="color:var(--accent)">Change</b></p>
+          <div class="otp tnum">
+            <div class="box">4</div><div class="box">1</div><div class="box">9</div>
+            <div class="box">2</div><div class="box f">|</div><div class="box"></div>
+          </div>
+          <button class="btn">Verify</button>
+          <p class="note">Didn't get it? <b style="color:var(--accent)">Resend in 0:24</b></p>
+          <div class="banner" style="margin-top:4px">Dev build: code auto-fills from the console OTP channel.</div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Role route -->
+    <div class="frame"><div class="cap"><b>Role routing</b> · post-login <span class="tag">session.role</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:41</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">T</div></div>
+        <div class="scrolly" style="justify-content:center">
+          <h2 class="t">How are you using Lynia?</h2>
+          <p class="sub">You can switch anytime — one account, both roles.</p>
+          <div class="seg"><div class="on">Send a parcel</div><div>Ride &amp; earn</div></div>
+          <div class="card" style="margin-top:4px">
+            <div style="font-size:13px;font-weight:700">New to riding?</div>
+            <p class="sub">Verify your ID &amp; bike to start accepting deliveries.</p>
+            <button class="btn acc-sec">Become a rider</button>
+          </div>
+          <button class="btn">Continue</button>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ BAND B — CUSTOMER CORE ============ -->
+<div class="band">
+  <div class="hd"><h2>② Customer — core journey</h2><span>create → offers → track → rate · app/home · app/order/[id]</span></div>
+  <div class="grid">
+
+    <!-- Home / send parcel -->
+    <div class="frame"><div class="cap"><b>Customer</b> · Map home + send <span class="tag">D-b</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:41</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">T</div></div>
+        <div class="map" style="flex:none;height:188px">
+          <div class="route"></div>
+          <div class="pin go" style="left:26%;top:34%"><div class="b go">Pickup</div><div class="s"></div></div>
+          <div class="pin" style="left:72%;top:70%"><div class="b">Drop-off</div><div class="s"></div></div>
+        </div>
+        <div class="sheet">
+          <div class="grab"></div><h2 class="t">Send a parcel</h2>
+          <div><label class="fl">Pickup</label><div class="field go"><span class="ic">●</span><span>Eastgate Mall, CBD</span></div></div>
+          <div><label class="fl">Drop-off</label><div class="field"><span class="ic">◎</span><span>14 Glenara Ave, Avenues</span></div></div>
+          <div><label class="fl">Your price (riders accept or counter)</label>
+            <div class="price"><div><div class="lab">Suggested $2.30</div><div class="val tnum">$2.50</div></div>
+              <div class="stepbtns"><button>–</button><button>+</button></div></div></div>
+          <button class="btn">Broadcast request</button>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Offers -->
+    <div class="frame"><div class="cap"><b>Customer</b> · Offers <span class="tag">best-match · D-d</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:42</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="statusline"><span class="spin"></span>Finding riders…</div><span class="muted-pill">3 interested</span></div>
+        <div class="map" style="flex:none;height:120px"><div class="bike" style="left:40%;top:55%">🏍</div><div class="bike" style="left:64%;top:40%">🏍</div></div>
+        <div class="sheet" style="flex:1;overflow:hidden">
+          <div class="grab"></div>
+          <div class="sortbar"><span>Sorted by <b>best match</b></span><span>Price · Rating · ETA ▾</span></div>
+          <div class="offer rec"><span class="rec-tag">RECOMMENDED</span><div class="rphoto">TM</div>
+            <div class="oinfo"><div class="nm">Tendai M.</div><div class="meta"><span class="star tnum">★ 4.9</span><span class="tnum">128 trips</span><span class="tnum">6 min</span></div></div>
+            <div class="oprice"><div class="p tnum">$2.50</div><div class="pick">Select</div></div></div>
+          <div class="offer"><div class="rphoto">RC</div>
+            <div class="oinfo"><div class="nm">Rugare C.</div><div class="meta"><span class="star tnum">★ 4.7</span><span class="tnum">64 trips</span><span class="tnum">4 min</span></div></div>
+            <div class="oprice"><div class="p tnum">$2.80</div><div class="pick">Select</div></div></div>
+          <div class="offer"><div class="rphoto">BN</div>
+            <div class="oinfo"><div class="nm">Blessing N.</div><div class="meta"><span class="star tnum">★ 4.6</span><span class="tnum">31 trips</span><span class="tnum">9 min</span></div></div>
+            <div class="oprice"><div class="p tnum">$2.50</div><div class="pick">Select</div></div></div>
+          <p class="note">Counter-offers stream in as riders respond.</p>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Tracking 7-step -->
+    <div class="frame"><div class="cap"><b>Customer</b> · Tracking <span class="tag">§5c · 7-step</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:48</span><span>📶 🔋</span></div>
+        <div class="map" style="flex:none;height:118px"><div class="route"></div><div class="bike" style="left:46%;top:50%">🏍</div><div class="pin" style="left:74%;top:64%"><div class="b">Drop-off</div><div class="s"></div></div></div>
+        <div class="track">
+          <div class="ridercard"><div class="rphoto">TM</div><div style="flex:1"><div class="nm">Tendai M. <span class="star tnum" style="font-size:12px">★ 4.9</span></div><div class="meta tnum">Bike ABZ 4417 · ~5 min</div></div><div class="callbtn">📞</div></div>
+          <div class="farechip"><span class="k">Agreed fare</span><span class="v tnum">$2.50</span></div>
+          <div style="height:12px"></div>
+          <div class="step done"><div class="rail"><div class="nub">✓</div><div class="line"></div></div><div class="body"><div class="lab">Ride accepted</div><div class="ts tnum">9:42</div></div></div>
+          <div class="step done"><div class="rail"><div class="nub">✓</div><div class="line"></div></div><div class="body"><div class="lab">Items &amp; note confirmed</div><div class="ts tnum">9:43</div></div></div>
+          <div class="step now"><div class="rail"><div class="nub">●</div><div class="line"></div></div><div class="body"><div class="lab">Rider on the way to pickup</div><div class="ts tnum">9:45 · live</div></div></div>
+          <div class="step todo"><div class="rail"><div class="nub">4</div><div class="line"></div></div><div class="body"><div class="lab">Items collected</div></div></div>
+          <div class="step todo"><div class="rail"><div class="nub">5</div><div class="line"></div></div><div class="body"><div class="lab">On the way to drop-off</div></div></div>
+          <div class="step todo"><div class="rail"><div class="nub">6</div><div class="line"></div></div><div class="body"><div class="lab">Delivered (OTP)</div></div></div>
+          <div class="step todo"><div class="rail"><div class="nub">7</div></div><div class="body"><div class="lab">Rate your rider</div></div></div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Delivered + rate -->
+    <div class="frame"><div class="cap"><b>Customer</b> · Delivered + rate <span class="tag">step 7</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>10:03</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">T</div></div>
+        <div class="scrolly">
+          <div class="card acc" style="align-items:center;text-align:center">
+            <div class="illus" style="margin:0;font-size:32px;width:64px;height:64px">✅</div>
+            <h2 class="t">Delivered</h2><p class="sub">Tendai handed off to the recipient at 10:02 with the OTP. Nice and safe.</p>
+          </div>
+          <div class="card"><div style="font-size:13px;font-weight:700">Rate your rider</div>
+            <div style="font-size:30px;letter-spacing:6px;color:#E8A400">★★★★<span style="color:var(--line)">★</span></div>
+            <div class="field" style="height:64px;align-items:flex-start;padding-top:10px"><span class="ph">Add a note (optional)…</span></div>
+            <button class="btn">Submit rating</button></div>
+          <p class="note">Rating closes the order. Required to finish.</p>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ BAND C — CUSTOMER STATES ============ -->
+<div class="band">
+  <div class="hd"><h2>③ Customer — edge states</h2><span>empty · no-supply · cancellable · DESIGN.md interaction matrix</span></div>
+  <div class="grid">
+
+    <!-- No offers -->
+    <div class="frame"><div class="cap"><b>Empty</b> · No offers / expired <span class="tag">P1</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:44</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">T</div></div>
+        <div class="empty"><div class="illus">🛵</div><h2>No riders took this price yet</h2>
+          <p>Your window closed with no offers. Nudging the price up usually gets a rider fast.</p>
+          <div class="acts"><button class="btn">Nudge price &amp; re-broadcast</button><button class="btn sec">Edit order</button></div></div>
+      </div></div>
+    </div>
+
+    <!-- No riders -->
+    <div class="frame"><div class="cap"><b>Empty</b> · No riders online <span class="tag">P1</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>22:10</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">T</div></div>
+        <div class="empty"><div class="illus">🌙</div><h2>No riders online in the CBD right now</h2>
+          <p>It's a quiet hour. We'll ping you the moment a rider comes online nearby.</p>
+          <div class="acts"><button class="btn">Notify me when one's available</button><button class="btn ghost">Browse anyway</button></div>
+          <p class="note" style="margin-top:8px">Most riders are online 7am–7pm.</p></div>
+      </div></div>
+    </div>
+
+    <!-- Cancellable / active pre-pickup -->
+    <div class="frame"><div class="cap"><b>Customer</b> · Cancellable order <span class="tag">§9</span></div>
+      <div class="phone"><div class="scr">
+        <div class="sbar tnum"><span>9:46</span><span>📶 🔋</span></div>
+        <div class="appbar"><div class="brand"><span class="dot">L</span>Lynia</div><div class="avatar">T</div></div>
+        <div class="scrolly">
+          <div class="card acc"><div class="statusline"><span class="spin"></span>Rider assigned — confirming details</div>
+            <div class="farechip"><span class="k">Agreed fare</span><span class="v tnum">$2.50</span></div></div>
+          <div class="ridercard" style="margin:0"><div class="rphoto">TM</div><div style="flex:1"><div class="nm">Tendai M.</div><div class="meta tnum">★ 4.9 · ABZ 4417</div></div><div class="callbtn">📞</div></div>
+          <div class="card"><div style="font-size:13px;font-weight:700">Need to stop?</div>
+            <p class="sub">You can cancel before pickup. Frequent late cancels add a short cooldown.</p>
+            <button class="btn danger">Cancel order</button></div>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+</body></html>

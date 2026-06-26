@@ -87,6 +87,119 @@ Signup / OTP        | "sending code…"    | n/a                            | se
 - **No riders online:** *"No riders online in [corridor] right now."* Primary: **Notify me when one's
   available**. Context line on typical busy hours.
 
+---
+
+# Two-sided journey (added by the pre-Phase-3 design consultation)
+
+> The sections above were the original customer-side design review. The build has since shipped the **rider
+> side** (Phase 2) and the app will soon need the **cross-cutting flows** every two-sided courier has. This
+> half of the spec covers the *full* journey — rider screens calibrated against the as-built code, plus the
+> not-yet-built flows (history, profile, earnings, notifications, support) designed once, now, on paper.
+> Same locked tokens and components as above — nothing new invented.
+
+## Rider information architecture
+
+```
+Rider:  [Become a rider / KYC]  name + ID + bike reg + photo → submit → Didit verification (browser) → pending/verified
+        [Rider home]            big online/offline toggle · distance-sorted broadcast board · active-job banner
+          → tap a broadcast → [Offer compose] accept-at-asking | counter (fare + ETA) → one round, then hidden
+        [Active job]            §5c status stepper (rider view) · customer card · advance buttons
+          → en_route_dropoff → [Delivery hand-off] enter recipient's 6-digit OTP → delivered → free for next
+```
+
+The rider side reuses the customer component language verbatim: the **online/offline toggle** is the
+screen's single primary CTA (52px pill, `--accent` when offline = "Go online", outline/ghost when online);
+the **broadcast board** is the same offer-card layout inverted (the rider scans *orders* the way the
+customer scans *offers* — tabular price · distance · item, sorted by `haversineKm` to pickup); the **active
+job** renders the §5c stepper from the rider's perspective.
+
+### Rider screens — spec + as-built calibration
+
+| Screen | As-built route | Spec notes (calibrate code to this) |
+|--------|----------------|-------------------------------------|
+| Become / KYC | `app/rider/become.tsx` | Two cards (identity, bike) → one CTA. Pending/verified result card. Only an `https://` verification URL opens (already enforced). Add: inline field validation states + a "what Didit needs" helper line. |
+| Rider home | `app/rider/index.tsx` | Online toggle is the one primary CTA; status line states the consequence ("offers stay live" / "go online to bid"). Board hides already-bid orders (built). Add the **two rider empty-states** below. |
+| Offer compose | (inline card in `index.tsx`) | Pre-fill fare = customer's ask (accept) ; any edit = counter (built). Label the toggle clearly: *Accept $X* vs *Counter*. ETA in minutes, tabular. |
+| Active job | `app/rider/job.tsx` | §5c stepper, **rider view** (table below). Customer card (name + ★ + call) visible only in the reveal window (§5d). Delivery-OTP card at `en_route_dropoff`; 5-attempt lockout messaged (built). |
+
+### §5c stepper — the rider's view (mirror of the customer table)
+
+| # | Rider sees | Order status | Rider action |
+|---|---|---|---|
+| 1 | **You're assigned** | `assigned` | Review item + note → **Confirm details** |
+| 2 | **Details confirmed** | `confirmed` | **Start ride** (head to pickup) |
+| 3 | **Heading to pickup** | `en_route_pickup` | Collect parcel → **Mark collected** (+ pickup photo) |
+| 4 | **Parcel collected** | `picked_up` | **Head to drop-off** |
+| 5 | **Heading to drop-off** | `en_route_dropoff` | Ask recipient for OTP → **enter code** |
+| 6 | **Delivered** | `delivered` | Done — *"You're free for the next job."* |
+
+> The customer stepper (§5c) and this rider stepper are **one timeline seen from two sides** — keep the step
+> labels paired so a support agent reading either screen sees the same journey.
+
+### Rider interaction-states (parity with the customer matrix)
+
+```
+FEATURE          | LOADING             | EMPTY                           | ERROR                              | SUCCESS              | PARTIAL
+-----------------|---------------------|---------------------------------|------------------------------------|----------------------|------------------
+Go online        | toggle spinner      | n/a                             | cooldown 403 → "taken offline" +   | "you're online"      | heartbeat retrying
+                 |                     |                                 |   reason, toggle flips off (built) |                      |
+Broadcast board  | skeleton cards      | no-orders → "No open orders in   | location off → "enable for nearest"| sorted board         | orders stream in
+                 |                     |   [corridor]. Stay online."      | net → retry banner                 |                      |
+Offer compose    | send spinner        | n/a                             | order taken → "gone — pick another"| hidden from board    |
+Active job       | stepper skeleton    | no active job → "Accept an order"| OTP 5-fail lockout → re-issue ask  | step lights up       | GPS stale → "paused"
+Delivery OTP     | verify spinner      | n/a                             | wrong code 401 → retry; 403 lockout| delivered            |
+```
+
+### Rider empty-states (the high-leverage ones, parity with customer)
+
+- **No open orders (online):** *"No open orders near you right now — you're online and first in line."*
+  Reassures the rider that staying online is the correct action (don't make idleness feel like a dead-end).
+  Secondary: typical busy-hours / busiest-corridor hint.
+- **Not yet verified:** if a rider opens the board pre-KYC, a calm gate — *"Finish verification to start
+  bidding."* Primary: **Resume verification**. No silent empty board.
+
+## Cross-cutting flows (designed now, built later)
+
+Designed once here so the post-Phase-3 build and the `/design-html` regen have a spec. All reuse existing
+components; none needs a device to design.
+
+| Flow | Who | Spec | Reuse / dependency |
+|------|-----|------|--------------------|
+| **Order / trip history** | both | Reverse-chron list of past orders (Card per order: route landmarks · date · fare · outcome pill · ★ given/received). Tap → read-only order detail. Empty: *"No trips yet."* | Same Card + StatusPill; reads existing order list. The first **"my past orders"** read each role needs. |
+| **Profile / settings** | both | View/edit name, phone (re-verify on change), language; rider also bike reg + KYC status + photo. Sign-out lives here (move off `home`). Empty/loading trivial. | Reuses `Field`/`Button`; today profile is set once in KYC with no edit path. |
+| **Rider rating profile** | customer-facing | The **public rider card** a customer taps an offer to expand: photo · first name + last initial · ★ aggregate + trip count · bike reg. **Score + count only, no written comments** (per §5d / DESIGN "NOT in scope"). | Lets customers choose on **more than price** (D-d best-match). Pairs with the BACKLOG **two-sided rating** item. |
+| **Notifications center** | both | In-app list of order events (offer received, selected, status changes) + a per-item read state. Bridges the gap until **FCM push** (BACKLOG, cloud-gated) lands; until then it's the polled feed surfaced as a list. | Socket/poll events already exist; this is presentation. Push delivery is deferred (BACKLOG). |
+| **Support / help** | both | Static FAQ + "report an issue on this order" (deep-links an order id into a prefilled message channel). Low-literacy: icon+label, short sentences. | No backend yet — design the surface; wire to a channel when one's chosen. |
+
+## Earnings / wallet — payment-agnostic (open §6 dependency)
+
+> **Stance:** Lynia is a *matchmaker, not a payment processor* for the pilot (§6 — revenue & settlement
+> deferred, **no commission, money moves outside the app**). The wallet is therefore designed **cash-first
+> and mechanism-free**: it shows what was *agreed and delivered*, not what was *charged or settled*.
+
+- **Rider earnings ledger:** a per-trip list of **agreed fares on completed deliveries** (date · route ·
+  `agreed_fare`), with a period total. Framed as a **record of work done**, explicitly *not* a payout
+  balance — no "withdraw", no settlement state, no commission line. Matches CONCEPT §7's "trip log
+  (informational; no payments)".
+- **Customer side:** the same data appears simply as the **fare on each past order** in history — no
+  separate wallet needed pre-revenue.
+- **Open dependency, called out:** when §6 picks a revenue/settlement mechanism (gateway / own rails /
+  commission / fee), this screen gains a settlement state + (if any) a take-rate line. The layout is built
+  to **absorb that without a redesign** — the ledger rows stay; a status column and a balance summary slot
+  in. **Do not** add payout/commission UI until §6 is decided.
+
+## Drift — built vs. designed (reconcile in the build phase)
+
+Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checklist instead of rediscovering:
+
+- **§5c 7-step stepper** is specced (customer + now rider) but **not built** in `app/order/[id].tsx` /
+  `app/rider/job.tsx` — both render plainer status lists today.
+- **Designed empty-states** (no-offers / no-riders, and the new rider ones) are **not all built**.
+- **API-contract fields with no UI:** `itemPhotoUrl`, `note` (create order); `comment` (rating);
+  `reason` (cancel) — all in `@lynia/shared` contracts, no field on screen. Either surface or consciously
+  defer per flow.
+- **Sign-out** lives on `home` today; spec moves it to **profile/settings**.
+
 ## Responsive & accessibility
 
 - Android-first, designed at 360px width; touch targets **≥ 44px** (52px for primary).
@@ -111,11 +224,21 @@ Signup / OTP        | "sending code…"    | n/a                            | se
 | DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) |
 | DT6 | P2 | A11y + sunlight + data-light pass (targets, contrast, labels, tile caching) |
 | DT7 | P2 | Run `/design-review` (visual QA) post-implementation |
+| DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` (this consultation) |
+| DT9 | P1 | Rider interaction-states + two rider empty-states (no-orders / not-verified) |
+| DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support |
+| DT11 | P2 | Earnings ledger — payment-agnostic; gains settlement state only when §6 is decided |
+| DT12 | P1 | Drift fixes: build §5c stepper (both sides), designed empty-states, surface/defer contract-only fields (photo/note/comment/reason), move sign-out to profile |
+| DT13 | P2 | Post-Phase-3: regen `/design-html` for the new flows, then DT7 visual review + `/qa` on a device build |
 
 ## Next steps (gstack flow)
 
-- ✅ Office Hours · CEO review · Eng review · **Design review** (this doc).
-- ⬜ **Build** — eng-review lane A → B/C → D/E/F, building screens from this system.
-- ⬜ Optional `/design-html` to generate HTML previews from this spec.
+- ✅ Office Hours · CEO review · Eng review · **Design review** (customer side).
+- ✅ Build — customer journey (Phase 1) + rider role (Phase 2) shipped.
+- ✅ **Design consultation — full two-sided journey** (this update): rider IA, cross-cutting flows,
+  payment-agnostic earnings, drift logged as DT8–DT13.
+- ⬜ **Build the newly-specced screens** alongside Phase 3 (cross-cutting flows, stepper, empty-states).
+- ⬜ **Post-Phase-3:** `/design-html` regen → `/design-review` (DT7) → `/qa` on a device build.
 
-**Design score: 4/10 → 8/10.** No unresolved decisions.
+**Design score: 8/10 → 8.5/10** — full journey now specced; remaining lift is the on-device visual QA that
+needs a Phase-3 build. No unresolved decisions except the §6 revenue mechanism (consciously deferred).
