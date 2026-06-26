@@ -1,0 +1,25 @@
+/* Tokens mirror docs/DESIGN.md (@lynia/shared design-tokens). */
+:root {
+  --ink: #14181b;
+  --muted: #5b6670;
+  --bg: #ffffff;
+  --surface: #f6f7f8;
+  --line: #e2e6ea;
+  --accent: #1e7a46;
+  --highlight: #f2b705;
+  --danger: #c0392b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

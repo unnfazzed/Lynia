@@ -1,0 +1,229 @@
+// Lynia data model (refines CONCEPT §5; constraints from ENG-REVIEW ET6/ET7).
+// Prisma owns the schema + typed client; the offer-loop hot path (guarded CAS) and the
+// PostGIS geography column are driven by raw SQL — see prisma/migrations/0001_init/migration.sql.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+enum Role {
+  customer
+  rider
+  merchant
+  admin
+}
+
+enum OrderType {
+  parcel
+  merchant
+}
+
+enum OrderStatus {
+  requested
+  open_for_offers
+  assigned
+  confirmed
+  en_route_pickup
+  picked_up
+  en_route_dropoff
+  delivered
+  completed
+  cancelled
+  expired
+}
+
+enum OfferType {
+  accept
+  counter
+}
+
+enum OfferStatus {
+  pending
+  selected
+  declined
+  expired
+}
+
+enum KycStatus {
+  pending
+  verified
+  failed
+}
+
+model Profile {
+  id              String    @id @default(uuid()) @db.Uuid
+  role            Role      @default(customer)
+  firstName       String    @map("first_name")
+  lastName        String    @map("last_name")
+  phone           String    @unique
+  email           String?
+  idNumber        String?   @map("id_number")
+  photoUrl        String?   @map("photo_url")
+  phoneVerifiedAt DateTime? @map("phone_verified_at")
+  ordersCount     Int       @default(0) @map("orders_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  rider          Rider?
+  customerOrders Order[]   @relation("customerOrders")
+  sessions       Session[]
+  addresses      Address[]
+  ratingsGiven   Rating[]  @relation("ratingBy")
+
+  @@map("profiles")
+}
+
+model Rider {
+  profileId       String    @id @map("profile_id") @db.Uuid
+  profile         Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  vehicleInfo     String?   @map("vehicle_info")
+  bikeReg         String    @map("bike_reg")
+  photoUrl        String    @map("photo_url")
+  idVerified      Boolean   @default(false) @map("id_verified")
+  kycStatus       KycStatus @default(pending) @map("kyc_status")
+  kycRef          String?   @map("kyc_ref")
+  isOnline        Boolean   @default(false) @map("is_online")
+  lastHeartbeatAt DateTime? @map("last_heartbeat_at")
+  currentLat      Float?    @map("current_lat")
+  currentLng      Float?    @map("current_lng")
+  // Indexed source of truth for nearby-rider queries (ST_DWithin + GiST). Managed via raw SQL.
+  geog            Unsupported("geography(Point, 4326)")?
+  tripsCount      Int       @default(0) @map("trips_count")
+  ratingAvg       Float     @default(0) @map("rating_avg")
+  ratingCount     Int       @default(0) @map("rating_count")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  orders Order[] @relation("riderOrders")
+  offers Offer[]
+
+  @@map("riders")
+}
+
+model Order {
+  id              String      @id @default(uuid()) @db.Uuid
+  orderType       OrderType   @default(parcel) @map("order_type")
+  customerId      String      @map("customer_id") @db.Uuid
+  customer        Profile     @relation("customerOrders", fields: [customerId], references: [id])
+  riderId         String?     @map("rider_id") @db.Uuid
+  rider           Rider?      @relation("riderOrders", fields: [riderId], references: [profileId])
+  merchantId      String?     @map("merchant_id") @db.Uuid
+  merchant        Merchant?   @relation(fields: [merchantId], references: [id])
+  pickup          Json
+  dropoff         Json
+  itemDesc        String      @map("item_desc")
+  note            String?
+  itemPhotoUrl    String?     @map("item_photo_url")
+  declaredValue   Decimal     @default(0) @map("declared_value") @db.Decimal(10, 2)
+  size            String?
+  distanceKm      Float?      @map("distance_km")
+  suggestedFare   Decimal     @map("suggested_fare") @db.Decimal(10, 2)
+  proposedFare    Decimal     @map("proposed_fare") @db.Decimal(10, 2)
+  agreedFare      Decimal?    @map("agreed_fare") @db.Decimal(10, 2)
+  currency        String      @default("USD")
+  // Hashed delivery OTP — never store plaintext (ET7).
+  otpHash         String?     @map("otp_hash")
+  status          OrderStatus @default(requested)
+  confirmedAt     DateTime?   @map("confirmed_at")
+  pickupStartedAt DateTime?   @map("pickup_started_at")
+  collectedAt     DateTime?   @map("collected_at")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  offers Offer[]
+  events OrderEvent[]
+  rating Rating?
+
+  @@index([status])
+  @@index([riderId])
+  @@map("orders")
+}
+
+model Offer {
+  id          String      @id @default(uuid()) @db.Uuid
+  orderId     String      @map("order_id") @db.Uuid
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  riderId     String      @map("rider_id") @db.Uuid
+  rider       Rider       @relation(fields: [riderId], references: [profileId])
+  type        OfferType
+  offeredFare Decimal     @map("offered_fare") @db.Decimal(10, 2)
+  etaMinutes  Int         @map("eta_minutes")
+  status      OfferStatus @default(pending)
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  // One offer per rider per order — the "one round" rule as a constraint (ET7).
+  @@unique([orderId, riderId])
+  @@index([orderId, status])
+  @@index([riderId])
+  @@map("offers")
+}
+
+model OrderEvent {
+  id        String      @id @default(uuid()) @db.Uuid
+  orderId   String      @map("order_id") @db.Uuid
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  lat       Float?
+  lng       Float?
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@map("order_events")
+}
+
+model Rating {
+  id          String   @id @default(uuid()) @db.Uuid
+  orderId     String   @unique @map("order_id") @db.Uuid
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  byProfileId String   @map("by_profile_id") @db.Uuid
+  by          Profile  @relation("ratingBy", fields: [byProfileId], references: [id])
+  score       Int
+  comment     String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("ratings")
+}
+
+// Server-side sessions so we own revoke/ban/logout (ET5).
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  profileId        String    @map("profile_id") @db.Uuid
+  profile          Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  refreshTokenHash String    @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@index([profileId])
+  @@map("sessions")
+}
+
+// §5b superapp seams — reserved, unused at launch.
+model Merchant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  orders Order[]
+
+  @@map("merchants")
+}
+
+model Address {
+  id        String   @id @default(uuid()) @db.Uuid
+  profileId String   @map("profile_id") @db.Uuid
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  label     String
+  point     Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([profileId])
+  @@map("addresses")
+}

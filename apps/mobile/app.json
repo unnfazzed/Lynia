@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Lynia",
+    "slug": "lynia",
+    "scheme": "lynia",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["android", "ios"],
+    "android": {
+      "package": "zw.co.lynia"
+    }
+  }
+}
