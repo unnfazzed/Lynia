@@ -33,7 +33,7 @@ export class RiderService {
   async becomeRider(
     profileId: string,
     data: { bikeReg: string; photoUrl: string },
-  ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"] }> {
+  ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string }> {
     const existing = await this.prisma.rider.findUnique({
       where: { profileId },
       select: { profileId: true },
@@ -41,8 +41,11 @@ export class RiderService {
     if (existing) throw new ConflictException("Already registered as a rider");
 
     let kycRef: string | null = null;
+    let verificationUrl: string | undefined;
     if (this.env.KYC_MODE === "auto") {
-      kycRef = (await this.vendor.submit(profileId)).ref;
+      const submission = await this.vendor.submit(profileId);
+      kycRef = submission.ref;
+      verificationUrl = submission.url;
     }
 
     await this.prisma.$transaction([
@@ -51,7 +54,7 @@ export class RiderService {
         data: { profileId, bikeReg: data.bikeReg, photoUrl: data.photoUrl, kycStatus: "pending", kycRef },
       }),
     ]);
-    return { kycStatus: "pending", mode: this.env.KYC_MODE };
+    return { kycStatus: "pending", mode: this.env.KYC_MODE, verificationUrl };
   }
 
   async setOnline(profileId: string, online: boolean): Promise<{ online: boolean }> {

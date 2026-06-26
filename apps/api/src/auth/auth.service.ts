@@ -39,7 +39,7 @@ export class AuthService {
     @Inject(OTP_SENDER) private readonly sender: OtpSender,
   ) {}
 
-  async requestOtp(phone: string, ip: string): Promise<{ sent: true; channel: string }> {
+  async requestOtp(phone: string, ip: string): Promise<{ sent: true; channel: string; devCode?: string }> {
     await this.enforceRate(`rl:phone:${phone}`, RL.phone);
     await this.enforceRate(`rl:ip:${ip}`, RL.ip);
     await this.enforceRate("rl:global", RL.global);
@@ -47,8 +47,13 @@ export class AuthService {
     const code = this.tokens.randomOtp();
     await this.store.put(phone, this.tokens.hash(code), this.env.OTP_TTL_SECONDS);
     await this.sender.send(phone, code);
+
+    // Local/dev convenience: on the console channel outside production, return the code so
+    // signup is testable with no messaging provider. Never leaks in production.
+    const devCode =
+      this.env.OTP_CHANNEL === "console" && this.env.NODE_ENV !== "production" ? code : undefined;
     // Never leak whether the phone exists — always "sent".
-    return { sent: true, channel: this.sender.channel() };
+    return { sent: true, channel: this.sender.channel(), ...(devCode ? { devCode } : {}) };
   }
 
   async verifyOtp(phone: string, code: string, userAgent?: string): Promise<SessionTokens & {
