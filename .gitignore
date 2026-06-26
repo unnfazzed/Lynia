@@ -1,2 +1,30 @@
 # gstack is installed per-developer, not vendored into the repo.
 .claude/skills/gstack/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Expo / React Native
+.expo/
+.expo-shared/
+apps/mobile/.expo/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Prisma
+apps/api/prisma/*.db
+
+# Logs / OS
+*.log
+.DS_Store

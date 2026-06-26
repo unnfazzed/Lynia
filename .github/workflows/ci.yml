@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: typecheck · build · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @lynia/shared build
+      - run: pnpm --filter @lynia/api prisma:generate
+      - run: pnpm run typecheck
+      - run: pnpm run build
+      - run: pnpm --filter @lynia/api test
+
+  schema:
+    name: prisma migrate · constraint proof (PostGIS)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: lynia
+          POSTGRES_PASSWORD: lynia
+          POSTGRES_DB: lynia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lynia"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://lynia:lynia@localhost:5432/lynia?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @lynia/api prisma:generate
+      - run: pnpm --filter @lynia/api migrate:deploy
+      - name: Assert offer-loop constraints applied (ET2/ET6)
+        run: |
+          set -euo pipefail
+          q() { PGPASSWORD=lynia psql -h localhost -U lynia -d lynia -tAc "$1"; }
+          q "SELECT indexname FROM pg_indexes WHERE tablename='orders' AND indexname='one_active_ride';" | grep -qx one_active_ride
+          q "SELECT 1 FROM pg_indexes WHERE tablename='riders' AND indexdef ILIKE '%gist%';" | grep -qx 1
+          q "SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='otp_hash';" | grep -qx 1
+          echo "✓ one_active_ride, GiST geog index, and otp_hash all present"

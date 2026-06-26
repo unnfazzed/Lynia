@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["react", "react-native"],
+    "noEmit": true,
+    "declaration": false,
+    "baseUrl": ".",
+    "paths": {
+      "@lynia/shared": ["../../packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["index.ts", "App.tsx", "src/**/*.ts", "src/**/*.tsx"]
+}
