@@ -254,7 +254,12 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           await tx.rider.update({ where: { profileId: order.riderId }, data: { cancelStrikes: strikes } });
         }
       }
-      return { orderId, status: "cancelled", cancelledBy: isRider ? "rider" : "customer", cooldownUntil };
+      return {
+        orderId,
+        status: "cancelled" as const,
+        cancelledBy: (isRider ? "rider" : "customer") as "customer" | "rider",
+        cooldownUntil,
+      };
     });
 
     this.gateway.emitOrderStatus(orderId, "cancelled");
