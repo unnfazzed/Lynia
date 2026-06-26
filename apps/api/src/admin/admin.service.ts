@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import type { KycStatus, OrderStatus } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
 function round(n: number): number {
@@ -61,5 +62,74 @@ export class AdminService {
         createdAt: o.createdAt.toISOString(),
       })),
     };
+  }
+
+  /** Rider roster for ops — the KYC review queue when filtered to `pending`. */
+  async listRiders(kyc?: KycStatus) {
+    const riders = await this.prisma.rider.findMany({
+      where: kyc ? { kycStatus: kyc } : {},
+      orderBy: { updatedAt: "desc" },
+      take: 100,
+      select: {
+        profileId: true,
+        bikeReg: true,
+        kycStatus: true,
+        kycRef: true,
+        idVerified: true,
+        isOnline: true,
+        ratingAvg: true,
+        ratingCount: true,
+        tripsCount: true,
+        cancelStrikes: true,
+        cooldownUntil: true,
+        profile: { select: { firstName: true, lastName: true, phone: true } },
+      },
+    });
+    return riders.map((r) => ({
+      profileId: r.profileId,
+      name: `${r.profile.firstName} ${r.profile.lastName}`.trim(),
+      phone: r.profile.phone,
+      bikeReg: r.bikeReg,
+      kycStatus: r.kycStatus,
+      kycRef: r.kycRef,
+      idVerified: r.idVerified,
+      isOnline: r.isOnline,
+      ratingAvg: r.ratingAvg,
+      ratingCount: r.ratingCount,
+      tripsCount: r.tripsCount,
+      cancelStrikes: r.cancelStrikes,
+      cooldownUntil: r.cooldownUntil?.toISOString() ?? null,
+    }));
+  }
+
+  /** Order monitor for ops — filter by status to watch live orders, cancellations, etc. */
+  async listOrders(status?: OrderStatus) {
+    const orders = await this.prisma.order.findMany({
+      where: status ? { status } : {},
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        status: true,
+        proposedFare: true,
+        agreedFare: true,
+        distanceKm: true,
+        riderId: true,
+        cancelledBy: true,
+        cancelReason: true,
+        createdAt: true,
+      },
+    });
+    return orders.map((o) => ({
+      id: o.id,
+      status: o.status,
+      proposedFare: o.proposedFare.toString(),
+      agreedFare: o.agreedFare?.toString() ?? null,
+      distanceKm: o.distanceKm,
+      riderId: o.riderId,
+      cancelledBy: o.cancelledBy,
+      cancelReason: o.cancelReason,
+      createdAt: o.createdAt.toISOString(),
+    }));
   }
 }

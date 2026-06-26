@@ -55,6 +55,10 @@ export default async function DashboardPage() {
       <header style={{ display: "flex", alignItems: "center", gap: tokens.space.md, marginBottom: tokens.space.xl }}>
         <span style={{ width: 28, height: 28, borderRadius: 8, background: tokens.color.accent, color: "#fff", display: "grid", placeItems: "center", fontWeight: 800 }}>L</span>
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Lynia — operations</h1>
+        <nav style={{ display: "flex", gap: tokens.space.md, marginLeft: tokens.space.lg }}>
+          <a href="/riders" style={{ fontSize: 13, color: tokens.color.muted, textDecoration: "none" }}>Riders</a>
+          <a href="/orders" style={{ fontSize: 13, color: tokens.color.muted, textDecoration: "none" }}>Orders</a>
+        </nav>
         <span style={{ marginLeft: "auto", fontSize: 12, color: data ? tokens.color.accent : tokens.color.muted }}>
           {data ? "● live" : "○ API not connected"}
         </span>
