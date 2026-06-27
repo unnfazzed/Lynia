@@ -61,7 +61,7 @@ is built yet, by design.
 - ✅ **Mobile app flows (Phase 1 + Phase 2) — DONE.** Both sides shipped: customer (auth → create → offers
   → §5c tracking → rate) and rider (KYC → online board → bid → drive → OTP), plus history, profile, and a
   payment-agnostic earnings ledger. _Remaining mobile work is **Phase 3** (native map + tap-to-pin) — see
-  the "Mobile app" section below — and the DT4 offer best-match sort (`docs/DESIGN.md`)._
+  the "Mobile app" section below. (The DT4 offer best-match sort has since shipped.)_
 - **Admin ops tooling (partial).** Ops tooling has landed, but the dashboard still lacks a **KYC review
   queue** (approve/decline via `POST /admin/riders/:id/kyc`), rider management, order drill-down, and a
   live-tracking view. _Trigger:_ first real Didit riders onboarding (the manual KYC backstop needs a UI).
