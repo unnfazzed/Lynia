@@ -86,7 +86,7 @@ export default function HomeScreen(): React.ReactElement {
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
             <Heading>Send a parcel</Heading>
             <View style={{ flex: 1 }} />
-            <Button label="Rider" variant="ghost" onPress={() => router.push("/rider")} />
+            <Button label="Trips" variant="ghost" onPress={() => router.push("/history")} />
             <Button label="Account" variant="ghost" onPress={() => router.push("/profile")} />
           </View>
           <Sub>Set pickup and drop-off, name your price, and riders will offer.</Sub>

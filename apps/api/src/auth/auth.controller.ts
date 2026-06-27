@@ -38,6 +38,6 @@ export class AuthController {
   @Get("me")
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() profileId: string) {
-    return { profileId };
+    return this.auth.getProfile(profileId);
   }
 }

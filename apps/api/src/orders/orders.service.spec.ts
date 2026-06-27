@@ -152,6 +152,70 @@ describe("OrdersService.listOpen", () => {
   });
 });
 
+describe("OrdersService.historyForUser", () => {
+  const svc = (rows: unknown[], capture?: (a: { where: unknown; orderBy: unknown }) => void) =>
+    new OrdersService(
+      {
+        order: {
+          findMany: async (args: { where: unknown; orderBy: unknown }) => {
+            capture?.(args);
+            return rows;
+          },
+        },
+      } as unknown as PrismaService,
+      {} as OfferExpiryService,
+    );
+
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: "o1",
+    customerId: "cust-1",
+    riderId: "rider-1",
+    pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues", contactPhone: "+263772222222" },
+    itemDesc: "Documents",
+    proposedFare: { toString: () => "2.50" },
+    agreedFare: { toString: () => "2.50" },
+    status: "completed",
+    createdAt: new Date("2026-06-26T00:00:00Z"),
+    rating: { score: 5, comment: "great" },
+    customer: { firstName: "Tatenda", lastName: "M" },
+    rider: { profile: { firstName: "Rugare", lastName: "C" } },
+    ...over,
+  });
+
+  it("queries both roles (OR customer/rider), newest first", async () => {
+    let args: { where: unknown; orderBy: unknown } | undefined;
+    await svc([row()], (a) => (args = a)).historyForUser("cust-1");
+    expect(args!.where).toEqual({ OR: [{ customerId: "cust-1" }, { riderId: "cust-1" }] });
+    expect(args!.orderBy).toEqual({ createdAt: "desc" });
+  });
+
+  it("serializes fares, redacts contactPhone, and names the counterparty by viewpoint", async () => {
+    const asCustomer = await svc([row()]).historyForUser("cust-1");
+    expect(asCustomer[0]).toMatchObject({
+      id: "o1",
+      role: "customer",
+      proposedFare: "2.50",
+      agreedFare: "2.50",
+      status: "completed",
+      counterpartyName: "Rugare C",
+      rating: { score: 5, comment: "great" },
+    });
+    expect(asCustomer[0]!.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" });
+    expect(JSON.stringify(asCustomer[0])).not.toContain("+263");
+
+    const asRider = await svc([row()]).historyForUser("rider-1");
+    expect(asRider[0]).toMatchObject({ role: "rider", counterpartyName: "Tatenda M" });
+  });
+
+  it("tolerates a null agreedFare, missing rating, and an unassigned order", async () => {
+    const rows = await svc([row({ agreedFare: null, rating: null, riderId: null, rider: null })]).historyForUser("cust-1");
+    expect(rows[0]!.agreedFare).toBeNull();
+    expect(rows[0]!.rating).toBeNull();
+    expect(rows[0]!.counterpartyName).toBeNull();
+  });
+});
+
 describe("OrdersService.activeForRider", () => {
   it("returns null when the rider has no active order", async () => {
     const prisma = { order: { findFirst: async () => null } };

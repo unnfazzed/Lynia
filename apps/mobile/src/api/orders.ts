@@ -55,6 +55,25 @@ export function getActiveOrder(): Promise<OrderSnapshot | null> {
   return apiFetch<OrderSnapshot | null>("/orders/mine/active");
 }
 
+// A past/present order as it appears in the trip-history list — summary only, no phones (§5d).
+export interface OrderHistoryRow {
+  id: string;
+  role: "customer" | "rider";
+  pickup: { point: LatLng; landmark: string };
+  dropoff: { point: LatLng; landmark: string };
+  itemDesc: string;
+  proposedFare: string;
+  agreedFare: string | null;
+  status: OrderStatus;
+  createdAt: string;
+  rating: { score: number; comment: string | null } | null;
+  counterpartyName: string | null;
+}
+
+export function getHistory(): Promise<OrderHistoryRow[]> {
+  return apiFetch<OrderHistoryRow[]>("/orders/history");
+}
+
 export function advanceStatus(orderId: string, to: AdvanceStatusRequest["to"]): Promise<{ orderId: string; status: OrderStatus }> {
   return apiFetch(`/orders/${orderId}/status`, { method: "POST", body: { to } });
 }

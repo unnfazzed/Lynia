@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { ENV } from "../config/config.module";
@@ -38,6 +39,47 @@ export class AuthService {
     @Inject(OTP_STORE) private readonly store: OtpStore,
     @Inject(OTP_SENDER) private readonly sender: OtpSender,
   ) {}
+
+  /** Full profile for the authenticated caller (GET /auth/me) — adds the rider record when present. */
+  async getProfile(profileId: string) {
+    const p = await this.prisma.profile.findUnique({
+      where: { id: profileId },
+      select: {
+        id: true,
+        role: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        email: true,
+        photoUrl: true,
+        ordersCount: true,
+        rider: {
+          select: { bikeReg: true, kycStatus: true, ratingAvg: true, ratingCount: true, tripsCount: true, isOnline: true },
+        },
+      },
+    });
+    if (!p) throw new NotFoundException("Profile not found");
+    return {
+      profileId: p.id,
+      role: p.role,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      phone: p.phone,
+      email: p.email,
+      photoUrl: p.photoUrl,
+      ordersCount: p.ordersCount,
+      rider: p.rider
+        ? {
+            bikeReg: p.rider.bikeReg,
+            kycStatus: p.rider.kycStatus,
+            ratingAvg: p.rider.ratingAvg,
+            ratingCount: p.rider.ratingCount,
+            tripsCount: p.rider.tripsCount,
+            isOnline: p.rider.isOnline,
+          }
+        : null,
+    };
+  }
 
   async requestOtp(phone: string, ip: string): Promise<{ sent: true; channel: string; devCode?: string }> {
     await this.enforceRate(`rl:phone:${phone}`, RL.phone);
