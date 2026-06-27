@@ -328,3 +328,29 @@ export function SkeletonList({ count = 3 }: { count?: number }): React.ReactElem
     </View>
   );
 }
+
+/** A row-shaped placeholder mirroring a list row that has a right-aligned value (e.g. trip history). */
+export function SkeletonRow(): React.ReactElement {
+  return (
+    <Card>
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
+          <Skeleton width="70%" height={14} />
+          <Skeleton width="90%" height={12} style={{ marginTop: tokens.space.sm }} />
+        </View>
+        <Skeleton width={48} height={16} />
+      </View>
+    </Card>
+  );
+}
+
+/** N skeleton rows — loading state for row-with-value lists (mirrors the row layout, no reflow). */
+export function SkeletonRows({ count = 4 }: { count?: number }): React.ReactElement {
+  return (
+    <View accessibilityLabel="Loading" accessibilityState={{ busy: true }}>
+      {Array.from({ length: count }, (_, i) => (
+        <SkeletonRow key={i} />
+      ))}
+    </View>
+  );
+}

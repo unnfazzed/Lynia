@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { getHistory, type OrderHistoryRow } from "../../src/api/orders";
-import { Button, Card, EmptyState, Heading, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, Heading, Screen, SkeletonRows, StatusPill, Sub } from "../../src/ui";
 
 function fmtDate(iso: string): string {
   const d = new Date(iso);
@@ -48,7 +48,7 @@ export default function HistoryScreen(): React.ReactElement {
       <Heading>Your trips</Heading>
       <Sub>Every parcel you've sent or delivered.</Sub>
       {historyQ.isLoading ? (
-        <SkeletonList />
+        <SkeletonRows />
       ) : historyQ.isError ? (
         <EmptyState icon="📡" title="Couldn't load your trips" message="Check your connection and try again.">
           <Button label="Retry" onPress={() => void historyQ.refetch()} />

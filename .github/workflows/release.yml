@@ -48,6 +48,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Fail fast with a clear message if armed but mis-configured, rather than an opaque
+      # mid-run error after a build has already started.
+      - name: Validate required deploy config
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
+          CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+          CLOUD_SQL_INSTANCE: ${{ vars.CLOUD_SQL_INSTANCE }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          MIGRATE_DATABASE_URL: ${{ secrets.MIGRATE_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO CLOUD_RUN_SERVICE CLOUD_SQL_INSTANCE GCP_SA_KEY MIGRATE_DATABASE_URL; do
+            [ -n "${!v:-}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::GCP_DEPLOY_ENABLED is true but these are unset: ${missing[*]}. See docs/NEXT-STAGE.md → 'Arm the release workflow'." >&2
+            exit 1
+          fi
+          echo "All required deploy config present."
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:

@@ -104,9 +104,12 @@ is built yet, by design.
 From the comprehensive eng + static-design review. The P1 error-state honesty and the rider-gate staleness
 were fixed in the same pass; these are the consciously-deferred remainder.
 
-- **Skeleton loaders over spinners (DESIGN.md data-light).** Every screen's loading branch is a bare
-  `ActivityIndicator`; the spec names skeletons for the list/board/stepper screens. _Trigger:_ a small
-  reusable `Skeleton` component; bundle with the on-device `/qa` polish pass.
+- ✅ **Skeleton loaders over spinners — DONE (generic + row).** `Skeleton`/`SkeletonCard`/`SkeletonList`
+  and a row-shaped `SkeletonRow`/`SkeletonRows` shipped in the mobile UI kit; the six content screens use
+  them instead of `ActivityIndicator`. _Remaining (carried to `/qa`):_ per-screen fidelity — a
+  `SkeletonStepper` for the §5c tracking/job screens and a tall accent summary skeleton for earnings, so
+  the placeholder mirrors those shapes with no reflow. _Trigger:_ the on-device `/qa` polish pass (reflow
+  is only judgeable on a real device).
 - **Harden the `x-user-id` dev fallback** in `apps/api/src/common/current-user.decorator.ts`. Latent (not
   exploitable on the JWT-guarded routes), but it should be gated to non-production or removed. _Trigger:_
   touches every controller's auth assumption — do it as its own careful pass with the auth tests in view.
