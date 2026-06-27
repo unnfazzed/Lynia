@@ -8,7 +8,7 @@ import { ApiError } from "../../src/api/client";
 import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { setOnline } from "../../src/api/riders";
-import { Button, Card, ErrorText, Field, Heading, Screen, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, Heading, Screen, Sub } from "../../src/ui";
 import { parseNum } from "../../src/util";
 
 export default function RiderHome(): React.ReactElement {
@@ -138,7 +138,13 @@ export default function RiderHome(): React.ReactElement {
                 <Button label="Make an offer" variant="ghost" onPress={() => chooseOrder(o)} />
               </Card>
             ))}
-            {ranked.length === 0 ? <Sub>No open orders right now.</Sub> : null}
+            {ranked.length === 0 ? (
+              <EmptyState
+                icon="📭"
+                title="No open orders near you right now"
+                message="You're online and first in line — stay put, requests come through fast. Busiest 7–9am & 5–7pm."
+              />
+            ) : null}
           </View>
         ) : null}
 

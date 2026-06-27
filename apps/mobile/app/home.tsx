@@ -5,13 +5,11 @@ import React, { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../src/api/client";
 import { createOrder } from "../src/api/orders";
-import { useAuth } from "../src/auth/auth-context";
 import { Button, Card, ErrorText, Field, Heading, Label, Screen, Sub } from "../src/ui";
 import { parseNum } from "../src/util";
 
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
-  const { signOut } = useAuth();
 
   const [pickupLat, setPickupLat] = useState("");
   const [pickupLng, setPickupLng] = useState("");
@@ -89,7 +87,7 @@ export default function HomeScreen(): React.ReactElement {
             <Heading>Send a parcel</Heading>
             <View style={{ flex: 1 }} />
             <Button label="Rider" variant="ghost" onPress={() => router.push("/rider")} />
-            <Button label="Sign out" variant="ghost" onPress={() => void signOut()} />
+            <Button label="Account" variant="ghost" onPress={() => router.push("/profile")} />
           </View>
           <Sub>Set pickup and drop-off, name your price, and riders will offer.</Sub>
 

@@ -8,7 +8,7 @@ import { cancelOrder, getOrder, rateOrder, rotateDeliveryCode } from "../../src/
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, ErrorText, Heading, Screen, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Heading, Screen, StatusPill, Stepper, Sub } from "../../src/ui";
 
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
@@ -136,7 +136,7 @@ export default function OrderScreen(): React.ReactElement {
           </View>
         ) : null}
 
-        {isActive || order.status === "delivered" ? (
+        {isActive || order.status === "delivered" || order.status === "completed" ? (
           <Card>
             <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: 4 }}>Agreed fare ${fare}</Text>
             {order.rider ? (
@@ -147,12 +147,8 @@ export default function OrderScreen(): React.ReactElement {
             {order.counterpartyPhone ? (
               <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4 }}>Rider phone: {order.counterpartyPhone}</Text>
             ) : null}
-            <View style={{ height: tokens.space.sm }} />
-            {order.events.map((e, i) => (
-              <Text key={`${e.status}-${i}`} style={{ fontSize: 12, color: tokens.color.muted }}>
-                • {e.status.replace(/_/g, " ")}
-              </Text>
-            ))}
+            <View style={{ height: tokens.space.md }} />
+            <Stepper events={order.events} currentStatus={order.status} view="customer" />
             {isActive ? (
               <Button label="Re-issue delivery code" variant="ghost" onPress={() => rotateM.mutate()} loading={rotateM.isPending} />
             ) : null}
@@ -178,9 +174,18 @@ export default function OrderScreen(): React.ReactElement {
             <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accent }}>Delivered &amp; completed. Thank you!</Text>
           </Card>
         ) : null}
-        {order.status === "cancelled" || order.status === "expired" ? (
+        {order.status === "expired" ? (
+          <EmptyState
+            icon="🛵"
+            title="No riders took this price yet"
+            message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
+          >
+            <Button label="Send another request" onPress={() => router.replace("/home")} />
+          </EmptyState>
+        ) : null}
+        {order.status === "cancelled" ? (
           <Card>
-            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.danger }}>This order is {order.status}.</Text>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.danger }}>This order is cancelled.</Text>
           </Card>
         ) : null}
 
