@@ -1,5 +1,9 @@
 # Lynia — CEO Review (Build checkpoint)
 
+> ⚠️ **Superseded (2026-06-27) by `docs/PILOT-READINESS.md`.** This snapshot predates the delivery-lifecycle
+> completion, both mobile app sides, and the design/history/profile/earnings work — its blocking findings
+> ("core loop can't complete a delivery", "mobile not recommended next") are now closed. Kept for history.
+
 > A gstack `/plan-ceo-review` run, re-aimed at **work already built** rather than a plan. Three
 > lenses: path-to-demo, strategy/economics, investor readiness. Pairs with the plan-stage
 > `docs/CEO-REVIEW.md` (which reviewed the concept) and `docs/ENG-REVIEW.md`.
