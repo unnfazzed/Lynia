@@ -25,6 +25,21 @@ is deliberately simple: a flat `base + perKm·distance` over **straight-line** d
 - **Per-corridor / per-city rates.** `FARE` constants are single-region (Harare USD). _Trigger:_ expansion
   beyond the pilot corridor. _Shape:_ make `FARE` lookup-by-region.
 
+## Revenue infrastructure (commission) — §6 decided, build deferred
+
+The revenue model is **decided** (CONCEPT §6, 2026-06-27): **rider commission** — Lynia takes a % of the
+agreed fare the rider is paid (inDrive-style), **0% for the first ~6–8 months**. No revenue infrastructure
+is built yet, by design.
+
+- **Commission capture + settlement.** Compute the take-rate against `agreed_fare`, record it, and settle
+  rider ↔ platform. _Trigger:_ ~6–8 months post-launch, when monetization begins. The data model is already
+  **payment-agnostic** (CONCEPT §5b) — this adds a commission/settlement layer, not a rewrite.
+- **Earnings settlement UI.** The rider earnings ledger (`apps/mobile/app/earnings/index.tsx`) is built
+  payment-agnostic (a work log, not a balance); it gains a **commission line + settlement state** when the
+  above lands. _Trigger:_ same.
+- **Take-rate calibration.** Set the commission % (and validate the base + per-km suggested-price guide) on
+  real corridor data before charging. _Trigger:_ enough pilot trips to calibrate without gouging.
+
 ## Messaging / OTP delivery
 
 - **Real WhatsApp BSP + SMS gateway.** OTP currently ships via the `console` channel (dev) with WhatsApp/SMS

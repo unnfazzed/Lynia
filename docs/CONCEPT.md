@@ -97,12 +97,13 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 
 > **Build-status note (2026-06-27):** of these, the *engineering* risks are now retired — **(6) bidding
 > complexity** is built, tested, and proven (concurrency-correct offer loop in CI); **(8) timeline** is
-> actualized (the brutally-scoped MVP shipped). Risks **(1) cold-start / real supply**, **(2) revenue
-> model (§6)**, **(11) WhatsApp BSP**, and **(12) KYC coverage on real ZIM IDs** remain **open** — they're
-> the external/decision gates tracked in `docs/PILOT-READINESS.md`, not engineering work.
+> actualized (the brutally-scoped MVP shipped). **(2) revenue model is now DECIDED** — rider commission,
+> 0% for ~6–8 months, infra built later (§6). Still **open**: **(1) cold-start / real supply**, **(11)
+> WhatsApp BSP**, and **(12) KYC coverage on real ZIM IDs** — the external gates tracked in
+> `docs/PILOT-READINESS.md`, not engineering work.
 
 1. **Cold-start (highest risk).** Straight-to-app + general wedge means no demand validation before build. **Mitigation:** recruit 5–15 riders in the launch corridor from day 1 (parallel to the build); keep a WhatsApp + spreadsheet channel as a manual backstop for ops, not as the product's matching path.
-2. **Payments & revenue (deliberately deferred).** The economy is cash and low-trust, and Lynia is a **matchmaker, not a payment processor** — it does **not** process or settle the delivery transaction. For the pilot, **payment infrastructure and Lynia's revenue model are out of scope**: the app agrees a fare via the bidding loop, but how that fare is settled and how Lynia earns is a **next-phase decision** (gateway like Paynow, own-built rails, or pure cash — undecided). **Risk:** monetization is therefore unvalidated during the pilot; the pilot proves demand/liquidity, not willingness-to-pay-commission. **Mitigation:** resolve the revenue model in the Plan/CEO review before scaling, and keep the data model neutral so any direction fits without a rebuild.
+2. **Payments & revenue (model decided; infra deferred ~6–8 months).** The economy is cash and low-trust, and Lynia is a **matchmaker, not a payment processor** — it does **not** process or settle the delivery transaction during the pilot. The revenue model is **decided: rider commission** (a % of the agreed fare, inDrive-style), but **0% for the first ~6–8 months** and **no settlement infrastructure built yet** (§6). **Risk:** monetization stays unvalidated during the launch period — the pilot proves demand/liquidity, not willingness-to-pay-commission. **Mitigation:** the data model is payment-agnostic so commission slots in without a rebuild; calibrate the take-rate on real corridor data before charging.
 3. **Addressing.** No reliable street addresses → rely on **GPS pin + landmark text + phone number**, never typed addresses.
 4. **Data cost.** Mobile data is expensive → keep the app light, cache maps, throttle background location.
 5. **Trust & safety.** Rider verification via **automated KYC** (ID check + selfie) plus **ZIM bike reg** (stored) and a **required rider photo**, item **photo at pickup**, **delivery OTP** at handover, two-way ratings, a **declared-value cap** (pilot: max ~US$100–150/item), and a **prohibited-items list** (cash, illegal/hazardous goods, live animals, anything above cap). Liability for safe handling sits with the rider; platform liability capped in T&Cs.
@@ -135,7 +136,7 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 - ❌ **Manual / admin dispatch as a product path** — no-offers is handled by expire + re-broadcast.
 - ❌ **Buy-for-me relay / rider float** — removed (cash, low-trust market).
 - ❌ **Goods payment between sender & receiver** — settled offline, never in the app.
-- ❌ **In-app payments / fare settlement / commission / rider balance / top-ups / payment-gateway (Paynow etc.) integration** — **deferred to next phase**; revenue model undecided. The app agrees the fare but moves no money.
+- ❌ **In-app payments / fare settlement / commission / rider balance / top-ups / payment-gateway (Paynow etc.) integration** — **deferred ~6–8 months**. The revenue model is decided (rider commission, §6) but its infrastructure is a later build; the pilot app agrees the fare but moves no money.
 - Merchant verticals + Cash-on-Delivery (the commerce fast-follow), multi-city, scheduled deliveries, in-app chat, promotions/referrals, advanced fraud tooling, full iOS launch.
 
 ---
@@ -178,9 +179,11 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 3. **Saved `addresses`** (address book) per user — needed for repeat grocery/food anyway.
 4. **One identity, expandable roles** — customer / rider / merchant / admin from day one.
 
-> **Payments are deliberately NOT a seam.** Earlier drafts pre-built a `rider_ledger` "commission/cash backbone";
-> that's removed. Since the revenue model is undecided (gateway, own-built rails, or cash — §6), pre-committing a
-> ledger schema would bias the decision. We add payment tables only once the model is chosen next phase.
+> **Payments are deliberately NOT a seam yet.** Earlier drafts pre-built a `rider_ledger` "commission/cash
+> backbone"; that's removed. The revenue model is now decided (**rider commission**, §6) but its
+> infrastructure is a **~6–8-month-out build**; we add the commission/settlement tables only then, so the
+> schema isn't pre-committed before the take-rate is calibrated on real data. The model stays payment-agnostic
+> until then.
 
 > Cost: a few enum columns + one stub table. Benefit: verticals are additive, not a rewrite.
 
@@ -305,19 +308,20 @@ number is simply gated by order state.
 
 ---
 
-## 6. Pricing guide & revenue (revenue deferred to next phase)
+## 6. Pricing guide & revenue (model decided; revenue deferred ~6–8 months)
 
 **Pricing exists only to drive matching — not payment.**
 - **Suggested price** = base + (per-km rate × distance), shown in **USD** as a guide. The **customer sets the proposed price** (notch up/down, no hard floor); riders **accept it or counter**, and the **agreed fare** is the selected offer's amount. These are the numbers the **bidding loop** runs on (`suggested_fare`/`proposed_fare`/`agreed_fare`); nothing here moves money.
 
-**Revenue & settlement are out of scope for the pilot — a deliberate next-phase decision.**
-- The app **agrees a fare but does not process or settle it**, and **takes no commission**. How the agreed fare is paid (the customer↔rider settlement) is **handled outside the app** for now and **not codified as product behavior**.
-- **How Lynia will earn is undecided.** Options to weigh next phase include a payment gateway (e.g. Paynow), **building our own payment rails**, a rider commission/subscription, or a customer-side fee — none chosen, none built. The data model is kept **payment-agnostic** so any path fits without a rewrite (§5b).
-- **Pilot stance:** the pilot earns **no revenue**; its job is to validate **demand and liquidity**, not monetization. Lynia remains a **matchmaker, not a payment processor**.
+**Revenue model — DECIDED (2026-06-27): rider commission, inDrive-style.**
+- Lynia takes a **percentage of the agreed fare** the rider is paid (a **rider-side commission**, deducted from the rider's earnings — not a customer surcharge). This is the inDrive model adapted to the Zimbabwe cash market.
+- **Commission is 0% for the first ~6–8 months.** The launch period charges nothing — its job is to build **supply, demand, and liquidity**, not to monetize. Riders keep the **full agreed fare** during this window.
+- **No revenue infrastructure is built yet.** Settlement rails + commission capture + the earnings settlement line are a **next-phase build, ~6–8 months out**, when monetization begins (see `docs/BACKLOG.md`). The data model is already **payment-agnostic** (§5b), so commission slots in without a rewrite.
+- **Pilot stance (unchanged):** the pilot earns **no revenue** and Lynia remains a **matchmaker, not a payment processor** — the fare is settled rider-direct in cash, outside the app, for now.
 
-> **To resolve in the Plan / CEO review:** the revenue model and settlement mechanism, plus the unit-economics
-> framework (base + per-km guide, target take-rate or fee) — calibrated on real corridor orders. Until then,
-> placeholder *suggested* pricing only: e.g. base $1.50 + $0.50/km (a matching guide, not a revenue figure).
+> **Resolved (2026-06-27):** model = rider commission (% of agreed fare), 0% for ~6–8 months, infra built
+> later. **Still to calibrate on real corridor data before charging:** the take-rate %, and the base +
+> per-km suggested-price guide (placeholder: base $1.50 + $0.50/km — a matching guide, not a revenue figure).
 
 ---
 
@@ -387,8 +391,9 @@ number is simply gated by order state.
 - ✅ **Build** — backend lifecycle + both mobile app sides shipped to `main`, CI-gated; a delivery
   completes end-to-end in code.
 - ✅ **Review** — comprehensive post-build eng + design conformance pass, fixes merged.
-- ⬜ **Remaining (external gates):** decide the revenue model (§6), pick a cloud (T0), greenlight a dev
-  build (Phase 3 native maps) → then `/qa` + `/ship`. See `docs/PILOT-READINESS.md`.
+- ✅ **Revenue model decided** (§6) — rider commission, 0% for ~6–8 months, infra built later.
+- ⬜ **Remaining (external gates):** pick a cloud (T0), greenlight a dev build (Phase 3 native maps) → then
+  `/qa` + `/ship`. See `docs/PILOT-READINESS.md`.
 
 > Note: gstack skills (`/plan-ceo-review`, etc.) require gstack installed locally; the equivalents above
 > were run manually. **Current overall status lives in `docs/PILOT-READINESS.md`.**

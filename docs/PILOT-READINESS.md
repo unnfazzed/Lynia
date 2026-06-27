@@ -10,13 +10,13 @@
 The product is now **functionally complete and end-to-end demoable in code**: a full delivery runs
 phone-to-phone — customer posts → riders bid → customer selects → rider drives the lifecycle → OTP
 hand-off → both reach completion → rate. Both app sides are built and the backend lifecycle is whole and
-tested. **What remains is no longer buildable-now engineering — it is three external unlocks:** a cloud
-(T0/Azure), a device build (Phase 3 / `/qa`), and the revenue decision (§6). Everything that does *not*
-depend on those is done.
+tested. **What remains is no longer buildable-now engineering — it is two external unlocks:** a cloud
+(T0/Azure) and a device build (Phase 3 / `/qa`). The revenue model (§6) is now **decided** — rider
+commission, 0% for ~6–8 months, infrastructure built later — so it's no longer a blocker. Everything that
+does *not* depend on the two remaining unlocks is done.
 
 This flips the prior checkpoint: the two things it gated on — the **delivery-lifecycle hole** and **no
-visible surface** — are both resolved. The remaining gates are the same *external* ones it also named
-(revenue, T0 spikes), now isolated as the only blockers.
+visible surface** — are both resolved, and the **revenue decision** it flagged is now made.
 
 ---
 
@@ -61,15 +61,15 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
 Every ❌ from the prior checkpoint is now ✅. Every remaining ◐/⏳ is gated on an external unlock, not on
 more code we can write today.
 
-## Decision gates (the only things blocking pilot)
+## Decision gates
 
-| Gate | Unlocks | Type |
-|------|---------|------|
-| **Pick a cloud** (Azure eligibility, or GCP) — T0 | `/ship` + release, FCM push, real object storage/signed URLs, OTEL export, production OTP path | Vendor/billing decision |
-| **Greenlight a dev build** (not Expo Go) | Phase 3 native map + tap-to-pin, `/qa` device pass, on-device verification of the stepper/earnings/gate | Go-ahead + device |
-| **Decide the revenue model** (§6) | The monetization story, profile/settlement UI, the "how we make money" slide | Product/founder decision |
+| Gate | Status / unlocks | Type |
+|------|------------------|------|
+| **Pick a cloud** (Azure eligibility, or GCP) — T0 | ⏳ **open** → `/ship` + release, FCM push, real object storage/signed URLs, OTEL export, production OTP path | Vendor/billing decision |
+| **Greenlight a dev build** (not Expo Go) | ⏳ **open** → Phase 3 native map + tap-to-pin, `/qa` device pass, on-device verification of the stepper/earnings/gate | Go-ahead + device |
+| **Revenue model** (§6) | ✅ **decided (2026-06-27)** — rider commission (% of agreed fare), **0% for ~6–8 months**, settlement/commission **infra built later**. No pilot blocker; the commission build is parked in BACKLOG with a ~6–8-month trigger. | Product/founder decision |
 
-Until a gate opens, the work behind it is correctly parked in `docs/BACKLOG.md` with its trigger.
+Two open gates remain (cloud, dev build). The work behind each is parked in `docs/BACKLOG.md` with its trigger.
 
 ## Ship / cloud-provisioning checklist (ready the moment a cloud is chosen)
 
@@ -91,14 +91,15 @@ already in place:
 
 ## Recommended sequence
 
-1. **Decide the revenue model (§6)** — a decision, not a build; unblocks the economics story and any
-   settlement UI. Cheapest high-leverage move.
+1. ✅ **Revenue model (§6) — decided** (rider commission, 0% for ~6–8 months, infra later). The economics
+   story now exists; no infra to build for the pilot.
 2. **Pick the cloud (T0)** — unblocks ship, push, storage, OTEL, and production OTP in one stroke; run the
-   checklist above.
+   checklist above. *Now the cheapest high-leverage move.*
 3. **Greenlight a dev build** — then Phase 3 native map + `/qa` on a real device, and finally `/ship`.
-4. Mobile profile-edit + notifications fold in once (1)/(2) land (they need a profile-update endpoint and
-   the FCM feed respectively).
+4. Mobile profile-edit + notifications fold in once the cloud lands (they need a profile-update endpoint
+   and the FCM feed respectively).
+5. **~6–8 months out:** build the commission/settlement infrastructure when monetization begins (BACKLOG).
 
 **Bottom line:** the engineering spine and both app surfaces are built and CI-green; the product can
-complete a delivery end to end in code. The path to a real pilot now runs through **decisions and
-vendor unlocks**, not through more feature code.
+complete a delivery end to end in code, and the revenue model is decided. The path to a real pilot now
+runs through **two vendor/device unlocks** (cloud, dev build), not through more feature code.

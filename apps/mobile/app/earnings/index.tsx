@@ -58,11 +58,12 @@ export default function EarningsScreen(): React.ReactElement {
             </Card>
           ))}
 
-          {/* §6: the pilot earns no revenue and settles no money — this is a work log, not a payout balance. */}
+          {/* §6 decided: rider commission, but 0% for the launch period — riders keep the full fare for now. */}
           <Card style={{ backgroundColor: "#FFFCF2", borderColor: "#F2B70566" }}>
             <Text style={{ fontSize: 12, color: "#6B5600", lineHeight: 17 }}>
-              A record of work done — not a payout balance. The pilot takes no commission; payment is cash, outside the app.
-              When the revenue model is set, settlement status will appear here.
+              A record of work done — not a payout balance. You keep the full agreed fare during the launch period
+              (no commission for the first few months); payment is cash, outside the app. A commission line will
+              appear here once settlement goes live.
             </Text>
           </Card>
           <View style={{ height: tokens.space.xxl }} />
