@@ -1,5 +1,10 @@
 # Lynia — Engineering Review (Plan stage)
 
+> ⚠️ **Historical snapshot (pre-build plan stage).** This locked the engineering architecture before any
+> code. The build has since shipped (2026-06-27): the offer-loop concurrency design (ET1–ET3), realtime
+> truth model (ET4), and auth subsystem (ET5) are all proven in CI; the ET1–ET10 task list is archived
+> here for design rationale — **do not read as current state.** Current status: `docs/PILOT-READINESS.md`.
+
 > Output of the gstack `/plan-eng-review` stage — the required shipping gate. Makes the build plan
 > concrete and technically correct on top of `docs/CONCEPT.md` + `docs/CEO-REVIEW.md`.
 > Status: **ENG CLEARED — ready to build** (design review recommended for the UI surfaces).

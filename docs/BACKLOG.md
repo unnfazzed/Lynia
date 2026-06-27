@@ -43,13 +43,13 @@ is deliberately simple: a flat `base + perKm·distance` over **straight-line** d
 
 ## Product surface
 
-- **Mobile app flows (phase 1+).** The Expo app is a static map-home shell; the backend it talks to is
-  feature-complete. Phase 1 = navigation + API client + token storage + OTP login + customer
-  create-order → see offers → accept. Later = rider go-online/nearby/offer + live tracking. _Trigger:_
-  prioritized for CEO-review demo or pilot.
-- **Admin ops tooling.** The dashboard is a read-only overview. Missing: KYC review queue (approve/decline
-  via the existing `POST /admin/riders/:id/kyc`), rider management, order drill-down, live tracking view.
-  _Trigger:_ first real Didit riders onboarding (the manual KYC backstop needs a UI).
+- ✅ **Mobile app flows (Phase 1 + Phase 2) — DONE.** Both sides shipped: customer (auth → create → offers
+  → §5c tracking → rate) and rider (KYC → online board → bid → drive → OTP), plus history, profile, and a
+  payment-agnostic earnings ledger. _Remaining mobile work is **Phase 3** (native map + tap-to-pin) — see
+  the "Mobile app" section below — and the DT4 offer best-match sort (`docs/DESIGN.md`)._
+- **Admin ops tooling (partial).** Ops tooling has landed, but the dashboard still lacks a **KYC review
+  queue** (approve/decline via `POST /admin/riders/:id/kyc`), rider management, order drill-down, and a
+  live-tracking view. _Trigger:_ first real Didit riders onboarding (the manual KYC backstop needs a UI).
 
 ## Delivery lifecycle
 
@@ -75,10 +75,9 @@ is deliberately simple: a flat `base + perKm·distance` over **straight-line** d
 
 ## Testing
 
-- **Tier-2 geo integration test.** Raw PostGIS queries `nearbyRiders` / `updateRiderLocation`
-  (`apps/api/src/tracking/tracking.service.ts`) are not unit-testable (raw SQL) and currently uncovered.
-  _Trigger:_ closes the last coverage gap from the test-hardening lane; runs in the existing `test:int`
-  CI job against the PostGIS service — small, self-contained.
+- ✅ **Tier-2 geo integration test — DONE.** The raw PostGIS `nearbyRiders` / `updateRiderLocation`
+  queries (`apps/api/src/tracking/tracking.service.ts`) are now covered by the `test:int` CI job against
+  the PostGIS service. (API suite is at 112 tests.)
 
 ## Post-build review findings (2026-06-27, deferred items)
 

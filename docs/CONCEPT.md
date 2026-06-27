@@ -10,6 +10,12 @@
 > References: Grab Express (point-to-point parcel), **inDrive** (customer-priced, cash-economy marketplace).
 > Output of a gstack-style **Office Hours** session. Status: **conceptualisation locked, ready for build.**
 
+> ✅ **Build shipped (2026-06-27).** The concept and architecture below are validated — a full delivery
+> runs phone-to-phone in code (offer loop → lifecycle → OTP hand-off → rating). This doc remains the
+> living north star; its forward-looking parts (§3 risks, §7 one-month plan, §10 next steps) are annotated
+> below. **For current status and the remaining external gates (cloud/T0, dev build, revenue §6), see
+> `docs/PILOT-READINESS.md`.**
+
 ---
 
 ## 1. What Lynia is (MVP)
@@ -88,6 +94,12 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 ---
 
 ## 3. Honest risk register (from Office Hours)
+
+> **Build-status note (2026-06-27):** of these, the *engineering* risks are now retired — **(6) bidding
+> complexity** is built, tested, and proven (concurrency-correct offer loop in CI); **(8) timeline** is
+> actualized (the brutally-scoped MVP shipped). Risks **(1) cold-start / real supply**, **(2) revenue
+> model (§6)**, **(11) WhatsApp BSP**, and **(12) KYC coverage on real ZIM IDs** remain **open** — they're
+> the external/decision gates tracked in `docs/PILOT-READINESS.md`, not engineering work.
 
 1. **Cold-start (highest risk).** Straight-to-app + general wedge means no demand validation before build. **Mitigation:** recruit 5–15 riders in the launch corridor from day 1 (parallel to the build); keep a WhatsApp + spreadsheet channel as a manual backstop for ops, not as the product's matching path.
 2. **Payments & revenue (deliberately deferred).** The economy is cash and low-trust, and Lynia is a **matchmaker, not a payment processor** — it does **not** process or settle the delivery transaction. For the pilot, **payment infrastructure and Lynia's revenue model are out of scope**: the app agrees a fare via the bidding loop, but how that fare is settled and how Lynia earns is a **next-phase decision** (gateway like Paynow, own-built rails, or pure cash — undecided). **Risk:** monetization is therefore unvalidated during the pilot; the pilot proves demand/liquidity, not willingness-to-pay-commission. **Mitigation:** resolve the revenue model in the Plan/CEO review before scaling, and keep the data model neutral so any direction fits without a rebuild.
@@ -311,6 +323,12 @@ number is simply gated by order state.
 
 ## 7. One-month plan (revised for straight-to-app)
 
+> **Historical (pre-build plan).** This was the original week-by-week intent. The actual build followed a
+> different sequence and timeline (vendor spikes → backend lifecycle → two eng reviews → both mobile sides
+> → design consultation → cross-cutting flows → comprehensive review), all shipped and CI-gated. The
+> Weeks 1–3 product scope is **built**; Week 4 (real pilot, Play Store) is gated on the dev build + cloud.
+> Kept as the planning record. Current status: `docs/PILOT-READINESS.md`.
+
 **Week 1 — Foundations + parallel recruitment**
 - Scaffold: Expo app shell (**role toggle**), Supabase schema (incl. `offers`, `order_events`), Next.js admin app, repo CI.
 - **Onboarding + identity:** phone auth via **WhatsApp OTP**, name + ID, optional email, **one-account role upgrade**, **rider automated KYC + ZIM bike reg + required photo** (rides only after verified), **viewable profiles** (§5d).
@@ -363,8 +381,14 @@ number is simply gated by order state.
 - ✅ **Office Hours follow-up** — added the **initiator live-tracking window** (§5c): live location from acceptance, rider confirm-only at item check, rating required to close.
 - ✅ **Office Hours follow-up** — **deferred payments & revenue entirely** to a later phase: removed Paynow / commission / `rider_ledger` / top-ups / cash-settlement from the MVP; the app agrees a fare (bidding loop intact) but moves no money; revenue model (gateway, own rails, or cash) undecided; Lynia stays a matchmaker. See §6.
 - ✅ **Office Hours follow-up** — added **account creation, identity & profiles** (§5d): low-friction phone+name+ID signup, **WhatsApp-only OTP**, **one-account upgrade-to-rider**, **automated KYC** (no admin, rides only after verified) + ZIM bike reg + required rider photo, **viewable profiles** (first name + last initial), **phone hidden except `assigned`→`completed`**.
-- ⬜ **Plan → `/plan-ceo-review`** — pressure-test the business/economics.
-- ⬜ **Plan → `/plan-eng-review`** — validate architecture & data model.
-- ⬜ **Build** — scaffold the Expo app + Supabase backend + admin dashboard.
+- ✅ **Plan → CEO review** — `docs/CEO-REVIEW.md` (plan-stage) + `docs/CEO-REVIEW-CHECKPOINT.md` (build).
+- ✅ **Plan → Eng review** — `docs/ENG-REVIEW.md`, plus two post-build first-principles eng reviews (P0 fixes).
+- ✅ **Design review** — `docs/DESIGN.md` + `docs/design/` mockups (full two-sided journey).
+- ✅ **Build** — backend lifecycle + both mobile app sides shipped to `main`, CI-gated; a delivery
+  completes end-to-end in code.
+- ✅ **Review** — comprehensive post-build eng + design conformance pass, fixes merged.
+- ⬜ **Remaining (external gates):** decide the revenue model (§6), pick a cloud (T0), greenlight a dev
+  build (Phase 3 native maps) → then `/qa` + `/ship`. See `docs/PILOT-READINESS.md`.
 
-> Note: gstack skills (`/plan-ceo-review`, etc.) require gstack installed locally; until then these can be run manually.
+> Note: gstack skills (`/plan-ceo-review`, etc.) require gstack installed locally; the equivalents above
+> were run manually. **Current overall status lives in `docs/PILOT-READINESS.md`.**

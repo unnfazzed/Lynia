@@ -213,32 +213,35 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 - Visual mockups — generate later with `/design-html` from this spec.
 - Written-comment display on profiles (ratings show score + count only, per CONCEPT §5d).
 
-## Build tasks (from the review)
+## Build tasks (status as of 2026-06-27)
 
-| ID | P | Task |
-|----|---|------|
-| DT1 | P1 | This file — tokens, Manrope scale, spacing, components |
-| DT2 | P1 | Two empty states (no-offers / no-riders) with warmth + primary action |
-| DT3 | P1 | Interaction-state coverage (loading/error/partial) for broadcast, offers, tracking, OTP |
-| DT4 | P1 | Offer list best-match default sort + recommended marker (D-d) |
-| DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) |
-| DT6 | P2 | A11y + sunlight + data-light pass (targets, contrast, labels, tile caching) |
-| DT7 | P2 | Run `/design-review` (visual QA) post-implementation |
-| DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` (this consultation) |
-| DT9 | P1 | Rider interaction-states + two rider empty-states (no-orders / not-verified) |
-| DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support |
-| DT11 | P2 | Earnings ledger — payment-agnostic; gains settlement state only when §6 is decided |
-| DT12 | P1 | Drift fixes: build §5c stepper (both sides), designed empty-states, surface/defer contract-only fields (photo/note/comment/reason), move sign-out to profile |
-| DT13 | P2 | Post-Phase-3: regen `/design-html` for the new flows, then DT7 visual review + `/qa` on a device build |
+| ID | P | Task | Status |
+|----|---|------|--------|
+| DT1 | P1 | This file — tokens, Manrope scale, spacing, components | ✅ done |
+| DT2 | P1 | Two empty states (no-offers / no-riders) with warmth + primary action | ✅ done |
+| DT3 | P1 | Interaction-state coverage (loading/error/partial) for broadcast, offers, tracking, OTP | ✅ done (error states landed in the post-build review fixes) |
+| DT4 | P1 | Offer list best-match default sort + recommended marker (D-d) | ❌ **not built** — offers render unsorted; buildable now |
+| DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) | ❌ **not built** — `home.tsx` is a typed-coordinate form; needs the Phase-3 native map |
+| DT6 | P2 | A11y + sunlight + data-light pass (targets, contrast, labels, tile caching) | ⬜ deferred (device-gated) |
+| DT7 | P2 | Run `/design-review` (visual QA) post-implementation | ⬜ deferred — needs a dev build |
+| DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` | ✅ done |
+| DT9 | P1 | Rider interaction-states + two rider empty-states (no-orders / not-verified) | ✅ done |
+| DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support | ◐ **partial** — history/profile/earnings shipped; notifications, support, and the *public* rider rating profile not yet |
+| DT11 | P2 | Earnings ledger — payment-agnostic; gains settlement state only when §6 is decided | ✅ done |
+| DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ✅ done (contract-only fields + rider pickup-photo still deferred — see BACKLOG) |
+| DT13 | P2 | Post-Phase-3: regen `/design-html`, then DT7 visual review + `/qa` on a device build | ⬜ deferred (device-gated) |
 
 ## Next steps (gstack flow)
 
 - ✅ Office Hours · CEO review · Eng review · **Design review** (customer side).
 - ✅ Build — customer journey (Phase 1) + rider role (Phase 2) shipped.
-- ✅ **Design consultation — full two-sided journey** (this update): rider IA, cross-cutting flows,
-  payment-agnostic earnings, drift logged as DT8–DT13.
-- ⬜ **Build the newly-specced screens** alongside Phase 3 (cross-cutting flows, stepper, empty-states).
-- ⬜ **Post-Phase-3:** `/design-html` regen → `/design-review` (DT7) → `/qa` on a device build.
+- ✅ **Design consultation — full two-sided journey**: rider IA, cross-cutting flows, payment-agnostic
+  earnings; drift logged as DT8–DT13.
+- ✅ **Built most of the newly-specced screens** — §5c stepper, empty-states, history, profile, earnings,
+  rider KYC gate (DT8/DT9/DT11/DT12); post-build eng+design review fixes merged.
+- ⬜ **Buildable now:** DT4 offer best-match sort + recommended marker.
+- ⬜ **Phase 3 (needs a dev build):** DT5 map-anchored home, the live map, then DT7 `/design-review` + `/qa`.
 
-**Design score: 8/10 → 8.5/10** — full journey now specced; remaining lift is the on-device visual QA that
-needs a Phase-3 build. No unresolved decisions except the §6 revenue mechanism (consciously deferred).
+**Design score: 8.5/10 → 9/10** — the full journey is specced and most of it is built and review-hardened.
+The remaining lift is DT4 (buildable now) plus the device-gated visual QA (DT5/DT7/DT13). The §6 revenue
+mechanism stays consciously deferred. **Current overall status: `docs/PILOT-READINESS.md`.**
