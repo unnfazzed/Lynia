@@ -1,5 +1,7 @@
+import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Env } from "../../config/env";
+import { GcsStorage } from "./gcs.storage";
 import { selectStorage } from "./storage.module";
 
 const base = {
@@ -11,6 +13,19 @@ const base = {
   OTEL_SERVICE_NAME: "lynia-api",
 } as Env;
 
+// A throwaway RSA key so V4 signing runs fully offline (no ADC / network). Generated per-run, so
+// nothing secret is committed; we only assert the signed-URL *shape*, never the signature value.
+const { privateKey } = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  publicKeyEncoding: { type: "spki", format: "pem" },
+});
+const testGcs = () =>
+  new GcsStorage("lynia-media", {
+    projectId: "test-project",
+    credentials: { client_email: "signer@test-project.iam.gserviceaccount.com", private_key: privateKey as string },
+  });
+
 describe("storage adapter selection (D7 portability)", () => {
   it("selects Azure Blob when CLOUD_PROVIDER=azure", () => {
     expect(selectStorage({ ...base, CLOUD_PROVIDER: "azure" }).provider()).toBe("azure");
@@ -20,12 +35,26 @@ describe("storage adapter selection (D7 portability)", () => {
     expect(selectStorage({ ...base, CLOUD_PROVIDER: "gcp" }).provider()).toBe("gcp");
   });
 
-  it("both adapters honour the same upload-URL contract", async () => {
+  it("Azure honours the upload-URL contract (stub — real SAS lands with the Azure portability run)", async () => {
     const azure = await selectStorage({ ...base, CLOUD_PROVIDER: "azure" }).createUploadUrl("k", "image/jpeg");
-    const gcp = await selectStorage({ ...base, CLOUD_PROVIDER: "gcp" }).createUploadUrl("k", "image/jpeg");
     expect(azure.key).toBe("k");
-    expect(gcp.key).toBe("k");
     expect(azure.url).toContain("blob.core.windows.net");
-    expect(gcp.url).toContain("storage.googleapis.com");
+  });
+});
+
+describe("GcsStorage — real V4 signing", () => {
+  it("createUploadUrl returns a V4-signed PUT URL for the key", async () => {
+    const target = await testGcs().createUploadUrl("kyc/rider-1/selfie.jpg", "image/jpeg", 600);
+    expect(target.key).toBe("kyc/rider-1/selfie.jpg");
+    expect(target.url).toContain("storage.googleapis.com/lynia-media/");
+    expect(target.url).toContain("X-Goog-Algorithm=GOOG4-RSA-SHA256");
+    expect(target.url).toContain("X-Goog-Signature=");
+    expect(target.url).toContain("X-Goog-Expires=600");
+  });
+
+  it("createReadUrl returns a V4-signed GET URL", async () => {
+    const url = await testGcs().createReadUrl("kyc/rider-1/selfie.jpg");
+    expect(url).toContain("storage.googleapis.com/lynia-media/");
+    expect(url).toContain("X-Goog-Signature=");
   });
 });

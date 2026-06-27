@@ -9,6 +9,9 @@ export const envSchema = z.object({
   // Cloud chosen: GCP (2026-06-27). Azure impl retained behind the adapters as the portability proof (D7).
   CLOUD_PROVIDER: z.enum(["azure", "gcp"]).default("gcp"),
   STORAGE_BUCKET: z.string().default("lynia-media"),
+  // GCS signing: project id for the Storage client. Signing creds come from ADC on Cloud Run
+  // (the attached SA + IAM signBlob), so no private key lives in env.
+  GCP_STORAGE_PROJECT_ID: z.string().optional(),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   OTEL_SERVICE_NAME: z.string().default("lynia-api"),
   // --- Auth (lane B) ---
