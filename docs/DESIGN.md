@@ -220,7 +220,7 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 | DT1 | P1 | This file — tokens, Manrope scale, spacing, components | ✅ done |
 | DT2 | P1 | Two empty states (no-offers / no-riders) with warmth + primary action | ✅ done |
 | DT3 | P1 | Interaction-state coverage (loading/error/partial) for broadcast, offers, tracking, OTP | ✅ done (error states landed in the post-build review fixes) |
-| DT4 | P1 | Offer list best-match default sort + recommended marker (D-d) | ❌ **not built** — offers render unsorted; buildable now |
+| DT4 | P1 | Offer list best-match default sort + recommended marker (D-d) | ✅ done — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector (best/cheapest/fastest/top-rated) and a RECOMMENDED badge on the customer offer screen |
 | DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) | ❌ **not built** — `home.tsx` is a typed-coordinate form; needs the Phase-3 native map |
 | DT6 | P2 | A11y + sunlight + data-light pass (targets, contrast, labels, tile caching) | ⬜ deferred (device-gated) |
 | DT7 | P2 | Run `/design-review` (visual QA) post-implementation | ⬜ deferred — needs a dev build |
@@ -239,9 +239,10 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
   earnings; drift logged as DT8–DT13.
 - ✅ **Built most of the newly-specced screens** — §5c stepper, empty-states, history, profile, earnings,
   rider KYC gate (DT8/DT9/DT11/DT12); post-build eng+design review fixes merged.
-- ⬜ **Buildable now:** DT4 offer best-match sort + recommended marker.
+- ✅ **DT4 offer best-match sort + recommended marker** — shipped.
 - ⬜ **Phase 3 (needs a dev build):** DT5 map-anchored home, the live map, then DT7 `/design-review` + `/qa`.
 
-**Design score: 8.5/10 → 9/10** — the full journey is specced and most of it is built and review-hardened.
-The remaining lift is DT4 (buildable now) plus the device-gated visual QA (DT5/DT7/DT13). The §6 revenue
-mechanism stays consciously deferred. **Current overall status: `docs/PILOT-READINESS.md`.**
+**Design score: 9/10** — the full journey is specced and built, review-hardened, with DT4 the last
+buildable-now gap now closed. The remaining lift is purely the **device-gated visual QA** (DT5 map / DT7 /
+DT13). The §6 revenue mechanism is decided (commission, deferred ~6–8 months). **Current overall status:
+`docs/PILOT-READINESS.md`.**

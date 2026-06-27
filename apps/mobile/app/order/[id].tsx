@@ -1,7 +1,7 @@
-import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, rankOffers, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
@@ -14,6 +14,14 @@ import { Button, Card, EmptyState, ErrorText, Heading, Screen, StatusPill, Stepp
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
 
+type SortMode = "best" | "cheapest" | "fastest" | "rated";
+const SORT_MODES: { key: SortMode; label: string }[] = [
+  { key: "best", label: "Best match" },
+  { key: "cheapest", label: "Cheapest" },
+  { key: "fastest", label: "Fastest" },
+  { key: "rated", label: "Top rated" },
+];
+
 export default function OrderScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
   const orderId = typeof id === "string" ? id : "";
@@ -21,6 +29,7 @@ export default function OrderScreen(): React.ReactElement {
   const router = useRouter();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
   const [score, setScore] = useState(5);
+  const [sortMode, setSortMode] = useState<SortMode>("best");
 
   // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash).
   useEffect(() => {
@@ -55,6 +64,29 @@ export default function OrderScreen(): React.ReactElement {
     enabled: status === "open_for_offers",
     refetchInterval: status === "open_for_offers" ? 4000 : false,
   });
+
+  // Order the offers for display (D-d): best-match blends price + rating + ETA and marks the top pick;
+  // the other modes are plain single-key sorts. Selection is unaffected — the customer still chooses.
+  const orderedOffers = useMemo((): { offer: OfferRow; recommended: boolean }[] => {
+    const offers = offersQ.data ?? [];
+    if (offers.length === 0) return [];
+    if (sortMode === "best") {
+      const ranked = rankOffers(
+        offers.map((o) => ({
+          offeredFare: Number(o.offeredFare),
+          ratingAvg: Number(o.rider.ratingAvg),
+          ratingCount: o.rider.ratingCount,
+          etaMinutes: o.etaMinutes,
+        })),
+      );
+      return ranked.map((r) => ({ offer: offers[r.index]!, recommended: r.recommended }));
+    }
+    const sorted = [...offers];
+    if (sortMode === "cheapest") sorted.sort((a, b) => Number(a.offeredFare) - Number(b.offeredFare));
+    else if (sortMode === "fastest") sorted.sort((a, b) => a.etaMinutes - b.etaMinutes);
+    else sorted.sort((a, b) => Number(b.rider.ratingAvg) - Number(a.rider.ratingAvg));
+    return sorted.map((offer) => ({ offer, recommended: false }));
+  }, [offersQ.data, sortMode]);
 
   const selectM = useMutation({
     mutationFn: (offerId: string) => selectOffer(orderId, offerId),
@@ -127,8 +159,37 @@ export default function OrderScreen(): React.ReactElement {
         {order.status === "open_for_offers" ? (
           <View>
             <Sub>Waiting for riders to offer{offersQ.isFetching ? " …" : ""}.</Sub>
-            {(offersQ.data ?? []).map((o: OfferRow) => (
-              <Card key={o.id}>
+            {orderedOffers.length > 1 ? (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: tokens.space.sm }}>
+                {SORT_MODES.map((m) => {
+                  const on = sortMode === m.key;
+                  return (
+                    <Pressable
+                      key={m.key}
+                      onPress={() => setSortMode(m.key)}
+                      hitSlop={6}
+                      style={{
+                        paddingVertical: 6,
+                        paddingHorizontal: 11,
+                        borderRadius: tokens.radius.pill,
+                        borderWidth: 1,
+                        borderColor: on ? tokens.color.accent : tokens.color.line,
+                        backgroundColor: on ? tokens.color.accent : tokens.color.bg,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: on ? "#fff" : tokens.color.muted }}>{m.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+            {orderedOffers.map(({ offer: o, recommended }) => (
+              <Card key={o.id} style={recommended ? { borderColor: tokens.color.highlight } : undefined}>
+                {recommended ? (
+                  <Text style={{ fontSize: 10, fontWeight: "800", color: tokens.color.highlight, letterSpacing: 0.5, marginBottom: 3 }}>
+                    ★ RECOMMENDED
+                  </Text>
+                ) : null}
                 <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>
                   {o.rider.profile.firstName} {o.rider.profile.lastName}
                 </Text>
@@ -139,7 +200,7 @@ export default function OrderScreen(): React.ReactElement {
                 <Button label="Choose this rider" onPress={() => selectM.mutate(o.id)} loading={selectM.isPending} />
               </Card>
             ))}
-            {(offersQ.data ?? []).length === 0 ? <Sub>No offers yet — hang tight.</Sub> : null}
+            {orderedOffers.length === 0 ? <Sub>No offers yet — hang tight.</Sub> : null}
           </View>
         ) : null}
 
