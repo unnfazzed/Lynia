@@ -1,5 +1,10 @@
 # Lynia — CEO Review (Plan stage)
 
+> ⚠️ **Historical snapshot (pre-build plan stage).** This locked the strategy/economics before any code.
+> The build has since shipped (2026-06-27); its plan-stage findings (S1–S11) and tasks (T0–T13) are
+> archived here for decision history — **do not read as current state.** For where things actually stand,
+> see `docs/PILOT-READINESS.md` (and the build-stage `docs/CEO-REVIEW-CHECKPOINT.md`).
+
 > Output of the gstack `/plan-ceo-review` stage, pressure-testing `docs/CONCEPT.md`
 > before build. Posture: **HOLD SCOPE** — accept the locked scope, make it bulletproof.
 > Status: **review complete, ready for `/plan-eng-review`.**
