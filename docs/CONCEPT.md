@@ -143,14 +143,22 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 
 ## 5. Tech architecture
 
+> **Build annotation (2026-06-27).** The original Office Hours sketch named **Supabase** (managed BaaS) as the
+> fastest path to an MVP. The Plan-stage reviews then **dropped the BaaS for an own NestJS/TypeScript API on
+> plain PostgreSQL** (full control, data sovereignty, no vendor lock-in) — and that is what **shipped**. The
+> table below reflects the **built** stack; the Supabase→own-stack mapping is in `docs/CEO-REVIEW.md`, and the
+> cloud is **Google Cloud** (Cloud Run + Cloud SQL + Memorystore + Cloud Storage) behind portability adapters
+> (D7). *Realtime is now an own Socket.IO + Redis gateway, auth an own JWT + WhatsApp-OTP subsystem, offer
+> expiry a server-side BullMQ job.*
+
 | Layer | Choice | Why |
 |---|---|---|
 | App (one app, role toggle) | **React Native + Expo (EAS)** | Single codebase + single build, customer ↔ rider toggle, Android now + iOS later |
-| Backend | **Supabase** (Postgres + Auth + Realtime + Storage) | Realtime = live tracking + offer/broadcast updates; fastest path to MVP |
-| Offer loop logic | **Supabase Realtime + Postgres** (broadcast, offers, window/expiry) | Push broadcasts to nearby riders; collect accepts/counters; expire on timeout |
+| Backend | **Own NestJS / TypeScript API on PostgreSQL** (no BaaS) | Full control & data sovereignty; custom JWT + WhatsApp-OTP auth, Prisma, BullMQ jobs; on Google Cloud behind portability adapters (D7) |
+| Offer loop logic | **Socket.IO + Redis + Postgres** (broadcast, offers, window/expiry) | Push broadcasts to nearby riders; collect accepts/counters; server-side BullMQ expiry on timeout |
 | Maps / routing | **Google Maps Platform** | Best data coverage in Zimbabwe; geocoding, distance, ETA |
 | Payments | **None in MVP — deferred** | No payment integration; the app agrees the fare but moves no money. Settlement and Lynia's revenue rails (gateway vs. own-built vs. cash) are a deliberate next-phase decision (§6) |
-| Admin dashboard | **Next.js** on the same Supabase backend | Monitoring & support tool (not a dispatch console) |
+| Admin dashboard | **Next.js** on the same NestJS API | Monitoring & support tool (not a dispatch console) |
 | Notifications | **WhatsApp (signup OTP)** + **Expo Notifications / FCM** + **SMS gateway** (fallback) | Signup OTP via WhatsApp (WhatsApp-only); push when online (primary for broadcast alerts); SMS fallback for other critical updates |
 
 ### Data model (sketch)
@@ -201,8 +209,8 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 In a **cash, low-trust** market the customer has handed a stranger their parcel and is waiting on a delivery
 they've already agreed to pay for. A legible, real-time "where is my bike" view is the single biggest **trust
 and anxiety-reducer** for the initiator, and it's what makes the two-way rating at the end feel earned. It
-reuses the **same Supabase Realtime channel** already built for the offer loop and rider location — no new
-infrastructure.
+reuses the **same WebSocket channel (Socket.IO + Redis)** already built for the offer loop and rider
+location — no new infrastructure.
 
 ### The journey, as the initiator sees it
 A vertical **stepper/timeline** at the top (each step lights up as it happens, stamped with a time), a **live
@@ -231,7 +239,7 @@ button) throughout. The steps map 1:1 to order statuses:
   from one source of truth.
 - **Live position.** From the moment the rider is selected (`assigned`) through `delivered`, the rider app
   pushes its GPS to `riders.current_lat/lng` on a **throttled** interval (data is expensive — §3.4); the
-  initiator subscribes via **Supabase Realtime** and the map marker animates between updates. The customer
+  initiator subscribes via the **WebSocket gateway (Socket.IO)** and the map marker animates between updates. The customer
   sees the bike right away, not just once it starts moving. Location streaming is **scoped to the active
   order** and **stops at `delivered`** (privacy + battery + data).
 - **ETA.** Google Maps Platform gives ETA to the current target (pickup pin, then drop-off pin); shown on the
@@ -334,7 +342,7 @@ number is simply gated by order state.
 > Kept as the planning record. Current status: `docs/PILOT-READINESS.md`.
 
 **Week 1 — Foundations + parallel recruitment**
-- Scaffold: Expo app shell (**role toggle**), Supabase schema (incl. `offers`, `order_events`), Next.js admin app, repo CI.
+- Scaffold: Expo app shell (**role toggle**), Postgres schema via Prisma (incl. `offers`, `order_events`), Next.js admin app, repo CI.
 - **Onboarding + identity:** phone auth via **WhatsApp OTP**, name + ID, optional email, **one-account role upgrade**, **rider automated KYC + ZIM bike reg + required photo** (rides only after verified), **viewable profiles** (§5d).
 - Customer happy-path skeleton: set pickup/dropoff pins, **suggested + adjustable price**.
 - Register the business; draft rider agreement + declared-value/prohibited-items policy. *(Payment-gateway setup deferred — revenue model undecided, §6.)*
