@@ -33,6 +33,11 @@ export default function ProfileScreen(): React.ReactElement {
 
       {meQ.isLoading ? (
         <ActivityIndicator />
+      ) : meQ.isError ? (
+        <Card>
+          <Text style={{ fontSize: 14, color: tokens.color.ink }}>Couldn't load your details.</Text>
+          <Button label="Retry" variant="ghost" onPress={() => void meQ.refetch()} />
+        </Card>
       ) : (
         <Card>
           <Text style={{ fontSize: 18, fontWeight: "800", color: tokens.color.ink }}>

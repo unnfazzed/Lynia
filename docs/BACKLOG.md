@@ -79,3 +79,26 @@ is deliberately simple: a flat `base + perKm·distance` over **straight-line** d
   (`apps/api/src/tracking/tracking.service.ts`) are not unit-testable (raw SQL) and currently uncovered.
   _Trigger:_ closes the last coverage gap from the test-hardening lane; runs in the existing `test:int`
   CI job against the PostGIS service — small, self-contained.
+
+## Post-build review findings (2026-06-27, deferred items)
+
+From the comprehensive eng + static-design review. The P1 error-state honesty and the rider-gate staleness
+were fixed in the same pass; these are the consciously-deferred remainder.
+
+- **Skeleton loaders over spinners (DESIGN.md data-light).** Every screen's loading branch is a bare
+  `ActivityIndicator`; the spec names skeletons for the list/board/stepper screens. _Trigger:_ a small
+  reusable `Skeleton` component; bundle with the on-device `/qa` polish pass.
+- **Harden the `x-user-id` dev fallback** in `apps/api/src/common/current-user.decorator.ts`. Latent (not
+  exploitable on the JWT-guarded routes), but it should be gated to non-production or removed. _Trigger:_
+  touches every controller's auth assumption — do it as its own careful pass with the auth tests in view.
+- **`onAccent` design token.** White-on-accent text is a hardcoded `"#fff"` in several places; the shared
+  tokens have no inverse/on-accent colour. _Trigger:_ add `color.onAccent` to `design-tokens.ts` when next
+  touching the shared palette.
+- **Surface contract-only fields.** `note`/`itemPhotoUrl` on create, `comment` on rating, `reason` on
+  cancel exist in the contracts with no UI (also in the DESIGN.md drift list). _Trigger:_ per-flow decision;
+  item photo also needs cloud object storage (T0).
+- **Rider pickup-photo step.** §5c rider step 4 is "Mark collected (+ pickup photo)"; the built advance has
+  no capture. _Trigger:_ pairs with object storage (T0) + the dev build.
+- **Pair the §5c stepper tables.** The built `Stepper` renders a 7th `completed` step for the rider view; the
+  DESIGN.md §5c rider table stops at 6. _Trigger:_ trim the rider view to 6 or add the row to the spec —
+  reconcile in the post-Phase-3 `/design-review`.

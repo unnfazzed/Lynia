@@ -26,6 +26,10 @@ export default function EarningsScreen(): React.ReactElement {
 
       {q.isLoading ? (
         <ActivityIndicator />
+      ) : q.isError ? (
+        <EmptyState icon="📡" title="Couldn't load your earnings" message="Check your connection and try again.">
+          <Button label="Retry" onPress={() => void q.refetch()} />
+        </EmptyState>
       ) : trips.length === 0 ? (
         <EmptyState icon="💵" title="No earnings yet" message="Completed deliveries and their agreed fares show up here.">
           <Button label="Find work" onPress={() => router.replace("/rider")} />

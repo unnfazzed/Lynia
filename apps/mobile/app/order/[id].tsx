@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { ApiError } from "../../src/api/client";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
@@ -72,7 +73,10 @@ export default function OrderScreen(): React.ReactElement {
   });
   const rateM = useMutation({
     mutationFn: () => rateOrder(orderId, { score }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: orderKey(orderId) });
+      void qc.invalidateQueries({ queryKey: ["history"] }); // the just-rated trip now shows its ★ in history
+    },
   });
   const cancelM = useMutation({
     mutationFn: () => cancelOrder(orderId),
@@ -87,10 +91,13 @@ export default function OrderScreen(): React.ReactElement {
     );
   }
   if (!orderQ.data) {
+    // Only a real 404 is "not found"; a transient fetch error gets a retry, not a dead-end.
+    const notFound = orderQ.error instanceof ApiError && orderQ.error.status === 404;
     return (
       <Screen>
-        <Heading>Order not found</Heading>
-        <Button label="Back home" onPress={() => router.replace("/home")} />
+        <Heading>{notFound ? "Order not found" : "Couldn't load this order"}</Heading>
+        {notFound ? null : <Button label="Retry" onPress={() => void orderQ.refetch()} />}
+        <Button label="Back home" variant="ghost" onPress={() => router.replace("/home")} />
       </Screen>
     );
   }

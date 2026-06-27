@@ -1,9 +1,9 @@
 import { haversineKm, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
-import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
@@ -42,6 +42,14 @@ export default function RiderHome(): React.ReactElement {
   // makeOffer too — the UI shouldn't pretend otherwise). `rider: null` = hasn't started rider setup.
   const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
   const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
+
+  // Re-check verification whenever this screen regains focus (e.g. back from the Didit browser flow), so a
+  // freshly-verified rider isn't trapped behind the gate by a stale ["me"] cache.
+  useFocusEffect(
+    useCallback(() => {
+      void qc.invalidateQueries({ queryKey: ["me"] });
+    }, [qc]),
+  );
 
   const onlineM = useMutation({
     mutationFn: (next: boolean) => setOnline(next),
@@ -121,7 +129,9 @@ export default function RiderHome(): React.ReactElement {
           </Card>
         ) : null}
 
-        {knownUnverified ? (
+        {meQ.isLoading ? (
+          <ActivityIndicator style={{ marginTop: tokens.space.xl }} />
+        ) : knownUnverified ? (
           <EmptyState
             icon="🪪"
             title={meQ.data?.rider ? "Finish verification to start bidding" : "Set up as a rider"}
@@ -160,7 +170,11 @@ export default function RiderHome(): React.ReactElement {
                 <Button label="Make an offer" variant="ghost" onPress={() => chooseOrder(o)} />
               </Card>
             ))}
-            {ranked.length === 0 ? (
+            {openQ.isError ? (
+              <EmptyState icon="📡" title="Couldn't load nearby orders" message="Check your connection and try again.">
+                <Button label="Retry" onPress={() => void openQ.refetch()} />
+              </EmptyState>
+            ) : ranked.length === 0 ? (
               <EmptyState
                 icon="📭"
                 title="No open orders near you right now"
