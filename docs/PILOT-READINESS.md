@@ -37,7 +37,13 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
   `docs/design/` all-flows PNG boards.
 - **DT12/DT10/DT11 flows** — the §5c 7-step stepper, empty-states, profile, trip **history**, full
   `/auth/me`, the **not-verified rider gate**, and a **payment-agnostic earnings ledger**.
-- **Test count** 21 → 72 → **112** API tests; mobile typecheck in the CI gate.
+- **Comprehensive post-build review** — independent eng + adversarial + static-design passes; fixed a
+  systemic error-state-honesty P1 and the rider-gate staleness. Backend confirmed clean (history/`me`
+  authz + PII).
+- **DT4 offer best-match sort** — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector and a
+  RECOMMENDED marker (design D-d). The **last buildable-now code gap — now closed.**
+- **Revenue model decided (§6)** — rider commission, 0% for ~6–8 months, infra later (see Decision gates).
+- **Test count** 21 → 72 → 112 → **119** API tests; mobile typecheck in the CI gate.
 
 ## Updated eng-plan scorecard (T0–T13)
 
