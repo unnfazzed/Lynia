@@ -97,10 +97,13 @@ none of it is blocked. These are the consciously-deferred items from the post-bu
    `x-user-id` can never stand in for a real user; the dev/test fallback is preserved. The resolver was
    extracted to a pure `resolveCurrentUser()` and covered by `current-user.decorator.spec.ts` (5 cases:
    JWT wins, dev fallback, prod ignores the header, no-identity throws).
-2. **`onAccent` design token** — replace hardcoded `"#fff"` on-accent text with `color.onAccent` in
-   `packages/shared/src/design-tokens.ts`; ripple to the call sites.
-3. **Skeleton loaders over spinners** — a small reusable `Skeleton`; swap the bare `ActivityIndicator`
-   loading branches on the list/board/stepper screens (DESIGN.md data-light spec).
+2. ✅ **DONE — `onAccent` design token.** Added `color.onAccent` to `packages/shared/src/design-tokens.ts`
+   and replaced every white-on-accent `"#fff"` (8 sites across mobile + admin: Button, Stepper, earnings
+   header, admin tabs/logo). Cream-tint highlights (`#FFFCF2`) left as-is — not on-accent.
+3. ✅ **DONE — skeleton loaders over spinners.** Added `Skeleton`/`SkeletonCard`/`SkeletonList` (native-driven
+   opacity pulse, `busy` a11y state) to the UI kit and swapped the bare `ActivityIndicator` on the six
+   content screens (order, rider board, rider job, history, earnings, profile) for content-shaped skeletons.
+   The auth-gate boot splash keeps its spinner. Mobile + admin typecheck clean.
 4. **Surface contract-only fields** — `note`/`itemPhotoUrl` on create, `comment` on rating, `reason` on
    cancel exist in the contracts with no UI (item photo pairs with A2 object storage).
 

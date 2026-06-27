@@ -3,13 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { setOnline } from "../../src/api/riders";
-import { Button, Card, EmptyState, ErrorText, Field, Heading, Screen, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
 import { parseNum } from "../../src/util";
 
 export default function RiderHome(): React.ReactElement {
@@ -130,7 +130,9 @@ export default function RiderHome(): React.ReactElement {
         ) : null}
 
         {meQ.isLoading ? (
-          <ActivityIndicator style={{ marginTop: tokens.space.xl }} />
+          <View style={{ marginTop: tokens.space.lg }}>
+            <SkeletonList count={2} />
+          </View>
         ) : knownUnverified ? (
           <EmptyState
             icon="🪪"

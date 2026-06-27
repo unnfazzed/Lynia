@@ -2,14 +2,14 @@ import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, rankOffers, tokens
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, EmptyState, ErrorText, Heading, Screen, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Heading, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
@@ -118,7 +118,7 @@ export default function OrderScreen(): React.ReactElement {
   if (orderQ.isLoading) {
     return (
       <Screen>
-        <ActivityIndicator />
+        <SkeletonList />
       </Screen>
     );
   }
@@ -177,7 +177,7 @@ export default function OrderScreen(): React.ReactElement {
                         backgroundColor: on ? tokens.color.accent : tokens.color.bg,
                       }}
                     >
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: on ? "#fff" : tokens.color.muted }}>{m.label}</Text>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: on ? tokens.color.onAccent : tokens.color.muted }}>{m.label}</Text>
                     </Pressable>
                   );
                 })}
