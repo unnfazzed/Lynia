@@ -13,8 +13,8 @@
 > ✅ **Build shipped (2026-06-27).** The concept and architecture below are validated — a full delivery
 > runs phone-to-phone in code (offer loop → lifecycle → OTP hand-off → rating). This doc remains the
 > living north star; its forward-looking parts (§3 risks, §7 one-month plan, §10 next steps) are annotated
-> below. **For current status and the remaining external gates (cloud/T0, dev build, revenue §6), see
-> `docs/PILOT-READINESS.md`.**
+> below. The **cloud (Google Cloud) and revenue model (§6) are now decided**; the remaining external gate is
+> the **dev build**. **For current status, see `docs/PILOT-READINESS.md`.**
 
 ---
 
@@ -392,8 +392,11 @@ number is simply gated by order state.
   completes end-to-end in code.
 - ✅ **Review** — comprehensive post-build eng + design conformance pass, fixes merged.
 - ✅ **Revenue model decided** (§6) — rider commission, 0% for ~6–8 months, infra built later.
-- ⬜ **Remaining (external gates):** pick a cloud (T0), greenlight a dev build (Phase 3 native maps) → then
-  `/qa` + `/ship`. See `docs/PILOT-READINESS.md`.
+- ✅ **Cloud chosen — Google Cloud** (2026-06-27): reachable from Zimbabwe with no country-level block,
+  nearest region Johannesburg `africa-south1`, Google Maps already a dependency; default `CLOUD_PROVIDER=gcp`,
+  Azure adapter kept as the D7 portability proof. Closes the T0 *pick-a-cloud* decision.
+- ⬜ **Remaining (external gates):** provision the GCP project (T0 execution), greenlight a dev build (Phase 3
+  native maps) → then `/qa` + `/ship`. See `docs/PILOT-READINESS.md`.
 
 > Note: gstack skills (`/plan-ceo-review`, etc.) require gstack installed locally; the equivalents above
 > were run manually. **Current overall status lives in `docs/PILOT-READINESS.md`.**

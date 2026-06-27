@@ -2,7 +2,7 @@ import { Logger } from "@nestjs/common";
 import type { CloudProvider, StorageAdapter, UploadTarget } from "./storage.interface";
 
 /**
- * Azure Blob Storage adapter (primary). Generates SAS-token URLs.
+ * Azure Blob Storage adapter (D7 portability fallback). Generates SAS-token URLs.
  * Lane A wires the shape and the URL contract; the @azure/storage-blob SAS signing call lands
  * with the first real upload (KYC/photo lane). The interface is what keeps D7 portable.
  */

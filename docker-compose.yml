@@ -1,4 +1,4 @@
-# Local dev infrastructure — no Azure needed.
+# Local dev infrastructure — no cloud needed.
 #   pnpm db:up && pnpm db:migrate && pnpm db:seed && pnpm dev
 services:
   postgres:

@@ -2,7 +2,7 @@ import { Logger } from "@nestjs/common";
 import type { CloudProvider, StorageAdapter, UploadTarget } from "./storage.interface";
 
 /**
- * Google Cloud Storage adapter (D7 fallback). Generates V4 signed URLs.
+ * Google Cloud Storage adapter (primary — GCP is the chosen cloud). Generates V4 signed URLs.
  * Same interface as Azure — switching clouds is a CLOUD_PROVIDER change, no business-logic edits.
  */
 export class GcsStorage implements StorageAdapter {
