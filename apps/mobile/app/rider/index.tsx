@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
+import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { setOnline } from "../../src/api/riders";
@@ -36,6 +37,11 @@ export default function RiderHome(): React.ReactElement {
   }, []);
 
   const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 8000 });
+
+  // Gate the dashboard behind KYC: a rider goes online only once verified (the backend enforces it on
+  // makeOffer too — the UI shouldn't pretend otherwise). `rider: null` = hasn't started rider setup.
+  const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
 
   const onlineM = useMutation({
     mutationFn: (next: boolean) => setOnline(next),
@@ -115,6 +121,21 @@ export default function RiderHome(): React.ReactElement {
           </Card>
         ) : null}
 
+        {knownUnverified ? (
+          <EmptyState
+            icon="🪪"
+            title={meQ.data?.rider ? "Finish verification to start bidding" : "Set up as a rider"}
+            message={
+              meQ.data?.rider
+                ? "Your ID check is still pending. Riders go online only once verified."
+                : "Verify your ID and register your bike to start accepting deliveries."
+            }
+          >
+            <Button label={meQ.data?.rider ? "Resume verification" : "Become a rider"} onPress={() => router.push("/rider/become")} />
+            <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+          </EmptyState>
+        ) : (
+          <>
         <Card>
           <Button
             label={online ? "Go offline" : "Go online"}
@@ -158,6 +179,10 @@ export default function RiderHome(): React.ReactElement {
             <Button label="Cancel" variant="ghost" onPress={() => setSelected(null)} />
           </Card>
         ) : null}
+
+        <Button label="View earnings" variant="ghost" onPress={() => router.push("/earnings")} />
+          </>
+        )}
 
         <Button label="Back to customer" variant="ghost" onPress={() => router.replace("/home")} />
         <ErrorText message={error} />
