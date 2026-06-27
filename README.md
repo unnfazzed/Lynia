@@ -7,8 +7,10 @@ price, riders accept or counter, customer selects). See [`docs/`](docs/) for the
 
 ## Monorepo
 
-pnpm + Turborepo. Backend is an own NestJS API on PostgreSQL (no BaaS), Azure-primary with a
-portable Google Cloud fallback (cloud-specific code lives behind adapters — see `apps/api/src/adapters`).
+pnpm + Turborepo. Backend is an own NestJS API on PostgreSQL (no BaaS) on **Google Cloud**
+(chosen 2026-06-27 — Cloud Run + Cloud SQL + Memorystore + Cloud Storage). Cloud-specific code lives
+behind adapters (`apps/api/src/adapters`), and the Azure impl is kept as the portability proof — so the
+cloud is a `CLOUD_PROVIDER` switch, not a rewrite.
 
 ```
 packages/shared   @lynia/shared  — enums, API contracts (zod), design tokens (shared by all apps)

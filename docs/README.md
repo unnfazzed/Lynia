@@ -7,7 +7,7 @@ snapshots, preserved for decision history (each carries a banner pointing to the
 
 | Doc | Kind | Purpose |
 |-----|------|---------|
-| [`PILOT-READINESS.md`](./PILOT-READINESS.md) | 🟢 Living (current) | Where the build actually stands (2026-06-27): T0–T13 scorecard, the three external gates (cloud / dev build / revenue §6), and a ship/cloud-provisioning checklist. **The source of truth for status.** |
+| [`PILOT-READINESS.md`](./PILOT-READINESS.md) | 🟢 Living (current) | Where the build actually stands (2026-06-27): T0–T13 scorecard, the external gates (cloud + revenue §6 now decided; **dev build** remains), and a ship/cloud-provisioning checklist. **The source of truth for status.** |
 | [`CONCEPT.md`](./CONCEPT.md) | 🟢 Living | Product concept & one-month plan — the north star. inDrive-style customer-priced courier; matchmaker, not a payment processor. Forward-looking sections annotated with build status. |
 | [`DESIGN.md`](./DESIGN.md) | 🟢 Living | Design system + UX spec (tokens, components, §5c journey, the full two-sided IA) and the `DT1`–`DT13` build-task status table. |
 | [`design/`](./design/) | 🟢 Living | Mockups + assets — all-flows PNG boards + HTML + tokens. See [`design/README.md`](./design/README.md). |

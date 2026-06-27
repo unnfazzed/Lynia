@@ -10,10 +10,11 @@
 The product is now **functionally complete and end-to-end demoable in code**: a full delivery runs
 phone-to-phone — customer posts → riders bid → customer selects → rider drives the lifecycle → OTP
 hand-off → both reach completion → rate. Both app sides are built and the backend lifecycle is whole and
-tested. **What remains is no longer buildable-now engineering — it is two external unlocks:** a cloud
-(T0/Azure) and a device build (Phase 3 / `/qa`). The revenue model (§6) is now **decided** — rider
-commission, 0% for ~6–8 months, infrastructure built later — so it's no longer a blocker. Everything that
-does *not* depend on the two remaining unlocks is done.
+tested. **What remains is no longer buildable-now engineering.** The **cloud is now chosen — Google
+Cloud** (2026-06-27; rationale in Decision gates), which closes the long-open T0 *pick-a-cloud* decision;
+what's left on that front is **provisioning execution**, not a choice. The other external unlock is a
+**device build** (Phase 3 / `/qa`). The revenue model (§6) is also **decided** — rider commission, 0% for
+~6–8 months, infrastructure built later. Everything that does *not* depend on those unlocks is done.
 
 This flips the prior checkpoint: the two things it gated on — the **delivery-lifecycle hole** and **no
 visible surface** — are both resolved, and the **revenue decision** it flagged is now made.
@@ -49,7 +50,7 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
 
 | ID | Task | Was (06-26) | Now (06-27) |
 |----|------|-------------|-------------|
-| T0 | Vendor + billing spikes (Azure/GCP, WhatsApp BSP, real ZIM-ID KYC) | ⏳ pending | ⏳ **pending — external** |
+| T0 | Vendor + billing spikes (cloud, WhatsApp BSP, real ZIM-ID KYC) | ⏳ pending | ◐ **cloud chosen: GCP** — GCP project provisioning + billing, WhatsApp BSP, real ZIM-ID KYC remain (external) |
 | T1 | Atomic offer-selection (guarded CAS + liveness) | ✅ proven | ✅ proven |
 | T2 | Server-side offer-expiry (BullMQ) | ✅ | ✅ |
 | T3 | Order auto-close on rating deadlock | ❌ not built | ✅ **done** (rating + auto-close + reconciler) |
@@ -62,7 +63,7 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
 | T10 | PostGIS nearby-rider + indexes | ✅ proven | ✅ proven (+ Tier-2 geo int test) |
 | T11 | GPS-drop / permission-revoked handling | ❌ not built | ◐ **partial** (stream gating + stale handling; full degradation device-gated) |
 | T12 | Empty-state UX (no offers / no riders) | ❌ not built | ✅ **done** (`EmptyState`, gates, expired/no-orders) |
-| T13 | Cloud portability adapters + exit-test | ◐ partial | ◐ partial — **GCP exit-test needs cloud (external)** |
+| T13 | Cloud portability adapters + exit-test | ◐ partial | ◐ partial — **GCP now primary** (`CLOUD_PROVIDER=gcp`); stand-up on GCP is provisioning; Azure adapter kept green in CI as the portability proof |
 
 Every ❌ from the prior checkpoint is now ✅. Every remaining ◐/⏳ is gated on an external unlock, not on
 more code we can write today.
@@ -71,18 +72,20 @@ more code we can write today.
 
 | Gate | Status / unlocks | Type |
 |------|------------------|------|
-| **Pick a cloud** (Azure eligibility, or GCP) — T0 | ⏳ **open** → `/ship` + release, FCM push, real object storage/signed URLs, OTEL export, production OTP path | Vendor/billing decision |
+| **Cloud provider** — T0 | ✅ **decided (2026-06-27) — Google Cloud.** Reachable from Zimbabwe with no country-level block; nearest region **Johannesburg `africa-south1`** (lowest latency to Harare); **Google Maps** is already a dependency; Google for Startups Cloud credits available (Accelerator: Africa for the larger tier). Default is now `CLOUD_PROVIDER=gcp`; the Azure adapter stays as the portability proof. **Unblocks** `/ship` + release, FCM push, real object storage/signed URLs, OTEL export, production OTP path — all now **provisioning execution**, not a choice. | Vendor decision — **closed** |
 | **Greenlight a dev build** (not Expo Go) | ⏳ **open** → Phase 3 native map + tap-to-pin, `/qa` device pass, on-device verification of the stepper/earnings/gate | Go-ahead + device |
 | **Revenue model** (§6) | ✅ **decided (2026-06-27)** — rider commission (% of agreed fare), **0% for ~6–8 months**, settlement/commission **infra built later**. No pilot blocker; the commission build is parked in BACKLOG with a ~6–8-month trigger. | Product/founder decision |
 
-Two open gates remain (cloud, dev build). The work behind each is parked in `docs/BACKLOG.md` with its trigger.
+One open gate remains (**dev build**); the cloud decision is **closed (Google Cloud)** and its follow-on
+work is provisioning execution. The work behind each is parked in `docs/BACKLOG.md` with its trigger.
 
-## Ship / cloud-provisioning checklist (ready the moment a cloud is chosen)
+## Ship / cloud-provisioning checklist (cloud chosen — GCP provisioning)
 
 Pre-staged so T0 → ship is execution, not discovery. Each maps to a `BACKLOG.md` item with its seam
 already in place:
 
-- [ ] **Cloud chosen + provisioned** (Azure billing/eligibility cleared, or GCP) — the blocking T0 spike.
+- [x] **Cloud chosen** — **Google Cloud** (2026-06-27). _Remaining:_ provision the GCP project (Cloud Run +
+      Cloud SQL + Memorystore + Cloud Storage) and clear billing/eligibility from Zimbabwe — the T0 execution step.
 - [ ] **Object storage adapter** wired to real Blob/GCS + signed URLs (stubs in `apps/api/src/adapters/storage/`).
 - [ ] **Secrets** moved to the cloud secret store (adapter seam exists).
 - [ ] **FCM push** — `firebase-admin` behind the existing stub; mobile consumes pushes (unblocks the
@@ -92,15 +95,18 @@ already in place:
 - [ ] **HTTPS for device builds** — Android 9+/iOS ATS block cleartext; required for a standalone build.
 - [ ] **OpenTelemetry** — NodeSDK + OTLP exporter pointed at the collector endpoint (T9).
 - [ ] **Real ZIM-ID KYC run** through Didit (measure the false-reject rate — gates rider onboarding).
-- [ ] **GCP exit-test** (T13) — prove the portability claim by standing the stack up on the second cloud.
+- [ ] **Portability check** (T13) — GCP is now the primary deploy target; keep the Azure adapter green in CI
+      as the portability proof (the second-cloud stand-up is the reverse direction now).
 - [ ] **CI release job** (`/ship`) — the two CI gates are green today; add the deploy/release step.
 
 ## Recommended sequence
 
 1. ✅ **Revenue model (§6) — decided** (rider commission, 0% for ~6–8 months, infra later). The economics
    story now exists; no infra to build for the pilot.
-2. **Pick the cloud (T0)** — unblocks ship, push, storage, OTEL, and production OTP in one stroke; run the
-   checklist above. *Now the cheapest high-leverage move.*
+2. ✅ **Cloud picked — Google Cloud (2026-06-27).** _Now:_ provision the GCP project (Cloud Run + Cloud SQL
+   + Memorystore + Cloud Storage) and clear billing/eligibility from Zimbabwe — this unblocks ship, push,
+   storage, OTEL, and the production OTP path in one stroke; run the checklist above. *The cheapest
+   high-leverage move.*
 3. **Greenlight a dev build** — then Phase 3 native map + `/qa` on a real device, and finally `/ship`.
 4. Mobile profile-edit + notifications fold in once the cloud lands (they need a profile-update endpoint
    and the FCM feed respectively).
@@ -108,4 +114,4 @@ already in place:
 
 **Bottom line:** the engineering spine and both app surfaces are built and CI-green; the product can
 complete a delivery end to end in code, and the revenue model is decided. The path to a real pilot now
-runs through **two vendor/device unlocks** (cloud, dev build), not through more feature code.
+runs through **provisioning the chosen cloud (Google Cloud) and a device build**, not through more feature code.

@@ -46,13 +46,18 @@ is built yet, by design.
   senders stubbed (`apps/api/src/auth/otp-sender.ts`). _Trigger:_ WhatsApp BSP onboarding decision /
   provider selected. The send-adapter seam is already in place — this is wiring, not redesign.
 
-## Cloud / infrastructure (Azure-gated)
+## Cloud / infrastructure (GCP — provisioning-gated)
 
-- **Azure/GCP cloud adapter SDKs** — real Blob / GCS object storage and signed-URL generation (storage
-  adapter stubs in `apps/api/src/adapters/storage/`). _Trigger:_ cloud chosen + provisioned (blocked on the
-  CEO-review T0 billing/eligibility spikes).
-- **FCM push notifications** — `firebase-admin` integration (currently a stub). _Trigger:_ cloud provisioned
-  + mobile app consuming pushes.
+> **Cloud chosen: Google Cloud** (2026-06-27, CONCEPT §10 / PILOT-READINESS Decision gates). Default is now
+> `CLOUD_PROVIDER=gcp` (Cloud Run + Cloud SQL + Memorystore + Cloud Storage + Secret Manager); the Azure
+> adapter is retained as the D7 portability proof. The decision is closed — the items below are now gated on
+> **provisioning the GCP project**, not on a cloud choice.
+
+- **GCS object-storage SDK** — real Cloud Storage uploads + V4 signed-URL generation behind the storage
+  adapter (`apps/api/src/adapters/storage/gcs.storage.ts`, currently a stub). _Trigger:_ GCP project
+  provisioned. The Azure Blob impl stays as the portability fallback.
+- **FCM push notifications** — `firebase-admin` integration (currently a stub). _Trigger:_ GCP/Firebase
+  project provisioned + mobile app consuming pushes.
 - **OpenTelemetry wiring** — NodeSDK + OTLP exporter (`TODO(lane D+)`); the API exposes OTEL config but does
   not yet export traces. _Trigger:_ a collector endpoint exists to point at.
 

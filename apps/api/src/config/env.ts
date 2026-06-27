@@ -6,7 +6,8 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1).optional(),
-  CLOUD_PROVIDER: z.enum(["azure", "gcp"]).default("azure"),
+  // Cloud chosen: GCP (2026-06-27). Azure impl retained behind the adapters as the portability proof (D7).
+  CLOUD_PROVIDER: z.enum(["azure", "gcp"]).default("gcp"),
   STORAGE_BUCKET: z.string().default("lynia-media"),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   OTEL_SERVICE_NAME: z.string().default("lynia-api"),
