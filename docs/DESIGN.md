@@ -227,7 +227,7 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 | DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` | ✅ done |
 | DT9 | P1 | Rider interaction-states + two rider empty-states (no-orders / not-verified) | ✅ done |
 | DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support | ◐ **partial** — history/profile/earnings shipped; notifications, support, and the *public* rider rating profile not yet |
-| DT11 | P2 | Earnings ledger — payment-agnostic; gains settlement state only when §6 is decided | ✅ done |
+| DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done — §6 decided (rider commission, 0% for ~6–8 months); the ledger gains a commission/settlement line when that infra is built (BACKLOG) |
 | DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ✅ done (contract-only fields + rider pickup-photo still deferred — see BACKLOG) |
 | DT13 | P2 | Post-Phase-3: regen `/design-html`, then DT7 visual review + `/qa` on a device build | ⬜ deferred (device-gated) |
 
