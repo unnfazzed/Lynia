@@ -63,6 +63,43 @@ describe("AuthService.requestOtp", () => {
   });
 });
 
+describe("AuthService.getProfile", () => {
+  const customerRow = {
+    id: "p1",
+    role: "customer",
+    firstName: "Tatenda",
+    lastName: "M",
+    phone: "+263771111111",
+    email: null,
+    photoUrl: null,
+    ordersCount: 3,
+    rider: null,
+  };
+  const riderRow = {
+    ...customerRow,
+    id: "p2",
+    role: "rider",
+    rider: { bikeReg: "ABZ 1234", kycStatus: "verified", ratingAvg: 4.8, ratingCount: 12, tripsCount: 30, isOnline: true },
+  };
+
+  it("returns a customer profile with rider:null", async () => {
+    const { svc } = make(baseEnv, { profile: { findUnique: async () => customerRow } });
+    const me = await svc.getProfile("p1");
+    expect(me).toMatchObject({ profileId: "p1", role: "customer", firstName: "Tatenda", phone: "+263771111111", rider: null });
+  });
+
+  it("nests the denormalized rider stats when the caller is a rider", async () => {
+    const { svc } = make(baseEnv, { profile: { findUnique: async () => riderRow } });
+    const me = await svc.getProfile("p2");
+    expect(me.rider).toMatchObject({ bikeReg: "ABZ 1234", kycStatus: "verified", ratingAvg: 4.8, tripsCount: 30, isOnline: true });
+  });
+
+  it("404s when the profile is missing", async () => {
+    const { svc } = make(baseEnv, { profile: { findUnique: async () => null } });
+    await expect(svc.getProfile("nope")).rejects.toThrow(/not found/i);
+  });
+});
+
 describe("AuthService.verifyOtp", () => {
   const profileRow = { id: "p1", role: "customer", firstName: "" };
   const fakePrisma = () => ({

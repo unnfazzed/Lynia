@@ -34,6 +34,12 @@ export class OrdersController {
     return this.orders.activeForRider(riderId);
   }
 
+  /** The caller's order history across both roles (newest first). */
+  @Get("history")
+  history(@CurrentUser() userId: string) {
+    return this.orders.historyForUser(userId);
+  }
+
   @Get(":orderId")
   get(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() callerId: string) {
     return this.orders.getSnapshot(orderId, callerId);

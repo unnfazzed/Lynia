@@ -98,6 +98,50 @@ export class OrdersService {
     return this.getSnapshot(order.id, riderId);
   }
 
+  /** A caller's order history across both roles (any order where they're the customer or the rider),
+   *  newest first — feeds the trip-history screen. Redacts contactPhone like listOpen and never carries
+   *  a counterparty phone; only the counterparty's display name + the rating on the order. */
+  async historyForUser(userId: string) {
+    const orders = await this.prisma.order.findMany({
+      where: { OR: [{ customerId: userId }, { riderId: userId }] },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        customerId: true,
+        riderId: true,
+        pickup: true,
+        dropoff: true,
+        itemDesc: true,
+        proposedFare: true,
+        agreedFare: true,
+        status: true,
+        createdAt: true,
+        rating: { select: { score: true, comment: true } },
+        customer: { select: { firstName: true, lastName: true } },
+        rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
+      },
+    });
+    return orders.map((o) => {
+      const isCustomer = o.customerId === userId;
+      const counterparty = isCustomer ? o.rider?.profile : o.customer;
+      const counterpartyName = counterparty ? `${counterparty.firstName} ${counterparty.lastName}`.trim() || null : null;
+      return {
+        id: o.id,
+        role: isCustomer ? "customer" : "rider",
+        pickup: publicWaypoint(o.pickup),
+        dropoff: publicWaypoint(o.dropoff),
+        itemDesc: o.itemDesc,
+        proposedFare: o.proposedFare.toString(),
+        agreedFare: o.agreedFare ? o.agreedFare.toString() : null,
+        status: o.status,
+        createdAt: o.createdAt.toISOString(),
+        rating: o.rating ? { score: o.rating.score, comment: o.rating.comment } : null,
+        counterpartyName,
+      };
+    });
+  }
+
   /**
    * Order snapshot — the REST source of truth the tracking client reads on (re)connect (ET4),
    * carrying status, last rider position, and the append-only event timeline. The counterparty's

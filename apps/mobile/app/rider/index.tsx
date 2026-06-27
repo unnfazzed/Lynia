@@ -104,6 +104,7 @@ export default function RiderHome(): React.ReactElement {
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Rider</Heading>
           <View style={{ flex: 1 }} />
+          <Button label="Trips" variant="ghost" onPress={() => router.push("/history")} />
           <Button label="Setup / KYC" variant="ghost" onPress={() => router.push("/rider/become")} />
         </View>
 
