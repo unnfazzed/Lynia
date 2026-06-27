@@ -8,7 +8,7 @@ import { STORAGE, type StorageAdapter } from "./storage.interface";
 /** Binds the StorageAdapter to the Azure or GCP impl based on CLOUD_PROVIDER (D7). */
 export function selectStorage(env: Env): StorageAdapter {
   return env.CLOUD_PROVIDER === "gcp"
-    ? new GcsStorage(env.STORAGE_BUCKET)
+    ? new GcsStorage(env.STORAGE_BUCKET, { projectId: env.GCP_STORAGE_PROJECT_ID })
     : new AzureBlobStorage(env.STORAGE_BUCKET);
 }
 

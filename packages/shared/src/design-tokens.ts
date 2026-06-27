@@ -12,6 +12,8 @@ export const color = {
   accent700: "#16633A",
   highlight: "#F2B705",
   danger: "#C0392B",
+  /** Text/icon colour on an accent (or danger) fill. The one inverse in the palette. */
+  onAccent: "#FFFFFF",
 } as const;
 
 /** 8pt spacing scale. */

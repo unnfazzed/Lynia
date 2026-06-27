@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
-import { ActivityIndicator, Pressable, Text, TextInput, View, type ViewStyle } from "react-native";
+import { ActivityIndicator, Animated, type DimensionValue, Pressable, Text, TextInput, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export function Screen({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -81,9 +81,9 @@ export function Button(props: {
       })}
     >
       {props.loading ? (
-        <ActivityIndicator color={primary ? "#fff" : tokens.color.accent} />
+        <ActivityIndicator color={primary ? tokens.color.onAccent : tokens.color.accent} />
       ) : (
-        <Text style={{ color: primary ? "#fff" : tokens.color.ink, fontWeight: "700", fontSize: 16 }}>{props.label}</Text>
+        <Text style={{ color: primary ? tokens.color.onAccent : tokens.color.ink, fontWeight: "700", fontSize: 16 }}>{props.label}</Text>
       )}
     </Pressable>
   );
@@ -211,7 +211,7 @@ export function Stepper(props: {
                   style={{
                     fontSize: 11,
                     fontWeight: "800",
-                    color: state === "done" ? "#fff" : state === "now" ? tokens.color.accent : tokens.color.muted,
+                    color: state === "done" ? tokens.color.onAccent : state === "now" ? tokens.color.accent : tokens.color.muted,
                   }}
                 >
                   {state === "done" ? "✓" : String(i + 1)}
@@ -274,6 +274,83 @@ export function EmptyState(props: {
         {props.message}
       </Text>
       {props.children ? <View style={{ alignSelf: "stretch", marginTop: tokens.space.md }}>{props.children}</View> : null}
+    </View>
+  );
+}
+
+// ── Skeleton loaders ──────────────────────────────────────────────────────────
+// DESIGN.md (data-light): list/board/stepper screens show content-shaped skeletons while loading,
+// not a bare spinner, so the layout doesn't jump when data lands. A calm opacity pulse, native-driven
+// so it stays cheap on constrained devices.
+export function Skeleton({
+  width = "100%",
+  height = 14,
+  radius = 6,
+  style,
+}: {
+  width?: DimensionValue;
+  height?: number;
+  radius?: number;
+  style?: ViewStyle;
+}): React.ReactElement {
+  const pulse = React.useRef(new Animated.Value(0.5)).current;
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.5, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  return <Animated.View style={[{ width, height, borderRadius: radius, backgroundColor: tokens.color.line, opacity: pulse }, style]} />;
+}
+
+/** A Card-shaped placeholder mirroring a list/board row. */
+export function SkeletonCard(): React.ReactElement {
+  return (
+    <Card>
+      <Skeleton width="55%" height={16} />
+      <Skeleton width="80%" height={12} style={{ marginTop: tokens.space.sm }} />
+      <Skeleton width="35%" height={12} style={{ marginTop: tokens.space.sm }} />
+    </Card>
+  );
+}
+
+/** N skeleton cards — the default loading state for list/board/stepper screens. */
+export function SkeletonList({ count = 3 }: { count?: number }): React.ReactElement {
+  return (
+    <View accessibilityLabel="Loading" accessibilityState={{ busy: true }}>
+      {Array.from({ length: count }, (_, i) => (
+        <SkeletonCard key={i} />
+      ))}
+    </View>
+  );
+}
+
+/** A row-shaped placeholder mirroring a list row that has a right-aligned value (e.g. trip history). */
+export function SkeletonRow(): React.ReactElement {
+  return (
+    <Card>
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
+          <Skeleton width="70%" height={14} />
+          <Skeleton width="90%" height={12} style={{ marginTop: tokens.space.sm }} />
+        </View>
+        <Skeleton width={48} height={16} />
+      </View>
+    </Card>
+  );
+}
+
+/** N skeleton rows — loading state for row-with-value lists (mirrors the row layout, no reflow). */
+export function SkeletonRows({ count = 4 }: { count?: number }): React.ReactElement {
+  return (
+    <View accessibilityLabel="Loading" accessibilityState={{ busy: true }}>
+      {Array.from({ length: count }, (_, i) => (
+        <SkeletonRow key={i} />
+      ))}
     </View>
   );
 }

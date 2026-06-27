@@ -1,0 +1,128 @@
+name: Release (Cloud Run)
+
+# Track A1 of the Ship stage (docs/NEXT-STAGE.md). Builds the API container, pushes it to
+# Artifact Registry, applies DB migrations, and deploys to Cloud Run.
+#
+# DORMANT UNTIL GCP IS PROVISIONED (Track F). The deploy job is gated on the repo variable
+# `GCP_DEPLOY_ENABLED == 'true'`, so until a maintainer arms it this workflow is a clean no-op —
+# it never fails a push. Arming it is the literal `/ship` step once provisioning hands back the
+# project/region/bucket/service-account (NEXT-STAGE.md Track F step 9).
+#
+# Required to arm (set in repo Settings → Secrets and variables → Actions):
+#   Variables:
+#     GCP_DEPLOY_ENABLED   "true" to arm this workflow
+#     GCP_PROJECT_ID       the provisioned project id
+#     GCP_REGION           africa-south1
+#     GCP_ARTIFACT_REPO    Artifact Registry repo name (e.g. lynia)
+#     CLOUD_RUN_SERVICE    Cloud Run service name (e.g. lynia-api)
+#     CLOUD_SQL_INSTANCE   Cloud SQL connection name (project:region:instance) — for migrations
+#   Secrets:
+#     GCP_SA_KEY           service-account JSON with Cloud Run Admin, Artifact Registry Writer,
+#                          Cloud SQL Client, Secret Manager Secret Accessor.
+#                          (Hardening follow-up: swap for Workload Identity Federation — see below.)
+#     MIGRATE_DATABASE_URL postgres URL through 127.0.0.1:5432 (the Cloud SQL Auth Proxy), used
+#                          only by `prisma migrate deploy`.
+#   App runtime secrets (DATABASE_URL, REDIS_URL, JWT_SIGNING_SECRET, vendor keys) live in
+#   Secret Manager and are injected at deploy via --set-secrets below.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: release-cloud-run
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: build · migrate · deploy
+    runs-on: ubuntu-latest
+    # The arming switch: no-op until a maintainer sets the variable post-provisioning.
+    if: ${{ vars.GCP_DEPLOY_ENABLED == 'true' }}
+    permissions:
+      contents: read
+      id-token: write # for Workload Identity Federation, when adopted
+    env:
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPO }}/lynia-api
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fail fast with a clear message if armed but mis-configured, rather than an opaque
+      # mid-run error after a build has already started.
+      - name: Validate required deploy config
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
+          CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+          CLOUD_SQL_INSTANCE: ${{ vars.CLOUD_SQL_INSTANCE }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          MIGRATE_DATABASE_URL: ${{ secrets.MIGRATE_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO CLOUD_RUN_SERVICE CLOUD_SQL_INSTANCE GCP_SA_KEY MIGRATE_DATABASE_URL; do
+            [ -n "${!v:-}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::GCP_DEPLOY_ENABLED is true but these are unset: ${missing[*]}. See docs/NEXT-STAGE.md → 'Arm the release workflow'." >&2
+            exit 1
+          fi
+          echo "All required deploy config present."
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          # Hardening follow-up — prefer keyless WIF over a long-lived SA key:
+          #   workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          #   service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          set -euo pipefail
+          docker build -f apps/api/Dockerfile -t "$IMAGE:${GITHUB_SHA}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${GITHUB_SHA}"
+          docker push "$IMAGE:latest"
+
+      - name: Apply database migrations (via Cloud SQL Auth Proxy)
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATE_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          curl -sSL -o cloud-sql-proxy \
+            https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.13.0/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy "${{ vars.CLOUD_SQL_INSTANCE }}" --port 5432 &
+          PROXY_PID=$!
+          # Wait for the proxy to accept connections, then migrate.
+          for i in $(seq 1 30); do (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1 && break || sleep 1; done
+          corepack enable
+          pnpm install --frozen-lockfile=false
+          pnpm --filter @lynia/api prisma:generate
+          pnpm --filter @lynia/api migrate:deploy
+          kill "$PROXY_PID" || true
+
+      - name: Deploy to Cloud Run
+        run: |
+          set -euo pipefail
+          gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --image "$IMAGE:${GITHUB_SHA}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --platform managed \
+            --port 3000 \
+            --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
+            --set-env-vars "NODE_ENV=production,CLOUD_PROVIDER=gcp,STORAGE_BUCKET=lynia-media,OTP_CHANNEL=whatsapp,KYC_PROVIDER=didit" \
+            --set-secrets "DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest" \
+            --allow-unauthenticated
+
+      - name: Summary
+        run: echo "Deployed ${IMAGE}:${GITHUB_SHA} to Cloud Run service ${{ vars.CLOUD_RUN_SERVICE }} (${{ vars.GCP_REGION }})." >> "$GITHUB_STEP_SUMMARY"

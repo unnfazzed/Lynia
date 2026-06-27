@@ -50,7 +50,7 @@ export default async function OrdersPage({
               padding: "4px 10px",
               borderRadius: 999,
               textDecoration: "none",
-              color: s === active ? "#fff" : tokens.color.muted,
+              color: s === active ? tokens.color.onAccent : tokens.color.muted,
               background: s === active ? tokens.color.accent : "transparent",
               border: `1px solid ${s === active ? tokens.color.accent : tokens.color.line}`,
             }}

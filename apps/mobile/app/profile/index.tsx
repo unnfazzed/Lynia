@@ -2,10 +2,10 @@ import { tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
-import { Button, Card, Heading, Screen, Sub } from "../../src/ui";
+import { Button, Card, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
 
 function KycBadge({ status }: { status: "pending" | "verified" | "failed" }): React.ReactElement {
   const color = status === "verified" ? tokens.color.accent : status === "failed" ? tokens.color.danger : tokens.color.muted;
@@ -32,7 +32,7 @@ export default function ProfileScreen(): React.ReactElement {
       <Sub>Your details and session.</Sub>
 
       {meQ.isLoading ? (
-        <ActivityIndicator />
+        <SkeletonList count={2} />
       ) : meQ.isError ? (
         <Card>
           <Text style={{ fontSize: 14, color: tokens.color.ink }}>Couldn't load your details.</Text>

@@ -2,9 +2,9 @@ import { tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { getHistory } from "../../src/api/orders";
-import { Button, Card, EmptyState, Heading, Screen, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
 
 function fmtDate(iso: string): string {
   const d = new Date(iso);
@@ -25,7 +25,7 @@ export default function EarningsScreen(): React.ReactElement {
       <Sub>What you've agreed and delivered.</Sub>
 
       {q.isLoading ? (
-        <ActivityIndicator />
+        <SkeletonList />
       ) : q.isError ? (
         <EmptyState icon="📡" title="Couldn't load your earnings" message="Check your connection and try again.">
           <Button label="Retry" onPress={() => void q.refetch()} />
@@ -37,9 +37,9 @@ export default function EarningsScreen(): React.ReactElement {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
           <Card style={{ backgroundColor: tokens.color.accent, borderColor: tokens.color.accent }}>
-            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600", opacity: 0.9 }}>Agreed &amp; delivered · total</Text>
-            <Text style={{ color: "#fff", fontSize: 30, fontWeight: "800", marginTop: 2 }}>${total.toFixed(2)}</Text>
-            <Text style={{ color: "#fff", fontSize: 12, opacity: 0.9, marginTop: 2 }}>
+            <Text style={{ color: tokens.color.onAccent, fontSize: 12, fontWeight: "600", opacity: 0.9 }}>Agreed &amp; delivered · total</Text>
+            <Text style={{ color: tokens.color.onAccent, fontSize: 30, fontWeight: "800", marginTop: 2 }}>${total.toFixed(2)}</Text>
+            <Text style={{ color: tokens.color.onAccent, fontSize: 12, opacity: 0.9, marginTop: 2 }}>
               {trips.length} completed {trips.length === 1 ? "trip" : "trips"}
             </Text>
           </Card>

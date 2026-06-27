@@ -55,7 +55,7 @@ export default async function RidersPage({
               padding: "4px 10px",
               borderRadius: 999,
               textDecoration: "none",
-              color: t === active ? "#fff" : tokens.color.muted,
+              color: t === active ? tokens.color.onAccent : tokens.color.muted,
               background: t === active ? tokens.color.accent : "transparent",
               border: `1px solid ${t === active ? tokens.color.accent : tokens.color.line}`,
             }}

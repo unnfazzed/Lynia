@@ -28,6 +28,7 @@
 | `--highlight` | `#F2B705` | 'recommended' marker only (gold, sparing) |
 | `--danger` | `#C0392B` | errors, destructive |
 | `--success` | `#1E7A46` | confirmations |
+| `--onAccent` | `#FFFFFF` | text/icons on an accent (or danger) fill — the one inverse |
 
 Body text ≥ 16px and ≥ 4.5:1 contrast; primary actions tuned ≥ 7:1 for **sunlight readability** (riders outdoors).
 
@@ -52,6 +53,7 @@ radius on every element).
 | Rider card | photo · first name + last initial · ★rating · call button (active order only) |
 | Status stepper | the §5c 7-step timeline |
 | Map bottom-sheet | draggable sheet over a full-bleed map |
+| Skeleton | content-shaped placeholder (pulse) for list/board screens — `SkeletonList` (cards) / `SkeletonRows` (row-with-value, e.g. history). Per-screen stepper/summary skeletons tuned in the on-device `/qa` pass |
 
 **Icons are always paired with a text label** (low-literacy users + screen readers).
 
