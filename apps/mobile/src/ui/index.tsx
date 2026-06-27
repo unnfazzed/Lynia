@@ -77,7 +77,7 @@ export function Button(props: {
         marginTop: tokens.space.sm,
         alignItems: "center",
         justifyContent: "center",
-        minHeight: tokens.touchTargetMin,
+        minHeight: primary ? 52 : tokens.touchTargetMin, // spec: primary CTA 52px, secondary ≥44px
       })}
     >
       {props.loading ? (
@@ -154,7 +154,7 @@ const STEP_LABELS: Record<"customer" | "rider", Record<string, string>> = {
     en_route_pickup: "Rider on the way to pickup",
     picked_up: "Items collected",
     en_route_dropoff: "On the way to drop-off",
-    delivered: "Delivered",
+    delivered: "Delivered (OTP)",
     completed: "Rate your rider",
   },
   rider: {
