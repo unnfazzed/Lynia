@@ -42,6 +42,26 @@ Storage + Secret Manager**, region **`africa-south1` (Johannesburg)** — lowest
 9. Hand back: project ID, region confirmation, bucket name, the service-account JSON, and the connection
    string so Track A can wire CI deploy secrets.
 
+### Arm the release workflow (connects provisioning → `/ship`)
+The CI release job (`.github/workflows/release.yml`, Track A1) is **built and dormant**. It runs only when
+the repo variable `GCP_DEPLOY_ENABLED` is `true`. Once provisioning hands back step 9, set these in
+**repo Settings → Secrets and variables → Actions**, then push to `main` to deploy:
+
+| Kind | Name | Value |
+|------|------|-------|
+| Variable | `GCP_DEPLOY_ENABLED` | `true` (the arming switch) |
+| Variable | `GCP_PROJECT_ID` | the provisioned project id |
+| Variable | `GCP_REGION` | `africa-south1` |
+| Variable | `GCP_ARTIFACT_REPO` | Artifact Registry repo name (e.g. `lynia`) |
+| Variable | `CLOUD_RUN_SERVICE` | `lynia-api` |
+| Variable | `CLOUD_SQL_INSTANCE` | connection name `project:region:instance` |
+| Secret | `GCP_SA_KEY` | service-account JSON (Cloud Run Admin, Artifact Registry Writer, Cloud SQL Client, Secret Manager Secret Accessor) |
+| Secret | `MIGRATE_DATABASE_URL` | postgres URL via `127.0.0.1:5432` (the Auth Proxy), for `prisma migrate deploy` |
+
+App runtime secrets (`DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET`) go in **Secret Manager** — the
+workflow injects them with `--set-secrets`. Hardening follow-up: swap `GCP_SA_KEY` for keyless Workload
+Identity Federation (the workflow already requests `id-token: write` and has the WIF lines commented in).
+
 ### Other founder-gated unlocks (parallel, lower urgency)
 - **Greenlight a dev build** (not Expo Go) → enables Phase 3 native map + on-device `/qa`.
 - **WhatsApp BSP onboarding** + SMS gateway account → flips OTP off the dev `console` channel.
@@ -56,7 +76,7 @@ flip, not a build. Each item is self-contained, CI-verifiable, and maps to a mar
 
 | # | Task | Seam / file | Verifiable now? |
 |---|------|-------------|-----------------|
-| A1 | **CI release/deploy job** — build the API container, push to Artifact Registry, deploy to Cloud Run. Secrets via GitHub env (filled from Track F step 9). Gated to `main`. | `.github/workflows/` (new `release.yml`) | ✅ lint/build the workflow; deploy step no-ops without secrets |
+| A1 | ✅ **DONE — CI release/deploy job.** Builds the API container, pushes to Artifact Registry, runs `prisma migrate deploy` via the Cloud SQL Auth Proxy, deploys to Cloud Run. **Dormant until armed** by the `GCP_DEPLOY_ENABLED` repo variable, so it's a clean no-op until Track F provisions. | `.github/workflows/release.yml` | ✅ shipped; arms on provisioning |
 | A2 | **GCS signed-URL wiring** — replace the placeholder URL in `createUploadUrl`/`createReadUrl` with the real `@google-cloud/storage` `getSignedUrl({action})` V4 call. | `apps/api/src/adapters/storage/gcs.storage.ts` (TODO marked) | ◐ unit-test signing shape with a fake key; live URL needs the bucket |
 | A3 | **Secrets adapter** — keep env-injection as the deploy contract (D7 avoids managed-identity lock-in); document the Secret-Manager→env mapping for Cloud Run. | `apps/api/src/adapters/secrets/` | ✅ |
 | A4 | **FCM push wiring** — `firebase-admin` behind the existing `fcm.push.ts` stub; mobile consumes the feed. | `apps/api/src/adapters/push/fcm.push.ts` | ◐ unit-test payload build; live send needs FCM project |
@@ -72,10 +92,11 @@ flip, not a build. Each item is self-contained, CI-verifiable, and maps to a mar
 Zero external dependency, runs anytime — sensible to do **while Track F provisioning is arranged**, since
 none of it is blocked. These are the consciously-deferred items from the post-build review (`BACKLOG.md`).
 
-1. **Gate/remove the `x-user-id` dev auth fallback** (`apps/api/src/common/current-user.decorator.ts`).
-   Latent (not exploitable on JWT-guarded routes) but it should be non-production-only or gone. Touches
-   every controller's auth assumption — do it as its own careful pass **with the auth tests in view**.
-   *Highest-value item here: it's a real pre-pilot security tightening and fully testable.*
+1. ✅ **DONE — gated the `x-user-id` dev auth fallback** (`apps/api/src/common/current-user.decorator.ts`).
+   In production the header is now ignored entirely — identity is only ever the JWT subject — so a spoofed
+   `x-user-id` can never stand in for a real user; the dev/test fallback is preserved. The resolver was
+   extracted to a pure `resolveCurrentUser()` and covered by `current-user.decorator.spec.ts` (5 cases:
+   JWT wins, dev fallback, prod ignores the header, no-identity throws).
 2. **`onAccent` design token** — replace hardcoded `"#fff"` on-accent text with `color.onAccent` in
    `packages/shared/src/design-tokens.ts`; ripple to the call sites.
 3. **Skeleton loaders over spinners** — a small reusable `Skeleton`; swap the bare `ActivityIndicator`
