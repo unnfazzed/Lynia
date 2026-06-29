@@ -94,13 +94,10 @@ target + grant the runtime SA `roles/cloudtrace.agent`).
 
 ---
 
-## One non-vendor action still outstanding (you, in Cloud Shell)
-The LB backend WebSocket timeout (`timeout_sec=3600`, so tracking sockets survive a full delivery) is merged
-but Terraform-side — apply it:
-```bash
-cd ~/Lynia/infra/terraform && git pull origin claude/project-next-steps-y3ce3g
-/usr/bin/terraform apply -auto-approve
-```
+## WebSocket timeout — resolved (no action needed)
+Tracking sockets need to survive a full delivery. This is handled by Cloud Run's request timeout
+(`--timeout 3600` in `release.yml`); a `timeout_sec` on the LB backend was tried but **removed** (PR #51) —
+it is invalid for a serverless-NEG backend. No Terraform apply is outstanding for this.
 
 ## Deferred infra hardening (pre-launch, not pilot — per the lean decision)
 Tracked in `infra/terraform/README.md`: drop Cloud SQL public IP (needs a VPC-internal migrator first),

@@ -3,7 +3,35 @@
 > Current-state status for a CEO/eng review. **Supersedes the verdict in
 > `docs/CEO-REVIEW-CHECKPOINT.md`** (2026-06-26), which predates the build work below — its top findings
 > ("core loop can't complete a delivery", "mobile not recommended next") are now **closed**.
-> Date: 2026-06-27. Branch: `claude/ceo-review-prep-975vdb`.
+> Date: 2026-06-27, **updated 2026-06-29**. Branch: `claude/ceo-review-prep-975vdb`.
+
+## 🟢 Update — 2026-06-29: the cloud gate is closed; the API is live
+
+Since the 06-27 snapshot below, the **Ship stage executed end to end.** The open gate at the time —
+GCP provisioning — is now **done**, and the API is **live and CI-deployed**:
+
+- **GCP provisioned** (project `lynia-500911`) entirely as Terraform (`infra/terraform/`): Cloud Run +
+  Cloud SQL (PostGIS) + Memorystore (Redis) + Cloud Storage + Secret Manager in `africa-south1`. CI auth
+  is **keyless** via Workload Identity Federation (no SA key).
+- **API live behind an external HTTPS load balancer** (global ALB + managed cert) at a custom domain,
+  **`https://lyniago.lyniafinance.com`** → `{"status":"ok","db":true,"redis":true}`. Cloud Run ingress is
+  **locked to the LB** (`internal-and-cloud-load-balancing`); the WS backend timeout is raised to 3600s so
+  tracking sockets survive a full delivery.
+- **`/ship` happened** — `.github/workflows/release.yml` builds the API image → Artifact Registry, runs
+  `prisma migrate deploy` via the Cloud SQL Auth Proxy, and deploys to Cloud Run on push to `main`
+  (docs-only changes skipped). Track A shipped: A1 release job, A2 GCS V4 signed URLs, A4 FCM adapter,
+  A5 OTEL exporter.
+- **Mobile cut over to the live API** — REST + Socket.IO target the LB over HTTPS/WSS.
+- **Full flow is testable now, vendor-free** — an opt-in, fail-safe **QA test mode** (`docs/QA-TESTING.md`)
+  lets the whole customer + rider journey run against the live deployment without the WhatsApp/Didit vendors.
+
+**What's left is no longer a code gate.** The remaining work is **founder/vendor wiring** — WhatsApp BSP
+(production OTP), a real Didit ZIM-ID KYC run, and a Firebase project (live FCM send) — each a
+*create account → set secret → flip flag* step documented in **`docs/FOUNDER-RUNBOOK.md`**, plus the
+**dev build** for on-device `/qa`. The 06-27 snapshot below is preserved for history; read the gate/checklist
+sections through this update.
+
+---
 
 ## Verdict (read this first)
 
@@ -76,42 +104,53 @@ more code we can write today.
 | **Greenlight a dev build** (not Expo Go) | ⏳ **open** → Phase 3 native map + tap-to-pin, `/qa` device pass, on-device verification of the stepper/earnings/gate | Go-ahead + device |
 | **Revenue model** (§6) | ✅ **decided (2026-06-27)** — rider commission (% of agreed fare), **0% for ~6–8 months**, settlement/commission **infra built later**. No pilot blocker; the commission build is parked in BACKLOG with a ~6–8-month trigger. | Product/founder decision |
 
-One open gate remains (**dev build**); the cloud decision is **closed (Google Cloud)** and its follow-on
-work is provisioning execution. The work behind each is parked in `docs/BACKLOG.md` with its trigger.
+As of the 06-29 update, the cloud decision is not just **closed (Google Cloud)** — it is **executed**: the
+project is provisioned and the API is live. The remaining gates are the **dev build** and the
+**founder/vendor wiring** (see `docs/FOUNDER-RUNBOOK.md`). The work behind each is parked in
+`docs/BACKLOG.md` with its trigger.
 
-## Ship / cloud-provisioning checklist (cloud chosen — GCP provisioning)
+## Ship / cloud-provisioning checklist (✅ provisioned + deployed — 2026-06-29)
 
-Pre-staged so T0 → ship is execution, not discovery. Each maps to a `BACKLOG.md` item with its seam
-already in place:
+Pre-staged so T0 → ship was execution, not discovery. Now mostly done; the open items are vendor/founder
+wiring, not code:
 
-- [x] **Cloud chosen** — **Google Cloud** (2026-06-27). _Remaining:_ provision the GCP project (Cloud Run +
-      Cloud SQL + Memorystore + Cloud Storage) and clear billing/eligibility from Zimbabwe — the T0 execution step.
-- [ ] **Object storage adapter** wired to real Blob/GCS + signed URLs (stubs in `apps/api/src/adapters/storage/`).
-- [ ] **Secrets** moved to the cloud secret store (adapter seam exists).
-- [ ] **FCM push** — `firebase-admin` behind the existing stub; mobile consumes pushes (unblocks the
-      notifications center).
+- [x] **Cloud chosen + provisioned** — **Google Cloud** (decided 06-27, provisioned 06-29). GCP project
+      `lynia-500911` stood up as Terraform (`infra/terraform/`): Cloud Run + Cloud SQL (PostGIS) + Memorystore
+      + Cloud Storage + Secret Manager in `africa-south1`. Billing/eligibility from Zimbabwe cleared.
+- [x] **Object storage adapter** wired to real GCS + V4 signed URLs (A2; `apps/api/src/adapters/storage/gcs.storage.ts`,
+      ADC `signBlob` — no private key). _Live round-trip needs the first real upload (rider KYC / item photo)._
+- [x] **Secrets** in Secret Manager (`DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET`), injected at deploy via `--set-secrets`.
+- [x] **FCM push adapter** (A4) — `firebase-admin` behind the seam, ADC creds, payload mapper unit-tested.
+      _Remaining (founder + feature):_ a Firebase project + device-token registration / send call-sites.
 - [ ] **Production OTP** — WhatsApp BSP onboarding + SMS gateway behind the `otp-sender.ts` seam (console
-      is dev-only today).
-- [ ] **HTTPS for device builds** — Android 9+/iOS ATS block cleartext; required for a standalone build.
-- [ ] **OpenTelemetry** — NodeSDK + OTLP exporter pointed at the collector endpoint (T9).
+      is dev-only today). **Founder action** — `FOUNDER-RUNBOOK.md` §1.
+- [x] **HTTPS for device builds** — external HTTPS load balancer + managed cert at `lyniago.lyniafinance.com`;
+      mobile cut over to HTTPS/WSS.
+- [x] **OpenTelemetry exporter** (A5) — NodeSDK + OTLP/HTTP, no-op until `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+      _Remaining:_ point it at a collector (deferred by CEO review — pilot volume doesn't need it yet).
 - [ ] **Real ZIM-ID KYC run** through Didit (measure the false-reject rate — gates rider onboarding).
-- [ ] **Portability check** (T13) — GCP is now the primary deploy target; keep the Azure adapter green in CI
-      as the portability proof (the second-cloud stand-up is the reverse direction now).
-- [ ] **CI release job** (`/ship`) — the two CI gates are green today; add the deploy/release step.
+      **Founder action** — `FOUNDER-RUNBOOK.md` §2. (The integration is built; `KYC_PROVIDER=didit`.)
+- [x] **Portability check** (T13) — GCP is the primary deploy target; the Azure adapter stays green in CI as
+      the D7 portability proof.
+- [x] **CI release job** (`/ship`) — `.github/workflows/release.yml` builds → migrates → deploys to Cloud Run
+      on push to `main`. Keyless via Workload Identity Federation.
 
 ## Recommended sequence
 
 1. ✅ **Revenue model (§6) — decided** (rider commission, 0% for ~6–8 months, infra later). The economics
    story now exists; no infra to build for the pilot.
-2. ✅ **Cloud picked — Google Cloud (2026-06-27).** _Now:_ provision the GCP project (Cloud Run + Cloud SQL
-   + Memorystore + Cloud Storage) and clear billing/eligibility from Zimbabwe — this unblocks ship, push,
-   storage, OTEL, and the production OTP path in one stroke; run the checklist above. *The cheapest
-   high-leverage move.*
-3. **Greenlight a dev build** — then Phase 3 native map + `/qa` on a real device, and finally `/ship`.
-4. Mobile profile-edit + notifications fold in once the cloud lands (they need a profile-update endpoint
-   and the FCM feed respectively).
-5. **~6–8 months out:** build the commission/settlement infrastructure when monetization begins (BACKLOG).
+2. ✅ **Cloud picked + provisioned + deployed — Google Cloud (chosen 06-27, live 06-29).** The API is up at
+   `https://lyniago.lyniafinance.com` and CI-deployed; ship, storage, OTEL, and push adapters are all wired.
+   *The cheapest high-leverage move — now banked.*
+3. **Founder/vendor wiring (start now, long lead time):** WhatsApp BSP (OTP) + a real Didit ZIM-ID run, in
+   parallel — each a *create account → set secret → flip flag* step in `FOUNDER-RUNBOOK.md`. Test the full
+   flow vendor-free today via `QA-TESTING.md`.
+4. **Greenlight a dev build** — then Phase 3 native map + `/qa` on a real device.
+5. Mobile profile-edit + notifications + a Firebase project fold in next (profile-update endpoint, device-token
+   registration, live FCM send).
+6. **~6–8 months out:** build the commission/settlement infrastructure when monetization begins (BACKLOG).
 
-**Bottom line:** the engineering spine and both app surfaces are built and CI-green; the product can
-complete a delivery end to end in code, and the revenue model is decided. The path to a real pilot now
-runs through **provisioning the chosen cloud (Google Cloud) and a device build**, not through more feature code.
+**Bottom line (06-29):** the engineering spine and both app surfaces are built and CI-green, **the API is
+live on GCP**, and the product can complete a delivery end to end against the live deployment (vendor-free
+via QA mode). The revenue model is decided. The path to a real pilot now runs through **founder/vendor
+wiring (WhatsApp BSP, Didit) and a device build**, not through more feature code or any cloud gate.

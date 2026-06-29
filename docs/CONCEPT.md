@@ -10,11 +10,13 @@
 > References: Grab Express (point-to-point parcel), **inDrive** (customer-priced, cash-economy marketplace).
 > Output of a gstack-style **Office Hours** session. Status: **conceptualisation locked, ready for build.**
 
-> ✅ **Build shipped (2026-06-27).** The concept and architecture below are validated — a full delivery
-> runs phone-to-phone in code (offer loop → lifecycle → OTP hand-off → rating). This doc remains the
+> ✅ **Build shipped (2026-06-27); deployed to GCP (2026-06-29).** The concept and architecture below are
+> validated — a full delivery runs phone-to-phone in code (offer loop → lifecycle → OTP hand-off → rating),
+> and the API is now **live and CI-deployed** at `https://lyniago.lyniafinance.com`. This doc remains the
 > living north star; its forward-looking parts (§3 risks, §7 one-month plan, §10 next steps) are annotated
-> below. The **cloud (Google Cloud) and revenue model (§6) are now decided**; the remaining external gate is
-> the **dev build**. **For current status, see `docs/PILOT-READINESS.md`.**
+> below. The **cloud (Google Cloud) is provisioned + deployed** and the **revenue model (§6) is decided**;
+> the remaining gates are the **dev build** and **founder/vendor wiring** (WhatsApp BSP, Didit — see
+> `docs/FOUNDER-RUNBOOK.md`). **For current status, see `docs/PILOT-READINESS.md`.**
 
 ---
 
@@ -400,11 +402,13 @@ number is simply gated by order state.
   completes end-to-end in code.
 - ✅ **Review** — comprehensive post-build eng + design conformance pass, fixes merged.
 - ✅ **Revenue model decided** (§6) — rider commission, 0% for ~6–8 months, infra built later.
-- ✅ **Cloud chosen — Google Cloud** (2026-06-27): reachable from Zimbabwe with no country-level block,
-  nearest region Johannesburg `africa-south1`, Google Maps already a dependency; default `CLOUD_PROVIDER=gcp`,
-  Azure adapter kept as the D7 portability proof. Closes the T0 *pick-a-cloud* decision.
-- ⬜ **Remaining (external gates):** provision the GCP project (T0 execution), greenlight a dev build (Phase 3
-  native maps) → then `/qa` + `/ship`. See `docs/PILOT-READINESS.md`.
+- ✅ **Cloud chosen, provisioned + deployed — Google Cloud** (chosen 2026-06-27, live 2026-06-29):
+  region Johannesburg `africa-south1`, default `CLOUD_PROVIDER=gcp`, Azure adapter kept as the D7
+  portability proof. The project (`lynia-500911`) is Terraform-provisioned and the API is CI-deployed to
+  Cloud Run behind an external HTTPS load balancer (`https://lyniago.lyniafinance.com`). Closes T0.
+- ⬜ **Remaining (founder/vendor + dev build):** WhatsApp BSP (OTP) + a real Didit ZIM-ID run
+  (`docs/FOUNDER-RUNBOOK.md`), and a greenlit dev build (Phase 3 native maps) → then on-device `/qa`.
+  The full flow is testable now vendor-free (`docs/QA-TESTING.md`). See `docs/PILOT-READINESS.md`.
 
 > Note: gstack skills (`/plan-ceo-review`, etc.) require gstack installed locally; the equivalents above
 > were run manually. **Current overall status lives in `docs/PILOT-READINESS.md`.**
