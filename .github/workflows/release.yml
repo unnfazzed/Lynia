@@ -32,6 +32,12 @@ name: Release (Cloud Run)
 on:
   push:
     branches: [main]
+    # Docs-only changes don't ship a new image — skip the build/migrate/deploy.
+    # (A commit that touches code AND docs still deploys; paths-ignore only skips
+    # when every changed file matches.)
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   workflow_dispatch: {}
 
 concurrency:
