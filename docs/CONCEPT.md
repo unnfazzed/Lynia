@@ -395,9 +395,12 @@ number is simply gated by order state.
 - ✅ **Office Hours follow-up** — added the **initiator live-tracking window** (§5c): live location from acceptance, rider confirm-only at item check, rating required to close.
 - ✅ **Office Hours follow-up** — **deferred payments & revenue entirely** to a later phase: removed Paynow / commission / `rider_ledger` / top-ups / cash-settlement from the MVP; the app agrees a fare (bidding loop intact) but moves no money; revenue model (gateway, own rails, or cash) undecided; Lynia stays a matchmaker. See §6.
 - ✅ **Office Hours follow-up** — added **account creation, identity & profiles** (§5d): low-friction phone+name+ID signup, **WhatsApp-only OTP**, **one-account upgrade-to-rider**, **automated KYC** (no admin, rides only after verified) + ZIM bike reg + required rider photo, **viewable profiles** (first name + last initial), **phone hidden except `assigned`→`completed`**.
-- ✅ **Plan → CEO review** — `docs/CEO-REVIEW.md` (plan-stage) + `docs/CEO-REVIEW-CHECKPOINT.md` (build).
-- ✅ **Plan → Eng review** — `docs/ENG-REVIEW.md`, plus two post-build first-principles eng reviews (P0 fixes).
-- ✅ **Design review** — `docs/DESIGN.md` + `docs/design/` mockups (full two-sided journey).
+- ✅ **CEO / product review** — `docs/CEO-REVIEW.md` — the living product review log (Plan pressure-test →
+  Build checkpoint → Ship triage).
+- ✅ **Engineering review** — `docs/ENG-REVIEW.md` — the living engineering review log (Plan architecture
+  gate → Build first-principles P0 audits → Ship provisioning/ship-prep).
+- ✅ **Design review** — `docs/DESIGN-REVIEW.md` (the review log) against the `docs/DESIGN.md` spec +
+  `docs/design/` mockups (full two-sided journey).
 - ✅ **Build** — backend lifecycle + both mobile app sides shipped to `main`, CI-gated; a delivery
   completes end-to-end in code.
 - ✅ **Review** — comprehensive post-build eng + design conformance pass, fixes merged.

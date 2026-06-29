@@ -1,8 +1,10 @@
 # Lynia — Design System & UX Spec
 
-> Seeded by the gstack `/plan-design-review` stage. This is the living design system: every screen and
-> future design review calibrates against it. Direction: **clean utility + a warm accent** — trust through
-> clarity, tuned for a low-trust cash market on cheap Android phones and expensive data.
+> Seeded by the gstack `/plan-design-review` stage. This is the living design **system/spec**: every screen
+> and future design review calibrates against it. The **review history** (verdicts, scores, findings) lives
+> in `docs/DESIGN-REVIEW.md`; this file is the baseline it measures against. Direction: **clean utility + a
+> warm accent** — trust through clarity, tuned for a low-trust cash market on cheap Android phones and
+> expensive data.
 
 ## Locked design decisions
 

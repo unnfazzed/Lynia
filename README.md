@@ -2,8 +2,9 @@
 
 On-demand motorbike courier for Zimbabwe — an inDrive-style "offer loop" (customer names a
 price, riders accept or counter, customer selects). See [`docs/`](docs/) for the full plan:
-[CONCEPT](docs/CONCEPT.md) · [CEO review](docs/CEO-REVIEW.md) · [Eng review](docs/ENG-REVIEW.md) ·
-[Design system](docs/DESIGN.md) · [screen previews](docs/design/lynia-screens.html).
+[CONCEPT](docs/CONCEPT.md) · review logs: [CEO](docs/CEO-REVIEW.md) · [Eng](docs/ENG-REVIEW.md) ·
+[Design](docs/DESIGN-REVIEW.md) · [Design system](docs/DESIGN.md) ·
+[screen previews](docs/design/lynia-screens.html).
 
 **Status:** the API is **live and CI-deployed on GCP** at
 [`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com) (`/health` →
