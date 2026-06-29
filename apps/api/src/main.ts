@@ -7,7 +7,8 @@ import { initObservability } from "./observability/otel";
 
 async function bootstrap(): Promise<void> {
   const env = loadEnv();
-  initObservability(env.OTEL_SERVICE_NAME, env.OTEL_EXPORTER_OTLP_ENDPOINT);
+  // Start tracing before the app so the SDK can patch http before the server begins handling requests.
+  await initObservability(env.OTEL_SERVICE_NAME, env.OTEL_EXPORTER_OTLP_ENDPOINT);
 
   // rawBody enables HMAC verification of the Didit KYC webhook against the unparsed body.
   const app = await NestFactory.create(AppModule, { bufferLogs: false, rawBody: true });

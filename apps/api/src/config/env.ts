@@ -14,6 +14,12 @@ export const envSchema = z.object({
   GCP_STORAGE_PROJECT_ID: z.string().optional(),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   OTEL_SERVICE_NAME: z.string().default("lynia-api"),
+  // --- Push (lane A4) ---
+  // "fcm" sends via firebase-admin (ADC creds on Cloud Run — no key in env); "noop" logs only
+  // (dev/test, and prod until the Firebase project + messaging role are provisioned).
+  PUSH_PROVIDER: z.enum(["fcm", "noop"]).default("noop"),
+  // Optional project override. On Cloud Run ADC supplies the project, so this is usually unset.
+  FCM_PROJECT_ID: z.string().optional(),
   // --- Auth (lane B) ---
   JWT_SIGNING_SECRET: z.string().min(16).default("dev-insecure-secret-change-me-please"),
   ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
