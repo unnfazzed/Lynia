@@ -44,7 +44,7 @@ verified against a real cloud.
 Target architecture (CONCEPT §10): **Cloud Run + Cloud SQL (PostGIS) + Memorystore (Redis) + Cloud
 Storage + Secret Manager**, region **`africa-south1` (Johannesburg)** — lowest latency to Harare.
 
-> **Now codified as Terraform: `infra/terraform/`** (reviewed in `docs/REVIEW-GCP-PROVISIONING.md`).
+> **Now codified as Terraform: `infra/terraform/`** (reviewed in `docs/ENG-REVIEW.md` §3b, Ship).
 > Steps 2–8 below are exactly what the module provisions — run `terraform apply`, not console clicks.
 > The only non-codeable step is **step 1 (project + billing)**, the founder gate. `terraform output
 > arming_guide` then prints the release-workflow arming checklist.

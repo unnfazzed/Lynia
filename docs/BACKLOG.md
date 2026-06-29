@@ -60,7 +60,7 @@ is built yet, by design.
 > + Cloud Storage + Secret Manager); the Azure adapter is retained as the D7 portability proof. The
 > provisioning gate is **closed** — what remains below is collector/feature wiring, not a cloud stand-up.
 > Deferred infra hardening (drop Cloud SQL public IP, Redis `STANDARD_HA`, Cloud SQL `REGIONAL`, tighten
-> bucket CORS) is tracked in `infra/terraform/README.md` and triaged in `docs/REVIEW-SHIP-FOLLOWUPS.md`.
+> bucket CORS) is tracked in `infra/terraform/README.md` and triaged in `docs/ENG-REVIEW.md` §3 (Ship).
 
 - ✅ **GCS object-storage SDK — DONE (A2).** Real Cloud Storage uploads + V4 signed-URL generation behind the
   storage adapter (`apps/api/src/adapters/storage/gcs.storage.ts`), ADC `signBlob` (no private key), offline

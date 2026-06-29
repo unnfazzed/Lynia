@@ -1,7 +1,8 @@
 # Lynia — Founder action runbook (post-launch unblocks)
 
 > The API is live and CI-deployed on GCP at **https://lyniago.lyniafinance.com**. Everything codeable
-> through the gstack review gates is shipped (`docs/REVIEW-SHIP-FOLLOWUPS.md`). What remains needs a
+> through the gstack review gates is shipped (Ship-stage triage in the review logs — `docs/CEO-REVIEW.md`
+> §3, `docs/ENG-REVIEW.md` §3, `docs/DESIGN-REVIEW.md` §3). What remains needs a
 > **founder/vendor action** — an account, a key, or an org decision — not code. The integrations are
 > already built behind env seams, so each item below is **create account → set secret → flip flag**.
 >

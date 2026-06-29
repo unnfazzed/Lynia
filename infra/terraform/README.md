@@ -8,7 +8,7 @@ provisions the target architecture from `CONCEPT.md` §10 — **Cloud Run + Clou
 
 This replaces the manual click-runbook with something reviewable, version-controlled,
 and re-runnable. It went through an engineering/cloud review pass —
-`docs/REVIEW-GCP-PROVISIONING.md`.
+`docs/ENG-REVIEW.md` §3b (Ship), incl. the post-apply addendum.
 
 ## What it creates
 

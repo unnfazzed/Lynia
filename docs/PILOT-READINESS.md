@@ -1,7 +1,7 @@
 # Lynia — Pilot-Readiness Checkpoint
 
-> Current-state status for a CEO/eng review. **Supersedes the verdict in
-> `docs/CEO-REVIEW-CHECKPOINT.md`** (2026-06-26), which predates the build work below — its top findings
+> Current-state status for a CEO/eng review. **Supersedes the verdict in the build-checkpoint review**
+> (`docs/CEO-REVIEW.md` §2, 2026-06-26), which predates the build work below — its top findings
 > ("core loop can't complete a delivery", "mobile not recommended next") are now **closed**.
 > Date: 2026-06-27, **updated 2026-06-29**. Branch: `claude/ceo-review-prep-975vdb`.
 
