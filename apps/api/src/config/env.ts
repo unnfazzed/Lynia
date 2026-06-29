@@ -28,6 +28,12 @@ export const envSchema = z.object({
   // E4: WhatsApp default, SMS behind a flag (schedule insurance vs BSP delay).
   // "console" logs the code for local/dev testing without any messaging provider.
   OTP_CHANNEL: z.enum(["whatsapp", "sms", "console"]).default("whatsapp"),
+  // QA/test only: comma-separated phone numbers for which requestOtp returns the code in its
+  // response, so end-to-end signup is testable on a real device with no WhatsApp BSP. ONLY
+  // effective on the "console" channel and ONLY for numbers in this list — an arbitrary phone
+  // is never exposed, so this is not an account-takeover hole. Empty = exposure off (default).
+  // MUST be empty (and OTP_CHANNEL=whatsapp) before real launch — see FOUNDER-RUNBOOK.
+  OTP_TEST_PHONES: z.string().default(""),
   // --- KYC (lane E) ---
   // auto = submit to the vendor; manual = leave pending for admin review (T7 backstop).
   KYC_MODE: z.enum(["auto", "manual"]).default("auto"),

@@ -61,6 +61,20 @@ describe("AuthService.requestOtp", () => {
     const res = await svc.requestOtp("+263770000004", "1.1.1.4");
     expect(res.devCode).toBeUndefined();
   });
+
+  it("returns devCode in production for an allowlisted OTP_TEST_PHONES number (QA)", async () => {
+    const env = {
+      ...baseEnv,
+      NODE_ENV: "production",
+      OTP_TEST_PHONES: "+263770000010, +263770000011",
+    } as Env;
+    const { svc } = make(env, {});
+    const allowed = await svc.requestOtp("+263770000011", "1.1.1.5");
+    expect(allowed.devCode).toMatch(/^\d{6}$/);
+    // A non-allowlisted phone in production is still never exposed.
+    const blocked = await svc.requestOtp("+263779999999", "1.1.1.6");
+    expect(blocked.devCode).toBeUndefined();
+  });
 });
 
 describe("AuthService.getProfile", () => {

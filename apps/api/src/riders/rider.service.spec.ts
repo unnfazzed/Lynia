@@ -44,6 +44,25 @@ describe("RiderService.becomeRider", () => {
     expect(res).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/sess_1" });
   });
 
+  it("stub provider in auto mode auto-verifies the rider so it can go online (QA/test)", async () => {
+    let created: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        findUnique: async () => null,
+        create: async (args: { data: Record<string, unknown> }) => {
+          created = args.data;
+          return {};
+        },
+      },
+      profile: { update: async () => ({}) },
+      $transaction: async (ops: unknown[]) => ops,
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
+    const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" });
+    expect(res.kycStatus).toBe("verified");
+    expect(created).toMatchObject({ kycStatus: "verified", idVerified: true });
+  });
+
   it("manual mode skips the vendor and returns no url", async () => {
     const vendor: KycVendor = {
       submit: async () => { throw new Error("vendor must not be called in manual mode"); },

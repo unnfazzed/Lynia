@@ -45,6 +45,12 @@ is built yet, by design.
 - **Real WhatsApp BSP + SMS gateway.** OTP currently ships via the `console` channel (dev) with WhatsApp/SMS
   senders stubbed (`apps/api/src/auth/otp-sender.ts`). _Trigger:_ WhatsApp BSP onboarding decision /
   provider selected. The send-adapter seam is already in place — this is wiring, not redesign.
+- **Canonicalize the phone identity (E.164).** The raw phone string is the OTP-store key, rate-limit key,
+  `profile.upsert` key, and the QA allowlist match — with no normalization (`auth.controller.ts` only
+  length-validates). So `+263772…`, `0772…`, `263772…` are different accounts with separate OTP/rate
+  buckets (account fragmentation + a per-format rate-limit-bypass). _Trigger:_ before real signups at
+  scale. _Shape:_ a `normalizePhone()` to E.164 applied once at the controller boundary; the QA allowlist
+  already strips cosmetic formatting for its compare. (Flagged in the QA test-mode security review.)
 
 ## Cloud / infrastructure (GCP — provisioning-gated)
 

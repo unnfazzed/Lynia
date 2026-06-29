@@ -90,12 +90,33 @@ export class AuthService {
     await this.store.put(phone, this.tokens.hash(code), this.env.OTP_TTL_SECONDS);
     await this.sender.send(phone, code);
 
-    // Local/dev convenience: on the console channel outside production, return the code so
-    // signup is testable with no messaging provider. Never leaks in production.
-    const devCode =
-      this.env.OTP_CHANNEL === "console" && this.env.NODE_ENV !== "production" ? code : undefined;
+    // Return the code in the response ONLY when it can't be a takeover vector:
+    //  - dev/test: any phone on the console channel (local signup convenience), OR
+    //  - prod QA: the console channel AND an allowlisted OTP_TEST_PHONES number, so a real
+    //    device can test signup with no WhatsApp BSP; arbitrary phones are never exposed.
+    const consoleChannel = this.env.OTP_CHANNEL === "console";
+    const exposeCode =
+      consoleChannel && (this.env.NODE_ENV !== "production" || this.isTestPhone(phone));
+    const devCode = exposeCode ? code : undefined;
     // Never leak whether the phone exists — always "sent".
     return { sent: true, channel: this.sender.channel(), ...(devCode ? { devCode } : {}) };
+  }
+
+  /**
+   * QA allowlist (OTP_TEST_PHONES, comma-separated) — gates returning the OTP code in prod.
+   * Compares with cosmetic formatting (spaces/dashes/parens) stripped on BOTH sides, so a tester
+   * whose device sends "+263 77 000 0011" still matches "+263770000011" in the list. This is a
+   * comparison-only normalization — it never widens the match to a different number, and does not
+   * touch the auth identity key (the raw phone). (Full E.164 normalization of the identity key is
+   * a separate, broader change — see BACKLOG.)
+   */
+  private isTestPhone(phone: string): boolean {
+    const norm = (p: string): string => p.replace(/[\s()-]/g, "");
+    const allow = (this.env.OTP_TEST_PHONES ?? "")
+      .split(",")
+      .map(norm)
+      .filter(Boolean);
+    return allow.includes(norm(phone));
   }
 
   async verifyOtp(phone: string, code: string, userAgent?: string): Promise<SessionTokens & {
