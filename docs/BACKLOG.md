@@ -56,10 +56,13 @@ is built yet, by design.
 - **GCS object-storage SDK** — real Cloud Storage uploads + V4 signed-URL generation behind the storage
   adapter (`apps/api/src/adapters/storage/gcs.storage.ts`, currently a stub). _Trigger:_ GCP project
   provisioned. The Azure Blob impl stays as the portability fallback.
-- **FCM push notifications** — `firebase-admin` integration (currently a stub). _Trigger:_ GCP/Firebase
-  project provisioned + mobile app consuming pushes.
-- **OpenTelemetry wiring** — NodeSDK + OTLP exporter (`TODO(lane D+)`); the API exposes OTEL config but does
-  not yet export traces. _Trigger:_ a collector endpoint exists to point at.
+- ✅ **FCM push notifications — adapter DONE (A4).** `firebase-admin` (v14 modular API) is wired behind the
+  `PushAdapter` seam (`apps/api/src/adapters/push/fcm.push.ts`), selected by `PUSH_PROVIDER=fcm`, ADC creds
+  on Cloud Run (no key in env), payload mapper unit-tested. _Remaining:_ device-token registration + calling
+  `PUSH.send` at lifecycle transitions, and a live send (needs the Firebase project + messaging role).
+- ✅ **OpenTelemetry wiring — DONE (A5).** NodeSDK + OTLP/HTTP trace exporter + http instrumentation
+  (`apps/api/src/observability/otel.ts`), lazy-loaded and a no-op until `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+  _Remaining:_ point it at a collector and (optionally) add pg/redis instrumentation.
 
 ## Product surface
 
