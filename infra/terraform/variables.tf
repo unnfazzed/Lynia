@@ -3,8 +3,9 @@
 # apps/api/.env.example, and CONCEPT §10 — change them only if you also change those.
 
 variable "project_id" {
-  description = "GCP project id to provision into. Must already have billing linked (Track F step 1 — the founder-gated, non-codeable step) unless create_project = true."
+  description = "GCP project id to provision into. Must already have billing linked (Track F step 1 — the founder-gated, non-codeable step) unless create_project = true. Defaults to the pilot project; override in terraform.tfvars for any other."
   type        = string
+  default     = "lynia-500911"
 }
 
 variable "create_project" {
