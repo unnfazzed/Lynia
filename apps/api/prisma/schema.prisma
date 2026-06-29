@@ -5,6 +5,9 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
+  // node:*-slim is Debian bookworm (OpenSSL 3). Pin the engine so it's never the
+  // 1.1.x default (which needs libssl.so.1.1, absent on bookworm → boot crash).
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
