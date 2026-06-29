@@ -49,15 +49,12 @@ resource "google_compute_backend_service" "api" {
   load_balancing_scheme = "EXTERNAL_MANAGED"
   protocol              = "HTTP"
 
-  # Socket.IO realtime (tracking.gateway.ts) holds a long-lived WebSocket the mobile
-  # client opens with transports:["websocket"] (no HTTP polling fallback). For a
-  # SERVERLESS NEG backend, timeout_sec is the per-request/stream deadline applied to
-  # the WebSocket as a whole: once the connection has been open this many seconds the
-  # LB tears it down regardless of activity. The default is 30s, which would sever
-  # every tracking socket after 30s and force a reconnect storm mid-delivery. Raise it
-  # so realtime survives a full delivery; the client still treats WS as best-effort and
-  # falls back to the REST snapshot on any drop (ET4).
-  timeout_sec = 3600
+  # NO timeout_sec here: GCP rejects it on a backend service backed by a SERVERLESS
+  # NEG ("Timeout sec is not supported for a backend service with Serverless network
+  # endpoint groups"). For serverless backends the effective request/stream deadline —
+  # what governs how long the Socket.IO tracking WebSocket (tracking.gateway.ts) can
+  # stay open — is the Cloud Run service's OWN request timeout, set via `--timeout 3600`
+  # in release.yml. That's the correct lever; the LB backend just inherits it.
 
   backend {
     group = google_compute_region_network_endpoint_group.api.id
