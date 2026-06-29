@@ -48,13 +48,28 @@ export class RiderService {
       verificationUrl = submission.url;
     }
 
+    // QA/test: the stub provider has no real vendor and never calls back, so in auto mode it
+    // acts as an instant pass — the rider is created already verified and can go online, making
+    // the full rider flow (online → bid → deliver → OTP) testable with no Didit account. A real
+    // provider (didit) still starts pending and is resolved by the vendor callback or the admin
+    // backstop. Flip KYC_PROVIDER=didit before launch (see FOUNDER-RUNBOOK).
+    const stubAutoPass = this.env.KYC_PROVIDER === "stub" && this.env.KYC_MODE === "auto";
+    const initialKyc: Kyc = stubAutoPass ? "verified" : "pending";
+
     await this.prisma.$transaction([
       this.prisma.profile.update({ where: { id: profileId }, data: { role: "rider" } }),
       this.prisma.rider.create({
-        data: { profileId, bikeReg: data.bikeReg, photoUrl: data.photoUrl, kycStatus: "pending", kycRef },
+        data: {
+          profileId,
+          bikeReg: data.bikeReg,
+          photoUrl: data.photoUrl,
+          kycStatus: initialKyc,
+          idVerified: stubAutoPass,
+          kycRef,
+        },
       }),
     ]);
-    return { kycStatus: "pending", mode: this.env.KYC_MODE, verificationUrl };
+    return { kycStatus: initialKyc, mode: this.env.KYC_MODE, verificationUrl };
   }
 
   async setOnline(profileId: string, online: boolean): Promise<{ online: boolean }> {

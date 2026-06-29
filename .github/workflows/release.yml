@@ -132,6 +132,10 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           set -euo pipefail
+          # QA/test config (no vendors): console OTP exposed only to OTP_TEST_PHONES, stub KYC
+          # auto-verifies riders, noop push. The "^@^" prefix on --set-env-vars sets @ as the
+          # delimiter so OTP_TEST_PHONES may itself contain commas. FLIP to
+          # OTP_CHANNEL=whatsapp / KYC_PROVIDER=didit / PUSH_PROVIDER=fcm before launch.
           gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
             --image "$IMAGE:${GITHUB_SHA}" \
             --project "${{ vars.GCP_PROJECT_ID }}" \
@@ -144,7 +148,7 @@ jobs:
             --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
             --vpc-egress private-ranges-only \
             --ingress internal-and-cloud-load-balancing \
-            --set-env-vars "NODE_ENV=production,CLOUD_PROVIDER=gcp,STORAGE_BUCKET=lynia-media,GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},OTP_CHANNEL=whatsapp,KYC_PROVIDER=didit,PUSH_PROVIDER=fcm" \
+            --set-env-vars "^@^NODE_ENV=production@CLOUD_PROVIDER=gcp@STORAGE_BUCKET=lynia-media@GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}@OTP_CHANNEL=console@OTP_TEST_PHONES=${{ vars.OTP_TEST_PHONES }}@KYC_PROVIDER=stub@PUSH_PROVIDER=noop" \
             --set-secrets "DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest" \
             --allow-unauthenticated
 

@@ -90,12 +90,25 @@ export class AuthService {
     await this.store.put(phone, this.tokens.hash(code), this.env.OTP_TTL_SECONDS);
     await this.sender.send(phone, code);
 
-    // Local/dev convenience: on the console channel outside production, return the code so
-    // signup is testable with no messaging provider. Never leaks in production.
-    const devCode =
-      this.env.OTP_CHANNEL === "console" && this.env.NODE_ENV !== "production" ? code : undefined;
+    // Return the code in the response ONLY when it can't be a takeover vector:
+    //  - dev/test: any phone on the console channel (local signup convenience), OR
+    //  - prod QA: the console channel AND an allowlisted OTP_TEST_PHONES number, so a real
+    //    device can test signup with no WhatsApp BSP; arbitrary phones are never exposed.
+    const consoleChannel = this.env.OTP_CHANNEL === "console";
+    const exposeCode =
+      consoleChannel && (this.env.NODE_ENV !== "production" || this.isTestPhone(phone));
+    const devCode = exposeCode ? code : undefined;
     // Never leak whether the phone exists — always "sent".
     return { sent: true, channel: this.sender.channel(), ...(devCode ? { devCode } : {}) };
+  }
+
+  /** QA allowlist (OTP_TEST_PHONES, comma-separated) — gates returning the OTP code in prod. */
+  private isTestPhone(phone: string): boolean {
+    const allow = (this.env.OTP_TEST_PHONES ?? "")
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    return allow.includes(phone.trim());
   }
 
   async verifyOtp(phone: string, code: string, userAgent?: string): Promise<SessionTokens & {
