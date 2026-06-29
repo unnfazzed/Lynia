@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
+import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { OrderLifecycleService } from "./order-lifecycle.service";
 
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "lifecycle-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
+/** Push is fire-and-forget; a no-op stub keeps the lifecycle unit tests off the notification path. */
+const noopNotifications = { notifyOrderStatus: async () => {} } as unknown as NotificationsService;
 
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma). */
 function build(methods: Record<string, unknown>) {
@@ -18,6 +21,7 @@ function build(methods: Record<string, unknown>) {
     prisma as unknown as PrismaService,
     tokens,
     gateway as unknown as TrackingGateway,
+    noopNotifications,
   );
   return { svc, emits, prisma };
 }

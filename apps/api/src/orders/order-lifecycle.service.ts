@@ -14,6 +14,7 @@ import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 
@@ -80,6 +81,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
     private readonly gateway: TrackingGateway,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private sweep?: ReturnType<typeof setInterval>;
@@ -134,13 +136,15 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     return { closed };
   }
 
-  /** Best-effort live status push (ET4). Never fails a committed transition — emits are notifications. */
+  /** Best-effort live status push (ET4): the WS fan-out for an open tracking screen, plus an FCM push
+   *  for whoever isn't looking. Both are fire-and-forget — neither can fail a committed transition. */
   private safeEmit(orderId: string, status: string): void {
     try {
       this.gateway.emitOrderStatus(orderId, status);
     } catch (err) {
       this.logger.warn(`status emit failed for order ${orderId}: ${(err as Error).message}`);
     }
+    void this.notifications.notifyOrderStatus(orderId, status);
   }
 
   /** Rider advances the trip one forward step (the non-OTP, non-completion edges). */

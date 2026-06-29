@@ -7,6 +7,7 @@ import { StorageModule } from "./adapters/storage/storage.module";
 import { ConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
 import { MatchingModule } from "./matching/matching.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 import { OffersModule } from "./offers/offers.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -21,6 +22,8 @@ import { TrackingModule } from "./tracking/tracking.module";
     StorageModule,
     SecretsModule,
     PushModule,
+    // Push notifications + device-token registry (consumes the PUSH seam).
+    NotificationsModule,
     HealthModule,
     // Lane B — auth (OTP + JWT/refresh sessions).
     AuthModule,

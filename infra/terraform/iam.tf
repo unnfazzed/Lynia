@@ -32,6 +32,14 @@ resource "google_service_account_iam_member" "runtime_sign_self" {
   member             = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# Send FCM pushes from Cloud Run via ADC (the attached runtime SA, no key) — the firebase-admin
+# messaging path in fcm.push.ts (A4). Scoped to the messaging admin role on the project.
+resource "google_project_iam_member" "runtime_fcm" {
+  project = local.project_id
+  role    = "roles/firebasecloudmessaging.admin"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 # Per-secret accessor (tighter than a project-wide grant). Defined in secrets.tf
 # via google_secret_manager_secret_iam_member.
 
