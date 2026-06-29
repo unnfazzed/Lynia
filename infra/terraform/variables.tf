@@ -137,3 +137,10 @@ variable "labels" {
     managed_by = "terraform"
   }
 }
+
+# --- External HTTPS Load Balancer (lb.tf) ---
+variable "api_domain" {
+  description = "Fully-qualified domain for the public API endpoint fronted by the global external HTTPS load balancer. A Google-managed certificate is issued for this domain, and the mobile app's device builds point at it (BACKLOG: HTTPS for device builds). After apply, create a DNS A record for this domain pointing at the load_balancer_ip output, then wait for the managed cert to go ACTIVE."
+  type        = string
+  default     = "lyniago.lyniafinance.com"
+}

@@ -91,3 +91,22 @@ output "arming_guide" {
     Secret Manager (injected by --set-secrets). Then push to main → first /ship.
   EOT
 }
+
+# --- External HTTPS Load Balancer (lb.tf) ---
+output "load_balancer_ip" {
+  description = "Static anycast IP of the global external HTTPS load balancer. Create a DNS A record for var.api_domain pointing here; the Google-managed cert provisions once DNS resolves to this IP."
+  value       = google_compute_global_address.api.address
+}
+
+output "api_endpoint" {
+  description = "Stable public HTTPS endpoint for the API (used by mobile device builds). Live once DNS for api_domain points at load_balancer_ip and the managed cert is ACTIVE."
+  value       = "https://${var.api_domain}"
+}
+
+output "api_managed_certificate" {
+  description = "Name and domain(s) of the Google-managed TLS certificate bound to the load balancer. Check status with: gcloud compute ssl-certificates describe <name> --global"
+  value = {
+    name    = google_compute_managed_ssl_certificate.api.name
+    domains = google_compute_managed_ssl_certificate.api.managed[0].domains
+  }
+}
