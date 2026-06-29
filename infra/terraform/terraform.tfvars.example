@@ -1,7 +1,8 @@
-# Copy to terraform.tfvars and fill in. Only project_id is required; the rest
-# default to the values the app/CI already expect (see variables.tf).
+# The pilot project_id is already the default in variables.tf (lynia-500911), so
+# you can run `terraform plan` with NO tfvars file at all. Copy this to
+# terraform.tfvars only to override a default below.
 
-project_id = "lynia-pilot" # the billing-linked project id (founder creates this)
+# project_id = "lynia-500911"  # already the default; uncomment to point elsewhere
 
 # region        = "africa-south1"
 # db_tier       = "db-custom-1-3840"   # downsize to "db-g1-small" to stretch credits

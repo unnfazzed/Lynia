@@ -13,6 +13,10 @@ resource "google_sql_database_instance" "main" {
   depends_on = [google_service_networking_connection.private_vpc]
 
   settings {
+    # ENTERPRISE (not ENTERPRISE_PLUS) is the edition that accepts custom machine
+    # types like db-custom-1-3840; it's also the cheaper tier, right for a pilot.
+    # Fresh projects can default to ENTERPRISE_PLUS, which rejects custom tiers.
+    edition           = "ENTERPRISE"
     tier              = var.db_tier
     availability_type = "ZONAL" # pilot; flip to REGIONAL for HA before launch
     disk_type         = "PD_SSD"
