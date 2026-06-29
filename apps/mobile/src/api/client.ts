@@ -29,6 +29,26 @@ interface RequestOpts {
   auth?: boolean;
 }
 
+// On a constrained mobile link (the target market) a request to the remote API can hang for the
+// OS default (tens of seconds) with only an in-button spinner showing. Bound every request so a
+// slow/stalled network fails into the friendly-error path within a few seconds instead of hanging.
+const REQUEST_TIMEOUT_MS = 15_000;
+
+async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new ApiError(0, "The network is slow — check your connection and try again.");
+    }
+    throw new ApiError(0, "Can't reach Lynia — check your connection and try again.");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Single-flight: concurrent 401s (the order screen runs two 4s pollers) share ONE refresh. The
 // backend rotates refresh tokens — without this, the second request would refresh with a token the
 // first just revoked and get a false sign-out.
@@ -39,7 +59,7 @@ export async function apiFetch<T>(path: string, opts: RequestOpts = {}): Promise
   const session = hooks?.getSession() ?? null;
 
   const send = (accessToken?: string): Promise<Response> =>
-    fetch(`${API_URL}${path}`, {
+    fetchWithTimeout(`${API_URL}${path}`, {
       method,
       headers: {
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
@@ -88,7 +108,7 @@ async function refreshSession(staleToken: string): Promise<Session | null> {
 
 async function doRefresh(refreshToken: string): Promise<Session | null> {
   try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
+    const res = await fetchWithTimeout(`${API_URL}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),

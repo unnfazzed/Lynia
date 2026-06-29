@@ -13,6 +13,9 @@
     ],
     "android": {
       "package": "zw.co.lynia"
+    },
+    "extra": {
+      "apiUrl": "https://lyniago.lyniafinance.com"
     }
   }
 }
