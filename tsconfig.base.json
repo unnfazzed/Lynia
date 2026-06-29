@@ -3,10 +3,6 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
-    // The lockfile resolved TypeScript 5.9, which turns the (still-supported) `moduleResolution: "Node"`
-    // into a hard TS5107 error slated for removal in TS 7. Silence it repo-wide so the build stays green
-    // on 5.9 without rewriting every package's resolution mode; revisit when moving to node16/bundler.
-    "ignoreDeprecations": "6.0",
     "declaration": true,
     "strict": true,
     "esModuleInterop": true,
