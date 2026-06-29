@@ -102,13 +102,21 @@ export class AuthService {
     return { sent: true, channel: this.sender.channel(), ...(devCode ? { devCode } : {}) };
   }
 
-  /** QA allowlist (OTP_TEST_PHONES, comma-separated) — gates returning the OTP code in prod. */
+  /**
+   * QA allowlist (OTP_TEST_PHONES, comma-separated) — gates returning the OTP code in prod.
+   * Compares with cosmetic formatting (spaces/dashes/parens) stripped on BOTH sides, so a tester
+   * whose device sends "+263 77 000 0011" still matches "+263770000011" in the list. This is a
+   * comparison-only normalization — it never widens the match to a different number, and does not
+   * touch the auth identity key (the raw phone). (Full E.164 normalization of the identity key is
+   * a separate, broader change — see BACKLOG.)
+   */
   private isTestPhone(phone: string): boolean {
+    const norm = (p: string): string => p.replace(/[\s()-]/g, "");
     const allow = (this.env.OTP_TEST_PHONES ?? "")
       .split(",")
-      .map((p) => p.trim())
+      .map(norm)
       .filter(Boolean);
-    return allow.includes(phone.trim());
+    return allow.includes(norm(phone));
   }
 
   async verifyOtp(phone: string, code: string, userAgent?: string): Promise<SessionTokens & {

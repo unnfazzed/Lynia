@@ -132,10 +132,12 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           set -euo pipefail
-          # QA/test config (no vendors): console OTP exposed only to OTP_TEST_PHONES, stub KYC
-          # auto-verifies riders, noop push. The "^@^" prefix on --set-env-vars sets @ as the
-          # delimiter so OTP_TEST_PHONES may itself contain commas. FLIP to
-          # OTP_CHANNEL=whatsapp / KYC_PROVIDER=didit / PUSH_PROVIDER=fcm before launch.
+          # OTP_CHANNEL / KYC_PROVIDER / PUSH_PROVIDER default to LAUNCH-SAFE values
+          # (whatsapp / didit / fcm). QA/test mode is OPT-IN by setting the matching repo
+          # Variables (OTP_CHANNEL=console, KYC_PROVIDER=stub, PUSH_PROVIDER=noop, plus
+          # OTP_TEST_PHONES) — so "do nothing" can never ship a vendor-free, auto-KYC build
+          # to the public URL, and flip-to-launch is just clearing those vars. The "^@^"
+          # prefix sets @ as the env delimiter so OTP_TEST_PHONES may contain commas.
           gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
             --image "$IMAGE:${GITHUB_SHA}" \
             --project "${{ vars.GCP_PROJECT_ID }}" \
@@ -148,7 +150,7 @@ jobs:
             --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
             --vpc-egress private-ranges-only \
             --ingress internal-and-cloud-load-balancing \
-            --set-env-vars "^@^NODE_ENV=production@CLOUD_PROVIDER=gcp@STORAGE_BUCKET=lynia-media@GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}@OTP_CHANNEL=console@OTP_TEST_PHONES=${{ vars.OTP_TEST_PHONES }}@KYC_PROVIDER=stub@PUSH_PROVIDER=noop" \
+            --set-env-vars "^@^NODE_ENV=production@CLOUD_PROVIDER=gcp@STORAGE_BUCKET=lynia-media@GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}@OTP_CHANNEL=${{ vars.OTP_CHANNEL || 'whatsapp' }}@OTP_TEST_PHONES=${{ vars.OTP_TEST_PHONES }}@KYC_PROVIDER=${{ vars.KYC_PROVIDER || 'didit' }}@PUSH_PROVIDER=${{ vars.PUSH_PROVIDER || 'fcm' }}" \
             --set-secrets "DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest" \
             --allow-unauthenticated
 

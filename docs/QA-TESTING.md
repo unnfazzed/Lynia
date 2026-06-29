@@ -6,30 +6,34 @@
 > deployment**; there are no real users yet. The flip-to-launch checklist at the bottom turns the
 > real vendors back on.
 
-## What test mode changes (all via deploy env in `release.yml`)
+## Fail-safe model: QA is OPT-IN via repo variables
 
-| Setting | Test value | Effect |
+The deploy **defaults to launch-safe** (`OTP_CHANNEL=whatsapp`, `KYC_PROVIDER=didit`, `PUSH_PROVIDER=fcm`).
+Test mode is turned on **only** by setting the matching repo Variables — so a vendor-free, auto-KYC build
+can never reach the public URL by accident, and turning it off is just clearing the vars.
+
+| Variable to set | Test value | Effect |
 |---|---|---|
-| `OTP_CHANNEL` | `console` | OTP codes are logged, not sent via WhatsApp |
-| `OTP_TEST_PHONES` | repo variable (your test numbers) | `POST /auth/otp` returns the code **in the response** — but ONLY for these exact numbers |
+| `OTP_CHANNEL` | `console` | OTP codes logged, not sent via WhatsApp |
+| `OTP_TEST_PHONES` | your test numbers (comma-sep) | `POST /auth/otp` returns the code **in the response** — ONLY for these numbers |
 | `KYC_PROVIDER` | `stub` | rider KYC **auto-verifies** (no Didit) so riders can go online |
-| `PUSH_PROVIDER` | `noop` | no Firebase needed; pushes are logged, not sent |
+| `PUSH_PROVIDER` | `noop` | no Firebase needed; pushes logged, not sent |
 
-Security note: the OTP code is exposed **only** for numbers you put in `OTP_TEST_PHONES`, only on the
-`console` channel. An arbitrary phone can never retrieve a code, so this is not an account-takeover
-hole. Rate limits (per-phone / per-IP / global) still apply.
+Security: the OTP code is exposed **only** for `OTP_TEST_PHONES` numbers, **only** on the `console`
+channel. An arbitrary phone can never retrieve a code (it's not an account-takeover hole). Rate limits
+(per-phone / per-IP / global) still apply. Match is format-tolerant (spaces/dashes ignored) but uses the
+exact number — `+263…` and `0…` prefixes are still different.
 
-## One-time setup: register your test phone numbers
-
-Set the repo variable with the number(s) you'll test with (E.164 format, exactly as the app sends them),
-then redeploy so it takes effect:
+## Turn QA mode ON
 
 ```bash
-# comma-separated; use the exact format the app submits (e.g. +263...)
-gh variable set OTP_TEST_PHONES --body "+263771234567,+263770000002"
-gh workflow run release.yml --ref main      # redeploy to pick up the variable
+gh variable set OTP_CHANNEL --body "console"
+gh variable set KYC_PROVIDER --body "stub"
+gh variable set PUSH_PROVIDER --body "noop"
+gh variable set OTP_TEST_PHONES --body "+263771234567,+263770000002"   # your test number(s)
+gh workflow run release.yml --ref main      # redeploy to apply
 ```
-(Or change it live without a redeploy: `gcloud run services update lynia-api --region africa-south1 --update-env-vars OTP_TEST_PHONES="+263771234567"`.)
+(Ad-hoc, no redeploy: `gcloud run services update lynia-api --region africa-south1 --update-env-vars '^@^OTP_CHANNEL=console@KYC_PROVIDER=stub@PUSH_PROVIDER=noop@OTP_TEST_PHONES=+263771234567'`.)
 
 ## Test the full customer flow
 1. **Sign up / log in:** `POST /auth/otp {phone}` → response includes `devCode` (your allowlisted number).
@@ -49,14 +53,18 @@ gh workflow run release.yml --ref main      # redeploy to pick up the variable
 > Want to test the **manual** KYC path (admin approval) instead of auto-verify? Deploy with
 > `KYC_MODE=manual` — riders stay `pending` and an admin approves via `POST /admin/riders/:id/kyc`.
 
-## ✅ Flip to launch (turn real vendors back on)
+## ✅ Flip to launch (turn QA mode OFF)
 
-Before real users, revert test mode in `release.yml`'s deploy `--set-env-vars` (and push):
-- `OTP_CHANNEL=console` → **`whatsapp`** (after WhatsApp BSP is wired — see `FOUNDER-RUNBOOK.md`)
-- remove **`OTP_TEST_PHONES`** (or clear the repo variable) so no code is ever returned
-- `KYC_PROVIDER=stub` → **`didit`** (after the Didit account + keys)
-- `PUSH_PROVIDER=noop` → **`fcm`** (after the Firebase project + device registration)
+Because QA is opt-in, launch = **clear the variables** (then redeploy):
+```bash
+gh variable delete OTP_CHANNEL      # back to default: whatsapp
+gh variable delete KYC_PROVIDER     # back to default: didit
+gh variable delete PUSH_PROVIDER    # back to default: fcm
+gh variable delete OTP_TEST_PHONES  # no code ever returned
+gh workflow run release.yml --ref main
+```
+Then complete the real-vendor wiring in `FOUNDER-RUNBOOK.md` (WhatsApp BSP, Didit keys, Firebase).
 
-Fail-safe: even if you forget `OTP_TEST_PHONES`, it defaults to empty (no exposure); and the code is
-never returned on the `whatsapp`/`sms` channels regardless. The one thing that matters for launch is
-flipping `OTP_CHANNEL` back to `whatsapp` so real codes are actually delivered.
+Fail-safe: with no vars set the deploy is already launch-safe; and the OTP code is never returned on the
+`whatsapp`/`sms` channels regardless of `OTP_TEST_PHONES`. There is no committed default that ships test
+mode — you must explicitly opt in.
