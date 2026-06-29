@@ -6,10 +6,9 @@
 >
 > This is design rationale and decision history. **For where the build stands** (the T0–T13 scorecard, the
 > live deployment) see **`docs/PILOT-READINESS.md`** — the single source of truth for status. Companions:
-> `docs/CEO-REVIEW.md` (product), `docs/DESIGN-REVIEW.md` (design), `docs/CONCEPT.md` (§5 architecture),
-> `docs/REFERENCE-ARCHITECTURES.md` (how the primitives map to inDrive/Gojek/Grab). The **ET1–ET10** task
-> IDs defined here are referenced by the schema, migrations, and the offer-loop concurrency test — they are
-> stable identifiers, do not renumber.
+> `docs/CEO-REVIEW.md` (product), `docs/DESIGN-REVIEW.md` (design), `docs/CONCEPT.md` (§5 architecture).
+> The **ET1–ET10** task IDs defined here are referenced by the schema, migrations, and the offer-loop
+> concurrency test — they are stable identifiers, do not renumber.
 
 | # | Stage | Date | Verdict (one line) |
 |---|-------|------|--------------------|
@@ -161,7 +160,7 @@ findings folded into P1 tasks with tests. No unresolved decisions. → handed to
 
 An independent eng + adversarial + static-design pass over the whole build. Backend confirmed clean
 (history/`me` authz + PII). Fixed a **systemic error-state-honesty P1** (errors were swallowed into success-
-looking states) and the **rider-gate staleness**. Consciously-deferred remainder booked in `docs/BACKLOG.md`.
+looking states) and the **rider-gate staleness**. Consciously-deferred remainder tracked as deferred work.
 Test count climbed 21 → 72 → 112 → **119** API tests through this stage, with mobile typecheck in the CI gate.
 
 **Verdict:** Build engineering CLEARED — foundations sound, P0s closed, lifecycle whole and tested. → Ship.

@@ -52,7 +52,7 @@ export class RiderService {
     // acts as an instant pass — the rider is created already verified and can go online, making
     // the full rider flow (online → bid → deliver → OTP) testable with no Didit account. A real
     // provider (didit) still starts pending and is resolved by the vendor callback or the admin
-    // backstop. Flip KYC_PROVIDER=didit before launch (see FOUNDER-RUNBOOK).
+    // backstop. Flip KYC_PROVIDER=didit before launch (see docs/PILOT-READINESS.md).
     const stubAutoPass = this.env.KYC_PROVIDER === "stub" && this.env.KYC_MODE === "auto";
     const initialKyc: Kyc = stubAutoPass ? "verified" : "pending";
 

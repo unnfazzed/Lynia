@@ -108,7 +108,7 @@ export class AuthService {
    * whose device sends "+263 77 000 0011" still matches "+263770000011" in the list. This is a
    * comparison-only normalization — it never widens the match to a different number, and does not
    * touch the auth identity key (the raw phone). (Full E.164 normalization of the identity key is
-   * a separate, broader change — see BACKLOG.)
+   * a separate, broader change — deferred.)
    */
   private isTestPhone(phone: string): boolean {
     const norm = (p: string): string => p.replace(/[\s()-]/g, "");

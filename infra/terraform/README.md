@@ -1,7 +1,7 @@
 # Lynia — GCP provisioning (Terraform)
 
-Infrastructure-as-Code for **Track F** of the Ship stage (`docs/NEXT-STAGE.md`). It
-provisions the target architecture from `CONCEPT.md` §10 — **Cloud Run + Cloud SQL
+Infrastructure-as-Code for the **Ship stage** GCP provisioning (status: `docs/PILOT-READINESS.md`).
+It provisions the target architecture from `CONCEPT.md` §10 — **Cloud Run + Cloud SQL
 (PostGIS) + Memorystore (Redis) + Cloud Storage + Secret Manager** in
 **`africa-south1` (Johannesburg)** — and emits exactly the values needed to arm
 `.github/workflows/release.yml` (the `/ship` step).

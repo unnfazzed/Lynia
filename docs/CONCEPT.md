@@ -15,8 +15,8 @@
 > and the API is now **live and CI-deployed** at `https://lyniago.lyniafinance.com`. This doc remains the
 > living north star; its forward-looking parts (§3 risks, §7 one-month plan, §10 next steps) are annotated
 > below. The **cloud (Google Cloud) is provisioned + deployed** and the **revenue model (§6) is decided**;
-> the remaining gates are the **dev build** and **founder/vendor wiring** (WhatsApp BSP, Didit — see
-> `docs/FOUNDER-RUNBOOK.md`). **For current status, see `docs/PILOT-READINESS.md`.**
+> the remaining gates are the **dev build** and **founder/vendor wiring** (WhatsApp BSP, Didit).
+> **For current status, see `docs/PILOT-READINESS.md`.**
 
 ---
 
@@ -326,7 +326,7 @@ number is simply gated by order state.
 **Revenue model — DECIDED (2026-06-27): rider commission, inDrive-style.**
 - Lynia takes a **percentage of the agreed fare** the rider is paid (a **rider-side commission**, deducted from the rider's earnings — not a customer surcharge). This is the inDrive model adapted to the Zimbabwe cash market.
 - **Commission is 0% for the first ~6–8 months.** The launch period charges nothing — its job is to build **supply, demand, and liquidity**, not to monetize. Riders keep the **full agreed fare** during this window.
-- **No revenue infrastructure is built yet.** Settlement rails + commission capture + the earnings settlement line are a **next-phase build, ~6–8 months out**, when monetization begins (see `docs/BACKLOG.md`). The data model is already **payment-agnostic** (§5b), so commission slots in without a rewrite.
+- **No revenue infrastructure is built yet.** Settlement rails + commission capture + the earnings settlement line are a **next-phase build, ~6–8 months out**, when monetization begins. The data model is already **payment-agnostic** (§5b), so commission slots in without a rewrite.
 - **Pilot stance (unchanged):** the pilot earns **no revenue** and Lynia remains a **matchmaker, not a payment processor** — the fare is settled rider-direct in cash, outside the app, for now.
 
 > **Resolved (2026-06-27):** model = rider commission (% of agreed fare), 0% for ~6–8 months, infra built
@@ -399,8 +399,8 @@ number is simply gated by order state.
   Build checkpoint → Ship triage).
 - ✅ **Engineering review** — `docs/ENG-REVIEW.md` — the living engineering review log (Plan architecture
   gate → Build first-principles P0 audits → Ship provisioning/ship-prep).
-- ✅ **Design review** — `docs/DESIGN-REVIEW.md` (the review log) against the `docs/DESIGN.md` spec +
-  `docs/design/` mockups (full two-sided journey).
+- ✅ **Design review** — `docs/DESIGN-REVIEW.md` (the review log) against the `docs/DESIGN.md` spec
+  (full two-sided journey).
 - ✅ **Build** — backend lifecycle + both mobile app sides shipped to `main`, CI-gated; a delivery
   completes end-to-end in code.
 - ✅ **Review** — comprehensive post-build eng + design conformance pass, fixes merged.
@@ -409,9 +409,8 @@ number is simply gated by order state.
   region Johannesburg `africa-south1`, default `CLOUD_PROVIDER=gcp`, Azure adapter kept as the D7
   portability proof. The project (`lynia-500911`) is Terraform-provisioned and the API is CI-deployed to
   Cloud Run behind an external HTTPS load balancer (`https://lyniago.lyniafinance.com`). Closes T0.
-- ⬜ **Remaining (founder/vendor + dev build):** WhatsApp BSP (OTP) + a real Didit ZIM-ID run
-  (`docs/FOUNDER-RUNBOOK.md`), and a greenlit dev build (Phase 3 native maps) → then on-device `/qa`.
-  The full flow is testable now vendor-free (`docs/QA-TESTING.md`). See `docs/PILOT-READINESS.md`.
+- ⬜ **Remaining (founder/vendor + dev build):** WhatsApp BSP (OTP) + a real Didit ZIM-ID run, and a
+  greenlit dev build (Phase 3 native maps) → then on-device `/qa`. See `docs/PILOT-READINESS.md`.
 
 > Note: gstack skills (`/plan-ceo-review`, etc.) require gstack installed locally; the equivalents above
 > were run manually. **Current overall status lives in `docs/PILOT-READINESS.md`.**
