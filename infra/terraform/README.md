@@ -21,7 +21,9 @@ and re-runnable. It went through an engineering/cloud review pass —
 | Cloud Storage bucket | `lynia-media` | uniform access, public access **enforced-off**, CORS for signed-URL PUT/GET |
 | Artifact Registry (Docker) | `lynia` | the API image repo |
 | Runtime SA | `lynia-run@…` | Cloud SQL Client, bucket Object Admin, **self `signBlob`** for keyless V4 signed URLs, per-secret accessor |
-| Deployer SA | `lynia-deployer@…` | Run Admin, AR Writer, Cloud SQL Client, actAs runtime SA; optional JSON key |
+| Deployer SA | `lynia-deployer@…` | Run Admin, AR Writer, Cloud SQL Client, actAs runtime SA |
+| Workload Identity pool/provider | `github-pool` / `github-provider` | **keyless CI auth**; OIDC scoped to `unnfazzed/Lynia` (no SA key) |
+| External HTTPS load balancer | `lynia-api-*` | global ALB + managed cert fronting Cloud Run (`api_domain`); stable HTTPS for device builds |
 | Secrets | `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET` | generated + populated |
 
 ## The one thing Terraform can't do: billing
@@ -59,15 +61,19 @@ terraform apply
 `terraform output arming_guide` prints the full checklist. In short — set repo
 **Variables** `GCP_DEPLOY_ENABLED=true`, `GCP_PROJECT_ID`, `GCP_REGION`,
 `GCP_ARTIFACT_REPO`, `CLOUD_RUN_SERVICE`, `CLOUD_SQL_INSTANCE`, `VPC_CONNECTOR`,
-`CLOUD_RUN_SERVICE_ACCOUNT`; set repo **Secrets** `GCP_SA_KEY`
-(`terraform output -raw deployer_sa_key | base64 -d`) and `MIGRATE_DATABASE_URL`
-(`terraform output -raw MIGRATE_DATABASE_URL`). Push to `main` → first Cloud Run deploy.
+`CLOUD_RUN_SERVICE_ACCOUNT`, plus the **keyless** auth pair
+`GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT`; set the one repo
+**Secret** `MIGRATE_DATABASE_URL` (`terraform output -raw MIGRATE_DATABASE_URL`).
+Push to `main` → first Cloud Run deploy.
+
+> **CI auth is keyless (Workload Identity Federation) — there is no `GCP_SA_KEY`.**
+> The org enforces `constraints/iam.disableServiceAccountKeyCreation`, so `wif.tf`
+> provisions an OIDC pool/provider scoped to this repo and `release.yml` authenticates
+> via `workload_identity_provider` + `service_account`. `emit_deployer_sa_key` stays
+> `false` (default); no long-lived key ever exists.
 
 ## Hardening follow-ups (deliberately deferred)
 
-- **Workload Identity Federation** instead of the deployer JSON key. The workflow already
-  requests `id-token: write` and has the WIF lines commented in. Once wired, set
-  `emit_deployer_sa_key = false` so no long-lived key exists in state.
 - **Drop Cloud SQL public IP.** It exists only so the GitHub-hosted runner's Auth Proxy
   can migrate. Move migrations to a VPC-internal runner (or a Cloud Run Job) and set
   `ipv4_enabled = false`.
