@@ -129,6 +129,7 @@ jobs:
             --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
             --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
             --vpc-egress private-ranges-only \
+            --ingress internal-and-cloud-load-balancing \
             --set-env-vars "NODE_ENV=production,CLOUD_PROVIDER=gcp,STORAGE_BUCKET=lynia-media,GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},OTP_CHANNEL=whatsapp,KYC_PROVIDER=didit" \
             --set-secrets "DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest" \
             --allow-unauthenticated
