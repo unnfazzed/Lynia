@@ -7,7 +7,7 @@
 >
 > This is the **review** record — verdicts, scores, findings, and their resolutions. The **spec it
 > calibrates against is `docs/DESIGN.md`** (tokens, components, IA, the §5c stepper, the two-sided journey,
-> the `DT1`–`DT13` build-task table) and the mockups in `docs/design/`. Companions: `docs/CEO-REVIEW.md`
+> the `DT1`–`DT13` build-task table). Companions: `docs/CEO-REVIEW.md`
 > (product), `docs/ENG-REVIEW.md` (engineering), `docs/CONCEPT.md` (§5c/§5d/§6 the design realises). For
 > live build status see `docs/PILOT-READINESS.md`.
 

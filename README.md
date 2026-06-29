@@ -3,14 +3,12 @@
 On-demand motorbike courier for Zimbabwe — an inDrive-style "offer loop" (customer names a
 price, riders accept or counter, customer selects). See [`docs/`](docs/) for the full plan:
 [CONCEPT](docs/CONCEPT.md) · review logs: [CEO](docs/CEO-REVIEW.md) · [Eng](docs/ENG-REVIEW.md) ·
-[Design](docs/DESIGN-REVIEW.md) · [Design system](docs/DESIGN.md) ·
-[screen previews](docs/design/lynia-screens.html).
+[Design](docs/DESIGN-REVIEW.md) · [Design system](docs/DESIGN.md).
 
 **Status:** the API is **live and CI-deployed on GCP** at
 [`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com) (`/health` →
-`{"status":"ok","db":true,"redis":true}`). Status → [`docs/PILOT-READINESS.md`](docs/PILOT-READINESS.md);
-what the founder wires next → [`docs/FOUNDER-RUNBOOK.md`](docs/FOUNDER-RUNBOOK.md); test the full flow
-vendor-free → [`docs/QA-TESTING.md`](docs/QA-TESTING.md).
+`{"status":"ok","db":true,"redis":true}`). Where the build stands + what the founder wires next →
+[`docs/PILOT-READINESS.md`](docs/PILOT-READINESS.md).
 
 ## Monorepo
 

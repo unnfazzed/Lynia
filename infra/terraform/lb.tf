@@ -5,7 +5,7 @@
 # (CIS-style hardening - the same org enforces iam.disableServiceAccountKeyCreation),
 # so external requests to the default URL get a bare edge 404. Exposing the service
 # through this ALB gives the mobile app a stable, org-allowed HTTPS endpoint
-# (BACKLOG "HTTPS for device builds"), with TLS terminated by a Google-managed cert.
+# (HTTPS for device builds), with TLS terminated by a Google-managed cert.
 #
 # IMPORTANT: Terraform does NOT create/manage the Cloud Run service itself - that
 # is done by `gcloud run deploy` in .github/workflows/release.yml. This LB only

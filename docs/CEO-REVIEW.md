@@ -274,8 +274,8 @@ because of lead time (WhatsApp BSP, a real Didit run — these gate demand and s
 model decided, §6); the pilot's job remains proving **demand/liquidity**, not willingness-to-pay-commission.
 
 **Founder actions to start now (long lead time):** WhatsApp BSP onboarding (gates signups), a real-ID Didit
-run (measures the false-reject rate gating rider onboarding), a Firebase project (unlocks FCM). All three are
-walked through in `docs/FOUNDER-RUNBOOK.md`.
+run (measures the false-reject rate gating rider onboarding), a Firebase project (unlocks FCM) — each an
+account/key/org decision, not code. Status tracked in `docs/PILOT-READINESS.md`.
 
 **Verdict:** Ship-stage product triage complete. The live-API cutover is the win; the rest is correctly
 sequenced behind founder/vendor unlocks or the lean-pilot decision. **Current status → `docs/PILOT-READINESS.md`.**

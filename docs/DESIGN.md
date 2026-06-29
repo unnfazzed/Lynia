@@ -171,8 +171,8 @@ components; none needs a device to design.
 |------|-----|------|--------------------|
 | **Order / trip history** | both | Reverse-chron list of past orders (Card per order: route landmarks · date · fare · outcome pill · ★ given/received). Tap → read-only order detail. Empty: *"No trips yet."* | Same Card + StatusPill; reads existing order list. The first **"my past orders"** read each role needs. |
 | **Profile / settings** | both | View/edit name, phone (re-verify on change), language; rider also bike reg + KYC status + photo. Sign-out lives here (move off `home`). Empty/loading trivial. | Reuses `Field`/`Button`; today profile is set once in KYC with no edit path. |
-| **Rider rating profile** | customer-facing | The **public rider card** a customer taps an offer to expand: photo · first name + last initial · ★ aggregate + trip count · bike reg. **Score + count only, no written comments** (per §5d / DESIGN "NOT in scope"). | Lets customers choose on **more than price** (D-d best-match). Pairs with the BACKLOG **two-sided rating** item. |
-| **Notifications center** | both | In-app list of order events (offer received, selected, status changes) + a per-item read state. Bridges the gap until **FCM push** (BACKLOG, cloud-gated) lands; until then it's the polled feed surfaced as a list. | Socket/poll events already exist; this is presentation. Push delivery is deferred (BACKLOG). |
+| **Rider rating profile** | customer-facing | The **public rider card** a customer taps an offer to expand: photo · first name + last initial · ★ aggregate + trip count · bike reg. **Score + count only, no written comments** (per §5d / DESIGN "NOT in scope"). | Lets customers choose on **more than price** (D-d best-match). Pairs with the deferred **two-sided rating** work. |
+| **Notifications center** | both | In-app list of order events (offer received, selected, status changes) + a per-item read state. Bridges the gap until **FCM push** (deferred, cloud-gated) lands; until then it's the polled feed surfaced as a list. | Socket/poll events already exist; this is presentation. Push delivery is deferred. |
 | **Support / help** | both | Static FAQ + "report an issue on this order" (deep-links an order id into a prefilled message channel). Low-literacy: icon+label, short sentences. | No backend yet — design the surface; wire to a channel when one's chosen. |
 
 ## Earnings / wallet — payment-agnostic (open §6 dependency)
@@ -231,8 +231,8 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 | DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` | ✅ done |
 | DT9 | P1 | Rider interaction-states + two rider empty-states (no-orders / not-verified) | ✅ done |
 | DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support | ◐ **partial** — history/profile/earnings shipped; notifications, support, and the *public* rider rating profile not yet |
-| DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done — §6 decided (rider commission, 0% for ~6–8 months); the ledger gains a commission/settlement line when that infra is built (BACKLOG) |
-| DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ✅ done (contract-only fields + rider pickup-photo still deferred — see BACKLOG) |
+| DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done — §6 decided (rider commission, 0% for ~6–8 months); the ledger gains a commission/settlement line when that infra is built (deferred — CONCEPT §6) |
+| DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ✅ done (contract-only fields + rider pickup-photo still deferred) |
 | DT13 | P2 | Post-Phase-3: regen `/design-html`, then DT7 visual review + `/qa` on a device build | ⬜ deferred (device-gated) |
 
 ## Next steps (gstack flow)

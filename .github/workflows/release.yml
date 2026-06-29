@@ -1,12 +1,12 @@
 name: Release (Cloud Run)
 
-# Track A1 of the Ship stage (docs/NEXT-STAGE.md). Builds the API container, pushes it to
+# Ship-stage release job (status: docs/PILOT-READINESS.md). Builds the API container, pushes it to
 # Artifact Registry, applies DB migrations, and deploys to Cloud Run.
 #
-# DORMANT UNTIL GCP IS PROVISIONED (Track F). The deploy job is gated on the repo variable
+# DORMANT UNTIL GCP IS PROVISIONED. The deploy job is gated on the repo variable
 # `GCP_DEPLOY_ENABLED == 'true'`, so until a maintainer arms it this workflow is a clean no-op —
 # it never fails a push. Arming it is the literal `/ship` step once provisioning hands back the
-# project/region/bucket/service-account (NEXT-STAGE.md Track F step 9).
+# project/region/bucket/service-account (see infra/terraform/README.md arming guide).
 #
 # Required to arm (set in repo Settings → Secrets and variables → Actions):
 #   Variables:
@@ -79,7 +79,7 @@ jobs:
             [ -n "${!v:-}" ] || missing+=("$v")
           done
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::GCP_DEPLOY_ENABLED is true but these are unset: ${missing[*]}. See docs/NEXT-STAGE.md → 'Arm the release workflow'." >&2
+            echo "::error::GCP_DEPLOY_ENABLED is true but these are unset: ${missing[*]}. See infra/terraform/README.md → arming guide." >&2
             exit 1
           fi
           echo "All required deploy config present."
