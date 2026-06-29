@@ -33,6 +33,8 @@ resource "google_project_service" "apis" {
     "storage.googleapis.com",
     "secretmanager.googleapis.com",
     "artifactregistry.googleapis.com",
+    "firebase.googleapis.com",               # link Firebase to the project (FCM, A4)
+    "firebasecloudmessaging.googleapis.com", # FCM HTTP v1 send from the runtime SA
   ])
 
   project            = local.project_id

@@ -1,17 +1,21 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { MakeOfferRequest } from "@lynia/shared";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
 export class OffersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /** Rider responds once — accept the proposed fare or counter. One round per rider (ET7). */
   async makeOffer(input: MakeOfferRequest, riderId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: input.orderId },
-      select: { status: true },
+      select: { status: true, customerId: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.status !== "open_for_offers") {
@@ -40,6 +44,8 @@ export class OffersService {
         },
         select: { id: true, type: true, offeredFare: true, etaMinutes: true, status: true },
       });
+      // Post-commit, best-effort: nudge the customer that an offer arrived (§5c).
+      void this.notifications.notifyNewOffer(input.orderId, order.customerId);
       return { ...offer, offeredFare: offer.offeredFare.toString() };
     } catch (err) {
       // The unique (order_id, rider_id) index enforces the one-round rule.

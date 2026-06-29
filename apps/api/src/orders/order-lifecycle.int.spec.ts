@@ -8,6 +8,7 @@ import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
 import { StubKycVendor } from "../kyc/kyc-vendor";
 import { MatchingService } from "../matching/matching.service";
+import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { RiderService } from "../riders/rider.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
@@ -15,10 +16,15 @@ import { OrderLifecycleService } from "./order-lifecycle.service";
 
 const prisma = new PrismaService();
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
-const matching = new MatchingService(prisma, tokens);
+// Push is fire-and-forget; a no-op stub keeps the lifecycle proof off the notification path.
+const noopNotifications = {
+  notifyOrderStatus: async () => {},
+  notifyNewOffer: async () => {},
+} as unknown as NotificationsService;
+const matching = new MatchingService(prisma, tokens, noopNotifications);
 const gateway = { emitOrderStatus: () => undefined } as unknown as TrackingGateway;
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
-const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway);
+const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications);
 const riders = new RiderService(prisma, {} as Env, new StubKycVendor());
 
 async function clean(): Promise<void> {

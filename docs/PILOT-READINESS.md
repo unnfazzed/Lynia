@@ -120,8 +120,13 @@ wiring, not code:
 - [x] **Object storage adapter** wired to real GCS + V4 signed URLs (A2; `apps/api/src/adapters/storage/gcs.storage.ts`,
       ADC `signBlob` — no private key). _Live round-trip needs the first real upload (rider KYC / item photo)._
 - [x] **Secrets** in Secret Manager (`DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET`), injected at deploy via `--set-secrets`.
-- [x] **FCM push adapter** (A4) — `firebase-admin` behind the seam, ADC creds, payload mapper unit-tested.
-      _Remaining (founder + feature):_ a Firebase project + device-token registration / send call-sites.
+- [x] **FCM push — server side complete** (A4) — `firebase-admin` behind the seam (ADC creds), **device-token
+      registration** (`POST/DELETE /notifications/device-token`, `device_tokens` table), and **send call-sites
+      wired** into the lifecycle (offer received → customer; assigned → rider; status changes → the watching
+      party; expired/cancelled) via a best-effort `NotificationsService` that can't fail a transition.
+      Terraform enables the FCM API + grants the runtime SA `roles/firebasecloudmessaging.admin`.
+      _Remaining:_ a **Firebase project** (founder) + the **mobile token-registration call** (device build —
+      POST the Expo/FCM token to the endpoint above; Expo Go can't, needs the dev build).
 - [ ] **Production OTP** — WhatsApp BSP onboarding + SMS gateway behind the `otp-sender.ts` seam (console
       is dev-only today). **Founder action** — set up a WhatsApp BSP account, then `OTP_CHANNEL=whatsapp`.
 - [x] **HTTPS for device builds** — external HTTPS load balancer + managed cert at `lyniago.lyniafinance.com`;
@@ -209,16 +214,18 @@ Measures the false-reject rate that decides whether real riders can self-onboard
 4. **Run a real Zimbabwean ID** end-to-end → record approve/decline + the false-reject rate. If rejects are
    high, the manual admin backstop (`POST /admin/riders/:id/kyc`) is the fallback.
 
-### 3. FCM push — device notifications  🟠 (after on-device builds exist)
-The adapter is built (`PUSH_PROVIDER=fcm`, `apps/api/src/adapters/push/fcm.push.ts`, ADC creds) but has no
-targets yet.
-1. **Enable Firebase** on the project: `firebase projects:addfirebase lynia-500911`, register an Android app
-   (`zw.co.lynia`), set `FCM_PROJECT_ID=lynia-500911`.
-2. Grant messaging: `gcloud projects add-iam-policy-binding lynia-500911 --member="serviceAccount:lynia-run@lynia-500911.iam.gserviceaccount.com" --role=roles/firebasecloudmessaging.admin`
-   (add `firebasecloudmessaging.googleapis.com` to the enabled APIs in `infra/terraform/project.tf`).
-3. **Code step (own feature):** mobile registers a device token (`expo-notifications`) → POSTs to a new API
-   endpoint → API stores it and calls `PUSH.send()` at offer/status transitions (payload mapper unit-tested).
-   Pilots can run on foreground/polling first.
+### 3. FCM push — device notifications  🟠 (server side done; needs the Firebase project + a device build)
+The **whole server side is built**: the adapter (`apps/api/src/adapters/push/fcm.push.ts`, ADC creds), the
+**device-token registry** (`device_tokens` table + `POST/DELETE /notifications/device-token`), and the
+**send wiring** — `NotificationsService` fires best-effort pushes at offer-received / assigned / each
+lifecycle status / expired / cancelled, and can never fail a transition. Terraform enables
+`firebase.googleapis.com` + `firebasecloudmessaging.googleapis.com` and grants the runtime SA
+`roles/firebasecloudmessaging.admin` (so `terraform apply` covers the old manual gcloud steps).
+1. **Enable Firebase** on the project (founder): `firebase projects:addfirebase lynia-500911`, register an
+   Android app (`zw.co.lynia`), set `FCM_PROJECT_ID=lynia-500911` + `PUSH_PROVIDER=fcm`.
+2. **Mobile token-registration call** (device build): after login the app gets its Expo/FCM device token and
+   `POST`s it to `/notifications/device-token` (and `DELETE`s on sign-out). Expo Go can't acquire a remote
+   token — this lands with the Phase-3 dev build. Pilots can run on foreground/polling until then.
 
 ### 4. OTEL traces — observability  🟢 deferred by decision
 Exporter wired (`apps/api/src/observability/otel.ts`), no-op until `OTEL_EXPORTER_OTLP_ENDPOINT` is set. CEO

@@ -75,12 +75,28 @@ model Profile {
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   rider          Rider?
-  customerOrders Order[]   @relation("customerOrders")
+  customerOrders Order[]       @relation("customerOrders")
   sessions       Session[]
   addresses      Address[]
-  ratingsGiven   Rating[]  @relation("ratingBy")
+  ratingsGiven   Rating[]      @relation("ratingBy")
+  deviceTokens   DeviceToken[]
 
   @@map("profiles")
+}
+
+/** FCM device push tokens. A profile can have many (multiple devices); a token is globally unique and
+ *  re-registering reassigns it to the current owner. Cascade-deleted with the profile. */
+model DeviceToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  profileId String   @map("profile_id") @db.Uuid
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([profileId])
+  @@map("device_tokens")
 }
 
 model Rider {

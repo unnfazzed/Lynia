@@ -70,6 +70,13 @@ export const CancelRequest = z.object({
 });
 export type CancelRequest = z.infer<typeof CancelRequest>;
 
+/** Mobile registers (or clears) its device push token so the API can deliver FCM notifications. */
+export const RegisterDeviceTokenRequest = z.object({
+  token: z.string().min(1).max(4096),
+  platform: z.enum(["android", "ios", "web"]).optional(),
+});
+export type RegisterDeviceTokenRequest = z.infer<typeof RegisterDeviceTokenRequest>;
+
 export const ApiError = z.object({
   statusCode: z.number(),
   code: z.string(),

@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { TokenService } from "../auth/token.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 /** Rider must have a heartbeat newer than this to be selectable (ET3 liveness). */
@@ -22,6 +23,7 @@ export class MatchingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -32,7 +34,7 @@ export class MatchingService {
    */
   async selectOffer(orderId: string, offerId: string, customerId: string): Promise<SelectResult> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         const offer = await tx.offer.findFirst({
           where: { id: offerId, orderId },
           select: {
@@ -89,6 +91,10 @@ export class MatchingService {
           deliveryCode,
         };
       });
+
+      // Post-commit, best-effort: tell the selected rider they're hired (§5c). Never blocks the assign.
+      void this.notifications.notifyOrderStatus(orderId, "assigned");
+      return result;
     } catch (err) {
       // ET2: the rider is already on another active ride → one_active_ride unique violation.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -103,7 +109,7 @@ export class MatchingService {
    * selected, the order is no longer open_for_offers, count is 0, and this no-ops. Idempotent.
    */
   async expireOrder(orderId: string): Promise<{ expired: boolean }> {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const res = await tx.order.updateMany({
         where: { id: orderId, status: "open_for_offers" },
         data: { status: "expired" },
@@ -114,5 +120,9 @@ export class MatchingService {
       await tx.orderEvent.create({ data: { orderId, status: "expired" } });
       return { expired: true };
     });
+
+    // Post-commit, best-effort: prompt the customer to nudge the price and re-broadcast (§5c).
+    if (result.expired) void this.notifications.notifyOrderStatus(orderId, "expired");
+    return result;
   }
 }

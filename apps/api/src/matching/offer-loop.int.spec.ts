@@ -6,12 +6,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
 import { TokenService } from "../auth/token.service";
+import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { MatchingService } from "./matching.service";
 
 const prisma = new PrismaService();
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
-const matching = new MatchingService(prisma, tokens);
+// Push is fire-and-forget; a no-op stub keeps the concurrency proof off the notification path.
+const noopNotifications = { notifyOrderStatus: async () => {} } as unknown as NotificationsService;
+const matching = new MatchingService(prisma, tokens, noopNotifications);
 
 async function clean(): Promise<void> {
   await prisma.orderEvent.deleteMany({});

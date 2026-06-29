@@ -1,12 +1,16 @@
 import { Prisma } from "@prisma/client";
 import type { MakeOfferRequest } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
+import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { OffersService } from "./offers.service";
 
+/** Push is fire-and-forget; a no-op stub keeps these unit tests off the notification path. */
+const noopNotifications = { notifyNewOffer: async () => {} } as unknown as NotificationsService;
+
 /** Per-test Prisma fake — only the methods makeOffer/listForOrder touch. No DB. */
 function svc(prisma: Partial<Record<string, unknown>>) {
-  return new OffersService(prisma as unknown as PrismaService);
+  return new OffersService(prisma as unknown as PrismaService, noopNotifications);
 }
 
 const offerInput: MakeOfferRequest = {
