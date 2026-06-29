@@ -23,6 +23,7 @@ snapshots, preserved for decision history (each carries a banner pointing to the
 | [`design/`](./design/) | 🟢 Living | Mockups + assets — all-flows PNG boards + HTML + tokens. See [`design/README.md`](./design/README.md). |
 | [`REFERENCE-ARCHITECTURES.md`](./REFERENCE-ARCHITECTURES.md) | 🟢 Living | How inDrive/Gojek/Grab/Chowdeck build the same primitives, and the Lynia scale-up ladder. |
 | [`BACKLOG.md`](./BACKLOG.md) | 🟢 Living | Deferred work, each with its trigger. Items move out as they ship. |
+| [`G-BRAIN-STRATEGY.md`](./G-BRAIN-STRATEGY.md) | 🟢 Living | How to use the "G Brain" (Google AI / Gemini on Vertex AI) — addressing, trust/safety, support, pricing — additively on the existing GCP spine; phased behind the cloud work. |
 | [`CEO-REVIEW.md`](./CEO-REVIEW.md) | 🟠 Historical (plan stage) | Strategy/economics pressure-test of the concept, pre-build. |
 | [`ENG-REVIEW.md`](./ENG-REVIEW.md) | 🟠 Historical (plan stage) | Engineering architecture review — offer-loop concurrency, realtime, auth — pre-build. |
 | [`CEO-REVIEW-CHECKPOINT.md`](./CEO-REVIEW-CHECKPOINT.md) | 🟠 Historical (build checkpoint) | A mid-build CEO review; **superseded by `PILOT-READINESS.md`**. |
