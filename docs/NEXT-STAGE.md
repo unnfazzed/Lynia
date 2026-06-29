@@ -28,6 +28,11 @@ verified against a real cloud.
 Target architecture (CONCEPT §10): **Cloud Run + Cloud SQL (PostGIS) + Memorystore (Redis) + Cloud
 Storage + Secret Manager**, region **`africa-south1` (Johannesburg)** — lowest latency to Harare.
 
+> **Now codified as Terraform: `infra/terraform/`** (reviewed in `docs/REVIEW-GCP-PROVISIONING.md`).
+> Steps 2–8 below are exactly what the module provisions — run `terraform apply`, not console clicks.
+> The only non-codeable step is **step 1 (project + billing)**, the founder gate. `terraform output
+> arming_guide` then prints the release-workflow arming checklist.
+
 1. **Create the GCP project + billing.** Apply Google for Startups Cloud credits (Accelerator: Africa for
    the larger tier). Confirm billing clears from Zimbabwe (the one eligibility risk to retire early).
 2. **Enable APIs:** Cloud Run, Cloud SQL Admin, Service Networking, Memorystore (Redis), Cloud Storage,
@@ -55,6 +60,8 @@ the repo variable `GCP_DEPLOY_ENABLED` is `true`. Once provisioning hands back s
 | Variable | `GCP_ARTIFACT_REPO` | Artifact Registry repo name (e.g. `lynia`) |
 | Variable | `CLOUD_RUN_SERVICE` | `lynia-api` |
 | Variable | `CLOUD_SQL_INSTANCE` | connection name `project:region:instance` |
+| Variable | `VPC_CONNECTOR` | Serverless VPC Access connector (`lynia-connector`) — lets Cloud Run reach Redis |
+| Variable | `CLOUD_RUN_SERVICE_ACCOUNT` | runtime SA email (`lynia-run@…`) — run as the scoped identity |
 | Secret | `GCP_SA_KEY` | service-account JSON (Cloud Run Admin, Artifact Registry Writer, Cloud SQL Client, Secret Manager Secret Accessor) |
 | Secret | `MIGRATE_DATABASE_URL` | postgres URL via `127.0.0.1:5432` (the Auth Proxy), for `prisma migrate deploy` |
 
