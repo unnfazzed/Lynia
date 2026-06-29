@@ -154,3 +154,146 @@ wiring, not code:
 live on GCP**, and the product can complete a delivery end to end against the live deployment (vendor-free
 via QA mode). The revenue model is decided. The path to a real pilot now runs through **founder/vendor
 wiring (WhatsApp BSP, Didit) and a device build**, not through more feature code or any cloud gate.
+
+---
+
+# Founder action runbook (the remaining unblocks)
+
+Everything codeable is shipped. What remains needs a **founder/vendor action** — an account, a key, or an
+org decision, not code. The integrations are already built behind env seams, so each item is **create
+account → set secret → flip flag**. Lead time is the long pole: **start items 1 and 2 now**, in parallel.
+
+### How a vendor secret reaches the running service (the wiring pattern)
+
+Runtime config is injected at deploy by `.github/workflows/release.yml`: **plain values** via
+`--set-env-vars` (already carries `OTP_CHANNEL`, `KYC_PROVIDER`, `PUSH_PROVIDER`), **secrets** via Secret
+Manager + `--set-secrets` (already carries `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET`). To add a
+vendor **secret**:
+
+```bash
+PROJECT=lynia-500911
+RUNTIME_SA=lynia-run@lynia-500911.iam.gserviceaccount.com
+
+# 1. create the secret + first version
+printf '%s' "<THE_VENDOR_KEY>" | gcloud secrets create <SECRET_NAME> \
+  --project "$PROJECT" --replication-policy=automatic --data-file=-
+# 2. let the runtime SA read it
+gcloud secrets add-iam-policy-binding <SECRET_NAME> --project "$PROJECT" \
+  --member="serviceAccount:$RUNTIME_SA" --role=roles/secretmanager.secretAccessor
+```
+
+Then add `<ENV_NAME>=<SECRET_NAME>:latest` to the `--set-secrets` list in `release.yml` and push to `main`.
+(Better long-term: track it in `infra/terraform/secrets.tf` — the pattern is there for the existing three.)
+
+### 1. WhatsApp BSP — production OTP  🔴 longest lead time, start first
+Real users can't sign up until OTP leaves the dev `console` channel. `OTP_CHANNEL=whatsapp` is already set;
+the send is a stub (`apps/api/src/auth/otp-sender.ts` → `WhatsAppOtpSender.send`).
+1. **Pick a BSP** (the decision gates the code): Meta WhatsApp **Cloud API** (direct) is the usual fastest
+   path; alternatives Twilio / Gupshup / 360dialog. Each needs Meta Business verification + an approved
+   **OTP template** — that approval is the lead-time item.
+2. Get the API key/token and (Cloud API) the phone-number ID + template name.
+3. Store the key: `WHATSAPP_BSP_API_KEY` → Secret Manager (pattern above).
+4. **Code step (small, once BSP chosen):** implement `WhatsAppOtpSender.send()` against the BSP's template
+   API — the adapter seam, channel flag, rate-limits, and hashing are already in place (one HTTP call).
+5. SMS fallback (optional insurance, E4): same pattern with `SMS_GATEWAY_API_KEY` + `OTP_CHANNEL=sms`.
+
+### 2. Didit ZIM-ID — real KYC run  🔴 start now (gates rider onboarding)
+Measures the false-reject rate that decides whether real riders can self-onboard. The integration is **done**
+(`apps/api/src/kyc/didit-kyc-vendor.ts`); `KYC_PROVIDER=didit` is set.
+1. Create a **Didit** account + workflow for Zimbabwean national IDs; get `DIDIT_API_KEY`,
+   `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`.
+2. Set the callback: **`DIDIT_CALLBACK_URL=https://lyniago.lyniafinance.com/kyc/callback`** (the route is
+   live and HMAC-verifies the webhook against `DIDIT_WEBHOOK_SECRET`).
+3. Store `DIDIT_API_KEY` + `DIDIT_WEBHOOK_SECRET` as secrets; `DIDIT_WORKFLOW_ID` + `DIDIT_CALLBACK_URL` can
+   be plain `--set-env-vars`. Keep `KYC_MODE=auto`.
+4. **Run a real Zimbabwean ID** end-to-end → record approve/decline + the false-reject rate. If rejects are
+   high, the manual admin backstop (`POST /admin/riders/:id/kyc`) is the fallback.
+
+### 3. FCM push — device notifications  🟠 (after on-device builds exist)
+The adapter is built (`PUSH_PROVIDER=fcm`, `apps/api/src/adapters/push/fcm.push.ts`, ADC creds) but has no
+targets yet.
+1. **Enable Firebase** on the project: `firebase projects:addfirebase lynia-500911`, register an Android app
+   (`zw.co.lynia`), set `FCM_PROJECT_ID=lynia-500911`.
+2. Grant messaging: `gcloud projects add-iam-policy-binding lynia-500911 --member="serviceAccount:lynia-run@lynia-500911.iam.gserviceaccount.com" --role=roles/firebasecloudmessaging.admin`
+   (add `firebasecloudmessaging.googleapis.com` to the enabled APIs in `infra/terraform/project.tf`).
+3. **Code step (own feature):** mobile registers a device token (`expo-notifications`) → POSTs to a new API
+   endpoint → API stores it and calls `PUSH.send()` at offer/status transitions (payload mapper unit-tested).
+   Pilots can run on foreground/polling first.
+
+### 4. OTEL traces — observability  🟢 deferred by decision
+Exporter wired (`apps/api/src/observability/otel.ts`), no-op until `OTEL_EXPORTER_OTLP_ENDPOINT` is set. CEO
+review defers this (admin funnel covers core metrics; a collector is cost pilot volume doesn't need yet).
+_Trigger:_ when trip volume makes traces necessary — point at a collector, or add
+`@google-cloud/opentelemetry-cloud-trace-exporter` (zero-infra, GCP-native) + grant the runtime SA
+`roles/cloudtrace.agent`.
+
+> **WebSocket timeout — resolved, no action.** Tracking sockets survive a full delivery via Cloud Run's
+> `--timeout 3600` (`release.yml`). A `timeout_sec` on the LB backend was tried then removed (invalid for a
+> serverless-NEG backend); no Terraform apply is outstanding.
+>
+> **Deferred infra hardening** (pre-launch, not pilot — lean decision; tracked in `infra/terraform/README.md`):
+> drop Cloud SQL public IP (needs a VPC-internal migrator first), Redis `STANDARD_HA` + Cloud SQL `REGIONAL`
+> (cost), tighten bucket CORS (needs the deployed admin origin).
+
+---
+
+# Vendor-free QA testing (exercise the full flow with no vendors)
+
+Run the **entire** customer + rider journey on real devices against the live API
+(`https://lyniago.lyniafinance.com`) **without** the WhatsApp BSP (OTP) or Didit (KYC) vendors — so vendor
+onboarding never blocks testing. This is a **test configuration of the production deployment**; there are no
+real users yet.
+
+### Fail-safe model: QA is OPT-IN via repo variables
+The deploy **defaults to launch-safe** (`OTP_CHANNEL=whatsapp`, `KYC_PROVIDER=didit`, `PUSH_PROVIDER=fcm`).
+Test mode turns on **only** when the matching repo Variables are set — a vendor-free, auto-KYC build can
+never reach the public URL by accident.
+
+| Variable | Test value | Effect |
+|---|---|---|
+| `OTP_CHANNEL` | `console` | OTP codes logged, not sent via WhatsApp |
+| `OTP_TEST_PHONES` | your test numbers (comma-sep) | `POST /auth/otp` returns the code **in the response** — ONLY for these numbers |
+| `KYC_PROVIDER` | `stub` | rider KYC **auto-verifies** (no Didit) so riders can go online |
+| `PUSH_PROVIDER` | `noop` | no Firebase needed; pushes logged, not sent |
+
+Security: the OTP code is exposed **only** for `OTP_TEST_PHONES` numbers on the `console` channel — an
+arbitrary phone can never retrieve a code (not an account-takeover hole). Rate limits still apply.
+
+### Turn QA mode ON
+```bash
+gh variable set OTP_CHANNEL --body "console"
+gh variable set KYC_PROVIDER --body "stub"
+gh variable set PUSH_PROVIDER --body "noop"
+gh variable set OTP_TEST_PHONES --body "+263771234567,+263770000002"   # your test number(s)
+gh workflow run release.yml --ref main      # redeploy to apply
+```
+(Ad-hoc, no redeploy: `gcloud run services update lynia-api --region africa-south1 --update-env-vars '^@^OTP_CHANNEL=console@KYC_PROVIDER=stub@PUSH_PROVIDER=noop@OTP_TEST_PHONES=+263771234567'`.)
+
+### Customer flow
+1. `POST /auth/otp {phone}` → response includes `devCode` (allowlisted number). `POST /auth/otp/verify
+   {phone, code}` → tokens.
+2. Complete profile → **create an order** (pickup/dropoff, item, suggested fare).
+3. From a **second (rider) account**, make an offer; back on the customer, **select** it.
+4. Watch **live tracking** (Socket.IO), then **rate** after delivery.
+
+### Rider flow
+1. Log in with a second allowlisted number → **become a rider** (`POST /riders/become`). With the stub
+   provider this returns `kycStatus: "verified"` immediately — no Didit, no admin step.
+2. **Go online** (`PATCH /riders/online`) → see the broadcast order → **bid** → once selected, drive the
+   lifecycle: mark collected → en route → **deliver with the handover OTP** → done. Earnings hit the ledger.
+
+> To test the **manual** KYC path instead of auto-verify, deploy with `KYC_MODE=manual` — riders stay
+> `pending` and an admin approves via `POST /admin/riders/:id/kyc`.
+
+### ✅ Flip to launch (turn QA mode OFF)
+Because QA is opt-in, launch = **clear the variables**, then redeploy:
+```bash
+gh variable delete OTP_CHANNEL      # back to default: whatsapp
+gh variable delete KYC_PROVIDER     # back to default: didit
+gh variable delete PUSH_PROVIDER    # back to default: fcm
+gh variable delete OTP_TEST_PHONES  # no code ever returned
+gh workflow run release.yml --ref main
+```
+Then complete the real-vendor wiring in the founder runbook above (WhatsApp BSP, Didit keys, Firebase). With
+no vars set the deploy is already launch-safe, and the OTP code is never returned on the `whatsapp`/`sms`
+channels regardless of `OTP_TEST_PHONES`.
