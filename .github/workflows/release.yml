@@ -116,6 +116,13 @@ jobs:
           pnpm --filter @lynia/api migrate:deploy
           kill "$PROXY_PID" || true
 
+      # --ingress internal-and-cloud-load-balancing: the service is fronted by the
+      # external HTTPS ALB (infra/terraform/lb.tf) and the org disables the default
+      # *.run.app edge URL, so only LB + internal traffic should reach Cloud Run.
+      # This also satisfies a constraints/run.allowedIngress org policy if enforced.
+      # NOTE: if the org enforces domain-restricted sharing (allowedPolicyMemberDomains),
+      # the allUsers bind below is rejected — drop --allow-unauthenticated and grant
+      # invoker to an org-allowed principal. Check: gcloud resource-manager org-policies list.
       - name: Deploy to Cloud Run
         run: |
           set -euo pipefail
@@ -131,6 +138,7 @@ jobs:
             --vpc-egress private-ranges-only \
             --set-env-vars "NODE_ENV=production,CLOUD_PROVIDER=gcp,STORAGE_BUCKET=lynia-media,GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},OTP_CHANNEL=whatsapp,KYC_PROVIDER=didit" \
             --set-secrets "DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest" \
+            --ingress internal-and-cloud-load-balancing \
             --allow-unauthenticated
 
       - name: Summary
