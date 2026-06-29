@@ -16,6 +16,8 @@ name: Release (Cloud Run)
 #     GCP_ARTIFACT_REPO    Artifact Registry repo name (e.g. lynia)
 #     CLOUD_RUN_SERVICE    Cloud Run service name (e.g. lynia-api)
 #     CLOUD_SQL_INSTANCE   Cloud SQL connection name (project:region:instance) — for migrations
+#     VPC_CONNECTOR        Serverless VPC Access connector (so Cloud Run reaches Redis)
+#     CLOUD_RUN_SERVICE_ACCOUNT  runtime SA email (run as lynia-run, not the default compute SA)
 #   Secrets:
 #     GCP_SA_KEY           service-account JSON with Cloud Run Admin, Artifact Registry Writer,
 #                          Cloud SQL Client, Secret Manager Secret Accessor.
@@ -57,12 +59,14 @@ jobs:
           GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
           CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
           CLOUD_SQL_INSTANCE: ${{ vars.CLOUD_SQL_INSTANCE }}
+          VPC_CONNECTOR: ${{ vars.VPC_CONNECTOR }}
+          CLOUD_RUN_SERVICE_ACCOUNT: ${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
           MIGRATE_DATABASE_URL: ${{ secrets.MIGRATE_DATABASE_URL }}
         run: |
           set -euo pipefail
           missing=()
-          for v in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO CLOUD_RUN_SERVICE CLOUD_SQL_INSTANCE GCP_SA_KEY MIGRATE_DATABASE_URL; do
+          for v in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO CLOUD_RUN_SERVICE CLOUD_SQL_INSTANCE VPC_CONNECTOR CLOUD_RUN_SERVICE_ACCOUNT GCP_SA_KEY MIGRATE_DATABASE_URL; do
             [ -n "${!v:-}" ] || missing+=("$v")
           done
           if [ ${#missing[@]} -gt 0 ]; then
@@ -119,8 +123,11 @@ jobs:
             --region "${{ vars.GCP_REGION }}" \
             --platform managed \
             --port 3000 \
+            --service-account "${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}" \
             --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
-            --set-env-vars "NODE_ENV=production,CLOUD_PROVIDER=gcp,STORAGE_BUCKET=lynia-media,OTP_CHANNEL=whatsapp,KYC_PROVIDER=didit" \
+            --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
+            --vpc-egress private-ranges-only \
+            --set-env-vars "NODE_ENV=production,CLOUD_PROVIDER=gcp,STORAGE_BUCKET=lynia-media,GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},OTP_CHANNEL=whatsapp,KYC_PROVIDER=didit" \
             --set-secrets "DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest" \
             --allow-unauthenticated
 

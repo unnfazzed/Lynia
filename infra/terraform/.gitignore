@@ -1,0 +1,13 @@
+# Local Terraform state, plans, vars, and provider plugins — never commit these.
+# State holds the generated DB password, JWT secret, and deployer key.
+.terraform/
+# Note: .terraform.lock.hcl SHOULD be committed (pins provider versions) — commit it
+# after your first `terraform init`. It's not ignored here.
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfplan
+terraform.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json

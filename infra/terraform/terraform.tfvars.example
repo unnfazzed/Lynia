@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars and fill in. Only project_id is required; the rest
+# default to the values the app/CI already expect (see variables.tf).
+
+project_id = "lynia-pilot" # the billing-linked project id (founder creates this)
+
+# region        = "africa-south1"
+# db_tier       = "db-custom-1-3840"   # downsize to "db-g1-small" to stretch credits
+# bucket_name   = "lynia-media"
+
+# --- Only if you want Terraform to create the project (needs org perms + billing) ---
+# create_project  = true
+# org_id          = "123456789012"     # or set folder_id instead
+# billing_account = "XXXXXX-XXXXXX-XXXXXX"
+
+# --- Once Workload Identity Federation is wired, stop minting an SA key ---
+# emit_deployer_sa_key = false
