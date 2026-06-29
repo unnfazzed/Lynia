@@ -1,9 +1,25 @@
 # Lynia — Next-Stage Plan: **Ship**
 
 > The execution plan for the stage after Build/Review/Test. Companion to the status snapshot in
-> `docs/PILOT-READINESS.md` (2026-06-27): that doc says *where we are*; this one says *what we do next
+> `docs/PILOT-READINESS.md`: that doc says *where we are*; this one says *what we do next
 > and who does it*. Guided by the gstack flow (Think → Plan → Design → Build → Review → Test → **Ship**).
-> Branch: `claude/next-dev-stage-planning-dkw52c`.
+> Branch: `claude/next-dev-stage-planning-dkw52c`. Date: 2026-06-27, **updated 2026-06-29**.
+
+## 🟢 Update — 2026-06-29: Ship executed
+
+This plan has now run. **Track F's gate cleared and Track A shipped:** the GCP project (`lynia-500911`) is
+provisioned via `infra/terraform/` (keyless CI auth via Workload Identity Federation), and the API is **live
+and CI-deployed** behind an external HTTPS load balancer at **`https://lyniago.lyniafinance.com`**. The
+release workflow builds → migrates → deploys to Cloud Run on every push to `main`. Track A (A1 release job,
+A2 GCS V4 signed URLs, A4 FCM adapter, A5 OTEL exporter) and Track B's hardening items (#1–#3) are merged.
+
+**What's left of this stage is the founder/vendor wiring** — production OTP (WhatsApp BSP), a real Didit
+ZIM-ID KYC run, and a Firebase project for live FCM — each now documented as a *create account → set secret →
+flip flag* step in **`docs/FOUNDER-RUNBOOK.md`**, plus the **dev build** for on-device `/qa`. The full flow is
+exercisable against the live deployment today, vendor-free, via **`docs/QA-TESTING.md`**. Read the tracks and
+exit criteria below through this update.
+
+---
 
 ## Why Ship is the next stage
 
@@ -132,13 +148,14 @@ Each lands behind `/review` + `/codex` and the existing test gate, exactly as th
 3. **Then:** A4 (FCM) + A5 (OTEL), production OTP path (WhatsApp BSP), and the real Didit KYC run.
 4. **Greenlight the dev build** → Phase 3 native map + tap-to-pin → on-device `/qa` → release.
 
-## Exit criteria for the Ship stage
-- [ ] GCP project provisioned; first Cloud Run deploy green from CI (`/ship`).
-- [ ] Object storage live: a rider KYC selfie / item photo round-trips through a real signed URL.
-- [ ] Production OTP path live (off the `console` channel).
-- [ ] `x-user-id` dev fallback gated to non-production.
-- [ ] OTEL traces landing in a collector; FCM push reaching a device.
-- [ ] Real Didit ZIM-ID run completed; false-reject rate measured.
+## Exit criteria for the Ship stage (status 2026-06-29)
+- [x] GCP project provisioned; first Cloud Run deploy green from CI (`/ship`) — live at `https://lyniago.lyniafinance.com`.
+- [x] `x-user-id` dev fallback gated to non-production (Track B #1).
+- [~] Object storage live: GCS V4 signing wired (A2); a real signed-URL round-trip still needs the first upload.
+- [ ] Production OTP path live (off the `console` channel) — **founder: WhatsApp BSP** (`FOUNDER-RUNBOOK.md` §1).
+- [ ] FCM push reaching a device — **founder: Firebase project** + device-token feature (adapter A4 done).
+- [ ] OTEL traces landing in a collector — **deferred by CEO review** (pilot volume doesn't need it yet).
+- [ ] Real Didit ZIM-ID run completed; false-reject rate measured — **founder: Didit account** (`FOUNDER-RUNBOOK.md` §2).
 
 ## gstack skills this stage uses
 `/ship` (CI + release — the headline), `/review` + `/codex` (each Track A/B PR), `/qa` (post dev-build,

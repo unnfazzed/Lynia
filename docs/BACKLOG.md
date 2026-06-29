@@ -52,16 +52,20 @@ is built yet, by design.
   scale. _Shape:_ a `normalizePhone()` to E.164 applied once at the controller boundary; the QA allowlist
   already strips cosmetic formatting for its compare. (Flagged in the QA test-mode security review.)
 
-## Cloud / infrastructure (GCP — provisioning-gated)
+## Cloud / infrastructure (GCP — ✅ provisioned + deployed 2026-06-29)
 
-> **Cloud chosen: Google Cloud** (2026-06-27, CONCEPT §10 / PILOT-READINESS Decision gates). Default is now
-> `CLOUD_PROVIDER=gcp` (Cloud Run + Cloud SQL + Memorystore + Cloud Storage + Secret Manager); the Azure
-> adapter is retained as the D7 portability proof. The decision is closed — the items below are now gated on
-> **provisioning the GCP project**, not on a cloud choice.
+> **Cloud chosen: Google Cloud** (2026-06-27, CONCEPT §10 / PILOT-READINESS Decision gates), **provisioned
+> and deployed 2026-06-29** (project `lynia-500911`, Terraform `infra/terraform/`, live at
+> `https://lyniago.lyniafinance.com`). Default is `CLOUD_PROVIDER=gcp` (Cloud Run + Cloud SQL + Memorystore
+> + Cloud Storage + Secret Manager); the Azure adapter is retained as the D7 portability proof. The
+> provisioning gate is **closed** — what remains below is collector/feature wiring, not a cloud stand-up.
+> Deferred infra hardening (drop Cloud SQL public IP, Redis `STANDARD_HA`, Cloud SQL `REGIONAL`, tighten
+> bucket CORS) is tracked in `infra/terraform/README.md` and triaged in `docs/REVIEW-SHIP-FOLLOWUPS.md`.
 
-- **GCS object-storage SDK** — real Cloud Storage uploads + V4 signed-URL generation behind the storage
-  adapter (`apps/api/src/adapters/storage/gcs.storage.ts`, currently a stub). _Trigger:_ GCP project
-  provisioned. The Azure Blob impl stays as the portability fallback.
+- ✅ **GCS object-storage SDK — DONE (A2).** Real Cloud Storage uploads + V4 signed-URL generation behind the
+  storage adapter (`apps/api/src/adapters/storage/gcs.storage.ts`), ADC `signBlob` (no private key), offline
+  V4-signing test. _Remaining:_ first live round-trip (rider KYC selfie / item photo upload). The Azure Blob
+  impl stays as the portability fallback.
 - ✅ **FCM push notifications — adapter DONE (A4).** `firebase-admin` (v14 modular API) is wired behind the
   `PushAdapter` seam (`apps/api/src/adapters/push/fcm.push.ts`), selected by `PUSH_PROVIDER=fcm`, ADC creds
   on Cloud Run (no key in env), payload mapper unit-tested. _Remaining:_ device-token registration + calling
@@ -91,9 +95,9 @@ is built yet, by design.
 
 ## Mobile app
 
-- **HTTPS for device builds.** The API must be served over HTTPS for a standalone build — Android 9+ and
-  iOS ATS block cleartext `http://`. _Trigger:_ first on-device/EAS build (works over `http` LAN in Expo Go
-  today). Pairs with the cloud provisioning (T0).
+- ✅ **HTTPS for device builds — DONE.** The API is served over HTTPS via an external load balancer +
+  managed cert at `https://lyniago.lyniafinance.com`; the mobile app is cut over to HTTPS/WSS
+  (`apps/mobile/app.json`). Standalone/EAS builds are no longer blocked by Android 9+/iOS ATS cleartext rules.
 - **Native map + tap-to-pin (Phase 3).** Pickup/dropoff are typed coordinates today; a `react-native-maps`
   picker needs a dev build (not Expo Go). _Trigger:_ device-testing phase.
 - **Reanimated/gesture-handler + FlatList.** Add the canonical Expo Router native deps when Phase 2 nav
