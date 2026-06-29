@@ -2,6 +2,12 @@
 FROM node:22-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
+# openssl + ca-certificates: Prisma's query engine needs libssl present (and
+# detectable) or it falls back to the 1.1.x engine, which can't load on bookworm
+# (OpenSSL 3) and crashes the container at $connect.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /repo
 
