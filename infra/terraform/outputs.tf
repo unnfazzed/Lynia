@@ -34,9 +34,20 @@ output "CLOUD_RUN_SERVICE_ACCOUNT" {
   value       = google_service_account.runtime.email
 }
 
+# --- Keyless CI auth (Workload Identity Federation) → repo Variables ---
+output "GCP_WORKLOAD_IDENTITY_PROVIDER" {
+  description = "Full provider resource name for google-github-actions/auth (workload_identity_provider)."
+  value       = google_iam_workload_identity_pool_provider.github.name
+}
+
+output "GCP_SERVICE_ACCOUNT" {
+  description = "Deployer SA the workflow impersonates via WIF (service_account)."
+  value       = google_service_account.deployer.email
+}
+
 # --- Repo Secrets (Settings → Secrets and variables → Actions → Secrets) ---
 output "deployer_sa_key" {
-  description = "JSON for the GCP_SA_KEY secret. Empty if emit_deployer_sa_key = false (WIF path). Read with: terraform output -raw deployer_sa_key | base64 -d"
+  description = "JSON for a legacy GCP_SA_KEY secret. Empty unless emit_deployer_sa_key = true (default false — CI uses WIF). Read with: terraform output -raw deployer_sa_key | base64 -d"
   value       = var.emit_deployer_sa_key ? google_service_account_key.deployer[0].private_key : ""
   sensitive   = true
 }
@@ -68,10 +79,13 @@ output "arming_guide" {
       CLOUD_SQL_INSTANCE        = ${google_sql_database_instance.main.connection_name}
       VPC_CONNECTOR             = ${google_vpc_access_connector.connector.name}
       CLOUD_RUN_SERVICE_ACCOUNT = ${google_service_account.runtime.email}
+      GCP_WORKLOAD_IDENTITY_PROVIDER = ${google_iam_workload_identity_pool_provider.github.name}
+      GCP_SERVICE_ACCOUNT       = ${google_service_account.deployer.email}
 
     Repo → Settings → Secrets and variables → Actions → Secrets:
-      GCP_SA_KEY           = terraform output -raw deployer_sa_key | base64 -d
       MIGRATE_DATABASE_URL = terraform output -raw MIGRATE_DATABASE_URL
+
+    CI auth is keyless (Workload Identity Federation) — no GCP_SA_KEY needed.
 
     Runtime secrets DATABASE_URL / REDIS_URL / JWT_SIGNING_SECRET are already in
     Secret Manager (injected by --set-secrets). Then push to main → first /ship.

@@ -18,12 +18,14 @@ name: Release (Cloud Run)
 #     CLOUD_SQL_INSTANCE   Cloud SQL connection name (project:region:instance) — for migrations
 #     VPC_CONNECTOR        Serverless VPC Access connector (so Cloud Run reaches Redis)
 #     CLOUD_RUN_SERVICE_ACCOUNT  runtime SA email (run as lynia-run, not the default compute SA)
+#     GCP_WORKLOAD_IDENTITY_PROVIDER  WIF provider resource name (keyless CI auth)
+#     GCP_SERVICE_ACCOUNT  deployer SA email the workflow impersonates via WIF
 #   Secrets:
-#     GCP_SA_KEY           service-account JSON with Cloud Run Admin, Artifact Registry Writer,
-#                          Cloud SQL Client, Secret Manager Secret Accessor.
-#                          (Hardening follow-up: swap for Workload Identity Federation — see below.)
 #     MIGRATE_DATABASE_URL postgres URL through 127.0.0.1:5432 (the Cloud SQL Auth Proxy), used
 #                          only by `prisma migrate deploy`.
+#   CI auth is keyless via Workload Identity Federation — no service-account JSON key
+#   (the org disables key creation). The deployer SA holds Cloud Run Admin, Artifact
+#   Registry Writer, Cloud SQL Client, and actAs on the runtime SA.
 #   App runtime secrets (DATABASE_URL, REDIS_URL, JWT_SIGNING_SECRET, vendor keys) live in
 #   Secret Manager and are injected at deploy via --set-secrets below.
 
@@ -61,12 +63,13 @@ jobs:
           CLOUD_SQL_INSTANCE: ${{ vars.CLOUD_SQL_INSTANCE }}
           VPC_CONNECTOR: ${{ vars.VPC_CONNECTOR }}
           CLOUD_RUN_SERVICE_ACCOUNT: ${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}
-          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
           MIGRATE_DATABASE_URL: ${{ secrets.MIGRATE_DATABASE_URL }}
         run: |
           set -euo pipefail
           missing=()
-          for v in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO CLOUD_RUN_SERVICE CLOUD_SQL_INSTANCE VPC_CONNECTOR CLOUD_RUN_SERVICE_ACCOUNT GCP_SA_KEY MIGRATE_DATABASE_URL; do
+          for v in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO CLOUD_RUN_SERVICE CLOUD_SQL_INSTANCE VPC_CONNECTOR CLOUD_RUN_SERVICE_ACCOUNT GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT MIGRATE_DATABASE_URL; do
             [ -n "${!v:-}" ] || missing+=("$v")
           done
           if [ ${#missing[@]} -gt 0 ]; then
@@ -78,10 +81,9 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-          # Hardening follow-up — prefer keyless WIF over a long-lived SA key:
-          #   workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          #   service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          # Keyless Workload Identity Federation — no long-lived SA key.
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2

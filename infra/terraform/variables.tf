@@ -118,9 +118,15 @@ variable "deletion_protection" {
 }
 
 variable "emit_deployer_sa_key" {
-  description = "Generate a JSON key for the CI deployer SA and expose it as the (sensitive) deployer_sa_key output, to paste into the GCP_SA_KEY GitHub secret. The key lands in Terraform state — prefer Workload Identity Federation (see README) and set this false once WIF is wired."
+  description = "Generate a JSON key for the CI deployer SA (legacy auth). Default false: CI uses keyless Workload Identity Federation (wif.tf), and most orgs disable key creation via constraints/iam.disableServiceAccountKeyCreation anyway. Leave false unless you have a specific need and key creation is permitted."
   type        = bool
-  default     = true
+  default     = false
+}
+
+variable "github_repository" {
+  description = "owner/repo of the GitHub repository allowed to impersonate the deployer SA via Workload Identity Federation. Case-sensitive — must match the OIDC `repository` claim."
+  type        = string
+  default     = "unnfazzed/Lynia"
 }
 
 variable "labels" {

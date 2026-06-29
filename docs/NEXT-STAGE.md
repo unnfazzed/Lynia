@@ -62,12 +62,15 @@ the repo variable `GCP_DEPLOY_ENABLED` is `true`. Once provisioning hands back s
 | Variable | `CLOUD_SQL_INSTANCE` | connection name `project:region:instance` |
 | Variable | `VPC_CONNECTOR` | Serverless VPC Access connector (`lynia-connector`) — lets Cloud Run reach Redis |
 | Variable | `CLOUD_RUN_SERVICE_ACCOUNT` | runtime SA email (`lynia-run@…`) — run as the scoped identity |
-| Secret | `GCP_SA_KEY` | service-account JSON (Cloud Run Admin, Artifact Registry Writer, Cloud SQL Client, Secret Manager Secret Accessor) |
+| Variable | `GCP_WORKLOAD_IDENTITY_PROVIDER` | WIF provider resource name — **keyless** CI auth |
+| Variable | `GCP_SERVICE_ACCOUNT` | deployer SA email (`lynia-deployer@…`) the workflow impersonates |
 | Secret | `MIGRATE_DATABASE_URL` | postgres URL via `127.0.0.1:5432` (the Auth Proxy), for `prisma migrate deploy` |
 
 App runtime secrets (`DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET`) go in **Secret Manager** — the
-workflow injects them with `--set-secrets`. Hardening follow-up: swap `GCP_SA_KEY` for keyless Workload
-Identity Federation (the workflow already requests `id-token: write` and has the WIF lines commented in).
+workflow injects them with `--set-secrets`. **CI auth is keyless** via Workload Identity Federation — there
+is no `GCP_SA_KEY`; the org disables long-lived SA keys (`constraints/iam.disableServiceAccountKeyCreation`),
+and the WIF pool/provider are provisioned by `infra/terraform/wif.tf`. `terraform output arming_guide`
+prints the exact values.
 
 ### Other founder-gated unlocks (parallel, lower urgency)
 - **Greenlight a dev build** (not Expo Go) → enables Phase 3 native map + on-device `/qa`.
