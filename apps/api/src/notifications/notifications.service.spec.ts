@@ -14,7 +14,7 @@ function makeDeps() {
       findUnique: vi.fn().mockResolvedValue(null),
     },
   };
-  const push: PushAdapter = { send: vi.fn().mockResolvedValue(undefined) };
+  const push: PushAdapter = { send: vi.fn().mockResolvedValue({ ok: true, invalidToken: false }) };
   const service = new NotificationsService(prisma as unknown as PrismaService, push);
   return { prisma, push, service };
 }
@@ -100,6 +100,31 @@ describe("NotificationsService — order-status notices", () => {
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "r1" }]);
     (push.send as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fcm down"));
     await expect(service.notifyOrderStatus("o1", "assigned")).resolves.toBeUndefined();
+  });
+});
+
+describe("NotificationsService — dead-token pruning", () => {
+  it("deletes tokens the provider reports as permanently invalid (and only those)", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "good" }, { token: "dead" }]);
+    (push.send as ReturnType<typeof vi.fn>).mockImplementation(async (m: { token: string }) => ({
+      ok: m.token !== "dead",
+      invalidToken: m.token === "dead",
+    }));
+
+    await service.notifyOrderStatus("o1", "delivered");
+
+    expect(prisma.deviceToken.deleteMany).toHaveBeenCalledWith({ where: { token: { in: ["dead"] } } });
+  });
+
+  it("does NOT prune on a transient throw (only on an explicit invalidToken result)", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "r1" }]);
+    (push.send as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network blip"));
+    await service.notifyOrderStatus("o1", "delivered");
+    expect(prisma.deviceToken.deleteMany).not.toHaveBeenCalled();
   });
 });
 

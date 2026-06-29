@@ -1,5 +1,5 @@
 import { Logger } from "@nestjs/common";
-import type { PushAdapter, PushMessage } from "./push.interface";
+import { maskToken, type PushAdapter, type PushMessage, type PushResult } from "./push.interface";
 
 /**
  * Log-only push. The default when PUSH_PROVIDER != "fcm" — i.e. local dev, tests, and production
@@ -9,7 +9,8 @@ import type { PushAdapter, PushMessage } from "./push.interface";
 export class NoopPush implements PushAdapter {
   private readonly logger = new Logger(NoopPush.name);
 
-  async send(message: PushMessage): Promise<void> {
-    this.logger.debug(`push (noop) → ${message.token}: ${message.title}`);
+  async send(message: PushMessage): Promise<PushResult> {
+    this.logger.debug(`push (noop) → ${maskToken(message.token)}: ${message.title}`);
+    return { ok: true, invalidToken: false };
   }
 }

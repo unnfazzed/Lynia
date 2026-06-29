@@ -88,7 +88,8 @@ export class NotificationsService {
     }
   }
 
-  /** Fan a message out to every device of the given profiles. Private; all callers pre-wrap in try/catch. */
+  /** Fan a message out to every device of the given profiles, and prune any token the provider
+   *  reports as permanently dead. Private; all callers pre-wrap in try/catch. */
   private async send(
     profileIds: string[],
     msg: { title: string; body: string; data?: Record<string, string> },
@@ -98,8 +99,26 @@ export class NotificationsService {
       where: { profileId: { in: profileIds } },
       select: { token: true },
     });
-    await Promise.all(
-      tokens.map((t) => this.push.send({ token: t.token, title: msg.title, body: msg.body, data: msg.data })),
+    if (tokens.length === 0) return;
+
+    const outcomes = await Promise.all(
+      tokens.map(async (t) => {
+        try {
+          const result = await this.push.send({ token: t.token, title: msg.title, body: msg.body, data: msg.data });
+          return { token: t.token, dead: result.invalidToken };
+        } catch {
+          // A throw is a transient failure (the adapters don't throw on dead tokens) — never prune on it.
+          return { token: t.token, dead: false };
+        }
+      }),
     );
+
+    // Drop tokens the provider says are unregistered/invalid so the table doesn't grow unbounded and
+    // we stop sending to dead devices (a token FCM later reassigns won't keep delivering to the wrong user).
+    const dead = outcomes.filter((o) => o.dead).map((o) => o.token);
+    if (dead.length > 0) {
+      await this.prisma.deviceToken.deleteMany({ where: { token: { in: dead } } });
+      this.logger.log(`pruned ${dead.length} dead device token(s)`);
+    }
   }
 }

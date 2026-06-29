@@ -3,6 +3,7 @@ import type { Env } from "../../config/env";
 import { buildFcmMessage, FcmPush } from "./fcm.push";
 import { NoopPush } from "./noop.push";
 import { selectPush } from "./push.module";
+import { maskToken } from "./push.interface";
 
 const base = {
   NODE_ENV: "test",
@@ -28,8 +29,20 @@ describe("push adapter selection (D7 portability)", () => {
     expect(() => new FcmPush("test-project")).not.toThrow();
   });
 
-  it("noop send resolves without throwing", async () => {
-    await expect(new NoopPush().send({ token: "t", title: "x", body: "y" })).resolves.toBeUndefined();
+  it("noop send resolves to an ok, non-dead result", async () => {
+    await expect(new NoopPush().send({ token: "t", title: "x", body: "y" })).resolves.toEqual({
+      ok: true,
+      invalidToken: false,
+    });
+  });
+});
+
+describe("maskToken — never log a whole device token", () => {
+  it("keeps a short head + tail and elides the middle", () => {
+    expect(maskToken("abcdefgh12345678ijklmnop")).toBe("abcdefgh…mnop");
+  });
+  it("fully elides a short token", () => {
+    expect(maskToken("short")).toBe("…");
   });
 });
 
