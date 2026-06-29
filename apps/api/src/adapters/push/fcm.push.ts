@@ -1,7 +1,14 @@
 import { Logger } from "@nestjs/common";
 import type { App } from "firebase-admin/app";
 import type { Messaging } from "firebase-admin/messaging";
-import type { PushAdapter, PushMessage } from "./push.interface";
+import { maskToken, type PushAdapter, type PushMessage, type PushResult } from "./push.interface";
+
+/** FCM error codes that mean the token is permanently dead and should be pruned (vs. a transient
+ *  network/5xx failure, which must not prune). */
+const DEAD_TOKEN_CODES = new Set([
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+]);
 
 /** The FCM HTTP-v1 message shape we send. Kept narrow — only what PushMessage maps to. */
 export interface FcmMessage {
@@ -56,13 +63,17 @@ export class FcmPush implements PushAdapter {
     return this.messagingPromise;
   }
 
-  async send(message: PushMessage): Promise<void> {
+  async send(message: PushMessage): Promise<PushResult> {
     try {
       const messaging = await this.messaging();
       await messaging.send(buildFcmMessage(message));
-      this.logger.debug(`push → ${message.token}: ${message.title}`);
+      this.logger.debug(`push → ${maskToken(message.token)}: ${message.title}`);
+      return { ok: true, invalidToken: false };
     } catch (err) {
-      this.logger.warn(`push send failed for ${message.token}: ${(err as Error).message}`);
+      const code = (err as { code?: string }).code ?? "";
+      const invalidToken = DEAD_TOKEN_CODES.has(code);
+      this.logger.warn(`push send failed for ${maskToken(message.token)} (${code || "unknown"})`);
+      return { ok: false, invalidToken };
     }
   }
 }

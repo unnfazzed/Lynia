@@ -165,6 +165,41 @@ Test count climbed 21 → 72 → 112 → **119** API tests through this stage, w
 
 **Verdict:** Build engineering CLEARED — foundations sound, P0s closed, lifecycle whole and tested. → Ship.
 
+### 2c. Notifications / FCM feature review (post-merge, 2026-06-29)
+
+> The FCM push feature (device-token registry + send-wiring; PRs #58/#59) **shipped without a review pass**
+> — and worse, merged red, twice (an invalid `ignoreDeprecations` tsconfig value; a `/** */` block comment
+> Prisma rejects). This is the retrospective gstack `/review` + `/codex` it should have had: a staff-engineer
+> audit paired with an independent adversarial second opinion over the merged code. Verdict: **LAND WITH
+> FIXES** — fixes applied in the follow-up change; no security/IDOR or concurrency defects.
+
+**Confirmed sound (both reviewers, by code):**
+- **Auth / IDOR.** `POST/DELETE /notifications/device-token` are class-`@UseGuards(JwtAuthGuard)`; identity is
+  the JWT `sub` via `@CurrentUser`, never a client field. `unregisterToken` is scoped `{ token, profileId }`
+  (can't delete another user's token). Token re-home on register is the standard FCM ownership-transfer
+  pattern (a token is a device secret), not a practical hijack vector.
+- **Concurrency.** Every `notify*` is `void`-fired **after** commit and wraps its whole body in try/catch, so
+  it never rejects (no `unhandledRejection`) and a push failure can't roll back an offer-loop/lifecycle write.
+  No double-notify (`assigned` only from `MatchingService`; `completed` only once via the delivered→completed
+  CAS). Audience mappings correct (assigned→rider, lifecycle→customer, cancelled→both, expired→customer).
+- **Migration fidelity.** `0004_device_tokens` matches the `DeviceToken` model (types, nullability, FK
+  `ON DELETE CASCADE`, unique-on-token, profile index); CI's PostGIS job applying it confirms it.
+
+| Sev | Finding | Resolution |
+|-----|---------|------------|
+| **P1** | **Dead/expired FCM tokens were never pruned.** The adapter swallowed *every* send error, including the one that identifies a permanently-dead token (`registration-token-not-registered`), and `NotificationsService` discarded all results — so `device_tokens` grows unbounded and keeps sending to dead devices (and a token FCM later reassigns would deliver to the wrong user). | ✅ **Fixed** — `PushAdapter.send` now returns `PushResult { ok, invalidToken }`; `FcmPush` maps the two unambiguous dead-token codes (never transient/5xx); `NotificationsService.send` collects and `deleteMany`s the dead tokens. Unit-tested (prunes only the invalid one; never prunes on a transient throw). |
+| **P2** | **Device tokens were logged whole** (`fcm.push.ts`, `noop.push.ts`) — bearer-ish credentials at `warn` level in prod logs. | ✅ **Fixed** — a shared `maskToken()` (head+tail only) used on every push log line; unit-tested. |
+| **P2** | **`PUSH_PROVIDER=fcm` with no `FCM_PROJECT_ID` failed silently** off Cloud Run (ADC has no ambient project) — push looks armed, delivers nothing, no signal. | ✅ **Fixed** — `selectPush` logs a boot `warn` when fcm is selected without a project id. |
+| **P2** | **Unbounded fan-out** — `Promise.all(tokens.map(send))` fires one FCM call per device with no batching. Trivial at pilot scale. | ◐ **Deferred** — switch to FCM `sendEach` (≤500/call); also halves the dead-token-cleanup cost. Booked. |
+| **P2** | **Rider-broadcast push gap.** CONCEPT §3.10 calls fast new-order alerts to nearby riders "critical — push is the primary channel," but only the WS board broadcast exists; no push to nearby riders on `open_for_offers`. | ◐ **Deferred** — needs the PostGIS nearby-rider query at broadcast time; a real feature, booked for the rider-notifications pass. |
+| NIT | `notifyOrderStatus` re-fetches `customerId`/`riderId` the caller already holds (1 extra query per transition, off the hot path since it's fire-and-forget). | Deferred — add a recipient-ids overload if it ever matters. |
+| NIT | No controller-level test (guard application / `@CurrentUser` wiring untested). | Deferred — low risk; the guard is class-level and shared across the codebase. |
+
+**Verdict:** LAND WITH FIXES. The one correctness issue (token pruning) is closed in code with tests; the
+logging and config-gating P2s are closed alongside; the fan-out batching and the rider-broadcast push are
+booked follow-ups. **Process note:** this feature should have had `/review` + a green CI gate *before* merge,
+not after — the two red-CI merges were avoidable.
+
 ---
 
 ## 3. Ship stage — provisioning + ship-prep reviews (2026-06-29)
