@@ -84,8 +84,8 @@ model Profile {
   @@map("profiles")
 }
 
-/** FCM device push tokens. A profile can have many (multiple devices); a token is globally unique and
- *  re-registering reassigns it to the current owner. Cascade-deleted with the profile. */
+// FCM device push tokens. A profile can have many (multiple devices); a token is globally unique and
+// re-registering reassigns it to the current owner. Cascade-deleted with the profile.
 model DeviceToken {
   id        String   @id @default(uuid()) @db.Uuid
   profileId String   @map("profile_id") @db.Uuid
