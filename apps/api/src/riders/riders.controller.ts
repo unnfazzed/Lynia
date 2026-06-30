@@ -12,7 +12,9 @@ const CompleteProfile = z.object({
 });
 const BecomeRider = z.object({
   bikeReg: z.string().min(3).max(20),
-  photoUrl: z.string().url(),
+  // The storage key returned by POST /uploads/kyc-photo (not a URL anymore — read URLs are minted on
+  // demand). Kept the column/field name `photoUrl`; the value it carries is now the object key.
+  photoUrl: z.string().min(1).max(256),
 });
 const SetOnline = z.object({ online: z.boolean() });
 
@@ -29,6 +31,12 @@ export class RidersController {
   @Post("become")
   become(@Body(new ZodBody(BecomeRider)) body: z.infer<typeof BecomeRider>, @CurrentUser() id: string) {
     return this.riders.becomeRider(id, body);
+  }
+
+  /** Re-run KYC for an existing rider whose check is pending/failed (Didit allows retries). */
+  @Post("kyc/retry")
+  retryKyc(@CurrentUser() id: string) {
+    return this.riders.retryKyc(id);
   }
 
   @Patch("online")

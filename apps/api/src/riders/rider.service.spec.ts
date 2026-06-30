@@ -93,6 +93,62 @@ describe("RiderService.becomeRider", () => {
   });
 });
 
+describe("RiderService.retryKyc", () => {
+  it("404s when the caller is not a rider", async () => {
+    const s = svc({ rider: { findUnique: async () => null } }, { KYC_MODE: "auto" });
+    await expect(s.retryKyc("p1")).rejects.toThrow(/not a rider/i);
+  });
+
+  it("409s when already verified", async () => {
+    const s = svc({ rider: { findUnique: async () => ({ kycStatus: "verified" }) } }, { KYC_MODE: "auto" });
+    await expect(s.retryKyc("p1")).rejects.toThrow(/already verified/i);
+  });
+
+  it("mints a fresh session and resets a failed rider to pending", async () => {
+    let data: Record<string, unknown> | undefined;
+    const vendor: KycVendor = {
+      submit: async () => ({ ref: "sess_new", status: "pending", url: "https://verify.didit.me/sess_new" }),
+    };
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "failed" }),
+        update: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return {};
+        },
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", verificationUrl: "https://verify.didit.me/sess_new" });
+    // New ref, reset to pending, and kycResolvedAt cleared so the fresh webhook resolves it.
+    expect(data).toMatchObject({ kycStatus: "pending", idVerified: false, kycRef: "sess_new", kycResolvedAt: null });
+  });
+
+  it("returns 503 when the vendor is down on retry", async () => {
+    const vendor: KycVendor = {
+      submit: async () => {
+        throw new Error("didit down");
+      },
+    };
+    const s = svc(
+      { rider: { findUnique: async () => ({ kycStatus: "failed" }) } },
+      { KYC_MODE: "auto", KYC_PROVIDER: "didit" },
+      vendor,
+    );
+    await expect(s.retryKyc("p1")).rejects.toThrow(/couldn't restart id verification/i);
+  });
+
+  it("leaves a manual-mode rider pending without calling the vendor", async () => {
+    const vendor: KycVendor = {
+      submit: async () => {
+        throw new Error("vendor must not be called in manual mode");
+      },
+    };
+    const s = svc({ rider: { findUnique: async () => ({ kycStatus: "failed" }) } }, { KYC_MODE: "manual" }, vendor);
+    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending" });
+  });
+});
+
 describe("RiderService.setOnline", () => {
   it("403s when the caller is not a rider", async () => {
     const s = svc({ rider: { findUnique: async () => null } }, {});

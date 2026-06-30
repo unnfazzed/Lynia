@@ -89,6 +89,35 @@ export class RiderService {
     return { kycStatus: initialKyc, mode: this.env.KYC_MODE, verificationUrl };
   }
 
+  /**
+   * Re-run KYC for an existing rider whose check is pending or failed (Didit allows retries within the
+   * workflow's retry window). Mints a fresh verification session, points the rider at the new ref, and
+   * clears kycResolvedAt so the new webhook resolves it. Verified riders are left untouched.
+   */
+  async retryKyc(profileId: string): Promise<{ kycStatus: Kyc; verificationUrl?: string }> {
+    const rider = await this.prisma.rider.findUnique({ where: { profileId }, select: { kycStatus: true } });
+    if (!rider) throw new NotFoundException("Not a rider");
+    if (rider.kycStatus === "verified") throw new ConflictException("Already verified");
+    // Manual mode has no vendor to resubmit to — the admin backstop resolves it; leave the rider pending.
+    if (this.env.KYC_MODE !== "auto") return { kycStatus: "pending" };
+
+    let submission: Awaited<ReturnType<KycVendor["submit"]>>;
+    try {
+      submission = await this.vendor.submit(profileId);
+    } catch (err) {
+      this.logger.error(`KYC retry failed for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
+      throw new ServiceUnavailableException("Couldn't restart ID verification. Please try again.");
+    }
+    // The stub provider has no real callback, so it stands in as an instant pass (QA), mirroring become.
+    const stubAutoPass = this.env.KYC_PROVIDER === "stub";
+    const next: Kyc = stubAutoPass ? "verified" : "pending";
+    await this.prisma.rider.update({
+      where: { profileId },
+      data: { kycStatus: next, idVerified: stubAutoPass, kycRef: submission.ref, kycResolvedAt: null },
+    });
+    return { kycStatus: next, verificationUrl: submission.url };
+  }
+
   async setOnline(profileId: string, online: boolean): Promise<{ online: boolean }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
