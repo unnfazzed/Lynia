@@ -67,6 +67,10 @@ export default function BecomeRiderScreen(): React.ReactElement {
               <Field label="Bike registration" value={bikeReg} onChangeText={setBikeReg} placeholder="ABZ 1234" maxLength={20} />
               <Field label="Photo URL" value={photoUrl} onChangeText={setPhotoUrl} placeholder="https://..." />
             </Card>
+            <Text style={{ fontSize: 12, color: tokens.color.muted, lineHeight: 17, marginBottom: tokens.space.sm }}>
+              By submitting, your national ID is checked by our verification partner (Didit) — an ID photo plus a
+              quick selfie liveness check. You'll finish in your browser, then return here to go online.
+            </Text>
             <Button label="Submit for verification" onPress={submit} loading={busy} disabled={!canSubmit} />
           </>
         )}
