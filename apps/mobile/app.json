@@ -16,7 +16,8 @@
           "photosPermission": "Lynia needs access to your photos to add your ID/profile photo for verification.",
           "cameraPermission": "Lynia uses the camera to take your ID/profile photo for verification."
         }
-      ]
+      ],
+      ["expo-notifications", { "color": "#1E7A46" }]
     ],
     "android": {
       "package": "zw.co.lynia"

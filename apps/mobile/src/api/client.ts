@@ -23,7 +23,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOpts {
-  method?: "GET" | "POST" | "PATCH";
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   /** Attach the bearer token (default true). */
   auth?: boolean;
