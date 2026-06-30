@@ -19,7 +19,7 @@ import { ZodBody } from "../common/zod.pipe";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { RiderService } from "../riders/rider.service";
-import { mapDiditStatus, verifyDiditSignature } from "./didit";
+import { diditTimestampFresh, mapDiditStatus, verifyDiditSignature, verifyDiditSignatureV2 } from "./didit";
 
 const AdminKyc = z.object({ status: z.enum(["pending", "verified", "failed"]) });
 
@@ -41,9 +41,19 @@ export class KycController {
 
     const secret = this.env.DIDIT_WEBHOOK_SECRET;
     if (secret) {
-      const sig = req.headers["x-signature"] as string | undefined;
-      if (!verifyDiditSignature(raw, sig, secret)) {
+      // Prefer X-Signature-V2 (canonical body — middleware-resilient, Didit's recommended header);
+      // fall back to the raw-bytes X-Signature for a delivery that carries only the legacy header.
+      const sigV2 = req.headers["x-signature-v2"] as string | undefined;
+      const ok = sigV2
+        ? verifyDiditSignatureV2(raw, sigV2, secret)
+        : verifyDiditSignature(raw, req.headers["x-signature"] as string | undefined, secret);
+      if (!ok) {
         throw new UnauthorizedException("Invalid webhook signature");
+      }
+      // Replay guard: reject a valid-HMAC body whose X-Timestamp is outside the 300s window.
+      const ts = req.headers["x-timestamp"] as string | undefined;
+      if (!diditTimestampFresh(ts, Date.now())) {
+        throw new UnauthorizedException("Stale webhook timestamp");
       }
     }
 

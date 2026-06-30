@@ -4,6 +4,7 @@ import type { Request } from "express";
 import { describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
 import type { RiderService } from "../riders/rider.service";
+import { canonicalizeDiditBody } from "./didit";
 import { KycController } from "./kyc.controller";
 
 const SECRET = "whsec_test_0123456789";
@@ -13,9 +14,16 @@ function req(raw: string, headers: Record<string, string> = {}): RawBodyRequest<
   return { rawBody: Buffer.from(raw, "utf8"), headers } as unknown as RawBodyRequest<Request>;
 }
 
+/** Legacy X-Signature: HMAC over the raw bytes. */
 function sign(raw: string): string {
   return createHmac("sha256", SECRET).update(raw, "utf8").digest("hex");
 }
+/** X-Signature-V2: HMAC over the canonical body. */
+function signV2(raw: string): string {
+  return createHmac("sha256", SECRET).update(canonicalizeDiditBody(raw), "utf8").digest("hex");
+}
+/** A current X-Timestamp (Unix seconds) so the fail-closed freshness check passes. */
+const freshTs = (): string => String(Math.floor(Date.now() / 1000));
 
 /** Records applyKycResult calls so we can assert it fires only for terminal statuses. */
 function fakeRiders() {
@@ -49,12 +57,36 @@ describe("KycController.callback", () => {
     expect(calls).toEqual([]);
   });
 
-  it("accepts a valid signature and applies the result", async () => {
+  it("accepts a valid X-Signature-V2 + fresh timestamp and applies the result", async () => {
     const { riders, calls } = fakeRiders();
     const raw = JSON.stringify({ session_id: "s_2", status: "Declined" });
-    const res = await ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(req(raw, { "x-signature": sign(raw) }));
+    const res = await ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(
+      req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": freshTs() }),
+    );
     expect(res).toEqual({ updated: 1 });
     expect(calls).toEqual([["s_2", "failed"]]);
+  });
+
+  it("accepts the legacy raw X-Signature when no V2 header is present", async () => {
+    const { riders, calls } = fakeRiders();
+    const raw = JSON.stringify({ session_id: "s_2b", status: "Approved" });
+    const res = await ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(
+      req(raw, { "x-signature": sign(raw), "x-timestamp": freshTs() }),
+    );
+    expect(res).toEqual({ updated: 1 });
+    expect(calls).toEqual([["s_2b", "verified"]]);
+  });
+
+  it("rejects a valid signature with a stale timestamp (replay guard)", async () => {
+    const { riders, calls } = fakeRiders();
+    const raw = JSON.stringify({ session_id: "s_2c", status: "Approved" });
+    const stale = String(Math.floor(Date.now() / 1000) - 600); // 10 min old
+    await expect(
+      ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(
+        req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": stale }),
+      ),
+    ).rejects.toThrow(/stale webhook timestamp/i);
+    expect(calls).toEqual([]);
   });
 
   it("rejects an invalid JSON body", async () => {

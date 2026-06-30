@@ -204,15 +204,33 @@ the send is a stub (`apps/api/src/auth/otp-sender.ts` → `WhatsAppOtpSender.sen
 
 ### 2. Didit ZIM-ID — real KYC run  🔴 start now (gates rider onboarding)
 Measures the false-reject rate that decides whether real riders can self-onboard. The integration is **done**
-(`apps/api/src/kyc/didit-kyc-vendor.ts`); `KYC_PROVIDER=didit` is set.
-1. Create a **Didit** account + workflow for Zimbabwean national IDs; get `DIDIT_API_KEY`,
-   `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`.
-2. Set the callback: **`DIDIT_CALLBACK_URL=https://lyniago.lyniafinance.com/kyc/callback`** (the route is
-   live and HMAC-verifies the webhook against `DIDIT_WEBHOOK_SECRET`).
-3. Store `DIDIT_API_KEY` + `DIDIT_WEBHOOK_SECRET` as secrets; `DIDIT_WORKFLOW_ID` + `DIDIT_CALLBACK_URL` can
-   be plain `--set-env-vars`. Keep `KYC_MODE=auto`.
-4. **Run a real Zimbabwean ID** end-to-end → record approve/decline + the false-reject rate. If rejects are
-   high, the manual admin backstop (`POST /admin/riders/:id/kyc`) is the fallback.
+and reconciled against Didit's v3 API: create-session `POST https://verification.didit.me/v3/session/` with
+`x-api-key` (`apps/api/src/kyc/didit-kyc-vendor.ts`), and a webhook (`/kyc/callback`) that verifies the
+recommended **`X-Signature-V2`** HMAC over the canonical body (with raw `X-Signature` fallback) plus a 300s
+`X-Timestamp` freshness window (`apps/api/src/kyc/didit.ts`). `KYC_PROVIDER` already defaults to `didit`; the
+deploy injects the Didit config **only when `DIDIT_ENABLED=true`**, so launch-safe / QA deploys never
+reference secrets that don't exist yet. Steps:
+1. **Get an API key.** Console (`https://business.didit.me`), or programmatically (no browser):
+   `POST https://apx.didit.me/auth/v2/programmatic/register/` → `…/verify-email/` with the emailed code →
+   persist `application.api_key` as `DIDIT_API_KEY`.
+2. **Pick the workflow id** (per-session config, *not* a secret): the **"Free KYC"** workflow is
+   `ef08effc-4f57-4c16-b06f-e41c04445eec`, or list yours via `GET /v3/workflows/`. This becomes `DIDIT_WORKFLOW_ID`.
+3. **Register the webhook destination once** (this returns the signing secret):
+   ```bash
+   curl -X POST https://verification.didit.me/v3/webhook/destinations/ \
+     -H "x-api-key: $DIDIT_API_KEY" -H "Content-Type: application/json" \
+     -d '{"label":"Lynia prod","url":"https://lyniago.lyniafinance.com/kyc/callback",
+          "webhook_version":"v3","subscribed_events":["status.updated"]}'
+   # → response.secret_shared_key  →  store as DIDIT_WEBHOOK_SECRET
+   ```
+   (`DIDIT_CALLBACK_URL` is separate — the post-verification browser **redirect**, a success page or app
+   deep link, *not* the webhook.)
+4. Store the two **secrets** in Secret Manager (wiring pattern above): `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`.
+   Set the plain repo Variables `DIDIT_WORKFLOW_ID` + `DIDIT_CALLBACK_URL`, keep `KYC_MODE=auto`, then flip
+   **`DIDIT_ENABLED=true`** and redeploy (`gh workflow run release.yml --ref main`) to activate real KYC.
+5. **Run a real Zimbabwean ID** end-to-end → record approve/decline + the false-reject rate. If rejects are
+   high, the manual admin backstop (`POST /admin/riders/:id/kyc`) is the fallback. Inspect the full decision
+   JSON via `GET /v3/session/{id}/decision/`.
 
 ### 3. FCM push — device notifications  🟠 (server side done; needs the Firebase project + a device build)
 The **whole server side is built**: the adapter (`apps/api/src/adapters/push/fcm.push.ts`, ADC creds), the
