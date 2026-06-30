@@ -20,9 +20,13 @@ RUN pnpm install --frozen-lockfile=false
 
 # --- build ---
 FROM deps AS build
+# Generate the Prisma client from just the schema FIRST, so the engine download (native +
+# debian-openssl-3.0.x) is cached on the schema rather than re-run on every source change. The
+# client is written into node_modules (excluded via .dockerignore), so the later COPY won't clobber it.
+COPY apps/api/prisma apps/api/prisma
+RUN pnpm --filter @lynia/api prisma:generate
 COPY . .
 RUN pnpm --filter @lynia/shared build \
- && pnpm --filter @lynia/api prisma:generate \
  && pnpm --filter @lynia/api build
 
 # --- runtime ---
