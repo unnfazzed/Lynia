@@ -46,6 +46,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
         : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6 });
     if (result.canceled) return;
     const asset = result.assets[0];
+    if (!asset) return;
     const contentType: ImageContentType = asset.mimeType === "image/png" ? "image/png" : "image/jpeg";
     setPhotoUri(asset.uri);
     setPhotoKey(null);
