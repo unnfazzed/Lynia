@@ -39,6 +39,17 @@ export const envSchema = z.object({
   // is never exposed, so this is not an account-takeover hole. Empty = exposure off (default).
   // MUST be empty (and OTP_CHANNEL=whatsapp) before real launch — see docs/PILOT-READINESS.md.
   OTP_TEST_PHONES: z.string().default(""),
+  // WhatsApp Cloud API (Meta) — only needed when OTP_CHANNEL=whatsapp. ACCESS_TOKEN is the secret.
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  WHATSAPP_ACCESS_TOKEN: z.string().optional(),
+  WHATSAPP_TEMPLATE_NAME: z.string().optional(),
+  WHATSAPP_TEMPLATE_LANG: z.string().default("en"),
+  WHATSAPP_GRAPH_VERSION: z.string().default("v21.0"),
+  // Plain string (not .url()) so an injected empty value can never crash boot (ENG-REVIEW §4).
+  WHATSAPP_GRAPH_BASE_URL: z.string().default("https://graph.facebook.com"),
+  // Meta "authentication"-category templates carry a one-tap/copy-code button that also takes the
+  // code as a parameter; set "false" if your approved template is body-only.
+  WHATSAPP_OTP_COPY_CODE_BUTTON: z.enum(["true", "false"]).default("true"),
   // --- KYC (lane E) ---
   // auto = submit to the vendor; manual = leave pending for admin review (T7 backstop).
   KYC_MODE: z.enum(["auto", "manual"]).default("auto"),
