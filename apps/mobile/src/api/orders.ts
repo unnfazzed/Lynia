@@ -20,6 +20,8 @@ export interface OrderSnapshot {
   status: OrderStatus;
   agreedFare: string | null;
   proposedFare: string;
+  pickup: { point: LatLng; landmark: string };
+  dropoff: { point: LatLng; landmark: string };
   rider: { profileId: string; currentLat: number | null; currentLng: number | null; updatedAt: string | null } | null;
   events: OrderEvent[];
   counterpartyPhone: string | null;

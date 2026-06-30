@@ -115,6 +115,8 @@ describe("OrdersService.getSnapshot", () => {
     proposedFare: 2.5,
     customerId: "cust-1",
     riderId: "rider-1",
+    pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues", contactPhone: "+263772222222" },
     customer: { phone: "+263771111111" },
     rider: { profileId: "rider-1", currentLat: null, currentLng: null, updatedAt: null, profile: { phone: "+263782000000" } },
     events: [],
@@ -136,6 +138,14 @@ describe("OrdersService.getSnapshot", () => {
     const snap = await svc(row()).getSnapshot("ord-1", "cust-1");
     expect(snap.counterpartyPhone).toBe("+263782000000");
     expect(snap.rider).toMatchObject({ profileId: "rider-1" });
+  });
+
+  it("returns pickup/drop-off for the map as point + landmark only — contactPhone redacted", async () => {
+    const snap = await svc(row()).getSnapshot("ord-1", "cust-1");
+    expect(snap.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" });
+    expect(snap.dropoff).toEqual({ point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" });
+    expect(snap.pickup).not.toHaveProperty("contactPhone");
+    expect(snap.dropoff).not.toHaveProperty("contactPhone");
   });
 
   it("reveals the customer's phone to the assigned rider", async () => {
