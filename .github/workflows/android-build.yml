@@ -1,0 +1,65 @@
+name: Build Android APK (free local build)
+
+# Builds an installable Android APK on a free GitHub-hosted runner using `eas build --local`.
+# Local builds do NOT consume EAS cloud build credits, and this repo is public so Actions minutes
+# are free — a zero-cost way to get a dev/QA build without the EAS cloud queue.
+#
+# Setup (one-time): add a repo secret EXPO_TOKEN (Settings → Secrets and variables → Actions → New
+# repository secret) with an Expo access token from https://expo.dev/settings/access-tokens.
+# The Google Maps key is read from the EAS `preview` environment (the GOOGLE_MAPS_API_KEY EAS secret),
+# so it does not need to be duplicated here.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [claude/phase-3-build-deploy-wbiqw0]
+    paths:
+      - "apps/mobile/**"
+      - "packages/shared/**"
+      - ".npmrc"
+      - ".github/workflows/android-build.yml"
+
+jobs:
+  android:
+    name: eas build --local (android)
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Build @lynia/shared
+        run: pnpm --filter @lynia/shared build
+
+      - name: EAS local build (no cloud credits)
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli@latest build \
+            --platform android \
+            --profile preview \
+            --local \
+            --non-interactive \
+            --output "${{ github.workspace }}/lynia.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lynia-android-apk
+          path: lynia.apk
+          if-no-files-found: error
