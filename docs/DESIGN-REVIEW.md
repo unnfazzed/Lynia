@@ -17,6 +17,7 @@
 | 2 | **Build** — two-sided consultation + post-build pass | 2026-06-27 | Full journey specced (DT8–DT13); error-state-honesty P1 fixed. |
 | 3 | **Ship** — ship-prep QA + post-launch lens | 2026-06-29 | onAccent **8/10**, skeletons **5→improved**; cutover UX catch shipped. **Design score 9/10.** |
 | 4 | **KYC onboarding** — rider verification UX | 2026-06-30 | Gate is honest &amp; good; **two stop-ships** for self-serve (un-enterable Photo URL, failed-KYC dead-end) → Phase-3. |
+| 5 | **Phase-3 build** — KYC hand-off polish | 2026-06-30 | The §4 P0s already shipped; the in-app browser hand-off + auto-poll-while-pending P1s now land. |
 
 > **Direction (constant across every pass):** *clean utility + a warm accent* — trust through clarity, tuned
 > for a low-trust cash market on cheap Android phones and expensive data. No pass has reinvented the tokens or
@@ -192,3 +193,31 @@ keyboard for the National ID; `Label`↔`TextInput` screen-reader association.
 form** are not ready for rider self-onboarding — the two P0s must land with the **Phase-3 dev build**
 (where camera-based KYC can actually be tested on-device). The server-side correctness/security fixes
 shipped separately (`docs/ENG-REVIEW.md` §4). **Current build status → `docs/PILOT-READINESS.md`.**
+
+---
+
+## 5. Phase-3 build — KYC hand-off polish (2026-06-30)
+
+> Build pass that closes the §4 P1 hand-off items. The two §4 **P0s** (un-enterable Photo URL → camera
+> capture; failed-KYC dead-end → honest `failed` state with a real retry) already shipped with the
+> Phase-3 dev build; this pass takes the **hand-off** the rest of the way for self-onboarding.
+
+**What landed:**
+
+- **In-app browser hand-off** (`become.tsx`, `rider/index.tsx`). The Didit hand-off used
+  `Linking.openURL`, which throws the rider into the **system browser** with no path back — they finish
+  verifying and are stranded in Chrome. Both the first-run submit and the pending/failed **retry** now use
+  `expo-web-browser` `openAuthSessionAsync`, which opens an **in-app tab** and **resolves when the rider
+  returns**. That return is the deterministic *"they're back → re-check"* hook the §4 review asked for: on
+  resolve we invalidate `["me"]` (and the gate already re-checks on focus), so a freshly-verified rider
+  drops straight through the gate. The `https://`-only guard is preserved.
+- **Auto-poll while `pending`** (`rider/index.tsx`). The pending gate previously only had a manual
+  *"Refresh status"* button, so a rider whose Didit webhook resolved while they sat on the screen saw
+  nothing until they tapped it. The `["me"]` query now carries a `refetchInterval` that polls every 5 s
+  **only while `kycStatus === "pending"`** and stops the moment it resolves (verified/failed) — the gate
+  clears itself. Manual Refresh stays as a belt-and-braces affordance.
+
+**Still open (P1 — needs the on-device `/qa` pass):** the `become` confirmation card and the gate's pending
+state still diverge in copy; unifying them is best judged on a real device alongside the stepper/earnings
+skeletons (DESIGN-REVIEW §3/§4). P2 polish (consent block strength, inline field validation, numeric ID
+keyboard, label↔input a11y association) is unchanged. **Current build status → `docs/PILOT-READINESS.md`.**

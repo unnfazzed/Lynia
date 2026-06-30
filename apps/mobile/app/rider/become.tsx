@@ -1,8 +1,9 @@
 import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
-import { Image, Linking, ScrollView, Text } from "react-native";
+import { Image, ScrollView, Text } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
@@ -70,9 +71,11 @@ export default function BecomeRiderScreen(): React.ReactElement {
     try {
       await completeProfile({ firstName: firstName.trim(), lastName: lastName.trim(), idNumber: idNumber.trim() });
       const res = await becomeRider({ bikeReg: bikeReg.trim(), photoUrl: photoKey });
-      // Only open an https URL — defense in depth against a bad/compromised vendor URL.
+      // Hand off in an in-app browser tab (not the system browser) — it returns deterministically to
+      // the app when the rider finishes/closes, so the gate can re-check on focus instead of stranding
+      // them in Chrome. Only ever open an https URL (defense against a bad/compromised vendor URL).
       if (res.verificationUrl && res.verificationUrl.startsWith("https://")) {
-        await Linking.openURL(res.verificationUrl).catch(() => undefined);
+        await WebBrowser.openAuthSessionAsync(res.verificationUrl).catch(() => undefined);
       }
       setPending(
         res.kycStatus === "verified"

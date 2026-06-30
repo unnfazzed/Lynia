@@ -6,6 +6,6 @@ import { TrackingService } from "./tracking.service";
 @Module({
   controllers: [TrackingController],
   providers: [TrackingService, TrackingGateway],
-  exports: [TrackingGateway],
+  exports: [TrackingGateway, TrackingService],
 })
 export class TrackingModule {}

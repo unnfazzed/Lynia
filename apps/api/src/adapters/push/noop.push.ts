@@ -13,4 +13,8 @@ export class NoopPush implements PushAdapter {
     this.logger.debug(`push (noop) → ${maskToken(message.token)}: ${message.title}`);
     return { ok: true, invalidToken: false };
   }
+
+  async sendEach(messages: PushMessage[]): Promise<PushResult[]> {
+    return Promise.all(messages.map((m) => this.send(m)));
+  }
 }
