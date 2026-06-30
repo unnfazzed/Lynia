@@ -204,13 +204,20 @@ the send is a stub (`apps/api/src/auth/otp-sender.ts` → `WhatsAppOtpSender.sen
 
 ### 2. Didit ZIM-ID — real KYC run  🔴 start now (gates rider onboarding)
 Measures the false-reject rate that decides whether real riders can self-onboard. The integration is **done**
-(`apps/api/src/kyc/didit-kyc-vendor.ts`); `KYC_PROVIDER=didit` is set.
-1. Create a **Didit** account + workflow for Zimbabwean national IDs; get `DIDIT_API_KEY`,
-   `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`.
-2. Set the callback: **`DIDIT_CALLBACK_URL=https://lyniago.lyniafinance.com/kyc/callback`** (the route is
-   live and HMAC-verifies the webhook against `DIDIT_WEBHOOK_SECRET`).
-3. Store `DIDIT_API_KEY` + `DIDIT_WEBHOOK_SECRET` as secrets; `DIDIT_WORKFLOW_ID` + `DIDIT_CALLBACK_URL` can
-   be plain `--set-env-vars`. Keep `KYC_MODE=auto`.
+and verified against Didit's v3 API (`POST https://verification.didit.me/v3/session/`, `x-api-key` auth, and
+the `x-signature` HMAC-SHA256 webhook — `apps/api/src/kyc/didit-kyc-vendor.ts` + `didit.ts`). `KYC_PROVIDER`
+already defaults to `didit`; the deploy injects the Didit config **only when `DIDIT_ENABLED=true`**, so
+launch-safe / QA deploys never reference secrets that don't exist yet. Steps:
+1. Create a **Didit** account + a workflow for Zimbabwean national IDs. From the Business Console get the
+   `DIDIT_API_KEY`, the workflow's `DIDIT_WORKFLOW_ID`, and a webhook signing **secret** (`DIDIT_WEBHOOK_SECRET`).
+2. **Configure the webhook** in the Didit Console → URL `https://lyniago.lyniafinance.com/kyc/callback`,
+   payload version **v3**, secret = the exact value you store as `DIDIT_WEBHOOK_SECRET`. That route is live
+   and HMAC-verifies every webhook against this secret; non-terminal statuses (In Review, …) stay `pending`
+   for the admin backstop. Separately, `DIDIT_CALLBACK_URL` is the post-verification **redirect** (a success
+   page or app deep link Didit sends the rider's browser to when they finish) — *not* the webhook.
+3. Store the two **secrets** in Secret Manager (wiring pattern above): `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`.
+   Set the plain repo Variables `DIDIT_WORKFLOW_ID` + `DIDIT_CALLBACK_URL`, keep `KYC_MODE=auto`, then flip
+   **`DIDIT_ENABLED=true`** and redeploy (`gh workflow run release.yml --ref main`) to activate real KYC.
 4. **Run a real Zimbabwean ID** end-to-end → record approve/decline + the false-reject rate. If rejects are
    high, the manual admin backstop (`POST /admin/riders/:id/kyc`) is the fallback.
 

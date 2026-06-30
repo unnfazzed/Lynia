@@ -138,6 +138,20 @@ jobs:
           # OTP_TEST_PHONES) — so "do nothing" can never ship a vendor-free, auto-KYC build
           # to the public URL, and flip-to-launch is just clearing those vars. The "^@^"
           # prefix sets @ as the env delimiter so OTP_TEST_PHONES may contain commas.
+          ENV_VARS="^@^NODE_ENV=production@CLOUD_PROVIDER=gcp@STORAGE_BUCKET=lynia-media@GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}@OTP_CHANNEL=${{ vars.OTP_CHANNEL || 'whatsapp' }}@OTP_TEST_PHONES=${{ vars.OTP_TEST_PHONES }}@KYC_PROVIDER=${{ vars.KYC_PROVIDER || 'didit' }}@PUSH_PROVIDER=${{ vars.PUSH_PROVIDER || 'fcm' }}"
+          SECRETS="DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest"
+
+          # Didit KYC vendor wiring is OPT-IN via DIDIT_ENABLED=true. Gating it keeps launch-safe /
+          # QA deploys from referencing Didit secrets before the founder has created them — a missing
+          # --set-secrets target fails the whole deploy. Once DIDIT_API_KEY / DIDIT_WEBHOOK_SECRET exist
+          # in Secret Manager and DIDIT_WORKFLOW_ID / DIDIT_CALLBACK_URL are set as repo Variables, flip
+          # DIDIT_ENABLED=true to activate real KYC (riders.module selects DiditKycVendor only when
+          # KYC_PROVIDER=didit AND DIDIT_API_KEY is present, so until then it safely falls back to stub).
+          if [ "${{ vars.DIDIT_ENABLED }}" = "true" ]; then
+            ENV_VARS="${ENV_VARS}@DIDIT_WORKFLOW_ID=${{ vars.DIDIT_WORKFLOW_ID }}@DIDIT_CALLBACK_URL=${{ vars.DIDIT_CALLBACK_URL }}"
+            SECRETS="${SECRETS},DIDIT_API_KEY=DIDIT_API_KEY:latest,DIDIT_WEBHOOK_SECRET=DIDIT_WEBHOOK_SECRET:latest"
+          fi
+
           gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
             --image "$IMAGE:${GITHUB_SHA}" \
             --project "${{ vars.GCP_PROJECT_ID }}" \
@@ -150,8 +164,8 @@ jobs:
             --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
             --vpc-egress private-ranges-only \
             --ingress internal-and-cloud-load-balancing \
-            --set-env-vars "^@^NODE_ENV=production@CLOUD_PROVIDER=gcp@STORAGE_BUCKET=lynia-media@GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}@OTP_CHANNEL=${{ vars.OTP_CHANNEL || 'whatsapp' }}@OTP_TEST_PHONES=${{ vars.OTP_TEST_PHONES }}@KYC_PROVIDER=${{ vars.KYC_PROVIDER || 'didit' }}@PUSH_PROVIDER=${{ vars.PUSH_PROVIDER || 'fcm' }}" \
-            --set-secrets "DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest" \
+            --set-env-vars "$ENV_VARS" \
+            --set-secrets "$SECRETS" \
             --allow-unauthenticated
 
       - name: Summary
