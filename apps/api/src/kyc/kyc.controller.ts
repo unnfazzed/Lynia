@@ -3,11 +3,13 @@ import {
   Body,
   Controller,
   Inject,
+  Logger,
   Param,
   ParseUUIDPipe,
   Post,
   type RawBodyRequest,
   Req,
+  ServiceUnavailableException,
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
@@ -25,6 +27,8 @@ const AdminKyc = z.object({ status: z.enum(["pending", "verified", "failed"]) })
 
 @Controller()
 export class KycController {
+  private readonly logger = new Logger(KycController.name);
+
   constructor(
     private readonly riders: RiderService,
     @Inject(ENV) private readonly env: Env,
@@ -40,6 +44,12 @@ export class KycController {
     const raw = req.rawBody?.toString("utf8") ?? "";
 
     const secret = this.env.DIDIT_WEBHOOK_SECRET;
+    // Fail-closed: in real-vendor mode the webhook MUST be signed. Without a secret we refuse rather
+    // than silently process unsigned bodies — otherwise anyone could flip a rider's KYC by session_id.
+    // (Don't rely on the DIDIT_ENABLED deploy flag to enforce this application-level invariant.)
+    if (this.env.KYC_PROVIDER === "didit" && !secret) {
+      throw new ServiceUnavailableException("KYC webhook not configured");
+    }
     if (secret) {
       // Prefer X-Signature-V2 (canonical body — middleware-resilient, Didit's recommended header);
       // fall back to the raw-bytes X-Signature for a delivery that carries only the legacy header.
@@ -57,7 +67,7 @@ export class KycController {
       }
     }
 
-    let payload: { session_id?: string; status?: string };
+    let payload: { session_id?: string; status?: string; timestamp?: number };
     try {
       payload = JSON.parse(raw || "{}");
     } catch {
@@ -69,7 +79,16 @@ export class KycController {
 
     const mapped = mapDiditStatus(payload.status);
     if (mapped === "pending") return { ignored: true, status: mapped };
-    return this.riders.applyKycResult(payload.session_id, mapped);
+
+    // Event time drives the monotonic guard. The timestamp is part of the signed body (Unix seconds),
+    // so it can't be forged; fall back to now() only if a delivery omits it.
+    const eventAt = typeof payload.timestamp === "number" ? new Date(payload.timestamp * 1000) : new Date();
+    const res = await this.riders.applyKycResult(payload.session_id, mapped, eventAt);
+    if (res.updated === 0) {
+      // No rider has this ref, or the event was stale/duplicate — surface for reconciliation.
+      this.logger.warn(`KYC webhook for session ${payload.session_id} (${mapped}) matched no rider or was stale`);
+    }
+    return res;
   }
 
   /** Manual-review backstop (T7): admin sets a rider's KYC status directly. */

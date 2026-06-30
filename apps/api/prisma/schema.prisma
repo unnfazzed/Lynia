@@ -107,7 +107,11 @@ model Rider {
   photoUrl        String    @map("photo_url")
   idVerified      Boolean   @default(false) @map("id_verified")
   kycStatus       KycStatus @default(pending) @map("kyc_status")
-  kycRef          String?   @map("kyc_ref")
+  // Unique so a Didit Approved/Declined webhook (keyed by session_id == kycRef) resolves exactly one
+  // rider. kycResolvedAt is the last applied webhook's event time — a monotonic guard so a replayed
+  // or out-of-order delivery can't overwrite a newer decision (see RiderService.applyKycResult).
+  kycRef          String?   @unique @map("kyc_ref")
+  kycResolvedAt   DateTime? @map("kyc_resolved_at")
   isOnline        Boolean   @default(false) @map("is_online")
   lastHeartbeatAt DateTime? @map("last_heartbeat_at")
   currentLat      Float?    @map("current_lat")

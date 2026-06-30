@@ -15,6 +15,7 @@
 | 1 | **Plan** — architecture gate | 2026-06 (pre-build) | ENG CLEARED — decisions E1–E4, offer-loop concurrency folded into P1 tasks with tests. |
 | 2 | **Build** — first-principles audits | 2026-06-27 | LAND WITH FIXES — P0 auth/PII/race holes closed in the same pass. |
 | 3 | **Ship** — provisioning + ship-prep | 2026-06-29 | LAND WITH FIXES — three "green CI, dead service" P1s closed before arming. |
+| 4 | **KYC integration** — Didit, adversarial pass | 2026-06-30 | LAND WITH FIXES — webhook hardened (fail-closed, monotonic, unique ref); 503 on vendor outage; UX/device items deferred. |
 
 ---
 
@@ -290,3 +291,46 @@ non-functional service (no Redis, wrong identity, broken signed URLs) are closed
 can still red the *first* real deploy is the org-policy interaction on ingress/`allUsers` — verify before
 arming. Remaining items are hardening follow-ups with explicit triggers. **Current status →
 `docs/PILOT-READINESS.md`.**
+
+---
+
+## 4. KYC integration review — Didit, adversarial pass (2026-06-30)
+
+> Independent correctness + security review of the live Didit KYC integration (create-session,
+> the `/kyc/callback` webhook, the rider gate, the deploy wiring), run after Didit went live on GCP.
+> Status: **LAND WITH FIXES** — the server-side P0/P1 fixes below shipped in the same pass; the UX
+> and device-build items are tracked for Phase 3 (see `docs/DESIGN-REVIEW.md` §4).
+
+**What was already sound:** X-Signature-V2 canonical HMAC + constant-time compare; fail-closed 300s
+`X-Timestamp` freshness; V2/legacy-header fallback with no downgrade (same secret); admin override
+behind `JwtAuthGuard + AdminGuard`; no PII echoed by the webhook; unknown/future statuses default to
+`pending`; the `optionalUrl` empty-string boot-crash fix.
+
+**Findings + resolutions (fixed this pass):**
+
+- **P0 — unsigned-webhook fail-open.** The signature check ran only `if (DIDIT_WEBHOOK_SECRET)`, and
+  the secret is gated behind the `DIDIT_ENABLED` deploy flag — so a half-configured `KYC_PROVIDER=didit`
+  deploy left an unsigned, `--allow-unauthenticated` KYC webhook live (anyone could flip a rider by
+  `session_id`). **Fixed:** the controller now refuses the callback (`503`) when `KYC_PROVIDER==="didit"`
+  and no secret is set — an application invariant, not a CI-flag one. (`kyc.controller.ts`)
+- **P0 — `applyKycResult` used `updateMany` on a non-unique `kyc_ref`.** A ref collision/reuse could
+  flip multiple riders. **Fixed:** `kyc_ref` is now `@unique` (migration `0005_kyc_hardening`), so an
+  Approved/Declined resolves exactly one rider; `updated === 0` is logged for reconciliation.
+- **P1 — no replay/reorder guard.** Didit retries on 5xx/404 and can deliver out of order; a replayed
+  older `Approved` could overwrite a newer `Declined`. **Fixed:** a monotonic guard — `kyc_resolved_at`
+  stores the last applied event time, and the update only applies when the webhook's signed `timestamp`
+  is newer (exact replays share a timestamp → ignored). (`rider.service.ts`)
+- **P1 — vendor outage → unhandled 500.** `becomeRider` let a Didit error propagate as a 500 with no
+  retry signal. **Fixed:** mapped to a retryable `503`, thrown before the rider row is created (no
+  half-onboarded rider). (`rider.service.ts`)
+- **P2 — silent stub/degraded modes.** `KYC_PROVIDER=stub` (auto-verify) and `didit`-without-key
+  (silent stub fallback) were invisible. **Fixed:** loud startup warnings — *not* a hard block, because
+  the vendor-free QA mode deliberately runs `stub` on the prod deployment (`riders.module.ts`).
+
+**Deferred (device-build / Phase 3):** the rider-facing UX gaps — photo capture, an honest
+failed-KYC retry state, in-app browser hand-off, pending-state polling — are design-side and need the
+dev build to test on-device. Tracked in `docs/DESIGN-REVIEW.md` §4.
+
+**Verdict:** KYC integration CLEARED for a supervised/operator-assisted pilot; the server-side
+hardening above lands in the same pass. Rider **self**-onboarding at scale is gated on the Phase-3 UX
+items. **Current status → `docs/PILOT-READINESS.md`.**

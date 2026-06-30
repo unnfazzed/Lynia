@@ -25,16 +25,19 @@ function signV2(raw: string): string {
 /** A current X-Timestamp (Unix seconds) so the fail-closed freshness check passes. */
 const freshTs = (): string => String(Math.floor(Date.now() / 1000));
 
-/** Records applyKycResult calls so we can assert it fires only for terminal statuses. */
-function fakeRiders() {
+/** Records applyKycResult calls so we can assert it fires only for terminal statuses, plus the
+ *  last event time passed (for the monotonic guard). */
+function fakeRiders(updated = 1) {
   const calls: Array<[string, string]> = [];
+  let lastEventAt: Date | undefined;
   const riders = {
-    applyKycResult: async (ref: string, status: string) => {
+    applyKycResult: async (ref: string, status: string, eventAt: Date) => {
       calls.push([ref, status]);
-      return { updated: 1 };
+      lastEventAt = eventAt;
+      return { updated };
     },
   } as unknown as RiderService;
-  return { riders, calls };
+  return { riders, calls, eventAt: () => lastEventAt };
 }
 
 const ctl = (riders: RiderService, env: Partial<Env>) => new KycController(riders, env as Env);
@@ -105,5 +108,24 @@ describe("KycController.callback", () => {
     const res = await ctl(riders, {}).callback(req(raw));
     expect(res).toEqual({ ignored: true, status: "pending" });
     expect(calls).toEqual([]);
+  });
+
+  it("refuses to process unsigned webhooks when KYC_PROVIDER=didit but no secret is set (fail-closed)", async () => {
+    const { riders, calls } = fakeRiders();
+    const raw = JSON.stringify({ session_id: "s_4", status: "Approved" });
+    await expect(
+      ctl(riders, { KYC_PROVIDER: "didit", DIDIT_WEBHOOK_SECRET: undefined }).callback(req(raw)),
+    ).rejects.toThrow(/not configured/i);
+    expect(calls).toEqual([]);
+  });
+
+  it("passes the signed event timestamp through as the monotonic-guard event time", async () => {
+    const { riders, eventAt } = fakeRiders();
+    const ts = 1_750_000_000; // Unix seconds
+    const raw = JSON.stringify({ session_id: "s_5", status: "Approved", timestamp: ts });
+    await ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(
+      req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": freshTs() }),
+    );
+    expect(eventAt()).toEqual(new Date(ts * 1000));
   });
 });
