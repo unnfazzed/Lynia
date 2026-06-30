@@ -33,7 +33,14 @@ const config: ExpoConfig = {
     // expo-image-picker's native image-cropper (com.github.CanHub:Android-Image-Cropper) is published
     // on JitPack. Add it as a Gradle repo so the dependency resolves from its real home instead of a
     // flaky mirror (the build hit a 504 resolving it from oss.sonatype.org).
-    ["expo-build-properties", { android: { extraMavenRepos: ["https://www.jitpack.io"] } }],
+    // - extraMavenRepos: JitPack hosts expo-image-picker's native image-cropper.
+    // - kotlinVersion 1.9.25: that cropper uses Jetpack Compose (Compose Compiler 1.5.15), which
+    //   requires Kotlin 1.9.25; Expo SDK 52 defaults to 1.9.24, so bump it to match and unblock
+    //   :expo-modules-core:compileReleaseKotlin.
+    [
+      "expo-build-properties",
+      { android: { extraMavenRepos: ["https://www.jitpack.io"], kotlinVersion: "1.9.25" } },
+    ],
   ],
   android: {
     package: "zw.co.lynia",
