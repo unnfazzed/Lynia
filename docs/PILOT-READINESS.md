@@ -252,9 +252,10 @@ lifecycle status / expired / cancelled, and can never fail a transition. Terrafo
 `roles/firebasecloudmessaging.admin` (so `terraform apply` covers the old manual gcloud steps).
 1. **Enable Firebase** on the project (founder): `firebase projects:addfirebase lynia-500911`, register an
    Android app (`zw.co.lynia`), set `FCM_PROJECT_ID=lynia-500911` + `PUSH_PROVIDER=fcm`.
-2. **Mobile token-registration call** (device build): after login the app gets its Expo/FCM device token and
-   `POST`s it to `/notifications/device-token` (and `DELETE`s on sign-out). Expo Go can't acquire a remote
-   token — this lands with the Phase-3 dev build. Pilots can run on foreground/polling until then.
+2. **Mobile token-registration call** — ✅ **shipped** (`apps/mobile/src/push/`): after login the app acquires
+   its native FCM device token (`getDevicePushTokenAsync`) and `POST`s it to `/notifications/device-token`
+   (`DELETE`s on sign-out), all best-effort. Expo Go can't acquire a remote token, so live delivery only
+   works on the **dev build** with `google-services.json` from the Firebase app above.
 
 ### 4. OTEL traces — observability  🟢 deferred by decision
 Exporter wired (`apps/api/src/observability/otel.ts`), no-op until `OTEL_EXPORTER_OTLP_ENDPOINT` is set. CEO
@@ -262,6 +263,19 @@ review defers this (admin funnel covers core metrics; a collector is cost pilot 
 _Trigger:_ when trip volume makes traces necessary — point at a collector, or add
 `@google-cloud/opentelemetry-cloud-trace-exporter` (zero-infra, GCP-native) + grant the runtime SA
 `roles/cloudtrace.agent`.
+
+### 5. Google Maps API key — Android native maps  🟠 (needed by the dev build for the maps)
+The customer pin-picker and the live tracking maps use `react-native-maps`. **iOS uses Apple Maps and
+needs no key; Android needs a Google Maps key.** Unlike the API vendor secrets above this is **not** a
+Secret Manager / `release.yml` value — it's a **mobile build-time var** read by `apps/mobile/app.config.ts`
+(`process.env.GOOGLE_MAPS_API_KEY` → `android.config.googleMaps.apiKey`), attached only when set.
+1. In the **same GCP project** (`lynia-500911`), enable **"Maps SDK for Android"** and create an **API key**
+   (APIs & Services → Credentials). Restrict it: *Application restriction* → Android apps → package
+   `zw.co.lynia` + the build's signing **SHA-1**; *API restriction* → Maps SDK for Android.
+2. Supply it to the build as **`GOOGLE_MAPS_API_KEY`** — an **EAS secret** (`eas secret:create --name
+   GOOGLE_MAPS_API_KEY`) for cloud builds, or `apps/mobile/.env` for a local prebuild. No redeploy of the
+   API is involved; it's baked into the app at build time.
+3. Without it the app still builds and runs — only the **Android** map renders blank; iOS is unaffected.
 
 > **WebSocket timeout — resolved, no action.** Tracking sockets survive a full delivery via Cloud Run's
 > `--timeout 3600` (`release.yml`). A `timeout_sec` on the LB backend was tried then removed (invalid for a
