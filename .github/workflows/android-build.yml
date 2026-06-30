@@ -1,4 +1,5 @@
 name: Build Android APK (free local build)
+# Re-trigger: run with EXPO_TOKEN secret configured.
 
 # Builds an installable Android APK on a free GitHub-hosted runner using `eas build --local`.
 # Local builds do NOT consume EAS cloud build credits, and this repo is public so Actions minutes
