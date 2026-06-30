@@ -13,6 +13,7 @@ import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { RidersModule } from "./riders/riders.module";
 import { TrackingModule } from "./tracking/tracking.module";
+import { UploadsModule } from "./uploads/uploads.module";
 
 @Module({
   imports: [
@@ -35,6 +36,8 @@ import { TrackingModule } from "./tracking/tracking.module";
     TrackingModule,
     // Lane E — KYC + rider onboarding.
     RidersModule,
+    // Client-direct media uploads (signed URLs) — rider KYC/profile photo.
+    UploadsModule,
     // Lane F — admin read API for the monitor dashboard.
     AdminModule,
   ],

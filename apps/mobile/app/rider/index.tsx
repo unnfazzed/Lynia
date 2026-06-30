@@ -3,12 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
-import { setOnline } from "../../src/api/riders";
+import { retryKyc, setOnline } from "../../src/api/riders";
 import { Button, Card, EmptyState, ErrorText, Field, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
 import { parseNum } from "../../src/util";
 
@@ -42,6 +42,7 @@ export default function RiderHome(): React.ReactElement {
   // makeOffer too — the UI shouldn't pretend otherwise). `rider: null` = hasn't started rider setup.
   const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
   const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
+  const kyc = meQ.data?.rider?.kycStatus;
 
   // Re-check verification whenever this screen regains focus (e.g. back from the Didit browser flow), so a
   // freshly-verified rider isn't trapped behind the gate by a stale ["me"] cache.
@@ -58,6 +59,19 @@ export default function RiderHome(): React.ReactElement {
       setError(null);
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't change your status."),
+  });
+
+  // Pending/failed riders re-run KYC: mint a FRESH Didit session and open it (no re-keying the form).
+  const retryM = useMutation({
+    mutationFn: retryKyc,
+    onSuccess: async (res) => {
+      setError(null);
+      if (res.verificationUrl && res.verificationUrl.startsWith("https://")) {
+        await Linking.openURL(res.verificationUrl).catch(() => undefined);
+      }
+      void qc.invalidateQueries({ queryKey: ["me"] });
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't restart verification."),
   });
 
   // Heartbeat: keep the rider selectable (ET3 liveness) while online by refreshing lastHeartbeatAt.
@@ -134,18 +148,37 @@ export default function RiderHome(): React.ReactElement {
             <SkeletonList count={2} />
           </View>
         ) : knownUnverified ? (
-          <EmptyState
-            icon="🪪"
-            title={meQ.data?.rider ? "Finish verification to start bidding" : "Set up as a rider"}
-            message={
-              meQ.data?.rider
-                ? "Your ID check is still pending. Riders go online only once verified."
-                : "Verify your ID and register your bike to start accepting deliveries."
-            }
-          >
-            <Button label={meQ.data?.rider ? "Resume verification" : "Become a rider"} onPress={() => router.push("/rider/become")} />
-            <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
-          </EmptyState>
+          !meQ.data?.rider ? (
+            // Not a rider yet → the full onboarding form (name, ID, bike, photo).
+            <EmptyState
+              icon="🪪"
+              title="Set up as a rider"
+              message="Verify your ID and register your bike to start accepting deliveries."
+            >
+              <Button label="Become a rider" onPress={() => router.push("/rider/become")} />
+              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+            </EmptyState>
+          ) : kyc === "failed" ? (
+            // Honest declined state with a real retry (a fresh session) — no silent "pending" loop.
+            <EmptyState
+              icon="⚠️"
+              title="We couldn't verify your ID"
+              message="The check didn't pass — often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing."
+            >
+              <Button label="Try again" onPress={() => retryM.mutate()} loading={retryM.isPending} />
+              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+            </EmptyState>
+          ) : (
+            // Pending — let them re-open a working verification session instead of re-keying the form.
+            <EmptyState
+              icon="🪪"
+              title="Finish verifying your ID"
+              message="Your ID check is still pending. Continue in the browser, then come back — riders go online once verified."
+            >
+              <Button label="Continue verification" onPress={() => retryM.mutate()} loading={retryM.isPending} />
+              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+            </EmptyState>
+          )
         ) : (
           <>
         <Card>

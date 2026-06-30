@@ -9,7 +9,14 @@
     "platforms": ["android", "ios"],
     "plugins": [
       "expo-router",
-      ["expo-location", { "locationWhenInUsePermission": "Lynia uses your location to set the pickup point." }]
+      ["expo-location", { "locationWhenInUsePermission": "Lynia uses your location to set the pickup point." }],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Lynia needs access to your photos to add your ID/profile photo for verification.",
+          "cameraPermission": "Lynia uses the camera to take your ID/profile photo for verification."
+        }
+      ]
     ],
     "android": {
       "package": "zw.co.lynia"
