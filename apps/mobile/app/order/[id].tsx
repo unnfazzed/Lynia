@@ -10,6 +10,7 @@ import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
 import { Button, Card, EmptyState, ErrorText, Heading, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { LiveMap } from "../../src/ui/LiveMap";
 
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
@@ -138,7 +139,10 @@ export default function OrderScreen(): React.ReactElement {
   const fare = order.agreedFare ?? order.proposedFare;
   const firstError = selectM.error ?? rotateM.error ?? rateM.error ?? cancelM.error;
   const mutationError = firstError instanceof Error ? firstError.message : null;
-  const hasPosition = order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null;
+  const riderPoint =
+    order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
+      ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
+      : null;
 
   return (
     <Screen>
@@ -206,10 +210,15 @@ export default function OrderScreen(): React.ReactElement {
 
         {isActive || order.status === "delivered" || order.status === "completed" ? (
           <Card>
-            <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: 4 }}>Agreed fare ${fare}</Text>
+            <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Agreed fare ${fare}</Text>
+            <LiveMap
+              pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}
+              dropoff={{ lat: order.dropoff.point.lat, lng: order.dropoff.point.lng }}
+              rider={riderPoint}
+            />
             {order.rider ? (
               <Text style={{ fontSize: 13, color: tokens.color.muted }}>
-                Rider position: {hasPosition ? `${order.rider.currentLat?.toFixed(4)}, ${order.rider.currentLng?.toFixed(4)}` : "waiting for GPS"}
+                {riderPoint ? "Rider is on the move — the gold pin updates live." : "Waiting for the rider's GPS…"}
               </Text>
             ) : null}
             {order.counterpartyPhone ? (

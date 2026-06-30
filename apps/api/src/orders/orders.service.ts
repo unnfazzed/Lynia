@@ -188,6 +188,8 @@ export class OrdersService {
         proposedFare: true,
         customerId: true,
         riderId: true,
+        pickup: true,
+        dropoff: true,
         customer: { select: { phone: true } },
         rider: {
           select: {
@@ -219,6 +221,10 @@ export class OrdersService {
       status: order.status,
       agreedFare: order.agreedFare,
       proposedFare: order.proposedFare,
+      // Map context for the tracker — point + landmark only; contactPhone stays redacted (it's gated
+      // separately by `counterpartyPhone` and the reveal window).
+      pickup: publicWaypoint(order.pickup),
+      dropoff: publicWaypoint(order.dropoff),
       rider: order.rider
         ? {
             profileId: order.rider.profileId,
