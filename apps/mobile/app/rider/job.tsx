@@ -7,6 +7,7 @@ import { ApiError } from "../../src/api/client";
 import { advanceStatus, cancelOrder, confirmDelivery, getActiveOrder } from "../../src/api/orders";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, ErrorText, Field, Heading, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { LiveMap } from "../../src/ui/LiveMap";
 
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
 const NEXT: Record<string, { to: AdvanceStatusRequest["to"]; label: string }> = {
@@ -75,6 +76,10 @@ export default function RiderJob(): React.ReactElement {
 
   const next = NEXT[order.status];
   const isActive = ACTIVE.includes(order.status);
+  const riderPoint =
+    order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
+      ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
+      : null;
 
   return (
     <Screen>
@@ -90,7 +95,12 @@ export default function RiderJob(): React.ReactElement {
           {order.counterpartyPhone ? (
             <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4 }}>Customer phone: {order.counterpartyPhone}</Text>
           ) : null}
-          <View style={{ height: tokens.space.md }} />
+          <View style={{ height: tokens.space.sm }} />
+          <LiveMap
+            pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}
+            dropoff={{ lat: order.dropoff.point.lat, lng: order.dropoff.point.lng }}
+            rider={riderPoint}
+          />
           <Stepper events={order.events} currentStatus={order.status} view="rider" />
         </Card>
 
