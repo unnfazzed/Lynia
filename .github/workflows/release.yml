@@ -148,7 +148,12 @@ jobs:
           # DIDIT_ENABLED=true to activate real KYC (riders.module selects DiditKycVendor only when
           # KYC_PROVIDER=didit AND DIDIT_API_KEY is present, so until then it safely falls back to stub).
           if [ "${{ vars.DIDIT_ENABLED }}" = "true" ]; then
-            ENV_VARS="${ENV_VARS}@DIDIT_WORKFLOW_ID=${{ vars.DIDIT_WORKFLOW_ID }}@DIDIT_CALLBACK_URL=${{ vars.DIDIT_CALLBACK_URL }}"
+            ENV_VARS="${ENV_VARS}@DIDIT_WORKFLOW_ID=${{ vars.DIDIT_WORKFLOW_ID }}"
+            # DIDIT_CALLBACK_URL is the optional post-verification redirect. Inject it ONLY when set —
+            # an empty value (`DIDIT_CALLBACK_URL=`) fails the URL schema and crashes boot.
+            if [ -n "${{ vars.DIDIT_CALLBACK_URL }}" ]; then
+              ENV_VARS="${ENV_VARS}@DIDIT_CALLBACK_URL=${{ vars.DIDIT_CALLBACK_URL }}"
+            fi
             SECRETS="${SECRETS},DIDIT_API_KEY=DIDIT_API_KEY:latest,DIDIT_WEBHOOK_SECRET=DIDIT_WEBHOOK_SECRET:latest"
           fi
 
