@@ -169,6 +169,18 @@ jobs:
             SECRETS="${SECRETS},DIDIT_API_KEY=DIDIT_API_KEY:latest,DIDIT_WEBHOOK_SECRET=DIDIT_WEBHOOK_SECRET:latest"
           fi
 
+          # WhatsApp Cloud API (OTP) wiring is OPT-IN via WHATSAPP_ENABLED=true — same reason as Didit:
+          # don't reference WHATSAPP_ACCESS_TOKEN before it exists. Set OTP_CHANNEL=whatsapp + the
+          # WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_TEMPLATE_NAME repo Variables and the token secret, then
+          # flip WHATSAPP_ENABLED=true. (Until then OTP runs on the console/QA channel.)
+          if [ "${{ vars.WHATSAPP_ENABLED }}" = "true" ]; then
+            ENV_VARS="${ENV_VARS}@WHATSAPP_PHONE_NUMBER_ID=${{ vars.WHATSAPP_PHONE_NUMBER_ID }}@WHATSAPP_TEMPLATE_NAME=${{ vars.WHATSAPP_TEMPLATE_NAME }}"
+            if [ -n "${{ vars.WHATSAPP_TEMPLATE_LANG }}" ]; then
+              ENV_VARS="${ENV_VARS}@WHATSAPP_TEMPLATE_LANG=${{ vars.WHATSAPP_TEMPLATE_LANG }}"
+            fi
+            SECRETS="${SECRETS},WHATSAPP_ACCESS_TOKEN=WHATSAPP_ACCESS_TOKEN:latest"
+          fi
+
           gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
             --image "$IMAGE:${GITHUB_SHA}" \
             --project "${{ vars.GCP_PROJECT_ID }}" \

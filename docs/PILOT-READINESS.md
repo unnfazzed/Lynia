@@ -191,16 +191,23 @@ Then add `<ENV_NAME>=<SECRET_NAME>:latest` to the `--set-secrets` list in `relea
 (Better long-term: track it in `infra/terraform/secrets.tf` — the pattern is there for the existing three.)
 
 ### 1. WhatsApp BSP — production OTP  🔴 longest lead time, start first
-Real users can't sign up until OTP leaves the dev `console` channel. `OTP_CHANNEL=whatsapp` is already set;
-the send is a stub (`apps/api/src/auth/otp-sender.ts` → `WhatsAppOtpSender.send`).
-1. **Pick a BSP** (the decision gates the code): Meta WhatsApp **Cloud API** (direct) is the usual fastest
-   path; alternatives Twilio / Gupshup / 360dialog. Each needs Meta Business verification + an approved
-   **OTP template** — that approval is the lead-time item.
-2. Get the API key/token and (Cloud API) the phone-number ID + template name.
-3. Store the key: `WHATSAPP_BSP_API_KEY` → Secret Manager (pattern above).
-4. **Code step (small, once BSP chosen):** implement `WhatsAppOtpSender.send()` against the BSP's template
-   API — the adapter seam, channel flag, rate-limits, and hashing are already in place (one HTTP call).
-5. SMS fallback (optional insurance, E4): same pattern with `SMS_GATEWAY_API_KEY` + `OTP_CHANNEL=sms`.
+Real users can't sign up until OTP leaves the dev `console` channel. The send is now **implemented** against
+the Meta **WhatsApp Cloud API** (`apps/api/src/auth/otp-sender.ts` → `WhatsAppOtpSender` + `buildWhatsAppOtpRequest`)
+— it sends the OTP as an authentication-template message and fails loud if misconfigured. What remains is the
+**account + an approved template** (the lead-time item), then set three values and flip a flag:
+1. Create a **Meta WhatsApp Cloud API** app (direct is the fastest path; Twilio / Gupshup / 360dialog are
+   alternatives but would need a small adapter tweak). Complete Meta Business verification and get an
+   **authentication-category OTP template approved** — this approval is the long pole.
+2. From the Meta app, grab the **phone-number ID**, a **permanent access token**, and the **template name**.
+3. Store the token as a secret (`WHATSAPP_ACCESS_TOKEN` → Secret Manager, pattern above). Set the repo
+   Variables `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_NAME` (and `WHATSAPP_TEMPLATE_LANG` if not `en`),
+   set `OTP_CHANNEL=whatsapp`, then flip **`WHATSAPP_ENABLED=true`** and redeploy. (Defaults: Graph `v21.0`,
+   and the template is assumed to have Meta's copy-code button — set `WHATSAPP_OTP_COPY_CODE_BUTTON=false`
+   for a body-only template.)
+4. **Until then keep OTP on the QA channel** (`OTP_CHANNEL=console` + `OTP_TEST_PHONES`) — flipping to
+   `whatsapp` without the config above makes `requestOtp` fail (by design: it won't pretend a code was sent).
+5. SMS fallback (optional insurance, E4): same idea with `SMS_GATEWAY_API_KEY` + `OTP_CHANNEL=sms` (the SMS
+   adapter is still a stub — implement when/if you add a gateway).
 
 ### 2. Didit ZIM-ID — real KYC run  🔴 start now (gates rider onboarding)
 Measures the false-reject rate that decides whether real riders can self-onboard. The integration is **done**
