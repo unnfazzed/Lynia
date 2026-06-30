@@ -41,6 +41,8 @@ const config: ExpoConfig = {
       "expo-build-properties",
       { android: { extraMavenRepos: ["https://www.jitpack.io"], kotlinVersion: "1.9.25" } },
     ],
+    // Remove the sunset oss.sonatype.org repo, whose 504s break Gradle dependency resolution.
+    "./plugins/withRemoveSonatype",
   ],
   android: {
     package: "zw.co.lynia",
