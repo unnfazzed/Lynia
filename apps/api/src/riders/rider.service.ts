@@ -1,4 +1,12 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { KycStatus } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -14,6 +22,8 @@ export function canGoOnline(kycStatus: string): boolean {
 
 @Injectable()
 export class RiderService {
+  private readonly logger = new Logger(RiderService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(ENV) private readonly env: Env,
@@ -43,9 +53,16 @@ export class RiderService {
     let kycRef: string | null = null;
     let verificationUrl: string | undefined;
     if (this.env.KYC_MODE === "auto") {
-      const submission = await this.vendor.submit(profileId);
-      kycRef = submission.ref;
-      verificationUrl = submission.url;
+      // A vendor outage must surface as a retryable 503, not an unhandled 500 — and we throw before
+      // creating the rider row, so a failed submit leaves no half-onboarded rider behind.
+      try {
+        const submission = await this.vendor.submit(profileId);
+        kycRef = submission.ref;
+        verificationUrl = submission.url;
+      } catch (err) {
+        this.logger.error(`KYC submit failed for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
+        throw new ServiceUnavailableException("Couldn't start ID verification. Please try again.");
+      }
     }
 
     // QA/test: the stub provider has no real vendor and never calls back, so in auto mode it
@@ -91,11 +108,21 @@ export class RiderService {
     return { online };
   }
 
-  /** Vendor callback result → flip the rider's KYC status. */
-  async applyKycResult(kycRef: string, status: "verified" | "failed"): Promise<{ updated: number }> {
+  /**
+   * Vendor callback result → flip the rider's KYC status. Monotonic by `eventAt`: the update only
+   * applies when this webhook is newer than the last applied one (kycResolvedAt null or older), so a
+   * replayed or out-of-order delivery can't overwrite a newer decision (an exact replay has the same
+   * timestamp → not newer → ignored). kycRef is unique, so this matches at most one rider.
+   * `updated: 0` means no rider has this ref, or the event was stale/duplicate.
+   */
+  async applyKycResult(
+    kycRef: string,
+    status: "verified" | "failed",
+    eventAt: Date,
+  ): Promise<{ updated: number }> {
     const res = await this.prisma.rider.updateMany({
-      where: { kycRef },
-      data: { kycStatus: status, idVerified: status === "verified" },
+      where: { kycRef, OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] },
+      data: { kycStatus: status, idVerified: status === "verified", kycResolvedAt: eventAt },
     });
     return { updated: res.count };
   }

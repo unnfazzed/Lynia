@@ -16,6 +16,7 @@
 | 1 | **Plan/Design** — system + customer side | 2026-06 (pre/early build) | System locked; empty-states flagged as the highest-leverage screens. |
 | 2 | **Build** — two-sided consultation + post-build pass | 2026-06-27 | Full journey specced (DT8–DT13); error-state-honesty P1 fixed. |
 | 3 | **Ship** — ship-prep QA + post-launch lens | 2026-06-29 | onAccent **8/10**, skeletons **5→improved**; cutover UX catch shipped. **Design score 9/10.** |
+| 4 | **KYC onboarding** — rider verification UX | 2026-06-30 | Gate is honest &amp; good; **two stop-ships** for self-serve (un-enterable Photo URL, failed-KYC dead-end) → Phase-3. |
 
 > **Direction (constant across every pass):** *clean utility + a warm accent* — trust through clarity, tuned
 > for a low-trust cash market on cheap Android phones and expensive data. No pass has reinvented the tokens or
@@ -150,3 +151,44 @@ Reviewed design follow-ups **not executed** (captured so nothing is lost; each w
 follow-ons (mostly device-gated `/qa` work). **Design score: 9/10** — the full two-sided journey is specced
 and built and review-hardened; the remaining lift is the device-gated visual QA (DT5 map / DT7 `/design-review`
 / DT13). **Current build status → `docs/PILOT-READINESS.md`.**
+
+---
+
+## 4. KYC onboarding review — rider verification UX (2026-06-30)
+
+> UX/UI review of the rider identity-verification (KYC) flow after Didit went live: the onboarding
+> screen (`app/rider/become.tsx`), the KYC gate (`app/rider/index.tsx`), and the contract
+> (`src/api/riders.ts`). Calibrated against `docs/DESIGN.md` (error-state honesty, "a dead-end becomes
+> an action", data-light, touch targets) and CONCEPT §5d. Engineering companion: `docs/ENG-REVIEW.md` §4.
+
+**What's genuinely good:** the **gate** is honest and well-built — an `EmptyState` (not a blank board)
+for unverified riders with a primary "Resume verification" action; re-check of `["me"]` on screen focus
+so a returning rider isn't trapped by a stale cache; server-enforced "go online" the UI doesn't lie
+about; `https://`-only guard on the vendor URL; and a new consent line naming the partner + data.
+
+**Two stop-ships for rider *self*-onboarding (device-build / Phase 3):**
+
+- **P0 — "Photo URL" is an un-enterable raw `https://` text field** (`become.tsx`). `canSubmit` requires
+  it, but a rider on a phone has a photo, not a URL — the form **cannot be submitted** by the intended
+  user. → `expo-image-picker` → upload to the existing GCS bucket → store the returned URL. Until then,
+  onboarding is operator-assisted, not self-serve.
+- **P0 — a failed/declined KYC is shown as "still pending" and loops** (`index.tsx` gate is binary
+  `kycStatus !== "verified"`; the backend collapses `Declined`/`Expired` → `failed`). Real ZIM-ID runs
+  *will* produce false-rejects, so the pilot hits this. → an explicit honest `failed` state with a real
+  retry (mint a fresh session) + the manual-review escape hatch. (This is the pre-existing DESIGN-REVIEW
+  §3 declined-KYC TODO, now confirmed live and promoted to P0.)
+
+**P1 (Phase 3):** "Resume" doesn't actually resume — the `verificationUrl` isn't returned by `getMe`, so
+the rider re-keys their ID to get a new session; no polling while `pending` (only manual Refresh); the
+hand-off uses `Linking.openURL` (system browser, no auto-return) where `expo-web-browser
+openAuthSessionAsync` would keep it in-app with a deterministic "they're back → re-check" hook; the
+`become`/gate pending states diverge.
+
+**P2 / polish:** strengthen the consent block (partner identity, retention, privacy link, ≥14px) for an
+ID+selfie ask in a low-trust market; inline field validation + an error slot on `Field`; numeric
+keyboard for the National ID; `Label`↔`TextInput` screen-reader association.
+
+**Verdict:** the **gate** is design-cleared and lives up to `docs/DESIGN.md`. The **hand-off and the
+form** are not ready for rider self-onboarding — the two P0s must land with the **Phase-3 dev build**
+(where camera-based KYC can actually be tested on-device). The server-side correctness/security fixes
+shipped separately (`docs/ENG-REVIEW.md` §4). **Current build status → `docs/PILOT-READINESS.md`.**

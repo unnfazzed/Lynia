@@ -76,6 +76,21 @@ describe("RiderService.becomeRider", () => {
     const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" });
     expect(res).toEqual({ kycStatus: "pending", mode: "manual", verificationUrl: undefined });
   });
+
+  it("surfaces a vendor outage as a 503 and creates no rider row", async () => {
+    let created = false;
+    const vendor: KycVendor = { submit: async () => { throw new Error("didit 502"); } };
+    const prisma = {
+      rider: { findUnique: async () => null, create: async () => { created = true; return {}; } },
+      profile: { update: async () => ({}) },
+      $transaction: async (ops: unknown[]) => ops,
+    };
+    const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
+    await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" })).rejects.toThrow(
+      /couldn't start id verification/i,
+    );
+    expect(created).toBe(false);
+  });
 });
 
 describe("RiderService.setOnline", () => {
@@ -128,9 +143,31 @@ describe("RiderService.setOnline", () => {
 });
 
 describe("RiderService.applyKycResult", () => {
-  it("reports how many riders matched the kycRef", async () => {
-    const s = svc({ rider: { updateMany: async () => ({ count: 1 }) } }, {});
-    expect(await s.applyKycResult("sess_1", "verified")).toEqual({ updated: 1 });
+  it("applies the status, records the event time, and guards monotonically", async () => {
+    let where: Record<string, unknown> | undefined;
+    let data: Record<string, unknown> | undefined;
+    const eventAt = new Date("2026-06-30T10:00:00Z");
+    const prisma = {
+      rider: {
+        updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          where = args.where;
+          data = args.data;
+          return { count: 1 };
+        },
+      },
+    };
+    expect(await svc(prisma, {}).applyKycResult("sess_1", "verified", eventAt)).toEqual({ updated: 1 });
+    // Only applies when newer than the last resolution (replay/reorder can't downgrade a newer decision).
+    expect(where).toMatchObject({
+      kycRef: "sess_1",
+      OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }],
+    });
+    expect(data).toMatchObject({ kycStatus: "verified", idVerified: true, kycResolvedAt: eventAt });
+  });
+
+  it("reports updated:0 for a stale/duplicate event or unknown ref", async () => {
+    const s = svc({ rider: { updateMany: async () => ({ count: 0 }) } }, {});
+    expect(await s.applyKycResult("sess_x", "failed", new Date())).toEqual({ updated: 0 });
   });
 });
 
