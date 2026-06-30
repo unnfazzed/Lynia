@@ -125,8 +125,12 @@ wiring, not code:
       wired** into the lifecycle (offer received → customer; assigned → rider; status changes → the watching
       party; expired/cancelled) via a best-effort `NotificationsService` that can't fail a transition.
       Terraform enables the FCM API + grants the runtime SA `roles/firebasecloudmessaging.admin`.
-      _Remaining:_ a **Firebase project** (founder) + the **mobile token-registration call** (device build —
-      POST the Expo/FCM token to the endpoint above; Expo Go can't, needs the dev build).
+      The **mobile token-registration call is now wired** (2026-06-30): on sign-in the app acquires the
+      **native FCM device token** (`expo-notifications` `getDevicePushTokenAsync` — not an Expo token, since
+      the server sends via `firebase-admin` directly) and `POST`s it to the endpoint above; it unregisters on
+      sign-out. All best-effort (`src/push/`), so Expo Go / a simulator / a denied permission degrade silently.
+      _Remaining:_ a **Firebase project** (founder, supplies `google-services.json` for the build) + a **dev
+      build** — Expo Go can't mint a device token, so live delivery is only testable on the dev build.
 - [ ] **Production OTP** — WhatsApp BSP onboarding + SMS gateway behind the `otp-sender.ts` seam (console
       is dev-only today). **Founder action** — set up a WhatsApp BSP account, then `OTP_CHANNEL=whatsapp`.
 - [x] **HTTPS for device builds** — external HTTPS load balancer + managed cert at `lyniago.lyniafinance.com`;
