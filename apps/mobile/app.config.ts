@@ -30,6 +30,10 @@ const config: ExpoConfig = {
       },
     ],
     ["expo-notifications", { color: "#1E7A46" }],
+    // expo-image-picker's native image-cropper (com.github.CanHub:Android-Image-Cropper) is published
+    // on JitPack. Add it as a Gradle repo so the dependency resolves from its real home instead of a
+    // flaky mirror (the build hit a 504 resolving it from oss.sonatype.org).
+    ["expo-build-properties", { android: { extraMavenRepos: ["https://www.jitpack.io"] } }],
   ],
   android: {
     package: "zw.co.lynia",
