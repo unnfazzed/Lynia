@@ -88,6 +88,28 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Tell nearby online riders that a new delivery is open for offers (CONCEPT §3.10 — for riders
+   * "push is the primary channel" for fast new-order alerts, alongside the WS board). The caller
+   * supplies the already-resolved nearby-rider profile IDs (a PostGIS radius query, ET6).
+   * Best-effort, never throws.
+   */
+  async notifyNewBroadcast(
+    orderId: string,
+    riderProfileIds: string[],
+    info: { pickup: string; fare: string },
+  ): Promise<void> {
+    try {
+      await this.send(riderProfileIds, {
+        title: "New delivery nearby",
+        body: `Pickup at ${info.pickup} · asking $${info.fare} — tap to bid before it's taken.`,
+        data: { orderId, kind: "broadcast" },
+      });
+    } catch (err) {
+      this.logger.warn(`notifyNewBroadcast(${orderId}) failed: ${(err as Error).message}`);
+    }
+  }
+
   /** Fan a message out to every device of the given profiles, and prune any token the provider
    *  reports as permanently dead. Private; all callers pre-wrap in try/catch. */
   private async send(
@@ -101,21 +123,15 @@ export class NotificationsService {
     });
     if (tokens.length === 0) return;
 
-    const outcomes = await Promise.all(
-      tokens.map(async (t) => {
-        try {
-          const result = await this.push.send({ token: t.token, title: msg.title, body: msg.body, data: msg.data });
-          return { token: t.token, dead: result.invalidToken };
-        } catch {
-          // A throw is a transient failure (the adapters don't throw on dead tokens) — never prune on it.
-          return { token: t.token, dead: false };
-        }
-      }),
+    // One batched provider call (FCM sendEach, chunked ≤500) instead of a per-token round-trip fan-out.
+    // Results align with `tokens` order, so a dead token is pruned by position.
+    const results = await this.push.sendEach(
+      tokens.map((t) => ({ token: t.token, title: msg.title, body: msg.body, data: msg.data })),
     );
 
     // Drop tokens the provider says are unregistered/invalid so the table doesn't grow unbounded and
     // we stop sending to dead devices (a token FCM later reassigns won't keep delivering to the wrong user).
-    const dead = outcomes.filter((o) => o.dead).map((o) => o.token);
+    const dead = tokens.filter((_, i) => results[i]?.invalidToken).map((t) => t.token);
     if (dead.length > 0) {
       await this.prisma.deviceToken.deleteMany({ where: { token: { in: dead } } });
       this.logger.log(`pruned ${dead.length} dead device token(s)`);

@@ -1,10 +1,16 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type CreateOrderRequest, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type CreateOrderRequest, PHONE_REVEAL_STATUSES, quoteFare, type Waypoint } from "@lynia/shared";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingService } from "../tracking/tracking.service";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
+
+/** Radius (metres) for the new-order push to nearby online riders (CONCEPT §3.10). Harare-corridor
+ *  scale; the REST nearby endpoint defaults to the same neighbourhood. */
+const BROADCAST_RADIUS_M = 5000;
 
 /** Strip a stored Waypoint down to what a browsing rider may see — point + landmark, no contactPhone. */
 function publicWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown } {
@@ -17,6 +23,8 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly expiry: OfferExpiryService,
+    private readonly tracking: TrackingService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */
@@ -46,6 +54,10 @@ export class OrdersService {
     // Server-side window expiry (ET1). No-op if Redis isn't configured.
     await this.expiry.schedule(order.id);
 
+    // Post-commit, best-effort: push the broadcast to nearby online riders (CONCEPT §3.10 — push is
+    // the primary new-order channel for riders, alongside the WS board). Never blocks the create.
+    void this.broadcastToNearbyRiders(order.id, input.pickup, order.proposedFare.toString());
+
     return {
       id: order.id,
       status: order.status,
@@ -53,6 +65,25 @@ export class OrdersService {
       suggestedFare: order.suggestedFare.toString(),
       distanceKm: order.distanceKm,
     };
+  }
+
+  /**
+   * Resolve the online riders within {@link BROADCAST_RADIUS_M} of the pickup (PostGIS ST_DWithin, ET6)
+   * and push them the new order. Fully best-effort: any failure here — no nearby riders, a geo-query
+   * error, a push outage — is swallowed so it can never affect the order the customer just created.
+   */
+  private async broadcastToNearbyRiders(orderId: string, pickup: Waypoint, fare: string): Promise<void> {
+    try {
+      const nearby = await this.tracking.nearbyRiders(pickup.point.lat, pickup.point.lng, BROADCAST_RADIUS_M);
+      if (nearby.length === 0) return;
+      await this.notifications.notifyNewBroadcast(
+        orderId,
+        nearby.map((r) => r.profileId),
+        { pickup: pickup.landmark, fare },
+      );
+    } catch {
+      /* best-effort: a broadcast-push failure never affects the created order */
+    }
   }
 
   /** Open orders a rider can bid on. The rider app sorts/filters by distance (haversine) client-side. */

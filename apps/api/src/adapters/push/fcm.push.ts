@@ -10,6 +10,9 @@ const DEAD_TOKEN_CODES = new Set([
   "messaging/invalid-registration-token",
 ]);
 
+/** FCM `sendEach` accepts at most 500 messages per call; larger fan-outs are chunked to this size. */
+const FCM_BATCH_LIMIT = 500;
+
 /** The FCM HTTP-v1 message shape we send. Kept narrow — only what PushMessage maps to. */
 export interface FcmMessage {
   token: string;
@@ -74,6 +77,39 @@ export class FcmPush implements PushAdapter {
       const invalidToken = DEAD_TOKEN_CODES.has(code);
       this.logger.warn(`push send failed for ${maskToken(message.token)} (${code || "unknown"})`);
       return { ok: false, invalidToken };
+    }
+  }
+
+  /**
+   * Batch send via FCM `sendEach` — one HTTP/2 multiplexed call per ≤500 messages instead of one
+   * network round-trip per device (the old `Promise.all(tokens.map(send))` fan-out). Per-message
+   * results are mapped back to PushResult in input order, so the caller prunes dead tokens positionally.
+   */
+  async sendEach(messages: PushMessage[]): Promise<PushResult[]> {
+    if (messages.length === 0) return [];
+    try {
+      const messaging = await this.messaging();
+      const results: PushResult[] = [];
+      // FCM caps a sendEach batch at 500 messages; chunk anything larger.
+      for (let i = 0; i < messages.length; i += FCM_BATCH_LIMIT) {
+        const batch = messages.slice(i, i + FCM_BATCH_LIMIT);
+        const resp = await messaging.sendEach(batch.map(buildFcmMessage));
+        for (const r of resp.responses) {
+          if (r.success) {
+            results.push({ ok: true, invalidToken: false });
+          } else {
+            const code = (r.error as { code?: string } | undefined)?.code ?? "";
+            results.push({ ok: false, invalidToken: DEAD_TOKEN_CODES.has(code) });
+          }
+        }
+        this.logger.debug(`push batch → ${batch.length} device(s): ${resp.successCount} ok, ${resp.failureCount} failed`);
+      }
+      return results;
+    } catch (err) {
+      // A whole-batch throw is a transport/credential failure (transient) — never prune on it.
+      const code = (err as { code?: string }).code ?? "";
+      this.logger.warn(`push sendEach failed for ${messages.length} device(s) (${code || "unknown"})`);
+      return messages.map(() => ({ ok: false, invalidToken: false }));
     }
   }
 }

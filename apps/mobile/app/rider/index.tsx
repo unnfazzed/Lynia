@@ -1,9 +1,10 @@
 import { haversineKm, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
+import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { Linking, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
@@ -40,7 +41,13 @@ export default function RiderHome(): React.ReactElement {
 
   // Gate the dashboard behind KYC: a rider goes online only once verified (the backend enforces it on
   // makeOffer too — the UI shouldn't pretend otherwise). `rider: null` = hasn't started rider setup.
-  const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
+  // While the check is `pending`, poll so a vendor webhook flipping the rider to verified clears the
+  // gate on its own — no manual Refresh needed. Stop polling once it resolves (verified/failed).
+  const meQ = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    refetchInterval: (query) => (query.state.data?.rider?.kycStatus === "pending" ? 5000 : false),
+  });
   const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
   const kyc = meQ.data?.rider?.kycStatus;
 
@@ -66,8 +73,10 @@ export default function RiderHome(): React.ReactElement {
     mutationFn: retryKyc,
     onSuccess: async (res) => {
       setError(null);
+      // In-app browser tab (not the system browser): it returns to the app when the rider closes it,
+      // so we can immediately re-check status rather than leaving them stranded outside the app.
       if (res.verificationUrl && res.verificationUrl.startsWith("https://")) {
-        await Linking.openURL(res.verificationUrl).catch(() => undefined);
+        await WebBrowser.openAuthSessionAsync(res.verificationUrl).catch(() => undefined);
       }
       void qc.invalidateQueries({ queryKey: ["me"] });
     },

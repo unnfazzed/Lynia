@@ -101,7 +101,7 @@ more code we can write today.
 | Gate | Status / unlocks | Type |
 |------|------------------|------|
 | **Cloud provider** — T0 | ✅ **decided (2026-06-27) — Google Cloud.** Reachable from Zimbabwe with no country-level block; nearest region **Johannesburg `africa-south1`** (lowest latency to Harare); **Google Maps** is already a dependency; Google for Startups Cloud credits available (Accelerator: Africa for the larger tier). Default is now `CLOUD_PROVIDER=gcp`; the Azure adapter stays as the portability proof. **Unblocks** `/ship` + release, FCM push, real object storage/signed URLs, OTEL export, production OTP path — all now **provisioning execution**, not a choice. | Vendor decision — **closed** |
-| **Greenlight a dev build** (not Expo Go) | ⏳ **open** → Phase 3 native map + tap-to-pin, `/qa` device pass, on-device verification of the stepper/earnings/gate | Go-ahead + device |
+| **Greenlight a dev build** (not Expo Go) | ⏳ **open** → Phase 3 native map + tap-to-pin, `/qa` device pass, on-device verification of the stepper/earnings/gate. _Phase-3 code progress (2026-06-30): rider-broadcast push wired + FCM `sendEach` batching (ENG-REVIEW §5); KYC in-app browser hand-off + auto-poll-while-pending (DESIGN-REVIEW §5) — all pending the on-device `/qa` run._ | Go-ahead + device |
 | **Revenue model** (§6) | ✅ **decided (2026-06-27)** — rider commission (% of agreed fare), **0% for ~6–8 months**, settlement/commission **infra built later** (CONCEPT §6). No pilot blocker; the commission build is deferred with a ~6–8-month trigger. | Product/founder decision |
 
 As of the 06-29 update, the cloud decision is not just **closed (Google Cloud)** — it is **executed**: the

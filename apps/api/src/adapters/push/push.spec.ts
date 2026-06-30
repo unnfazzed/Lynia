@@ -35,6 +35,21 @@ describe("push adapter selection (D7 portability)", () => {
       invalidToken: false,
     });
   });
+
+  it("noop sendEach returns one ok result per message, in order", async () => {
+    const out = await new NoopPush().sendEach([
+      { token: "a", title: "x", body: "y" },
+      { token: "b", title: "x", body: "y" },
+    ]);
+    expect(out).toEqual([
+      { ok: true, invalidToken: false },
+      { ok: true, invalidToken: false },
+    ]);
+  });
+
+  it("noop sendEach on an empty batch resolves to an empty array", async () => {
+    await expect(new NoopPush().sendEach([])).resolves.toEqual([]);
+  });
 });
 
 describe("maskToken — never log a whole device token", () => {

@@ -1,7 +1,9 @@
 import { type CreateOrderRequest, quoteFare } from "@lynia/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { OfferExpiryService } from "../matching/offer-expiry.service";
+import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import type { NearbyRider, TrackingService } from "../tracking/tracking.service";
 import { OrdersService } from "./orders.service";
 
 const orderInput: CreateOrderRequest = {
@@ -11,6 +13,12 @@ const orderInput: CreateOrderRequest = {
   declaredValue: 10,
   proposedFare: 2.5,
 };
+
+// Inert collaborators for the read paths (create's broadcast is exercised explicitly below).
+const noTracking = { nearbyRiders: async (): Promise<NearbyRider[]> => [] } as unknown as TrackingService;
+const noNotifications = { notifyNewBroadcast: async (): Promise<void> => {} } as unknown as NotificationsService;
+/** Let the fire-and-forget post-commit broadcast settle so its calls are observable. */
+const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 
 describe("OrdersService.create", () => {
   it("opens the order for offers, prices a distance-based anchor, and schedules window expiry", async () => {
@@ -32,7 +40,7 @@ describe("OrdersService.create", () => {
       },
     };
     const expiry = { schedule: async (id: string) => { scheduledId = id; } } as unknown as OfferExpiryService;
-    const svc = new OrdersService(prisma as unknown as PrismaService, expiry);
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry, noTracking, noNotifications);
 
     const res = await svc.create(orderInput, "cust-1");
 
@@ -49,6 +57,53 @@ describe("OrdersService.create", () => {
     expect(created!.suggestedFare).toBe(quote.suggestedFare);
     expect(created!.distanceKm).toBe(quote.distanceKm);
     expect(created!.suggestedFare).not.toBe(created!.proposedFare);
+  });
+
+  it("pushes the new order to nearby online riders post-commit (CONCEPT §3.10), best-effort", async () => {
+    const prisma = {
+      order: {
+        create: async () => ({
+          id: "ord-1",
+          status: "open_for_offers",
+          proposedFare: { toString: () => "2.50" },
+          suggestedFare: { toString: () => "2.40" },
+          distanceKm: 1.5,
+        }),
+      },
+    };
+    const expiry = { schedule: async () => {} } as unknown as OfferExpiryService;
+    const nearbyRiders = vi.fn(async () => [{ profileId: "rider-1", distanceM: 800 }] as NearbyRider[]);
+    const notifyNewBroadcast = vi.fn(async () => {});
+    const tracking = { nearbyRiders } as unknown as TrackingService;
+    const notifications = { notifyNewBroadcast } as unknown as NotificationsService;
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry, tracking, notifications);
+
+    await svc.create(orderInput, "cust-1");
+    await flush();
+
+    // The pickup point drives the PostGIS radius lookup; matched riders get the broadcast push.
+    expect(nearbyRiders).toHaveBeenCalledWith(orderInput.pickup.point.lat, orderInput.pickup.point.lng, expect.any(Number));
+    expect(notifyNewBroadcast).toHaveBeenCalledWith("ord-1", ["rider-1"], { pickup: "Eastgate", fare: "2.50" });
+  });
+
+  it("never fails the create when the broadcast push throws", async () => {
+    const prisma = {
+      order: {
+        create: async () => ({
+          id: "ord-1",
+          status: "open_for_offers",
+          proposedFare: { toString: () => "2.50" },
+          suggestedFare: { toString: () => "2.40" },
+          distanceKm: 1.5,
+        }),
+      },
+    };
+    const expiry = { schedule: async () => {} } as unknown as OfferExpiryService;
+    const tracking = { nearbyRiders: async () => { throw new Error("postgis down"); } } as unknown as TrackingService;
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry, tracking, noNotifications);
+
+    await expect(svc.create(orderInput, "cust-1")).resolves.toMatchObject({ id: "ord-1" });
+    await flush();
   });
 });
 
@@ -69,6 +124,8 @@ describe("OrdersService.getSnapshot", () => {
     new OrdersService(
       { order: { findUnique: async () => snap } } as unknown as PrismaService,
       {} as OfferExpiryService,
+      noTracking,
+      noNotifications,
     );
 
   it("404s when the order is missing", async () => {
@@ -119,7 +176,7 @@ describe("OrdersService.listOpen", () => {
         },
       },
     };
-    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications);
     const rows = await svc.listOpen();
     expect(where).toEqual({ status: "open_for_offers" });
     expect(rows[0]).toMatchObject({ id: "o1", itemDesc: "Documents", suggestedFare: "2.40", proposedFare: "2.50", distanceKm: 1.5 });
@@ -142,7 +199,7 @@ describe("OrdersService.listOpen", () => {
         ],
       },
     };
-    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications);
     const rows = await svc.listOpen();
     expect(rows[0]!.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" });
     expect(rows[0]!.dropoff).toEqual({ point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" });
@@ -164,6 +221,8 @@ describe("OrdersService.historyForUser", () => {
         },
       } as unknown as PrismaService,
       {} as OfferExpiryService,
+      noTracking,
+      noNotifications,
     );
 
   const row = (over: Record<string, unknown> = {}) => ({
@@ -219,7 +278,7 @@ describe("OrdersService.historyForUser", () => {
 describe("OrdersService.activeForRider", () => {
   it("returns null when the rider has no active order", async () => {
     const prisma = { order: { findFirst: async () => null } };
-    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications);
     expect(await svc.activeForRider("rider-1")).toBeNull();
   });
 
@@ -238,7 +297,7 @@ describe("OrdersService.activeForRider", () => {
     const prisma = {
       order: { findFirst: async () => ({ id: "o1" }), findUnique: async () => snap },
     };
-    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService);
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications);
     const res = await svc.activeForRider("rider-1");
     expect(res).toMatchObject({ id: "o1", status: "assigned" });
     // rider sees the customer's phone in the active window

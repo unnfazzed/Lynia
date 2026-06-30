@@ -20,6 +20,12 @@ export interface PushResult {
 
 export interface PushAdapter {
   send(message: PushMessage): Promise<PushResult>;
+  /**
+   * Batch send (FCM `sendEach`, ≤500 messages/provider call — the adapter chunks beyond that). Returns
+   * one PushResult per input message, in input order, so a caller can prune dead tokens positionally.
+   * Never throws — a whole-batch transport failure resolves every result to a non-dead `ok:false`.
+   */
+  sendEach(messages: PushMessage[]): Promise<PushResult[]>;
 }
 
 /** Tokens are bearer-ish device credentials — never log them whole. */

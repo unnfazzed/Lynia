@@ -16,6 +16,7 @@
 | 2 | **Build** — first-principles audits | 2026-06-27 | LAND WITH FIXES — P0 auth/PII/race holes closed in the same pass. |
 | 3 | **Ship** — provisioning + ship-prep | 2026-06-29 | LAND WITH FIXES — three "green CI, dead service" P1s closed before arming. |
 | 4 | **KYC integration** — Didit, adversarial pass | 2026-06-30 | LAND WITH FIXES — webhook hardened (fail-closed, monotonic, unique ref); 503 on vendor outage; UX/device items deferred. |
+| 5 | **Phase-3 build** — rider notifications | 2026-06-30 | SHIPPED — the deferred rider-broadcast push (CONCEPT §3.10) wired on `open_for_offers`; fan-out batched via FCM `sendEach`. |
 
 ---
 
@@ -191,8 +192,8 @@ Test count climbed 21 → 72 → 112 → **119** API tests through this stage, w
 | **P1** | **Dead/expired FCM tokens were never pruned.** The adapter swallowed *every* send error, including the one that identifies a permanently-dead token (`registration-token-not-registered`), and `NotificationsService` discarded all results — so `device_tokens` grows unbounded and keeps sending to dead devices (and a token FCM later reassigns would deliver to the wrong user). | ✅ **Fixed** — `PushAdapter.send` now returns `PushResult { ok, invalidToken }`; `FcmPush` maps the two unambiguous dead-token codes (never transient/5xx); `NotificationsService.send` collects and `deleteMany`s the dead tokens. Unit-tested (prunes only the invalid one; never prunes on a transient throw). |
 | **P2** | **Device tokens were logged whole** (`fcm.push.ts`, `noop.push.ts`) — bearer-ish credentials at `warn` level in prod logs. | ✅ **Fixed** — a shared `maskToken()` (head+tail only) used on every push log line; unit-tested. |
 | **P2** | **`PUSH_PROVIDER=fcm` with no `FCM_PROJECT_ID` failed silently** off Cloud Run (ADC has no ambient project) — push looks armed, delivers nothing, no signal. | ✅ **Fixed** — `selectPush` logs a boot `warn` when fcm is selected without a project id. |
-| **P2** | **Unbounded fan-out** — `Promise.all(tokens.map(send))` fires one FCM call per device with no batching. Trivial at pilot scale. | ◐ **Deferred** — switch to FCM `sendEach` (≤500/call); also halves the dead-token-cleanup cost. Booked. |
-| **P2** | **Rider-broadcast push gap.** CONCEPT §3.10 calls fast new-order alerts to nearby riders "critical — push is the primary channel," but only the WS board broadcast exists; no push to nearby riders on `open_for_offers`. | ◐ **Deferred** — needs the PostGIS nearby-rider query at broadcast time; a real feature, booked for the rider-notifications pass. |
+| **P2** | **Unbounded fan-out** — `Promise.all(tokens.map(send))` fires one FCM call per device with no batching. Trivial at pilot scale. | ✅ **Fixed (Phase 3, §5)** — `PushAdapter.sendEach` (FCM `sendEach`, chunked ≤500/call) replaces the per-token fan-out; one batched call per notice. |
+| **P2** | **Rider-broadcast push gap.** CONCEPT §3.10 calls fast new-order alerts to nearby riders "critical — push is the primary channel," but only the WS board broadcast exists; no push to nearby riders on `open_for_offers`. | ✅ **Fixed (Phase 3, §5)** — `create` fires a post-commit, best-effort broadcast to the ET6 PostGIS nearby-rider set. |
 | NIT | `notifyOrderStatus` re-fetches `customerId`/`riderId` the caller already holds (1 extra query per transition, off the hot path since it's fire-and-forget). | Deferred — add a recipient-ids overload if it ever matters. |
 | NIT | No controller-level test (guard application / `@CurrentUser` wiring untested). | Deferred — low risk; the guard is class-level and shared across the codebase. |
 
@@ -334,3 +335,39 @@ dev build to test on-device. Tracked in `docs/DESIGN-REVIEW.md` §4.
 **Verdict:** KYC integration CLEARED for a supervised/operator-assisted pilot; the server-side
 hardening above lands in the same pass. Rider **self**-onboarding at scale is gated on the Phase-3 UX
 items. **Current status → `docs/PILOT-READINESS.md`.**
+
+---
+
+## 5. Phase-3 build — rider notifications (2026-06-30)
+
+> Build pass that closes the two notification P2s the Build review (§2) consciously deferred. CONCEPT
+> §3.10 calls a fast new-order alert to nearby riders **"critical — push is the primary channel"**; until
+> now riders only saw new work by polling the WS board. The PostGIS half (ET6 `nearbyRiders`, the GiST
+> `geog` index) already existed and was exposed only via a REST endpoint — this pass wires it into the
+> broadcast path. Status: **SHIPPED.**
+
+**What landed:**
+
+- **Rider-broadcast push.** `OrdersService.create` now fires a **post-commit, best-effort** push to the
+  online riders within `BROADCAST_RADIUS_M` (5 km) of the pickup, resolved by the existing
+  `TrackingService.nearbyRiders` (ST_DWithin on the GiST `geog` index, ET6). It is `void`-dispatched and
+  fully wrapped — a geo-query error, no nearby riders, or a push outage can **never** affect the order the
+  customer just created (mirrors the §2 ET4 best-effort contract). `TrackingModule` now exports
+  `TrackingService`; `NotificationsService.notifyNewBroadcast(orderId, riderProfileIds, info)` carries a
+  `kind: "broadcast"` data payload so the client can deep-link to the open-orders board.
+- **Batched fan-out (FCM `sendEach`).** The `PushAdapter` seam grows a `sendEach(messages[])` that returns
+  one `PushResult` per message in input order; `FcmPush` implements it on `messaging.sendEach` and chunks
+  at the 500-message FCM limit. `NotificationsService.send` now makes **one batched provider call** instead
+  of `Promise.all(tokens.map(send))` — dead tokens are still pruned, now positionally from the aligned
+  results. This matters precisely because the broadcast above fans a single notice out to up to 50 riders ×
+  N devices.
+
+**Tested:** `notifications.service.spec` (batched send, positional dead-token prune, the new-broadcast
+notice + its no-op/​swallow-failure paths), `push.spec` (noop `sendEach` ordering + empty batch), and
+`orders.service.spec` (broadcast fires post-commit with the pickup-derived radius; a throwing geo-query
+never fails the create). `FcmPush.sendEach`'s live path is unit-boundaried like `send` — the firebase-admin
+call needs a real project, so the payload mapper (`buildFcmMessage`) is what's asserted.
+
+**Deferred (unchanged):** the NIT `notifyOrderStatus` recipient-ids overload, and the §4 device-build KYC
+UX items (those are design-side — see `docs/DESIGN-REVIEW.md` §5). **Current status →
+`docs/PILOT-READINESS.md`.**
