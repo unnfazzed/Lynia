@@ -11,6 +11,9 @@ const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
 const config: ExpoConfig = {
   name: "Lynia",
   slug: "lynia",
+  // EAS project owner + id (from `eas init`) — required here because the config is dynamic, so EAS
+  // can't auto-write it. Links local builds to the @lyniago/lynia project on Expo.
+  owner: "lyniago",
   scheme: "lynia",
   version: "0.1.0",
   orientation: "portrait",
@@ -35,6 +38,9 @@ const config: ExpoConfig = {
   },
   extra: {
     apiUrl: "https://lyniago.lyniafinance.com",
+    eas: {
+      projectId: "25b2785d-94e0-4ecc-9940-bd9f9d8eb27c",
+    },
   },
 };
 
