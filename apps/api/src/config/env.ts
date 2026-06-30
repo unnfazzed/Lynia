@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+/** Optional URL that treats an empty string as absent. The deploy injects some optional vars with an
+ *  empty value when their repo Variable is unset (e.g. `--set-env-vars DIDIT_CALLBACK_URL=`); "" is not
+ *  `undefined`, so a bare `.url().optional()` would reject it and crash boot. Coerce "" → undefined. */
+const optionalUrl = z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional());
+
 /** Validated environment. Secrets are injected as env at deploy (D7: no managed-identity lock-in). */
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -12,7 +17,7 @@ export const envSchema = z.object({
   // GCS signing: project id for the Storage client. Signing creds come from ADC on Cloud Run
   // (the attached SA + IAM signBlob), so no private key lives in env.
   GCP_STORAGE_PROJECT_ID: z.string().optional(),
-  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+  OTEL_EXPORTER_OTLP_ENDPOINT: optionalUrl,
   OTEL_SERVICE_NAME: z.string().default("lynia-api"),
   // --- Push (lane A4) ---
   // "fcm" sends via firebase-admin (ADC creds on Cloud Run — no key in env); "noop" logs only
@@ -43,7 +48,7 @@ export const envSchema = z.object({
   DIDIT_API_KEY: z.string().optional(),
   DIDIT_WORKFLOW_ID: z.string().optional(),
   DIDIT_WEBHOOK_SECRET: z.string().optional(),
-  DIDIT_CALLBACK_URL: z.string().url().optional(),
+  DIDIT_CALLBACK_URL: optionalUrl,
   DIDIT_BASE_URL: z.string().url().default("https://verification.didit.me"),
 });
 
