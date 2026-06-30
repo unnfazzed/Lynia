@@ -19,7 +19,7 @@ import { ZodBody } from "../common/zod.pipe";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { RiderService } from "../riders/rider.service";
-import { mapDiditStatus, verifyDiditSignature } from "./didit";
+import { diditTimestampStale, mapDiditStatus, verifyDiditSignature } from "./didit";
 
 const AdminKyc = z.object({ status: z.enum(["pending", "verified", "failed"]) });
 
@@ -44,6 +44,12 @@ export class KycController {
       const sig = req.headers["x-signature"] as string | undefined;
       if (!verifyDiditSignature(raw, sig, secret)) {
         throw new UnauthorizedException("Invalid webhook signature");
+      }
+      // Replay guard: reject a valid-HMAC body whose X-Timestamp is too old. Fail-open on a
+      // missing/unreadable timestamp so a genuine webhook is never rejected (see diditTimestampStale).
+      const ts = req.headers["x-timestamp"] as string | undefined;
+      if (diditTimestampStale(ts, Date.now())) {
+        throw new UnauthorizedException("Stale webhook timestamp");
       }
     }
 

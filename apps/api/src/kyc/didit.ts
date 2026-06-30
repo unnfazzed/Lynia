@@ -30,3 +30,24 @@ export function verifyDiditSignature(rawBody: string, signatureHeader: string | 
   const b = Buffer.from(signatureHeader.trim(), "utf8");
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+/**
+ * Replay guard. A valid HMAC over an old body is still a replay, so Didit sends the send-time in
+ * the X-Timestamp header; reject a webhook whose timestamp is outside the tolerance window.
+ *
+ * Deliberately **fail-open** on a missing or unparseable header (returns "not stale"): the HMAC
+ * already authenticates the request, so a header we can't read must never reject a genuine webhook
+ * and silently break KYC. We only fail-closed when we can parse a timestamp and it is clearly
+ * outside the window. Epoch-millis is tolerated so a seconds/millis unit change can't reject all.
+ */
+export function diditTimestampStale(
+  timestampHeader: string | undefined,
+  nowMs: number,
+  toleranceSec = 300,
+): boolean {
+  if (!timestampHeader) return false;
+  let ts = Number(timestampHeader.trim());
+  if (!Number.isFinite(ts)) return false;
+  if (ts > 1e12) ts = ts / 1000; // tolerate epoch-millis (seconds in 2026 are ~1.7e9)
+  return Math.abs(nowMs / 1000 - ts) > toleranceSec;
+}
