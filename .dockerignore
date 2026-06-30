@@ -1,0 +1,16 @@
+# Keep the API image build fast and its layer cache stable. Only the root workspace config,
+# packages/shared, and apps/api feed the build; everything else just bloats the context (sent to
+# the daemon on every build) and busts the layer cache on changes that don't affect the API.
+.git
+.github
+**/node_modules
+**/dist
+**/.turbo
+**/.expo
+docs
+infra
+apps/mobile
+apps/admin
+*.md
+.env
+.env.*
