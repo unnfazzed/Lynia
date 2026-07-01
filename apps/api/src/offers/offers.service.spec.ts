@@ -2,12 +2,17 @@ import { Prisma } from "@prisma/client";
 import type { MakeOfferRequest } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
+import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { OffersService } from "./offers.service";
 
 /** Push is fire-and-forget; a no-op stub keeps these unit tests off the notification path. */
 const noopNotifications = { notifyNewOffer: async () => {} } as unknown as NotificationsService;
+
+/** Metrics are best-effort observability; a spy fake keeps unit tests off the OTel path. */
+const fakeMetrics = () =>
+  ({ startTimer: () => () => 0, recordOfferLatency: vi.fn(), incOffersMade: vi.fn() }) as unknown as MetricsService;
 
 /** Fake WS gateway — the offers-changed signal is best-effort; spy on it, never hit a real socket. */
 function fakeGateway() {
@@ -17,7 +22,12 @@ function fakeGateway() {
 /** Per-test Prisma fake — only the methods makeOffer/listForOrder touch. No DB. */
 function svc(prisma: Partial<Record<string, unknown>>, gateway = fakeGateway()) {
   return {
-    service: new OffersService(prisma as unknown as PrismaService, noopNotifications, gateway as unknown as TrackingGateway),
+    service: new OffersService(
+      prisma as unknown as PrismaService,
+      noopNotifications,
+      gateway as unknown as TrackingGateway,
+      fakeMetrics(),
+    ),
     gateway,
   };
 }

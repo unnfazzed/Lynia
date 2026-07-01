@@ -25,10 +25,40 @@ export async function buildOtelSdk(serviceName: string, endpoint?: string): Prom
   const { NodeSDK } = await import("@opentelemetry/sdk-node");
   const { OTLPTraceExporter } = await import("@opentelemetry/exporter-trace-otlp-http");
   const { HttpInstrumentation } = await import("@opentelemetry/instrumentation-http");
+  // Metrics ride the SAME NodeSDK (D7). Loaded lazily alongside traces so a no-endpoint dev/test boot
+  // never pulls the metrics tree. Traces stay BatchSpanProcessor (NodeSDK default) — never inline export.
+  const { PeriodicExportingMetricReader, AggregationType } = await import("@opentelemetry/sdk-metrics");
+  const { OTLPMetricExporter } = await import("@opentelemetry/exporter-metrics-otlp-http");
+
+  const base = endpoint.replace(/\/+$/, "");
+
+  // Explicit latency buckets per histogram (ms). The buckets are chosen around each metric's p95 SLO
+  // so histogram_quantile has resolution where the alert threshold sits (see docs/OBSERVABILITY.md).
+  const histogramBuckets: Record<string, number[]> = {
+    position_emit_latency_ms: [50, 100, 200, 300, 500, 750, 1000],
+    offer_received_latency_ms: [250, 500, 1000, 1500, 2000, 3000, 5000],
+    match_select_duration_ms: [50, 100, 200, 300, 500, 1000],
+    broadcast_nearby_duration_ms: [50, 100, 200, 300, 400, 600, 1000],
+    otp_verify_duration_ms: [100, 250, 500, 800, 1200, 2000],
+    http_request_duration_ms: [50, 100, 250, 500, 1000, 2000, 5000],
+  };
 
   return new NodeSDK({
-    traceExporter: new OTLPTraceExporter({ url: `${endpoint.replace(/\/+$/, "")}/v1/traces` }),
+    traceExporter: new OTLPTraceExporter({ url: `${base}/v1/traces` }),
     instrumentations: [new HttpInstrumentation()],
+    // OTLP push (no scrape endpoint); the exporter targets the SAME collector as traces at /v1/metrics.
+    metricReaders: [
+      new PeriodicExportingMetricReader({
+        exporter: new OTLPMetricExporter({ url: `${base}/v1/metrics` }),
+        exportIntervalMillis: 15_000,
+      }),
+    ],
+    // One View per histogram binds its explicit buckets by instrument name (sdk-metrics 2.x uses
+    // ViewOptions objects with AggregationType.EXPLICIT_BUCKET_HISTOGRAM, not the legacy View class).
+    views: Object.entries(histogramBuckets).map(([instrumentName, boundaries]) => ({
+      instrumentName,
+      aggregation: { type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM, options: { boundaries } },
+    })),
   });
 }
 

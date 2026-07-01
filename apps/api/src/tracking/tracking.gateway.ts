@@ -16,6 +16,7 @@ import { type BoardNewOrderEvent, BoardSubscribeEvent, boardCell, boardCellNeigh
 import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { MetricsService } from "../observability/metrics.service";
 import { BOARD_ROOM, boardGeoRoom, orderRoom, parseBearer } from "./tracking.constants";
 import { TrackingService } from "./tracking.service";
 
@@ -38,6 +39,7 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @Inject(ENV) private readonly env: Env,
     private readonly tokens: TokenService,
     private readonly tracking: TrackingService,
+    private readonly metrics: MetricsService,
   ) {}
 
   afterInit(server: Server): void {
@@ -139,12 +141,16 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
     // Emit-before-persist (P1-1a): the customer's live position must not be gated on the DB write.
     // Best-effort PUSH — a null server or emit failure never blocks the (still-persisted) fix.
+    // Measure the EMIT only (recorded BEFORE the DB write) so the SLO reflects glass-to-server push
+    // latency, not the throttled position flush that follows.
+    const done = this.metrics.startTimer();
     this.server?.to(orderRoom(body.orderId)).emit(WS_EVENTS.position, {
       riderId: user.sub,
       lat: body.lat,
       lng: body.lng,
       at: new Date().toISOString(),
     });
+    this.metrics.recordPositionEmit(done());
     await this.tracking.recordFix(user.sub, body.lat, body.lng);
     return { ok: true };
   }

@@ -8,6 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { OfferExpiryService } from "../matching/offer-expiry.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { Env } from "../config/env";
+import { MetricsService } from "../observability/metrics.service";
 import { OrdersService } from "../orders/orders.service";
 import type { TrackingGateway } from "./tracking.gateway";
 import { PrismaService } from "../prisma/prisma.service";
@@ -15,7 +16,8 @@ import { TrackingService } from "./tracking.service";
 
 const prisma = new PrismaService();
 // REDIS_URL unset: recordFix/updateRiderLocation exercise the direct PG geo write (no throttle).
-const tracking = new TrackingService({ REDIS_URL: undefined } as Env, prisma);
+// Real MetricsService is NoopMeter-safe with no OTLP endpoint (every record is a cheap no-op).
+const tracking = new TrackingService({ REDIS_URL: undefined } as Env, prisma, new MetricsService());
 
 // Harare CBD. ~0.01° of latitude ≈ 1.11 km, so the offsets below give predictable distances.
 const CENTER = { lat: -17.8292, lng: 31.0522 };

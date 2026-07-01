@@ -9,6 +9,7 @@ import type { Env } from "../config/env";
 import { StubKycVendor } from "../kyc/kyc-vendor";
 import { MatchingService } from "../matching/matching.service";
 import type { NotificationsService } from "../notifications/notifications.service";
+import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { RiderService } from "../riders/rider.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
@@ -21,7 +22,8 @@ const noopNotifications = {
   notifyOrderStatus: async () => {},
   notifyNewOffer: async () => {},
 } as unknown as NotificationsService;
-const matching = new MatchingService(prisma, tokens, noopNotifications);
+// Real MetricsService is NoopMeter-safe with no OTLP endpoint (every record is a cheap no-op).
+const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService());
 const gateway = { emitOrderStatus: () => undefined } as unknown as TrackingGateway;
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
 const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications);

@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { APP_INTERCEPTOR } from "@nestjs/core";
 import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
 import { PushModule } from "./adapters/push/push.module";
@@ -8,6 +9,8 @@ import { ConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
 import { MatchingModule } from "./matching/matching.module";
 import { NotificationsModule } from "./notifications/notifications.module";
+import { MetricsInterceptor } from "./observability/metrics.interceptor";
+import { ObservabilityModule } from "./observability/metrics.service";
 import { OffersModule } from "./offers/offers.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -18,6 +21,8 @@ import { UploadsModule } from "./uploads/uploads.module";
 @Module({
   imports: [
     ConfigModule,
+    // Latency/SLO metrics (@Global) — MetricsService is injectable app-wide with no per-module import.
+    ObservabilityModule,
     PrismaModule,
     // Cloud-portable adapter seam (D7): swap impls via CLOUD_PROVIDER, no business-logic edits.
     StorageModule,
@@ -40,6 +45,10 @@ import { UploadsModule } from "./uploads/uploads.module";
     UploadsModule,
     // Lane F — admin read API for the monitor dashboard.
     AdminModule,
+  ],
+  providers: [
+    // Time every HTTP request into http_request_duration_ms (route template + status class labels).
+    { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
   ],
 })
 export class AppModule {}

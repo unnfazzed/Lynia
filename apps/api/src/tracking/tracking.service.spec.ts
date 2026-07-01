@@ -1,18 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
+import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "./tracking.service";
 
 /** REDIS_URL unset ⇒ the no-Redis path (flush every fix), which is the dev/test default. */
 const noRedisEnv = { REDIS_URL: undefined } as Env;
 
+/** Spy metrics fake — broadcast-nearby recording is best-effort; keep tests off the OTel path. */
+const fakeMetrics = () =>
+  ({ startTimer: () => () => 0, recordBroadcastNearby: vi.fn() }) as unknown as MetricsService;
+
 function svc(findUnique: () => Promise<unknown>) {
-  return new TrackingService(noRedisEnv, { order: { findUnique } } as unknown as PrismaService);
+  return new TrackingService(noRedisEnv, { order: { findUnique } } as unknown as PrismaService, fakeMetrics());
 }
 
 /** Fakes only the rider.findUnique the board-eligibility check reads. */
 function riderSvc(rider: unknown) {
-  return new TrackingService(noRedisEnv, { rider: { findUnique: async () => rider } } as unknown as PrismaService);
+  return new TrackingService(noRedisEnv, { rider: { findUnique: async () => rider } } as unknown as PrismaService, fakeMetrics());
 }
 
 /** A minimal in-memory Redis fake exposing the get/set/quit surface recordFix/getLivePosition use,
@@ -89,7 +94,7 @@ describe("TrackingService.isBoardEligible", () => {
 describe("TrackingService.recordFix (no Redis — dev/test default)", () => {
   it("writes the position AND heartbeat on every fix (no throttle without Redis)", async () => {
     const executeRaw = vi.fn(async () => 1);
-    const s = new TrackingService(noRedisEnv, { $executeRaw: executeRaw } as unknown as PrismaService);
+    const s = new TrackingService(noRedisEnv, { $executeRaw: executeRaw } as unknown as PrismaService, fakeMetrics());
 
     await s.recordFix("rider-1", -17.8, 31.0);
     await s.recordFix("rider-1", -17.81, 31.01);
@@ -100,7 +105,7 @@ describe("TrackingService.recordFix (no Redis — dev/test default)", () => {
   });
 
   it("getLivePosition returns null without Redis", async () => {
-    const s = new TrackingService(noRedisEnv, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService);
+    const s = new TrackingService(noRedisEnv, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService, fakeMetrics());
     expect(await s.getLivePosition("rider-1")).toBeNull();
   });
 });
@@ -108,7 +113,7 @@ describe("TrackingService.recordFix (no Redis — dev/test default)", () => {
 describe("TrackingService.recordFix (Redis path — injected fake)", () => {
   it("SETs the live-position key and getLivePosition reads it back (hit)", async () => {
     const redis = fakeRedis();
-    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService);
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService, fakeMetrics());
     s.setRedisClient(redis as never);
 
     await s.recordFix("rider-1", -17.8, 31.0);
@@ -133,7 +138,7 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
       calls.push(strings.join("?"));
       return 1;
     });
-    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: executeRaw } as unknown as PrismaService);
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: executeRaw } as unknown as PrismaService, fakeMetrics());
     s.setRedisClient(redis as never);
 
     await s.recordFix("rider-1", -17.8, 31.0);
@@ -147,7 +152,7 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
 
   it("getLivePosition returns null (no throw) when the Redis GET rejects", async () => {
     const redis = { ...fakeRedis(), get: vi.fn(async () => Promise.reject(new Error("redis down"))) };
-    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService);
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService, fakeMetrics());
     s.setRedisClient(redis as never);
     await expect(s.getLivePosition("rider-1")).resolves.toBeNull(); // fallback, never 500s the snapshot
   });
@@ -160,7 +165,7 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
       if (strings.join("?").includes("current_lat")) positioned.push("pos");
       return 1;
     });
-    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: executeRaw } as unknown as PrismaService);
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: executeRaw } as unknown as PrismaService, fakeMetrics());
     s.setRedisClient(redis as never);
     await s.flushToPg("rider-1");
     expect(positioned).toHaveLength(1); // the last-known position was persisted on disconnect
@@ -168,7 +173,7 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
 
   it("recordFix GEOADDs the rider into the geo index (best-effort, alongside the position SET)", async () => {
     const redis = fakeRedis();
-    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService);
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService, fakeMetrics());
     s.setRedisClient(redis as never);
 
     await s.recordFix("rider-1", -17.8, 31.0);
@@ -181,7 +186,7 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
   it("recordFix still writes the heartbeat when GEOADD rejects (Redis error never starves the heartbeat)", async () => {
     const redis = { ...fakeRedis(), geoadd: vi.fn(async () => Promise.reject(new Error("redis down"))) };
     const executeRaw = vi.fn(async () => 1);
-    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: executeRaw } as unknown as PrismaService);
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: executeRaw } as unknown as PrismaService, fakeMetrics());
     s.setRedisClient(redis as never);
     await expect(s.recordFix("rider-1", -17.8, 31.0)).resolves.toBeUndefined();
     expect(executeRaw).toHaveBeenCalled(); // heartbeat + flush still ran
@@ -197,6 +202,7 @@ describe("TrackingService.nearbyRiders (Redis prefilter path)", () => {
     const s = new TrackingService(
       { REDIS_URL: "redis://x" } as Env,
       { $queryRaw: queryRaw } as unknown as PrismaService,
+      fakeMetrics(),
     );
     s.setRedisClient(redis as never);
 
@@ -217,6 +223,7 @@ describe("TrackingService.nearbyRiders (Redis prefilter path)", () => {
     const s = new TrackingService(
       { REDIS_URL: "redis://x" } as Env,
       { $queryRaw: queryRaw } as unknown as PrismaService,
+      fakeMetrics(),
     );
     s.setRedisClient(redis as never);
 
@@ -236,6 +243,7 @@ describe("TrackingService.nearbyRiders (Redis prefilter path)", () => {
     const s = new TrackingService(
       { REDIS_URL: "redis://x" } as Env,
       { $queryRaw: queryRaw } as unknown as PrismaService,
+      fakeMetrics(),
     );
     s.setRedisClient(redis as never);
 
@@ -255,6 +263,7 @@ describe("TrackingService.nearbyRiders (Redis prefilter path)", () => {
     const s = new TrackingService(
       { REDIS_URL: undefined } as Env,
       { $queryRaw: queryRaw } as unknown as PrismaService,
+      fakeMetrics(),
     );
     s.setRedisClient(null); // explicit degrade — no Redis client
 

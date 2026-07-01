@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
+import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "./auth.service";
 import { ConsoleOtpSender } from "./otp-sender";
@@ -22,6 +23,10 @@ const baseEnv = {
 
 const tokens = new TokenService(baseEnv);
 
+/** Spy metrics fake — OTP-verify recording is best-effort; keep tests off the OTel path. */
+const fakeMetrics = () =>
+  ({ startTimer: () => () => 0, recordOtpVerify: vi.fn() }) as unknown as MetricsService;
+
 function make(env: Env, prisma: Partial<Record<string, unknown>>) {
   const store = new InMemoryOtpStore();
   const svc = new AuthService(
@@ -30,6 +35,7 @@ function make(env: Env, prisma: Partial<Record<string, unknown>>) {
     new TokenService(env),
     store,
     new ConsoleOtpSender(),
+    fakeMetrics(),
   );
   return { svc, store };
 }
