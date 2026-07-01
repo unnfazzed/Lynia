@@ -35,6 +35,8 @@ resource "google_project_service" "apis" {
     "artifactregistry.googleapis.com",
     "firebase.googleapis.com",               # link Firebase to the project (FCM, A4)
     "firebasecloudmessaging.googleapis.com", # FCM HTTP v1 send from the runtime SA
+    "monitoring.googleapis.com",             # OTLP metrics → Cloud Monitoring (GMP ingest) + SLO alerts
+    "cloudtrace.googleapis.com",             # OTLP traces → Cloud Trace (both via the collector sidecar)
   ])
 
   project            = local.project_id

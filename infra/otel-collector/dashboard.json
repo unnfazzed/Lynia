@@ -1,0 +1,63 @@
+{
+  "//": "Lynia latency-SLO dashboard — import once, then hand-tune in the console. NOT managed by Terraform (presentation, not correctness). Import: gcloud monitoring dashboards create --config-from-file=infra/otel-collector/dashboard.json --project <PROJECT_ID>. Each tile plots p95 (and a dashed SLO line implied by the alert). Metric names match docs/OBSERVABILITY.md; queries resolve via GMP.",
+  "displayName": "Lynia — Latency SLOs (p95)",
+  "mosaicLayout": {
+    "columns": 12,
+    "tiles": [
+      {
+        "xPos": 0, "yPos": 0, "width": 6, "height": 4,
+        "widget": {
+          "title": "Offer received p95 (SLO < 2000ms)",
+          "xyChart": {
+            "dataSets": [{ "timeSeriesQuery": { "prometheusQuery": "histogram_quantile(0.95, sum(rate(offer_received_latency_ms_bucket[5m])) by (le))" } }]
+          }
+        }
+      },
+      {
+        "xPos": 6, "yPos": 0, "width": 6, "height": 4,
+        "widget": {
+          "title": "Position emit p95 (SLO < 500ms)",
+          "xyChart": {
+            "dataSets": [{ "timeSeriesQuery": { "prometheusQuery": "histogram_quantile(0.95, sum(rate(position_emit_latency_ms_bucket[5m])) by (le))" } }]
+          }
+        }
+      },
+      {
+        "xPos": 0, "yPos": 4, "width": 6, "height": 4,
+        "widget": {
+          "title": "Match select p95 (SLO < 300ms)",
+          "xyChart": {
+            "dataSets": [{ "timeSeriesQuery": { "prometheusQuery": "histogram_quantile(0.95, sum(rate(match_select_duration_ms_bucket[5m])) by (le))" } }]
+          }
+        }
+      },
+      {
+        "xPos": 6, "yPos": 4, "width": 6, "height": 4,
+        "widget": {
+          "title": "Broadcast nearby p95 (SLO < 400ms)",
+          "xyChart": {
+            "dataSets": [{ "timeSeriesQuery": { "prometheusQuery": "histogram_quantile(0.95, sum(rate(broadcast_nearby_duration_ms_bucket[5m])) by (le))" } }]
+          }
+        }
+      },
+      {
+        "xPos": 0, "yPos": 8, "width": 6, "height": 4,
+        "widget": {
+          "title": "OTP verify p95 (SLO < 800ms)",
+          "xyChart": {
+            "dataSets": [{ "timeSeriesQuery": { "prometheusQuery": "histogram_quantile(0.95, sum(rate(otp_verify_duration_ms_bucket[5m])) by (le))" } }]
+          }
+        }
+      },
+      {
+        "xPos": 6, "yPos": 8, "width": 6, "height": 4,
+        "widget": {
+          "title": "HTTP request p95 by route (SLO < 1000ms)",
+          "xyChart": {
+            "dataSets": [{ "timeSeriesQuery": { "prometheusQuery": "histogram_quantile(0.95, sum(rate(http_request_duration_ms_bucket[5m])) by (le, route))" } }]
+          }
+        }
+      }
+    ]
+  }
+}

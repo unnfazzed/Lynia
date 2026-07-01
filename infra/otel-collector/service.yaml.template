@@ -1,0 +1,69 @@
+# Cloud Run multi-container service TEMPLATE — adds the OTel Collector sidecar to lynia-api.
+#
+# WHY a template + `gcloud run services replace` (not a change to .github/workflows/release.yml):
+# the normal deploy is a single-container `gcloud run deploy`. Folding the sidecar into that workflow
+# blind (no gcloud/CI here to validate) risks breaking ALL deploys for a telemetry feature. So the
+# founder applies this once, deliberately, and can roll back instantly by re-running the release
+# workflow (which redeploys the single-container form). See docs/OBSERVABILITY.md → Production activation.
+#
+# FILL THE <PLACEHOLDERS> (they mirror the flags in release.yml's `gcloud run deploy`), then:
+#   gcloud run services replace infra/otel-collector/service.yaml --region <REGION> --project <PROJECT_ID>
+#
+# NOTE: exactly one container is the ingress container (the API, containerPort 3000). The collector is
+# a sidecar with NO ports block — the API reaches it over localhost:4318. After any subsequent normal
+# release-workflow deploy, the sidecar is dropped and this replace must be re-applied (documented drift).
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: lynia-api
+  labels:
+    cloud.googleapis.com/location: <REGION> # e.g. africa-south1
+  annotations:
+    run.googleapis.com/ingress: internal-and-cloud-load-balancing
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/cloudsql-instances: <CLOUD_SQL_INSTANCE> # = --add-cloudsql-instances
+        run.googleapis.com/vpc-access-connector: <VPC_CONNECTOR>
+        run.googleapis.com/vpc-access-egress: private-ranges-only
+        # Config for the sidecar, mounted from a Secret Manager secret (see runbook step 2).
+    spec:
+      serviceAccountName: <CLOUD_RUN_SERVICE_ACCOUNT> # lynia-run runtime SA
+      timeoutSeconds: 3600
+      containers:
+        # --- Ingress container: the API (unchanged from release.yml, plus the OTLP endpoint) ---
+        - name: api
+          image: <REGION>-docker.pkg.dev/<PROJECT_ID>/<ARTIFACT_REPO>/lynia-api:<GIT_SHA>
+          ports:
+            - containerPort: 3000
+          env:
+            # Turns the dormant OTLP exporters on — points them at the sidecar. This env lives HERE
+            # (coupled to the sidecar), NOT in release.yml, so "endpoint set" ⇔ "collector present".
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://localhost:4318
+            - name: OTEL_SERVICE_NAME
+              value: lynia-api
+            # ... reproduce every other --set-env-vars / --set-secrets entry from release.yml here ...
+        # --- Sidecar: the OTel Collector (no ports → not the ingress container) ---
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.116.0 # pinned; contrib has googlecloud + GMP
+          args: ["--config=/etc/otelcol/config.yaml"]
+          resources:
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          volumeMounts:
+            - name: otel-config
+              mountPath: /etc/otelcol
+      volumes:
+        # Deliver config.yaml as a Secret Manager secret (runbook step 2 creates it from
+        # infra/otel-collector/config.yaml). Alternative: bake it into a thin custom collector image.
+        - name: otel-config
+          secret:
+            secretName: otel-collector-config
+            items:
+              - key: latest
+                path: config.yaml
