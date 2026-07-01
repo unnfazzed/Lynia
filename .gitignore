@@ -1,5 +1,7 @@
 # gstack is installed per-developer, not vendored into the repo.
 .claude/skills/gstack/
+# Transient agent worktrees.
+.claude/worktrees/
 
 # Dependencies
 node_modules/
