@@ -138,4 +138,25 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
     expect(heartbeats).toHaveLength(2); // heartbeat on BOTH fixes (P0 liveness never throttled)
     expect(positions).toHaveLength(1); // full position write only on the first fix (throttled after)
   });
+
+  it("getLivePosition returns null (no throw) when the Redis GET rejects", async () => {
+    const redis = { ...fakeRedis(), get: vi.fn(async () => Promise.reject(new Error("redis down"))) };
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService);
+    s.setRedisClient(redis as never);
+    await expect(s.getLivePosition("rider-1")).resolves.toBeNull(); // fallback, never 500s the snapshot
+  });
+
+  it("flushToPg writes the last Redis position to PG and evicts the throttle entry", async () => {
+    const redis = fakeRedis();
+    redis.store.set("rider:pos:rider-1", JSON.stringify({ lat: -17.9, lng: 31.1, at: 1 }));
+    const positioned: string[] = [];
+    const executeRaw = vi.fn(async (strings: TemplateStringsArray) => {
+      if (strings.join("?").includes("current_lat")) positioned.push("pos");
+      return 1;
+    });
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: executeRaw } as unknown as PrismaService);
+    s.setRedisClient(redis as never);
+    await s.flushToPg("rider-1");
+    expect(positioned).toHaveLength(1); // the last-known position was persisted on disconnect
+  });
 });

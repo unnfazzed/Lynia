@@ -26,20 +26,30 @@ interface FormDraft {
 
 // Reuse the same on-device primitive the auth session uses (expo-secure-store); a single key.
 const DRAFT_KEY = "lynia.orderDraft";
+// All three are best-effort: a SecureStore reject (native read/write failure) must never reject —
+// otherwise a failed read would leave `hydrated` unset and silently disable draft saving for the
+// whole session. A draft is a convenience, never load-bearing.
 async function loadDraft(): Promise<FormDraft | null> {
-  const raw = await SecureStore.getItemAsync(DRAFT_KEY);
-  if (!raw) return null;
   try {
-    return JSON.parse(raw) as FormDraft;
+    const raw = await SecureStore.getItemAsync(DRAFT_KEY);
+    return raw ? (JSON.parse(raw) as FormDraft) : null;
   } catch {
     return null;
   }
 }
 async function saveDraft(draft: FormDraft): Promise<void> {
-  await SecureStore.setItemAsync(DRAFT_KEY, JSON.stringify(draft));
+  try {
+    await SecureStore.setItemAsync(DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    /* best-effort */
+  }
 }
 async function clearDraft(): Promise<void> {
-  await SecureStore.deleteItemAsync(DRAFT_KEY);
+  try {
+    await SecureStore.deleteItemAsync(DRAFT_KEY);
+  } catch {
+    /* best-effort */
+  }
 }
 
 export default function HomeScreen(): React.ReactElement {

@@ -174,8 +174,11 @@ export class TrackingService implements OnModuleDestroy {
     }
   }
 
-  /** Flush the last known Redis position to PG (on disconnect, so it isn't lost when the key TTLs). */
+  /** Flush the last known Redis position to PG (on disconnect, so it isn't lost when the key TTLs).
+   *  Also evicts the rider's throttle bookkeeping — the session ended, so the in-memory `lastFlush`
+   *  entry must not linger (otherwise the Map grows unbounded over an instance's lifetime). */
   async flushToPg(riderId: string): Promise<void> {
+    this.lastFlush.delete(riderId);
     const pos = await this.getLivePosition(riderId);
     if (!pos) return;
     await this.writePosition(riderId, pos.lat, pos.lng);
