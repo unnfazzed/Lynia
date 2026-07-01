@@ -16,7 +16,7 @@ polished native ride/courier app.
 
 All work below was reviewed (gStack Engineering + Design plan rubrics), implemented, and hardened
 (a second Eng + Design pass on each diff). Every hardening verdict **PASS** / Design **9–9.5/10**,
-no P0/P1 correctness issues. API tests **246 pass**; shared/api/mobile typecheck + api build clean.
+no P0/P1 correctness issues. API tests **274 pass**; shared/api/mobile typecheck + api build clean.
 
 - ✅ **Batch 1 (merged):** WS-pushed offers during `open_for_offers` (A1) + WS-pushed rider board
   (A2); optimistic UI on select + rider-advance with a muted rollback (C1); marker interpolation +
@@ -36,6 +36,12 @@ no P0/P1 correctness issues. API tests **246 pass**; shared/api/mobile typecheck
   `nearbyRiders` (GEOSEARCH → PG `is_online` filter; PG fallback on no-Redis or a transient GEOSEARCH
   error); the **map-anchored home** IA slice (hero sheet + collapsible "Add details"; the full
   draggable single-map build is spec'd under DT5, device-gated).
+- ✅ **Batch 4 (PR #85):** the P2 remainder — **server-side WS position coalesce** (E3 — ≤1 emit/sec
+  per room, leading-edge + trailing-flush, per-fix persist untouched); **history composite indexes**
+  (E5 — migration `0007`: `orders(customer_id, created_at)` / `(rider_id, created_at)` /
+  `order_events(order_id, created_at)`, subsuming the old single-column indexes); **explicit Prisma
+  connection pool** (E6 — deterministic `connection_limit` + `DATABASE_POOL_TIMEOUT` passthrough on
+  the datasource URL); and **rating-on-tap** (D3 — optimistic star-tap submit with an undo window).
 - ⏸️ **Still deferred:** the Redis *online-set* for `nearbyRiders` (the safe GEOSEARCH-then-PG-filter
   ships; the online-set/ZREM design is a ghost-rider consistency trap, intentionally avoided);
   per-region **WS board rooms** at multi-city scale (the coarse cell + poll fallback is enough at
@@ -362,32 +368,39 @@ explicitly before load, not a launch blocker.
 | **P1-2** | Geo-scope the rider board server-side (`ST_DWithin`) | `orders.service.ts:90`, `tracking.service.ts` | M | Correct locality, smaller payloads (A3) | ✅ done (batch 2; `pickup_geog` GiST batch 3) |
 | **P1-3** | `staleTime`/cache + seed order cache on create; add `polling` transport | `query/client.ts`, `home.tsx:56`, socket hooks | S | Instant nav, resilient connect (C2, C3, B4) | ✅ done (batch 1) |
 | **P1-4** | Trim required order form to pin+pin+price; persist draft; reverse-geocode landmark | `home.tsx`, `MapPicker.tsx` | M | Fewer taps to broadcast (D1, D2) | ✅ done (draft + reverse-geocode batch 2; map-anchored IA slice batch 3) |
-| **P2-1** | Jitter offer-expiry; server-side WS coalesce; prod REDIS_URL boot guard | `offer-expiry.service.ts`, `tracking.gateway.ts`, `config/env.ts` | S | Smooth under load (E2, E3, E4) | ◐ partial — jitter (E2) + boot-guard (E4) ✅ done (batch 3); **server-side WS coalesce (E3) still open** |
-| **P2-2** | Composite indexes + UNION history; explicit Prisma pool | migrations, `orders.service.ts`, `prisma.service.ts` | S | Headroom as data grows (E5, E6) | ◐ partial — `pickup_geog` GiST + Redis GEO ✅ done (batch 3); **history composite indexes/UNION (E5) + explicit Prisma pool (E6) still open** |
-| **P2-3** | Rating-on-tap, ≥44 px targets, taller tracking map, online chip, seeded ETA | `order/[id].tsx`, `LiveMap.tsx`, `rider/index.tsx` | S | Interface polish (D3–D6, A4) | ◐ partial — ≥44 px targets, taller map (D5), online chip (D6), seeded ETA (A4) ✅ done (batches 1–2); **rating-on-tap (D3) still open** |
+| **P2-1** | Jitter offer-expiry; server-side WS coalesce; prod REDIS_URL boot guard | `offer-expiry.service.ts`, `tracking.gateway.ts`, `config/env.ts` | S | Smooth under load (E2, E3, E4) | ✅ done — jitter (E2) + boot-guard (E4) batch 3; server-side WS coalesce (E3) PR #85 |
+| **P2-2** | Composite indexes + UNION history; explicit Prisma pool | migrations, `orders.service.ts`, `prisma.service.ts` | S | Headroom as data grows (E5, E6) | ✅ done — `pickup_geog` GiST + Redis GEO batch 3; history composite indexes (E5) + explicit pool (E6) PR #85 (the UNION rewrite was intentionally skipped — the composites make it unnecessary at the bounded 100-row take) |
+| **P2-3** | Rating-on-tap, ≥44 px targets, taller tracking map, online chip, seeded ETA | `order/[id].tsx`, `LiveMap.tsx`, `rider/index.tsx` | S | Interface polish (D3–D6, A4) | ✅ done — ≥44 px targets, taller map (D5), online chip (D6), seeded ETA (A4) batches 1–2; rating-on-tap (D3) PR #85 |
 
 **P0 is the whole story:** four changes (three of them small) that reuse plumbing already in the
 repo take the auction and the tracking map from "polled and jumpy" to "live and smooth." Everything
-after is depth and scale headroom. **All P0 and P1 items shipped** (batches 1–2); P2 is the
-remaining polish/scale headroom — see the pending list below.
+after is depth and scale headroom. **Every roadmap item — P0 through P2 — has now shipped**
+(P0/P1 in batches 1–2, the P2 remainder in PR #85). What's left below is only the
+intentionally-deferred / device-gated set.
 
 ---
 
-## Pending tasks (as of 2026-07-01)
+## Pending tasks (as of 2026-07-01, updated post-PR #85)
 
-Everything the review flagged as P0/P1 has landed. What remains is P2 depth-and-scale polish, none of
-it a pilot blocker:
+Everything the review flagged as P0/P1/P2 has landed. What remains is intentionally deferred or
+device-gated — none of it a pilot blocker:
 
-- [ ] **E3 — server-side WS position coalesce.** `tracking.gateway.ts` still emits every received fix
-      straight to the room; add per-room coalescing to ≤1 emit/second so a fast/misbehaving client
-      can't flood a room (client-side throttle already helps).
-- [ ] **E5 — history composite indexes + UNION rewrite.** `orders` still filters `OR: [{customerId},
-      {riderId}]` with only single-column indexes; add `orders(customer_id, created_at DESC)` +
-      `orders(rider_id, created_at DESC)` (and `order_events(order_id, created_at)`) and a UNION rewrite.
-- [ ] **E6 — explicit Prisma connection pool / graceful-shutdown tuning** before load (not a launch
-      blocker).
-- [ ] **D3 — rating-on-tap.** The star rating is still a two-step "Submit rating" action; submit
-      optimistically on star tap with an undo affordance.
+- [x] **E3 — server-side WS position coalesce** — ✅ done (PR #85): position emits to an order room are
+      capped at ≤1/sec (leading edge fires immediately, preserving emit-before-persist; a trailing timer
+      flushes the rider's latest buffered fix), so a fast/misbehaving client can't flood a room. The
+      durable per-fix persist is untouched.
+- [x] **E5 — history composite indexes** — ✅ done (PR #85, migration `0007_history_indexes`):
+      `orders(customer_id, created_at)` + `orders(rider_id, created_at)` +
+      `order_events(order_id, created_at)`; the composites subsume the old single-column indexes
+      (dropped). The UNION rewrite was intentionally skipped — with both sides of the OR indexed and a
+      bounded `take: 100`, it buys nothing over the typed nested selects.
+- [x] **E6 — explicit Prisma connection pool** — ✅ done (PR #85): deterministic `connection_limit` on
+      the datasource URL (default 10, `DATABASE_CONNECTION_LIMIT` / `DATABASE_POOL_TIMEOUT` overrides;
+      a URL-present value or unparseable URL is left untouched so a bad value can't block boot).
+      Graceful shutdown was already covered by `enableShutdownHooks` + `onModuleDestroy`.
+- [x] **D3 — rating-on-tap** — ✅ done (PR #85): a star tap submits optimistically after a short undo
+      window (rating is terminal server-side → `completed`, so the window holds the commit rather than
+      un-rating); Undo cancels, re-tap re-arms, pending submit cleared on unmount.
 - [ ] **Redis online-set for `nearbyRiders`** — intentionally deferred (the safe GEOSEARCH-then-PG-filter
       ships; the online-set/ZREM design is a ghost-rider consistency trap).
 - [ ] **Per-region WS board rooms** at multi-city scale — **the geo-scoped mechanism already ships**:

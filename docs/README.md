@@ -8,13 +8,15 @@ documents (CONCEPT + the three per-discipline review logs) plus the design spec 
 The Ship stage's hard gate — GCP provisioning — is **closed** (project `lynia-500911`, Terraform-applied), and
 the **Phase-3 build** has landed on top: native map + tap-to-pin and a **live tracking map** on the order and
 rider screens, plus the vendor integrations now **built behind flags** (WhatsApp Cloud API OTP send, Didit v3
-KYC + a one-command founder-wiring script, FCM push + `google-services.json` build wiring). The latest pass —
-the **inDrive-parity P0+P1 roadmap** — also shipped: the reverse auction is now **push, not poll** (WS-streamed
-offers + geo-scoped rider-board push), tracking is **smooth** (marker interpolation, fit-once camera + recenter),
-**optimistic UI** throughout, and a **Redis live-position index** for scale (**246 API tests green**). What
-remains is **founder account/key wiring** (WhatsApp BSP, Didit, Firebase), an on-device **dev build**, and some
-**P2 scale polish** — all tracked in **[`PILOT-READINESS.md`](./PILOT-READINESS.md)**, the source of truth for
-status (see its **Pending tasks** section).
+KYC + a one-command founder-wiring script, FCM push + `google-services.json` build wiring). The
+**inDrive-parity roadmap has now shipped in full, P0 → P2**: the reverse auction is **push, not poll**
+(WS-streamed offers + geo-scoped rider-board push), tracking is **smooth** (marker interpolation, fit-once
+camera + recenter, ≤1/sec server-side coalesce), **optimistic UI** throughout (incl. rating-on-tap), a
+**Redis live-position index** + history composite indexes + an explicit Prisma pool for scale, and
+**client RUM** for true glass-to-glass latency (**274 API tests green**). What remains is **founder
+account/key wiring** (WhatsApp BSP, Didit, Firebase) and an on-device **dev build** — tracked in
+**[`PILOT-READINESS.md`](./PILOT-READINESS.md)**, the source of truth for status (see its **Pending
+tasks** section).
 
 The three **review logs** are living per-discipline records (CEO/product · engineering · design), each
 organised by sprint stage (Plan → Build → Ship) and preserved for decision history. Status is **not**
