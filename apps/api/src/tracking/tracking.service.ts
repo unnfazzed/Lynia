@@ -4,6 +4,7 @@ import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
 import { createRedisClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 export interface NearbyRider {
@@ -49,6 +50,7 @@ export class TrackingService implements OnModuleDestroy {
   constructor(
     @Inject(ENV) private readonly env: Env,
     private readonly prisma: PrismaService,
+    private readonly metrics: MetricsService,
   ) {}
 
   /** Lazily create the single position client the first time it's needed. Null without REDIS_URL. */
@@ -212,13 +214,18 @@ export class TrackingService implements OnModuleDestroy {
    * path over the GiST geog index, byte-identical to before this Redis prefilter existed (degrade).
    */
   async nearbyRiders(lat: number, lng: number, radiusM: number): Promise<NearbyRider[]> {
+    const done = this.metrics.startTimer();
     const redis = this.getRedis();
     if (redis) {
       const candidates = await this.geoSearchCandidates(redis, lat, lng, radiusM);
       // null ⇒ GEOSEARCH errored → fall through to the PG path (resilient to a transient Redis blip).
       // [] ⇒ Redis answered with no candidates → no PG round-trip needed.
       if (candidates !== null) {
-        if (candidates.length === 0) return [];
+        // The GEOSEARCH path served this call — label the duration source="redis".
+        if (candidates.length === 0) {
+          this.metrics.recordBroadcastNearby(done(), "redis");
+          return [];
+        }
         const ids = candidates.map((c) => c.profileId);
         const online = await this.prisma.$queryRaw<Array<{ profile_id: string }>>`
           SELECT profile_id
@@ -229,7 +236,9 @@ export class TrackingService implements OnModuleDestroy {
         const onlineSet = new Set(online.map((r) => r.profile_id));
         // Preserve GEOSEARCH nearest-first order; keep PG-confirmed online riders; cap at 50 for
         // true parity with the PG path's LIMIT 50.
-        return candidates.filter((c) => onlineSet.has(c.profileId)).slice(0, 50);
+        const result = candidates.filter((c) => onlineSet.has(c.profileId)).slice(0, 50);
+        this.metrics.recordBroadcastNearby(done(), "redis");
+        return result;
       }
     }
 
@@ -242,6 +251,8 @@ export class TrackingService implements OnModuleDestroy {
         AND ST_DWithin(geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})
       ORDER BY distance_m ASC
       LIMIT 50`;
+    // The PG ST_DWithin fallback served this call (no Redis, or a GEOSEARCH miss) — source="pg".
+    this.metrics.recordBroadcastNearby(done(), "pg");
     return rows.map((r) => ({ profileId: r.profile_id, distanceM: Number(r.distance_m) }));
   }
 

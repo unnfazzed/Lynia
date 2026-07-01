@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundExce
 import { Prisma } from "@prisma/client";
 import { TokenService } from "../auth/token.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 /** Rider must have a heartbeat newer than this to be selectable (ET3 liveness). */
@@ -24,6 +25,7 @@ export class MatchingService {
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
     private readonly notifications: NotificationsService,
+    private readonly metrics: MetricsService,
   ) {}
 
   /**
@@ -33,6 +35,7 @@ export class MatchingService {
    * the DB reject a rider who is selected on two orders at once. Liveness is checked in-tx (ET3).
    */
   async selectOffer(orderId: string, offerId: string, customerId: string): Promise<SelectResult> {
+    const done = this.metrics.startTimer();
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         const offer = await tx.offer.findFirst({
@@ -94,14 +97,33 @@ export class MatchingService {
 
       // Post-commit, best-effort: tell the selected rider they're hired (§5c). Never blocks the assign.
       void this.notifications.notifyOrderStatus(orderId, "assigned");
+      this.metrics.recordMatchSelect(done(), "assigned");
       return result;
     } catch (err) {
       // ET2: the rider is already on another active ride → one_active_ride unique violation.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        // Record the metric, then RE-THROW the domain error — the "rider just taken" rollback UX
+        // depends on this ConflictException still propagating; the metric wrapper must NOT swallow it.
+        this.metrics.recordMatchSelect(done(), "unavailable");
         throw new ConflictException("Rider just became unavailable, pick another");
       }
+      // Map the thrown domain exception to an outcome label, then RE-THROW so the caller still sees it.
+      this.metrics.recordMatchSelect(done(), this.selectOutcome(err));
       throw err;
     }
+  }
+
+  /** Map a selectOffer failure to a bounded outcome label. Never changes control flow — the caller
+   *  always re-throws the original exception; this only classifies it for the metric. */
+  private selectOutcome(err: unknown): MatchSelectOutcome {
+    if (err instanceof ForbiddenException) return "forbidden";
+    if (err instanceof ConflictException) {
+      const msg = err.message;
+      if (msg.includes("no longer open")) return "not_open";
+      if (msg.includes("just taken")) return "taken";
+      if (msg.includes("no longer available") || msg.includes("just became unavailable")) return "unavailable";
+    }
+    return "error";
   }
 
   /**

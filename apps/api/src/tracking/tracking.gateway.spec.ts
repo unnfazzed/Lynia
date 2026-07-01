@@ -3,6 +3,7 @@ import { WS_EVENTS } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import type { TokenService } from "../auth/token.service";
+import type { MetricsService } from "../observability/metrics.service";
 import type { TrackingService } from "./tracking.service";
 import { boardCell, boardCellNeighborhood } from "@lynia/shared";
 import { BOARD_ROOM, boardGeoRoom, orderRoom } from "./tracking.constants";
@@ -34,11 +35,16 @@ function fakeServer() {
   return { server: { to } as unknown, to, emit };
 }
 
+/** Spy metrics fake — position-emit recording is best-effort; keep tests off the OTel path. */
+const fakeMetrics = () =>
+  ({ startTimer: () => () => 0, recordPositionEmit: vi.fn() }) as unknown as MetricsService;
+
 function gateway(tracking: Partial<TrackingService> = {}) {
   const g = new TrackingGateway(
     {} as Env,
     {} as TokenService,
     tracking as unknown as TrackingService,
+    fakeMetrics(),
   );
   return g;
 }

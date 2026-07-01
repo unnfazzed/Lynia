@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
+import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "./auth.service";
 import { ConsoleOtpSender } from "./otp-sender";
@@ -22,16 +23,22 @@ const baseEnv = {
 
 const tokens = new TokenService(baseEnv);
 
+/** Spy metrics fake — OTP-verify recording is best-effort; keep tests off the OTel path. */
+const fakeMetrics = () =>
+  ({ startTimer: () => () => 0, recordOtpVerify: vi.fn() }) as unknown as MetricsService;
+
 function make(env: Env, prisma: Partial<Record<string, unknown>>) {
   const store = new InMemoryOtpStore();
+  const metrics = fakeMetrics();
   const svc = new AuthService(
     env,
     prisma as unknown as PrismaService,
     new TokenService(env),
     store,
     new ConsoleOtpSender(),
+    metrics,
   );
-  return { svc, store };
+  return { svc, store, metrics };
 }
 
 describe("AuthService.requestOtp", () => {
@@ -147,6 +154,28 @@ describe("AuthService.verifyOtp", () => {
     expect(res).toMatchObject({ profileId: "p1", role: "customer", needsProfile: true });
     expect(res.accessToken).toBeTruthy();
     expect(res.refreshToken).toContain(".");
+  });
+
+  it("records otp_verify_duration with the mapped result label on every exit path", async () => {
+    const expired = make(baseEnv, fakePrisma());
+    await expect(expired.svc.verifyOtp("+263770000020", "123456")).rejects.toThrow();
+    expect(expired.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "expired");
+
+    const locked = make(baseEnv, fakePrisma());
+    await locked.store.put("+263770000021", tokens.hash("123456"), 300);
+    for (let i = 0; i < 5; i++) await locked.store.incrAttempts("+263770000021");
+    await expect(locked.svc.verifyOtp("+263770000021", "123456")).rejects.toThrow();
+    expect(locked.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "locked");
+
+    const invalid = make(baseEnv, fakePrisma());
+    await invalid.store.put("+263770000022", tokens.hash("111111"), 300);
+    await expect(invalid.svc.verifyOtp("+263770000022", "222222")).rejects.toThrow();
+    expect(invalid.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "invalid");
+
+    const ok = make(baseEnv, fakePrisma());
+    await ok.store.put("+263770000023", tokens.hash("654321"), 300);
+    await ok.svc.verifyOtp("+263770000023", "654321");
+    expect(ok.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "ok");
   });
 
   it("clears needsProfile once the profile has a name", async () => {

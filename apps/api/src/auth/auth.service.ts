@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { OTP_SENDER, type OtpSender } from "./otp-sender";
 import { OTP_STORE, type OtpStore } from "./otp-store";
@@ -38,6 +39,7 @@ export class AuthService {
     private readonly tokens: TokenService,
     @Inject(OTP_STORE) private readonly store: OtpStore,
     @Inject(OTP_SENDER) private readonly sender: OtpSender,
+    private readonly metrics: MetricsService,
   ) {}
 
   /** Full profile for the authenticated caller (GET /auth/me) — adds the rider record when present. */
@@ -124,29 +126,45 @@ export class AuthService {
     role: string;
     needsProfile: boolean;
   }> {
-    const rec = await this.store.get(phone);
-    if (!rec) throw new UnauthorizedException("Code expired or never requested");
-    if (rec.attempts >= MAX_OTP_ATTEMPTS) {
+    const done = this.metrics.startTimer();
+    // Record duration + the mapped result on EVERY exit path, then re-throw so callers see the error.
+    const record = (result: OtpVerifyResult): void => this.metrics.recordOtpVerify(done(), result);
+    try {
+      const rec = await this.store.get(phone);
+      if (!rec) {
+        record("expired");
+        throw new UnauthorizedException("Code expired or never requested");
+      }
+      if (rec.attempts >= MAX_OTP_ATTEMPTS) {
+        await this.store.del(phone);
+        record("locked");
+        throw new UnauthorizedException("Too many attempts — request a new code");
+      }
+
+      const attempts = await this.store.incrAttempts(phone);
+      if (!this.tokens.safeEqualHex(this.tokens.hash(code), rec.hash)) {
+        if (attempts >= MAX_OTP_ATTEMPTS) await this.store.del(phone);
+        record("invalid");
+        throw new UnauthorizedException("Invalid code");
+      }
       await this.store.del(phone);
-      throw new UnauthorizedException("Too many attempts — request a new code");
+
+      const profile = await this.prisma.profile.upsert({
+        where: { phone },
+        update: { phoneVerifiedAt: new Date() },
+        create: { phone, firstName: "", lastName: "", role: "customer", phoneVerifiedAt: new Date() },
+        select: { id: true, role: true, firstName: true },
+      });
+
+      const session = await this.issueSession(profile.id, profile.role, userAgent);
+      record("ok");
+      return { ...session, profileId: profile.id, role: profile.role, needsProfile: profile.firstName === "" };
+    } catch (err) {
+      // An UnauthorizedException already recorded its specific result above; anything else is an
+      // unexpected failure (DB/session mint) → label "error". Re-throw regardless.
+      if (!(err instanceof UnauthorizedException)) record("error");
+      throw err;
     }
-
-    const attempts = await this.store.incrAttempts(phone);
-    if (!this.tokens.safeEqualHex(this.tokens.hash(code), rec.hash)) {
-      if (attempts >= MAX_OTP_ATTEMPTS) await this.store.del(phone);
-      throw new UnauthorizedException("Invalid code");
-    }
-    await this.store.del(phone);
-
-    const profile = await this.prisma.profile.upsert({
-      where: { phone },
-      update: { phoneVerifiedAt: new Date() },
-      create: { phone, firstName: "", lastName: "", role: "customer", phoneVerifiedAt: new Date() },
-      select: { id: true, role: true, firstName: true },
-    });
-
-    const session = await this.issueSession(profile.id, profile.role, userAgent);
-    return { ...session, profileId: profile.id, role: profile.role, needsProfile: profile.firstName === "" };
   }
 
   async refresh(refreshToken: string, userAgent?: string): Promise<SessionTokens> {
