@@ -1,21 +1,39 @@
 const { withProjectBuildGradle } = require("@expo/config-plugins");
 
 /**
- * Strip the legacy `oss.sonatype.org` snapshots Maven repo from the Android root build.gradle.
+ * Remove the decommissioned `oss.sonatype.org` snapshots repo from the Android build.
  *
- * Sonatype's OSSRH host (oss.sonatype.org) is being sunset and intermittently returns
- * `504 Gateway Time-out`. Because Gradle treats a 5xx from any configured repo as a fatal error
- * (not a "try the next repo"), a single sonatype timeout breaks dependency resolution for whatever
- * it happens to query there — e.g. the Kotlin compiler classpath (`kotlin-script-runtime`). Those
- * artifacts all live on Maven Central, so removing the broken repo lets resolution succeed.
+ * React Native's Gradle plugin (`DependencyUtils.configureRepositories`) programmatically adds
+ * `https://oss.sonatype.org/content/repositories/snapshots/` to every project's repositories — and
+ * it adds it *before* mavenCentral. Sonatype's legacy OSSRH host is sunset and returns 504, so Gradle
+ * queries it first, times out, and fatally aborts resolution for artifacts that actually live on
+ * Maven Central (Fresco, the Kotlin compiler classpath, the image cropper). There is no `maven {}`
+ * block on disk to edit (it's added at configuration time, inside the app project's afterEvaluate),
+ * so we append a `projectsEvaluated` hook to the root build.gradle. `projectsEvaluated` runs *after*
+ * every project's afterEvaluate — i.e. after RN has added the repo — so the removal is reliable
+ * (a plain afterEvaluate hook races the RN plugin and would be a no-op).
  */
+const SNIPPET = `
+
+// --- withRemoveSonatype: strip sunset oss.sonatype.org snapshots repo (RN adds it before Central; it 504s) ---
+gradle.projectsEvaluated { g ->
+    g.rootProject.allprojects { p ->
+        def removed = p.repositories.removeAll { repo ->
+            (repo instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository) &&
+                repo.url != null && repo.url.toString().contains('oss.sonatype.org')
+        }
+        if (removed) { p.logger.lifecycle('[withRemoveSonatype] removed oss.sonatype.org repo from ' + p.path) }
+    }
+}
+// --- end withRemoveSonatype ---
+`;
+
 module.exports = function withRemoveSonatype(config) {
   return withProjectBuildGradle(config, (cfg) => {
     if (cfg.modResults.language !== "groovy") return cfg;
-    cfg.modResults.contents = cfg.modResults.contents.replace(
-      /maven\s*\{[^{}]*oss\.sonatype\.org[^{}]*\}/g,
-      "// oss.sonatype.org snapshots removed (OSSRH sunset — returns 504, breaks resolution)",
-    );
+    if (!cfg.modResults.contents.includes("withRemoveSonatype")) {
+      cfg.modResults.contents += SNIPPET;
+    }
     return cfg;
   });
 };

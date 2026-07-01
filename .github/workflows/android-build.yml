@@ -55,14 +55,16 @@ jobs:
         run: |
           mkdir -p "$HOME/.gradle/init.d"
           cat > "$HOME/.gradle/init.d/remove-sonatype.gradle" <<'GRADLE'
-          allprojects { p ->
-              def strip = {
-                  p.repositories.removeAll { r ->
-                      try { r.url?.toString()?.contains('oss.sonatype.org') } catch (ignored) { false }
+          // RN's Gradle plugin adds oss.sonatype.org (now 504-ing) programmatically, in afterEvaluate,
+          // before mavenCentral. Remove it in projectsEvaluated, which runs AFTER all afterEvaluate
+          // callbacks — so the removal reliably lands after RN adds it.
+          gradle.projectsEvaluated { g ->
+              g.rootProject.allprojects { p ->
+                  def removed = p.repositories.removeAll { r ->
+                      try { r.url != null && r.url.toString().contains('oss.sonatype.org') } catch (ignored) { false }
                   }
+                  if (removed) { println '[init remove-sonatype] stripped from ' + p.path }
               }
-              strip()
-              p.afterEvaluate { strip() }
           }
           GRADLE
 
