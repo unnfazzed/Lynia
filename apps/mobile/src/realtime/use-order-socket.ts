@@ -5,6 +5,7 @@ import type { Socket } from "socket.io-client";
 import type { OrderSnapshot } from "../api/orders";
 import { useAuth } from "../auth/auth-context";
 import { offersKey, orderKey } from "../query/client";
+import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
 import { createSocket } from "./socket";
 
 /**
@@ -26,6 +27,7 @@ export function useOrderSocket(orderId: string | null): { connected: boolean } {
 
   useEffect(() => {
     if (!orderId || !token) return;
+    setActiveRole("customer"); // this is the customer tracking surface — label apifetch RUM accordingly
     const socket: Socket = createSocket(token);
     // Background refetch — keeps previous data on screen (no flash) while the snapshot re-loads.
     const refetchOrder = (): void => void qc.invalidateQueries({ queryKey: orderKey(orderId) });
@@ -47,10 +49,26 @@ export function useOrderSocket(orderId: string | null): { connected: boolean } {
 
     // New live-auction signal: the offer set changed. Payload is signal-only; refetch the offer list.
     socket.on(WS_EVENTS.offersChanged, (e: OffersChangedEvent) => {
-      if (!e || e.orderId === orderId) refetchOffers();
+      // Only OUR order counts — a mismatched (or empty) event is not a glass-to-glass for this screen,
+      // so neither refetch nor sample it (else a stray/leaked event records latency for a render that
+      // never happened).
+      if (!e || e.orderId !== orderId) return;
+      refetchOffers();
+      // RUM: glass-to-glass from the server-stamped `at` to now (skew-clamped, dropped if unusable).
+      if (e.at) {
+        const ms = clampGlassSample(Date.now(), e.at);
+        if (ms == null) noteDropped();
+        else enqueue("offer_glass", ms, "customer");
+      }
     });
 
     socket.on(WS_EVENTS.position, (p: { lat: number; lng: number; at: string }) => {
+      // RUM: glass-to-glass from the fix's server `at` to now (skew-clamped).
+      if (p?.at) {
+        const ms = clampGlassSample(Date.now(), p.at);
+        if (ms == null) noteDropped();
+        else enqueue("position_glass", ms, "customer");
+      }
       qc.setQueryData<OrderSnapshot>(orderKey(orderId), (prev) => {
         if (!prev) return prev;
         // Don't drop the first fix when the snapshot's rider isn't populated yet.

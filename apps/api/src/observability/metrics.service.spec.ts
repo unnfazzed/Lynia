@@ -6,7 +6,7 @@ import {
   PeriodicExportingMetricReader,
 } from "@opentelemetry/sdk-metrics";
 import { afterEach, describe, expect, it } from "vitest";
-import { MetricsService } from "./metrics.service";
+import { bucketAppVersion, MetricsService } from "./metrics.service";
 
 /**
  * MetricsService is NoopMeter-safe: with no MeterProvider registered, metrics.getMeter() returns the
@@ -36,6 +36,12 @@ describe("MetricsService — NoopMeter safety (no provider registered)", () => {
       m.recordHttp("/orders", "POST", "2xx", 42);
       m.incOffersMade("created");
       m.incOffersMade("conflict");
+      // Client RUM record paths are no-ops under the Noop too (fire-and-forget must never throw).
+      m.recordClientSample("position_glass", 500, "customer", "1.4");
+      m.recordClientSample("offer_glass", 500, "customer", "other");
+      m.recordClientSample("board_glass", 500, "rider", "1.4");
+      m.recordClientSample("apifetch", 500, "rider", "1.4");
+      m.incClientDropped(3, "rider");
     }).not.toThrow();
   });
 
@@ -116,5 +122,106 @@ describe("MetricsService — with a real in-memory MeterProvider", () => {
     m.recordPositionEmit(20);
     expect(cache.get("position_emit_latency_ms")).toBe(first); // reused, not recreated
     expect(cache.size).toBe(1);
+  });
+
+  it("recordClientSample maps each event to its fixed histogram with {role, version} labels", async () => {
+    const { exporter, reader, provider } = withProvider();
+    const m = new MetricsService();
+
+    m.recordClientSample("position_glass", 800, "customer", "1.4");
+    m.recordClientSample("offer_glass", 800, "customer", "1.4");
+    m.recordClientSample("board_glass", 800, "rider", "1.4");
+    m.recordClientSample("apifetch", 800, "rider", "1.4");
+    m.incClientDropped(5, "rider");
+
+    await reader.forceFlush();
+    const collected = exporter.getMetrics();
+    const byName = new Map(
+      collected
+        .flatMap((rm) => rm.scopeMetrics)
+        .flatMap((sm) => sm.metrics)
+        .map((md) => [md.descriptor.name, md] as const),
+    );
+
+    for (const name of [
+      "client_position_glass_latency_ms",
+      "client_offer_glass_latency_ms",
+      "client_board_glass_latency_ms",
+      "client_apifetch_latency_ms",
+      "client_samples_dropped_total",
+    ]) {
+      expect(byName.has(name)).toBe(true);
+    }
+
+    // A glass histogram carries only the bounded {role, version} label set — never a raw appVersion/id.
+    const posAttrs = byName.get("client_position_glass_latency_ms")!.dataPoints[0]!.attributes;
+    expect(posAttrs).toEqual({ role: "customer", version: "1.4" });
+    // The dropped counter is labelled by role only.
+    const dropped = byName.get("client_samples_dropped_total")!;
+    expect(dropped.dataPoints[0]!.attributes).toEqual({ role: "rider" });
+
+    await provider.shutdown();
+  });
+
+  it("recordClientSample clamps ms into [0, 60000] before recording (never trusts the wire)", async () => {
+    const { exporter, reader, provider } = withProvider();
+    const m = new MetricsService();
+
+    m.recordClientSample("apifetch", -50, "rider", "1.4"); // → clamped up to 0
+    m.recordClientSample("apifetch", 999_999, "rider", "1.4"); // → clamped down to 60000
+
+    await reader.forceFlush();
+    const hist = exporter
+      .getMetrics()
+      .flatMap((rm) => rm.scopeMetrics)
+      .flatMap((sm) => sm.metrics)
+      .find((md) => md.descriptor.name === "client_apifetch_latency_ms");
+    // sum reflects the clamped values (0 + 60000), proving neither the negative nor the overflow leaked.
+    const point = hist!.dataPoints[0]! as { value: { sum: number; min: number; max: number } };
+    expect(point.value.sum).toBe(60_000);
+    expect(point.value.min).toBe(0);
+    expect(point.value.max).toBe(60_000);
+
+    await provider.shutdown();
+  });
+
+  it("caps distinct client version labels at runtime (well-formed-but-adversarial → 'other')", async () => {
+    const { exporter, reader, provider } = withProvider();
+    const m = new MetricsService();
+
+    // An attacker sends 100 DISTINCT, schema-valid major.minor versions. bucketAppVersion bounds the
+    // format but not the value space, so without the runtime cap this would mint 100 label values.
+    for (let i = 0; i < 100; i++) {
+      m.recordClientSample("apifetch", 100, "rider", bucketAppVersion(`1.${i}`));
+    }
+
+    await reader.forceFlush();
+    const hist = exporter
+      .getMetrics()
+      .flatMap((rm) => rm.scopeMetrics)
+      .flatMap((sm) => sm.metrics)
+      .find((md) => md.descriptor.name === "client_apifetch_latency_ms");
+    const versions = new Set(hist!.dataPoints.map((dp) => dp.attributes.version));
+    // ≤ 16 admitted buckets + the "other" sink — never 100. Cardinality is bounded regardless of input.
+    expect(versions.size).toBeLessThanOrEqual(17);
+    expect(versions.has("other")).toBe(true);
+
+    await provider.shutdown();
+  });
+});
+
+describe("bucketAppVersion — bounded major.minor label (P0 cardinality guard)", () => {
+  it("extracts major.minor from a well-formed version", () => {
+    expect(bucketAppVersion("1.4.2")).toBe("1.4");
+    expect(bucketAppVersion("1.4")).toBe("1.4");
+    expect(bucketAppVersion("12.30.0-beta.1")).toBe("12.30");
+  });
+
+  it("collapses anything non-conforming to 'other'", () => {
+    expect(bucketAppVersion("garbage")).toBe("other");
+    expect(bucketAppVersion("v1.4")).toBe("other"); // must start with digits
+    expect(bucketAppVersion("1")).toBe("other"); // needs both major AND minor
+    expect(bucketAppVersion("")).toBe("other");
+    expect(bucketAppVersion(undefined)).toBe("other");
   });
 });

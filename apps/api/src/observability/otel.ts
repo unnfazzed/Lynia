@@ -41,6 +41,12 @@ export async function buildOtelSdk(serviceName: string, endpoint?: string): Prom
     broadcast_nearby_duration_ms: [50, 100, 200, 300, 400, 600, 1000],
     otp_verify_duration_ms: [100, 250, 500, 800, 1200, 2000],
     http_request_duration_ms: [50, 100, 250, 500, 1000, 2000, 5000],
+    // Client RUM (glass-to-glass + REST). WIDER than server buckets: these span network + render, so a
+    // 1–3s tail is normal on mobile and needs resolution the server buckets don't carry.
+    client_position_glass_latency_ms: [100, 250, 500, 1000, 2000, 3000, 5000, 10000],
+    client_offer_glass_latency_ms: [100, 250, 500, 1000, 2000, 3000, 5000, 10000],
+    client_board_glass_latency_ms: [100, 250, 500, 1000, 2000, 3000, 5000, 10000],
+    client_apifetch_latency_ms: [50, 100, 250, 500, 1000, 2000, 5000, 10000],
   };
 
   return new NodeSDK({
