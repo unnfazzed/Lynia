@@ -12,11 +12,11 @@ import {
 import { createAdapter } from "@socket.io/redis-adapter";
 import IORedis from "ioredis";
 import { Server, Socket } from "socket.io";
-import { type BoardNewOrderEvent, WS_EVENTS } from "@lynia/shared";
+import { type BoardNewOrderEvent, BoardSubscribeEvent, boardCell, boardCellNeighborhood, WS_EVENTS } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
-import { BOARD_ROOM, orderRoom, parseBearer } from "./tracking.constants";
+import { BOARD_ROOM, boardGeoRoom, orderRoom, parseBearer } from "./tracking.constants";
 import { TrackingService } from "./tracking.service";
 
 interface SocketUser {
@@ -88,14 +88,35 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     return { joined: body.orderId };
   }
 
-  /** A KYC-verified, online rider joins the single global board room for new-order pushes (§3.10). */
+  /**
+   * A KYC-verified, online rider subscribes to the new-order board (§3.10). With a position (lat &
+   * lng) the board is geo-scoped: the rider joins its cell + 8 neighbours (3×3), so it only receives
+   * pushes for pickups nearby. Without a position it falls back to the city-wide BOARD_ROOM (mirrors
+   * the REST `GET /orders/open` city-wide fallback). A re-subscribe on move re-scopes cleanly: we
+   * first leave every board room the socket is currently in, then join the fresh set.
+   */
   @SubscribeMessage(WS_EVENTS.boardSubscribe)
   async boardSubscribe(
     @ConnectedSocket() client: Socket,
-  ): Promise<{ joined: string } | { error: string }> {
+    @MessageBody() body: unknown,
+  ): Promise<{ joined: string | number } | { error: string }> {
     const user = client.data.user as SocketUser | undefined;
     if (!user) return { error: "unauthenticated" };
     if (!(await this.tracking.isBoardEligible(user.sub))) return { error: "forbidden" };
+
+    const { lat, lng } = BoardSubscribeEvent.parse(body ?? {});
+
+    // Re-scope cleanly: drop any board room this socket already sits in (a prior geo neighbourhood or
+    // the city-wide room) before joining the fresh set, so moving riders don't accumulate stale rooms.
+    for (const room of client.rooms) {
+      if (room.startsWith("board:geo:") || room === BOARD_ROOM) await client.leave(room);
+    }
+
+    if (lat !== undefined && lng !== undefined) {
+      const rooms = boardCellNeighborhood(lat, lng).map(boardGeoRoom);
+      for (const room of rooms) await client.join(room);
+      return { joined: rooms.length };
+    }
     await client.join(BOARD_ROOM);
     return { joined: "board" };
   }
@@ -152,10 +173,16 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   }
 
   /**
-   * Push a new (redacted) open order to the board room (verified + online riders). Best-effort;
-   * a gateway failure must never affect the order the customer just created.
+   * Push a new (redacted) open order to riders watching its pickup area. Emits to BOTH the pickup's
+   * geo-cell room (geo-scoped subscribers) AND the city-wide BOARD_ROOM (loc-less subscribers) in one
+   * chained call — Socket.IO unions + dedupes the target sockets, so a rider in either room gets
+   * exactly one event, and the client dedupes by id regardless. Best-effort; a gateway failure must
+   * never affect the order the customer just created.
    */
-  emitBoardNewOrder(payload: BoardNewOrderEvent): void {
-    this.server?.to(BOARD_ROOM).emit(WS_EVENTS.boardNewOrder, payload);
+  emitBoardNewOrder(payload: BoardNewOrderEvent, pickupLat: number, pickupLng: number): void {
+    this.server
+      ?.to(boardGeoRoom(boardCell(pickupLat, pickupLng)))
+      .to(BOARD_ROOM)
+      .emit(WS_EVENTS.boardNewOrder, payload);
   }
 }

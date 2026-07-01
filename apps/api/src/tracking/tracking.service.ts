@@ -27,6 +27,13 @@ const POSITION_TTL_S = 120;
  *  throttled (it gates offer selection — see the P0 note on recordFix). */
 const POSITION_FLUSH_MS = 10_000;
 
+/** Redis geospatial index of rider positions (GEOADD/GEOSEARCH). A prefilter for nearbyRiders — PG
+ *  stays the is_online authority — so a stale/offline member here is harmless (the PG join drops it). */
+const GEO_KEY = "rider:geo";
+
+/** Cap on GEOSEARCH candidates fed into the PG is_online filter (mirrors the PG path's LIMIT 50). */
+const GEO_SEARCH_COUNT = 100;
+
 @Injectable()
 export class TrackingService implements OnModuleDestroy {
   /** Lazily-created live-position client (Redis-backed). Null when REDIS_URL is unset (dev/test),
@@ -115,6 +122,14 @@ export class TrackingService implements OnModuleDestroy {
       } catch {
         /* best-effort: a Redis outage falls back to the PG heartbeat + flush below */
       }
+      // Also index the position in the geo set so nearbyRiders can prefilter candidates via GEOSEARCH
+      // (Postgres stays the is_online authority). Best-effort — a GEOADD failure never affects the
+      // heartbeat/flush; nearbyRiders degrades to the pure-PG path if the set is empty/unavailable.
+      try {
+        await redis.geoadd(GEO_KEY, lng, lat, riderId);
+      } catch {
+        /* best-effort: nearbyRiders falls through to the PG ST_DWithin path on a Redis miss */
+      }
     }
 
     // (b) ALWAYS write the ET3 liveness heartbeat — single-column, never throttled (P0).
@@ -184,8 +199,35 @@ export class TrackingService implements OnModuleDestroy {
     await this.writePosition(riderId, pos.lat, pos.lng);
   }
 
-  /** Nearby online riders for a broadcast (ET6 — ST_DWithin uses the GiST geog index). */
+  /**
+   * Nearby online riders for a broadcast (ET6).
+   *
+   * With Redis: GEOSEARCH the rider:geo index for candidate ids ordered nearest-first (carrying the
+   * approximate distance), then ONE PG query keeps only the ones still online with a live geog — PG
+   * remains the is_online authority, so a stale/offline set member is harmlessly dropped. The distance
+   * is only used to order/annotate the notify, so the GEOSEARCH value is good enough.
+   *
+   * WITHOUT Redis (getRedis() null — dev/test + no-REDIS_URL prod): fall through to the PG ST_DWithin
+   * path over the GiST geog index, byte-identical to before this Redis prefilter existed (degrade).
+   */
   async nearbyRiders(lat: number, lng: number, radiusM: number): Promise<NearbyRider[]> {
+    const redis = this.getRedis();
+    if (redis) {
+      const candidates = await this.geoSearchCandidates(redis, lat, lng, radiusM);
+      // No candidates ⇒ no online riders in range (empty set / all filtered). Skip the PG round-trip.
+      if (candidates.length === 0) return [];
+      const ids = candidates.map((c) => c.profileId);
+      const online = await this.prisma.$queryRaw<Array<{ profile_id: string }>>`
+        SELECT profile_id
+        FROM riders
+        WHERE profile_id = ANY(${ids}::uuid[])
+          AND is_online = true
+          AND geog IS NOT NULL`;
+      const onlineSet = new Set(online.map((r) => r.profile_id));
+      // Preserve the GEOSEARCH nearest-first order; keep only the PG-confirmed online riders.
+      return candidates.filter((c) => onlineSet.has(c.profileId));
+    }
+
     const rows = await this.prisma.$queryRaw<Array<{ profile_id: string; distance_m: number }>>`
       SELECT profile_id,
              ST_Distance(geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
@@ -196,5 +238,35 @@ export class TrackingService implements OnModuleDestroy {
       ORDER BY distance_m ASC
       LIMIT 50`;
     return rows.map((r) => ({ profileId: r.profile_id, distanceM: Number(r.distance_m) }));
+  }
+
+  /** GEOSEARCH the rider geo index → nearest-first candidates with their approximate distance (m).
+   *  Best-effort: a Redis error yields an empty candidate set, so nearbyRiders returns [] (the same
+   *  "no nearby riders" outcome the caller already treats as best-effort). */
+  private async geoSearchCandidates(
+    redis: IORedis,
+    lat: number,
+    lng: number,
+    radiusM: number,
+  ): Promise<NearbyRider[]> {
+    try {
+      const res = (await redis.geosearch(
+        GEO_KEY,
+        "FROMLONLAT",
+        lng,
+        lat,
+        "BYRADIUS",
+        radiusM,
+        "m",
+        "ASC",
+        "COUNT",
+        GEO_SEARCH_COUNT,
+        "WITHDIST",
+      )) as Array<[string, string]>;
+      // WITHDIST rows are [member, distance]; without it ioredis would return bare member strings.
+      return res.map((row) => ({ profileId: row[0], distanceM: Number(row[1]) }));
+    } catch {
+      return [];
+    }
   }
 }

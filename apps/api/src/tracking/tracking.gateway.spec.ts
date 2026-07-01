@@ -4,22 +4,33 @@ import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import type { TokenService } from "../auth/token.service";
 import type { TrackingService } from "./tracking.service";
-import { BOARD_ROOM, orderRoom } from "./tracking.constants";
+import { boardCell, boardCellNeighborhood } from "@lynia/shared";
+import { BOARD_ROOM, boardGeoRoom, orderRoom } from "./tracking.constants";
 import { TrackingGateway } from "./tracking.gateway";
 
-/** Minimal socket fake: records room joins/leaves + carries the authenticated user in `data`. */
-function fakeSocket(user?: { sub: string; role: string }) {
+/** Minimal socket fake: maintains a live `rooms` Set (like a real Socket) as join/leave run, and
+ *  carries the authenticated user in `data`. */
+function fakeSocket(user?: { sub: string; role: string }, rooms: string[] = []) {
+  const roomSet = new Set(rooms);
   return {
     data: { user },
-    join: vi.fn(async () => {}),
-    leave: vi.fn(async () => {}),
+    rooms: roomSet,
+    join: vi.fn(async (room: string) => {
+      roomSet.add(room);
+    }),
+    leave: vi.fn(async (room: string) => {
+      roomSet.delete(room);
+    }),
   };
 }
 
-/** Minimal server fake exposing a chainable `to().emit()` so we can assert room + event + payload. */
+/** Minimal server fake exposing a chainable `to().to().emit()` so we can assert every targeted room
+ *  plus the event + payload. `to` records each room and returns the same chainable handle. */
 function fakeServer() {
   const emit = vi.fn();
-  const to = vi.fn(() => ({ emit }));
+  const chain = { emit, to: vi.fn() as ReturnType<typeof vi.fn> };
+  const to = vi.fn(() => chain);
+  chain.to = to;
   return { server: { to } as unknown, to, emit };
 }
 
@@ -33,18 +44,43 @@ function gateway(tracking: Partial<TrackingService> = {}) {
 }
 
 describe("TrackingGateway.boardSubscribe", () => {
-  it("joins the board room for a verified + online rider", async () => {
+  it("loc-less: joins the city-wide board room for a verified + online rider", async () => {
     const g = gateway({ isBoardEligible: vi.fn(async () => true) });
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
-    const res = await g.boardSubscribe(client as never);
+    const res = await g.boardSubscribe(client as never, {});
     expect(res).toEqual({ joined: "board" });
     expect(client.join).toHaveBeenCalledWith(BOARD_ROOM);
+  });
+
+  it("with lat/lng: joins the 9 geo-cell rooms (3×3 neighbourhood), not the city-wide room", async () => {
+    const g = gateway({ isBoardEligible: vi.fn(async () => true) });
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    const res = await g.boardSubscribe(client as never, { lat: -17.83, lng: 31.05 });
+
+    const expectedRooms = boardCellNeighborhood(-17.83, 31.05).map(boardGeoRoom);
+    expect(expectedRooms).toHaveLength(9);
+    expect(res).toEqual({ joined: 9 });
+    for (const room of expectedRooms) expect(client.join).toHaveBeenCalledWith(room);
+    expect(client.join).not.toHaveBeenCalledWith(BOARD_ROOM);
+  });
+
+  it("re-subscribe on move leaves the prior board rooms before joining the fresh set", async () => {
+    const g = gateway({ isBoardEligible: vi.fn(async () => true) });
+    const stale = boardGeoRoom("99:99");
+    // Socket already sits in a stale geo room + the city-wide room from a prior subscribe.
+    const client = fakeSocket({ sub: "rider-1", role: "rider" }, [stale, BOARD_ROOM, orderRoom("keep")]);
+    await g.boardSubscribe(client as never, { lat: -17.83, lng: 31.05 });
+
+    // The stale board rooms are dropped; an unrelated order room is untouched.
+    expect(client.leave).toHaveBeenCalledWith(stale);
+    expect(client.leave).toHaveBeenCalledWith(BOARD_ROOM);
+    expect(client.leave).not.toHaveBeenCalledWith(orderRoom("keep"));
   });
 
   it("returns forbidden for an ineligible (unverified/offline/non-rider) caller", async () => {
     const g = gateway({ isBoardEligible: vi.fn(async () => false) });
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
-    const res = await g.boardSubscribe(client as never);
+    const res = await g.boardSubscribe(client as never, {});
     expect(res).toEqual({ error: "forbidden" });
     expect(client.join).not.toHaveBeenCalled();
   });
@@ -52,7 +88,7 @@ describe("TrackingGateway.boardSubscribe", () => {
   it("returns unauthenticated when the socket carries no user", async () => {
     const g = gateway({ isBoardEligible: vi.fn(async () => true) });
     const client = fakeSocket(undefined);
-    const res = await g.boardSubscribe(client as never);
+    const res = await g.boardSubscribe(client as never, {});
     expect(res).toEqual({ error: "unauthenticated" });
     expect(client.join).not.toHaveBeenCalled();
   });
@@ -144,17 +180,22 @@ describe("TrackingGateway.emitBoardNewOrder", () => {
     createdAt: "2026-06-26T00:00:00Z",
   };
 
-  it("emits board:new-order to the global BOARD_ROOM", () => {
+  it("emits board:new-order to the pickup's geo-cell room AND the city-wide BOARD_ROOM", () => {
     const { server, to, emit } = fakeServer();
     const g = gateway();
     g.server = server as never;
-    g.emitBoardNewOrder(payload);
+    const pickup = payload.pickup.point;
+    g.emitBoardNewOrder(payload, pickup.lat, pickup.lng);
+    // Geo-scoped riders are in the pickup cell room; loc-less riders are in BOARD_ROOM. Socket.IO
+    // unions + dedupes the two, so each rider gets exactly one event.
+    expect(to).toHaveBeenCalledWith(boardGeoRoom(boardCell(pickup.lat, pickup.lng)));
     expect(to).toHaveBeenCalledWith(BOARD_ROOM);
     expect(emit).toHaveBeenCalledWith(WS_EVENTS.boardNewOrder, payload);
   });
 
   it("never throws when the server is undefined (best-effort)", () => {
     const g = gateway();
-    expect(() => g.emitBoardNewOrder(payload)).not.toThrow();
+    const pickup = payload.pickup.point;
+    expect(() => g.emitBoardNewOrder(payload, pickup.lat, pickup.lng)).not.toThrow();
   });
 });

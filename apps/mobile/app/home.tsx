@@ -3,13 +3,19 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
 import { ApiError } from "../src/api/client";
 import { createOrder, type OrderSnapshot } from "../src/api/orders";
 import { orderKey } from "../src/query/client";
 import { Button, Card, ErrorText, Field, Heading, Screen, Sub } from "../src/ui";
+import { BottomSheet } from "../src/ui/BottomSheet";
 import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
+
+// LayoutAnimation needs an explicit opt-in on old-architecture Android; a no-op on iOS / Fabric.
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 // The form draft persisted between visits. PII (the two contact phone numbers) is DELIBERATELY
 // excluded — a courier app must not stash a third party's phone in on-device storage. Everything
@@ -79,6 +85,25 @@ export default function HomeScreen(): React.ReactElement {
   const [draftRestored, setDraftRestored] = useState(false);
   // Gate persistence until the initial load has run, so we don't clobber the stored draft with empties.
   const hydrated = useRef(false);
+
+  // "Add details (optional)" collapsible — secondary fields (landmarks, phones, declared value) live
+  // here so the required path (pins → item → price → Broadcast) stays primary and always visible.
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  // Reduce-motion: read once (same pattern as LiveMap). When on, expand/collapse is instant, no anim.
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void AccessibilityInfo.isReduceMotionEnabled().then((on) => {
+      if (!cancelled) setReduceMotion(on);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const toggleDetails = useCallback((): void => {
+    if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setDetailsOpen((v) => !v);
+  }, [reduceMotion]);
 
   // Rehydrate the draft once on mount.
   useEffect(() => {
@@ -228,7 +253,12 @@ export default function HomeScreen(): React.ReactElement {
   return (
     <Screen>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: tokens.space.lg }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
             <Heading>Send a parcel</Heading>
             <View style={{ flex: 1 }} />
@@ -271,6 +301,7 @@ export default function HomeScreen(): React.ReactElement {
             </View>
           ) : null}
 
+          {/* Required path — the pins. Drop pickup + drop-off; these gate the CTA. */}
           <Card>
             <MapPicker
               label="Pickup"
@@ -278,47 +309,79 @@ export default function HomeScreen(): React.ReactElement {
               onChange={setPickupPoint}
               onReverseGeocode={onPickupReverseGeocode}
               showMyLocation
+              height={180}
             />
-            <Field
-              label={pickupLandmarkFromMap ? "Pickup landmark  • from map" : "Pickup landmark"}
-              value={pickupLandmark}
-              onChangeText={editPickupLandmark}
-              placeholder="Eastgate Mall, CBD"
-              maxLength={160}
+            <MapPicker
+              label="Drop-off"
+              value={dropPoint}
+              onChange={setDropPoint}
+              onReverseGeocode={onDropReverseGeocode}
+              height={180}
             />
-            <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
           </Card>
 
+          {/* Secondary fields — collapsed by default under a tap-to-expand toggle so the required
+              path stays short. Landmarks keep their "• from map" auto-fill hint (unchanged). */}
           <Card>
-            <MapPicker label="Drop-off" value={dropPoint} onChange={setDropPoint} onReverseGeocode={onDropReverseGeocode} />
-            <Field
-              label={dropLandmarkFromMap ? "Drop-off landmark  • from map" : "Drop-off landmark"}
-              value={dropLandmark}
-              onChangeText={editDropLandmark}
-              placeholder="14 Glenara Ave, Avenues"
-              maxLength={160}
-            />
-            <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
-          </Card>
+            <Pressable
+              onPress={toggleDetails}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: detailsOpen }}
+              accessibilityLabel="Add details (optional)"
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                minHeight: tokens.touchTargetMin,
+              }}
+            >
+              <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: tokens.color.ink }}>Add details (optional)</Text>
+              <Text style={{ fontSize: 15, fontWeight: "700", color: tokens.color.muted }}>{detailsOpen ? "▾" : "▸"}</Text>
+            </Pressable>
 
-          <Card>
-            <Field label="What are you sending?" value={itemDescription} onChangeText={setItemDescription} placeholder="Documents envelope" maxLength={280} />
-            <Field label="Declared value (USD, max 150)" value={declaredValue} onChangeText={setDeclaredValue} placeholder="10" keyboardType="decimal-pad" />
-            {quote ? (
-              <View style={{ marginBottom: tokens.space.sm }}>
-                <Text style={{ fontSize: 13, color: tokens.color.muted }}>
-                  Suggested fare ${quote.suggestedFare.toFixed(2)} · {quote.distanceKm} km
-                </Text>
-                <Button label={`Use suggested $${quote.suggestedFare.toFixed(2)}`} variant="ghost" onPress={() => setProposedFare(quote.suggestedFare.toFixed(2))} />
+            {detailsOpen ? (
+              <View style={{ marginTop: tokens.space.sm }}>
+                <Field
+                  label={pickupLandmarkFromMap ? "Pickup landmark  • from map" : "Pickup landmark"}
+                  value={pickupLandmark}
+                  onChangeText={editPickupLandmark}
+                  placeholder="Eastgate Mall, CBD"
+                  maxLength={160}
+                />
+                <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
+                <Field
+                  label={dropLandmarkFromMap ? "Drop-off landmark  • from map" : "Drop-off landmark"}
+                  value={dropLandmark}
+                  onChangeText={editDropLandmark}
+                  placeholder="14 Glenara Ave, Avenues"
+                  maxLength={160}
+                />
+                <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
+                <Field label="Declared value (USD, max 150)" value={declaredValue} onChangeText={setDeclaredValue} placeholder="10" keyboardType="decimal-pad" />
               </View>
             ) : null}
-            <Field label="Your price (USD)" value={proposedFare} onChangeText={setProposedFare} placeholder="2.50" keyboardType="decimal-pad" />
           </Card>
-
-          <Button label="Broadcast request" onPress={submit} loading={busy} disabled={!canSubmit} />
-          <ErrorText message={error} />
-          <View style={{ height: tokens.space.xxl }} />
         </ScrollView>
+
+        {/* Hero action in the thumb zone: what you're sending, name your price, broadcast. */}
+        <BottomSheet
+          footer={
+            <>
+              <Button label="Broadcast request" onPress={submit} loading={busy} disabled={!canSubmit} />
+              <ErrorText message={error} />
+            </>
+          }
+        >
+          <Field label="What are you sending?" value={itemDescription} onChangeText={setItemDescription} placeholder="Documents envelope" maxLength={280} />
+          {quote ? (
+            <View style={{ marginBottom: tokens.space.sm }}>
+              <Text style={{ fontSize: 13, color: tokens.color.muted }}>
+                Suggested fare ${quote.suggestedFare.toFixed(2)} · {quote.distanceKm} km
+              </Text>
+              <Button label={`Use suggested $${quote.suggestedFare.toFixed(2)}`} variant="ghost" onPress={() => setProposedFare(quote.suggestedFare.toFixed(2))} />
+            </View>
+          ) : null}
+          <Field label="Your price (USD)" value={proposedFare} onChangeText={setProposedFare} placeholder="2.50" keyboardType="decimal-pad" />
+        </BottomSheet>
       </KeyboardAvoidingView>
     </Screen>
   );

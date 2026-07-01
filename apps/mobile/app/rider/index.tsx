@@ -101,7 +101,7 @@ export default function RiderHome(): React.ReactElement {
   }, [online]);
 
   // Board push: new orders arrive live over WS while online; the poll is the 15s self-heal fallback.
-  const board = useRiderBoard(online);
+  const board = useRiderBoard(online, loc);
   const openQ = useQuery({
     queryKey: ["openOrders"],
     // Pass the rider's position so the server geo-scopes to nearby, distance-sorted orders; with no

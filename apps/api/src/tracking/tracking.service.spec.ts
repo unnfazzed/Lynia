@@ -15,16 +15,22 @@ function riderSvc(rider: unknown) {
   return new TrackingService(noRedisEnv, { rider: { findUnique: async () => rider } } as unknown as PrismaService);
 }
 
-/** A minimal in-memory Redis fake exposing only the get/set/quit surface recordFix/getLivePosition use. */
+/** A minimal in-memory Redis fake exposing the get/set/quit surface recordFix/getLivePosition use,
+ *  plus geoadd/geosearch stubs for the nearbyRiders Redis prefilter. geosearch returns whatever is
+ *  queued in `geoResult` (nearest-first [member, distance] rows, as WITHDIST would). */
 function fakeRedis() {
   const store = new Map<string, string>();
+  const geoResult: Array<[string, string]> = [];
   return {
     store,
+    geoResult,
     get: vi.fn(async (k: string) => store.get(k) ?? null),
     set: vi.fn(async (k: string, v: string, ..._rest: unknown[]) => {
       store.set(k, v);
       return "OK";
     }),
+    geoadd: vi.fn(async (..._args: unknown[]) => 1),
+    geosearch: vi.fn(async (..._args: unknown[]) => geoResult),
     quit: vi.fn(async () => {}),
   };
 }
@@ -158,5 +164,85 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
     s.setRedisClient(redis as never);
     await s.flushToPg("rider-1");
     expect(positioned).toHaveLength(1); // the last-known position was persisted on disconnect
+  });
+
+  it("recordFix GEOADDs the rider into the geo index (best-effort, alongside the position SET)", async () => {
+    const redis = fakeRedis();
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService);
+    s.setRedisClient(redis as never);
+
+    await s.recordFix("rider-1", -17.8, 31.0);
+
+    expect(redis.geoadd).toHaveBeenCalledTimes(1);
+    // ioredis geoadd order is (key, lng, lat, member).
+    expect(redis.geoadd).toHaveBeenCalledWith("rider:geo", 31.0, -17.8, "rider-1");
+  });
+
+  it("recordFix still writes the heartbeat when GEOADD rejects (Redis error never starves the heartbeat)", async () => {
+    const redis = { ...fakeRedis(), geoadd: vi.fn(async () => Promise.reject(new Error("redis down"))) };
+    const executeRaw = vi.fn(async () => 1);
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: executeRaw } as unknown as PrismaService);
+    s.setRedisClient(redis as never);
+    await expect(s.recordFix("rider-1", -17.8, 31.0)).resolves.toBeUndefined();
+    expect(executeRaw).toHaveBeenCalled(); // heartbeat + flush still ran
+  });
+});
+
+describe("TrackingService.nearbyRiders (Redis prefilter path)", () => {
+  it("GEOSEARCHes candidates then keeps only PG-confirmed online riders, preserving nearest-first order", async () => {
+    const redis = fakeRedis();
+    // GEOSEARCH yields three candidates nearest-first; PG will confirm only two are still online.
+    redis.geoResult.push(["rider-near", "100"], ["rider-off", "200"], ["rider-far", "300"]);
+    const queryRaw = vi.fn(async () => [{ profile_id: "rider-near" }, { profile_id: "rider-far" }]);
+    const s = new TrackingService(
+      { REDIS_URL: "redis://x" } as Env,
+      { $queryRaw: queryRaw } as unknown as PrismaService,
+    );
+    s.setRedisClient(redis as never);
+
+    const hits = await s.nearbyRiders(-17.8, 31.0, 5000);
+
+    expect(redis.geosearch).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledTimes(1); // ONE PG is_online query for the whole candidate set
+    // Only PG-online riders survive, in the GEOSEARCH nearest-first order (rider-off dropped).
+    expect(hits).toEqual([
+      { profileId: "rider-near", distanceM: 100 },
+      { profileId: "rider-far", distanceM: 300 },
+    ]);
+  });
+
+  it("skips the PG round-trip when GEOSEARCH returns no candidates", async () => {
+    const redis = fakeRedis(); // geoResult empty
+    const queryRaw = vi.fn(async () => []);
+    const s = new TrackingService(
+      { REDIS_URL: "redis://x" } as Env,
+      { $queryRaw: queryRaw } as unknown as PrismaService,
+    );
+    s.setRedisClient(redis as never);
+
+    const hits = await s.nearbyRiders(-17.8, 31.0, 5000);
+
+    expect(hits).toEqual([]);
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("DEGRADE: without Redis it uses the PG ST_DWithin path unchanged (setRedisClient(null))", async () => {
+    // The no-Redis path must be byte-identical to before the prefilter: one $queryRaw with the
+    // ST_DWithin filter + ST_Distance ordering, returning {profileId, distanceM}. No geosearch.
+    const redis = fakeRedis();
+    const queryRaw = vi.fn(async (strings: TemplateStringsArray) => {
+      expect(strings.join("?")).toContain("ST_DWithin");
+      return [{ profile_id: "rider-1", distance_m: 42 }];
+    });
+    const s = new TrackingService(
+      { REDIS_URL: undefined } as Env,
+      { $queryRaw: queryRaw } as unknown as PrismaService,
+    );
+    s.setRedisClient(null); // explicit degrade — no Redis client
+
+    const hits = await s.nearbyRiders(-17.8, 31.0, 5000);
+
+    expect(redis.geosearch).not.toHaveBeenCalled();
+    expect(hits).toEqual([{ profileId: "rider-1", distanceM: 42 }]);
   });
 });

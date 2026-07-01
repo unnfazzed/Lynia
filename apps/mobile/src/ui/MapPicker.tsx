@@ -42,9 +42,12 @@ export function MapPicker(props: {
   showMyLocation?: boolean;
   /** Emitted (best-effort) once a pin is placed/moved and reverse-geocoding yields a landmark. */
   onReverseGeocode?: (landmark: string) => void;
+  /** Map box height in px (default 200) so the create flow can render more compact pins. */
+  height?: number;
 }): React.ReactElement {
   const mapRef = useRef<MapView>(null);
   const [locating, setLocating] = useState(false);
+  const height = props.height ?? 200;
 
   const initialRegion: Region = props.value
     ? { latitude: props.value.lat, longitude: props.value.lng, latitudeDelta: 0.02, longitudeDelta: 0.02 }
@@ -99,7 +102,7 @@ export function MapPicker(props: {
       <Label>{props.label}</Label>
       <View
         style={{
-          height: 200,
+          height,
           borderRadius: tokens.radius.input,
           overflow: "hidden",
           borderWidth: 1,

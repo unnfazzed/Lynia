@@ -120,16 +120,17 @@ export class OrdersService {
         distanceKm: meta.distanceKm,
         createdAt: meta.createdAt,
       });
-      this.safeEmitBoardNewOrder(boardEvent);
+      this.safeEmitBoardNewOrder(boardEvent, pickup.point.lat, pickup.point.lng);
     } catch {
       /* best-effort: a broadcast-push failure never affects the created order */
     }
   }
 
-  /** Fire-and-forget board push. Wrapped so a WS failure can never affect the created order. */
-  private safeEmitBoardNewOrder(event: BoardNewOrderEvent): void {
+  /** Fire-and-forget board push, scoped to the pickup's geo cell. Wrapped so a WS failure can never
+   *  affect the created order. */
+  private safeEmitBoardNewOrder(event: BoardNewOrderEvent, pickupLat: number, pickupLng: number): void {
     try {
-      this.gateway.emitBoardNewOrder(event);
+      this.gateway.emitBoardNewOrder(event, pickupLat, pickupLng);
     } catch (err) {
       this.logger.warn(`board push failed for order ${event.id}: ${(err as Error).message}`);
     }
@@ -175,11 +176,11 @@ export class OrdersService {
   }
 
   /**
-   * Geo-scoped open board: open orders whose pickup point is within `radiusM` of the caller,
-   * nearest-first. The pickup lat/lng live in the pickup JSON column, so we extract them, build a
-   * geography point and filter with ST_DWithin. Rows whose pickup JSON is malformed (a null lat/lng
-   * extract) are skipped by the WHERE guard rather than 500-ing the board. Fares are serialized and
-   * contactPhone is redacted just like the city-wide path.
+   * Geo-scoped open board: open orders whose pickup is within `radiusM` of the caller, nearest-first.
+   * Filters and sorts directly on the indexed `pickup_geog` generated column (GiST, migration 0006)
+   * instead of re-extracting lat/lng from the pickup JSON per row. Rows whose pickup JSON is malformed
+   * have a NULL `pickup_geog` and are skipped by the WHERE guard rather than 500-ing the board. Fares
+   * are serialized and contactPhone is redacted just like the city-wide path.
    */
   private async listOpenNearby(lat: number, lng: number, radiusM: number) {
     const rows = await this.prisma.$queryRaw<
@@ -204,29 +205,9 @@ export class OrdersService {
              created_at
       FROM orders
       WHERE status = 'open_for_offers'
-        AND (pickup -> 'point' ->> 'lat') IS NOT NULL
-        AND (pickup -> 'point' ->> 'lng') IS NOT NULL
-        AND ST_DWithin(
-              ST_SetSRID(
-                ST_MakePoint(
-                  (pickup -> 'point' ->> 'lng')::float8,
-                  (pickup -> 'point' ->> 'lat')::float8
-                ),
-                4326
-              )::geography,
-              ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-              ${radiusM}
-            )
-      ORDER BY ST_Distance(
-                 ST_SetSRID(
-                   ST_MakePoint(
-                     (pickup -> 'point' ->> 'lng')::float8,
-                     (pickup -> 'point' ->> 'lat')::float8
-                   ),
-                   4326
-                 )::geography,
-                 ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography
-               ) ASC
+        AND pickup_geog IS NOT NULL
+        AND ST_DWithin(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})
+      ORDER BY ST_Distance(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) ASC
       LIMIT 50`;
     return rows.map((o) => ({
       id: o.id,
