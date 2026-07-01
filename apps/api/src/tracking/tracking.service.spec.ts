@@ -226,6 +226,24 @@ describe("TrackingService.nearbyRiders (Redis prefilter path)", () => {
     expect(queryRaw).not.toHaveBeenCalled();
   });
 
+  it("falls back to the PG ST_DWithin path when GEOSEARCH errors (resilient to a transient Redis blip)", async () => {
+    const redis = fakeRedis();
+    redis.geosearch = vi.fn(async () => Promise.reject(new Error("redis down"))) as never;
+    const queryRaw = vi.fn(async (strings: TemplateStringsArray) => {
+      expect(strings.join("?")).toContain("ST_DWithin"); // fell through to the PG path
+      return [{ profile_id: "rider-1", distance_m: 42 }];
+    });
+    const s = new TrackingService(
+      { REDIS_URL: "redis://x" } as Env,
+      { $queryRaw: queryRaw } as unknown as PrismaService,
+    );
+    s.setRedisClient(redis as never);
+
+    const hits = await s.nearbyRiders(-17.8, 31.0, 5000);
+    expect(hits).toEqual([{ profileId: "rider-1", distanceM: 42 }]);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
   it("DEGRADE: without Redis it uses the PG ST_DWithin path unchanged (setRedisClient(null))", async () => {
     // The no-Redis path must be byte-identical to before the prefilter: one $queryRaw with the
     // ST_DWithin filter + ST_Distance ordering, returning {profileId, distanceM}. No geosearch.

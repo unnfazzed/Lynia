@@ -366,6 +366,19 @@ export default function HomeScreen(): React.ReactElement {
         <BottomSheet
           footer={
             <>
+              {!canSubmit ? (
+                // A disabled Pressable swallows the tap, so name what's still missing here rather
+                // than only on an edge-complete submit — never a silent greyed dead-end.
+                <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: tokens.space.xs }}>
+                  {`Add ${[
+                    !coordsOk ? "pickup & drop-off pins" : null,
+                    itemDescription.trim().length === 0 ? "an item" : null,
+                    !(fare !== null && fare > 0) ? "a price" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")} to broadcast.`}
+                </Text>
+              ) : null}
               <Button label="Broadcast request" onPress={submit} loading={busy} disabled={!canSubmit} />
               <ErrorText message={error} />
             </>

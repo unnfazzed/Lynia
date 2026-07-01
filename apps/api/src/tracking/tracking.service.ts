@@ -31,7 +31,8 @@ const POSITION_FLUSH_MS = 10_000;
  *  stays the is_online authority — so a stale/offline member here is harmless (the PG join drops it). */
 const GEO_KEY = "rider:geo";
 
-/** Cap on GEOSEARCH candidates fed into the PG is_online filter (mirrors the PG path's LIMIT 50). */
+/** Cap on GEOSEARCH candidates fed into the PG is_online filter. Over-fetches (vs the PG LIMIT 50)
+ *  so the online filter still has ≥50 after dropping offline members; the result is then sliced to 50. */
 const GEO_SEARCH_COUNT = 100;
 
 @Injectable()
@@ -214,18 +215,22 @@ export class TrackingService implements OnModuleDestroy {
     const redis = this.getRedis();
     if (redis) {
       const candidates = await this.geoSearchCandidates(redis, lat, lng, radiusM);
-      // No candidates ⇒ no online riders in range (empty set / all filtered). Skip the PG round-trip.
-      if (candidates.length === 0) return [];
-      const ids = candidates.map((c) => c.profileId);
-      const online = await this.prisma.$queryRaw<Array<{ profile_id: string }>>`
-        SELECT profile_id
-        FROM riders
-        WHERE profile_id = ANY(${ids}::uuid[])
-          AND is_online = true
-          AND geog IS NOT NULL`;
-      const onlineSet = new Set(online.map((r) => r.profile_id));
-      // Preserve the GEOSEARCH nearest-first order; keep only the PG-confirmed online riders.
-      return candidates.filter((c) => onlineSet.has(c.profileId));
+      // null ⇒ GEOSEARCH errored → fall through to the PG path (resilient to a transient Redis blip).
+      // [] ⇒ Redis answered with no candidates → no PG round-trip needed.
+      if (candidates !== null) {
+        if (candidates.length === 0) return [];
+        const ids = candidates.map((c) => c.profileId);
+        const online = await this.prisma.$queryRaw<Array<{ profile_id: string }>>`
+          SELECT profile_id
+          FROM riders
+          WHERE profile_id = ANY(${ids}::uuid[])
+            AND is_online = true
+            AND geog IS NOT NULL`;
+        const onlineSet = new Set(online.map((r) => r.profile_id));
+        // Preserve GEOSEARCH nearest-first order; keep PG-confirmed online riders; cap at 50 for
+        // true parity with the PG path's LIMIT 50.
+        return candidates.filter((c) => onlineSet.has(c.profileId)).slice(0, 50);
+      }
     }
 
     const rows = await this.prisma.$queryRaw<Array<{ profile_id: string; distance_m: number }>>`
@@ -241,14 +246,14 @@ export class TrackingService implements OnModuleDestroy {
   }
 
   /** GEOSEARCH the rider geo index → nearest-first candidates with their approximate distance (m).
-   *  Best-effort: a Redis error yields an empty candidate set, so nearbyRiders returns [] (the same
-   *  "no nearby riders" outcome the caller already treats as best-effort). */
+   *  Returns null on a Redis error so the caller can fall back to the PG ST_DWithin path (vs an empty
+   *  array, which legitimately means "Redis answered: no riders in range"). */
   private async geoSearchCandidates(
     redis: IORedis,
     lat: number,
     lng: number,
     radiusM: number,
-  ): Promise<NearbyRider[]> {
+  ): Promise<NearbyRider[] | null> {
     try {
       const res = (await redis.geosearch(
         GEO_KEY,
@@ -266,7 +271,7 @@ export class TrackingService implements OnModuleDestroy {
       // WITHDIST rows are [member, distance]; without it ioredis would return bare member strings.
       return res.map((row) => ({ profileId: row[0], distanceM: Number(row[1]) }));
     } catch {
-      return [];
+      return null;
     }
   }
 }

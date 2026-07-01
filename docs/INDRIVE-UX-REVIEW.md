@@ -15,8 +15,8 @@ polished native ride/courier app.
 ## Implementation status (2026-07-01)
 
 All work below was reviewed (gStack Engineering + Design plan rubrics), implemented, and hardened
-(a second Eng + Design pass on the diff). Both hardening verdicts **PASS** / Design **9.5/10**, no
-P0/P1 correctness issues. API tests **228 pass**; shared/api/mobile typecheck + api build clean.
+(a second Eng + Design pass on each diff). Every hardening verdict **PASS** / Design **9–9.5/10**,
+no P0/P1 correctness issues. API tests **246 pass**; shared/api/mobile typecheck + api build clean.
 
 - ✅ **Batch 1 (merged):** WS-pushed offers during `open_for_offers` (A1) + WS-pushed rider board
   (A2); optimistic UI on select + rider-advance with a muted rollback (C1); marker interpolation +
@@ -30,10 +30,16 @@ P0/P1 correctness issues. API tests **228 pass**; shared/api/mobile typecheck + 
   danger crossfade that pre-surfaces the nudge before the dead-end); **taller/expandable tracking
   map** (D5), **reverse-geocoded landmark** (D2), and a **PII-free persisted draft** (D1 — the two
   phone numbers are deliberately not stored).
-- ⏸️ **Still deferred:** Redis `GEOADD` for `nearbyRiders` (write-path fix already removes the scale
-  problem); the `pickup_geog` column + GiST (compute-in-SQL suffices at pilot); geo-scoping the
-  live WS board push (REST is scoped; the global push is reconciled client-side by the haversine
-  sort); full map-anchored home redesign; offer-expiry jitter + prod `REDIS_URL` boot-guard (E2/E4).
+- ✅ **Batch 3 (this branch):** prod `REDIS_URL` **boot-guard** + offer-expiry **jitter** (E2/E4);
+  **geo-scoped live board push** (3×3 cell neighbourhood, city-wide fallback); **`pickup_geog`
+  GENERATED column + GiST** (index scan instead of per-row JSON extract); **Redis GEO** for
+  `nearbyRiders` (GEOSEARCH → PG `is_online` filter; PG fallback on no-Redis or a transient GEOSEARCH
+  error); the **map-anchored home** IA slice (hero sheet + collapsible "Add details"; the full
+  draggable single-map build is spec'd under DT5, device-gated).
+- ⏸️ **Still deferred:** the Redis *online-set* for `nearbyRiders` (the safe GEOSEARCH-then-PG-filter
+  ships; the online-set/ZREM design is a ghost-rider consistency trap, intentionally avoided);
+  per-region **WS board rooms** at multi-city scale (the coarse cell + poll fallback is enough at
+  pilot); the full single-full-bleed-map + draggable-sheet DT5 build (needs on-device tuning).
 
 ## TL;DR
 
