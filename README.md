@@ -7,8 +7,12 @@ price, riders accept or counter, customer selects). See [`docs/`](docs/) for the
 
 **Status:** the API is **live and CI-deployed on GCP** at
 [`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com) (`/health` →
-`{"status":"ok","db":true,"redis":true}`). Where the build stands + what the founder wires next →
-[`docs/PILOT-READINESS.md`](docs/PILOT-READINESS.md).
+`{"status":"ok","db":true,"redis":true}`). The **Phase-3 mobile build** has since landed — native map +
+tap-to-pin for pickup/drop-off and a **live tracking map** on both the customer order and rider job
+screens — and the vendor integrations are now **implemented behind flags** (WhatsApp Cloud API OTP send,
+Didit v3 KYC with a one-command founder-wiring script, FCM push + `google-services.json` build wiring). What
+remains is **founder account/key actions and an on-device `/qa` dev build**, not more feature code. Where the
+build stands + what the founder wires next → [`docs/PILOT-READINESS.md`](docs/PILOT-READINESS.md).
 
 ## Monorepo
 

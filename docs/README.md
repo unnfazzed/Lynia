@@ -3,11 +3,14 @@
 This folder is the project's **review record + product spec**, kept deliberately lean: the four core
 documents (CONCEPT + the three per-discipline review logs) plus the design spec and the status board.
 
-**Status (2026-06-29):** the API is **live and CI-deployed on GCP** at
+**Status (2026-07-01):** the API is **live and CI-deployed on GCP** at
 **[`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com)** (`{"status":"ok","db":true,"redis":true}`).
-The Ship stage's hard gate — GCP provisioning — is **closed** (project `lynia-500911`, Terraform-applied).
-What remains is **founder/vendor wiring** (WhatsApp BSP, Didit KYC, Firebase) and a **dev build** — tracked
-in **[`PILOT-READINESS.md`](./PILOT-READINESS.md)**, the source of truth for status.
+The Ship stage's hard gate — GCP provisioning — is **closed** (project `lynia-500911`, Terraform-applied), and
+the **Phase-3 build** has landed on top: native map + tap-to-pin and a **live tracking map** on the order and
+rider screens, plus the vendor integrations now **built behind flags** (WhatsApp Cloud API OTP send, Didit v3
+KYC + a one-command founder-wiring script, FCM push + `google-services.json` build wiring). What remains is
+**founder account/key wiring** (WhatsApp BSP, Didit, Firebase) and an on-device **dev build** — tracked in
+**[`PILOT-READINESS.md`](./PILOT-READINESS.md)**, the source of truth for status.
 
 The three **review logs** are living per-discipline records (CEO/product · engineering · design), each
 organised by sprint stage (Plan → Build → Ship) and preserved for decision history. Status is **not**
