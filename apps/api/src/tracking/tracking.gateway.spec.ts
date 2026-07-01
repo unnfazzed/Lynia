@@ -7,7 +7,7 @@ import type { MetricsService } from "../observability/metrics.service";
 import type { TrackingService } from "./tracking.service";
 import { boardCell, boardCellNeighborhood } from "@lynia/shared";
 import { BOARD_ROOM, boardGeoRoom, orderRoom } from "./tracking.constants";
-import { TrackingGateway } from "./tracking.gateway";
+import { POSITION_COALESCE_MS, TrackingGateway } from "./tracking.gateway";
 
 /** Minimal socket fake: maintains a live `rooms` Set (like a real Socket) as join/leave run, and
  *  carries the authenticated user in `data`. */
@@ -153,6 +153,54 @@ describe("TrackingGateway.riderLocation", () => {
     const res = await g.riderLocation(client as never, { orderId: "ord-1", lat: 0, lng: 0 });
     expect(res).toEqual({ error: "forbidden" });
     expect(to).not.toHaveBeenCalled();
+  });
+
+  it("coalesces a flood to ≤1 emit/sec per room: leading edge now, one trailing flush of the LATEST", async () => {
+    vi.useFakeTimers();
+    try {
+      const { server, emit } = fakeServer();
+      const recordFix = vi.fn(async () => {});
+      const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix });
+      g.server = server as never;
+      const client = fakeSocket({ sub: "rider-1", role: "rider" });
+      // Three fixes in the same instant (a flooding client).
+      await g.riderLocation(client as never, { orderId: "ord-1", lat: 1, lng: 1 });
+      await g.riderLocation(client as never, { orderId: "ord-1", lat: 2, lng: 2 });
+      await g.riderLocation(client as never, { orderId: "ord-1", lat: 3, lng: 3 });
+      // Only the leading edge has gone out; the room is shielded from the other two.
+      expect(emit).toHaveBeenCalledTimes(1);
+      expect(emit).toHaveBeenLastCalledWith(WS_EVENTS.position, expect.objectContaining({ lat: 1, lng: 1 }));
+      // Persist still ran for every fix — coalescing throttles the EMIT, not the durable write.
+      expect(recordFix).toHaveBeenCalledTimes(3);
+      // At window end a single trailing flush carries the rider's LATEST buffered position.
+      await vi.advanceTimersByTimeAsync(POSITION_COALESCE_MS);
+      expect(emit).toHaveBeenCalledTimes(2);
+      expect(emit).toHaveBeenLastCalledWith(WS_EVENTS.position, expect.objectContaining({ lat: 3, lng: 3 }));
+      // No further fixes → no extra emits after the window drains.
+      await vi.advanceTimersByTimeAsync(POSITION_COALESCE_MS * 2);
+      expect(emit).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a fix after the window is a fresh leading-edge emit (throttle resets)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { server, emit } = fakeServer();
+      const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix: vi.fn(async () => {}) });
+      g.server = server as never;
+      const client = fakeSocket({ sub: "rider-1", role: "rider" });
+      await g.riderLocation(client as never, { orderId: "ord-1", lat: 1, lng: 1 });
+      expect(emit).toHaveBeenCalledTimes(1);
+      // Let the window fully elapse with nothing buffered, then send another fix.
+      await vi.advanceTimersByTimeAsync(POSITION_COALESCE_MS + 50);
+      await g.riderLocation(client as never, { orderId: "ord-1", lat: 9, lng: 9 });
+      expect(emit).toHaveBeenCalledTimes(2);
+      expect(emit).toHaveBeenLastCalledWith(WS_EVENTS.position, expect.objectContaining({ lat: 9, lng: 9 }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

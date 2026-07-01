@@ -10,6 +10,10 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1),
+  // Explicit Prisma connection-pool tuning (E6). Applied to the datasource URL in PrismaService; both
+  // optional — the pool size falls back to a deterministic default and pool_timeout to Prisma's.
+  DATABASE_CONNECTION_LIMIT: z.coerce.number().int().positive().optional(),
+  DATABASE_POOL_TIMEOUT: z.coerce.number().int().nonnegative().optional(),
   REDIS_URL: z.string().min(1).optional(),
   // Cloud chosen: GCP (2026-06-27). Azure impl retained behind the adapters as the portability proof (D7).
   CLOUD_PROVIDER: z.enum(["azure", "gcp"]).default("gcp"),

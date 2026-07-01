@@ -24,6 +24,8 @@ const SORT_MODES: { key: SortMode; label: string }[] = [
 ];
 
 const URGENT_MS = 20_000;
+// Rating-on-tap undo window (D3): how long a tapped rating stays cancellable before it commits.
+const RATE_UNDO_MS = 4_000;
 
 /** mm:ss for the auction timer. */
 function formatClock(ms: number): string {
@@ -92,6 +94,10 @@ export default function OrderScreen(): React.ReactElement {
   const reduceMotion = useReduceMotion();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
   const [score, setScore] = useState(5);
+  // Rating-on-tap (D3): a star tap arms the submit; a short undo window lets the customer change or
+  // cancel before it commits (rating is terminal server-side → completed, so we hold, not un-rate).
+  const [ratePending, setRatePending] = useState(false);
+  const rateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("best");
   // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
   const [selectNotice, setSelectNotice] = useState<string | null>(null);
@@ -251,7 +257,7 @@ export default function OrderScreen(): React.ReactElement {
     },
   });
   const rateM = useMutation({
-    mutationFn: () => rateOrder(orderId, { score }),
+    mutationFn: (value: number) => rateOrder(orderId, { score: value }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
       void qc.invalidateQueries({ queryKey: ["history"] }); // the just-rated trip now shows its ★ in history
@@ -261,6 +267,27 @@ export default function OrderScreen(): React.ReactElement {
     mutationFn: () => cancelOrder(orderId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
   });
+
+  // Rating-on-tap handlers (D3). Tapping a star sets the score and (re)arms a short commit window;
+  // Undo cancels it. The window is cleared on unmount so a pending submit can't fire after teardown.
+  useEffect(() => () => { if (rateTimer.current) clearTimeout(rateTimer.current); }, []);
+  function tapStar(n: number) {
+    setScore(n);
+    if (rateTimer.current) clearTimeout(rateTimer.current);
+    setRatePending(true);
+    rateTimer.current = setTimeout(() => {
+      rateTimer.current = null;
+      setRatePending(false);
+      rateM.mutate(n);
+    }, RATE_UNDO_MS);
+    AccessibilityInfo.announceForAccessibility(`${n} star${n === 1 ? "" : "s"} — submitting, tap Undo to change`);
+  }
+  function undoRate() {
+    if (rateTimer.current) clearTimeout(rateTimer.current);
+    rateTimer.current = null;
+    setRatePending(false);
+    AccessibilityInfo.announceForAccessibility("Rating cancelled");
+  }
 
   if (orderQ.isLoading) {
     return (
@@ -441,18 +468,29 @@ export default function OrderScreen(): React.ReactElement {
               {[1, 2, 3, 4, 5].map((n) => (
                 <Pressable
                   key={n}
-                  onPress={() => setScore(n)}
+                  onPress={() => tapStar(n)}
+                  disabled={rateM.isPending}
                   accessibilityRole="button"
-                  accessibilityLabel={`${n} star${n === 1 ? "" : "s"}`}
+                  accessibilityLabel={`Rate ${n} star${n === 1 ? "" : "s"}`}
                   accessibilityState={{ selected: n <= score }}
-                  hitSlop={8}
+                  hitSlop={12}
                   style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
                 >
                   <Text style={{ fontSize: 28, color: n <= score ? tokens.color.highlight : tokens.color.line }}>★</Text>
                 </Pressable>
               ))}
             </View>
-            <Button label="Submit rating" onPress={() => rateM.mutate()} loading={rateM.isPending} />
+            {ratePending ? (
+              // Tap-to-rate is armed: submitting shortly, still cancellable.
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text style={{ fontSize: 14, color: tokens.color.muted }}>Submitting {score}★…</Text>
+                <Button label="Undo" variant="ghost" onPress={undoRate} />
+              </View>
+            ) : rateM.isPending ? (
+              <Text style={{ fontSize: 14, color: tokens.color.muted }}>Saving your rating…</Text>
+            ) : (
+              <Text style={{ fontSize: 13, color: tokens.color.muted }}>Tap a star to rate</Text>
+            )}
           </Card>
         ) : null}
 

@@ -25,6 +25,22 @@ interface SocketUser {
   role: string;
 }
 
+interface PositionPayload {
+  riderId: string;
+  lat: number;
+  lng: number;
+  at: string;
+}
+
+/** Server-side coalesce window: at most one `position` emit per order room per this interval (E3). */
+export const POSITION_COALESCE_MS = 1_000;
+
+interface CoalesceState {
+  lastEmit: number;
+  timer?: ReturnType<typeof setTimeout>;
+  pending?: PositionPayload;
+}
+
 /**
  * Live tracking (ET4). WS is best-effort PUSH only — GET /orders/:id (lane C) stays the source of
  * truth on reconnect. The Redis adapter fans events out across API instances.
@@ -34,6 +50,10 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   private readonly logger = new Logger(TrackingGateway.name);
 
   @WebSocketServer() server!: Server;
+
+  /** Per-order-room coalesce state — server-side throttle so one fast/misbehaving client can't flood
+   *  a room with position emits (E3). Keyed by order room; entries are dropped once a window drains. */
+  private readonly positionEmit = new Map<string, CoalesceState>();
 
   constructor(
     @Inject(ENV) private readonly env: Env,
@@ -140,19 +160,62 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     if (!(await this.tracking.isAssignedRider(user.sub, body.orderId))) return { error: "forbidden" };
 
     // Emit-before-persist (P1-1a): the customer's live position must not be gated on the DB write.
-    // Best-effort PUSH — a null server or emit failure never blocks the (still-persisted) fix.
-    // Measure the EMIT only (recorded BEFORE the DB write) so the SLO reflects glass-to-server push
-    // latency, not the throttled position flush that follows.
-    const done = this.metrics.startTimer();
-    this.server?.to(orderRoom(body.orderId)).emit(WS_EVENTS.position, {
+    // Best-effort PUSH — a null server or emit failure never blocks the (still-persisted) fix. The
+    // emit is coalesced to ≤1/sec per room server-side (E3), so the persist below still runs on every
+    // fix while the room is shielded from a flood.
+    this.coalescePositionEmit(orderRoom(body.orderId), {
       riderId: user.sub,
       lat: body.lat,
       lng: body.lng,
       at: new Date().toISOString(),
     });
-    this.metrics.recordPositionEmit(done());
     await this.tracking.recordFix(user.sub, body.lat, body.lng);
     return { ok: true };
+  }
+
+  /**
+   * Server-side coalesce of `position` emits to ≤1 per room per POSITION_COALESCE_MS (E3). Leading
+   * edge fires immediately (preserving emit-before-persist / low first-fix latency); further fixes
+   * inside the window overwrite a single buffered payload that a trailing timer flushes at window end,
+   * so the customer always converges on the rider's latest position without a flood. Measures the SLO
+   * on emitted fixes only. Never throws — a null server or timer hiccup must not affect the persist.
+   */
+  private coalescePositionEmit(room: string, payload: PositionPayload): void {
+    const now = Date.now();
+    const state = this.positionEmit.get(room) ?? { lastEmit: 0 };
+    if (now - state.lastEmit >= POSITION_COALESCE_MS) {
+      state.lastEmit = now;
+      state.pending = undefined;
+      this.positionEmit.set(room, state);
+      this.flushPositionEmit(room, payload);
+      return;
+    }
+    // Inside the window: buffer the latest fix and ensure a single trailing flush is scheduled.
+    state.pending = payload;
+    this.positionEmit.set(room, state);
+    if (!state.timer) {
+      state.timer = setTimeout(() => {
+        const s = this.positionEmit.get(room);
+        if (!s) return;
+        s.timer = undefined;
+        const next = s.pending;
+        s.pending = undefined;
+        if (next) {
+          s.lastEmit = Date.now();
+          this.flushPositionEmit(room, next);
+        } else {
+          this.positionEmit.delete(room); // window drained with nothing buffered — release the entry
+        }
+      }, POSITION_COALESCE_MS - (now - state.lastEmit));
+      state.timer.unref?.();
+    }
+  }
+
+  /** Fire one `position` emit and record its glass-to-server latency. Best-effort. */
+  private flushPositionEmit(room: string, payload: PositionPayload): void {
+    const done = this.metrics.startTimer();
+    this.server?.to(room).emit(WS_EVENTS.position, payload);
+    this.metrics.recordPositionEmit(done());
   }
 
   /**
