@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { OFFER_WINDOW_MS } from "@lynia/shared";
 import { Queue, Worker } from "bullmq";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -6,8 +7,9 @@ import { MatchingService } from "./matching.service";
 
 const QUEUE_NAME = "offer-expiry";
 
-/** Offer window length (CONCEPT §9 — placeholder; tune on real corridor supply). */
-export const OFFER_WINDOW_MS = 90_000;
+// OFFER_WINDOW_MS now lives in @lynia/shared (the client renders the countdown from it). Re-exported
+// so existing importers of this module keep working.
+export { OFFER_WINDOW_MS };
 
 /** Plain ioredis options (structurally typed) so BullMQ owns its connections — avoids
  *  cross-version ioredis instance mismatches between the api and bullmq's bundled copy. */

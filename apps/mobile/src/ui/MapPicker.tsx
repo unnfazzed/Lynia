@@ -25,12 +25,23 @@ const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 
  * chosen point so the parent keeps it in the order form. Needs the dev build + a Google Maps key on
  * Android (Apple Maps on iOS needs none) — see app.config.ts / PILOT-READINESS.
  */
+/** Build a short landmark string from a reverse-geocode result — the most human parts, capped. */
+function landmarkFrom(r: Location.LocationGeocodedAddress): string {
+  return [r.name, r.street, r.district ?? r.city]
+    .filter(Boolean)
+    .join(", ")
+    .trim()
+    .slice(0, 120);
+}
+
 export function MapPicker(props: {
   label: string;
   value: PickedPoint | null;
   onChange: (p: PickedPoint) => void;
   /** Show a "use my location" button (pickup only — the recipient isn't standing at the drop-off). */
   showMyLocation?: boolean;
+  /** Emitted (best-effort) once a pin is placed/moved and reverse-geocoding yields a landmark. */
+  onReverseGeocode?: (landmark: string) => void;
 }): React.ReactElement {
   const mapRef = useRef<MapView>(null);
   const [locating, setLocating] = useState(false);
@@ -39,7 +50,28 @@ export function MapPicker(props: {
     ? { latitude: props.value.lat, longitude: props.value.lng, latitudeDelta: 0.02, longitudeDelta: 0.02 }
     : HARARE;
 
-  const set = (c: LatLng): void => props.onChange({ lat: c.latitude, lng: c.longitude });
+  // Best-effort reverse geocode on final placement only (not per drag frame). Geocoding can fail
+  // offline — on failure we do nothing and leave the field as the user left it.
+  const { onReverseGeocode } = props;
+  const reverseGeocode = (c: LatLng): void => {
+    if (!onReverseGeocode) return;
+    void (async () => {
+      try {
+        const results = await Location.reverseGeocodeAsync({ latitude: c.latitude, longitude: c.longitude });
+        const first = results[0];
+        if (!first) return;
+        const landmark = landmarkFrom(first);
+        if (landmark) onReverseGeocode(landmark);
+      } catch {
+        /* offline / no geocoder — leave the field untouched */
+      }
+    })();
+  };
+
+  const set = (c: LatLng): void => {
+    props.onChange({ lat: c.latitude, lng: c.longitude });
+    reverseGeocode(c);
+  };
 
   const useMyLocation = async (): Promise<void> => {
     setLocating(true);

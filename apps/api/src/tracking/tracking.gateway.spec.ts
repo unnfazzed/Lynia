@@ -89,10 +89,10 @@ describe("TrackingGateway.emitOffersChanged", () => {
 describe("TrackingGateway.riderLocation", () => {
   it("emits the position before (and independent of) the DB persist", async () => {
     const { server, to, emit } = fakeServer();
-    const updateRiderLocation = vi.fn(async () => {
+    const recordFix = vi.fn(async () => {
       throw new Error("db down");
     });
-    const g = gateway({ isAssignedRider: vi.fn(async () => true), updateRiderLocation });
+    const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix });
     g.server = server as never;
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
     // Persist fails, so the call rejects — but the customer's live position already went out.
@@ -111,6 +111,24 @@ describe("TrackingGateway.riderLocation", () => {
     const res = await g.riderLocation(client as never, { orderId: "ord-1", lat: 0, lng: 0 });
     expect(res).toEqual({ error: "forbidden" });
     expect(to).not.toHaveBeenCalled();
+  });
+});
+
+describe("TrackingGateway.handleDisconnect", () => {
+  it("flushes the rider's last live position to PG (best-effort) when a user is present", () => {
+    const flushToPg = vi.fn(async () => {});
+    const g = gateway({ flushToPg });
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    g.handleDisconnect(client as never);
+    expect(flushToPg).toHaveBeenCalledWith("rider-1");
+  });
+
+  it("no-ops for an unauthenticated socket and never throws", () => {
+    const flushToPg = vi.fn(async () => {});
+    const g = gateway({ flushToPg });
+    const client = fakeSocket(undefined);
+    expect(() => g.handleDisconnect(client as never)).not.toThrow();
+    expect(flushToPg).not.toHaveBeenCalled();
   });
 });
 

@@ -4,6 +4,11 @@
  */
 import { z } from "zod";
 
+/** Offer window length (CONCEPT §9). Wire-relevant: the customer's auction countdown renders from
+ *  it (order.expiresAt = createdAt + OFFER_WINDOW_MS), and the API schedules expiry off the same
+ *  value — one source so the clock the customer sees and the server enforces can't drift. */
+export const OFFER_WINDOW_MS = 90_000;
+
 export const LatLng = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),

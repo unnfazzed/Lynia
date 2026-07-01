@@ -1,14 +1,46 @@
 import { CreateOrderRequest, quoteFare, tokens } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import * as SecureStore from "expo-secure-store";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../src/api/client";
 import { createOrder, type OrderSnapshot } from "../src/api/orders";
 import { orderKey } from "../src/query/client";
 import { Button, Card, ErrorText, Field, Heading, Screen, Sub } from "../src/ui";
 import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
+
+// The form draft persisted between visits. PII (the two contact phone numbers) is DELIBERATELY
+// excluded — a courier app must not stash a third party's phone in on-device storage. Everything
+// here is the sender's own routing/pricing intent, which is safe to restore.
+interface FormDraft {
+  pickupPoint: PickedPoint | null;
+  pickupLandmark: string;
+  dropPoint: PickedPoint | null;
+  dropLandmark: string;
+  itemDescription: string;
+  declaredValue: string;
+  proposedFare: string;
+}
+
+// Reuse the same on-device primitive the auth session uses (expo-secure-store); a single key.
+const DRAFT_KEY = "lynia.orderDraft";
+async function loadDraft(): Promise<FormDraft | null> {
+  const raw = await SecureStore.getItemAsync(DRAFT_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as FormDraft;
+  } catch {
+    return null;
+  }
+}
+async function saveDraft(draft: FormDraft): Promise<void> {
+  await SecureStore.setItemAsync(DRAFT_KEY, JSON.stringify(draft));
+}
+async function clearDraft(): Promise<void> {
+  await SecureStore.deleteItemAsync(DRAFT_KEY);
+}
 
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
@@ -25,6 +57,107 @@ export default function HomeScreen(): React.ReactElement {
   const [proposedFare, setProposedFare] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Landmark auto-fill: once the user edits a landmark it's theirs — stop auto-filling from the map.
+  const [pickupLandmarkTouched, setPickupLandmarkTouched] = useState(false);
+  const [dropLandmarkTouched, setDropLandmarkTouched] = useState(false);
+  // Whether the current landmark value came from the map (drives the "• from map" label hint).
+  const [pickupLandmarkFromMap, setPickupLandmarkFromMap] = useState(false);
+  const [dropLandmarkFromMap, setDropLandmarkFromMap] = useState(false);
+
+  // "Draft restored" chip — shown when a draft is rehydrated on mount, dismissed on clear/submit.
+  const [draftRestored, setDraftRestored] = useState(false);
+  // Gate persistence until the initial load has run, so we don't clobber the stored draft with empties.
+  const hydrated = useRef(false);
+
+  // Rehydrate the draft once on mount.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const draft = await loadDraft();
+      if (cancelled) {
+        hydrated.current = true;
+        return;
+      }
+      if (draft) {
+        setPickupPoint(draft.pickupPoint);
+        setPickupLandmark(draft.pickupLandmark);
+        setDropPoint(draft.dropPoint);
+        setDropLandmark(draft.dropLandmark);
+        setItemDescription(draft.itemDescription);
+        setDeclaredValue(draft.declaredValue);
+        setProposedFare(draft.proposedFare);
+        // Restored landmarks are user-owned text (not live from the map): treat them as typed.
+        if (draft.pickupLandmark) setPickupLandmarkTouched(true);
+        if (draft.dropLandmark) setDropLandmarkTouched(true);
+        setDraftRestored(true);
+      }
+      hydrated.current = true;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist the draft (PII-free) whenever a persisted field changes, after initial hydration.
+  useEffect(() => {
+    if (!hydrated.current) return;
+    void saveDraft({
+      pickupPoint,
+      pickupLandmark,
+      dropPoint,
+      dropLandmark,
+      itemDescription,
+      declaredValue,
+      proposedFare,
+    });
+  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, itemDescription, declaredValue, proposedFare]);
+
+  // Landmark edits: mark the field user-owned and drop the "from map" hint.
+  const editPickupLandmark = useCallback((t: string): void => {
+    setPickupLandmark(t);
+    setPickupLandmarkTouched(true);
+    setPickupLandmarkFromMap(false);
+  }, []);
+  const editDropLandmark = useCallback((t: string): void => {
+    setDropLandmark(t);
+    setDropLandmarkTouched(true);
+    setDropLandmarkFromMap(false);
+  }, []);
+
+  // Auto-fill from reverse geocode — only while the field is untouched (user hasn't typed one).
+  const onPickupReverseGeocode = useCallback(
+    (landmark: string): void => {
+      if (pickupLandmarkTouched) return;
+      setPickupLandmark(landmark);
+      setPickupLandmarkFromMap(true);
+    },
+    [pickupLandmarkTouched],
+  );
+  const onDropReverseGeocode = useCallback(
+    (landmark: string): void => {
+      if (dropLandmarkTouched) return;
+      setDropLandmark(landmark);
+      setDropLandmarkFromMap(true);
+    },
+    [dropLandmarkTouched],
+  );
+
+  const clearForm = useCallback((): void => {
+    setPickupPoint(null);
+    setPickupLandmark("");
+    setDropPoint(null);
+    setDropLandmark("");
+    setItemDescription("");
+    setDeclaredValue("");
+    setProposedFare("");
+    setPickupLandmarkTouched(false);
+    setDropLandmarkTouched(false);
+    setPickupLandmarkFromMap(false);
+    setDropLandmarkFromMap(false);
+    setDraftRestored(false);
+    void clearDraft();
+  }, []);
 
   const fare = parseNum(proposedFare);
   const coordsOk = pickupPoint != null && dropPoint != null;
@@ -69,7 +202,11 @@ export default function HomeScreen(): React.ReactElement {
         rider: null,
         events: [],
         counterpartyPhone: null,
+        expiresAt: order.expiresAt,
       });
+      // Draft fulfilled — wipe it so the next visit starts clean.
+      setDraftRestored(false);
+      void clearDraft();
       router.push(`/order/${order.id}`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't create the order.");
@@ -90,15 +227,67 @@ export default function HomeScreen(): React.ReactElement {
           </View>
           <Sub>Drop a pin for pickup and drop-off, name your price, and riders will offer.</Sub>
 
+          {draftRestored ? (
+            <View
+              accessibilityRole="text"
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                alignSelf: "flex-start",
+                backgroundColor: tokens.color.surface,
+                borderWidth: 1,
+                borderColor: tokens.color.line,
+                borderRadius: tokens.radius.pill,
+                paddingLeft: 10,
+                paddingRight: 4,
+                paddingVertical: 4,
+                marginBottom: tokens.space.md,
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accent }}>Draft restored</Text>
+              <Pressable
+                onPress={clearForm}
+                accessibilityRole="button"
+                accessibilityLabel="Clear the restored draft"
+                style={({ pressed }) => ({
+                  minHeight: tokens.touchTargetMin,
+                  justifyContent: "center",
+                  paddingHorizontal: tokens.space.sm,
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.muted }}>Clear</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           <Card>
-            <MapPicker label="Pickup" value={pickupPoint} onChange={setPickupPoint} showMyLocation />
-            <Field label="Pickup landmark" value={pickupLandmark} onChangeText={setPickupLandmark} placeholder="Eastgate Mall, CBD" maxLength={160} />
+            <MapPicker
+              label="Pickup"
+              value={pickupPoint}
+              onChange={setPickupPoint}
+              onReverseGeocode={onPickupReverseGeocode}
+              showMyLocation
+            />
+            <Field
+              label={pickupLandmarkFromMap ? "Pickup landmark  • from map" : "Pickup landmark"}
+              value={pickupLandmark}
+              onChangeText={editPickupLandmark}
+              placeholder="Eastgate Mall, CBD"
+              maxLength={160}
+            />
             <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
           </Card>
 
           <Card>
-            <MapPicker label="Drop-off" value={dropPoint} onChange={setDropPoint} />
-            <Field label="Drop-off landmark" value={dropLandmark} onChangeText={setDropLandmark} placeholder="14 Glenara Ave, Avenues" maxLength={160} />
+            <MapPicker label="Drop-off" value={dropPoint} onChange={setDropPoint} onReverseGeocode={onDropReverseGeocode} />
+            <Field
+              label={dropLandmarkFromMap ? "Drop-off landmark  • from map" : "Drop-off landmark"}
+              value={dropLandmark}
+              onChangeText={editDropLandmark}
+              placeholder="14 Glenara Ave, Avenues"
+              maxLength={160}
+            />
             <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
           </Card>
 

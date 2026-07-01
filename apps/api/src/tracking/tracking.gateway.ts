@@ -3,6 +3,7 @@ import {
   ConnectedSocket,
   MessageBody,
   type OnGatewayConnection,
+  type OnGatewayDisconnect,
   type OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
@@ -28,7 +29,7 @@ interface SocketUser {
  * truth on reconnect. The Redis adapter fans events out across API instances.
  */
 @WebSocketGateway({ cors: { origin: "*" } })
-export class TrackingGateway implements OnGatewayInit, OnGatewayConnection {
+export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(TrackingGateway.name);
 
   @WebSocketServer() server!: Server;
@@ -58,6 +59,20 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection {
       client.data.user = this.tokens.verifyAccess(raw) as SocketUser;
     } catch {
       client.disconnect(true);
+    }
+  }
+
+  /**
+   * On disconnect, flush the rider's last live position (held in Redis with a short TTL) to PG so it
+   * isn't lost once the key expires. Best-effort — a flush failure must never surface to the socket.
+   */
+  handleDisconnect(client: Socket): void {
+    const user = client.data.user as SocketUser | undefined;
+    if (!user) return;
+    try {
+      void this.tracking.flushToPg(user.sub);
+    } catch {
+      /* best-effort: losing the last position on disconnect is acceptable, throwing is not */
     }
   }
 
@@ -109,7 +124,7 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection {
       lng: body.lng,
       at: new Date().toISOString(),
     });
-    await this.tracking.updateRiderLocation(user.sub, body.lat, body.lng);
+    await this.tracking.recordFix(user.sub, body.lat, body.lng);
     return { ok: true };
   }
 

@@ -37,6 +37,9 @@ export function useRiderBoard(online: boolean): { connected: boolean } {
       const parsed = BoardNewOrderEvent.safeParse(raw);
       if (!parsed.success) return;
       const order = parsed.data as OpenOrder;
+      // Merge into the same ["openOrders"] cache the REST fetch fills. Note: this live push is still
+      // global (city-wide), whereas the REST fetch is now geo-scoped to nearby orders — the rider
+      // screen's haversine sort reconciles the two visually (nearest first). No change needed here.
       qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => {
         if (!prev) return [order];
         if (prev.some((o) => o.id === order.id)) return prev; // dedupe: poll may have it already

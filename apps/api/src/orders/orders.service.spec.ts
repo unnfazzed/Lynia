@@ -1,4 +1,4 @@
-import { BoardNewOrderEvent, type CreateOrderRequest, quoteFare } from "@lynia/shared";
+import { BoardNewOrderEvent, type CreateOrderRequest, OFFER_WINDOW_MS, quoteFare } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { OfferExpiryService } from "../matching/offer-expiry.service";
 import type { NotificationsService } from "../notifications/notifications.service";
@@ -16,7 +16,11 @@ const orderInput: CreateOrderRequest = {
 };
 
 // Inert collaborators for the read paths (create's broadcast is exercised explicitly below).
-const noTracking = { nearbyRiders: async (): Promise<NearbyRider[]> => [] } as unknown as TrackingService;
+// getLivePosition returns null (no Redis) so getSnapshot falls back to the PG rider columns.
+const noTracking = {
+  nearbyRiders: async (): Promise<NearbyRider[]> => [],
+  getLivePosition: async () => null,
+} as unknown as TrackingService;
 const noNotifications = { notifyNewBroadcast: async (): Promise<void> => {} } as unknown as NotificationsService;
 /** Fake WS gateway — the board push is best-effort; spy on it, never hit a real socket. */
 const fakeGateway = () => ({ emitOffersChanged: vi.fn(), emitBoardNewOrder: vi.fn() });
@@ -208,6 +212,7 @@ describe("OrdersService.getSnapshot", () => {
     proposedFare: 2.5,
     customerId: "cust-1",
     riderId: "rider-1",
+    createdAt: new Date("2026-06-26T00:00:00Z"),
     pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" },
     dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues", contactPhone: "+263772222222" },
     customer: { phone: "+263771111111" },
@@ -255,6 +260,34 @@ describe("OrdersService.getSnapshot", () => {
   it("never leaks a phone to a third party", async () => {
     const snap = await svc(row()).getSnapshot("ord-1", "stranger");
     expect(snap.counterpartyPhone).toBeNull();
+  });
+
+  it("returns expiresAt = createdAt + OFFER_WINDOW_MS while open_for_offers (auction countdown)", async () => {
+    const createdAt = new Date("2026-06-26T00:00:00Z");
+    const snap = await svc(row({ status: "open_for_offers", createdAt })).getSnapshot("ord-1", "cust-1");
+    expect(snap.expiresAt).toBe(new Date(createdAt.getTime() + OFFER_WINDOW_MS).toISOString());
+  });
+
+  it("returns expiresAt = null once the order is no longer open (assigned)", async () => {
+    const snap = await svc(row({ status: "assigned" })).getSnapshot("ord-1", "cust-1");
+    expect(snap.expiresAt).toBeNull();
+  });
+
+  it("prefers the Redis live rider position over the stale PG columns", async () => {
+    const tracking = {
+      nearbyRiders: async (): Promise<NearbyRider[]> => [],
+      getLivePosition: async () => ({ lat: -17.9, lng: 31.1, at: 1_700_000_000_000 }),
+    } as unknown as TrackingService;
+    const s = new OrdersService(
+      { order: { findUnique: async () => row() } } as unknown as PrismaService,
+      {} as OfferExpiryService,
+      tracking,
+      noNotifications,
+      noGateway,
+    );
+    const snap = await s.getSnapshot("ord-1", "cust-1");
+    expect(snap.rider).toMatchObject({ profileId: "rider-1", currentLat: -17.9, currentLng: 31.1 });
+    expect(snap.rider!.updatedAt).toEqual(new Date(1_700_000_000_000));
   });
 });
 
@@ -310,6 +343,47 @@ describe("OrdersService.listOpen", () => {
     expect(rows[0]!.pickup).not.toHaveProperty("contactPhone");
     expect(rows[0]!.dropoff).not.toHaveProperty("contactPhone");
     expect(JSON.stringify(rows[0])).not.toContain("+263");
+  });
+
+  it("with lat/lng takes the geo path ($queryRaw) and redacts contactPhone from the rows", async () => {
+    const findMany = vi.fn(async () => []);
+    const queryRaw = vi.fn(async () => [
+      {
+        id: "o1",
+        pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" },
+        dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues", contactPhone: "+263772222222" },
+        item_desc: "Documents",
+        suggested_fare: { toString: () => "2.40" },
+        proposed_fare: { toString: () => "2.50" },
+        distance_km: 1.5,
+        created_at: new Date("2026-06-26T00:00:00Z"),
+      },
+    ]);
+    const prisma = { order: { findMany }, $queryRaw: queryRaw };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+
+    const rows = await svc.listOpen(-17.83, 31.05, 3000);
+
+    // Geo path taken: the raw PostGIS query runs, the city-wide findMany does not.
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(findMany).not.toHaveBeenCalled();
+    expect(rows[0]).toMatchObject({ id: "o1", itemDesc: "Documents", suggestedFare: "2.40", proposedFare: "2.50", distanceKm: 1.5 });
+    // Same redaction as the city-wide path — point + landmark only, never contactPhone.
+    expect(rows[0]!.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" });
+    expect(rows[0]!.pickup).not.toHaveProperty("contactPhone");
+    expect(JSON.stringify(rows[0])).not.toContain("+263");
+  });
+
+  it("without lat/lng falls back to the city-wide findMany path", async () => {
+    const findMany = vi.fn(async () => []);
+    const queryRaw = vi.fn(async () => []);
+    const prisma = { order: { findMany }, $queryRaw: queryRaw };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+
+    await svc.listOpen();
+
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });
 
@@ -395,6 +469,7 @@ describe("OrdersService.activeForRider", () => {
       proposedFare: 2.5,
       customerId: "cust-1",
       riderId: "rider-1",
+      createdAt: new Date("2026-06-26T00:00:00Z"),
       customer: { phone: "+263771111111" },
       rider: { profileId: "rider-1", currentLat: null, currentLng: null, updatedAt: null, profile: { phone: "+263782000000" } },
       events: [],

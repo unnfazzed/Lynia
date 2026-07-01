@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, OFFER_WINDOW_MS, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -82,6 +82,9 @@ export class OrdersService {
       proposedFare: order.proposedFare.toString(),
       suggestedFare: order.suggestedFare.toString(),
       distanceKm: order.distanceKm,
+      // Auction countdown: the client renders the window off createdAt + OFFER_WINDOW_MS (the same
+      // window the server schedules expiry against). Status is open_for_offers on create.
+      expiresAt: new Date(order.createdAt.getTime() + OFFER_WINDOW_MS).toISOString(),
     };
   }
 
@@ -132,8 +135,16 @@ export class OrdersService {
     }
   }
 
-  /** Open orders a rider can bid on. The rider app sorts/filters by distance (haversine) client-side. */
-  async listOpen() {
+  /**
+   * Open orders a rider can bid on. With a caller position (lat & lng) the board is scoped to
+   * {@link BROADCAST_RADIUS_M}-scale radius and distance-sorted server-side (PostGIS ST_DWithin over
+   * the pickup JSON point). Without a position it falls back to the city-wide, newest-first list so
+   * the endpoint stays backward-compatible. Either way contactPhone is redacted (§5d reveal window).
+   */
+  async listOpen(lat?: number, lng?: number, radiusM = 5000) {
+    if (lat !== undefined && lng !== undefined) {
+      return this.listOpenNearby(lat, lng, radiusM);
+    }
     const orders = await this.prisma.order.findMany({
       where: { status: "open_for_offers" },
       orderBy: { createdAt: "desc" },
@@ -160,6 +171,72 @@ export class OrdersService {
       proposedFare: o.proposedFare.toString(),
       distanceKm: o.distanceKm,
       createdAt: o.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Geo-scoped open board: open orders whose pickup point is within `radiusM` of the caller,
+   * nearest-first. The pickup lat/lng live in the pickup JSON column, so we extract them, build a
+   * geography point and filter with ST_DWithin. Rows whose pickup JSON is malformed (a null lat/lng
+   * extract) are skipped by the WHERE guard rather than 500-ing the board. Fares are serialized and
+   * contactPhone is redacted just like the city-wide path.
+   */
+  private async listOpenNearby(lat: number, lng: number, radiusM: number) {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        pickup: Prisma.JsonValue;
+        dropoff: Prisma.JsonValue;
+        item_desc: string;
+        suggested_fare: Prisma.Decimal;
+        proposed_fare: Prisma.Decimal;
+        distance_km: number | null;
+        created_at: Date;
+      }>
+    >`
+      SELECT id,
+             pickup,
+             dropoff,
+             item_desc,
+             suggested_fare,
+             proposed_fare,
+             distance_km,
+             created_at
+      FROM orders
+      WHERE status = 'open_for_offers'
+        AND (pickup -> 'point' ->> 'lat') IS NOT NULL
+        AND (pickup -> 'point' ->> 'lng') IS NOT NULL
+        AND ST_DWithin(
+              ST_SetSRID(
+                ST_MakePoint(
+                  (pickup -> 'point' ->> 'lng')::float8,
+                  (pickup -> 'point' ->> 'lat')::float8
+                ),
+                4326
+              )::geography,
+              ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
+              ${radiusM}
+            )
+      ORDER BY ST_Distance(
+                 ST_SetSRID(
+                   ST_MakePoint(
+                     (pickup -> 'point' ->> 'lng')::float8,
+                     (pickup -> 'point' ->> 'lat')::float8
+                   ),
+                   4326
+                 )::geography,
+                 ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography
+               ) ASC
+      LIMIT 50`;
+    return rows.map((o) => ({
+      id: o.id,
+      pickup: publicWaypoint(o.pickup),
+      dropoff: publicWaypoint(o.dropoff),
+      itemDesc: o.item_desc,
+      suggestedFare: o.suggested_fare.toString(),
+      proposedFare: o.proposed_fare.toString(),
+      distanceKm: o.distance_km,
+      createdAt: o.created_at.toISOString(),
     }));
   }
 
@@ -234,6 +311,7 @@ export class OrdersService {
         proposedFare: true,
         customerId: true,
         riderId: true,
+        createdAt: true,
         pickup: true,
         dropoff: true,
         customer: { select: { phone: true } },
@@ -262,6 +340,21 @@ export class OrdersService {
     if (revealed && isCustomer) counterpartyPhone = order.rider?.profile.phone ?? null;
     else if (revealed && isRider) counterpartyPhone = order.customer.phone;
 
+    // Freshest rider position: the live-position index (Redis) leads the PG columns, which only
+    // hold the last throttled flush. Fall back to the PG snapshot on a miss / no-Redis.
+    let rider = null as
+      | { profileId: string; currentLat: number | null; currentLng: number | null; updatedAt: Date | null }
+      | null;
+    if (order.rider) {
+      const live = await this.tracking.getLivePosition(order.rider.profileId);
+      rider = {
+        profileId: order.rider.profileId,
+        currentLat: live ? live.lat : order.rider.currentLat,
+        currentLng: live ? live.lng : order.rider.currentLng,
+        updatedAt: live ? new Date(live.at) : order.rider.updatedAt,
+      };
+    }
+
     return {
       id: order.id,
       status: order.status,
@@ -271,16 +364,14 @@ export class OrdersService {
       // separately by `counterpartyPhone` and the reveal window).
       pickup: publicWaypoint(order.pickup),
       dropoff: publicWaypoint(order.dropoff),
-      rider: order.rider
-        ? {
-            profileId: order.rider.profileId,
-            currentLat: order.rider.currentLat,
-            currentLng: order.rider.currentLng,
-            updatedAt: order.rider.updatedAt,
-          }
-        : null,
+      rider,
       events: order.events,
       counterpartyPhone,
+      // Auction countdown: present only while the order is still open for offers.
+      expiresAt:
+        order.status === "open_for_offers"
+          ? new Date(order.createdAt.getTime() + OFFER_WINDOW_MS).toISOString()
+          : null,
     };
   }
 }

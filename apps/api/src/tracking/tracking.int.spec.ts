@@ -4,11 +4,13 @@
  * and nearbyRiders (ST_DWithin radius filter + ST_Distance ordering over the GiST geog index).
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "./tracking.service";
 
 const prisma = new PrismaService();
-const tracking = new TrackingService(prisma);
+// REDIS_URL unset: recordFix/updateRiderLocation exercise the direct PG geo write (no throttle).
+const tracking = new TrackingService({ REDIS_URL: undefined } as Env, prisma);
 
 // Harare CBD. ~0.01° of latitude ≈ 1.11 km, so the offsets below give predictable distances.
 const CENTER = { lat: -17.8292, lng: 31.0522 };

@@ -23,6 +23,27 @@ const SORT_MODES: { key: SortMode; label: string }[] = [
   { key: "rated", label: "Top rated" },
 ];
 
+const URGENT_MS = 20_000;
+
+/** mm:ss for the auction timer. */
+function formatClock(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/** Spoken form for the timer's accessibilityLabel, e.g. "1 minute 20 seconds left". */
+function spokenRemaining(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  const parts: string[] = [];
+  if (m > 0) parts.push(`${m} minute${m === 1 ? "" : "s"}`);
+  parts.push(`${s} second${s === 1 ? "" : "s"}`);
+  return `Offer window: ${parts.join(" ")} left`;
+}
+
 /** Live-auction: OS reduce-motion preference, so the bid entrance animation degrades to instant. */
 function useReduceMotion(): boolean {
   const [reduce, setReduce] = useState(false);
@@ -126,6 +147,55 @@ export default function OrderScreen(): React.ReactElement {
     }
     prevBidCount.current = liveBidCount;
   }, [liveBidCount, status]);
+
+  // --- Auction countdown ---
+  // Tick a 1s clock ONLY while open_for_offers with a known expiry. During a socket reconnect we
+  // freeze the last value (we can't trust wall-clock drift vs. the server), so the ticker skips.
+  const expiresAt = orderQ.data?.expiresAt ?? null;
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
+  const frozen = connectionState === "reconnecting";
+  useEffect(() => {
+    if (status !== "open_for_offers" || expiresAt == null) {
+      setRemainingMs(null);
+      return;
+    }
+    const end = new Date(expiresAt).getTime();
+    const compute = () => setRemainingMs(Math.max(0, end - Date.now()));
+    compute();
+    if (frozen) return; // hold the last value; don't advance a clock we can't trust
+    const iv = setInterval(compute, 1000);
+    return () => clearInterval(iv);
+  }, [status, expiresAt, frozen]);
+
+  // SR thresholds fire once each (not a per-second live region, which is unusable).
+  const firedThresholds = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    firedThresholds.current.clear();
+  }, [orderId]);
+  useEffect(() => {
+    if (remainingMs == null || status !== "open_for_offers") return;
+    const fire = (key: number, msg: string) => {
+      if (remainingMs <= key && !firedThresholds.current.has(key)) {
+        firedThresholds.current.add(key);
+        AccessibilityInfo.announceForAccessibility(msg);
+      }
+    };
+    fire(60_000, "Offer window: 1 minute left");
+    fire(30_000, "Offer window: 30 seconds left");
+    fire(0, "Offer window closing");
+  }, [remainingMs, status]);
+
+  // Amber-urgency colour crossfade over the last 20s (instant under reduce-motion).
+  const urgent = remainingMs != null && remainingMs <= URGENT_MS;
+  const urgencyAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const to = urgent ? 1 : 0;
+    if (reduceMotion) {
+      urgencyAnim.setValue(to);
+      return;
+    }
+    Animated.timing(urgencyAnim, { toValue: to, duration: 200, useNativeDriver: false }).start();
+  }, [urgent, reduceMotion, urgencyAnim]);
 
   // Order the offers for display (D-d): best-match blends price + rating + ETA and marks the top pick;
   // the other modes are plain single-key sorts. Selection is unaffected — the customer still chooses.
@@ -247,12 +317,38 @@ export default function OrderScreen(): React.ReactElement {
         {order.status === "open_for_offers" ? (
           <View>
             {/* Live header: bid count the moment the first bid lands, else a "finding" state; a
-                reconnecting hint when the auction socket is down and we're on the poll fallback. */}
-            <Sub>
-              {bidCount > 0
-                ? `${bidCount} ${bidCount === 1 ? "rider" : "riders"} bidding${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
-                : `Finding riders near you…${connectionState === "reconnecting" ? " reconnecting…" : ""}`}
-            </Sub>
+                reconnecting hint when the auction socket is down and we're on the poll fallback.
+                Right-aligned countdown shares the baseline — calm (muted) until the last 20s, then
+                amber-urgency (danger, bold), with a paused dot when the socket is reconnecting. */}
+            <View style={{ flexDirection: "row", alignItems: "baseline", marginBottom: tokens.space.lg }}>
+              <Text style={{ flex: 1, fontSize: 14, color: tokens.color.muted }}>
+                {bidCount > 0
+                  ? `${bidCount} ${bidCount === 1 ? "rider" : "riders"} bidding${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
+                  : `Finding riders near you…${connectionState === "reconnecting" ? " reconnecting…" : ""}`}
+              </Text>
+              {remainingMs != null ? (
+                <Animated.Text
+                  accessibilityLabel={spokenRemaining(remainingMs)}
+                  style={{
+                    fontSize: 14,
+                    fontVariant: ["tabular-nums"],
+                    fontWeight: urgent ? "700" : "400",
+                    color: urgencyAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [tokens.color.muted, tokens.color.danger],
+                    }),
+                  }}
+                >
+                  {formatClock(remainingMs)}
+                  {frozen ? " ·" : ""}
+                </Animated.Text>
+              ) : null}
+            </View>
+            {urgent ? (
+              // Pre-surface the recovery affordance BEFORE the dead-end — same destination as the
+              // expired state's "Send another request". Ghost so it doesn't compete with "Choose".
+              <Button label="Nudge price & re-broadcast" variant="ghost" onPress={() => router.replace("/home")} />
+            ) : null}
             {orderedOffers.length > 1 ? (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: tokens.space.sm }}>
                 {SORT_MODES.map((m) => {

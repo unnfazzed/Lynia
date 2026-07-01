@@ -104,11 +104,25 @@ export default function RiderHome(): React.ReactElement {
   const board = useRiderBoard(online);
   const openQ = useQuery({
     queryKey: ["openOrders"],
-    queryFn: getOpenOrders,
+    // Pass the rider's position so the server geo-scopes to nearby, distance-sorted orders; with no
+    // loc yet it fetches city-wide (backward compat). The key stays exactly ["openOrders"] — do NOT
+    // add loc — because useRiderBoard merges live pushes into that exact key. When loc arrives/changes
+    // the useEffect below invalidates this query to re-run the geo-scoped fetch.
+    queryFn: () => getOpenOrders(loc ?? undefined, 5000),
     enabled: online,
     refetchInterval: online ? 15_000 : false,
   });
 
+  // Once the rider's position is known (or moves), re-run the geo-scoped fetch. We invalidate rather
+  // than key the query on loc so the live-board merge into ["openOrders"] keeps working.
+  useEffect(() => {
+    if (!online || !loc) return;
+    void qc.invalidateQueries({ queryKey: ["openOrders"] });
+  }, [loc?.lat, loc?.lng, online, qc]);
+
+  // Client-side haversine sort. Now largely a no-op when the server already distance-sorted, but it's
+  // kept as the sort for the loc-absent (city-wide) fallback and to visually reconcile live WS pushes
+  // (which are still global) against the geo-scoped REST results.
   const ranked = (openQ.data ?? [])
     .filter((o) => !bidIds.has(o.id)) // hide orders we've already bid on (one round per rider)
     .map((o) => ({ o, km: loc ? haversineKm(loc, o.pickup.point) : null }))
