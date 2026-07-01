@@ -1,6 +1,6 @@
 import * as Notifications from "expo-notifications";
-import { useRouter } from "expo-router";
-import { useEffect } from "react";
+import { useRootNavigationState, useRouter } from "expo-router";
+import { useEffect, useRef } from "react";
 
 /**
  * The `data` payload the backend attaches to every push (see `apps/api/.../notifications.service.ts`).
@@ -45,6 +45,15 @@ function routeFor(data: PushData): string | null {
  */
 export function usePushNotificationRouter(): void {
   const router = useRouter();
+  // `undefined` until the root navigator has mounted. Navigating before that is a no-op-or-warn in
+  // expo-router ("navigate before mounting the Root Layout"), which would silently drop a cold-start
+  // deep link. We gate the cold-start push on this becoming defined; warm taps can't race it.
+  const navReady = useRootNavigationState()?.key != null;
+  // Path a cold-start tap wants to open, held until the navigator is ready.
+  const pendingPath = useRef<string | null>(null);
+  // Live readiness, read by the once-only mount effect's async callback (its closure captures the
+  // initial `navReady`, so it needs the ref to see the current value).
+  const navReadyRef = useRef(navReady);
 
   useEffect(() => {
     const navigate = (response: Notifications.NotificationResponse | null): void => {
@@ -54,13 +63,20 @@ export function usePushNotificationRouter(): void {
       if (path) router.push(path);
     };
 
-    // Cold start: the tap that launched the app is surfaced here, once, on mount.
+    // Cold start: the tap that launched the app is surfaced here, once, on mount. If the navigator
+    // isn't mounted yet, stash the path and let the readiness effect below flush it.
     let cancelled = false;
     void Notifications.getLastNotificationResponseAsync().then((response) => {
-      if (!cancelled) navigate(response);
+      if (cancelled) return;
+      const data = response?.notification.request.content.data as PushData | undefined;
+      const path = data ? routeFor(data) : null;
+      if (!path) return;
+      if (navReadyRef.current) router.push(path);
+      else pendingPath.current = path;
     });
 
-    // Warm taps: fires for every tap while the app is alive (foreground or background).
+    // Warm taps: fires for every tap while the app is alive (foreground or background). The navigator
+    // is already mounted for these, so they navigate immediately.
     const subscription = Notifications.addNotificationResponseReceivedListener(navigate);
 
     return () => {
@@ -69,4 +85,15 @@ export function usePushNotificationRouter(): void {
     };
     // `router` is stable for the app's lifetime; run this wiring exactly once.
   }, [router]);
+
+  // Keep the readiness ref in sync and flush any cold-start path that arrived before the navigator.
+  useEffect(() => {
+    navReadyRef.current = navReady;
+    // Flush a cold-start path that arrived before the navigator was ready.
+    if (navReady && pendingPath.current) {
+      const path = pendingPath.current;
+      pendingPath.current = null;
+      router.push(path);
+    }
+  }, [navReady, router]);
 }

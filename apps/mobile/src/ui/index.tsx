@@ -66,9 +66,10 @@ export function Field(props: {
           backgroundColor: tokens.color.bg,
         }}
       />
-      {/* Error slot: red, ≥12px, below the input; only occupies space when errored (no layout reserve). */}
+      {/* Error slot: red, 13px (a rider must act on it — one tier above the 12px caption), below the
+          input; only occupies space when errored (no layout reserve). */}
       {errored ? (
-        <Text style={{ color: tokens.color.danger, fontSize: 12, marginTop: 4 }}>{props.error}</Text>
+        <Text style={{ color: tokens.color.danger, fontSize: 13, marginTop: 4 }}>{props.error}</Text>
       ) : null}
     </View>
   );

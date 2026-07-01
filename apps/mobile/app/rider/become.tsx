@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
-import { Image, Linking, ScrollView, Text } from "react-native";
+import { Image, Linking, Pressable, ScrollView, Text } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
@@ -12,6 +12,10 @@ import { Button, Card, ErrorText, Field, Heading, Label, Screen, Sub } from "../
 // Where the "what we do with your data" copy links. Kept as a constant so the consent block and any
 // future settings screen point at the same policy.
 const PRIVACY_URL = "https://lyniago.lyniafinance.com/privacy";
+
+// Top-level banner shown when submit is blocked by field errors. Named so blur-validation can clear
+// exactly this message (and not a real API error) once the rider fixes everything.
+const FIX_FIELDS_MSG = "Please fix the highlighted fields.";
 
 // Per-field validation. Rules are deliberately forgiving (KYC does the real ID check) — this only
 // catches obviously-empty/too-short input before we spend a Didit session on it. Returns null = valid.
@@ -52,13 +56,17 @@ export default function BecomeRiderScreen(): React.ReactElement {
 
   const fieldValues: Record<FieldName, string> = { firstName, lastName, idNumber, bikeReg };
   const validateOnBlur = (name: FieldName): void =>
-    setFieldErrors((prev) => ({ ...prev, [name]: validateField(name, fieldValues[name]) ?? undefined }));
+    setFieldErrors((prev) => {
+      const next = { ...prev, [name]: validateField(name, fieldValues[name]) ?? undefined };
+      // Once every field is clean, drop the "fix the highlighted fields" banner so it doesn't linger.
+      if (!Object.values(next).some(Boolean)) setError((e) => (e === FIX_FIELDS_MSG ? null : e));
+      return next;
+    });
 
+  // Gate the button on the *same* predicate submit uses, so it never enables only for submit to reject
+  // (previously canSubmit accepted a 4-char ID while validateField requires ≥6 stripped alphanumerics).
   const canSubmit =
-    firstName.trim().length > 0 &&
-    lastName.trim().length > 0 &&
-    idNumber.trim().length >= 4 &&
-    bikeReg.trim().length >= 3 &&
+    (Object.keys(fieldValues) as FieldName[]).every((name) => validateField(name, fieldValues[name]) === null) &&
     photoKey != null &&
     !uploading;
 
@@ -105,7 +113,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
     });
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) {
-      setError("Please fix the highlighted fields.");
+      setError(FIX_FIELDS_MSG);
       return;
     }
     if (!photoKey) return;
@@ -216,13 +224,16 @@ export default function BecomeRiderScreen(): React.ReactElement {
                 and verification result to run rides and meet the law — not for marketing — and delete the photos once
                 the check is done. You'll finish in your browser, then return here to go online.
               </Text>
-              <Text
+              {/* Pressable (not a bare Text) so the tap target clears the 44px minimum — vertical padding
+                  gives it height, hitSlop widens the reach on a cheap phone. */}
+              <Pressable
                 accessibilityRole="link"
                 onPress={() => void Linking.openURL(PRIVACY_URL)}
-                style={{ fontSize: 14, fontWeight: "700", color: tokens.color.accent, marginTop: tokens.space.sm }}
+                hitSlop={8}
+                style={{ paddingVertical: tokens.space.sm, alignSelf: "flex-start" }}
               >
-                Read our privacy policy
-              </Text>
+                <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.accent }}>Read our privacy policy</Text>
+              </Pressable>
             </Card>
             <Button label="Submit for verification" onPress={submit} loading={busy} disabled={!canSubmit} />
           </>

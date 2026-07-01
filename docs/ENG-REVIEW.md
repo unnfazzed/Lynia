@@ -371,3 +371,50 @@ call needs a real project, so the payload mapper (`buildFcmMessage`) is what's a
 **Deferred (unchanged):** the NIT `notifyOrderStatus` recipient-ids overload, and the §4 device-build KYC
 UX items (those are design-side — see `docs/DESIGN-REVIEW.md` §5). **Current status →
 `docs/PILOT-READINESS.md`.**
+
+---
+
+## 6. Phase-3 build — notification-tap deep-linking + KYC validation (2026-07-01)
+
+> Build pass that closes the *receive* side of the §5 push work (a tapped notification must land the user
+> on the right screen, not just Home) and tightens the KYC form's client-side validation. Developed by
+> parallel build agents, then put through an independent staff-engineer correctness review whose verified
+> findings are folded in below. Status: **SHIPPED (green).**
+
+**What landed:**
+
+- **Notification-tap router** (`src/push/use-push-notification-router.ts`, mounted once in `_layout.tsx`
+  as `PushRouter`). A `routeFor(data)` maps the backend's `{orderId, status, kind}` payload to a route —
+  `kind:"broadcast"` → the rider board, `kind:"offer"` → the customer order screen, a rider-facing
+  `status` (`assigned`/`completed`, mirroring `STATUS_NOTICES.to === ["rider"]`) → the rider job, any
+  other status or a bare `orderId` → the order/tracking screen. Handles **warm** taps (response listener)
+  and **cold-start** taps (the launch-response query). Fully defensive: a missing/partial payload yields a
+  no-op, and nothing throws.
+- **KYC client validation** (`become.tsx`, `src/ui/index.tsx`). Per-field `validateField` with an inline
+  error slot + danger border on `Field`, blur + submit validation, numeric ID keyboard, and Label↔input
+  screen-reader association (the design half is `docs/DESIGN-REVIEW.md` §6).
+
+**Review findings folded in (this pass):**
+
+- **[HIGH] Cold-start navigation before the router is ready.** `getLastNotificationResponseAsync` could
+  resolve and `router.push` *before* expo-router's root navigator mounts — a no-op-or-warn that silently
+  drops the deep link, stranding a killed-app tap on Home. **Fixed:** gate the cold-start push on
+  `useRootNavigationState()?.key`; if the tap resolves first, stash the path and flush it in a readiness
+  effect. Warm taps are unaffected (navigator already mounted).
+- **[MEDIUM] `canSubmit` / `validateField` idNumber mismatch.** The button enabled at raw length ≥ 4 while
+  submit rejected stripped-alphanumeric < 6 — an enable-but-reject trap. **Fixed:** `canSubmit` now runs
+  the *same* `validateField` predicate over every field, so the button and the submit gate are always in
+  lockstep.
+- **[LOW] Stale "fix the highlighted fields" banner.** The top-level banner persisted after the rider
+  corrected the fields. **Fixed:** blur-validation clears exactly that banner (named `FIX_FIELDS_MSG`, so a
+  real API error is never swallowed) once no field errors remain.
+
+**Confirmed correct (no change):** the `content.data` cast is defensive (every field optional, guarded
+before use); cold-start does **not** double-navigate (the launch tap isn't re-delivered to the warm
+listener); `RIDER_STATUSES` exactly matches the server's rider-targeted statuses. Cross-role route
+guarding (a re-homed token tapping into the wrong role's screen) is left to the existing route-level
+auth — noted, not diff-introduced.
+
+**Tested:** `pnpm --filter @lynia/mobile typecheck` passes. Runtime tap/cold-start behaviour is
+device-gated (needs the APK + a real FCM message) and rides the same `/qa` pass as the rest of the
+Phase-3 UI. **Current status → `docs/PILOT-READINESS.md`.**

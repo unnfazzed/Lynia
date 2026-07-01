@@ -221,3 +221,43 @@ shipped separately (`docs/ENG-REVIEW.md` §4). **Current build status → `docs/
 state still diverge in copy; unifying them is best judged on a real device alongside the stepper/earnings
 skeletons (DESIGN-REVIEW §3/§4). P2 polish (consent block strength, inline field validation, numeric ID
 keyboard, label↔input a11y association) is unchanged. **Current build status → `docs/PILOT-READINESS.md`.**
+
+---
+
+## 6. Phase-3 build — KYC onboarding UX polish (2026-07-01)
+
+> Build pass that closes the §4 **P2** onboarding-UX items deferred as "device-gated polish". Developed by
+> a build agent, then reviewed against `docs/DESIGN.md` by an independent design/UX pass whose findings are
+> folded in below. Status: **SHIPPED.**
+
+**What landed (all four §4 P2 goals):**
+
+- **Stronger consent block** (`become.tsx`). Replaced the 12px muted paragraph with a `--surface` card that
+  names the partner (**Didit**), states what's collected (ID photo + selfie liveness), why it's kept (run
+  rides + legal, *not* marketing), retention (**photos deleted after the check**), and links the policy —
+  all ≥14px `--ink` on `--surface` (high contrast). Right calibre of trust for an ID+selfie ask in a
+  low-trust cash market.
+- **Inline field validation + error slot** (`Field` in `src/ui/index.tsx`). A per-field error turns the
+  input border `--danger` and renders a message below it; validates on blur and again on submit.
+- **Numeric ID keyboard.** `keyboardType="numeric"` (not `number-pad`) so the ZW national-ID check letter
+  (e.g. `63-1234567 A 42`) stays enterable — `number-pad` on iOS is digits-only and would trap the rider.
+- **Label↔input a11y association.** `Label` carries a stable `nativeID`; the input points at it via
+  `accessibilityLabelledBy`/`aria-labelledby`, with `accessibilityLabel`/`aria-label` as the direct-naming
+  fallback (covers iOS, where `LabelledBy` is a no-op) and `aria-invalid` on error.
+
+**Review findings folded in (this pass):**
+
+- **[P2 — touch target] Privacy link was a bare `Text` (~19px tall), under the 44px minimum.** The one
+  requirement the batch actively missed. **Fixed:** wrapped in a `Pressable` with vertical padding +
+  `hitSlop`, so the "Read our privacy policy" affordance clears the ≥44px target on a cheap phone.
+- **[Nit — legibility] Inline error at 12px.** Consistent with the caption tier, but an error a
+  low-literacy rider must *act on* is higher-stakes than a static caption. **Fixed:** bumped to 13px
+  (matching the "Photo added ✓" affordance) — one tier up, still on the grid.
+
+**Confirmed sound (no change):** consent copy meets the trust bar; numeric-keyboard choice is correct; the
+a11y association is implemented right on both platforms; `--danger` on `--bg`/`--surface` clears 4.5:1.
+The `--accent`-on-`--surface` privacy-link contrast sits right at 4.5:1 — acceptable for a non-primary
+link; a future `accent700` swap is logged as optional polish.
+
+**Verdict:** all four §4 P2 onboarding-UX goals delivered; no redesign, no token violations. What remains
+is purely the device-gated visual `/qa` (DT7/DT13). **Current build status → `docs/PILOT-READINESS.md`.**
