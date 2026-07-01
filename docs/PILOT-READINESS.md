@@ -33,6 +33,33 @@ sections through this update.
 
 ---
 
+## 🟢 Update — 2026-07-01: inDrive-parity pass landed (the app now *feels* live)
+
+Since the 06-29 update, the **inDrive UX / latency review** ([`INDRIVE-UX-REVIEW.md`](./INDRIVE-UX-REVIEW.md))
+ran and its **P0 + P1 roadmap shipped end-to-end** (three review-hardened batches, merged via PRs #79/#80).
+The gap it flagged — a correct product that didn't yet *feel* like inDrive — is closed for the moments that
+matter:
+
+- **The reverse auction is now push, not poll** — offers stream to the customer over WS during
+  `open_for_offers`, and new broadcasts push to online riders' boards (geo-scoped, 3×3 cell neighbourhood
+  with a city-wide fallback). Polling stays only as a slow self-heal.
+- **Live tracking is smooth** — marker interpolation, fit-camera-once + a recenter button (no more
+  camera-fight), `websocket→polling` fallback, and a non-flashing reconnect.
+- **Optimistic UI everywhere** — select / cancel / rate / rider-advance reflect instantly with muted rollback.
+- **Scale headroom** — live GPS moved to a **Redis live-position index** (throttled PG flush, emit-before-persist),
+  a **`pickup_geog` GENERATED column + GiST** and **Redis GEO** for nearby lookups, **offer-expiry jitter**, and a
+  **prod `REDIS_URL` boot-guard** (fail-fast on multi-instance without Redis).
+- **Form + map polish** — PII-free persisted draft, reverse-geocoded landmark, taller/expandable tracking map,
+  auction countdown, online chip, seeded ETA, ≥44 px targets, and the **map-anchored home** IA slice.
+
+**API tests 212 → 246 pass**; shared/api/mobile typecheck + api build clean. What remains from the review is
+**P2 depth-and-scale polish** (server-side WS coalesce, history composite indexes/UNION, explicit Prisma pool,
+rating-on-tap) — none a pilot blocker — plus the already-deferred device-gated items. See **Pending tasks** at
+the bottom of this doc. The founder/vendor wiring (WhatsApp BSP, Didit, Firebase) and the dev build remain the
+only pilot gates, unchanged by this pass.
+
+---
+
 ## Verdict (read this first)
 
 The product is now **functionally complete and end-to-end demoable in code**: a full delivery runs
@@ -72,8 +99,9 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
 - **DT4 offer best-match sort** — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector and a
   RECOMMENDED marker (design D-d). The **last buildable-now code gap — now closed.**
 - **Revenue model decided (§6)** — rider commission, 0% for ~6–8 months, infra later (see Decision gates).
-- **Test count** 21 → 72 → 112 → 119 → **212** API tests (Phase-3 push/broadcast, KYC-hardening, and
-  WhatsApp-OTP suites added since the 06-27 snapshot); mobile typecheck in the CI gate.
+- **Test count** 21 → 72 → 112 → 119 → 212 → **246** API tests (Phase-3 push/broadcast, KYC-hardening,
+  WhatsApp-OTP, and the 07-01 inDrive-parity suites added since the 06-27 snapshot); mobile typecheck in
+  the CI gate.
 
 ## Updated eng-plan scorecard (T0–T13)
 
@@ -357,3 +385,40 @@ gh workflow run release.yml --ref main
 Then complete the real-vendor wiring in the founder runbook above (WhatsApp BSP, Didit keys, Firebase). With
 no vars set the deploy is already launch-safe, and the OTP code is never returned on the `whatsapp`/`sms`
 channels regardless of `OTP_TEST_PHONES`.
+
+---
+
+# ⏳ Pending tasks (single-glance status, 2026-07-01)
+
+Everything codeable through P0/P1 is shipped and CI-green. What remains, grouped by who unblocks it:
+
+### 🔴 Pilot gates — founder / vendor action (not code)
+- [ ] **WhatsApp BSP — production OTP.** Meta Cloud API app + Business verification + an approved
+      authentication-category template, then set `WHATSAPP_*` values and flip `WHATSAPP_ENABLED=true` /
+      `OTP_CHANNEL=whatsapp`. *(Longest lead time — start first. The send is implemented behind the seam.)*
+- [ ] **Didit ZIM-ID — real KYC run.** Create the account/key (one-command `pnpm didit:setup`), store the
+      two secrets, flip `DIDIT_ENABLED=true`, then run a real Zimbabwean ID and record the false-reject rate.
+- [ ] **Firebase project — live FCM send.** `firebase projects:addfirebase lynia-500911`, register the
+      `zw.co.lynia` Android app, and supply `google-services.json` (EAS file secret). *(Server side + build
+      wiring already done.)*
+- [ ] **Greenlight a dev build (not Expo Go)** → then on-device `/qa`: DT5 map, DT7 `/design-review`,
+      device-token FCM, GPS-degradation (T11).
+
+### 🟠 P2 depth & scale polish — codeable, no pilot blocker (from INDRIVE-UX-REVIEW)
+- [ ] **E3** — server-side WS position coalesce (≤1 emit/sec per room).
+- [ ] **E5** — history composite indexes (`orders(customer_id, created_at DESC)` / `(rider_id, …)`,
+      `order_events(order_id, created_at)`) + UNION rewrite.
+- [ ] **E6** — explicit Prisma connection pool / graceful-shutdown tuning before load.
+- [ ] **D3** — rating-on-tap (submit optimistically on star tap; today it's a two-step "Submit rating").
+
+### 🟢 Deferred by decision (not now)
+- [ ] **OTEL collector** — exporter wired; point it at a collector when trip volume needs traces (CEO-deferred).
+- [ ] **Commission / settlement infrastructure** — revenue model decided (0% for ~6–8 months); build at the
+      ~6–8-month monetization trigger (CONCEPT §6).
+- [ ] **Redis online-set for `nearbyRiders`** and **per-region WS board rooms** — intentionally deferred
+      (ghost-rider consistency trap; coarse cell + poll fallback suffices at pilot scale).
+- [ ] **Infra hardening** — drop Cloud SQL public IP, Redis `STANDARD_HA` + Cloud SQL `REGIONAL`, tighter
+      bucket CORS (pre-launch, not pilot; tracked in `infra/terraform/README.md`).
+
+**Bottom line:** the pilot path runs entirely through the 🔴 gates (founder/vendor wiring + a dev build).
+The 🟠 items are post-pilot headroom; the 🟢 items are deferred by explicit decision.
