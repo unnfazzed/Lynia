@@ -4,14 +4,18 @@ import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { retryKyc, setOnline } from "../../src/api/riders";
-import { Button, Card, EmptyState, ErrorText, Field, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
+import { useRiderBoard } from "../../src/realtime/use-rider-board";
+import { Button, Card, EmptyState, ErrorText, Field, Heading, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 import { parseNum } from "../../src/util";
+
+/** Urban motorbike cruising speed for a rough pickup-ETA seed (min = distance / speed). */
+const AVG_PICKUP_KMH = 22;
 
 export default function RiderHome(): React.ReactElement {
   const router = useRouter();
@@ -96,11 +100,13 @@ export default function RiderHome(): React.ReactElement {
     return () => clearInterval(t);
   }, [online]);
 
+  // Board push: new orders arrive live over WS while online; the poll is the 15s self-heal fallback.
+  const board = useRiderBoard(online);
   const openQ = useQuery({
     queryKey: ["openOrders"],
     queryFn: getOpenOrders,
     enabled: online,
-    refetchInterval: online ? 5000 : false,
+    refetchInterval: online ? 15_000 : false,
   });
 
   const ranked = (openQ.data ?? [])
@@ -132,7 +138,10 @@ export default function RiderHome(): React.ReactElement {
   const chooseOrder = (o: OpenOrder): void => {
     setSelected(o);
     setFare(o.proposedFare);
-    setEta("10");
+    // Seed the ETA from the real distance to pickup instead of a constant "10", so the customer's
+    // "Fastest" sort ranks on something real. Rider can still edit before sending.
+    const km = loc ? haversineKm(loc, o.pickup.point) : null;
+    setEta(km != null ? String(Math.max(3, Math.round((km / AVG_PICKUP_KMH) * 60))) : "10");
   };
 
   return (
@@ -191,6 +200,23 @@ export default function RiderHome(): React.ReactElement {
         ) : (
           <>
         <Card>
+          {/* Persistent connection chip so a silent heartbeat-drop is glanceable, not a surprise
+              at offer time. Tap it while offline to go back online. */}
+          <Pressable
+            onPress={() => {
+              if (!online) onlineM.mutate(true);
+            }}
+            disabled={online || onlineM.isPending}
+            accessibilityRole="button"
+            accessibilityLabel={online ? "You are online" : "You are offline — tap to go online"}
+            style={{ minHeight: tokens.touchTargetMin, justifyContent: "center", marginBottom: 4 }}
+          >
+            <StatusPill
+              status={online ? "Online" : "Offline"}
+              tone={online ? "online" : "offline"}
+              dot
+            />
+          </Pressable>
           <Button
             label={online ? "Go offline" : "Go online"}
             variant={online ? "ghost" : "primary"}
@@ -198,7 +224,11 @@ export default function RiderHome(): React.ReactElement {
             loading={onlineM.isPending}
           />
           <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 4 }}>
-            {online ? "You're online — offers you make stay live." : "Go online to see and bid on nearby orders."}
+            {online
+              ? board.connected
+                ? "You're online — new orders arrive live."
+                : "You're online — reconnecting to the live board…"
+              : "Go online to see and bid on nearby orders."}
           </Text>
         </Card>
 

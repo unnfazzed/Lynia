@@ -1,15 +1,15 @@
 import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, rankOffers, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, Animated, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
-import { cancelOrder, getOrder, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
+import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, EmptyState, ErrorText, Heading, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Heading, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
@@ -23,14 +23,57 @@ const SORT_MODES: { key: SortMode; label: string }[] = [
   { key: "rated", label: "Top rated" },
 ];
 
+/** Live-auction: OS reduce-motion preference, so the bid entrance animation degrades to instant. */
+function useReduceMotion(): boolean {
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((r) => {
+      if (alive) setReduce(r);
+    });
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduce);
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+  return reduce;
+}
+
+/**
+ * A single bid, animated in. A newly-arrived offer mounts with a fresh key, so this runs its
+ * slide+fade entrance exactly once — existing cards keep their key and don't re-animate on re-sort
+ * or poll. Honors reduce-motion (renders at rest). useNativeDriver so it stays cheap on low-end
+ * Android; we deliberately avoid animating border colour (JS-thread) to keep it smooth.
+ */
+function BidEntrance({ animate, children }: { animate: boolean; children: React.ReactNode }): React.ReactElement {
+  const v = useRef(new Animated.Value(animate ? 0 : 1)).current;
+  useEffect(() => {
+    if (animate) Animated.timing(v, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+  }, [animate, v]);
+  return (
+    <Animated.View
+      style={{
+        opacity: v,
+        transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 export default function OrderScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
   const orderId = typeof id === "string" ? id : "";
   const qc = useQueryClient();
   const router = useRouter();
+  const reduceMotion = useReduceMotion();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
   const [score, setScore] = useState(5);
   const [sortMode, setSortMode] = useState<SortMode>("best");
+  // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
+  const [selectNotice, setSelectNotice] = useState<string | null>(null);
 
   // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash).
   useEffect(() => {
@@ -49,21 +92,27 @@ export default function OrderScreen(): React.ReactElement {
     enabled: orderId !== "",
     refetchInterval: (q) => {
       const s = q.state.data?.status;
-      if (s === "open_for_offers") return 4000;
-      if (s !== undefined && ACTIVE.includes(s)) return 10_000; // self-heal if the WS drops
+      // WS pushes now drive the live states; polling is only a slow self-heal if the socket drops.
+      if (s === "open_for_offers") return 15_000;
+      if (s !== undefined && ACTIVE.includes(s)) return 15_000;
       return false;
     },
   });
   const status = orderQ.data?.status;
   const isActive = status !== undefined && ACTIVE.includes(status);
 
-  useOrderSocket(isActive || status === "delivered" ? orderId : null);
+  // Open the socket during the AUCTION too (not just once active): `offers:changed` streams new
+  // bids in, and `order:status` reflects the assignment. Expose connection state for the UI.
+  const socketExpected = isActive || status === "delivered" || status === "open_for_offers";
+  const { connected } = useOrderSocket(socketExpected ? orderId : null);
+  const connectionState: "live" | "reconnecting" = connected ? "live" : "reconnecting";
 
   const offersQ = useQuery({
     queryKey: offersKey(orderId),
     queryFn: () => listOffers(orderId),
     enabled: status === "open_for_offers",
-    refetchInterval: status === "open_for_offers" ? 4000 : false,
+    // The `offers:changed` WS signal invalidates this instantly; poll is the 15s fallback.
+    refetchInterval: status === "open_for_offers" ? 15_000 : false,
   });
 
   // Order the offers for display (D-d): best-match blends price + rating + ETA and marks the top pick;
@@ -91,11 +140,26 @@ export default function OrderScreen(): React.ReactElement {
 
   const selectM = useMutation({
     mutationFn: (offerId: string) => selectOffer(orderId, offerId),
+    // Partial optimism: flip to `assigned` so the offer list collapses the instant they tap — the
+    // delivery code paints in onSuccess (it isn't in the cache). cancelQueries first so the poll
+    // can't clobber the optimistic write; rollback + a muted notice if the rider was just taken.
+    onMutate: async () => {
+      setSelectNotice(null);
+      await qc.cancelQueries({ queryKey: orderKey(orderId) });
+      const prev = qc.getQueryData<OrderSnapshot>(orderKey(orderId));
+      qc.setQueryData<OrderSnapshot>(orderKey(orderId), (o) => (o ? { ...o, status: "assigned" } : o));
+      return { prev };
+    },
     onSuccess: (res) => {
       setDeliveryCode(res.deliveryCode);
       void saveDeliveryCode(orderId, res.deliveryCode);
-      void qc.invalidateQueries({ queryKey: orderKey(orderId) });
     },
+    onError: (_e, _v, ctx) => {
+      if (ctx && "prev" in ctx) qc.setQueryData(orderKey(orderId), ctx.prev);
+      setSelectNotice("That rider was just taken — choose another.");
+      AccessibilityInfo.announceForAccessibility("That rider was just taken — choose another.");
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
   });
   const rotateM = useMutation({
     mutationFn: () => rotateDeliveryCode(orderId),
@@ -137,12 +201,20 @@ export default function OrderScreen(): React.ReactElement {
 
   const order = orderQ.data;
   const fare = order.agreedFare ?? order.proposedFare;
-  const firstError = selectM.error ?? rotateM.error ?? rateM.error ?? cancelM.error;
+  // selectM is handled with its own muted notice (a rolled-back race), so it's excluded here.
+  const firstError = rotateM.error ?? rateM.error ?? cancelM.error;
   const mutationError = firstError instanceof Error ? firstError.message : null;
   const riderPoint =
     order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
       ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
       : null;
+  const bidCount = orderedOffers.length;
+  const trackingHint =
+    connectionState === "reconnecting"
+      ? "Live paused — reconnecting…"
+      : riderPoint
+        ? "Rider is on the move — the gold pin updates live."
+        : "Waiting for the rider's GPS…";
 
   return (
     <Screen>
@@ -162,7 +234,13 @@ export default function OrderScreen(): React.ReactElement {
 
         {order.status === "open_for_offers" ? (
           <View>
-            <Sub>Waiting for riders to offer{offersQ.isFetching ? " …" : ""}.</Sub>
+            {/* Live header: bid count the moment the first bid lands, else a "finding" state; a
+                reconnecting hint when the auction socket is down and we're on the poll fallback. */}
+            <Sub>
+              {bidCount > 0
+                ? `${bidCount} ${bidCount === 1 ? "rider" : "riders"} bidding${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
+                : `Finding riders near you…${connectionState === "reconnecting" ? " reconnecting…" : ""}`}
+            </Sub>
             {orderedOffers.length > 1 ? (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: tokens.space.sm }}>
                 {SORT_MODES.map((m) => {
@@ -171,10 +249,13 @@ export default function OrderScreen(): React.ReactElement {
                     <Pressable
                       key={m.key}
                       onPress={() => setSortMode(m.key)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
                       hitSlop={6}
                       style={{
-                        paddingVertical: 6,
-                        paddingHorizontal: 11,
+                        minHeight: tokens.touchTargetMin,
+                        justifyContent: "center",
+                        paddingHorizontal: 14,
                         borderRadius: tokens.radius.pill,
                         borderWidth: 1,
                         borderColor: on ? tokens.color.accent : tokens.color.line,
@@ -188,23 +269,35 @@ export default function OrderScreen(): React.ReactElement {
               </View>
             ) : null}
             {orderedOffers.map(({ offer: o, recommended }) => (
-              <Card key={o.id} style={recommended ? { borderColor: tokens.color.highlight } : undefined}>
-                {recommended ? (
-                  <Text style={{ fontSize: 10, fontWeight: "800", color: tokens.color.highlight, letterSpacing: 0.5, marginBottom: 3 }}>
-                    ★ RECOMMENDED
+              <BidEntrance key={o.id} animate={!reduceMotion}>
+                <Card style={recommended ? { borderColor: tokens.color.highlight } : undefined}>
+                  {recommended ? (
+                    <Text style={{ fontSize: 10, fontWeight: "800", color: tokens.color.highlight, letterSpacing: 0.5, marginBottom: 3 }}>
+                      ★ RECOMMENDED
+                    </Text>
+                  ) : null}
+                  <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>
+                    {o.rider.profile.firstName} {o.rider.profile.lastName}
                   </Text>
-                ) : null}
-                <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>
-                  {o.rider.profile.firstName} {o.rider.profile.lastName}
-                </Text>
-                <Text style={{ fontSize: 13, color: tokens.color.muted }}>
-                  ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
-                </Text>
-                <Text style={{ fontSize: 20, fontWeight: "800", marginVertical: 4 }}>${o.offeredFare}</Text>
-                <Button label="Choose this rider" onPress={() => selectM.mutate(o.id)} loading={selectM.isPending} />
-              </Card>
+                  <Text style={{ fontSize: 13, color: tokens.color.muted }}>
+                    ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
+                  </Text>
+                  <Text style={{ fontSize: 20, fontWeight: "800", marginVertical: 4 }}>${o.offeredFare}</Text>
+                  <Button label="Choose this rider" onPress={() => selectM.mutate(o.id)} loading={selectM.isPending} />
+                </Card>
+              </BidEntrance>
             ))}
-            {orderedOffers.length === 0 ? <Sub>No offers yet — hang tight.</Sub> : null}
+            {selectNotice ? (
+              <Text style={{ color: tokens.color.muted, fontSize: 13, marginTop: tokens.space.xs }}>{selectNotice}</Text>
+            ) : null}
+            {orderedOffers.length === 0 ? (
+              // Live-but-empty: a "working" state (pulsing placeholder) distinct from the expired
+              // dead-end, so streaming-into-empty reads as "finding", not "broken".
+              <View style={{ marginTop: tokens.space.sm }}>
+                <SkeletonCard />
+                <Sub>No offers yet — riders nearby have been pinged. Hang tight.</Sub>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -215,11 +308,10 @@ export default function OrderScreen(): React.ReactElement {
               pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}
               dropoff={{ lat: order.dropoff.point.lat, lng: order.dropoff.point.lng }}
               rider={riderPoint}
+              connectionState={isActive ? connectionState : "live"}
             />
             {order.rider ? (
-              <Text style={{ fontSize: 13, color: tokens.color.muted }}>
-                {riderPoint ? "Rider is on the move — the gold pin updates live." : "Waiting for the rider's GPS…"}
-              </Text>
+              <Text style={{ fontSize: 13, color: tokens.color.muted }}>{trackingHint}</Text>
             ) : null}
             {order.counterpartyPhone ? (
               <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4 }}>Rider phone: {order.counterpartyPhone}</Text>
@@ -235,9 +327,17 @@ export default function OrderScreen(): React.ReactElement {
         {order.status === "delivered" ? (
           <Card>
             <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: tokens.space.sm }}>Rate your rider</Text>
-            <View style={{ flexDirection: "row", gap: 8, marginBottom: tokens.space.sm }}>
+            <View style={{ flexDirection: "row", gap: 4, marginBottom: tokens.space.sm }}>
               {[1, 2, 3, 4, 5].map((n) => (
-                <Pressable key={n} onPress={() => setScore(n)} hitSlop={8}>
+                <Pressable
+                  key={n}
+                  onPress={() => setScore(n)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${n} star${n === 1 ? "" : "s"}`}
+                  accessibilityState={{ selected: n <= score }}
+                  hitSlop={8}
+                  style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
+                >
                   <Text style={{ fontSize: 28, color: n <= score ? tokens.color.highlight : tokens.color.line }}>★</Text>
                 </Pressable>
               ))}

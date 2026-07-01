@@ -83,3 +83,51 @@ export const ApiError = z.object({
   message: z.string(),
 });
 export type ApiError = z.infer<typeof ApiError>;
+
+// ── Realtime (WebSocket) events ─────────────────────────────────────────────
+// Event names + payload schemas shared by the API gateway and the mobile client so the socket
+// wire shape can't drift between ends (same guarantee this file gives the REST contract). Rooms
+// are a server-only concern and live in apps/api/src/tracking/tracking.constants.ts.
+export const WS_EVENTS = {
+  /** server→client: rider GPS position, to an order room. */
+  position: "position",
+  /** server→client: an order's status changed. */
+  orderStatus: "order:status",
+  /** server→client: an order's offer set changed — SIGNAL ONLY (no offer contents); the client
+   *  refetches the offer list. Keeps rider PII on the authenticated REST path. */
+  offersChanged: "offers:changed",
+  /** server→client: a new open order for the rider board — REDACTED (point + landmark, never
+   *  contactPhone; mirrors GET /orders/open). */
+  boardNewOrder: "board:new-order",
+  /** client→server: join an order's room to receive position + status + offers-changed. */
+  subscribeOrder: "subscribe:order",
+  /** client→server: a verified, online rider joins the open-order board. */
+  boardSubscribe: "board:subscribe",
+  /** client→server: rider leaves the board (go-offline / unmount). */
+  boardLeave: "board:leave",
+  /** client→server: rider streams a GPS fix for an active order. */
+  riderLocation: "rider:location",
+} as const;
+export type WsEvent = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];
+
+/** `offers:changed` payload — signal only; the client refetches `GET /orders/:id/offers`. */
+export const OffersChangedEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
+export type OffersChangedEvent = z.infer<typeof OffersChangedEvent>;
+
+/** Redacted waypoint a browsing (pre-assignment) rider may see: point + landmark only. `.strict()`
+ *  so a stray `contactPhone` is REJECTED, not silently stripped — the board must never carry PII. */
+export const PublicWaypoint = z.object({ point: LatLng, landmark: z.string() }).strict();
+export type PublicWaypoint = z.infer<typeof PublicWaypoint>;
+
+/** `board:new-order` payload — the redacted open-order row (mirrors the `GET /orders/open` shape). */
+export const BoardNewOrderEvent = z.object({
+  id: z.string().uuid(),
+  pickup: PublicWaypoint,
+  dropoff: PublicWaypoint,
+  itemDesc: z.string(),
+  suggestedFare: z.string(),
+  proposedFare: z.string(),
+  distanceKm: z.number().nullable(),
+  createdAt: z.string(),
+});
+export type BoardNewOrderEvent = z.infer<typeof BoardNewOrderEvent>;

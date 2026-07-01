@@ -11,10 +11,11 @@ import {
 import { createAdapter } from "@socket.io/redis-adapter";
 import IORedis from "ioredis";
 import { Server, Socket } from "socket.io";
+import { type BoardNewOrderEvent, WS_EVENTS } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
-import { orderRoom, parseBearer } from "./tracking.constants";
+import { BOARD_ROOM, orderRoom, parseBearer } from "./tracking.constants";
 import { TrackingService } from "./tracking.service";
 
 interface SocketUser {
@@ -60,7 +61,7 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection {
     }
   }
 
-  @SubscribeMessage("subscribe:order")
+  @SubscribeMessage(WS_EVENTS.subscribeOrder)
   async subscribeOrder(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { orderId: string },
@@ -72,7 +73,26 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection {
     return { joined: body.orderId };
   }
 
-  @SubscribeMessage("rider:location")
+  /** A KYC-verified, online rider joins the single global board room for new-order pushes (§3.10). */
+  @SubscribeMessage(WS_EVENTS.boardSubscribe)
+  async boardSubscribe(
+    @ConnectedSocket() client: Socket,
+  ): Promise<{ joined: string } | { error: string }> {
+    const user = client.data.user as SocketUser | undefined;
+    if (!user) return { error: "unauthenticated" };
+    if (!(await this.tracking.isBoardEligible(user.sub))) return { error: "forbidden" };
+    await client.join(BOARD_ROOM);
+    return { joined: "board" };
+  }
+
+  /** Rider leaves the board (go-offline / unmount). */
+  @SubscribeMessage(WS_EVENTS.boardLeave)
+  async boardLeave(@ConnectedSocket() client: Socket): Promise<{ left: string }> {
+    await client.leave(BOARD_ROOM);
+    return { left: "board" };
+  }
+
+  @SubscribeMessage(WS_EVENTS.riderLocation)
   async riderLocation(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { orderId: string; lat: number; lng: number },
@@ -81,13 +101,15 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection {
     if (!user) return { error: "unauthenticated" };
     if (!(await this.tracking.isAssignedRider(user.sub, body.orderId))) return { error: "forbidden" };
 
-    await this.tracking.updateRiderLocation(user.sub, body.lat, body.lng);
-    this.server.to(orderRoom(body.orderId)).emit("position", {
+    // Emit-before-persist (P1-1a): the customer's live position must not be gated on the DB write.
+    // Best-effort PUSH — a null server or emit failure never blocks the (still-persisted) fix.
+    this.server?.to(orderRoom(body.orderId)).emit(WS_EVENTS.position, {
       riderId: user.sub,
       lat: body.lat,
       lng: body.lng,
       at: new Date().toISOString(),
     });
+    await this.tracking.updateRiderLocation(user.sub, body.lat, body.lng);
     return { ok: true };
   }
 
@@ -96,10 +118,29 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection {
    * snapshot stays the source of truth, so this never throws into a caller's transaction.
    */
   emitOrderStatus(orderId: string, status: string): void {
-    this.server?.to(orderRoom(orderId)).emit("order:status", {
+    this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.orderStatus, {
       orderId,
       status,
       at: new Date().toISOString(),
     });
+  }
+
+  /**
+   * Signal an order's offer set changed to everyone watching it (SIGNAL ONLY — no offer contents;
+   * the client refetches over the authenticated REST path). Best-effort; never throws.
+   */
+  emitOffersChanged(orderId: string): void {
+    this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.offersChanged, {
+      orderId,
+      at: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Push a new (redacted) open order to the board room (verified + online riders). Best-effort;
+   * a gateway failure must never affect the order the customer just created.
+   */
+  emitBoardNewOrder(payload: BoardNewOrderEvent): void {
+    this.server?.to(BOARD_ROOM).emit(WS_EVENTS.boardNewOrder, payload);
   }
 }

@@ -3,6 +3,9 @@ export function orderRoom(orderId: string): string {
   return `order:${orderId}`;
 }
 
+/** The single global room verified + online riders join to receive new-order board pushes. */
+export const BOARD_ROOM = "board";
+
 /** Accept either a raw access token or an "Authorization: Bearer <token>" header value. */
 export function parseBearer(header?: string): string | undefined {
   if (!header) return undefined;

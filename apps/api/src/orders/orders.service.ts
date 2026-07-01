@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type CreateOrderRequest, PHONE_REVEAL_STATUSES, quoteFare, type Waypoint } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, type CreateOrderRequest, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -20,11 +21,14 @@ function publicWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknow
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly expiry: OfferExpiryService,
     private readonly tracking: TrackingService,
     private readonly notifications: NotificationsService,
+    private readonly gateway: TrackingGateway,
   ) {}
 
   /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */
@@ -48,7 +52,15 @@ export class OrdersService {
         status: "open_for_offers",
         events: { create: { status: "open_for_offers" } },
       },
-      select: { id: true, status: true, proposedFare: true, suggestedFare: true, distanceKm: true },
+      select: {
+        id: true,
+        status: true,
+        itemDesc: true,
+        proposedFare: true,
+        suggestedFare: true,
+        distanceKm: true,
+        createdAt: true,
+      },
     });
 
     // Server-side window expiry (ET1). No-op if Redis isn't configured.
@@ -56,7 +68,13 @@ export class OrdersService {
 
     // Post-commit, best-effort: push the broadcast to nearby online riders (CONCEPT §3.10 — push is
     // the primary new-order channel for riders, alongside the WS board). Never blocks the create.
-    void this.broadcastToNearbyRiders(order.id, input.pickup, order.proposedFare.toString());
+    void this.broadcastToNearbyRiders(order.id, input, {
+      itemDesc: order.itemDesc,
+      suggestedFare: order.suggestedFare.toString(),
+      proposedFare: order.proposedFare.toString(),
+      distanceKm: order.distanceKm,
+      createdAt: order.createdAt.toISOString(),
+    });
 
     return {
       id: order.id,
@@ -72,17 +90,43 @@ export class OrdersService {
    * and push them the new order. Fully best-effort: any failure here — no nearby riders, a geo-query
    * error, a push outage — is swallowed so it can never affect the order the customer just created.
    */
-  private async broadcastToNearbyRiders(orderId: string, pickup: Waypoint, fare: string): Promise<void> {
+  private async broadcastToNearbyRiders(
+    orderId: string,
+    input: CreateOrderRequest,
+    meta: { itemDesc: string; suggestedFare: string; proposedFare: string; distanceKm: number | null; createdAt: string },
+  ): Promise<void> {
     try {
+      const { pickup } = input;
       const nearby = await this.tracking.nearbyRiders(pickup.point.lat, pickup.point.lng, BROADCAST_RADIUS_M);
       if (nearby.length === 0) return;
       await this.notifications.notifyNewBroadcast(
         orderId,
         nearby.map((r) => r.profileId),
-        { pickup: pickup.landmark, fare },
+        { pickup: pickup.landmark, fare: meta.proposedFare },
       );
+      // Same redaction as listOpen — point + landmark only, NEVER contactPhone. The board carries no PII.
+      const boardEvent: BoardNewOrderEvent = {
+        id: orderId,
+        pickup: publicWaypoint(input.pickup as unknown as Prisma.JsonValue) as BoardNewOrderEvent["pickup"],
+        dropoff: publicWaypoint(input.dropoff as unknown as Prisma.JsonValue) as BoardNewOrderEvent["dropoff"],
+        itemDesc: meta.itemDesc,
+        suggestedFare: meta.suggestedFare,
+        proposedFare: meta.proposedFare,
+        distanceKm: meta.distanceKm,
+        createdAt: meta.createdAt,
+      };
+      this.safeEmitBoardNewOrder(boardEvent);
     } catch {
       /* best-effort: a broadcast-push failure never affects the created order */
+    }
+  }
+
+  /** Fire-and-forget board push. Wrapped so a WS failure can never affect the created order. */
+  private safeEmitBoardNewOrder(event: BoardNewOrderEvent): void {
+    try {
+      this.gateway.emitBoardNewOrder(event);
+    } catch (err) {
+      this.logger.warn(`board push failed for order ${event.id}: ${(err as Error).message}`);
     }
   }
 

@@ -33,3 +33,6 @@ apps/api/prisma/*.db
 # Logs / OS
 *.log
 .DS_Store
+
+# Local Prisma engine binaries (fetched manually when the proxy blocks the download)
+.prisma-engines/

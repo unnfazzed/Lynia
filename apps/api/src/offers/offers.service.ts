@@ -1,14 +1,18 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { MakeOfferRequest } from "@lynia/shared";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 
 @Injectable()
 export class OffersService {
+  private readonly logger = new Logger(OffersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly gateway: TrackingGateway,
   ) {}
 
   /** Rider responds once — accept the proposed fare or counter. One round per rider (ET7). */
@@ -46,6 +50,9 @@ export class OffersService {
       });
       // Post-commit, best-effort: nudge the customer that an offer arrived (§5c).
       void this.notifications.notifyNewOffer(input.orderId, order.customerId);
+      // Post-commit, best-effort: signal the order room so a watching customer refetches the offer
+      // list (SIGNAL ONLY — no offer contents on the wire; rider PII stays on the REST path).
+      this.safeEmitOffersChanged(input.orderId);
       return { ...offer, offeredFare: offer.offeredFare.toString() };
     } catch (err) {
       // The unique (order_id, rider_id) index enforces the one-round rule.
@@ -53,6 +60,16 @@ export class OffersService {
         throw new ConflictException("You already responded to this order (one round only)");
       }
       throw err;
+    }
+  }
+
+  /** Fire-and-forget offers-changed push (§5c). The gateway is best-effort, but wrap it so a WS
+   *  failure can never surface into the just-committed offer create. */
+  private safeEmitOffersChanged(orderId: string): void {
+    try {
+      this.gateway.emitOffersChanged(orderId);
+    } catch (err) {
+      this.logger.warn(`offers-changed emit failed for order ${orderId}: ${(err as Error).message}`);
     }
   }
 
