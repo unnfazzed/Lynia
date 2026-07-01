@@ -176,7 +176,12 @@ model Order {
   rating Rating?
 
   @@index([status])
-  @@index([riderId])
+  // Composite (role, created_at) indexes so the trip-history query — an OR over customer_id/rider_id
+  // ordered by created_at — resolves as two index scans instead of a seq-scan-then-sort as `orders`
+  // grows (E5). The (rider_id, created_at) index also covers the plain rider_id lookups the old
+  // single-column index served (leftmost-prefix), so it replaces it.
+  @@index([customerId, createdAt])
+  @@index([riderId, createdAt])
   @@map("orders")
 }
 
@@ -208,7 +213,9 @@ model OrderEvent {
   lng       Float?
   createdAt DateTime    @default(now()) @map("created_at")
 
-  @@index([orderId])
+  // Composite (order_id, created_at) so the snapshot timeline read (filter order_id, order by
+  // created_at asc) is an index-order scan; covers the plain order_id lookups too (E5).
+  @@index([orderId, createdAt])
   @@map("order_events")
 }
 
