@@ -352,23 +352,48 @@ explicitly before load, not a launch blocker.
 
 ## Prioritized roadmap (mapped to inDrive parity)
 
-| # | Change | Files | Effort | inDrive parity unlocked |
-|---|--------|-------|--------|--------------------------|
-| **P0-1** | Push offers to the customer over WS during `open_for_offers`; poll → 15 s fallback | `offers.service.ts`, `order/[id].tsx:60,66`, `use-order-socket.ts` | S | Live auction feels live (A1) |
-| **P0-2** | Push new broadcasts to online riders' board over WS | `orders.service.ts`, `tracking.gateway.ts`, `rider/index.tsx:103` | M | Instant supply-side pickup (A2) |
-| **P0-3** | Optimistic UI on select/cancel/rate/advance | `order/[id].tsx`, `rider/job.tsx` | S | Weightless taps (C1) |
-| **P0-4** | Interpolate marker + fit-camera-once + recenter button | `LiveMap.tsx`, `use-order-socket.ts` | S/M | Smooth tracking (B1, B2) |
-| **P1-1** | Emit-before-persist; move live position to Redis, throttle PG flush | `tracking.gateway.ts:83`, `tracking.service.ts:35` | M | Low-lag tracking + scale (B3, E1) |
-| **P1-2** | Geo-scope the rider board server-side (`ST_DWithin`) | `orders.service.ts:90`, `tracking.service.ts` | M | Correct locality, smaller payloads (A3) |
-| **P1-3** | `staleTime`/cache + seed order cache on create; add `polling` transport | `query/client.ts`, `home.tsx:56`, socket hooks | S | Instant nav, resilient connect (C2, C3, B4) |
-| **P1-4** | Trim required order form to pin+pin+price; persist draft; reverse-geocode landmark | `home.tsx`, `MapPicker.tsx` | M | Fewer taps to broadcast (D1, D2) |
-| **P2-1** | Jitter offer-expiry; server-side WS coalesce; prod REDIS_URL boot guard | `offer-expiry.service.ts`, `tracking.gateway.ts`, `config/env.ts` | S | Smooth under load (E2, E3, E4) |
-| **P2-2** | Composite indexes + UNION history; explicit Prisma pool | migrations, `orders.service.ts`, `prisma.service.ts` | S | Headroom as data grows (E5, E6) |
-| **P2-3** | Rating-on-tap, ≥44 px targets, taller tracking map, online chip, seeded ETA | `order/[id].tsx`, `LiveMap.tsx`, `rider/index.tsx` | S | Interface polish (D3–D6, A4) |
+| # | Change | Files | Effort | inDrive parity unlocked | Status |
+|---|--------|-------|--------|--------------------------|--------|
+| **P0-1** | Push offers to the customer over WS during `open_for_offers`; poll → 15 s fallback | `offers.service.ts`, `order/[id].tsx:60,66`, `use-order-socket.ts` | S | Live auction feels live (A1) | ✅ done (batch 1) |
+| **P0-2** | Push new broadcasts to online riders' board over WS | `orders.service.ts`, `tracking.gateway.ts`, `rider/index.tsx:103` | M | Instant supply-side pickup (A2) | ✅ done (batch 1; geo-scoped push added batch 3) |
+| **P0-3** | Optimistic UI on select/cancel/rate/advance | `order/[id].tsx`, `rider/job.tsx` | S | Weightless taps (C1) | ✅ done (batch 1) |
+| **P0-4** | Interpolate marker + fit-camera-once + recenter button | `LiveMap.tsx`, `use-order-socket.ts` | S/M | Smooth tracking (B1, B2) | ✅ done (batch 1) |
+| **P1-1** | Emit-before-persist; move live position to Redis, throttle PG flush | `tracking.gateway.ts:83`, `tracking.service.ts:35` | M | Low-lag tracking + scale (B3, E1) | ✅ done (emit-before-persist batch 1; Redis index batch 2) |
+| **P1-2** | Geo-scope the rider board server-side (`ST_DWithin`) | `orders.service.ts:90`, `tracking.service.ts` | M | Correct locality, smaller payloads (A3) | ✅ done (batch 2; `pickup_geog` GiST batch 3) |
+| **P1-3** | `staleTime`/cache + seed order cache on create; add `polling` transport | `query/client.ts`, `home.tsx:56`, socket hooks | S | Instant nav, resilient connect (C2, C3, B4) | ✅ done (batch 1) |
+| **P1-4** | Trim required order form to pin+pin+price; persist draft; reverse-geocode landmark | `home.tsx`, `MapPicker.tsx` | M | Fewer taps to broadcast (D1, D2) | ✅ done (draft + reverse-geocode batch 2; map-anchored IA slice batch 3) |
+| **P2-1** | Jitter offer-expiry; server-side WS coalesce; prod REDIS_URL boot guard | `offer-expiry.service.ts`, `tracking.gateway.ts`, `config/env.ts` | S | Smooth under load (E2, E3, E4) | ◐ partial — jitter (E2) + boot-guard (E4) ✅ done (batch 3); **server-side WS coalesce (E3) still open** |
+| **P2-2** | Composite indexes + UNION history; explicit Prisma pool | migrations, `orders.service.ts`, `prisma.service.ts` | S | Headroom as data grows (E5, E6) | ◐ partial — `pickup_geog` GiST + Redis GEO ✅ done (batch 3); **history composite indexes/UNION (E5) + explicit Prisma pool (E6) still open** |
+| **P2-3** | Rating-on-tap, ≥44 px targets, taller tracking map, online chip, seeded ETA | `order/[id].tsx`, `LiveMap.tsx`, `rider/index.tsx` | S | Interface polish (D3–D6, A4) | ◐ partial — ≥44 px targets, taller map (D5), online chip (D6), seeded ETA (A4) ✅ done (batches 1–2); **rating-on-tap (D3) still open** |
 
 **P0 is the whole story:** four changes (three of them small) that reuse plumbing already in the
 repo take the auction and the tracking map from "polled and jumpy" to "live and smooth." Everything
-after is depth and scale headroom.
+after is depth and scale headroom. **All P0 and P1 items shipped** (batches 1–2); P2 is the
+remaining polish/scale headroom — see the pending list below.
+
+---
+
+## Pending tasks (as of 2026-07-01)
+
+Everything the review flagged as P0/P1 has landed. What remains is P2 depth-and-scale polish, none of
+it a pilot blocker:
+
+- [ ] **E3 — server-side WS position coalesce.** `tracking.gateway.ts` still emits every received fix
+      straight to the room; add per-room coalescing to ≤1 emit/second so a fast/misbehaving client
+      can't flood a room (client-side throttle already helps).
+- [ ] **E5 — history composite indexes + UNION rewrite.** `orders` still filters `OR: [{customerId},
+      {riderId}]` with only single-column indexes; add `orders(customer_id, created_at DESC)` +
+      `orders(rider_id, created_at DESC)` (and `order_events(order_id, created_at)`) and a UNION rewrite.
+- [ ] **E6 — explicit Prisma connection pool / graceful-shutdown tuning** before load (not a launch
+      blocker).
+- [ ] **D3 — rating-on-tap.** The star rating is still a two-step "Submit rating" action; submit
+      optimistically on star tap with an undo affordance.
+- [ ] **Redis online-set for `nearbyRiders`** — intentionally deferred (the safe GEOSEARCH-then-PG-filter
+      ships; the online-set/ZREM design is a ghost-rider consistency trap).
+- [ ] **Per-region WS board rooms** at multi-city scale — the coarse geo-cell + poll fallback is enough
+      at pilot volume.
+- [ ] **Full DT5 single-full-bleed-map + draggable sheet** — the IA slice shipped; the full build is
+      device-gated (drag/snap/keyboard physics tunable only on-device).
 
 ---
 
