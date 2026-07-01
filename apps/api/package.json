@@ -15,7 +15,8 @@
     "prisma:generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "didit:setup": "tsx scripts/didit-setup.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.14.0",
