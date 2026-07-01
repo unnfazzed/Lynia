@@ -129,8 +129,12 @@ wiring, not code:
       **native FCM device token** (`expo-notifications` `getDevicePushTokenAsync` — not an Expo token, since
       the server sends via `firebase-admin` directly) and `POST`s it to the endpoint above; it unregisters on
       sign-out. All best-effort (`src/push/`), so Expo Go / a simulator / a denied permission degrade silently.
-      _Remaining:_ a **Firebase project** (founder, supplies `google-services.json` for the build) + a **dev
-      build** — Expo Go can't mint a device token, so live delivery is only testable on the dev build.
+      The **build now consumes `google-services.json`** (2026-07-01): `app.config.ts` wires
+      `android.googleServicesFile` from a `GOOGLE_SERVICES_JSON` EAS file secret (or a local drop, gitignored),
+      attached only when present so unprovisioned builds still succeed.
+      _Remaining:_ a **Firebase project** (founder — register the `zw.co.lynia` Android app and supply that
+      `google-services.json`) + a **dev build** — Expo Go can't mint a device token, so live delivery is only
+      testable on the dev build.
 - [ ] **Production OTP** — WhatsApp BSP onboarding + SMS gateway behind the `otp-sender.ts` seam (console
       is dev-only today). **Founder action** — set up a WhatsApp BSP account, then `OTP_CHANNEL=whatsapp`.
 - [x] **HTTPS for device builds** — external HTTPS load balancer + managed cert at `lyniago.lyniafinance.com`;
@@ -251,10 +255,18 @@ lifecycle status / expired / cancelled, and can never fail a transition. Terrafo
 `firebase.googleapis.com` + `firebasecloudmessaging.googleapis.com` and grants the runtime SA
 `roles/firebasecloudmessaging.admin` (so `terraform apply` covers the old manual gcloud steps).
 1. **Enable Firebase** on the project (founder): `firebase projects:addfirebase lynia-500911`, register an
-   Android app (`zw.co.lynia`), set `FCM_PROJECT_ID=lynia-500911` + `PUSH_PROVIDER=fcm`.
-2. **Mobile token-registration call** (device build): after login the app gets its Expo/FCM device token and
-   `POST`s it to `/notifications/device-token` (and `DELETE`s on sign-out). Expo Go can't acquire a remote
-   token — this lands with the Phase-3 dev build. Pilots can run on foreground/polling until then.
+   Android app (`zw.co.lynia`), set `FCM_PROJECT_ID=lynia-500911` + `PUSH_PROVIDER=fcm` (server side).
+2. **Drop in `google-services.json`** (the only genuinely new founder step): download it from the Android
+   app you just registered and provide it to the build — either an **EAS file secret** named
+   `GOOGLE_SERVICES_JSON` (`eas secret:create --scope project --name GOOGLE_SERVICES_JSON --type file
+   --value ./google-services.json`) or, for a local dev build, drop it at `apps/mobile/google-services.json`.
+   **`app.config.ts` already consumes it** (`android.googleServicesFile`, attached only when present, so an
+   unprovisioned build still succeeds), and the file is **gitignored**. Nothing else to wire — without it the
+   Android build can't mint an FCM token and delivery stays inert even with the server on `fcm`.
+3. **Mobile token-registration call** (device build): after login the app gets its native FCM device token
+   (`getDevicePushTokenAsync`) and `POST`s it to `/notifications/device-token` (and `DELETE`s on sign-out) —
+   **already wired** (`src/push/`). Expo Go can't acquire a remote token, so this needs the Phase-3 dev build;
+   pilots can run on foreground/polling until then.
 
 ### 4. OTEL traces — observability  🟢 deferred by decision
 Exporter wired (`apps/api/src/observability/otel.ts`), no-op until `OTEL_EXPORTER_OTLP_ENDPOINT` is set. CEO

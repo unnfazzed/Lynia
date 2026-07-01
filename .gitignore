@@ -17,6 +17,11 @@ build/
 .expo-shared/
 apps/mobile/.expo/
 
+# Firebase mobile credentials (founder-supplied per build — EAS file secret or a local drop;
+# holds project identifiers, so keep it out of the repo)
+google-services.json
+GoogleService-Info.plist
+
 # Env / secrets
 .env
 .env.*
