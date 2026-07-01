@@ -16,6 +16,7 @@ those cover *why*; this covers *how it is wired*.
 
 ## Table of contents
 
+- **[Master architecture diagram](#master-architecture-diagram)** — everything on one canvas
 1. [System context](#1-system-context)
 2. [Monorepo layout](#2-monorepo-layout)
 3. [Deployment topology (GCP)](#3-deployment-topology-gcp)
@@ -32,6 +33,163 @@ those cover *why*; this covers *how it is wired*.
 14. [Background jobs & self-healing](#14-background-jobs--self-healing)
 15. [CI / CD pipeline](#15-ci--cd-pipeline)
 16. [REST + WebSocket surface](#16-rest--websocket-surface)
+
+---
+
+## Master architecture diagram
+
+One canvas: clients, the API's edge + feature lanes + adapter seam + background workers, every data
+store (with the load-bearing schema constraints called out), the external vendors, and the labeled
+data-flow paths between them. Boxes are components/stores; solid arrows are the primary request/data
+paths (labeled with what flows); dotted arrows are best-effort or out-of-band paths.
+
+The individual sections below zoom into each region ([deployment](#3-deployment-topology-gcp),
+[modules](#4-api-module-map-nestjs), [data model](#5-data-model-erd),
+[concurrency](#13-concurrency-safety-model)); this is the whole thing at a glance.
+
+```mermaid
+flowchart TB
+    %% ===================== Clients =====================
+    subgraph CLIENTS["Clients"]
+        direction LR
+        CUST["📱 Customer app<br/>Expo / RN"]
+        RIDER["🏍️ Rider app<br/>Expo / RN"]
+        ADMIN["🖥️ Admin console<br/>Next.js"]
+    end
+
+    %% ===================== External vendors =====================
+    subgraph EXT["External integrations (behind adapters)"]
+        direction LR
+        WA["WhatsApp Cloud API<br/>OTP send"]
+        FCM["Firebase Cloud Messaging<br/>push"]
+        DIDIT["Didit<br/>ID / KYC"]
+    end
+
+    %% ===================== API =====================
+    subgraph API["@lynia/api · NestJS on Cloud Run (fronted by HTTPS ALB)"]
+        direction TB
+        subgraph EDGE["Edge"]
+            direction LR
+            REST["REST controllers<br/>JWT / admin guard"]
+            GW["Socket.IO<br/>TrackingGateway"]
+        end
+        subgraph FEAT["Feature lanes"]
+            direction LR
+            AUTH["Auth<br/>OTP · JWT · sessions"]
+            OFF["Offers<br/>make · list"]
+            MATCH["Matching<br/>select offer"]
+            LIFE["Lifecycle<br/>advance · deliver · rate · cancel"]
+            RID["Riders<br/>onboard · online"]
+            KYCM["KYC<br/>webhook · admin override"]
+            TRK["Tracking<br/>geo · access checks"]
+            NOTIF["Notifications<br/>push + device tokens"]
+            UP["Uploads<br/>signed URLs"]
+            ADM["Admin read API"]
+        end
+        subgraph SEAM["Cloud adapter seam (D7)"]
+            direction LR
+            STO["StorageAdapter"]
+            PSH["PushAdapter"]
+        end
+        subgraph JOBS["Background workers (BullMQ + reconciler)"]
+            direction LR
+            QEXP["offer-expiry"]
+            QAC["rating auto-close"]
+            RECON["DB reconciler<br/>15-min sweep"]
+        end
+    end
+
+    %% ===================== Data stores =====================
+    subgraph STORE["Data stores"]
+        direction TB
+        subgraph PG["PostgreSQL + PostGIS"]
+            direction LR
+            TORD["orders<br/>🔒 one_active_ride<br/>🔒 otp_hash (hashed)"]
+            TOFF["offers<br/>🔒 unique(order,rider)"]
+            TRID["riders<br/>geog · GiST index"]
+            TPRO["profiles · sessions<br/>device_tokens"]
+            TEVT["order_events · ratings"]
+        end
+        REDIS[("Redis<br/>OTP + rate-limit ·<br/>BullMQ · WS pub/sub")]
+        GCS[["Object storage<br/>KYC / item photos"]]
+    end
+
+    %% ---------- Clients → API ----------
+    CUST -->|"REST: create order · select offer · rate"| REST
+    RIDER -->|"REST: make offer · advance · deliver OTP"| REST
+    ADMIN -->|"admin JWT (read)"| REST
+    CUST <-->|"WS: order:status · position"| GW
+    RIDER -->|"WS: rider:location"| GW
+
+    %% ---------- Clients → storage (direct upload) ----------
+    CUST -.->|"PUT bytes (signed URL)"| GCS
+    RIDER -.->|"PUT bytes (signed URL)"| GCS
+
+    %% ---------- Edge → lanes ----------
+    REST --> AUTH & OFF & MATCH & LIFE & RID & KYCM & NOTIF & UP & ADM
+    GW --> TRK
+
+    %% ---------- Lanes → stores (labeled data flow) ----------
+    AUTH -->|"sessions · hashed OTP/refresh"| TPRO
+    AUTH -->|"OTP store · rate-limit counters"| REDIS
+    OFF -->|"insert (one round)"| TOFF
+    MATCH -->|"guarded CAS → assigned"| TORD
+    MATCH -->|"schedule 90s expiry"| REDIS
+    LIFE -->|"guarded CAS · row-lock OTP verify"| TORD
+    LIFE -->|"schedule rating auto-close"| REDIS
+    RID --> TRID
+    KYCM -->|"monotonic update (kycRef)"| TRID
+    TRK -->|"ST_DWithin nearby · update geog"| TRID
+    NOTIF -->|"device tokens"| TPRO
+    UP --> STO
+    ADM -->|"read counts / lists"| PG
+    MATCH --> TEVT
+    LIFE --> TEVT
+
+    %% ---------- Background workers ----------
+    REDIS --> QEXP -->|"expire (idempotent CAS)"| TORD
+    REDIS --> QAC -->|"complete"| TORD
+    RECON -->|"close stale delivered"| TORD
+
+    %% ---------- Realtime fan-out ----------
+    LIFE -.->|"emitOrderStatus"| GW
+    GW <-.->|"Socket.IO adapter fan-out"| REDIS
+
+    %% ---------- Adapter seam → cloud/vendors ----------
+    STO --> GCS
+    NOTIF --> PSH --> FCM
+    AUTH -->|"send code"| WA
+
+    %% ---------- KYC integration ----------
+    RID -->|"create verification session"| DIDIT
+    DIDIT -->|"HMAC webhook → /kyc/callback"| REST
+
+    %% ===================== Styles =====================
+    classDef ext fill:#fde68a,stroke:#b45309,color:#111;
+    classDef store fill:#bbf7d0,stroke:#15803d,color:#111;
+    classDef safe fill:#fee2e2,stroke:#b91c1c,color:#111,stroke-width:2px;
+    classDef client fill:#bfdbfe,stroke:#1d4ed8,color:#111;
+    class WA,FCM,DIDIT ext;
+    class REDIS,GCS,TPRO,TEVT store;
+    class TORD,TOFF,TRID safe;
+    class CUST,RIDER,ADMIN client;
+```
+
+**How to read it:**
+
+- **🔒 red boxes** are the tables whose database constraints make the offer loop correct — `orders`
+  (the `one_active_ride` partial-unique index + the hashed delivery `otp_hash`), `offers` (the
+  `unique(order, rider)` one-round rule), and `riders` (the `geog` GiST index). Edge labels like
+  *"guarded CAS"* and *"row-lock OTP verify"* mark exactly where contended writes are serialized —
+  full detail in [§13](#13-concurrency-safety-model).
+- **Green boxes** are data stores; **Redis** wears three hats (OTP + rate-limit counters, the BullMQ
+  job queues, and the Socket.IO pub/sub fan-out across API instances).
+- **Amber boxes** are the external vendors — all reached through the adapter seam
+  ([§12](#12-the-cloud-portable-adapter-seam)), except the Didit KYC webhook which posts back in.
+- **Solid arrows** are primary request/data paths (labeled with what flows); **dotted arrows** are
+  best-effort or out-of-band (WS status fan-out, direct-to-storage uploads, push).
+- Note the two **direct-to-storage** dotted paths: photo bytes never transit the API — clients PUT to
+  object storage via a short-lived signed URL ([§11](#11-media-uploads-signed-urls)).
 
 ---
 
