@@ -52,11 +52,13 @@ matter:
 - **Form + map polish** — PII-free persisted draft, reverse-geocoded landmark, taller/expandable tracking map,
   auction countdown, online chip, seeded ETA, ≥44 px targets, and the **map-anchored home** IA slice.
 
-**API tests 212 → 246 pass**; shared/api/mobile typecheck + api build clean. What remains from the review is
-**P2 depth-and-scale polish** (server-side WS coalesce, history composite indexes/UNION, explicit Prisma pool,
-rating-on-tap) — none a pilot blocker — plus the already-deferred device-gated items. See **Pending tasks** at
-the bottom of this doc. The founder/vendor wiring (WhatsApp BSP, Didit, Firebase) and the dev build remain the
-only pilot gates, unchanged by this pass.
+**API tests 212 → 246 pass**; shared/api/mobile typecheck + api build clean. What remained from the review —
+**P2 depth-and-scale polish** — has since **also landed** (PR #85, same day: server-side WS coalesce, history
+composite indexes, explicit Prisma pool, rating-on-tap; **274 API tests pass**), joined by **client RUM +
+the gesture-driven bottom sheet** (PR #84). Every codeable roadmap item P0→P2 is now shipped; only the
+intentionally-deferred / device-gated items remain. See **Pending tasks** at the bottom of this doc. The
+founder/vendor wiring (WhatsApp BSP, Didit, Firebase) and the dev build remain the only pilot gates,
+unchanged by this pass.
 
 ---
 
@@ -99,9 +101,9 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
 - **DT4 offer best-match sort** — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector and a
   RECOMMENDED marker (design D-d). The **last buildable-now code gap — now closed.**
 - **Revenue model decided (§6)** — rider commission, 0% for ~6–8 months, infra later (see Decision gates).
-- **Test count** 21 → 72 → 112 → 119 → 212 → **246** API tests (Phase-3 push/broadcast, KYC-hardening,
-  WhatsApp-OTP, and the 07-01 inDrive-parity suites added since the 06-27 snapshot); mobile typecheck in
-  the CI gate.
+- **Test count** 21 → 72 → 112 → 119 → 212 → 246 → **274** API tests (Phase-3 push/broadcast,
+  KYC-hardening, WhatsApp-OTP, the 07-01 inDrive-parity suites, then the client-RUM and P2 coalesce/pool
+  suites); mobile typecheck in the CI gate.
 
 ## Updated eng-plan scorecard (T0–T13)
 
@@ -404,12 +406,17 @@ Everything codeable through P0/P1 is shipped and CI-green. What remains, grouped
 - [ ] **Greenlight a dev build (not Expo Go)** → then on-device `/qa`: DT5 map, DT7 `/design-review`,
       device-token FCM, GPS-degradation (T11).
 
-### 🟠 P2 depth & scale polish — codeable, no pilot blocker (from INDRIVE-UX-REVIEW)
-- [ ] **E3** — server-side WS position coalesce (≤1 emit/sec per room).
-- [ ] **E5** — history composite indexes (`orders(customer_id, created_at DESC)` / `(rider_id, …)`,
-      `order_events(order_id, created_at)`) + UNION rewrite.
-- [ ] **E6** — explicit Prisma connection pool / graceful-shutdown tuning before load.
-- [ ] **D3** — rating-on-tap (submit optimistically on star tap; today it's a two-step "Submit rating").
+### 🟠 P2 depth & scale polish — ✅ ALL DONE (PR #85, 2026-07-01)
+- [x] **E3** — server-side WS position coalesce (≤1 emit/sec per room; leading edge immediate, trailing
+      flush of the latest fix; the per-fix persist untouched).
+- [x] **E5** — history composite indexes (`orders(customer_id, created_at)` / `(rider_id, created_at)`,
+      `order_events(order_id, created_at)`; migration `0007`, old single-column indexes subsumed and
+      dropped). The UNION rewrite was intentionally skipped — unnecessary once both OR sides are indexed
+      at the bounded `take: 100`.
+- [x] **E6** — explicit Prisma connection pool (deterministic `connection_limit`, `DATABASE_CONNECTION_LIMIT`
+      / `DATABASE_POOL_TIMEOUT` overrides; graceful shutdown already covered by `enableShutdownHooks`).
+- [x] **D3** — rating-on-tap (optimistic star-tap submit behind a short undo window; Undo cancels,
+      unmount clears the pending submit).
 
 ### 🟢 Deferred by decision (not now)
 - [ ] **OTEL collector** — exporter wired; point it at a collector when trip volume needs traces (CEO-deferred).
@@ -421,4 +428,5 @@ Everything codeable through P0/P1 is shipped and CI-green. What remains, grouped
       bucket CORS (pre-launch, not pilot; tracked in `infra/terraform/README.md`).
 
 **Bottom line:** the pilot path runs entirely through the 🔴 gates (founder/vendor wiring + a dev build).
-The 🟠 items are post-pilot headroom; the 🟢 items are deferred by explicit decision.
+The 🟠 P2 polish is **now fully shipped** (PR #85); the 🟢 items are deferred by explicit decision. There is
+no codeable roadmap work left — every open item needs either a founder action, a device, or a future trigger.
