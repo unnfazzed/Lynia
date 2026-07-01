@@ -46,6 +46,26 @@ jobs:
       - name: Build @lynia/shared
         run: pnpm --filter @lynia/shared build
 
+      # oss.sonatype.org (Sonatype OSSRH) is decommissioned and returns 504 for every artifact it's
+      # queried for, which fatally aborts Gradle resolution (React Native 0.76's build config still
+      # references it). A Gradle init script in ~/.gradle/init.d is auto-applied to every Gradle run
+      # (including eas build --local's) and strips that repo from all projects — however it was
+      # declared — so resolution falls through to Maven Central where the artifacts actually live.
+      - name: Strip dead oss.sonatype.org repo (Gradle init script)
+        run: |
+          mkdir -p "$HOME/.gradle/init.d"
+          cat > "$HOME/.gradle/init.d/remove-sonatype.gradle" <<'GRADLE'
+          allprojects { p ->
+              def strip = {
+                  p.repositories.removeAll { r ->
+                      try { r.url?.toString()?.contains('oss.sonatype.org') } catch (ignored) { false }
+                  }
+              }
+              strip()
+              p.afterEvaluate { strip() }
+          }
+          GRADLE
+
       - name: EAS local build (no cloud credits)
         working-directory: apps/mobile
         env:
