@@ -220,7 +220,18 @@ and reconciled against Didit's v3 API: create-session `POST https://verification
 recommended **`X-Signature-V2`** HMAC over the canonical body (with raw `X-Signature` fallback) plus a 300s
 `X-Timestamp` freshness window (`apps/api/src/kyc/didit.ts`). `KYC_PROVIDER` already defaults to `didit`; the
 deploy injects the Didit config **only when `DIDIT_ENABLED=true`**, so launch-safe / QA deploys never
-reference secrets that don't exist yet. Steps:
+reference secrets that don't exist yet.
+
+**One-command path (recommended).** `apps/api/scripts/didit-setup.ts` automates steps 1–3 below — register
+the account, list/pick the workflow, register the webhook — and prints the four values to store:
+```bash
+cd apps/api
+DIDIT_WEBHOOK_URL=https://lyniago.lyniafinance.com/kyc/callback pnpm didit:setup
+# already have a key? DIDIT_API_KEY=… pnpm didit:setup webhook   (just registers the webhook destination)
+```
+It talks to the live Didit API (creates a real account/destination) and persists nothing — copy the printed
+`DIDIT_API_KEY` / `DIDIT_WEBHOOK_SECRET` into Secret Manager and the workflow id into a repo Variable, then
+do step 4. The manual steps are kept below for reference:
 1. **Get an API key.** Console (`https://business.didit.me`), or programmatically (no browser):
    `POST https://apx.didit.me/auth/v2/programmatic/register/` → `…/verify-email/` with the emailed code →
    persist `application.api_key` as `DIDIT_API_KEY`.
