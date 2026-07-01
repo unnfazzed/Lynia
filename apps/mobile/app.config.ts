@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { ExpoConfig } from "expo/config";
 
 /**
@@ -7,6 +8,22 @@ import type { ExpoConfig } from "expo/config";
  * no key). When it's unset the rest of the app still builds; only the Android map renders blank.
  */
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
+
+/**
+ * Android FCM credentials file (`google-services.json`) from the Firebase project. Android needs this
+ * baked into the build for `expo-notifications` to mint a native FCM device token — without it,
+ * `getDevicePushTokenAsync()` returns nothing and live push never delivers, even with the server on
+ * `PUSH_PROVIDER=fcm`. It's founder-supplied: register an Android app for `zw.co.lynia` in the Firebase
+ * console, download the file, and provide it either as an EAS **file** secret (`GOOGLE_SERVICES_JSON`
+ * → a materialised path at build time) or by dropping it at `apps/mobile/google-services.json` for a
+ * local dev build. The file is gitignored (project identifiers — kept out of the repo).
+ *
+ * Attached only when present, so an unprovisioned build still succeeds — push just stays inert (the
+ * whole client path is best-effort). iOS FCM would use `ios.googleServicesFile` + APNs, added later.
+ */
+const googleServicesFile =
+  process.env.GOOGLE_SERVICES_JSON ??
+  (existsSync(`${__dirname}/google-services.json`) ? "./google-services.json" : undefined);
 
 const config: ExpoConfig = {
   name: "Lynia",
@@ -32,6 +49,9 @@ const config: ExpoConfig = {
     package: "zw.co.lynia",
     // Only attach the Maps block when a key is present, so an unkeyed build doesn't ship an empty key.
     ...(googleMapsApiKey ? { config: { googleMaps: { apiKey: googleMapsApiKey } } } : {}),
+    // Only reference the FCM credentials file when it's actually available, so an unprovisioned build
+    // doesn't fail prebuild pointing at a missing path.
+    ...(googleServicesFile ? { googleServicesFile } : {}),
   },
   extra: {
     apiUrl: "https://lyniago.lyniafinance.com",
