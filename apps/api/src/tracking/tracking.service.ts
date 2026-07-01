@@ -31,6 +31,15 @@ export class TrackingService {
     return !!o && o.riderId === userId && ACTIVE.includes(o.status);
   }
 
+  /** Only a KYC-verified, online rider may join the open-order board (mirrors the offer gating §5d). */
+  async isBoardEligible(riderId: string): Promise<boolean> {
+    const rider = await this.prisma.rider.findUnique({
+      where: { profileId: riderId },
+      select: { kycStatus: true, isOnline: true },
+    });
+    return !!rider && rider.kycStatus === "verified" && rider.isOnline === true;
+  }
+
   /** Persist the rider's position so a reconnecting client's REST snapshot (ET4) is fresh. */
   async updateRiderLocation(riderId: string, lat: number, lng: number): Promise<void> {
     await this.prisma.$executeRaw`

@@ -1,15 +1,18 @@
 import { CreateOrderRequest, quoteFare, tokens } from "@lynia/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../src/api/client";
-import { createOrder } from "../src/api/orders";
+import { createOrder, type OrderSnapshot } from "../src/api/orders";
+import { orderKey } from "../src/query/client";
 import { Button, Card, ErrorText, Field, Heading, Screen, Sub } from "../src/ui";
 import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
 
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
+  const qc = useQueryClient();
 
   const [pickupPoint, setPickupPoint] = useState<PickedPoint | null>(null);
   const [pickupLandmark, setPickupLandmark] = useState("");
@@ -54,6 +57,19 @@ export default function HomeScreen(): React.ReactElement {
     setBusy(true);
     try {
       const order = await createOrder(parsed.data);
+      // Seed the order cache from the response + the form we already have, so the order screen
+      // paints the auction immediately instead of blank → skeleton → content on navigate.
+      qc.setQueryData<OrderSnapshot>(orderKey(order.id), {
+        id: order.id,
+        status: order.status,
+        agreedFare: null,
+        proposedFare: order.proposedFare,
+        pickup: { point: { lat: pickupPoint.lat, lng: pickupPoint.lng }, landmark: pickupLandmark.trim() },
+        dropoff: { point: { lat: dropPoint.lat, lng: dropPoint.lng }, landmark: dropLandmark.trim() },
+        rider: null,
+        events: [],
+        counterpartyPhone: null,
+      });
       router.push(`/order/${order.id}`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't create the order.");

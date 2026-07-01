@@ -109,10 +109,37 @@ export function Card({ children, style }: { children: React.ReactNode; style?: V
   );
 }
 
-export function StatusPill({ status }: { status: string }): React.ReactElement {
+/**
+ * A pill label. Default (neutral) tone renders an order status in the accent colour. The
+ * online/offline/reconnecting tones + optional leading dot back the rider's persistent connection
+ * chip (DESIGN.md — reuse StatusPill, don't invent a chip), so an offline/paused state reads at a
+ * glance without a new component.
+ */
+export type PillTone = "neutral" | "online" | "offline" | "reconnecting";
+const PILL_TONE: Record<PillTone, string> = {
+  neutral: tokens.color.accent,
+  online: tokens.color.accent,
+  offline: tokens.color.muted,
+  // A dropped/paused connection is a transient state, not an error — muted, never danger-red.
+  reconnecting: tokens.color.muted,
+};
+
+export function StatusPill({
+  status,
+  tone = "neutral",
+  dot = false,
+}: {
+  status: string;
+  tone?: PillTone;
+  dot?: boolean;
+}): React.ReactElement {
+  const toneColor = PILL_TONE[tone];
   return (
     <View
+      accessibilityRole="text"
       style={{
+        flexDirection: "row",
+        alignItems: "center",
         alignSelf: "flex-start",
         backgroundColor: tokens.color.surface,
         borderWidth: 1,
@@ -122,7 +149,10 @@ export function StatusPill({ status }: { status: string }): React.ReactElement {
         paddingVertical: 4,
       }}
     >
-      <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accent }}>{status.replace(/_/g, " ")}</Text>
+      {dot ? (
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: toneColor, marginRight: 6 }} />
+      ) : null}
+      <Text style={{ fontSize: 12, fontWeight: "700", color: toneColor }}>{status.replace(/_/g, " ")}</Text>
     </View>
   );
 }

@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
-import { advanceStatus, cancelOrder, confirmDelivery, getActiveOrder } from "../../src/api/orders";
+import { advanceStatus, cancelOrder, confirmDelivery, getActiveOrder, type OrderSnapshot } from "../../src/api/orders";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, ErrorText, Field, Heading, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
@@ -34,10 +34,24 @@ export default function RiderJob(): React.ReactElement {
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
   const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Something went wrong.");
 
+  // Optimistic advance: the trip step is a frequent, near-always-succeeds tap, so paint the next
+  // step instantly and reconcile in the background. cancelQueries first so the 6s poller can't
+  // clobber the optimistic write mid-flight; rollback to the snapshot on error (onSettled always
+  // re-syncs from the server).
   const advanceM = useMutation({
     mutationFn: (to: AdvanceStatusRequest["to"]) => advanceStatus(orderId!, to),
-    onSuccess: refresh,
-    onError: fail,
+    onMutate: async (to) => {
+      await qc.cancelQueries({ queryKey: ["activeJob"] });
+      const prev = qc.getQueryData<OrderSnapshot | null>(["activeJob"]);
+      qc.setQueryData<OrderSnapshot | null>(["activeJob"], (o) => (o ? { ...o, status: to } : o));
+      return { prev };
+    },
+    onError: (e, _to, ctx) => {
+      // Restore the snapshot (incl. a legitimate null), but never write `undefined` back over the cache.
+      if (ctx?.prev !== undefined) qc.setQueryData(["activeJob"], ctx.prev);
+      fail(e);
+    },
+    onSettled: refresh,
   });
   const deliverM = useMutation({
     mutationFn: () => confirmDelivery(orderId!, code.trim()),
