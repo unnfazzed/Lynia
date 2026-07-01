@@ -9,6 +9,7 @@ import { ConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
 import { MatchingModule } from "./matching/matching.module";
 import { NotificationsModule } from "./notifications/notifications.module";
+import { ClientMetricsModule } from "./observability/client-metrics.module";
 import { MetricsInterceptor } from "./observability/metrics.interceptor";
 import { ObservabilityModule } from "./observability/metrics.service";
 import { OffersModule } from "./offers/offers.module";
@@ -23,6 +24,8 @@ import { UploadsModule } from "./uploads/uploads.module";
     ConfigModule,
     // Latency/SLO metrics (@Global) — MetricsService is injectable app-wide with no per-module import.
     ObservabilityModule,
+    // Client RUM ingest (POST /client-metrics) — consumes the @Global MetricsService.
+    ClientMetricsModule,
     PrismaModule,
     // Cloud-portable adapter seam (D7): swap impls via CLOUD_PROVIDER, no business-logic edits.
     StorageModule,

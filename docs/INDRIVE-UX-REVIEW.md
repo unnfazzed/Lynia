@@ -390,10 +390,27 @@ it a pilot blocker:
       optimistically on star tap with an undo affordance.
 - [ ] **Redis online-set for `nearbyRiders`** — intentionally deferred (the safe GEOSEARCH-then-PG-filter
       ships; the online-set/ZREM design is a ghost-rider consistency trap).
-- [ ] **Per-region WS board rooms** at multi-city scale — the coarse geo-cell + poll fallback is enough
-      at pilot volume.
-- [ ] **Full DT5 single-full-bleed-map + draggable sheet** — the IA slice shipped; the full build is
-      device-gated (drag/snap/keyboard physics tunable only on-device).
+- [ ] **Per-region WS board rooms** at multi-city scale — **the geo-scoped mechanism already ships**:
+      the gateway broadcasts into `board:geo:<cell>` rooms over a 3×3 ~5 km-cell neighbourhood
+      (`tracking.gateway.ts` `emitBoardNewOrder`, `packages/shared/src/geo.ts`), which is the
+      per-locality room model. What's deferred is only *named multi-city regions* on top of the cells —
+      not needed at pilot volume, and the cell grid needs no schema migration to scale.
+- [x] **DT5 draggable sheet (component)** — ✅ done: `BottomSheet` is now a real gesture-driven sheet
+      (RN-core `Animated` + `PanResponder`, `useNativeDriver`, velocity snap, reduce-motion aware,
+      `accessibilityRole="adjustable"` handle so a screen-reader / no-gesture user can expand it). The
+      remaining **full single-full-bleed-map re-architecture** (map behind, 3-stop peek/half/full,
+      keyboard-lift physics) stays device-gated — tunable only on-device.
+- [x] **Client RUM (glass-to-glass latency)** — ✅ done: the mobile app measures perceived latency
+      (skew-clamped WS glass-to-glass + skew-free `apiFetch` round-trips) and posts a bounded, auth'd
+      batch to `POST /client-metrics`, which records `client_*_latency_ms` into the same OTEL pipeline as
+      the server SLOs. Turns the server-only SLOs into true end-to-end numbers. See `docs/OBSERVABILITY.md`.
+
+**Already implemented in code (no work pending — founder-gated on credentials only):** the vendor
+integrations flagged as "wiring" are already built behind interfaces with env-var selectors + no-op
+fallbacks — **WhatsApp** OTP (`auth/otp-sender.ts` `WhatsAppOtpSender`, Meta Cloud API), **Didit** KYC
+(`kyc/didit-kyc-vendor.ts`, HMAC webhook), and **Firebase/FCM** push (`adapters/push/fcm.push.ts`,
+`firebase-admin`). Activating them is provisioning secrets (`WHATSAPP_ACCESS_TOKEN`, `DIDIT_API_KEY`,
+FCM ADC) + live-sandbox testing, not code.
 
 ---
 

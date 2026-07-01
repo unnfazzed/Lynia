@@ -145,3 +145,50 @@ export const BoardNewOrderEvent = z.object({
   createdAt: z.string(),
 });
 export type BoardNewOrderEvent = z.infer<typeof BoardNewOrderEvent>;
+
+// ── Client RUM (glass-to-glass latency) ─────────────────────────────────────
+// The app already emits SERVER-side latency SLOs (docs/OBSERVABILITY.md); those miss network RTT +
+// client render. This is the client's side of the picture: the mobile app measures perceived latency
+// and posts a small batch to `POST /client-metrics`, which records it into the SAME OTEL pipeline as
+// `client_*_latency_ms` histograms. TRUST BOUNDARY: unlike the server instruments (labels derived by
+// trusted interceptor/gateway code), every value here is client-supplied — so the wire schema is a
+// hard allowlist. `event`/`role` are enums (bounded label cardinality — the fixed-vocabulary rule),
+// `ms` is clamped to a sane ceiling, and `.strict()` REJECTS any stray field (no ids/phones/lat-lng
+// can ride in as a label). The server re-clamps and buckets on ingest; nothing here is trusted as-is.
+//
+// Clock-skew note: `apifetch` is measured entirely on-client (skew-free). The WS-glass events subtract
+// a SERVER-stamped `at` from a client clock, so the client drops out-of-range samples before sending
+// and reports the count in `dropped` — skew stays observable instead of poisoning the p95.
+
+/** What a client-side latency sample measures. Bounded enum → safe as a metric label. */
+export const ClientMetricEvent = z.enum([
+  /** glass-to-glass: rider fix `at` → customer map marker updated. */
+  "position_glass",
+  /** glass-to-glass: offer `offers:changed` `at` → customer offer list refreshed. */
+  "offer_glass",
+  /** glass-to-glass: `board:new-order` `createdAt` → rider board row rendered. */
+  "board_glass",
+  /** client-measured REST round-trip (skew-free: start + end both client `Date.now()`). */
+  "apifetch",
+]);
+export type ClientMetricEvent = z.infer<typeof ClientMetricEvent>;
+
+/** One latency sample. `ms` capped at 60s — anything larger is treated as garbage and dropped. */
+export const ClientMetricSample = z
+  .object({ event: ClientMetricEvent, ms: z.number().int().min(0).max(60_000) })
+  .strict();
+export type ClientMetricSample = z.infer<typeof ClientMetricSample>;
+
+/** `POST /client-metrics` body — a bounded, fire-and-forget batch. `.strict()` rejects stray keys so
+ *  no unbounded/PII field can become a label. `appVersion` is coerced to a `major.minor` bucket on the
+ *  server (or dropped) before it's ever used as an attribute. `dropped` carries the count of skewed
+ *  samples the client discarded, so tail distortion is measurable rather than silent. */
+export const ClientMetricsBatch = z
+  .object({
+    role: z.enum(["rider", "customer"]),
+    appVersion: z.string().max(24).optional(),
+    samples: z.array(ClientMetricSample).min(1).max(20),
+    dropped: z.number().int().min(0).max(10_000).optional(),
+  })
+  .strict();
+export type ClientMetricsBatch = z.infer<typeof ClientMetricsBatch>;

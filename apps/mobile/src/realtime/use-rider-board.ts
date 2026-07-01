@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import type { OpenOrder } from "../api/orders";
 import { useAuth } from "../auth/auth-context";
+import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
 import { createSocket } from "./socket";
 
 /**
@@ -29,6 +30,7 @@ export function useRiderBoard(online: boolean, loc: { lat: number; lng: number }
       setConnected(false);
       return;
     }
+    setActiveRole("rider"); // rider board surface — label apifetch RUM as rider
     const socket: Socket = createSocket(token);
     socketRef.current = socket;
 
@@ -44,6 +46,10 @@ export function useRiderBoard(online: boolean, loc: { lat: number; lng: number }
       const parsed = BoardNewOrderEvent.safeParse(raw);
       if (!parsed.success) return;
       const order = parsed.data as OpenOrder;
+      // RUM: glass-to-glass from the order's server `createdAt` to now (skew-clamped, rider role).
+      const ms = clampGlassSample(Date.now(), parsed.data.createdAt);
+      if (ms == null) noteDropped();
+      else enqueue("board_glass", ms, "rider");
       // Merge into the same ["openOrders"] cache the REST fetch fills. Note: this live push is still
       // global (city-wide), whereas the REST fetch is now geo-scoped to nearby orders — the rider
       // screen's haversine sort reconciles the two visually (nearest first). No change needed here.

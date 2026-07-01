@@ -1,5 +1,6 @@
 import type { Session } from "../auth/session";
 import { API_URL } from "../config";
+import { CLIENT_METRICS_PATH, enqueueApiFetch } from "../telemetry/rum";
 
 /** Hooks the AuthProvider registers so the client can read/rotate tokens without a circular import. */
 interface ApiHooks {
@@ -54,7 +55,24 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
 // first just revoked and get a false sign-out.
 let inflightRefresh: Promise<Session | null> | null = null;
 
+/**
+ * Every REST call routes through here, so it's the one place to time round-trips for client RUM. The
+ * timing is skew-free (start + end both `Date.now()` on-device) — the primary latency signal. We time
+ * whether the request succeeds or throws (a stalled network is exactly what we want to see), but we
+ * EXCLUDE the `/client-metrics` POST itself so telemetry doesn't measure telemetry (no feedback loop).
+ */
 export async function apiFetch<T>(path: string, opts: RequestOpts = {}): Promise<T> {
+  if (path === CLIENT_METRICS_PATH) return apiFetchInner<T>(path, opts);
+  const startedAt = Date.now();
+  try {
+    return await apiFetchInner<T>(path, opts);
+  } finally {
+    // Recorded under the app's current active role (set by the realtime hooks), not a hardcoded one.
+    enqueueApiFetch(Date.now() - startedAt);
+  }
+}
+
+async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   const { method = "GET", body, auth = true } = opts;
   const session = hooks?.getSession() ?? null;
 
