@@ -19,8 +19,8 @@ export function Sub({ children }: { children: React.ReactNode }): React.ReactEle
   return <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.lg }}>{children}</Text>;
 }
 
-export function Label({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginBottom: 4 }}>{children}</Text>;
+export function Label({ children, nativeID }: { children: React.ReactNode; nativeID?: string }): React.ReactElement {
+  return <Text nativeID={nativeID} style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginBottom: 4 }}>{children}</Text>;
 }
 
 export function Field(props: {
@@ -28,22 +28,37 @@ export function Field(props: {
   value: string;
   onChangeText: (t: string) => void;
   placeholder?: string;
-  keyboardType?: "default" | "number-pad" | "phone-pad" | "decimal-pad";
+  keyboardType?: "default" | "number-pad" | "numeric" | "phone-pad" | "decimal-pad";
   maxLength?: number;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  /** Inline validation error shown below the input; also turns the border danger. */
+  error?: string | null;
+  onBlur?: () => void;
 }): React.ReactElement {
+  // Pair the visible Label with the TextInput for screen readers: a stable nativeID lets the input point
+  // at the label (accessibilityLabelledBy / aria-labelledby), while accessibilityLabel names it directly.
+  const labelId = `field-${props.label.replace(/\s+/g, "-").toLowerCase()}`;
+  const errored = props.error != null && props.error.length > 0;
   return (
     <View style={{ marginBottom: tokens.space.md }}>
-      <Label>{props.label}</Label>
+      <Label nativeID={labelId}>{props.label}</Label>
       <TextInput
         value={props.value}
         onChangeText={props.onChangeText}
+        onBlur={props.onBlur}
         placeholder={props.placeholder}
         placeholderTextColor={tokens.color.muted}
         keyboardType={props.keyboardType ?? "default"}
         maxLength={props.maxLength}
+        autoCapitalize={props.autoCapitalize}
+        accessibilityLabel={props.label}
+        accessibilityLabelledBy={labelId}
+        aria-label={props.label}
+        aria-labelledby={labelId}
+        aria-invalid={errored}
         style={{
           borderWidth: 1,
-          borderColor: tokens.color.line,
+          borderColor: errored ? tokens.color.danger : tokens.color.line,
           borderRadius: tokens.radius.input,
           padding: tokens.space.md,
           fontSize: 16,
@@ -51,6 +66,10 @@ export function Field(props: {
           backgroundColor: tokens.color.bg,
         }}
       />
+      {/* Error slot: red, ≥12px, below the input; only occupies space when errored (no layout reserve). */}
+      {errored ? (
+        <Text style={{ color: tokens.color.danger, fontSize: 12, marginTop: 4 }}>{props.error}</Text>
+      ) : null}
     </View>
   );
 }
