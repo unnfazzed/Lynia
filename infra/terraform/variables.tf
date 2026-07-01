@@ -110,6 +110,13 @@ variable "cloud_run_service" {
   default     = "lynia-api"
 }
 
+# --- Observability ---
+variable "alert_notification_channels" {
+  description = "Cloud Monitoring notification-channel IDs the SLO alert policies page (e.g. [\"projects/<id>/notificationChannels/123\"]). Empty by default: policies still fire in the console but page no one — create a channel (email/SMS) and supply its id to actually get paged. See docs/OBSERVABILITY.md."
+  type        = list(string)
+  default     = []
+}
+
 # --- Safety / convenience ---
 variable "deletion_protection" {
   description = "Guards Cloud SQL against accidental `terraform destroy`. Keep true outside throwaway tests."

@@ -1,0 +1,50 @@
+# OpenTelemetry Collector config for the Lynia API sidecar (Cloud Run).
+#
+# The API (vendor-neutral OTLP, apps/api/src/observability/otel.ts) posts to this collector at
+# http://localhost:4318; the collector owns the Google auth and exports traces → Cloud Trace and
+# metrics → Cloud Monitoring (Managed Service for Prometheus, so the PromQL in docs/OBSERVABILITY.md
+# and the SLO alert policies in infra/terraform/monitoring.tf resolve directly).
+#
+# Project + resource labels are auto-detected from the Cloud Run metadata server (resourcedetection +
+# ADC), so nothing here is project-specific — no id to hardcode. Run with the contrib distro, pinned:
+#   image: otel/opentelemetry-collector-contrib:0.116.0   (never :latest)
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318 # the API's OTLP/HTTP exporter target (localhost:4318)
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 65
+    spike_limit_percentage: 20
+  resourcedetection:
+    detectors: [gcp] # Cloud Run service/revision/region/project labels
+    timeout: 10s
+  batch:
+    send_batch_size: 200
+    send_batch_max_size: 200
+    timeout: 5s
+
+exporters:
+  googlecloud: {} # traces → Cloud Trace (project auto-detected)
+  googlemanagedprometheus: {} # metrics → Cloud Monitoring (GMP; preserves histogram_quantile semantics)
+
+service:
+  # Keep the collector's own logs lean; it isn't the ingress container.
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [googlecloud]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [googlemanagedprometheus]

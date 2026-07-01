@@ -40,6 +40,22 @@ resource "google_project_iam_member" "runtime_fcm" {
   member  = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# Observability: the OTel Collector sidecar runs under the runtime SA and exports OTLP telemetry
+# to Google via ADC — metrics to Cloud Monitoring (Managed Service for Prometheus ingest) and spans
+# to Cloud Trace. Both grants are additive and only take effect once the sidecar is deployed
+# (docs/OBSERVABILITY.md → "Production activation").
+resource "google_project_iam_member" "runtime_monitoring_writer" {
+  project = local.project_id
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+resource "google_project_iam_member" "runtime_trace_agent" {
+  project = local.project_id
+  role    = "roles/cloudtrace.agent"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 # Per-secret accessor (tighter than a project-wide grant). Defined in secrets.tf
 # via google_secret_manager_secret_iam_member.
 

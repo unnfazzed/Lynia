@@ -111,3 +111,50 @@ Every histogram here measures time **inside the API process** (or, for `position
 in-process emit). They do **not** capture network RTT to the device or client-side render time.
 **Glass-to-glass** latency — what the rider/customer actually perceives — needs a separate **client RUM**
 signal instrumented in the apps. Treat the server SLOs as a floor, not the full picture.
+
+## Production activation (GCP)
+
+The app-side metrics are **dormant until `OTEL_EXPORTER_OTLP_ENDPOINT` is set** (with no endpoint the
+OTEL SDK is a no-op — dev/test/CI stay light). Activation adds an **OpenTelemetry Collector sidecar**
+to the Cloud Run service: the API posts OTLP to `http://localhost:4318`, and the collector (which owns
+the Google auth via ADC) exports **traces → Cloud Trace** and **metrics → Cloud Monitoring** (Managed
+Service for Prometheus, so the PromQL above resolves directly). The app stays vendor-neutral; the
+collector is the only Google-aware piece.
+
+Artifacts in this repo:
+
+- `infra/otel-collector/config.yaml` — the collector pipeline (OTLP receiver → `googlecloud` traces +
+  `googlemanagedprometheus` metrics; project auto-detected, nothing to hardcode).
+- `infra/otel-collector/service.yaml.template` — a Cloud Run **multi-container** service manifest
+  (API ingress container + collector sidecar) with `<PLACEHOLDERS>` mirroring the `gcloud run deploy`
+  flags in `.github/workflows/release.yml`.
+- `infra/terraform/monitoring.tf` — the SLO **alert policies** (PromQL conditions, one per metric).
+- `infra/otel-collector/dashboard.json` — an importable p95 dashboard (not Terraform-managed).
+- `infra/terraform/iam.tf` — the runtime SA gains `roles/monitoring.metricWriter` + `roles/cloudtrace.agent`.
+
+### Steps (founder, one-time)
+
+1. **Terraform** (from `infra/terraform/`): `terraform plan` then `terraform apply`. This enables the
+   `monitoring`/`cloudtrace` APIs, grants the two runtime-SA roles, and creates the alert policies.
+   PromQL alert conditions validate on syntax alone, so this applies cleanly **before** any metric
+   exists. To actually get paged, create a notification channel (email/SMS) and pass its id via
+   `alert_notification_channels` (default `[]` = fires in-console, pages no one).
+2. **Collector config secret**: store the pipeline so the sidecar can mount it —
+   `gcloud secrets create otel-collector-config --data-file=infra/otel-collector/config.yaml`
+   (and grant the runtime SA `secretAccessor` on it, as the other secrets already are in `secrets.tf`).
+3. **Deploy the sidecar**: fill the `<PLACEHOLDERS>` in `service.yaml.template` (copy the current flag
+   values from `release.yml` + the deployed image tag), then
+   `gcloud run services replace infra/otel-collector/service.yaml --region <REGION> --project <PROJECT_ID>`.
+   This sets `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` on the API container and starts the
+   collector. Roll back instantly by re-running the release workflow (redeploys the single-container form).
+4. **Import the dashboard**:
+   `gcloud monitoring dashboards create --config-from-file=infra/otel-collector/dashboard.json --project <PROJECT_ID>`,
+   then hand-tune in the console.
+5. **Verify** in Metrics Explorer's **PromQL** tab that series like `offer_received_latency_ms_bucket`
+   are arriving (GMP can sanitize names; confirm the real series before trusting the alerts).
+
+> **Operational drift:** the sidecar lives in the `services replace` manifest, **not** in the release
+> workflow (which still deploys a single container). After any subsequent normal `/ship` deploy the
+> sidecar is dropped and step 3 must be re-applied — or, once the manifest is battle-tested, fold the
+> sidecar into `release.yml`. `OTEL_EXPORTER_OTLP_ENDPOINT` deliberately lives with the sidecar so
+> "endpoint set" and "collector present" can never diverge.
