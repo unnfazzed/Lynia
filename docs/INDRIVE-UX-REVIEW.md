@@ -14,22 +14,32 @@ polished native ride/courier app.
 
 ## Implementation status (2026-07-01)
 
-The **P0 set + cheap P1s were reviewed (gStack Engineering + Design rubrics), implemented, and
-hardened** (a second Eng + Design pass on the diff): Eng verdict **PASS** (no P0/P1 correctness
-issues), Design fidelity **9/10**. API tests **215 pass**; shared/api/mobile typecheck clean.
+All work below was reviewed (gStack Engineering + Design plan rubrics), implemented, and hardened
+(a second Eng + Design pass on each diff). Every hardening verdict **PASS** / Design **9–9.5/10**,
+no P0/P1 correctness issues. API tests **246 pass**; shared/api/mobile typecheck + api build clean.
 
-- ✅ **Shipped:** WS-pushed offers during `open_for_offers` (A1) + WS-pushed rider board (A2);
-  optimistic UI on select + rider-advance with a muted rollback (C1); marker interpolation +
+- ✅ **Batch 1 (merged):** WS-pushed offers during `open_for_offers` (A1) + WS-pushed rider board
+  (A2); optimistic UI on select + rider-advance with a muted rollback (C1); marker interpolation +
   fit-camera-once + recenter + reconnecting state (B1, B2, B5); websocket→polling fallback (B4);
-  emit-before-persist (B3/P1-1a); `staleTime` + order-cache seed on create (C2, C3); the live
-  bid-count, streaming-bid animation, "finding riders" state, online chip, seeded ETA, and ≥44px
-  touch targets (D3–D6 partial). Polls widened to a 15s self-heal.
-- ⏸️ **Consciously deferred** (separately reviewable): the **Redis live-position index** (B3/E1 —
-  kept the Postgres write, only reordered it; the source-of-truth split is the riskiest change);
-  **server-side geo-scoped board** (A3/P1-2); the **auction countdown** (needs the expiry time on
-  the snapshot + is a flagged product decision — urgency vs. anxiety); **taller/expandable map**,
-  **map-anchored home / draft form**, and **reverse-geocoded landmark** (D1/D2/D5 — device-gated
-  DT5 work); offer-expiry jitter + prod `REDIS_URL` boot-guard (E2/E4).
+  emit-before-persist (B3/P1-1a); `staleTime` + order-cache seed on create (C2, C3); live bid-count,
+  streaming-bid animation, "finding riders" state, online chip, seeded ETA, ≥44px touch targets.
+- ✅ **Batch 2 (this branch):** **Redis live-position index** (E1/B3 — live GPS to Redis, throttled
+  PG flush, Redis-first snapshot, flush-on-disconnect; the ET3 heartbeat stays un-throttled on every
+  fix); **server-side geo-scoped board** (A3 — `ST_DWithin` over the pickup JSON, city-wide
+  fallback); **auction countdown** (A — `expiresAt` on the snapshot, calm muted `mm:ss`, last-20s
+  danger crossfade that pre-surfaces the nudge before the dead-end); **taller/expandable tracking
+  map** (D5), **reverse-geocoded landmark** (D2), and a **PII-free persisted draft** (D1 — the two
+  phone numbers are deliberately not stored).
+- ✅ **Batch 3 (this branch):** prod `REDIS_URL` **boot-guard** + offer-expiry **jitter** (E2/E4);
+  **geo-scoped live board push** (3×3 cell neighbourhood, city-wide fallback); **`pickup_geog`
+  GENERATED column + GiST** (index scan instead of per-row JSON extract); **Redis GEO** for
+  `nearbyRiders` (GEOSEARCH → PG `is_online` filter; PG fallback on no-Redis or a transient GEOSEARCH
+  error); the **map-anchored home** IA slice (hero sheet + collapsible "Add details"; the full
+  draggable single-map build is spec'd under DT5, device-gated).
+- ⏸️ **Still deferred:** the Redis *online-set* for `nearbyRiders` (the safe GEOSEARCH-then-PG-filter
+  ships; the online-set/ZREM design is a ghost-rider consistency trap, intentionally avoided);
+  per-region **WS board rooms** at multi-city scale (the coarse cell + poll fallback is enough at
+  pilot); the full single-full-bleed-map + draggable-sheet DT5 build (needs on-device tuning).
 
 ## TL;DR
 

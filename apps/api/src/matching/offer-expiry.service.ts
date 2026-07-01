@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { OFFER_WINDOW_MS } from "@lynia/shared";
 import { Queue, Worker } from "bullmq";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -6,8 +7,23 @@ import { MatchingService } from "./matching.service";
 
 const QUEUE_NAME = "offer-expiry";
 
-/** Offer window length (CONCEPT §9 — placeholder; tune on real corridor supply). */
-export const OFFER_WINDOW_MS = 90_000;
+// OFFER_WINDOW_MS now lives in @lynia/shared (the client renders the countdown from it). Re-exported
+// so existing importers of this module keep working.
+export { OFFER_WINDOW_MS };
+
+/** Max additive jitter (ms) spread over the base window. */
+const JITTER_MAX_MS = 10_000;
+
+/**
+ * Expiry delay with ADDITIVE-ONLY jitter (0–10s) on top of the base window. Bursts of orders created
+ * together otherwise fire their expiry CAS transactions simultaneously (thundering herd). The jitter
+ * MUST never subtract: the customer-facing countdown renders `createdAt + OFFER_WINDOW_MS`, so the job
+ * must never fire BEFORE the countdown hits zero. (Math.random is fine here — this is the API service,
+ * not a workflow script.)
+ */
+export function jitteredDelayMs(): number {
+  return OFFER_WINDOW_MS + Math.floor(Math.random() * JITTER_MAX_MS);
+}
 
 /** Plain ioredis options (structurally typed) so BullMQ owns its connections — avoids
  *  cross-version ioredis instance mismatches between the api and bullmq's bundled copy. */
@@ -57,7 +73,7 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
    * Schedule the window-expiry transition. jobId = orderId makes the job idempotent, so a retry
    * (or a duplicate schedule) can never fire the expiry CAS twice (ET1).
    */
-  async schedule(orderId: string, delayMs: number = OFFER_WINDOW_MS): Promise<void> {
+  async schedule(orderId: string, delayMs: number = jitteredDelayMs()): Promise<void> {
     if (!this.queue) return;
     await this.queue.add(
       "expire",

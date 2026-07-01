@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { CreateOrderRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
@@ -22,9 +22,23 @@ export class OrdersController {
 
   // Static routes MUST precede the :orderId param route, or "open"/"mine" get parsed as an order id.
 
-  /** Open orders a rider can bid on. */
+  /**
+   * Open orders a rider can bid on. Optional `lat`/`lng` (with an optional `radiusM`) scope the board
+   * to the rider's neighbourhood, distance-sorted; without them it falls back to the city-wide list.
+   * Params are coerced to numbers and only passed through when both lat & lng are finite.
+   */
   @Get("open")
-  open() {
+  open(
+    @Query("lat") lat?: string,
+    @Query("lng") lng?: string,
+    @Query("radiusM") radiusM?: string,
+  ) {
+    const latN = Number(lat);
+    const lngN = Number(lng);
+    if (Number.isFinite(latN) && Number.isFinite(lngN)) {
+      const radiusN = Number(radiusM);
+      return this.orders.listOpen(latN, lngN, Number.isFinite(radiusN) ? radiusN : undefined);
+    }
     return this.orders.listOpen();
   }
 

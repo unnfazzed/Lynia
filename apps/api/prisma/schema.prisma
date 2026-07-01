@@ -141,6 +141,10 @@ model Order {
   merchantId      String?     @map("merchant_id") @db.Uuid
   merchant        Merchant?   @relation(fields: [merchantId], references: [id])
   pickup          Json
+  // Generated (STORED) geography point derived from pickup.point (managed via raw SQL migration
+  // 0006). Indexed with GiST for the nearby-order board (ST_DWithin). Read-through only — Prisma
+  // never writes an Unsupported column, so the generated-column contract is safe.
+  pickupGeog      Unsupported("geography(Point, 4326)")? @map("pickup_geog")
   dropoff         Json
   itemDesc        String      @map("item_desc")
   note            String?

@@ -225,7 +225,7 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 | DT2 | P1 | Two empty states (no-offers / no-riders) with warmth + primary action | ✅ done |
 | DT3 | P1 | Interaction-state coverage (loading/error/partial) for broadcast, offers, tracking, OTP | ✅ done (error states landed in the post-build review fixes) |
 | DT4 | P1 | Offer list best-match default sort + recommended marker (D-d) | ✅ done — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector (best/cheapest/fastest/top-rated) and a RECOMMENDED badge on the customer offer screen |
-| DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) | ❌ **not built** — `home.tsx` is a typed-coordinate form; needs the Phase-3 native map |
+| DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) | ◐ **partial** — the IA slice shipped (`home.tsx`: pins + item + price + Broadcast are the hero in a thumb-zone `BottomSheet`; landmarks/phones/declared-value collapse under "Add details", reduce-motion-aware). The full **single full-bleed map + draggable sheet + two-pin toggle** is spec'd below and deferred to the device-gated build (its drag/snap/keyboard physics + sunlight legibility are only tunable on-device). |
 | DT6 | P2 | A11y + sunlight + data-light pass (targets, contrast, labels, tile caching) | ⬜ deferred (device-gated) |
 | DT7 | P2 | Run `/design-review` (visual QA) post-implementation | ⬜ deferred — needs a dev build |
 | DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` | ✅ done |
@@ -234,6 +234,30 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 | DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done — §6 decided (rider commission, 0% for ~6–8 months); the ledger gains a commission/settlement line when that infra is built (deferred — CONCEPT §6) |
 | DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ✅ done (contract-only fields + rider pickup-photo still deferred) |
 | DT13 | P2 | Post-Phase-3: regen `/design-html`, then DT7 visual review + `/qa` on a device build | ⬜ deferred (device-gated) |
+
+### DT5 — deferred full spec (single full-bleed map + draggable sheet)
+
+The shipped slice keeps the two `MapPicker`s and a static thumb-zone sheet. The device-gated build
+replaces that with the locked D-b design; build it on a device where the drag/snap/keyboard physics
+and sunlight legibility can actually be tuned (Eng + Design plan reviews, batch-3):
+
+- **Layers:** z0 full-bleed `MapView`; z1 top-left "Draft restored · Clear" chip + top-right "Use my
+  location" pill on solid `bg` fills (sunlight-legible); z2 the bottom `MapSheet`.
+- **`MapSheet`** — a new token-built `ui/` component from RN `Animated` + `PanResponder` + `Pressable`
+  (NOT `@gorhom/bottom-sheet`/reanimated/gesture-handler — not deps, off-pattern vs `LiveMap`). Two snap
+  points: **peek ≈ 0.42 vh** (handle · target toggle · route summary · item · price + suggested-fare
+  chip · CTA) and **expanded ≈ 0.88 vh** (+ landmarks, phones, declared value). Draggable between;
+  never dismissable.
+- **Single-map two-pin UX:** a segmented "Pickup | Drop-off" toggle whose selected colour == the pin
+  being placed (accent = pickup, danger = drop-off, from `LiveMap`); a map tap routes to
+  `setPickupPoint`/`setDropPoint` by the active target; auto-advance pickup→drop after the first pin.
+  No gold (reserved for the recommended marker).
+- **Keyboard:** focusing the price field auto-snaps to expanded and lifts above the keyboard.
+- **Reduce-motion:** reuse the `LiveMap` `AccessibilityInfo.isReduceMotionEnabled` guard — snap, no spring.
+- **A11y/SR order:** map summary → target toggle → item → price → suggested-fare → CTA; "Use my
+  location" + the landmark Fields stay the non-visual way to set a location; toggle/CTA ≥ 44/52 px.
+- **Preserve (already built):** the PII-free draft (phones never stored), reverse-geocode "• from map"
+  auto-fill, and the order-cache seed on create.
 
 ## Next steps (gstack flow)
 

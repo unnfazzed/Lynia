@@ -4,6 +4,11 @@
  */
 import { z } from "zod";
 
+/** Offer window length (CONCEPT §9). Wire-relevant: the customer's auction countdown renders from
+ *  it (order.expiresAt = createdAt + OFFER_WINDOW_MS), and the API schedules expiry off the same
+ *  value — one source so the clock the customer sees and the server enforces can't drift. */
+export const OFFER_WINDOW_MS = 90_000;
+
 export const LatLng = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
@@ -113,6 +118,15 @@ export type WsEvent = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];
 /** `offers:changed` payload — signal only; the client refetches `GET /orders/:id/offers`. */
 export const OffersChangedEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
 export type OffersChangedEvent = z.infer<typeof OffersChangedEvent>;
+
+/** `board:subscribe` payload — the rider's position, so the server scopes the live board to the
+ *  rider's geo-cell neighbourhood. lat/lng are OPTIONAL: a loc-less subscribe falls back to the
+ *  city-wide board room (mirrors the REST `GET /orders/open` city-wide fallback). */
+export const BoardSubscribeEvent = z.object({
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+});
+export type BoardSubscribeEvent = z.infer<typeof BoardSubscribeEvent>;
 
 /** Redacted waypoint a browsing (pre-assignment) rider may see: point + landmark only. `.strict()`
  *  so a stray `contactPhone` is REJECTED, not silently stripped — the board must never carry PII. */

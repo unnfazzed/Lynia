@@ -61,6 +61,19 @@ export const envSchema = z.object({
   DIDIT_WEBHOOK_SECRET: z.string().optional(),
   DIDIT_CALLBACK_URL: optionalUrl,
   DIDIT_BASE_URL: z.string().url().default("https://verification.didit.me"),
+}).superRefine((env, ctx) => {
+  // Boot-guard: several consumers silently degrade to in-memory without REDIS_URL. Critically the
+  // OTP/rate-limit store (auth/otp-store.ts InMemoryOtpStore is per-process), so on multi-instance
+  // prod the brute-force cap is multiplied per instance, and the Socket.IO adapter is per-instance.
+  // Fail the boot loudly rather than degrade silently. Stays optional in dev/test.
+  if (env.NODE_ENV === "production" && !env.REDIS_URL) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["REDIS_URL"],
+      message:
+        "REDIS_URL is required in production — the in-memory OTP/rate-limit store and Socket.IO adapter are per-instance without it",
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

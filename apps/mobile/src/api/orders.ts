@@ -7,6 +7,8 @@ export interface CreateOrderResult {
   proposedFare: string;
   suggestedFare: string;
   distanceKm: number;
+  /** ISO end of the offer window (createdAt + OFFER_WINDOW_MS) — drives the auction countdown. */
+  expiresAt: string | null;
 }
 
 export interface OrderEvent {
@@ -25,6 +27,8 @@ export interface OrderSnapshot {
   rider: { profileId: string; currentLat: number | null; currentLng: number | null; updatedAt: string | null } | null;
   events: OrderEvent[];
   counterpartyPhone: string | null;
+  /** ISO end of the offer window while `open_for_offers`, else null — drives the auction countdown. */
+  expiresAt: string | null;
 }
 
 export function createOrder(body: CreateOrderRequest): Promise<CreateOrderResult> {
@@ -49,8 +53,11 @@ export interface OpenOrder {
   createdAt: string;
 }
 
-export function getOpenOrders(): Promise<OpenOrder[]> {
-  return apiFetch<OpenOrder[]>("/orders/open");
+/** Open orders the rider can bid on. When the rider's location is known, the server scopes to nearby
+ *  orders (distance-sorted); with no location it falls back to the newest city-wide (backward compat). */
+export function getOpenOrders(loc?: { lat: number; lng: number }, radiusM?: number): Promise<OpenOrder[]> {
+  const q = loc ? `?lat=${loc.lat}&lng=${loc.lng}${radiusM ? `&radiusM=${radiusM}` : ""}` : "";
+  return apiFetch<OpenOrder[]>(`/orders/open${q}`);
 }
 
 export function getActiveOrder(): Promise<OrderSnapshot | null> {

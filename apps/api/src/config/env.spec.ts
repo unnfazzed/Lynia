@@ -25,3 +25,26 @@ describe("loadEnv — optional URL fields", () => {
     expect(() => loadEnv({ ...base, DIDIT_CALLBACK_URL: "not-a-url" })).toThrow(/Invalid environment configuration/);
   });
 });
+
+describe("loadEnv — production REDIS_URL boot-guard", () => {
+  it("rejects production without REDIS_URL (in-memory OTP/rate-limit store is per-instance)", () => {
+    expect(() => loadEnv({ ...base, NODE_ENV: "production" })).toThrow(/Invalid environment configuration/);
+    expect(() => loadEnv({ ...base, NODE_ENV: "production" })).toThrow(/REDIS_URL/);
+  });
+
+  it("accepts production when REDIS_URL is set", () => {
+    const env = loadEnv({ ...base, NODE_ENV: "production", REDIS_URL: "redis://localhost:6379" });
+    expect(env.NODE_ENV).toBe("production");
+    expect(env.REDIS_URL).toBe("redis://localhost:6379");
+  });
+
+  it("keeps REDIS_URL optional in development", () => {
+    const env = loadEnv({ ...base, NODE_ENV: "development" });
+    expect(env.REDIS_URL).toBeUndefined();
+  });
+
+  it("keeps REDIS_URL optional in test", () => {
+    const env = loadEnv({ ...base, NODE_ENV: "test" });
+    expect(env.REDIS_URL).toBeUndefined();
+  });
+});
