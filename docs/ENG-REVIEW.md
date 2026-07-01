@@ -164,6 +164,7 @@ An independent eng + adversarial + static-design pass over the whole build. Back
 (history/`me` authz + PII). Fixed a **systemic error-state-honesty P1** (errors were swallowed into success-
 looking states) and the **rider-gate staleness**. Consciously-deferred remainder tracked as deferred work.
 Test count climbed 21 → 72 → 112 → **119** API tests through this stage, with mobile typecheck in the CI gate.
+(It has since grown to **212** with the Ship/Phase-3 work below.)
 
 **Verdict:** Build engineering CLEARED — foundations sound, P0s closed, lifecycle whole and tested. → Ship.
 
@@ -370,4 +371,41 @@ call needs a real project, so the payload mapper (`buildFcmMessage`) is what's a
 
 **Deferred (unchanged):** the NIT `notifyOrderStatus` recipient-ids overload, and the §4 device-build KYC
 UX items (those are design-side — see `docs/DESIGN-REVIEW.md` §5). **Current status →
+`docs/PILOT-READINESS.md`.**
+
+---
+
+## 6. Phase-3 build — production OTP send + vendor wiring (2026-06-30 → 07-01)
+
+> Build passes that turn the last two **stubbed** external seams into real, fail-loud integrations, plus
+> the founder-facing wiring that makes them one-command to activate. These close the T6 (production OTP)
+> and T7/T0 (real KYC) code gaps; what's left is a founder account/key, not code. Status: **SHIPPED.**
+
+**What landed:**
+
+- **WhatsApp Cloud API OTP send** (`auth/otp-sender.ts`). The `OtpSender` seam's `whatsapp` channel was a
+  console stub; it now sends against Meta's **WhatsApp Cloud API** as an authentication-template message
+  (`WhatsAppOtpSender` + a pure `buildWhatsAppOtpRequest` payload builder, unit-tested). It **fails loud on
+  misconfiguration** rather than pretending a code was sent — flipping `OTP_CHANNEL=whatsapp` without the
+  phone-number id / token / template makes `requestOtp` throw by design. New env (`config/env.ts`):
+  `WHATSAPP_ENABLED`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_TEMPLATE_NAME`
+  (+ lang / Graph version / copy-code-button knobs), injected by `release.yml`. The `console` QA channel and
+  the `OTP_TEST_PHONES` allowlist are untouched, so vendor-free QA still works.
+- **Didit one-command founder wiring** (`scripts/didit-setup.ts`, `pnpm didit:setup`). The v3 KYC
+  integration (create-session + `X-Signature-V2` webhook) was already reviewed in §4; this adds a script
+  that registers the account, lists/picks the workflow, and registers the webhook destination, printing the
+  four values to store — so activating real KYC is *create account → set secret → flip `DIDIT_ENABLED`*.
+  Persists nothing; talks to the live Didit API.
+- **Tracking-snapshot redaction for the live map** (server side of the mobile map work). The tracking
+  snapshot now returns **redacted pickup/drop-off points** so the customer/rider map can draw the route pins
+  and the rider's GPS marker without exposing precise counterparty coordinates outside the reveal window —
+  keeping the §5d PII gate intact while feeding the new live map (design side: `docs/DESIGN-REVIEW.md` §6).
+
+**Tested:** `otp-sender.spec` (WhatsApp payload shape, misconfig-throws, channel routing) and the existing
+`env.spec` config guards. The live Graph/Didit HTTP calls are unit-boundaried like the FCM path — a real
+account is needed to exercise them end-to-end, so the payload/request builders are what's asserted. Total
+**212** API tests.
+
+**Deferred / founder-gated (not code):** an approved WhatsApp authentication template + a real Didit ZIM-ID
+run remain founder actions (runbook in `docs/PILOT-READINESS.md`). **Current status →
 `docs/PILOT-READINESS.md`.**

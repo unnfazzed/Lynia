@@ -409,8 +409,14 @@ number is simply gated by order state.
   region Johannesburg `africa-south1`, default `CLOUD_PROVIDER=gcp`, Azure adapter kept as the D7
   portability proof. The project (`lynia-500911`) is Terraform-provisioned and the API is CI-deployed to
   Cloud Run behind an external HTTPS load balancer (`https://lyniago.lyniafinance.com`). Closes T0.
-- ⬜ **Remaining (founder/vendor + dev build):** WhatsApp BSP (OTP) + a real Didit ZIM-ID run, and a
-  greenlit dev build (Phase 3 native maps) → then on-device `/qa`. See `docs/PILOT-READINESS.md`.
+- ✅ **Phase-3 build shipped (2026-06-30 → 07-01)** — native map + tap-to-pin for pickup/drop-off and a
+  **live tracking map** on the customer order and rider job screens; rider-broadcast push + batched FCM;
+  in-app KYC hand-off with auto-poll; FCM device-token registration + `google-services.json` build wiring.
+  The vendor integrations are now **built behind flags**: WhatsApp Cloud API OTP **send** (was a stub) and
+  Didit v3 KYC + a one-command founder-wiring script (`pnpm didit:setup`).
+- ⬜ **Remaining (founder account/key + dev build, not code):** an approved WhatsApp authentication
+  template + a real Didit ZIM-ID run + a Firebase project (`google-services.json`), and a greenlit dev
+  build → then on-device `/qa`. See `docs/PILOT-READINESS.md`.
 
 > Note: gstack skills (`/plan-ceo-review`, etc.) require gstack installed locally; the equivalents above
 > were run manually. **Current overall status lives in `docs/PILOT-READINESS.md`.**

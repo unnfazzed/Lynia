@@ -72,7 +72,8 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
 - **DT4 offer best-match sort** — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector and a
   RECOMMENDED marker (design D-d). The **last buildable-now code gap — now closed.**
 - **Revenue model decided (§6)** — rider commission, 0% for ~6–8 months, infra later (see Decision gates).
-- **Test count** 21 → 72 → 112 → **119** API tests; mobile typecheck in the CI gate.
+- **Test count** 21 → 72 → 112 → 119 → **212** API tests (Phase-3 push/broadcast, KYC-hardening, and
+  WhatsApp-OTP suites added since the 06-27 snapshot); mobile typecheck in the CI gate.
 
 ## Updated eng-plan scorecard (T0–T13)
 

@@ -221,3 +221,27 @@ shipped separately (`docs/ENG-REVIEW.md` §4). **Current build status → `docs/
 state still diverge in copy; unifying them is best judged on a real device alongside the stepper/earnings
 skeletons (DESIGN-REVIEW §3/§4). P2 polish (consent block strength, inline field validation, numeric ID
 keyboard, label↔input a11y association) is unchanged. **Current build status → `docs/PILOT-READINESS.md`.**
+
+---
+
+## 6. Phase-3 build — native map + live tracking (2026-06-30)
+
+> Build pass that replaces the placeholder location UX with real maps on both sides. The customer home
+> previously took **raw lat/lng text entry** for pickup/drop-off — unusable for a real courier flow — and
+> the §5c tracking screen had no spatial view of where the rider actually was. Status: **SHIPPED (pending
+> the on-device `/qa` pass).**
+
+**What landed:**
+
+- **Native map + tap-to-pin** for pickup/drop-off on the customer home (`react-native-maps`), replacing the
+  raw lat/lng entry — the customer drops pins on a map instead of typing coordinates.
+- **Live tracking map** on **both** the customer order screen and the rider job screen: pickup and drop-off
+  pins plus the rider's GPS marker, refitting the viewport as the rider moves. It draws from the
+  redacted tracking snapshot (server side: `docs/ENG-REVIEW.md` §6), so the map never exposes precise
+  counterparty coordinates outside the reveal window — the §5d PII gate holds.
+
+**Platform note / founder-gated:** Android maps need a **Google Maps API key** (`GOOGLE_MAPS_API_KEY` env /
+EAS secret → `app.config.ts`); iOS uses Apple Maps, no key. Like the rest of Phase-3 this is verifiable only
+on the **dev build** — Expo Go can't exercise native maps — so the on-device visual QA of the map, the §5c
+stepper, and the earnings screens is the remaining design gate. **Current build status →
+`docs/PILOT-READINESS.md`.**
