@@ -86,6 +86,34 @@ describe("TrackingGateway.emitOffersChanged", () => {
   });
 });
 
+describe("TrackingGateway.riderLocation", () => {
+  it("emits the position before (and independent of) the DB persist", async () => {
+    const { server, to, emit } = fakeServer();
+    const updateRiderLocation = vi.fn(async () => {
+      throw new Error("db down");
+    });
+    const g = gateway({ isAssignedRider: vi.fn(async () => true), updateRiderLocation });
+    g.server = server as never;
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    // Persist fails, so the call rejects — but the customer's live position already went out.
+    await expect(
+      g.riderLocation(client as never, { orderId: "ord-1", lat: -17.8, lng: 31.0 }),
+    ).rejects.toThrow("db down");
+    expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+    expect(emit).toHaveBeenCalledWith(WS_EVENTS.position, expect.objectContaining({ lat: -17.8, lng: 31.0 }));
+  });
+
+  it("rejects a non-assigned rider before any emit (auth precedes the push)", async () => {
+    const { server, to } = fakeServer();
+    const g = gateway({ isAssignedRider: vi.fn(async () => false) });
+    g.server = server as never;
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    const res = await g.riderLocation(client as never, { orderId: "ord-1", lat: 0, lng: 0 });
+    expect(res).toEqual({ error: "forbidden" });
+    expect(to).not.toHaveBeenCalled();
+  });
+});
+
 describe("TrackingGateway.emitBoardNewOrder", () => {
   const payload: BoardNewOrderEvent = {
     id: "11111111-1111-1111-1111-111111111111",

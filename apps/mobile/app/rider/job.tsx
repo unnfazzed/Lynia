@@ -47,7 +47,8 @@ export default function RiderJob(): React.ReactElement {
       return { prev };
     },
     onError: (e, _to, ctx) => {
-      if (ctx && "prev" in ctx) qc.setQueryData(["activeJob"], ctx.prev);
+      // Restore the snapshot (incl. a legitimate null), but never write `undefined` back over the cache.
+      if (ctx?.prev !== undefined) qc.setQueryData(["activeJob"], ctx.prev);
       fail(e);
     },
     onSettled: refresh,

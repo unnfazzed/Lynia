@@ -115,6 +115,18 @@ export default function OrderScreen(): React.ReactElement {
     refetchInterval: status === "open_for_offers" ? 15_000 : false,
   });
 
+  // Announce a newly-arrived bid for screen-reader users — the streaming list updates silently.
+  const liveBidCount = offersQ.data?.length ?? 0;
+  const prevBidCount = useRef(0);
+  useEffect(() => {
+    if (liveBidCount > prevBidCount.current && status === "open_for_offers") {
+      AccessibilityInfo.announceForAccessibility(
+        liveBidCount === 1 ? "A rider is bidding on your order" : `${liveBidCount} riders bidding`,
+      );
+    }
+    prevBidCount.current = liveBidCount;
+  }, [liveBidCount, status]);
+
   // Order the offers for display (D-d): best-match blends price + rating + ETA and marks the top pick;
   // the other modes are plain single-key sorts. Selection is unaffected — the customer still chooses.
   const orderedOffers = useMemo((): { offer: OfferRow; recommended: boolean }[] => {
@@ -155,7 +167,7 @@ export default function OrderScreen(): React.ReactElement {
       void saveDeliveryCode(orderId, res.deliveryCode);
     },
     onError: (_e, _v, ctx) => {
-      if (ctx && "prev" in ctx) qc.setQueryData(orderKey(orderId), ctx.prev);
+      if (ctx?.prev !== undefined) qc.setQueryData(orderKey(orderId), ctx.prev);
       setSelectNotice("That rider was just taken — choose another.");
       AccessibilityInfo.announceForAccessibility("That rider was just taken — choose another.");
     },
@@ -288,7 +300,9 @@ export default function OrderScreen(): React.ReactElement {
               </BidEntrance>
             ))}
             {selectNotice ? (
-              <Text style={{ color: tokens.color.muted, fontSize: 13, marginTop: tokens.space.xs }}>{selectNotice}</Text>
+              <Text accessibilityLiveRegion="polite" style={{ color: tokens.color.muted, fontSize: 13, marginTop: tokens.space.xs }}>
+                {selectNotice}
+              </Text>
             ) : null}
             {orderedOffers.length === 0 ? (
               // Live-but-empty: a "working" state (pulsing placeholder) distinct from the expired

@@ -6,6 +6,11 @@ function svc(findUnique: () => Promise<unknown>) {
   return new TrackingService({ order: { findUnique } } as unknown as PrismaService);
 }
 
+/** Fakes only the rider.findUnique the board-eligibility check reads. */
+function riderSvc(rider: unknown) {
+  return new TrackingService({ rider: { findUnique: async () => rider } } as unknown as PrismaService);
+}
+
 describe("TrackingService.canAccessOrder", () => {
   it("denies access to a missing order", async () => {
     expect(await svc(async () => null).canAccessOrder("u1", "o1")).toBe(false);
@@ -39,5 +44,20 @@ describe("TrackingService.isAssignedRider", () => {
   it("allows the assigned rider on an active ride", async () => {
     const s = svc(async () => ({ riderId: "u1", status: "en_route_pickup" }));
     expect(await s.isAssignedRider("u1", "o1")).toBe(true);
+  });
+});
+
+describe("TrackingService.isBoardEligible", () => {
+  it("denies a non-rider (no row)", async () => {
+    expect(await riderSvc(null).isBoardEligible("u1")).toBe(false);
+  });
+  it("denies an unverified rider", async () => {
+    expect(await riderSvc({ kycStatus: "pending", isOnline: true }).isBoardEligible("u1")).toBe(false);
+  });
+  it("denies a verified rider who is offline", async () => {
+    expect(await riderSvc({ kycStatus: "verified", isOnline: false }).isBoardEligible("u1")).toBe(false);
+  });
+  it("allows a verified, online rider", async () => {
+    expect(await riderSvc({ kycStatus: "verified", isOnline: true }).isBoardEligible("u1")).toBe(true);
   });
 });

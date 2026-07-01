@@ -120,7 +120,8 @@ const PILL_TONE: Record<PillTone, string> = {
   neutral: tokens.color.accent,
   online: tokens.color.accent,
   offline: tokens.color.muted,
-  reconnecting: tokens.color.danger,
+  // A dropped/paused connection is a transient state, not an error — muted, never danger-red.
+  reconnecting: tokens.color.muted,
 };
 
 export function StatusPill({

@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, type CreateOrderRequest, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -104,17 +104,19 @@ export class OrdersService {
         nearby.map((r) => r.profileId),
         { pickup: pickup.landmark, fare: meta.proposedFare },
       );
-      // Same redaction as listOpen — point + landmark only, NEVER contactPhone. The board carries no PII.
-      const boardEvent: BoardNewOrderEvent = {
+      // Same redaction as listOpen — point + landmark only, NEVER contactPhone. Parsing through the
+      // `.strict()` schema enforces the no-PII guarantee ON THE WIRE (throws → swallowed best-effort
+      // by the surrounding try) rather than trusting the projection alone.
+      const boardEvent: BoardNewOrderEvent = BoardNewOrderEvent.parse({
         id: orderId,
-        pickup: publicWaypoint(input.pickup as unknown as Prisma.JsonValue) as BoardNewOrderEvent["pickup"],
-        dropoff: publicWaypoint(input.dropoff as unknown as Prisma.JsonValue) as BoardNewOrderEvent["dropoff"],
+        pickup: publicWaypoint(input.pickup as unknown as Prisma.JsonValue),
+        dropoff: publicWaypoint(input.dropoff as unknown as Prisma.JsonValue),
         itemDesc: meta.itemDesc,
         suggestedFare: meta.suggestedFare,
         proposedFare: meta.proposedFare,
         distanceKm: meta.distanceKm,
         createdAt: meta.createdAt,
-      };
+      });
       this.safeEmitBoardNewOrder(boardEvent);
     } catch {
       /* best-effort: a broadcast-push failure never affects the created order */

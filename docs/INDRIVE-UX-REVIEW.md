@@ -12,6 +12,25 @@ polished native ride/courier app.
 
 ---
 
+## Implementation status (2026-07-01)
+
+The **P0 set + cheap P1s were reviewed (gStack Engineering + Design rubrics), implemented, and
+hardened** (a second Eng + Design pass on the diff): Eng verdict **PASS** (no P0/P1 correctness
+issues), Design fidelity **9/10**. API tests **215 pass**; shared/api/mobile typecheck clean.
+
+- ✅ **Shipped:** WS-pushed offers during `open_for_offers` (A1) + WS-pushed rider board (A2);
+  optimistic UI on select + rider-advance with a muted rollback (C1); marker interpolation +
+  fit-camera-once + recenter + reconnecting state (B1, B2, B5); websocket→polling fallback (B4);
+  emit-before-persist (B3/P1-1a); `staleTime` + order-cache seed on create (C2, C3); the live
+  bid-count, streaming-bid animation, "finding riders" state, online chip, seeded ETA, and ≥44px
+  touch targets (D3–D6 partial). Polls widened to a 15s self-heal.
+- ⏸️ **Consciously deferred** (separately reviewable): the **Redis live-position index** (B3/E1 —
+  kept the Postgres write, only reordered it; the source-of-truth split is the riskiest change);
+  **server-side geo-scoped board** (A3/P1-2); the **auction countdown** (needs the expiry time on
+  the snapshot + is a flagged product decision — urgency vs. anxiety); **taller/expandable map**,
+  **map-anchored home / draft form**, and **reverse-geocoded landmark** (D1/D2/D5 — device-gated
+  DT5 work); offer-expiry jitter + prod `REDIS_URL` boot-guard (E2/E4).
+
 ## TL;DR
 
 Lynia is built on a genuinely strong foundation — a real WebSocket layer with a Redis fan-out
