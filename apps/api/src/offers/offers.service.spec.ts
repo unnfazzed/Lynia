@@ -20,15 +20,16 @@ function fakeGateway() {
 }
 
 /** Per-test Prisma fake — only the methods makeOffer/listForOrder touch. No DB. */
-function svc(prisma: Partial<Record<string, unknown>>, gateway = fakeGateway()) {
+function svc(prisma: Partial<Record<string, unknown>>, gateway = fakeGateway(), metrics = fakeMetrics()) {
   return {
     service: new OffersService(
       prisma as unknown as PrismaService,
       noopNotifications,
       gateway as unknown as TrackingGateway,
-      fakeMetrics(),
+      metrics,
     ),
     gateway,
+    metrics,
   };
 }
 
@@ -106,6 +107,33 @@ describe("OffersService.makeOffer", () => {
     });
     const res = await service.makeOffer(offerInput, "rider-1");
     expect(res).toEqual({ id: "o1", type: "accept", offeredFare: "2.50", etaMinutes: 10, status: "pending" });
+  });
+
+  it("labels the offers_made_total counter by outcome (created / forbidden / conflict)", async () => {
+    const ok = {
+      order: { findUnique: async () => ({ status: "open_for_offers" }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true }) },
+      offer: { create: async () => ({ id: "o1", type: "accept", offeredFare: { toString: () => "2.50" }, etaMinutes: 10, status: "pending" }) },
+    };
+    const created = svc(ok);
+    await created.service.makeOffer(offerInput, "rider-1");
+    expect(created.metrics.incOffersMade).toHaveBeenCalledWith("created");
+
+    const offline = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers" }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: false }) },
+    });
+    await expect(offline.service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/go online/i);
+    expect(offline.metrics.incOffersMade).toHaveBeenCalledWith("forbidden");
+
+    const dup = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
+    const conflict = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers" }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true }) },
+      offer: { create: async () => { throw dup; } },
+    });
+    await expect(conflict.service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/already responded/i);
+    expect(conflict.metrics.incOffersMade).toHaveBeenCalledWith("conflict");
   });
 
   it("signals offers:changed for the order room on a successful offer", async () => {

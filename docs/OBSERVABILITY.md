@@ -34,6 +34,13 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `match_select_total`            | counter   | 1    | `outcome`                       | —          |
 | `offers_made_total`             | counter   | 1    | `outcome`                       | —          |
 
+> **Scope of the two "push" metrics** (both are single-process spans, not glass-to-glass):
+> `offer_received_latency_ms` times the rider's `makeOffer` **server handling** (request → offer row
+> committed + `offers:changed` emitted) — i.e. "offer *made* server-side", **not** when the customer's
+> screen renders it. `position_emit_latency_ms` times only the in-process `server.emit()` of a rider
+> fix (typically sub-millisecond); its `< 500 ms` target is a loose regression tripwire, not a delivery
+> SLO. Customer-perceived latency for both needs the client RUM signal noted at the bottom.
+
 ### Fixed label vocabularies (bounded cardinality — never ids/phones/lat-lng/raw-urls)
 
 - `match_select` `outcome` ∈ `assigned | taken | unavailable | not_open | forbidden | error`
