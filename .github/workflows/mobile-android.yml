@@ -1,0 +1,180 @@
+name: Mobile Android APK
+
+# Builds a signed, standalone Android APK on GitHub's runners — NO EAS credits.
+# `expo prebuild` generates the native project, Gradle assembles a RELEASE APK (embeds the JS
+# bundle, so it runs on a tester's phone with no Metro server), and the artifact is delivered two
+# ways: a GitHub Actions artifact (always) and a time-limited GCS signed URL (phone-installable,
+# best-effort — needs the two IAM grants in the setup notes below).
+#
+# Trigger: manual only. From Cloud Shell:
+#   gh workflow run mobile-android.yml --ref claude/project-next-steps-cyjl9v
+# (or the "Run workflow" button once this file is on the default branch).
+#
+# ── Required GitHub secrets (set via `gh secret set …` in Cloud Shell) ──────────────────────────
+#   GOOGLE_SERVICES_JSON_BASE64   base64 of apps/mobile/google-services.json  (Firebase/FCM)
+#   ANDROID_KEYSTORE_BASE64       base64 of a release keystore (generate with keytool — see notes)
+#   ANDROID_KEYSTORE_PASSWORD     keystore store password
+#   ANDROID_KEY_ALIAS             key alias (e.g. lynia)
+#   ANDROID_KEY_PASSWORD          key password
+#   GOOGLE_MAPS_API_KEY           (optional) Android Maps key; omit and the map renders blank
+#
+# ── Required repo Variables (already set — the live API release uses them) ──────────────────────
+#   GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT
+#
+# ── Two IAM grants so CI (the deployer SA) can upload + sign (run once, in Cloud Shell) ──────────
+#   SA=lynia-deployer@lynia-500911.iam.gserviceaccount.com
+#   gcloud storage buckets add-iam-policy-binding gs://lynia-media \
+#     --member="serviceAccount:$SA" --role=roles/storage.objectAdmin
+#   gcloud iam service-accounts add-iam-policy-binding "$SA" \
+#     --member="serviceAccount:$SA" --role=roles/iam.serviceAccountTokenCreator
+#   (Until these run, the build still succeeds and uploads the artifact; only the GCS link is skipped.)
+
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: "GCS bucket for the APK (must be writable by the deployer SA)"
+        default: "lynia-media"
+        type: string
+
+concurrency:
+  group: mobile-android
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build · sign · deliver
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation (GCS delivery)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail early if signing secrets are missing
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          GSJ: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in KS KS_PW ALIAS KEY_PW GSJ; do
+            [ -n "${!v:-}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${missing[*]}. See the header of this workflow for the setup commands." >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @lynia/shared build
+
+      - name: Materialise google-services.json
+        run: echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > apps/mobile/google-services.json
+
+      - name: Prebuild native Android project
+        working-directory: apps/mobile
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          EXPO_NO_TELEMETRY: "1"
+        run: pnpm exec expo prebuild --platform android --no-install
+
+      - name: Decode release keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+
+      - name: Assemble signed release APK
+        working-directory: apps/mobile/android
+        env:
+          KS_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew :app:assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/release.keystore" \
+            -Pandroid.injected.signing.store.password="$KS_PW" \
+            -Pandroid.injected.signing.key.alias="$ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PW"
+
+      - name: Locate the APK
+        id: apk
+        run: |
+          set -euo pipefail
+          path="$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' | head -1)"
+          [ -n "$path" ] || { echo "::error::No APK produced" >&2; exit 1; }
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+          echo "Built: $path ($(du -h "$path" | cut -f1))"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lynia-android-${{ github.run_number }}
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+
+      # ── Phone-installable delivery via GCS (best-effort) ────────────────────────────────────────
+      - name: Authenticate to Google Cloud
+        id: gcpauth
+        continue-on-error: true
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        if: steps.gcpauth.outcome == 'success'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload to GCS and print a 7-day install link
+        if: steps.gcpauth.outcome == 'success'
+        continue-on-error: true
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          SA: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          APK: ${{ steps.apk.outputs.path }}
+        run: |
+          set -euo pipefail
+          OBJ="app-builds/lynia-${{ github.run_number }}-$(git rev-parse --short HEAD).apk"
+          gcloud storage cp "$APK" "gs://$BUCKET/$OBJ" \
+            --content-type=application/vnd.android.package-archive
+          URL="$(gcloud storage sign-url "gs://$BUCKET/$OBJ" \
+            --impersonate-service-account="$SA" --duration=7d --http-verb=GET \
+            --format='value(signed_url)')"
+          {
+            echo "## 📱 Install the APK on your phone"
+            echo ""
+            echo "Open this link **on the Android device** (valid 7 days), then install:"
+            echo ""
+            echo "\`\`\`"
+            echo "$URL"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delivery fallback note
+        if: steps.gcpauth.outcome != 'success'
+        run: |
+          {
+            echo "## 📦 APK built — GCS delivery skipped"
+            echo ""
+            echo "The signed-URL step was skipped (GCP auth/IAM not ready). Download the APK from the"
+            echo "**Artifacts** section of this run, or add the two IAM grants in the workflow header and re-run."
+          } >> "$GITHUB_STEP_SUMMARY"
