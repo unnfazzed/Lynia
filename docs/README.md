@@ -3,20 +3,11 @@
 This folder is the project's **review record + product spec**, kept deliberately lean: the four core
 documents (CONCEPT + the three per-discipline review logs) plus the design spec and the status board.
 
-**Status (2026-07-01):** the API is **live and CI-deployed on GCP** at
-**[`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com)** (`{"status":"ok","db":true,"redis":true}`).
-The Ship stage's hard gate — GCP provisioning — is **closed** (project `lynia-500911`, Terraform-applied), and
-the **Phase-3 build** has landed on top: native map + tap-to-pin and a **live tracking map** on the order and
-rider screens, plus the vendor integrations now **built behind flags** (WhatsApp Cloud API OTP send, Didit v3
-KYC + a one-command founder-wiring script, FCM push + `google-services.json` build wiring). The
-**inDrive-parity roadmap has now shipped in full, P0 → P2**: the reverse auction is **push, not poll**
-(WS-streamed offers + geo-scoped rider-board push), tracking is **smooth** (marker interpolation, fit-once
-camera + recenter, ≤1/sec server-side coalesce), **optimistic UI** throughout (incl. rating-on-tap), a
-**Redis live-position index** + history composite indexes + an explicit Prisma pool for scale, and
-**client RUM** for true glass-to-glass latency (**274 API tests green**). What remains is **founder
-account/key wiring** (WhatsApp BSP, Didit, Firebase) and an on-device **dev build** — tracked in
-**[`PILOT-READINESS.md`](./PILOT-READINESS.md)**, the source of truth for status (see its **Pending
-tasks** section).
+**Status:** the API is **live and CI-deployed on GCP** at
+**[`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com)** (`{"status":"ok","db":true,"redis":true}`),
+the CI deploy is **armed**, and the inDrive-parity roadmap has shipped (**push, not poll**). Status is
+**held once** — see **[`PILOT-READINESS.md`](./PILOT-READINESS.md)**, the single source of truth (its
+**Pending tasks** section).
 
 The three **review logs** are living per-discipline records (CEO/product · engineering · design), each
 organised by sprint stage (Plan → Build → Ship) and preserved for decision history. Status is **not**
@@ -31,7 +22,10 @@ duplicated across them — `PILOT-READINESS.md` holds it once.
 | [`ENG-REVIEW.md`](./ENG-REVIEW.md) | 📋 Review log (engineering) | Architecture + correctness reviews across **Plan → Build → Ship** (offer-loop concurrency, the P0 audits, GCP provisioning). Defines the stable `ET1`–`ET10` IDs. |
 | [`DESIGN-REVIEW.md`](./DESIGN-REVIEW.md) | 📋 Review log (design) | Design/UX reviews across **Plan → Build → Ship** (system lock, two-sided consultation, ship-prep visual QA). Calibrates against `DESIGN.md`. |
 | [`INDRIVE-UX-REVIEW.md`](./INDRIVE-UX-REVIEW.md) | 📋 Review (UX/latency) | Perceived-speed & responsiveness audit vs inDrive: the auction/tracking are polled not pushed, no optimistic UI, marker teleport + camera-fight, plus architecture/scale smells — with a P0→P2 fix roadmap mapped to inDrive parity. Complements the visual `DESIGN-REVIEW.md` and the architecture `COMPETITOR-REVIEW.md`. |
+| [`COMPETITOR-REVIEW.md`](./COMPETITOR-REVIEW.md) | 📋 Review (architecture) | Architecture/competitor benchmarking: `ARCHITECTURE.md` weighed against inDrive, Gojek, Grab, and Chowdeck — engineering decisions ranked in fair weight classes, drawn from public sources. Complements the UX `INDRIVE-UX-REVIEW.md`. |
 | [`DESIGN.md`](./DESIGN.md) | 🟢 Living (spec) | Design system + UX spec (tokens, components, §5c journey, the full two-sided IA) and the `DT1`–`DT13` build-task status table. The baseline every design review calibrates against. |
+| [`DESIGN-SYSTEM.md`](./DESIGN-SYSTEM.md) | 🟢 Living | Design-system adoption record: how the LyniaGo system in `packages/design/` was vendored, the token reconciliation into `packages/shared`, what is wired into the apps, and the device/build follow-ups. |
+| [`OBSERVABILITY.md`](./OBSERVABILITY.md) | 🟢 Living (spec) | Observability spec: latency SLOs, the metric vocabulary (fixed-cardinality labels), and the OTLP-push collector runbook (`OTEL_EXPORTER_OTLP_ENDPOINT`). |
 | [`PILOT-READINESS.md`](./PILOT-READINESS.md) | 🟢 Living (current) | Where the build actually stands: T0–T13 scorecard and the remaining gates, plus the **founder action runbook** (WhatsApp BSP / Didit / FCM wiring) and the **vendor-free QA-testing** guide. **The single source of truth for status.** |
 
 ## Reading order

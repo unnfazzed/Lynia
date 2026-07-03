@@ -82,5 +82,4 @@ scope for this phase.
 
 ## Known follow-ups (see `HANDOFF.md`)
 - Repo-side engineering tickets (contact-phone guard, timeouts, race/OTP/board wiring, heartbeat).
-- Outline the Fredoka wordmark to vector for final production.
 - On-device checks: CTA sunlight contrast, skeleton reflow, sheet drag physics.

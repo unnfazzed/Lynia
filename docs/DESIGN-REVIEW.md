@@ -33,8 +33,10 @@
 
 ### What this pass locked
 
-- **The design system** — tokens (color/type/spacing/radius), the **Manrope** typeface (deliberately not a
-  system font), tabular numerals for fares/ETAs/ratings, the 8pt grid, and the component set (Primary CTA,
+- **The design system** — tokens (color/type/spacing/radius), a non-system display typeface (originally
+  locked as **Manrope**; the system has since standardised on **Inter** — the typeface Grab uses in-product —
+  see `docs/DESIGN-SYSTEM.md` / `packages/shared/src/design-tokens.ts`), tabular numerals for
+  fares/ETAs/ratings, the 8pt grid, and the component set (Primary CTA,
   Input-with-visible-label, Offer/Rider cards, Status stepper, Map bottom-sheet, Skeleton). All in
   `docs/DESIGN.md` — **the calibration baseline for every later pass.**
 - **Four locked design decisions** — D-a clean-utility + warm accent; D-b map-anchored home + scannable LIST

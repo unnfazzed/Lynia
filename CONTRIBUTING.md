@@ -156,8 +156,8 @@ graph LR
 
 | Job | What it does |
 |---|---|
-| **build** | `pnpm install` → build `@lynia/shared` → `prisma:generate` → `typecheck` → `build` → API `test`, across all workspaces. |
-| **schema** | Spins up a **real PostGIS service**, runs `migrate:deploy`, then **asserts the offer-loop constraints actually applied** — `one_active_ride`, the GiST geo index, and the hashed delivery OTP. |
+| **build** | `pnpm install` → build `@lynia/shared` → `prisma:generate` → `typecheck` → `build` → API `test` → mobile `test` (`@lynia/mobile`), across all workspaces. |
+| **schema** | Spins up a **real PostGIS service**, runs `migrate:deploy`, **asserts the offer-loop constraints actually applied** — `one_active_ride`, the GiST geo index, and the hashed delivery OTP — then runs the offer-loop concurrency integration tests (`test:int`). |
 
 The schema job is the important one to understand: the correctness of the offer loop rests on those DB
 constraints ([ARCHITECTURE §13](docs/ARCHITECTURE.md#13-concurrency-safety-model)), so CI proves they

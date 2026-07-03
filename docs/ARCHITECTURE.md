@@ -118,8 +118,8 @@ flowchart TB
     CUST -->|"REST: create order · select offer · rate"| REST
     RIDER -->|"REST: make offer · advance · deliver OTP"| REST
     ADMIN -->|"admin JWT (read)"| REST
-    CUST <-->|"WS: order:status · position"| GW
-    RIDER -->|"WS: rider:location"| GW
+    CUST <-->|"WS: order:status · position · offers:changed"| GW
+    RIDER <-->|"WS: rider:location · board:subscribe → board:new-order"| GW
 
     %% ---------- Clients → storage (direct upload) ----------
     CUST -.->|"PUT bytes (signed URL)"| GCS
@@ -134,7 +134,7 @@ flowchart TB
     AUTH -->|"OTP store · rate-limit counters"| REDIS
     OFF -->|"insert (one round)"| TOFF
     MATCH -->|"guarded CAS → assigned"| TORD
-    MATCH -->|"schedule 90s expiry"| REDIS
+    MATCH -->|"schedule 90–100s expiry"| REDIS
     LIFE -->|"guarded CAS · row-lock OTP verify"| TORD
     LIFE -->|"schedule rating auto-close"| REDIS
     RID --> TRID
@@ -153,6 +153,7 @@ flowchart TB
 
     %% ---------- Realtime fan-out ----------
     LIFE -.->|"emitOrderStatus"| GW
+    OFF -.->|"offers:changed (signal, push not poll)"| GW
     GW <-.->|"Socket.IO adapter fan-out"| REDIS
 
     %% ---------- Adapter seam → cloud/vendors ----------
@@ -412,7 +413,10 @@ body), and enables shutdown hooks (so BullMQ workers close cleanly).
 
 Prisma owns the schema and the typed client. The hot-path constraints and the PostGIS geography
 column are driven by raw SQL in `migrations/0001_init`. `Merchant` and `Address` are reserved
-super-app seams, unused at launch.
+super-app seams, unused at launch. The **line-items seam is now realized**: `Order.items`
+(nullable line-items JSON, migration `0008`) makes the §5b "line-items, not a single item field"
+decision concrete — `itemDesc` stays as the derived compact summary so existing consumers are
+unaffected.
 
 ```mermaid
 erDiagram
@@ -459,6 +463,7 @@ erDiagram
         OrderType orderType
         json pickup
         json dropoff
+        json items "line-items (migration 0008)"
         decimal suggestedFare
         decimal proposedFare
         decimal agreedFare
@@ -536,7 +541,7 @@ sequenceDiagram
 
     C->>API: POST /orders (pickup, dropoff, proposedFare)
     API->>DB: insert order (status=open_for_offers)
-    API->>Q: schedule offer-expiry (delay 90s, jobId=orderId)
+    API->>Q: schedule offer-expiry (delay 90–100s: 90s + ≤10s jitter, jobId=orderId)
     API-->>R: push "New delivery nearby" (PostGIS nearby query)
 
     Note over R: each rider responds ONCE
@@ -778,6 +783,14 @@ Flow details:
   reconnecting client's REST snapshot is fresh, then re-emitted to the room.
 - **`order:status`**: emitted by the lifecycle service after a committed transition — wrapped so it
   can never throw into the caller's transaction.
+- **`offers:changed`** (auction is **push, not poll**): during `open_for_offers` the offers service
+  pushes a *signal-only* event (`orderId` + `at`, never offer contents) to the order room whenever the
+  offer set changes; the customer refetches `GET /orders/:id/offers`, so rider PII stays on the
+  authenticated REST path while the list updates in real time.
+- **Rider board** (`board:subscribe` / `board:new-order` / `board:leave`): a verified, online rider
+  joins a **geo-scoped** board (3×3 cell neighbourhood, city-wide fallback when loc-less); a newly
+  created open order pushes to that board as a **redacted** row (point + landmark, never `contactPhone`,
+  mirroring `GET /orders/open`), so riders see work the instant it's posted instead of polling.
 - On the client, `useOrderSocket` applies `position` pushes to the React Query cache and, on
   connect / `order:status` / connect-error, **invalidates and refetches** the REST snapshot (the
   authoritative source). The screen also polls during active statuses as a second safety net.
@@ -912,7 +925,7 @@ backstop** so a lost job or a Redis outage can't strand an order.
 ```mermaid
 graph TB
     subgraph offer["Offer expiry"]
-        o1["order created →<br/>schedule expire (90s, jobId=orderId)"]
+        o1["order created →<br/>schedule expire (90–100s, jobId=orderId)"]
         o2["BullMQ worker → expireOrder (guarded CAS)"]
         o1 --> o2
     end
@@ -931,6 +944,10 @@ graph TB
 
 - **`jobId = orderId`** makes both jobs idempotent — a retry or duplicate schedule can't fire the
   transition twice.
+- **Offer-expiry delay is `OFFER_WINDOW_MS` (90s) plus additive 0–10s jitter → 90–100s.** The jitter is
+  additive-only so the job never fires before the customer-facing countdown (`createdAt + OFFER_WINDOW_MS`)
+  hits zero; it just de-synchronizes a burst of orders created together so their expiry CAS transactions
+  don't stampede.
 - The **rating auto-close reconciler** runs on boot and every 15 minutes, sweeping any
   delivered-but-unrated order past the rating window (batched, 500 at a time). It's the self-healing
   backstop for a crash between commit and schedule, or a Redis outage — completion metrics never
@@ -943,7 +960,8 @@ graph TB
 ## 15. CI / CD pipeline
 
 Two GitHub Actions workflows. **CI** gates every PR/push; **Release** ships the API container to
-Cloud Run (dormant until a maintainer arms it post-provisioning).
+Cloud Run. It is **armed and live** — `GCP_DEPLOY_ENABLED` is set, WIF is active, and a push to `main`
+deploys to the running service at `https://lyniago.lyniafinance.com`.
 
 ```mermaid
 graph LR
@@ -972,8 +990,9 @@ graph LR
 - The **schema job runs migrations against a real PostGIS service** and then asserts the
   offer-loop constraints actually applied (`one_active_ride`, the GiST geo index, the hashed
   delivery OTP) — the constraints are load-bearing, so CI proves them on every change.
-- **Release** is gated on `GCP_DEPLOY_ENABLED == 'true'`: until a maintainer arms it, the workflow is
-  a clean no-op that never fails a push. It skips on docs-only changes (`paths-ignore`).
+- **Release** is gated on `GCP_DEPLOY_ENABLED == 'true'` — the arming switch, now **set**, so the
+  workflow deploys on every push to `main` (it was a clean no-op before provisioning; that gate is now
+  armed). It skips on docs-only changes (`paths-ignore`).
 - Auth is **keyless** (Workload Identity Federation); app runtime secrets live in Secret Manager and
   are injected at deploy via `--set-secrets`.
 
@@ -1027,8 +1046,12 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 |---|---|---|
 | client → server | `subscribe:order { orderId }` | Join an order room (customer or assigned rider) |
 | client → server | `rider:location { orderId, lat, lng }` | Assigned rider streams position |
+| client → server | `board:subscribe { lat?, lng? }` | Verified, online rider joins the geo-scoped open-order board (loc-less → city-wide fallback) |
+| client → server | `board:leave` | Rider leaves the board (go-offline / unmount) |
 | server → client | `position { riderId, lat, lng, at }` | Live rider position to the room |
 | server → client | `order:status { orderId, status, at }` | Order status changed |
+| server → client | `offers:changed { orderId, at }` | The order's offer set changed — signal only (no rider PII); the customer refetches the offer list |
+| server → client | `board:new-order { … }` | A new open order pushed to the rider board — redacted (point + landmark, never `contactPhone`) |
 
 ---
 

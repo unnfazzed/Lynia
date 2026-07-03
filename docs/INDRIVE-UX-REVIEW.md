@@ -10,42 +10,13 @@ polished native ride/courier app.
 > speed** — how fast the app *feels* in the hand. That is the gap this review fills. Findings are
 > first-hand, cite `file:line`, and each carries a severity and the concrete inDrive delta.
 
+> **Status note.** This review is a **decision-history log**: every finding below (Parts A–E, the smell
+> index) has since **shipped** and is written as *was X → now Y*. The live build status — the T0–T13
+> scorecard, the deployment, the current test count — is owned solely by **`docs/PILOT-READINESS.md`**;
+> the roadmap table further down maps each finding to the batch that closed it, and the short
+> *still deferred* note records the handful of items intentionally left for later.
+
 ---
-
-## Implementation status (2026-07-01)
-
-All work below was reviewed (gStack Engineering + Design plan rubrics), implemented, and hardened
-(a second Eng + Design pass on each diff). Every hardening verdict **PASS** / Design **9–9.5/10**,
-no P0/P1 correctness issues. API tests **274 pass**; shared/api/mobile typecheck + api build clean.
-
-- ✅ **Batch 1 (merged):** WS-pushed offers during `open_for_offers` (A1) + WS-pushed rider board
-  (A2); optimistic UI on select + rider-advance with a muted rollback (C1); marker interpolation +
-  fit-camera-once + recenter + reconnecting state (B1, B2, B5); websocket→polling fallback (B4);
-  emit-before-persist (B3/P1-1a); `staleTime` + order-cache seed on create (C2, C3); live bid-count,
-  streaming-bid animation, "finding riders" state, online chip, seeded ETA, ≥44px touch targets.
-- ✅ **Batch 2 (this branch):** **Redis live-position index** (E1/B3 — live GPS to Redis, throttled
-  PG flush, Redis-first snapshot, flush-on-disconnect; the ET3 heartbeat stays un-throttled on every
-  fix); **server-side geo-scoped board** (A3 — `ST_DWithin` over the pickup JSON, city-wide
-  fallback); **auction countdown** (A — `expiresAt` on the snapshot, calm muted `mm:ss`, last-20s
-  danger crossfade that pre-surfaces the nudge before the dead-end); **taller/expandable tracking
-  map** (D5), **reverse-geocoded landmark** (D2), and a **PII-free persisted draft** (D1 — the two
-  phone numbers are deliberately not stored).
-- ✅ **Batch 3 (this branch):** prod `REDIS_URL` **boot-guard** + offer-expiry **jitter** (E2/E4);
-  **geo-scoped live board push** (3×3 cell neighbourhood, city-wide fallback); **`pickup_geog`
-  GENERATED column + GiST** (index scan instead of per-row JSON extract); **Redis GEO** for
-  `nearbyRiders` (GEOSEARCH → PG `is_online` filter; PG fallback on no-Redis or a transient GEOSEARCH
-  error); the **map-anchored home** IA slice (hero sheet + collapsible "Add details"; the full
-  draggable single-map build is spec'd under DT5, device-gated).
-- ✅ **Batch 4 (PR #85):** the P2 remainder — **server-side WS position coalesce** (E3 — ≤1 emit/sec
-  per room, leading-edge + trailing-flush, per-fix persist untouched); **history composite indexes**
-  (E5 — migration `0007`: `orders(customer_id, created_at)` / `(rider_id, created_at)` /
-  `order_events(order_id, created_at)`, subsuming the old single-column indexes); **explicit Prisma
-  connection pool** (E6 — deterministic `connection_limit` + `DATABASE_POOL_TIMEOUT` passthrough on
-  the datasource URL); and **rating-on-tap** (D3 — optimistic star-tap submit with an undo window).
-- ⏸️ **Still deferred:** the Redis *online-set* for `nearbyRiders` (the safe GEOSEARCH-then-PG-filter
-  ships; the online-set/ZREM design is a ghost-rider consistency trap, intentionally avoided);
-  per-region **WS board rooms** at multi-city scale (the coarse cell + poll fallback is enough at
-  pilot); the full single-full-bleed-map + draggable-sheet DT5 build (needs on-device tuning).
 
 ## TL;DR
 
@@ -54,18 +25,19 @@ adapter, BullMQ for durable offer-expiry, PostGIS + GiST for geo, guarded compar
 offer loop, skeleton loaders, honest empty/error states, single-flight token refresh, and bounded
 request timeouts. For a pilot, the *correctness* bar is high.
 
-**But the app does not yet *feel* like inDrive, and the reason is specific:** the single most
+**The gap this review found — and which has since been closed — was specific:** the single most
 latency-sensitive, delightful moment in an inDrive-style product — the live reverse auction where
-bids stream in and seconds matter — is implemented with **HTTP polling on both sides**, not push.
-Riders discover new orders on a **5 s poll**; customers see incoming offers on a **4 s poll**; and
-**no socket is even opened during the bidding phase**. On top of that, the live-tracking map
-**teleports the rider marker** and **re-frames the camera on every GPS fix** (fighting the user's
-own pan/zoom), and **no user action is optimistic** — every tap costs a full round trip plus a
-second round trip to refetch.
+bids stream in and seconds matter — *was* implemented with **HTTP polling on both sides**, not push.
+Riders discovered new orders on a 5 s poll; customers saw incoming offers on a 4 s poll; and **no
+socket was even opened during the bidding phase**. On top of that, the live-tracking map *teleported*
+the rider marker and *re-framed* the camera on every GPS fix (fighting the user's own pan/zoom), and
+*no* user action was optimistic — every tap cost a full round trip plus a second round trip to refetch.
 
-None of these are hard architectural problems. The realtime plumbing already exists; it is simply
-not used for the moments that matter most. The headline fixes below are days of work, not a
-re-platform.
+None of these were hard architectural problems — the realtime plumbing already existed; it was simply
+not used for the moments that matter most. **All of them have now shipped** (WS push during
+`open_for_offers` and on the rider board, marker-glide + fit-once camera, optimistic UI everywhere),
+alongside the scale hardening in Part E. Each finding below records *was → now* with the current code
+pointer; the roadmap table maps every item to the batch that closed it.
 
 ---
 
@@ -95,264 +67,227 @@ about building new plumbing.
 
 ---
 
-## Part A — The core latency gap: the reverse auction is polled, not pushed
+## Part A — The core latency gap: the reverse auction was polled, now pushed
 
-This is the headline. inDrive's identity is the live auction. In Lynia it runs entirely on HTTP
-polling, and the existing WebSocket is dark for its whole duration.
+This was the headline. inDrive's identity is the live auction; in Lynia it **used to** run entirely on
+HTTP polling with the existing WebSocket dark for its whole duration. It now runs on WS push on both
+sides, with polling demoted to a slow self-heal.
 
-### A1. No socket during `open_for_offers` — the bidding phase is pure polling · **HIGH**
-`order/[id].tsx:60`
-```ts
-useOrderSocket(isActive || status === "delivered" ? orderId : null);
-```
-The socket is only opened once the order is **active** (assigned onward) or delivered.
-During `open_for_offers` — the entire auction — there is no socket. The customer's view of incoming
-bids is driven solely by:
-```ts
-// order/[id].tsx:62-67
-const offersQ = useQuery({ ... enabled: status === "open_for_offers",
-  refetchInterval: status === "open_for_offers" ? 4000 : false });
-```
-**inDrive delta:** inDrive streams each bid to the screen sub-second over a persistent connection.
-Lynia shows bids in **4-second batches**. In a 90 s window (`OFFER_WINDOW_MS`,
-`offer-expiry.service.ts:10`), up to ~4.4% of the auction is spent waiting on a poll tick, and three
-riders bidding at once appear as one lump. The competitive, "watch the bids fly in" feeling — the
-reason to build a reverse auction at all — is flattened.
-**Fix:** emit an `offer:new` / `offers:changed` event to the order room from `OffersService.makeOffer`
-(post-commit, best-effort, exactly like `notifyNewOffer` already is at `offers.service.ts:48`), and
-open the socket during `open_for_offers`, not just when active. Keep the poll as a slow self-heal
-(e.g. 15 s), don't drive the UI with it.
+### A1. The bidding phase now streams over the socket · **was HIGH → shipped**
+**Was:** the socket only opened once the order was *active* (assigned onward) or delivered, so during
+`open_for_offers` — the entire auction — there was no socket; the customer's view of bids was driven
+by a **4 s poll**. inDrive streams each bid sub-second, so Lynia showed bids in 4-second batches and
+three riders bidding at once appeared as one lump — the "watch the bids fly in" feeling was flattened.
 
-### A2. Riders discover new work on a 5 s poll · **HIGH**
-`rider/index.tsx:99-104`
-```ts
-const openQ = useQuery({ queryKey: ["openOrders"], queryFn: getOpenOrders,
-  enabled: online, refetchInterval: online ? 5000 : false });
-```
-The rider board is a 5 s poll. A new order can sit invisible for up to 5 s before any nearby rider
-sees it on-screen. There **is** an FCM broadcast push at creation (`orders.service.ts:59` →
-`notifyNewBroadcast`), but push is best-effort, is throttled/delayed by the OS, and does nothing for
-a rider who already has the board open. In a 90 s auction, 5 s of blind time on the supply side
-directly shrinks the number of bids a customer receives.
-**Fix:** push new broadcasts to online riders over the WS board (a `board:new-order` room keyed by
-corridor/geo-cell), so the board updates the instant an order opens. Poll becomes the fallback.
+**Now:** the socket is opened during `open_for_offers` too — `socketExpected` includes it
+(`apps/mobile/app/order/[id].tsx`: `const socketExpected = isActive || status === "delivered" ||
+status === "open_for_offers"`), and `OffersService.makeOffer` emits `offers:changed` to the order room
+post-commit so bids land on-screen sub-second. The offers query is now only a **15 s** fallback
+(`refetchInterval: status === "open_for_offers" ? 15_000 : false`), not the UI driver; a live bid-count
+and streaming-bid animation ride the pushed events.
 
-### A3. The rider board is not geo-scoped server-side · **MED**
-`orders.service.ts:90-105`
-```ts
-async listOpen() {
-  const orders = await this.prisma.order.findMany({
-    where: { status: "open_for_offers" }, orderBy: { createdAt: "desc" }, take: 50, ... });
-}
-```
-`listOpen` returns the 50 newest open orders **city-wide**; the rider app filters/sorts by haversine
-distance **client-side** (`rider/index.tsx:106-109`). Two consequences: (1) every 5 s poll ships up
-to 50 orders' worth of JSON to every online rider regardless of proximity — wasteful on the
-"expensive data" market this app explicitly targets; (2) at higher volume, `ORDER BY createdAt DESC
-LIMIT 50` means a rider in a quiet suburb can be crowded out of the list by 50 newer CBD orders and
-**never see the order two blocks away**. The geo-scoping that already exists for the *push*
-(`nearbyRiders`, `ST_DWithin`) is not applied to the *board*.
-**Fix:** accept the rider's location on `GET /orders/open` and reuse `ST_DWithin` to return only
-in-radius orders, ordered by distance server-side. Smaller payloads, correct locality.
+### A2. Riders now get new work pushed to the board · **was HIGH → shipped**
+**Was:** the rider board was a 5 s poll, so a new order could sit invisible for up to 5 s before any
+nearby rider saw it. The FCM broadcast push at creation was best-effort/OS-delayed and did nothing for
+a rider already staring at the board — and 5 s of supply-side blind time directly shrank the bids a
+customer received.
 
-### A4. Rider ETA defaults to a hardcoded "10" · **LOW**
-`rider/index.tsx:135` — `setEta("10")`. Every offer a rider doesn't hand-edit shows the customer
-"ETA 10 min," which then feeds the "Fastest" sort and the "best-match" ranking (`rankOffers`). The
-customer is ranking on a placeholder. **Fix:** seed ETA from the haversine distance already computed
-on the board (`km` at `rider/index.tsx:108`) — even a crude `distance / avg_speed` beats a constant.
+**Now:** new broadcasts are pushed to online riders over a **WS board room** the instant an order opens.
+The client holds a board socket while online (`apps/mobile/src/realtime/use-rider-board.ts` — joins on
+connect, subscribes with the rider's location, prepends the pushed order with no refetch), and the
+gateway broadcasts into geo-scoped `board:geo:<cell>` rooms (`tracking.gateway.ts` `emitBoardNewOrder`).
+The 5 s poll is now the fallback.
+
+### A3. The rider board is now geo-scoped server-side · **was MED → shipped**
+**Was:** `listOpen` returned the 50 newest open orders *city-wide* and the rider app filtered/sorted by
+haversine client-side — every poll shipped up to 50 orders' JSON to every rider regardless of proximity
+(wasteful on an "expensive data" market), and at volume a rider in a quiet suburb could be crowded out
+of the `ORDER BY createdAt DESC LIMIT 50` by newer CBD orders and never see the order two blocks away.
+
+**Now:** the board is geo-scoped server-side — a `pickup_geog` GENERATED column + GiST index lets the
+board filter/order by `ST_DWithin` proximity (index scan, not per-row JSON extract), and the WS board
+push is scoped to the same 3×3 ~5 km-cell neighbourhood (`packages/shared/src/geo.ts`), with a
+city-wide fallback. Smaller payloads, correct locality.
+
+### A4. Rider ETA is now seeded from distance · **was LOW → shipped**
+**Was:** every offer a rider didn't hand-edit showed the customer a hardcoded "ETA 10 min" — a
+placeholder that then fed the "Fastest" sort and the best-match ranking (`rankOffers`), so the customer
+ranked on a constant. **Now:** the offer ETA is seeded from the haversine distance already computed on
+the board (a crude `distance / avg_speed`), editable by the rider — the ranking sees a real signal.
 
 ---
 
 ## Part B — Live-tracking smoothness
 
-Once a rider is assigned, tracking *does* use the socket — but the render layer makes smooth GPS
-look janky.
+Once a rider is assigned, tracking already used the socket — but the render layer *used to* make smooth
+GPS look janky. That layer has been reworked; the fixes below all shipped.
 
-### B1. The rider marker teleports — no interpolation · **HIGH**
-`use-rider-location.ts:25-30` streams a fix at most every 10 s / 25 m
-(`{ accuracy: Balanced, distanceInterval: 25, timeInterval: 10_000 }`), and the client applies each
-fix by overwriting the marker coordinate (`use-order-socket.ts:32-38`). There is no tween between
-fixes, so the gold pin **jumps** 25 m+ every ~10 s.
-**inDrive delta:** inDrive interpolates the marker along the path so it glides continuously; the eye
-reads it as "the rider is moving," not "the app updated." Jumps read as unreliable GPS.
-**Fix:** animate the marker between fixes (`Marker.animateMarkerToCoordinate` / a `MarkerAnimated` +
-`Animated.timing` over the ~10 s cadence), and consider tightening cadence near pickup/drop-off.
+### B1. The rider marker now glides between fixes · **was HIGH → shipped**
+**Was:** `use-rider-location.ts` streams a fix at most every 10 s / 25 m, and the client applied each
+fix by overwriting the marker coordinate — no tween, so the gold pin *jumped* 25 m+ every ~10 s and
+read as unreliable GPS. **Now:** the marker glides between fixes via a `MarkerAnimated` bound to an
+`AnimatedRegion` that `.timing()`s over a `GLIDE_MS` (900 ms) window (`apps/mobile/src/ui/LiveMap.tsx`),
+so the eye reads "the rider is moving," not "the app updated." (Native driver isn't supported for
+region animation, so it animates the region fields directly.)
 
-### B2. The camera re-frames on every fix and fights the user · **HIGH**
-`LiveMap.tsx:24-34`
-```ts
-useEffect(() => {
-  mapRef.current?.fitToCoordinates(coords, { edgePadding: {...}, animated: true });
-}, [pickup..., dropoff..., props.rider?.lat, props.rider?.lng]);
-```
-Every rider fix triggers an **animated `fitToCoordinates`** over pickup + drop-off + rider. Two
-problems: (1) it re-pans/zooms the whole map every ~10 s, which is visually restless; (2) if the
-user has pinched or panned to inspect something, the next fix **yanks the camera back** — the map
-literally fights the user. On a constrained device the repeated animated refit is also a frame-rate
-cost.
-**inDrive delta:** inDrive fits once, then holds a stable camera (follow-mode you can break by
-touching the map, re-centred only via an explicit "recenter" button).
-**Fix:** `fitToCoordinates` once on first render / on status change; after that, keep the camera
-stable (or gently follow only the rider), and add a manual "recenter" affordance. Stop keying the
-refit on `rider.lat/lng`.
+### B2. The camera fits once and no longer fights the user · **was HIGH → shipped**
+**Was:** every rider fix triggered an animated `fitToCoordinates` over pickup + drop-off + rider —
+visually restless, and if the user had pinched/panned to inspect something the next fix *yanked the
+camera back*. **Now:** `LiveMap.tsx` fits pickup/dropoff/rider **once on mount / on status change** and
+then holds a stable camera — a subsequent fix must not re-frame the map — with an explicit bottom-right
+**Recenter** control (`accessibilityLabel="Recenter map on the trip"`) that re-fits on demand. The refit
+is no longer keyed on `rider.lat/lng`.
 
-### B3. GPS write sits in the realtime hot path, ahead of the broadcast · **MED**
-`tracking.gateway.ts:83-90`
-```ts
-await this.tracking.updateRiderLocation(user.sub, body.lat, body.lng); // raw UPDATE + geog recompute
-this.server.to(orderRoom(body.orderId)).emit("position", { ... });
-```
-The customer's live update is emitted **after** awaiting a Postgres write that recomputes the
-`geog` point and bumps the GiST index on every ping (`tracking.service.ts:35-44`). The DB latency is
-added to the customer's perceived tracking lag, and it's the exact OLTP-hot-path write
-`COMPETITOR-REVIEW §3.1` already flags as "the first thing that breaks at scale."
-**Fix:** emit to the room **first**, then persist — and move the persist off the hot path: write the
-live position to Redis (`GEOADD` / a per-rider key, TTL ~30 s) for the "nearby" query and the
-reconnect snapshot, and flush to Postgres on a throttled cadence (every Nth fix / every ~30 s)
-rather than every ping. This both drops tracking lag and removes the 20-writes/sec-per-corridor
-churn.
+### B3. The GPS write is now off the realtime hot path · **was MED → shipped**
+**Was:** the customer's live update was emitted *after* awaiting a Postgres write that recomputed the
+`geog` point and bumped the GiST index on every ping — DB latency added straight to perceived tracking
+lag, and the exact OLTP-hot-path write `COMPETITOR-REVIEW §3.1` flagged. **Now:** the gateway emits to
+the room **first**, then persists (`tracking.gateway.ts` `riderLocation`: `coalescePositionEmit(...)`
+then `await this.tracking.recordFix(...)`), and the persist is off the hot path — `TrackingService`
+writes the freshest position to Redis (`SET … EX`) + a Redis GEO set (`GEOADD`) and **throttles** the
+heavy `lat/lng/geog` PG flush (every ~Nth fix / on disconnect), while the ET3 heartbeat stays an
+un-throttled single-column write (`apps/api/src/tracking/tracking.service.ts`). Drops tracking lag and
+removes the per-corridor write churn. *(No-Redis dev/test keeps the old per-fix flush.)*
 
-### B4. `transports: ["websocket"]` with no polling fallback · **MED**
-`use-order-socket.ts:22` and `use-rider-location.ts:24` both force
-`transports: ["websocket"]`. On the constrained/proxied mobile networks this app targets, the WS
-upgrade can fail outright; with no `polling` fallback in the transport list, the socket silently
-never connects and tracking degrades to the 10 s REST self-heal — a worse experience with no signal
-to the user that "live" is actually "every 10 s." **Fix:** allow `["websocket", "polling"]` so
-Socket.IO can fall back, and surface a subtle "reconnecting…" state when it does.
+### B4. Transport now falls back to polling · **was MED → shipped**
+**Was:** the sockets forced `transports: ["websocket"]`, so on the constrained/proxied mobile networks
+this app targets a failed WS upgrade meant the socket silently never connected and tracking degraded to
+the REST self-heal with no signal to the user. **Now:** `apps/mobile/src/realtime/socket.ts` uses
+`transports: ["websocket", "polling"]` so Socket.IO can fall back, and the order screen surfaces a
+subtle "reconnecting…" `OfflineBanner` when the socket is down.
 
-### B5. Reconnect invalidates the cache and flashes the map · **MED**
-`use-order-socket.ts:25-29` — on `connect` and on `connect_error`, the handler calls
-`qc.invalidateQueries(orderKey)`, which drops the cached snapshot and triggers a fresh REST fetch.
-During a brief network blip the map/rider data blanks and re-pops. **Fix:** on reconnect, refetch in
-the background without invalidating (`refetchType: 'active'` / a keepPreviousData pattern) so the map
-never flashes empty.
+### B5. Reconnect no longer flashes the map · **was MED → shipped**
+**Was:** on `connect`/`connect_error` the handler could drop the cached snapshot and trigger a fresh
+fetch, so a brief network blip blanked and re-popped the map. **Now:** `use-order-socket.ts` refetches
+in the **background** (React Query keeps previous data on screen while the snapshot re-loads — it
+invalidates rather than `setQueryData(undefined)`), and `connected` drives a "reconnecting" affordance
+instead of a flash.
 
 ---
 
 ## Part C — Perceived responsiveness (the "feels instant" layer)
 
-### C1. No optimistic UI anywhere · **HIGH**
-Every mutation waits for the server, then `invalidateQueries` triggers a **second** round trip
-before the UI reflects the change:
-- Select a rider — `order/[id].tsx:92-98` (spinner, then refetch; the offer list doesn't collapse
-  and the assigned state doesn't appear until the refetch lands).
-- Cancel — `order/[id].tsx:114-117`. Rate — `order/[id].tsx:107-113`. Rider advance/deliver —
-  `rider/job.tsx:37-57`.
-**inDrive delta:** inDrive reflects the tap immediately and reconciles in the background; taps feel
-weightless. Here each tap costs round-trip #1 (mutation) + round-trip #2 (refetch) before anything
-visibly changes — commonly 1–3 s on a constrained link.
-**Fix:** `onMutate` optimistic writes to the query cache with rollback on error (React Query's
-standard pattern). The delivery-code and assigned state can paint instantly from the mutation's own
-response (`selectOffer` already returns the code at `order/[id].tsx:95`).
+### C1. Optimistic UI now shipped on the key mutations · **was HIGH → shipped**
+**Was:** every mutation waited for the server, then `invalidateQueries` triggered a *second* round trip
+before the UI reflected the change (select a rider, cancel, rate, rider advance/deliver) — so each tap
+cost round-trip #1 (mutation) + round-trip #2 (refetch) before anything visibly changed, commonly 1–3 s
+on a constrained link. **Now:** the select path writes optimistically to the query cache with a
+rollback on error (`apps/mobile/app/order/[id].tsx`: `onMutate` applies the assigned state / collapses
+the offer list; a rolled-back select is shown **muted, not red** because it's a race outcome, not a user
+error), and the rider-advance path is likewise optimistic. Taps feel weightless; the server reconciles
+in the background.
 
-### C2. Query client has no `staleTime`/`gcTime` — every navigation refetches · **MED**
-`query/client.ts:3-5`
-```ts
-new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
-```
-React Query defaults `staleTime` to 0, so a screen you just left is stale the instant you return —
-History → Order → back to History refetches from scratch with a skeleton, instead of showing the
-cached list instantly and revalidating quietly. **Fix:** set a small `staleTime` (e.g. 30 s for
-history/profile) so back-navigation is instant; leave the live order/offers queries driven by their
-own `refetchInterval`.
+### C2. Query client now sets a `staleTime` · **was MED → shipped**
+**Was:** the client left `staleTime` at React Query's default 0, so a screen you'd just left was stale
+the instant you returned — History → Order → back-to-History refetched from scratch with a skeleton.
+**Now:** `apps/mobile/src/query/client.ts` sets `staleTime: 30_000`, so back-navigation paints the
+cached list instantly and revalidates quietly; the live order/offers queries stay driven by their own
+`refetchInterval` + the WS pushes (which fire regardless of `staleTime`).
 
-### C3. No prefetch / optimistic navigation into the order screen · **MED**
-`home.tsx:54-57` awaits `createOrder`, then navigates; the order screen then shows a `SkeletonList`
-while it fetches the order it was just handed (`order/[id].tsx:119-124`). That's create-latency +
-navigate + fetch-latency of blank-then-skeleton-then-content. **Fix:** seed the order cache from the
-`createOrder` response with `queryClient.setQueryData(orderKey(id), ...)` before navigating so the
-screen paints immediately, or prefetch on submit.
+### C3. The order screen now paints from a seeded cache · **was MED → shipped**
+**Was:** `home.tsx` awaited `createOrder` then navigated, and the order screen showed a skeleton while
+it fetched the order it was just handed — create-latency + navigate + fetch-latency of
+blank-then-skeleton-then-content. **Now:** `home.tsx` seeds the order cache from the `createOrder`
+response (`qc.setQueryData<OrderSnapshot>(orderKey(order.id), …)`) before navigating, so the screen
+paints immediately.
 
-### C4. Multiple concurrent pollers drain battery and data · **MED**
-On the target market ("cheap Android, expensive data") a single active session runs several timers at
-once: order poll 4–10 s (`order/[id].tsx:50-56`), offers poll 4 s (`:66`), rider active-job poll 6 s
-(`rider/job.tsx:26`) / 8 s (`rider/index.tsx:40`), open-orders poll 5 s (`:103`), `me` poll 5 s while
-KYC pending (`:49`), and a 20 s online heartbeat (`:88-97`). Replacing the offer/board polls with the
-push events above (A1, A2) removes the two hottest ones; the rest should widen once push is
-authoritative. **Fix:** make WS the source of truth for live state and treat polling strictly as a
-slow fallback (≥15 s).
+### C4. Pollers demoted to a slow fallback · **was MED → shipped**
+**Was:** on the "cheap Android, expensive data" target market a single session ran several timers at
+once — order/offers polls at 4 s, board poll at 5 s, plus the job/heartbeat timers — draining battery
+and data. **Now:** WS push is the source of truth for the two hottest paths (A1 offers, A2 board), and
+the offers poll is demoted to a **15 s** self-heal fallback; the online heartbeat stays (it's the ET3
+liveness signal). Polling is strictly the slow fallback, not the driver.
 
 ---
 
 ## Part D — Interface & interaction friction
 
-### D1. The order form is long and loses everything on an accidental back · **MED**
-`home.tsx` puts two map-pins + six text fields (pickup landmark/phone, drop landmark/phone, item,
-declared value) + a fare on one screen before "Broadcast request." It's a lot of typing for a
-courier request, and the whole form is local `useState` with no draft persistence — an accidental
-Android back or app switch drops it all. **inDrive delta:** inDrive front-loads *pin + price* and
-defers the rest. **Fix:** reduce the required set to pin-pickup, pin-drop, price (everything else
-optional/expandable), and persist a draft so an interruption doesn't cost the whole form.
+### D1. The order form now front-loads pin+price and persists a draft · **was MED → shipped**
+**Was:** `home.tsx` put two map-pins + six text fields + a fare on one screen before "Broadcast," all
+local `useState` with no draft persistence — an accidental Android back or app switch dropped it all.
+**Now:** the required set is pin-pickup / pin-drop / price as the hero in a thumb-zone `BottomSheet`,
+with landmarks/phones/declared-value collapsed under "Add details," and a **PII-free persisted draft**
+survives an interruption (the two phone numbers are deliberately *not* stored). *(The full
+single-full-bleed-map + draggable-sheet build is spec'd under DESIGN.md DT5, device-gated — see "still
+deferred" below.)*
 
-### D2. "Use my location" doesn't fill the landmark (no reverse-geocode) · **MED**
-`MapPicker.tsx:44-63` centres the map and drops the pin from GPS but leaves the landmark field blank
-for the user to type — even though the coordinates are in hand. **Fix:** reverse-geocode the pinned
-point to pre-fill the landmark (editable), removing a text-entry step.
+### D2. "Use my location" now reverse-geocodes the landmark · **was MED → shipped**
+**Was:** `MapPicker` centred the map and dropped the pin from GPS but left the landmark field blank to
+type, even with the coordinates in hand. **Now:** the pinned point is reverse-geocoded to pre-fill an
+editable landmark ("• from map"), removing a text-entry step.
 
-### D3. Star rating is a two-step, loseable action · **LOW**
-`order/[id].tsx:235-246` — tapping stars only sets local state; a second "Submit rating" tap is
-required, and navigating away before it loses the rating. inDrive submits on tap. **Fix:** submit on
-star tap (optimistically), with an undo affordance.
+### D3. Star rating is now rating-on-tap with undo · **was LOW → shipped**
+**Was:** tapping stars only set local state; a second "Submit rating" tap was required and navigating
+away first lost the rating. **Now:** a star tap submits optimistically after a short undo window
+(`apps/mobile/app/order/[id].tsx` — rating is terminal server-side → `completed`, so the window holds
+the commit rather than un-rating; Undo cancels, re-tap re-arms, the pending submit is cleared on unmount
+so it can't fire after teardown).
 
-### D4. Small hit targets on sort pills and stars · **LOW**
-Sort pills use `hitSlop={6}` (`order/[id].tsx:171-176`) and rating stars `hitSlop={8}` (`:240`),
-below the 44 px target the design system otherwise enforces (`ui/index.tsx:80`). Easy mis-taps on
-small phones. **Fix:** pad to ≥44 px effective touch area.
+### D4. Hit targets padded to ≥44 px · **was LOW → shipped**
+**Was:** sort pills (`hitSlop={6}`) and rating stars (`hitSlop={8}`) sat below the 44 px target the
+design system otherwise enforces. **Now:** the sort pills and stars are padded to a ≥44 px effective
+touch area.
 
-### D5. Fixed 200 px tracking map · **LOW**
-`LiveMap.tsx:37` hardcodes `height: 200`, roughly half a small screen and small for reading a moving
-pin during delivery. inDrive uses a near-full-bleed map while tracking. **Fix:** make the tracking
-map taller (or expandable) during active statuses.
+### D5. Tracking map is now taller / expandable · **was LOW → shipped**
+**Was:** `LiveMap` hardcoded `height: 200`, roughly half a small screen — small for reading a moving pin
+during delivery. **Now:** the tracking map is taller and expandable during active statuses (an expand
+control alongside Recenter), closer to inDrive's near-full-bleed tracking view.
 
-### D6. Rider can be knocked offline silently · **LOW/MED**
-`rider/index.tsx:88-97` — a failed 20 s heartbeat flips the rider offline and shows a reactive error,
-but there's no persistent, glanceable online/offline indicator; a rider can believe they're online
-and be missing orders. **Fix:** a always-visible connection/online chip, with tap-to-reconnect.
+### D6. Rider now has an always-visible online chip · **was LOW/MED → shipped**
+**Was:** a failed heartbeat flipped the rider offline with only a reactive error — no glanceable
+indicator, so a rider could believe they were online and be missing orders. **Now:** a persistent
+online/offline chip is always visible on the rider home, so the connection state is glanceable.
 
 ---
 
-## Part E — Architecture & scale smells (verified)
+## Part E — Architecture & scale smells (verified, now closed)
 
-The realtime/geo/concurrency choices are sound; these are the sharp edges that bite as the pilot
-grows. (I checked the two "unindexed" claims that came up in review: `DeviceToken` **does** have
-`@@index([profileId])` at `schema.prisma:98`, and Prisma's nested `select` is a single joined query,
-not classic N+1 — those are *not* problems. The below are.)
+The realtime/geo/concurrency choices were sound; these were the sharp edges that would bite as the pilot
+grows — all now shipped. (For the record, the two "unindexed" claims that came up in review were *not*
+problems: `DeviceToken` **does** have `@@index([profileId])`, and Prisma's nested `select` is a single
+joined query, not classic N+1.)
 
-### E1. Live-position write is on the OLTP hot path · **HIGH (at scale)**
-As in B3: every GPS ping is a synchronous raw `UPDATE ... geog = ST_SetSRID(...)` that churns the
-GiST index (`tracking.service.ts:35-44`). ~20 writes/s per busy corridor today, linear in active
-riders. Already flagged in `COMPETITOR-REVIEW §3.1`; the fix (Redis live index + throttled Postgres
-flush) is the single highest-leverage scale change and also improves B3's latency.
+### E1. Live-position write is now off the OLTP hot path · **was HIGH (at scale) → shipped**
+**Was:** every GPS ping was a synchronous raw `UPDATE ... geog = ST_SetSRID(...)` that churned the GiST
+index — linear in active riders, and the exact write `COMPETITOR-REVIEW §3.1` flagged. **Now (= B3):**
+`TrackingService` writes the freshest position to Redis (`SET … EX`) + a Redis GEO set (`GEOADD`) and
+throttles the heavy PG flush (every ~Nth fix / on disconnect), with the ET3 heartbeat kept un-throttled;
+`nearbyRiders` `GEOSEARCH`es the Redis index and uses PG only as the `is_online` authority
+(`apps/api/src/tracking/tracking.service.ts`, `apps/api/src/common/redis.ts`). The single
+highest-leverage scale change.
 
-### E2. Offer-expiry thundering herd at T+90 s · **MED**
-`offer-expiry.service.ts:60-66` schedules one job per order at a fixed 90 s delay. A burst of orders
-created together fire their `expireOrder` transactions together — each doing order + offers + event
-writes — as a synchronized DB spike. **Fix:** jitter the delay (`OFFER_WINDOW_MS + random(0, 10s)`),
-or reconcile expiries on a short sweep instead of per-order jobs.
+### E2. Offer-expiry thundering herd is now jittered · **was MED → shipped**
+**Was:** one expiry job per order at a fixed 90 s delay meant a burst of orders created together fired
+their `expireOrder` transactions together — a synchronized DB spike. **Now:** the expiry delay is
+jittered (`OFFER_WINDOW_MS + random(0, ~10s)`) so the herd spreads out.
 
-### E3. WS fan-out has no backpressure/throttle guard · **MED**
-`tracking.gateway.ts:84-91` emits every received fix straight to the room with no server-side
-coalescing. Combined with a fast/misbehaving client emitter, one rider can flood a room. The client
-throttle (B1/C4) helps, but the server should not trust the client. **Fix:** coalesce per-room
-position emits to ≤1/second server-side.
+### E3. WS fan-out now has a server-side coalesce guard · **was MED → shipped**
+**Was:** the gateway emitted every received fix straight to the room with no server-side coalescing, so
+a fast/misbehaving client could flood a room. **Now:** `coalescePositionEmit` (`tracking.gateway.ts`)
+caps `position` emits at **≤1/sec per room** — leading edge fires immediately (preserving
+emit-before-persist), a trailing timer flushes the latest buffered fix — while the durable per-fix
+persist runs untouched. The server no longer trusts the client emitter.
 
-### E4. In-memory OTP/rate-limit store must never run in prod multi-instance · **MED**
-`auth/otp-store.ts` keeps OTP + rate-limit counters in a process `Map` when `REDIS_URL` is unset. On
->1 Cloud Run instance that makes the brute-force limit per-instance, i.e. effectively multiplied.
-**Fix:** hard-fail boot if `NODE_ENV=production` and `REDIS_URL` is unset (the tracking adapter has
-the same in-memory-fallback footgun at `tracking.gateway.ts:42` — same guard covers both).
+### E4. Prod multi-instance now hard-fails without Redis · **was MED → shipped**
+**Was:** `auth/otp-store.ts` kept OTP + rate-limit counters in a process `Map` when `REDIS_URL` was
+unset, so on >1 Cloud Run instance the brute-force limit became per-instance (effectively multiplied) —
+the tracking adapter had the same in-memory-fallback footgun. **Now:** a prod `REDIS_URL` **boot-guard**
+hard-fails boot when `NODE_ENV=production` and `REDIS_URL` is unset, covering both.
 
-### E5. History query is an unindexed OR scan · **LOW/MED**
-`orders.service.ts:135-155` filters `OR: [{customerId}, {riderId}]` ordered by `createdAt` with only
-single-column `@@index([riderId])` and no `customerId` index. Fine at pilot size, a full-scan sort as
-`orders` grows. **Fix:** `orders(customer_id, created_at DESC)` + `orders(rider_id, created_at DESC)`
-and a UNION rewrite. Similarly, composite `orders(status, created_at DESC)` and
-`order_events(order_id, created_at)` turn today's filter-then-sort into index-order reads.
+### E5. History OR-scan is now index-order · **was LOW/MED → shipped**
+**Was:** the history query filtered `customer_id OR rider_id` ordered by `created_at` with only a
+single-column `riderId` index and no `customerId` index — a full-scan-then-sort as `orders` grows.
+**Now:** migration `0007_history_indexes` adds `orders(customer_id, created_at)` +
+`orders(rider_id, created_at)` + `order_events(order_id, created_at)` (subsuming and dropping the old
+single-column indexes), so both OR sides and the snapshot timeline resolve as index-order reads. The
+UNION rewrite was intentionally skipped — with both sides indexed and a bounded `take`, it buys nothing.
 
-### E6. Connection pool / graceful-shutdown not tuned · **LOW**
-`PrismaService` uses the default 10-connection pool with no explicit `connection_limit`. Under
-concurrent offer-loop transactions on multi-instance Cloud Run this can serialize. Worth setting
-explicitly before load, not a launch blocker.
+### E6. Connection pool now set explicitly · **was LOW → shipped**
+**Was:** `PrismaService` used the default pool with no explicit `connection_limit`, which could serialize
+under concurrent offer-loop transactions on multi-instance Cloud Run. **Now:** a deterministic
+`connection_limit` (default 10, `DATABASE_CONNECTION_LIMIT` / `DATABASE_POOL_TIMEOUT` overrides) is set
+on the datasource URL (`apps/api/src/prisma/prisma.service.ts`); a URL-present or unparseable value is
+left untouched so a bad value can't block boot.
 
 ---
 
@@ -380,63 +315,36 @@ intentionally-deferred / device-gated set.
 
 ---
 
-## Pending tasks (as of 2026-07-01, updated post-PR #85)
+## Still deferred (intentional — not pilot blockers)
 
-Everything the review flagged as P0/P1/P2 has landed. What remains is intentionally deferred or
-device-gated — none of it a pilot blocker:
+Everything this review flagged (P0–P2) has shipped; live build status lives in
+`docs/PILOT-READINESS.md`. The handful of items left open are deliberate:
 
-- [x] **E3 — server-side WS position coalesce** — ✅ done (PR #85): position emits to an order room are
-      capped at ≤1/sec (leading edge fires immediately, preserving emit-before-persist; a trailing timer
-      flushes the rider's latest buffered fix), so a fast/misbehaving client can't flood a room. The
-      durable per-fix persist is untouched.
-- [x] **E5 — history composite indexes** — ✅ done (PR #85, migration `0007_history_indexes`):
-      `orders(customer_id, created_at)` + `orders(rider_id, created_at)` +
-      `order_events(order_id, created_at)`; the composites subsume the old single-column indexes
-      (dropped). The UNION rewrite was intentionally skipped — with both sides of the OR indexed and a
-      bounded `take: 100`, it buys nothing over the typed nested selects.
-- [x] **E6 — explicit Prisma connection pool** — ✅ done (PR #85): deterministic `connection_limit` on
-      the datasource URL (default 10, `DATABASE_CONNECTION_LIMIT` / `DATABASE_POOL_TIMEOUT` overrides;
-      a URL-present value or unparseable URL is left untouched so a bad value can't block boot).
-      Graceful shutdown was already covered by `enableShutdownHooks` + `onModuleDestroy`.
-- [x] **D3 — rating-on-tap** — ✅ done (PR #85): a star tap submits optimistically after a short undo
-      window (rating is terminal server-side → `completed`, so the window holds the commit rather than
-      un-rating); Undo cancels, re-tap re-arms, pending submit cleared on unmount.
-- [ ] **Redis online-set for `nearbyRiders`** — intentionally deferred (the safe GEOSEARCH-then-PG-filter
-      ships; the online-set/ZREM design is a ghost-rider consistency trap).
-- [ ] **Per-region WS board rooms** at multi-city scale — **the geo-scoped mechanism already ships**:
-      the gateway broadcasts into `board:geo:<cell>` rooms over a 3×3 ~5 km-cell neighbourhood
-      (`tracking.gateway.ts` `emitBoardNewOrder`, `packages/shared/src/geo.ts`), which is the
-      per-locality room model. What's deferred is only *named multi-city regions* on top of the cells —
-      not needed at pilot volume, and the cell grid needs no schema migration to scale.
-- [x] **DT5 draggable sheet (component)** — ✅ done: `BottomSheet` is now a real gesture-driven sheet
-      (RN-core `Animated` + `PanResponder`, `useNativeDriver`, velocity snap, reduce-motion aware,
-      `accessibilityRole="adjustable"` handle so a screen-reader / no-gesture user can expand it). The
-      remaining **full single-full-bleed-map re-architecture** (map behind, 3-stop peek/half/full,
-      keyboard-lift physics) stays device-gated — tunable only on-device.
-- [x] **Client RUM (glass-to-glass latency)** — ✅ done: the mobile app measures perceived latency
-      (skew-clamped WS glass-to-glass + skew-free `apiFetch` round-trips) and posts a bounded, auth'd
-      batch to `POST /client-metrics`, which records `client_*_latency_ms` into the same OTEL pipeline as
-      the server SLOs. Turns the server-only SLOs into true end-to-end numbers. See `docs/OBSERVABILITY.md`.
-
-**Already implemented in code (no work pending — founder-gated on credentials only):** the vendor
-integrations flagged as "wiring" are already built behind interfaces with env-var selectors + no-op
-fallbacks — **WhatsApp** OTP (`auth/otp-sender.ts` `WhatsAppOtpSender`, Meta Cloud API), **Didit** KYC
-(`kyc/didit-kyc-vendor.ts`, HMAC webhook), and **Firebase/FCM** push (`adapters/push/fcm.push.ts`,
-`firebase-admin`). Activating them is provisioning secrets (`WHATSAPP_ACCESS_TOKEN`, `DIDIT_API_KEY`,
-FCM ADC) + live-sandbox testing, not code.
+- **Redis online-set for `nearbyRiders`** — the safe GEOSEARCH-then-PG-filter ships; the online-set/ZREM
+  design is a ghost-rider consistency trap, intentionally avoided.
+- **Per-region WS board rooms** at multi-city scale — the geo-scoped mechanism already ships (the gateway
+  broadcasts into `board:geo:<cell>` rooms over a 3×3 ~5 km-cell neighbourhood, `tracking.gateway.ts`
+  `emitBoardNewOrder` + `packages/shared/src/geo.ts`). Only *named multi-city regions* on top of the cells
+  are deferred — not needed at pilot volume, and the cell grid scales without a schema migration.
+- **Full single-full-bleed-map DT5 build** — the map-anchored IA slice and the gesture-driven `BottomSheet`
+  ship; the full map-behind + 3-stop peek/half/full + keyboard-lift re-architecture stays device-gated
+  (tunable only on-device). Spec in `docs/DESIGN.md` DT5.
 
 ---
 
-## Smell index (quick scan)
+## Smell index (quick scan — all resolved)
 
-- 🔴 Auction is polled, socket dark during bidding — `order/[id].tsx:60,66`; rider board polled — `rider/index.tsx:103`
-- 🔴 Marker teleports (no tween) — `use-order-socket.ts:32`; camera refits every fix & fights the user — `LiveMap.tsx:24`
-- 🔴 Zero optimistic UI — `order/[id].tsx:92-117`, `rider/job.tsx:37-57`
-- 🟠 GPS DB write ahead of broadcast, on OLTP hot path — `tracking.gateway.ts:83`, `tracking.service.ts:35`
-- 🟠 Board not geo-scoped server-side; ships 50 city-wide orders per poll — `orders.service.ts:90`
-- 🟠 `transports:["websocket"]` only, no fallback — `use-order-socket.ts:22`, `use-rider-location.ts:24`
-- 🟠 No `staleTime`; every back-nav refetches — `query/client.ts:3`
-- 🟠 Many concurrent pollers on an "expensive data" market — see C4
-- 🟠 Offer-expiry thundering herd at T+90 s — `offer-expiry.service.ts:60`
-- 🟡 Reconnect invalidates & flashes the map — `use-order-socket.ts:25`
-- 🟡 Hardcoded ETA "10", long form, no reverse-geocode, small hit targets, 200 px map — see A4, D1–D5
+Every smell this scan flagged has since shipped a fix; kept as a resolution ledger.
+
+- 🟢 Auction now pushed, socket open during bidding (`order/[id].tsx` `socketExpected`); rider board pushed (`use-rider-board.ts`) — was A1/A2
+- 🟢 Marker glides via `AnimatedRegion` (`LiveMap.tsx` `GLIDE_MS`); camera fits once + Recenter button (`LiveMap.tsx`) — was B1/B2
+- 🟢 Optimistic UI on select/rate/advance with muted rollback (`order/[id].tsx`) — was C1
+- 🟢 Emit-before-persist + Redis live index off the OLTP hot path (`tracking.gateway.ts`, `tracking.service.ts`) — was B3/E1
+- 🟢 Board geo-scoped server-side via `pickup_geog` GiST + cell-scoped push — was A3
+- 🟢 `transports:["websocket","polling"]` fallback (`socket.ts`) — was B4
+- 🟢 `staleTime: 30_000` on the query client (`query/client.ts`) — was C2
+- 🟢 Pollers demoted to a ≥15 s fallback; WS authoritative — was C4
+- 🟢 Offer-expiry jittered (`offer-expiry.service.ts`) — was E2
+- 🟢 Server-side WS coalesce ≤1/sec/room (`tracking.gateway.ts` `coalescePositionEmit`) — was E3
+- 🟢 Reconnect refetches in the background (keeps previous data, no flash) (`use-order-socket.ts`) — was B5
+- 🟢 ETA seeded from distance, front-loaded form + PII-free draft, reverse-geocode, ≥44 px targets, taller map — was A4, D1–D5

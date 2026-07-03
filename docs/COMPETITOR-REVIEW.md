@@ -51,7 +51,7 @@ The rest of this doc defends that second claim and turns it into a roadmap.
 | **ML platform** | *(none)* | analytics-driven pre-positioning | *(ML teams, undisclosed)* | **Feast** + in-house ML | **Catwalk** (TF-Serving) |
 | **Fraud/anti-abuse** | *(none)* | *(not disclosed)* | *(undisclosed)* | *(ML)* | **GrabDefence** + graph fraud |
 | **IaC / CI** | **Terraform + keyless WIF, schema-asserting CI** | *(not disclosed)* | Terraform | GitLab CI | mature |
-| **Observability** | **OTel** (exporter wired) | *(not disclosed)* | **Full OSS stack** (Prom/Thanos/Grafana/Jaeger/OTel/ELK, SLOs) | mature | mature |
+| **Observability** | **OTel** (metrics + auto HTTP traces; **SLO buckets + Terraform alert policies + collector→Cloud Monitoring/Trace shipped**, client RUM) | *(not disclosed)* | **Full OSS stack** (Prom/Thanos/Grafana/Jaeger/OTel/ELK, SLOs) | mature | mature |
 
 ### The one architectural fact worth internalizing
 
@@ -100,15 +100,23 @@ a dispatcher. That's the right architectural north star for this product.
 
 Ordered by how soon they will actually bite.
 
-### 3.1 Location on the Postgres hot path — the #1 scaling cliff
-Every `rider:location` ping persists `geog = ST_SetSRID(ST_MakePoint(...))` to Postgres and nearby
-search runs `ST_DWithin` against the DB ([§10](ARCHITECTURE.md#10-live-tracking-websocket)). This is
-correct and fine at pilot volume, but it is **the first thing that breaks at scale**. With N online
-riders pinging every few seconds, you get N writes/sec hammering the primary plus GiST index churn,
-and every broadcast fan-out is a DB radius query. **Every reference company that scaled location
-moved the live index off the OLTP DB** — Grab and Gojek both use in-memory **geohash grids**; the
-standard pattern is Redis GEO (`GEOADD`/`GEOSEARCH`) or an in-memory grid as the live layer, with
-the DB written only periodically or on status change.
+### 3.1 Location on the Postgres hot path — the #1 scaling cliff · **ADDRESSED**
+Original finding: every `rider:location` ping persisted `geog = ST_SetSRID(ST_MakePoint(...))` to
+Postgres and nearby search ran `ST_DWithin` against the DB
+([§10](ARCHITECTURE.md#10-live-tracking-websocket)) — correct and fine at pilot volume, but **the
+first thing that breaks at scale**: with N online riders pinging every few seconds you get N writes/sec
+on the primary plus GiST index churn, and every broadcast fan-out is a DB radius query. **Every
+reference company that scaled location moved the live index off the OLTP DB** (Grab/Gojek in-memory
+geohash grids; the standard pattern is Redis GEO or an in-memory grid, DB written only periodically).
+
+**Now shipped:** the fix is exactly that. `TrackingService` writes the freshest position to **Redis**
+(`SET … EX` per-rider key) and indexes it in a **Redis GEO set** (`GEOADD`), while the heavy
+`lat/lng/geog` Postgres write is **throttled** (flushed every ~Nth fix / on disconnect, not per ping);
+the ET3 liveness heartbeat stays a single-column un-throttled write. `nearbyRiders` now `GEOSEARCH`es
+the Redis index for candidates and uses PG only as the `is_online` authority, degrading cleanly to the
+pure-PG `ST_DWithin` path when Redis is absent or a GEOSEARCH errors
+(`apps/api/src/tracking/tracking.service.ts`, `apps/api/src/common/redis.ts`). The OLTP write is off
+the hot path. *(No-Redis dev/test is byte-identical to the old behaviour.)*
 
 ### 3.2 WebSocket on Cloud Run
 Long-lived Socket.IO connections on a **serverless** runtime that autoscales and recycles instances
@@ -139,23 +147,32 @@ Customer-selects is correct (it's the inDrive model), but there is no ranking as
 cherry-picking and lifts match rate. Signals like acceptance-likelihood and ETA-reliability improve
 matches without abandoning the customer-choice model.
 
-### 3.7 Observability is wired but not closed
-OTel is exported, but there's no mention of dashboards, SLOs, or alerting. inDrive publishes a full
-SLO/SLI framework. You can't operate a pilot blind.
+### 3.7 Observability is wired but not closed · **ADDRESSED**
+Original finding: OTel was exported, but with no dashboards, SLOs, or alerting — you can't operate a
+pilot blind (inDrive publishes a full SLO/SLI framework).
+
+**Now shipped:** the loop is closed. `apps/api/src/observability/otel.ts` defines explicit SLO
+histogram buckets (offer-received, position-emit, match-select, broadcast-nearby, otp-verify, HTTP,
+plus client-RUM glass-to-glass); `infra/terraform/monitoring.tf` provisions the per-metric p95 alert
+policies; an OTel Collector sidecar exports traces → Cloud Trace and metrics → Cloud Monitoring
+(Managed Prometheus), with an importable p95 dashboard. Full SLO table, PromQL, and the founder
+activation runbook live in **`docs/OBSERVABILITY.md`**. What remains is only founder activation
+(set `OTEL_EXPORTER_OTLP_ENDPOINT` + deploy the sidecar + wire a notification channel), not code.
 
 ---
 
 ## 4. Recommendations — prioritized
 
 ### Now (before / during pilot — cheap, high leverage)
-1. **Get location off the OLTP hot path.** Redis GEO (`GEOADD`/`GEOSEARCH`) as the live index for
-   nearby-rider broadcast; write `geog` to Postgres only on status change or every ~30s, not per
-   ping. Single biggest scalability win, low effort. *(Addresses §3.1.)*
+1. ✅ **Done — location off the OLTP hot path.** Redis GEO (`GEOADD`/`GEOSEARCH`) is the live index for
+   nearby-rider broadcast; `geog` flushes to Postgres on a throttle / on disconnect, not per ping.
+   Shipped — the single biggest scalability win. *(Addresses §3.1.)*
 2. **Fraud primitives.** GPS-plausibility checks (teleport/velocity), offer-rate limits per rider,
    same-device customer↔rider detection, and a rating-eligibility guard. Cheap now, painful to
-   retrofit after abuse starts. *(§3.5.)*
-3. **Close observability.** Point OTel at Cloud Trace/Grafana, define 3–4 SLOs (offer-select
-   latency, OTP-verify success, WS delivery lag, broadcast→first-offer time), add alerting. *(§3.7.)*
+   retrofit after abuse starts. **Still open.** *(§3.5.)*
+3. ✅ **Done — observability closed.** OTel now carries SLO buckets; Terraform alert policies + an
+   OTel Collector export traces/metrics to Cloud Trace / Cloud Monitoring; p95 dashboard + PromQL in
+   `docs/OBSERVABILITY.md`. Remaining is founder activation, not code. *(§3.7.)*
 4. **Add a transactional outbox.** Emit domain events to an append-only outbox table alongside the
    CAS write. Zero new infra, but it turns `OrderEvent` into a real event source you can later tap —
    sets up §3.3/§3.4 without committing to Kafka yet.
@@ -200,8 +217,12 @@ location-index fix, basic fraud primitives, and closing observability. Everythin
 post-pilot roadmap that the current architecture is well-positioned to grow into precisely *because*
 it stayed simple and correct first.
 
-**Stage-adjusted grade: A−.** The minus is §3.1 (location hot path) and §3.7 (open-loop
-observability) — both cheap to fix before real traffic arrives.
+**Stage-adjusted grade: A−.** The two things that held the grade off an A — §3.1 (location on the OLTP
+hot path) and §3.7 (open-loop observability) — have both **shipped** (Redis GEO live index + throttled
+PG flush; SLO buckets + Terraform alert policies + collector export). The residual minus is now the
+**intelligence spine**: no fraud/anti-abuse primitives (§3.5) and no analytics/event-outbox pipe
+(§3.3/§3.4) — scale-and-intelligence gaps, still not correctness gaps, and appropriately post-pilot
+except the cheap fraud primitives.
 
 ---
 

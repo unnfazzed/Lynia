@@ -27,6 +27,7 @@ cloud is a `CLOUD_PROVIDER` switch, not a rewrite.
 
 ```
 packages/shared   @lynia/shared  — enums, API contracts (zod), design tokens (shared by all apps)
+packages/design   @lynia/design  — vendored LyniaGo design system: tokens, components, brand assets, UI kits
 apps/api          @lynia/api     — NestJS: config, Prisma, health, cloud adapters, OpenTelemetry
 apps/mobile       @lynia/mobile  — Expo (React Native), Android-first
 apps/admin        @lynia/admin   — Next.js monitor/support console
