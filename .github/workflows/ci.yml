@@ -22,6 +22,7 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run build
       - run: pnpm --filter @lynia/api test
+      - run: pnpm --filter @lynia/mobile test
 
   schema:
     name: prisma migrate · constraint proof (PostGIS)

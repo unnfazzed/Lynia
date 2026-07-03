@@ -122,6 +122,10 @@ Carried from `ALIGNMENT-REVIEW.md`. The design shows the intended UX; these wire
 9. Skeleton→content reflow on a real device; bottom-sheet drag physics on the map home.
 
 ## Before production
-- Outline the Fredoka wordmark to SVG (drop the font dependency for the logo).
-- Wire `assets/brand/icon/` into the app + web `<head>` (snippet in `assets/brand/icon/README.md`).
+- ~~Outline the Fredoka wordmark to SVG (drop the font dependency for the logo).~~ **Done** —
+  `assets/brand/lyniago-wordmark.svg` (kerned outlines) + `apps/mobile/src/ui/wordmark-paths.ts`;
+  the app no longer loads a Fredoka file.
+- Wire `assets/brand/icon/` into the app + web `<head>` (snippet in `assets/brand/icon/README.md`) —
+  the Expo launcher icon/adaptive-icon/splash are wired in `app.config.ts`; the web `<head>` snippet
+  applies to any future web surface.
 - Decide payment display copy when/if it moves beyond cash.

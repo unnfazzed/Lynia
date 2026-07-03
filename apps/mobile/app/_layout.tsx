@@ -22,7 +22,7 @@ function PushSync(): null {
 }
 
 export default function RootLayout(): React.ReactElement | null {
-  // Self-hosted Inter (+ Fredoka wordmark) — the splash stays up until the fonts register so no
+  // Self-hosted Inter — the splash stays up until the fonts register so no
   // Text mounts before its family is available. Font assets are bundled (no network), so on the
   // rare load error we fall through to the system-font fallback rather than block the app.
   const [fontsLoaded, fontError] = useAppFonts();

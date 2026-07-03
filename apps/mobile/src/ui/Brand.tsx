@@ -1,8 +1,8 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import Svg, { Path, Polygon } from "react-native-svg";
-import { fontFamilies } from "./fonts";
+import { WORDMARK_ASPECT, WORDMARK_GO_D, WORDMARK_LYNIA_D, WORDMARK_VIEWBOX } from "./wordmark-paths";
 
 /**
  * The Paper Dove — the LyniaGo mark (packages/design/assets/brand/lyniago-mark.svg). A folded paper
@@ -26,13 +26,17 @@ export function DoveMark({ size = 28 }: { size?: number }): React.ReactElement {
   );
 }
 
-/** The "LyniaGo" wordmark — Fredoka 600, "Go" in the deep brand green. Never used for UI/body text. */
-export function Wordmark({ size = 22, color = tokens.color.ink }: { size?: number; color?: string }): React.ReactElement {
+/**
+ * The "LyniaGo" wordmark — Fredoka 600 letterforms shipped as OUTLINED vector paths (kerned), so
+ * the logo never depends on a font file loading. "Go" carries the deep brand green in the standard
+ * lockup; passing an explicit `color` renders the whole mark one-colour (e.g. white on a dark bar).
+ */
+export function Wordmark({ size = 22, color }: { size?: number; color?: string }): React.ReactElement {
   return (
-    <Text style={{ fontFamily: fontFamilies.wordmark, fontSize: size, color, includeFontPadding: false }}>
-      Lynia
-      <Text style={{ fontFamily: fontFamilies.wordmark, fontSize: size, color: tokens.color.accentPressed }}>Go</Text>
-    </Text>
+    <Svg width={size * WORDMARK_ASPECT} height={size} viewBox={WORDMARK_VIEWBOX} accessibilityLabel="LyniaGo">
+      <Path d={WORDMARK_LYNIA_D} fill={color ?? tokens.color.ink} />
+      <Path d={WORDMARK_GO_D} fill={color ?? tokens.color.accentPressed} />
+    </Svg>
   );
 }
 
@@ -40,8 +44,9 @@ export function Wordmark({ size = 22, color = tokens.color.ink }: { size?: numbe
 export function BrandLockup({ size = 32, color }: { size?: number; color?: string }): React.ReactElement {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}>
+      {/* 0.68 keeps the cap height where the old Fredoka fontSize (0.72×size) put it. */}
       <DoveMark size={size} />
-      <Wordmark size={Math.round(size * 0.72)} color={color} />
+      <Wordmark size={Math.round(size * 0.68)} color={color} />
     </View>
   );
 }
