@@ -57,7 +57,6 @@ export const envSchema = z.object({
   // --- KYC (lane E) ---
   // auto = submit to the vendor; manual = leave pending for admin review (T7 backstop).
   KYC_MODE: z.enum(["auto", "manual"]).default("auto"),
-  KYC_CALLBACK_SECRET: z.string().optional(),
   // Didit verifies Zimbabwean national IDs. Default "stub" keeps CI/tests vendor-free.
   KYC_PROVIDER: z.enum(["stub", "didit"]).default("stub"),
   DIDIT_API_KEY: z.string().optional(),

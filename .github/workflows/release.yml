@@ -52,7 +52,7 @@ jobs:
     if: ${{ vars.GCP_DEPLOY_ENABLED == 'true' }}
     permissions:
       contents: read
-      id-token: write # for Workload Identity Federation, when adopted
+      id-token: write # mints the OIDC token the Authenticate step federates via Workload Identity
     env:
       IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPO }}/lynia-api
     steps:

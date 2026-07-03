@@ -2,9 +2,9 @@
 #
 # The org disables long-lived SA keys (constraints/iam.disableServiceAccountKeyCreation),
 # which is the right default. Instead, GitHub Actions presents its OIDC token and
-# federates into the deployer SA: no secret key ever exists. The release workflow
-# authenticates with `workload_identity_provider` + `service_account` (already the
-# documented hardening path; the workflow had the WIF lines commented in).
+# federates into the deployer SA: no secret key ever exists. The release workflow's
+# Authenticate step uses `workload_identity_provider` + `service_account` (keyless);
+# there is no `GCP_SA_KEY`.
 
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "github-pool"
