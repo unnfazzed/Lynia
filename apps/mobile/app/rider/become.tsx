@@ -97,7 +97,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
 
         {pending ? (
           <Card style={{ borderColor: tokens.color.accent }}>
-            <Text style={{ color: tokens.color.accent, fontWeight: "700", fontSize: 15 }}>{pending}</Text>
+            <Text style={{ color: tokens.color.accentText, fontWeight: "700", fontSize: 15 }}>{pending}</Text>
           </Card>
         ) : (
           <>
@@ -129,7 +129,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
               />
               <Button label="Choose from gallery" variant="ghost" onPress={() => void pickFrom("library")} disabled={uploading} />
               {photoKey ? (
-                <Text style={{ fontSize: 13, color: tokens.color.accent, fontWeight: "700", marginTop: 4 }}>Photo added ✓</Text>
+                <Text style={{ fontSize: 13, color: tokens.color.accentText, fontWeight: "700", marginTop: 4 }}>Photo added ✓</Text>
               ) : null}
             </Card>
             <Text style={{ fontSize: 12, color: tokens.color.muted, lineHeight: 17, marginBottom: tokens.space.sm }}>

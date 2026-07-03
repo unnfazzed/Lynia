@@ -1,0 +1,33 @@
+/* Lynia spacing + radius + elevation. 8pt base scale. Grab shape language: primary CTAs are
+   full pills, cards are soft 16px, inputs 12px. Touch targets ≥ 44px (52px for primary). */
+:root {
+  /* ── Spacing (8pt) ────────────────────────────────────────── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+  /* Screen edge padding — 16px, NOT 24px: designs must work at 320px-wide cheap Androids,
+     leaving 288px of usable content width. */
+  --space-screen: 16px;
+
+  /* ── Radius (Grab shape language) ─────────────────────────── */
+  --radius-input: 12px;
+  --radius-card: 16px;
+  --radius-button: 999px; /* primary + secondary buttons are pills */
+  --radius-pill: 999px;
+
+  /* ── Touch targets ────────────────────────────────────────── */
+  --target-min: 44px;     /* every interactive element */
+  --target-primary: 52px; /* the one primary CTA per screen */
+
+  /* ── Elevation ────────────────────────────────────────────────
+     Grab-style: cards float on a soft ambient shadow instead of a visible border;
+     hairlines remain for dividers and inputs. */
+  --shadow-none: none;
+  --shadow-card: 0 1px 4px rgba(20, 24, 27, 0.08), 0 2px 12px rgba(20, 24, 27, 0.06);
+  --shadow-sheet: 0 -2px 16px rgba(20, 24, 27, 0.08); /* bottom-sheet lift */
+  --shadow-menu: 0 4px 16px rgba(20, 24, 27, 0.1);    /* popover / dropdown */
+}

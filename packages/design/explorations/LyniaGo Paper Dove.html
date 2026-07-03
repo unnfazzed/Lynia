@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="design_doc_mode" content="canvas" />
+<title>LyniaGo — the Paper Dove</title>
+<link rel="stylesheet" href="../styles.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&display=swap" />
+<style>
+  body { margin:0; font-family:var(--font-sans); background:#0e100f; }
+  .title { position:absolute; font-size:36px; font-weight:800; letter-spacing:-.03em; color:#fff; margin:0; }
+  .kicker { position:absolute; font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); }
+  .story { position:absolute; color:#c6cdd2; font-size:14.5px; line-height:1.7; max-width:400px; }
+  .story b { color:#fff; }
+  .card { position:absolute; box-sizing:border-box; border-radius:20px; overflow:hidden; box-shadow:0 6px 28px rgba(0,0,0,.35); }
+  .lbl { font-size:11px; color:var(--muted); font-weight:600; letter-spacing:.02em; }
+  .wm { font-family:"Fredoka",var(--font-sans); font-weight:600; letter-spacing:.005em; }
+</style>
+</head>
+<body>
+
+<div class="kicker" style="left:64px; top:52px;">One concept · unconstrained</div>
+<h1 class="title" style="left:62px; top:74px; white-space:nowrap;">The Paper Dove</h1>
+
+<!-- HERO -->
+<div class="card" style="left:60px; top:140px; width:520px; height:440px; background:linear-gradient(160deg,#fff, #f2f6f3);">
+  <div style="width:100%;height:100%;display:grid;place-items:center;">
+    <svg width="300" height="300" viewBox="0 0 96 96" aria-hidden="true">
+      <!-- raised wing -->
+      <polygon points="28,6 58,32 38,42" fill="var(--accent)"/>
+      <!-- body -->
+      <polygon points="90,26 14,52 48,60" fill="var(--accent)"/>
+      <!-- keel / tail fold -->
+      <polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/>
+      <!-- fold line -->
+      <path d="M90 26 L48 60" stroke="#f6faf7" stroke-width="2.4" fill="none"/>
+    </svg>
+  </div>
+</div>
+
+<!-- STORY -->
+<div class="story" style="left:640px; top:150px;">
+  <p style="margin:0 0 14px;"><b>At first glance, it’s a send.</b> The folded paper dart every human on a phone already reads as <i>“on its way.”</i> Delivery, understood in a tenth of a second.</p>
+  <p style="margin:0 0 14px;"><b>Look again — it’s a dove.</b> Raised wing, beak, tail. The messenger bird. Noah’s dove carried the olive leaf back to the ark — <b>the first confirmed delivery in history</b> — and it is the quiet emblem of the Spirit, of peace, of trust. Hidden in plain sight, for those with eyes to see.</p>
+  <p style="margin:0 0 14px;"><b>And it’s folded paper.</b> The material of the informal economy — banknotes, receipts, notes passed hand to hand. LyniaGo folds that paper into flight: parcels first, then money, credit and dignity, along the same rails.</p>
+  <p style="margin:0;"><b>It climbs to the right.</b> Go. Growth. The last mile, rising.</p>
+</div>
+
+<!-- LOCKUP -->
+<div class="card" style="left:60px; top:620px; width:640px; height:170px; background:#fff;">
+  <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;gap:18px;">
+    <svg width="72" height="72" viewBox="0 0 96 96" aria-hidden="true">
+      <polygon points="28,6 58,32 38,42" fill="var(--accent)"/>
+      <polygon points="90,26 14,52 48,60" fill="var(--accent)"/>
+      <polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/>
+      <path d="M90 26 L48 60" stroke="#fff" stroke-width="2.4" fill="none"/>
+    </svg>
+    <span class="wm" style="font-size:52px;color:var(--ink);">Lynia<span style="color:var(--accent-700);">Go</span></span>
+  </div>
+</div>
+
+<!-- ICON + MONO -->
+<div class="card" style="left:740px; top:620px; width:170px; height:170px; background:var(--accent);">
+  <div style="width:100%;height:100%;display:grid;place-items:center;">
+    <svg width="92" height="92" viewBox="0 0 96 96" aria-hidden="true">
+      <polygon points="28,6 58,32 38,42" fill="#fff"/>
+      <polygon points="90,26 14,52 48,60" fill="#fff"/>
+      <polygon points="90,26 48,60 42,84" fill="#fff" opacity=".55"/>
+      <path d="M90 26 L48 60" stroke="var(--accent)" stroke-width="2.4" fill="none"/>
+    </svg>
+  </div>
+</div>
+
+<div class="card" style="left:930px; top:620px; width:170px; height:170px; background:#15181a;">
+  <div style="width:100%;height:100%;display:grid;place-items:center;">
+    <svg width="86" height="86" viewBox="0 0 96 96" aria-hidden="true">
+      <polygon points="28,6 58,32 38,42" fill="#fff"/>
+      <polygon points="90,26 14,52 48,60" fill="#fff"/>
+      <polygon points="90,26 48,60 42,84" fill="#fff" opacity=".5"/>
+      <path d="M90 26 L48 60" stroke="#15181a" stroke-width="2.4" fill="none"/>
+    </svg>
+  </div>
+</div>
+
+<div class="lbl" style="position:absolute; left:64px; top:800px; color:#7d868d;">Lockup · Fredoka, “Go” in deep green — the dove flies, the name stays still.</div>
+<div class="lbl" style="position:absolute; left:744px; top:800px; color:#7d868d;">App icon</div>
+<div class="lbl" style="position:absolute; left:934px; top:800px; color:#7d868d;">One-colour</div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="24" fill="#00B14F"/>
+    <polygon points="34,12 60,34 42,43" fill="#fff"/>
+    <polygon points="88,30 20,53 50,60" fill="#fff"/>
+    <polygon points="88,30 50,60 45,82" fill="#fff" opacity=".55"/>
+  </svg>
+</template>
+</body>
+</html>

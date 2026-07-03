@@ -284,7 +284,7 @@ export default function HomeScreen(): React.ReactElement {
                 marginBottom: tokens.space.md,
               }}
             >
-              <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accent }}>Draft restored</Text>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accentText }}>Draft restored</Text>
               <Pressable
                 onPress={clearForm}
                 accessibilityRole="button"

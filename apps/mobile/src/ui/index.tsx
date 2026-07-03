@@ -68,22 +68,25 @@ export function Button(props: {
       onPress={props.onPress}
       disabled={props.disabled || props.loading}
       style={({ pressed }) => ({
-        backgroundColor: primary ? tokens.color.accent : "transparent",
+        // Grab shape language: full-pill buttons. Primary fill is `cta` (#00812F) — tuned for
+        // white-on-green sunlight legibility — and presses to the darker `ctaPressed`; the brand
+        // `accent` green stays reserved for non-text fills. Ghost is the outline pill with green text.
+        backgroundColor: primary ? (pressed ? tokens.color.ctaPressed : tokens.color.cta) : pressed ? tokens.color.surface : "transparent",
         borderWidth: primary ? 0 : 1,
         borderColor: tokens.color.line,
-        opacity: props.disabled ? 0.5 : pressed ? 0.85 : 1,
-        borderRadius: tokens.radius.input,
+        opacity: props.disabled ? 0.5 : 1,
+        borderRadius: tokens.radius.button,
         paddingVertical: 14,
         marginTop: tokens.space.sm,
         alignItems: "center",
         justifyContent: "center",
-        minHeight: primary ? 52 : tokens.touchTargetMin, // spec: primary CTA 52px, secondary ≥44px
+        minHeight: primary ? tokens.touchTargetPrimary : tokens.touchTargetMin, // primary CTA 52px, secondary ≥44px
       })}
     >
       {props.loading ? (
-        <ActivityIndicator color={primary ? tokens.color.onAccent : tokens.color.accent} />
+        <ActivityIndicator color={primary ? tokens.color.onAccent : tokens.color.accentText} />
       ) : (
-        <Text style={{ color: primary ? tokens.color.onAccent : tokens.color.ink, fontWeight: "700", fontSize: 16 }}>{props.label}</Text>
+        <Text style={{ color: primary ? tokens.color.onAccent : tokens.color.accentText, fontWeight: "700", fontSize: 16 }}>{props.label}</Text>
       )}
     </Pressable>
   );
@@ -94,12 +97,16 @@ export function Card({ children, style }: { children: React.ReactNode; style?: V
     <View
       style={[
         {
+          // Grab card look: white fill floating on a soft ambient shadow, no visible hairline. The
+          // border stays in the box model but transparent so an emphasis card can still pass an
+          // accent `borderColor` (active job, delivery code) without a layout shift.
           backgroundColor: tokens.color.bg,
           borderWidth: 1,
-          borderColor: tokens.color.line,
+          borderColor: "transparent",
           borderRadius: tokens.radius.card,
           padding: tokens.space.lg,
           marginBottom: tokens.space.md,
+          ...tokens.shadow.card,
         },
         style,
       ]}
@@ -117,8 +124,9 @@ export function Card({ children, style }: { children: React.ReactNode; style?: V
  */
 export type PillTone = "neutral" | "online" | "offline" | "reconnecting";
 const PILL_TONE: Record<PillTone, string> = {
-  neutral: tokens.color.accent,
-  online: tokens.color.accent,
+  // Pill text + dot render the green — use the legible text-green, never the bright fill green.
+  neutral: tokens.color.accentText,
+  online: tokens.color.accentText,
   offline: tokens.color.muted,
   // A dropped/paused connection is a transient state, not an error — muted, never danger-red.
   reconnecting: tokens.color.muted,
@@ -241,7 +249,7 @@ export function Stepper(props: {
                   style={{
                     fontSize: 11,
                     fontWeight: "800",
-                    color: state === "done" ? tokens.color.onAccent : state === "now" ? tokens.color.accent : tokens.color.muted,
+                    color: state === "done" ? tokens.color.onAccent : state === "now" ? tokens.color.accentText : tokens.color.muted,
                   }}
                 >
                   {state === "done" ? "✓" : String(i + 1)}
@@ -256,7 +264,7 @@ export function Stepper(props: {
                 style={{
                   fontSize: 14,
                   fontWeight: state === "todo" ? "600" : "700",
-                  color: state === "now" ? tokens.color.accent : state === "todo" ? tokens.color.muted : tokens.color.ink,
+                  color: state === "now" ? tokens.color.accentText : state === "todo" ? tokens.color.muted : tokens.color.ink,
                 }}
               >
                 {labels[s]}

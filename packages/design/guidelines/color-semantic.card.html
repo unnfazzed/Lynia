@@ -1,0 +1,24 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Semantic" subtitle="Error, success, and the gold disclaimer wash" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; font-family: var(--font-sans); background: var(--bg); }
+  .row { display: flex; gap: 12px; padding: 16px; }
+  .sw { flex: 1; border-radius: var(--radius-card); border: 1px solid var(--line); overflow: hidden; }
+  .chip { height: 64px; display:flex; align-items:center; justify-content:center; }
+  .meta { padding: 8px 10px; }
+  .name { font-size: 12px; font-weight: 700; color: var(--ink); }
+  .hex { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:var(--danger)"></div><div class="meta"><div class="name">Danger</div><div class="hex">#C0392B · errors</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--success)"></div><div class="meta"><div class="name">Success</div><div class="hex">#00B14F · confirmation fills</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--highlight-wash);border-bottom:1px solid var(--highlight-border)"><span style="color:var(--highlight-ink);font-size:12px;font-weight:700">Disclaimer</span></div><div class="meta"><div class="name">Highlight wash</div><div class="hex">#FFFCF2 · gold note</div></div></div>
+  </div>
+</body>
+</html>

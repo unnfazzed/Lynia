@@ -1,0 +1,26 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Neutrals" subtitle="Ink, muted, surface, line — the utility base" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; font-family: var(--font-sans); background: var(--bg); }
+  .row { display: flex; gap: 12px; padding: 16px; }
+  .sw { flex: 1; border-radius: var(--radius-card); border: 1px solid var(--line); overflow: hidden; }
+  .chip { height: 64px; }
+  .meta { padding: 8px 10px; }
+  .name { font-size: 12px; font-weight: 700; color: var(--ink); }
+  .hex { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:var(--ink)"></div><div class="meta"><div class="name">Ink</div><div class="hex">#14181B · body</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--muted)"></div><div class="meta"><div class="name">Muted</div><div class="hex">#5B6670 · captions</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--surface)"></div><div class="meta"><div class="name">Surface</div><div class="hex">#F6F7F8 · sheets</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--line)"></div><div class="meta"><div class="name">Line</div><div class="hex">#E2E6EA · borders</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg);border-bottom:1px solid var(--line)"></div><div class="meta"><div class="name">Background</div><div class="hex">#FFFFFF · page</div></div></div>
+  </div>
+</body>
+</html>

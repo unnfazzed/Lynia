@@ -8,7 +8,7 @@ import { useAuth } from "../../src/auth/auth-context";
 import { Button, Card, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
 
 function KycBadge({ status }: { status: "pending" | "verified" | "failed" }): React.ReactElement {
-  const color = status === "verified" ? tokens.color.accent : status === "failed" ? tokens.color.danger : tokens.color.muted;
+  const color = status === "verified" ? tokens.color.accentText : status === "failed" ? tokens.color.danger : tokens.color.muted;
   return (
     <View style={{ alignSelf: "flex-start", borderRadius: 6, paddingHorizontal: 9, paddingVertical: 3, backgroundColor: tokens.color.surface, marginTop: 4 }}>
       <Text style={{ fontSize: 11, fontWeight: "800", color }}>

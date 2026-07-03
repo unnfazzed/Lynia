@@ -1,0 +1,58 @@
+<!-- @dsCard group="Brand" viewport="700x470" name="LyniaGo logo — the Paper Dove" subtitle="Symbolism, lockup, icon, one-colour, size rule" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin:0; font-family:var(--font-sans); background:var(--bg); padding:16px 20px; }
+  .row { display:flex; align-items:stretch; gap:12px; }
+  .cell { border:1px solid var(--line); border-radius:var(--radius-card); padding:14px 16px; display:flex; align-items:center; justify-content:center; }
+  .cap { font-size:10.5px; color:var(--muted); margin-top:5px; text-align:center; }
+  .wm { font-family:var(--font-wordmark); font-weight:600; color:var(--ink); }
+  .sect { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:14px 0 8px; }
+  .sym { display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; font-size:12px; color:var(--muted); line-height:1.5; }
+  .sym b { color:var(--ink); font-weight:600; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div style="flex:1.4">
+      <div class="cell" style="gap:12px;">
+        <img src="../assets/brand/lyniago-mark.svg" alt="" width="52" height="52" />
+        <span class="wm" style="font-size:38px;">Lynia<span style="color:var(--accent-700)">Go</span></span>
+      </div>
+      <div class="cap">Primary lockup — Fredoka 600, "Go" in --accent-700</div>
+    </div>
+    <div>
+      <div class="cell" style="background:var(--surface);border-color:transparent;">
+        <img src="../assets/brand/lyniago-icon.svg" alt="" width="68" height="68" />
+      </div>
+      <div class="cap">App icon</div>
+    </div>
+    <div>
+      <div class="cell" style="background:var(--ink);border-color:var(--ink);">
+        <img src="../assets/brand/lyniago-mark-mono.svg" alt="" width="56" height="56" style="filter:invert(1);" />
+      </div>
+      <div class="cap">One-colour</div>
+    </div>
+  </div>
+
+  <div class="sect">Size rule — creases (the hidden cross) appear only ≥ 32px</div>
+  <div class="row" style="align-items:flex-end; gap:20px; padding:4px 2px 0;">
+    <span><svg width="16" height="16" viewBox="0 0 96 96"><polygon points="28,6 58,32 38,42" fill="var(--accent-700)"/><polygon points="90,26 14,52 48,60" fill="var(--accent-700)"/><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/></svg><div class="cap">16</div></span>
+    <span><svg width="24" height="24" viewBox="0 0 96 96"><polygon points="28,6 58,32 38,42" fill="var(--accent-700)"/><polygon points="90,26 14,52 48,60" fill="var(--accent-700)"/><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/></svg><div class="cap">24 · silhouette only</div></span>
+    <span><svg width="32" height="32" viewBox="0 0 96 96"><polygon points="28,6 58,32 38,42" fill="var(--accent)"/><polygon points="90,26 14,52 48,60" fill="var(--accent)"/><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/><path d="M90 26 L48 60 M70.5 30.2 L81.5 43.8" stroke="#fff" stroke-width="2.4" fill="none"/></svg><div class="cap">32 · creases on</div></span>
+    <span><svg width="48" height="48" viewBox="0 0 96 96"><polygon points="28,6 58,32 38,42" fill="var(--accent)"/><polygon points="90,26 14,52 48,60" fill="var(--accent)"/><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/><path d="M90 26 L48 60 M70.5 30.2 L81.5 43.8" stroke="#fff" stroke-width="2.4" fill="none"/></svg><div class="cap">48</div></span>
+    <span><svg width="72" height="72" viewBox="0 0 96 96"><polygon points="28,6 58,32 38,42" fill="var(--accent)"/><polygon points="90,26 14,52 48,60" fill="var(--accent)"/><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/><path d="M90 26 L48 60 M70.5 30.2 L81.5 43.8" stroke="#fff" stroke-width="2.4" fill="none"/></svg><div class="cap">72</div></span>
+  </div>
+
+  <div class="sect">Symbolism — one glyph, four layers</div>
+  <div class="sym">
+    <div><b>A send.</b> The paper-dart glyph the world reads as "on its way" — delivery in a tenth of a second.</div>
+    <div><b>A dove.</b> Noah's dove brought the olive leaf home — the first confirmed delivery — and the quiet emblem of the Spirit and of trust.</div>
+    <div><b>Folded paper.</b> The material of the informal economy — banknotes, receipts, notes — folded into flight: parcels, then credit.</div>
+    <div><b>The crease is a cross.</b> The fold lines cross at the upper third (latin proportions), hidden in plain sight. Files: <code>assets/brand/</code>.</div>
+  </div>
+</body>
+</html>

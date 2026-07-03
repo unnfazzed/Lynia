@@ -2,15 +2,22 @@
 
 > Seeded by the gstack `/plan-design-review` stage. This is the living design **system/spec**: every screen
 > and future design review calibrates against it. The **review history** (verdicts, scores, findings) lives
-> in `docs/DESIGN-REVIEW.md`; this file is the baseline it measures against. Direction: **clean utility + a
-> warm accent** — trust through clarity, tuned for a low-trust cash market on cheap Android phones and
-> expensive data.
+> in `docs/DESIGN-REVIEW.md`; this file is the baseline it measures against. Direction: **Grab-style clean
+> utility** — trust through clarity, tuned for a low-trust cash market on cheap Android phones in bright
+> sunlight. Light theme, data-light, white cards on soft shadows, a bright Grab-green with a dark text-green
+> for legibility, one sparing gold marker.
+>
+> **The full design system is vendored at [`packages/design/`](../packages/design/)** — CSS-variable tokens,
+> reusable primitives, brand assets (the Paper Dove), and the mobile/admin/support UI kits. That folder is the
+> visual source of truth; `@lynia/shared`'s `design-tokens.ts` mirrors it for the apps. See
+> [`docs/DESIGN-SYSTEM.md`](./DESIGN-SYSTEM.md) for how it was adopted and what remains, and
+> `packages/design/HANDOFF.md` for the engineering handoff.
 
 ## Locked design decisions
 
 | # | Decision | Choice |
 |---|----------|--------|
-| D-a | Visual/brand direction | Clean utility + warm accent |
+| D-a | Visual/brand direction | Grab-style clean utility — bright Grab-green fills, dark text-green, mint selected wash (clean-utility neutrals unchanged) |
 | D-b | Customer home layout | Map-anchored home; scannable LIST for offer compare |
 | D-c | Theme + data discipline | Light, sunlight-contrast, data-light (dark mode deferred) |
 | D-d | Offer presentation | Sorted list, blended "best-match" default + 'recommended' marker |
@@ -26,21 +33,31 @@
 | `--bg` | `#FFFFFF` | page background |
 | `--surface` | `#F6F7F8` | cards, sheets |
 | `--line` | `#E2E6EA` | borders, dividers |
-| `--accent` | `#1E7A46` | primary action / "go" (green) |
+| `--accent` | `#00B14F` | brand green — **fills / graphics / map pins only** (≈2.9:1, never text) |
+| `--accent-700` | `#009D3B` | pressed / hover-deep fill |
+| `--accent-text` | `#006630` | green **text & small icons** (≈7:1 on white) |
+| `--accent-wash` | `#E9F8EF` | mint wash — selected states, chips |
+| `--cta-fill` | `#00812F` | primary-button fill — white label ≈4.7:1 (AA large), sunlight-tuned |
 | `--highlight` | `#F2B705` | 'recommended' marker only (gold, sparing) |
 | `--danger` | `#C0392B` | errors, destructive |
-| `--success` | `#1E7A46` | confirmations |
+| `--success` | `#00B14F` | confirmation fills (use `--accent-text` for success text) |
 | `--onAccent` | `#FFFFFF` | text/icons on an accent (or danger) fill — the one inverse |
 
-Body text ≥ 16px and ≥ 4.5:1 contrast; primary actions tuned ≥ 7:1 for **sunlight readability** (riders outdoors).
+Body text ≥ 4.5:1 contrast; green **text** uses `--accent-text` (≈7:1) and the primary CTA uses `--cta-fill`
+(white label ≈4.7:1) for **sunlight readability** (riders outdoors). **Never set text in `--accent`** — the bright
+fill green fails contrast; that is exactly what `--accent-text` is for.
 
-**Type:** **Manrope** (UI + display) — a real typeface, deliberately NOT Inter/Roboto/Arial/system. **Tabular
-numerals** for fares, ETAs, ratings. Headings 600/700; body 400/500. Minimum body 16px.
+**Type:** **Inter** (UI + display) — the same open-source typeface Grab uses in-product; self-hosted 400/600/700
+in `packages/design/assets/fonts` with a system-font (Roboto) fallback, `font-display: swap`. **Tabular numerals**
+for fares, ETAs, ratings. Grab-dense scale: 24px screen titles, 18px card titles, **14px body, 12px captions**,
+16px for inputs & button labels. Titles bold 700; body 400/600. **Fredoka 600** is the LyniaGo wordmark face only
+(never UI/body text).
 
-**Spacing:** 8pt base — `4 / 8 / 12 / 16 / 24 / 32 / 48`.
+**Spacing:** 8pt base — `4 / 8 / 12 / 16 / 24 / 32 / 48`. Screen edge padding 16px (320px-first, not 24px).
 
-**Radius:** containers 12px, inputs 8px, primary CTA full pill. Consistent, not ornamental (no uniform "bubbly"
-radius on every element).
+**Radius (Grab shape language):** cards **16px**, inputs **12px**, buttons **full pill** (primary + secondary),
+chips/status pills full. Cards float on a soft ambient shadow with no visible border; hairlines stay for dividers,
+inputs and chips.
 
 **Data-light:** cache map tiles, throttle the GPS marker render, lazy-load images, skeleton loaders over spinners.
 
@@ -48,7 +65,7 @@ radius on every element).
 
 | Component | Spec |
 |-----------|------|
-| Primary CTA | full-width pill, **52px** tall, `--accent`, one per screen |
+| Primary CTA | full-width pill, **52px** tall, `--cta-fill` (brand `--accent` reserved for non-text fills), one per screen |
 | Secondary | outline, 48px |
 | Input | **visible label above** the field (never placeholder-as-label), 48px |
 | Offer card | big **tabular price** · ★rating + count · ETA · optional 'recommended' marker |
@@ -57,7 +74,9 @@ radius on every element).
 | Map bottom-sheet | draggable sheet over a full-bleed map |
 | Skeleton | content-shaped placeholder (pulse) for list/board screens — `SkeletonList` (cards) / `SkeletonRows` (row-with-value, e.g. history). Per-screen stepper/summary skeletons tuned in the on-device `/qa` pass |
 
-**Icons are always paired with a text label** (low-literacy users + screen readers).
+**Icons** are the self-hosted **Lucide** line-icon subset (`packages/design/assets/lynia-icons.js`, ~5KB — never
+the full CDN library) and are **always paired with a text label** (low-literacy users + screen readers). Green
+icons use `--accent-text`; icons on a green fill are white. **No emoji** — they are not part of the visual language.
 
 ## Screen information architecture
 

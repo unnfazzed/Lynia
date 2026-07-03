@@ -1,0 +1,164 @@
+<!-- @dsCard group="Admin console" viewport="1040x680" name="Lynia ops console" subtitle="Monitor orders & riders, KYC review — no manual dispatch" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lynia — operations</title>
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--surface); color: var(--ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+  main { max-width: 1040px; margin: 0 auto; padding: var(--space-xl); }
+  header { display: flex; align-items: center; gap: var(--space-md); margin-bottom: var(--space-xl); }
+  .mono { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 700; }
+  h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+  nav.tabs { display: flex; gap: var(--space-md); margin-left: var(--space-lg); }
+  nav.tabs button { background: none; border: none; font-family: var(--font-sans); font-size: 13px; color: var(--muted); cursor: pointer; padding: 4px 2px; border-bottom: 2px solid transparent; }
+  nav.tabs button[aria-current="true"] { color: var(--accent-text); font-weight: 700; border-bottom-color: var(--accent); }
+  .live { margin-left: auto; font-size: 12px; color: var(--accent-text); }
+  .card { background: var(--bg); border: 1px solid transparent; box-shadow: var(--shadow-card); border-radius: var(--radius-card); padding: var(--space-lg); }
+  .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-lg); }
+  .panels .label { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .panels .value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 2px 0; }
+  .panels .hint { font-size: 12px; color: var(--muted); }
+  section.block { margin-top: var(--space-xl); }
+  .block-title { font-size: 14px; font-weight: 700; margin-bottom: var(--space-md); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { color: var(--muted); text-align: left; }
+  th { padding: 6px 4px; font-weight: 600; }
+  td { padding: 8px 4px; border-top: 1px solid var(--line); }
+  td.mono-txt { font-family: ui-monospace, "SF Mono", monospace; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .kpill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+  .subnav { display: flex; gap: var(--space-sm); margin-bottom: var(--space-lg); }
+  .subnav a { font-size: 13px; padding: 4px 12px; border-radius: 999px; text-decoration: none; color: var(--muted); border: 1px solid var(--line); cursor: pointer; }
+  .subnav a[aria-current="true"] { color: var(--on-accent); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .act { display: inline-flex; gap: 6px; }
+  .act button { font-size: 12px; padding: 5px 14px; border-radius: 999px; background: transparent; cursor: pointer; font-family: var(--font-sans); font-weight: 600; }
+  .approve { border: 1px solid var(--accent-text); color: var(--accent-text); }
+  .decline { border: 1px solid var(--muted); color: var(--muted); }
+  .hidden { display: none; }
+  .done { color: var(--accent-text); font-weight: 700; font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <svg width="30" height="30" viewBox="0 0 96 96" aria-hidden="true"><polygon points="28,6 58,32 38,42" fill="var(--accent)"></polygon><polygon points="90,26 14,52 48,60" fill="var(--accent)"></polygon><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"></polygon></svg>
+    <h1>LyniaGo — operations</h1>
+    <nav class="tabs">
+      <button data-tab="dashboard" aria-current="true" onclick="showTab('dashboard')">Dashboard</button>
+      <button data-tab="riders" onclick="showTab('riders')">Riders</button>
+      <button data-tab="orders" onclick="showTab('orders')">Orders</button>
+    </nav>
+    <span class="live">● live</span>
+  </header>
+
+  <!-- Dashboard -->
+  <div id="dashboard">
+    <section class="panels">
+      <div class="card"><div class="label">Live orders</div><div class="value">14</div><div class="hint">open_for_offers / assigned</div></div>
+      <div class="card"><div class="label">Riders online</div><div class="value">9/23</div><div class="hint">online / verified</div></div>
+      <div class="card"><div class="label">Offers per broadcast</div><div class="value">2.8</div><div class="hint">pilot funnel (§8)</div></div>
+      <div class="card"><div class="label">Expiry rate</div><div class="value">11%</div><div class="hint">broadcasts that drew no rider</div></div>
+    </section>
+    <section class="card block">
+      <div class="block-title">Recent orders</div>
+      <table>
+        <thead><tr><th>Order</th><th>Route</th><th>Status</th><th>Fare</th></tr></thead>
+        <tbody id="recent"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- Riders -->
+  <div id="riders" class="hidden">
+    <div class="subnav" id="kyc-tabs">
+      <a data-kyc="pending" aria-current="true" onclick="showKyc('pending')">pending</a>
+      <a data-kyc="verified" onclick="showKyc('verified')">verified</a>
+      <a data-kyc="failed" onclick="showKyc('failed')">failed</a>
+      <a data-kyc="all" onclick="showKyc('all')">all</a>
+    </div>
+    <section class="card">
+      <div class="block-title">Riders — KYC review</div>
+      <table>
+        <thead><tr><th>Rider</th><th>Phone</th><th>Bike</th><th>KYC</th><th>Trips / rating</th><th>Flags</th><th>Action</th></tr></thead>
+        <tbody id="riders-body"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- Orders -->
+  <div id="orders" class="hidden">
+    <section class="card">
+      <div class="block-title">All orders</div>
+      <table>
+        <thead><tr><th>Order</th><th>Route</th><th>Status</th><th>Rider</th><th>Fare</th><th>Created</th></tr></thead>
+        <tbody id="orders-body"></tbody>
+      </table>
+    </section>
+  </div>
+</main>
+
+<script>
+  const ORDERS = [
+    { id: "8f3a91c2", route: "Eastgate → Avenues", status: "open_for_offers", rider: "—", fare: "2.50", when: "2 min ago" },
+    { id: "3b71de04", route: "Avondale → CBD", status: "en_route_dropoff", rider: "Tendai M.", fare: "2.20", when: "14 min ago" },
+    { id: "c092a5f1", route: "Borrowdale → Msasa", status: "delivered", rider: "Kudzai N.", fare: "4.00", when: "31 min ago" },
+    { id: "1a4e77b9", route: "Msasa → Highlands", status: "completed", rider: "Farai R.", fare: "3.10", when: "1 hr ago" },
+    { id: "77c120ab", route: "CBD → Belvedere", status: "expired", rider: "—", fare: "1.50", when: "2 hr ago" },
+  ];
+  const RIDERS = [
+    { name: "Tendai Moyo", phone: "+263 77 123 4567", bike: "ABZ 1234", kyc: "verified", trips: 132, rating: "4.8", flags: "online" },
+    { name: "Kudzai Ncube", phone: "+263 71 555 0090", bike: "ADR 8842", kyc: "verified", trips: 88, rating: "4.9", flags: "online" },
+    { name: "Farai Rusike", phone: "+263 78 202 1180", bike: "AEG 4471", kyc: "pending", trips: 3, rating: "—", flags: "—" },
+    { name: "Rutendo Dube", phone: "+263 77 810 2231", bike: "AFT 9920", kyc: "pending", trips: 0, rating: "—", flags: "—" },
+    { name: "Blessing Sibanda", phone: "+263 71 340 7788", bike: "AAB 1092", kyc: "failed", trips: 0, rating: "—", flags: "1 strike" },
+  ];
+  const STATUS_COLOR = { open_for_offers: "var(--accent-text)", en_route_dropoff: "var(--accent-text)", delivered: "var(--accent-text)", completed: "var(--muted)", expired: "var(--danger)" };
+
+  function statusPill(s) {
+    const c = STATUS_COLOR[s] || "var(--muted)";
+    return `<span class="kpill" style="color:${c}">${s.replace(/_/g, " ")}</span>`;
+  }
+  function renderRecent() {
+    document.getElementById("recent").innerHTML = ORDERS.slice(0, 4).map(o =>
+      `<tr><td class="mono-txt">${o.id}</td><td>${o.route}</td><td>${statusPill(o.status)}</td><td class="num">$${o.fare}</td></tr>`).join("");
+  }
+  function renderOrders() {
+    document.getElementById("orders-body").innerHTML = ORDERS.map(o =>
+      `<tr><td class="mono-txt">${o.id}</td><td>${o.route}</td><td>${statusPill(o.status)}</td><td>${o.rider}</td><td class="num">$${o.fare}</td><td>${o.when}</td></tr>`).join("");
+  }
+  let kycFilter = "pending";
+  function renderRiders() {
+    const rows = RIDERS.filter(r => kycFilter === "all" || r.kyc === kycFilter);
+    document.getElementById("riders-body").innerHTML = rows.map((r, i) =>
+      `<tr>
+        <td>${r.name}</td><td class="mono-txt">${r.phone}</td><td>${r.bike}</td>
+        <td>${statusPill(r.kyc)}</td>
+        <td class="num">${r.trips} / ${r.rating}</td>
+        <td style="color:var(--muted)">${r.flags}</td>
+        <td>${r.kyc === "pending"
+          ? `<span class="act"><button class="approve" onclick="decide(this,'Approved')">Approve</button><button class="decline" onclick="decide(this,'Declined')">Decline</button></span>`
+          : `<span style="color:var(--muted)">—</span>`}</td>
+      </tr>`).join("");
+  }
+  function decide(btn, word) {
+    const cell = btn.closest("td");
+    cell.innerHTML = `<span class="done">${word} ✓</span>`;
+  }
+  function showTab(t) {
+    ["dashboard", "riders", "orders"].forEach(id => document.getElementById(id).classList.toggle("hidden", id !== t));
+    document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === t ? "true" : "false"));
+  }
+  function showKyc(k) {
+    kycFilter = k;
+    document.querySelectorAll("#kyc-tabs a").forEach(a => a.setAttribute("aria-current", a.dataset.kyc === k ? "true" : "false"));
+    renderRiders();
+  }
+  renderRecent(); renderOrders(); renderRiders();
+</script>
+</body>
+</html>

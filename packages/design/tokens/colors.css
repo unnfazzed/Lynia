@@ -1,0 +1,57 @@
+/* Lynia colour system — light theme, Grab-style green.
+   Fills/CTAs use bright Grab green #00B14F; text and small icons use the darker text-green
+   (#006630, ≈7:1 on white) so sunlight legibility holds on cheap Android screens.
+   Neutrals stay the clean utility greys. Dark mode deferred. */
+:root {
+  /* ── Base palette ─────────────────────────────────────────── */
+  --ink: #14181b;         /* body text (≥4.5:1) */
+  --muted: #5b6670;       /* secondary text, captions */
+  --bg: #ffffff;          /* page background */
+  --surface: #f6f7f8;     /* sheets, chips, sunken areas */
+  --line: #e2e6ea;        /* borders, dividers */
+
+  --accent: #00b14f;      /* Grab green — fills, CTAs, big graphics ONLY (≈2.9:1 on white) */
+  --accent-700: #009d3b;  /* pressed / hover-deep fill */
+  --accent-text: #006630; /* text & small icons in green (≈7:1 on white) */
+  --accent-wash: #e9f8ef; /* light mint wash — selected states, chips */
+
+  /* Primary-CTA FILL — sunlight contrast decision APPLIED (2026-07-03).
+     Set to #00812f so white CTA labels clear ≈4.7:1 (WCAG AA large) — legible on cheap phones in
+     bright sun, per the spec. Kept separate from --accent so the brand green stays vibrant on
+     non-text fills (map graphics, chips, icon tiles). To re-tune, change ONLY these two lines:
+       #00b14f = brand-true (≈2.9:1, too low for sunlight)
+       #009d3b = 1 shade down (≈3.4:1)
+       #00812f = white-on-green ≈4.7:1 (AA large) — CURRENT
+       #006b27 = ≈6.3:1 if a darker press is wanted */
+  --cta-fill: #00812f;
+  --cta-fill-pressed: #006b27;
+  --highlight: #f2b705;   /* 'recommended' marker only (gold, sparing) */
+  --danger: #c0392b;      /* errors, destructive */
+  --success: #00b14f;     /* confirmation fills (== accent); use --accent-text for success TEXT */
+  --on-accent: #ffffff;   /* text/icons on an accent (or danger) fill — the one inverse */
+
+  /* Tints used in-product: earnings disclaimer card (gold wash), highlight border alpha. */
+  --highlight-wash: #fffcf2;
+  --highlight-ink: #6b5600;
+  --highlight-border: #f2b70566;
+
+  /* ── Semantic aliases ─────────────────────────────────────── */
+  --text-body: var(--ink);
+  --text-secondary: var(--muted);
+  --text-on-accent: var(--on-accent);
+  --text-accent: var(--accent-text);
+
+  --surface-page: var(--bg);
+  --surface-card: var(--bg);
+  --surface-sunken: var(--surface);
+  --surface-selected: var(--accent-wash);
+
+  --border-default: var(--line);
+  --border-strong: var(--muted);
+
+  --action-primary: var(--accent);
+  --action-primary-pressed: var(--accent-700);
+  --marker-recommended: var(--highlight);
+  --state-error: var(--danger);
+  --state-success: var(--success);
+}

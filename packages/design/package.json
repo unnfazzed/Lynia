@@ -1,0 +1,23 @@
+{
+  "name": "@lynia/design",
+  "version": "0.0.0",
+  "private": true,
+  "description": "LyniaGo design system — brand, CSS-variable design tokens, reusable UI primitives, and UI kits. Reference/source-of-truth for the app design language. See HANDOFF.md and readme.md.",
+  "sideEffects": ["styles.css", "tokens/*.css"],
+  "exports": {
+    "./styles.css": "./styles.css",
+    "./tokens/colors.css": "./tokens/colors.css",
+    "./tokens/typography.css": "./tokens/typography.css",
+    "./tokens/spacing.css": "./tokens/spacing.css",
+    "./tokens/fonts.css": "./tokens/fonts.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "styles.css",
+    "tokens",
+    "assets",
+    "components",
+    "guidelines",
+    "templates"
+  ]
+}

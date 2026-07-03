@@ -1,0 +1,38 @@
+<!-- @dsCard group="Brand" viewport="700x170" name="Iconography — Lucide" subtitle="Rounded 2px line icons, always paired with a text label" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; font-family: var(--font-sans); background: var(--bg); color: var(--ink); padding: 18px 20px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .ic { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 7px 13px; }
+  .ic svg, .ic i { color: var(--accent-text); width: 20px; height: 20px; }
+  .lab { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .glyphs { margin-top: 14px; display: flex; gap: 16px; align-items: center; }
+  .g { font-size: 18px; font-weight: 700; }
+  .gn { font-size: 11px; color: var(--muted); }
+</style>
+<script src="../assets/lynia-icons.js"></script>
+</head>
+<body>
+  <div class="row">
+    <div class="ic"><i data-lucide="bike"></i><span class="lab">No offers</span></div>
+    <div class="ic"><i data-lucide="inbox"></i><span class="lab">No orders</span></div>
+    <div class="ic"><i data-lucide="id-card"></i><span class="lab">KYC</span></div>
+    <div class="ic"><i data-lucide="banknote"></i><span class="lab">Earnings</span></div>
+    <div class="ic"><i data-lucide="package"></i><span class="lab">Parcel</span></div>
+    <div class="ic"><i data-lucide="wifi-off"></i><span class="lab">Network</span></div>
+    <div class="ic"><i data-lucide="map-pin"></i><span class="lab">Pin</span></div>
+    <div class="ic"><i data-lucide="phone"></i><span class="lab">Call</span></div>
+  </div>
+  <div class="glyphs">
+    <span class="g" style="color:var(--highlight)">★</span><span class="gn">rating</span>
+    <span class="g" style="color:var(--accent-text)">✓</span><span class="gn">done step</span>
+    <span class="g" style="color:var(--muted)">→</span><span class="gn">route</span>
+    <span class="g" style="color:var(--accent)">●</span><span class="gn">online</span>
+  </div>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

@@ -40,7 +40,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL, {
         name: "Deliveries",
         importance: Notifications.AndroidImportance.HIGH,
-        lightColor: "#1E7A46",
+        lightColor: "#00B14F",
       });
     }
 
