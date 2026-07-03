@@ -88,13 +88,17 @@ export default function RiderHome(): React.ReactElement {
   });
 
   // Heartbeat: keep the rider selectable (ET3 liveness) while online by refreshing lastHeartbeatAt.
-  // If a beat fails (e.g. a cooldown forced us offline server-side), reflect it instead of lying.
+  // Only a 403 (server cooldown forced us offline) flips the switch — a network blip/timeout is a
+  // transient reconnect, which is a state (the reconnecting chip/banner), not an error, so we keep
+  // the rider online and let the next beat self-heal.
   useEffect(() => {
     if (!online) return;
     const t = setInterval(() => {
-      void setOnline(true).catch(() => {
-        setOnlineState(false);
-        setError("You were taken offline (cooldown or a connection issue). Tap Go online to retry.");
+      void setOnline(true).catch((e: unknown) => {
+        if (e instanceof ApiError && e.status === 403) {
+          setOnlineState(false);
+          setError("You were taken offline (cooldown or a connection issue). Tap Go online to retry.");
+        }
       });
     }, 20_000);
     return () => clearInterval(t);
@@ -165,13 +169,14 @@ export default function RiderHome(): React.ReactElement {
           <Heading>Rider</Heading>
           <View style={{ flex: 1 }} />
           <Button label="Trips" variant="ghost" onPress={() => router.push("/history")} />
-          <Button label="Setup / KYC" variant="ghost" onPress={() => router.push("/rider/become")} />
+          <Button label="Rider setup" variant="ghost" onPress={() => router.push("/rider/become")} />
         </View>
 
         {activeQ.data ? (
           <Card style={{ borderColor: tokens.color.accent }}>
             <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({activeQ.data.status.replace(/_/g, " ")})</Text>
-            <Button label="Open job" onPress={() => router.push("/rider/job")} />
+            {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
+            <Button label="Open job" variant="ghost" onPress={() => router.push("/rider/job")} />
           </Card>
         ) : null}
 
