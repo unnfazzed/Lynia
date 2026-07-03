@@ -33,8 +33,15 @@ const config: ExpoConfig = {
   orientation: "portrait",
   userInterfaceStyle: "light",
   platforms: ["android", "ios"],
+  // Launcher icon + splash source, copied from packages/design/assets/brand/icon/ (the design
+  // system owns the artwork). Light background only — the design defers dark mode.
+  icon: "./assets/icon.png",
   plugins: [
     "expo-router",
+    [
+      "expo-splash-screen",
+      { image: "./assets/splash-icon.png", imageWidth: 120, resizeMode: "contain", backgroundColor: "#FFFFFF" },
+    ],
     ["expo-location", { locationWhenInUsePermission: "Lynia uses your location to set the pickup point." }],
     [
       "expo-image-picker",
@@ -47,6 +54,7 @@ const config: ExpoConfig = {
   ],
   android: {
     package: "zw.co.lynia",
+    adaptiveIcon: { foregroundImage: "./assets/adaptive-icon.png", backgroundColor: "#FFFFFF" },
     // Only attach the Maps block when a key is present, so an unkeyed build doesn't ship an empty key.
     ...(googleMapsApiKey ? { config: { googleMaps: { apiKey: googleMapsApiKey } } } : {}),
     // Only reference the FCM credentials file when it's actually available, so an unprovisioned build

@@ -43,11 +43,13 @@ export const color = {
   cta: "#00812F",
   ctaPressed: "#006B27",
 
-  /** 'Recommended' offer marker only (gold, sparing). */
+  /** 'Recommended' offer marker only (gold, sparing) — borders/stars, never text (use highlightInk). */
   highlight: "#F2B705",
-  /** Tints for the earnings-disclaimer / highlight card. */
+  /** Tints for the earnings-disclaimer / highlight card. Text on the wash uses highlightInk. */
   highlightWash: "#FFFCF2",
   highlightInk: "#6B5600",
+  /** 40%-alpha gold border for highlight cards (mirrors --highlight-border). */
+  highlightBorder: "#F2B70566",
 
   danger: "#C0392B",
   /** Confirmation fills (== accent); use `accentText` for success TEXT. */
@@ -118,10 +120,24 @@ export const shadow = {
   sheet: {
     shadowColor: "#14181B",
     shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 16,
     elevation: 6,
   },
+  menu: {
+    shadowColor: "#14181B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+} as const;
+
+/** Line heights (unitless multipliers, ≈4px grid at the scale sizes) — mirrors --leading-*. */
+export const leading = {
+  tight: 1.15,
+  snug: 1.35,
+  body: 1.45,
 } as const;
 
 /** Minimum touch target (px). The one primary CTA per screen uses `touchTargetPrimary` (52). */

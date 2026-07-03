@@ -44,27 +44,45 @@ export function interFamily(weight?: string | number | null): string {
  * now-redundant `fontWeight` so Android doesn't double-synthesise bold). An explicit `fontFamily`
  * (e.g. the Fredoka wordmark) is left untouched. Guarded per render so any internals mismatch falls
  * back to the system font instead of crashing.
+ *
+ * Latent nested-`<Text>` caveat: a child span without an explicit `fontFamily` gets
+ * `Inter_400Regular` injected instead of inheriting the parent span's weight. Today only Brand.tsx
+ * nests Text, and it sets explicit families on both spans.
  */
-let patched = false;
 export function applyInterToTextComponents(): void {
-  if (patched) return;
-  patched = true;
   for (const Comp of [Text, TextInput] as unknown as { render?: (...args: any[]) => unknown }[]) {
     const original = Comp.render;
-    if (typeof original !== "function") continue;
-    Comp.render = function patchedRender(props: any, ref: any) {
+    if (typeof original !== "function") {
+      // Loud in dev — a future RN export-shape change would otherwise silently drop Inter.
+      if (__DEV__) console.warn("[lynia] Text/TextInput render patch no-op — Inter will not apply; check RN version");
+      continue;
+    }
+    // The already-patched marker lives on the render function itself (not module state) so a Fast
+    // Refresh re-evaluation of this module doesn't stack a second wrapper on the cached RN component.
+    if ((original as any).__lyniaInterPatched) continue;
+    const patchedRender = function patchedRender(this: unknown, props: any, ref: any) {
+      // Compute the injected props inside the guard but call `original` exactly once — a throw
+      // mid-render would otherwise re-enter it in the same fiber pass and corrupt the hook cursor.
+      let propsToUse = props;
       try {
-        const flat = (StyleSheet.flatten(props?.style as never) ?? {}) as { fontFamily?: string; fontWeight?: string | number };
-        if (!flat.fontFamily) {
-          const { fontWeight, ...rest } = flat;
-          const style = [{ fontFamily: interFamily(fontWeight) }, rest];
-          return original.call(this, { ...props, style }, ref);
+        if (props?.style == null) {
+          // Fast path — most Texts carry no style at all; skip the flatten entirely.
+          propsToUse = { ...props, style: { fontFamily: interFamily(undefined) } };
+        } else {
+          const flat = (StyleSheet.flatten(props.style as never) ?? {}) as { fontFamily?: string; fontWeight?: string | number };
+          if (!flat.fontFamily) {
+            const { fontWeight, ...rest } = flat;
+            propsToUse = { ...props, style: [{ fontFamily: interFamily(fontWeight) }, rest] };
+          }
         }
       } catch {
-        /* fall through to the untouched render → system font */
+        propsToUse = props; // untouched render → system font
       }
-      return original.call(this, props, ref);
+      return original.call(this, propsToUse, ref);
     };
+    (patchedRender as any).__lyniaInterPatched = true;
+    (patchedRender as any).__lyniaOriginal = original;
+    Comp.render = patchedRender;
   }
 }
 

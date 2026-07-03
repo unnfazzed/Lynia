@@ -213,6 +213,9 @@ export function BottomSheet({
           backgroundColor: tokens.color.bg,
           borderTopLeftRadius: tokens.radius.card,
           borderTopRightRadius: tokens.radius.card,
+          // DS sheet elevation (upward soft shadow; `elevation` covers Android, where negative-offset
+          // shadows don't render — the top hairline stays as the Android seam).
+          ...tokens.shadow.sheet,
           borderTopWidth: 1,
           borderColor: tokens.color.line,
           padding: tokens.space.lg,
@@ -240,7 +243,7 @@ export function BottomSheet({
           alignSelf: "stretch",
           alignItems: "center",
           justifyContent: "center",
-          minHeight: 44,
+          minHeight: tokens.touchTargetMin,
           marginTop: -tokens.space.sm,
           marginBottom: tokens.space.xs,
         }}
