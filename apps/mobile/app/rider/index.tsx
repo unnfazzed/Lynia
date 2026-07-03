@@ -11,7 +11,7 @@ import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { retryKyc, setOnline } from "../../src/api/riders";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
-import { Button, Card, EmptyState, ErrorText, Field, Heading, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, Heading, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 import { parseNum } from "../../src/util";
 
 /** Urban motorbike cruising speed for a rough pickup-ETA seed (min = distance / speed). */

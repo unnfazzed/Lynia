@@ -472,10 +472,24 @@ export default function OrderScreen(): React.ReactElement {
               connectionState={isActive ? connectionState : "live"}
             />
             {order.rider ? (
-              <Text style={{ fontSize: 13, color: tokens.color.muted }}>{trackingHint}</Text>
+              <Text style={{ fontSize: 14, color: tokens.color.muted }}>{trackingHint}</Text>
             ) : null}
             {order.counterpartyPhone ? (
-              <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4 }}>Rider phone: {order.counterpartyPhone}</Text>
+              <>
+                <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>
+                  Rider phone: {order.counterpartyPhone}
+                </Text>
+                {/* One-tap dialer next to the visible number — a call beats copy/paste mid-delivery. */}
+                <Pressable
+                  onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Call rider"
+                  style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+                >
+                  <Icon name="phone" size={16} color={tokens.color.accentText} />
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call rider</Text>
+                </Pressable>
+              </>
             ) : null}
             <View style={{ height: tokens.space.md }} />
             <Stepper events={order.events} currentStatus={order.status} view="customer" />
@@ -507,13 +521,13 @@ export default function OrderScreen(): React.ReactElement {
             {ratePending ? (
               // Tap-to-rate is armed: submitting shortly, still cancellable.
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                <Text style={{ fontSize: 14, color: tokens.color.muted }}>Submitting {score}★…</Text>
+                <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>Submitting {score}★…</Text>
                 <Button label="Undo" variant="ghost" onPress={undoRate} />
               </View>
             ) : rateM.isPending ? (
               <Text style={{ fontSize: 14, color: tokens.color.muted }}>Saving your rating…</Text>
             ) : (
-              <Text style={{ fontSize: 13, color: tokens.color.muted }}>Tap a star to rate</Text>
+              <Text style={{ fontSize: 14, color: tokens.color.muted }}>Tap a star to rate</Text>
             )}
           </Card>
         ) : null}
