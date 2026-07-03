@@ -32,7 +32,9 @@ export function Label({ children }: { children: React.ReactNode }): React.ReactE
 }
 
 export function Field(props: {
-  label: string;
+  // Optional: repeatable rows (the compose item list) carry a single shared heading instead of a
+  // label per row.
+  label?: string;
   value: string;
   onChangeText: (t: string) => void;
   placeholder?: string;
@@ -41,7 +43,7 @@ export function Field(props: {
 }): React.ReactElement {
   return (
     <View style={{ marginBottom: tokens.space.md }}>
-      <Label>{props.label}</Label>
+      {props.label ? <Label>{props.label}</Label> : null}
       <TextInput
         value={props.value}
         onChangeText={props.onChangeText}

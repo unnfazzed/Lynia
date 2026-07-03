@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, OFFER_WINDOW_MS, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, summarizeItems } from "@lynia/shared";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -48,13 +48,21 @@ export class OrdersService {
     // Distance-based anchor the customer sees alongside their own proposal (CONCEPT §1).
     const { distanceKm, suggestedFare } = quoteFare(input.pickup.point, input.dropoff.point);
 
+    // CANONICAL DIRECTION: `items` is the line-item source of truth for every order this API
+    // writes; `itemDesc` is ALWAYS the derived summary (summarizeItems). A legacy client's
+    // `itemDescription` normalizes to one qty-1 row, whose summary is the raw string — so old
+    // clients, old rows, and every itemDesc consumer (board, history, admin) are byte-identical
+    // to before. The contract guarantees at least one shape; when both arrive, `items` wins.
+    const items: OrderItem[] = input.items ?? [{ description: input.itemDescription ?? "", quantity: 1 }];
+
     const order = await this.prisma.order.create({
       data: {
         customerId,
         orderType: "parcel",
         pickup: input.pickup as unknown as Prisma.InputJsonValue,
         dropoff: input.dropoff as unknown as Prisma.InputJsonValue,
-        itemDesc: input.itemDescription,
+        itemDesc: summarizeItems(items),
+        items: items as unknown as Prisma.InputJsonValue,
         note: input.note ?? null,
         itemPhotoUrl: input.itemPhotoUrl ?? null,
         declaredValue: input.declaredValue,
@@ -307,6 +315,7 @@ export class OrdersService {
         createdAt: true,
         pickup: true,
         dropoff: true,
+        items: true,
         customer: { select: { phone: true } },
         rider: {
           select: {
@@ -358,6 +367,10 @@ export class OrdersService {
       // doors); everyone else, and every listing path, stays redacted.
       pickup: revealed && isRider ? riderWaypoint(order.pickup) : publicWaypoint(order.pickup),
       dropoff: revealed && isRider ? riderWaypoint(order.dropoff) : publicWaypoint(order.dropoff),
+      // Full line-items for the tracker + assigned-rider job view; null on pre-0008 rows (the
+      // client falls back to nothing). Listing paths deliberately stay on the itemDesc summary
+      // (data budget); no PII lives in items.
+      items: (order.items as OrderItem[] | null) ?? null,
       rider,
       events: order.events,
       counterpartyPhone,

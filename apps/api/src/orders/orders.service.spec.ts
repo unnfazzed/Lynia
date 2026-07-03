@@ -69,6 +69,68 @@ describe("OrdersService.create", () => {
     expect(created!.suggestedFare).not.toBe(created!.proposedFare);
   });
 
+  it("legacy itemDescription-only create: itemDesc stays the raw string, items normalizes to one qty-1 row", async () => {
+    let created: Record<string, unknown> | undefined;
+    const prisma = {
+      order: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          created = args.data;
+          return {
+            id: "ord-1",
+            status: "open_for_offers",
+            itemDesc: "Documents",
+            proposedFare: { toString: () => "2.50" },
+            suggestedFare: { toString: () => "2.40" },
+            distanceKm: 1.5,
+            createdAt: new Date("2026-06-26T00:00:00Z"),
+          };
+        },
+      },
+    };
+    const expiry = { schedule: async () => {} } as unknown as OfferExpiryService;
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry, noTracking, noNotifications, noGateway);
+
+    await svc.create(orderInput, "cust-1");
+
+    // Canonical direction: items is always written; the single qty-1 row summarizes back to the
+    // exact legacy string, so old clients produce byte-identical itemDesc rows.
+    expect(created!.itemDesc).toBe("Documents");
+    expect(created!.items).toEqual([{ description: "Documents", quantity: 1 }]);
+  });
+
+  it("line-items create: stores items and writes the summarized string into itemDesc", async () => {
+    let created: Record<string, unknown> | undefined;
+    const prisma = {
+      order: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          created = args.data;
+          return {
+            id: "ord-1",
+            status: "open_for_offers",
+            itemDesc: args.data.itemDesc,
+            proposedFare: { toString: () => "2.50" },
+            suggestedFare: { toString: () => "2.40" },
+            distanceKm: 1.5,
+            createdAt: new Date("2026-06-26T00:00:00Z"),
+          };
+        },
+      },
+    };
+    const expiry = { schedule: async () => {} } as unknown as OfferExpiryService;
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry, noTracking, noNotifications, noGateway);
+
+    const items = [
+      { description: "Documents", quantity: 2 },
+      { description: "Phone charger", quantity: 1 },
+    ];
+    // items wins over a stray legacy itemDescription when both arrive (contract rule).
+    await svc.create({ ...orderInput, items }, "cust-1");
+
+    expect(created!.items).toEqual(items);
+    // Every itemDesc consumer (board, history, admin) reads the compact summary unchanged.
+    expect(created!.itemDesc).toBe("2× Documents · 1× Phone charger");
+  });
+
   it("pushes the new order to nearby online riders post-commit (CONCEPT §3.10), best-effort", async () => {
     const prisma = {
       order: {
@@ -231,6 +293,15 @@ describe("OrdersService.getSnapshot", () => {
 
   it("404s when the order is missing", async () => {
     await expect(svc(null).getSnapshot("missing", "cust-1")).rejects.toThrow(/order not found/i);
+  });
+
+  it("serves the stored line-items on the snapshot, and null for pre-items rows", async () => {
+    const items = [{ description: "Documents", quantity: 2 }];
+    const withItems = await svc(row({ items })).getSnapshot("ord-1", "cust-1");
+    expect(withItems.items).toEqual(items);
+    // Old rows (pre-migration-0008) carry no items column value — served as an explicit null.
+    const legacy = await svc(row()).getSnapshot("ord-1", "cust-1");
+    expect(legacy.items).toBeNull();
   });
 
   it("reveals the rider's phone to the customer during the active window", async () => {

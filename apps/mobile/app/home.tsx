@@ -7,7 +7,7 @@ import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pre
 import { ApiError } from "../src/api/client";
 import { createOrder, type OrderSnapshot } from "../src/api/orders";
 import { orderKey } from "../src/query/client";
-import { Button, Card, ErrorText, Field, Heading, Icon, Screen, Sub } from "../src/ui";
+import { Button, Card, ErrorText, Field, Heading, Icon, Label, Screen, Sub } from "../src/ui";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
@@ -17,6 +17,16 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// One compose row of "what are you sending?" — mirrors the contract's OrderItem.
+interface ItemRow {
+  description: string;
+  quantity: number;
+}
+const emptyItem = (): ItemRow => ({ description: "", quantity: 1 });
+// Contract caps: ≤10 rows, qty 1–99, description ≤140 (OrderItem).
+const MAX_ITEMS = 10;
+const MAX_QTY = 99;
+
 // The form draft persisted between visits. PII (the two contact phone numbers) is DELIBERATELY
 // excluded — a courier app must not stash a third party's phone in on-device storage. Everything
 // here is the sender's own routing/pricing intent, which is safe to restore.
@@ -25,7 +35,7 @@ interface FormDraft {
   pickupLandmark: string;
   dropPoint: PickedPoint | null;
   dropLandmark: string;
-  itemDescription: string;
+  items: ItemRow[];
   declaredValue: string;
   proposedFare: string;
 }
@@ -38,7 +48,17 @@ const DRAFT_KEY = "lynia.orderDraft";
 async function loadDraft(): Promise<FormDraft | null> {
   try {
     const raw = await SecureStore.getItemAsync(DRAFT_KEY);
-    return raw ? (JSON.parse(raw) as FormDraft) : null;
+    if (!raw) return null;
+    const d = JSON.parse(raw) as FormDraft & { itemDescription?: string };
+    // Pre-line-items drafts stored a single `itemDescription` string — hydrate it as one row.
+    // Rows are re-clamped to the contract caps in case a stale/foreign draft slips through.
+    const rows = Array.isArray(d.items) ? d.items : [{ description: d.itemDescription ?? "", quantity: 1 }];
+    d.items = rows.slice(0, MAX_ITEMS).map((r) => ({
+      description: typeof r?.description === "string" ? r.description : "",
+      quantity: Math.min(MAX_QTY, Math.max(1, Math.round(Number(r?.quantity) || 1))),
+    }));
+    if (d.items.length === 0) d.items = [emptyItem()];
+    return d;
   } catch {
     return null;
   }
@@ -68,7 +88,7 @@ export default function HomeScreen(): React.ReactElement {
   const [dropPoint, setDropPoint] = useState<PickedPoint | null>(null);
   const [dropLandmark, setDropLandmark] = useState("");
   const [dropPhone, setDropPhone] = useState("");
-  const [itemDescription, setItemDescription] = useState("");
+  const [items, setItems] = useState<ItemRow[]>([emptyItem()]);
   const [declaredValue, setDeclaredValue] = useState("");
   const [proposedFare, setProposedFare] = useState("");
   const [busy, setBusy] = useState(false);
@@ -121,7 +141,7 @@ export default function HomeScreen(): React.ReactElement {
         setPickupLandmark(draft.pickupLandmark);
         setDropPoint(draft.dropPoint);
         setDropLandmark(draft.dropLandmark);
-        setItemDescription(draft.itemDescription);
+        setItems(draft.items);
         setDeclaredValue(draft.declaredValue);
         setProposedFare(draft.proposedFare);
         // Restored landmarks are user-owned text (not live from the map): treat them as typed.
@@ -144,11 +164,22 @@ export default function HomeScreen(): React.ReactElement {
       pickupLandmark,
       dropPoint,
       dropLandmark,
-      itemDescription,
+      items,
       declaredValue,
       proposedFare,
     });
-  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, itemDescription, declaredValue, proposedFare]);
+  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, declaredValue, proposedFare]);
+
+  // Item-row edits — bounds mirror the contract (≥1 row always on screen, ≤MAX_ITEMS, qty 1–99).
+  const updateItem = useCallback((i: number, patch: Partial<ItemRow>): void => {
+    setItems((arr) => arr.map((it, j) => (j === i ? { ...it, ...patch } : it)));
+  }, []);
+  const addItem = useCallback((): void => {
+    setItems((arr) => (arr.length >= MAX_ITEMS ? arr : [...arr, emptyItem()]));
+  }, []);
+  const removeItem = useCallback((i: number): void => {
+    setItems((arr) => (arr.length <= 1 ? arr : arr.filter((_, j) => j !== i)));
+  }, []);
 
   // Landmark edits: mark the field user-owned and drop the "from map" hint.
   const editPickupLandmark = useCallback((t: string): void => {
@@ -185,7 +216,7 @@ export default function HomeScreen(): React.ReactElement {
     setPickupLandmark("");
     setDropPoint(null);
     setDropLandmark("");
-    setItemDescription("");
+    setItems([emptyItem()]);
     setDeclaredValue("");
     setProposedFare("");
     setPickupLandmarkTouched(false);
@@ -208,7 +239,9 @@ export default function HomeScreen(): React.ReactElement {
   // then bounce off a raw Zod message on submit.
   const pickupPhoneOk = pickupPhone.trim().length >= 6;
   const dropPhoneOk = dropPhone.trim().length >= 6;
-  const canSubmit = coordsOk && fare !== null && fare > 0 && itemDescription.trim().length > 0 && pickupPhoneOk && dropPhoneOk;
+  // Every row needs a description — an empty row must block submit, not silently drop.
+  const itemsOk = items.every((it) => it.description.trim().length > 0);
+  const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk;
 
   const submit = async (): Promise<void> => {
     setError(null);
@@ -219,7 +252,9 @@ export default function HomeScreen(): React.ReactElement {
     const candidate = {
       pickup: { point: { lat: pickupPoint.lat, lng: pickupPoint.lng }, landmark: pickupLandmark.trim(), contactPhone: pickupPhone.trim() },
       dropoff: { point: { lat: dropPoint.lat, lng: dropPoint.lng }, landmark: dropLandmark.trim(), contactPhone: dropPhone.trim() },
-      itemDescription: itemDescription.trim(),
+      // Line-items are the payload (the contract accepts either shape; `items` alone is the new
+      // clients' path — the server derives the itemDesc summary).
+      items: items.map((it) => ({ description: it.description.trim(), quantity: it.quantity })),
       declaredValue: parseNum(declaredValue) ?? 0,
       proposedFare: fare,
     };
@@ -240,6 +275,7 @@ export default function HomeScreen(): React.ReactElement {
         proposedFare: order.proposedFare,
         pickup: { point: { lat: pickupPoint.lat, lng: pickupPoint.lng }, landmark: pickupLandmark.trim() },
         dropoff: { point: { lat: dropPoint.lat, lng: dropPoint.lng }, landmark: dropLandmark.trim() },
+        items: candidate.items,
         rider: null,
         events: [],
         counterpartyPhone: null,
@@ -376,7 +412,7 @@ export default function HomeScreen(): React.ReactElement {
                 <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.xs }}>
                   {`Add ${[
                     !coordsOk ? "pickup & drop-off pins" : null,
-                    itemDescription.trim().length === 0 ? "an item" : null,
+                    !itemsOk ? (items.length > 1 ? "a description for every item" : "an item") : null,
                     !pickupPhoneOk ? "a pickup contact phone" : null,
                     !dropPhoneOk ? "a recipient phone" : null,
                     !(fare !== null && fare > 0) ? "a price" : null,
@@ -390,7 +426,42 @@ export default function HomeScreen(): React.ReactElement {
             </>
           }
         >
-          <Field label="What are you sending?" value={itemDescription} onChangeText={setItemDescription} placeholder="Documents envelope" maxLength={280} />
+          {/* Line items — repeatable description + quantity rows (ITEM-DESIGN-REVIEW: multiple
+              {description, quantity}, nothing more for the pilot). Description stacks above the
+              qty stepper so a row still works at 320px. */}
+          <Label>What are you sending?</Label>
+          {items.map((it, i) => (
+            <View key={i}>
+              <Field
+                value={it.description}
+                onChangeText={(t) => updateItem(i, { description: t })}
+                placeholder={i === 0 ? "Documents" : "Another item"}
+                maxLength={140}
+              />
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: -tokens.space.sm, marginBottom: tokens.space.sm }}>
+                <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginRight: tokens.space.sm }}>Qty</Text>
+                <QtyStepper value={it.quantity} onChange={(q) => updateItem(i, { quantity: q })} />
+                <View style={{ flex: 1 }} />
+                {items.length > 1 ? (
+                  <Pressable
+                    onPress={() => removeItem(i)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove item ${i + 1}`}
+                    style={({ pressed }) => ({
+                      minWidth: tokens.touchTargetMin,
+                      minHeight: tokens.touchTargetMin,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      opacity: pressed ? 0.6 : 1,
+                    })}
+                  >
+                    <Icon name="x" size={16} color={tokens.color.muted} />
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+          ))}
+          {items.length < MAX_ITEMS ? <Button label="Add another item" variant="ghost" onPress={addItem} /> : null}
           {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
               "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
           <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
@@ -407,5 +478,40 @@ export default function HomeScreen(): React.ReactElement {
         </BottomSheet>
       </KeyboardAvoidingView>
     </Screen>
+  );
+}
+
+/** Compact − / count / + quantity stepper. 44px round targets (touchTargetMin) so it's tappable on
+ *  a cheap phone; the count renders in tabular numerals so rows don't shimmy as digits change. */
+function QtyStepper({ value, onChange }: { value: number; onChange: (n: number) => void }): React.ReactElement {
+  const btn = (glyph: "−" | "+", next: number, disabled: boolean, label: string): React.ReactElement => (
+    <Pressable
+      onPress={() => onChange(next)}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => ({
+        width: tokens.touchTargetMin,
+        height: tokens.touchTargetMin,
+        borderRadius: tokens.touchTargetMin / 2,
+        borderWidth: 1,
+        borderColor: tokens.color.line,
+        backgroundColor: pressed ? tokens.color.accentWash : tokens.color.bg,
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: disabled ? 0.4 : 1,
+      })}
+    >
+      <Text style={{ fontSize: 20, fontWeight: "700", lineHeight: 22, color: tokens.color.accentText }}>{glyph}</Text>
+    </Pressable>
+  );
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}>
+      {btn("−", Math.max(1, value - 1), value <= 1, "Decrease quantity")}
+      <Text style={{ minWidth: 26, textAlign: "center", fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
+        {value}
+      </Text>
+      {btn("+", Math.min(MAX_QTY, value + 1), value >= MAX_QTY, "Increase quantity")}
+    </View>
   );
 }

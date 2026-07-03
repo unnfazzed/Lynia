@@ -144,6 +144,18 @@ export default function RiderJob(): React.ReactElement {
               <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call drop-off contact</Text>
             </Pressable>
           ) : null}
+          {/* Line-items — the §5c "Items & note confirmed" step made real. Absent on orders
+              created before the items column, so render nothing rather than a stub. */}
+          {order.items && order.items.length > 0 ? (
+            <View style={{ marginTop: tokens.space.sm }}>
+              <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginBottom: 2 }}>Items</Text>
+              {order.items.map((it, i) => (
+                <Text key={i} style={{ fontSize: 14, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
+                  {it.quantity}× {it.description}
+                </Text>
+              ))}
+            </View>
+          ) : null}
           <View style={{ height: tokens.space.sm }} />
           <LiveMap
             pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}
