@@ -373,7 +373,7 @@ export default function HomeScreen(): React.ReactElement {
               {!canSubmit ? (
                 // A disabled Pressable swallows the tap, so name what's still missing here rather
                 // than only on an edge-complete submit — never a silent greyed dead-end.
-                <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: tokens.space.xs }}>
+                <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.xs }}>
                   {`Add ${[
                     !coordsOk ? "pickup & drop-off pins" : null,
                     itemDescription.trim().length === 0 ? "an item" : null,
@@ -397,7 +397,7 @@ export default function HomeScreen(): React.ReactElement {
           <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
           {quote ? (
             <View style={{ marginBottom: tokens.space.sm }}>
-              <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+              <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                 Suggested fare ${quote.suggestedFare.toFixed(2)} · {quote.distanceKm} km
               </Text>
               <Button label={`Use suggested $${quote.suggestedFare.toFixed(2)}`} variant="ghost" onPress={() => setProposedFare(quote.suggestedFare.toFixed(2))} />

@@ -7,11 +7,14 @@ import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
 import { Button, Card, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
 
+// Custom pill (not StatusPill) only because the failed state needs danger, which the shared tones
+// deliberately exclude — but it follows the DS pill spec: full radius, 12px/600, wash backgrounds.
 function KycBadge({ status }: { status: "pending" | "verified" | "failed" }): React.ReactElement {
   const color = status === "verified" ? tokens.color.accentText : status === "failed" ? tokens.color.danger : tokens.color.muted;
+  const bg = status === "verified" ? tokens.color.accentWash : tokens.color.surface;
   return (
-    <View style={{ alignSelf: "flex-start", borderRadius: 6, paddingHorizontal: 9, paddingVertical: 3, backgroundColor: tokens.color.surface, marginTop: 4 }}>
-      <Text style={{ fontSize: 11, fontWeight: "800", color }}>
+    <View style={{ alignSelf: "flex-start", borderRadius: tokens.radius.pill, borderWidth: 1, borderColor: tokens.color.line, paddingHorizontal: tokens.space.md, paddingVertical: 4, backgroundColor: bg, marginTop: 4 }}>
+      <Text style={{ fontSize: 12, fontWeight: "600", color }}>
         {status === "verified" ? "Verified rider" : status === "failed" ? "Verification failed" : "Verification pending"}
       </Text>
     </View>
@@ -40,14 +43,14 @@ export default function ProfileScreen(): React.ReactElement {
         </Card>
       ) : (
         <Card>
-          <Text style={{ fontSize: 18, fontWeight: "800", color: tokens.color.ink }}>
+          <Text style={{ fontSize: 18, fontWeight: "700", color: tokens.color.ink }}>
             {me ? `${me.firstName} ${me.lastName}`.trim() || "Your account" : "Your account"}
           </Text>
-          {me?.phone ? <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 2 }}>{me.phone}</Text> : null}
-          <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 2, textTransform: "capitalize" }}>{role}</Text>
+          {me?.phone ? <Text style={{ fontSize: 14, color: tokens.color.muted, marginTop: 2, fontVariant: ["tabular-nums"] }}>{me.phone}</Text> : null}
+          <Text style={{ fontSize: 14, color: tokens.color.muted, marginTop: 2 }}>{role === "rider" ? "Rider" : "Customer"}</Text>
           {me?.rider ? (
             <>
-              <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 6 }}>
+              <Text style={{ fontSize: 14, color: tokens.color.muted, marginTop: 6, fontVariant: ["tabular-nums"] }}>
                 Bike {me.rider.bikeReg} · ★ {me.rider.ratingCount > 0 ? me.rider.ratingAvg.toFixed(1) : "new"} · {me.rider.tripsCount} trips
               </Text>
               <KycBadge status={me.rider.kycStatus} />

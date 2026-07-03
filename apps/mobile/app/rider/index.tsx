@@ -164,6 +164,8 @@ export default function RiderHome(): React.ReactElement {
 
   return (
     <Screen>
+      {/* A dropped board socket while online surfaces as the standard top banner. */}
+      {online && !board.connected ? <OfflineBanner state="reconnecting" /> : null}
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Rider</Heading>
@@ -231,14 +233,15 @@ export default function RiderHome(): React.ReactElement {
             style={{ minHeight: tokens.touchTargetMin, justifyContent: "center", marginBottom: 4 }}
           >
             <StatusPill
-              status={online ? "Online" : "Offline"}
-              tone={online ? "online" : "offline"}
+              status={online ? (board.connected ? "Online" : "Reconnecting") : "Offline"}
+              tone={online ? (board.connected ? "online" : "reconnecting") : "offline"}
               dot
             />
           </Pressable>
           <Button
             label={online ? "Go offline" : "Go online"}
-            variant={online ? "ghost" : "primary"}
+            // Ghost while the compose card is open so "Send offer" is the screen's one primary.
+            variant={online || selected != null ? "ghost" : "primary"}
             onPress={() => onlineM.mutate(!online)}
             loading={onlineM.isPending}
           />
@@ -257,7 +260,7 @@ export default function RiderHome(): React.ReactElement {
             {ranked.map(({ o, km }) => (
               <Card key={o.id}>
                 <Text style={{ fontWeight: "700", color: tokens.color.ink }}>{o.pickup.landmark} → {o.dropoff.landmark}</Text>
-                <Text style={{ fontSize: 13, color: tokens.color.muted }}>
+                <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                   {o.itemDesc} · {km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`} · asking ${o.proposedFare}
                 </Text>
                 <Button label="Make an offer" variant="ghost" onPress={() => chooseOrder(o)} />
