@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ExpoConfig } from "expo/config";
 
 /**
@@ -23,7 +24,7 @@ const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
  */
 const googleServicesFile =
   process.env.GOOGLE_SERVICES_JSON ??
-  (existsSync(`${__dirname}/google-services.json`) ? "./google-services.json" : undefined);
+  (existsSync(resolve(process.cwd(), "google-services.json")) ? "./google-services.json" : undefined);
 
 const config: ExpoConfig = {
   name: "Lynia",
