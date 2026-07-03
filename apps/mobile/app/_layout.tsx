@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "../src/auth/auth-context";
 import { queryClient } from "../src/query/client";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { start as startRum } from "../src/telemetry/rum";
+import { useAppFonts } from "../src/ui/fonts";
 
 /** Syncs the device's FCM token with the signed-in profile. Renders nothing; lives under AuthProvider. */
 function PushSync(): null {
@@ -15,12 +16,19 @@ function PushSync(): null {
   return null;
 }
 
-export default function RootLayout(): React.ReactElement {
+export default function RootLayout(): React.ReactElement | null {
+  // Self-hosted Inter (+ Fredoka wordmark) — keep the native splash up until the fonts register so
+  // no Text mounts before its family is available. Font assets are bundled (no network), so on the
+  // rare load error we fall through to the system-font fallback rather than block the app.
+  const [fontsLoaded, fontError] = useAppFonts();
+
   // Arm the client-RUM buffer once at app root. Role is tagged per-enqueue, so a role at root isn't
   // needed; we just pass the app version for the (server-bucketed) `appVersion` label.
   useEffect(() => {
     startRum(Constants.expoConfig?.version);
   }, []);
+
+  if (!fontsLoaded && !fontError) return null;
 
   return (
     <SafeAreaProvider>

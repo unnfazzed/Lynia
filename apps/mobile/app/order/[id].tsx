@@ -337,7 +337,7 @@ export default function OrderScreen(): React.ReactElement {
         {deliveryCode ? (
           <Card style={{ borderColor: tokens.color.accent }}>
             <Text style={{ fontSize: 13, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
-            <Text style={{ fontSize: 32, fontWeight: "800", letterSpacing: 6, color: tokens.color.accent }}>{deliveryCode}</Text>
+            <Text style={{ fontSize: 32, fontWeight: "800", letterSpacing: 6, color: tokens.color.accentText }}>{deliveryCode}</Text>
           </Card>
         ) : null}
 
@@ -393,8 +393,8 @@ export default function OrderScreen(): React.ReactElement {
                         paddingHorizontal: 14,
                         borderRadius: tokens.radius.pill,
                         borderWidth: 1,
-                        borderColor: on ? tokens.color.accent : tokens.color.line,
-                        backgroundColor: on ? tokens.color.accent : tokens.color.bg,
+                        borderColor: on ? tokens.color.cta : tokens.color.line,
+                        backgroundColor: on ? tokens.color.cta : tokens.color.bg,
                       }}
                     >
                       <Text style={{ fontSize: 12, fontWeight: "700", color: on ? tokens.color.onAccent : tokens.color.muted }}>{m.label}</Text>
@@ -496,12 +496,12 @@ export default function OrderScreen(): React.ReactElement {
 
         {order.status === "completed" ? (
           <Card>
-            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accent }}>Delivered &amp; completed. Thank you!</Text>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accentText }}>Delivered &amp; completed. Thank you!</Text>
           </Card>
         ) : null}
         {order.status === "expired" ? (
           <EmptyState
-            icon="🛵"
+            icon="bike"
             title="No riders took this price yet"
             message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
           >

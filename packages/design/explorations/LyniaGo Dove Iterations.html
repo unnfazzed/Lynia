@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="design_doc_mode" content="canvas" />
+<title>LyniaGo — Paper Dove iterations</title>
+<link rel="stylesheet" href="../styles.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&display=swap" />
+<style>
+  body { margin:0; font-family:var(--font-sans); background:#0e100f; }
+  .title { position:absolute; font-size:34px; font-weight:800; letter-spacing:-.03em; color:#fff; margin:0; white-space:nowrap; }
+  .sub { position:absolute; font-size:14px; color:#9aa4ad; max-width:760px; line-height:1.6; }
+  .card { position:absolute; box-sizing:border-box; border-radius:20px; overflow:hidden; background:#fff; box-shadow:0 6px 24px rgba(0,0,0,.35); }
+  .badge { position:absolute; top:-12px; left:16px; background:#fff; color:var(--ink); font-size:12px; font-weight:700; padding:4px 10px; border-radius:999px; z-index:2; box-shadow:0 2px 8px rgba(0,0,0,.25); }
+  .box { width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
+  .cap { position:absolute; bottom:0; left:0; right:0; padding:12px 18px 14px; border-top:1px solid var(--line); }
+  .cap h3 { margin:0 0 3px; font-size:14px; font-weight:700; color:var(--ink); }
+  .cap p { margin:0; font-size:12.5px; line-height:1.5; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<h1 class="title" style="left:60px; top:44px;">Paper Dove · iterations</h1>
+<p class="sub" style="left:62px; top:92px;">Same bird, five temperaments. Pick by badge (2a–2e).</p>
+
+<!-- 2a Origami / Japanese -->
+<div class="card" style="left:60px; top:150px; width:360px; height:340px;">
+  <span class="badge">2a · origami (Japanese)</span>
+  <div class="box" style="padding-bottom:70px;">
+    <svg width="210" height="210" viewBox="0 0 96 96">
+      <polygon points="18,12 44,35 28,44" fill="var(--accent-700)"/>
+      <polygon points="30,7 60,33 40,43" fill="var(--accent)"/>
+      <polygon points="90,26 14,52 48,60" fill="var(--accent)"/>
+      <polygon points="90,26 60,36 66,46" fill="var(--accent-700)"/>
+      <polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/>
+      <path d="M90 26 L48 60 M90 26 L60 36" stroke="#fff" stroke-width="2" fill="none"/>
+    </svg>
+  </div>
+  <div class="cap"><h3>Origami tsuru</h3><p>Extra folds — a second wing behind and a head crease. Precise, crafted, paper-first. The most “made by hand”.</p></div>
+</div>
+
+<!-- 2b Minimal -->
+<div class="card" style="left:440px; top:150px; width:360px; height:340px;">
+  <span class="badge">2b · minimal</span>
+  <div class="box" style="padding-bottom:70px;">
+    <svg width="210" height="210" viewBox="0 0 96 96">
+      <polygon points="30,7 60,33 41,42" fill="var(--accent-700)"/>
+      <polygon points="90,26 14,52 48,60 42,84" fill="var(--accent-700)"/>
+    </svg>
+  </div>
+  <div class="cap"><h3>Flat silhouette</h3><p>One colour, no folds, fewest points. Quietest and most “financial-grade” — ages best, prints anywhere.</p></div>
+</div>
+
+<!-- 2c Rounded -->
+<div class="card" style="left:820px; top:150px; width:360px; height:340px;">
+  <span class="badge">2c · rounded</span>
+  <div class="box" style="padding-bottom:70px;">
+    <svg width="210" height="210" viewBox="0 0 96 96">
+      <polygon points="30,8 58,32 41,42" fill="var(--accent)" stroke="var(--accent)" stroke-width="7" stroke-linejoin="round"/>
+      <polygon points="88,27 16,52 48,59" fill="var(--accent)" stroke="var(--accent)" stroke-width="7" stroke-linejoin="round"/>
+      <polygon points="88,27 48,59 43,82" fill="var(--accent-700)" stroke="var(--accent-700)" stroke-width="7" stroke-linejoin="round"/>
+      <path d="M88 27 L48 59" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <div class="cap"><h3>Soft fold</h3><p>Same geometry, corners rounded — warm and friendly (Chowdeck energy). Best match for the Fredoka wordmark.</p></div>
+</div>
+
+<!-- 2d Olive branch (my pick) -->
+<div class="card" style="left:60px; top:540px; width:360px; height:340px;">
+  <span class="badge">2d · the olive leaf ✦</span>
+  <div class="box" style="padding-bottom:70px;">
+    <svg width="210" height="210" viewBox="0 0 96 96">
+      <polygon points="28,6 58,32 38,42" fill="var(--accent)"/>
+      <polygon points="90,26 14,52 48,60" fill="var(--accent)"/>
+      <polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/>
+      <path d="M90 26 L48 60" stroke="#fff" stroke-width="2.4" fill="none"/>
+      <path d="M88 17 q7 -7 14 -4 q-5 7 -14 4" fill="var(--accent-700)"/>
+      <path d="M88 17 q-2 4 2 8" stroke="var(--accent-700)" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <div class="cap"><h3>Noah’s delivery (my choice)</h3><p>The base dove carrying a tiny olive leaf — the first confirmed delivery, completed. The faith layer gets its proof, still whisper-quiet.</p></div>
+</div>
+
+<!-- 2e Ascending trail (my choice 2) -->
+<div class="card" style="left:440px; top:540px; width:360px; height:340px;">
+  <span class="badge">2e · the lift</span>
+  <div class="box" style="padding-bottom:70px;">
+    <svg width="210" height="210" viewBox="0 0 96 96">
+      <path d="M10 88 Q 34 84 48 68" stroke="var(--accent)" stroke-width="4" fill="none" stroke-linecap="round" opacity=".35"/>
+      <path d="M22 90 Q 44 86 54 74" stroke="var(--accent)" stroke-width="4" fill="none" stroke-linecap="round" opacity=".18"/>
+      <polygon points="28,6 58,32 38,42" fill="var(--accent)"/>
+      <polygon points="90,26 14,52 48,60" fill="var(--accent)"/>
+      <polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/>
+      <path d="M90 26 L48 60" stroke="#fff" stroke-width="2.4" fill="none"/>
+    </svg>
+  </div>
+  <div class="cap"><h3>With lift lines</h3><p>Faint rising trails under the tail — motion made visible. Great for splash/loading; probably too much for the static mark.</p></div>
+</div>
+
+<!-- lockup strip -->
+<div class="card" style="left:820px; top:540px; width:360px; height:340px; background:#f4f7f5;">
+  <span class="badge">in the lockup</span>
+  <div class="box" style="gap:24px; padding-bottom:70px;">
+    <span style="display:inline-flex;align-items:center;gap:12px;"><svg width="44" height="44" viewBox="0 0 96 96"><polygon points="30,7 60,33 41,42" fill="var(--accent-700)"/><polygon points="90,26 14,52 48,60 42,84" fill="var(--accent-700)"/></svg><span style="font-family:'Fredoka';font-weight:600;font-size:34px;color:var(--ink);">Lynia<span style="color:var(--accent-700);">Go</span></span></span>
+    <span style="display:inline-flex;align-items:center;gap:12px;"><svg width="44" height="44" viewBox="0 0 96 96"><polygon points="30,8 58,32 41,42" fill="var(--accent)" stroke="var(--accent)" stroke-width="7" stroke-linejoin="round"/><polygon points="88,27 16,52 48,59" fill="var(--accent)" stroke="var(--accent)" stroke-width="7" stroke-linejoin="round"/><polygon points="88,27 48,59 43,82" fill="var(--accent-700)" stroke="var(--accent-700)" stroke-width="7" stroke-linejoin="round"/></svg><span style="font-family:'Fredoka';font-weight:600;font-size:34px;color:var(--ink);">Lynia<span style="color:var(--accent-700);">Go</span></span></span>
+  </div>
+  <div class="cap"><h3>2b + 2c beside the name</h3><p>Minimal reads banker-calm; rounded reads app-warm. Both hold at header size.</p></div>
+</div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="24" fill="#00B14F"/>
+    <polygon points="34,12 60,34 42,43" fill="#fff"/>
+    <polygon points="88,30 20,53 50,60" fill="#fff"/>
+    <polygon points="88,30 50,60 45,82" fill="#fff" opacity=".55"/>
+  </svg>
+</template>
+</body>
+</html>

@@ -1,0 +1,7 @@
+/* Lynia design system — global entry point. Consumers link THIS one file.
+   @import lines only; every token + font-face file is reached from here. */
+@import "tokens/fonts.css";
+@import "tokens/colors.css";
+@import "tokens/typography.css";
+@import "tokens/spacing.css";
+@import "tokens/icons.css";

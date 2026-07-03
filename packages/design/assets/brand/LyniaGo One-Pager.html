@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LyniaGo — Brand One-Pager</title>
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  doc-page:not(:defined){ visibility:hidden; }
+  body { margin:0; background:#eceff1; font-family:var(--font-sans); color:var(--ink); }
+  h1,h2,h3 { margin:0; }
+  .top { display:flex; align-items:center; gap:16px; padding-bottom:16px; border-bottom:2px solid var(--ink); }
+  .top .wm { font-family:var(--font-wordmark); font-weight:600; font-size:40px; line-height:1; }
+  .top .wm .go { color:var(--accent-700); }
+  .top .tag { margin-left:auto; text-align:right; font-size:12px; color:var(--muted); line-height:1.5; }
+  .lead { font-size:15px; line-height:1.6; color:var(--ink); margin:18px 0 22px; max-width:52ch; }
+  .lead b { font-weight:700; }
+  .sec { font-size:12px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:var(--accent-700); margin:22px 0 12px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  .sym { display:grid; grid-template-columns:auto 1fr; gap:8px 12px; font-size:13px; line-height:1.5; color:var(--muted); }
+  .sym b { color:var(--ink); font-weight:600; }
+  .dot { width:16px; height:16px; border-radius:50%; background:var(--accent); margin-top:2px; }
+
+  .sw { display:flex; gap:10px; flex-wrap:wrap; }
+  .chip { width:104px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .chip .c { height:44px; }
+  .chip .m { padding:6px 8px; }
+  .chip .n { font-size:11px; font-weight:700; }
+  .chip .h { font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+  .type-row { display:flex; align-items:baseline; gap:12px; padding:3px 0; }
+  .type-row .t { width:96px; font-size:10px; color:var(--muted); }
+  .lock { display:flex; align-items:center; gap:12px; }
+  .rules { display:grid; grid-template-columns:1fr 1fr; gap:6px 24px; font-size:12.5px; line-height:1.5; }
+  .do { color:var(--accent-700); font-weight:700; } .dont { color:var(--danger); font-weight:700; }
+  footer .ft { font-size:11px; color:var(--muted); display:flex; }
+</style>
+</head>
+<body>
+<doc-page size="letter" margin="0.6in">
+
+  <div class="top">
+    <img src="lyniago-mark.svg" alt="" width="56" height="56" />
+    <div class="wm">Lynia<span class="go">Go</span></div>
+    <div class="tag">Brand one-pager<br/>v1 · July 2026</div>
+  </div>
+
+  <p class="lead">LyniaGo is an on-demand <b>motorbike courier for Zimbabwe</b> — you name a price, a nearby rider takes it, and you track the delivery live. The mark is a folded paper dart that is also a dove: the messenger bird carrying the last mile of goods and, in time, of money. <b>LyniaGo is the single consumer brand;</b> Lynia Finance is the background parent company.</p>
+
+  <div class="sec">The mark — one glyph, four meanings</div>
+  <div class="grid2">
+    <div class="lock">
+      <img src="lyniago-icon.svg" alt="" width="96" height="96" />
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <img src="lyniago-mark.svg" alt="" width="52" height="52" />
+        <img src="lyniago-mark-mono.svg" alt="" width="52" height="52" />
+      </div>
+    </div>
+    <div class="sym">
+      <div class="dot"></div><div><b>A send.</b> The paper-dart glyph everyone reads as “on its way.”</div>
+      <div class="dot"></div><div><b>A dove.</b> Noah’s dove — the first confirmed delivery; peace, trust.</div>
+      <div class="dot"></div><div><b>Folded paper.</b> The material of the informal economy, folded into flight.</div>
+      <div class="dot"></div><div><b>The crease is a cross.</b> The fold lines cross at the upper third — hidden in plain sight.</div>
+    </div>
+  </div>
+
+  <div class="sec">Colour</div>
+  <div class="sw">
+    <div class="chip"><div class="c" style="background:var(--accent)"></div><div class="m"><div class="n">Brand green</div><div class="h">#00B14F</div></div></div>
+    <div class="chip"><div class="c" style="background:var(--cta-fill);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700">Aa</div><div class="m"><div class="n">CTA fill</div><div class="h">#00812F</div></div></div>
+    <div class="chip"><div class="c" style="background:var(--accent-text)"></div><div class="m"><div class="n">Text green</div><div class="h">#006630</div></div></div>
+    <div class="chip"><div class="c" style="background:var(--ink)"></div><div class="m"><div class="n">Ink</div><div class="h">#14181B</div></div></div>
+    <div class="chip"><div class="c" style="background:var(--accent-wash)"></div><div class="m"><div class="n">Mint</div><div class="h">#E9F8EF</div></div></div>
+    <div class="chip"><div class="c" style="background:var(--highlight)"></div><div class="m"><div class="n">Gold</div><div class="h">#F2B705</div></div></div>
+  </div>
+
+  <div class="grid2" style="margin-top:22px;">
+    <div>
+      <div class="sec" style="margin-top:0;">Type</div>
+      <div class="type-row"><span class="t">Wordmark</span><span style="font-family:var(--font-wordmark);font-weight:600;font-size:24px;">LyniaGo</span></div>
+      <div class="type-row"><span class="t">Titles · Inter 700</span><span style="font-weight:700;font-size:20px;letter-spacing:-.02em;">Send a parcel</span></div>
+      <div class="type-row"><span class="t">Body · Inter 400</span><span style="font-size:14px;">14px body · 12px captions</span></div>
+      <div class="type-row"><span class="t">Numbers</span><span style="font-weight:700;font-variant-numeric:tabular-nums;">$3.36 · 7 min · ★4.8</span></div>
+    </div>
+    <div>
+      <div class="sec" style="margin-top:0;">Voice</div>
+      <div style="font-size:12.5px;line-height:1.55;color:var(--muted);">Second person, sentence case, calm and honest. Every dead-end offers an action. No emoji, no shouting. <span style="color:var(--ink);">“No riders took this price yet — nudging it up usually gets a rider fast.”</span></div>
+    </div>
+  </div>
+
+  <div class="sec">Do &amp; don’t</div>
+  <div class="rules">
+    <div><span class="do">Do</span> use the dove on green, white or ink — full lockup at ≥32px.</div>
+    <div><span class="dont">Don’t</span> add the crease-cross below 32px — use the silhouette.</div>
+    <div><span class="do">Do</span> reserve gold for the ‘recommended’ marker only.</div>
+    <div><span class="dont">Don’t</span> set white text on bright #00B14F — use the CTA green.</div>
+    <div><span class="do">Do</span> keep one filled primary button per screen.</div>
+    <div><span class="dont">Don’t</span> stretch, recolour or rotate the dove.</div>
+  </div>
+
+  <div slot="footer" class="ft">
+    <span>LyniaGo — the last mile of the informal economy.</span>
+    <span style="margin-left:auto;">Full system: readme.md · Design System tab</span>
+  </div>
+
+</doc-page>
+<script src="doc-page.js"></script>
+</body>
+</html>

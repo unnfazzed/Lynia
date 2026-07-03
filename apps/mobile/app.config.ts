@@ -43,7 +43,7 @@ const config: ExpoConfig = {
         cameraPermission: "Lynia uses the camera to take your ID/profile photo for verification.",
       },
     ],
-    ["expo-notifications", { color: "#1E7A46" }],
+    ["expo-notifications", { color: "#00B14F" }],
   ],
   android: {
     package: "zw.co.lynia",

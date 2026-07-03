@@ -40,7 +40,7 @@ export default async function RidersPage({
       <header style={{ display: "flex", alignItems: "center", gap: tokens.space.md, marginBottom: tokens.space.lg }}>
         <a href="/" style={{ color: tokens.color.muted, textDecoration: "none", fontSize: 13 }}>← Dashboard</a>
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Riders — KYC review</h1>
-        <span style={{ marginLeft: "auto", fontSize: 12, color: riders ? tokens.color.accent : tokens.color.muted }}>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: riders ? tokens.color.accentText : tokens.color.muted }}>
           {riders ? "● live" : "○ API not connected"}
         </span>
       </header>
@@ -56,8 +56,8 @@ export default async function RidersPage({
               borderRadius: 999,
               textDecoration: "none",
               color: t === active ? tokens.color.onAccent : tokens.color.muted,
-              background: t === active ? tokens.color.accent : "transparent",
-              border: `1px solid ${t === active ? tokens.color.accent : tokens.color.line}`,
+              background: t === active ? tokens.color.cta : "transparent",
+              border: `1px solid ${t === active ? tokens.color.cta : tokens.color.line}`,
             }}
           >
             {t}
@@ -95,7 +95,7 @@ export default async function RidersPage({
                   <td style={{ padding: "6px 4px" }}>
                     {r.kycStatus === "pending" ? (
                       <span style={{ display: "flex", gap: 6 }}>
-                        <KycButton profileId={r.profileId} status="verified" label="Approve" color={tokens.color.accent} />
+                        <KycButton profileId={r.profileId} status="verified" label="Approve" color={tokens.color.cta} />
                         <KycButton profileId={r.profileId} status="failed" label="Decline" color={tokens.color.muted} />
                       </span>
                     ) : (

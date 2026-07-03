@@ -133,7 +133,7 @@ export default function RiderJob(): React.ReactElement {
 
         {order.status === "delivered" ? (
           <Card>
-            <Text style={{ fontWeight: "700", color: tokens.color.accent }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
+            <Text style={{ fontWeight: "700", color: tokens.color.accentText }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
           </Card>
         ) : null}
 

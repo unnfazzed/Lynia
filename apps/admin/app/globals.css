@@ -1,13 +1,42 @@
-/* Tokens mirror docs/DESIGN.md (@lynia/shared design-tokens). */
+/* Tokens mirror the LyniaGo design system (packages/design/tokens/*.css) via @lynia/shared. */
+
+/* Inter — self-hosted, same files as packages/design/assets/fonts, served from /public/fonts.
+   font-display: swap → text paints instantly in the system font and upgrades to Inter. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/inter-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/inter-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/inter-700.woff2") format("woff2");
+}
+
 :root {
   --ink: #14181b;
   --muted: #5b6670;
   --bg: #ffffff;
   --surface: #f6f7f8;
   --line: #e2e6ea;
-  --accent: #1e7a46;
-  --highlight: #f2b705;
+  --accent: #00b14f; /* brand green — fills / graphics only, never text */
+  --accent-text: #006630; /* green text & small icons (≈7:1 on white) */
+  --accent-wash: #e9f8ef; /* mint wash — selected states */
+  --cta: #00812f; /* primary-action fill — white label ≈4.7:1 (AA large) */
+  --highlight: #f2b705; /* 'recommended' marker only */
   --danger: #c0392b;
+  --shadow-card: 0 1px 4px rgba(20, 24, 27, 0.08), 0 2px 12px rgba(20, 24, 27, 0.06);
 }
 
 * {
@@ -20,6 +49,6 @@ body {
   padding: 0;
   background: var(--surface);
   color: var(--ink);
-  font-family: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 }

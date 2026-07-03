@@ -35,7 +35,7 @@ export default async function OrdersPage({
       <header style={{ display: "flex", alignItems: "center", gap: tokens.space.md, marginBottom: tokens.space.lg }}>
         <a href="/" style={{ color: tokens.color.muted, textDecoration: "none", fontSize: 13 }}>← Dashboard</a>
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Orders monitor</h1>
-        <span style={{ marginLeft: "auto", fontSize: 12, color: orders ? tokens.color.accent : tokens.color.muted }}>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: orders ? tokens.color.accentText : tokens.color.muted }}>
           {orders ? "● live" : "○ API not connected"}
         </span>
       </header>
@@ -51,8 +51,8 @@ export default async function OrdersPage({
               borderRadius: 999,
               textDecoration: "none",
               color: s === active ? tokens.color.onAccent : tokens.color.muted,
-              background: s === active ? tokens.color.accent : "transparent",
-              border: `1px solid ${s === active ? tokens.color.accent : tokens.color.line}`,
+              background: s === active ? tokens.color.cta : "transparent",
+              border: `1px solid ${s === active ? tokens.color.cta : tokens.color.line}`,
             }}
           >
             {s || "all"}

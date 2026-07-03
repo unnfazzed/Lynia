@@ -1,0 +1,26 @@
+<!-- @dsCard group="Brand" viewport="700x200" name="Voice & tone" subtitle="Second person, calm, honest — every dead-end is an action" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; font-family: var(--font-sans); background: var(--bg); color: var(--ink); padding: 18px 20px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .cell { border: 1px solid var(--line); border-radius: var(--radius-card); padding: 12px 14px; }
+  .do { color: var(--accent-text); font-size: 11px; font-weight: 700; letter-spacing: 0.4px; }
+  .dont { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 0.4px; }
+  .line { font-size: 14px; margin-top: 6px; line-height: 1.4; }
+  .sub { color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="cell"><div class="do">SAY</div><div class="line">"No riders took this price yet. Nudging the price up usually gets a rider fast."</div></div>
+    <div class="cell"><div class="dont">NOT</div><div class="line sub">"Error: broadcast expired with 0 matched offers."</div></div>
+    <div class="cell"><div class="do">SAY</div><div class="line">"You're online and first in line — stay put, requests come through fast."</div></div>
+    <div class="cell"><div class="dont">NOT</div><div class="line sub">"No results found in your area."</div></div>
+  </div>
+  <div style="font-size:12px;color:var(--muted);margin-top:12px;line-height:1.5">Second person ("you", "your rider"). Sentence case, no ALL-CAPS shouting. Honest about what happened, then always end on a next action. Warm but utilitarian — never salesy, never blaming the user.</div>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="design_doc_mode" content="canvas" />
+<title>LyniaGo — Gojek-style wordmark</title>
+<link rel="stylesheet" href="../styles.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700&family=Lexend:wght@600;700&family=Poppins:wght@600;700&family=Nunito+Sans:opsz,wght@6..12,700;6..12,800&family=Fredoka:wght@600&display=swap" />
+<style>
+  body { margin:0; font-family:var(--font-sans); background:#0e100f; }
+  .title { position:absolute; font-size:32px; font-weight:800; letter-spacing:-.03em; color:#fff; margin:0; white-space:nowrap; }
+  .sub { position:absolute; font-size:14px; color:#9aa4ad; max-width:780px; line-height:1.6; }
+  .card { position:absolute; box-sizing:border-box; border-radius:18px; overflow:hidden; background:#fff; box-shadow:0 6px 24px rgba(0,0,0,.35); }
+  .badge { position:absolute; top:-12px; left:16px; background:#fff; color:var(--ink); font-size:12px; font-weight:700; padding:4px 10px; border-radius:999px; z-index:2; box-shadow:0 2px 8px rgba(0,0,0,.25); }
+  .box { width:100%; height:100%; display:flex; align-items:center; gap:16px; padding:0 30px 46px; box-sizing:border-box; }
+  .cap { position:absolute; bottom:0; left:0; right:0; padding:11px 18px 13px; border-top:1px solid var(--line); }
+  .cap h3 { margin:0 0 2px; font-size:13.5px; font-weight:700; color:var(--ink); }
+  .cap p { margin:0; font-size:12px; line-height:1.45; color:var(--muted); }
+  .go { color: var(--accent-700); }
+  .dove { flex-shrink:0; }
+</style>
+</head>
+<body>
+
+<h1 class="title" style="left:60px; top:40px;">Wordmark · Gojek-style options</h1>
+<p class="sub" style="left:62px; top:86px;">Gojek’s current wordmark is a clean, geometric-humanist rounded sans (lowercase, medium weight, tight). Closest Google fonts below, dove held constant. Pick by badge (4a–4d).</p>
+
+<!-- 4a Plus Jakarta Sans -->
+<div class="card" style="left:60px; top:150px; width:560px; height:132px;">
+  <span class="badge">4a · Plus Jakarta Sans</span>
+  <div class="box">
+    <svg class="dove" width="42" height="42" viewBox="0 0 96 96"><polygon points="28,6 58,32 38,42" fill="var(--accent)"/><polygon points="90,26 14,52 48,60" fill="var(--accent)"/><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/><path d="M90 26 L48 60 M70.5 30.2 L81.5 43.8" stroke="#fff" stroke-width="2.4" fill="none"/></svg>
+    <span style="font-family:'Plus Jakarta Sans';font-weight:700;font-size:40px;letter-spacing:-.02em;color:var(--ink)">lynia<span class="go">go</span></span>
+  </div>
+  <div class="cap"><h3>Plus Jakarta Sans · closest match</h3><p>Indonesian-made geometric humanist — the nearest Google font to Gojek’s actual wordmark. Lowercase, tight, modern.</p></div>
+</div>
+
+<!-- 4b Lexend -->
+<div class="card" style="left:640px; top:150px; width:560px; height:132px;">
+  <span class="badge">4b · Lexend</span>
+  <div class="box">
+    <svg class="dove" width="42" height="42" viewBox="0 0 96 96"><polygon points="28,6 58,32 38,42" fill="var(--accent)"/><polygon points="90,26 14,52 48,60" fill="var(--accent)"/><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/><path d="M90 26 L48 60 M70.5 30.2 L81.5 43.8" stroke="#fff" stroke-width="2.4" fill="none"/></svg>
+    <span style="font-family:'Lexend';font-weight:700;font-size:40px;letter-spacing:-.02em;color:var(--ink)">lynia<span class="go">go</span></span>
+  </div>
+  <div class="cap"><h3>Lexend · open &amp; legible</h3><p>Rounder apertures, engineered for readability. Slightly wider than Gojek’s; very friendly at small sizes.</p></div>
+</div>
+
+<!-- 4c Poppins -->
+<div class="card" style="left:60px; top:308px; width:560px; height:132px;">
+  <span class="badge">4c · Poppins</span>
+  <div class="box">
+    <svg class="dove" width="42" height="42" viewBox="0 0 96 96"><polygon points="28,6 58,32 38,42" fill="var(--accent)"/><polygon points="90,26 14,52 48,60" fill="var(--accent)"/><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/><path d="M90 26 L48 60 M70.5 30.2 L81.5 43.8" stroke="#fff" stroke-width="2.4" fill="none"/></svg>
+    <span style="font-family:'Poppins';font-weight:600;font-size:40px;letter-spacing:-.03em;color:var(--ink)">lynia<span class="go">go</span></span>
+  </div>
+  <div class="cap"><h3>Poppins · geometric circles</h3><p>Purely geometric (perfect-circle o’s). Cleaner/colder than Gojek; the dove’s fold contrasts nicely with the round letters.</p></div>
+</div>
+
+<!-- 4d Nunito Sans -->
+<div class="card" style="left:640px; top:308px; width:560px; height:132px;">
+  <span class="badge">4d · Nunito Sans</span>
+  <div class="box">
+    <svg class="dove" width="42" height="42" viewBox="0 0 96 96"><polygon points="28,6 58,32 38,42" fill="var(--accent)"/><polygon points="90,26 14,52 48,60" fill="var(--accent)"/><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"/><path d="M90 26 L48 60 M70.5 30.2 L81.5 43.8" stroke="#fff" stroke-width="2.4" fill="none"/></svg>
+    <span style="font-family:'Nunito Sans';font-weight:800;font-size:40px;letter-spacing:-.02em;color:var(--ink)">lynia<span class="go">go</span></span>
+  </div>
+  <div class="cap"><h3>Nunito Sans · soft humanist</h3><p>Gently rounded terminals — warmest of the four, still tidy. A middle ground between Fredoka’s bounce and Jakarta’s precision.</p></div>
+</div>
+
+<!-- comparison: capitalised vs current Fredoka -->
+<div class="card" style="left:60px; top:466px; width:1140px; height:150px; background:#f4f7f5;">
+  <span class="badge">for reference</span>
+  <div class="box" style="gap:44px; flex-wrap:wrap;">
+    <span style="font-family:'Fredoka';font-weight:600;font-size:34px;color:var(--muted)">Lynia<span style="color:var(--accent-700)">Go</span> <span style="font-size:13px;">· current (Fredoka, camel-case)</span></span>
+    <span style="font-family:'Plus Jakarta Sans';font-weight:700;font-size:34px;letter-spacing:-.02em;color:var(--ink)">Lynia<span class="go">Go</span> <span style="font-size:13px;color:var(--muted)">· Jakarta, camel-case</span></span>
+    <span style="font-family:'Plus Jakarta Sans';font-weight:700;font-size:34px;letter-spacing:-.02em;color:var(--ink)">lyniago <span style="font-size:13px;color:var(--muted)">· Jakarta, all-lower (Gojek style)</span></span>
+  </div>
+  <div class="cap"><h3>Casing note</h3><p>Gojek’s wordmark is all-lowercase. “lyniago” reads most Gojek; “LyniaGo” keeps the two-brand (Lynia + Go) legibility. Your call — I can set either.</p></div>
+</div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="24" fill="#00B14F"/>
+    <polygon points="34,12 60,34 42,43" fill="#fff"/>
+    <polygon points="88,30 20,53 50,60" fill="#fff"/>
+    <polygon points="88,30 50,60 45,82" fill="#fff" opacity=".55"/>
+  </svg>
+</template>
+</body>
+</html>

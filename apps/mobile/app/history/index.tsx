@@ -50,11 +50,11 @@ export default function HistoryScreen(): React.ReactElement {
       {historyQ.isLoading ? (
         <SkeletonRows />
       ) : historyQ.isError ? (
-        <EmptyState icon="📡" title="Couldn't load your trips" message="Check your connection and try again.">
+        <EmptyState icon="wifi-off" title="Couldn't load your trips" message="Check your connection and try again.">
           <Button label="Retry" onPress={() => void historyQ.refetch()} />
         </EmptyState>
       ) : (historyQ.data ?? []).length === 0 ? (
-        <EmptyState icon="📦" title="No trips yet" message="Your sent and delivered parcels will show up here.">
+        <EmptyState icon="package" title="No trips yet" message="Your sent and delivered parcels will show up here.">
           <Button label="Send a parcel" onPress={() => router.replace("/home")} />
         </EmptyState>
       ) : (

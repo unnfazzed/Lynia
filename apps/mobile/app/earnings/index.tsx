@@ -27,16 +27,16 @@ export default function EarningsScreen(): React.ReactElement {
       {q.isLoading ? (
         <SkeletonList />
       ) : q.isError ? (
-        <EmptyState icon="📡" title="Couldn't load your earnings" message="Check your connection and try again.">
+        <EmptyState icon="wifi-off" title="Couldn't load your earnings" message="Check your connection and try again.">
           <Button label="Retry" onPress={() => void q.refetch()} />
         </EmptyState>
       ) : trips.length === 0 ? (
-        <EmptyState icon="💵" title="No earnings yet" message="Completed deliveries and their agreed fares show up here.">
+        <EmptyState icon="banknote" title="No earnings yet" message="Completed deliveries and their agreed fares show up here.">
           <Button label="Find work" onPress={() => router.replace("/rider")} />
         </EmptyState>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
-          <Card style={{ backgroundColor: tokens.color.accent, borderColor: tokens.color.accent }}>
+          <Card style={{ backgroundColor: tokens.color.cta, borderColor: tokens.color.cta }}>
             <Text style={{ color: tokens.color.onAccent, fontSize: 12, fontWeight: "600", opacity: 0.9 }}>Agreed &amp; delivered · total</Text>
             <Text style={{ color: tokens.color.onAccent, fontSize: 30, fontWeight: "800", marginTop: 2 }}>${total.toFixed(2)}</Text>
             <Text style={{ color: tokens.color.onAccent, fontSize: 12, opacity: 0.9, marginTop: 2 }}>

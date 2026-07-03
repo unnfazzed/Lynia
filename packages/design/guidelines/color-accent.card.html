@@ -1,0 +1,26 @@
+<!-- @dsCard group="Colors" viewport="700x160" name="Greens" subtitle="Brand green (graphics), CTA green (sunlight-safe text), text-green, mint" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; font-family: var(--font-sans); background: var(--bg); }
+  .row { display: flex; gap: 12px; padding: 16px; }
+  .sw { flex: 1; border-radius: var(--radius-card); border: 1px solid var(--line); overflow: hidden; }
+  .chip { height: 64px; }
+  .meta { padding: 8px 10px; }
+  .name { font-size: 12px; font-weight: 700; color: var(--ink); }
+  .hex { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="meta"><div class="name">Brand accent</div><div class="hex">#00B14F · graphics / chips</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--cta-fill);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700">Button</div><div class="meta"><div class="name">CTA fill</div><div class="hex">#00812F · white ≈4.7:1</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--accent-text)"></div><div class="meta"><div class="name">Text green</div><div class="hex">#006630 · text & icons</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--accent-wash)"></div><div class="meta"><div class="name">Mint wash</div><div class="hex">#E9F8EF · selected</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--highlight)"></div><div class="meta"><div class="name">Highlight</div><div class="hex">#F2B705 · recommended</div></div></div>
+  </div>
+</body>
+</html>

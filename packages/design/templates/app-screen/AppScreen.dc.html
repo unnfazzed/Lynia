@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="LyniaGo app screen" description="Phone-framed LyniaGo screen scaffold — Paper Dove header, content card, and a primary CTA, built from the design-system components." -->
+<helmet>
+  <script src="./ds-base.js"></script>
+  <style>
+    @keyframes lynia-pulse { 0%,100% { opacity:.5 } 50% { opacity:1 } }
+  </style>
+</helmet>
+<div style="min-height:100vh;background:#eceff1;display:flex;justify-content:center;align-items:flex-start;padding:24px;font-family:var(--font-sans)">
+  <div style="width:360px;min-height:720px;background:var(--surface);border-radius:34px;border:10px solid #14181b;overflow:hidden;position:relative;box-shadow:0 20px 60px rgba(20,24,27,.28)">
+    <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:110px;height:22px;background:#14181b;border-radius:0 0 14px 14px;z-index:20"></div>
+    <div style="height:720px;overflow-y:auto">
+      <div style="padding:16px">
+
+        <!-- Header: monogram + wordmark + a status pill -->
+        <div style="display:flex;align-items:center;gap:10px;margin:8px 0 16px">
+          <svg width="26" height="26" viewBox="0 0 96 96" aria-hidden="true"><polygon points="28,6 58,32 38,42" fill="var(--accent)"></polygon><polygon points="90,26 14,52 48,60" fill="var(--accent)"></polygon><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"></polygon></svg>
+          <span style="font-family:var(--font-wordmark);font-size:18px;font-weight:600;color:var(--ink);letter-spacing:-.01em">LyniaGo</span>
+          <span style="flex:1"></span>
+          <x-import component-from-global-scope="LyniaDesignSystem_94c56a.StatusPill" status="Online" tone="online" dot="{{ true }}" hint-size="80px,26px"></x-import>
+        </div>
+
+        <!-- Screen title -->
+        <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Heading" hint-size="200px,30px">Send a parcel</x-import>
+        <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Sub" hint-size="100%,20px">Name your price and nearby riders will offer.</x-import>
+
+        <!-- Content card with a field -->
+        <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Card" hint-size="100%,120px">
+          <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Field" label="What are you sending?" value="Documents envelope" hint-size="100%,60px"></x-import>
+          <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Field" label="Your price (USD)" value="2.50" input-mode="decimal" hint="Riders here usually accept around $2.40." hint-size="100%,80px"></x-import>
+        </x-import>
+
+        <!-- Primary CTA -->
+        <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Button" label="Broadcast request" hint-size="100%,52px"></x-import>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
