@@ -48,14 +48,20 @@ export default async function OrdersPage({
           <a
             key={s || "all"}
             href={s ? `/orders?status=${s}` : "/orders"}
+            // DS selected state = accent wash + accent text, not a CTA fill. 32px pill is a
+            // desktop pointer target; the 44px --target-min rule is mobile-first.
             style={{
+              display: "inline-flex",
+              alignItems: "center",
+              minHeight: 32,
               fontSize: 12,
-              padding: "4px 10px",
+              padding: "6px 14px",
               borderRadius: 999,
               textDecoration: "none",
-              color: s === active ? tokens.color.onAccent : tokens.color.muted,
-              background: s === active ? tokens.color.cta : "transparent",
-              border: `1px solid ${s === active ? tokens.color.cta : tokens.color.line}`,
+              fontWeight: s === active ? 600 : 400,
+              color: s === active ? tokens.color.accentText : tokens.color.muted,
+              background: s === active ? tokens.color.accentWash : "transparent",
+              border: `1px solid ${s === active ? tokens.color.accentText : tokens.color.line}`,
             }}
           >
             {s || "all"}
@@ -65,7 +71,7 @@ export default async function OrdersPage({
 
       <section style={card}>
         {orders && orders.length > 0 ? (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ color: tokens.color.muted, textAlign: "left" }}>
                 <th style={{ padding: "8px 8px" }}>Order</th>
@@ -90,7 +96,7 @@ export default async function OrdersPage({
             </tbody>
           </table>
         ) : (
-          <div style={{ fontSize: 13, color: tokens.color.muted }}>
+          <div style={{ fontSize: 14, color: tokens.color.muted }}>
             {orders ? "No orders in this view." : "Set API_BASE_URL (and ADMIN_API_TOKEN) to show live data."}
           </div>
         )}

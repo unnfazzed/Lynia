@@ -93,17 +93,21 @@ use the design system in production.)
 
 Carried from `ALIGNMENT-REVIEW.md`. The design shows the intended UX; these wire it to the backend.
 
+> **Status (post-review pass).** P0-1 (contact phones), timeout coverage incl. uploads (P1-2), 409-scoping (P1-3),
+> OTP 401/403 client handling (P1-4), the reconnecting chip (P1-7) and phone reveal (P1-6) are addressed in the app
+> as of this branch. Multi line-items are tracked separately. Items kept below for the record.
+
 **P0**
 1. **Enforce both contact phones on submit.** `apps/mobile/app/home.tsx` must block "Broadcast" while
    either pickup or drop-off `contactPhone` is empty (contract requires `min(6)`). The design already
-   requires both on the required path — the app currently can send `contactPhone: ""`.
+   requires both on the required path — the app currently can send `contactPhone: ""`. **Addressed** (status note above).
 
 **P1**
 2. **Bounded request timeout + error state on every async action** (send code, broadcast, select,
    submit KYC, confirm delivery). 15s AbortController → a friendly retry (the `Field.error` slot and
-   `OfflineBanner` exist for this). No screen should hang on a spinner.
+   `OfflineBanner` exist for this). No screen should hang on a spinner. **Addressed** (status note above).
 3. **Select-offer race (409).** Optimistic assign → on 409 roll back with the muted "That rider was
-   just taken — choose another." (never error-red). Kit shows the UX; wire the real mutation.
+   just taken — choose another." (never error-red). Kit shows the UX; wire the real mutation. **Addressed** (status note above).
 4. **Delivery-OTP: 401 retry + 403 lockout + re-issue.** 5 wrong attempts → lockout copy on the rider
    side; customer "Re-issue delivery code" calls `rotateDeliveryCode`. Kit shows both.
 5. **One round per rider on the board.** After an offer, hide that order (`bidIds`); a job starts only

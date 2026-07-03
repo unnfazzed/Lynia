@@ -345,8 +345,8 @@ export default function OrderScreen(): React.ReactElement {
 
         {deliveryCode ? (
           <Card style={{ borderColor: tokens.color.accent }}>
-            <Text style={{ fontSize: 13, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
-            <Text style={{ fontSize: 32, fontWeight: "800", letterSpacing: 6, color: tokens.color.accentText }}>{deliveryCode}</Text>
+            <Text style={{ fontSize: 14, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
+            <Text style={{ fontSize: 28, fontWeight: "800", letterSpacing: 6, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>{deliveryCode}</Text>
           </Card>
         ) : null}
 
