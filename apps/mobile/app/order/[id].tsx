@@ -393,8 +393,8 @@ export default function OrderScreen(): React.ReactElement {
                         paddingHorizontal: 14,
                         borderRadius: tokens.radius.pill,
                         borderWidth: 1,
-                        borderColor: on ? tokens.color.accent : tokens.color.line,
-                        backgroundColor: on ? tokens.color.accent : tokens.color.bg,
+                        borderColor: on ? tokens.color.cta : tokens.color.line,
+                        backgroundColor: on ? tokens.color.cta : tokens.color.bg,
                       }}
                     >
                       <Text style={{ fontSize: 12, fontWeight: "700", color: on ? tokens.color.onAccent : tokens.color.muted }}>{m.label}</Text>
@@ -501,7 +501,7 @@ export default function OrderScreen(): React.ReactElement {
         ) : null}
         {order.status === "expired" ? (
           <EmptyState
-            icon="🛵"
+            icon="bike"
             title="No riders took this price yet"
             message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
           >

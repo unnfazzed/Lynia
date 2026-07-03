@@ -1,8 +1,9 @@
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
+import { View } from "react-native";
 import { requestOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
-import { Button, ErrorText, Field, Heading, Screen, Sub } from "../src/ui";
+import { BrandLockup, Button, ErrorText, Field, Heading, Screen, Sub } from "../src/ui";
 
 export default function PhoneScreen(): React.ReactElement {
   const router = useRouter();
@@ -26,7 +27,10 @@ export default function PhoneScreen(): React.ReactElement {
 
   return (
     <Screen>
-      <Heading>Welcome to Lynia</Heading>
+      <View style={{ marginBottom: 24 }}>
+        <BrandLockup size={40} />
+      </View>
+      <Heading>Welcome to LyniaGo</Heading>
       <Sub>Enter your phone number to get a one-time code.</Sub>
       <Field
         label="Phone number"

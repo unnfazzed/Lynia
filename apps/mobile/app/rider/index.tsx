@@ -183,7 +183,7 @@ export default function RiderHome(): React.ReactElement {
           !meQ.data?.rider ? (
             // Not a rider yet → the full onboarding form (name, ID, bike, photo).
             <EmptyState
-              icon="🪪"
+              icon="id-card"
               title="Set up as a rider"
               message="Verify your ID and register your bike to start accepting deliveries."
             >
@@ -193,7 +193,7 @@ export default function RiderHome(): React.ReactElement {
           ) : kyc === "failed" ? (
             // Honest declined state with a real retry (a fresh session) — no silent "pending" loop.
             <EmptyState
-              icon="⚠️"
+              icon="triangle-alert"
               title="We couldn't verify your ID"
               message="The check didn't pass — often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing."
             >
@@ -203,7 +203,7 @@ export default function RiderHome(): React.ReactElement {
           ) : (
             // Pending — let them re-open a working verification session instead of re-keying the form.
             <EmptyState
-              icon="🪪"
+              icon="id-card"
               title="Finish verifying your ID"
               message="Your ID check is still pending. Continue in the browser, then come back — riders go online once verified."
             >
@@ -259,12 +259,12 @@ export default function RiderHome(): React.ReactElement {
               </Card>
             ))}
             {openQ.isError ? (
-              <EmptyState icon="📡" title="Couldn't load nearby orders" message="Check your connection and try again.">
+              <EmptyState icon="wifi-off" title="Couldn't load nearby orders" message="Check your connection and try again.">
                 <Button label="Retry" onPress={() => void openQ.refetch()} />
               </EmptyState>
             ) : ranked.length === 0 ? (
               <EmptyState
-                icon="📭"
+                icon="inbox"
                 title="No open orders near you right now"
                 message="You're online and first in line — stay put, requests come through fast. Busiest 7–9am & 5–7pm."
               />

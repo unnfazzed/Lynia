@@ -2,6 +2,11 @@ import { tokens } from "@lynia/shared";
 import React from "react";
 import { ActivityIndicator, Animated, type DimensionValue, Pressable, Text, TextInput, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Icon, type IconName } from "./Icon";
+
+export { Icon, type IconName } from "./Icon";
+export { BrandLockup, DoveMark, Wordmark } from "./Brand";
+export { fontFamilies, interFamily } from "./fonts";
 
 export function Screen({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
@@ -287,7 +292,7 @@ export function Stepper(props: {
 // A dead-end becomes an action (DESIGN.md): warm illustration + heading + one primary action passed as
 // children. Used for no-offers / no-orders and similar calm, recoverable states.
 export function EmptyState(props: {
-  icon: string;
+  icon: IconName;
   title: string;
   message: string;
   children?: React.ReactNode;
@@ -305,7 +310,7 @@ export function EmptyState(props: {
           marginBottom: tokens.space.md,
         }}
       >
-        <Text style={{ fontSize: 36 }}>{props.icon}</Text>
+        <Icon name={props.icon} size={34} color={tokens.color.muted} strokeWidth={1.75} />
       </View>
       <Text style={{ fontSize: 18, fontWeight: "800", color: tokens.color.ink, textAlign: "center" }}>{props.title}</Text>
       <Text style={{ fontSize: 13, color: tokens.color.muted, textAlign: "center", lineHeight: 19, marginTop: 6, maxWidth: 260 }}>

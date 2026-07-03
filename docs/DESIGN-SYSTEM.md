@@ -60,23 +60,36 @@ anything a user reads → `accentText`.
   the app router (`app/favicon.ico`, `app/icon.png`); metadata rebranded to LyniaGo.
 - **`docs/DESIGN.md`** token/type/radius/icon sections rewritten to the LyniaGo values.
 
-## Remaining follow-ups (need a native dependency and/or on-device QA)
+## Mobile fonts, icons, brand — implemented
 
-These were intentionally **not** done blind — they change native builds or need a device to verify, and this
-environment can't build/run the RN app. Each is a small, well-scoped ticket.
+The native-dependency work is now done (Expo SDK 52):
 
-1. **Mobile Inter font.** The DS ships `.woff2` (used by admin/web); React Native needs `.ttf`. Add Inter 400/600/700
-   `.ttf`, load them with `expo-font` in `app/_layout.tsx`, and set the primitives' `fontFamily` to `Inter` (+
-   Fredoka for the wordmark). Until then mobile renders in the system font (Roboto) — the design is built to read in
-   the fallback, so this is a polish upgrade, not a blocker.
-2. **Mobile emoji → Lucide.** `EmptyState` and screens still pass emoji (`icon="📦"`), which the brand disallows.
-   Add a native icon renderer (`lucide-react-native` + `react-native-svg`, or Feather/MaterialCommunity via
-   `@expo/vector-icons`), introduce an `Icon` primitive mirroring `packages/design/components/core/Icon`, map the
-   house set (bike/inbox/id-card/banknote/package/wifi-off/triangle-alert/…), and swap the `EmptyState` icon prop.
-3. **On-device QA.** Verify `cta` (#00812F) white-label contrast in real sunlight (re-tune `cta`/`ctaPressed` only if
-   needed), and the Card shadow → content reflow on a cheap Android.
-4. **Brand polish.** Wire `packages/design/assets/brand/icon/` into the mobile app icon/splash; outline the Fredoka
-   wordmark to vector before production (drop the font dependency for the logo).
+- **Inter + Fredoka fonts.** Added `expo-font`, `@expo-google-fonts/inter` (400/600/700) and
+  `@expo-google-fonts/fredoka` (600). `app/_layout.tsx` loads them with `useAppFonts()` and holds the native splash
+  until they register (`src/ui/fonts.ts`). Because Android matches font families by exact name, each weight is a
+  distinct family; `fonts.ts` patches `Text`/`TextInput` once to inject the weight-correct Inter family app-wide
+  (dropping the redundant `fontWeight` so Android doesn't double-synthesise bold), leaving explicit families — the
+  Fredoka wordmark — untouched. The patch is guarded per render and falls back to the system font on any mismatch.
+- **Lucide icons.** Added `lucide-react-native` + `react-native-svg`. `src/ui/Icon.tsx` is the `Icon` primitive
+  (rounded 2px line icons, the house set only — bike/inbox/id-card/banknote/package/wifi-off/triangle-alert/…);
+  `EmptyState` now renders it and all seven emoji call sites pass Lucide names. The kept Unicode glyphs (`★` ratings
+  / recommended marker, `✓` completed step) stay — those are part of the visual language, emoji are not.
+- **Paper Dove + wordmark.** `src/ui/Brand.tsx` draws the dove with `react-native-svg` (creases/hidden-cross only at
+  ≥ 32px, silhouette below) and the "LyniaGo" wordmark in Fredoka 600 ("Go" in the deep green). `BrandLockup` is on
+  the auth entry screen (`app/phone.tsx`).
+- **Contrast.** Every green that carries text now uses a legible token: white-on-green fills (buttons, earnings hero
+  card, order toggle on-state) use `cta` (#00812F ≈ 4.7:1); green text/icons use `accent-text` (#006630 ≈ 7:1). The
+  bright `accent` (#00B14F) is left only on non-text fills (map pins, the stepper ring graphic).
+
+## Remaining (need a device / pre-production hardening)
+
+1. **On-device QA.** Verify `cta` white-label contrast in real sunlight (re-tune `cta`/`ctaPressed` — one line — only
+   if needed) and the Card shadow → content reflow on a cheap Android; sanity-check the `Text`/`TextInput` font patch
+   on a real build.
+2. **Launcher icon / splash.** Wire `packages/design/assets/brand/icon/` (1024 PNG, maskable, favicon) into the Expo
+   `icon`/`splash` config in `app.config.ts`.
+3. **Outline the wordmark.** Before production, ship the Fredoka wordmark as vector outlines so the logo never depends
+   on a font file (interim self-hosting is fine — it can't fail on a weak network).
 
 ## Repo-side product tickets carried by the design (from `packages/design/ALIGNMENT-REVIEW.md`)
 
