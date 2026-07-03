@@ -109,13 +109,13 @@ Carried from `ALIGNMENT-REVIEW.md`. The design shows the intended UX; these wire
 3. **Select-offer race (409).** Optimistic assign → on 409 roll back with the muted "That rider was
    just taken — choose another." (never error-red). Kit shows the UX; wire the real mutation. **Addressed** (status note above).
 4. **Delivery-OTP: 401 retry + 403 lockout + re-issue.** 5 wrong attempts → lockout copy on the rider
-   side; customer "Re-issue delivery code" calls `rotateDeliveryCode`. Kit shows both.
+   side; customer "Re-issue delivery code" calls `rotateDeliveryCode`. Kit shows both. **Addressed** (status note above).
 5. **One round per rider on the board.** After an offer, hide that order (`bidIds`); a job starts only
    when the customer selects. Kit shows this.
 6. **Bidirectional phone reveal** gated to `assigned`→`completed` (`PHONE_REVEAL_STATUSES`); hide
-   after. Kit shows both sides.
+   after. Kit shows both sides. **Addressed** (status note above).
 7. **Rider heartbeat + cooldown-403** → auto-flip to offline with a reason; connection chip supports
-   the "Reconnecting" state.
+   the "Reconnecting" state. **Reconnecting chip addressed** (status note above); heartbeat/cooldown wiring stays open.
 
 **On-device checks (can't judge from a screen)**
 8. CTA green (#00812F) contrast in real sunlight — re-tune `--cta-fill` if needed (one line).

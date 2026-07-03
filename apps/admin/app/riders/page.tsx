@@ -59,7 +59,7 @@ export default async function RidersPage({
               display: "inline-flex",
               alignItems: "center",
               minHeight: 32,
-              fontSize: 13,
+              fontSize: 12, // --text-label, matches the orders filter pills
               padding: "6px 14px",
               borderRadius: 999,
               textDecoration: "none",

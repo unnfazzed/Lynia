@@ -386,7 +386,7 @@ export default function OrderScreen(): React.ReactElement {
               <Button label="Nudge price & re-broadcast" variant="ghost" onPress={() => router.replace("/home")} />
             ) : null}
             {orderedOffers.length > 1 ? (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: tokens.space.sm }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
                 {SORT_MODES.map((m) => {
                   const on = sortMode === m.key;
                   return (
@@ -399,40 +399,55 @@ export default function OrderScreen(): React.ReactElement {
                       style={{
                         minHeight: tokens.touchTargetMin,
                         justifyContent: "center",
-                        paddingHorizontal: 14,
+                        paddingHorizontal: tokens.space.lg,
                         borderRadius: tokens.radius.pill,
                         borderWidth: 1,
-                        borderColor: on ? tokens.color.cta : tokens.color.line,
-                        backgroundColor: on ? tokens.color.cta : tokens.color.bg,
+                        // Selected = mint wash + green text (DS chip state) — the CTA fill stays
+                        // reserved for the screen's one primary action.
+                        borderColor: on ? tokens.color.accentText : tokens.color.line,
+                        backgroundColor: on ? tokens.color.accentWash : tokens.color.bg,
                       }}
                     >
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: on ? tokens.color.onAccent : tokens.color.muted }}>{m.label}</Text>
+                      <Text style={{ fontSize: 12, fontWeight: "600", color: on ? tokens.color.accentText : tokens.color.muted }}>{m.label}</Text>
                     </Pressable>
                   );
                 })}
               </View>
             ) : null}
-            {orderedOffers.map(({ offer: o, recommended }) => (
-              <BidEntrance key={o.id} animate={!reduceMotion}>
-                <Card style={recommended ? { borderColor: tokens.color.highlight } : undefined}>
-                  {recommended ? (
-                    <Text style={{ fontSize: 10, fontWeight: "800", color: tokens.color.highlight, letterSpacing: 0.5, marginBottom: 3 }}>
-                      ★ RECOMMENDED
+            {orderedOffers.map(({ offer: o, recommended }, idx) => {
+              // One primary CTA on the list: the recommended card (or the first, if none is marked).
+              const primaryPick = recommended || (!orderedOffers.some((x) => x.recommended) && idx === 0);
+              return (
+                <BidEntrance key={o.id} animate={!reduceMotion}>
+                  <Card style={recommended ? { borderColor: tokens.color.highlight } : undefined}>
+                    {recommended ? (
+                      <Text style={{ fontSize: 10, fontWeight: "800", color: tokens.color.highlightInk, letterSpacing: 0.5, marginBottom: 3 }}>
+                        ★ RECOMMENDED
+                      </Text>
+                    ) : null}
+                    <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>
+                      {o.rider.profile.firstName} {o.rider.profile.lastName}
                     </Text>
-                  ) : null}
-                  <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>
-                    {o.rider.profile.firstName} {o.rider.profile.lastName}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: tokens.color.muted }}>
-                    ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
-                  </Text>
-                  <Text style={{ fontSize: 20, fontWeight: "800", marginVertical: 4 }}>${o.offeredFare}</Text>
-                  <Button label="Choose this rider" onPress={() => selectM.mutate(o.id)} loading={selectM.isPending} />
-                </Card>
-              </BidEntrance>
-            ))}
+                    <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                      ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
+                    </Text>
+                    <Text style={{ fontSize: 20, fontWeight: "800", marginVertical: 4, fontVariant: ["tabular-nums"] }}>${o.offeredFare}</Text>
+                    <Button
+                      label="Choose this rider"
+                      variant={primaryPick ? "primary" : "ghost"}
+                      onPress={() => {
+                        setSelectingId(o.id);
+                        selectM.mutate(o.id);
+                      }}
+                      loading={selectingId === o.id && selectM.isPending}
+                      disabled={selectM.isPending}
+                    />
+                  </Card>
+                </BidEntrance>
+              );
+            })}
             {selectNotice ? (
-              <Text accessibilityLiveRegion="polite" style={{ color: tokens.color.muted, fontSize: 13, marginTop: tokens.space.xs }}>
+              <Text accessibilityLiveRegion="polite" style={{ color: tokens.color.muted, fontSize: 14, marginTop: tokens.space.xs }}>
                 {selectNotice}
               </Text>
             ) : null}
@@ -449,7 +464,7 @@ export default function OrderScreen(): React.ReactElement {
 
         {isActive || order.status === "delivered" || order.status === "completed" ? (
           <Card>
-            <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Agreed fare ${fare}</Text>
+            <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm, fontVariant: ["tabular-nums"] }}>Agreed fare ${fare}</Text>
             <LiveMap
               pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}
               dropoff={{ lat: order.dropoff.point.lat, lng: order.dropoff.point.lng }}
