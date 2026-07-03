@@ -239,7 +239,7 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.rider).toMatchObject({ profileId: "rider-1" });
   });
 
-  it("returns pickup/drop-off for the map as point + landmark only — contactPhone redacted", async () => {
+  it("returns pickup/drop-off to the CUSTOMER as point + landmark only — waypoint contactPhone redacted", async () => {
     const snap = await svc(row()).getSnapshot("ord-1", "cust-1");
     expect(snap.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" });
     expect(snap.dropoff).toEqual({ point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" });
@@ -252,6 +252,18 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBe("+263771111111");
   });
 
+  it("reveals the waypoint contactPhones to the ASSIGNED rider inside the reveal window (E1)", async () => {
+    const snap = await svc(row()).getSnapshot("ord-1", "rider-1");
+    expect(snap.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" });
+    expect(snap.dropoff).toEqual({ point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues", contactPhone: "+263772222222" });
+  });
+
+  it("keeps waypoint contactPhones redacted from the rider OUTSIDE the reveal window", async () => {
+    const snap = await svc(row({ status: "open_for_offers" })).getSnapshot("ord-1", "rider-1");
+    expect(snap.pickup).not.toHaveProperty("contactPhone");
+    expect(snap.dropoff).not.toHaveProperty("contactPhone");
+  });
+
   it("hides phones outside the reveal window", async () => {
     const snap = await svc(row({ status: "open_for_offers" })).getSnapshot("ord-1", "cust-1");
     expect(snap.counterpartyPhone).toBeNull();
@@ -260,6 +272,9 @@ describe("OrdersService.getSnapshot", () => {
   it("never leaks a phone to a third party", async () => {
     const snap = await svc(row()).getSnapshot("ord-1", "stranger");
     expect(snap.counterpartyPhone).toBeNull();
+    // The waypoint reveal is assigned-rider-only — a stranger in-window still gets the redaction.
+    expect(snap.pickup).not.toHaveProperty("contactPhone");
+    expect(snap.dropoff).not.toHaveProperty("contactPhone");
   });
 
   it("returns expiresAt = createdAt + OFFER_WINDOW_MS while open_for_offers (auction countdown)", async () => {

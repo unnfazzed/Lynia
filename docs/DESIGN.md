@@ -49,7 +49,7 @@ fill green fails contrast; that is exactly what `--accent-text` is for.
 
 **Type:** **Inter** (UI + display) — the same open-source typeface Grab uses in-product; self-hosted 400/600/700
 in `packages/design/assets/fonts` with a system-font (Roboto) fallback, `font-display: swap`. **Tabular numerals**
-for fares, ETAs, ratings. Grab-dense scale: 24px screen titles, 18px card titles, **14px body, 12px captions**,
+for fares, ETAs, ratings — in the app always via the shared `tabular` style helper (`apps/mobile/src/ui`), never ad hoc. Grab-dense scale: 24px screen titles, 18px card titles, **14px body, 12px captions**,
 16px for inputs & button labels. Titles bold 700; body 400/600. **Fredoka 600** is the LyniaGo wordmark face only
 (never UI/body text).
 
@@ -73,6 +73,7 @@ inputs and chips.
 | Status stepper | the §5c 7-step timeline |
 | Map bottom-sheet | draggable sheet over a full-bleed map |
 | Skeleton | content-shaped placeholder (pulse) for list/board screens — `SkeletonList` (cards) / `SkeletonRows` (row-with-value, e.g. history). Per-screen stepper/summary skeletons tuned in the on-device `/qa` pass |
+| OfflineBanner | global connectivity affordance, mounted once per screen — ink bar = offline, surface bar = reconnecting; renders nothing while online |
 
 **Icons** are the self-hosted **Lucide** line-icon subset (`packages/design/assets/lynia-icons.js`, ~5KB — never
 the full CDN library) and are **always paired with a text label** (low-literacy users + screen readers). Green

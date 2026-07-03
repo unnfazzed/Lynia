@@ -31,12 +31,21 @@
   --surface: #f6f7f8;
   --line: #e2e6ea;
   --accent: #00b14f; /* brand green — fills / graphics only, never text */
+  --accent-700: #009d3b; /* pressed / hover-deep fill */
   --accent-text: #006630; /* green text & small icons (≈7:1 on white) */
   --accent-wash: #e9f8ef; /* mint wash — selected states */
-  --cta: #00812f; /* primary-action fill — white label ≈4.7:1 (AA large) */
+  --cta-fill: #00812f; /* primary-action fill — white label ≈4.7:1 (AA large) */
+  --cta-fill-pressed: #006b27;
+  --on-accent: #ffffff; /* text/icons on an accent (or danger) fill */
   --highlight: #f2b705; /* 'recommended' marker only */
+  --highlight-wash: #fffcf2;
+  --highlight-ink: #6b5600;
+  --highlight-border: #f2b70566;
   --danger: #c0392b;
+  --success: #00b14f; /* confirmation fills (== accent); use --accent-text for success TEXT */
   --shadow-card: 0 1px 4px rgba(20, 24, 27, 0.08), 0 2px 12px rgba(20, 24, 27, 0.06);
+  --shadow-sheet: 0 -2px 16px rgba(20, 24, 27, 0.08); /* bottom-sheet lift */
+  --shadow-menu: 0 4px 16px rgba(20, 24, 27, 0.1); /* popover / dropdown */
 }
 
 * {

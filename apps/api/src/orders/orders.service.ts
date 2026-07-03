@@ -19,6 +19,18 @@ function publicWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknow
   return { point: o.point ?? null, landmark: o.landmark ?? null };
 }
 
+/** Waypoint as the ASSIGNED rider sees it inside the reveal window — contactPhone included, since
+ *  they need to call the sender/recipient at the doors (§5d / design E1). Every other viewer and
+ *  every listing path goes through {@link publicWaypoint}. */
+function riderWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown; contactPhone: string | null } {
+  const o = (w ?? {}) as { point?: unknown; landmark?: unknown; contactPhone?: unknown };
+  return {
+    point: o.point ?? null,
+    landmark: o.landmark ?? null,
+    contactPhone: typeof o.contactPhone === "string" ? o.contactPhone : null,
+  };
+}
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -341,10 +353,11 @@ export class OrdersService {
       status: order.status,
       agreedFare: order.agreedFare,
       proposedFare: order.proposedFare,
-      // Map context for the tracker — point + landmark only; contactPhone stays redacted (it's gated
-      // separately by `counterpartyPhone` and the reveal window).
-      pickup: publicWaypoint(order.pickup),
-      dropoff: publicWaypoint(order.dropoff),
+      // Map context for the tracker — point + landmark. The assigned rider additionally gets the
+      // waypoint contactPhones inside the reveal window (E1: they call the sender/recipient at the
+      // doors); everyone else, and every listing path, stays redacted.
+      pickup: revealed && isRider ? riderWaypoint(order.pickup) : publicWaypoint(order.pickup),
+      dropoff: revealed && isRider ? riderWaypoint(order.dropoff) : publicWaypoint(order.dropoff),
       rider,
       events: order.events,
       counterpartyPhone,

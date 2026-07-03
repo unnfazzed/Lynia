@@ -7,7 +7,7 @@ import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pre
 import { ApiError } from "../src/api/client";
 import { createOrder, type OrderSnapshot } from "../src/api/orders";
 import { orderKey } from "../src/query/client";
-import { Button, Card, ErrorText, Field, Heading, Screen, Sub } from "../src/ui";
+import { Button, Card, ErrorText, Field, Heading, Icon, Screen, Sub } from "../src/ui";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
@@ -86,8 +86,10 @@ export default function HomeScreen(): React.ReactElement {
   // Gate persistence until the initial load has run, so we don't clobber the stored draft with empties.
   const hydrated = useRef(false);
 
-  // "Add details (optional)" collapsible — secondary fields (landmarks, phones, declared value) live
-  // here so the required path (pins → item → price → Broadcast) stays primary and always visible.
+  // "Add details (optional)" collapsible — secondary fields (landmarks, declared value) live here
+  // so the required path (pins → item → phones → price → Broadcast) stays primary and always
+  // visible. The contact phones are NOT in here: the contract requires both (min 6), so hiding
+  // them behind an "optional" toggle would enable Broadcast only to fail it on submit.
   const [detailsOpen, setDetailsOpen] = useState(false);
   // Reduce-motion: read once (same pattern as LiveMap). When on, expand/collapse is instant, no anim.
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -202,12 +204,16 @@ export default function HomeScreen(): React.ReactElement {
         { lat: dropPoint.lat, lng: dropPoint.lng },
       )
     : null;
-  const canSubmit = coordsOk && fare !== null && fare > 0 && itemDescription.trim().length > 0;
+  // Mirror the contract's contactPhone floor (min 6, both waypoints) so Broadcast can't enable and
+  // then bounce off a raw Zod message on submit.
+  const pickupPhoneOk = pickupPhone.trim().length >= 6;
+  const dropPhoneOk = dropPhone.trim().length >= 6;
+  const canSubmit = coordsOk && fare !== null && fare > 0 && itemDescription.trim().length > 0 && pickupPhoneOk && dropPhoneOk;
 
   const submit = async (): Promise<void> => {
     setError(null);
     if (!canSubmit || pickupPoint == null || dropPoint == null || fare === null) {
-      setError("Drop a pin for pickup and drop-off, name an item, and set a price.");
+      setError("Drop a pin for pickup and drop-off, name an item, add both contact phones, and set a price.");
       return;
     }
     const candidate = {
@@ -334,8 +340,8 @@ export default function HomeScreen(): React.ReactElement {
                 minHeight: tokens.touchTargetMin,
               }}
             >
-              <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: tokens.color.ink }}>Add details (optional)</Text>
-              <Text style={{ fontSize: 15, fontWeight: "700", color: tokens.color.muted }}>{detailsOpen ? "▾" : "▸"}</Text>
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Add details (optional)</Text>
+              <Icon name={detailsOpen ? "chevron-down" : "chevron-right"} size={16} color={tokens.color.muted} />
             </Pressable>
 
             {detailsOpen ? (
@@ -347,7 +353,6 @@ export default function HomeScreen(): React.ReactElement {
                   placeholder="Eastgate Mall, CBD"
                   maxLength={160}
                 />
-                <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
                 <Field
                   label={dropLandmarkFromMap ? "Drop-off landmark  • from map" : "Drop-off landmark"}
                   value={dropLandmark}
@@ -355,7 +360,6 @@ export default function HomeScreen(): React.ReactElement {
                   placeholder="14 Glenara Ave, Avenues"
                   maxLength={160}
                 />
-                <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
                 <Field label="Declared value (USD, max 150)" value={declaredValue} onChangeText={setDeclaredValue} placeholder="10" keyboardType="decimal-pad" />
               </View>
             ) : null}
@@ -373,6 +377,8 @@ export default function HomeScreen(): React.ReactElement {
                   {`Add ${[
                     !coordsOk ? "pickup & drop-off pins" : null,
                     itemDescription.trim().length === 0 ? "an item" : null,
+                    !pickupPhoneOk ? "a pickup contact phone" : null,
+                    !dropPhoneOk ? "a recipient phone" : null,
                     !(fare !== null && fare > 0) ? "a price" : null,
                   ]
                     .filter(Boolean)
@@ -385,9 +391,13 @@ export default function HomeScreen(): React.ReactElement {
           }
         >
           <Field label="What are you sending?" value={itemDescription} onChangeText={setItemDescription} placeholder="Documents envelope" maxLength={280} />
+          {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
+              "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
+          <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
+          <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
           {quote ? (
             <View style={{ marginBottom: tokens.space.sm }}>
-              <Text style={{ fontSize: 13, color: tokens.color.muted }}>
+              <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                 Suggested fare ${quote.suggestedFare.toFixed(2)} · {quote.distanceKm} km
               </Text>
               <Button label={`Use suggested $${quote.suggestedFare.toFixed(2)}`} variant="ghost" onPress={() => setProposedFare(quote.suggestedFare.toFixed(2))} />

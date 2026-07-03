@@ -2,14 +2,14 @@ import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, rankOffers, tokens
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Pressable, ScrollView, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, EmptyState, ErrorText, Heading, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
@@ -101,6 +101,9 @@ export default function OrderScreen(): React.ReactElement {
   const [sortMode, setSortMode] = useState<SortMode>("best");
   // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
   const [selectNotice, setSelectNotice] = useState<string | null>(null);
+  // Which offer is mid-select, so only ITS button spins (the rest just disable) — set in onPress,
+  // cleared when the mutation settles.
+  const [selectingId, setSelectingId] = useState<string | null>(null);
 
   // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash).
   useEffect(() => {
@@ -242,12 +245,19 @@ export default function OrderScreen(): React.ReactElement {
       setDeliveryCode(res.deliveryCode);
       void saveDeliveryCode(orderId, res.deliveryCode);
     },
-    onError: (_e, _v, ctx) => {
+    onError: (e, _v, ctx) => {
       if (ctx?.prev !== undefined) qc.setQueryData(orderKey(orderId), ctx.prev);
-      setSelectNotice("That rider was just taken — choose another.");
-      AccessibilityInfo.announceForAccessibility("That rider was just taken — choose another.");
+      // Only a 409 means the rider was raced away (a muted notice); any other failure is a real
+      // error and flows to the red mutationError slot below instead.
+      if (e instanceof ApiError && e.status === 409) {
+        setSelectNotice("That rider was just taken — choose another.");
+        AccessibilityInfo.announceForAccessibility("That rider was just taken — choose another.");
+      }
     },
-    onSettled: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
+    onSettled: () => {
+      setSelectingId(null);
+      void qc.invalidateQueries({ queryKey: orderKey(orderId) });
+    },
   });
   const rotateM = useMutation({
     mutationFn: () => rotateDeliveryCode(orderId),
@@ -310,23 +320,22 @@ export default function OrderScreen(): React.ReactElement {
 
   const order = orderQ.data;
   const fare = order.agreedFare ?? order.proposedFare;
-  // selectM is handled with its own muted notice (a rolled-back race), so it's excluded here.
-  const firstError = rotateM.error ?? rateM.error ?? cancelM.error;
+  // A select 409 (rider raced away) is handled with its own muted notice, so it's excluded here;
+  // any other select failure is a real error and joins the red slot.
+  const selectRace = selectM.error instanceof ApiError && selectM.error.status === 409;
+  const firstError = (selectRace ? null : selectM.error) ?? rotateM.error ?? rateM.error ?? cancelM.error;
   const mutationError = firstError instanceof Error ? firstError.message : null;
   const riderPoint =
     order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
       ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
       : null;
   const bidCount = orderedOffers.length;
-  const trackingHint =
-    connectionState === "reconnecting"
-      ? "Live paused — reconnecting…"
-      : riderPoint
-        ? "Rider is on the move — the gold pin updates live."
-        : "Waiting for the rider's GPS…";
+  const trackingHint = riderPoint ? "Rider is on the move — the gold pin updates live." : "Waiting for the rider's GPS…";
 
   return (
     <Screen>
+      {/* A dropped socket surfaces as the standard top banner, not an inline strip in the card. */}
+      {socketExpected && connectionState === "reconnecting" ? <OfflineBanner state="reconnecting" /> : null}
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Order {order.id.slice(0, 8)}</Heading>
