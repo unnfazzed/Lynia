@@ -91,15 +91,30 @@ export default function RiderHome(): React.ReactElement {
   // Only a 403 (server cooldown forced us offline) flips the switch — a network blip/timeout is a
   // transient reconnect, which is a state (the reconnecting chip/banner), not an error, so we keep
   // the rider online and let the next beat self-heal.
+  // Two consecutive failed beats mean the server may have already cooled us down while the board
+  // socket still looks healthy — surface the reconnecting state instead of a confident "Online".
+  const [beatStale, setBeatStale] = useState(false);
   useEffect(() => {
-    if (!online) return;
+    if (!online) {
+      setBeatStale(false);
+      return;
+    }
+    let failures = 0;
     const t = setInterval(() => {
-      void setOnline(true).catch((e: unknown) => {
-        if (e instanceof ApiError && e.status === 403) {
-          setOnlineState(false);
-          setError("You were taken offline (cooldown or a connection issue). Tap Go online to retry.");
-        }
-      });
+      setOnline(true)
+        .then(() => {
+          failures = 0;
+          setBeatStale(false);
+        })
+        .catch((e: unknown) => {
+          if (e instanceof ApiError && e.status === 403) {
+            setOnlineState(false);
+            setError("You were taken offline (cooldown or a connection issue). Tap Go online to retry.");
+          } else {
+            failures += 1;
+            if (failures >= 2) setBeatStale(true);
+          }
+        });
     }, 20_000);
     return () => clearInterval(t);
   }, [online]);
@@ -165,7 +180,7 @@ export default function RiderHome(): React.ReactElement {
   return (
     <Screen>
       {/* A dropped board socket while online surfaces as the standard top banner. */}
-      {online && !board.connected ? <OfflineBanner state="reconnecting" /> : null}
+      {online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Rider</Heading>
@@ -233,8 +248,8 @@ export default function RiderHome(): React.ReactElement {
             style={{ minHeight: tokens.touchTargetMin, justifyContent: "center", marginBottom: 4 }}
           >
             <StatusPill
-              status={online ? (board.connected ? "Online" : "Reconnecting") : "Offline"}
-              tone={online ? (board.connected ? "online" : "reconnecting") : "offline"}
+              status={online ? (board.connected && !beatStale ? "Online" : "Reconnecting") : "Offline"}
+              tone={online ? (board.connected && !beatStale ? "online" : "reconnecting") : "offline"}
               dot
             />
           </Pressable>

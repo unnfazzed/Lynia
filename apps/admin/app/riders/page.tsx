@@ -69,7 +69,7 @@ export default async function RidersPage({
               border: `1px solid ${t === active ? tokens.color.accentText : tokens.color.line}`,
             }}
           >
-            {t}
+            {t.replace(/_/g, " ")}
           </a>
         ))}
       </nav>

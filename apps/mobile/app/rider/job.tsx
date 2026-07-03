@@ -108,7 +108,7 @@ export default function RiderJob(): React.ReactElement {
           <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>Agreed fare ${order.agreedFare ?? order.proposedFare}</Text>
           {order.counterpartyPhone ? (
             <>
-              <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4 }}>Customer phone: {order.counterpartyPhone}</Text>
+              <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>Customer phone: {order.counterpartyPhone}</Text>
               {/* One-tap dialer next to the visible number — a call beats copy/paste mid-delivery. */}
               <Pressable
                 onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}

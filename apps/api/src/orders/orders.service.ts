@@ -53,7 +53,9 @@ export class OrdersService {
     // `itemDescription` normalizes to one qty-1 row, whose summary is the raw string — so old
     // clients, old rows, and every itemDesc consumer (board, history, admin) are byte-identical
     // to before. The contract guarantees at least one shape; when both arrive, `items` wins.
-    const items: OrderItem[] = input.items ?? [{ description: input.itemDescription ?? "", quantity: 1 }];
+    // The derived row is clamped to OrderItem's 140-char cap (legacy itemDescription allows 280)
+    // so stored `items` JSON always round-trips through the contract; itemDesc keeps the raw string.
+    const items: OrderItem[] = input.items ?? [{ description: (input.itemDescription ?? "").slice(0, 140), quantity: 1 }];
 
     const order = await this.prisma.order.create({
       data: {
@@ -61,7 +63,7 @@ export class OrdersService {
         orderType: "parcel",
         pickup: input.pickup as unknown as Prisma.InputJsonValue,
         dropoff: input.dropoff as unknown as Prisma.InputJsonValue,
-        itemDesc: summarizeItems(items),
+        itemDesc: input.items ? summarizeItems(input.items) : (input.itemDescription ?? ""),
         items: items as unknown as Prisma.InputJsonValue,
         note: input.note ?? null,
         itemPhotoUrl: input.itemPhotoUrl ?? null,

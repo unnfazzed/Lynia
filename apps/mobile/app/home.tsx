@@ -54,7 +54,7 @@ async function loadDraft(): Promise<FormDraft | null> {
     // Rows are re-clamped to the contract caps in case a stale/foreign draft slips through.
     const rows = Array.isArray(d.items) ? d.items : [{ description: d.itemDescription ?? "", quantity: 1 }];
     d.items = rows.slice(0, MAX_ITEMS).map((r) => ({
-      description: typeof r?.description === "string" ? r.description : "",
+      description: (typeof r?.description === "string" ? r.description : "").slice(0, 140),
       quantity: Math.min(MAX_QTY, Math.max(1, Math.round(Number(r?.quantity) || 1))),
     }));
     if (d.items.length === 0) d.items = [emptyItem()];
@@ -241,7 +241,10 @@ export default function HomeScreen(): React.ReactElement {
   const dropPhoneOk = dropPhone.trim().length >= 6;
   // Every row needs a description — an empty row must block submit, not silently drop.
   const itemsOk = items.every((it) => it.description.trim().length > 0);
-  const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk;
+  // Landmarks are contract-required too (Waypoint.landmark min 1). They're normally auto-filled
+  // from the reverse geocode, but that can fail offline / keyless — same never-fail-Zod rule.
+  const landmarksOk = pickupLandmark.trim().length > 0 && dropLandmark.trim().length > 0;
+  const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk;
 
   const submit = async (): Promise<void> => {
     setError(null);
@@ -415,6 +418,7 @@ export default function HomeScreen(): React.ReactElement {
                     !itemsOk ? (items.length > 1 ? "a description for every item" : "an item") : null,
                     !pickupPhoneOk ? "a pickup contact phone" : null,
                     !dropPhoneOk ? "a recipient phone" : null,
+                    !landmarksOk ? "pickup & drop-off landmarks (under \u201cAdd details\u201d)" : null,
                     !(fare !== null && fare > 0) ? "a price" : null,
                   ]
                     .filter(Boolean)
@@ -439,7 +443,7 @@ export default function HomeScreen(): React.ReactElement {
                 maxLength={140}
               />
               <View style={{ flexDirection: "row", alignItems: "center", marginTop: -tokens.space.sm, marginBottom: tokens.space.sm }}>
-                <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginRight: tokens.space.sm }}>Qty</Text>
+                <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginRight: tokens.space.sm }}>Quantity</Text>
                 <QtyStepper value={it.quantity} onChange={(q) => updateItem(i, { quantity: q })} />
                 <View style={{ flex: 1 }} />
                 {items.length > 1 ? (
@@ -448,20 +452,28 @@ export default function HomeScreen(): React.ReactElement {
                     accessibilityRole="button"
                     accessibilityLabel={`Remove item ${i + 1}`}
                     style={({ pressed }) => ({
-                      minWidth: tokens.touchTargetMin,
                       minHeight: tokens.touchTargetMin,
+                      flexDirection: "row",
                       alignItems: "center",
-                      justifyContent: "center",
+                      gap: tokens.space.xs,
+                      paddingHorizontal: tokens.space.xs,
                       opacity: pressed ? 0.6 : 1,
                     })}
                   >
                     <Icon name="x" size={16} color={tokens.color.muted} />
+                    {/* Icons are always paired with a text label (low-literacy market). */}
+                    <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted }}>Remove</Text>
                   </Pressable>
                 ) : null}
               </View>
             </View>
           ))}
-          {items.length < MAX_ITEMS ? <Button label="Add another item" variant="ghost" onPress={addItem} /> : null}
+          {items.length < MAX_ITEMS ? (
+            <Button label="Add another item" variant="ghost" onPress={addItem} />
+          ) : (
+            // The control never just vanishes — say why it's gone (every dead-end explains itself).
+            <Text style={{ fontSize: 12, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Up to 10 items per order.</Text>
+          )}
           {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
               "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
           <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />

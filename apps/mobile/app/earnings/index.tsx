@@ -39,7 +39,7 @@ export default function EarningsScreen(): React.ReactElement {
           <Card style={{ backgroundColor: tokens.color.cta, borderColor: tokens.color.cta }}>
             <Text style={{ color: tokens.color.onAccent, fontSize: 12, fontWeight: "600", opacity: 0.9 }}>Agreed &amp; delivered · total</Text>
             <Text style={{ color: tokens.color.onAccent, fontSize: 28, fontWeight: "700", marginTop: 2, fontVariant: ["tabular-nums"] }}>${total.toFixed(2)}</Text>
-            <Text style={{ color: tokens.color.onAccent, fontSize: 12, opacity: 0.9, marginTop: 2 }}>
+            <Text style={{ color: tokens.color.onAccent, fontSize: 12, opacity: 0.9, marginTop: 2, fontVariant: ["tabular-nums"] }}>
               {trips.length} completed {trips.length === 1 ? "trip" : "trips"}
             </Text>
           </Card>

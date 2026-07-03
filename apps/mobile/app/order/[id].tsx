@@ -135,6 +135,10 @@ export default function OrderScreen(): React.ReactElement {
   // bids in, and `order:status` reflects the assignment. Expose connection state for the UI.
   const socketExpected = isActive || status === "delivered" || status === "open_for_offers";
   const { connected } = useOrderSocket(socketExpected ? orderId : null);
+  // "Reconnecting" only reads truthfully after we've been live once — the initial connect window
+  // would otherwise flash the banner on every mount.
+  const wasConnected = React.useRef(false);
+  if (connected) wasConnected.current = true;
   const connectionState: "live" | "reconnecting" = connected ? "live" : "reconnecting";
 
   const offersQ = useQuery({
@@ -335,7 +339,7 @@ export default function OrderScreen(): React.ReactElement {
   return (
     <Screen>
       {/* A dropped socket surfaces as the standard top banner, not an inline strip in the card. */}
-      {socketExpected && connectionState === "reconnecting" ? <OfflineBanner state="reconnecting" /> : null}
+      {socketExpected && wasConnected.current && connectionState === "reconnecting" ? <OfflineBanner state="reconnecting" /> : null}
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Order {order.id.slice(0, 8)}</Heading>
@@ -346,7 +350,7 @@ export default function OrderScreen(): React.ReactElement {
         {deliveryCode ? (
           <Card style={{ borderColor: tokens.color.accent }}>
             <Text style={{ fontSize: 14, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
-            <Text style={{ fontSize: 28, fontWeight: "800", letterSpacing: 6, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>{deliveryCode}</Text>
+            <Text style={{ fontSize: 28, fontWeight: "700", letterSpacing: 6, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>{deliveryCode}</Text>
           </Card>
         ) : null}
 
@@ -421,7 +425,7 @@ export default function OrderScreen(): React.ReactElement {
                 <BidEntrance key={o.id} animate={!reduceMotion}>
                   <Card style={recommended ? { borderColor: tokens.color.highlight } : undefined}>
                     {recommended ? (
-                      <Text style={{ fontSize: 10, fontWeight: "800", color: tokens.color.highlightInk, letterSpacing: 0.5, marginBottom: 3 }}>
+                      <Text style={{ fontSize: 10, fontWeight: "700", color: tokens.color.highlightInk, letterSpacing: 0.5, marginBottom: 3 }}>
                         ★ RECOMMENDED
                       </Text>
                     ) : null}
@@ -431,11 +435,12 @@ export default function OrderScreen(): React.ReactElement {
                     <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                       ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
                     </Text>
-                    <Text style={{ fontSize: 20, fontWeight: "800", marginVertical: 4, fontVariant: ["tabular-nums"] }}>${o.offeredFare}</Text>
+                    <Text style={{ fontSize: 20, fontWeight: "700", marginVertical: 4, fontVariant: ["tabular-nums"] }}>${o.offeredFare}</Text>
                     <Button
                       label="Choose this rider"
                       variant={primaryPick ? "primary" : "ghost"}
                       onPress={() => {
+                        setSelectNotice(null); // a new attempt clears the stale "just taken" notice
                         setSelectingId(o.id);
                         selectM.mutate(o.id);
                       }}

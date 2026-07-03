@@ -64,7 +64,7 @@ export default async function OrdersPage({
               border: `1px solid ${s === active ? tokens.color.accentText : tokens.color.line}`,
             }}
           >
-            {s || "all"}
+            {(s || "all").replace(/_/g, " ")}
           </a>
         ))}
       </nav>
