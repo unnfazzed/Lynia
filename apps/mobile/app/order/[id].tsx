@@ -2,14 +2,14 @@ import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, rankOffers, tokens
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Pressable, ScrollView, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, EmptyState, ErrorText, Heading, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
@@ -101,6 +101,9 @@ export default function OrderScreen(): React.ReactElement {
   const [sortMode, setSortMode] = useState<SortMode>("best");
   // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
   const [selectNotice, setSelectNotice] = useState<string | null>(null);
+  // Which offer is mid-select, so only ITS button spins (the rest just disable) — set in onPress,
+  // cleared when the mutation settles.
+  const [selectingId, setSelectingId] = useState<string | null>(null);
 
   // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash).
   useEffect(() => {
@@ -132,6 +135,10 @@ export default function OrderScreen(): React.ReactElement {
   // bids in, and `order:status` reflects the assignment. Expose connection state for the UI.
   const socketExpected = isActive || status === "delivered" || status === "open_for_offers";
   const { connected } = useOrderSocket(socketExpected ? orderId : null);
+  // "Reconnecting" only reads truthfully after we've been live once — the initial connect window
+  // would otherwise flash the banner on every mount.
+  const wasConnected = React.useRef(false);
+  if (connected) wasConnected.current = true;
   const connectionState: "live" | "reconnecting" = connected ? "live" : "reconnecting";
 
   const offersQ = useQuery({
@@ -242,12 +249,19 @@ export default function OrderScreen(): React.ReactElement {
       setDeliveryCode(res.deliveryCode);
       void saveDeliveryCode(orderId, res.deliveryCode);
     },
-    onError: (_e, _v, ctx) => {
+    onError: (e, _v, ctx) => {
       if (ctx?.prev !== undefined) qc.setQueryData(orderKey(orderId), ctx.prev);
-      setSelectNotice("That rider was just taken — choose another.");
-      AccessibilityInfo.announceForAccessibility("That rider was just taken — choose another.");
+      // Only a 409 means the rider was raced away (a muted notice); any other failure is a real
+      // error and flows to the red mutationError slot below instead.
+      if (e instanceof ApiError && e.status === 409) {
+        setSelectNotice("That rider was just taken — choose another.");
+        AccessibilityInfo.announceForAccessibility("That rider was just taken — choose another.");
+      }
     },
-    onSettled: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
+    onSettled: () => {
+      setSelectingId(null);
+      void qc.invalidateQueries({ queryKey: orderKey(orderId) });
+    },
   });
   const rotateM = useMutation({
     mutationFn: () => rotateDeliveryCode(orderId),
@@ -310,23 +324,22 @@ export default function OrderScreen(): React.ReactElement {
 
   const order = orderQ.data;
   const fare = order.agreedFare ?? order.proposedFare;
-  // selectM is handled with its own muted notice (a rolled-back race), so it's excluded here.
-  const firstError = rotateM.error ?? rateM.error ?? cancelM.error;
+  // A select 409 (rider raced away) is handled with its own muted notice, so it's excluded here;
+  // any other select failure is a real error and joins the red slot.
+  const selectRace = selectM.error instanceof ApiError && selectM.error.status === 409;
+  const firstError = (selectRace ? null : selectM.error) ?? rotateM.error ?? rateM.error ?? cancelM.error;
   const mutationError = firstError instanceof Error ? firstError.message : null;
   const riderPoint =
     order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
       ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
       : null;
   const bidCount = orderedOffers.length;
-  const trackingHint =
-    connectionState === "reconnecting"
-      ? "Live paused — reconnecting…"
-      : riderPoint
-        ? "Rider is on the move — the gold pin updates live."
-        : "Waiting for the rider's GPS…";
+  const trackingHint = riderPoint ? "Rider is on the move — the gold pin updates live." : "Waiting for the rider's GPS…";
 
   return (
     <Screen>
+      {/* A dropped socket surfaces as the standard top banner, not an inline strip in the card. */}
+      {socketExpected && wasConnected.current && connectionState === "reconnecting" ? <OfflineBanner state="reconnecting" /> : null}
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Order {order.id.slice(0, 8)}</Heading>
@@ -336,8 +349,8 @@ export default function OrderScreen(): React.ReactElement {
 
         {deliveryCode ? (
           <Card style={{ borderColor: tokens.color.accent }}>
-            <Text style={{ fontSize: 13, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
-            <Text style={{ fontSize: 32, fontWeight: "800", letterSpacing: 6, color: tokens.color.accentText }}>{deliveryCode}</Text>
+            <Text style={{ fontSize: 14, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
+            <Text style={{ fontSize: 28, fontWeight: "700", letterSpacing: 6, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>{deliveryCode}</Text>
           </Card>
         ) : null}
 
@@ -377,7 +390,7 @@ export default function OrderScreen(): React.ReactElement {
               <Button label="Nudge price & re-broadcast" variant="ghost" onPress={() => router.replace("/home")} />
             ) : null}
             {orderedOffers.length > 1 ? (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: tokens.space.sm }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
                 {SORT_MODES.map((m) => {
                   const on = sortMode === m.key;
                   return (
@@ -390,40 +403,56 @@ export default function OrderScreen(): React.ReactElement {
                       style={{
                         minHeight: tokens.touchTargetMin,
                         justifyContent: "center",
-                        paddingHorizontal: 14,
+                        paddingHorizontal: tokens.space.lg,
                         borderRadius: tokens.radius.pill,
                         borderWidth: 1,
-                        borderColor: on ? tokens.color.cta : tokens.color.line,
-                        backgroundColor: on ? tokens.color.cta : tokens.color.bg,
+                        // Selected = mint wash + green text (DS chip state) — the CTA fill stays
+                        // reserved for the screen's one primary action.
+                        borderColor: on ? tokens.color.accentText : tokens.color.line,
+                        backgroundColor: on ? tokens.color.accentWash : tokens.color.bg,
                       }}
                     >
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: on ? tokens.color.onAccent : tokens.color.muted }}>{m.label}</Text>
+                      <Text style={{ fontSize: 12, fontWeight: "600", color: on ? tokens.color.accentText : tokens.color.muted }}>{m.label}</Text>
                     </Pressable>
                   );
                 })}
               </View>
             ) : null}
-            {orderedOffers.map(({ offer: o, recommended }) => (
-              <BidEntrance key={o.id} animate={!reduceMotion}>
-                <Card style={recommended ? { borderColor: tokens.color.highlight } : undefined}>
-                  {recommended ? (
-                    <Text style={{ fontSize: 10, fontWeight: "800", color: tokens.color.highlight, letterSpacing: 0.5, marginBottom: 3 }}>
-                      ★ RECOMMENDED
+            {orderedOffers.map(({ offer: o, recommended }, idx) => {
+              // One primary CTA on the list: the recommended card (or the first, if none is marked).
+              const primaryPick = recommended || (!orderedOffers.some((x) => x.recommended) && idx === 0);
+              return (
+                <BidEntrance key={o.id} animate={!reduceMotion}>
+                  <Card style={recommended ? { borderColor: tokens.color.highlight } : undefined}>
+                    {recommended ? (
+                      <Text style={{ fontSize: 10, fontWeight: "700", color: tokens.color.highlightInk, letterSpacing: 0.5, marginBottom: 3 }}>
+                        ★ RECOMMENDED
+                      </Text>
+                    ) : null}
+                    <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>
+                      {o.rider.profile.firstName} {o.rider.profile.lastName}
                     </Text>
-                  ) : null}
-                  <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>
-                    {o.rider.profile.firstName} {o.rider.profile.lastName}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: tokens.color.muted }}>
-                    ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
-                  </Text>
-                  <Text style={{ fontSize: 20, fontWeight: "800", marginVertical: 4 }}>${o.offeredFare}</Text>
-                  <Button label="Choose this rider" onPress={() => selectM.mutate(o.id)} loading={selectM.isPending} />
-                </Card>
-              </BidEntrance>
-            ))}
+                    <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                      ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
+                    </Text>
+                    <Text style={{ fontSize: 20, fontWeight: "700", marginVertical: 4, fontVariant: ["tabular-nums"] }}>${o.offeredFare}</Text>
+                    <Button
+                      label="Choose this rider"
+                      variant={primaryPick ? "primary" : "ghost"}
+                      onPress={() => {
+                        setSelectNotice(null); // a new attempt clears the stale "just taken" notice
+                        setSelectingId(o.id);
+                        selectM.mutate(o.id);
+                      }}
+                      loading={selectingId === o.id && selectM.isPending}
+                      disabled={selectM.isPending}
+                    />
+                  </Card>
+                </BidEntrance>
+              );
+            })}
             {selectNotice ? (
-              <Text accessibilityLiveRegion="polite" style={{ color: tokens.color.muted, fontSize: 13, marginTop: tokens.space.xs }}>
+              <Text accessibilityLiveRegion="polite" style={{ color: tokens.color.muted, fontSize: 14, marginTop: tokens.space.xs }}>
                 {selectNotice}
               </Text>
             ) : null}
@@ -440,7 +469,7 @@ export default function OrderScreen(): React.ReactElement {
 
         {isActive || order.status === "delivered" || order.status === "completed" ? (
           <Card>
-            <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Agreed fare ${fare}</Text>
+            <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm, fontVariant: ["tabular-nums"] }}>Agreed fare ${fare}</Text>
             <LiveMap
               pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}
               dropoff={{ lat: order.dropoff.point.lat, lng: order.dropoff.point.lng }}
@@ -448,10 +477,24 @@ export default function OrderScreen(): React.ReactElement {
               connectionState={isActive ? connectionState : "live"}
             />
             {order.rider ? (
-              <Text style={{ fontSize: 13, color: tokens.color.muted }}>{trackingHint}</Text>
+              <Text style={{ fontSize: 14, color: tokens.color.muted }}>{trackingHint}</Text>
             ) : null}
             {order.counterpartyPhone ? (
-              <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4 }}>Rider phone: {order.counterpartyPhone}</Text>
+              <>
+                <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>
+                  Rider phone: {order.counterpartyPhone}
+                </Text>
+                {/* One-tap dialer next to the visible number — a call beats copy/paste mid-delivery. */}
+                <Pressable
+                  onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Call rider"
+                  style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+                >
+                  <Icon name="phone" size={16} color={tokens.color.accentText} />
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call rider</Text>
+                </Pressable>
+              </>
             ) : null}
             <View style={{ height: tokens.space.md }} />
             <Stepper events={order.events} currentStatus={order.status} view="customer" />
@@ -483,13 +526,13 @@ export default function OrderScreen(): React.ReactElement {
             {ratePending ? (
               // Tap-to-rate is armed: submitting shortly, still cancellable.
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                <Text style={{ fontSize: 14, color: tokens.color.muted }}>Submitting {score}★…</Text>
+                <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>Submitting {score}★…</Text>
                 <Button label="Undo" variant="ghost" onPress={undoRate} />
               </View>
             ) : rateM.isPending ? (
               <Text style={{ fontSize: 14, color: tokens.color.muted }}>Saving your rating…</Text>
             ) : (
-              <Text style={{ fontSize: 13, color: tokens.color.muted }}>Tap a star to rate</Text>
+              <Text style={{ fontSize: 14, color: tokens.color.muted }}>Tap a star to rate</Text>
             )}
           </Card>
         ) : null}

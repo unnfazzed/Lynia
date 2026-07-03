@@ -22,14 +22,14 @@ function Row({ o, onPress }: { o: OrderHistoryRow; onPress: () => void }): React
             <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }} numberOfLines={1}>
               {o.pickup.landmark || "Pickup"} → {o.dropoff.landmark || "Drop-off"}
             </Text>
-            <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
+            <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2, fontVariant: ["tabular-nums"] }}>
               {fmtDate(o.createdAt)} · {o.role === "customer" ? "Sent" : "Delivered"}
               {o.counterpartyName ? ` · ${o.counterpartyName}` : ""}
               {o.rating ? ` · ★ ${o.rating.score}` : ""}
             </Text>
           </View>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={{ fontSize: 15, fontWeight: "800", color: tokens.color.ink }}>${fare}</Text>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>${fare}</Text>
             <View style={{ height: 4 }} />
             <StatusPill status={o.status} />
           </View>

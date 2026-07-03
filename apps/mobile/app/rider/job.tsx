@@ -2,11 +2,11 @@ import { ACTIVE_RIDE_STATUSES, type AdvanceStatusRequest, tokens } from "@lynia/
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { advanceStatus, cancelOrder, confirmDelivery, getActiveOrder, type OrderSnapshot } from "../../src/api/orders";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, ErrorText, Field, Heading, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Button, Card, ErrorText, Field, Heading, Icon, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
@@ -105,9 +105,56 @@ export default function RiderJob(): React.ReactElement {
         </View>
 
         <Card>
-          <Text style={{ fontSize: 13, color: tokens.color.muted }}>Agreed fare ${order.agreedFare ?? order.proposedFare}</Text>
+          <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>Agreed fare ${order.agreedFare ?? order.proposedFare}</Text>
           {order.counterpartyPhone ? (
-            <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4 }}>Customer phone: {order.counterpartyPhone}</Text>
+            <>
+              <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>Customer phone: {order.counterpartyPhone}</Text>
+              {/* One-tap dialer next to the visible number — a call beats copy/paste mid-delivery. */}
+              <Pressable
+                onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
+                accessibilityRole="button"
+                accessibilityLabel="Call customer"
+                style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+              >
+                <Icon name="phone" size={16} color={tokens.color.accentText} />
+                <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call customer</Text>
+              </Pressable>
+            </>
+          ) : null}
+          {/* Waypoint contacts arrive only for the assigned rider inside the reveal window (§5d). */}
+          {order.pickup.contactPhone ? (
+            <Pressable
+              onPress={() => void Linking.openURL(`tel:${order.pickup.contactPhone}`)}
+              accessibilityRole="button"
+              accessibilityLabel="Call pickup contact"
+              style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+            >
+              <Icon name="phone" size={16} color={tokens.color.accentText} />
+              <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call pickup contact</Text>
+            </Pressable>
+          ) : null}
+          {order.dropoff.contactPhone ? (
+            <Pressable
+              onPress={() => void Linking.openURL(`tel:${order.dropoff.contactPhone}`)}
+              accessibilityRole="button"
+              accessibilityLabel="Call drop-off contact"
+              style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+            >
+              <Icon name="phone" size={16} color={tokens.color.accentText} />
+              <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call drop-off contact</Text>
+            </Pressable>
+          ) : null}
+          {/* Line-items — the §5c "Items & note confirmed" step made real. Absent on orders
+              created before the items column, so render nothing rather than a stub. */}
+          {order.items && order.items.length > 0 ? (
+            <View style={{ marginTop: tokens.space.sm }}>
+              <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginBottom: 2 }}>Items</Text>
+              {order.items.map((it, i) => (
+                <Text key={i} style={{ fontSize: 14, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
+                  {it.quantity}× {it.description}
+                </Text>
+              ))}
+            </View>
           ) : null}
           <View style={{ height: tokens.space.sm }} />
           <LiveMap

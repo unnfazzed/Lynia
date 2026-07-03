@@ -1,23 +1,26 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
-import { ActivityIndicator, Animated, type DimensionValue, Pressable, Text, TextInput, View, type ViewStyle } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Animated, type DimensionValue, Pressable, Text, TextInput, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "./Icon";
 
 export { Icon, type IconName } from "./Icon";
 export { BrandLockup, DoveMark, Wordmark } from "./Brand";
 export { fontFamilies, interFamily } from "./fonts";
+export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 
 export function Screen({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.surface }}>
-      <View style={{ flex: 1, padding: tokens.space.xl }}>{children}</View>
+      {/* 16px edge padding — designs must work at 320px wide (space.screen, not xl). */}
+      <View style={{ flex: 1, padding: tokens.space.screen }}>{children}</View>
     </SafeAreaView>
   );
 }
 
 export function Heading({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <Text style={{ fontSize: 24, fontWeight: "800", color: tokens.color.ink, marginBottom: tokens.space.sm }}>{children}</Text>;
+  // Bold with slight negative tracking (≈ -0.02em at 24px) — only 400/600/700 ship, no 800.
+  return <Text style={{ fontSize: 24, fontWeight: "700", letterSpacing: -0.4, color: tokens.color.ink, marginBottom: tokens.space.sm }}>{children}</Text>;
 }
 
 export function Sub({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -29,7 +32,9 @@ export function Label({ children }: { children: React.ReactNode }): React.ReactE
 }
 
 export function Field(props: {
-  label: string;
+  // Optional: repeatable rows (the compose item list) carry a single shared heading instead of a
+  // label per row.
+  label?: string;
   value: string;
   onChangeText: (t: string) => void;
   placeholder?: string;
@@ -38,7 +43,7 @@ export function Field(props: {
 }): React.ReactElement {
   return (
     <View style={{ marginBottom: tokens.space.md }}>
-      <Label>{props.label}</Label>
+      {props.label ? <Label>{props.label}</Label> : null}
       <TextInput
         value={props.value}
         onChangeText={props.onChangeText}
@@ -76,7 +81,8 @@ export function Button(props: {
         // Grab shape language: full-pill buttons. Primary fill is `cta` (#00812F) — tuned for
         // white-on-green sunlight legibility — and presses to the darker `ctaPressed`; the brand
         // `accent` green stays reserved for non-text fills. Ghost is the outline pill with green text.
-        backgroundColor: primary ? (pressed ? tokens.color.ctaPressed : tokens.color.cta) : pressed ? tokens.color.surface : "transparent",
+        // Ghost press feedback is the mint wash — `surface` is invisible against a Screen background.
+        backgroundColor: primary ? (pressed ? tokens.color.ctaPressed : tokens.color.cta) : pressed ? tokens.color.accentWash : "transparent",
         borderWidth: primary ? 0 : 1,
         borderColor: tokens.color.line,
         opacity: props.disabled ? 0.5 : 1,
@@ -91,7 +97,7 @@ export function Button(props: {
       {props.loading ? (
         <ActivityIndicator color={primary ? tokens.color.onAccent : tokens.color.accentText} />
       ) : (
-        <Text style={{ color: primary ? tokens.color.onAccent : tokens.color.accentText, fontWeight: "700", fontSize: 16 }}>{props.label}</Text>
+        <Text style={{ color: primary ? tokens.color.onAccent : tokens.color.accentText, fontWeight: "600", fontSize: 16 }}>{props.label}</Text>
       )}
     </Pressable>
   );
@@ -128,13 +134,14 @@ export function Card({ children, style }: { children: React.ReactNode; style?: V
  * glance without a new component.
  */
 export type PillTone = "neutral" | "online" | "offline" | "reconnecting";
-const PILL_TONE: Record<PillTone, string> = {
-  // Pill text + dot render the green — use the legible text-green, never the bright fill green.
-  neutral: tokens.color.accentText,
-  online: tokens.color.accentText,
-  offline: tokens.color.muted,
+// Mirrors packages/design/components/core/StatusPill.jsx: text is the legible text-green (never the
+// bright fill green), the dot is the fill green, and only the online tone sits on the mint wash.
+const PILL_TONE: Record<PillTone, { text: string; bg: string; dot: string }> = {
+  neutral: { text: tokens.color.accentText, bg: tokens.color.surface, dot: tokens.color.accent },
+  online: { text: tokens.color.accentText, bg: tokens.color.accentWash, dot: tokens.color.accent },
+  offline: { text: tokens.color.muted, bg: tokens.color.surface, dot: tokens.color.muted },
   // A dropped/paused connection is a transient state, not an error — muted, never danger-red.
-  reconnecting: tokens.color.muted,
+  reconnecting: { text: tokens.color.muted, bg: tokens.color.surface, dot: tokens.color.muted },
 };
 
 export function StatusPill({
@@ -146,7 +153,7 @@ export function StatusPill({
   tone?: PillTone;
   dot?: boolean;
 }): React.ReactElement {
-  const toneColor = PILL_TONE[tone];
+  const t = PILL_TONE[tone];
   return (
     <View
       accessibilityRole="text"
@@ -154,25 +161,29 @@ export function StatusPill({
         flexDirection: "row",
         alignItems: "center",
         alignSelf: "flex-start",
-        backgroundColor: tokens.color.surface,
+        backgroundColor: t.bg,
         borderWidth: 1,
         borderColor: tokens.color.line,
         borderRadius: tokens.radius.pill,
-        paddingHorizontal: 10,
+        paddingHorizontal: tokens.space.md,
         paddingVertical: 4,
       }}
     >
       {dot ? (
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: toneColor, marginRight: 6 }} />
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: t.dot, marginRight: 6 }} />
       ) : null}
-      <Text style={{ fontSize: 12, fontWeight: "700", color: toneColor }}>{status.replace(/_/g, " ")}</Text>
+      <Text style={{ fontSize: 12, fontWeight: "600", color: t.text }}>{status.replace(/_/g, " ")}</Text>
     </View>
   );
 }
 
+// Fares, ETAs and ratings render with tabular numerals (design tokens: font.tabularNumerals) —
+// spread into any money/numeric Text style so digit columns align.
+export const tabular = { fontVariant: ["tabular-nums"] as const };
+
 export function ErrorText({ message }: { message?: string | null }): React.ReactElement | null {
   if (!message) return null;
-  return <Text style={{ color: tokens.color.danger, fontSize: 13, marginTop: tokens.space.sm }}>{message}</Text>;
+  return <Text style={{ color: tokens.color.danger, fontSize: 14, marginTop: tokens.space.sm }}>{message}</Text>;
 }
 
 // ── §5c journey stepper ───────────────────────────────────────────────────────
@@ -253,7 +264,7 @@ export function Stepper(props: {
                 <Text
                   style={{
                     fontSize: 11,
-                    fontWeight: "800",
+                    fontWeight: "700",
                     color: state === "done" ? tokens.color.onAccent : state === "now" ? tokens.color.accentText : tokens.color.muted,
                   }}
                 >
@@ -304,16 +315,17 @@ export function EmptyState(props: {
           width: 88,
           height: 88,
           borderRadius: 44,
-          backgroundColor: tokens.color.surface,
+          // Mint-wash tile + text-green icon (DS EmptyState tone) — warm, not greyed-out.
+          backgroundColor: tokens.color.accentWash,
           alignItems: "center",
           justifyContent: "center",
           marginBottom: tokens.space.md,
         }}
       >
-        <Icon name={props.icon} size={34} color={tokens.color.muted} strokeWidth={1.75} />
+        <Icon name={props.icon} size={34} color={tokens.color.accentText} strokeWidth={1.75} />
       </View>
-      <Text style={{ fontSize: 18, fontWeight: "800", color: tokens.color.ink, textAlign: "center" }}>{props.title}</Text>
-      <Text style={{ fontSize: 13, color: tokens.color.muted, textAlign: "center", lineHeight: 19, marginTop: 6, maxWidth: 260 }}>
+      <Text style={{ fontSize: 18, fontWeight: "700", color: tokens.color.ink, textAlign: "center" }}>{props.title}</Text>
+      <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center", lineHeight: 20, marginTop: 6, maxWidth: 260 }}>
         {props.message}
       </Text>
       {props.children ? <View style={{ alignSelf: "stretch", marginTop: tokens.space.md }}>{props.children}</View> : null}
@@ -325,6 +337,24 @@ export function EmptyState(props: {
 // DESIGN.md (data-light): list/board/stepper screens show content-shaped skeletons while loading,
 // not a bare spinner, so the layout doesn't jump when data lands. A calm opacity pulse, native-driven
 // so it stays cheap on constrained devices.
+
+// Reduce-motion, live-updating — a pulsing loop must stop the moment the OS setting flips on.
+function useReduceMotion(): boolean {
+  const [reduceMotion, setReduceMotion] = React.useState(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    void AccessibilityInfo.isReduceMotionEnabled().then((on) => {
+      if (!cancelled) setReduceMotion(on);
+    });
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
+  return reduceMotion;
+}
+
 export function Skeleton({
   width = "100%",
   height = 14,
@@ -336,8 +366,14 @@ export function Skeleton({
   radius?: number;
   style?: ViewStyle;
 }): React.ReactElement {
+  const reduceMotion = useReduceMotion();
   const pulse = React.useRef(new Animated.Value(0.5)).current;
   React.useEffect(() => {
+    // Reduce-motion: no pulse — hold a static mid opacity so the placeholder still reads as loading.
+    if (reduceMotion) {
+      pulse.setValue(0.65);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
@@ -346,7 +382,7 @@ export function Skeleton({
     );
     loop.start();
     return () => loop.stop();
-  }, [pulse]);
+  }, [pulse, reduceMotion]);
   return <Animated.View style={[{ width, height, borderRadius: radius, backgroundColor: tokens.color.line, opacity: pulse }, style]} />;
 }
 

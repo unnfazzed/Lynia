@@ -11,7 +11,7 @@ import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { retryKyc, setOnline } from "../../src/api/riders";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
-import { Button, Card, EmptyState, ErrorText, Field, Heading, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, Heading, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 import { parseNum } from "../../src/util";
 
 /** Urban motorbike cruising speed for a rough pickup-ETA seed (min = distance / speed). */
@@ -88,14 +88,33 @@ export default function RiderHome(): React.ReactElement {
   });
 
   // Heartbeat: keep the rider selectable (ET3 liveness) while online by refreshing lastHeartbeatAt.
-  // If a beat fails (e.g. a cooldown forced us offline server-side), reflect it instead of lying.
+  // Only a 403 (server cooldown forced us offline) flips the switch — a network blip/timeout is a
+  // transient reconnect, which is a state (the reconnecting chip/banner), not an error, so we keep
+  // the rider online and let the next beat self-heal.
+  // Two consecutive failed beats mean the server may have already cooled us down while the board
+  // socket still looks healthy — surface the reconnecting state instead of a confident "Online".
+  const [beatStale, setBeatStale] = useState(false);
   useEffect(() => {
-    if (!online) return;
+    if (!online) {
+      setBeatStale(false);
+      return;
+    }
+    let failures = 0;
     const t = setInterval(() => {
-      void setOnline(true).catch(() => {
-        setOnlineState(false);
-        setError("You were taken offline (cooldown or a connection issue). Tap Go online to retry.");
-      });
+      setOnline(true)
+        .then(() => {
+          failures = 0;
+          setBeatStale(false);
+        })
+        .catch((e: unknown) => {
+          if (e instanceof ApiError && e.status === 403) {
+            setOnlineState(false);
+            setError("You were taken offline (cooldown or a connection issue). Tap Go online to retry.");
+          } else {
+            failures += 1;
+            if (failures >= 2) setBeatStale(true);
+          }
+        });
     }, 20_000);
     return () => clearInterval(t);
   }, [online]);
@@ -160,18 +179,21 @@ export default function RiderHome(): React.ReactElement {
 
   return (
     <Screen>
+      {/* A dropped board socket while online surfaces as the standard top banner. */}
+      {online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Rider</Heading>
           <View style={{ flex: 1 }} />
           <Button label="Trips" variant="ghost" onPress={() => router.push("/history")} />
-          <Button label="Setup / KYC" variant="ghost" onPress={() => router.push("/rider/become")} />
+          <Button label="Rider setup" variant="ghost" onPress={() => router.push("/rider/become")} />
         </View>
 
         {activeQ.data ? (
           <Card style={{ borderColor: tokens.color.accent }}>
             <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({activeQ.data.status.replace(/_/g, " ")})</Text>
-            <Button label="Open job" onPress={() => router.push("/rider/job")} />
+            {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
+            <Button label="Open job" variant="ghost" onPress={() => router.push("/rider/job")} />
           </Card>
         ) : null}
 
@@ -226,14 +248,15 @@ export default function RiderHome(): React.ReactElement {
             style={{ minHeight: tokens.touchTargetMin, justifyContent: "center", marginBottom: 4 }}
           >
             <StatusPill
-              status={online ? "Online" : "Offline"}
-              tone={online ? "online" : "offline"}
+              status={online ? (board.connected && !beatStale ? "Online" : "Reconnecting") : "Offline"}
+              tone={online ? (board.connected && !beatStale ? "online" : "reconnecting") : "offline"}
               dot
             />
           </Pressable>
           <Button
             label={online ? "Go offline" : "Go online"}
-            variant={online ? "ghost" : "primary"}
+            // Ghost while the compose card is open so "Send offer" is the screen's one primary.
+            variant={online || selected != null ? "ghost" : "primary"}
             onPress={() => onlineM.mutate(!online)}
             loading={onlineM.isPending}
           />
@@ -252,7 +275,7 @@ export default function RiderHome(): React.ReactElement {
             {ranked.map(({ o, km }) => (
               <Card key={o.id}>
                 <Text style={{ fontWeight: "700", color: tokens.color.ink }}>{o.pickup.landmark} → {o.dropoff.landmark}</Text>
-                <Text style={{ fontSize: 13, color: tokens.color.muted }}>
+                <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                   {o.itemDesc} · {km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`} · asking ${o.proposedFare}
                 </Text>
                 <Button label="Make an offer" variant="ghost" onPress={() => chooseOrder(o)} />

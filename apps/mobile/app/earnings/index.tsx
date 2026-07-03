@@ -38,8 +38,8 @@ export default function EarningsScreen(): React.ReactElement {
         <ScrollView showsVerticalScrollIndicator={false}>
           <Card style={{ backgroundColor: tokens.color.cta, borderColor: tokens.color.cta }}>
             <Text style={{ color: tokens.color.onAccent, fontSize: 12, fontWeight: "600", opacity: 0.9 }}>Agreed &amp; delivered · total</Text>
-            <Text style={{ color: tokens.color.onAccent, fontSize: 30, fontWeight: "800", marginTop: 2 }}>${total.toFixed(2)}</Text>
-            <Text style={{ color: tokens.color.onAccent, fontSize: 12, opacity: 0.9, marginTop: 2 }}>
+            <Text style={{ color: tokens.color.onAccent, fontSize: 28, fontWeight: "700", marginTop: 2, fontVariant: ["tabular-nums"] }}>${total.toFixed(2)}</Text>
+            <Text style={{ color: tokens.color.onAccent, fontSize: 12, opacity: 0.9, marginTop: 2, fontVariant: ["tabular-nums"] }}>
               {trips.length} completed {trips.length === 1 ? "trip" : "trips"}
             </Text>
           </Card>
@@ -53,14 +53,14 @@ export default function EarningsScreen(): React.ReactElement {
                   </Text>
                   <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>{fmtDate(o.createdAt)}</Text>
                 </View>
-                <Text style={{ fontSize: 15, fontWeight: "800", color: tokens.color.ink }}>${o.agreedFare ?? o.proposedFare}</Text>
+                <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>${o.agreedFare ?? o.proposedFare}</Text>
               </View>
             </Card>
           ))}
 
           {/* §6 decided: rider commission, but 0% for the launch period — riders keep the full fare for now. */}
-          <Card style={{ backgroundColor: "#FFFCF2", borderColor: "#F2B70566" }}>
-            <Text style={{ fontSize: 12, color: "#6B5600", lineHeight: 17 }}>
+          <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
+            <Text style={{ fontSize: 12, color: tokens.color.highlightInk, lineHeight: 18 }}>
               A record of work done — not a payout balance. You keep the full agreed fare during the launch period
               (no commission for the first few months); payment is cash, outside the app. A commission line will
               appear here once settlement goes live.

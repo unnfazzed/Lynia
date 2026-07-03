@@ -89,6 +89,14 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
   let res = await send(session?.accessToken);
 
   if (res.status === 401 && auth && session?.refreshToken) {
+    // Not every 401 is an expired session: domain code answers 401 too (a wrong delivery code from
+    // the order-lifecycle service). Refresh-and-retry on those would RE-SUBMIT the business action
+    // — a wrong OTP would burn a second attempt toward the lockout — so only the auth guard's own
+    // 401s take the refresh path; everything else surfaces as the domain error it is.
+    const text = await res.text().catch(() => "");
+    if (!isAuthGuard401(text)) {
+      throw new ApiError(401, friendlyMessage(401, text));
+    }
     const refreshed = await refreshSession(session.refreshToken);
     if (refreshed) {
       res = await send(refreshed.accessToken);
@@ -146,6 +154,20 @@ async function doRefresh(refreshToken: string): Promise<Session | null> {
     return next;
   } catch {
     return null;
+  }
+}
+
+// The JwtAuthGuard's only two messages (apps/api/src/auth/jwt-auth.guard.ts) — the discriminator
+// between "your token is bad" (refresh and retry is safe) and a domain 401 (it isn't). An
+// unparseable body counts as domain: when in doubt, DON'T re-send — a retry can double-submit.
+const AUTH_GUARD_401_MESSAGES = new Set(["Missing bearer token", "Invalid or expired token"]);
+
+function isAuthGuard401(text: string): boolean {
+  try {
+    const parsed = JSON.parse(text) as { message?: unknown };
+    return typeof parsed.message === "string" && AUTH_GUARD_401_MESSAGES.has(parsed.message);
+  } catch {
+    return false;
   }
 }
 

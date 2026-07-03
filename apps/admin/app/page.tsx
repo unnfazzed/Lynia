@@ -33,10 +33,12 @@ async function getOverview(): Promise<Overview | null> {
   }
 }
 
+/* DS card: white surface floating on --surface via the soft ambient shadow (no visible border). */
 const card = {
   background: tokens.color.bg,
-  border: `1px solid ${tokens.color.line}`,
+  border: "none",
   borderRadius: tokens.radius.card,
+  boxShadow: "var(--shadow-card)",
   padding: tokens.space.lg,
 } as const;
 
@@ -53,11 +55,13 @@ export default async function DashboardPage() {
   return (
     <main style={{ maxWidth: 1040, margin: "0 auto", padding: tokens.space.xl }}>
       <header style={{ display: "flex", alignItems: "center", gap: tokens.space.md, marginBottom: tokens.space.xl }}>
-        <img src="/brand/lyniago-mark.svg" alt="LyniaGo" width={28} height={28} style={{ display: "block" }} />
-        <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>LyniaGo — operations</h1>
+        {/* 32px: the static mark's crease facets only resolve at ≥32px (brand crease rule). */}
+        <img src="/brand/lyniago-mark.svg" alt="LyniaGo" width={32} height={32} style={{ display: "block" }} />
+        {/* Dense-console page header sits on --text-h2 (20/700). */}
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>LyniaGo — operations</h1>
         <nav style={{ display: "flex", gap: tokens.space.md, marginLeft: tokens.space.lg }}>
-          <a href="/riders" style={{ fontSize: 13, color: tokens.color.muted, textDecoration: "none" }}>Riders</a>
-          <a href="/orders" style={{ fontSize: 13, color: tokens.color.muted, textDecoration: "none" }}>Orders</a>
+          <a href="/riders" style={{ fontSize: 14, color: tokens.color.muted, textDecoration: "none" }}>Riders</a>
+          <a href="/orders" style={{ fontSize: 14, color: tokens.color.muted, textDecoration: "none" }}>Orders</a>
         </nav>
         <span style={{ marginLeft: "auto", fontSize: 12, color: data ? tokens.color.accentText : tokens.color.muted }}>
           {data ? "● live" : "○ API not connected"}
@@ -68,35 +72,36 @@ export default async function DashboardPage() {
         {panels.map((p) => (
           <div key={p.label} style={card}>
             <div style={{ fontSize: 12, fontWeight: 600, color: tokens.color.muted }}>{p.label}</div>
-            <div style={{ fontSize: 32, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{p.value}</div>
+            {/* --text-display (28); only 400/600/700 webfonts ship, so 700 is the max real weight. */}
+            <div style={{ fontSize: 28, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{p.value}</div>
             <div style={{ fontSize: 12, color: tokens.color.muted }}>{p.hint}</div>
           </div>
         ))}
       </section>
 
       <section style={{ ...card, marginTop: tokens.space.xl }}>
-        <div style={{ fontSize: 14, fontWeight: 800, marginBottom: tokens.space.md }}>Recent orders</div>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: tokens.space.md }}>Recent orders</div>
         {data && data.recentOrders.length > 0 ? (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ color: tokens.color.muted, textAlign: "left" }}>
-                <th style={{ padding: "6px 4px" }}>Order</th>
-                <th style={{ padding: "6px 4px" }}>Status</th>
-                <th style={{ padding: "6px 4px" }}>Fare</th>
+                <th style={{ padding: "8px 8px" }}>Order</th>
+                <th style={{ padding: "8px 8px" }}>Status</th>
+                <th style={{ padding: "8px 8px" }}>Fare</th>
               </tr>
             </thead>
             <tbody>
               {data.recentOrders.map((o) => (
                 <tr key={o.id} style={{ borderTop: `1px solid ${tokens.color.line}` }}>
-                  <td style={{ padding: "6px 4px", fontFamily: "monospace" }}>{o.id.slice(0, 8)}</td>
-                  <td style={{ padding: "6px 4px" }}>{o.status}</td>
-                  <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums" }}>${o.agreedFare ?? o.proposedFare}</td>
+                  <td style={{ padding: "8px 8px", fontFamily: "monospace" }}>{o.id.slice(0, 8)}</td>
+                  <td style={{ padding: "8px 8px" }}>{o.status}</td>
+                  <td style={{ padding: "8px 8px", fontVariantNumeric: "tabular-nums" }}>${o.agreedFare ?? o.proposedFare}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <div style={{ fontSize: 13, color: tokens.color.muted }}>
+          <div style={{ fontSize: 14, color: tokens.color.muted }}>
             {data ? "No orders yet." : "Set API_BASE_URL (and ADMIN_API_TOKEN) to show live data."}
           </div>
         )}

@@ -133,7 +133,7 @@ export function MapPicker(props: {
           loading={locating}
         />
       ) : null}
-      <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 4 }}>
+      <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, marginTop: tokens.space.xs }}>
         {props.value
           ? `Pinned: ${props.value.lat.toFixed(5)}, ${props.value.lng.toFixed(5)}`
           : "Tap the map to drop a pin, then drag it to adjust."}

@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, OFFER_WINDOW_MS, PHONE_REVEAL_STATUSES, quoteFare } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, summarizeItems } from "@lynia/shared";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -17,6 +17,18 @@ const BROADCAST_RADIUS_M = 5000;
 function publicWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown } {
   const o = (w ?? {}) as { point?: unknown; landmark?: unknown };
   return { point: o.point ?? null, landmark: o.landmark ?? null };
+}
+
+/** Waypoint as the ASSIGNED rider sees it inside the reveal window — contactPhone included, since
+ *  they need to call the sender/recipient at the doors (§5d / design E1). Every other viewer and
+ *  every listing path goes through {@link publicWaypoint}. */
+function riderWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown; contactPhone: string | null } {
+  const o = (w ?? {}) as { point?: unknown; landmark?: unknown; contactPhone?: unknown };
+  return {
+    point: o.point ?? null,
+    landmark: o.landmark ?? null,
+    contactPhone: typeof o.contactPhone === "string" ? o.contactPhone : null,
+  };
 }
 
 @Injectable()
@@ -36,13 +48,23 @@ export class OrdersService {
     // Distance-based anchor the customer sees alongside their own proposal (CONCEPT §1).
     const { distanceKm, suggestedFare } = quoteFare(input.pickup.point, input.dropoff.point);
 
+    // CANONICAL DIRECTION: `items` is the line-item source of truth for every order this API
+    // writes; `itemDesc` is ALWAYS the derived summary (summarizeItems). A legacy client's
+    // `itemDescription` normalizes to one qty-1 row, whose summary is the raw string — so old
+    // clients, old rows, and every itemDesc consumer (board, history, admin) are byte-identical
+    // to before. The contract guarantees at least one shape; when both arrive, `items` wins.
+    // The derived row is clamped to OrderItem's 140-char cap (legacy itemDescription allows 280)
+    // so stored `items` JSON always round-trips through the contract; itemDesc keeps the raw string.
+    const items: OrderItem[] = input.items ?? [{ description: (input.itemDescription ?? "").slice(0, 140), quantity: 1 }];
+
     const order = await this.prisma.order.create({
       data: {
         customerId,
         orderType: "parcel",
         pickup: input.pickup as unknown as Prisma.InputJsonValue,
         dropoff: input.dropoff as unknown as Prisma.InputJsonValue,
-        itemDesc: input.itemDescription,
+        itemDesc: input.items ? summarizeItems(input.items) : (input.itemDescription ?? ""),
+        items: items as unknown as Prisma.InputJsonValue,
         note: input.note ?? null,
         itemPhotoUrl: input.itemPhotoUrl ?? null,
         declaredValue: input.declaredValue,
@@ -295,6 +317,7 @@ export class OrdersService {
         createdAt: true,
         pickup: true,
         dropoff: true,
+        items: true,
         customer: { select: { phone: true } },
         rider: {
           select: {
@@ -341,10 +364,15 @@ export class OrdersService {
       status: order.status,
       agreedFare: order.agreedFare,
       proposedFare: order.proposedFare,
-      // Map context for the tracker — point + landmark only; contactPhone stays redacted (it's gated
-      // separately by `counterpartyPhone` and the reveal window).
-      pickup: publicWaypoint(order.pickup),
-      dropoff: publicWaypoint(order.dropoff),
+      // Map context for the tracker — point + landmark. The assigned rider additionally gets the
+      // waypoint contactPhones inside the reveal window (E1: they call the sender/recipient at the
+      // doors); everyone else, and every listing path, stays redacted.
+      pickup: revealed && isRider ? riderWaypoint(order.pickup) : publicWaypoint(order.pickup),
+      dropoff: revealed && isRider ? riderWaypoint(order.dropoff) : publicWaypoint(order.dropoff),
+      // Full line-items for the tracker + assigned-rider job view; null on pre-0008 rows (the
+      // client falls back to nothing). Listing paths deliberately stay on the itemDesc summary
+      // (data budget); no PII lives in items.
+      items: (order.items as OrderItem[] | null) ?? null,
       rider,
       events: order.events,
       counterpartyPhone,

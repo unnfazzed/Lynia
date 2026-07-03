@@ -2,6 +2,7 @@ import { tokens } from "@lynia/shared";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Modal, Pressable, Text, View } from "react-native";
 import MapView, { AnimatedRegion, type LatLng, Marker, MarkerAnimated, type Region } from "react-native-maps";
+import { Icon } from "./Icon";
 
 export interface MapPoint {
   lat: number;
@@ -135,7 +136,8 @@ export function LiveMap(props: {
         <MarkerAnimated
           coordinate={riderRegion.current as unknown as LatLng}
           title="Rider"
-          pinColor={tokens.color.highlight}
+          // Rider presence is green — gold (`highlight`) is reserved for the recommended marker.
+          pinColor={tokens.color.accent}
           opacity={riderMuted ? 0.5 : 1}
         />
       ) : null}
@@ -175,8 +177,8 @@ export function LiveMap(props: {
           ...controlStyle(pressed),
         })}
       >
-        <Text style={{ fontSize: 14 }}>⤢</Text>
-        <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: "700", color: tokens.color.ink }}>Expand</Text>
+        <Icon name="chevron-up" size={16} color={tokens.color.accentText} />
+        <Text style={{ marginLeft: tokens.space.sm, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Expand</Text>
       </Pressable>
 
       <Pressable
@@ -190,8 +192,8 @@ export function LiveMap(props: {
           ...controlStyle(pressed),
         })}
       >
-        <Text style={{ fontSize: 14 }}>◎</Text>
-        <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: "700", color: tokens.color.ink }}>Recenter</Text>
+        <Icon name="navigation" size={16} color={tokens.color.accentText} />
+        <Text style={{ marginLeft: tokens.space.sm, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Recenter</Text>
       </Pressable>
 
       <Modal
@@ -217,8 +219,8 @@ export function LiveMap(props: {
               ...controlStyle(pressed),
             })}
           >
-            <Text style={{ fontSize: 14 }}>✕</Text>
-            <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: "700", color: tokens.color.ink }}>Close</Text>
+            <Icon name="x" size={16} color={tokens.color.accentText} />
+            <Text style={{ marginLeft: tokens.space.sm, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Close</Text>
           </Pressable>
 
           <Pressable
@@ -232,8 +234,8 @@ export function LiveMap(props: {
               ...controlStyle(pressed),
             })}
           >
-            <Text style={{ fontSize: 14 }}>◎</Text>
-            <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: "700", color: tokens.color.ink }}>Recenter</Text>
+            <Icon name="navigation" size={16} color={tokens.color.accentText} />
+            <Text style={{ marginLeft: tokens.space.sm, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Recenter</Text>
           </Pressable>
         </View>
       </Modal>

@@ -14,10 +14,12 @@ interface Order {
 }
 
 const STATUSES = Object.values(OrderStatus);
+/* DS card: white surface floating on --surface via the soft ambient shadow (no visible border). */
 const card = {
   background: tokens.color.bg,
-  border: `1px solid ${tokens.color.line}`,
+  border: "none",
   borderRadius: tokens.radius.card,
+  boxShadow: "var(--shadow-card)",
   padding: tokens.space.lg,
 } as const;
 
@@ -33,8 +35,9 @@ export default async function OrdersPage({
   return (
     <main style={{ maxWidth: 1040, margin: "0 auto", padding: tokens.space.xl }}>
       <header style={{ display: "flex", alignItems: "center", gap: tokens.space.md, marginBottom: tokens.space.lg }}>
-        <a href="/" style={{ color: tokens.color.muted, textDecoration: "none", fontSize: 13 }}>← Dashboard</a>
-        <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Orders monitor</h1>
+        <a href="/" style={{ color: tokens.color.muted, textDecoration: "none", fontSize: 14 }}>← Dashboard</a>
+        {/* Dense-console page header sits on --text-h2 (20/700). */}
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Orders monitor</h1>
         <span style={{ marginLeft: "auto", fontSize: 12, color: orders ? tokens.color.accentText : tokens.color.muted }}>
           {orders ? "● live" : "○ API not connected"}
         </span>
@@ -45,41 +48,47 @@ export default async function OrdersPage({
           <a
             key={s || "all"}
             href={s ? `/orders?status=${s}` : "/orders"}
+            // DS selected state = accent wash + accent text, not a CTA fill. 32px pill is a
+            // desktop pointer target; the 44px --target-min rule is mobile-first.
             style={{
+              display: "inline-flex",
+              alignItems: "center",
+              minHeight: 32,
               fontSize: 12,
-              padding: "4px 10px",
+              padding: "6px 14px",
               borderRadius: 999,
               textDecoration: "none",
-              color: s === active ? tokens.color.onAccent : tokens.color.muted,
-              background: s === active ? tokens.color.cta : "transparent",
-              border: `1px solid ${s === active ? tokens.color.cta : tokens.color.line}`,
+              fontWeight: s === active ? 600 : 400,
+              color: s === active ? tokens.color.accentText : tokens.color.muted,
+              background: s === active ? tokens.color.accentWash : "transparent",
+              border: `1px solid ${s === active ? tokens.color.accentText : tokens.color.line}`,
             }}
           >
-            {s || "all"}
+            {(s || "all").replace(/_/g, " ")}
           </a>
         ))}
       </nav>
 
       <section style={card}>
         {orders && orders.length > 0 ? (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ color: tokens.color.muted, textAlign: "left" }}>
-                <th style={{ padding: "6px 4px" }}>Order</th>
-                <th style={{ padding: "6px 4px" }}>Status</th>
-                <th style={{ padding: "6px 4px" }}>Fare</th>
-                <th style={{ padding: "6px 4px" }}>Distance</th>
-                <th style={{ padding: "6px 4px" }}>Note</th>
+                <th style={{ padding: "8px 8px" }}>Order</th>
+                <th style={{ padding: "8px 8px" }}>Status</th>
+                <th style={{ padding: "8px 8px" }}>Fare</th>
+                <th style={{ padding: "8px 8px" }}>Distance</th>
+                <th style={{ padding: "8px 8px" }}>Note</th>
               </tr>
             </thead>
             <tbody>
               {orders.map((o) => (
                 <tr key={o.id} style={{ borderTop: `1px solid ${tokens.color.line}` }}>
-                  <td style={{ padding: "6px 4px", fontFamily: "monospace" }}>{o.id.slice(0, 8)}</td>
-                  <td style={{ padding: "6px 4px" }}>{o.status}</td>
-                  <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums" }}>${o.agreedFare ?? o.proposedFare}</td>
-                  <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums" }}>{o.distanceKm != null ? `${o.distanceKm} km` : "—"}</td>
-                  <td style={{ padding: "6px 4px", color: tokens.color.muted }}>
+                  <td style={{ padding: "8px 8px", fontFamily: "monospace" }}>{o.id.slice(0, 8)}</td>
+                  <td style={{ padding: "8px 8px" }}>{o.status}</td>
+                  <td style={{ padding: "8px 8px", fontVariantNumeric: "tabular-nums" }}>${o.agreedFare ?? o.proposedFare}</td>
+                  <td style={{ padding: "8px 8px", fontVariantNumeric: "tabular-nums" }}>{o.distanceKm != null ? `${o.distanceKm} km` : "—"}</td>
+                  <td style={{ padding: "8px 8px", color: tokens.color.muted }}>
                     {o.cancelReason ? `cancelled${o.cancelledByRole ? ` (${o.cancelledByRole})` : ""}: ${o.cancelReason}` : "—"}
                   </td>
                 </tr>
@@ -87,7 +96,7 @@ export default async function OrdersPage({
             </tbody>
           </table>
         ) : (
-          <div style={{ fontSize: 13, color: tokens.color.muted }}>
+          <div style={{ fontSize: 14, color: tokens.color.muted }}>
             {orders ? "No orders in this view." : "Set API_BASE_URL (and ADMIN_API_TOKEN) to show live data."}
           </div>
         )}

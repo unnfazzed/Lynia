@@ -22,8 +22,12 @@ export interface OrderSnapshot {
   status: OrderStatus;
   agreedFare: string | null;
   proposedFare: string;
-  pickup: { point: LatLng; landmark: string };
-  dropoff: { point: LatLng; landmark: string };
+  // contactPhone arrives only for the ASSIGNED rider inside the reveal window (§5d) — absent for
+  // the customer view and outside the window.
+  pickup: { point: LatLng; landmark: string; contactPhone?: string | null };
+  dropoff: { point: LatLng; landmark: string; contactPhone?: string | null };
+  // Line-items — null/absent on orders created before the items column (clients render nothing).
+  items?: { description: string; quantity: number }[] | null;
   rider: { profileId: string; currentLat: number | null; currentLng: number | null; updatedAt: string | null } | null;
   events: OrderEvent[];
   counterpartyPhone: string | null;

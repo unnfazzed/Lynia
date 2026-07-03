@@ -521,7 +521,7 @@ function App() {
             <div style={{ flex: 1 }} />
           </TopRow>
           <Sub>What you've agreed and delivered.</Sub>
-          <Card style={{ background: "var(--accent)", border: "1px solid transparent", boxShadow: "var(--shadow-card)" }}>
+          <Card style={{ background: "var(--cta-fill)", border: "1px solid transparent", boxShadow: "var(--shadow-card)" }}>
             <div style={{ color: "var(--on-accent)", fontSize: 12, fontWeight: 600, opacity: 0.9 }}>Agreed &amp; delivered · total</div>
             <div style={{ color: "var(--on-accent)", fontSize: 28, fontWeight: 700, marginTop: 2 }} className="lynia-tabular">${total.toFixed(2)}</div>
             <div style={{ color: "var(--on-accent)", fontSize: 12, opacity: 0.9, marginTop: 2 }}>{done.length} completed {done.length === 1 ? "trip" : "trips"}</div>

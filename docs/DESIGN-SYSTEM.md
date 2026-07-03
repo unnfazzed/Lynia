@@ -81,15 +81,44 @@ The native-dependency work is now done (Expo SDK 52):
   card, order toggle on-state) use `cta` (#00812F ≈ 4.7:1); green text/icons use `accent-text` (#006630 ≈ 7:1). The
   bright `accent` (#00B14F) is left only on non-text fills (map pins, the stepper ring graphic).
 
-## Remaining (need a device / pre-production hardening)
+## Decisions & clarifications (post-adoption review)
 
-1. **On-device QA.** Verify `cta` white-label contrast in real sunlight (re-tune `cta`/`ctaPressed` — one line — only
-   if needed) and the Card shadow → content reflow on a cheap Android; sanity-check the `Text`/`TextInput` font patch
-   on a real build.
-2. **Launcher icon / splash.** Wire `packages/design/assets/brand/icon/` (1024 PNG, maskable, favicon) into the Expo
-   `icon`/`splash` config in `app.config.ts`.
-3. **Outline the wordmark.** Before production, ship the Fredoka wordmark as vector outlines so the logo never depends
-   on a font file (interim self-hosting is fine — it can't fail on a weak network).
+- **Hero / large-display fills that carry white text use `--cta-fill`, never `--accent`.** The bright green fails
+  white-text contrast (≈2.9:1); the earnings hero card in the mobile kit was corrected to match the app (both now
+  use `cta`). Same rule as buttons: white text on green → CTA green.
+- **Gold `#F2B705` is border/star only.** Recommended-marker **text** uses `--highlight-ink` (`#6B5600`); the gold
+  itself never carries text. App and kit agree.
+- **Selected states are `--accent-wash` background + `--accent-text` text/border** (`--surface-selected`) — never
+  the CTA fill. CTA green means "the one primary action on this screen"; a selected chip is not that. The kit's
+  sort chips were corrected to demonstrate this.
+- **CSS ↔ TS token naming map** (same values, two spellings): `--cta-fill` ↔ `cta`, `--cta-fill-pressed` ↔
+  `ctaPressed`, `--accent-700` ↔ `accentPressed`, `--space-2xl`/`--space-3xl` ↔ `space.xxl`/`space.xxxl`. The RN
+  `shadow` tokens are documented **approximations** of the layered CSS shadows — RN can't render multi-layer
+  box-shadows, so they match the visual weight, not the literal values.
+- **RN font patch.** `fonts.ts` patches `Text`/`TextInput` once to inject the weight-correct Inter family; caveat:
+  a nested `Text` inherits the parent's resolved family, so set the weight on the innermost span that needs it.
+
+## Done since (pre-production items closed in code)
+
+- **Wordmark outlined.** "LyniaGo" now ships as kerned vector paths extracted from Fredoka SemiBold
+  (harfbuzz-shaped GPOS kerning): `packages/design/assets/brand/lyniago-wordmark.svg` +
+  `apps/mobile/src/ui/wordmark-paths.ts` consumed by `Brand.tsx`. No Fredoka font file loads at
+  runtime any more (the `@expo-google-fonts/fredoka` dependency was removed). Regenerate both files
+  together via fonttools/uharfbuzz if the mark ever changes.
+- **Font patch unit-proven.** `apps/mobile/src/ui/__tests__/fonts.test.tsx` (jest-expo) verifies the
+  genuine RN 0.76 `Text`/`TextInput` modules expose the patchable shape and exercises the patch
+  end-to-end through a real forwardRef component: weight→family mapping (500→400, 800→700),
+  explicit-family passthrough, fontWeight dropped from the injected style, exactly-one render call
+  even when style computation throws, and the no-double-wrap guard.
+
+## Remaining (genuinely needs a device)
+
+1. **Sunlight check.** The contrast math is verified (`cta` #00812F carries white at ≈4.7:1, AA-large;
+   green text #006630 ≈7:1) — what no remote environment can judge is panel brightness + glare on a
+   cheap Android outdoors. If it reads dim in the field, re-tune `cta`/`ctaPressed` (one line, options
+   documented in `design-tokens.ts`).
+2. **Physical QA.** Card shadow → content reflow and the rendered Inter faces on a real build — the
+   font patch is unit-proven, but pixels on glass still deserve one look.
 
 ## Repo-side product tickets carried by the design (from `packages/design/ALIGNMENT-REVIEW.md`)
 

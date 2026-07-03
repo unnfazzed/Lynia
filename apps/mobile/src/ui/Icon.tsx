@@ -61,7 +61,8 @@ export type IconName = keyof typeof ICONS;
 
 export function Icon({
   name,
-  size = 24,
+  // 20px default per the design system's --icon-size.
+  size = 20,
   color = tokens.color.ink,
   strokeWidth = 2,
 }: {

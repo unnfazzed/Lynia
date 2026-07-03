@@ -22,16 +22,46 @@ export const Waypoint = z.object({
 });
 export type Waypoint = z.infer<typeof Waypoint>;
 
-/** Customer creates a delivery and names a price (CONCEPT §1). */
-export const CreateOrderRequest = z.object({
-  pickup: Waypoint,
-  dropoff: Waypoint,
-  itemDescription: z.string().min(1).max(280),
-  note: z.string().max(280).optional(),
-  itemPhotoUrl: z.string().url().optional(),
-  declaredValue: z.number().nonnegative().max(150), // pilot cap (CONCEPT §3.5)
-  proposedFare: z.number().positive(),
+/** One "what are you sending?" line — description + quantity, nothing more for the pilot
+ *  (ITEM-DESIGN-REVIEW decision 2026-07-02; size/category/photo stay deferred seams). */
+export const OrderItem = z.object({
+  description: z.string().min(1).max(140),
+  quantity: z.number().int().min(1).max(99),
 });
+export type OrderItem = z.infer<typeof OrderItem>;
+
+/** Compact one-line rendering of a line-item list — "2× Documents · 1× Phone charger". A single
+ *  qty-1 item renders as its bare description, so a legacy `itemDescription` normalized to one row
+ *  round-trips into the stored `itemDesc` summary UNCHANGED (back-compat for board/history/admin). */
+export function summarizeItems(items: readonly OrderItem[]): string {
+  if (items.length === 1 && items[0]!.quantity === 1) return items[0]!.description;
+  return items.map((it) => `${it.quantity}× ${it.description}`).join(" · ");
+}
+
+/** Customer creates a delivery and names a price (CONCEPT §1).
+ *  Item shape is dual for the deployed pilot: NEW clients send `items` (line-items, §5b seam);
+ *  OLD clients send only `itemDescription`. Exactly one is required (superRefine); when both
+ *  arrive, the server treats `items` as authoritative. */
+export const CreateOrderRequest = z
+  .object({
+    pickup: Waypoint,
+    dropoff: Waypoint,
+    itemDescription: z.string().min(1).max(280).optional(),
+    items: z.array(OrderItem).min(1).max(10).optional(),
+    note: z.string().max(280).optional(),
+    itemPhotoUrl: z.string().url().optional(),
+    declaredValue: z.number().nonnegative().max(150), // pilot cap (CONCEPT §3.5)
+    proposedFare: z.number().positive(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.items === undefined && v.itemDescription === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["items"],
+        message: "Say what you're sending — add at least one item.",
+      });
+    }
+  });
 export type CreateOrderRequest = z.infer<typeof CreateOrderRequest>;
 
 /** Rider responds once: accept the proposed fare, or counter with their own. */
