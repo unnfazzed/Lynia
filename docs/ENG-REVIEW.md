@@ -164,7 +164,8 @@ An independent eng + adversarial + static-design pass over the whole build. Back
 (history/`me` authz + PII). Fixed a **systemic error-state-honesty P1** (errors were swallowed into success-
 looking states) and the **rider-gate staleness**. Consciously-deferred remainder tracked as deferred work.
 Test count climbed 21 → 72 → 112 → **119** API tests through this stage, with mobile typecheck in the CI gate.
-(It has since grown to **212** with the Ship/Phase-3 work below.)
+(It has since grown to **300+** API tests with the Ship/Phase-3/batch-4 work below — see
+`docs/PILOT-READINESS.md` for the current count.)
 
 **Verdict:** Build engineering CLEARED — foundations sound, P0s closed, lifecycle whole and tested. → Ship.
 
@@ -403,9 +404,47 @@ UX items (those are design-side — see `docs/DESIGN-REVIEW.md` §5). **Current 
 
 **Tested:** `otp-sender.spec` (WhatsApp payload shape, misconfig-throws, channel routing) and the existing
 `env.spec` config guards. The live Graph/Didit HTTP calls are unit-boundaried like the FCM path — a real
-account is needed to exercise them end-to-end, so the payload/request builders are what's asserted. Total
-**212** API tests.
+account is needed to exercise them end-to-end, so the payload/request builders are what's asserted.
+(**300+** API tests as of the batch-4 work in §7 — current count in `docs/PILOT-READINESS.md`.)
 
 **Deferred / founder-gated (not code):** an approved WhatsApp authentication template + a real Didit ZIM-ID
 run remain founder actions (runbook in `docs/PILOT-READINESS.md`). **Current status →
 `docs/PILOT-READINESS.md`.**
+
+---
+
+## 7. Batch-4 build — scale headroom + client RUM (PR #85, 2026-07-01)
+
+> Build pass that closes the P2 scale/observability remainder the earlier reviews (and the
+> `docs/INDRIVE-UX-REVIEW.md` roadmap) consciously deferred — the "smooth-under-load, headroom-as-data-grows"
+> tail. Nothing here changes the offer-loop or lifecycle contracts; each item is a hot-path or
+> operability hardening behind the already-shipped behaviour. Status: **SHIPPED.**
+
+**What landed:**
+
+- **Server-side WS position coalesce (E3).** `TrackingGateway` now coalesces `position` emits to **≤1/sec per
+  order room** (`coalescePositionEmit`, `tracking.gateway.ts`): the leading edge fires immediately — preserving
+  the ET4/P1-1a emit-before-persist and low first-fix latency — and further fixes inside the window overwrite a
+  single buffered payload that a trailing timer flushes at window end, so the customer converges on the latest
+  position without a flood. **The durable per-fix persist (`recordFix`) is untouched** — this only shields the
+  broadcast, not the write. Never throws; a null server or timer hiccup can't affect the persist.
+- **History composite indexes (E5).** Migration `0007_history_indexes`: `orders(customer_id, created_at)` +
+  `orders(rider_id, created_at)` + `order_events(order_id, created_at)`, turning the `customer_id OR rider_id`
+  history scan and the snapshot-timeline read from seq-scan-then-sort into index-order reads. The composites
+  subsume the old single-column `orders_rider_id_idx` / `order_events_order_id_idx` (leftmost-prefix), so those
+  are dropped to avoid redundant indexes. The UNION rewrite ET5 floated was intentionally skipped — with both
+  OR sides indexed and a bounded `take`, it buys nothing.
+- **Explicit Prisma connection pool (E6).** `PrismaService` now sets a deterministic `connection_limit` on the
+  datasource URL (default 10, overridable via `DATABASE_CONNECTION_LIMIT`; `DATABASE_POOL_TIMEOUT` passed
+  through as `pool_timeout` when set), rather than leaning on Prisma's cpu-derived default — predictable pool
+  behaviour across Cloud Run instance sizes. A URL-present value or an unparseable URL is left untouched so a
+  bad value can't block boot.
+- **Client-RUM ingest (glass-to-glass).** A bounded, auth'd `POST /client-metrics`
+  (`apps/api/src/observability/client-metrics.controller.ts`) accepts the mobile app's perceived-latency
+  samples and records them via `MetricsService.recordClientSample` into the same OTEL pipeline as the server
+  SLOs — the `client_position/offer/board_glass_latency_ms` + `client_apifetch_latency_ms` histograms and the
+  `client_samples_dropped_total` counter. Turns the server-only SLOs into true end-to-end numbers. See
+  `docs/OBSERVABILITY.md`.
+
+**Verdict:** batch-4 engineering CLEARED — the deferred scale/observability tail is closed; no contract or
+concurrency change. **Current status → `docs/PILOT-READINESS.md`.**

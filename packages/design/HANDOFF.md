@@ -82,8 +82,9 @@ use the design system in production.)
   ≈4.7:1 for sunlight); green **text/icons** use **#006630** (`--accent-text`). Gold **#F2B705** only
   for the 'recommended' marker.
 - Logo = the **Paper Dove** (`assets/brand/`). Full lockup ≥32px (crease-cross shows); silhouette
-  below 32px. Wordmark is Fredoka 600 — self-hosted now; **outline it to vector for final production**
-  so the logo never depends on a font file (interim is fine, it's self-hosted and can't fail).
+  below 32px. Wordmark **ships as outlined vector paths** (`assets/brand/lyniago-wordmark.svg` +
+  `apps/mobile/src/ui/wordmark-paths.ts`) so the logo never depends on a font file; the Fredoka 600
+  woff2 remains only as a fallback for the HTML kits.
 - Voice: second person, sentence case, calm, honest; every dead-end offers an action; no emoji.
 - Device rules: 320px-first, ~150KB/screen, skeletons over spinners, touch targets ≥44px.
 
@@ -91,35 +92,34 @@ use the design system in production.)
 
 ## Repo-side engineering tickets (design can't fix these — app code must)
 
-Carried from `ALIGNMENT-REVIEW.md`. The design shows the intended UX; these wire it to the backend.
+**This doc is the single canonical owner of the repo-side ticket list.** (`ALIGNMENT-REVIEW.md` and
+`docs/DESIGN-SYSTEM.md` point here rather than keeping their own copies.) The design shows the intended
+UX; these wire it to the backend.
 
-> **Status (post-review pass).** P0-1 (contact phones), timeout coverage incl. uploads (P1-2), 409-scoping (P1-3),
-> OTP 401/403 client handling (P1-4), the reconnecting chip (P1-7) and phone reveal (P1-6) are addressed in the app
-> as of this branch. Multi line-items are tracked separately. Items kept below for the record.
+**Closed on this branch** — the app now implements them; kits already showed the UX:
 
-**P0**
-1. **Enforce both contact phones on submit.** `apps/mobile/app/home.tsx` must block "Broadcast" while
-   either pickup or drop-off `contactPhone` is empty (contract requires `min(6)`). The design already
-   requires both on the required path — the app currently can send `contactPhone: ""`. **Addressed** (status note above).
+- **P0-1 · Both contact phones enforced on submit** — `home.tsx` blocks Broadcast while either
+  `contactPhone` is empty (`min(6)`), so the client can't send `contactPhone: ""`.
+- **P1-2 · Bounded timeout + error state on every async action** (send code, broadcast, select, KYC,
+  confirm delivery) — 15s AbortController → friendly retry via `Field.error` / `OfflineBanner`.
+- **P1-3 · Select-offer race (409)** — optimistic assign, roll back on 409 with the muted
+  "That rider was just taken — choose another."
+- **P1-4 · Delivery-OTP 401 retry + 403 lockout + re-issue** — 5 wrong → lockout; customer
+  "Re-issue delivery code" calls `rotateDeliveryCode`.
+- **P1-6 · Bidirectional phone reveal** gated to `assigned`→`completed` (`PHONE_REVEAL_STATUSES`), hidden after.
+- **P1-7 · Reconnecting connection chip** (the glanceable state).
 
-**P1**
-2. **Bounded request timeout + error state on every async action** (send code, broadcast, select,
-   submit KYC, confirm delivery). 15s AbortController → a friendly retry (the `Field.error` slot and
-   `OfflineBanner` exist for this). No screen should hang on a spinner. **Addressed** (status note above).
-3. **Select-offer race (409).** Optimistic assign → on 409 roll back with the muted "That rider was
-   just taken — choose another." (never error-red). Kit shows the UX; wire the real mutation. **Addressed** (status note above).
-4. **Delivery-OTP: 401 retry + 403 lockout + re-issue.** 5 wrong attempts → lockout copy on the rider
-   side; customer "Re-issue delivery code" calls `rotateDeliveryCode`. Kit shows both. **Addressed** (status note above).
-5. **One round per rider on the board.** After an offer, hide that order (`bidIds`); a job starts only
-   when the customer selects. Kit shows this.
-6. **Bidirectional phone reveal** gated to `assigned`→`completed` (`PHONE_REVEAL_STATUSES`); hide
-   after. Kit shows both sides. **Addressed** (status note above).
-7. **Rider heartbeat + cooldown-403** → auto-flip to offline with a reason; connection chip supports
-   the "Reconnecting" state. **Reconnecting chip addressed** (status note above); heartbeat/cooldown wiring stays open.
+**Still open:**
 
-**On-device checks (can't judge from a screen)**
-8. CTA green (#00812F) contrast in real sunlight — re-tune `--cta-fill` if needed (one line).
-9. Skeleton→content reflow on a real device; bottom-sheet drag physics on the map home.
+- **P1-5 · One round per rider on the board.** After an offer, hide that order (`bidIds`); a job starts
+  only when the customer selects. Kit shows this — wire the real board mutation.
+- **P1-7b · Rider heartbeat + cooldown-403.** Auto-flip to offline with a reason on cooldown 403; the
+  reconnecting chip exists but the heartbeat loop + cooldown wiring is still device-gated.
+
+**On-device checks (can't judge from a screen):**
+
+- CTA green (#00812F) contrast in real sunlight — re-tune `--cta-fill` if needed (one line).
+- Skeleton→content reflow on a real device; bottom-sheet drag physics on the map home.
 
 ## Before production
 - ~~Outline the Fredoka wordmark to SVG (drop the font dependency for the logo).~~ **Done** —

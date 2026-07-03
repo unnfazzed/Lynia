@@ -166,7 +166,7 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 ### Data model (sketch)
 - `profiles` (id, role: customer/rider/merchant/admin, **first_name, last_name** (public = first name + last initial), phone, **email** (nullable), **id_number** (stored; verified only for riders), **photo_url** (required for riders), **phone_verified_at** (WhatsApp OTP), **created_at** (date joined), **orders_count** (denormalized for the customer profile))
 - `riders` (profile_id, vehicle_info, **bike_reg** (ZIM plate, stored — not live-checked), **photo_url** (required), id_verified, **kyc_status[`pending`|`verified`|`failed`]**, **kyc_ref** (KYC provider reference), is_online, current_lat, current_lng, **trips_count**, **rating_avg, rating_count** (denormalized from `ratings` for cheap profile rendering), updated_at) — a rider can only go online / accept jobs once `kyc_status = verified`. *(No commission/balance fields — payments are out of scope, §6.)*
-- `orders` (id, order_type[`parcel`], customer_id, rider_id, pickup{lat,lng,landmark,contact}, dropoff{...}, item_desc, **note** (customer's pickup/handling instructions the rider confirms), item_photo_url, declared_value, size, distance_km, **suggested_fare** (system), **proposed_fare** (customer's broadcast price), **agreed_fare** (selected offer), currency, delivery_otp, status, **confirmed_at**, **pickup_started_at**, **collected_at**, timestamps)
+- `orders` (id, order_type[`parcel`], customer_id, rider_id, pickup{lat,lng,landmark,contact}, dropoff{...}, item_desc (now backed by an **`items` line-items JSON column** — the §5b "line-items, not a single field" seam **realized**, `Order.items`, migration 0008; `item_desc` kept as the derived compact summary), **note** (customer's pickup/handling instructions the rider confirms), item_photo_url, declared_value, size, distance_km, **suggested_fare** (system), **proposed_fare** (customer's broadcast price), **agreed_fare** (selected offer), currency, delivery_otp, status, **confirmed_at**, **pickup_started_at**, **collected_at**, timestamps)
 - `offers` (id, order_id, rider_id, **type[`accept`|`counter`]**, offered_fare, eta_minutes, status[`pending`|`selected`|`declined`|`expired`], at) — the bidding loop; `accept` means offered_fare = customer's proposed_fare, `counter` means a different amount
 - `order_events` (order_id, status, **lat, lng** (rider position at the event, when relevant), at) — status history; the **append-only feed the initiator's tracking timeline renders from** (§5c)
 - `ratings` (order_id, by, score, comment)
@@ -184,7 +184,7 @@ The two post-assignment states — **`confirmed`** (rider has reviewed and confi
 
 Low-cost data decisions so grocery/pharmacy/food plug in later as **additive order types**, not migrations:
 
-1. **Generic `orders`** with an `order_type` enum — `parcel` at launch; `merchant` reserved (for COD verticals). Use **line-items**, not a single hard-coded item field.
+1. **Generic `orders`** with an `order_type` enum — `parcel` at launch; `merchant` reserved (for COD verticals). Use **line-items**, not a single hard-coded item field — ✅ **implemented** (`Order.items` JSON, migration 0008; `itemDesc` kept as the derived summary).
 2. **Stubbed `merchants`** table + optional `merchant_id` on orders (unused at launch; powers COD verticals later).
 3. **Saved `addresses`** (address book) per user — needed for repeat grocery/food anyway.
 4. **One identity, expandable roles** — customer / rider / merchant / admin from day one.
@@ -378,14 +378,14 @@ number is simply gated by order state.
 
 ## 9. Open decisions (pending — to resolve in Plan stage)
 
-- **Offer-loop tuning:** broadcast radius, offer-window length, max offers shown, offer/selection expiry timers — start with placeholders, calibrate on real corridor supply.
+- **Offer-loop tuning:** broadcast radius, offer-window length, max offers shown, offer/selection expiry timers — start with placeholders, calibrate on real corridor supply. *(The **offer-window now has a real value — 90s**, `OFFER_WINDOW_MS` in `@lynia/shared`; keep "calibrate on real data" but it is no longer a bare placeholder.)*
 - **Legal / regulatory:** business registration, ZIMRA tax, motorbike commercial-use rules, rider licensing & insurance, goods/rider liability, data privacy. Verify with a local advisor before *public* launch (not a blocker for a closed pilot).
 - **Brand & language:** is "Lynia" the final consumer name? English first; Shona/Ndebele later?
 - **Launch corridor:** which specific Harare suburbs go first (drives rider recruitment + demand seeding)?
 - **WhatsApp OTP provider:** which WhatsApp Business API BSP/aggregator delivers the signup code — cost per message, verification-template approval, delivery reliability in Zimbabwe.
-- **KYC vendor (riders):** which automated ID-verification service actually supports **Zimbabwean national IDs** — coverage, price, latency, false-reject rate, and the fallback (e.g. manual review) if none is adequate.
+- **KYC vendor (riders): ✅ DECIDED — Didit.** The automated ID-verification vendor is chosen and **integrated** (`apps/api/src/kyc/didit.ts`; the deploy defaults `KYC_PROVIDER=didit`, with the manual admin review kept as the backstop). What remains is not a decision but a measurement: the **real ZIM-ID coverage run** (false-reject rate on genuine Zimbabwean national IDs) — tracked in `docs/PILOT-READINESS.md`.
 - **SMS gateway:** which local aggregator for non-OTP critical notifications (push fallback)?
-- **Cancellation/no-show enforcement** in a cash model (hard to charge fees) — policy TBD. Includes the **rider-can't-take-it case** at the item-confirm step (§5c step 2): since confirm is confirm-only, a rider problem cancels the order — define who bears it and how the customer is re-served (re-broadcast prompt).
+- **Cancellation/no-show enforcement** in a cash model (hard to charge fees) — the **mechanism is now BUILT**: a rider-initiated cancel is a no-show strike, and every 3rd strike **forces the rider offline on a 2-hour cooldown** (a strike counter + cooldown in `apps/api/src/orders/order-lifecycle.service.ts`, no money required). What may still calibrate on real data is the *policy* — strike threshold and cooldown length. Still includes the **rider-can't-take-it case** at the item-confirm step (§5c step 2): since confirm is confirm-only, a rider problem cancels the order — and the customer is re-served via the re-broadcast prompt.
 
 ---
 

@@ -54,7 +54,7 @@ matter:
 
 **API tests 212 → 246 pass**; shared/api/mobile typecheck + api build clean. What remained from the review —
 **P2 depth-and-scale polish** — has since **also landed** (PR #85, same day: server-side WS coalesce, history
-composite indexes, explicit Prisma pool, rating-on-tap; **274 API tests pass**), joined by **client RUM +
+composite indexes, explicit Prisma pool, rating-on-tap; **300+ API tests pass**), joined by **client RUM +
 the gesture-driven bottom sheet** (PR #84). Every codeable roadmap item P0→P2 is now shipped; only the
 intentionally-deferred / device-gated items remain. See **Pending tasks** at the bottom of this doc. The
 founder/vendor wiring (WhatsApp BSP, Didit, Firebase) and the dev build remain the only pilot gates,
@@ -101,7 +101,7 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
 - **DT4 offer best-match sort** — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector and a
   RECOMMENDED marker (design D-d). The **last buildable-now code gap — now closed.**
 - **Revenue model decided (§6)** — rider commission, 0% for ~6–8 months, infra later (see Decision gates).
-- **Test count** 21 → 72 → 112 → 119 → 212 → 246 → **274** API tests (Phase-3 push/broadcast,
+- **Test count** 21 → 72 → 112 → 119 → 212 → 246 → **300+** API tests (Phase-3 push/broadcast,
   KYC-hardening, WhatsApp-OTP, the 07-01 inDrive-parity suites, then the client-RUM and P2 coalesce/pool
   suites); mobile typecheck in the CI gate.
 
@@ -190,8 +190,9 @@ wiring, not code:
    parallel — each a *create account → set secret → flip flag* step. The full flow is exercisable today
    vendor-free via the opt-in QA test mode.
 4. **Greenlight a dev build** — then Phase 3 native map + `/qa` on a real device.
-5. Mobile profile-edit + notifications + a Firebase project fold in next (profile-update endpoint, device-token
-   registration, live FCM send).
+5. Mobile profile-edit + a Firebase project fold in next (profile-update endpoint — genuinely absent — and
+   live FCM send). *(Device-token registration is already shipped: `POST/DELETE /notifications/device-token`,
+   the `device_tokens` table, and the mobile `src/push` wiring.)*
 6. **~6–8 months out:** build the commission/settlement infrastructure when monetization begins (CONCEPT §6).
 
 **Bottom line (06-29):** the engineering spine and both app surfaces are built and CI-green, **the API is

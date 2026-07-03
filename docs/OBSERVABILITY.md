@@ -1,6 +1,8 @@
 # Observability — latency SLOs & metrics
 
-Lynia's API emits **metrics only** in this batch (no custom spans). Instruments are OpenTelemetry
+Lynia's API emits **metrics + auto HTTP traces** (no custom app spans yet — the `OTLPTraceExporter`
+and `HttpInstrumentation` are wired in `apps/api/src/observability/otel.ts`, so inbound/outbound HTTP
+is auto-traced; there are no hand-instrumented business spans). Instruments are OpenTelemetry
 histograms/counters exported over **OTLP/HTTP push** to whatever collector
 `OTEL_EXPORTER_OTLP_ENDPOINT` points at. There is **no Prometheus scrape endpoint** — the API pushes;
 the collector (Cloud Run → Cloud Monitoring, or any OTLP sink) pulls it forward.
@@ -31,8 +33,21 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `broadcast_nearby_duration_ms`  | histogram | ms   | `source`                        | < 400 ms   |
 | `otp_verify_duration_ms`        | histogram | ms   | `result`                        | < 800 ms   |
 | `http_request_duration_ms`      | histogram | ms   | `route`, `method`, `status_class` | < 1000 ms |
+| `client_position_glass_latency_ms` | histogram | ms | `role`                         | (glass-to-glass) |
+| `client_offer_glass_latency_ms` | histogram | ms   | `role`                          | (glass-to-glass) |
+| `client_board_glass_latency_ms` | histogram | ms   | `role`                          | (glass-to-glass) |
+| `client_apifetch_latency_ms`    | histogram | ms   | `role`                          | (client RTT)     |
 | `match_select_total`            | counter   | 1    | `outcome`                       | —          |
 | `offers_made_total`             | counter   | 1    | `outcome`                       | —          |
+| `client_samples_dropped_total`  | counter   | 1    | `role`                          | —          |
+
+> **Client RUM (present, not future).** The four `client_*_latency_ms` histograms and the
+> `client_samples_dropped_total` counter are the **glass-to-glass** signal — the mobile app measures
+> perceived latency (skew-clamped WS glass-to-glass for position/offer/board, skew-free `apiFetch`
+> round-trips) and posts a bounded, auth'd batch to `POST /client-metrics`
+> (`apps/api/src/observability/client-metrics.controller.ts`), which records them into the same OTEL
+> pipeline as the server SLOs (`recordClientSample` in `metrics.service.ts`). These turn the
+> server-only SLOs below into true end-to-end numbers.
 
 > **Scope of the two "push" metrics** (both are single-process spans, not glass-to-glass):
 > `offer_received_latency_ms` times the rider's `makeOffer` **server handling** (request → offer row
@@ -107,10 +122,11 @@ latency alerts with error-rate alerts off the counters, e.g.
 
 ## Caveat — these are SERVER-side latencies
 
-Every histogram here measures time **inside the API process** (or, for `position_emit_latency_ms`, the
-in-process emit). They do **not** capture network RTT to the device or client-side render time.
-**Glass-to-glass** latency — what the rider/customer actually perceives — needs a separate **client RUM**
-signal instrumented in the apps. Treat the server SLOs as a floor, not the full picture.
+The server histograms here measure time **inside the API process** (or, for `position_emit_latency_ms`,
+the in-process emit). They do **not** capture network RTT to the device or client-side render time.
+**Glass-to-glass** latency — what the rider/customer actually perceives — is captured by the
+**client RUM** histograms (`client_*_latency_ms`) the mobile app now posts to `POST /client-metrics`
+(see the metric table above). Treat the server SLOs as the floor and the client RUM as the full picture.
 
 ## Production activation (GCP)
 

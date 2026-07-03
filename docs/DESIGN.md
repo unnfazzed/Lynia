@@ -241,7 +241,7 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 
 | ID | P | Task | Status |
 |----|---|------|--------|
-| DT1 | P1 | This file — tokens, Manrope scale, spacing, components | ✅ done |
+| DT1 | P1 | This file — tokens, Inter scale, spacing, components | ✅ done |
 | DT2 | P1 | Two empty states (no-offers / no-riders) with warmth + primary action | ✅ done |
 | DT3 | P1 | Interaction-state coverage (loading/error/partial) for broadcast, offers, tracking, OTP | ✅ done (error states landed in the post-build review fixes) |
 | DT4 | P1 | Offer list best-match default sort + recommended marker (D-d) | ✅ done — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector (best/cheapest/fastest/top-rated) and a RECOMMENDED badge on the customer offer screen |
