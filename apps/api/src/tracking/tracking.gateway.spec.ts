@@ -435,6 +435,32 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     }
   });
 
+  it("prunes an already-escalated order once the ride ends — no unbounded leak of the notified set", async () => {
+    vi.useFakeTimers();
+    try {
+      const { server } = fakeServer();
+      const tracking = customerTracking();
+      const g = gateway(tracking);
+      g.server = server as never;
+      const client = fakeSocket({ sub: "c1", role: "customer" });
+
+      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      g.handleDisconnect(client as never);
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence(); // escalates ord-1 → now in the notified set (excluded from `candidates`)
+
+      // The ride ends. A scan MUST still re-check the escalated order and prune it — proven by
+      // filterActiveOrders being called with ord-1 even though it's no longer a fresh candidate.
+      // Before the fix, `toCheck` was candidates-only → empty → early return → the entry leaked forever.
+      tracking.filterActiveOrders.mockClear();
+      tracking.filterActiveOrders.mockImplementation(async () => new Set<string>());
+      await g.scanPresence();
+      expect(tracking.filterActiveOrders).toHaveBeenCalledWith(expect.arrayContaining(["ord-1"]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("re-arms after the customer re-subscribes (reconnected), then dropped again", async () => {
     vi.useFakeTimers();
     try {

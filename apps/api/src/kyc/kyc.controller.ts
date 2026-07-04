@@ -23,13 +23,20 @@ import type { Env } from "../config/env";
 import { RiderService } from "../riders/rider.service";
 import { diditTimestampFresh, mapDiditStatus, verifyDiditSignature, verifyDiditSignatureV2 } from "./didit";
 
-// A-02: a decline may carry the reason code (recorded on the rider + audit log). Free string (the
+// A-02: a decline MUST carry the reason code (recorded on the rider + audit log — a compliance
+// invariant, so it's server-enforced here, not only in the admin ConfirmModal). Free string (the
 // admin sends the reason label from KYC_DECLINE_REASONS) — capped, not enum-bound, so the admin's
 // mirrored list can evolve without 400ing here.
-const AdminKyc = z.object({
-  status: z.enum(["pending", "verified", "failed"]),
-  reasonCode: z.string().min(1).max(160).optional(),
-});
+const AdminKyc = z
+  .object({
+    status: z.enum(["pending", "verified", "failed"]),
+    reasonCode: z.string().min(1).max(160).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.status === "failed" && !v.reasonCode) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["reasonCode"], message: "A decline must record a reason." });
+    }
+  });
 
 @Controller()
 export class KycController {

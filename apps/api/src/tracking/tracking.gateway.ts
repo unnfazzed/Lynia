@@ -446,15 +446,24 @@ export class TrackingGateway
           candidates.push(orderId);
         }
       }
-      if (candidates.length === 0) return;
-      const active = await this.tracking.filterActiveOrders(candidates);
-      for (const orderId of candidates) {
-        const p = this.customerPresence.get(orderId);
+      // Check the fresh candidates AND the already-escalated set: an escalated order is excluded from
+      // `candidates` forever, so without re-checking it here its entries would leak past the ride's end
+      // (mirror of the rider-side prune at scanPresence). One DB round-trip over the union.
+      const toCheck = [...new Set([...candidates, ...this.customerStaleNotified])];
+      if (toCheck.length === 0) return;
+      const active = await this.tracking.filterActiveOrders(toCheck);
+      // Prune anything no longer active from BOTH sets — the ride ended while the customer was away;
+      // dropping the entry stops the leak and re-arms a future escalation if they ever reconnect.
+      for (const orderId of toCheck) {
         if (!active.has(orderId)) {
-          // Ride ended while the customer was away — drop the presence entry so it can't leak.
           this.customerPresence.delete(orderId);
-          continue;
+          this.customerStaleNotified.delete(orderId);
         }
+      }
+      // Escalate the fresh candidates that are still active (one-shot; re-arms on reconnect).
+      for (const orderId of candidates) {
+        if (!active.has(orderId)) continue; // pruned above
+        const p = this.customerPresence.get(orderId);
         this.customerStaleNotified.add(orderId);
         this.emitPresenceStale(orderId, "customer", p?.darkSince != null ? new Date(p.darkSince) : null);
       }
