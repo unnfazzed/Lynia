@@ -113,9 +113,12 @@ Turn QA mode on with the documented `gh variable set` commands
   parallel allowlist beside the unconditional pass would gate nothing (would require tightening
   `stubAutoPass` itself — unnecessary pre-pilot).
 - Gradle build caching — deferred to a follow-up after the first green build.
-- Full E.164 phone normalization — P3, real-user polish, deferred.
-  (The other P3 polish — input-field a11y `autoComplete`/`textContentType` + label association, and the
-  OTP "we sent a code" copy on a pre-filled test build — was **folded in**, not deferred.)
+- _Nothing outstanding from the review._ The P3 polish that was originally deferred is now folded in:
+  input-field a11y (`autoComplete`/`textContentType` + label association), the pre-filled-build OTP
+  copy, the honest KYC copy on the test build, and **E.164 phone normalization** at the auth boundary
+  (`normalizePhone` in `@lynia/shared`; `requestOtp`/`verifyOtp` canonicalize so one subscriber = one
+  account however they type the number). Existing DB rows are not retro-migrated — safe pre-pilot
+  (test data only); a backfill would be a separate migration if real rows ever predate this.
 
 ## Implementation Tasks
 
