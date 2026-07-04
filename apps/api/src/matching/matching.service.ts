@@ -146,11 +146,14 @@ export class MatchingService {
     });
 
     // Post-commit, best-effort. The auction closed with no pick, so (C2) signal `bid:expired` to the
-    // order room — the single server timer authority firing, distinct from the `not_chosen`/
-    // `offers:changed` a select produces — and prompt the customer to nudge the price (§5c).
+    // bidders — the board rooms the order was broadcast to (gateway resolves the pickup cell) — the
+    // single server timer authority firing, distinct from the `not_chosen`/`offers:changed` a select
+    // produces — and prompt the customer to nudge the price (§5c).
     if (result.expired) {
       try {
-        this.gateway.emitBidExpired(orderId);
+        const ord = await this.prisma.order.findUnique({ where: { id: orderId }, select: { pickup: true } });
+        const pt = (ord?.pickup as { point?: { lat: number; lng: number } } | null)?.point;
+        this.gateway.emitBidExpired(orderId, pt?.lat, pt?.lng);
       } catch (err) {
         this.logger.warn(`bid:expired emit failed for order ${orderId}: ${(err as Error).message}`);
       }

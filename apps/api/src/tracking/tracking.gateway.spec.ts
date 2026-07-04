@@ -255,12 +255,24 @@ describe("TrackingGateway.emitBoardNewOrder", () => {
 });
 
 describe("TrackingGateway.emitBidExpired (C2)", () => {
-  it("signals bid:expired to the order's room", () => {
+  it("signals bid:expired to the BOARD (pickup geo-cell + city-wide), where bidders are — not the order room", () => {
+    const { server, to, emit } = fakeServer();
+    const g = gateway();
+    g.server = server as never;
+    g.emitBidExpired("ord-1", -17.83, 31.05);
+    // Bidders live on the board (same distribution as board:new-order), never the order room.
+    expect(to).toHaveBeenCalledWith(BOARD_ROOM);
+    expect(to).toHaveBeenCalledWith(boardGeoRoom(boardCell(-17.83, 31.05)));
+    expect(to).not.toHaveBeenCalledWith(orderRoom("ord-1"));
+    expect(emit).toHaveBeenCalledWith(WS_EVENTS.bidExpired, expect.objectContaining({ orderId: "ord-1" }));
+  });
+
+  it("falls back to the city-wide board when pickup coords are absent", () => {
     const { server, to, emit } = fakeServer();
     const g = gateway();
     g.server = server as never;
     g.emitBidExpired("ord-1");
-    expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+    expect(to).toHaveBeenCalledWith(BOARD_ROOM);
     expect(emit).toHaveBeenCalledWith(WS_EVENTS.bidExpired, expect.objectContaining({ orderId: "ord-1" }));
   });
 

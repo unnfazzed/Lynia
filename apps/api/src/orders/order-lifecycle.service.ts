@@ -198,15 +198,17 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   ): Promise<{ orderId: string; confirmedIndexes: number[] }> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { status: true, riderId: true },
+      select: { status: true, riderId: true, items: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
     if (order.status !== "en_route_pickup") {
       throw new ConflictException("Items can only be confirmed at the pickup");
     }
-    // De-dupe + sort so the stored set is canonical regardless of tick order.
-    const indexes = [...new Set(confirmedIndexes)].sort((a, b) => a - b);
+    // De-dupe + sort, and bound to the order's actual item count so a stale/oversized index (the
+    // contract allows 0–9) can't persist a phantom row the checklist would render.
+    const itemCount = Array.isArray(order.items) ? order.items.length : 0;
+    const indexes = [...new Set(confirmedIndexes)].filter((i) => i < itemCount).sort((a, b) => a - b);
     await this.prisma.order.update({
       where: { id: orderId },
       data: { itemsCollected: indexes as unknown as Prisma.InputJsonValue },
@@ -438,6 +440,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         suggestedFare: true,
         proposedFare: true,
         currency: true,
+        disclaimerVersion: true,
+        disclaimerAcceptedAt: true,
       },
     });
     if (!src) throw new NotFoundException("Order not found");
@@ -458,6 +462,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         suggestedFare: src.suggestedFare,
         proposedFare: src.proposedFare,
         currency: src.currency,
+        // Same customer + same terms → carry the disclaimer consent forward (A1-8); a re-broadcast
+        // isn't a fresh order the customer restarts, so it shouldn't drop their recorded consent.
+        disclaimerVersion: src.disclaimerVersion,
+        disclaimerAcceptedAt: src.disclaimerAcceptedAt,
         status: "open_for_offers",
         rebroadcastOfId: sourceOrderId,
         events: { create: { status: "open_for_offers" } },

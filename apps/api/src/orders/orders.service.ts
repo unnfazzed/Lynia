@@ -377,6 +377,9 @@ export class OrdersService {
         pickup: true,
         dropoff: true,
         items: true,
+        itemsCollected: true,
+        undeliveredReason: true,
+        deliveryAttempts: true,
         customer: { select: { phone: true } },
         rider: {
           select: {
@@ -432,6 +435,12 @@ export class OrdersService {
       // client falls back to nothing). Listing paths deliberately stay on the itemDesc summary
       // (data budget); no PII lives in items.
       items: (order.items as OrderItem[] | null) ?? null,
+      // Per-item pickup confirmation, so the rider's checklist state survives a reconnect/refetch.
+      itemsCollected: (order.itemsCollected as number[] | null) ?? null,
+      // C6: the failed-hand-off reason + attempt count, shown verbatim on the customer's terminal
+      // screen. Null until the order is `undelivered`.
+      undeliveredReason: order.undeliveredReason,
+      undeliveredAttempts: order.deliveryAttempts,
       rider,
       events: order.events,
       counterpartyPhone,

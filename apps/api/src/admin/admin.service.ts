@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { type KycStatus, type OrderStatus, PHONE_REVEAL_STATUSES } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type KycStatus, type OrderStatus } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -87,13 +87,15 @@ export class AdminService {
       },
     });
 
-    // A-03 (P0): mask each rider's phone UNLESS they're a party on an order whose status is in
-    // PHONE_REVEAL_STATUSES *right now* (the same reveal rule orders.service getSnapshot uses). One
-    // query resolves the set of riders currently inside a reveal window; everyone else is masked.
+    // A-03 (P0): mask each rider's phone UNLESS they're on a LIVE order right now. The reveal set is
+    // ACTIVE_RIDE_STATUSES (mid-delivery) — NOT PHONE_REVEAL_STATUSES, which includes the permanent
+    // terminal states (delivered/completed/undelivered): using those would leave any rider who ever
+    // finished one order unmasked forever, defeating the roster-scrape protection. The per-order
+    // reveal window (getSnapshot) still uses PHONE_REVEAL_STATUSES — that's scoped to one live order.
     const revealingRiderIds = new Set(
       (
         await this.prisma.order.findMany({
-          where: { riderId: { in: riders.map((r) => r.profileId) }, status: { in: PHONE_REVEAL_STATUSES } },
+          where: { riderId: { in: riders.map((r) => r.profileId) }, status: { in: ACTIVE_RIDE_STATUSES } },
           select: { riderId: true },
           distinct: ["riderId"],
         })

@@ -1,3 +1,4 @@
+import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminService, computeFunnel } from "./admin.service";
@@ -54,15 +55,27 @@ describe("AdminService.listRiders", () => {
     expect(rows[0]!.phone).not.toContain("78200");
   });
 
-  it("REVEALS the full phone when the rider is a party on a reveal-status order right now", async () => {
+  it("REVEALS the full phone when the rider is a party on a LIVE order right now", async () => {
+    let orderWhere: { status?: { in: string[] } } = {};
     const prisma = {
       rider: { findMany: async () => [riderRow()] },
       // The rider is currently on a live order → reveal the real number for ops to call them.
-      order: { findMany: async () => [{ riderId: "r1" }] },
+      order: {
+        findMany: async (args: { where: { status?: { in: string[] } } }) => {
+          orderWhere = args.where;
+          return [{ riderId: "r1" }];
+        },
+      },
     };
     const svc = new AdminService(prisma as unknown as PrismaService);
     const rows = await svc.listRiders();
     expect(rows[0]!.phone).toBe("+263782000001");
+    // The reveal set MUST be live-only (ACTIVE_RIDE_STATUSES) — NOT the terminal-inclusive
+    // PHONE_REVEAL_STATUSES, which would unmask any rider who ever completed one order forever (A-03).
+    expect(orderWhere.status?.in).toEqual(ACTIVE_RIDE_STATUSES);
+    for (const terminal of ["completed", "delivered", "undelivered"]) {
+      expect(orderWhere.status?.in).not.toContain(terminal);
+    }
   });
 
   it("returns all riders when no filter is given", async () => {

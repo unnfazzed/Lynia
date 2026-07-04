@@ -290,13 +290,20 @@ export class TrackingGateway
   }
 
   /**
-   * The auction window closed with no pick — signal `bid:expired` to everyone in the order's room
-   * (INTERFACE-AUDIT C2). Distinct from `offers:changed`/`not_chosen` (someone else was picked). The
-   * server is the single expiry timer authority; clients never drive this. Best-effort; never throws.
+   * The auction window closed with no pick — signal `bid:expired` to ALL bidders (INTERFACE-AUDIT C2).
+   * Bidders live on the BOARD (the geo-cell room the order was broadcast to + the city-wide BOARD_ROOM
+   * for loc-less riders) — NOT the order room, which only the customer joins — so this mirrors
+   * `emitBoardNewOrder`'s exact distribution so the same riders who saw the order see it close. Distinct
+   * from `offers:changed`/`not_chosen` (someone else was picked). The server is the single expiry timer
+   * authority; clients never drive this. Best-effort; never throws.
    */
-  emitBidExpired(orderId: string): void {
+  emitBidExpired(orderId: string, pickupLat?: number, pickupLng?: number): void {
     const payload: BidExpiredEvent = { orderId, at: new Date().toISOString() };
-    this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.bidExpired, payload);
+    let target = this.server?.to(BOARD_ROOM);
+    if (target && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
+      target = target.to(boardGeoRoom(boardCell(pickupLat as number, pickupLng as number)));
+    }
+    target?.emit(WS_EVENTS.bidExpired, payload);
   }
 
   /**
