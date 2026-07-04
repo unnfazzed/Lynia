@@ -301,6 +301,28 @@ and transition logic, not schema.
 Launch A first; B and D immediately after 1a merges; C tracks Phase 2 transition-by-transition.
 Conflict flag: A and B both touch `packages/shared` — keep 1b additive-only and rebase.
 
+## E1. Verification run — 4 Jul 2026 (implementation branch)
+
+Executed against the implemented branch, not just static checks:
+
+- **Static gate:** `pnpm typecheck` (5/5), `pnpm lint`, `pnpm build`, `pnpm test` all green.
+  Unit tests: 329 API + 23 mobile + shared.
+- **Real DB migration:** Postgres 16 + PostGIS 3.4 (local cluster). `prisma migrate deploy` applied
+  all 9 migrations clean, `0009_seam_contracts` included; verified in-DB that the `undelivered` enum
+  value, the seven new `orders` columns, `riders.kyc_attempts`, and the rebroadcast index all landed.
+- **Integration suite (needs a live PostGIS):** `pnpm --filter @lynia/api test:int` → **32/32** —
+  order-lifecycle (the two-sided seam transitions: cancellation matrix, F-01 re-broadcast, undelivered
+  guard), matching offer-loop, tracking, client-metrics. Surfaced one **test-only** bug the mocked unit
+  run couldn't (Prisma `Decimal.toString()` drops trailing zeros: `"2.50"` → `"2.5"`); fixed the
+  assertion to compare Decimals by value.
+- **Admin browser QA (headless Chromium):** all **10 routes** (overview, orders, riders, customers,
+  issues, cash + detail views) return 200 with zero console/page errors and the DS3 shell on every
+  page. Degraded (`API_BASE_URL` unset) states render correct placeholders; the **A-06 settlement
+  caveat** banner is prominent on `/cash`; accent-split verified visually (active nav = `accentWash` +
+  `accentText`, not a fill). **Not covered here** (needs a connected API + seed): the ConfirmModal
+  destructive-action interaction and DataTable-with-rows — actions are deliberately disabled until the
+  console is connected, so that belongs to a connected-stack QA.
+
 ## E. Verification checklist (every phase)
 
 1. `pnpm install && pnpm build` clean (Turbo) · `pnpm typecheck` · `pnpm lint` · `pnpm test`.
