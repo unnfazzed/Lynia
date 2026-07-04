@@ -1,10 +1,12 @@
 import { ACTIVE_RIDE_STATUSES, type AdvanceStatusRequest, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
-import { advanceStatus, cancelOrder, confirmDelivery, getActiveOrder, type OrderSnapshot } from "../../src/api/orders";
+import { collectedItemCount } from "../../src/logic/journey";
+import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, type OrderSnapshot } from "../../src/api/orders";
+import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, ErrorText, Field, Heading, Icon, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
@@ -22,14 +24,28 @@ export default function RiderJob(): React.ReactElement {
   const qc = useQueryClient();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Pickup item verification: which line-items the rider has ticked as physically collected. Indexes
+  // into order.items; defaults to all ticked when the rider reaches the pickup-verification step.
+  const [checkedItems, setCheckedItems] = useState<Set<number>>(() => new Set());
 
   const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 6000 });
   const order = jobQ.data ?? null;
   const orderId = order?.id ?? null;
+  const items = order?.items ?? [];
 
   // Stream GPS only while the ride is genuinely active — stops on delivered AND cancelled/completed
   // (don't blocklist a single terminal state, or a cancelled job keeps broadcasting the rider's GPS).
   useRiderLocationStream(order && ACTIVE.includes(order.status) ? orderId : null);
+
+  // The customer can cancel anytime (C3). When `job:cancelled` arrives we FREEZE the last-known
+  // snapshot into a terminal, because a cancelled order immediately drops out of /orders/mine/active
+  // (so a refetch would blank the sender contact needed for a post-pickup hand-back).
+  const [cancelledJob, setCancelledJob] = useState<{ collected: boolean; snapshot: OrderSnapshot } | null>(null);
+  const orderRef = useRef<OrderSnapshot | null>(order);
+  orderRef.current = order;
+  useRiderJobSocket(order && ACTIVE.includes(order.status) ? orderId : null, (e) => {
+    if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current });
+  });
 
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
   const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Something went wrong.");
@@ -71,6 +87,82 @@ export default function RiderJob(): React.ReactElement {
   });
   const cancelM = useMutation({ mutationFn: () => cancelOrder(orderId!), onSuccess: refresh, onError: fail });
 
+  // Default every item ticked when the rider enters the pickup-verification step — they untick only
+  // what's missing. Keyed on primitives so a 6s poll (new object identity, same data) doesn't reset
+  // the rider's manual ticks mid-verification.
+  useEffect(() => {
+    if (order?.status === "en_route_pickup" && items.length > 0) {
+      setCheckedItems(new Set(items.map((_, i) => i)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per order/step, not per poll.
+  }, [order?.id, order?.status, items.length]);
+
+  const toggleItem = (i: number): void => {
+    setCheckedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+  // Confirm the ticked items, then advance to picked_up. The confirmation POST is best-effort
+  // (TODO(api): route pending) so it never blocks the collect; the advance is gated on ≥1 tick.
+  const confirmAndCollect = (): void => {
+    if (!orderId || checkedItems.size === 0) return;
+    const confirmedIndexes = [...checkedItems].sort((a, b) => a - b);
+    void confirmItems(orderId, { confirmedIndexes }).catch(() => undefined);
+    advanceM.mutate("picked_up");
+  };
+
+  // Terminal: the customer cancelled. Rendered from the frozen snapshot so the hand-back path keeps
+  // the sender contact even after the order leaves the active-job feed.
+  if (cancelledJob) {
+    const snap = cancelledJob.snapshot;
+    const senderPhone = snap.counterpartyPhone ?? snap.pickup.contactPhone ?? null;
+    return (
+      <Screen>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
+            <Heading>Your job</Heading>
+            <View style={{ flex: 1 }} />
+            <StatusPill status="cancelled" tone="offline" dot />
+          </View>
+          <Card>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
+                <Icon name="circle-alert" size={18} color={tokens.color.danger} />
+              </View>
+              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>The customer cancelled</Text>
+            </View>
+            {cancelledJob.collected ? (
+              <>
+                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
+                  This job has ended. You still have the parcel — arrange the hand-back directly with the sender. This doesn&apos;t affect your reliability score.
+                </Text>
+                {senderPhone ? (
+                  <Pressable
+                    onPress={() => void Linking.openURL(`tel:${senderPhone}`)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Call sender"
+                    style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+                  >
+                    <Icon name="phone" size={16} color={tokens.color.accentText} />
+                    <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>Call sender · {senderPhone}</Text>
+                  </Pressable>
+                ) : null}
+              </>
+            ) : (
+              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
+                Cancelled before pickup — you&apos;re simply free. No parcel, straight back to the board.
+              </Text>
+            )}
+          </Card>
+          <Button label="Back to board" onPress={() => router.replace("/rider")} />
+        </ScrollView>
+      </Screen>
+    );
+  }
+
   if (jobQ.isLoading) {
     return (
       <Screen>
@@ -90,6 +182,9 @@ export default function RiderJob(): React.ReactElement {
 
   const next = NEXT[order.status];
   const isActive = ACTIVE.includes(order.status);
+  // Total quantity across the ticked items — the collect CTA counts pieces, not rows ("Confirm 3
+  // items collected" for a 1× + 2× selection).
+  const collectedCount = collectedItemCount(items, checkedItems);
   const riderPoint =
     order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
       ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
@@ -165,7 +260,71 @@ export default function RiderJob(): React.ReactElement {
           <Stepper events={order.events} currentStatus={order.status} view="rider" />
         </Card>
 
-        {next ? (
+        {/* Pickup item verification — between "arrived at pickup" and "collected", the rider ticks the
+            sender's items against what's physically in hand. The collect CTA counts them and confirms.
+            Legacy orders with no line-items fall back to the plain advance button. */}
+        {order.status === "en_route_pickup" && items.length > 0 ? (
+          <Card style={{ borderColor: tokens.color.accent }}>
+            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: 2 }}>Confirm pickup</Text>
+            <Sub>Tick each item against the sender&apos;s list before you ride off.</Sub>
+            <View style={{ gap: tokens.space.sm }}>
+              {items.map((it, i) => {
+                const on = checkedItems.has(i);
+                return (
+                  <Pressable
+                    key={i}
+                    onPress={() => toggleItem(i)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: on }}
+                    accessibilityLabel={`${it.quantity} ${it.description}`}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: tokens.space.md,
+                      minHeight: tokens.touchTargetMin,
+                      paddingHorizontal: tokens.space.md,
+                      paddingVertical: tokens.space.sm,
+                      borderRadius: tokens.radius.input,
+                      backgroundColor: on ? tokens.color.accentWash : tokens.color.surface,
+                      borderWidth: 1,
+                      borderColor: on ? "transparent" : tokens.color.line,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 7,
+                        // Bright accent as a non-text fill (the tick box); white check glyph on it.
+                        backgroundColor: on ? tokens.color.accent : tokens.color.bg,
+                        borderWidth: on ? 0 : 1.5,
+                        borderColor: tokens.color.line,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {on ? <Icon name="check" size={15} color={tokens.color.onAccent} /> : null}
+                    </View>
+                    <Text style={{ flex: 1, fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{it.description}</Text>
+                    <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.bold, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{it.quantity}×</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={{ flexDirection: "row", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginTop: tokens.space.sm }}>
+              <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
+              <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+                Only confirm what you actually have. The recipient still verifies delivery with the 6-digit code.
+              </Text>
+            </View>
+            <Button
+              label={`Confirm ${collectedCount} item${collectedCount === 1 ? "" : "s"} collected`}
+              onPress={confirmAndCollect}
+              loading={advanceM.isPending}
+              disabled={checkedItems.size === 0}
+            />
+          </Card>
+        ) : next ? (
           <Button label={next.label} onPress={() => advanceM.mutate(next.to)} loading={advanceM.isPending} />
         ) : null}
 

@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import type { KycStatus, OrderStatus } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type KycStatus, type OrderStatus } from "@lynia/shared";
+import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
 
 function round(n: number): number {
@@ -85,10 +86,26 @@ export class AdminService {
         profile: { select: { firstName: true, lastName: true, phone: true } },
       },
     });
+
+    // A-03 (P0): mask each rider's phone UNLESS they're on a LIVE order right now. The reveal set is
+    // ACTIVE_RIDE_STATUSES (mid-delivery) — NOT PHONE_REVEAL_STATUSES, which includes the permanent
+    // terminal states (delivered/completed/undelivered): using those would leave any rider who ever
+    // finished one order unmasked forever, defeating the roster-scrape protection. The per-order
+    // reveal window (getSnapshot) still uses PHONE_REVEAL_STATUSES — that's scoped to one live order.
+    const revealingRiderIds = new Set(
+      (
+        await this.prisma.order.findMany({
+          where: { riderId: { in: riders.map((r) => r.profileId) }, status: { in: ACTIVE_RIDE_STATUSES } },
+          select: { riderId: true },
+          distinct: ["riderId"],
+        })
+      ).flatMap((o) => (o.riderId ? [o.riderId] : [])),
+    );
+
     return riders.map((r) => ({
       profileId: r.profileId,
       name: `${r.profile.firstName} ${r.profile.lastName}`.trim(),
-      phone: r.profile.phone,
+      phone: revealingRiderIds.has(r.profileId) ? r.profile.phone : maskPhone(r.profile.phone),
       bikeReg: r.bikeReg,
       kycStatus: r.kycStatus,
       kycRef: r.kycRef,

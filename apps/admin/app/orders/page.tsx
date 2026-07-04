@@ -84,7 +84,11 @@ export default async function OrdersPage({
             <tbody>
               {orders.map((o) => (
                 <tr key={o.id} style={{ borderTop: `1px solid ${tokens.color.line}` }}>
-                  <td style={{ padding: "8px 8px", fontFamily: "monospace" }}>{o.id.slice(0, 8)}</td>
+                  <td style={{ padding: "8px 8px", fontFamily: "monospace" }}>
+                    <a href={`/orders/${o.id}`} style={{ color: tokens.color.accentText, textDecoration: "none" }}>
+                      {o.id.slice(0, 8)}
+                    </a>
+                  </td>
                   <td style={{ padding: "8px 8px" }}>{o.status}</td>
                   <td style={{ padding: "8px 8px", fontVariantNumeric: "tabular-nums" }}>${o.agreedFare ?? o.proposedFare}</td>
                   <td style={{ padding: "8px 8px", fontVariantNumeric: "tabular-nums" }}>{o.distanceKm != null ? `${o.distanceKm} km` : "—"}</td>

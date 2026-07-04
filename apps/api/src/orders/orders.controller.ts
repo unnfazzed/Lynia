@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { CreateOrderRequest } from "@lynia/shared";
+import { AcceptDisclaimerRequest, CreateOrderRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
@@ -18,6 +18,17 @@ export class OrdersController {
     @CurrentUser() customerId: string,
   ) {
     return this.orders.create(body, customerId);
+  }
+
+  /** Acknowledge the customer's pre-broadcast disclaimer consent (A1-8). The binding record is the
+   *  order's own `disclaimerVersion`/`disclaimerAcceptedAt` stamped at create; this endpoint lets the
+   *  client register acceptance at the gate (before it has an order id) and get the server timestamp. */
+  @Post("disclaimer")
+  acceptDisclaimer(
+    @Body(new ZodBody(AcceptDisclaimerRequest)) body: AcceptDisclaimerRequest,
+    @CurrentUser() customerId: string,
+  ) {
+    return this.orders.acceptDisclaimer(body.policyVersion, customerId);
   }
 
   // Static routes MUST precede the :orderId param route, or "open"/"mine" get parsed as an order id.

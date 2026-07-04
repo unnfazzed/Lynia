@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { verifyOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
+import { loadRolePreference } from "../src/auth/session";
 import { Button, ErrorText, Field, Heading, Screen, Sub } from "../src/ui";
 
 export default function VerifyScreen(): React.ReactElement {
@@ -27,7 +28,10 @@ export default function VerifyScreen(): React.ReactElement {
         profileId: res.profileId,
         role: res.role,
       });
-      router.replace("/home");
+      // Show the role fork once per account (RIDER-JOURNEY-AUDIT R0-4). A returning user who already
+      // picked a role goes straight home rather than being re-prompted every sign-in.
+      const chosen = await loadRolePreference();
+      router.replace(chosen ? "/home" : "/role");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't verify the code.");
     } finally {

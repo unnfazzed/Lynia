@@ -3,11 +3,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
+import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
 import { ApiError } from "../src/api/client";
-import { createOrder, type OrderSnapshot } from "../src/api/orders";
+import { acceptDisclaimer, createOrder, type OrderSnapshot } from "../src/api/orders";
+import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/session";
 import { orderKey } from "../src/query/client";
-import { Button, Card, ErrorText, Field, Heading, Icon, Label, Screen, Sub } from "../src/ui";
+import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Label, Screen, Sub } from "../src/ui";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
@@ -39,6 +40,10 @@ interface FormDraft {
   declaredValue: string;
   proposedFare: string;
 }
+
+// The liability-disclaimer policy the customer must accept before a first broadcast (A1-8). Bump this
+// string when the disclaimer copy/terms change and the accept-to-continue gate re-shows.
+const DISCLAIMER_POLICY_VERSION = "2026-07-01";
 
 // Reuse the same on-device primitive the auth session uses (expo-secure-store); a single key.
 const DRAFT_KEY = "lynia.orderDraft";
@@ -93,6 +98,21 @@ export default function HomeScreen(): React.ReactElement {
   const [proposedFare, setProposedFare] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Pre-broadcast liability disclaimer (A1-8). Gate the first broadcast behind an accept-to-continue
+  // sheet; once accepted for the current policy version we don't re-show it. Kept in a ref (read at
+  // tap time, not a render dependency) plus the modal's own visibility state.
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const disclaimerAccepted = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    void loadDisclaimerAccepted().then((v) => {
+      if (alive && v === DISCLAIMER_POLICY_VERSION) disclaimerAccepted.current = true;
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Landmark auto-fill: once the user edits a landmark it's theirs — stop auto-filling from the map.
   const [pickupLandmarkTouched, setPickupLandmarkTouched] = useState(false);
@@ -260,6 +280,9 @@ export default function HomeScreen(): React.ReactElement {
       items: items.map((it) => ({ description: it.description.trim(), quantity: it.quantity })),
       declaredValue: parseNum(declaredValue) ?? 0,
       proposedFare: fare,
+      // A1-8: bind the accepted disclaimer version onto the order itself; the server stamps the
+      // acceptance time. The accept-to-continue gate guarantees this is set before broadcast.
+      disclaimerVersion: DISCLAIMER_POLICY_VERSION,
     };
     const parsed = CreateOrderRequest.safeParse(candidate);
     if (!parsed.success) {
@@ -293,6 +316,25 @@ export default function HomeScreen(): React.ReactElement {
     } finally {
       setBusy(false);
     }
+  };
+
+  // Broadcast tap: the disclaimer is an accept-to-continue GATE in front of the first order create.
+  // If the customer has already accepted the current policy version, go straight to submit.
+  const onBroadcast = (): void => {
+    if (disclaimerAccepted.current) {
+      void submit();
+      return;
+    }
+    setShowDisclaimer(true);
+  };
+  const onAgreeAndBroadcast = (): void => {
+    disclaimerAccepted.current = true;
+    void saveDisclaimerAccepted(DISCLAIMER_POLICY_VERSION);
+    // Record consent server-side (policyVersion + timestamp). Best-effort: a reject (incl. the route
+    // not being wired yet) must never block the broadcast — the local flag already gates re-showing.
+    void acceptDisclaimer({ policyVersion: DISCLAIMER_POLICY_VERSION }).catch(() => undefined);
+    setShowDisclaimer(false);
+    void submit();
   };
 
   return (
@@ -425,7 +467,7 @@ export default function HomeScreen(): React.ReactElement {
                     .join(", ")} to broadcast.`}
                 </Text>
               ) : null}
-              <Button label="Broadcast request" onPress={submit} loading={busy} disabled={!canSubmit} />
+              <Button label="Broadcast request" onPress={onBroadcast} loading={busy} disabled={!canSubmit} />
               <ErrorText message={error} />
             </>
           }
@@ -489,7 +531,113 @@ export default function HomeScreen(): React.ReactElement {
           <Field label="Your price (USD)" value={proposedFare} onChangeText={setProposedFare} placeholder="2.50" keyboardType="decimal-pad" />
         </BottomSheet>
       </KeyboardAvoidingView>
+      <DisclaimerSheet visible={showDisclaimer} onAgree={onAgreeAndBroadcast} onBack={() => setShowDisclaimer(false)} />
     </Screen>
+  );
+}
+
+/**
+ * A1-8 pre-broadcast liability disclaimer — an accept-to-continue sheet shown before the first order
+ * is created. The primary "Agree & broadcast" stays disabled until the customer ticks the consent
+ * box; agreeing records consent (policy version + timestamp) and proceeds. Modeled on the
+ * new-flows.html disclaimer: three plain-language terms, then a mint consent row.
+ */
+const DISCLAIMER_ROWS: { icon: IconName; title: string; body: string }[] = [
+  {
+    icon: "triangle-alert",
+    title: "Sending is at your own risk",
+    body: "If your parcel is lost, damaged or not delivered, Lynia isn't liable — you're hiring an independent rider.",
+  },
+  {
+    icon: "banknote",
+    title: "Payment is between you and your rider",
+    body: "You agree the price in the app and pay cash directly. Lynia isn't involved in payment or any money dispute.",
+  },
+  {
+    icon: "user",
+    title: "Lynia connects you — that's all",
+    body: "We match you with a nearby rider. We don't carry, insure or guarantee your parcel.",
+  },
+];
+
+function DisclaimerSheet({ visible, onAgree, onBack }: { visible: boolean; onAgree: () => void; onBack: () => void }): React.ReactElement {
+  const [checked, setChecked] = useState(false);
+  // Reset the consent tick each time the sheet opens — consent is per-broadcast, never pre-ticked.
+  useEffect(() => {
+    if (visible) setChecked(false);
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onBack} statusBarTranslucent>
+      <View style={{ flex: 1, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "flex-end" }}>
+        <View
+          style={{
+            backgroundColor: tokens.color.bg,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
+            paddingHorizontal: tokens.space.lg,
+            paddingTop: tokens.space.md,
+            paddingBottom: tokens.space.xl,
+            maxHeight: "94%",
+            ...tokens.shadow.sheet,
+          }}
+        >
+          <View style={{ width: 36, height: 4, borderRadius: tokens.radius.pill, backgroundColor: tokens.color.line, alignSelf: "center", marginBottom: tokens.space.md }} />
+          <Heading>Before you send</Heading>
+          <Sub>Please read and accept — this is how Lynia works.</Sub>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1 }}>
+            {DISCLAIMER_ROWS.map((r) => (
+              <View key={r.title} style={{ flexDirection: "row", gap: tokens.space.md, marginBottom: tokens.space.md }}>
+                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
+                  <Icon name={r.icon} size={17} color={tokens.color.accentText} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{r.title}</Text>
+                  <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18, marginTop: 1 }}>{r.body}</Text>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+          <Pressable
+            onPress={() => setChecked((v) => !v)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked }}
+            accessibilityLabel="I understand and accept these terms"
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: tokens.space.sm,
+              padding: tokens.space.md,
+              borderRadius: tokens.radius.input,
+              backgroundColor: tokens.color.accentWash,
+              marginTop: tokens.space.xs,
+              minHeight: tokens.touchTargetMin,
+            }}
+          >
+            <View
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 6,
+                // Bright accent is a non-text fill here (the tick box) — the check glyph is white on it.
+                backgroundColor: checked ? tokens.color.accent : tokens.color.bg,
+                borderWidth: checked ? 0 : 1.5,
+                borderColor: tokens.color.line,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {checked ? <Icon name="check" size={14} color={tokens.color.onAccent} /> : null}
+            </View>
+            <Text style={{ flex: 1, fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>
+              I understand and accept these terms
+            </Text>
+          </Pressable>
+          <Button label="Agree & broadcast" onPress={onAgree} disabled={!checked} />
+          <Button label="Back" variant="ghost" onPress={onBack} />
+        </View>
+      </View>
+    </Modal>
   );
 }
 

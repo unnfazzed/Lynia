@@ -9,12 +9,14 @@ import {
   type OnModuleInit,
   UnauthorizedException,
 } from "@nestjs/common";
-import { CUSTOMER_CANCELLABLE_STATUSES } from "@lynia/shared";
+import { CUSTOMER_CANCELLABLE_STATUSES, RIDER_CANCELLABLE_STATUSES } from "@lynia/shared";
+import { Prisma } from "@prisma/client";
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { NotificationsService } from "../notifications/notifications.service";
+import { OrdersService } from "./orders.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 
@@ -28,9 +30,14 @@ const FORWARD = {
 } as const;
 
 const DELIVERY_OTP_MAX_ATTEMPTS = 5;
-/** A customer may bail before the parcel is collected; a rider may bail any time before delivery. */
+/** Cancellation matrix (INTERFACE-AUDIT C3), server-enforced. Customer: any live status (pre- OR
+ *  post-pickup). Rider: ONLY up to arrival at pickup — blocked from `picked_up` onward (the parcel is
+ *  on the bike; a post-pickup failure is an `undelivered(breakdown)`, not a cancel). Both sets are the
+ *  shared source of truth the clients import for the cancel affordance. */
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
-const RIDER_CANCELLABLE = new Set(["assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]);
+const RIDER_CANCELLABLE = new Set<string>(RIDER_CANCELLABLE_STATUSES);
+/** A hand-off can only FAIL after the parcel is collected (C6/F-02): picked_up or en_route_dropoff. */
+const POST_PICKUP_FOR_UNDELIVERED = new Set<string>(["picked_up", "en_route_dropoff"]);
 /** Repeated rider cancels earn a cooldown that blocks going online (T4 no-show penalty). */
 const CANCEL_STRIKE_LIMIT = 3;
 const COOLDOWN_MS = 2 * 60 * 60 * 1000;
@@ -82,6 +89,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     private readonly tokens: TokenService,
     private readonly gateway: TrackingGateway,
     private readonly notifications: NotificationsService,
+    private readonly orders: OrdersService,
   ) {}
 
   private sweep?: ReturnType<typeof setInterval>;
@@ -179,6 +187,35 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     return { orderId, status: to };
   }
 
+  /** Rider ticks off the sender's items at pickup before riding on (rider "pickup item
+   *  verification"). Persists which line-item indexes were physically collected; does NOT advance the
+   *  status (the rider's next tap runs `advance` to `picked_up`). Guarded to the assigned rider and
+   *  allowed only at `en_route_pickup` (at the pickup, before collection). */
+  async confirmItems(
+    orderId: string,
+    riderId: string,
+    confirmedIndexes: number[],
+  ): Promise<{ orderId: string; confirmedIndexes: number[] }> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true, riderId: true, items: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
+    if (order.status !== "en_route_pickup") {
+      throw new ConflictException("Items can only be confirmed at the pickup");
+    }
+    // De-dupe + sort, and bound to the order's actual item count so a stale/oversized index (the
+    // contract allows 0–9) can't persist a phantom row the checklist would render.
+    const itemCount = Array.isArray(order.items) ? order.items.length : 0;
+    const indexes = [...new Set(confirmedIndexes)].filter((i) => i < itemCount).sort((a, b) => a - b);
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { itemsCollected: indexes as unknown as Prisma.InputJsonValue },
+    });
+    return { orderId, confirmedIndexes: indexes };
+  }
+
   /** Rider confirms the handover with the recipient's delivery code → `delivered`. */
   async confirmDelivery(orderId: string, riderId: string, code: string): Promise<LifecycleResult> {
     // Serialize attempts with a row lock so the count gate, the otp compare, and the increment are
@@ -213,6 +250,42 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     this.safeEmit(orderId, "delivered");
     await this.scheduleAutoClose(orderId);
     return { orderId, status: "delivered" };
+  }
+
+  /**
+   * Rider marks a hand-off as failed → terminal `undelivered` (INTERFACE-AUDIT C6 / F-02). Allowed
+   * ONLY post-pickup (picked_up / en_route_dropoff) and only for the assigned rider — a guarded CAS
+   * like every other transition. The reason enum + timestamp are persisted and shown verbatim to the
+   * customer; `undelivered` is terminal and not an active-ride status, so it frees the rider for the
+   * next job exactly like `delivered`/`cancelled`. The customer's phone-reveal survives (undelivered
+   * ∈ PHONE_REVEAL_STATUSES) so the "call the rider" action stays live on the terminal screen.
+   */
+  async markUndelivered(
+    orderId: string,
+    riderId: string,
+    reason: string,
+  ): Promise<{ orderId: string; status: "undelivered" }> {
+    await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { status: true, riderId: true },
+      });
+      if (!order) throw new NotFoundException("Order not found");
+      if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (!POST_PICKUP_FOR_UNDELIVERED.has(order.status)) {
+        throw new ConflictException("A hand-off can only fail after the parcel is picked up");
+      }
+
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, status: order.status },
+        data: { status: "undelivered", undeliveredReason: reason, undeliveredAt: new Date() },
+      });
+      if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+      await tx.orderEvent.create({ data: { orderId, status: "undelivered" } });
+    });
+
+    this.safeEmit(orderId, "undelivered");
+    return { orderId, status: "undelivered" };
   }
 
   /** Customer rates the rider after delivery; this closes the order and updates the rider's score. */
@@ -256,15 +329,26 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Either party cancels an in-flight order (T4). The customer may cancel before the parcel is
-   * collected; the rider may cancel any time before delivery. A rider-initiated cancel is a no-show
-   * strike — every CANCEL_STRIKE_LIMIT strikes forces the rider offline on a cooldown.
+   * Either party cancels an order (T4 / INTERFACE-AUDIT C3). The cancellation matrix is server-
+   * enforced (CUSTOMER_CANCELLABLE / RIDER_CANCELLABLE):
+   *  - **Customer** may cancel at ANY live status. If a rider is assigned we push `job:cancelled` to
+   *    them with `collected` (post-pickup → hand-back path; pre-pickup → back to the board). NO
+   *    reliability impact on the rider — a customer cancel never strikes.
+   *  - **Rider** may cancel ONLY pre-pickup (assigned…en_route_pickup); `picked_up`+ is rejected. A
+   *    rider cancel IS a no-show strike (every CANCEL_STRIKE_LIMIT forces offline on a cooldown) and
+   *    auto re-broadcasts the job as a NEW open order (F-01) — the old row stays terminal `cancelled`.
    */
   async cancel(orderId: string, callerId: string, reason?: string): Promise<CancelResult> {
+    // Side effects resolved inside the tx but fired AFTER commit (best-effort pushes must never sit
+    // inside the transaction). rebroadcastId: the new open order to announce; jobCancelledCollected:
+    // non-null ⇒ tell the assigned rider the customer cancelled, carrying the collected flag.
+    let rebroadcastId: string | null = null;
+    let jobCancelledCollected: boolean | null = null;
+
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, customerId: true, riderId: true },
+        select: { status: true, customerId: true, riderId: true, collectedAt: true },
       });
       if (!order) throw new NotFoundException("Order not found");
 
@@ -283,13 +367,19 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // Release any offers still pending against this order.
       await tx.offer.updateMany({ where: { orderId, status: "pending" }, data: { status: "declined" } });
 
+      // Post-pickup? `collectedAt` is stamped at the picked_up edge (drives the rider's hand-back UI).
+      const collected = order.collectedAt != null;
+
       let cooldownUntil: Date | null = null;
       if (isRider && order.riderId) {
+        // Reliability decrement for a rider-initiated cancel (cancelStrike).
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
           select: { cancelStrikes: true },
         });
         const strikes = (rider?.cancelStrikes ?? 0) + 1;
+        // TODO(R-01): reliability score maths / on_hold threshold — product decision Q2. Until then the
+        // existing cancelStrike/cooldown is the only decrement applied.
         if (strikes >= CANCEL_STRIKE_LIMIT) {
           // Hit the limit: reset the counter, force offline, start the cooldown.
           cooldownUntil = new Date(Date.now() + COOLDOWN_MS);
@@ -300,7 +390,15 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         } else {
           await tx.rider.update({ where: { profileId: order.riderId }, data: { cancelStrikes: strikes } });
         }
+        // F-01: the rider bailed on an assigned-but-not-collected job (rider cancels are blocked
+        // post-pickup, so it's never collected here) — clone the job back onto the board as a NEW
+        // open order in the SAME transaction. The old row stays terminal; never reopened.
+        rebroadcastId = await this.cloneForRebroadcast(tx, orderId);
+      } else if (isCustomer && order.riderId) {
+        // C3: a rider was already working this job — signal them the customer pulled out.
+        jobCancelledCollected = collected;
       }
+
       return {
         orderId,
         status: "cancelled" as const,
@@ -310,7 +408,71 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.safeEmit(orderId, "cancelled");
+    // Best-effort post-commit pushes. emitJobCancelled is guarded (the gateway swallows a null server),
+    // and the re-broadcast announce is fire-and-forget like the create() path.
+    if (jobCancelledCollected !== null) this.gateway.emitJobCancelled(orderId, jobCancelledCollected);
+    if (rebroadcastId) void this.orders.announceOpenOrder(rebroadcastId);
     return result;
+  }
+
+  /**
+   * Clone an order's broadcast params into a NEW `open_for_offers` row inside the caller's transaction
+   * (F-01 rider-cancel auto re-broadcast). `rebroadcastOfId` back-links to the order it replaced so the
+   * lineage is traceable; the append-only OrderEvent timeline of the old order stays clean (it's just
+   * `cancelled`). Returns the new order's id for the post-commit board announce. Same-price: proposed/
+   * suggested fares are copied verbatim.
+   */
+  private async cloneForRebroadcast(tx: Prisma.TransactionClient, sourceOrderId: string): Promise<string> {
+    const src = await tx.order.findUnique({
+      where: { id: sourceOrderId },
+      select: {
+        customerId: true,
+        orderType: true,
+        pickup: true,
+        dropoff: true,
+        itemDesc: true,
+        items: true,
+        note: true,
+        itemPhotoUrl: true,
+        declaredValue: true,
+        size: true,
+        distanceKm: true,
+        suggestedFare: true,
+        proposedFare: true,
+        currency: true,
+        disclaimerVersion: true,
+        disclaimerAcceptedAt: true,
+      },
+    });
+    if (!src) throw new NotFoundException("Order not found");
+
+    const clone = await tx.order.create({
+      data: {
+        customerId: src.customerId,
+        orderType: src.orderType,
+        pickup: src.pickup as Prisma.InputJsonValue,
+        dropoff: src.dropoff as Prisma.InputJsonValue,
+        itemDesc: src.itemDesc,
+        items: (src.items as Prisma.InputJsonValue | null) ?? Prisma.DbNull,
+        note: src.note,
+        itemPhotoUrl: src.itemPhotoUrl,
+        declaredValue: src.declaredValue,
+        size: src.size,
+        distanceKm: src.distanceKm,
+        suggestedFare: src.suggestedFare,
+        proposedFare: src.proposedFare,
+        currency: src.currency,
+        // Same customer + same terms → carry the disclaimer consent forward (A1-8); a re-broadcast
+        // isn't a fresh order the customer restarts, so it shouldn't drop their recorded consent.
+        disclaimerVersion: src.disclaimerVersion,
+        disclaimerAcceptedAt: src.disclaimerAcceptedAt,
+        status: "open_for_offers",
+        rebroadcastOfId: sourceOrderId,
+        events: { create: { status: "open_for_offers" } },
+      },
+      select: { id: true },
+    });
+    return clone.id;
   }
 
   /** Auto-close a delivered-but-unrated order so completion metrics don't stall (T3). Idempotent. */

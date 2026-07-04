@@ -91,7 +91,11 @@ export default async function RidersPage({
             <tbody>
               {riders.map((r) => (
                 <tr key={r.profileId} style={{ borderTop: `1px solid ${tokens.color.line}` }}>
-                  <td style={{ padding: "8px 8px" }}>{r.name || r.profileId.slice(0, 8)}</td>
+                  <td style={{ padding: "8px 8px" }}>
+                    <a href={`/riders/${r.profileId}`} style={{ color: tokens.color.accentText, textDecoration: "none" }}>
+                      {r.name || r.profileId.slice(0, 8)}
+                    </a>
+                  </td>
                   <td style={{ padding: "8px 8px", fontFamily: "monospace" }}>{r.phone}</td>
                   <td style={{ padding: "8px 8px" }}>{r.bikeReg}</td>
                   <td style={{ padding: "8px 8px" }}>{r.kycStatus}</td>

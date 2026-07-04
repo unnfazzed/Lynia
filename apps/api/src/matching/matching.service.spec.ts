@@ -4,7 +4,11 @@ import type { TokenService } from "../auth/token.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { MetricsService, MatchSelectOutcome } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { MatchingService } from "./matching.service";
+
+/** bid:expired is best-effort; a no-op gateway keeps selectOffer's unit tests off the socket path. */
+const noopGateway = { emitBidExpired: () => {} } as unknown as TrackingGateway;
 
 /**
  * selectOffer wraps its transaction in a metrics timer. The wrapper MUST classify the failure for the
@@ -28,7 +32,7 @@ function svc(tx: Record<string, unknown>) {
   const prisma = {
     $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
   } as unknown as PrismaService;
-  return { service: new MatchingService(prisma, noopTokens, noopNotifications, metrics), metrics };
+  return { service: new MatchingService(prisma, noopTokens, noopNotifications, metrics, noopGateway), metrics };
 }
 
 const orderId = "11111111-1111-1111-1111-111111111111";

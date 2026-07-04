@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
+import type { OrdersService } from "./orders.service";
 import { OrderLifecycleService } from "./order-lifecycle.service";
 
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "lifecycle-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
@@ -13,7 +14,13 @@ const noopNotifications = { notifyOrderStatus: async () => {} } as unknown as No
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma). */
 function build(methods: Record<string, unknown>) {
   const emits: Array<[string, string]> = [];
-  const gateway = { emitOrderStatus: (id: string, s: string) => emits.push([id, s]) };
+  const jobCancelled: Array<[string, boolean]> = [];
+  const gateway = {
+    emitOrderStatus: (id: string, s: string) => emits.push([id, s]),
+    emitJobCancelled: (id: string, collected: boolean) => jobCancelled.push([id, collected]),
+  };
+  // F-01 re-broadcast announce is best-effort push — spy so tests can assert it fired without a socket.
+  const orders = { announceOpenOrder: vi.fn(async () => {}) };
   const prisma = { ...methods } as Record<string, unknown>;
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   const svc = new OrderLifecycleService(
@@ -22,8 +29,9 @@ function build(methods: Record<string, unknown>) {
     tokens,
     gateway as unknown as TrackingGateway,
     noopNotifications,
+    orders as unknown as OrdersService,
   );
-  return { svc, emits, prisma };
+  return { svc, emits, jobCancelled, orders, prisma };
 }
 
 describe("OrderLifecycleService.advance", () => {
@@ -192,9 +200,15 @@ describe("OrderLifecycleService.rotateDeliveryCode", () => {
 });
 
 describe("OrderLifecycleService.cancel", () => {
-  const order = (over: Record<string, unknown> = {}) => ({ status: "assigned", customerId: "c1", riderId: "r1", ...over });
+  const order = (over: Record<string, unknown> = {}) => ({ status: "assigned", customerId: "c1", riderId: "r1", collectedAt: null, ...over });
+  // A cancellable fake: findUnique serves both the guard read and cloneForRebroadcast's source read;
+  // order.create clones the re-broadcast row; rider.* serves the strike path.
   const cancellable = (extra: Record<string, unknown> = {}) => ({
-    order: { findUnique: async () => order(), updateMany: async () => ({ count: 1 }) },
+    order: {
+      findUnique: async () => order(),
+      updateMany: async () => ({ count: 1 }),
+      create: async () => ({ id: "rebroadcast-1" }),
+    },
     orderEvent: { create: async () => ({}) },
     offer: { updateMany: async () => ({ count: 0 }) },
     ...extra,
@@ -205,21 +219,39 @@ describe("OrderLifecycleService.cancel", () => {
     await expect(svc.cancel("o1", "stranger")).rejects.toThrow(/not your order/i);
   });
 
-  it("lets the customer cancel before pickup", async () => {
-    const { svc, emits } = build(cancellable());
+  it("lets the customer cancel before pickup and tells the assigned rider (collected:false)", async () => {
+    const { svc, emits, jobCancelled } = build(cancellable());
     const res = await svc.cancel("o1", "c1", "changed my mind");
     expect(res).toMatchObject({ status: "cancelled", cancelledBy: "customer", cooldownUntil: null });
     expect(emits).toEqual([["o1", "cancelled"]]);
+    // C3: a rider was already assigned pre-pickup → job:cancelled with collected:false (back to board).
+    expect(jobCancelled).toEqual([["o1", false]]);
   });
 
-  it("blocks a customer cancel once the parcel is collected", async () => {
+  it("customer cancel AFTER pickup pushes job:cancelled with collected:true (hand-back path)", async () => {
+    const { svc, jobCancelled } = build(
+      // Customer may cancel at any live status; collectedAt set ⇒ post-pickup.
+      cancellable({
+        order: {
+          findUnique: async () => order({ status: "en_route_dropoff", collectedAt: new Date() }),
+          updateMany: async () => ({ count: 1 }),
+          create: async () => ({ id: "rebroadcast-1" }),
+        },
+      }),
+    );
+    const res = await svc.cancel("o1", "c1");
+    expect(res.cancelledBy).toBe("customer");
+    expect(jobCancelled).toEqual([["o1", true]]);
+  });
+
+  it("blocks a RIDER cancel once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
     const { svc } = build({ order: { findUnique: async () => order({ status: "picked_up" }) } });
-    await expect(svc.cancel("o1", "c1")).rejects.toThrow(/cannot cancel a picked_up/i);
+    await expect(svc.cancel("o1", "r1")).rejects.toThrow(/cannot cancel a picked_up/i);
   });
 
-  it("counts a rider cancel as a strike (below the limit)", async () => {
+  it("counts a rider cancel as a strike (below the limit) and re-broadcasts a new open order (F-01)", async () => {
     let riderData: Record<string, unknown> | undefined;
-    const { svc } = build(
+    const { svc, orders, jobCancelled } = build(
       cancellable({
         rider: {
           findUnique: async () => ({ cancelStrikes: 0 }),
@@ -231,6 +263,10 @@ describe("OrderLifecycleService.cancel", () => {
     expect(res.cancelledBy).toBe("rider");
     expect(res.cooldownUntil).toBeNull();
     expect(riderData).toMatchObject({ cancelStrikes: 1 });
+    // F-01: exactly one new open order announced; a rider cancel never fires job:cancelled.
+    expect(orders.announceOpenOrder).toHaveBeenCalledTimes(1);
+    expect(orders.announceOpenOrder).toHaveBeenCalledWith("rebroadcast-1");
+    expect(jobCancelled).toEqual([]);
   });
 
   it("puts the rider on cooldown and forces them offline at the strike limit", async () => {
@@ -247,5 +283,39 @@ describe("OrderLifecycleService.cancel", () => {
     expect(res.cooldownUntil).toBeInstanceOf(Date);
     expect(riderData).toMatchObject({ cancelStrikes: 0, isOnline: false });
     expect(riderData!.cooldownUntil).toBeInstanceOf(Date);
+  });
+});
+
+describe("OrderLifecycleService.markUndelivered", () => {
+  const row = (over: Record<string, unknown> = {}) => ({ status: "picked_up", riderId: "r1", ...over });
+
+  it("404s for a missing order", async () => {
+    const { svc } = build({ order: { findUnique: async () => null } });
+    await expect(svc.markUndelivered("o1", "r1", "unreachable")).rejects.toThrow(/not found/i);
+  });
+
+  it("403s when the caller is not the assigned rider", async () => {
+    const { svc } = build({ order: { findUnique: async () => row() } });
+    await expect(svc.markUndelivered("o1", "other", "unreachable")).rejects.toThrow(/assigned rider/i);
+  });
+
+  it("409s before pickup — a hand-off can only fail post-pickup", async () => {
+    const { svc } = build({ order: { findUnique: async () => row({ status: "en_route_pickup" }) } });
+    await expect(svc.markUndelivered("o1", "r1", "unreachable")).rejects.toThrow(/after the parcel is picked up/i);
+  });
+
+  it("marks undelivered post-pickup, stamps the reason + time, and pushes the status", async () => {
+    let data: Record<string, unknown> | undefined;
+    const { svc, emits } = build({
+      order: {
+        findUnique: async () => row({ status: "en_route_dropoff" }),
+        updateMany: async (a: { data: Record<string, unknown> }) => { data = a.data; return { count: 1 }; },
+      },
+      orderEvent: { create: async () => ({}) },
+    });
+    expect(await svc.markUndelivered("o1", "r1", "refused")).toEqual({ orderId: "o1", status: "undelivered" });
+    expect(data).toMatchObject({ status: "undelivered", undeliveredReason: "refused" });
+    expect(data!.undeliveredAt).toBeInstanceOf(Date);
+    expect(emits).toEqual([["o1", "undelivered"]]);
   });
 });

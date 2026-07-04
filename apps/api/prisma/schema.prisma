@@ -40,6 +40,9 @@ enum OrderStatus {
   completed
   cancelled
   expired
+  // Terminal: rider could not complete the hand-off (INTERFACE-AUDIT C6 / F-02). Reason + attempt
+  // count recorded on the order; shown verbatim to the customer.
+  undelivered
 }
 
 enum OfferType {
@@ -123,6 +126,9 @@ model Rider {
   ratingCount     Int       @default(0) @map("rating_count")
   cancelStrikes   Int       @default(0) @map("cancel_strikes")
   cooldownUntil   DateTime? @map("cooldown_until")
+  // KYC resubmission counter (admin A-02). Decline increments; attempt 2 locks → support. The admin
+  // decision write-back sets kycStatus + this counter; the rider app reads it for the lock state.
+  kycAttempts     Int       @default(0) @map("kyc_attempts")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   orders Order[] @relation("riderOrders")
@@ -167,11 +173,25 @@ model Order {
   confirmedAt         DateTime?   @map("confirmed_at")
   pickupStartedAt     DateTime?   @map("pickup_started_at")
   collectedAt         DateTime?   @map("collected_at")
+  // Per-item pickup confirmation (rider "pickup item verification"): which indexes of `items` the
+  // rider physically collected. Nullable — legacy orders + orders never through the checklist.
+  itemsCollected      Json?       @map("items_collected")
   deliveredAt         DateTime?   @map("delivered_at")
   completedAt         DateTime?   @map("completed_at")
   cancelledAt         DateTime?   @map("cancelled_at")
   cancelledBy         String?     @map("cancelled_by") @db.Uuid
   cancelReason        String?     @map("cancel_reason")
+  // Failed hand-off terminal (INTERFACE-AUDIT C6). Reason enum kept as text (shared UndeliveredReason);
+  // deliveryAttempts is the recipient-contact attempt count shown to the customer.
+  undeliveredReason   String?     @map("undelivered_reason")
+  undeliveredAt       DateTime?   @map("undelivered_at")
+  deliveryAttempts    Int         @default(0) @map("delivery_attempts")
+  // Pre-broadcast liability disclaimer consent (A1-8): {policy version, timestamp} on the order.
+  disclaimerVersion    String?    @map("disclaimer_version")
+  disclaimerAcceptedAt DateTime?  @map("disclaimer_accepted_at")
+  // Rider-cancel auto re-broadcast (F-01): a new order cloned at the same price back-links here to
+  // the order it replaced. Plain column (no relation) — a lineage pointer, not a hot-path join.
+  rebroadcastOfId     String?     @map("rebroadcast_of_id") @db.Uuid
   createdAt           DateTime    @default(now()) @map("created_at")
   updatedAt           DateTime    @updatedAt @map("updated_at")
 
@@ -180,6 +200,7 @@ model Order {
   rating Rating?
 
   @@index([status])
+  @@index([rebroadcastOfId])
   // Composite (role, created_at) indexes so the trip-history query — an OR over customer_id/rider_id
   // ordered by created_at — resolves as two index scans instead of a seq-scan-then-sort as `orders`
   // grows (E5). The (rider_id, created_at) index also covers the plain rider_id lookups the old

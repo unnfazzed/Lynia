@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
+import { isPendingCounter } from "../../src/logic/journey";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
@@ -14,6 +15,20 @@ import { LiveMap } from "../../src/ui/LiveMap";
 
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
+// Post-pickup cancels (parcel already on the bike) get a hand-back warning before we confirm — the
+// customer keeps the right to cancel anytime (INTERFACE-AUDIT C3) but must understand they'll arrange
+// getting the parcel back directly with the rider.
+const POST_PICKUP_CANCEL = new Set<string>(["picked_up", "en_route_dropoff"]);
+
+// A rider's `undelivered` reason code → the verbatim line shown on the customer's terminal card. The
+// stored code is authoritative; this only makes it readable (mirrors new-flows.html "recipient
+// unreachable · N attempts").
+const UNDELIVERED_REASON_LABEL: Record<string, string> = {
+  unreachable: "recipient unreachable",
+  refused: "recipient refused delivery",
+  wrong_address: "address was wrong",
+  breakdown: "rider breakdown",
+};
 
 type SortMode = "best" | "cheapest" | "fastest" | "rated";
 const SORT_MODES: { key: SortMode; label: string }[] = [
@@ -104,6 +119,12 @@ export default function OrderScreen(): React.ReactElement {
   // Which offer is mid-select, so only ITS button spins (the rest just disable) — set in onPress,
   // cleared when the mutation settles.
   const [selectingId, setSelectingId] = useState<string | null>(null);
+  // Counter-offers the customer has DECLINED (F-07): decline is client-side dismissal only — the bid
+  // stays live server-side, so we just drop the prominent Accept/Decline treatment and the offer
+  // reverts to a normal choosable bid at the countered price. One round, no counter-back.
+  const [declinedCounterIds, setDeclinedCounterIds] = useState<Set<string>>(() => new Set());
+  // Post-pickup cancel confirmation gate (the hand-back warning).
+  const [cancelConfirm, setCancelConfirm] = useState(false);
 
   // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash).
   useEffect(() => {
@@ -336,6 +357,19 @@ export default function OrderScreen(): React.ReactElement {
   const bidCount = orderedOffers.length;
   const trackingHint = riderPoint ? "Rider is on the move — the gold pin updates live." : "Waiting for the rider's GPS…";
 
+  // Counter-offer (F-07): a `counter` bid ABOVE the customer's ask surfaces as Accept/Decline. A
+  // declined one reverts to a normal choosable bid (its Accept treatment removed), so it drops out of
+  // `isActiveCounter`. Never auto-charge above ask — Accept selects at the shown counter price.
+  const ask = Number(order.proposedFare);
+  const isActiveCounter = (o: OfferRow): boolean =>
+    isPendingCounter(o.type, Number(o.offeredFare), ask, declinedCounterIds.has(o.id));
+  const hasActiveCounter = orderedOffers.some(({ offer }) => isActiveCounter(offer));
+  const chooseOffer = (offerId: string): void => {
+    setSelectNotice(null); // a new attempt clears the stale "just taken" notice
+    setSelectingId(offerId);
+    selectM.mutate(offerId);
+  };
+
   return (
     <Screen>
       {/* A dropped socket surfaces as the standard top banner, not an inline strip in the card. */}
@@ -419,31 +453,42 @@ export default function OrderScreen(): React.ReactElement {
               </View>
             ) : null}
             {orderedOffers.map(({ offer: o, recommended }, idx) => {
+              if (isActiveCounter(o)) {
+                return (
+                  <BidEntrance key={o.id} animate={!reduceMotion}>
+                    <CounterOfferCard
+                      offer={o}
+                      ask={ask}
+                      onAccept={() => chooseOffer(o.id)}
+                      onDecline={() => setDeclinedCounterIds((prev) => new Set(prev).add(o.id))}
+                      loading={selectingId === o.id && selectM.isPending}
+                      disabled={selectM.isPending}
+                    />
+                  </BidEntrance>
+                );
+              }
               // One primary CTA on the list: the recommended card (or the first, if none is marked).
-              const primaryPick = recommended || (!orderedOffers.some((x) => x.recommended) && idx === 0);
+              // While a counter Accept is on screen it owns the one primary — normal bids go ghost.
+              const primaryPick = !hasActiveCounter && (recommended || (!orderedOffers.some((x) => x.recommended) && idx === 0));
               return (
                 <BidEntrance key={o.id} animate={!reduceMotion}>
                   <Card style={recommended ? { borderColor: tokens.color.highlight } : undefined}>
                     {recommended ? (
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: tokens.color.highlightInk, letterSpacing: 0.5, marginBottom: 3 }}>
+                      <Text style={{ fontSize: tokens.font.size.micro, fontWeight: tokens.font.weight.bold, color: tokens.color.highlightInk, letterSpacing: 0.5, marginBottom: 3 }}>
                         ★ RECOMMENDED
                       </Text>
                     ) : null}
-                    <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>
+                    <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
                       {o.rider.profile.firstName} {o.rider.profile.lastName}
                     </Text>
-                    <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                       ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
                     </Text>
-                    <Text style={{ fontSize: 20, fontWeight: "700", marginVertical: 4, fontVariant: ["tabular-nums"] }}>${o.offeredFare}</Text>
+                    <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, marginVertical: 4, fontVariant: ["tabular-nums"] }}>${o.offeredFare}</Text>
                     <Button
                       label="Choose this rider"
                       variant={primaryPick ? "primary" : "ghost"}
-                      onPress={() => {
-                        setSelectNotice(null); // a new attempt clears the stale "just taken" notice
-                        setSelectingId(o.id);
-                        selectM.mutate(o.id);
-                      }}
+                      onPress={() => chooseOffer(o.id)}
                       loading={selectingId === o.id && selectM.isPending}
                       disabled={selectM.isPending}
                     />
@@ -553,17 +598,147 @@ export default function OrderScreen(): React.ReactElement {
         ) : null}
         {order.status === "cancelled" ? (
           <Card>
-            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.danger }}>This order is cancelled.</Text>
+            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>This order is cancelled.</Text>
           </Card>
         ) : null}
 
+        {/* Undeliverable terminal (F-02 / C6): the rider couldn't complete the hand-off. Reason +
+            attempt count are shown verbatim; the call-rider action stays (phone is still revealed for
+            `undelivered`, PHONE_REVEAL_STATUSES). Own-risk — no Lynia return obligation. */}
+        {order.status === "undelivered" ? (
+          <>
+            <Card>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
+                  <Icon name="circle-alert" size={18} color={tokens.color.danger} />
+                </View>
+                <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>Parcel not delivered</Text>
+              </View>
+              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
+                Your rider couldn&apos;t complete this delivery. The parcel is still with your rider.
+              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.sm }}>
+                <Icon name="circle-alert" size={15} color={tokens.color.muted} />
+                <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.ink, lineHeight: 18 }}>
+                  <Text style={{ fontWeight: tokens.font.weight.bold }}>Reason recorded by your rider: </Text>
+                  {UNDELIVERED_REASON_LABEL[order.undeliveredReason ?? ""] ?? "delivery not completed"}
+                  {order.undeliveredAttempts != null ? ` · ${order.undeliveredAttempts} attempt${order.undeliveredAttempts === 1 ? "" : "s"}` : ""}
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.sm }}>
+                <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
+                <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+                  Sending is at your own risk — arrange the parcel directly with your rider. Lynia isn&apos;t liable for non-delivery.
+                </Text>
+              </View>
+              {order.counterpartyPhone ? (
+                <Pressable
+                  onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Call rider"
+                  style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+                >
+                  <Icon name="phone" size={16} color={tokens.color.accentText} />
+                  <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
+                    Call rider{order.counterpartyPhone ? ` · ${order.counterpartyPhone}` : ""}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </Card>
+            <Button label="Send a new request" onPress={() => router.replace("/home")} />
+          </>
+        ) : null}
+
+        {/* Cancel-anytime (C3). Post-pickup the parcel is on the bike, so a cancel gets a hand-back
+            warning before it fires; pre-pickup cancels straight through. */}
         {CUSTOMER_CANCELLABLE.has(order.status) ? (
-          <Button label="Cancel order" variant="ghost" onPress={() => cancelM.mutate()} loading={cancelM.isPending} />
+          cancelConfirm && POST_PICKUP_CANCEL.has(order.status) ? (
+            <Card style={{ borderColor: tokens.color.danger }}>
+              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>Cancel after pickup?</Text>
+              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
+                Your rider already has the parcel. If you cancel now, you&apos;ll arrange getting it back directly with them — Lynia can&apos;t recover it, and an agreed fare isn&apos;t refunded.
+              </Text>
+              <Button label="Yes, cancel this order" onPress={() => { setCancelConfirm(false); cancelM.mutate(); }} loading={cancelM.isPending} />
+              <Button label="Keep my order" variant="ghost" onPress={() => setCancelConfirm(false)} />
+            </Card>
+          ) : (
+            <Button
+              label="Cancel order"
+              variant="ghost"
+              onPress={() => {
+                if (POST_PICKUP_CANCEL.has(order.status)) setCancelConfirm(true);
+                else cancelM.mutate();
+              }}
+              loading={cancelM.isPending}
+            />
+          )
         ) : null}
         <Button label="Back home" variant="ghost" onPress={() => router.replace("/home")} />
         <ErrorText message={mutationError} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
     </Screen>
+  );
+}
+
+/**
+ * F-07 counter-offer card. A rider bidding ABOVE the ask surfaces as ask-vs-counter (+delta) with an
+ * Accept (assigns at the counter price) and a Decline. Decline is client-side dismissal only — the
+ * bid stays live server-side and reverts to a normal choosable card at the countered price (one round,
+ * no counter-back). Never shows an auto-charge above the customer's price.
+ */
+function CounterOfferCard({
+  offer,
+  ask,
+  onAccept,
+  onDecline,
+  loading,
+  disabled,
+}: {
+  offer: OfferRow;
+  ask: number;
+  onAccept: () => void;
+  onDecline: () => void;
+  loading: boolean;
+  disabled: boolean;
+}): React.ReactElement {
+  const counter = Number(offer.offeredFare);
+  const delta = counter - ask;
+  const name = `${offer.rider.profile.firstName} ${offer.rider.profile.lastName}`;
+  return (
+    <Card style={{ borderColor: tokens.color.accent }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+        <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
+          <Icon name="user" size={20} color={tokens.color.accentText} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{name}</Text>
+          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+            ★ {offer.rider.ratingCount > 0 ? Number(offer.rider.ratingAvg).toFixed(1) : "new"} · {offer.rider.tripsCount} trips · ETA {offer.etaMinutes} min
+          </Text>
+        </View>
+      </View>
+      <View style={{ flexDirection: "row", alignItems: "stretch", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+        <View style={{ flex: 1, backgroundColor: tokens.color.surface, borderRadius: tokens.radius.input, padding: tokens.space.sm }}>
+          <Text style={{ fontSize: tokens.font.size.micro, fontWeight: tokens.font.weight.bold, letterSpacing: 0.4, color: tokens.color.muted }}>YOUR PRICE</Text>
+          <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>${ask.toFixed(2)}</Text>
+        </View>
+        <View style={{ alignItems: "center", justifyContent: "center" }}>
+          <Icon name="arrow-right" size={16} color={tokens.color.muted} />
+        </View>
+        <View style={{ flex: 1, backgroundColor: tokens.color.accentWash, borderRadius: tokens.radius.input, padding: tokens.space.sm }}>
+          <Text style={{ fontSize: tokens.font.size.micro, fontWeight: tokens.font.weight.bold, letterSpacing: 0.4, color: tokens.color.accentText }}>THEIR OFFER</Text>
+          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6 }}>
+            <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>${counter.toFixed(2)}</Text>
+            <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.bold, color: tokens.color.highlightInk, fontVariant: ["tabular-nums"] }}>+${delta.toFixed(2)}</Text>
+          </View>
+        </View>
+      </View>
+      <Button label={`Accept $${counter.toFixed(2)}`} onPress={onAccept} loading={loading} disabled={disabled} />
+      <Button label="Decline" variant="ghost" onPress={onDecline} disabled={disabled} />
+      <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center", marginTop: 2 }}>
+        Declining keeps {offer.rider.profile.firstName} in your list at ${counter.toFixed(2)} — one counter round, no counter-back.
+      </Text>
+    </Card>
   );
 }
