@@ -183,8 +183,22 @@ export const WS_EVENTS = {
   /** server→client: the counterparty's socket has been dark past PRESENCE_ESCALATION_MS
    *  (INTERFACE-AUDIT C5) — the receiving app escalates its "live paused" treatment to a warning. */
   presenceStale: "presence:stale",
+  /** server→client (to the CANCELLED order's room, i.e. the customer): the assigned rider bailed and
+   *  the order was auto re-broadcast at the same price as a NEW order (INTERFACE-AUDIT F-01). Carries
+   *  the new order id so the customer app moves to the fresh auction instead of a dead "cancelled"
+   *  terminal — the customer never restarts the order themselves. */
+  orderRebroadcast: "order:rebroadcast",
 } as const;
 export type WsEvent = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];
+
+/** `order:rebroadcast` payload (F-01) — `orderId` is the cancelled order the customer is watching;
+ *  `newOrderId` is the re-broadcast auction to move them to. */
+export const OrderRebroadcastEvent = z.object({
+  orderId: z.string().uuid(),
+  newOrderId: z.string().uuid(),
+  at: z.string(),
+});
+export type OrderRebroadcastEvent = z.infer<typeof OrderRebroadcastEvent>;
 
 /** `offers:changed` payload — signal only; the client refetches `GET /orders/:id/offers`. */
 export const OffersChangedEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
