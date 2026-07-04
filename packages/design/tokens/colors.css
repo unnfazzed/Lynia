@@ -27,6 +27,7 @@
   --cta-fill-pressed: #006b27;
   --highlight: #f2b705;   /* 'recommended' marker only (gold, sparing) */
   --danger: #c0392b;      /* errors, destructive */
+  --danger-wash: #faedeb; /* danger tint — 'bad' status pills, warn bars, danger hover */
   --success: #00b14f;     /* confirmation fills (== accent); use --accent-text for success TEXT */
   --on-accent: #ffffff;   /* text/icons on an accent (or danger) fill — the one inverse */
 

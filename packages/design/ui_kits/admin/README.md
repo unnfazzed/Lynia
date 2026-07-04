@@ -1,13 +1,21 @@
 # Admin ops console — UI kit
 
-A static recreation of the **Lynia** operations console (the real app is Next.js). It is a **monitor & support** tool — there is **no manual dispatch** in the normal flow (no-offers is handled by expire + customer re-broadcast).
+A static recreation of the **LyniaGo** operations console (the real app is Next.js at `apps/admin`). It is a **monitor & support** tool — there is **no manual dispatch**: a no-offer order expires and the customer re-broadcasts. Single ops-admin role, pilot-scale Harare data.
 
-**File**
-- `index.html` — self-contained; uses the design tokens directly (the real admin uses inline styles from `@lynia/shared` tokens, not the React primitives).
+**Shared**
+- `admin.css` — console styles on top of the design tokens (`../../styles.css`).
+- `shell.js` — sidebar/top-tab nav, connection states, reason-code confirm modal, toast, skeleton/empty helpers, Tweaks panel.
 
-**Tabs**
-- **Dashboard** — four KPI panels (live orders, riders online, offers per broadcast, expiry rate) + a recent-orders table. Metrics track the pilot funnel (§8).
-- **Riders** — KYC review queue with `pending / verified / failed / all` filters and Approve/Decline actions on pending riders. (In production, KYC is automated via Didit; admin is the manual backstop.)
-- **Orders** — full order table with status, rider and fare.
+**Pages** (each linked from the sidebar)
+- `index.html` — **Overview**: 4 primary KPIs (live orders, riders online, completed today + rate, fares today), secondary funnel strip (time-to-first-offer, expiry, cancels, KYC backlog, signups, offers/broadcast), needs-attention queue, recent orders.
+- `orders.html` — **Orders**: status-filtered monitor → order detail with the 8-step delivery timeline, parcel line items, people (privacy-masked customer phone), proposed→agreed fare. Edge cases: **stuck order** (no GPS 22 min → call / nudge / cancel), fare **adjust/refund** and **cancel** with required reason codes.
+- `kyc.html` — **KYC review**: Didit-automated queue (pending/verified/failed) → full review screen: ID + selfie placeholders, face-match score vs the 0.85 auto-approve line, doc authenticity, liveness; approve / decline with reason codes; **resubmission (attempt 2)** path with lock warning.
+- `riders.html` — **Riders**: directory → profile (trips, rating, completion, strikes, cooldown, cash owed, recent trips). Actions: suspend / lift / permanent ban, all reason-coded; suspended-rider state included.
+- `customers.html` — **Customers**: directory → profile (masked phone, spend, cancel pattern, reports from riders). Edge case: **cancel-pattern flagged customer**; flag / clear / ban flows.
+- `issues.html` — **Issues**: dispute queue → investigation (what happened, OTP-not-entered evidence callout, both statements, photo placeholder) → resolve: refund / rider strike / close-no-action, each confirmed with a reason.
+- `cash.html` — **Cash & settlements**: the cash-market model — rider-collected fares, 15% weekly commission, adjustments/netting, settled / due / **overdue** states, record-payment modal (agent cash / EcoCash / netted).
 
-All numbers use tabular figures; status uses the muted/accent/danger convention (expired = danger, active/success = accent).
+**States & tweaks**
+Every page renders **live / empty / loading-skeleton / offline** (banner + dimmed data + disabled actions) — switch via the Tweaks panel, which also controls density (comfortable/compact), navigation (sidebar/top tabs) and data volume (pilot/growth). All destructive actions use a **confirm modal with a required reason code** and an audit-log line.
+
+All numbers are tabular figures; status pills follow the muted/accent/danger convention (expired · stuck · overdue = danger; active/verified = accent wash).

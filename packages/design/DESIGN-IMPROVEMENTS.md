@@ -1,8 +1,8 @@
 # Design improvements — response to the gstack design review
 
-Source: [`docs/DESIGN-REVIEW.md`](https://github.com/unnfazzed/Lynia/blob/main/docs/DESIGN-REVIEW.md) (5 review passes, design score 9/10, with a trigger-tagged backlog). This is the **record of how the design system answered** each open review item — every row below shipped — aimed squarely at out-crafting inDrive and GrabBike on the details that matter in a low-trust, low-bandwidth market.
+Source: [`docs/DESIGN-REVIEW.md`](https://github.com/unnfazzed/Lynia/blob/main/docs/DESIGN-REVIEW.md) (5 review passes, design score 9/10, with a trigger-tagged backlog). This pass turns the review's open items into shipped design-system pieces, aimed squarely at out-crafting inDrive and GrabBike on the details that matter in a low-trust, low-bandwidth market.
 
-## Review findings → what shipped (all delivered)
+## Review findings → what shipped here
 
 | Review item (stage) | Status in review | What shipped in this design system |
 |---|---|---|

@@ -52,6 +52,8 @@ export const color = {
   highlightBorder: "#F2B70566",
 
   danger: "#C0392B",
+  /** Danger tint (mirrors --danger-wash) — 'bad' status pills, warn bars, danger hover states. */
+  dangerWash: "#FAEDEB",
   /** Confirmation fills (== accent); use `accentText` for success TEXT. */
   success: "#00B14F",
   /** Text/icon colour on an accent (or danger) fill. The one inverse in the palette. */

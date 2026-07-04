@@ -1,0 +1,215 @@
+<!-- @dsCard group="Admin console" viewport="1280x800" name="Riders — directory & profile" subtitle="Rider record: trips, strikes, cooldown, cash owed; suspend / lift with reason codes" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lynia ops — riders</title>
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidenav" id="sidenav"></aside>
+  <main class="content">
+    <nav class="topnav" id="topnav"></nav>
+
+    <!-- Directory -->
+    <div id="list-view" data-screen-label="Riders directory">
+      <header class="page">
+        <h1>Riders</h1>
+        <span class="sub" id="dir-sub"></span>
+        <span class="conn" id="conn">● live</span>
+      </header>
+      <div class="offline-banner" id="offline-banner"></div>
+      <nav class="subnav" id="filters"></nav>
+      <section class="card stale-dim">
+        <table class="data">
+          <thead><tr><th>Rider</th><th>Phone</th><th>Bike</th><th>KYC</th><th>Trips / rating</th><th>Strikes</th><th>Status</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="rows-empty"></div>
+      </section>
+    </div>
+
+    <!-- Profile -->
+    <div id="detail-view" class="hidden" data-screen-label="Rider profile">
+      <header class="page">
+        <a class="back" href="#" onclick="showList();return false">← Riders</a>
+        <h1 id="d-name" style="font-size:18px"></h1>
+        <span id="d-pills" style="display:flex;gap:6px"></span>
+        <span class="conn" id="conn2">● live</span>
+      </header>
+      <div class="warnbar hidden" id="d-susp">
+        <i data-lucide="circle-alert"></i>
+        <span class="t"><b>Suspended.</b> <span id="d-susp-why"></span> The rider cannot go online until the suspension is lifted.</span>
+      </div>
+      <section class="panels stale-dim" id="d-stats" style="margin-bottom:var(--space-lg)"></section>
+      <div class="detail-grid stale-dim">
+        <section class="card">
+          <div class="block-title">Recent trips</div>
+          <table class="data">
+            <thead><tr><th>Order</th><th>Route</th><th>Status</th><th>Fare</th><th>When</th></tr></thead>
+            <tbody id="d-trips"></tbody>
+          </table>
+        </section>
+        <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
+          <section class="card">
+            <div class="block-title">Details</div>
+            <dl class="kv" id="d-info"></dl>
+          </section>
+          <section class="card">
+            <div class="block-title">Actions</div>
+            <div style="display:flex;flex-direction:column;gap:8px" id="d-actions"></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:10px">Suspensions and bans require a reason code and are recorded in the audit log.</div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../assets/lynia-icons.js"></script>
+<script>
+  window.TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+    "density": "comfortable",
+    "nav": "sidebar",
+    "volume": "pilot",
+    "state": "live"
+  }/*EDITMODE-END*/;
+</script>
+<script src="shell.js"></script>
+<script>
+  const TRIPS = [
+    ["3b71de04", "Avondale → CBD", "en_route_dropoff", "2.20", "14 min ago"],
+    ["9921aa07", "CBD → Avondale", "completed", "2.00", "3 hr ago"],
+    ["57e0cd14", "Eastgate → Milton Park", "completed", "2.80", "yesterday"],
+    ["208bb1f6", "CBD → Mt Pleasant", "cancelled", "3.50", "2 days ago"],
+  ];
+  const RIDERS = [
+    { name: "Tendai Moyo", phone: "+263 77 123 4567", bike: "ABZ 1234", kyc: "verified", trips: 132, rating: "4.8", ratingN: 118, strikes: 1, status: "online", joined: "Feb 2026", completion: "96%", owed: "8.20", trail: TRIPS },
+    { name: "Kudzai Ncube", phone: "+263 71 555 0090", bike: "ADR 8842", kyc: "verified", trips: 88, rating: "4.9", ratingN: 80, strikes: 0, status: "online", joined: "Mar 2026", completion: "98%", owed: "4.90", trail: TRIPS.slice(1) },
+    { name: "Farai Rusike", phone: "+263 78 202 1180", bike: "AEG 4471", kyc: "verified", trips: 41, rating: "4.6", ratingN: 35, strikes: 2, status: "cooldown", cooldown: "38 min left", joined: "Apr 2026", completion: "88%", owed: "12.40", owedOverdue: true, trail: TRIPS.slice(2) },
+    { name: "Rutendo Dube", phone: "+263 77 810 2231", bike: "AFT 9920", kyc: "pending", trips: 0, rating: null, ratingN: 0, strikes: 0, status: "offline", joined: "Jun 2026", completion: "—", owed: "0.00", trail: [] },
+    { name: "Tinashe Bere", phone: "+263 71 908 3345", bike: "ACC 7719", kyc: "verified", trips: 67, rating: "4.2", ratingN: 60, strikes: 3, status: "suspended", suspWhy: "Safety report from a customer on 30 Jun — under review with the rider.", joined: "Mar 2026", completion: "81%", owed: "0.00", trail: TRIPS.slice(1, 3) },
+  ];
+  const RIDERS_GROWTH = [
+    { name: "Nyasha Gumbo", phone: "+263 77 902 5511", bike: "AGH 2210", kyc: "verified", trips: 25, rating: "4.7", ratingN: 21, strikes: 0, status: "online", joined: "May 2026", completion: "95%", owed: "3.10", trail: TRIPS.slice(0, 2) },
+    { name: "Blessing Sibanda", phone: "+263 71 340 7788", bike: "AAB 1092", kyc: "pending", trips: 0, rating: null, ratingN: 0, strikes: 0, status: "offline", joined: "Jul 2026", completion: "—", owed: "0.00", trail: [] },
+    { name: "Simba Mutasa", phone: "+263 71 220 9034", bike: "AJK 5567", kyc: "verified", trips: 54, rating: "4.8", ratingN: 49, strikes: 1, status: "online", joined: "Apr 2026", completion: "93%", owed: "6.70", trail: TRIPS.slice(1) },
+  ];
+
+  const FILTERS = ["all", "online", "suspended"];
+  let filter = "all", envNow = { state: "live", volume: "pilot" }, current = null;
+
+  function statusPill(r) {
+    if (r.status === "online") return AdminShell.pill("● online", "good");
+    if (r.status === "suspended") return AdminShell.pill("suspended", "bad");
+    if (r.status === "cooldown") return AdminShell.pill("cooldown · " + r.cooldown, "");
+    return AdminShell.pill("offline", "mut");
+  }
+  function ratingTxt(r) { return r.rating ? `★ ${r.rating} · ${r.ratingN}` : "★ new"; }
+
+  function render(env) {
+    envNow = env;
+    document.getElementById("conn2").textContent = document.getElementById("conn").textContent;
+    document.getElementById("conn2").className = document.getElementById("conn").className;
+    const all = AdminShell.vol(env, RIDERS, RIDERS_GROWTH);
+    document.getElementById("dir-sub").textContent = `${all.filter((r) => r.kyc === "verified").length} verified · ${all.filter((r) => r.status === "online").length} online now`;
+    document.getElementById("filters").innerHTML = FILTERS.map((f) =>
+      `<a ${f === filter ? 'aria-current="true"' : ""} onclick="setFilter('${f}')">${f}</a>`).join("");
+
+    const rows = all.filter((r) => filter === "all" || r.status === filter);
+    const tb = document.getElementById("rows"), em = document.getElementById("rows-empty");
+    em.innerHTML = "";
+    if (env.state === "loading") tb.innerHTML = AdminShell.skelRows(7, 5);
+    else if (env.state === "empty" || rows.length === 0) { tb.innerHTML = ""; em.innerHTML = AdminShell.emptyState("bike", "No riders in this view", "Verified riders appear here as they sign up in the corridor."); }
+    else tb.innerHTML = rows.map((r) =>
+      `<tr class="rowlink" onclick="showDetail('${r.name}')">
+        <td>${r.name}</td><td class="mono">${r.phone}</td><td class="mono">${r.bike}</td>
+        <td>${AdminShell.pill(r.kyc, r.kyc === "verified" ? "good" : r.kyc === "failed" ? "bad" : "mut")}</td>
+        <td class="num">${r.trips} · ${ratingTxt(r)}</td>
+        <td class="num" style="color:${r.strikes >= 2 ? "var(--danger)" : "inherit"}">${r.strikes || "—"}</td>
+        <td>${statusPill(r)}</td>
+      </tr>`).join("");
+    if (current) renderDetail();
+    if (window.lucide) lucide.createIcons();
+  }
+  function setFilter(f) { filter = f; render(envNow); }
+  function showList() { current = null; document.getElementById("detail-view").classList.add("hidden"); document.getElementById("list-view").classList.remove("hidden"); }
+  function showDetail(name) {
+    current = AdminShell.vol(envNow, RIDERS, RIDERS_GROWTH).find((r) => r.name === name);
+    document.getElementById("list-view").classList.add("hidden");
+    document.getElementById("detail-view").classList.remove("hidden");
+    renderDetail();
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderDetail() {
+    const r = current;
+    document.getElementById("d-name").textContent = r.name;
+    document.getElementById("d-pills").innerHTML = statusPill(r) + " " + AdminShell.pill(r.kyc, r.kyc === "verified" ? "good" : "mut");
+    document.getElementById("d-susp").classList.toggle("hidden", r.status !== "suspended");
+    if (r.suspWhy) document.getElementById("d-susp-why").textContent = r.suspWhy;
+
+    const stat = (l, v, h) => `<div class="card kpi"><div class="label">${l}</div><div class="value" style="font-size:22px">${v}</div><div class="hint">${h}</div></div>`;
+    document.getElementById("d-stats").innerHTML =
+      stat("Trips", r.trips, "since " + r.joined)
+      + stat("Rating", ratingTxt(r), r.ratingN ? r.ratingN + " ratings" : "no ratings yet")
+      + stat("Completion", r.completion, "accepted → delivered")
+      + stat("Cancel strikes", r.strikes, r.status === "cooldown" ? "cooldown " + r.cooldown : "3 strikes = auto-cooldown")
+      + stat("Cash owed", "$" + r.owed, r.owedOverdue ? '<span style="color:var(--danger)">settlement overdue</span>' : "commission to settle");
+
+    document.getElementById("d-trips").innerHTML = r.trail.length
+      ? r.trail.map((t) => `<tr class="rowlink" onclick="location.href='orders.html'"><td class="mono">${t[0]}</td><td>${t[1]}</td><td>${AdminShell.statusPill(t[2])}</td><td class="num">$${t[3]}</td><td class="mut">${t[4]}</td></tr>`).join("")
+      : `<tr><td colspan="5" class="mut" style="text-align:center;padding:20px">No trips yet — this rider hasn't gone online.</td></tr>`;
+
+    document.getElementById("d-info").innerHTML =
+      `<dt>Phone</dt><dd class="mono">${r.phone}</dd>
+       <dt>Bike reg</dt><dd class="mono">${r.bike}</dd>
+       <dt>Joined</dt><dd>${r.joined}</dd>
+       <dt>KYC</dt><dd>${r.kyc}${r.kyc === "verified" ? ` · <a href="kyc.html" style="color:var(--accent-text)">view record</a>` : ` · <a href="kyc.html" style="color:var(--accent-text)">in queue</a>`}</dd>
+       <dt>Settlement</dt><dd>$${r.owed} owed · <a href="cash.html" style="color:var(--accent-text)">cash & settlements</a></dd>`;
+
+    const off = envNow.state === "offline" ? "disabled" : "";
+    document.getElementById("d-actions").innerHTML = r.status === "suspended"
+      ? `<button class="btn solid" ${off} onclick="liftSusp()">Lift suspension…</button>
+         <button class="btn danger" ${off} onclick="banRider()">Ban permanently…</button>`
+      : `<button class="btn ghost" ${off} onclick="AdminShell.toast('Calling ${r.name} — ${r.phone}')"><i data-lucide="phone"></i>Call rider</button>
+         <button class="btn danger" ${off} onclick="suspend()">Suspend rider…</button>`;
+  }
+
+  function suspend() {
+    AdminShell.confirmAction({
+      title: "Suspend " + current.name + "?",
+      body: `They are taken offline immediately and can't accept work. <b>${current.trips} trips · ${ratingTxt(current)}</b>. Suspension holds until an admin lifts it.`,
+      reasons: ["Safety report from a customer", "Repeated cancellations after accepting", "Suspected fare fraud", "Failed re-verification"],
+      danger: true, noteRequired: true, notePlaceholder: "What happened? The rider sees this context when they contact support.",
+      confirmLabel: "Suspend rider",
+      onConfirm: (r) => { current.status = "suspended"; current.suspWhy = r + "."; AdminShell.toast(`${current.name} suspended — ${r}`); render(envNow); },
+    });
+  }
+  function liftSusp() {
+    AdminShell.confirmAction({
+      title: "Lift suspension for " + current.name + "?",
+      body: "They can go online again immediately. Their strike count stays as it is.",
+      reasons: ["Issue resolved with the rider", "Report not substantiated", "Suspension period served"],
+      confirmLabel: "Lift suspension",
+      onConfirm: (r) => { current.status = "offline"; AdminShell.toast(`Suspension lifted — ${r}`); render(envNow); },
+    });
+  }
+  function banRider() {
+    AdminShell.confirmAction({
+      title: "Permanently ban " + current.name + "?",
+      body: "<b>This can't be undone from the console.</b> Their account, bike registration and national ID are blocked from re-registering.",
+      reasons: ["Confirmed fraud", "Serious safety incident", "Repeat offences after suspension"],
+      danger: true, noteRequired: true, notePlaceholder: "Required — describe the incident and evidence.",
+      confirmLabel: "Ban rider",
+      onConfirm: (r) => { AdminShell.toast(`${current.name} banned — ${r}`); showList(); render(envNow); },
+    });
+  }
+
+  AdminShell.init({ page: "riders", onRender: render });
+</script>
+</body>
+</html>

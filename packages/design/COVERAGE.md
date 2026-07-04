@@ -30,6 +30,21 @@ scope for this phase.
 | Trip history · earnings · profile | ✅ |
 | 320px small-screen mode | ✅ |
 
+### 2026 journey-review additions (`ui_kits/mobile/new-flows.html` · design; wire in app)
+| Screen / state | Status |
+|---|---|
+| Search-first addressing — address search (Google Places, saved Home/Work, current location) | ✅ design |
+| Profile registration — full name + national ID, stored only (no KYC); phone verified via OTP | ✅ design |
+| Choose your role — send parcels / earn as a rider (one account; rider exits to rider journey) | ✅ design |
+| Confirm pin on map — draggable pin, stores lat/lng + place_id, deep-links Google Maps | ✅ design |
+| Live tracking — “Follow route in Google Maps” route-sync row | ✅ design |
+| Pre-broadcast liability disclaimer (accept-to-continue, consent recorded) — A1-8 | ✅ design |
+| Auction counter-offer — accept/decline a rider's higher price (never auto-charge) — F-07 | ✅ design |
+| Rider cancelled → auto re-broadcast at same price — F-01 | ✅ design |
+| Not delivered / undeliverable terminal (rider-recorded reason + attempts shown) — F-02 / S6 | ✅ design |
+| Cancel-anytime — live-tracking cancel edge + post-pickup hand-back warning — S5 | ✅ design |
+| Live paused — covers either side's outage, ~2-min escalation — S8 | ✅ design |
+
 ## Rider app (`ui_kits/mobile/`)
 | Screen / state | Status |
 |---|---|
@@ -42,12 +57,41 @@ scope for this phase.
 | Delivery-OTP hand-off (wrong-code, 5-attempt lockout) | ✅ |
 | Delivered | ✅ |
 
+### 2026 rider journey-review (`explorations/journey/LyniaGo Rider Journey Map.html` · full flow map)
+| Screen / state | Status |
+|---|---|
+| Rider-framed onboarding + location/notification priming | ✅ design |
+| Role selection — "send a parcel" vs "earn as a rider" (one account) — R0-4 | ✅ design |
+| KYC — become a rider (form + consent → pending → verified) | ✅ |
+| KYC branches — verification failed, ID expired / re-verify | ✅ design |
+| Board race — order taken by another rider first | ✅ design |
+| Make an offer — **accept price _or_ counter** (fare + ETA) | ✅ design |
+| Offer sent / picked / not-chosen | ✅ design |
+| Pickup item verification — tick each item to confirm collection | ✅ design |
+| Job failures — wrong-code lockout (+ "ask customer to re-send"), undeliverable terminal (incl. breakdown reason), rider bail (pre-pickup only), mid-job connection loss | ✅ design |
+| **Customer cancelled** terminal — rider-side mirror of cancel-anytime (pre/post-pickup) — S5 | ✅ design |
+| **Auction expired · no pick** — distinct from not-chosen; live window countdown on offer-sent — S1 | ✅ design |
+| Rate the sender (optional, at delivered) — S10 | ✅ design |
+| Earnings — lean total + trip list; new-rider empty state | ✅ |
+| Account — profile, bike & documents, trip history, settings, help | ✅ design |
+| System/edge — offline, on-hold, force-update, no-GPS, generic error | ✅ |
+
 ## Admin ops console (`ui_kits/admin/`)
 | Screen | Status |
 |---|---|
-| Dashboard KPIs | ✅ |
-| Rider KYC review queue (approve/decline, filters) | ✅ |
-| Orders table | ✅ |
+| Overview dashboard — KPIs, funnel strip, needs-attention, recent orders | ✅ |
+| Orders monitor + order detail (timeline, parcel, fare) | ✅ |
+| Edge — stuck order (no GPS → call / nudge / cancel) | ✅ |
+| Fare adjust / refund + cancel (reason-code modals) | ✅ |
+| KYC queue + full review (Didit checks, doc viewer, approve/decline) | ✅ |
+| Edge — KYC resubmission (attempt 2, lock warning) | ✅ |
+| Riders directory + profile (strikes, cooldown, cash owed) | ✅ |
+| Edge — suspend / lift / permanent ban | ✅ |
+| Customers directory + profile (masked phone, spend, reports) | ✅ |
+| Edge — cancel-pattern flag / clear / ban | ✅ |
+| Issues queue + investigation (OTP evidence, statements, resolve) | ✅ |
+| Cash & settlements (weekly commission, overdue, record payment) | ✅ |
+| States on every page — live / empty / loading / offline | ✅ |
 
 ## Support / onboarding / edge (`ui_kits/support/`)
 | Screen | Status |
@@ -75,11 +119,17 @@ scope for this phase.
 ## ⛔ Out of scope (this phase — by decision)
 | Area | Note |
 |---|---|
-| Financial / superapp: wallet, credit offer, repayment, bike leasing | Roadmap phase — not designed |
+| Payment handling / reconciliation / refunds | **Off-platform by decision** — cash is settled directly between customer & rider; Lynia is not a party to payment or money disputes (surfaced via the pre-broadcast disclaimer). |
+| Financial / superapp: wallet, credit offer, repayment, bike leasing | Roadmap phase — not designed. EcoCash / mobile money noted as a strategic rec in the audit. |
 | Localisation (Shona / Ndebele) | Copy is English-only |
 | Marketing website | Not started |
 | In-app chat / live-agent support | Help routes to WhatsApp for now |
 
 ## Known follow-ups (see `HANDOFF.md`)
+- **2026 seam resolution** (`INTERFACE-AUDIT.md`): customer ⇄ rider interface contracts C1–C9 in `HANDOFF.md` — each is one server-side transition pushed to both apps (counter round rules, cancellation matrix, code re-issue loop, presence escalation, undelivered reason flow).
+- **Backlog execution:** sequenced in `BACKLOG-PLAN.md` (7 waves; Waves 1–2 pre-launch).
+- **2026 customer journey-review flows** (`ui_kits/mobile/new-flows.html`) still need wiring into the interactive kit + app: counter-offer accept/decline, rider-cancel → auto re-broadcast, undeliverable terminal, disclaimer consent record, Google Places + Maps deep-link. Full gap list & severities in `CUSTOMER-JOURNEY-AUDIT.md`.
+- **2026 rider journey-review** (`explorations/journey/LyniaGo Rider Journey Map.html`): two net-new screens to wire (role selection, pickup item verification) + rider tickets (reliability-score/bail maths, rider SOS, counter re-counter rules, hand-off lockout recovery, mid-job connection guards, order-level support). Full gap list & severities in `RIDER-JOURNEY-AUDIT.md`.
 - Repo-side engineering tickets (contact-phone guard, timeouts, race/OTP/board wiring, heartbeat).
+- Outline the Fredoka wordmark to vector for final production.
 - On-device checks: CTA sunlight contrast, skeleton reflow, sheet drag physics.

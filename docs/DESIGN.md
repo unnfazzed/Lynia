@@ -40,6 +40,7 @@
 | `--cta-fill` | `#00812F` | primary-button fill — white label ≈4.7:1 (AA large), sunlight-tuned |
 | `--highlight` | `#F2B705` | 'recommended' marker only (gold, sparing) |
 | `--danger` | `#C0392B` | errors, destructive |
+| `--danger-wash` | `#FAEDEB` | danger tint — 'bad' status pills, warn bars, danger hover (admin console) |
 | `--success` | `#00B14F` | confirmation fills (use `--accent-text` for success text) |
 | `--onAccent` | `#FFFFFF` | text/icons on an accent (or danger) fill — the one inverse |
 

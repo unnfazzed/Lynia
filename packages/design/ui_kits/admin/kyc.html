@@ -1,0 +1,216 @@
+<!-- @dsCard group="Admin console" viewport="1280x800" name="KYC — queue & review" subtitle="Didit automated checks, document viewer, approve/decline with reason codes, resubmit path" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lynia ops — KYC review</title>
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidenav" id="sidenav"></aside>
+  <main class="content">
+    <nav class="topnav" id="topnav"></nav>
+
+    <!-- Queue -->
+    <div id="list-view" data-screen-label="KYC queue">
+      <header class="page">
+        <h1>KYC review</h1>
+        <span class="sub">Didit verifies automatically — this queue is the human backstop</span>
+        <span class="conn" id="conn">● live</span>
+      </header>
+      <div class="offline-banner" id="offline-banner"></div>
+      <nav class="subnav" id="filters"></nav>
+      <section class="card stale-dim">
+        <table class="data">
+          <thead><tr><th>Rider</th><th>Phone</th><th>Bike reg</th><th>Submitted</th><th>Didit result</th><th>Attempt</th><th>Status</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="rows-empty"></div>
+      </section>
+    </div>
+
+    <!-- Review screen -->
+    <div id="detail-view" class="hidden" data-screen-label="KYC review screen">
+      <header class="page">
+        <a class="back" href="#" onclick="showList();return false">← KYC queue</a>
+        <h1 id="d-name" style="font-size:18px"></h1>
+        <span id="d-pill"></span>
+        <span class="conn" id="conn2">● live</span>
+      </header>
+      <div class="warnbar hidden" id="d-resub">
+        <i data-lucide="circle-alert"></i>
+        <span class="t"><b>Resubmission — attempt 2.</b> <span id="d-resub-why"></span> A second decline locks the application; the rider must contact support.</span>
+      </div>
+      <div class="detail-grid stale-dim">
+        <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
+          <section class="card">
+            <div class="block-title">Documents</div>
+            <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:var(--space-md)">
+              <div>
+                <div class="doc-ph" style="height:170px">national ID — front<br />(photo from rider's phone)</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:6px">National ID · <span class="mono" id="d-idno"></span></div>
+              </div>
+              <div>
+                <div class="doc-ph" style="height:170px">live selfie<br />(Didit liveness capture)</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:6px">Captured <span id="d-when"></span></div>
+              </div>
+            </div>
+          </section>
+          <section class="card">
+            <div class="block-title">Automated checks — Didit</div>
+            <div id="d-checks"></div>
+            <div style="font-size:12px;color:var(--muted);margin-top:10px" id="d-why"></div>
+          </section>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
+          <section class="card">
+            <div class="block-title">Applicant</div>
+            <dl class="kv" id="d-app"></dl>
+          </section>
+          <section class="card">
+            <div class="block-title">Decision</div>
+            <div style="font-size:13px;color:var(--muted);margin-bottom:14px">Approving lets this rider go online immediately. Declining shows them the reason in the app.</div>
+            <div style="display:flex;gap:8px">
+              <button class="btn solid" id="d-approve" onclick="approve()"><i data-lucide="check"></i>Approve rider</button>
+              <button class="btn danger" id="d-decline" onclick="decline()">Decline…</button>
+            </div>
+            <div id="d-decided" style="margin-top:12px;font-size:13px"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../assets/lynia-icons.js"></script>
+<script>
+  window.TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+    "density": "comfortable",
+    "nav": "sidebar",
+    "volume": "pilot",
+    "state": "live"
+  }/*EDITMODE-END*/;
+</script>
+<script src="shell.js"></script>
+<script>
+  const APPS = [
+    { name: "Farai Rusike", phone: "+263 78 202 1180", idno: "63-482716 A 47", dob: "12 Mar 1994", bike: "AEG 4471", submitted: "26 hr ago", attempt: 1, status: "pending",
+      face: 0.81, doc: "pass", live: "pass", why: "Face match 0.81 is below the 0.85 auto-approve line — likely the low-light selfie. Compare the two photos yourself." },
+    { name: "Rutendo Dube", phone: "+263 77 810 2231", idno: "63-901238 B 12", dob: "3 Aug 1999", bike: "AFT 9920", submitted: "9 hr ago", attempt: 1, status: "pending",
+      face: 0.93, doc: "glare", live: "pass", why: "Didit couldn't read the ID's security features through glare. If the number and face check out, approve; otherwise decline as unreadable." },
+    { name: "Blessing Sibanda", phone: "+263 71 340 7788", idno: "63-115290 C 33", dob: "27 Jan 1991", bike: "AAB 1092", submitted: "1 hr ago", attempt: 2, status: "pending",
+      prior: "Declined 3 days ago — ID photo unreadable.", face: 0.9, doc: "pass", live: "pass", why: "All checks pass on the new photos. This resubmission only needs a quick confirmation." },
+    { name: "Tendai Moyo", phone: "+263 77 123 4567", idno: "63-274401 D 08", dob: "15 Jun 1990", bike: "ABZ 1234", submitted: "3 weeks ago", attempt: 1, status: "verified", face: 0.97, doc: "pass", live: "pass", why: "Auto-verified by Didit." },
+    { name: "Munashe Chirwa", phone: "+263 78 660 4412", idno: "63-556019 E 21", dob: "9 Nov 1997", bike: "—", submitted: "2 days ago", attempt: 1, status: "failed", face: 0.42, doc: "fail", live: "fail", declineReason: "Suspected fraud — selfie does not match the ID", why: "Face match 0.42; document check failed. Auto-declined by Didit, confirmed by ops." },
+  ];
+  const APPS_GROWTH = [
+    { name: "Nyasha Gumbo", phone: "+263 77 902 5511", idno: "63-338805 F 90", dob: "22 Feb 1996", bike: "AGH 2210", submitted: "4 hr ago", attempt: 1, status: "pending", face: 0.83, doc: "pass", live: "pass", why: "Face match just under the line — verify by eye." },
+    { name: "Simba Mutasa", phone: "+263 71 220 9034", idno: "63-770412 F 03", dob: "30 Sep 1992", bike: "AJK 5567", submitted: "2 weeks ago", attempt: 1, status: "verified", face: 0.96, doc: "pass", live: "pass", why: "Auto-verified by Didit." },
+  ];
+
+  const FILTERS = ["pending", "verified", "failed", "all"];
+  let filter = "pending", envNow = { state: "live", volume: "pilot" }, current = null;
+
+  function checkRow(label, value, ok) {
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:13px">
+      <span style="flex:1">${label}</span><span class="num mut" style="font-size:12px">${value}</span>
+      ${AdminShell.pill(ok === true ? "pass" : ok === "warn" ? "needs review" : "fail", ok === true ? "good" : ok === "warn" ? "" : "bad")}</div>`;
+  }
+
+  function render(env) {
+    envNow = env;
+    document.getElementById("conn2").textContent = document.getElementById("conn").textContent;
+    document.getElementById("conn2").className = document.getElementById("conn").className;
+    const all = AdminShell.vol(env, APPS, APPS_GROWTH);
+    document.getElementById("filters").innerHTML = FILTERS.map((f) => {
+      const n = f === "all" ? all.length : all.filter((a) => a.status === f).length;
+      return `<a ${f === filter ? 'aria-current="true"' : ""} onclick="setFilter('${f}')">${f} · ${n}</a>`;
+    }).join("");
+
+    const rows = all.filter((a) => filter === "all" || a.status === filter);
+    const tb = document.getElementById("rows"), em = document.getElementById("rows-empty");
+    em.innerHTML = "";
+    if (env.state === "loading") tb.innerHTML = AdminShell.skelRows(8, 4);
+    else if (env.state === "empty" || rows.length === 0) {
+      tb.innerHTML = "";
+      em.innerHTML = AdminShell.emptyState("id-card", "Queue is clear", filter === "pending" ? "Every application has been reviewed. New submissions appear here." : "No riders in this view.");
+    } else tb.innerHTML = rows.map((a, i) =>
+      `<tr class="rowlink" onclick="showDetail('${a.name}')">
+        <td>${a.name}</td><td class="mono">${a.phone}</td><td class="mono">${a.bike}</td><td class="mut">${a.submitted}</td>
+        <td>${a.face >= 0.85 && a.doc === "pass" && a.live === "pass" ? AdminShell.pill("pass", "good") : a.status === "failed" ? AdminShell.pill("fail", "bad") : AdminShell.pill("needs review", "")}
+          <span class="mut num" style="font-size:11px">face ${a.face.toFixed(2)}</span></td>
+        <td class="num">${a.attempt}${a.attempt > 1 ? " " + AdminShell.pill("resubmitted", "") : ""}</td>
+        <td>${AdminShell.pill(a.status, a.status === "verified" ? "good" : a.status === "failed" ? "bad" : "mut")}</td>
+        <td>${a.status === "pending" ? '<span class="btn ghost" style="padding:4px 12px">Review</span>' : ""}</td>
+      </tr>`).join("");
+    if (current) renderDetail();
+    if (window.lucide) lucide.createIcons();
+  }
+  function setFilter(f) { filter = f; render(envNow); }
+  function showList() { current = null; document.getElementById("detail-view").classList.add("hidden"); document.getElementById("list-view").classList.remove("hidden"); }
+  function showDetail(name) {
+    current = AdminShell.vol(envNow, APPS, APPS_GROWTH).find((a) => a.name === name);
+    document.getElementById("list-view").classList.add("hidden");
+    document.getElementById("detail-view").classList.remove("hidden");
+    renderDetail();
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderDetail() {
+    const a = current;
+    document.getElementById("d-name").textContent = a.name;
+    document.getElementById("d-pill").innerHTML = AdminShell.pill(a.status, a.status === "verified" ? "good" : a.status === "failed" ? "bad" : "mut");
+    document.getElementById("d-resub").classList.toggle("hidden", !(a.attempt > 1 && a.status === "pending"));
+    if (a.prior) document.getElementById("d-resub-why").textContent = a.prior;
+    document.getElementById("d-idno").textContent = a.idno;
+    document.getElementById("d-when").textContent = a.submitted;
+    document.getElementById("d-checks").innerHTML =
+      checkRow("Selfie ↔ ID face match", a.face.toFixed(2) + " / auto-approve ≥ 0.85", a.face >= 0.85 ? true : a.face >= 0.6 ? "warn" : false)
+      + checkRow("Document authenticity", a.doc === "pass" ? "security features read" : a.doc === "glare" ? "unreadable — glare" : "failed", a.doc === "pass" ? true : a.doc === "glare" ? "warn" : false)
+      + checkRow("Liveness", a.live === "pass" ? "real-time capture" : "failed", a.live === "pass" ? true : false);
+    document.getElementById("d-why").textContent = a.why;
+    document.getElementById("d-app").innerHTML =
+      `<dt>Full name</dt><dd>${a.name}</dd>
+       <dt>Phone</dt><dd class="mono">${a.phone}</dd>
+       <dt>National ID</dt><dd class="mono">${a.idno}</dd>
+       <dt>Date of birth</dt><dd>${a.dob}</dd>
+       <dt>Bike reg</dt><dd class="mono">${a.bike}</dd>
+       <dt>Attempt</dt><dd class="num">${a.attempt}</dd>`;
+    const decided = a.status !== "pending";
+    document.getElementById("d-approve").disabled = decided || envNow.state === "offline";
+    document.getElementById("d-decline").disabled = decided || envNow.state === "offline";
+    document.getElementById("d-decided").innerHTML = decided
+      ? a.status === "verified"
+        ? `<span style="color:var(--accent-text);font-weight:600">✓ Verified — this rider can go online.</span>`
+        : `<span style="color:var(--danger);font-weight:600">Declined.</span> <span class="mut">${a.declineReason || ""}</span>`
+      : "";
+  }
+
+  function approve() {
+    AdminShell.confirmAction({
+      title: "Approve " + current.name + "?",
+      body: `They'll be marked <b>verified</b> and can go online right away. Face match <b>${current.face.toFixed(2)}</b> · attempt ${current.attempt}.`,
+      confirmLabel: "Approve rider",
+      onConfirm: () => { current.status = "verified"; AdminShell.toast(`${current.name} approved — they can go online`); render(envNow); },
+    });
+  }
+  function decline() {
+    AdminShell.confirmAction({
+      title: "Decline " + current.name + "?",
+      body: current.attempt > 1
+        ? `This is <b>attempt 2</b> — a decline locks the application and the rider must contact support.`
+        : `The rider sees the reason in the app and can fix and resubmit <b>once</b>.`,
+      reasons: ["ID photo unreadable — retake", "Selfie doesn't match the ID", "Bike registration invalid or missing", "Suspected fraud or stolen identity"],
+      danger: true,
+      confirmLabel: "Decline application",
+      onConfirm: (r) => { current.status = "failed"; current.declineReason = r; AdminShell.toast(`Application declined — ${r}`); render(envNow); },
+    });
+  }
+
+  AdminShell.init({ page: "kyc", onRender: render });
+</script>
+</body>
+</html>
