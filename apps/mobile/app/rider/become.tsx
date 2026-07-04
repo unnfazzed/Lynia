@@ -7,7 +7,7 @@ import { Image, ScrollView, Text } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
-import { Button, Card, ErrorText, Field, Heading, Label, Screen, Sub } from "../../src/ui";
+import { Button, Card, ErrorText, Field, Heading, isTestBuild, Label, Screen, Sub } from "../../src/ui";
 
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
@@ -129,8 +129,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
               ) : null}
             </Card>
             <Text style={{ fontSize: 12, color: tokens.color.muted, lineHeight: 18, marginBottom: tokens.space.sm }}>
-              By submitting, your national ID is checked by our verification partner (Didit) — an ID photo plus a
-              quick selfie liveness check. You'll finish in your browser, then return here to go online.
+              {isTestBuild()
+                ? "Test build: ID verification is bypassed — submit and you'll be verified straight away so you can go online."
+                : "By submitting, your national ID is checked by our verification partner (Didit) — an ID photo plus a quick selfie liveness check. You'll finish in your browser, then return here to go online."}
             </Text>
             <Button label="Submit for verification" onPress={submit} loading={busy} disabled={!canSubmit} />
           </>
