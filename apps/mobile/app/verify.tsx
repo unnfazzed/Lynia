@@ -10,7 +10,8 @@ export default function VerifyScreen(): React.ReactElement {
   const { signIn } = useAuth();
   const params = useLocalSearchParams<{ phone?: string; devCode?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
-  const [code, setCode] = useState(typeof params.devCode === "string" ? params.devCode : "");
+  const prefilled = typeof params.devCode === "string" && params.devCode.length > 0;
+  const [code, setCode] = useState(prefilled ? (params.devCode as string) : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,8 +38,19 @@ export default function VerifyScreen(): React.ReactElement {
   return (
     <Screen>
       <Heading>Enter your code</Heading>
-      <Sub>We sent a 6-digit code to {phone || "your phone"}.</Sub>
-      <Field label="6-digit code" value={code} onChangeText={setCode} placeholder="000000" keyboardType="number-pad" maxLength={6} />
+      {/* On a QA build the code arrives pre-filled (console OTP channel) — no message was sent, so
+          don't claim one was. Real users still see the "we sent a code" copy. */}
+      <Sub>{prefilled ? "Test build: code pre-filled — tap Verify." : `We sent a 6-digit code to ${phone || "your phone"}.`}</Sub>
+      <Field
+        label="6-digit code"
+        value={code}
+        onChangeText={setCode}
+        placeholder="000000"
+        keyboardType="number-pad"
+        maxLength={6}
+        autoComplete="one-time-code"
+        textContentType="oneTimeCode"
+      />
       <Button label="Verify" onPress={submit} loading={busy} disabled={code.trim().length !== 6} />
       <Button label="Back" variant="ghost" onPress={() => router.back()} />
       <ErrorText message={error} />

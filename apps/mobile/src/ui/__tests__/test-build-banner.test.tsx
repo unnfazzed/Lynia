@@ -75,3 +75,31 @@ describe("Field keyboard default (National-ID fix)", () => {
     expect(input.props.keyboardType).toBe("default");
   });
 });
+
+describe("Field accessibility + autofill", () => {
+  it("names the input for screen readers from the label", () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<Field label="Phone number" value="" onChangeText={() => {}} />);
+    });
+    expect(tree.root.findByType("TextInput" as never).props.accessibilityLabel).toBe("Phone number");
+  });
+
+  it("falls back to the placeholder when there is no label", () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<Field value="" onChangeText={() => {}} placeholder="000000" />);
+    });
+    expect(tree.root.findByType("TextInput" as never).props.accessibilityLabel).toBe("000000");
+  });
+
+  it("forwards autofill hints to the input", () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<Field label="6-digit code" value="" onChangeText={() => {}} autoComplete="one-time-code" textContentType="oneTimeCode" />);
+    });
+    const input = tree.root.findByType("TextInput" as never);
+    expect(input.props.autoComplete).toBe("one-time-code");
+    expect(input.props.textContentType).toBe("oneTimeCode");
+  });
+});

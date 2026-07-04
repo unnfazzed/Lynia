@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
-import { AccessibilityInfo, ActivityIndicator, Animated, type DimensionValue, Pressable, Text, TextInput, View, type ViewStyle } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Animated, type DimensionValue, Pressable, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "./Icon";
 import { isTestBuild } from "./test-build";
@@ -61,6 +61,11 @@ export function Field(props: {
   placeholder?: string;
   keyboardType?: "default" | "number-pad" | "phone-pad" | "decimal-pad";
   maxLength?: number;
+  // Autofill hints: `autoComplete` (cross-platform, Android autofill) + `textContentType` (iOS). Set
+  // them on the phone (tel) and OTP (one-time-code) fields so the keyboard/SMS autofill offers the
+  // right value.
+  autoComplete?: TextInputProps["autoComplete"];
+  textContentType?: TextInputProps["textContentType"];
 }): React.ReactElement {
   return (
     <View style={{ marginBottom: tokens.space.md }}>
@@ -72,6 +77,11 @@ export function Field(props: {
         placeholderTextColor={tokens.color.muted}
         keyboardType={props.keyboardType ?? "default"}
         maxLength={props.maxLength}
+        autoComplete={props.autoComplete}
+        textContentType={props.textContentType}
+        // The visible Label is a sibling Text with no programmatic link, so name the input for
+        // screen readers from the label (falls back to the placeholder for label-less rows).
+        accessibilityLabel={props.label ?? props.placeholder}
         style={{
           borderWidth: 1,
           borderColor: tokens.color.line,

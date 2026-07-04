@@ -113,8 +113,9 @@ Turn QA mode on with the documented `gh variable set` commands
   parallel allowlist beside the unconditional pass would gate nothing (would require tightening
   `stubAutoPass` itself — unnecessary pre-pilot).
 - Gradle build caching — deferred to a follow-up after the first green build.
-- Full E.164 phone normalization, input-field a11y (`textContentType`/label association), and the OTP
-  "we sent a code" copy tweak — P3, real-user polish, filed as TODOs not built here.
+- Full E.164 phone normalization — P3, real-user polish, deferred.
+  (The other P3 polish — input-field a11y `autoComplete`/`textContentType` + label association, and the
+  OTP "we sent a code" copy on a pre-filled test build — was **folded in**, not deferred.)
 
 ## Implementation Tasks
 
