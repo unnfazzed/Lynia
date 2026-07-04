@@ -9,6 +9,12 @@ import { z } from "zod";
  *  value — one source so the clock the customer sees and the server enforces can't drift. */
 export const OFFER_WINDOW_MS = 90_000;
 
+/** Presence escalation window (INTERFACE-AUDIT C5). One shared constant for BOTH sides of a live
+ *  trip: after this long with a socket dark, the muted "live paused" treatment escalates to a
+ *  warning (customer: "rider offline — call your rider"; rider: reassurance → warning). Rider
+ *  position older than this must not be rendered as live on the customer's tracking. */
+export const PRESENCE_ESCALATION_MS = 120_000;
+
 export const LatLng = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
@@ -92,6 +98,29 @@ export const ConfirmDeliveryRequest = z.object({
 });
 export type ConfirmDeliveryRequest = z.infer<typeof ConfirmDeliveryRequest>;
 
+/** Rider marks a hand-off as failed → terminal `undelivered` (INTERFACE-AUDIT C6 / F-02). The reason
+ *  enum + attempt count are persisted and shown verbatim to the customer. Allowed only post-pickup. */
+export const MarkUndeliveredRequest = z.object({
+  reason: z.enum(["unreachable", "refused", "wrong_address", "breakdown"]),
+  note: z.string().max(280).optional(),
+});
+export type MarkUndeliveredRequest = z.infer<typeof MarkUndeliveredRequest>;
+
+/** Rider ticks off the sender's items at pickup before riding on (rider-journey "pickup item
+ *  verification"). Persists which line-items were physically collected; the recipient still verifies
+ *  delivery with the 6-digit code. `confirmedIndexes` indexes into the order's `items` array. */
+export const ConfirmItemsRequest = z.object({
+  confirmedIndexes: z.array(z.number().int().min(0).max(9)).min(1),
+});
+export type ConfirmItemsRequest = z.infer<typeof ConfirmItemsRequest>;
+
+/** Customer records consent to the pre-broadcast liability disclaimer before an order is created
+ *  (customer-journey A1-8). Persisted on the order as {policyVersion, timestamp}. */
+export const AcceptDisclaimerRequest = z.object({
+  policyVersion: z.string().min(1).max(40),
+});
+export type AcceptDisclaimerRequest = z.infer<typeof AcceptDisclaimerRequest>;
+
 /** Customer rates the rider after delivery; this also closes the order (`completed`). */
 export const RateRequest = z.object({
   score: z.number().int().min(1).max(5),
@@ -142,6 +171,15 @@ export const WS_EVENTS = {
   boardLeave: "board:leave",
   /** client→server: rider streams a GPS fix for an active order. */
   riderLocation: "rider:location",
+  /** server→client: the auction window closed with no pick — pushed to ALL bidders on that order
+   *  (INTERFACE-AUDIT C2). Distinct from `not_chosen` (someone else was picked). */
+  bidExpired: "bid:expired",
+  /** server→client: the customer cancelled — pushed to the assigned rider (INTERFACE-AUDIT C3).
+   *  Carries whether the parcel was already collected so the rider UI can show the hand-back path. */
+  jobCancelled: "job:cancelled",
+  /** server→client: the counterparty's socket has been dark past PRESENCE_ESCALATION_MS
+   *  (INTERFACE-AUDIT C5) — the receiving app escalates its "live paused" treatment to a warning. */
+  presenceStale: "presence:stale",
 } as const;
 export type WsEvent = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];
 
@@ -163,7 +201,10 @@ export type BoardSubscribeEvent = z.infer<typeof BoardSubscribeEvent>;
 export const PublicWaypoint = z.object({ point: LatLng, landmark: z.string() }).strict();
 export type PublicWaypoint = z.infer<typeof PublicWaypoint>;
 
-/** `board:new-order` payload — the redacted open-order row (mirrors the `GET /orders/open` shape). */
+/** `board:new-order` payload — the redacted open-order row (mirrors the `GET /orders/open` shape).
+ *  `expiresAt` exposes the shared auction clock (INTERFACE-AUDIT C2) so a bidder's offer-sent screen
+ *  can render a countdown of the same window the customer sees. Optional for back-compat with rows
+ *  created before the field existed. */
 export const BoardNewOrderEvent = z.object({
   id: z.string().uuid(),
   pickup: PublicWaypoint,
@@ -173,8 +214,33 @@ export const BoardNewOrderEvent = z.object({
   proposedFare: z.string(),
   distanceKm: z.number().nullable(),
   createdAt: z.string(),
+  expiresAt: z.string().optional(),
 });
 export type BoardNewOrderEvent = z.infer<typeof BoardNewOrderEvent>;
+
+/** `bid:expired` payload — the auction closed with no pick (INTERFACE-AUDIT C2). */
+export const BidExpiredEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
+export type BidExpiredEvent = z.infer<typeof BidExpiredEvent>;
+
+/** `job:cancelled` payload — the customer cancelled an assigned job (INTERFACE-AUDIT C3). `collected`
+ *  distinguishes the pre-pickup path (rider returns to the board) from post-pickup (sender contact
+ *  shown for the hand-back). No reliability impact on the rider. */
+export const JobCancelledEvent = z.object({
+  orderId: z.string().uuid(),
+  collected: z.boolean(),
+  at: z.string(),
+});
+export type JobCancelledEvent = z.infer<typeof JobCancelledEvent>;
+
+/** `presence:stale` payload — the counterparty has been dark past PRESENCE_ESCALATION_MS
+ *  (INTERFACE-AUDIT C5). `role` is whose presence went stale; `lastSeenAt` is their last fix/beat. */
+export const PresenceStaleEvent = z.object({
+  orderId: z.string().uuid(),
+  role: z.enum(["rider", "customer"]),
+  lastSeenAt: z.string().nullable(),
+  at: z.string(),
+});
+export type PresenceStaleEvent = z.infer<typeof PresenceStaleEvent>;
 
 // ── Client RUM (glass-to-glass latency) ─────────────────────────────────────
 // The app already emits SERVER-side latency SLOs (docs/OBSERVABILITY.md); those miss network RTT +
