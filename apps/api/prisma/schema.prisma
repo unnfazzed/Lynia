@@ -275,6 +275,26 @@ model Session {
   @@map("sessions")
 }
 
+// Admin audit trail (INTERFACE-AUDIT A-01, compliance). Every destructive console action
+// (suspend / lift / ban / decline / refund / cancel / flag / clear / settle) writes one row here so
+// the intent is recorded server-side and queryable — closing the "UI-only seam" where the console
+// posted an action nowhere. `actor` is the authenticated admin's profile id; `action` + `target`
+// identify what was done to whom; `reasonCode` + `note` carry the ConfirmModal justification. Plain
+// columns (no FK on actor/target) so an audit row survives even if the referenced row is later
+// deleted — an audit log must be append-only and outlive its subjects.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actor      String
+  action     String
+  target     String
+  reasonCode String?  @map("reason_code")
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
 // §5b superapp seams — reserved, unused at launch.
 model Merchant {
   id        String   @id @default(uuid()) @db.Uuid
