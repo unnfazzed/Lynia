@@ -82,6 +82,10 @@ export class OrdersService {
         distanceKm,
         suggestedFare,
         proposedFare: input.proposedFare,
+        // A1-8: record the liability-disclaimer consent on the order (version + timestamp) so it
+        // survives with the order, not just as a client-side flag. Absent for old clients → null.
+        disclaimerVersion: input.disclaimerVersion ?? null,
+        disclaimerAcceptedAt: input.disclaimerVersion ? new Date() : null,
         status: "open_for_offers",
         events: { create: { status: "open_for_offers" } },
       },
@@ -119,6 +123,13 @@ export class OrdersService {
       // window the server schedules expiry against). Status is open_for_offers on create.
       expiresAt: new Date(order.createdAt.getTime() + OFFER_WINDOW_MS).toISOString(),
     };
+  }
+
+  /** Acknowledge the customer's pre-broadcast disclaimer consent (A1-8). The binding record is the
+   *  order's `disclaimerVersion`/`disclaimerAcceptedAt`, stamped when the order is created; this
+   *  returns the server-authoritative acceptance timestamp for the gate the client shows first. */
+  acceptDisclaimer(policyVersion: string, _customerId: string): { policyVersion: string; acceptedAt: string } {
+    return { policyVersion, acceptedAt: new Date().toISOString() };
   }
 
   /**

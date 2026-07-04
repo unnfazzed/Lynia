@@ -126,12 +126,10 @@ export function cancelOrder(
 }
 
 /**
- * Record the customer's consent to the pre-broadcast liability disclaimer (A1-8). Consent is
- * {policyVersion, timestamp}; the server persists it against the customer so the next created order
- * carries it.
- * TODO(api): the `POST /orders/disclaimer` route is still being built server-side. The mobile side is
- * typed + wired here; until the route lands the caller also stores acceptance locally so the gate
- * isn't re-shown, and this call is best-effort (a reject must not block the broadcast).
+ * Acknowledge the customer's pre-broadcast disclaimer consent at the gate (A1-8) and get the
+ * server-authoritative timestamp. Best-effort — the binding record is the order's own
+ * `disclaimerVersion`, stamped at create (the broadcast payload carries it), so a reject here must
+ * never block the broadcast; the local flag already prevents the gate re-showing.
  */
 export function acceptDisclaimer(body: AcceptDisclaimerRequest): Promise<{ policyVersion: string; acceptedAt: string }> {
   return apiFetch(`/orders/disclaimer`, { method: "POST", body });
@@ -139,9 +137,8 @@ export function acceptDisclaimer(body: AcceptDisclaimerRequest): Promise<{ polic
 
 /**
  * Rider confirms which of the sender's line-items were physically collected at pickup (rider-journey
- * "pickup item verification"). `confirmedIndexes` indexes into the order's `items` array.
- * TODO(api): the `POST /orders/:id/items/confirm` route is still being built server-side. The
- * checklist UX + advance gating are wired here; wire the persisted confirmation once the route lands.
+ * "pickup item verification"). `confirmedIndexes` indexes into the order's `items` array; the server
+ * persists them on the order (`itemsCollected`) at `en_route_pickup`, before the advance to picked_up.
  */
 export function confirmItems(orderId: string, body: ConfirmItemsRequest): Promise<{ orderId: string; confirmedIndexes: number[] }> {
   return apiFetch(`/orders/${orderId}/items/confirm`, { method: "POST", body });

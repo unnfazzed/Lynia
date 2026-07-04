@@ -1,5 +1,5 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
-import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, MarkUndeliveredRequest, RateRequest } from "@lynia/shared";
+import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, ConfirmItemsRequest, MarkUndeliveredRequest, RateRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
@@ -20,6 +20,17 @@ export class LifecycleController {
     @CurrentUser() riderId: string,
   ) {
     return this.lifecycle.advance(orderId, riderId, body.to);
+  }
+
+  /** Rider ticks off the sender's items at pickup (pickup item verification). Persists the collected
+   *  set; the rider's next tap advances to picked_up. */
+  @Post("items/confirm")
+  confirmItems(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(ConfirmItemsRequest)) body: ConfirmItemsRequest,
+    @CurrentUser() riderId: string,
+  ) {
+    return this.lifecycle.confirmItems(orderId, riderId, body.confirmedIndexes);
   }
 
   /** Rider confirms the handover with the recipient's delivery code → delivered. */

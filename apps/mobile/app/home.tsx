@@ -280,6 +280,9 @@ export default function HomeScreen(): React.ReactElement {
       items: items.map((it) => ({ description: it.description.trim(), quantity: it.quantity })),
       declaredValue: parseNum(declaredValue) ?? 0,
       proposedFare: fare,
+      // A1-8: bind the accepted disclaimer version onto the order itself; the server stamps the
+      // acceptance time. The accept-to-continue gate guarantees this is set before broadcast.
+      disclaimerVersion: DISCLAIMER_POLICY_VERSION,
     };
     const parsed = CreateOrderRequest.safeParse(candidate);
     if (!parsed.success) {

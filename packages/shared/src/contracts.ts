@@ -58,6 +58,9 @@ export const CreateOrderRequest = z
     itemPhotoUrl: z.string().url().optional(),
     declaredValue: z.number().nonnegative().max(150), // pilot cap (CONCEPT §3.5)
     proposedFare: z.number().positive(),
+    // Pre-broadcast liability disclaimer consent (A1-8). The version the customer accepted; the
+    // server stamps the acceptance time on the order. Optional for back-compat with old clients.
+    disclaimerVersion: z.string().min(1).max(40).optional(),
   })
   .superRefine((v, ctx) => {
     if (v.items === undefined && v.itemDescription === undefined) {

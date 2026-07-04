@@ -187,6 +187,33 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     return { orderId, status: to };
   }
 
+  /** Rider ticks off the sender's items at pickup before riding on (rider "pickup item
+   *  verification"). Persists which line-item indexes were physically collected; does NOT advance the
+   *  status (the rider's next tap runs `advance` to `picked_up`). Guarded to the assigned rider and
+   *  allowed only at `en_route_pickup` (at the pickup, before collection). */
+  async confirmItems(
+    orderId: string,
+    riderId: string,
+    confirmedIndexes: number[],
+  ): Promise<{ orderId: string; confirmedIndexes: number[] }> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true, riderId: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
+    if (order.status !== "en_route_pickup") {
+      throw new ConflictException("Items can only be confirmed at the pickup");
+    }
+    // De-dupe + sort so the stored set is canonical regardless of tick order.
+    const indexes = [...new Set(confirmedIndexes)].sort((a, b) => a - b);
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { itemsCollected: indexes as unknown as Prisma.InputJsonValue },
+    });
+    return { orderId, confirmedIndexes: indexes };
+  }
+
   /** Rider confirms the handover with the recipient's delivery code → `delivered`. */
   async confirmDelivery(orderId: string, riderId: string, code: string): Promise<LifecycleResult> {
     // Serialize attempts with a row lock so the count gate, the otp compare, and the increment are
