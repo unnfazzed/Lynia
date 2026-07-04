@@ -94,6 +94,33 @@ export interface SettlementWeek {
   rows: SettlementRow[];
 }
 
+/* ── KYC review (kit kyc.html — admin A-02) ─────────────────── */
+/**
+ * One rider's KYC doc-review detail (`GET /admin/riders/:id/kyc`). The persisted A-02 state machine:
+ * status, the resubmission counter + derived attempt/lock, and the last decline reason. Didit's
+ * granular scores (face-match, doc authenticity, liveness) are NOT persisted in the pilot — only the
+ * overall verdict flows into `status` — so the checks panel is rendered from `status` + the reviewer's
+ * own compare rather than numeric fields (see admin.service.getKycReview).
+ */
+export interface KycReview {
+  id: string;
+  name: string;
+  /** Server-masked (A-03) — the reviewer matches the ID number, not the phone. */
+  phone: string;
+  idNumber: string | null;
+  bike: string;
+  status: "pending" | "verified" | "failed";
+  kycRef: string | null;
+  /** Decline counter. 0 = first review, 1 = one resubmit used, >= 2 = locked. */
+  kycAttempts: number;
+  /** Current attempt number (1 on first review, 2 on the single allowed resubmit). */
+  attempt: number;
+  /** True once `kycAttempts >= 2` — resubmission is locked; the rider must contact support. */
+  locked: boolean;
+  declineReason: string | null;
+  submittedAt: string;
+}
+
 /* ── Order detail (kit orders.html) ────────────────────────── */
 export interface OrderDetail {
   id: string;

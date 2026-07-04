@@ -323,6 +323,37 @@ Executed against the implemented branch, not just static checks:
   destructive-action interaction and DataTable-with-rows — actions are deliberately disabled until the
   console is connected, so that belongs to a connected-stack QA.
 
+## E2. Connected-stack QA + Track-A follow-ups — 4 Jul 2026
+
+Ran the connected-stack QA the degraded pass deferred, and completed the customer-side seam loose
+ends + the KYC A-02 state machine.
+
+- **Connected-stack QA (real API + DB + seed, headless Chromium):** stood up `@lynia/api` against a
+  seeded Postgres+PostGIS (`lynia_qa`) + `@lynia/admin` pointed at it. Live data renders on overview /
+  orders / riders with zero console/network errors; **KYC approve round-trips to the DB**
+  (pending→verified verified in-row); **phone masking (A-03) clean** — full number shown only for the
+  rider on the live `en_route_pickup` order, masked everywhere else; DataTable rowlink nav works.
+- **Track-A completion:** customer-side presence escalation (C5 now both directions),
+  `deliveryAttempts` increment (real undelivered attempt count), F-01 customer re-attach
+  (`order:rebroadcast` → the customer moves to the fresh auction). KYC A-02: decline reason + attempt
+  counter + 2-attempt resubmission lock, migration `0010`, admin doc-review page with lock states.
+  339 API + 23 mobile tests; migration 0010 applies to a live DB.
+
+### QA findings + disposition
+- **D-1 (fixed):** the overview/cash pages baked `data=null` at build when `API_BASE_URL` was absent
+  at build time (early-return before the `no-store` fetch → Next never marks the route dynamic), so a
+  CI/Docker build shipped a permanently "API not connected" console. Fixed: `force-dynamic` at the
+  admin root layout — the live ops console is never statically prerendered.
+- **D-2 (tracked follow-up — admin API lane):** the admin UI is ahead of the API. Only
+  `/admin/overview`, `/admin/riders` (list), `/admin/orders` (list), and now `/admin/riders/:id/kyc`
+  exist; **order/rider detail, customers, issues, cash, and `POST /admin/audit-actions` (A-01) still
+  404.** The console pages render their offline placeholder against a live API for those routes.
+  Wiring these `/admin/*` reads + the audit-log write path is the next admin-lane work (A-01 audit is
+  the priority — it's a hard compliance requirement, currently a UI-only seam that degrades silently).
+- **D-3 (tracked follow-up):** `adminFetch` collapses a 404 (endpoint not built) and an unset env into
+  the same `null`, so an unimplemented page tells the operator "API not connected" even when the API
+  is healthy. Distinguish the two (a missing endpoint vs. an unreachable API) once D-2's endpoints land.
+
 ## E. Verification checklist (every phase)
 
 1. `pnpm install && pnpm build` clean (Turbo) · `pnpm typecheck` · `pnpm lint` · `pnpm test`.

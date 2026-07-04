@@ -119,6 +119,22 @@ export class TrackingService implements OnModuleDestroy {
     }));
   }
 
+  /**
+   * Of the given candidate order ids, which are still an active ride (INTERFACE-AUDIT C5, customer
+   * mirror). The gateway tracks customer-socket presence in memory (no DB heartbeat exists for the
+   * customer side), then gates a `presence:stale` escalation on the order still being live — so a
+   * customer who closed the app on a finished/cancelled order is never escalated. Bounded `in` set
+   * (only the handful of orders whose customer went dark this scan); mirrors findStaleRiderPresence.
+   */
+  async filterActiveOrders(orderIds: string[]): Promise<Set<string>> {
+    if (orderIds.length === 0) return new Set();
+    const rows = await this.prisma.order.findMany({
+      where: { id: { in: orderIds }, status: { in: ACTIVE_RIDE_STATUSES } },
+      select: { id: true },
+    });
+    return new Set(rows.map((r) => r.id));
+  }
+
   /** Only a KYC-verified, online rider may join the open-order board (mirrors the offer gating §5d). */
   async isBoardEligible(riderId: string): Promise<boolean> {
     const rider = await this.prisma.rider.findUnique({

@@ -109,10 +109,30 @@ export default async function RidersPage({
                     {r.kycStatus === "pending" ? (
                       <span style={{ display: "flex", gap: 6 }}>
                         <KycButton profileId={r.profileId} status="verified" label="Approve" variant="solid" />
-                        <KycButton profileId={r.profileId} status="failed" label="Decline" variant="ghost" />
+                        {/* Decline needs a reason code (A-02) — route to the doc-review screen where the
+                            reason-coded modal + document compare live, not a reason-less inline decline. */}
+                        <a
+                          href={`/riders/${r.profileId}/kyc`}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            minHeight: 36,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            padding: "6px 14px",
+                            borderRadius: 999,
+                            border: `1px solid ${tokens.color.line}`,
+                            color: tokens.color.muted,
+                            textDecoration: "none",
+                          }}
+                        >
+                          Review
+                        </a>
                       </span>
                     ) : (
-                      <span style={{ color: tokens.color.muted }}>—</span>
+                      <a href={`/riders/${r.profileId}/kyc`} style={{ color: tokens.color.accentText, textDecoration: "none" }}>
+                        Review
+                      </a>
                     )}
                   </td>
                 </tr>

@@ -17,6 +17,18 @@ export const REASONS = {
   ],
   orderCancel: ["Rider unreachable", "Customer asked ops to cancel", "Safety concern", "Suspected fraud"],
 
+  // kyc.html — KYC decline (admin A-02). MIRRORS the api's canonical list in
+  // apps/api/src/riders/kyc-decline-reasons.ts (KYC_DECLINE_REASONS). @lynia/shared is off-limits for
+  // this change, so the strings are duplicated across the two packages — keep them in sync until the
+  // A-01 shared enum lands and both import a single source.
+  kycDecline: [
+    "ID photo unreadable — retake",
+    "Selfie doesn't match the ID",
+    "ID expired or not a valid national ID",
+    "Bike registration invalid or missing",
+    "Suspected fraud or stolen identity",
+  ],
+
   // riders.html
   riderSuspend: [
     "Safety report from a customer",

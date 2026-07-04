@@ -278,7 +278,16 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
       const claimed = await tx.order.updateMany({
         where: { id: orderId, status: order.status },
-        data: { status: "undelivered", undeliveredReason: reason, undeliveredAt: new Date() },
+        data: {
+          status: "undelivered",
+          undeliveredReason: reason,
+          undeliveredAt: new Date(),
+          // Record the failed hand-off attempt that led the rider to give up, so the customer's
+          // terminal shows a real count (C6 "recipient unreachable · N attempts") instead of a
+          // hardcoded 0. markUndelivered is the single guarded "gave up" edge (CAS to undelivered,
+          // fires at most once), so this is the one place the attempt becomes durable.
+          deliveryAttempts: { increment: 1 },
+        },
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await tx.orderEvent.create({ data: { orderId, status: "undelivered" } });
@@ -411,7 +420,12 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // Best-effort post-commit pushes. emitJobCancelled is guarded (the gateway swallows a null server),
     // and the re-broadcast announce is fire-and-forget like the create() path.
     if (jobCancelledCollected !== null) this.gateway.emitJobCancelled(orderId, jobCancelledCollected);
-    if (rebroadcastId) void this.orders.announceOpenOrder(rebroadcastId);
+    if (rebroadcastId) {
+      // F-01: tell the customer watching the (now cancelled) order to re-attach to the fresh auction,
+      // then announce the new open order to the board. Both are best-effort post-commit pushes.
+      this.gateway.emitOrderRebroadcast(orderId, rebroadcastId);
+      void this.orders.announceOpenOrder(rebroadcastId);
+    }
     return result;
   }
 

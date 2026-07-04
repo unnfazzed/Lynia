@@ -95,9 +95,18 @@ export class RiderService {
    * clears kycResolvedAt so the new webhook resolves it. Verified riders are left untouched.
    */
   async retryKyc(profileId: string): Promise<{ kycStatus: Kyc; verificationUrl?: string }> {
-    const rider = await this.prisma.rider.findUnique({ where: { profileId }, select: { kycStatus: true } });
+    const rider = await this.prisma.rider.findUnique({
+      where: { profileId },
+      select: { kycStatus: true, kycAttempts: true },
+    });
     if (!rider) throw new NotFoundException("Not a rider");
     if (rider.kycStatus === "verified") throw new ConflictException("Already verified");
+    // A-02 lock: one resubmit is allowed. After a second admin decline (kycAttempts >= 2) the
+    // application is locked — no third attempt is minted; the rider must contact support. Enforced here
+    // for every mode so a manual-mode rider can't loop past the limit either.
+    if (rider.kycAttempts >= 2) {
+      throw new ForbiddenException("ID verification is locked after two attempts. Please contact support.");
+    }
     // Manual mode has no vendor to resubmit to — the admin backstop resolves it; leave the rider pending.
     if (this.env.KYC_MODE !== "auto") return { kycStatus: "pending" };
 
@@ -156,14 +165,59 @@ export class RiderService {
     return { updated: res.count };
   }
 
-  /** Manual-review backstop (T7) — admin override when no vendor supports a ZIM ID. */
-  async adminSetKyc(profileId: string, status: Kyc): Promise<{ profileId: string; kycStatus: Kyc }> {
-    const rider = await this.prisma.rider.findUnique({ where: { profileId }, select: { profileId: true } });
+  /**
+   * Admin KYC decision write-back (A-02 state machine) + manual-review backstop (T7).
+   *
+   * - **approve** (`verified`) → rider can go online; clear any prior decline reason.
+   * - **decline** (`failed`) → record the `reasonCode` (surfaced to the rider app + the audit log) and
+   *   increment `kycAttempts`. The second decline pushes the counter to >= 2, which locks resubmission
+   *   in `retryKyc` (one resubmit allowed → then support).
+   * - `pending` is the plain backstop reset (no counter change).
+   *
+   * `locked` is returned so the console can reflect the terminal state immediately without re-reading.
+   */
+  async adminSetKyc(
+    profileId: string,
+    status: Kyc,
+    reasonCode?: string | null,
+  ): Promise<{ profileId: string; kycStatus: Kyc; kycAttempts: number; locked: boolean }> {
+    const rider = await this.prisma.rider.findUnique({
+      where: { profileId },
+      select: { profileId: true, kycAttempts: true },
+    });
     if (!rider) throw new NotFoundException("Rider not found");
+
+    if (status === "failed") {
+      // Decline: record the reason and bump the attempt counter. The increment is the lock's source of
+      // truth — a second decline lands at >= 2 and retryKyc refuses to mint a third session.
+      const updated = await this.prisma.rider.update({
+        where: { profileId },
+        data: {
+          kycStatus: "failed",
+          idVerified: false,
+          kycDeclineReason: reasonCode ?? null,
+          kycAttempts: { increment: 1 },
+        },
+        select: { kycAttempts: true },
+      });
+      return {
+        profileId,
+        kycStatus: "failed",
+        kycAttempts: updated.kycAttempts,
+        locked: updated.kycAttempts >= 2,
+      };
+    }
+
+    // Approve / pending reset: no counter change. Clearing the decline reason on approve keeps the
+    // rider app from showing a stale "you were declined for …" once they're verified.
     await this.prisma.rider.update({
       where: { profileId },
-      data: { kycStatus: status, idVerified: status === "verified" },
+      data: {
+        kycStatus: status,
+        idVerified: status === "verified",
+        ...(status === "verified" ? { kycDeclineReason: null } : {}),
+      },
     });
-    return { profileId, kycStatus: status };
+    return { profileId, kycStatus: status, kycAttempts: rider.kycAttempts, locked: rider.kycAttempts >= 2 };
   }
 }

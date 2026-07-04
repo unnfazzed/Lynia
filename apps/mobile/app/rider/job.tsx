@@ -41,11 +41,23 @@ export default function RiderJob(): React.ReactElement {
   // snapshot into a terminal, because a cancelled order immediately drops out of /orders/mine/active
   // (so a refetch would blank the sender contact needed for a post-pickup hand-back).
   const [cancelledJob, setCancelledJob] = useState<{ collected: boolean; snapshot: OrderSnapshot } | null>(null);
+  // C5: the customer's app has gone dark on this active job — surface a soft "may be offline" warning
+  // so the rider knows the customer might not be seeing live position/status. Cleared on the next
+  // status change (the flow progressing implies things are moving again).
+  const [customerStale, setCustomerStale] = useState(false);
   const orderRef = useRef<OrderSnapshot | null>(order);
   orderRef.current = order;
-  useRiderJobSocket(order && ACTIVE.includes(order.status) ? orderId : null, (e) => {
-    if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current });
-  });
+  useRiderJobSocket(
+    order && ACTIVE.includes(order.status) ? orderId : null,
+    (e) => {
+      if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current });
+    },
+    () => setCustomerStale(true),
+  );
+  // A status advance means the ride is moving again — drop a stale customer-presence warning.
+  useEffect(() => {
+    setCustomerStale(false);
+  }, [order?.status]);
 
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
   const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Something went wrong.");
@@ -198,6 +210,21 @@ export default function RiderJob(): React.ReactElement {
           <View style={{ flex: 1 }} />
           <StatusPill status={order.status} />
         </View>
+
+        {/* C5: the customer's app went dark — they may not be seeing your live updates. Soft, muted
+            warning (a state, not an alarm); it clears itself on the next status change. */}
+        {isActive && customerStale ? (
+          <View
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, borderWidth: 1, borderColor: tokens.color.line, marginBottom: tokens.space.sm }}
+          >
+            <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
+            <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+              The customer&apos;s app looks offline — they may not be seeing live updates. Call them if you need to reach the sender.
+            </Text>
+          </View>
+        ) : null}
 
         <Card>
           <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>Agreed fare ${order.agreedFare ?? order.proposedFare}</Text>

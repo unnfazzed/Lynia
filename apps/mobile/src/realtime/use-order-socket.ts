@@ -1,6 +1,6 @@
-import { WS_EVENTS, type OffersChangedEvent } from "@lynia/shared";
+import { OrderRebroadcastEvent, WS_EVENTS, type OffersChangedEvent } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import type { OrderSnapshot } from "../api/orders";
 import { useAuth } from "../auth/auth-context";
@@ -19,11 +19,17 @@ import { createSocket } from "./socket";
  * previous data while a refetch is in flight, so invalidating (not `setQueryData(undefined)`) means the
  * map doesn't flash when the socket reconnects.
  */
-export function useOrderSocket(orderId: string | null): { connected: boolean } {
+export function useOrderSocket(
+  orderId: string | null,
+  onRebroadcast?: (newOrderId: string) => void,
+): { connected: boolean } {
   const { session } = useAuth();
   const token = session?.accessToken;
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
+  // Hold the latest callback in a ref so re-subscribing isn't tied to its identity.
+  const rebroadcastRef = useRef(onRebroadcast);
+  rebroadcastRef.current = onRebroadcast;
 
   useEffect(() => {
     if (!orderId || !token) return;
@@ -46,6 +52,15 @@ export function useOrderSocket(orderId: string | null): { connected: boolean } {
     });
 
     socket.on(WS_EVENTS.orderStatus, refetchOrder); // invalidate is authoritative — no optimistic write needed
+
+    // F-01: the assigned rider bailed and the job was auto re-broadcast at the same price as a NEW
+    // order. The server pushes this to THIS (now cancelled) order's room; move the customer to the
+    // fresh auction instead of stranding them on a dead "cancelled" terminal.
+    socket.on(WS_EVENTS.orderRebroadcast, (raw: unknown) => {
+      const parsed = OrderRebroadcastEvent.safeParse(raw);
+      if (!parsed.success || parsed.data.orderId !== orderId) return;
+      rebroadcastRef.current?.(parsed.data.newOrderId);
+    });
 
     // New live-auction signal: the offer set changed. Payload is signal-only; refetch the offer list.
     socket.on(WS_EVENTS.offersChanged, (e: OffersChangedEvent) => {

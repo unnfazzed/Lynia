@@ -7,6 +7,12 @@ export const metadata: Metadata = {
   description: "Monitor & support console for the LyniaGo pilot",
 };
 
+// The ops console is a LIVE monitoring surface — never statically prerender it. Without this, a page
+// whose data fetch early-returns null when API_BASE_URL is unset (overview, cash — they lack the
+// searchParams/params dynamic signal the list/detail routes have) bakes `data=null` at build time and
+// ships permanently "API not connected" even when the runtime env is set correctly (QA finding D-1).
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
