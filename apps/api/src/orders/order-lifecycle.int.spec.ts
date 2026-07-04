@@ -320,7 +320,10 @@ describe("seam-contract transitions", () => {
     expect(clones).toHaveLength(1); // exactly one new row
     expect(clones[0]!.status).toBe("open_for_offers");
     expect(clones[0]!.id).not.toBe(orderId);
-    expect(clones[0]!.proposedFare.toString()).toBe("2.50"); // same price re-broadcast
+    // Same price re-broadcast: assert the clone carries the SOURCE order's fare (compare the Decimals
+    // by value — Prisma's Decimal.toString() drops trailing zeros, so "2.50" would be "2.5").
+    const orig = await prisma.order.findUnique({ where: { id: orderId }, select: { proposedFare: true } });
+    expect(clones[0]!.proposedFare.equals(orig!.proposedFare)).toBe(true);
   });
 
   it("C3: a rider cancel is BLOCKED once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
