@@ -287,7 +287,9 @@ export function Stepper(props: {
                   borderRadius: 11,
                   borderWidth: 2,
                   borderColor: onTrack ? tokens.color.accent : tokens.color.line,
-                  backgroundColor: state === "done" ? tokens.color.accent : tokens.color.bg,
+                  // Done node = mint wash + green mark (matches the DS timeline treatment); the bright
+                  // accent fill carried a white glyph at ~2.9:1 — keep white only off the CTA green.
+                  backgroundColor: state === "done" ? tokens.color.accentWash : tokens.color.bg,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
@@ -296,7 +298,7 @@ export function Stepper(props: {
                   style={{
                     fontSize: 11,
                     fontWeight: "700",
-                    color: state === "done" ? tokens.color.onAccent : state === "now" ? tokens.color.accentText : tokens.color.muted,
+                    color: state === "done" || state === "now" ? tokens.color.accentText : tokens.color.muted,
                   }}
                 >
                   {state === "done" ? "✓" : String(i + 1)}
