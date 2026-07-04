@@ -7,7 +7,7 @@ import { Image, ScrollView, Text } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
-import { Button, Card, ErrorText, Field, Heading, Label, Screen, Sub } from "../../src/ui";
+import { Button, Card, ErrorText, Field, Heading, isTestBuild, Label, Screen, Sub } from "../../src/ui";
 
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
@@ -104,13 +104,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
             <Card>
               <Field label="First name" value={firstName} onChangeText={setFirstName} maxLength={80} />
               <Field label="Last name" value={lastName} onChangeText={setLastName} maxLength={80} />
-              <Field
-                label="National ID number"
-                value={idNumber}
-                onChangeText={setIdNumber}
-                keyboardType="number-pad"
-                maxLength={40}
-              />
+              {/* Default (text) keyboard — Zimbabwean national IDs are alphanumeric (e.g. "63-123456 A 12"),
+                  so a number-pad would make the letter suffix untypeable and block KYC submission. */}
+              <Field label="National ID number" value={idNumber} onChangeText={setIdNumber} maxLength={40} />
             </Card>
             <Card>
               <Field label="Bike registration" value={bikeReg} onChangeText={setBikeReg} placeholder="ABZ 1234" maxLength={20} />
@@ -133,8 +129,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
               ) : null}
             </Card>
             <Text style={{ fontSize: 12, color: tokens.color.muted, lineHeight: 18, marginBottom: tokens.space.sm }}>
-              By submitting, your national ID is checked by our verification partner (Didit) — an ID photo plus a
-              quick selfie liveness check. You'll finish in your browser, then return here to go online.
+              {isTestBuild()
+                ? "Test build: ID verification is bypassed — submit and you'll be verified straight away so you can go online."
+                : "By submitting, your national ID is checked by our verification partner (Didit) — an ID photo plus a quick selfie liveness check. You'll finish in your browser, then return here to go online."}
             </Text>
             <Button label="Submit for verification" onPress={submit} loading={busy} disabled={!canSubmit} />
           </>

@@ -1,17 +1,38 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
-import { AccessibilityInfo, ActivityIndicator, Animated, type DimensionValue, Pressable, Text, TextInput, View, type ViewStyle } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Animated, type DimensionValue, Pressable, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "./Icon";
+import { isTestBuild } from "./test-build";
 
 export { Icon, type IconName } from "./Icon";
 export { BrandLockup, DoveMark, Wordmark } from "./Brand";
 export { fontFamilies, interFamily } from "./fonts";
 export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 
+export { isTestBuild } from "./test-build";
+
+/**
+ * A gold attention bar shown only on the QA test build (isTestBuild). It tells a tester the app is a
+ * bypass build talking to the LIVE API — so test data and provenance in bug-report screenshots are
+ * never mistaken for production. Renders nothing in a real release, so it can't leak.
+ */
+export function TestBuildBanner(): React.ReactElement | null {
+  if (!isTestBuild()) return null;
+  return (
+    <View
+      accessibilityRole="alert"
+      style={{ backgroundColor: tokens.color.highlight, paddingVertical: 6, paddingHorizontal: tokens.space.screen, alignItems: "center" }}
+    >
+      <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.ink }}>TEST BUILD — live API</Text>
+    </View>
+  );
+}
+
 export function Screen({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.surface }}>
+      <TestBuildBanner />
       {/* 16px edge padding — designs must work at 320px wide (space.screen, not xl). */}
       <View style={{ flex: 1, padding: tokens.space.screen }}>{children}</View>
     </SafeAreaView>
@@ -40,6 +61,11 @@ export function Field(props: {
   placeholder?: string;
   keyboardType?: "default" | "number-pad" | "phone-pad" | "decimal-pad";
   maxLength?: number;
+  // Autofill hints: `autoComplete` (cross-platform, Android autofill) + `textContentType` (iOS). Set
+  // them on the phone (tel) and OTP (one-time-code) fields so the keyboard/SMS autofill offers the
+  // right value.
+  autoComplete?: TextInputProps["autoComplete"];
+  textContentType?: TextInputProps["textContentType"];
 }): React.ReactElement {
   return (
     <View style={{ marginBottom: tokens.space.md }}>
@@ -51,6 +77,11 @@ export function Field(props: {
         placeholderTextColor={tokens.color.muted}
         keyboardType={props.keyboardType ?? "default"}
         maxLength={props.maxLength}
+        autoComplete={props.autoComplete}
+        textContentType={props.textContentType}
+        // The visible Label is a sibling Text with no programmatic link, so name the input for
+        // screen readers from the label (falls back to the placeholder for label-less rows).
+        accessibilityLabel={props.label ?? props.placeholder}
         style={{
           borderWidth: 1,
           borderColor: tokens.color.line,

@@ -84,6 +84,42 @@ describe("AuthService.requestOtp", () => {
   });
 });
 
+describe("AuthService phone identity is E.164-normalized", () => {
+  it("request in local form + verify in international form resolve to one account", async () => {
+    let upsertWhere: { phone?: string } = {};
+    const prisma = {
+      profile: {
+        upsert: async (args: { where: { phone: string } }) => {
+          upsertWhere = args.where;
+          return { id: "p9", role: "customer", firstName: "" };
+        },
+      },
+      session: { create: async () => ({ id: "s9" }) },
+    };
+    const { svc } = make(baseEnv, prisma);
+    // Requested with the local trunk-0 form...
+    const req = await svc.requestOtp("0771230000", "1.2.3.4");
+    expect(req.devCode).toMatch(/^\d{6}$/);
+    // ...verified with the international form — same stored OTP key, same account.
+    const res = await svc.verifyOtp("+263771230000", req.devCode as string);
+    expect(res).toMatchObject({ profileId: "p9" });
+    expect(upsertWhere.phone).toBe("+263771230000");
+  });
+
+  it("rejects an unparseable phone with 400 instead of minting a junk identity", async () => {
+    const { svc } = make(baseEnv, {});
+    await expect(svc.requestOtp("abc", "1.2.3.4")).rejects.toMatchObject({ status: 400 });
+    await expect(svc.verifyOtp("xx", "123456")).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("matches an allowlisted tester written in a different format (local list vs E.164 device)", async () => {
+    const env = { ...baseEnv, NODE_ENV: "production", OTP_TEST_PHONES: "0770000011" } as Env;
+    const { svc } = make(env, {});
+    const res = await svc.requestOtp("+263770000011", "1.1.1.9");
+    expect(res.devCode).toMatch(/^\d{6}$/);
+  });
+});
+
 describe("AuthService.getProfile", () => {
   const customerRow = {
     id: "p1",

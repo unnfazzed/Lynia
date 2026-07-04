@@ -39,6 +39,8 @@ export default function PhoneScreen(): React.ReactElement {
         placeholder="+263 77 000 0000"
         keyboardType="phone-pad"
         maxLength={20}
+        autoComplete="tel"
+        textContentType="telephoneNumber"
       />
       <Button label="Send code" onPress={submit} loading={busy} disabled={phone.trim().length < 6} />
       <ErrorText message={error} />

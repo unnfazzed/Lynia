@@ -360,6 +360,17 @@ gh workflow run release.yml --ref main      # redeploy to apply
 ```
 (Ad-hoc, no redeploy: `gcloud run services update lynia-api --region africa-south1 --update-env-vars '^@^OTP_CHANNEL=console@KYC_PROVIDER=stub@PUSH_PROVIDER=noop@OTP_TEST_PHONES=+263771234567'`.)
 
+### Build & install the test APK
+The on-device dev build is a GitHub Actions workflow: **Actions → "Android Test APK" → Run workflow**
+(or push a `test-apk/**` tag) — [`.github/workflows/android-test-apk.yml`](../.github/workflows/android-test-apk.yml).
+It runs `expo prebuild` and assembles a **signed release** APK (JS bundled, so it runs offline;
+throwaway keystore), uploaded as the `lynia-test-apk` run artifact. Download it, then `adb install`
+or sideload directly. It renders a gold **"TEST BUILD — live API"** banner so testers know it's a
+bypass build hitting production. Optional repo secrets: `GOOGLE_MAPS_API_KEY` (map renders — restrict
+it in GCP by package `zw.co.lynia` + the run's signing SHA-1, printed in the build log) and
+`GOOGLE_SERVICES_JSON` (base64 of `google-services.json`, for FCM). Both are optional; the build
+succeeds without them (blank map / inert push).
+
 ### Customer flow
 1. `POST /auth/otp {phone}` → response includes `devCode` (allowlisted number). `POST /auth/otp/verify
    {phone, code}` → tokens.

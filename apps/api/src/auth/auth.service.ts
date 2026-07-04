@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   HttpStatus,
   Inject,
@@ -7,6 +8,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
+import { normalizePhone } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
@@ -83,7 +85,11 @@ export class AuthService {
     };
   }
 
-  async requestOtp(phone: string, ip: string): Promise<{ sent: true; channel: string; devCode?: string }> {
+  async requestOtp(rawPhone: string, ip: string): Promise<{ sent: true; channel: string; devCode?: string }> {
+    // Canonicalize to E.164 at the boundary so every downstream key (OTP store, rate limit, and the
+    // profile identity in verifyOtp) is the same string regardless of how the number was typed.
+    const phone = normalizePhone(rawPhone);
+    if (!phone) throw new BadRequestException("Enter a valid phone number");
     await this.enforceRate(`rl:phone:${phone}`, RL.phone);
     await this.enforceRate(`rl:ip:${ip}`, RL.ip);
     await this.enforceRate("rl:global", RL.global);
@@ -105,27 +111,26 @@ export class AuthService {
   }
 
   /**
-   * QA allowlist (OTP_TEST_PHONES, comma-separated) — gates returning the OTP code in prod.
-   * Compares with cosmetic formatting (spaces/dashes/parens) stripped on BOTH sides, so a tester
-   * whose device sends "+263 77 000 0011" still matches "+263770000011" in the list. This is a
-   * comparison-only normalization — it never widens the match to a different number, and does not
-   * touch the auth identity key (the raw phone). (Full E.164 normalization of the identity key is
-   * a separate, broader change — deferred.)
+   * QA allowlist (OTP_TEST_PHONES, comma-separated) — gates returning the OTP code in prod. `phone` is
+   * already E.164-normalized by requestOtp, so we canonicalize each list entry the same way: an entry
+   * written as "+263 77 000 0011", "0770000011", or "263770000011" all match the same tester.
    */
   private isTestPhone(phone: string): boolean {
-    const norm = (p: string): string => p.replace(/[\s()-]/g, "");
     const allow = (this.env.OTP_TEST_PHONES ?? "")
       .split(",")
-      .map(norm)
-      .filter(Boolean);
-    return allow.includes(norm(phone));
+      .map((e) => normalizePhone(e))
+      .filter((e): e is string => e !== null);
+    return allow.includes(phone);
   }
 
-  async verifyOtp(phone: string, code: string, userAgent?: string): Promise<SessionTokens & {
+  async verifyOtp(rawPhone: string, code: string, userAgent?: string): Promise<SessionTokens & {
     profileId: string;
     role: string;
     needsProfile: boolean;
   }> {
+    // Same canonicalization as requestOtp — the OTP was stored (and the profile is keyed) under E.164.
+    const phone = normalizePhone(rawPhone);
+    if (!phone) throw new BadRequestException("Enter a valid phone number");
     const done = this.metrics.startTimer();
     // Record duration + the mapped result on EVERY exit path, then re-throw so callers see the error.
     const record = (result: OtpVerifyResult): void => this.metrics.recordOtpVerify(done(), result);

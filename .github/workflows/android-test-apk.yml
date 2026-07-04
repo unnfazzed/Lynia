@@ -1,0 +1,108 @@
+name: Android Test APK
+
+# Builds a sideloadable Android APK for QA (docs/plans/TEST-APK-BUILD-PLAN.md). It runs the WHOLE
+# customer + rider journey against the LIVE API with no WhatsApp/Didit vendors — the backend bypass is
+# config-only and already ships (OTP_CHANNEL=console + OTP_TEST_PHONES; stub KYC auto-verifies riders),
+# turned on via the PILOT-READINESS "Vendor-free QA testing" runbook. This workflow only produces the
+# missing dev build.
+#
+# Manual by design (workflow_dispatch) — a QA APK is on-demand, never on every push.
+#
+# WHY a release-type APK, not assembleDebug: a React Native 0.76 *debug* variant loads its JS from a
+# Metro dev server, so a sideloaded debug APK just shows "Unable to load script" with no Metro on the
+# tester's phone. The *release* variant embeds the JS bundle, so it runs offline. We sign it with a
+# THROWAWAY keystore generated in-run (no stored signing secret); reinstalls may need an uninstall
+# first because the key isn't stable across runs.
+#
+# Optional repo secrets (build still succeeds if unset — app.config.ts tolerates absence):
+#   GOOGLE_MAPS_API_KEY   Android Maps key so the map renders (restrict it in GCP by package
+#                         zw.co.lynia + this run's signing SHA-1). Unset => blank map.
+#   GOOGLE_SERVICES_JSON  base64 of the Firebase google-services.json for FCM. Unset => push inert.
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "test-apk/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build sideloadable test apk
+    runs-on: ubuntu-latest
+    env:
+      # Renders the build-gated "TEST BUILD — live API" banner (app.config.ts extra.testBuild → src/ui
+      # Screen). Only this workflow sets it, so a real EAS release build never shows the banner.
+      LYNIA_TEST_BUILD: "1"
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Expo SDK 52 / RN 0.76 build on JDK 17.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      # pnpm's symlinked store can break RN Gradle autolinking in a monorepo. Force a hoisted layout
+      # for THIS build (repo-wide install stays default) so expo prebuild + Gradle resolve react-native
+      # and the native modules (react-native-maps, expo-*) from a flat node_modules. This is the single
+      # most likely build failure per the eng review — pin it up front rather than debug a red run.
+      - name: Install (hoisted node_modules for RN autolinking)
+        run: pnpm install --frozen-lockfile=false --config.node-linker=hoisted
+
+      - name: Build shared package
+        run: pnpm --filter @lynia/shared build
+
+      # Materialize the Firebase file secret if provided (GitHub has no native file secrets).
+      # app.config.ts reads GOOGLE_SERVICES_JSON as a filesystem path.
+      - name: Provide google-services.json (optional)
+        if: ${{ secrets.GOOGLE_SERVICES_JSON != '' }}
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > "$RUNNER_TEMP/google-services.json"
+          echo "GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
+
+      # Generate the native android/ project (it is not committed — Expo CNG/prebuild owns it).
+      - name: Expo prebuild (android)
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --platform android --no-install
+
+      # Throwaway keystore, generated per run — no signing secret to manage.
+      - name: Generate throwaway keystore
+        run: |
+          keytool -genkeypair -dname "CN=Lynia Test, O=Lynia, C=ZW" \
+            -alias lynia-test -keystore "$RUNNER_TEMP/test.keystore" \
+            -storepass lyniatest -keypass lyniatest \
+            -keyalg RSA -keysize 2048 -validity 365
+
+      # Release variant => JS bundled => runs offline. Signing injected via Gradle properties so the
+      # generated build.gradle isn't edited.
+      - name: Assemble signed release APK
+        working-directory: apps/mobile/android
+        run: |
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/test.keystore" \
+            -Pandroid.injected.signing.store.password=lyniatest \
+            -Pandroid.injected.signing.key.alias=lynia-test \
+            -Pandroid.injected.signing.key.password=lyniatest
+
+      - name: Print signing SHA-1 (restrict the Maps key to this in GCP)
+        run: keytool -list -v -keystore "$RUNNER_TEMP/test.keystore" -storepass lyniatest -alias lynia-test | grep -i "SHA1:" || true
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lynia-test-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
