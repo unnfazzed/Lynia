@@ -90,8 +90,8 @@ function SortChips({ value, onChange }) {
         return (
           <button key={k} onClick={() => onChange(k)} style={{
             minHeight: 36, padding: "0 14px", borderRadius: "var(--radius-pill)",
-            border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`, background: on ? "var(--accent)" : "var(--bg)",
-            color: on ? "var(--on-accent)" : "var(--muted)", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${on ? "var(--accent-text)" : "var(--line)"}`, background: on ? "var(--accent-wash)" : "var(--bg)",
+            color: on ? "var(--accent-text)" : "var(--muted)", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, cursor: "pointer",
           }}>{lbl}</button>
         );
       })}

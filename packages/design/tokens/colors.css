@@ -50,8 +50,9 @@
   --border-default: var(--line);
   --border-strong: var(--muted);
 
-  --action-primary: var(--accent);
-  --action-primary-pressed: var(--accent-700);
+  /* Primary actions carry white labels → must use the sunlight-contrast CTA fill (see --cta-fill above), never --accent. */
+  --action-primary: var(--cta-fill);
+  --action-primary-pressed: var(--cta-fill-pressed);
   --marker-recommended: var(--highlight);
   --state-error: var(--danger);
   --state-success: var(--success);

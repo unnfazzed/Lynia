@@ -14,34 +14,43 @@ implement the new rider-journey, customer-journey and admin-console designs.
 
 ## A. Design ↔ code inconsistency register
 
-### A1. DS3 is the source of truth — four internal contradictions flagged for upstream fix (not patched in-repo)
+### A1. The precedence rule — design system wins, except where it carries a violation
 
-**Decision (4 Jul 2026): the updated design system is the source of truth for edge cases.**
-`packages/design/` is a **vendored mirror** of the uploaded package, so it is synced **verbatim** —
-the repo does not override the design on its own judgment, and hand-edits here would create permanent
-diff-noise against every future export. Four files carry values that contradict the design system's
-**own written brand rules** (`readme.md` / `HANDOFF.md`: white-on-green ⇒ `--cta-fill`, selected ⇒
-wash, reduced-motion respected). That is a contradiction **inside the design system**, and it is
-resolved **upstream in the design tool**, not by forking the vendored copy:
+**Decision (4 Jul 2026). Two-part rule, applied in this order:**
 
-| # | File | DS3 value (synced verbatim) | Contradicts (DS's own rule) — fix upstream |
-|---|------|------------------------------|--------------------------------------------|
-| 1 | `packages/design/tokens/colors.css` | `--action-primary: var(--accent)` / `--action-primary-pressed: var(--accent-700)` | Brand rule: a primary action carries a white label ⇒ `--cta-fill` (#00812F ≈4.7:1), not bright `--accent` (#00B14F ≈2.9:1). **Dead token — no consumer** (`Button.jsx` uses `--cta-fill` directly), so zero render impact either way |
-| 2 | `packages/design/ui_kits/mobile/app.js` | Earnings hero card `background: var(--accent)` | Same white-on-green rule ⇒ `--cta-fill`. **Kit preview only** |
-| 3 | `packages/design/ui_kits/mobile/kit-parts.js` | Toggle on-state: solid `--accent` fill + white text | Selected states ⇒ `--accent-wash` bg + `--accent-text`, never a green fill with white text. **Kit preview only** |
-| 4 | `packages/design/components/feedback/Skeleton.jsx` | Pulse always animates | Accessibility: `prefers-reduced-motion` should disable the pulse. **Reference component — the shipped RN `Skeleton` in `apps/mobile/src/ui` is separate** |
+1. **The updated design system is the source of truth for design decisions and edge cases.** Layouts,
+   copy, states, the new flows/screens, the seam contracts — DS3 is authoritative and `packages/design/`
+   is synced from it. The repo does not second-guess the design's intent.
+2. **Where the design carries an objective *violation*, the corrected code file overrules it** — and
+   only the violation is corrected, nothing else. A violation is a measurable defect, not a taste call:
+   a WCAG contrast failure, a dropped accessibility feature. The design system does not get to keep a
+   violation just because it is authoritative. The fix is **also** back-ported upstream so the next
+   export stops carrying it.
 
-**Why this is safe to take verbatim:** none of these four files is consumed by the apps at runtime
-(no app imports `@lynia/design`). The values that actually ship to users live in
-`packages/shared/src/design-tokens.ts` and the app primitives — DS3 did **not** change those, so the
-correct CTA-green contrast still reaches production. The contradictions above only bite someone who
-lifts a value straight out of the reference kit; this register is the warning for that.
+These four DS3 files carry a violation, so the repo's corrected versions stand:
 
-**Follow-up (upstream, owner: design tool):** reconcile the token file and kit against the brand
-rules in the design tool's source, then regenerate `_ds_bundle.js`. The prior repo-side corrections
-(recorded in `docs/DESIGN-SYSTEM.md`) were **reverted** so the vendored copy mirrors the upload; they
-must be re-landed in the design tool so the next export is self-consistent. Treat this as the standing
-rule for every future drop: **sync DS verbatim, flag contradictions here, fix them at the source.**
+| # | File | DS3 (violation) | Repo (kept — corrects only the violation) |
+|---|------|-----------------|-------------------------------------------|
+| 1 | `packages/design/tokens/colors.css` | `--action-primary: var(--accent)` (#00B14F ≈2.9:1) | `var(--cta-fill)` (#00812F ≈4.7:1) — a white label on green must clear AA-large; `--accent` fails it |
+| 2 | `packages/design/ui_kits/mobile/app.js` | Earnings hero `background: var(--accent)` + white text | `var(--cta-fill)` — same white-on-green contrast rule |
+| 3 | `packages/design/ui_kits/mobile/kit-parts.js` | Toggle on-state: solid `--accent` fill + white text | `--accent-wash` bg + `--accent-text` — the on-state legible, not a 2.9:1 white-on-bright-green |
+| 4 | `packages/design/components/feedback/Skeleton.jsx` | Pulse always animates | `prefers-reduced-motion: reduce` → static at 65 % opacity — restores the dropped a11y affordance |
+
+**Scope of the override is minimal:** each file differs from DS3 by exactly the contrast/motion fix
+and nothing else — every other layout, value and state in these files is DS3's. Everything in DS3
+that is *not* a violation was taken as-is (the entire admin kit, the new flows, the journey maps, the
+audit docs, the rest of every one of these four files).
+
+**Back-port (upstream, owner: design tool):** re-land these four fixes in the design tool's source and
+regenerate `_ds_bundle.js`, so the export stops contradicting the design system's own brand rules
+(`readme.md` / `HANDOFF.md` already say white-on-green ⇒ `--cta-fill`, selected ⇒ wash — the token
+file and kit just drifted from those rules). Standing rule for every future drop: **take the design
+verbatim, except revert any re-introduced violation to its corrected version and flag it here.**
+
+> Note: even absent the override, production contrast is safe — the apps consume
+> `packages/shared/src/design-tokens.ts` + their own primitives, not `@lynia/design`, and DS3 didn't
+> change those. The override matters for anyone lifting values out of the reference kit, which is
+> exactly what the kit is for.
 
 ### A2. Repo-only artifacts the zip lacks — **preserved, do not delete on future syncs**
 
@@ -116,9 +125,8 @@ appears. `--danger-wash` is now a real token (see A6).
 - **`--danger-wash #FAEDEB` tokenised** (was a literal ×4 in `ui_kits/admin/admin.css`): added to
   `packages/design/tokens/colors.css`, `packages/shared/src/design-tokens.ts` (`dangerWash`),
   `apps/admin/app/globals.css`, `docs/DESIGN.md` — all four palette faces.
-- `--action-primary` remains a **dead token** (no consumer in components/kits — `Button.jsx` uses
-  `--cta-fill` directly). Now mirrors DS3 (`var(--accent)`, per §A1); wire it to `--cta-fill` or drop
-  it in the design tool.
+- `--action-primary` is held at `--cta-fill` (the §A1 violation override); it is also a **dead token**
+  (no consumer — `Button.jsx` uses `--cta-fill` directly), so wire it or drop it in the design tool.
 
 ### A7. Code-side systemic debt the new designs will collide with
 
@@ -297,10 +305,11 @@ Conflict flag: A and B both touch `packages/shared` — keep 1b additive-only an
 
 1. `pnpm install && pnpm build` clean (Turbo) · `pnpm typecheck` · `pnpm lint` · `pnpm test`.
 2. Token drift: CSS ↔ `design-tokens.ts` ↔ admin `globals.css` ↔ `docs/DESIGN.md` value-identical.
-3. Accent-split audit greps stay clean **in the shipping layer** (`packages/shared` tokens + app
-   primitives + screens): no white text on `accent`; green text only via `accentText`; selected
-   states only wash+text; gold never carries text. The `packages/design/` reference mirror is exempt
-   (synced verbatim per §A1 — its contradictions are fixed upstream, not in-repo).
+3. Accent-split audit greps stay clean everywhere: no white text on `accent`; green text only via
+   `accentText`; selected states only wash+text; gold never carries text. This holds in the shipping
+   layer (`packages/shared` + app primitives + screens) **and** in the `packages/design/` reference
+   kit — the four §A1 violation overrides keep the kit clean too. A future DS drop that re-introduces
+   any of these four is a **violation**: revert it to the corrected version and note it in §A1.
 4. No new hardcoded hexes/sizes where a token exists (`_adherence.oxlintrc.json` is the design-side
    lint; extend repo lint similarly).
 5. Journey maps + `COVERAGE.md` updated when a designed screen ships (the standing rule from
@@ -335,7 +344,7 @@ independent second opinion when running locally, per repo convention (CLAUDE.md 
 
 **Verdict: DONE_WITH_CONCERNS** — plan locked with the applied changes above. Concerns that remain open
 (not blockers, tracked in §C): four product decisions (Q1–Q4), settlement model A-06, Didit thresholds,
-and the §A1 upstream reconciliation in the design tool (the four self-contradicting files ship verbatim
-because the design system is the source of truth; production is unaffected since the apps don't consume
-the reference mirror — but the design tool must reconcile them at the source so the kit stops
-contradicting its own brand rules).
+and the §A1 back-port — the design system is source of truth, but four DS3 files carry an objective
+violation (WCAG contrast ×3 + a dropped reduced-motion affordance), so the corrected code overrules
+them and the fixes must be re-landed in the design tool so the next export stops re-introducing the
+violation.

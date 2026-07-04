@@ -119,17 +119,18 @@ flows (`ui_kits/mobile/new-flows.html`, `explorations/journey/`), four new audit
 (`INTERFACE-AUDIT.md`, `RIDER-JOURNEY-AUDIT.md`, `CUSTOMER-JOURNEY-AUDIT.md`, `BACKLOG-PLAN.md`) and
 the `handoff/` bundle.
 
-**The updated design system is the source of truth for edge cases**, so `packages/design/` is a
-**verbatim mirror** of the upload — the repo does not override the design on its own judgment.
-Four files (`tokens/colors.css` `--action-primary`, the kit's earnings-hero + toggle-chip, and
-`Skeleton.jsx` reduced-motion) carry values that contradict the design system's **own brand rules**;
-the earlier repo-side corrections to them were **reverted** to keep the mirror faithful, and the
-contradictions are logged for **upstream fix in the design tool** instead. This is safe because the
-apps consume `packages/shared/src/design-tokens.ts` and their own primitives — not
-`@lynia/design` — and DS3 didn't change those, so production contrast is unaffected. `--danger-wash
-#FAEDEB` was promoted from an `admin.css` literal to a real token (the DS3 handoff itself requested
-this) across CSS + `dangerWash` in `design-tokens.ts` + admin `globals.css` + `docs/DESIGN.md`. The
-full inconsistency register and phased execution plan live in
+**Precedence rule.** The updated design system is the source of truth for design decisions and edge
+cases, so `packages/design/` is synced from DS3 — **except where the design carries an objective
+violation**, in which case the corrected code file overrules it (and only the violation is corrected).
+Four DS3 files carry a violation: `tokens/colors.css` `--action-primary`, the kit's earnings-hero and
+toggle-chip on-states (all three white-on-`--accent`, ≈2.9:1 — below AA-large), and `Skeleton.jsx`
+(dropped `prefers-reduced-motion`). Their corrected versions were kept; each differs from DS3 by only
+the contrast/motion fix. The fixes must be **back-ported into the design tool** so the next export
+stops re-introducing them (the design's own brand rules already require `--cta-fill` for white-on-green
+and a wash for selected states — the token file and kit just drifted). `--danger-wash #FAEDEB` was
+promoted from an `admin.css` literal to a real token (the DS3 handoff itself requested this) across
+CSS + `dangerWash` in `design-tokens.ts` + admin `globals.css` + `docs/DESIGN.md`. The full
+inconsistency register and phased execution plan live in
 **[`docs/plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md`](plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md)**.
 
 ## Remaining (genuinely needs a device)
