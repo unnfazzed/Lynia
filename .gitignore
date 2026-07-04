@@ -36,3 +36,4 @@ apps/api/prisma/*.db
 
 # Local Prisma engine binaries (fetched manually when the proxy blocks the download)
 .prisma-engines/
+.claude/worktrees/
