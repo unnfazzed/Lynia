@@ -111,6 +111,21 @@ The native-dependency work is now done (Expo SDK 52):
   explicit-family passthrough, fontWeight dropped from the injected style, exactly-one render call
   even when style computation throws, and the no-double-wrap guard.
 
+## Design System v3 drop (4 Jul 2026)
+
+The refreshed package (`Lynia_Design_System_3.zip`) was synced into `packages/design/`. It adds the
+7-screen admin ops console kit (`ui_kits/admin/` + `admin.css`), the 2026 customer/rider journey
+flows (`ui_kits/mobile/new-flows.html`, `explorations/journey/`), four new audit docs
+(`INTERFACE-AUDIT.md`, `RIDER-JOURNEY-AUDIT.md`, `CUSTOMER-JOURNEY-AUDIT.md`, `BACKLOG-PLAN.md`) and
+the `handoff/` bundle. The sync was **regression-safe**: the zip predated four fixes recorded above
+(the `--action-primary` CTA mapping, the kit's earnings-hero and toggle-chip accent-split
+corrections, and the Skeleton reduced-motion support) — the repo versions were kept, and the fixes
+must be re-applied in the design tool before its next export. `--danger-wash #FAEDEB` was promoted
+from an `admin.css` literal to a real token (CSS + `dangerWash` in `design-tokens.ts` + admin
+`globals.css` + `docs/DESIGN.md`). The full reconciliation record, design ↔ code inconsistency
+register, and the phased execution plan live in
+**[`docs/plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md`](plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md)**.
+
 ## Remaining (genuinely needs a device)
 
 1. **Sunlight check.** The contrast math is verified (`cta` #00812F carries white at ≈4.7:1, AA-large;

@@ -43,33 +43,76 @@ only useful insofar as it's a shortcut to those three.
   hard-coded item field") and a **size** category — so we can *grow into* structure without a
   migration. That means: don't over-build now, but don't paint ourselves into a single-string corner.
 
----
+## 3. Options
 
-> ## §3–6 SUPERSEDED
-> The analysis below recommended **Option B** (one description + a required `size` enum, defer
-> line-items). **That recommendation was NOT adopted.** The founder chose **Option D — multiple
-> line-items `{ description, quantity }`** (see the decision block up top), and Option D shipped in the
-> mobile kit and the contract (`packages/shared/src/contracts.ts` — `items` line-items; `size`,
-> `category`, `itemPhotoUrl` deferred as data-model seams). The framing in §1–2 still holds; the
-> option verdicts and open questions here are kept only as the pre-decision design record. **Do not
-> build the size selector.**
+### A — Status quo: one free-text description (+ optional note)
+`itemDescription` (required) + `note` (optional). Universal, lowest friction, works for one item or
+many ("3 boxes of car parts, ~20kg"). **But**: the rider gets no *structured* size to judge bike-fit,
+pricing/ETA can't factor bulk, and there's no prohibited-items gate.
+*Verdict:* fine as a floor; under-serves the rider's accept decision and safety.
 
-## 3–4. Options considered (superseded)
+### B — Description + a **size** selector (recommended core)
+Keep the free-text description, add **one required size choice expressed in bike terms**, not abstract
+S/M/L:
 
-Four options were weighed: **A** free-text description only; **B** description + a required 3-chip
-`size` selector in bike-fit terms (this pass's original recommendation); **C** category chips on top of
-B; **D** structured line-items (`{name, qty}` rows). The original recommendation was **A + B + a
-prohibited-items acknowledgement**, deferring C and D.
+| Size | Plain label | Bike-fit hint | Icon |
+|------|-------------|---------------|------|
+| `small` | Fits in a bag | Envelope, phone, documents | `package` |
+| `medium` | Backpack size | Shoebox, small parts, meal | `package` |
+| `large` | Bulky / needs straps | Helmet box, big bag, multiple items | `package` |
 
-**What actually shipped: Option D.** Line-items (description + quantity, add/remove per row) matched the
-§5b superapp seam literally, and the rider reviews the whole load on the job card. `size`, `category`
-and `itemPhotoUrl` were all deferred (kept as data-model seams); handling notes ride on the optional
-free-text **note** (D7). The prohibited-items/declared-value cap remains a client-side gate against
-`declaredValue.max(150)`.
+Three chips, tappable, icon+label, one required tap. This is the rider's accept-decision input and the
+hook pricing/ETA grows into. Maps directly to the reserved `size` field. **Note** carries handling.
+*Verdict:* best friction-to-value ratio for the pilot; serves the rider without a catalogue.
 
-## 5–6. Resolved
+### C — Category chips + size + description
+Add a category row (Documents / Food / Clothes / Electronics / Parts / Other) on top of B. Category
+*can* auto-imply handling (Food → "keep upright/cold" nudge; Electronics → "fragile"), and seeds
+future analytics/verticals. **But**: more taps, more literacy load, and category is a weak proxy for
+the thing that matters (size). Risk: sender picks "Other" for everything.
+*Verdict:* defer. Revisit when there's data or when a vertical (food) actually needs it.
 
-The §5 data-model recommendation (add a `size` enum, reserve line-items) was **overtaken** — the
-contract ships line-items now, with `size` reserved. The §6 open questions (size labels, prohibited-
-items gate style, category, multi-item day-one need) are all **resolved by the Option-D decision**:
-multi-item is a day-one need and is expressed as line-items; no size enum ships in the pilot.
+### D — Structured line-items (name + qty rows)
+"Add item" → multiple rows. Matches the §5b seam literally and reads "professional." **But**: heavy UI
+for a one-shipment parcel courier, high friction on a cheap phone, and the rider still just needs
+size+bulk of the *whole load*. Multiple items in the pilot are better expressed as description + size
+("10 shirts") than as ten rows.
+*Verdict:* defer to the merchant/COD vertical, where a shop's order genuinely is line-items.
+
+## 4. Recommendation
+
+Ship **A + B + a prohibited-items acknowledgement**, defer C and D:
+
+1. **Description** (required, free-text, universal) — one item or many, in the sender's words.
+2. **Size** (required, 3 bike-fit chips) — the rider's accept input; maps to the reserved `size`
+   field; future hook for pricing/ETA by bulk.
+3. **Note** (optional, multiline — already built) — handling: fragile, upright, keep cold.
+4. **Prohibited-items + cap acknowledgement** at broadcast — a single checkbox/line: *"No cash, no
+   hazardous or illegal goods, nothing over $150."* Cheap, and exactly the trust/safety affordance a
+   cash, low-trust market needs (§3.5). Ties to the declared-value cap.
+
+This keeps the required path to **description + size + price + 2 phones + pins** — still one screen,
+still low-friction — while giving the rider what they need to bid confidently and adding a real safety
+gate. "Food, clothes, car parts, many items" are all expressible as *description + size + note* without
+a taxonomy the pilot can't yet justify.
+
+## 5. Engineering-lens note (data model)
+
+- **Keep `itemDescription`** as the required string; **add a `size` enum** (`small|medium|large`) —
+  the data model already anticipates it. Don't hard-code categories yet.
+- **Reserve, don't build, line-items.** Per §5b keep the door open (a future `items: [{name, qty}]`)
+  but the pilot writes one description + size. No migration cost later.
+- **Prohibited/cap** is a client-side gate + the existing `declaredValue.max(150)` — no new server
+  field needed for the acknowledgement (or a boolean `acknowledgedTerms` if we want an audit trail).
+- **No image picker** for the item in the pilot (D7 deferral holds) — data cost + the rider's pickup
+  photo already covers dispute evidence.
+
+## 6. Open questions for you
+
+1. **Size labels** — do the bike-fit labels ("Fits in a bag / Backpack size / Bulky") read right for
+   Harare users, or do you want literal S/M/L, or a weight band instead (e.g. "<2kg / 2–8kg / heavy")?
+2. **Prohibited-items gate** — a passive line, a required checkbox, or a first-time-only explainer?
+3. **Category** — confident to defer for the pilot, or do you want Food specifically flagged now
+   (perishable handling) ahead of the food vertical?
+4. **Many items** — is "describe in text + size" acceptable for the pilot, or is multi-item a real
+   day-one need for your senders?

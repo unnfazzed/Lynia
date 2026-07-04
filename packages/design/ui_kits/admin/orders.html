@@ -1,0 +1,215 @@
+<!-- @dsCard group="Admin console" viewport="1280x800" name="Orders — monitor & detail" subtitle="Status filters, order timeline, stuck-order edge case, fare adjust / refund / cancel with reason codes" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lynia ops — orders</title>
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidenav" id="sidenav"></aside>
+  <main class="content">
+    <nav class="topnav" id="topnav"></nav>
+
+    <!-- ── List view ─────────────────────────────────────── -->
+    <div id="list-view" data-screen-label="Orders list">
+      <header class="page">
+        <h1>Orders</h1>
+        <span class="sub" id="list-count"></span>
+        <span class="conn" id="conn">● live</span>
+      </header>
+      <div class="offline-banner" id="offline-banner"></div>
+      <nav class="subnav" id="filters"></nav>
+      <section class="card stale-dim">
+        <table class="data">
+          <thead><tr><th>Order</th><th>Route</th><th>Status</th><th>Rider</th><th>Fare</th><th>Distance</th><th>Note</th><th>Created</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="rows-empty"></div>
+      </section>
+    </div>
+
+    <!-- ── Detail view ───────────────────────────────────── -->
+    <div id="detail-view" class="hidden" data-screen-label="Order detail">
+      <header class="page">
+        <a class="back" href="#" onclick="showList();return false">← Orders</a>
+        <h1 id="d-title" class="mono" style="font-size:18px"></h1>
+        <span id="d-status"></span>
+        <span class="conn" id="conn2">● live</span>
+      </header>
+      <div class="warnbar hidden" id="d-warn">
+        <i data-lucide="triangle-alert"></i>
+        <span class="t"><b>This order may be stuck.</b> No GPS update from the rider for 22 minutes while en route to drop-off. The customer has not reported a problem yet.</span>
+      </div>
+      <div class="detail-grid stale-dim">
+        <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
+          <section class="card">
+            <div class="block-title">Delivery timeline</div>
+            <ul class="tl" id="d-steps"></ul>
+          </section>
+          <section class="card">
+            <div class="block-title">Parcel</div>
+            <div id="d-items"></div>
+          </section>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
+          <section class="card">
+            <div class="block-title">People</div>
+            <dl class="kv" id="d-people"></dl>
+          </section>
+          <section class="card">
+            <div class="block-title">Fare — cash</div>
+            <dl class="kv" id="d-fare"></dl>
+            <div style="display:flex;gap:8px;margin-top:14px">
+              <button class="btn ghost act-btn" onclick="adjustFare()">Adjust fare / refund</button>
+            </div>
+          </section>
+          <section class="card">
+            <div class="block-title">Actions</div>
+            <div style="display:flex;flex-direction:column;gap:8px" id="d-actions"></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:10px">There is no manual dispatch — a no-offer order expires and the customer re-broadcasts.</div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../assets/lynia-icons.js"></script>
+<script>
+  window.TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+    "density": "comfortable",
+    "nav": "sidebar",
+    "volume": "pilot",
+    "state": "live"
+  }/*EDITMODE-END*/;
+</script>
+<script src="shell.js"></script>
+<script>
+  const STEPS = ["Broadcast — customer named a price", "Offer selected", "En route to pickup", "At pickup", "Picked up", "En route to drop-off", "Delivered — code entered", "Completed"];
+  const STEP_OF = { open_for_offers: 0, offer_selected: 1, en_route_pickup: 2, at_pickup: 3, picked_up: 4, en_route_dropoff: 5, delivered: 6, completed: 7 };
+
+  const ORDERS = [
+    { id: "8f3a91c2", route: "Eastgate → Avenues", status: "open_for_offers", rider: null, customer: "Rudo C.", proposed: "2.50", agreed: null, km: 3.1, when: "2 min ago", note: "2 offers so far", items: [["Documents (envelope)", 1]] },
+    { id: "3b71de04", route: "Avondale → CBD", status: "en_route_dropoff", stuck: true, rider: "Tendai M.", riderPhone: "+263 77 123 4567", bike: "ABZ 1234", customer: "Tapiwa N.", custPhone: "+263 71 ··· 8802", proposed: "2.00", agreed: "2.20", km: 4.6, when: "14 min ago", note: "no GPS 22 min", items: [["Phone charger", 1], ["Padded envelope", 1]] },
+    { id: "b5209e77", route: "CBD → Mbare", status: "picked_up", rider: "Kudzai N.", riderPhone: "+263 71 555 0090", bike: "ADR 8842", customer: "Chipo M.", custPhone: "+263 78 ··· 1123", proposed: "1.80", agreed: "1.80", km: 5.2, when: "19 min ago", note: "—", items: [["Spare part (small box)", 1]] },
+    { id: "c092a5f1", route: "Borrowdale → Msasa", status: "delivered", rider: "Kudzai N.", riderPhone: "+263 71 555 0090", bike: "ADR 8842", customer: "Anesu K.", custPhone: "+263 77 ··· 3345", proposed: "4.00", agreed: "4.00", km: 9.8, when: "31 min ago", note: "disputed — see Issues", items: [["Baked goods (box)", 2]] },
+    { id: "1a4e77b9", route: "Msasa → Highlands", status: "completed", rider: "Farai R.", riderPhone: "+263 78 202 1180", bike: "AEG 4471", customer: "Rudo C.", custPhone: "+263 71 ··· 6650", proposed: "3.00", agreed: "3.10", km: 6.4, when: "1 hr ago", note: "—", items: [["Documents (envelope)", 1]] },
+    { id: "77c120ab", route: "CBD → Belvedere", status: "expired", rider: null, customer: "Tanaka D.", proposed: "1.50", agreed: null, km: 4.0, when: "2 hr ago", note: "no offers at this price", items: [["Groceries (bag)", 1]] },
+    { id: "45b8e2d0", route: "Msasa → Greendale", status: "cancelled", rider: null, customer: "Chipo M.", proposed: "2.00", agreed: null, km: 3.8, when: "1 hr ago", note: "cancelled (customer): change of plans", items: [["Keys", 1]] },
+  ];
+  const ORDERS_GROWTH = [
+    { id: "e410cc28", route: "Highlands → CBD", status: "en_route_pickup", rider: "Nyasha G.", riderPhone: "+263 77 902 5511", bike: "AGH 2210", customer: "Munya T.", custPhone: "+263 78 ··· 9012", proposed: "3.20", agreed: "3.20", km: 7.1, when: "4 min ago", note: "—", items: [["Laptop sleeve", 1]] },
+    { id: "90daf113", route: "Mabelreign → Avondale", status: "completed", rider: "Farai R.", riderPhone: "+263 78 202 1180", bike: "AEG 4471", customer: "Anesu K.", custPhone: "+263 77 ··· 3345", proposed: "2.70", agreed: "2.70", km: 5.5, when: "48 min ago", note: "—", items: [["Documents (envelope)", 1]] },
+    { id: "72fe0a91", route: "Greendale → CBD", status: "at_pickup", rider: "Blessing S.", riderPhone: "+263 71 340 7788", bike: "AAB 1092", customer: "Tanaka D.", custPhone: "+263 71 ··· 2270", proposed: "2.40", agreed: "2.60", km: 6.0, when: "8 min ago", note: "—", items: [["Medication (sealed)", 1]] },
+  ];
+
+  const FILTERS = ["all", "live", "delivered", "completed", "expired", "cancelled"];
+  const LIVE_SET = ["open_for_offers", "offer_selected", "en_route_pickup", "at_pickup", "picked_up", "en_route_dropoff"];
+  let filter = "all", envNow = { state: "live", volume: "pilot" }, current = null;
+
+  function render(env) {
+    envNow = env;
+    document.getElementById("conn2").textContent = document.getElementById("conn").textContent;
+    document.getElementById("conn2").className = document.getElementById("conn").className;
+    document.getElementById("filters").innerHTML = FILTERS.map((f) =>
+      `<a ${f === filter ? 'aria-current="true"' : ""} onclick="setFilter('${f}')">${f}</a>`).join("");
+
+    const all = AdminShell.vol(env, ORDERS, ORDERS_GROWTH);
+    const rows = all.filter((o) => filter === "all" || (filter === "live" ? LIVE_SET.includes(o.status) : o.status === filter));
+    const tb = document.getElementById("rows"), em = document.getElementById("rows-empty");
+    em.innerHTML = "";
+    document.getElementById("list-count").textContent = env.state === "live" || env.state === "offline" ? `${rows.length} of ${all.length} orders · today` : "";
+    if (env.state === "loading") tb.innerHTML = AdminShell.skelRows(8, 6);
+    else if (env.state === "empty") { tb.innerHTML = ""; em.innerHTML = AdminShell.emptyState("inbox", "No orders in this view", "Try another status filter, or wait — new broadcasts appear here live."); }
+    else tb.innerHTML = rows.map((o) =>
+      `<tr class="rowlink" onclick="showDetail('${o.id}')">
+        <td class="mono">${o.id}</td><td>${o.route}</td>
+        <td>${AdminShell.statusPill(o.status)}${o.stuck ? " " + AdminShell.pill("stuck?", "bad") : ""}</td>
+        <td>${o.rider || "—"}</td><td class="num">$${o.agreed || o.proposed}${o.agreed && o.agreed !== o.proposed ? ` <span class="mut" style="font-size:11px">was $${o.proposed}</span>` : ""}</td>
+        <td class="num">${o.km} km</td><td class="mut">${o.note}</td><td class="mut">${o.when}</td>
+      </tr>`).join("");
+    if (current) renderDetail();
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function setFilter(f) { filter = f; render(envNow); }
+  function showList() { current = null; document.getElementById("detail-view").classList.add("hidden"); document.getElementById("list-view").classList.remove("hidden"); }
+  function showDetail(id) {
+    current = AdminShell.vol(envNow, ORDERS, ORDERS_GROWTH).find((o) => o.id === id);
+    document.getElementById("list-view").classList.add("hidden");
+    document.getElementById("detail-view").classList.remove("hidden");
+    renderDetail();
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderDetail() {
+    const o = current, idx = STEP_OF[o.status] ?? -1;
+    document.getElementById("d-title").textContent = o.id;
+    document.getElementById("d-status").innerHTML = AdminShell.statusPill(o.status);
+    document.getElementById("d-warn").classList.toggle("hidden", !o.stuck);
+
+    const times = ["09:02", "09:04", "09:06", "09:15", "09:18", "09:21", "", ""];
+    document.getElementById("d-steps").innerHTML = STEPS.map((s, i) => {
+      const state = o.status === "expired" || o.status === "cancelled"
+        ? (i === 0 ? "done" : "")
+        : i < idx ? "done" : i === idx ? (o.stuck ? "stall" : "now") : "";
+      const mark = state === "done" ? "✓" : state === "stall" ? "!" : i + 1;
+      return `<li class="${state}"><span class="node">${mark}</span>
+        <span><span class="lbl">${s}</span>${i === idx && o.stuck ? `<div class="note">Last GPS ping 22 min ago near Kopje</div>` : ""}</span>
+        <span class="ts">${state === "done" || state === "now" || state === "stall" ? times[i] || "now" : ""}</span></li>`;
+    }).join("") + (o.status === "expired" ? `<li class="stall"><span class="node">✕</span><span><span class="lbl">Expired</span><div class="note">No rider took this price — customer can re-broadcast</div></span></li>` : "")
+      + (o.status === "cancelled" ? `<li><span class="node">✕</span><span><span class="lbl">Cancelled</span><div class="note">${o.note}</div></span></li>` : "");
+
+    document.getElementById("d-items").innerHTML = o.items.map(([d, q]) =>
+      `<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-top:1px solid var(--line)"><span>${d}</span><span class="num mut">× ${q}</span></div>`).join("")
+      + `<div style="font-size:12px;color:var(--muted);margin-top:8px">Route: ${o.route} · ${o.km} km</div>`;
+
+    document.getElementById("d-people").innerHTML =
+      `<dt>Customer</dt><dd>${o.customer} <span class="mono mut">${o.custPhone || "+263 ·· ··· ····"}</span></dd>
+       <dt>Rider</dt><dd>${o.rider ? `${o.rider} <span class="mono mut">${o.riderPhone}</span>` : "— none assigned"}</dd>
+       ${o.bike ? `<dt>Bike</dt><dd class="mono">${o.bike}</dd>` : ""}
+       <dt>Privacy</dt><dd class="mut" style="font-size:12px">Full numbers visible to ops only during an active order.</dd>`;
+
+    document.getElementById("d-fare").innerHTML =
+      `<dt>Proposed</dt><dd class="num">$${o.proposed}</dd>
+       <dt>Agreed</dt><dd class="num">${o.agreed ? "$" + o.agreed + (o.agreed !== o.proposed ? ` <span class="mut" style="font-size:12px">rider countered</span>` : "") : "—"}</dd>
+       <dt>Collected</dt><dd class="num">${idx >= 6 ? "$" + o.agreed + " cash at drop-off" : "not yet — cash on delivery"}</dd>`;
+
+    const off = envNow.state === "offline" ? "disabled" : "";
+    const live = LIVE_SET.includes(o.status);
+    document.getElementById("d-actions").innerHTML =
+      (o.rider && live ? `<button class="btn ghost" ${off} onclick="AdminShell.toast('Calling ${o.rider} — ${o.riderPhone}')"><i data-lucide="phone"></i>Call rider</button>
+        <button class="btn ghost" ${off} onclick="AdminShell.toast('Nudge sent to ${o.rider} — push + SMS')">Nudge rider — “Are you OK to continue?”</button>` : "")
+      + (live ? `<button class="btn danger" ${off} onclick="cancelOrder()">Cancel order…</button>`
+        : `<span style="font-size:12px;color:var(--muted)">This order is ${o.status.replace(/_/g, " ")} — no live actions.</span>`);
+    document.querySelectorAll(".act-btn").forEach((b) => (b.disabled = envNow.state === "offline"));
+  }
+
+  function adjustFare() {
+    AdminShell.confirmAction({
+      title: "Adjust fare / record refund",
+      body: `Order <b>${current.id}</b> · agreed fare <b>$${current.agreed || current.proposed}</b>. Cash refunds are paid out via the rider's next settlement.`,
+      reasons: ["Parcel damaged", "Parcel lost", "Wrong fare agreed / overcharge", "Service failure — late or incomplete"],
+      confirmLabel: "Record adjustment",
+      onConfirm: (r) => AdminShell.toast(`Adjustment recorded — ${r}`),
+    });
+  }
+  function cancelOrder() {
+    AdminShell.confirmAction({
+      title: "Cancel this order?",
+      body: `Order <b>${current.id}</b> will be cancelled for both sides. The customer is notified and can re-broadcast; the rider gets no strike if the reason is not theirs.`,
+      reasons: ["Rider unreachable", "Customer asked ops to cancel", "Safety concern", "Suspected fraud"],
+      danger: true,
+      confirmLabel: "Cancel order",
+      onConfirm: (r) => { AdminShell.toast(`Order cancelled — ${r}`); showList(); },
+    });
+  }
+
+  AdminShell.init({ page: "orders", onRender: render });
+</script>
+</body>
+</html>

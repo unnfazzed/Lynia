@@ -41,7 +41,7 @@ How Lynia writes copy:
 
 ## VISUAL FOUNDATIONS
 
-- **Color.** A light, near-monochrome utility base — ink `#14181B`, muted `#5B6670`, page white, surface `#F6F7F8`, hairline `#E2E6EA` — with the **bright Grab green `#00B14F`** (`--accent`) for fills and big graphics only (accent-press `#009D3B`), a separate **CTA fill `#00812F`** (`--cta-fill`, white label ≈4.7:1 in sunlight; pressed `--cta-fill-pressed` `#006B27`) for primary buttons, the **dark text-green `#006630`** (≈7:1 on white) for any green *text or small icons*, and a **mint wash `#E9F8EF`** for selected states. One sparing gold `#F2B705` strictly for the 'recommended' offer marker. Danger `#C0392B`. `onAccent` white is the single inverse. **Never set text in `#00B14F`** — it fails contrast; that's what `--accent-text` is for. Dark mode is deliberately deferred.
+- **Color.** A light, near-monochrome utility base — ink `#14181B`, muted `#5B6670`, page white, surface `#F6F7F8`, hairline `#E2E6EA` — with the **bright Grab green `#00B14F`** for fills, CTAs and big graphics (pressed `#009D3B`), the **dark text-green `#006630`** (≈7:1 on white) for any green *text or small icons*, and a **mint wash `#E9F8EF`** for selected states. One sparing gold `#F2B705` strictly for the 'recommended' offer marker. Danger `#C0392B`. `onAccent` white is the single inverse. **Never set text in `#00B14F`** — it fails contrast; that's what `--accent-text` is for. Dark mode is deliberately deferred.
 - **Type.** **Inter** for everything — the same typeface Grab's app uses in-product (free/open source). Titles bold **700** with slight negative tracking; body 400/500; labels 600. **Grab-dense scale:** 24px screen titles, 18px card/empty-state titles, **14px body, 12px captions/labels**, 16px only for inputs and button labels. **Tabular numerals** on every fare, ETA, rating, timer and count.
 - **Spacing.** Strict **8pt scale**: 4 / 8 / 12 / 16 / 24 / 32 / 48.
 - **Radius (Grab shape language).** Buttons are **full pills**; cards **16px**; inputs **12px**; chips/status pills full.
@@ -49,7 +49,7 @@ How Lynia writes copy:
 - **Backgrounds.** Solid fills only — page white, sunken surface grey, mint wash for selected/highlight areas. **No gradients, no photographic heroes, no patterns.** Maps are the one full-bleed surface.
 - **Cards.** White fill, soft shadow, 16px radius, 16px padding, 12px bottom margin. Green border = emphasis; gold border = recommended offer.
 - **Animation.** Minimal and functional, always **reduce-motion aware**. A new bid slides+fades in once (220ms). Skeletons pulse opacity 0.5↔1. The auction timer crossfades muted→danger over the last 20s. **No bounces, no decorative loops.**
-- **Hover / press.** Primary buttons use the CTA fill `#00812F` and press to `#006B27` (`--cta-fill-pressed`); ghost buttons press to the grey surface; disabled is 0.5 opacity. Inputs draw the deep-green border on focus. Nothing scales on press.
+- **Hover / press.** Primary buttons press to the darker green `#009D3B`; ghost buttons press to the grey surface; disabled is 0.5 opacity. Inputs draw the deep-green border on focus. Nothing scales on press.
 - **Transparency & blur.** Essentially none — sunlight legibility beats glass effects.
 - **Layout rules.** Android-first at 360px width. One primary CTA per screen, 52px pill, in the thumb zone (often a bottom sheet). Every touch target ≥ 44px. Icons always paired with a text label. Labels sit *above* inputs, never as placeholders.
 
@@ -94,7 +94,7 @@ Files in `assets/brand/`: `lyniago-mark.svg` (master), `lyniago-mark-mono.svg` (
 
 **Inter** — the same typeface Grab uses in its app (chosen by Grab after testing 40+ typefaces; free, SIL OFL). **Self-hosted** in `assets/fonts/` — only three Latin weights (400/600/700, ~135KB total) with `font-display: swap`, so text paints instantly in the Android system font and upgrades, with no Google Fonts round-trip. Declared via `@font-face` in `tokens/fonts.css`.
 
-**Fredoka 600** — the **brand wordmark face only** (the "LyniaGo" lockup; never body/UI text). Also **self-hosted** (`assets/fonts/fredoka-600.woff2`, ~16KB, one Latin weight) so the logo never needs a Google Fonts round-trip and can't fail on a weak network. Used via the `--font-wordmark` token (`"Fredoka", "Baloo 2", "Trebuchet MS", var(--font-sans)` — rounded-sans fallback so the lockup still reads if the font is slow). In the app the wordmark now **ships as outlined vector paths** (`assets/brand/lyniago-wordmark.svg`; the app loads no Fredoka file); the woff2 is kept only as a fallback for the HTML kits, where the lockup is still set in live Fredoka.
+**Fredoka 600** — the **brand wordmark face only** (the "LyniaGo" lockup; never body/UI text). Also **self-hosted** (`assets/fonts/fredoka-600.woff2`, ~16KB, one Latin weight) so the logo never needs a Google Fonts round-trip and can't fail on a weak network. Used via the `--font-wordmark` token (`"Fredoka", "Baloo 2", "Trebuchet MS", var(--font-sans)` — rounded-sans fallback so the lockup still reads if the font is slow). Interim measure until the wordmark is shipped as vector outlines; when outlined, the wordmark stops depending on this file entirely.
 
 > Style provenance: the visual direction follows **Grab's in-app style** (green #00B14F, Inter, pill CTAs, soft floating cards, rounded line icons) per the founder's request — applied to Lynia's own brand name, monogram and copy. Grab's proprietary assets (Duxton icons, logo, Sanomat) were not copied.
 
@@ -104,7 +104,7 @@ Files in `assets/brand/`: `lyniago-mark.svg` (master), `lyniago-mark-mono.svg` (
 
 **Root**
 - `styles.css` — the single entry point consumers link (`@import` list only).
-- `tokens/` — `colors.css`, `typography.css`, `spacing.css`, `icons.css`, `fonts.css`.
+- `tokens/` — `colors.css`, `typography.css`, `spacing.css`, `fonts.css`.
 - `guidelines/` — foundation specimen cards (Colors, Type, Spacing, Brand incl. the device & data budget).
 - `assets/` — `lynia-icons.js` (self-hosted 22-icon subset), `icons/` raw SVGs, `fonts/` (self-hosted Inter 400/600/700 woff2).
 - `components/` — reusable React primitives (below).
@@ -133,4 +133,5 @@ These mirror `apps/mobile/src/ui/index.tsx` — the source's real primitive inve
 ## Caveats
 
 - The **live map** is a cosmetic placeholder in the kits — the real app uses Google Maps Platform (native map, tap-to-pin, live rider tracking).
+- **No logo asset** exists; the wordmark + L monogram stand in. Provide a real mark to replace them.
 - The mobile kit **simulates** the offer stream and step advances with timers/buttons for demo purposes; the real flow is socket-driven.

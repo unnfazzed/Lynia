@@ -1,10 +1,7 @@
 # LyniaGo icon set
 
-Generated from the Paper Dove — white dove on the brand-green (#00B14F) rounded tile. The vector brand
-rule shows the crease-cross from **≥32px** (`Brand.tsx` `showCrease = size >= 32`); for these
-**rasterized PNG tiles** the crease is only baked in from **≥48px** — at 16/32 raster px the fine
-crease lines alias and muddy, so the smaller tiles use the clean silhouette. This 48px raster threshold
-is a deliberate exception to the 32px vector rule, not a different brand rule.
+Generated from the Paper Dove — white dove on the brand-green (#00B14F) rounded tile. The crease-cross
+appears only at ≥48px; smaller icons use the clean silhouette (per the brand size rule).
 
 ## Files
 - `lyniago-icon-{16,32,48,64,128,180,192,256,512,1024}.png` — square app/store icons.

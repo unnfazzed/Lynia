@@ -23,6 +23,9 @@
               "components/forms/**",
               "components/journey/**",
               "components/typography/**",
+              "explorations/journey/**",
+              "handoff/**",
+              "ui_kits/admin/**",
               "ui_kits/mobile/**",
               "ui_kits/support/**"
             ],

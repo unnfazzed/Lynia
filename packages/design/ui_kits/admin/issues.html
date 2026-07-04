@@ -1,0 +1,205 @@
+<!-- @dsCard group="Admin console" viewport="1280x800" name="Issues — disputes & investigation" subtitle="Lost-parcel dispute: OTP evidence, both statements, resolve with refund / strike / close" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lynia ops — issues</title>
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidenav" id="sidenav"></aside>
+  <main class="content">
+    <nav class="topnav" id="topnav"></nav>
+
+    <!-- Queue -->
+    <div id="list-view" data-screen-label="Issues queue">
+      <header class="page">
+        <h1>Issues</h1>
+        <span class="sub">Disputes and reports from customers, recipients and riders</span>
+        <span class="conn" id="conn">● live</span>
+      </header>
+      <div class="offline-banner" id="offline-banner"></div>
+      <nav class="subnav" id="filters"></nav>
+      <section class="card stale-dim">
+        <table class="data">
+          <thead><tr><th>Issue</th><th>Type</th><th>Order</th><th>Opened by</th><th>Opened</th><th>Status</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="rows-empty"></div>
+      </section>
+    </div>
+
+    <!-- Investigation -->
+    <div id="detail-view" class="hidden" data-screen-label="Issue investigation">
+      <header class="page">
+        <a class="back" href="#" onclick="showList();return false">← Issues</a>
+        <h1 id="d-title" style="font-size:18px"></h1>
+        <span id="d-pill"></span>
+        <span class="conn" id="conn2">● live</span>
+      </header>
+      <div class="detail-grid stale-dim">
+        <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
+          <section class="card">
+            <div class="block-title">What happened</div>
+            <div id="d-facts" style="font-size:13px;line-height:1.55"></div>
+          </section>
+          <section class="card">
+            <div class="block-title">Statements</div>
+            <div id="d-statements"></div>
+          </section>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
+          <section class="card">
+            <div class="block-title">Order</div>
+            <dl class="kv" id="d-order"></dl>
+            <a class="btn ghost" href="orders.html" style="margin-top:12px;text-decoration:none">Open order record</a>
+          </section>
+          <section class="card">
+            <div class="block-title">Resolution</div>
+            <div id="d-resolution"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../assets/lynia-icons.js"></script>
+<script>
+  window.TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+    "density": "comfortable",
+    "nav": "sidebar",
+    "volume": "pilot",
+    "state": "live"
+  }/*EDITMODE-END*/;
+</script>
+<script src="shell.js"></script>
+<script>
+  const ISSUES = [
+    { id: "d-102", type: "lost parcel", order: "c092a5f1", route: "Borrowdale → Msasa", fare: "4.00", rider: "Kudzai N.", customer: "Anesu K.", by: "recipient", opened: "40 min ago", status: "open",
+      facts: `The rider marked the parcel <b>delivered at 10:22</b>, but the <b>delivery code was never entered</b> — the hand-off was closed manually by the rider after 3 failed code attempts. Twenty minutes later the recipient reported the parcel as never received. GPS shows the rider stopped at the drop-off pin for 6 minutes.`,
+      statements: [
+        ["Recipient — via customer", "“Nothing arrived. The gate guard says no bike came to the house this morning.”"],
+        ["Rider — Kudzai N.", "“I handed the box to a man at the gate who said he was the recipient's brother. He couldn't find the code so I marked it delivered.”"],
+      ] },
+    { id: "d-101", type: "fare dispute", order: "1a4e77b9", route: "Msasa → Highlands", fare: "3.10", rider: "Farai R.", customer: "Rudo C.", by: "customer", opened: "yesterday", status: "resolved", resolution: "Refunded $0.10 difference — rider had collected above the agreed fare. Reminder sent to rider.",
+      facts: `Customer says the rider asked for <b>$3.20 cash</b> at drop-off; the agreed fare was <b>$3.10</b>. Rider confirmed and returned the difference at the next order.`,
+      statements: [
+        ["Customer — Rudo C.", "“He said he had no 10c change so I paid $3.20.”"],
+        ["Rider — Farai R.", "“True — I didn't have change. Happy to return it.”"],
+      ] },
+  ];
+  const ISSUES_GROWTH = [
+    { id: "d-103", type: "damaged parcel", order: "90daf113", route: "Mabelreign → Avondale", fare: "2.70", rider: "Farai R.", customer: "Anesu K.", by: "customer", opened: "2 hr ago", status: "investigating",
+      facts: `Recipient accepted the parcel, then reported the contents (baked goods) <b>crushed on arrival</b>. Photos submitted. Rider says the box was strapped normally.`,
+      statements: [
+        ["Customer — Anesu K.", "“The box was fine when it left. Photos attached.”"],
+        ["Rider — Farai R.", "“Strapped as always. The road on that route is rough.”"],
+      ] },
+  ];
+
+  const FILTERS = ["all", "open", "investigating", "resolved"];
+  let filter = "all", envNow = { state: "live", volume: "pilot" }, current = null;
+
+  function issuePill(s) { return AdminShell.pill(s, s === "resolved" ? "mut" : s === "open" ? "bad" : ""); }
+
+  function render(env) {
+    envNow = env;
+    document.getElementById("conn2").textContent = document.getElementById("conn").textContent;
+    document.getElementById("conn2").className = document.getElementById("conn").className;
+    const all = AdminShell.vol(env, ISSUES, ISSUES_GROWTH);
+    document.getElementById("filters").innerHTML = FILTERS.map((f) => {
+      const n = f === "all" ? all.length : all.filter((i) => i.status === f).length;
+      return `<a ${f === filter ? 'aria-current="true"' : ""} onclick="setFilter('${f}')">${f} · ${n}</a>`;
+    }).join("");
+
+    const rows = all.filter((i) => filter === "all" || i.status === filter);
+    const tb = document.getElementById("rows"), em = document.getElementById("rows-empty");
+    em.innerHTML = "";
+    if (env.state === "loading") tb.innerHTML = AdminShell.skelRows(6, 3);
+    else if (env.state === "empty" || rows.length === 0) { tb.innerHTML = ""; em.innerHTML = AdminShell.emptyState("check", "No open issues", "Disputes opened from the app land here with the order attached."); }
+    else tb.innerHTML = rows.map((i) =>
+      `<tr class="rowlink" onclick="showDetail('${i.id}')">
+        <td class="mono">${i.id}</td><td>${i.type}</td><td class="mono">${i.order}</td>
+        <td>${i.by}</td><td class="mut">${i.opened}</td><td>${issuePill(i.status)}</td>
+      </tr>`).join("");
+    if (current) renderDetail();
+    if (window.lucide) lucide.createIcons();
+  }
+  function setFilter(f) { filter = f; render(envNow); }
+  function showList() { current = null; document.getElementById("detail-view").classList.add("hidden"); document.getElementById("list-view").classList.remove("hidden"); }
+  function showDetail(id) {
+    current = AdminShell.vol(envNow, ISSUES, ISSUES_GROWTH).find((i) => i.id === id);
+    document.getElementById("list-view").classList.add("hidden");
+    document.getElementById("detail-view").classList.remove("hidden");
+    renderDetail();
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderDetail() {
+    const i = current;
+    document.getElementById("d-title").textContent = `${i.id} — ${i.type}`;
+    document.getElementById("d-pill").innerHTML = issuePill(i.status);
+    document.getElementById("d-facts").innerHTML = i.facts
+      + (i.type === "lost parcel" ? `<div class="warnbar" style="margin:14px 0 0"><i data-lucide="triangle-alert"></i><span class="t"><b>Delivery code was not entered.</b> A completed hand-off normally requires the recipient's code — treat a manual close as unconfirmed delivery.</span></div>` : "")
+      + (i.type === "damaged parcel" ? `<div style="margin-top:14px"><div class="doc-ph" style="height:120px;max-width:280px">recipient's photos (2)</div></div>` : "");
+    document.getElementById("d-statements").innerHTML = i.statements.map(([who, txt]) =>
+      `<div style="padding:10px 0;border-top:1px solid var(--line)">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:3px">${who}</div>
+        <div style="font-size:13px">${txt}</div>
+      </div>`).join("");
+    document.getElementById("d-order").innerHTML =
+      `<dt>Order</dt><dd class="mono">${i.order}</dd>
+       <dt>Route</dt><dd>${i.route}</dd>
+       <dt>Fare</dt><dd class="num">$${i.fare} cash</dd>
+       <dt>Rider</dt><dd>${i.rider} · <a href="riders.html" style="color:var(--accent-text)">profile</a></dd>
+       <dt>Customer</dt><dd>${i.customer} · <a href="customers.html" style="color:var(--accent-text)">profile</a></dd>`;
+
+    const off = envNow.state === "offline" ? "disabled" : "";
+    document.getElementById("d-resolution").innerHTML = i.status === "resolved"
+      ? `<div style="font-size:13px"><span style="color:var(--accent-text);font-weight:600">✓ Resolved.</span> <span class="mut">${i.resolution}</span></div>`
+      : `<div style="font-size:13px;color:var(--muted);margin-bottom:14px">Pick an outcome — each is recorded on the order, the rider and the customer.</div>
+         <div style="display:flex;flex-direction:column;gap:8px">
+           <button class="btn ghost" ${off} onclick="refund()">Refund the fare…</button>
+           <button class="btn danger" ${off} onclick="strike()">Strike the rider…</button>
+           <button class="btn quiet" ${off} onclick="closeNoAction()">Close — no action…</button>
+         </div>`;
+  }
+
+  function resolve(text) { current.status = "resolved"; current.resolution = text; render(envNow); }
+  function refund() {
+    AdminShell.confirmAction({
+      title: "Refund $" + current.fare + " to the customer?",
+      body: `Cash refunds are handed to the customer by ops or netted off the rider's next settlement. Order <b>${current.order}</b>.`,
+      reasons: ["Parcel lost — delivery unconfirmed", "Parcel damaged in transit", "Overcharge confirmed"],
+      confirmLabel: "Record refund",
+      onConfirm: (r) => { resolve(`Refunded $${current.fare} — ${r}.`); AdminShell.toast("Refund recorded — " + r); },
+    });
+  }
+  function strike() {
+    AdminShell.confirmAction({
+      title: "Give " + current.rider + " a strike?",
+      body: "Three strikes trigger an automatic cooldown. Consider a suspension instead if this involves safety or fraud.",
+      reasons: ["Closed hand-off without the code", "Unconfirmed delivery — parcel missing", "Overcharged the customer"],
+      danger: true,
+      confirmLabel: "Add strike",
+      onConfirm: (r) => { resolve(`Strike added to ${current.rider} — ${r}.`); AdminShell.toast("Strike recorded — " + r); },
+    });
+  }
+  function closeNoAction() {
+    AdminShell.confirmAction({
+      title: "Close " + current.id + " with no action?",
+      body: "Both sides are notified that the issue is closed. It stays on record and reopens if new evidence arrives.",
+      reasons: ["Resolved between the parties", "Report not substantiated", "Duplicate issue"],
+      confirmLabel: "Close issue",
+      onConfirm: (r) => { resolve(`Closed with no action — ${r}.`); AdminShell.toast("Issue closed — " + r); },
+    });
+  }
+
+  AdminShell.init({ page: "issues", onRender: render });
+</script>
+</body>
+</html>

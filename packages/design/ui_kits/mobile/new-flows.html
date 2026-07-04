@@ -1,0 +1,79 @@
+<!-- @dsCard group="Mobile app" viewport="1180x1520" name="New customer flows · 2026 journey review" subtitle="Six net-new customer screens + Google Maps route-sync from the customer-journey gap review — search-first addressing, pre-broadcast liability disclaimer, auction counter-offer, rider-cancelled auto-rebroadcast, not-delivered terminal. Production fidelity; see CUSTOMER-JOURNEY-AUDIT.md." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LyniaGo — new customer flows (handoff)</title>
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  html, body { margin: 0; background: #eceff1; }
+  body { font-family: var(--font-sans); color: var(--ink); padding: 28px 32px 48px; box-sizing: border-box; }
+  .head { max-width: 1100px; margin: 0 auto 26px; }
+  .head h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 6px; }
+  .head p { font-size: 14px; color: var(--muted); line-height: 1.5; margin: 0; max-width: 760px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, 336px); gap: 30px; justify-content: center; max-width: 1140px; margin: 0 auto; }
+  .cell { width: 336px; }
+  .cap { display: flex; align-items: center; gap: 8px; height: 26px; margin-bottom: 9px; }
+  .badge { font-size: 11px; font-weight: 700; color: var(--on-accent); background: var(--accent-text); border-radius: 6px; padding: 2px 7px; font-variant-numeric: tabular-nums; }
+  .ttl { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .phone { width: 336px; height: 640px; border-radius: 30px; border: 8px solid #14181b; overflow: hidden; position: relative; background: var(--surface); box-shadow: 0 14px 40px rgba(20,24,27,.22); }
+  .notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 100px; height: 20px; background: #14181b; border-radius: 0 0 12px 12px; z-index: 30; }
+  .screen { height: 100%; overflow: hidden; background: var(--surface); }
+  .note { margin-top: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 13px; box-shadow: var(--shadow-card); }
+  .ref { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; color: #8a6a00; background: var(--highlight); border-radius: 5px; padding: 2px 7px; margin-bottom: 8px; }
+  .ref.p0 { color: #fff; background: var(--danger); }
+  .nrow { display: flex; gap: 7px; font-size: 12px; line-height: 1.45; margin-top: 5px; }
+  .nrow .k { flex: 0 0 52px; font-weight: 700; color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: .04em; padding-top: 1px; }
+  .nrow .v { flex: 1; color: var(--ink); }
+  .nrow .v.cta { color: var(--accent-text); font-weight: 600; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../assets/lynia-icons.js"></script>
+<script src="../../_ds_bundle.js"></script>
+</head>
+<body>
+<div class="head">
+  <h1>New customer flows — engineering handoff</h1>
+  <p>Six net-new screens plus a Google&nbsp;Maps route-sync row, from the 2026 customer-journey gap review. Rendered at production fidelity from the design-system components. Full findings &amp; severities live in <strong>CUSTOMER-JOURNEY-AUDIT.md</strong>; the flow context is <strong>explorations/journey/</strong>. <strong>P0</strong> = launch-blocker.</p>
+</div>
+<div id="root"></div>
+<script>window.__LYNIA_KIT_PAGE = true;</script>
+<script type="text/babel" src="kit-parts.js"></script>
+<script type="text/babel" src="../support/parts.js"></script>
+<script type="text/babel" src="../../explorations/journey/screens.jsx"></script>
+<script type="text/babel">
+const NOTES = [
+  { id: "addr_search", badge: "1·2", title: "Address search", ref: "Addressing redesign", trigger: "Tap a pickup / drop-off row", logic: "Google Places autocomplete · saved Home/Work · current location · set-on-map fallback", cta: "Pick a place → confirm" },
+  { id: "addr_map_confirm", badge: "1·3", title: "Confirm pin on map", ref: "Addressing redesign", trigger: "Pick a place / set on map", logic: "Draggable pin · stores lat/lng + place_id · optional landmark note · deep-links Google Maps", cta: "Confirm drop-off" },
+  { id: "disclaimer", badge: "1·6", title: "Broadcast disclaimer", ref: "A1-8 · P1", trigger: "Tap Broadcast", logic: "Accept-to-continue · record consent (version + timestamp) before the order is created", cta: "Agree & broadcast" },
+  { id: "auction_counter", badge: "2·3", title: "Counter-offer review", ref: "F-07 · P0", p0: true, trigger: "A rider offers above your ask", logic: "Show ask vs counter + delta · Accept assigns at the counter price · Decline keeps the rider in the list · never auto-charge higher", cta: "Accept / Decline" },
+  { id: "rider_cancelled", badge: "3·b0", title: "Rider cancelled → re-broadcast", ref: "F-01 · P0", p0: true, trigger: "Assigned rider cancels / no-shows", logic: "Auto re-opens the auction at the same price · new order lifecycle, same params · customer stays put", cta: "Cancel order" },
+  { id: "undelivered", badge: "3·b5", title: "Not delivered (terminal)", ref: "F-02 · P0", p0: true, trigger: "Rider marks undeliverable after attempts", logic: "Terminal state · reason recorded · no Lynia return obligation (own-risk) · call-rider retained", cta: "Send a new request" },
+  { id: "track_active", badge: "3·2", title: "Live tracking + Maps sync", ref: "Maps sync", trigger: "Rider en route to drop-off", logic: "Added ‘Follow route in Google Maps’ row — customer follows the same route the rider is navigating", cta: "Call rider" },
+];
+
+function Cell({ n }) {
+  const R = window.LJ[n.id];
+  return (
+    <div className="cell">
+      <div className="cap"><span className="badge">{n.badge}</span><span className="ttl">{n.title}</span></div>
+      <div className="phone"><div className="notch" /><div className="screen">{R ? R() : null}</div></div>
+      <div className="note">
+        <span className={"ref" + (n.p0 ? " p0" : "")}>{n.ref}</span>
+        <div className="nrow"><span className="k">Trigger</span><span className="v">{n.trigger}</span></div>
+        <div className="nrow"><span className="k">Logic</span><span className="v">{n.logic}</span></div>
+        <div className="nrow"><span className="k">CTA</span><span className="v cta">{n.cta}</span></div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <div className="grid">{NOTES.map((n) => <Cell key={n.id} n={n} />)}</div>
+);
+</script>
+</body>
+</html>

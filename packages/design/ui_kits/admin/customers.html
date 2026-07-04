@@ -1,0 +1,221 @@
+<!-- @dsCard group="Admin console" viewport="1280x800" name="Customers — directory & profile" subtitle="Masked contact, spend & cancel pattern, reports against, flag / ban with reason codes" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lynia ops — customers</title>
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidenav" id="sidenav"></aside>
+  <main class="content">
+    <nav class="topnav" id="topnav"></nav>
+
+    <!-- Directory -->
+    <div id="list-view" data-screen-label="Customers directory">
+      <header class="page">
+        <h1>Customers</h1>
+        <span class="sub" id="dir-sub"></span>
+        <span class="conn" id="conn">● live</span>
+      </header>
+      <div class="offline-banner" id="offline-banner"></div>
+      <nav class="subnav" id="filters"></nav>
+      <section class="card stale-dim">
+        <table class="data">
+          <thead><tr><th>Customer</th><th>Phone</th><th>Orders</th><th>Spend</th><th>Cancel rate</th><th>Flags</th><th>Joined</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="rows-empty"></div>
+      </section>
+    </div>
+
+    <!-- Profile -->
+    <div id="detail-view" class="hidden" data-screen-label="Customer profile">
+      <header class="page">
+        <a class="back" href="#" onclick="showList();return false">← Customers</a>
+        <h1 id="d-name" style="font-size:18px"></h1>
+        <span id="d-pills" style="display:flex;gap:6px"></span>
+        <span class="conn" id="conn2">● live</span>
+      </header>
+      <div class="warnbar hidden" id="d-warn">
+        <i data-lucide="circle-alert"></i>
+        <span class="t" id="d-warn-txt"></span>
+      </div>
+      <section class="panels stale-dim" id="d-stats" style="margin-bottom:var(--space-lg)"></section>
+      <div class="detail-grid stale-dim">
+        <section class="card">
+          <div class="block-title">Recent orders</div>
+          <table class="data">
+            <thead><tr><th>Order</th><th>Route</th><th>Status</th><th>Fare</th><th>When</th></tr></thead>
+            <tbody id="d-orders"></tbody>
+          </table>
+        </section>
+        <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
+          <section class="card">
+            <div class="block-title">Details</div>
+            <dl class="kv" id="d-info"></dl>
+          </section>
+          <section class="card">
+            <div class="block-title">Reports against this customer</div>
+            <div id="d-flags"></div>
+          </section>
+          <section class="card">
+            <div class="block-title">Actions</div>
+            <div style="display:flex;flex-direction:column;gap:8px" id="d-actions"></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:10px">Flags and bans require a reason code and are recorded in the audit log.</div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../assets/lynia-icons.js"></script>
+<script>
+  window.TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+    "density": "comfortable",
+    "nav": "sidebar",
+    "volume": "pilot",
+    "state": "live"
+  }/*EDITMODE-END*/;
+</script>
+<script src="shell.js"></script>
+<script>
+  const CUSTOMERS = [
+    { name: "Rudo Chikafu", phone: "+263 77 ··· 4102", orders: 26, spend: "61.30", cancelRate: "4%", flags: 0, joined: "Feb 2026", status: "active",
+      trail: [["8f3a91c2", "Eastgate → Avenues", "open_for_offers", "2.50", "2 min ago"], ["1a4e77b9", "Msasa → Highlands", "completed", "3.10", "1 hr ago"], ["66d01ba9", "CBD → Avenues", "completed", "2.00", "yesterday"]] },
+    { name: "Tapiwa Nyandoro", phone: "+263 71 ··· 8802", orders: 12, spend: "27.80", cancelRate: "0%", flags: 0, joined: "Mar 2026", status: "active",
+      trail: [["3b71de04", "Avondale → CBD", "en_route_dropoff", "2.20", "14 min ago"], ["31f8ac20", "CBD → Avondale", "completed", "2.00", "3 days ago"]] },
+    { name: "Anesu Kanengoni", phone: "+263 77 ··· 3345", orders: 19, spend: "48.90", cancelRate: "5%", flags: 1, joined: "Feb 2026", status: "active",
+      flagLog: [["30 Jun", "Dispute opened on order c092a5f1 — parcel reported not delivered. Under investigation.", "issues.html"]],
+      trail: [["c092a5f1", "Borrowdale → Msasa", "delivered", "4.00", "31 min ago"], ["90daf113", "Mabelreign → Avondale", "completed", "2.70", "48 min ago"]] },
+    { name: "Tanaka Dziva", phone: "+263 71 ··· 2270", orders: 8, spend: "9.40", cancelRate: "50%", flags: 2, joined: "May 2026", status: "flagged",
+      warn: "<b>Cancel pattern.</b> 4 of the last 6 broadcasts were cancelled after a rider accepted — riders lose fuel and time. Two riders have reported no-shows at pickup.",
+      flagLog: [["2 Jul", "Rider report — customer not at pickup after 15 min (order 77c120ab).", null], ["28 Jun", "Rider report — cancelled at pickup, parcel not ready.", null]],
+      trail: [["77c120ab", "CBD → Belvedere", "expired", "1.50", "2 hr ago"], ["45b8e2d0", "Msasa → Greendale", "cancelled", "2.00", "1 hr ago"], ["2c88fe01", "CBD → Belvedere", "cancelled", "1.80", "3 days ago"]] },
+    { name: "Chipo Marufu", phone: "+263 78 ··· 1123", orders: 31, spend: "72.10", cancelRate: "3%", flags: 0, joined: "Jan 2026", status: "active",
+      trail: [["b5209e77", "CBD → Mbare", "picked_up", "1.80", "19 min ago"], ["8a01dd35", "Mbare → CBD", "completed", "1.80", "yesterday"]] },
+  ];
+  const CUSTOMERS_GROWTH = [
+    { name: "Munya Taderera", phone: "+263 78 ··· 9012", orders: 5, spend: "14.60", cancelRate: "0%", flags: 0, joined: "Jun 2026", status: "active",
+      trail: [["e410cc28", "Highlands → CBD", "en_route_pickup", "3.20", "4 min ago"]] },
+    { name: "Vimbai Shoko", phone: "+263 77 ··· 5583", orders: 2, spend: "4.30", cancelRate: "0%", flags: 0, joined: "Jul 2026", status: "active", trail: [] },
+  ];
+
+  const FILTERS = ["all", "active", "flagged"];
+  let filter = "all", envNow = { state: "live", volume: "pilot" }, current = null;
+
+  function custPill(c) {
+    if (c.status === "banned") return AdminShell.pill("banned", "bad");
+    if (c.status === "flagged") return AdminShell.pill("flagged", "bad");
+    return AdminShell.pill("active", "good");
+  }
+
+  function render(env) {
+    envNow = env;
+    document.getElementById("conn2").textContent = document.getElementById("conn").textContent;
+    document.getElementById("conn2").className = document.getElementById("conn").className;
+    const all = AdminShell.vol(env, CUSTOMERS, CUSTOMERS_GROWTH);
+    document.getElementById("dir-sub").textContent = `${all.length} customers · Harare pilot`;
+    document.getElementById("filters").innerHTML = FILTERS.map((f) =>
+      `<a ${f === filter ? 'aria-current="true"' : ""} onclick="setFilter('${f}')">${f}</a>`).join("");
+
+    const rows = all.filter((c) => filter === "all" || c.status === filter);
+    const tb = document.getElementById("rows"), em = document.getElementById("rows-empty");
+    em.innerHTML = "";
+    if (env.state === "loading") tb.innerHTML = AdminShell.skelRows(7, 5);
+    else if (env.state === "empty" || rows.length === 0) { tb.innerHTML = ""; em.innerHTML = AdminShell.emptyState("user", "No customers in this view", "New sign-ups appear here after their first broadcast."); }
+    else tb.innerHTML = rows.map((c) =>
+      `<tr class="rowlink" onclick="showDetail('${c.name}')">
+        <td>${c.name}</td><td class="mono">${c.phone}</td><td class="num">${c.orders}</td><td class="num">$${c.spend}</td>
+        <td class="num" style="color:${parseInt(c.cancelRate) >= 25 ? "var(--danger)" : "inherit"}">${c.cancelRate}</td>
+        <td>${c.flags ? AdminShell.pill(c.flags + (c.flags > 1 ? " reports" : " report"), "bad") : '<span class="mut">—</span>'}</td>
+        <td class="mut">${c.joined}</td>
+      </tr>`).join("");
+    if (current) renderDetail();
+    if (window.lucide) lucide.createIcons();
+  }
+  function setFilter(f) { filter = f; render(envNow); }
+  function showList() { current = null; document.getElementById("detail-view").classList.add("hidden"); document.getElementById("list-view").classList.remove("hidden"); }
+  function showDetail(name) {
+    current = AdminShell.vol(envNow, CUSTOMERS, CUSTOMERS_GROWTH).find((c) => c.name === name);
+    document.getElementById("list-view").classList.add("hidden");
+    document.getElementById("detail-view").classList.remove("hidden");
+    renderDetail();
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderDetail() {
+    const c = current;
+    document.getElementById("d-name").textContent = c.name;
+    document.getElementById("d-pills").innerHTML = custPill(c);
+    document.getElementById("d-warn").classList.toggle("hidden", !c.warn);
+    if (c.warn) document.getElementById("d-warn-txt").innerHTML = c.warn;
+
+    const stat = (l, v, h) => `<div class="card kpi"><div class="label">${l}</div><div class="value" style="font-size:22px">${v}</div><div class="hint">${h}</div></div>`;
+    document.getElementById("d-stats").innerHTML =
+      stat("Orders", c.orders, "since " + c.joined)
+      + stat("Spend", "$" + c.spend, "agreed fares, cash")
+      + stat("Cancel rate", c.cancelRate, "after a rider accepted")
+      + stat("Reports", c.flags || "0", "from riders or recipients");
+
+    document.getElementById("d-orders").innerHTML = c.trail.length
+      ? c.trail.map((t) => `<tr class="rowlink" onclick="location.href='orders.html'"><td class="mono">${t[0]}</td><td>${t[1]}</td><td>${AdminShell.statusPill(t[2])}</td><td class="num">$${t[3]}</td><td class="mut">${t[4]}</td></tr>`).join("")
+      : `<tr><td colspan="5" class="mut" style="text-align:center;padding:20px">No orders yet.</td></tr>`;
+
+    document.getElementById("d-info").innerHTML =
+      `<dt>Phone</dt><dd class="mono">${c.phone} <span class="mut" style="font-size:11px;font-family:var(--font-sans)">masked — full number shows only during an active order</span></dd>
+       <dt>Joined</dt><dd>${c.joined}</dd>
+       <dt>Public name</dt><dd>${c.name.split(" ")[0]} ${c.name.split(" ")[1][0]}. <span class="mut" style="font-size:11px">what riders see</span></dd>`;
+
+    document.getElementById("d-flags").innerHTML = c.flagLog && c.flagLog.length
+      ? c.flagLog.map(([d, txt, href]) =>
+        `<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:13px">
+          <span class="mut num" style="flex:none;font-size:12px">${d}</span><span style="flex:1">${txt}${href ? ` <a href="${href}" style="color:var(--accent-text)">Open issue →</a>` : ""}</span>
+        </div>`).join("")
+      : `<div class="mut" style="font-size:13px">No reports. Riders can report a customer from the app after a no-show or unsafe pickup.</div>`;
+
+    const off = envNow.state === "offline" ? "disabled" : "";
+    document.getElementById("d-actions").innerHTML = c.status === "flagged"
+      ? `<button class="btn ghost" ${off} onclick="clearFlag()">Clear flag…</button>
+         <button class="btn danger" ${off} onclick="banCustomer()">Ban customer…</button>`
+      : `<button class="btn ghost" ${off} onclick="flagCustomer()">Flag account…</button>
+         <button class="btn danger" ${off} onclick="banCustomer()">Ban customer…</button>`;
+  }
+
+  function flagCustomer() {
+    AdminShell.confirmAction({
+      title: "Flag " + current.name + "?",
+      body: "A flag marks the account for review. The customer can keep ordering, but new reports escalate to a ban decision.",
+      reasons: ["Cancel pattern hurting riders", "Rider report — no-show at pickup", "Abusive behaviour reported", "Suspected fraud"],
+      confirmLabel: "Flag account",
+      onConfirm: (r) => { current.status = "flagged"; current.warn = "<b>Flagged.</b> " + r + "."; AdminShell.toast(`${current.name} flagged — ${r}`); render(envNow); },
+    });
+  }
+  function clearFlag() {
+    AdminShell.confirmAction({
+      title: "Clear the flag on " + current.name + "?",
+      body: "The account returns to good standing. The report history stays on record.",
+      reasons: ["Behaviour improved", "Reports not substantiated"],
+      confirmLabel: "Clear flag",
+      onConfirm: (r) => { current.status = "active"; current.warn = null; AdminShell.toast(`Flag cleared — ${r}`); render(envNow); },
+    });
+  }
+  function banCustomer() {
+    AdminShell.confirmAction({
+      title: "Ban " + current.name + "?",
+      body: "<b>They can no longer send parcels.</b> Their phone number is blocked from re-registering. This is reversible only by a database admin.",
+      reasons: ["Confirmed fraud", "Repeated no-shows after warnings", "Abuse of riders", "Safety incident"],
+      danger: true, noteRequired: true, notePlaceholder: "Required — what happened, and which orders are involved?",
+      confirmLabel: "Ban customer",
+      onConfirm: (r) => { AdminShell.toast(`${current.name} banned — ${r}`); showList(); render(envNow); },
+    });
+  }
+
+  AdminShell.init({ page: "customers", onRender: render });
+</script>
+</body>
+</html>
