@@ -138,6 +138,34 @@ describe("RiderService.retryKyc", () => {
     await expect(s.retryKyc("p1")).rejects.toThrow(/couldn't restart id verification/i);
   });
 
+  it("A-02 lock: refuses a THIRD attempt once kycAttempts >= 2 (locked → support)", async () => {
+    const vendor: KycVendor = {
+      submit: async () => {
+        throw new Error("vendor must not be called once locked");
+      },
+    };
+    const s = svc(
+      { rider: { findUnique: async () => ({ kycStatus: "failed", kycAttempts: 2 }) } },
+      { KYC_MODE: "auto", KYC_PROVIDER: "didit" },
+      vendor,
+    );
+    await expect(s.retryKyc("p1")).rejects.toThrow(/locked|contact support/i);
+  });
+
+  it("still allows the single resubmit after the first decline (kycAttempts = 1)", async () => {
+    const vendor: KycVendor = {
+      submit: async () => ({ ref: "sess_2", status: "pending", url: "https://verify.didit.me/sess_2" }),
+    };
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1 }),
+        update: async () => ({}),
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", verificationUrl: "https://verify.didit.me/sess_2" });
+  });
+
   it("leaves a manual-mode rider pending without calling the vendor", async () => {
     const vendor: KycVendor = {
       submit: async () => {
@@ -227,23 +255,57 @@ describe("RiderService.applyKycResult", () => {
   });
 });
 
-describe("RiderService.adminSetKyc", () => {
+describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
   it("404s for an unknown rider", async () => {
     const s = svc({ rider: { findUnique: async () => null } }, {});
     await expect(s.adminSetKyc("p1", "verified")).rejects.toThrow(/rider not found/i);
   });
 
-  it("sets idVerified when the status is verified", async () => {
+  it("approve → verified + idVerified, and clears any prior decline reason", async () => {
     let data: Record<string, unknown> | undefined;
     const prisma = {
       rider: {
-        findUnique: async () => ({ profileId: "p1" }),
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 1 }),
         update: async (args: { data: Record<string, unknown> }) => { data = args.data; return {}; },
       },
     };
     const s = svc(prisma, {});
     const res = await s.adminSetKyc("p1", "verified");
-    expect(res).toEqual({ profileId: "p1", kycStatus: "verified" });
-    expect(data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(res).toMatchObject({ profileId: "p1", kycStatus: "verified", locked: false });
+    expect(data).toMatchObject({ kycStatus: "verified", idVerified: true, kycDeclineReason: null });
+  });
+
+  it("decline → failed, records the reason code, and increments kycAttempts", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 0 }),
+        update: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { kycAttempts: 1 };
+        },
+      },
+    };
+    const s = svc(prisma, {});
+    const res = await s.adminSetKyc("p1", "failed", "Selfie doesn't match the ID");
+    expect(res).toMatchObject({ kycStatus: "failed", kycAttempts: 1, locked: false });
+    expect(data).toMatchObject({
+      kycStatus: "failed",
+      idVerified: false,
+      kycDeclineReason: "Selfie doesn't match the ID",
+      kycAttempts: { increment: 1 },
+    });
+  });
+
+  it("a SECOND decline lands at kycAttempts >= 2 and reports locked", async () => {
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 1 }),
+        update: async () => ({ kycAttempts: 2 }),
+      },
+    };
+    const s = svc(prisma, {});
+    const res = await s.adminSetKyc("p1", "failed", "Suspected fraud or stolen identity");
+    expect(res).toMatchObject({ kycStatus: "failed", kycAttempts: 2, locked: true });
   });
 });

@@ -129,6 +129,9 @@ model Rider {
   // KYC resubmission counter (admin A-02). Decline increments; attempt 2 locks → support. The admin
   // decision write-back sets kycStatus + this counter; the rider app reads it for the lock state.
   kycAttempts     Int       @default(0) @map("kyc_attempts")
+  // The reason code from the most recent admin decline (admin A-02). Surfaced to the rider app so they
+  // know what to fix on a resubmit, and recorded alongside the audit-log row. Cleared on approve.
+  kycDeclineReason String?  @map("kyc_decline_reason")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   orders Order[] @relation("riderOrders")

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, NotFoundException, Param, ParseUUIDPipe, Query, UseGuards } from "@nestjs/common";
 import { KycStatus, OrderStatus } from "@lynia/shared";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -22,6 +22,14 @@ export class AdminController {
   riders(@Query("kyc") kyc?: string) {
     const filter = kyc && KYC_VALUES.includes(kyc) ? (kyc as KycStatus) : undefined;
     return this.admin.listRiders(filter);
+  }
+
+  /** KYC doc-review detail for one rider (A-02). 404s when the profile isn't a rider. */
+  @Get("riders/:profileId/kyc")
+  async kycReview(@Param("profileId", ParseUUIDPipe) profileId: string) {
+    const review = await this.admin.getKycReview(profileId);
+    if (!review) throw new NotFoundException("Rider not found");
+    return review;
   }
 
   /** Order monitor. `?status=<OrderStatus>` filters; unknown values are ignored. */

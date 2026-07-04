@@ -119,6 +119,52 @@ export class AdminService {
     }));
   }
 
+  /**
+   * Single-rider KYC review detail (admin A-02) — the doc-review screen behind the KYC queue. Returns
+   * the real, persisted KYC state: status, the resubmission counter + derived lock/attempt, the last
+   * decline reason, and the applicant fields ops compare against the documents. Phone is masked (A-03)
+   * — the reviewer matches the ID number, not the phone.
+   *
+   * Didit's granular scores (face-match, doc authenticity, liveness) are NOT persisted in the pilot —
+   * only the overall verdict flows through the webhook into `kycStatus`. Those fields are therefore
+   * omitted here; the console renders the checks panel from `kycStatus` + the reviewer's own compare.
+   */
+  async getKycReview(profileId: string) {
+    const rider = await this.prisma.rider.findUnique({
+      where: { profileId },
+      select: {
+        profileId: true,
+        bikeReg: true,
+        kycStatus: true,
+        kycRef: true,
+        kycAttempts: true,
+        kycDeclineReason: true,
+        idVerified: true,
+        updatedAt: true,
+        profile: { select: { firstName: true, lastName: true, phone: true, idNumber: true } },
+      },
+    });
+    if (!rider) return null;
+
+    // kycAttempts counts declines. The current attempt number is declines + 1 (1 on first review, 2 on
+    // the single allowed resubmit). >= 2 declines = locked → support, no further attempts.
+    const locked = rider.kycAttempts >= 2;
+    return {
+      id: rider.profileId,
+      name: `${rider.profile.firstName} ${rider.profile.lastName}`.trim(),
+      phone: maskPhone(rider.profile.phone),
+      idNumber: rider.profile.idNumber,
+      bike: rider.bikeReg,
+      status: rider.kycStatus,
+      kycRef: rider.kycRef,
+      kycAttempts: rider.kycAttempts,
+      attempt: Math.min(rider.kycAttempts + 1, 2),
+      locked,
+      declineReason: rider.kycDeclineReason,
+      submittedAt: rider.updatedAt.toISOString(),
+    };
+  }
+
   /** Order monitor for ops — filter by status to watch live orders, cancellations, etc. */
   async listOrders(status?: OrderStatus) {
     const orders = await this.prisma.order.findMany({
