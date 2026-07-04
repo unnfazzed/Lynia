@@ -1,4 +1,4 @@
-import { JobCancelledEvent, WS_EVENTS } from "@lynia/shared";
+import { JobCancelledEvent, PresenceStaleEvent, WS_EVENTS } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import type { Socket } from "socket.io-client";
@@ -6,20 +6,29 @@ import { useAuth } from "../auth/auth-context";
 import { createSocket } from "./socket";
 
 /**
- * The rider's inbound socket for their active job (INTERFACE-AUDIT C3). Joins the order room and
+ * The rider's inbound socket for their active job (INTERFACE-AUDIT C3 / C5). Joins the order room and
  * listens for `job:cancelled` — the customer cancelled — plus `order:status` for any other server
- * transition. `order:status` just invalidates the active-job query (self-heal, same discipline as the
- * customer's use-order-socket); `job:cancelled` is terminal, so it's surfaced through `onCancelled`
- * where the job screen can freeze a hand-back terminal from the last-known snapshot (the order drops
- * out of `/orders/mine/active` the moment it's cancelled, so we can't refetch it back).
+ * transition, and `presence:stale` role:"customer" — the customer's app went dark (C5 mirror).
+ * `order:status` just invalidates the active-job query (self-heal, same discipline as the customer's
+ * use-order-socket); `job:cancelled` is terminal, so it's surfaced through `onCancelled` where the job
+ * screen can freeze a hand-back terminal from the last-known snapshot (the order drops out of
+ * `/orders/mine/active` the moment it's cancelled, so we can't refetch it back). `onCustomerStale`
+ * fires when the customer's socket has been dark past the escalation threshold, so the rider UI can
+ * warn that the customer may not be seeing live updates.
  */
-export function useRiderJobSocket(orderId: string | null, onCancelled: (e: JobCancelledEvent) => void): void {
+export function useRiderJobSocket(
+  orderId: string | null,
+  onCancelled: (e: JobCancelledEvent) => void,
+  onCustomerStale?: () => void,
+): void {
   const { session } = useAuth();
   const token = session?.accessToken;
   const qc = useQueryClient();
-  // Hold the latest callback in a ref so re-subscribing isn't tied to its identity.
+  // Hold the latest callbacks in refs so re-subscribing isn't tied to their identity.
   const cbRef = useRef(onCancelled);
   cbRef.current = onCancelled;
+  const staleRef = useRef(onCustomerStale);
+  staleRef.current = onCustomerStale;
 
   useEffect(() => {
     if (!orderId || !token) return;
@@ -33,6 +42,13 @@ export function useRiderJobSocket(orderId: string | null, onCancelled: (e: JobCa
       const parsed = JobCancelledEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId) return;
       cbRef.current(parsed.data);
+    });
+    // C5: the rider is the RECEIVER of role:"customer" (the customer went dark). Ignore role:"rider"
+    // here — that's the rider's OWN staleness, meant for the customer's app, not a self-escalation.
+    socket.on(WS_EVENTS.presenceStale, (raw: unknown) => {
+      const parsed = PresenceStaleEvent.safeParse(raw);
+      if (!parsed.success || parsed.data.orderId !== orderId || parsed.data.role !== "customer") return;
+      staleRef.current?.();
     });
 
     return () => {

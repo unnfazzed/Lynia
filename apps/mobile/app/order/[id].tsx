@@ -155,7 +155,11 @@ export default function OrderScreen(): React.ReactElement {
   // Open the socket during the AUCTION too (not just once active): `offers:changed` streams new
   // bids in, and `order:status` reflects the assignment. Expose connection state for the UI.
   const socketExpected = isActive || status === "delivered" || status === "open_for_offers";
-  const { connected } = useOrderSocket(socketExpected ? orderId : null);
+  // F-01: on a rider bail the server re-broadcasts a NEW order and pushes `order:rebroadcast` here;
+  // move the customer to the fresh auction (replace, so the dead cancelled order isn't in the stack).
+  const { connected } = useOrderSocket(socketExpected ? orderId : null, (newOrderId) => {
+    router.replace(`/order/${newOrderId}`);
+  });
   // "Reconnecting" only reads truthfully after we've been live once — the initial connect window
   // would otherwise flash the banner on every mount.
   const wasConnected = React.useRef(false);

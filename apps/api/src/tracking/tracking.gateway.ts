@@ -19,6 +19,7 @@ import {
   boardCell,
   boardCellNeighborhood,
   type JobCancelledEvent,
+  type OrderRebroadcastEvent,
   PRESENCE_ESCALATION_MS,
   type PresenceStaleEvent,
   WS_EVENTS,
@@ -80,6 +81,26 @@ export class TrackingGateway
    *  again (reset on reconnect) or the ride ends, re-arming a future escalation. */
   private readonly staleNotified = new Set<string>();
 
+  /**
+   * Customer-side presence (C5 mirror). No server-side customer heartbeat exists — the customer's
+   * socket only ever SUBSCRIBEs to an order room and then listens — so we derive the customer's
+   * liveness from the socket connection itself: `live` counts the customer sockets currently joined
+   * to the order room, and `darkSince` is the wall-clock moment the last one dropped (null while
+   * ≥1 is live). scanPresence escalates `presence:stale` role:"customer" once an order's `darkSince`
+   * ages past PRESENCE_ESCALATION_MS (and the ride is still active), so the RIDER's app escalates
+   * its "live paused" treatment. Keyed by order id.
+   */
+  private readonly customerPresence = new Map<string, { live: number; darkSince: number | null }>();
+
+  /** Reverse index socketId → the order ids that socket subscribed to AS THE CUSTOMER, so a
+   *  disconnect can decrement the right rooms without reading client.rooms (already cleared by the
+   *  time handleDisconnect fires). */
+  private readonly customerSocketOrders = new Map<string, Set<string>>();
+
+  /** Customer-side twin of `staleNotified` — the orders whose customer we've already escalated, so a
+   *  continuously-dark customer is escalated once. Re-armed on the customer's re-subscribe. */
+  private readonly customerStaleNotified = new Set<string>();
+
   constructor(
     @Inject(ENV) private readonly env: Env,
     private readonly tokens: TokenService,
@@ -123,6 +144,22 @@ export class TrackingGateway
    * isn't lost once the key expires. Best-effort — a flush failure must never surface to the socket.
    */
   handleDisconnect(client: Socket): void {
+    // C5 customer-presence: release the customer's rooms first (independent of the rider flush). The
+    // last customer socket dropping off an order starts its dark clock; scanPresence escalates it if
+    // the ride is still active PRESENCE_ESCALATION_MS later.
+    const orders = this.customerSocketOrders.get(client.id);
+    if (orders) {
+      this.customerSocketOrders.delete(client.id);
+      for (const orderId of orders) {
+        const p = this.customerPresence.get(orderId);
+        if (!p) continue;
+        p.live -= 1;
+        if (p.live <= 0) {
+          p.live = 0;
+          p.darkSince = Date.now();
+        }
+      }
+    }
     const user = client.data.user as SocketUser | undefined;
     if (!user) return;
     try {
@@ -141,7 +178,28 @@ export class TrackingGateway
     if (!user) return { error: "unauthenticated" };
     if (!(await this.tracking.canAccessOrder(user.sub, body.orderId))) return { error: "forbidden" };
     await client.join(orderRoom(body.orderId));
+    // C5 customer-presence: a customer-role subscriber is, by construction, the order's customer (an
+    // assigned rider is always rider-role, so canAccessOrder + role:"customer" ⇒ the sender). Mark
+    // them live and re-arm any prior escalation. A rider-role subscriber is left untracked here (its
+    // liveness is the DB heartbeat via findStaleRiderPresence).
+    if (user.role === "customer") this.markCustomerPresent(client.id, body.orderId);
     return { joined: body.orderId };
+  }
+
+  /** Record that a customer socket is live on an order room (C5). Increments the live count, clears
+   *  the dark clock, indexes the socket for disconnect cleanup, and re-arms a future escalation. */
+  private markCustomerPresent(socketId: string, orderId: string): void {
+    const p = this.customerPresence.get(orderId) ?? { live: 0, darkSince: null };
+    p.live += 1;
+    p.darkSince = null;
+    this.customerPresence.set(orderId, p);
+    let orders = this.customerSocketOrders.get(socketId);
+    if (!orders) {
+      orders = new Set();
+      this.customerSocketOrders.set(socketId, orders);
+    }
+    orders.add(orderId);
+    this.customerStaleNotified.delete(orderId); // back on the room → re-arm the one-shot escalation
   }
 
   /**
@@ -333,11 +391,30 @@ export class TrackingGateway
   }
 
   /**
-   * One watchdog pass (C5): find active rides whose rider heartbeat is older than
-   * `PRESENCE_ESCALATION_MS` and escalate each ONCE. An order that recovers (rider reconnected) or
-   * ends drops out of the stale set and is removed from `staleNotified`, re-arming a future
-   * escalation. Best-effort — a scan failure must never crash the interval. Public so it's unit-testable
-   * without driving real timers.
+   * The assigned rider bailed and the job was auto re-broadcast at the same price as a NEW open order
+   * (INTERFACE-AUDIT F-01). Push `order:rebroadcast` to the OLD (now `cancelled`) order's room — where
+   * the customer is subscribed — carrying the new order's id so the customer app moves itself to the
+   * fresh auction instead of stranding on a dead "cancelled" terminal. Mirrors `emitJobCancelled`'s
+   * shape (one action to `orderRoom(oldOrderId)`). Best-effort; never throws.
+   */
+  emitOrderRebroadcast(oldOrderId: string, newOrderId: string): void {
+    const payload: OrderRebroadcastEvent = {
+      orderId: oldOrderId,
+      newOrderId,
+      at: new Date().toISOString(),
+    };
+    this.server?.to(orderRoom(oldOrderId)).emit(WS_EVENTS.orderRebroadcast, payload);
+  }
+
+  /**
+   * One watchdog pass (C5): escalate each dark counterparty ONCE. Two mirror directions, one interval:
+   *  - RIDER: active rides whose rider heartbeat is older than `PRESENCE_ESCALATION_MS` (the DB
+   *    liveness authority) → `presence:stale` role:"rider" so the customer's app pauses "live".
+   *  - CUSTOMER: order rooms whose last customer socket dropped more than `PRESENCE_ESCALATION_MS`
+   *    ago (in-memory `customerPresence`) AND whose ride is still active → `presence:stale`
+   *    role:"customer" so the rider's app escalates. An order that recovers (counterparty reconnected)
+   *    or ends drops out of its notified set, re-arming a future escalation. Best-effort — a scan
+   *    failure must never crash the interval. Public so it's unit-testable without driving real timers.
    */
   async scanPresence(): Promise<void> {
     try {
@@ -352,6 +429,37 @@ export class TrackingGateway
       }
     } catch (err) {
       this.logger.warn(`presence scan failed: ${(err as Error).message}`);
+    }
+    await this.scanCustomerPresence();
+  }
+
+  /** Customer half of the watchdog (C5 mirror). Split out so a failure in either direction can't
+   *  starve the other. Only orders whose customer has been dark past the threshold are candidates;
+   *  the DB round-trip confirms they're still active before escalating (a customer who backgrounded
+   *  the app on a delivered/cancelled order is never flagged). */
+  private async scanCustomerPresence(): Promise<void> {
+    try {
+      const now = Date.now();
+      const candidates: string[] = [];
+      for (const [orderId, p] of this.customerPresence) {
+        if (p.darkSince != null && now - p.darkSince >= PRESENCE_ESCALATION_MS && !this.customerStaleNotified.has(orderId)) {
+          candidates.push(orderId);
+        }
+      }
+      if (candidates.length === 0) return;
+      const active = await this.tracking.filterActiveOrders(candidates);
+      for (const orderId of candidates) {
+        const p = this.customerPresence.get(orderId);
+        if (!active.has(orderId)) {
+          // Ride ended while the customer was away — drop the presence entry so it can't leak.
+          this.customerPresence.delete(orderId);
+          continue;
+        }
+        this.customerStaleNotified.add(orderId);
+        this.emitPresenceStale(orderId, "customer", p?.darkSince != null ? new Date(p.darkSince) : null);
+      }
+    } catch (err) {
+      this.logger.warn(`customer presence scan failed: ${(err as Error).message}`);
     }
   }
 }

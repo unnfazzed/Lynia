@@ -15,9 +15,11 @@ const noopNotifications = { notifyOrderStatus: async () => {} } as unknown as No
 function build(methods: Record<string, unknown>) {
   const emits: Array<[string, string]> = [];
   const jobCancelled: Array<[string, boolean]> = [];
+  const rebroadcasts: Array<[string, string]> = [];
   const gateway = {
     emitOrderStatus: (id: string, s: string) => emits.push([id, s]),
     emitJobCancelled: (id: string, collected: boolean) => jobCancelled.push([id, collected]),
+    emitOrderRebroadcast: (oldId: string, newId: string) => rebroadcasts.push([oldId, newId]),
   };
   // F-01 re-broadcast announce is best-effort push — spy so tests can assert it fired without a socket.
   const orders = { announceOpenOrder: vi.fn(async () => {}) };
@@ -31,7 +33,7 @@ function build(methods: Record<string, unknown>) {
     noopNotifications,
     orders as unknown as OrdersService,
   );
-  return { svc, emits, jobCancelled, orders, prisma };
+  return { svc, emits, jobCancelled, rebroadcasts, orders, prisma };
 }
 
 describe("OrderLifecycleService.advance", () => {
@@ -251,7 +253,7 @@ describe("OrderLifecycleService.cancel", () => {
 
   it("counts a rider cancel as a strike (below the limit) and re-broadcasts a new open order (F-01)", async () => {
     let riderData: Record<string, unknown> | undefined;
-    const { svc, orders, jobCancelled } = build(
+    const { svc, orders, jobCancelled, rebroadcasts } = build(
       cancellable({
         rider: {
           findUnique: async () => ({ cancelStrikes: 0 }),
@@ -267,6 +269,9 @@ describe("OrderLifecycleService.cancel", () => {
     expect(orders.announceOpenOrder).toHaveBeenCalledTimes(1);
     expect(orders.announceOpenOrder).toHaveBeenCalledWith("rebroadcast-1");
     expect(jobCancelled).toEqual([]);
+    // F-01 re-attach: the OLD (cancelled) order's room is told to move to the NEW order id, so the
+    // customer lands on the fresh auction instead of the dead cancelled terminal.
+    expect(rebroadcasts).toEqual([["o1", "rebroadcast-1"]]);
   });
 
   it("puts the rider on cooldown and forces them offline at the strike limit", async () => {
@@ -316,6 +321,8 @@ describe("OrderLifecycleService.markUndelivered", () => {
     expect(await svc.markUndelivered("o1", "r1", "refused")).toEqual({ orderId: "o1", status: "undelivered" });
     expect(data).toMatchObject({ status: "undelivered", undeliveredReason: "refused" });
     expect(data!.undeliveredAt).toBeInstanceOf(Date);
+    // C6: the failed hand-off is recorded so the customer's terminal shows a real attempt count, not 0.
+    expect(data!.deliveryAttempts).toEqual({ increment: 1 });
     expect(emits).toEqual([["o1", "undelivered"]]);
   });
 });

@@ -1,5 +1,5 @@
 import type { BoardNewOrderEvent } from "@lynia/shared";
-import { WS_EVENTS } from "@lynia/shared";
+import { PRESENCE_ESCALATION_MS, WS_EVENTS } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import type { TokenService } from "../auth/token.service";
@@ -11,9 +11,10 @@ import { POSITION_COALESCE_MS, TrackingGateway } from "./tracking.gateway";
 
 /** Minimal socket fake: maintains a live `rooms` Set (like a real Socket) as join/leave run, and
  *  carries the authenticated user in `data`. */
-function fakeSocket(user?: { sub: string; role: string }, rooms: string[] = []) {
+function fakeSocket(user?: { sub: string; role: string }, rooms: string[] = [], id = "sock-1") {
   const roomSet = new Set(rooms);
   return {
+    id,
     data: { user },
     rooms: roomSet,
     join: vi.fn(async (room: string) => {
@@ -345,5 +346,138 @@ describe("TrackingGateway.scanPresence (C5 watchdog)", () => {
     });
     const g = gateway({ findStaleRiderPresence });
     await expect(g.scanPresence()).resolves.toBeUndefined();
+  });
+});
+
+describe("TrackingGateway.emitOrderRebroadcast (F-01)", () => {
+  it("pushes order:rebroadcast to the OLD order's room carrying the new order id", () => {
+    const { server, to, emit } = fakeServer();
+    const g = gateway();
+    g.server = server as never;
+    g.emitOrderRebroadcast("old-1", "new-1");
+    // The customer is subscribed to the cancelled order's room — that's where the re-attach goes.
+    expect(to).toHaveBeenCalledWith(orderRoom("old-1"));
+    expect(emit).toHaveBeenCalledWith(
+      WS_EVENTS.orderRebroadcast,
+      expect.objectContaining({ orderId: "old-1", newOrderId: "new-1" }),
+    );
+  });
+
+  it("never throws when the server is undefined (best-effort)", () => {
+    const g = gateway();
+    expect(() => g.emitOrderRebroadcast("old-1", "new-1")).not.toThrow();
+  });
+});
+
+describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
+  // A customer-role subscribe marks presence; the customer's disconnect starts the dark clock; a scan
+  // after PRESENCE_ESCALATION_MS escalates presence:stale role:"customer" to the order room (the rider
+  // is the receiver). filterActiveOrders confirms the ride is still live before escalating.
+  const customerTracking = () => ({
+    canAccessOrder: vi.fn(async () => true),
+    flushToPg: vi.fn(async () => {}),
+    findStaleRiderPresence: vi.fn(async () => []), // keep the rider pass quiet
+    filterActiveOrders: vi.fn(async (ids: string[]) => new Set(ids)),
+  });
+
+  it("escalates role:customer once after the customer socket has been dark past the threshold", async () => {
+    vi.useFakeTimers();
+    try {
+      const { server, to, emit } = fakeServer();
+      const g = gateway(customerTracking());
+      g.server = server as never;
+      const client = fakeSocket({ sub: "c1", role: "customer" });
+
+      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      // Not yet dark → a scan escalates nothing.
+      await g.scanPresence();
+      expect(emit).not.toHaveBeenCalled();
+
+      // Customer drops → dark clock starts; still inside the window → no escalation.
+      g.handleDisconnect(client as never);
+      await g.scanPresence();
+      expect(emit).not.toHaveBeenCalled();
+
+      // Past the escalation window → one presence:stale role:"customer" to the order room.
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence();
+      expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+      expect(emit).toHaveBeenCalledWith(
+        WS_EVENTS.presenceStale,
+        expect.objectContaining({ orderId: "ord-1", role: "customer" }),
+      );
+
+      // Still dark on the next scan → no repeat (escalate once, no spam).
+      await g.scanPresence();
+      expect(emit).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does NOT escalate when the ride is no longer active (customer left a finished order)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { server, emit } = fakeServer();
+      const tracking = customerTracking();
+      tracking.filterActiveOrders = vi.fn(async () => new Set<string>()); // order no longer active
+      const g = gateway(tracking);
+      g.server = server as never;
+      const client = fakeSocket({ sub: "c1", role: "customer" });
+
+      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      g.handleDisconnect(client as never);
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence();
+      expect(emit).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-arms after the customer re-subscribes (reconnected), then dropped again", async () => {
+    vi.useFakeTimers();
+    try {
+      const { server, emit } = fakeServer();
+      const g = gateway(customerTracking());
+      g.server = server as never;
+      const client = fakeSocket({ sub: "c1", role: "customer" });
+
+      // First dark spell → one escalation.
+      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      g.handleDisconnect(client as never);
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence();
+      expect(emit).toHaveBeenCalledTimes(1);
+
+      // Customer reconnects (re-subscribe re-arms), then goes dark again → a second escalation.
+      const client2 = fakeSocket({ sub: "c1", role: "customer" }, [], "sock-2");
+      await g.subscribeOrder(client2 as never, { orderId: "ord-1" });
+      g.handleDisconnect(client2 as never);
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence();
+      expect(emit).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not track a rider-role subscriber as customer presence", async () => {
+    vi.useFakeTimers();
+    try {
+      const { server, emit } = fakeServer();
+      const g = gateway(customerTracking());
+      g.server = server as never;
+      const rider = fakeSocket({ sub: "r1", role: "rider" });
+
+      await g.subscribeOrder(rider as never, { orderId: "ord-1" });
+      g.handleDisconnect(rider as never);
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence();
+      // No customer presence was recorded for a rider socket → nothing to escalate.
+      expect(emit).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
