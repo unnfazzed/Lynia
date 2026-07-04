@@ -51,6 +51,10 @@ const config: ExpoConfig = {
       },
     ],
     ["expo-notifications", { color: "#00B14F" }],
+    // Pin Kotlin to 1.9.25: expo-modules-core's Compose Compiler (1.5.15) requires it, and the SDK-52
+    // default (1.9.24) fails :expo-modules-core:compileReleaseKotlin. prebuild regenerates android/,
+    // so this must live in config, not a hand-edit of build.gradle.
+    ["expo-build-properties", { android: { kotlinVersion: "1.9.25" } }],
   ],
   android: {
     package: "zw.co.lynia",
