@@ -1,21 +1,22 @@
 import { tokens } from "@lynia/shared";
-import { adminFetch } from "../../lib/api";
+import { adminFetchResult } from "../../lib/api";
 import { REASONS } from "../../lib/reasons";
 import type { IssueDetail } from "../../lib/adminTypes";
 import { KeyValue } from "../../components/KeyValue";
 import { Pill } from "../../components/StatusPill";
 import { ConfirmModal } from "../../components/ConfirmModal";
-import { Conn, EmptyState, OfflineBanner } from "../../components/states";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert } from "../../components/icons";
 
 /** Dispute investigation (kit `issues.html` detail): what happened, OTP-not-entered evidence
  *  callout, both statements, photo evidence, and resolve → refund / strike / close, each reason-coded
  *  through <ConfirmModal>. */
 export default async function IssueDetailPage({ params }: { params: { id: string } }) {
-  const i = await adminFetch<IssueDetail>(`/admin/issues/${params.id}`);
+  const res = await adminFetchResult<IssueDetail>(`/admin/issues/${params.id}`);
   const path = `/issues/${params.id}`;
 
-  if (!i) {
+  if (!("data" in res)) {
+    const reason = res.reason;
     return (
       <main className="content">
         <header className="page">
@@ -23,21 +24,22 @@ export default async function IssueDetailPage({ params }: { params: { id: string
             ← Issues
           </a>
           <h1 style={{ fontSize: 18 }}>Issue investigation</h1>
-          <Conn connected={false} />
+          <Conn connected={false} reason={reason} />
         </header>
-        <OfflineBanner />
+        <OfflineBanner reason={reason} />
         <section className="card">
           <EmptyState
             icon={<IconAlert />}
-            title="Investigation not connected"
-            line="Set API_BASE_URL (and ADMIN_API_TOKEN) to load this dispute."
+            title={reasonTitle(reason, "Investigation")}
+            line={reasonLine(reason, "this dispute")}
           />
         </section>
       </main>
     );
   }
 
-  // Past the guard `i` is non-null → connected; resolve actions are enabled.
+  const i = res.data;
+  // Past the guard `i` is live data → connected; resolve actions are enabled.
   const connected = true;
   const issuePill = <Pill kind={i.status === "resolved" ? "mut" : i.status === "open" ? "bad" : ""}>{i.status}</Pill>;
 

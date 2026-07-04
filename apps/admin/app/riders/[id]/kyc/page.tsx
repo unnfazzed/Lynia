@@ -1,10 +1,10 @@
 import { tokens } from "@lynia/shared";
-import { adminFetch } from "../../../lib/api";
+import { adminFetchResult } from "../../../lib/api";
 import type { KycReview } from "../../../lib/adminTypes";
 import { KeyValue } from "../../../components/KeyValue";
 import { Pill } from "../../../components/StatusPill";
 import { KycDecision } from "../../../components/KycDecision";
-import { Conn, EmptyState, OfflineBanner } from "../../../components/states";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../../components/states";
 import { IconAlert, IconIdCard } from "../../../components/icons";
 
 /**
@@ -47,9 +47,10 @@ function statusPill(status: KycReview["status"]) {
 }
 
 export default async function KycReviewPage({ params }: { params: { id: string } }) {
-  const r = await adminFetch<KycReview>(`/admin/riders/${params.id}/kyc`);
+  const res = await adminFetchResult<KycReview>(`/admin/riders/${params.id}/kyc`);
 
-  if (!r) {
+  if (!("data" in res)) {
+    const reason = res.reason;
     return (
       <main className="content">
         <header className="page">
@@ -57,20 +58,21 @@ export default async function KycReviewPage({ params }: { params: { id: string }
             ← KYC queue
           </a>
           <h1 style={{ fontSize: 18 }}>KYC review</h1>
-          <Conn connected={false} />
+          <Conn connected={false} reason={reason} />
         </header>
-        <OfflineBanner />
+        <OfflineBanner reason={reason} />
         <section className="card">
           <EmptyState
             icon={<IconIdCard />}
-            title="Review not connected"
-            line="Set API_BASE_URL (and ADMIN_API_TOKEN) to load this rider's KYC review."
+            title={reasonTitle(reason, "Review")}
+            line={reasonLine(reason, "this rider's KYC review")}
           />
         </section>
       </main>
     );
   }
 
+  const r = res.data;
   const connected = true;
   const decided = r.status !== "pending";
   // Resubmission warning: the rider has used their one resubmit and this is the last review before the

@@ -1,12 +1,12 @@
 import { tokens } from "@lynia/shared";
-import { adminFetch } from "../../lib/api";
+import { adminFetchResult } from "../../lib/api";
 import { submitAdminAction } from "../../actions/audit";
 import { REASONS } from "../../lib/reasons";
 import type { OrderDetail } from "../../lib/adminTypes";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { ConfirmModal } from "../../components/ConfirmModal";
-import { Conn, EmptyState, OfflineBanner } from "../../components/states";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconPackage, IconPhone } from "../../components/icons";
 
 /** Order detail (kit `orders.html` detail): 8-step delivery timeline, parcel line items, people
@@ -87,9 +87,10 @@ function deriveSteps(o: OrderDetail): Step[] {
 }
 
 export default async function OrderDetailPage({ params }: { params: { id: string } }) {
-  const o = await adminFetch<OrderDetail>(`/admin/orders/${params.id}`);
+  const res = await adminFetchResult<OrderDetail>(`/admin/orders/${params.id}`);
 
-  if (!o) {
+  if (!("data" in res)) {
+    const reason = res.reason;
     return (
       <main className="content">
         <header className="page">
@@ -99,21 +100,22 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           <h1 className="mono" style={{ fontSize: 18 }}>
             {params.id}
           </h1>
-          <Conn connected={false} />
+          <Conn connected={false} reason={reason} />
         </header>
-        <OfflineBanner />
+        <OfflineBanner reason={reason} />
         <section className="card">
           <EmptyState
             icon={<IconPackage />}
-            title="Order record not connected"
-            line="Set API_BASE_URL (and ADMIN_API_TOKEN) to load this order."
+            title={reasonTitle(reason, "Order record")}
+            line={reasonLine(reason, "this order")}
           />
         </section>
       </main>
     );
   }
 
-  // Past the guard `o` is non-null → connected; live actions are enabled.
+  const o = res.data;
+  // Past the guard `o` is live data → connected; live actions are enabled.
   const connected = true;
   const steps = deriveSteps(o);
   const idx = STEP_OF[o.status] ?? -1;

@@ -1,5 +1,5 @@
 import { tokens } from "@lynia/shared";
-import { adminFetch } from "../../lib/api";
+import { adminFetchResult } from "../../lib/api";
 import { REASONS } from "../../lib/reasons";
 import type { RiderDetail, TripRow } from "../../lib/adminTypes";
 import { DataTable, type Column } from "../../components/DataTable";
@@ -7,7 +7,7 @@ import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { ConfirmModal } from "../../components/ConfirmModal";
-import { Conn, EmptyState, OfflineBanner } from "../../components/states";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconBike, IconPhone } from "../../components/icons";
 
 /** Rider profile (kit `riders.html` detail): trips, rating, completion, cancel strikes, cooldown,
@@ -24,10 +24,11 @@ function riderPill(r: RiderDetail) {
 }
 
 export default async function RiderProfilePage({ params }: { params: { id: string } }) {
-  const r = await adminFetch<RiderDetail>(`/admin/riders/${params.id}`);
+  const res = await adminFetchResult<RiderDetail>(`/admin/riders/${params.id}`);
   const path = `/riders/${params.id}`;
 
-  if (!r) {
+  if (!("data" in res)) {
+    const reason = res.reason;
     return (
       <main className="content">
         <header className="page">
@@ -35,21 +36,22 @@ export default async function RiderProfilePage({ params }: { params: { id: strin
             ← Riders
           </a>
           <h1 style={{ fontSize: 18 }}>Rider profile</h1>
-          <Conn connected={false} />
+          <Conn connected={false} reason={reason} />
         </header>
-        <OfflineBanner />
+        <OfflineBanner reason={reason} />
         <section className="card">
           <EmptyState
             icon={<IconBike />}
-            title="Profile not connected"
-            line="Set API_BASE_URL (and ADMIN_API_TOKEN) to load this rider."
+            title={reasonTitle(reason, "Profile")}
+            line={reasonLine(reason, "this rider")}
           />
         </section>
       </main>
     );
   }
 
-  // Past the guard `r` is non-null → connected; suspend/lift/ban actions are enabled.
+  const r = res.data;
+  // Past the guard `r` is live data → connected; suspend/lift/ban actions are enabled.
   const connected = true;
 
   const tripCols: Column<TripRow>[] = [

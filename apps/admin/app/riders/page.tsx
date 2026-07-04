@@ -1,5 +1,6 @@
 import { tokens } from "@lynia/shared";
-import { adminFetch } from "../lib/api";
+import { adminFetchResult } from "../lib/api";
+import { connOffLabel, reasonLine } from "../components/states";
 import { setKyc } from "./actions";
 
 interface Rider {
@@ -35,7 +36,9 @@ export default async function RidersPage({
   const raw = searchParams.kyc;
   const active = typeof raw === "string" && (TABS as readonly string[]).includes(raw) ? raw : "pending";
   const query = active === "all" ? "" : `?kyc=${active}`;
-  const riders = await adminFetch<Rider[]>(`/admin/riders${query}`);
+  const res = await adminFetchResult<Rider[]>(`/admin/riders${query}`);
+  const riders = "data" in res ? res.data : null;
+  const reason = "data" in res ? undefined : res.reason;
 
   return (
     <main style={{ maxWidth: 1040, margin: "0 auto", padding: tokens.space.xl }}>
@@ -44,7 +47,7 @@ export default async function RidersPage({
         {/* Dense-console page header sits on --text-h2 (20/700). */}
         <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Riders — KYC review</h1>
         <span style={{ marginLeft: "auto", fontSize: 12, color: riders ? tokens.color.accentText : tokens.color.muted }}>
-          {riders ? "● live" : "○ API not connected"}
+          {riders ? "● live" : connOffLabel(reason)}
         </span>
       </header>
 
@@ -141,7 +144,7 @@ export default async function RidersPage({
           </table>
         ) : (
           <div style={{ fontSize: 14, color: tokens.color.muted }}>
-            {riders ? "No riders in this view." : "Set API_BASE_URL (and ADMIN_API_TOKEN) to show live data."}
+            {riders ? "No riders in this view." : reasonLine(reason ?? "unconfigured", "riders")}
           </div>
         )}
       </section>
