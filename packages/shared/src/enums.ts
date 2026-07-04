@@ -129,3 +129,47 @@ export const KycStatus = {
   FAILED: "failed",
 } as const;
 export type KycStatus = (typeof KycStatus)[keyof typeof KycStatus];
+
+/** Rider account standing, distinct from KYC + reliability (A-04). `suspended` and `banned` are admin
+ *  actions (or a settlement auto-pause → `suspended`); `active` is the only status that may go online.
+ *  A reliability `on_hold` is a SEPARATE, auto flag (see policy.ts) — a rider can be active-but-on-hold. */
+export const RiderAccountStatus = {
+  ACTIVE: "active",
+  SUSPENDED: "suspended",
+  BANNED: "banned",
+} as const;
+export type RiderAccountStatus = (typeof RiderAccountStatus)[keyof typeof RiderAccountStatus];
+
+/** Canonical KYC decline reasons (A-02). Single source for API validation, the admin reason picker,
+ *  and the rider-app decline copy — replaces the api/admin duplicated lists. */
+export const KycDeclineReason = {
+  ID_EXPIRED: "id_expired",
+  ID_UNREADABLE: "id_unreadable",
+  FACE_MISMATCH: "face_mismatch",
+  LIVENESS_FAILED: "liveness_failed",
+  DOC_TAMPERED: "doc_tampered",
+  NAME_MISMATCH: "name_mismatch",
+  DUPLICATE: "duplicate",
+  OTHER: "other",
+} as const;
+export type KycDeclineReason = (typeof KycDeclineReason)[keyof typeof KycDeclineReason];
+
+/** Human labels for the KYC decline reasons (rider-facing + admin picker). */
+export const KYC_DECLINE_REASON_LABELS: Record<KycDeclineReason, string> = {
+  id_expired: "ID document expired",
+  id_unreadable: "ID photo unreadable",
+  face_mismatch: "Selfie doesn't match the ID",
+  liveness_failed: "Liveness check failed",
+  doc_tampered: "Document looks altered",
+  name_mismatch: "Name doesn't match registration",
+  duplicate: "Already registered on another account",
+  other: "Other (see notes)",
+};
+
+/** Weekly cash settlement status (A-06). */
+export const SettlementStatus = {
+  PENDING: "pending",
+  PAID: "paid",
+  OVERDUE: "overdue",
+} as const;
+export type SettlementStatus = (typeof SettlementStatus)[keyof typeof SettlementStatus];
