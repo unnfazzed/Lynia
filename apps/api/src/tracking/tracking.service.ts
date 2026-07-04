@@ -93,6 +93,32 @@ export class TrackingService implements OnModuleDestroy {
     return !!o && o.riderId === userId && ACTIVE.includes(o.status);
   }
 
+  /**
+   * Presence watchdog query (INTERFACE-AUDIT C5): active rides whose assigned rider's heartbeat is
+   * older than `thresholdMs` (or has none) — i.e. the rider's socket has gone dark. `lastHeartbeatAt`
+   * is the DB liveness authority (written on every fix by recordFix), so it doubles as the presence
+   * signal without new infra. Pilot-scale scan (bounded `take`); the gateway runs it on one interval.
+   */
+  async findStaleRiderPresence(
+    thresholdMs: number,
+  ): Promise<Array<{ orderId: string; riderId: string; lastSeenAt: Date | null }>> {
+    const cutoff = new Date(Date.now() - thresholdMs);
+    const rows = await this.prisma.order.findMany({
+      where: {
+        status: { in: ACTIVE_RIDE_STATUSES },
+        riderId: { not: null },
+        rider: { OR: [{ lastHeartbeatAt: null }, { lastHeartbeatAt: { lt: cutoff } }] },
+      },
+      select: { id: true, riderId: true, rider: { select: { lastHeartbeatAt: true } } },
+      take: 500,
+    });
+    return rows.map((o) => ({
+      orderId: o.id,
+      riderId: o.riderId as string,
+      lastSeenAt: o.rider?.lastHeartbeatAt ?? null,
+    }));
+  }
+
   /** Only a KYC-verified, online rider may join the open-order board (mirrors the offer gating §5d). */
   async isBoardEligible(riderId: string): Promise<boolean> {
     const rider = await this.prisma.rider.findUnique({

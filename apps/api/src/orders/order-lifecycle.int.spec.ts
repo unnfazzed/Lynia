@@ -13,6 +13,7 @@ import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { RiderService } from "../riders/rider.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
+import type { OrdersService } from "./orders.service";
 import { OrderLifecycleService } from "./order-lifecycle.service";
 
 const prisma = new PrismaService();
@@ -23,10 +24,20 @@ const noopNotifications = {
   notifyNewOffer: async () => {},
 } as unknown as NotificationsService;
 // Real MetricsService is NoopMeter-safe with no OTLP endpoint (every record is a cheap no-op).
-const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService());
-const gateway = { emitOrderStatus: () => undefined } as unknown as TrackingGateway;
+// The gateway captures job:cancelled so the two-sided WS contract (C3) is asserted at integration
+// level; the other emits are best-effort no-ops.
+const jobCancelledEmits: Array<{ orderId: string; collected: boolean }> = [];
+const gateway = {
+  emitOrderStatus: () => undefined,
+  emitBidExpired: () => undefined,
+  emitJobCancelled: (orderId: string, collected: boolean) => jobCancelledEmits.push({ orderId, collected }),
+} as unknown as TrackingGateway;
+const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), gateway);
+// The board announce for F-01 re-broadcast is best-effort push; stub it so the proof asserts DB state
+// (the new open_for_offers row) without a live socket/Redis, mirroring how notifications are stubbed.
+const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersService;
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
-const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications);
+const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders);
 const riders = new RiderService(prisma, {} as Env, new StubKycVendor());
 
 async function clean(): Promise<void> {
@@ -242,5 +253,133 @@ describe("delivery lifecycle", () => {
     const after = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { deliveryOtpAttempts: true } });
     expect(after.deliveryOtpAttempts).toBe(5); // exactly the cap — the FOR UPDATE lock prevents over-counting/bypass
     expect(await statusOf(orderId)).toBe("en_route_dropoff"); // never wrongly delivered
+  });
+});
+
+// ── Phase 2 seam-contract transitions (INTERFACE-AUDIT C3/C4/C6, F-01) ──────────────────────────
+describe("seam-contract transitions", () => {
+  /** Drive a fresh order to the given post-assignment status and return its ids. */
+  async function driveTo(customerId: string, riderId: string, target: string) {
+    const { orderId, deliveryCode } = await assign(customerId, riderId);
+    const steps = ["confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] as const;
+    for (const to of steps) {
+      await lifecycle.advance(orderId, riderId, to);
+      if (to === target) break;
+    }
+    return { orderId, deliveryCode };
+  }
+
+  it("C6/F-02: a rider marks a post-pickup hand-off undelivered — terminal, reason persisted, rider freed", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId } = await driveTo(customer, rider, "picked_up");
+
+    const res = await lifecycle.markUndelivered(orderId, rider, "unreachable");
+    expect(res).toEqual({ orderId, status: "undelivered" });
+
+    const o = await prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      select: { status: true, undeliveredReason: true, undeliveredAt: true },
+    });
+    expect(o.status).toBe("undelivered");
+    expect(o.undeliveredReason).toBe("unreachable");
+    expect(o.undeliveredAt).not.toBeNull();
+
+    // undelivered is terminal + leaves one_active_ride → the rider can take a new job.
+    const next = await assign(customer, rider);
+    expect(await statusOf(next.orderId)).toBe("assigned");
+  });
+
+  it("C6: undelivered is rejected before pickup and for a non-assigned rider", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const other = await makeRider();
+    const { orderId } = await driveTo(customer, rider, "confirmed"); // pre-pickup
+
+    await expect(lifecycle.markUndelivered(orderId, rider, "breakdown")).rejects.toThrow(/after the parcel is picked up/i);
+    // Advance to a valid post-pickup state, then a stranger still can't mark it.
+    await lifecycle.advance(orderId, rider, "en_route_pickup");
+    await lifecycle.advance(orderId, rider, "picked_up");
+    await expect(lifecycle.markUndelivered(orderId, other, "breakdown")).rejects.toThrow(/assigned rider/i);
+    expect(await statusOf(orderId)).toBe("picked_up");
+  });
+
+  it("F-01: a rider cancel re-broadcasts EXACTLY ONE new open order and never reopens the old one", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId } = await assign(customer, rider);
+
+    const res = await lifecycle.cancel(orderId, rider, "cannot make it");
+    expect(res.cancelledBy).toBe("rider");
+    expect(await statusOf(orderId)).toBe("cancelled"); // old row terminal, never reopened
+
+    const clones = await prisma.order.findMany({
+      where: { rebroadcastOfId: orderId },
+      select: { id: true, status: true, proposedFare: true },
+    });
+    expect(clones).toHaveLength(1); // exactly one new row
+    expect(clones[0]!.status).toBe("open_for_offers");
+    expect(clones[0]!.id).not.toBe(orderId);
+    expect(clones[0]!.proposedFare.toString()).toBe("2.50"); // same price re-broadcast
+  });
+
+  it("C3: a rider cancel is BLOCKED once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId } = await driveTo(customer, rider, "picked_up");
+
+    await expect(lifecycle.cancel(orderId, rider, "changed my mind")).rejects.toThrow(/cannot cancel a picked_up/i);
+    expect(await statusOf(orderId)).toBe("picked_up");
+    // Blocked cancel ⇒ no re-broadcast row.
+    expect(await prisma.order.count({ where: { rebroadcastOfId: orderId } })).toBe(0);
+  });
+
+  it("C3: post-pickup CUSTOMER cancel pushes job:cancelled with collected:true and never strikes the rider", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId } = await driveTo(customer, rider, "picked_up");
+    jobCancelledEmits.length = 0;
+
+    const res = await lifecycle.cancel(orderId, customer, "changed plans");
+    expect(res.cancelledBy).toBe("customer");
+    expect(await statusOf(orderId)).toBe("cancelled");
+    // Two-sided WS contract: the assigned rider is told, with the hand-back (collected) flag.
+    expect(jobCancelledEmits).toEqual([{ orderId, collected: true }]);
+    // No reliability impact from a customer cancel.
+    const r = await prisma.rider.findUniqueOrThrow({ where: { profileId: rider }, select: { cancelStrikes: true } });
+    expect(r.cancelStrikes).toBe(0);
+    // A customer cancel does NOT re-broadcast (that's rider-cancel only).
+    expect(await prisma.order.count({ where: { rebroadcastOfId: orderId } })).toBe(0);
+  });
+
+  it("C3: pre-pickup customer cancel pushes job:cancelled with collected:false", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId } = await assign(customer, rider); // assigned, not collected
+    jobCancelledEmits.length = 0;
+
+    await lifecycle.cancel(orderId, customer);
+    expect(jobCancelledEmits).toEqual([{ orderId, collected: false }]);
+  });
+
+  it("C4: re-issuing the delivery code resets the attempt counter and unlocks a locked-out rider", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId } = await driveTo(customer, rider, "en_route_dropoff");
+
+    // Burn all 5 attempts with a wrong code → the rider is locked out.
+    for (let i = 0; i < 5; i++) {
+      await expect(lifecycle.confirmDelivery(orderId, rider, "999999")).rejects.toThrow();
+    }
+    await expect(lifecycle.confirmDelivery(orderId, rider, "999999")).rejects.toThrow(/too many attempts/i);
+
+    // Customer re-issues → counter reset to 0.
+    const { deliveryCode: fresh } = await lifecycle.rotateDeliveryCode(orderId, customer);
+    const after = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { deliveryOtpAttempts: true } });
+    expect(after.deliveryOtpAttempts).toBe(0);
+
+    // The fresh code now works — the lockout recovered because the counter was reset.
+    await lifecycle.confirmDelivery(orderId, rider, fresh);
+    expect(await statusOf(orderId)).toBe("delivered");
   });
 });

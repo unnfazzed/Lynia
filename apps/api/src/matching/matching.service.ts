@@ -4,6 +4,7 @@ import { TokenService } from "../auth/token.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 
 /** Rider must have a heartbeat newer than this to be selectable (ET3 liveness). */
 const HEARTBEAT_TTL_MS = 30_000;
@@ -26,6 +27,7 @@ export class MatchingService {
     private readonly tokens: TokenService,
     private readonly notifications: NotificationsService,
     private readonly metrics: MetricsService,
+    private readonly gateway: TrackingGateway,
   ) {}
 
   /**
@@ -143,8 +145,17 @@ export class MatchingService {
       return { expired: true };
     });
 
-    // Post-commit, best-effort: prompt the customer to nudge the price and re-broadcast (§5c).
-    if (result.expired) void this.notifications.notifyOrderStatus(orderId, "expired");
+    // Post-commit, best-effort. The auction closed with no pick, so (C2) signal `bid:expired` to the
+    // order room — the single server timer authority firing, distinct from the `not_chosen`/
+    // `offers:changed` a select produces — and prompt the customer to nudge the price (§5c).
+    if (result.expired) {
+      try {
+        this.gateway.emitBidExpired(orderId);
+      } catch (err) {
+        this.logger.warn(`bid:expired emit failed for order ${orderId}: ${(err as Error).message}`);
+      }
+      void this.notifications.notifyOrderStatus(orderId, "expired");
+    }
     return result;
   }
 }

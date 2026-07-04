@@ -1,5 +1,5 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
-import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, RateRequest } from "@lynia/shared";
+import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, MarkUndeliveredRequest, RateRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
@@ -30,6 +30,16 @@ export class LifecycleController {
     @CurrentUser() riderId: string,
   ) {
     return this.lifecycle.confirmDelivery(orderId, riderId, body.code);
+  }
+
+  /** Rider marks a hand-off as failed → terminal `undelivered` (C6/F-02). Allowed only post-pickup. */
+  @Post("undelivered")
+  undelivered(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(MarkUndeliveredRequest)) body: MarkUndeliveredRequest,
+    @CurrentUser() riderId: string,
+  ) {
+    return this.lifecycle.markUndelivered(orderId, riderId, body.reason);
   }
 
   /** Customer rates the rider → completed. */

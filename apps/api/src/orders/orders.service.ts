@@ -19,6 +19,17 @@ function publicWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknow
   return { point: o.point ?? null, landmark: o.landmark ?? null };
 }
 
+/** Pull the pickup's lat/lng + landmark out of a stored/input Waypoint JSON (the nearby-radius anchor
+ *  and the push copy). Returns null when the point is malformed, so the broadcast is skipped rather
+ *  than throwing (it's best-effort). Works for both the create input and a re-broadcast DB row. */
+function pickupPoint(w: Prisma.JsonValue): { lat: number; lng: number; landmark: string } | null {
+  const o = (w ?? {}) as { point?: { lat?: unknown; lng?: unknown }; landmark?: unknown };
+  const lat = o.point?.lat;
+  const lng = o.point?.lng;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  return { lat, lng, landmark: typeof o.landmark === "string" ? o.landmark : "" };
+}
+
 /** Waypoint as the ASSIGNED rider sees it inside the reveal window — contactPhone included, since
  *  they need to call the sender/recipient at the doors (§5d / design E1). Every other viewer and
  *  every listing path goes through {@link publicWaypoint}. */
@@ -90,7 +101,7 @@ export class OrdersService {
 
     // Post-commit, best-effort: push the broadcast to nearby online riders (CONCEPT §3.10 — push is
     // the primary new-order channel for riders, alongside the WS board). Never blocks the create.
-    void this.broadcastToNearbyRiders(order.id, input, {
+    void this.broadcastToNearbyRiders(order.id, input.pickup as unknown as Prisma.JsonValue, input.dropoff as unknown as Prisma.JsonValue, {
       itemDesc: order.itemDesc,
       suggestedFare: order.suggestedFare.toString(),
       proposedFare: order.proposedFare.toString(),
@@ -117,35 +128,72 @@ export class OrdersService {
    */
   private async broadcastToNearbyRiders(
     orderId: string,
-    input: CreateOrderRequest,
+    pickup: Prisma.JsonValue,
+    dropoff: Prisma.JsonValue,
     meta: { itemDesc: string; suggestedFare: string; proposedFare: string; distanceKm: number | null; createdAt: string },
   ): Promise<void> {
     try {
-      const { pickup } = input;
-      const nearby = await this.tracking.nearbyRiders(pickup.point.lat, pickup.point.lng, BROADCAST_RADIUS_M);
+      const pt = pickupPoint(pickup);
+      if (!pt) return;
+      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, BROADCAST_RADIUS_M);
       if (nearby.length === 0) return;
       await this.notifications.notifyNewBroadcast(
         orderId,
         nearby.map((r) => r.profileId),
-        { pickup: pickup.landmark, fare: meta.proposedFare },
+        { pickup: pt.landmark, fare: meta.proposedFare },
       );
       // Same redaction as listOpen — point + landmark only, NEVER contactPhone. Parsing through the
       // `.strict()` schema enforces the no-PII guarantee ON THE WIRE (throws → swallowed best-effort
-      // by the surrounding try) rather than trusting the projection alone.
+      // by the surrounding try) rather than trusting the projection alone. `expiresAt` exposes the
+      // shared auction clock (C2) so a bidder's offer-sent screen can render the same countdown.
       const boardEvent: BoardNewOrderEvent = BoardNewOrderEvent.parse({
         id: orderId,
-        pickup: publicWaypoint(input.pickup as unknown as Prisma.JsonValue),
-        dropoff: publicWaypoint(input.dropoff as unknown as Prisma.JsonValue),
+        pickup: publicWaypoint(pickup),
+        dropoff: publicWaypoint(dropoff),
         itemDesc: meta.itemDesc,
         suggestedFare: meta.suggestedFare,
         proposedFare: meta.proposedFare,
         distanceKm: meta.distanceKm,
         createdAt: meta.createdAt,
+        expiresAt: new Date(new Date(meta.createdAt).getTime() + OFFER_WINDOW_MS).toISOString(),
       });
-      this.safeEmitBoardNewOrder(boardEvent, pickup.point.lat, pickup.point.lng);
+      this.safeEmitBoardNewOrder(boardEvent, pt.lat, pt.lng);
     } catch {
       /* best-effort: a broadcast-push failure never affects the created order */
     }
+  }
+
+  /**
+   * Re-announce an already-created open order onto the board (F-01 rider-cancel auto re-broadcast).
+   * Reuses the EXACT create() post-commit path: schedule the window expiry, then push to nearby riders
+   * + the board. Best-effort and idempotent-safe — it no-ops if the order isn't open_for_offers (e.g.
+   * it was picked up or cancelled between the clone and this call). Called after the cancel transaction
+   * commits, so a push failure can never affect the terminal state of the order that was cancelled.
+   */
+  async announceOpenOrder(orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        status: true,
+        pickup: true,
+        dropoff: true,
+        itemDesc: true,
+        suggestedFare: true,
+        proposedFare: true,
+        distanceKm: true,
+        createdAt: true,
+      },
+    });
+    if (!order || order.status !== "open_for_offers") return;
+    await this.expiry.schedule(order.id);
+    await this.broadcastToNearbyRiders(order.id, order.pickup, order.dropoff, {
+      itemDesc: order.itemDesc,
+      suggestedFare: order.suggestedFare.toString(),
+      proposedFare: order.proposedFare.toString(),
+      distanceKm: order.distanceKm,
+      createdAt: order.createdAt.toISOString(),
+    });
   }
 
   /** Fire-and-forget board push, scoped to the pickup's geo cell. Wrapped so a WS failure can never

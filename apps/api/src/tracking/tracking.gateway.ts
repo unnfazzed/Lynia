@@ -1,4 +1,4 @@
-import { Inject, Logger } from "@nestjs/common";
+import { Inject, Logger, type OnModuleDestroy } from "@nestjs/common";
 import {
   ConnectedSocket,
   MessageBody,
@@ -12,7 +12,17 @@ import {
 import { createAdapter } from "@socket.io/redis-adapter";
 import IORedis from "ioredis";
 import { Server, Socket } from "socket.io";
-import { type BoardNewOrderEvent, BoardSubscribeEvent, boardCell, boardCellNeighborhood, WS_EVENTS } from "@lynia/shared";
+import {
+  type BidExpiredEvent,
+  type BoardNewOrderEvent,
+  BoardSubscribeEvent,
+  boardCell,
+  boardCellNeighborhood,
+  type JobCancelledEvent,
+  PRESENCE_ESCALATION_MS,
+  type PresenceStaleEvent,
+  WS_EVENTS,
+} from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -35,6 +45,11 @@ interface PositionPayload {
 /** Server-side coalesce window: at most one `position` emit per order room per this interval (E3). */
 export const POSITION_COALESCE_MS = 1_000;
 
+/** How often the presence watchdog scans active rides for a dark rider socket (INTERFACE-AUDIT C5).
+ *  Pilot-simple: ONE Nest interval over `ACTIVE_RIDE_STATUSES` orders, no new infra. The escalation
+ *  threshold itself is the shared `PRESENCE_ESCALATION_MS`; this is only the poll cadence. */
+export const PRESENCE_SCAN_INTERVAL_MS = 30_000;
+
 interface CoalesceState {
   lastEmit: number;
   timer?: ReturnType<typeof setTimeout>;
@@ -46,7 +61,9 @@ interface CoalesceState {
  * truth on reconnect. The Redis adapter fans events out across API instances.
  */
 @WebSocketGateway({ cors: { origin: "*" } })
-export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+export class TrackingGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+{
   private readonly logger = new Logger(TrackingGateway.name);
 
   @WebSocketServer() server!: Server;
@@ -54,6 +71,14 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   /** Per-order-room coalesce state — server-side throttle so one fast/misbehaving client can't flood
    *  a room with position emits (E3). Keyed by order room; entries are dropped once a window drains. */
   private readonly positionEmit = new Map<string, CoalesceState>();
+
+  /** Presence-watchdog interval handle (C5). Started in afterInit once the server exists. */
+  private presenceTimer?: ReturnType<typeof setInterval>;
+
+  /** Order ids we've already escalated a `presence:stale` for — so a continuously-dark rider is
+   *  escalated ONCE, not on every scan (no escalation spam). An id is dropped once its rider is fresh
+   *  again (reset on reconnect) or the ride ends, re-arming a future escalation. */
+  private readonly staleNotified = new Set<string>();
 
   constructor(
     @Inject(ENV) private readonly env: Env,
@@ -69,6 +94,15 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       server.adapter(createAdapter(pub, sub));
       this.logger.log("Socket.IO Redis adapter enabled");
     }
+    // Presence watchdog (C5): one interval scanning active rides for a dark rider socket. unref so it
+    // never keeps the process alive; it only runs where the gateway is actually initialised (not in
+    // the unit tests, which construct the gateway directly and call scanPresence() explicitly).
+    this.presenceTimer = setInterval(() => void this.scanPresence(), PRESENCE_SCAN_INTERVAL_MS);
+    this.presenceTimer.unref?.();
+  }
+
+  onModuleDestroy(): void {
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
   }
 
   /** Authenticate the socket via the access JWT; drop it if the token is missing/invalid. */
@@ -253,5 +287,64 @@ export class TrackingGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       ?.to(boardGeoRoom(boardCell(pickupLat, pickupLng)))
       .to(BOARD_ROOM)
       .emit(WS_EVENTS.boardNewOrder, payload);
+  }
+
+  /**
+   * The auction window closed with no pick — signal `bid:expired` to everyone in the order's room
+   * (INTERFACE-AUDIT C2). Distinct from `offers:changed`/`not_chosen` (someone else was picked). The
+   * server is the single expiry timer authority; clients never drive this. Best-effort; never throws.
+   */
+  emitBidExpired(orderId: string): void {
+    const payload: BidExpiredEvent = { orderId, at: new Date().toISOString() };
+    this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.bidExpired, payload);
+  }
+
+  /**
+   * The customer cancelled an assigned job — push `job:cancelled` to the order room so the assigned
+   * rider leaves the (now dead) job screen (INTERFACE-AUDIT C3). `collected` tells the rider UI which
+   * path to show: pre-pickup → back to the board; post-pickup → sender contact for the hand-back. No
+   * reliability impact on the rider (a customer cancel never strikes). Best-effort; never throws.
+   */
+  emitJobCancelled(orderId: string, collected: boolean): void {
+    const payload: JobCancelledEvent = { orderId, collected, at: new Date().toISOString() };
+    this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.jobCancelled, payload);
+  }
+
+  /**
+   * The counterparty's socket has been dark past `PRESENCE_ESCALATION_MS` — push `presence:stale` to
+   * the order room so the receiving app escalates its "live paused" treatment to a warning and stops
+   * rendering the last position as live (INTERFACE-AUDIT C5). Best-effort; never throws.
+   */
+  emitPresenceStale(orderId: string, role: PresenceStaleEvent["role"], lastSeenAt: Date | null): void {
+    const payload: PresenceStaleEvent = {
+      orderId,
+      role,
+      lastSeenAt: lastSeenAt ? lastSeenAt.toISOString() : null,
+      at: new Date().toISOString(),
+    };
+    this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.presenceStale, payload);
+  }
+
+  /**
+   * One watchdog pass (C5): find active rides whose rider heartbeat is older than
+   * `PRESENCE_ESCALATION_MS` and escalate each ONCE. An order that recovers (rider reconnected) or
+   * ends drops out of the stale set and is removed from `staleNotified`, re-arming a future
+   * escalation. Best-effort — a scan failure must never crash the interval. Public so it's unit-testable
+   * without driving real timers.
+   */
+  async scanPresence(): Promise<void> {
+    try {
+      const stale = await this.tracking.findStaleRiderPresence(PRESENCE_ESCALATION_MS);
+      const staleIds = new Set(stale.map((s) => s.orderId));
+      // Drop recovered/ended orders so a reconnect re-arms the one-shot escalation.
+      for (const id of this.staleNotified) if (!staleIds.has(id)) this.staleNotified.delete(id);
+      for (const s of stale) {
+        if (this.staleNotified.has(s.orderId)) continue; // already escalated — don't spam every scan
+        this.staleNotified.add(s.orderId);
+        this.emitPresenceStale(s.orderId, "rider", s.lastSeenAt);
+      }
+    } catch (err) {
+      this.logger.warn(`presence scan failed: ${(err as Error).message}`);
+    }
   }
 }

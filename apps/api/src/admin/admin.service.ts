@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import type { KycStatus, OrderStatus } from "@lynia/shared";
+import { type KycStatus, type OrderStatus, PHONE_REVEAL_STATUSES } from "@lynia/shared";
+import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
 
 function round(n: number): number {
@@ -85,10 +86,24 @@ export class AdminService {
         profile: { select: { firstName: true, lastName: true, phone: true } },
       },
     });
+
+    // A-03 (P0): mask each rider's phone UNLESS they're a party on an order whose status is in
+    // PHONE_REVEAL_STATUSES *right now* (the same reveal rule orders.service getSnapshot uses). One
+    // query resolves the set of riders currently inside a reveal window; everyone else is masked.
+    const revealingRiderIds = new Set(
+      (
+        await this.prisma.order.findMany({
+          where: { riderId: { in: riders.map((r) => r.profileId) }, status: { in: PHONE_REVEAL_STATUSES } },
+          select: { riderId: true },
+          distinct: ["riderId"],
+        })
+      ).flatMap((o) => (o.riderId ? [o.riderId] : [])),
+    );
+
     return riders.map((r) => ({
       profileId: r.profileId,
       name: `${r.profile.firstName} ${r.profile.lastName}`.trim(),
-      phone: r.profile.phone,
+      phone: revealingRiderIds.has(r.profileId) ? r.profile.phone : maskPhone(r.profile.phone),
       bikeReg: r.bikeReg,
       kycStatus: r.kycStatus,
       kycRef: r.kycRef,

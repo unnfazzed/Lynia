@@ -17,40 +17,60 @@ describe("computeFunnel (pilot metrics §8)", () => {
 });
 
 describe("AdminService.listRiders", () => {
-  it("filters by kyc status and shapes the row for the queue", async () => {
+  const riderRow = (over: Record<string, unknown> = {}) => ({
+    profileId: "r1",
+    bikeReg: "ABZ 1",
+    kycStatus: "pending",
+    kycRef: "sess_1",
+    idVerified: false,
+    isOnline: false,
+    ratingAvg: 0,
+    ratingCount: 0,
+    tripsCount: 0,
+    cancelStrikes: 0,
+    cooldownUntil: null,
+    profile: { firstName: "Tendai", lastName: "M", phone: "+263782000001" },
+    ...over,
+  });
+
+  it("filters by kyc status and MASKS the phone when the rider isn't on a live order (A-03)", async () => {
     let where: unknown;
     const prisma = {
       rider: {
         findMany: async (args: { where: unknown }) => {
           where = args.where;
-          return [
-            {
-              profileId: "r1",
-              bikeReg: "ABZ 1",
-              kycStatus: "pending",
-              kycRef: "sess_1",
-              idVerified: false,
-              isOnline: false,
-              ratingAvg: 0,
-              ratingCount: 0,
-              tripsCount: 0,
-              cancelStrikes: 0,
-              cooldownUntil: null,
-              profile: { firstName: "Tendai", lastName: "M", phone: "+263782000001" },
-            },
-          ];
+          return [riderRow()];
         },
       },
+      // No order in a reveal-status window ⇒ the phone must be masked.
+      order: { findMany: async () => [] },
     };
     const svc = new AdminService(prisma as unknown as PrismaService);
     const rows = await svc.listRiders("pending");
     expect(where).toEqual({ kycStatus: "pending" });
-    expect(rows[0]).toMatchObject({ profileId: "r1", name: "Tendai M", phone: "+263782000001", kycStatus: "pending" });
+    expect(rows[0]).toMatchObject({ profileId: "r1", name: "Tendai M", kycStatus: "pending" });
+    // Masked: country code + last 4 kept, middle bulleted — never the full number.
+    expect(rows[0]!.phone).toBe("+263•••••0001");
+    expect(rows[0]!.phone).not.toContain("78200");
+  });
+
+  it("REVEALS the full phone when the rider is a party on a reveal-status order right now", async () => {
+    const prisma = {
+      rider: { findMany: async () => [riderRow()] },
+      // The rider is currently on a live order → reveal the real number for ops to call them.
+      order: { findMany: async () => [{ riderId: "r1" }] },
+    };
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    const rows = await svc.listRiders();
+    expect(rows[0]!.phone).toBe("+263782000001");
   });
 
   it("returns all riders when no filter is given", async () => {
     let where: unknown = "unset";
-    const prisma = { rider: { findMany: async (args: { where: unknown }) => { where = args.where; return []; } } };
+    const prisma = {
+      rider: { findMany: async (args: { where: unknown }) => { where = args.where; return []; } },
+      order: { findMany: async () => [] },
+    };
     const svc = new AdminService(prisma as unknown as PrismaService);
     await svc.listRiders();
     expect(where).toEqual({});

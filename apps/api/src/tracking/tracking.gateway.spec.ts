@@ -253,3 +253,85 @@ describe("TrackingGateway.emitBoardNewOrder", () => {
     expect(() => g.emitBoardNewOrder(payload, pickup.lat, pickup.lng)).not.toThrow();
   });
 });
+
+describe("TrackingGateway.emitBidExpired (C2)", () => {
+  it("signals bid:expired to the order's room", () => {
+    const { server, to, emit } = fakeServer();
+    const g = gateway();
+    g.server = server as never;
+    g.emitBidExpired("ord-1");
+    expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+    expect(emit).toHaveBeenCalledWith(WS_EVENTS.bidExpired, expect.objectContaining({ orderId: "ord-1" }));
+  });
+
+  it("never throws when the server is undefined (best-effort)", () => {
+    const g = gateway();
+    expect(() => g.emitBidExpired("ord-1")).not.toThrow();
+  });
+});
+
+describe("TrackingGateway.emitJobCancelled (C3)", () => {
+  it("carries collected:true to the order room (post-pickup hand-back path)", () => {
+    const { server, to, emit } = fakeServer();
+    const g = gateway();
+    g.server = server as never;
+    g.emitJobCancelled("ord-1", true);
+    expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+    expect(emit).toHaveBeenCalledWith(WS_EVENTS.jobCancelled, expect.objectContaining({ orderId: "ord-1", collected: true }));
+  });
+
+  it("carries collected:false pre-pickup", () => {
+    const { server, emit } = fakeServer();
+    const g = gateway();
+    g.server = server as never;
+    g.emitJobCancelled("ord-1", false);
+    expect(emit).toHaveBeenCalledWith(WS_EVENTS.jobCancelled, expect.objectContaining({ collected: false }));
+  });
+});
+
+describe("TrackingGateway.scanPresence (C5 watchdog)", () => {
+  it("escalates presence:stale (role:rider) once per continuously-dark order", async () => {
+    const lastSeen = new Date("2026-06-26T00:00:00Z");
+    const findStaleRiderPresence = vi.fn(async () => [{ orderId: "ord-1", riderId: "r1", lastSeenAt: lastSeen }]);
+    const { server, to, emit } = fakeServer();
+    const g = gateway({ findStaleRiderPresence });
+    g.server = server as never;
+
+    await g.scanPresence();
+    expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+    expect(emit).toHaveBeenCalledWith(
+      WS_EVENTS.presenceStale,
+      expect.objectContaining({ orderId: "ord-1", role: "rider", lastSeenAt: lastSeen.toISOString() }),
+    );
+
+    // Still dark on the next scan → no repeat emit (escalate once, no spam).
+    await g.scanPresence();
+    expect(emit).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-arms after the order recovers (rider reconnected / ride ended)", async () => {
+    const stale = [{ orderId: "ord-1", riderId: "r1", lastSeenAt: null }];
+    let round = 0;
+    // scan 1: stale → emit; scan 2: recovered (empty) → drop; scan 3: stale again → emit.
+    const findStaleRiderPresence = vi.fn(async () => (round === 1 ? [] : stale));
+    const { server, emit } = fakeServer();
+    const g = gateway({ findStaleRiderPresence });
+    g.server = server as never;
+
+    round = 0;
+    await g.scanPresence();
+    round = 1;
+    await g.scanPresence();
+    round = 2;
+    await g.scanPresence();
+    expect(emit).toHaveBeenCalledTimes(2); // once on the first dark, once after re-arming
+  });
+
+  it("never throws when the scan query fails (best-effort interval)", async () => {
+    const findStaleRiderPresence = vi.fn(async () => {
+      throw new Error("db down");
+    });
+    const g = gateway({ findStaleRiderPresence });
+    await expect(g.scanPresence()).resolves.toBeUndefined();
+  });
+});
