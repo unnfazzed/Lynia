@@ -104,13 +104,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
             <Card>
               <Field label="First name" value={firstName} onChangeText={setFirstName} maxLength={80} />
               <Field label="Last name" value={lastName} onChangeText={setLastName} maxLength={80} />
-              <Field
-                label="National ID number"
-                value={idNumber}
-                onChangeText={setIdNumber}
-                keyboardType="number-pad"
-                maxLength={40}
-              />
+              {/* Default (text) keyboard — Zimbabwean national IDs are alphanumeric (e.g. "63-123456 A 12"),
+                  so a number-pad would make the letter suffix untypeable and block KYC submission. */}
+              <Field label="National ID number" value={idNumber} onChangeText={setIdNumber} maxLength={40} />
             </Card>
             <Card>
               <Field label="Bike registration" value={bikeReg} onChangeText={setBikeReg} placeholder="ABZ 1234" maxLength={20} />

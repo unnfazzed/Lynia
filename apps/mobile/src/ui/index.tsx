@@ -3,15 +3,36 @@ import React from "react";
 import { AccessibilityInfo, ActivityIndicator, Animated, type DimensionValue, Pressable, Text, TextInput, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "./Icon";
+import { isTestBuild } from "./test-build";
 
 export { Icon, type IconName } from "./Icon";
 export { BrandLockup, DoveMark, Wordmark } from "./Brand";
 export { fontFamilies, interFamily } from "./fonts";
 export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 
+export { isTestBuild } from "./test-build";
+
+/**
+ * A gold attention bar shown only on the QA test build (isTestBuild). It tells a tester the app is a
+ * bypass build talking to the LIVE API — so test data and provenance in bug-report screenshots are
+ * never mistaken for production. Renders nothing in a real release, so it can't leak.
+ */
+export function TestBuildBanner(): React.ReactElement | null {
+  if (!isTestBuild()) return null;
+  return (
+    <View
+      accessibilityRole="alert"
+      style={{ backgroundColor: tokens.color.highlight, paddingVertical: 6, paddingHorizontal: tokens.space.screen, alignItems: "center" }}
+    >
+      <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.ink }}>TEST BUILD — live API</Text>
+    </View>
+  );
+}
+
 export function Screen({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.surface }}>
+      <TestBuildBanner />
       {/* 16px edge padding — designs must work at 320px wide (space.screen, not xl). */}
       <View style={{ flex: 1, padding: tokens.space.screen }}>{children}</View>
     </SafeAreaView>

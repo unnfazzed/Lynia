@@ -118,30 +118,28 @@ Turn QA mode on with the documented `gh variable set` commands
 
 ## Implementation Tasks
 
-- [ ] **T1 (P1) — ci/mobile — Add `android-test-apk.yml` building a bundled, signed release APK.**
+_All six implemented on branch `claude/test-apk-build-planning-1nyyd9`. Mobile fixes verified in CI
+(typecheck + jest green, 13 tests). The APK workflow's own green run is founder-gated on the optional
+repo secrets and a first live CI run (see T1/T2 verify) — it can't be exercised from this planning env._
+
+- [x] **T1 (P1) — ci — `android-test-apk.yml` builds a bundled, signed release APK.**
   - Surfaced by: Eng review — `assembleDebug` won't run sideloaded; release + embedded JS + throwaway keystore.
   - Files: `.github/workflows/android-test-apk.yml`
-  - Verify: green run; download APK; it installs and opens to the phone screen with no Metro.
-- [ ] **T2 (P2) — ci/mobile — De-risk pnpm + Expo prebuild + Gradle autolinking.**
-  - Surfaced by: Eng review — symlinked pnpm store breaks RN autolinking; may need `node-linker=hoisted`.
-  - Files: `apps/mobile/.npmrc` (only if needed), the workflow install step.
-  - Verify: prebuild + `assembleRelease` resolve all native modules on a clean CI runner.
-- [ ] **T3 (P2) — mobile — Fix National ID keyboard.**
-  - Surfaced by: Design review — `become.tsx:111` `number-pad` blocks alphanumeric ZIM IDs.
-  - Files: `apps/mobile/app/rider/become.tsx`
-  - Verify: field accepts letters; RTL test asserts text keyboard.
-- [ ] **T4 (P2) — mobile — Build-gated TEST BUILD banner.**
-  - Surfaced by: Design review — no test-vs-prod signal on a live-API build.
-  - Files: `apps/mobile/app.config.ts`, `apps/mobile/src/ui`
-  - Verify: banner shows with `LYNIA_TEST_BUILD=1`, absent otherwise.
-- [ ] **T5 (P2) — ci — Supply `GOOGLE_MAPS_API_KEY` (repo secret) to the workflow; restrict key in GCP.**
-  - Surfaced by: Design review — silent blank map → bug-report noise.
-  - Files: `.github/workflows/android-test-apk.yml` (env), GCP key restriction (founder).
-  - Verify: map tiles render on the customer home in the built APK.
-- [ ] **T6 (P3, docs) — Cross-link this APK workflow from `PILOT-READINESS.md` QA section.**
-  - Surfaced by: Eng review — the runbook exists; the APK is the missing "dev build" it references.
-  - Files: `docs/PILOT-READINESS.md`
-  - Verify: QA section links the workflow + sideload steps.
+  - Verify (founder, first run): trigger the workflow; download APK; it installs and opens to the phone screen with no Metro.
+- [x] **T2 (P2) — ci — De-risk pnpm + Expo prebuild + Gradle autolinking.**
+  - Done: the workflow's install step pins `--config.node-linker=hoisted` for the build so RN autolinking resolves from a flat `node_modules` (repo-wide install stays default).
+  - Verify (founder, first run): prebuild + `assembleRelease` resolve all native modules on the CI runner.
+- [x] **T3 (P2) — mobile — Fix National ID keyboard.**
+  - Done: `become.tsx` National-ID `Field` now uses the default (text) keyboard.
+  - Verified: `test-build-banner.test.tsx` asserts `keyboardType === "default"`.
+- [x] **T4 (P2) — mobile — Build-gated TEST BUILD banner.**
+  - Done: `app.config.ts` `extra.testBuild = LYNIA_TEST_BUILD === "1"`; `src/ui/test-build.ts` `isTestBuild()`; `Screen` renders `TestBuildBanner`.
+  - Verified: `test-build.test.ts` + `test-build-banner.test.tsx` (shows iff flag set, null otherwise).
+- [x] **T5 (P2) — ci — Supply `GOOGLE_MAPS_API_KEY` to the workflow; restrict key in GCP.**
+  - Done: workflow passes `GOOGLE_MAPS_API_KEY` from a repo secret and prints the run's signing SHA-1 to restrict the key.
+  - Verify (founder): add the secret; map tiles render in the built APK.
+- [x] **T6 (P3, docs) — Cross-link the APK workflow from `PILOT-READINESS.md` QA section.**
+  - Done: "Build & install the test APK" subsection added under Vendor-free QA testing.
 
 ## GSTACK REVIEW REPORT
 

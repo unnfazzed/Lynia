@@ -63,6 +63,11 @@ const config: ExpoConfig = {
   },
   extra: {
     apiUrl: "https://lyniago.lyniafinance.com",
+    // Test-build marker: only the QA APK workflow (.github/workflows/android-test-apk.yml) sets
+    // LYNIA_TEST_BUILD=1, so a normal EAS release build leaves this false and the TEST BUILD banner
+    // (src/ui Screen) never renders. Testers get a visible signal they're on a bypass build hitting
+    // the live API; real releases show nothing.
+    testBuild: process.env.LYNIA_TEST_BUILD === "1",
   },
 };
 
