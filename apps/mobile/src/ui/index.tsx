@@ -41,15 +41,15 @@ export function Screen({ children }: { children: React.ReactNode }): React.React
 
 export function Heading({ children }: { children: React.ReactNode }): React.ReactElement {
   // Bold with slight negative tracking (≈ -0.02em at 24px) — only 400/600/700 ship, no 800.
-  return <Text style={{ fontSize: 24, fontWeight: "700", letterSpacing: -0.4, color: tokens.color.ink, marginBottom: tokens.space.sm }}>{children}</Text>;
+  return <Text style={{ fontSize: tokens.font.size.h1, fontWeight: tokens.font.weight.bold, letterSpacing: -0.4, color: tokens.color.ink, marginBottom: tokens.space.sm }}>{children}</Text>;
 }
 
 export function Sub({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.lg }}>{children}</Text>;
+  return <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, marginBottom: tokens.space.lg }}>{children}</Text>;
 }
 
 export function Label({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginBottom: 4 }}>{children}</Text>;
+  return <Text style={{ fontSize: tokens.font.size.label, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted, marginBottom: 4 }}>{children}</Text>;
 }
 
 export function Field(props: {
@@ -87,7 +87,7 @@ export function Field(props: {
           borderColor: tokens.color.line,
           borderRadius: tokens.radius.input,
           padding: tokens.space.md,
-          fontSize: 16,
+          fontSize: tokens.font.size.bodyLg,
           color: tokens.color.ink,
           backgroundColor: tokens.color.bg,
         }}
@@ -128,7 +128,7 @@ export function Button(props: {
       {props.loading ? (
         <ActivityIndicator color={primary ? tokens.color.onAccent : tokens.color.accentText} />
       ) : (
-        <Text style={{ color: primary ? tokens.color.onAccent : tokens.color.accentText, fontWeight: "600", fontSize: 16 }}>{props.label}</Text>
+        <Text style={{ color: primary ? tokens.color.onAccent : tokens.color.accentText, fontWeight: tokens.font.weight.semibold, fontSize: tokens.font.size.bodyLg }}>{props.label}</Text>
       )}
     </Pressable>
   );
@@ -203,7 +203,7 @@ export function StatusPill({
       {dot ? (
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: t.dot, marginRight: 6 }} />
       ) : null}
-      <Text style={{ fontSize: 12, fontWeight: "600", color: t.text }}>{status.replace(/_/g, " ")}</Text>
+      <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.semibold, color: t.text }}>{status.replace(/_/g, " ")}</Text>
     </View>
   );
 }
@@ -214,7 +214,7 @@ export const tabular = { fontVariant: ["tabular-nums"] as const };
 
 export function ErrorText({ message }: { message?: string | null }): React.ReactElement | null {
   if (!message) return null;
-  return <Text style={{ color: tokens.color.danger, fontSize: 14, marginTop: tokens.space.sm }}>{message}</Text>;
+  return <Text style={{ color: tokens.color.danger, fontSize: tokens.font.size.body, marginTop: tokens.space.sm }}>{message}</Text>;
 }
 
 // ── §5c journey stepper ───────────────────────────────────────────────────────
@@ -355,8 +355,8 @@ export function EmptyState(props: {
       >
         <Icon name={props.icon} size={34} color={tokens.color.accentText} strokeWidth={1.75} />
       </View>
-      <Text style={{ fontSize: 18, fontWeight: "700", color: tokens.color.ink, textAlign: "center" }}>{props.title}</Text>
-      <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center", lineHeight: 20, marginTop: 6, maxWidth: 260 }}>
+      <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>{props.title}</Text>
+      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, textAlign: "center", lineHeight: 20, marginTop: 6, maxWidth: 260 }}>
         {props.message}
       </Text>
       {props.children ? <View style={{ alignSelf: "stretch", marginTop: tokens.space.md }}>{props.children}</View> : null}

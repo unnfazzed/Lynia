@@ -1,4 +1,4 @@
-import { BoardNewOrderEvent, WS_EVENTS } from "@lynia/shared";
+import { BidExpiredEvent, BoardNewOrderEvent, WS_EVENTS } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
@@ -14,11 +14,18 @@ import { createSocket } from "./socket";
  * so the list updates with no refetch. Joins the board on connect, leaves it on go-offline / unmount.
  * Returns connection state for the online chip.
  */
-export function useRiderBoard(online: boolean, loc: { lat: number; lng: number } | null): { connected: boolean } {
+export function useRiderBoard(
+  online: boolean,
+  loc: { lat: number; lng: number } | null,
+): { connected: boolean; expiredOrderIds: Set<string> } {
   const { session } = useAuth();
   const token = session?.accessToken;
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
+  // Orders whose 90s auction closed with NObody picked (INTERFACE-AUDIT C2) — pushed to every bidder.
+  // The rider screen uses this to show a distinct "that window closed" state on a sent offer (vs.
+  // "not chosen", which means someone else was picked).
+  const [expiredOrderIds, setExpiredOrderIds] = useState<Set<string>>(() => new Set());
   // Hold the live socket + latest loc in refs so the loc-change effect can re-subscribe (re-scope the
   // geo rooms) without tearing down and rebuilding the connection.
   const socketRef = useRef<Socket | null>(null);
@@ -60,6 +67,16 @@ export function useRiderBoard(online: boolean, loc: { lat: number; lng: number }
       });
     });
 
+    // Auction closed with no pick: drop the order from the board cache (it's no longer biddable) and
+    // record its id so a rider who bid on it sees the "nobody picked" state, not a silent removal.
+    socket.on(WS_EVENTS.bidExpired, (raw: unknown) => {
+      const parsed = BidExpiredEvent.safeParse(raw);
+      if (!parsed.success) return;
+      const { orderId } = parsed.data;
+      setExpiredOrderIds((prev) => (prev.has(orderId) ? prev : new Set(prev).add(orderId)));
+      qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => prev?.filter((o) => o.id !== orderId));
+    });
+
     return () => {
       socketRef.current = null;
       socket.emit(WS_EVENTS.boardLeave);
@@ -75,5 +92,5 @@ export function useRiderBoard(online: boolean, loc: { lat: number; lng: number }
     socket.emit(WS_EVENTS.boardSubscribe, loc ? { lat: loc.lat, lng: loc.lng } : {});
   }, [loc?.lat, loc?.lng]);
 
-  return { connected };
+  return { connected, expiredOrderIds };
 }

@@ -1,4 +1,4 @@
-import { haversineKm, tokens } from "@lynia/shared";
+import { haversineKm, OFFER_WINDOW_MS, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
@@ -11,8 +11,25 @@ import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { retryKyc, setOnline } from "../../src/api/riders";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
-import { Button, Card, EmptyState, ErrorText, Field, Heading, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 import { parseNum } from "../../src/util";
+
+/** mm:ss for the offer-sent auction countdown. */
+function formatClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/** A live offer the rider has sent — kept on-screen with a countdown to the auction close (C2). */
+interface SentOffer {
+  order: OpenOrder;
+  fare: string;
+  etaMinutes: number;
+  /** ISO auction close — createdAt + OFFER_WINDOW_MS, the same window the customer sees. */
+  expiresAt: string;
+}
 
 /** Urban motorbike cruising speed for a rough pickup-ETA seed (min = distance / speed). */
 const AVG_PICKUP_KMH = 22;
@@ -27,6 +44,11 @@ export default function RiderHome(): React.ReactElement {
   const [fare, setFare] = useState("");
   const [eta, setEta] = useState("");
   const [bidIds, setBidIds] = useState<Set<string>>(() => new Set());
+  // Offers the rider has sent this session — rendered with a live "customer's window closes in"
+  // countdown, and flipped to a distinct "that window closed" state on a `bid:expired` push.
+  const [sentOffers, setSentOffers] = useState<SentOffer[]>([]);
+  // 1s clock for the countdowns (only advanced while there are live sent offers).
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     void (async () => {
@@ -121,6 +143,18 @@ export default function RiderHome(): React.ReactElement {
 
   // Board push: new orders arrive live over WS while online; the poll is the 15s self-heal fallback.
   const board = useRiderBoard(online, loc);
+
+  // Sent offers are a live-board artifact: clear them when the rider goes offline (the board room is
+  // gone and the countdowns are meaningless).
+  useEffect(() => {
+    if (!online) setSentOffers([]);
+  }, [online]);
+  // Tick a 1s clock only while there are sent offers on screen, for the auction countdowns.
+  useEffect(() => {
+    if (sentOffers.length === 0) return;
+    const iv = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, [sentOffers.length]);
   const openQ = useQuery({
     queryKey: ["openOrders"],
     // Pass the rider's position so the server geo-scopes to nearby, distance-sorted orders; with no
@@ -158,7 +192,13 @@ export default function RiderHome(): React.ReactElement {
       return makeOffer(selected!.id, { type, offeredFare: fareNum!, etaMinutes: Math.round(etaNum!) });
     },
     onSuccess: () => {
-      if (selected) setBidIds((prev) => new Set(prev).add(selected.id));
+      if (selected) {
+        const s = selected;
+        setBidIds((prev) => new Set(prev).add(s.id));
+        // Same auction window the customer sees: createdAt + OFFER_WINDOW_MS (the shared clock).
+        const expiresAt = new Date(new Date(s.createdAt).getTime() + OFFER_WINDOW_MS).toISOString();
+        setSentOffers((prev) => [{ order: s, fare, etaMinutes: Math.round(etaNum ?? 0), expiresAt }, ...prev.filter((p) => p.order.id !== s.id)]);
+      }
       setSelected(null);
       setFare("");
       setEta("");
@@ -268,6 +308,42 @@ export default function RiderHome(): React.ReactElement {
               : "Go online to see and bid on nearby orders."}
           </Text>
         </Card>
+
+        {online && sentOffers.some((s) => s.order.id !== activeQ.data?.id) ? (
+          <View>
+            <Sub>Your offers</Sub>
+            {sentOffers
+              .filter((s) => s.order.id !== activeQ.data?.id)
+              .map((s) => {
+                const expired = board.expiredOrderIds.has(s.order.id);
+                const remaining = new Date(s.expiresAt).getTime() - nowMs;
+                return (
+                  <Card key={s.order.id}>
+                    <Text style={{ fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
+                      {s.order.pickup.landmark} → {s.order.dropoff.landmark}
+                    </Text>
+                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                      Your offer ${s.fare} · ETA {s.etaMinutes} min
+                    </Text>
+                    {expired ? (
+                      // Distinct from "not chosen": the whole auction closed with nobody picked (C2).
+                      <View style={{ flexDirection: "row", gap: tokens.space.sm, marginTop: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}>
+                        <Icon name="inbox" size={16} color={tokens.color.muted} />
+                        <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+                          That window closed — the customer&apos;s auction ended with nobody picked. If they re-broadcast at a new price, it&apos;ll show up here as a fresh order.
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}>
+                        <Text style={{ flex: 1, fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>Customer&apos;s window closes in</Text>
+                        <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatClock(remaining)}</Text>
+                      </View>
+                    )}
+                  </Card>
+                );
+              })}
+          </View>
+        ) : null}
 
         {online ? (
           <View>

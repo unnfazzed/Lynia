@@ -1,4 +1,14 @@
-import type { AdvanceStatusRequest, CancelRequest, CreateOrderRequest, LatLng, OrderStatus, RateRequest } from "@lynia/shared";
+import type {
+  AcceptDisclaimerRequest,
+  AdvanceStatusRequest,
+  CancelRequest,
+  ConfirmItemsRequest,
+  CreateOrderRequest,
+  LatLng,
+  OrderStatus,
+  RateRequest,
+  UndeliveredReason,
+} from "@lynia/shared";
 import { apiFetch } from "./client";
 
 export interface CreateOrderResult {
@@ -33,6 +43,11 @@ export interface OrderSnapshot {
   counterpartyPhone: string | null;
   /** ISO end of the offer window while `open_for_offers`, else null — drives the auction countdown. */
   expiresAt: string | null;
+  // Set only on the terminal `undelivered` status (INTERFACE-AUDIT C6 / F-02): the reason the rider
+  // recorded + how many hand-off attempts were made, shown verbatim on the customer's terminal card.
+  // Absent/null on every other status.
+  undeliveredReason?: UndeliveredReason | null;
+  undeliveredAttempts?: number | null;
 }
 
 export function createOrder(body: CreateOrderRequest): Promise<CreateOrderResult> {
@@ -108,4 +123,26 @@ export function cancelOrder(
   body: CancelRequest = {},
 ): Promise<{ orderId: string; status: "cancelled"; cancelledBy: "customer" | "rider"; cooldownUntil: string | null }> {
   return apiFetch(`/orders/${orderId}/cancel`, { method: "POST", body });
+}
+
+/**
+ * Record the customer's consent to the pre-broadcast liability disclaimer (A1-8). Consent is
+ * {policyVersion, timestamp}; the server persists it against the customer so the next created order
+ * carries it.
+ * TODO(api): the `POST /orders/disclaimer` route is still being built server-side. The mobile side is
+ * typed + wired here; until the route lands the caller also stores acceptance locally so the gate
+ * isn't re-shown, and this call is best-effort (a reject must not block the broadcast).
+ */
+export function acceptDisclaimer(body: AcceptDisclaimerRequest): Promise<{ policyVersion: string; acceptedAt: string }> {
+  return apiFetch(`/orders/disclaimer`, { method: "POST", body });
+}
+
+/**
+ * Rider confirms which of the sender's line-items were physically collected at pickup (rider-journey
+ * "pickup item verification"). `confirmedIndexes` indexes into the order's `items` array.
+ * TODO(api): the `POST /orders/:id/items/confirm` route is still being built server-side. The
+ * checklist UX + advance gating are wired here; wire the persisted confirmation once the route lands.
+ */
+export function confirmItems(orderId: string, body: ConfirmItemsRequest): Promise<{ orderId: string; confirmedIndexes: number[] }> {
+  return apiFetch(`/orders/${orderId}/items/confirm`, { method: "POST", body });
 }

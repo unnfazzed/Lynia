@@ -40,3 +40,45 @@ export async function loadDeliveryCode(orderId: string): Promise<string | null> 
   return SecureStore.getItemAsync(codeKey(orderId));
 }
 
+// Which starting role the user picked at the post-OTP role fork (one account, two roles). Persisted
+// so an existing user isn't re-prompted on every sign-in — verify.tsx routes straight home once set.
+// All best-effort: a native read/write failure must never trap the sign-in flow.
+export type StartRole = "customer" | "rider";
+const ROLE_PREF_KEY = "lynia.rolePreference";
+
+export async function saveRolePreference(role: StartRole): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(ROLE_PREF_KEY, role);
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadRolePreference(): Promise<StartRole | null> {
+  try {
+    const v = await SecureStore.getItemAsync(ROLE_PREF_KEY);
+    return v === "customer" || v === "rider" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+// Latest liability-disclaimer policy version the customer has accepted on this device (A1-8). Stored
+// so the accept-to-continue gate isn't re-shown every broadcast. Best-effort — a read failure just
+// re-shows the gate, which is safe.
+const DISCLAIMER_KEY = "lynia.disclaimerAccepted";
+
+export async function saveDisclaimerAccepted(policyVersion: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(DISCLAIMER_KEY, policyVersion);
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadDisclaimerAccepted(): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(DISCLAIMER_KEY);
+  } catch {
+    return null;
+  }
+}
+
