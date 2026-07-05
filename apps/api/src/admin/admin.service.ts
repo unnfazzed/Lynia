@@ -1,6 +1,14 @@
-import { Injectable } from "@nestjs/common";
-import { ACTIVE_RIDE_STATUSES, type KycStatus, type OrderStatus, PHONE_REVEAL_STATUSES } from "@lynia/shared";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ACTIVE_RIDE_STATUSES,
+  type KycStatus,
+  type OrderStatus,
+  PHONE_REVEAL_STATUSES,
+  RiderAccountStatus,
+  TERMINAL_STATUSES,
+} from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
+import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 function round(n: number): number {
@@ -281,6 +289,129 @@ export class AdminService {
       select: { id: true },
     });
     return { id: row.id };
+  }
+
+  /**
+   * Build the AuditLog `data` for a server-driven admin mutation. Same shape recordAuditAction writes,
+   * but created with a transaction client so the audit row commits atomically with the state change it
+   * describes (A-01: the mutation and its audit row are one `$transaction` — never one without the other).
+   */
+  private auditData(
+    actor: string,
+    action: string,
+    target: string,
+    reasonCode?: string | null,
+    note?: string | null,
+  ): Prisma.AuditLogCreateInput {
+    return { actor, action, target, reasonCode: reasonCode ?? null, note: note ?? null };
+  }
+
+  /**
+   * A-04 rider suspend. Sets `accountStatus=suspended` + the admin reason (only `active` riders may go
+   * online, so this pulls them offline-eligible) AND writes the audit row in ONE transaction. Reason is
+   * required (enforced by the controller's zod body). 404s when the id isn't a rider.
+   */
+  async suspendRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { profileId: true } });
+      if (!rider) throw new NotFoundException("Rider not found");
+      await tx.rider.update({
+        where: { profileId },
+        data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: input.reason },
+      });
+      const audit = await tx.auditLog.create({
+        data: this.auditData(actor, "rider.suspend", profileId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: profileId, accountStatus: RiderAccountStatus.SUSPENDED, auditId: audit.id };
+    });
+  }
+
+  /**
+   * A-04 lift a suspension → back to `active`, clearing the suspend reason (including a
+   * `settlement_overdue` auto-pause). Reason is optional. Mutation + audit in one transaction.
+   */
+  async liftRider(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { profileId: true } });
+      if (!rider) throw new NotFoundException("Rider not found");
+      await tx.rider.update({
+        where: { profileId },
+        data: { accountStatus: RiderAccountStatus.ACTIVE, suspendReason: null },
+      });
+      const audit = await tx.auditLog.create({
+        data: this.auditData(actor, "rider.lift", profileId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: profileId, accountStatus: RiderAccountStatus.ACTIVE, auditId: audit.id };
+    });
+  }
+
+  /**
+   * A-04 permanent ban → `accountStatus=banned` with the reason recorded in `suspendReason`. Reason is
+   * required. Mutation + audit in one transaction.
+   */
+  async banRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { profileId: true } });
+      if (!rider) throw new NotFoundException("Rider not found");
+      await tx.rider.update({
+        where: { profileId },
+        data: { accountStatus: RiderAccountStatus.BANNED, suspendReason: input.reason },
+      });
+      const audit = await tx.auditLog.create({
+        data: this.auditData(actor, "rider.ban", profileId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: profileId, accountStatus: RiderAccountStatus.BANNED, auditId: audit.id };
+    });
+  }
+
+  /**
+   * Admin order cancel → terminal `cancelled`. Records `cancelledBy` = the acting admin's id and the
+   * reason, appends an OrderEvent for the timeline, and writes the audit row — all in one transaction.
+   * Rejects an order already in a terminal state (nothing to cancel). Reason required.
+   */
+  async cancelOrder(actor: string, orderId: string, input: { reason: string; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: orderId }, select: { status: true } });
+      if (!order) throw new NotFoundException("Order not found");
+      if (TERMINAL_STATUSES.includes(order.status)) {
+        throw new ConflictException("Order is already in a terminal state");
+      }
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: "cancelled",
+          cancelledBy: actor,
+          cancelReason: input.reason,
+          cancelledAt: new Date(),
+        },
+      });
+      await tx.orderEvent.create({ data: { orderId, status: "cancelled" } });
+      const audit = await tx.auditLog.create({
+        data: this.auditData(actor, "order.cancel", orderId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: orderId, status: "cancelled" as const, auditId: audit.id };
+    });
+  }
+
+  /**
+   * Admin fare adjustment → overwrites `agreedFare` (a manual correction / dispute resolution). The new
+   * fare, the reason and the audit row commit in one transaction. Reason required. 404s when not found.
+   */
+  async adjustFare(actor: string, orderId: string, input: { agreedFare: number; reason: string; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true } });
+      if (!order) throw new NotFoundException("Order not found");
+      await tx.order.update({ where: { id: orderId }, data: { agreedFare: input.agreedFare } });
+      const audit = await tx.auditLog.create({
+        data: this.auditData(actor, "order.fare_adjust", orderId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: orderId, agreedFare: input.agreedFare.toFixed(2), auditId: audit.id };
+    });
   }
 
   /**

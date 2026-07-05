@@ -1,8 +1,11 @@
 import { createHmac } from "node:crypto";
+import { KYC_THRESHOLDS } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
 import {
   canonicalizeDiditBody,
+  decideDiditKyc,
   diditTimestampFresh,
+  extractDiditScore,
   mapDiditStatus,
   verifyDiditSignature,
   verifyDiditSignatureV2,
@@ -22,6 +25,47 @@ describe("mapDiditStatus", () => {
     expect(mapDiditStatus("Resubmitted")).toBe("pending");
     expect(mapDiditStatus("Abandoned")).toBe("pending");
     expect(mapDiditStatus("Not Started")).toBe("pending");
+  });
+});
+
+describe("extractDiditScore", () => {
+  it("reads a top-level score / confidence", () => {
+    expect(extractDiditScore({ score: 0.91 })).toBe(0.91);
+    expect(extractDiditScore({ confidence: 0.4 })).toBe(0.4);
+  });
+  it("reads a nested decision.face_match score", () => {
+    expect(extractDiditScore({ decision: { face_match: { score: 0.73 } } })).toBe(0.73);
+    expect(extractDiditScore({ decision: { score: 0.5 } })).toBe(0.5);
+  });
+  it("returns null when there is no score, or it is out of [0,1] / non-numeric", () => {
+    expect(extractDiditScore({ status: "Approved" })).toBeNull();
+    expect(extractDiditScore({ score: 1.4 })).toBeNull();
+    expect(extractDiditScore({ score: "0.9" })).toBeNull();
+    expect(extractDiditScore(null)).toBeNull();
+  });
+});
+
+describe("decideDiditKyc (Didit auto-decision bands, KYC_THRESHOLDS)", () => {
+  it("score >= autoApprove → verified", () => {
+    expect(decideDiditKyc("Approved", KYC_THRESHOLDS.autoApprove)).toEqual({ status: "verified" });
+    expect(decideDiditKyc("In Review", 0.99)).toEqual({ status: "verified" });
+  });
+
+  it("[needsReview, autoApprove) → pending (human review, never auto-verified)", () => {
+    expect(decideDiditKyc("In Review", KYC_THRESHOLDS.needsReview)).toEqual({ status: "pending" });
+    expect(decideDiditKyc("Approved", 0.7)).toEqual({ status: "pending" });
+  });
+
+  it("score < needsReview → failed (auto-decline) with a reason", () => {
+    const d = decideDiditKyc("In Review", 0.3);
+    expect(d.status).toBe("failed");
+    expect(d.reason).toMatch(/score .* below .* threshold/i);
+  });
+
+  it("no score → falls back to the status-string mapping", () => {
+    expect(decideDiditKyc("Approved", null)).toEqual({ status: "verified" });
+    expect(decideDiditKyc("Declined", null)).toEqual({ status: "failed" });
+    expect(decideDiditKyc("In Review", null)).toEqual({ status: "pending" });
   });
 });
 

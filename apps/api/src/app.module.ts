@@ -16,6 +16,7 @@ import { OffersModule } from "./offers/offers.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { RidersModule } from "./riders/riders.module";
+import { SettlementsModule } from "./settlements/settlements.module";
 import { TrackingModule } from "./tracking/tracking.module";
 import { UploadsModule } from "./uploads/uploads.module";
 
@@ -46,6 +47,8 @@ import { UploadsModule } from "./uploads/uploads.module";
     RidersModule,
     // Client-direct media uploads (signed URLs) — rider KYC/profile photo.
     UploadsModule,
+    // A-06 — cash settlement engine (weekly commission, auto-pause). Consumed by AdminModule.
+    SettlementsModule,
     // Lane F — admin read API for the monitor dashboard.
     AdminModule,
   ],

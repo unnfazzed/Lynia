@@ -370,6 +370,95 @@ describe("AdminService.listCustomers + getCustomerDetail (D-2)", () => {
   });
 });
 
+describe("AdminService admin mutations (Item 1 — mutation + audit in ONE $transaction, A-01)", () => {
+  interface Calls {
+    riderUpdate: { where: unknown; data: Record<string, unknown> } | null;
+    orderUpdate: { where: unknown; data: Record<string, unknown> } | null;
+    orderEvent: { data: Record<string, unknown> } | null;
+    audit: { data: Record<string, unknown> } | null;
+  }
+  // A tx whose writes are recorded; $transaction runs the service callback against THIS object, so a
+  // recorded riderUpdate AND a recorded audit prove both landed inside the same transaction.
+  function makeTx(over: { rider?: unknown; order?: unknown } = {}) {
+    const calls: Calls = { riderUpdate: null, orderUpdate: null, orderEvent: null, audit: null };
+    const tx = {
+      rider: {
+        findUnique: async () => ("rider" in over ? over.rider : { profileId: "r1" }),
+        update: async (args: Calls["riderUpdate"]) => { calls.riderUpdate = args; return {}; },
+      },
+      order: {
+        findUnique: async () => ("order" in over ? over.order : { id: "o1", status: "assigned" }),
+        update: async (args: Calls["orderUpdate"]) => { calls.orderUpdate = args; return {}; },
+      },
+      orderEvent: { create: async (args: Calls["orderEvent"]) => { calls.orderEvent = args; return {}; } },
+      auditLog: { create: async (args: Calls["audit"]) => { calls.audit = args; return { id: "audit-9" }; } },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    return { prisma, calls };
+  }
+
+  it("suspendRider sets accountStatus=suspended + reason AND writes the audit row atomically", async () => {
+    const { prisma, calls } = makeTx();
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    const res = await svc.suspendRider("admin-1", "r1", { reason: "safety report", note: "incident #7" });
+    expect(calls.riderUpdate!.data).toEqual({ accountStatus: "suspended", suspendReason: "safety report" });
+    // The audit row committed in the SAME transaction as the state change (both non-null here).
+    expect(calls.audit!.data).toMatchObject({ actor: "admin-1", action: "rider.suspend", target: "r1", reasonCode: "safety report", note: "incident #7" });
+    expect(res).toEqual({ id: "r1", accountStatus: "suspended", auditId: "audit-9" });
+  });
+
+  it("banRider sets accountStatus=banned + reason and audits", async () => {
+    const { prisma, calls } = makeTx();
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    await svc.banRider("admin-1", "r1", { reason: "fraud" });
+    expect(calls.riderUpdate!.data).toEqual({ accountStatus: "banned", suspendReason: "fraud" });
+    expect(calls.audit!.data).toMatchObject({ action: "rider.ban", reasonCode: "fraud", note: null });
+  });
+
+  it("liftRider returns to active, CLEARS the suspend reason, audits", async () => {
+    const { prisma, calls } = makeTx();
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    await svc.liftRider("admin-1", "r1", {});
+    expect(calls.riderUpdate!.data).toEqual({ accountStatus: "active", suspendReason: null });
+    expect(calls.audit!.data).toMatchObject({ action: "rider.lift", reasonCode: null });
+  });
+
+  it("suspendRider 404s when the id isn't a rider and writes NOTHING", async () => {
+    const { prisma, calls } = makeTx({ rider: null });
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    await expect(svc.suspendRider("admin-1", "nope", { reason: "x" })).rejects.toThrow("Rider not found");
+    expect(calls.riderUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
+  });
+
+  it("cancelOrder sets cancelled + cancelledBy=admin, appends an OrderEvent, and audits in one tx", async () => {
+    const { prisma, calls } = makeTx();
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    const res = await svc.cancelOrder("admin-1", "o1", { reason: "duplicate order" });
+    expect(calls.orderUpdate!.data).toMatchObject({ status: "cancelled", cancelledBy: "admin-1", cancelReason: "duplicate order" });
+    expect(calls.orderEvent!.data).toEqual({ orderId: "o1", status: "cancelled" });
+    expect(calls.audit!.data).toMatchObject({ action: "order.cancel", target: "o1", reasonCode: "duplicate order" });
+    expect(res).toMatchObject({ id: "o1", status: "cancelled", auditId: "audit-9" });
+  });
+
+  it("cancelOrder rejects an order already in a terminal state (nothing written)", async () => {
+    const { prisma, calls } = makeTx({ order: { id: "o1", status: "completed" } });
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    await expect(svc.cancelOrder("admin-1", "o1", { reason: "x" })).rejects.toThrow("terminal");
+    expect(calls.orderUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
+  });
+
+  it("adjustFare overwrites agreedFare and audits atomically", async () => {
+    const { prisma, calls } = makeTx();
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    const res = await svc.adjustFare("admin-1", "o1", { agreedFare: 7.5, reason: "GPS overcharge" });
+    expect(calls.orderUpdate!.data).toEqual({ agreedFare: 7.5 });
+    expect(calls.audit!.data).toMatchObject({ action: "order.fare_adjust", target: "o1", reasonCode: "GPS overcharge" });
+    expect(res).toMatchObject({ id: "o1", agreedFare: "7.50", auditId: "audit-9" });
+  });
+});
+
 describe("fmtUntil", () => {
   it("formats hours+minutes and minutes-only, flooring elapsed to 0m", () => {
     const now = Date.parse("2026-07-04T00:00:00Z");

@@ -5,6 +5,7 @@ import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
+import { SettlementsService } from "../settlements/settlements.service";
 import { AdminService } from "./admin.service";
 
 const KYC_VALUES = Object.values(KycStatus) as string[];
@@ -21,10 +22,35 @@ const AuditAction = z.object({
   note: z.string().max(2000).nullish(),
 });
 
+// A-04/D-2 mutation bodies. `reason` is the ConfirmModal justification recorded as the audit
+// reasonCode; `note` is the optional free-text. Reason is REQUIRED for the destructive actions
+// (suspend/ban/cancel/fare) and optional for a lift. Bounds mirror the AuditAction payload.
+const ReasonRequired = z.object({
+  reason: z.string().min(1).max(160),
+  note: z.string().max(2000).nullish(),
+});
+const ReasonOptional = z.object({
+  reason: z.string().max(160).nullish(),
+  note: z.string().max(2000).nullish(),
+});
+// Positive money value (2dp handled server-side) for a manual fare correction.
+const FareAdjust = z.object({
+  agreedFare: z.number().positive().max(100000),
+  reason: z.string().min(1).max(160),
+  note: z.string().max(2000).nullish(),
+});
+// Settlement payment method (A-06). Free but capped — the taxonomy can evolve without a 400.
+const RecordPayment = z.object({
+  method: z.enum(["cash-at-agent", "EcoCash", "netted"]),
+});
+
 @Controller("admin")
 @UseGuards(JwtAuthGuard, AdminGuard)
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(
+    private readonly admin: AdminService,
+    private readonly settlements: SettlementsService,
+  ) {}
 
   @Get("overview")
   overview() {
@@ -97,5 +123,85 @@ export class AdminController {
     @CurrentUser() actor: string,
   ) {
     return this.admin.recordAuditAction(actor, body);
+  }
+
+  /* ── A-04 rider account state machine (mutation + audit in one $transaction) ─────────── */
+
+  /** Suspend a rider (accountStatus=suspended + reason). Reason required. */
+  @Post("riders/:id/suspend")
+  suspendRider(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @CurrentUser() actor: string,
+  ) {
+    return this.admin.suspendRider(actor, id, body);
+  }
+
+  /** Lift a suspension → active, clearing the suspend reason. Reason optional. */
+  @Post("riders/:id/lift")
+  liftRider(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonOptional)) body: z.infer<typeof ReasonOptional>,
+    @CurrentUser() actor: string,
+  ) {
+    return this.admin.liftRider(actor, id, body);
+  }
+
+  /** Permanently ban a rider (accountStatus=banned + reason). Reason required. */
+  @Post("riders/:id/ban")
+  banRider(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @CurrentUser() actor: string,
+  ) {
+    return this.admin.banRider(actor, id, body);
+  }
+
+  /* ── Order admin actions (mutation + event + audit in one $transaction) ──────────────── */
+
+  /** Admin-cancel an order (status→cancelled, cancelledBy=admin, reason). Reason required. */
+  @Post("orders/:id/cancel")
+  cancelOrder(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @CurrentUser() actor: string,
+  ) {
+    return this.admin.cancelOrder(actor, id, body);
+  }
+
+  /** Adjust an order's agreed fare (manual correction / dispute). Reason required. */
+  @Post("orders/:id/fare")
+  adjustFare(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(FareAdjust)) body: z.infer<typeof FareAdjust>,
+    @CurrentUser() actor: string,
+  ) {
+    return this.admin.adjustFare(actor, id, body);
+  }
+
+  /* ── A-06 cash & settlements (delegated to SettlementsService) ────────────────────────── */
+
+  /** Current-period settlement rows + KPIs in the console's SettlementWeek shape. */
+  @Get("cash/settlements")
+  cashSettlements() {
+    return this.settlements.currentWeek();
+  }
+
+  /** Record a settlement as paid (cash-at-agent / EcoCash / netted). */
+  @Post("cash/settlements/:id/pay")
+  paySettlement(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(RecordPayment)) body: z.infer<typeof RecordPayment>,
+  ) {
+    return this.settlements.recordPayment(id, body.method);
+  }
+
+  /**
+   * A-06 auto-pause sweep: overdue settlements (>overduePauseDays past due) → overdue + suspend rider.
+   * Callable (pilot has no in-process scheduler); a cron/ops can hit this on the settlement cadence.
+   */
+  @Post("cash/settlements/auto-pause")
+  autoPauseSettlements() {
+    return this.settlements.autoPauseOverdue();
   }
 }

@@ -58,7 +58,18 @@ export class AuthService {
         photoUrl: true,
         ordersCount: true,
         rider: {
-          select: { bikeReg: true, kycStatus: true, ratingAvg: true, ratingCount: true, tripsCount: true, isOnline: true },
+          select: {
+            bikeReg: true,
+            kycStatus: true,
+            ratingAvg: true,
+            ratingCount: true,
+            tripsCount: true,
+            isOnline: true,
+            // A-02: surface the decline reason + attempt count so the rider app can show what to fix
+            // on a resubmit and the attempt-2 lock state (item 4).
+            kycDeclineReason: true,
+            kycAttempts: true,
+          },
         },
       },
     });
@@ -80,6 +91,8 @@ export class AuthService {
             ratingCount: p.rider.ratingCount,
             tripsCount: p.rider.tripsCount,
             isOnline: p.rider.isOnline,
+            kycDeclineReason: p.rider.kycDeclineReason,
+            kycAttempts: p.rider.kycAttempts,
           }
         : null,
     };

@@ -132,7 +132,7 @@ describe("OrderLifecycleService.rate", () => {
       rating: { create: async () => ({}) },
       orderEvent: { create: async () => ({}) },
       rider: {
-        findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5 }),
+        findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false }),
         update: async (args: { data: Record<string, unknown> }) => { riderData = args.data; return {}; },
       },
     });
@@ -140,21 +140,48 @@ describe("OrderLifecycleService.rate", () => {
     // (4.0*2 + 5) / 3 = 4.333...
     expect(riderData!.ratingAvg).toBeCloseTo(4.3333, 3);
     expect(riderData).toMatchObject({ ratingCount: 3, tripsCount: 6 });
+    // Q2: a good rating (> LOW_RATING_AT) is a clean completion → +RECOVER_PER_COMPLETION (90 → 92).
+    expect(riderData).toMatchObject({ reliabilityScore: 92, onHold: false });
     expect(emits).toEqual([["o1", "completed"]]);
+  });
+
+  it("Q2: a low rating (<= LOW_RATING_AT) penalises the rider and can trip on_hold", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      rating: { create: async () => ({}) },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        // 68 is already below ON_HOLD_CLEAR_AT(70); a -lowRating(10) → 58 < ON_HOLD_BELOW(60) trips on_hold.
+        findUnique: async () => ({ ratingAvg: 5, ratingCount: 1, tripsCount: 3, reliabilityScore: 68, onHold: false }),
+        update: async (args: { data: Record<string, unknown> }) => { riderData = args.data; return {}; },
+      },
+    });
+    await svc.rate("o1", "c1", 2);
+    expect(riderData).toMatchObject({ reliabilityScore: 58, onHold: true });
   });
 });
 
 describe("OrderLifecycleService.completeOrder (auto-close)", () => {
-  it("completes a delivered order", async () => {
+  it("completes a delivered order and recovers reliability (clean unrated completion, Q2)", async () => {
+    let riderData: Record<string, unknown> | undefined;
     const { svc, emits } = build({
       order: {
         updateMany: async () => ({ count: 1 }),
         findUnique: async () => ({ riderId: "r1" }),
       },
       orderEvent: { create: async () => ({}) },
-      rider: { update: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ reliabilityScore: 95, onHold: false }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
     });
     expect(await svc.completeOrder("o1")).toEqual({ completed: true });
+    // +RECOVER_PER_COMPLETION (95 → 97), alongside the trips increment; clamps at MAX(100) elsewhere.
+    expect(riderData).toMatchObject({ tripsCount: { increment: 1 }, reliabilityScore: 97, onHold: false });
     expect(emits).toEqual([["o1", "completed"]]);
   });
 
@@ -174,7 +201,7 @@ describe("OrderLifecycleService.reconcileStaleDeliveries", () => {
         findUnique: async () => ({ riderId: "r1" }),
       },
       orderEvent: { create: async () => ({}) },
-      rider: { update: async () => ({}) },
+      rider: { findUnique: async () => ({ reliabilityScore: 100, onHold: false }), update: async () => ({}) },
     });
     expect(await svc.reconcileStaleDeliveries()).toEqual({ closed: 2 });
   });
@@ -256,7 +283,7 @@ describe("OrderLifecycleService.cancel", () => {
     const { svc, orders, jobCancelled, rebroadcasts } = build(
       cancellable({
         rider: {
-          findUnique: async () => ({ cancelStrikes: 0 }),
+          findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false }),
           update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
         },
       }),
@@ -264,7 +291,8 @@ describe("OrderLifecycleService.cancel", () => {
     const res = await svc.cancel("o1", "r1");
     expect(res.cancelledBy).toBe("rider");
     expect(res.cooldownUntil).toBeNull();
-    expect(riderData).toMatchObject({ cancelStrikes: 1 });
+    // Q2: a rider cancel is always pre-pickup → -prePickupCancel(5) folded into the strike update (80 → 75).
+    expect(riderData).toMatchObject({ cancelStrikes: 1, reliabilityScore: 75, onHold: false });
     // F-01: exactly one new open order announced; a rider cancel never fires job:cancelled.
     expect(orders.announceOpenOrder).toHaveBeenCalledTimes(1);
     expect(orders.announceOpenOrder).toHaveBeenCalledWith("rebroadcast-1");
@@ -317,6 +345,11 @@ describe("OrderLifecycleService.markUndelivered", () => {
         updateMany: async (a: { data: Record<string, unknown> }) => { data = a.data; return { count: 1 }; },
       },
       orderEvent: { create: async () => ({}) },
+      // `refused` is a recipient fault → NO reliability hit, so no rider read/update is expected here.
+      rider: {
+        findUnique: async () => { throw new Error("refused must not touch reliability"); },
+        update: async () => { throw new Error("refused must not touch reliability"); },
+      },
     });
     expect(await svc.markUndelivered("o1", "r1", "refused")).toEqual({ orderId: "o1", status: "undelivered" });
     expect(data).toMatchObject({ status: "undelivered", undeliveredReason: "refused" });
@@ -324,5 +357,41 @@ describe("OrderLifecycleService.markUndelivered", () => {
     // C6: the failed hand-off is recorded so the customer's terminal shows a real attempt count, not 0.
     expect(data!.deliveryAttempts).toEqual({ increment: 1 });
     expect(emits).toEqual([["o1", "undelivered"]]);
+  });
+
+  it("Q2: a breakdown (post-pickup bail) applies -postPickupCancel to reliability", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => row({ status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ reliabilityScore: 90, onHold: false }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.markUndelivered("o1", "r1", "breakdown");
+    // -postPickupCancel(15): 90 → 75.
+    expect(riderData).toMatchObject({ reliabilityScore: 75, onHold: false });
+  });
+
+  it("Q2: an unreachable recipient (no-show) applies -noShow to reliability", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => row({ status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ reliabilityScore: 70, onHold: false }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.markUndelivered("o1", "r1", "unreachable");
+    // -noShow(15): 70 → 55 < ON_HOLD_BELOW(60) → trips on_hold.
+    expect(riderData).toMatchObject({ reliabilityScore: 55, onHold: true });
   });
 });

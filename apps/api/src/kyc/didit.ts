@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { KYC_THRESHOLDS } from "@lynia/shared";
 
 export type RiderKyc = "verified" | "failed" | "pending";
 
@@ -23,6 +24,49 @@ export function mapDiditStatus(status: string): RiderKyc {
       // Not Started | In Progress | Awaiting User | In Review | Resubmitted | Abandoned | Expired
       return "pending";
   }
+}
+
+/**
+ * Pull Didit's numeric decision/face-match score (0..1) out of a webhook payload, or null when it
+ * doesn't expose one. Didit's terminal decision webhook can carry the confidence at the top level
+ * (`score`/`confidence`) or nested under `decision` (e.g. `decision.score`,
+ * `decision.face_match.score`/`.confidence`); we probe those documented shapes defensively and reject
+ * anything outside [0, 1]. A non-terminal status webhook carries no score → null → status fallback.
+ */
+export function extractDiditScore(payload: unknown): number | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  const decision = (p.decision ?? {}) as Record<string, unknown>;
+  const faceMatch = (decision.face_match ?? {}) as Record<string, unknown>;
+  const candidates = [p.score, p.confidence, decision.score, faceMatch.score, faceMatch.confidence];
+  for (const c of candidates) {
+    if (typeof c === "number" && Number.isFinite(c) && c >= 0 && c <= 1) return c;
+  }
+  return null;
+}
+
+/**
+ * Auto-decision for a Didit KYC result (NOTE: thresholds live in packages/shared/src/policy.ts
+ * `KYC_THRESHOLDS` — no magic numbers). When the payload exposes a numeric score we apply the bands:
+ *   - score >= autoApprove         → `verified` (auto-approve)
+ *   - [needsReview, autoApprove)   → `pending`  (hold for a human reviewer — NEVER auto-verify)
+ *   - score <  needsReview         → `failed`   (auto-decline, with a reason)
+ * When the payload has NO score (non-terminal statuses, or a vendor that omits it), we fall back to
+ * the legacy status-string mapping ({@link mapDiditStatus}). A `reason` is returned only on a
+ * score-driven auto-decline, for the rider-facing decline copy + audit log.
+ */
+export function decideDiditKyc(status: string, score: number | null): { status: RiderKyc; reason?: string } {
+  if (score !== null) {
+    if (score >= KYC_THRESHOLDS.autoApprove) return { status: "verified" };
+    if (score < KYC_THRESHOLDS.needsReview) {
+      return {
+        status: "failed",
+        reason: `ID face-match score ${score.toFixed(2)} is below the ${KYC_THRESHOLDS.needsReview} auto-decline threshold`,
+      };
+    }
+    return { status: "pending" }; // needs human review — held for the admin backstop, no auto-verify
+  }
+  return { status: mapDiditStatus(status) };
 }
 
 /**

@@ -7,7 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { KycStatus } from "@lynia/shared";
+import { KycStatus, RiderAccountStatus } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
@@ -19,6 +19,34 @@ type Kyc = "pending" | "verified" | "failed";
 export function canGoOnline(kycStatus: string): boolean {
   return kycStatus === KycStatus.VERIFIED;
 }
+
+/** Why a rider was refused going online — a machine-readable tag the app keys off to show the right
+ *  state (verify your ID / account suspended / on hold / on cooldown). */
+export type OnlineRefusal = "kyc" | "suspended" | "on_hold" | "cooldown";
+
+/**
+ * The online-gate (Q2): the FIRST failed precondition, or null when the rider may go online. A rider
+ * goes online only when KYC is verified, the account is `active` (admin-owned — read here, never
+ * written), reliability is not `on_hold`, and any no-show cooldown has elapsed. Pure for unit tests.
+ */
+export function onlineRefusalReason(
+  rider: { kycStatus: string; accountStatus: string; onHold: boolean; cooldownUntil: Date | null },
+  now: Date = new Date(),
+): OnlineRefusal | null {
+  if (!canGoOnline(rider.kycStatus)) return "kyc";
+  if (rider.accountStatus !== RiderAccountStatus.ACTIVE) return "suspended";
+  if (rider.onHold) return "on_hold";
+  if (rider.cooldownUntil && rider.cooldownUntil > now) return "cooldown";
+  return null;
+}
+
+/** Rider-facing copy per refusal reason. The structured `reason` (not this string) is the contract. */
+const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
+  kyc: "Rider is not verified yet",
+  suspended: "Your rider account is suspended",
+  on_hold: "You're on hold — complete deliveries to raise your reliability score",
+  cooldown: "On cooldown after repeated cancellations — try again later",
+};
 
 @Injectable()
 export class RiderService {
@@ -130,14 +158,15 @@ export class RiderService {
   async setOnline(profileId: string, online: boolean): Promise<{ online: boolean }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
-      select: { kycStatus: true, cooldownUntil: true },
+      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
     });
     if (!rider) throw new ForbiddenException("Not a rider");
-    if (online && !canGoOnline(rider.kycStatus)) {
-      throw new ForbiddenException("Rider is not verified yet");
-    }
-    if (online && rider.cooldownUntil && rider.cooldownUntil > new Date()) {
-      throw new ForbiddenException("On cooldown after repeated cancellations — try again later");
+    // Full online-gate (Q2): kyc + account standing + reliability on_hold + cooldown. Only enforced
+    // when going ONLINE — a rider can always go offline. The refusal carries a structured `reason` so
+    // the app renders the correct blocked state instead of a generic 403.
+    if (online) {
+      const reason = onlineRefusalReason(rider);
+      if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
     }
     await this.prisma.rider.update({
       where: { profileId },
@@ -157,10 +186,19 @@ export class RiderService {
     kycRef: string,
     status: "verified" | "failed",
     eventAt: Date,
+    reason?: string | null,
   ): Promise<{ updated: number }> {
     const res = await this.prisma.rider.updateMany({
       where: { kycRef, OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] },
-      data: { kycStatus: status, idVerified: status === "verified", kycResolvedAt: eventAt },
+      data: {
+        kycStatus: status,
+        idVerified: status === "verified",
+        kycResolvedAt: eventAt,
+        // Record the auto-decline reason (Didit score below the threshold) so the rider app can show
+        // why, and clear any stale reason on a verify. NOT a kycAttempts change — the attempt counter
+        // is the admin A-02 decline path's, not the vendor webhook's.
+        ...(status === "failed" ? { kycDeclineReason: reason ?? null } : { kycDeclineReason: null }),
+      },
     });
     return { updated: res.count };
   }
