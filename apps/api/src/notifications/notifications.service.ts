@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger } from "@nestjs/common";
 import { PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -40,12 +40,22 @@ export class NotificationsService {
     @Inject(PUSH) private readonly push: PushAdapter,
   ) {}
 
-  /** Register (or re-home) a device token to the calling profile. Idempotent per token. */
+  /** Register a device token to the calling profile. Idempotent for the SAME owner. A token already
+   *  homed to a different profile is a conflict — never silently re-homed, or an attacker who posts a
+   *  victim's FCM token would redirect the victim's pushes to their own device. */
   async registerToken(profileId: string, token: string, platform?: string): Promise<{ ok: true }> {
+    const existing = await this.prisma.deviceToken.findUnique({
+      where: { token },
+      select: { profileId: true },
+    });
+    if (existing && existing.profileId !== profileId) {
+      throw new ConflictException("Device token is already registered to another account");
+    }
+    // Owner unchanged (or new token) — upsert without ever reassigning profileId.
     await this.prisma.deviceToken.upsert({
       where: { token },
       create: { profileId, token, platform: platform ?? null },
-      update: { profileId, platform: platform ?? null },
+      update: { platform: platform ?? null },
     });
     return { ok: true };
   }

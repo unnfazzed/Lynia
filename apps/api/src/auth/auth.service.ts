@@ -217,9 +217,11 @@ export class AuthService {
     return this.issueSession(s.profileId, s.profile.role, userAgent);
   }
 
-  async logout(sessionId: string): Promise<{ revoked: boolean }> {
+  async logout(sessionId: string, profileId: string): Promise<{ revoked: boolean }> {
+    // Scope by the caller's profileId so a user can only revoke their OWN session — otherwise a
+    // leaked session UUID is a targeted forced-logout of any account.
     const res = await this.prisma.session.updateMany({
-      where: { id: sessionId, revokedAt: null },
+      where: { id: sessionId, profileId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
     return { revoked: res.count > 0 };
