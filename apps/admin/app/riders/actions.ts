@@ -32,3 +32,29 @@ export async function decideKyc(
   revalidatePath(`/riders/${profileId}/kyc`);
   revalidatePath("/riders");
 }
+
+/**
+ * Rider account-status mutations (item 1) — suspend / lift / ban via
+ * `POST /admin/riders/:id/{suspend|lift|ban}`. The domain half of a <ConfirmModal> confirm (the audit
+ * row is already written by submitAdminAction). `action` is the endpoint segment; the body carries the
+ * audit envelope the endpoints accept. Suspend/ban require a reason (enforced in the modal). Throws on a
+ * failed write; only fires against a live API since the triggers are disabled off the connected path.
+ */
+export async function mutateRider(
+  profileId: string,
+  action: "suspend" | "lift" | "ban",
+  target: string,
+  reasonCode: string | null,
+  note: string,
+): Promise<void> {
+  const auditAction = action === "lift" ? "rider.lift_suspension" : `rider.${action}`;
+  const ok = await adminPost(`/admin/riders/${profileId}/${action}`, {
+    action: auditAction,
+    target,
+    reasonCode,
+    note: note || null,
+  });
+  if (!ok) throw new Error(`Failed to ${action} rider ${profileId} (check API_BASE_URL / admin token).`);
+  revalidatePath(`/riders/${profileId}`);
+  revalidatePath("/riders");
+}

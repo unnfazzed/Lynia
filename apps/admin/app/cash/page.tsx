@@ -1,12 +1,11 @@
 import { tokens } from "@lynia/shared";
 import { adminFetchResult } from "../lib/api";
 import { submitAdminAction } from "../actions/audit";
-import { REASONS } from "../lib/reasons";
 import type { SettlementRow, SettlementWeek } from "../lib/adminTypes";
 import { DataTable, type Column } from "../components/DataTable";
 import { KpiCard } from "../components/KpiCard";
 import { Pill } from "../components/StatusPill";
-import { ConfirmModal } from "../components/ConfirmModal";
+import { RecordPayment } from "./RecordPayment";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { IconBanknote } from "../components/icons";
 
@@ -18,11 +17,12 @@ import { IconBanknote } from "../components/icons";
  * Every number rendered here comes from the API (`SettlementWeek`) — none are hard-coded as truth —
  * and the caveat banner below flags the whole model as an assumption until A-06 lands.
  */
+/** Canonical SettlementStatus → pill. `overdue` lands in dangerWash (the `bad` pill); `paid` in the
+ *  accent wash (`good`); `pending` stays neutral. */
 function settPill(r: SettlementRow) {
-  if (r.status === "settled") return <Pill kind="good">settled</Pill>;
-  if (r.status === "overdue") return <Pill kind="bad">{r.note}</Pill>;
-  if (r.status === "none") return <Pill kind="mut">—</Pill>;
-  return <Pill kind="mut">{r.note}</Pill>;
+  if (r.status === "paid") return <Pill kind="good">paid</Pill>;
+  if (r.status === "overdue") return <Pill kind="bad">overdue</Pill>;
+  return <Pill kind="mut">pending</Pill>;
 }
 
 export default async function CashPage() {
@@ -36,13 +36,15 @@ export default async function CashPage() {
       key: "name",
       header: "Rider",
       cell: (r) => (
-        <a href="/riders" style={{ color: "inherit", textDecoration: "none", fontWeight: 500 }}>
+        <a
+          href={r.riderId ? `/riders/${r.riderId}` : "/riders"}
+          style={{ color: "inherit", textDecoration: "none", fontWeight: 500 }}
+        >
           {r.name}
         </a>
       ),
     },
-    { key: "trips", header: "Trips", className: "num", cell: (r) => r.trips },
-    { key: "cash", header: "Cash collected", className: "num", cell: (r) => `$${r.cash}` },
+    { key: "gross", header: "Gross fares", className: "num", cell: (r) => `$${r.grossFares}` },
     {
       key: "comm",
       header: "Commission",
@@ -50,36 +52,46 @@ export default async function CashPage() {
       cell: (r) => <span style={{ fontWeight: 600 }}>${r.commission}</span>,
     },
     {
-      key: "adj",
-      header: "Adjustments",
-      className: "mut",
-      cell: (r) => <span style={{ fontSize: 12 }}>{r.adjustment ?? "—"}</span>,
+      key: "refunds",
+      header: "Refunds netted",
+      className: "num mut",
+      cell: (r) =>
+        r.refundsNetted && r.refundsNetted !== "0" ? (
+          <span style={{ fontSize: 12 }}>−${r.refundsNetted}</span>
+        ) : (
+          <span style={{ fontSize: 12 }}>—</span>
+        ),
+    },
+    {
+      key: "due",
+      header: "Amount due",
+      className: "num",
+      cell: (r) => <span style={{ fontWeight: 600 }}>${r.amountDue}</span>,
     },
     { key: "status", header: "Status", cell: (r) => settPill(r) },
+    {
+      key: "dueDate",
+      header: "Due",
+      className: "mut",
+      cell: (r) => (
+        <span style={{ fontSize: 12, color: r.status === "overdue" ? tokens.color.danger : undefined }}>
+          {r.dueDate}
+        </span>
+      ),
+    },
     {
       key: "action",
       header: "",
       align: "right",
       cell: (r) =>
-        r.status === "due" || r.status === "overdue" ? (
+        r.status !== "paid" ? (
           <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
-            <ConfirmModal
-              action="cash.settle"
-              target={r.name}
-              path="/cash"
-              triggerLabel="Record payment…"
-              triggerVariant="ghost"
-              disabled={!connected}
-              title={`Record settlement — ${r.name}`}
-              consequence={
-                <span>
-                  Commission owed: <b>${r.commission}</b>
-                  {r.adjustment ? <span className="mut"> ({r.adjustment})</span> : null}. Confirm only after the money is
-                  received.
-                </span>
-              }
-              reasons={REASONS.cashSettle}
-              confirmLabel="Mark settled"
+            <RecordPayment
+              id={r.id}
+              name={r.name}
+              amountDue={r.amountDue}
+              refundsNetted={r.refundsNetted}
+              connected={connected}
             />
             {r.status === "overdue" ? (
               // Non-destructive nudge — still routed through the audit seam.

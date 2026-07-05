@@ -1,14 +1,13 @@
 import { tokens } from "@lynia/shared";
 import { adminFetchResult } from "../../lib/api";
-import { REASONS } from "../../lib/reasons";
 import type { RiderDetail, TripRow } from "../../lib/adminTypes";
 import { DataTable, type Column } from "../../components/DataTable";
 import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
-import { ConfirmModal } from "../../components/ConfirmModal";
+import { RiderActions } from "./RiderActions";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
-import { IconAlert, IconBike, IconPhone } from "../../components/icons";
+import { IconAlert, IconBike } from "../../components/icons";
 
 /** Rider profile (kit `riders.html` detail): trips, rating, completion, cancel strikes, cooldown,
  *  cash owed, recent trips; suspend / lift / ban actions each reason-coded through <ConfirmModal>. */
@@ -25,7 +24,6 @@ function riderPill(r: RiderDetail) {
 
 export default async function RiderProfilePage({ params }: { params: { id: string } }) {
   const res = await adminFetchResult<RiderDetail>(`/admin/riders/${params.id}`);
-  const path = `/riders/${params.id}`;
 
   if (!("data" in res)) {
     const reason = res.reason;
@@ -160,74 +158,14 @@ export default async function RiderProfilePage({ params }: { params: { id: strin
           <section className="card">
             <div className="block-title">Actions</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {suspended ? (
-                <>
-                  <ConfirmModal
-                    action="rider.lift_suspension"
-                    target={r.name}
-                    path={path}
-                    triggerLabel="Lift suspension…"
-                    triggerVariant="solid"
-                    disabled={!connected}
-                    title={`Lift suspension for ${r.name}?`}
-                    consequence="They can go online again immediately. Their strike count stays as it is."
-                    reasons={REASONS.riderLift}
-                    confirmLabel="Lift suspension"
-                  />
-                  <ConfirmModal
-                    action="rider.ban"
-                    target={r.name}
-                    path={path}
-                    triggerLabel="Ban permanently…"
-                    triggerVariant="danger"
-                    danger
-                    disabled={!connected}
-                    title={`Permanently ban ${r.name}?`}
-                    consequence={
-                      <span>
-                        <b>This can&apos;t be undone from the console.</b> Their account, bike registration and national ID
-                        are blocked from re-registering.
-                      </span>
-                    }
-                    reasons={REASONS.riderBan}
-                    noteRequired
-                    notePlaceholder="Required — describe the incident and evidence."
-                    confirmLabel="Ban rider"
-                  />
-                </>
-              ) : (
-                <>
-                  <a className="btn ghost" href={telHref}>
-                    <span style={{ display: "inline-flex", fontSize: 14 }}>
-                      <IconPhone />
-                    </span>
-                    Call rider
-                  </a>
-                  <ConfirmModal
-                    action="rider.suspend"
-                    target={r.name}
-                    path={path}
-                    triggerLabel="Suspend rider…"
-                    triggerVariant="danger"
-                    danger
-                    disabled={!connected}
-                    title={`Suspend ${r.name}?`}
-                    consequence={
-                      <span>
-                        They are taken offline immediately and can&apos;t accept work.{" "}
-                        <b>
-                          {r.trips} trips · {ratingTxt(r)}
-                        </b>
-                        . Suspension holds until an admin lifts it.
-                      </span>
-                    }
-                    reasons={REASONS.riderSuspend}
-                    noteRequired
-                    notePlaceholder="What happened? The rider sees this context when they contact support."
-                    confirmLabel="Suspend rider"
-                  />
-                </>
-              )}
+              <RiderActions
+                id={r.id}
+                name={r.name}
+                suspended={suspended}
+                suspendSummary={`${r.trips} trips · ${ratingTxt(r)}`}
+                telHref={telHref}
+                connected={connected}
+              />
             </div>
             <div style={{ fontSize: 11, color: tokens.color.muted, marginTop: 10 }}>
               Suspensions and bans require a reason code and are recorded in the audit log.

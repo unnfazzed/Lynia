@@ -1,3 +1,5 @@
+import { KYC_DECLINE_REASON_LABELS, type KycDeclineReason } from "@lynia/shared";
+
 /**
  * Reason-code taxonomies for every destructive admin action — lifted verbatim from the DS3 kit's
  * `confirmAction({ reasons: [...] })` calls (packages/design/ui_kits/admin/*.html). These drive the
@@ -5,7 +7,8 @@
  *
  * TODO(A-01): once the api-side AuditLog table + reason-code enums land, these should be imported
  * from `@lynia/shared` (a single source shared by api + admin) rather than typed here. For now the
- * kit is the source of truth and the api has no enum to import.
+ * kit is the source of truth and the api has no enum to import — EXCEPT the KYC decline reasons,
+ * which now come from the canonical `KYC_DECLINE_REASON_LABELS` in `@lynia/shared` (see below).
  */
 export const REASONS = {
   // orders.html
@@ -17,17 +20,15 @@ export const REASONS = {
   ],
   orderCancel: ["Rider unreachable", "Customer asked ops to cancel", "Safety concern", "Suspected fraud"],
 
-  // kyc.html — KYC decline (admin A-02). MIRRORS the api's canonical list in
-  // apps/api/src/riders/kyc-decline-reasons.ts (KYC_DECLINE_REASONS). @lynia/shared is off-limits for
-  // this change, so the strings are duplicated across the two packages — keep them in sync until the
-  // A-01 shared enum lands and both import a single source.
-  kycDecline: [
-    "ID photo unreadable — retake",
-    "Selfie doesn't match the ID",
-    "ID expired or not a valid national ID",
-    "Bike registration invalid or missing",
-    "Suspected fraud or stolen identity",
-  ],
+  // kyc.html — KYC decline (admin A-02). Canonical source: `KYC_DECLINE_REASON_LABELS` in
+  // `@lynia/shared` — a single list shared by the api validation, this admin picker, and the rider-app
+  // decline copy. UNLIKE the other taxonomies, the stored reasonCode here is the machine KEY (e.g.
+  // `id_expired`), NOT the label — the rider app reads `rider.kycDeclineReason` and maps the key back
+  // through `KYC_DECLINE_REASON_LABELS` to show the copy, so a label string wouldn't resolve. The
+  // picker therefore submits `{value: key, label}` pairs.
+  kycDecline: (Object.entries(KYC_DECLINE_REASON_LABELS) as [KycDeclineReason, string][]).map(
+    ([value, label]) => ({ value, label }),
+  ),
 
   // riders.html
   riderSuspend: [
