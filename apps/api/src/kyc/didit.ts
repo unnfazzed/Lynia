@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { KYC_THRESHOLDS } from "@lynia/shared";
+import { KYC_THRESHOLDS, KycDeclineReason } from "@lynia/shared";
 
 export type RiderKyc = "verified" | "failed" | "pending";
 
@@ -59,10 +59,9 @@ export function decideDiditKyc(status: string, score: number | null): { status: 
   if (score !== null) {
     if (score >= KYC_THRESHOLDS.autoApprove) return { status: "verified" };
     if (score < KYC_THRESHOLDS.needsReview) {
-      return {
-        status: "failed",
-        reason: `ID face-match score ${score.toFixed(2)} is below the ${KYC_THRESHOLDS.needsReview} auto-decline threshold`,
-      };
+      // Store a canonical KycDeclineReason KEY (not a sentence) so the rider app resolves it via
+      // KYC_DECLINE_REASON_LABELS, same as an admin decline — a sub-threshold face-match is a mismatch.
+      return { status: "failed", reason: KycDeclineReason.FACE_MISMATCH };
     }
     return { status: "pending" }; // needs human review — held for the admin backstop, no auto-verify
   }

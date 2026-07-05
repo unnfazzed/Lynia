@@ -54,36 +54,56 @@ describe("SettlementsService.generateForPeriod (math + idempotent upsert)", () =
 });
 
 describe("SettlementsService.autoPauseOverdue (overdue → suspend rider)", () => {
-  it("marks overdue AND suspends the rider with reason settlement_overdue, in a tx per rider", async () => {
-    const txOps: unknown[][] = [];
+  it("marks overdue AND suspends ONLY an active rider + audits, in a tx per rider", async () => {
+    const calls: Array<{ op: string; args: Record<string, unknown> }> = [];
+    const tx = {
+      settlement: { update: (args: Record<string, unknown>) => calls.push({ op: "settlement.update", args }) },
+      // updateMany reports it suspended an ACTIVE rider (count 1) → the pause + audit fire.
+      rider: { updateMany: (args: Record<string, unknown>) => { calls.push({ op: "rider.updateMany", args }); return { count: 1 }; } },
+      auditLog: { create: (args: Record<string, unknown>) => calls.push({ op: "auditLog.create", args }) },
+    };
     const prisma = {
       settlement: {
         findMany: async (args: { where: { dueDate: { lt: Date } } }) => {
-          // The cutoff must be overduePauseDays in the past.
           const spanDays = Math.round((Date.now() - args.where.dueDate.lt.getTime()) / DAY);
           expect(spanDays).toBe(SETTLEMENT.overduePauseDays);
           return [{ id: "s1", riderId: "r1" }];
         },
-        update: (args: unknown) => ({ __op: "settlement.update", args }),
       },
-      rider: { update: (args: unknown) => ({ __op: "rider.update", args }) },
-      $transaction: async (ops: unknown[]) => { txOps.push(ops); return ops; },
+      $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
     };
     const svc = new SettlementsService(prisma as unknown as PrismaService);
     const res = await svc.autoPauseOverdue(new Date());
     expect(res).toEqual({ paused: 1 });
-    // Both writes were handed to ONE $transaction call.
-    expect(txOps).toHaveLength(1);
-    const [settleUpdate, riderUpdate] = txOps[0] as Array<{ __op: string; args: { data: Record<string, unknown> } }>;
-    expect(settleUpdate.args.data).toEqual({ status: "overdue" });
+    const riderUpdate = calls.find((c) => c.op === "rider.updateMany") as unknown as { args: { where: Record<string, unknown>; data: Record<string, unknown> } };
+    // Guarded to active riders only — never downgrades a ban / admin suspension.
+    expect(riderUpdate.args.where).toEqual({ profileId: "r1", accountStatus: "active" });
     expect(riderUpdate.args.data).toEqual({ accountStatus: "suspended", suspendReason: "settlement_overdue" });
+    // The automated state change is audited (A-01).
+    expect(calls.some((c) => c.op === "auditLog.create")).toBe(true);
+  });
+
+  it("marks overdue but does NOT re-pause / audit a non-active (banned/suspended) rider", async () => {
+    const calls: string[] = [];
+    const tx = {
+      settlement: { update: () => calls.push("settlement.update") },
+      rider: { updateMany: () => { calls.push("rider.updateMany"); return { count: 0 }; } }, // not active → 0
+      auditLog: { create: () => calls.push("auditLog.create") },
+    };
+    const prisma = {
+      settlement: { findMany: async () => [{ id: "s1", riderId: "r1" }] },
+      $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+    };
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
+    expect(await svc.autoPauseOverdue(new Date())).toEqual({ paused: 0 });
+    expect(calls).toContain("settlement.update"); // still marked overdue
+    expect(calls).not.toContain("auditLog.create"); // no pause → no audit
   });
 
   it("pauses nothing when no settlement is past the cutoff", async () => {
     const prisma = {
       settlement: { findMany: async () => [] },
-      rider: {},
-      $transaction: async (ops: unknown[]) => ops,
+      $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn({}),
     };
     const svc = new SettlementsService(prisma as unknown as PrismaService);
     expect(await svc.autoPauseOverdue()).toEqual({ paused: 0 });

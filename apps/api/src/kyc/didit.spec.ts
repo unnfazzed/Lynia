@@ -59,7 +59,7 @@ describe("decideDiditKyc (Didit auto-decision bands, KYC_THRESHOLDS)", () => {
   it("score < needsReview → failed (auto-decline) with a reason", () => {
     const d = decideDiditKyc("In Review", 0.3);
     expect(d.status).toBe("failed");
-    expect(d.reason).toMatch(/score .* below .* threshold/i);
+    expect(d.reason).toBe("face_mismatch"); // canonical KycDeclineReason key, resolved to copy by the app
   });
 
   it("no score → falls back to the status-string mapping", () => {

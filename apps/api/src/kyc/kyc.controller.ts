@@ -24,9 +24,10 @@ import { RiderService } from "../riders/rider.service";
 import { decideDiditKyc, diditTimestampFresh, extractDiditScore, verifyDiditSignature, verifyDiditSignatureV2 } from "./didit";
 
 // A-02: a decline MUST carry the reason code (recorded on the rider + audit log — a compliance
-// invariant, so it's server-enforced here, not only in the admin ConfirmModal). Free string (the
-// admin sends the reason label from KYC_DECLINE_REASONS) — capped, not enum-bound, so the admin's
-// mirrored list can evolve without 400ing here.
+// invariant, so it's server-enforced here, not only in the admin ConfirmModal). The admin sends a
+// canonical KycDeclineReason KEY (e.g. `face_mismatch`), which the rider app maps back to copy via
+// KYC_DECLINE_REASON_LABELS; kept a capped free string here (not enum-bound) so the shared list can
+// grow without 400ing an older admin build.
 const AdminKyc = z
   .object({
     status: z.enum(["pending", "verified", "failed"]),

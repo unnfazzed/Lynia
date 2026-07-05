@@ -4,6 +4,7 @@ import {
   type KycStatus,
   type OrderStatus,
   PHONE_REVEAL_STATUSES,
+  RELIABILITY,
   RiderAccountStatus,
   TERMINAL_STATUSES,
 } from "@lynia/shared";
@@ -333,11 +334,26 @@ export class AdminService {
    */
   async liftRider(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const rider = await tx.rider.findUnique({ where: { profileId }, select: { profileId: true } });
+      const rider = await tx.rider.findUnique({
+        where: { profileId },
+        select: { accountStatus: true, reliabilityScore: true },
+      });
       if (!rider) throw new NotFoundException("Rider not found");
+      // A lift restores access and clears a reliability hold. It does NOT undo a permanent ban —
+      // reinstating a banned rider must be a separate, deliberate action, not a side effect of "lift".
+      if (rider.accountStatus === RiderAccountStatus.BANNED) {
+        throw new ConflictException("A banned rider can't be lifted — reinstating a ban is a separate action.");
+      }
       await tx.rider.update({
         where: { profileId },
-        data: { accountStatus: RiderAccountStatus.ACTIVE, suspendReason: null },
+        data: {
+          accountStatus: RiderAccountStatus.ACTIVE,
+          suspendReason: null,
+          // Clear the reliability lockout: on_hold otherwise has no escape (recovery needs online
+          // completions, which the hold blocks). Raise the score to the clear threshold if it's below.
+          onHold: false,
+          reliabilityScore: Math.max(rider.reliabilityScore, RELIABILITY.ON_HOLD_CLEAR_AT),
+        },
       });
       const audit = await tx.auditLog.create({
         data: this.auditData(actor, "rider.lift", profileId, input.reason, input.note),

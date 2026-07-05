@@ -123,6 +123,10 @@ export class SettlementsService {
           status: SettlementStatus.PENDING,
         },
         // Recompute money only — never reset an already-actioned status/paidAt/method (idempotency).
+        // INVARIANT: only call generateForPeriod for the current OPEN period. Regenerating a past
+        // period whose rows are already `paid` would recompute the money upward (e.g. a late-completing
+        // order) while the status stays `paid` → silent under-collection. currentWeek() only ever
+        // generates the current (pending) period, so this holds.
         update: { periodEnd, grossFares, commission, refundsNetted, amountDue, dueDate },
       });
     }
@@ -142,16 +146,34 @@ export class SettlementsService {
       select: { id: true, riderId: true },
     });
 
+    let paused = 0;
     for (const s of overdue) {
-      await this.prisma.$transaction([
-        this.prisma.settlement.update({ where: { id: s.id }, data: { status: SettlementStatus.OVERDUE } }),
-        this.prisma.rider.update({
-          where: { profileId: s.riderId },
+      await this.prisma.$transaction(async (tx) => {
+        // The settlement is overdue regardless of account standing.
+        await tx.settlement.update({ where: { id: s.id }, data: { status: SettlementStatus.OVERDUE } });
+        // Only pause an ACTIVE account — never downgrade an admin ban/suspension or overwrite its
+        // reason (guarded via updateMany's compound where). A rider with several overdue settlements
+        // is suspended once: subsequent rows match 0 rows here, so no double audit.
+        const res = await tx.rider.updateMany({
+          where: { profileId: s.riderId, accountStatus: RiderAccountStatus.ACTIVE },
           data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: "settlement_overdue" },
-        }),
-      ]);
+        });
+        if (res.count > 0) {
+          paused++;
+          // A-01: an automated state change is audited too, actor "system".
+          await tx.auditLog.create({
+            data: {
+              actor: "system",
+              action: "rider.auto_pause",
+              target: s.riderId,
+              reasonCode: "settlement_overdue",
+              note: `settlement ${s.id} overdue past ${SETTLEMENT.overduePauseDays}d`,
+            },
+          });
+        }
+      });
     }
-    return { paused: overdue.length };
+    return { paused };
   }
 
   /**

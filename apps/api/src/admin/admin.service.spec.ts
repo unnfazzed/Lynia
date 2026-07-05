@@ -415,12 +415,26 @@ describe("AdminService admin mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.audit!.data).toMatchObject({ action: "rider.ban", reasonCode: "fraud", note: null });
   });
 
-  it("liftRider returns to active, CLEARS the suspend reason, audits", async () => {
-    const { prisma, calls } = makeTx();
+  it("liftRider returns to active, CLEARS the suspend reason + reliability hold, audits", async () => {
+    // A suspended, reliability-held rider (score 55 < clear-at 70).
+    const { prisma, calls } = makeTx({ rider: { accountStatus: "suspended", reliabilityScore: 55 } });
     const svc = new AdminService(prisma as unknown as PrismaService);
     await svc.liftRider("admin-1", "r1", {});
-    expect(calls.riderUpdate!.data).toEqual({ accountStatus: "active", suspendReason: null });
+    // Clears the suspension AND the on_hold lockout, raising the score to the clear threshold (the
+    // only escape for on_hold, which otherwise needs online completions the hold itself blocks).
+    expect(calls.riderUpdate!.data).toEqual({
+      accountStatus: "active",
+      suspendReason: null,
+      onHold: false,
+      reliabilityScore: 70,
+    });
     expect(calls.audit!.data).toMatchObject({ action: "rider.lift", reasonCode: null });
+  });
+
+  it("liftRider refuses to un-ban a banned rider", async () => {
+    const { prisma } = makeTx({ rider: { accountStatus: "banned", reliabilityScore: 100 } });
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    await expect(svc.liftRider("admin-1", "r1", {})).rejects.toThrow(/banned/i);
   });
 
   it("suspendRider 404s when the id isn't a rider and writes NOTHING", async () => {
