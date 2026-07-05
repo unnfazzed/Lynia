@@ -1,4 +1,4 @@
-import { ACTIVE_RIDE_STATUSES, type AdvanceStatusRequest, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type AdvanceStatusRequest, RIDER_CANCELLABLE_STATUSES, UndeliveredReason, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -6,10 +6,10 @@ import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { collectedItemCount } from "../../src/logic/journey";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
-import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, type OrderSnapshot } from "../../src/api/orders";
+import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, type OrderSnapshot } from "../../src/api/orders";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, ErrorText, Field, Heading, Icon, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
@@ -20,6 +20,20 @@ const NEXT: Record<string, { to: AdvanceStatusRequest["to"]; label: string }> = 
   en_route_pickup: { to: "picked_up", label: "Mark parcel collected" },
   picked_up: { to: "en_route_dropoff", label: "Head to drop-off" },
 };
+
+// Delivery-OTP cap (R9). Mirrors the server's DELIVERY_OTP_MAX_ATTEMPTS: the server enforces the lock;
+// the client counts wrong tries to show attempts-remaining and disable the field at the cap.
+const DELIVERY_OTP_MAX_ATTEMPTS = 5;
+
+// The post-pickup "can't complete delivery" reasons (R1) — the shared UndeliveredReason enum paired
+// with rider-facing copy + an icon, mirroring the "Couldn't deliver" mockup (rider-screens.jsx).
+const UNDELIVERED_OPTIONS: { reason: UndeliveredReason; label: string; icon: IconName }[] = [
+  { reason: UndeliveredReason.UNREACHABLE, label: "Recipient unreachable", icon: "phone" },
+  { reason: UndeliveredReason.REFUSED, label: "Recipient refused", icon: "circle-alert" },
+  { reason: UndeliveredReason.WRONG_ADDRESS, label: "Wrong address", icon: "map-pin" },
+  { reason: UndeliveredReason.BREAKDOWN, label: "Couldn't complete (breakdown)", icon: "bike" },
+];
+const UNDELIVERED_LABEL = Object.fromEntries(UNDELIVERED_OPTIONS.map((o) => [o.reason, o.label])) as Record<UndeliveredReason, string>;
 
 export default function RiderJob(): React.ReactElement {
   const router = useRouter();

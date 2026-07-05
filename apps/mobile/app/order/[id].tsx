@@ -376,6 +376,25 @@ export default function OrderScreen(): React.ReactElement {
     selectM.mutate(offerId);
   };
 
+  // C5: the re-broadcast / "send another request" CTAs used to `router.replace("/home")`, dumping the
+  // customer on a BLANK compose form and losing the whole order. Instead carry THIS order's route,
+  // landmarks, line-items and price into the compose flow so home.tsx prefills them (params are strings,
+  // so items ride as JSON). The customer lands on a filled form and just nudges the price and re-sends.
+  const rebroadcast = (): void =>
+    router.replace({
+      pathname: "/home",
+      params: {
+        rbPickupLat: String(order.pickup.point.lat),
+        rbPickupLng: String(order.pickup.point.lng),
+        rbPickupLandmark: order.pickup.landmark ?? "",
+        rbDropLat: String(order.dropoff.point.lat),
+        rbDropLng: String(order.dropoff.point.lng),
+        rbDropLandmark: order.dropoff.landmark ?? "",
+        rbItems: JSON.stringify(order.items ?? []),
+        rbFare: String(order.proposedFare ?? ""),
+      },
+    });
+
   return (
     <Screen>
       {/* A dropped socket surfaces as the standard top banner, not an inline strip in the card. */}
@@ -387,11 +406,26 @@ export default function OrderScreen(): React.ReactElement {
           <StatusPill status={order.status} />
         </View>
 
-        {deliveryCode ? (
-          <Card style={{ borderColor: tokens.color.accent }}>
-            <Text style={{ fontSize: 14, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
-            <Text style={{ fontSize: 28, fontWeight: "700", letterSpacing: 6, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>{deliveryCode}</Text>
-          </Card>
+        {/* Hand-off code — only while the trip is live/deliverable (C6). On a terminal order
+            (cancelled / undelivered / delivered / completed) the code is meaningless and, above
+            "This order is cancelled." / "Parcel not delivered", actively misleading. */}
+        {isActive ? (
+          deliveryCode ? (
+            <Card style={{ borderColor: tokens.color.accent }}>
+              <Text style={{ fontSize: 14, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
+              <Text style={{ fontSize: 28, fontWeight: "700", letterSpacing: 6, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>{deliveryCode}</Text>
+            </Card>
+          ) : (
+            // C7: assigned-or-later with no local code (e.g. a dropped select response). Don't show
+            // nothing — prompt a re-issue via the existing rotate mutation instead of leaving the
+            // customer with no code and no explanation.
+            <Card style={{ borderColor: tokens.color.accent }}>
+              <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
+                Your hand-off code isn&apos;t showing — tap to re-issue so you can give it to the recipient at hand-off.
+              </Text>
+              <Button label="Re-issue delivery code" onPress={() => rotateM.mutate()} loading={rotateM.isPending} />
+            </Card>
+          )
         ) : null}
 
         {order.status === "open_for_offers" ? (
@@ -427,7 +461,7 @@ export default function OrderScreen(): React.ReactElement {
             {urgent ? (
               // Pre-surface the recovery affordance BEFORE the dead-end — same destination as the
               // expired state's "Send another request". Ghost so it doesn't compete with "Choose".
-              <Button label="Nudge price & re-broadcast" variant="ghost" onPress={() => router.replace("/home")} />
+              <Button label="Nudge price & re-broadcast" variant="ghost" onPress={rebroadcast} />
             ) : null}
             {orderedOffers.length > 1 ? (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
@@ -614,7 +648,7 @@ export default function OrderScreen(): React.ReactElement {
             title="No riders took this price yet"
             message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
           >
-            <Button label="Send another request" onPress={() => router.replace("/home")} />
+            <Button label="Send another request" onPress={rebroadcast} />
           </EmptyState>
         ) : null}
         {order.status === "cancelled" ? (
@@ -666,7 +700,7 @@ export default function OrderScreen(): React.ReactElement {
                 </Pressable>
               ) : null}
             </Card>
-            <Button label="Send a new request" onPress={() => router.replace("/home")} />
+            <Button label="Send a new request" onPress={rebroadcast} />
           </>
         ) : null}
 
