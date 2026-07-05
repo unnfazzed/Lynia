@@ -12,6 +12,7 @@ import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
 import { Button, Card, EmptyState, ErrorText, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
+import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
@@ -553,6 +554,10 @@ export default function OrderScreen(): React.ReactElement {
           </Card>
         ) : null}
 
+        {/* SOS on a live trip (R-16/F-13) — a deliberate danger control, highest value at the cash
+            hand-off. Only while the trip is genuinely active. */}
+        {isActive ? <SosControl orderId={orderId} /> : null}
+
         {order.status === "delivered" ? (
           <Card>
             <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: tokens.space.sm }}>Rate your rider</Text>
@@ -676,6 +681,14 @@ export default function OrderScreen(): React.ReactElement {
               loading={cancelM.isPending}
             />
           )
+        ) : null}
+        {/* Order-level support — replaces the generic-help dead-end for an active or completed trip. */}
+        {isActive || order.status === "delivered" || order.status === "completed" || order.status === "undelivered" ? (
+          <GetHelpControl orderId={orderId} />
+        ) : null}
+        {/* Report / block after a trip (customer → rider). Terminal states only. */}
+        {order.status === "delivered" || order.status === "completed" || order.status === "undelivered" || order.status === "cancelled" ? (
+          <ReportControl orderId={orderId} counterpartyNoun="rider" />
         ) : null}
         <Button label="Back home" variant="ghost" onPress={() => router.replace("/home")} />
         <ErrorText message={mutationError} />

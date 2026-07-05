@@ -10,6 +10,7 @@ import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, ErrorText, Field, Heading, Icon, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
+import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
 const NEXT: Record<string, { to: AdvanceStatusRequest["to"]; label: string }> = {
@@ -370,9 +371,17 @@ export default function RiderJob(): React.ReactElement {
           </Card>
         ) : null}
 
+        {/* SOS on a live run (R-16/F-13) — a deliberate danger control, highest value at the cash
+            hand-off. Passes the rider's own live GPS when available. */}
+        {isActive ? <SosControl orderId={order.id} lat={riderPoint?.lat} lng={riderPoint?.lng} /> : null}
+
         {isActive ? (
           <Button label="Cancel job" variant="ghost" onPress={() => cancelM.mutate()} loading={cancelM.isPending} />
         ) : null}
+
+        {/* Order-level support (active) + report/block after the trip (rider → sender). */}
+        {isActive || order.status === "delivered" ? <GetHelpControl orderId={order.id} /> : null}
+        {order.status === "delivered" ? <ReportControl orderId={order.id} counterpartyNoun="sender" /> : null}
         <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
         <ErrorText message={error} />
         <View style={{ height: tokens.space.xxl }} />

@@ -19,12 +19,13 @@ export interface GateError {
 
 /**
  * The reasons the rules API can refuse a rider going online (the online-gate). Mirrors the documented
- * contract: `kyc` (not verified), `suspended` (admin/settlement pause), `on_hold` (reliability auto-hold,
+ * contract: `kyc` (not verified), `suspended` (admin/settlement pause, recoverable via support),
+ * `banned` (permanent admin removal — a harder state than suspended), `on_hold` (reliability auto-hold,
  * Q2), `cooldown` (recent cancel cool-off).
  */
-export type OnlineGateReason = "kyc" | "suspended" | "on_hold" | "cooldown";
+export type OnlineGateReason = "kyc" | "suspended" | "banned" | "on_hold" | "cooldown";
 
-const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = ["kyc", "suspended", "on_hold", "cooldown"];
+const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = ["kyc", "suspended", "banned", "on_hold", "cooldown"];
 
 function isOnlineGateReason(v: string): v is OnlineGateReason {
   return (ONLINE_GATE_REASONS as readonly string[]).includes(v);
@@ -43,6 +44,8 @@ export function onlineGateReason(err: GateError | null | undefined): OnlineGateR
   if (isOnlineGateReason(code)) return code;
   const m = (err.message ?? "").toLowerCase();
   if (m.includes("on hold") || m.includes("on-hold") || m.includes("on_hold")) return "on_hold";
+  // Check banned before suspended: they're distinct states and a message could mention both.
+  if (m.includes("banned") || m.includes("ban ")) return "banned";
   if (m.includes("suspend")) return "suspended";
   if (m.includes("cooldown") || m.includes("cool-down") || m.includes("cool down")) return "cooldown";
   if (m.includes("kyc") || m.includes("verif")) return "kyc";
@@ -62,6 +65,10 @@ export const ONLINE_GATE_COPY: Record<OnlineGateReason, GateCopy> = {
   suspended: {
     title: "Your account is suspended",
     message: "You can't go online while your account is suspended. Contact support to sort this out.",
+  },
+  banned: {
+    title: "Your account is banned",
+    message: "Your account has been banned and can no longer go online. If you think this is a mistake, contact support.",
   },
   on_hold: {
     title: "Your account is on hold",

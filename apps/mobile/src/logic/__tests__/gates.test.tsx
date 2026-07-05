@@ -1,10 +1,11 @@
 import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
-import { isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, kycDeclineLabel, onlineGateReason } from "../gates";
+import { ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, kycDeclineLabel, onlineGateReason } from "../gates";
 
 describe("onlineGateReason (rider online-gate refusal)", () => {
   it("reads a machine reason code (case-insensitive)", () => {
     expect(onlineGateReason({ code: "on_hold" })).toBe("on_hold");
     expect(onlineGateReason({ code: "SUSPENDED" })).toBe("suspended");
+    expect(onlineGateReason({ code: "banned" })).toBe("banned");
     expect(onlineGateReason({ code: "cooldown" })).toBe("cooldown");
     expect(onlineGateReason({ code: "kyc" })).toBe("kyc");
   });
@@ -12,12 +13,19 @@ describe("onlineGateReason (rider online-gate refusal)", () => {
   it("falls back to sniffing the friendly message when no code is tagged", () => {
     expect(onlineGateReason({ message: "Your account is on hold." })).toBe("on_hold");
     expect(onlineGateReason({ message: "This account is suspended." })).toBe("suspended");
+    expect(onlineGateReason({ message: "Your account has been banned." })).toBe("banned");
     expect(onlineGateReason({ message: "You're on a cooldown after cancelling." })).toBe("cooldown");
     expect(onlineGateReason({ message: "Finish KYC before going online." })).toBe("kyc");
   });
 
+  it("keeps banned distinct from suspended (they are different states)", () => {
+    expect(onlineGateReason({ code: "banned" })).not.toBe("suspended");
+    expect(ONLINE_GATE_COPY.banned.title).not.toBe(ONLINE_GATE_COPY.suspended.title);
+  });
+
   it("prefers the code over the message", () => {
     expect(onlineGateReason({ code: "on_hold", message: "suspended" })).toBe("on_hold");
+    expect(onlineGateReason({ code: "banned", message: "suspended" })).toBe("banned");
   });
 
   it("returns null for an unrecognised refusal or missing error", () => {

@@ -9,15 +9,18 @@ import {
   ChevronUp,
   CircleAlert,
   Clock,
+  Flag,
   History,
   IdCard,
   Inbox,
+  LifeBuoy,
   type LucideIcon,
   MapPin,
   Navigation,
   Package,
   Phone,
   Search,
+  ShieldAlert,
   Star,
   TriangleAlert,
   User,
@@ -55,6 +58,9 @@ const ICONS = {
   search: Search,
   x: X,
   "circle-alert": CircleAlert,
+  "life-buoy": LifeBuoy, // get help with this trip
+  flag: Flag, // report a problem
+  "shield-alert": ShieldAlert, // SOS / emergency
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
