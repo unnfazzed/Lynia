@@ -17,10 +17,28 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Machine-readable reason lifted off the error body (e.g. an online-gate `on_hold`, a corridor
+     *  `out_of_area`), when the API tags one — null otherwise. Domain screens branch on this over the
+     *  human `message`, which is copy and can change. */
+    public readonly code: string | null = null,
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/** Lift a machine-readable reason code off a Nest error body, if present. Checks the fields the API is
+ *  likely to carry it in (`code` / `reason` / `error`); returns null when the body has none / isn't JSON. */
+function errorCode(text: string): string | null {
+  try {
+    const parsed = JSON.parse(text) as { code?: unknown; reason?: unknown; error?: unknown };
+    for (const v of [parsed.code, parsed.reason, parsed.error]) {
+      if (typeof v === "string" && v.length > 0) return v;
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
 }
 
 interface RequestOpts {
@@ -108,7 +126,7 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new ApiError(res.status, friendlyMessage(res.status, text));
+    throw new ApiError(res.status, friendlyMessage(res.status, text), errorCode(text));
   }
   // Parse via text so an empty body (e.g. /orders/mine/active with no job) doesn't throw — it
   // yields undefined, and a literal "null" parses to null, both of which callers treat as "none".
