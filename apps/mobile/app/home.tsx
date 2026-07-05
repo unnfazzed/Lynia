@@ -7,6 +7,7 @@ import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Modal, Platfo
 import { ApiError } from "../src/api/client";
 import { acceptDisclaimer, createOrder, type OrderSnapshot } from "../src/api/orders";
 import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/session";
+import { isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import { orderKey } from "../src/query/client";
 import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Label, Screen, Sub } from "../src/ui";
 import { BottomSheet } from "../src/ui/BottomSheet";
@@ -98,6 +99,9 @@ export default function HomeScreen(): React.ReactElement {
   const [proposedFare, setProposedFare] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Q1 out-of-service-area (a distinct state, not a red error): set when a pin is outside the launch
+  // corridor — either caught client-side pre-broadcast or from the server's service-corridor 4xx.
+  const [outOfArea, setOutOfArea] = useState(false);
 
   // Pre-broadcast liability disclaimer (A1-8). Gate the first broadcast behind an accept-to-continue
   // sheet; once accepted for the current policy version we don't re-show it. Kept in a ref (read at
@@ -190,6 +194,12 @@ export default function HomeScreen(): React.ReactElement {
     });
   }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, declaredValue, proposedFare]);
 
+  // Moving either pin is the fix for an out-of-area result — drop the state so it doesn't linger over
+  // a now-valid route. Only fires on a real pin change (not on the submit that set it).
+  useEffect(() => {
+    setOutOfArea(false);
+  }, [pickupPoint, dropPoint]);
+
   // Item-row edits — bounds mirror the contract (≥1 row always on screen, ≤MAX_ITEMS, qty 1–99).
   const updateItem = useCallback((i: number, patch: Partial<ItemRow>): void => {
     setItems((arr) => arr.map((it, j) => (j === i ? { ...it, ...patch } : it)));
@@ -268,8 +278,15 @@ export default function HomeScreen(): React.ReactElement {
 
   const submit = async (): Promise<void> => {
     setError(null);
+    setOutOfArea(false);
     if (!canSubmit || pickupPoint == null || dropPoint == null || fare === null) {
       setError("Drop a pin for pickup and drop-off, name an item, add both contact phones, and set a price.");
+      return;
+    }
+    // Optional client-side pre-check (server stays the authority): if a pin is already outside the
+    // launch corridor, show the out-of-area state now and skip the round-trip that would only 4xx.
+    if (!isWithinServiceCorridor(pickupPoint) || !isWithinServiceCorridor(dropPoint)) {
+      setOutOfArea(true);
       return;
     }
     const candidate = {
@@ -312,7 +329,13 @@ export default function HomeScreen(): React.ReactElement {
       void clearDraft();
       router.push(`/order/${order.id}`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't create the order.");
+      // The server is the authority on coverage: a service-corridor 4xx becomes the out-of-area state
+      // (not a generic error), even if the client pre-check passed (corridor edge / stale constant).
+      if (e instanceof ApiError && isOutOfServiceArea(e)) {
+        setOutOfArea(true);
+      } else {
+        setError(e instanceof ApiError ? e.message : "Couldn't create the order.");
+      }
     } finally {
       setBusy(false);
     }
@@ -466,6 +489,31 @@ export default function HomeScreen(): React.ReactElement {
                     .filter(Boolean)
                     .join(", ")} to broadcast.`}
                 </Text>
+              ) : null}
+              {outOfArea ? (
+                // Q1: a distinct, calm out-of-area state (not a red error) — the fix is moving a pin,
+                // so it names that rather than implying something went wrong.
+                <View
+                  accessibilityRole="text"
+                  style={{
+                    flexDirection: "row",
+                    gap: tokens.space.sm,
+                    padding: tokens.space.md,
+                    borderRadius: tokens.radius.input,
+                    backgroundColor: tokens.color.surface,
+                    marginBottom: tokens.space.sm,
+                  }}
+                >
+                  <Icon name="map-pin" size={18} color={tokens.color.accentText} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
+                      Outside our service area
+                    </Text>
+                    <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18, marginTop: 1 }}>
+                      We don&apos;t cover that pickup or drop-off yet. Move your pins closer to Harare to broadcast, or check back as we expand.
+                    </Text>
+                  </View>
+                </View>
               ) : null}
               <Button label="Broadcast request" onPress={onBroadcast} loading={busy} disabled={!canSubmit} />
               <ErrorText message={error} />

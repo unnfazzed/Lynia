@@ -31,6 +31,7 @@ const gateway = {
   emitOrderStatus: () => undefined,
   emitBidExpired: () => undefined,
   emitJobCancelled: (orderId: string, collected: boolean) => jobCancelledEmits.push({ orderId, collected }),
+  emitOrderRebroadcast: () => undefined,
 } as unknown as TrackingGateway;
 const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), gateway);
 // The board announce for F-01 re-broadcast is best-effort push; stub it so the proof asserts DB state

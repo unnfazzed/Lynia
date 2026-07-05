@@ -1,12 +1,11 @@
 import { tokens } from "@lynia/shared";
-import { adminFetch } from "../../lib/api";
+import { adminFetchResult } from "../../lib/api";
 import { submitAdminAction } from "../../actions/audit";
-import { REASONS } from "../../lib/reasons";
 import type { OrderDetail } from "../../lib/adminTypes";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
-import { ConfirmModal } from "../../components/ConfirmModal";
-import { Conn, EmptyState, OfflineBanner } from "../../components/states";
+import { FareAdjust, CancelOrder } from "./OrderActions";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconPackage, IconPhone } from "../../components/icons";
 
 /** Order detail (kit `orders.html` detail): 8-step delivery timeline, parcel line items, people
@@ -87,9 +86,10 @@ function deriveSteps(o: OrderDetail): Step[] {
 }
 
 export default async function OrderDetailPage({ params }: { params: { id: string } }) {
-  const o = await adminFetch<OrderDetail>(`/admin/orders/${params.id}`);
+  const res = await adminFetchResult<OrderDetail>(`/admin/orders/${params.id}`);
 
-  if (!o) {
+  if (!("data" in res)) {
+    const reason = res.reason;
     return (
       <main className="content">
         <header className="page">
@@ -99,21 +99,22 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           <h1 className="mono" style={{ fontSize: 18 }}>
             {params.id}
           </h1>
-          <Conn connected={false} />
+          <Conn connected={false} reason={reason} />
         </header>
-        <OfflineBanner />
+        <OfflineBanner reason={reason} />
         <section className="card">
           <EmptyState
             icon={<IconPackage />}
-            title="Order record not connected"
-            line="Set API_BASE_URL (and ADMIN_API_TOKEN) to load this order."
+            title={reasonTitle(reason, "Order record")}
+            line={reasonLine(reason, "this order")}
           />
         </section>
       </main>
     );
   }
 
-  // Past the guard `o` is non-null → connected; live actions are enabled.
+  const o = res.data;
+  // Past the guard `o` is live data → connected; live actions are enabled.
   const connected = true;
   const steps = deriveSteps(o);
   const idx = STEP_OF[o.status] ?? -1;
@@ -251,23 +252,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               ]}
             />
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-              <ConfirmModal
-                action="order.adjust_fare"
-                target={o.id}
-                path={path}
-                triggerLabel="Adjust fare / refund"
-                triggerVariant="ghost"
-                disabled={!connected}
-                title="Adjust fare / record refund"
-                consequence={
-                  <span>
-                    Order <b>{o.id}</b> · agreed fare <b>${o.agreed ?? o.proposed}</b>. Cash refunds are paid out via the
-                    rider&apos;s next settlement.
-                  </span>
-                }
-                reasons={REASONS.orderAdjustFare}
-                confirmLabel="Record adjustment"
-              />
+              <FareAdjust id={o.id} agreedOrProposed={o.agreed ?? o.proposed} connected={connected} />
             </div>
           </section>
 
@@ -295,24 +280,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                 </>
               ) : null}
               {live ? (
-                <ConfirmModal
-                  action="order.cancel"
-                  target={o.id}
-                  path={path}
-                  triggerLabel="Cancel order…"
-                  triggerVariant="danger"
-                  danger
-                  disabled={!connected}
-                  title="Cancel this order?"
-                  consequence={
-                    <span>
-                      Order <b>{o.id}</b> will be cancelled for both sides. The customer is notified and can re-broadcast;
-                      the rider gets no strike if the reason is not theirs.
-                    </span>
-                  }
-                  reasons={REASONS.orderCancel}
-                  confirmLabel="Cancel order"
-                />
+                <CancelOrder id={o.id} connected={connected} />
               ) : (
                 <span style={{ fontSize: 12, color: tokens.color.muted }}>
                   This order is {o.status.replace(/_/g, " ")} — no live actions.

@@ -266,6 +266,45 @@ describe("OrdersService.create", () => {
   });
 });
 
+describe("OrdersService.create service-corridor gate (Q1)", () => {
+  const svc = (createSpy: () => unknown) =>
+    new OrdersService(
+      { order: { create: async () => createSpy() } } as unknown as PrismaService,
+      { schedule: async () => {} } as unknown as OfferExpiryService,
+      noTracking,
+      noNotifications,
+      noGateway,
+    );
+  // Far outside the Harare corridor (SERVICE_CORRIDOR radius 25km) — the Gulf of Guinea (0,0).
+  const farPoint = { lat: 0, lng: 0 };
+  const wp = (point: { lat: number; lng: number }) => ({ point, landmark: "X", contactPhone: "+263771111111" });
+
+  it("rejects an out-of-area PICKUP with a 4xx and never writes the order", async () => {
+    let created = false;
+    const s = svc(() => { created = true; return {}; });
+    await expect(s.create({ ...orderInput, pickup: wp(farPoint) }, "cust-1")).rejects.toThrow(/service area/i);
+    expect(created).toBe(false);
+  });
+
+  it("rejects an out-of-area DROP-OFF with a 4xx", async () => {
+    const s = svc(() => ({}));
+    await expect(s.create({ ...orderInput, dropoff: wp(farPoint) }, "cust-1")).rejects.toThrow(/service area/i);
+  });
+
+  it("allows an order with both waypoints inside the corridor", async () => {
+    const s = svc(() => ({
+      id: "ord-1",
+      status: "open_for_offers",
+      itemDesc: "Documents",
+      proposedFare: { toString: () => "2.50" },
+      suggestedFare: { toString: () => "2.40" },
+      distanceKm: 1.5,
+      createdAt: new Date("2026-06-26T00:00:00Z"),
+    }));
+    await expect(s.create(orderInput, "cust-1")).resolves.toMatchObject({ id: "ord-1" });
+  });
+});
+
 describe("OrdersService.getSnapshot", () => {
   const row = (overrides: Record<string, unknown> = {}) => ({
     id: "ord-1",

@@ -9,8 +9,9 @@ import {
   type OnModuleInit,
   UnauthorizedException,
 } from "@nestjs/common";
-import { CUSTOMER_CANCELLABLE_STATUSES, RIDER_CANCELLABLE_STATUSES } from "@lynia/shared";
+import { CUSTOMER_CANCELLABLE_STATUSES, RELIABILITY, RIDER_CANCELLABLE_STATUSES } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
+import { applyReliabilityDelta, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
@@ -291,6 +292,24 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await tx.orderEvent.create({ data: { orderId, status: "undelivered" } });
+
+      // Reliability (Q2): a failed hand-off dings the rider only when it's their fault — `breakdown`
+      // (post-pickup bail) → postPickupCancel, `unreachable` (recipient no-show) → noShow; `refused`
+      // / `wrong_address` are recipient/customer faults → no hit. NOTE(Q2): weights in policy.ts.
+      // Same transaction as the undelivered CAS.
+      const penalty = undeliveredPenalty(reason);
+      if (penalty > 0 && order.riderId) {
+        const rider = await tx.rider.findUnique({
+          where: { profileId: order.riderId },
+          select: { reliabilityScore: true, onHold: true },
+        });
+        if (rider) {
+          await tx.rider.update({
+            where: { profileId: order.riderId },
+            data: applyReliabilityDelta(rider, -penalty),
+          });
+        }
+      }
     });
 
     this.safeEmit(orderId, "undelivered");
@@ -320,14 +339,20 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       if (order.riderId) {
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
-          select: { ratingAvg: true, ratingCount: true, tripsCount: true },
+          select: { ratingAvg: true, ratingCount: true, tripsCount: true, reliabilityScore: true, onHold: true },
         });
         if (rider) {
           const ratingCount = rider.ratingCount + 1;
           const ratingAvg = (rider.ratingAvg * rider.ratingCount + score) / ratingCount;
+          // Reliability (Q2): a delivered trip rated <= LOW_RATING_AT is a penalty; any better-rated
+          // completion is a clean delivery that slowly recovers the score. NOTE(Q2): weights +
+          // thresholds in packages/shared/src/policy.ts RELIABILITY. Same transaction as the rating.
+          const delta =
+            score <= RELIABILITY.LOW_RATING_AT ? -RELIABILITY.PENALTY.lowRating : RELIABILITY.RECOVER_PER_COMPLETION;
+          const reliability = applyReliabilityDelta(rider, delta);
           await tx.rider.update({
             where: { profileId: order.riderId },
-            data: { ratingAvg, ratingCount, tripsCount: rider.tripsCount + 1 },
+            data: { ratingAvg, ratingCount, tripsCount: rider.tripsCount + 1, ...reliability },
           });
         }
       }
@@ -384,20 +409,29 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // Reliability decrement for a rider-initiated cancel (cancelStrike).
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
-          select: { cancelStrikes: true },
+          select: { cancelStrikes: true, reliabilityScore: true, onHold: true },
         });
         const strikes = (rider?.cancelStrikes ?? 0) + 1;
-        // TODO(R-01): reliability score maths / on_hold threshold — product decision Q2. Until then the
-        // existing cancelStrike/cooldown is the only decrement applied.
+        // Reliability (Q2): a rider cancel is server-blocked post-pickup, so it's ALWAYS a pre-pickup
+        // cancel → prePickupCancel penalty, clamped + on_hold-hysteresis'd in the same transaction as
+        // the strike bump. NOTE(Q2): weights/threshold in packages/shared/src/policy.ts RELIABILITY.
+        // The cancelStrike/cooldown gate is a separate, coarser axis kept alongside the score.
+        const reliability = applyReliabilityDelta(
+          { reliabilityScore: rider?.reliabilityScore ?? RELIABILITY.START, onHold: rider?.onHold ?? false },
+          -RELIABILITY.PENALTY.prePickupCancel,
+        );
         if (strikes >= CANCEL_STRIKE_LIMIT) {
           // Hit the limit: reset the counter, force offline, start the cooldown.
           cooldownUntil = new Date(Date.now() + COOLDOWN_MS);
           await tx.rider.update({
             where: { profileId: order.riderId },
-            data: { cancelStrikes: 0, cooldownUntil, isOnline: false },
+            data: { cancelStrikes: 0, cooldownUntil, isOnline: false, ...reliability },
           });
         } else {
-          await tx.rider.update({ where: { profileId: order.riderId }, data: { cancelStrikes: strikes } });
+          await tx.rider.update({
+            where: { profileId: order.riderId },
+            data: { cancelStrikes: strikes, ...reliability },
+          });
         }
         // F-01: the rider bailed on an assigned-but-not-collected job (rider cancels are blocked
         // post-pickup, so it's never collected here) — clone the job back onto the board as a NEW
@@ -500,9 +534,18 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       await tx.orderEvent.create({ data: { orderId, status: "completed" } });
       const order = await tx.order.findUnique({ where: { id: orderId }, select: { riderId: true } });
       if (order?.riderId) {
+        // A delivered order that auto-closes with no complaint is a clean completion → slow
+        // reliability recovery (Q2). NOTE(Q2): RECOVER_PER_COMPLETION in policy.ts. This is the
+        // unrated counterpart to rate()'s recovery — the two completion edges are mutually exclusive
+        // (both CAS on status=delivered), so recovery is never double-counted.
+        const rider = await tx.rider.findUnique({
+          where: { profileId: order.riderId },
+          select: { reliabilityScore: true, onHold: true },
+        });
+        const reliability = rider ? applyReliabilityDelta(rider, RELIABILITY.RECOVER_PER_COMPLETION) : {};
         await tx.rider.update({
           where: { profileId: order.riderId },
-          data: { tripsCount: { increment: 1 } },
+          data: { tripsCount: { increment: 1 }, ...reliability },
         });
       }
       return true;

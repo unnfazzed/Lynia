@@ -30,14 +30,28 @@ export interface ConfirmModalProps {
 
   title: string;
   consequence: ReactNode;
-  reasons?: readonly string[];
+  /** Reason options. A plain string is shown and submitted verbatim; a `{value,label}` pair submits
+   *  `value` (a stable code, e.g. a KycDeclineReason key) while showing `label` — use the pair form
+   *  whenever the stored reasonCode must be machine-readable, not a display string. */
+  reasons?: readonly (string | { value: string; label: string })[];
+  /** When the caller's `onConfirm` domain mutation hits an endpoint that writes the audit row IN its
+   *  own transaction (A-01), set this so the modal does NOT also POST a standalone audit row — that
+   *  would double-record the action. Leave false when the audit comes only from `submitAdminAction`. */
+  auditInEndpoint?: boolean;
   noteRequired?: boolean;
   notePlaceholder?: string;
   confirmLabel?: string;
   danger?: boolean;
   auditActor?: string;
 
-  onConfirm?: (result: { reasonCode: string | null; note: string }) => void;
+  /**
+   * Optional single numeric input (e.g. an adjusted fare) rendered above the note. Its value is NOT
+   * written to the audit row — the audit contract stays `{ action, target, reasonCode, note }` — but
+   * it is surfaced to `onConfirm` as `amount` so the caller's domain mutation can consume it.
+   */
+  amount?: { label: string; prefix?: string; placeholder?: string; required?: boolean };
+
+  onConfirm?: (result: { reasonCode: string | null; note: string; amount: string }) => void;
 }
 
 export function ConfirmModal(props: ConfirmModalProps) {
@@ -52,17 +66,20 @@ export function ConfirmModal(props: ConfirmModalProps) {
     title,
     consequence,
     reasons = [],
+    auditInEndpoint = false,
     noteRequired = false,
     notePlaceholder = "Add context for the audit log",
     confirmLabel = "Confirm",
     danger = false,
     auditActor = "the signed-in admin",
+    amount,
     onConfirm,
   } = props;
 
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [amountVal, setAmountVal] = useState("");
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -77,11 +94,15 @@ export function ConfirmModal(props: ConfirmModalProps) {
   function reset() {
     setReason(null);
     setNote("");
+    setAmountVal("");
   }
 
+  // Normalize to {value,label}: a plain string submits its own text; a pair submits the stable value.
+  const reasonOpts = reasons.map((r) => (typeof r === "string" ? { value: r, label: r } : r));
   const reasonOk = reasons.length === 0 || reason !== null;
   const noteOk = !noteRequired || note.trim().length > 0;
-  const canConfirm = reasonOk && noteOk && !pending;
+  const amountOk = !amount?.required || amountVal.trim().length > 0;
+  const canConfirm = reasonOk && noteOk && amountOk && !pending;
 
   function confirm() {
     if (!canConfirm) return;
@@ -92,8 +113,10 @@ export function ConfirmModal(props: ConfirmModalProps) {
     if (reason) fd.set("reasonCode", reason);
     fd.set("note", note);
     startTransition(async () => {
-      await submitAdminAction(fd);
-      onConfirm?.({ reasonCode: reason, note });
+      // Skip the standalone audit POST when the domain endpoint records the audit row in its own
+      // transaction (A-01) — otherwise the action is double-recorded in the audit log.
+      if (!auditInEndpoint) await submitAdminAction(fd);
+      onConfirm?.({ reasonCode: reason, note, amount: amountVal });
       setOpen(false);
       reset();
     });
@@ -130,18 +153,47 @@ export function ConfirmModal(props: ConfirmModalProps) {
               <>
                 <span className="field-label">Reason — required</span>
                 <div className="reason-list">
-                  {reasons.map((r) => (
-                    <label key={r}>
+                  {reasonOpts.map((r) => (
+                    <label key={r.value}>
                       <input
                         type="radio"
                         name="reasonCode"
-                        value={r}
-                        checked={reason === r}
-                        onChange={() => setReason(r)}
+                        value={r.value}
+                        checked={reason === r.value}
+                        onChange={() => setReason(r.value)}
                       />
-                      {r}
+                      {r.label}
                     </label>
                   ))}
+                </div>
+              </>
+            ) : null}
+
+            {amount ? (
+              <>
+                <span className="field-label">
+                  {amount.label} {amount.required ? "— required" : "(optional)"}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {amount.prefix ? <span className="num" style={{ fontWeight: 600 }}>{amount.prefix}</span> : null}
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    className="num"
+                    value={amountVal}
+                    placeholder={amount.placeholder}
+                    onChange={(e) => setAmountVal(e.target.value)}
+                    style={{
+                      flex: 1,
+                      border: "1px solid var(--line)",
+                      borderRadius: 12,
+                      fontFamily: "var(--font-sans)",
+                      fontSize: 13,
+                      padding: "10px 12px",
+                    }}
+                  />
                 </div>
               </>
             ) : null}

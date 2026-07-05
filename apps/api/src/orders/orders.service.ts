@@ -1,6 +1,6 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -8,6 +8,23 @@ import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
+
+/** Q1 — Launch service corridor: the coverage disc's centre (from policy.ts SERVICE_CORRIDOR). */
+const CORRIDOR_CENTRE: LatLng = { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng };
+
+/**
+ * Q1 — reject an order whose pickup OR drop-off falls outside the launch service corridor (a single
+ * coverage disc, {@link SERVICE_CORRIDOR.radiusKm} of the centre — no magic numbers). ONE check reused
+ * for both waypoints via {@link haversineKm}. Throws a clear 4xx so the customer sees "outside our
+ * service area" rather than a silent failure downstream.
+ */
+function assertWithinServiceCorridor(pickup: LatLng, dropoff: LatLng): void {
+  for (const [label, point] of [["pickup", pickup], ["drop-off", dropoff]] as const) {
+    if (haversineKm(point, CORRIDOR_CENTRE) > SERVICE_CORRIDOR.radiusKm) {
+      throw new BadRequestException(`That ${label} is outside our service area.`);
+    }
+  }
+}
 
 /** Radius (metres) for the new-order push to nearby online riders (CONCEPT §3.10). Harare-corridor
  *  scale; the REST nearby endpoint defaults to the same neighbourhood. */
@@ -56,6 +73,9 @@ export class OrdersService {
 
   /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */
   async create(input: CreateOrderRequest, customerId: string) {
+    // Q1: gate on the service corridor before doing any work — both waypoints must be in coverage.
+    assertWithinServiceCorridor(input.pickup.point, input.dropoff.point);
+
     // Distance-based anchor the customer sees alongside their own proposal (CONCEPT §1).
     const { distanceKm, suggestedFare } = quoteFare(input.pickup.point, input.dropoff.point);
 

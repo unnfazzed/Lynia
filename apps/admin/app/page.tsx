@@ -1,9 +1,12 @@
 import { tokens } from "@lynia/shared";
+import { adminFetchResult } from "./lib/api";
+import { connOffLabel, reasonLine } from "./components/states";
 
 /**
  * Monitor/support console (CONCEPT §4). Reads the API's /admin/overview (lane F). Configure
  * API_BASE_URL (+ an admin ADMIN_API_TOKEN) to show live data; falls back to a placeholder
- * state when the API is unreachable or unconfigured.
+ * state when the API is unconfigured, unreachable, or the endpoint hasn't shipped (QA D-3 — the
+ * header + fallback copy name which case it is).
  */
 interface Overview {
   ordersByStatus: Record<string, number>;
@@ -17,22 +20,6 @@ interface Overview {
   recentOrders: Array<{ id: string; status: string; proposedFare: string; agreedFare: string | null; createdAt: string }>;
 }
 
-async function getOverview(): Promise<Overview | null> {
-  const base = process.env.API_BASE_URL;
-  if (!base) return null;
-  const token = process.env.ADMIN_API_TOKEN;
-  try {
-    const res = await fetch(`${base}/admin/overview`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as Overview;
-  } catch {
-    return null;
-  }
-}
-
 /* DS card: white surface floating on --surface via the soft ambient shadow (no visible border). */
 const card = {
   background: tokens.color.bg,
@@ -43,7 +30,9 @@ const card = {
 } as const;
 
 export default async function DashboardPage() {
-  const data = await getOverview();
+  const res = await adminFetchResult<Overview>("/admin/overview");
+  const data = "data" in res ? res.data : null;
+  const reason = "data" in res ? undefined : res.reason;
 
   const panels = [
     { label: "Live orders", value: data ? liveOrders(data.ordersByStatus) : "—", hint: "open_for_offers / assigned" },
@@ -64,7 +53,7 @@ export default async function DashboardPage() {
           <a href="/orders" style={{ fontSize: 14, color: tokens.color.muted, textDecoration: "none" }}>Orders</a>
         </nav>
         <span style={{ marginLeft: "auto", fontSize: 12, color: data ? tokens.color.accentText : tokens.color.muted }}>
-          {data ? "● live" : "○ API not connected"}
+          {data ? "● live" : connOffLabel(reason)}
         </span>
       </header>
 
@@ -102,7 +91,7 @@ export default async function DashboardPage() {
           </table>
         ) : (
           <div style={{ fontSize: 14, color: tokens.color.muted }}>
-            {data ? "No orders yet." : "Set API_BASE_URL (and ADMIN_API_TOKEN) to show live data."}
+            {data ? "No orders yet." : reasonLine(reason ?? "unconfigured", "recent orders")}
           </div>
         )}
       </section>

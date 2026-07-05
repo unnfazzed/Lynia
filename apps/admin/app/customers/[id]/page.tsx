@@ -1,5 +1,5 @@
 import { tokens } from "@lynia/shared";
-import { adminFetch } from "../../lib/api";
+import { adminFetchResult } from "../../lib/api";
 import { REASONS } from "../../lib/reasons";
 import type { CustomerDetail, TripRow } from "../../lib/adminTypes";
 import { DataTable, type Column } from "../../components/DataTable";
@@ -7,16 +7,17 @@ import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { ConfirmModal } from "../../components/ConfirmModal";
-import { Conn, EmptyState, OfflineBanner } from "../../components/states";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconUser } from "../../components/icons";
 
 /** Customer profile (kit `customers.html` detail): masked phone, spend, cancel pattern, rider
  *  reports, and flag / clear / ban actions — each reason-coded through <ConfirmModal>. */
 export default async function CustomerProfilePage({ params }: { params: { id: string } }) {
-  const c = await adminFetch<CustomerDetail>(`/admin/customers/${params.id}`);
+  const res = await adminFetchResult<CustomerDetail>(`/admin/customers/${params.id}`);
   const path = `/customers/${params.id}`;
 
-  if (!c) {
+  if (!("data" in res)) {
+    const reason = res.reason;
     return (
       <main className="content">
         <header className="page">
@@ -24,21 +25,22 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
             ← Customers
           </a>
           <h1 style={{ fontSize: 18 }}>Customer profile</h1>
-          <Conn connected={false} />
+          <Conn connected={false} reason={reason} />
         </header>
-        <OfflineBanner />
+        <OfflineBanner reason={reason} />
         <section className="card">
           <EmptyState
             icon={<IconUser />}
-            title="Profile not connected"
-            line="Set API_BASE_URL (and ADMIN_API_TOKEN) to load this customer."
+            title={reasonTitle(reason, "Profile")}
+            line={reasonLine(reason, "this customer")}
           />
         </section>
       </main>
     );
   }
 
-  // Past the guard `c` is non-null, so the console is connected and mutating actions are enabled.
+  const c = res.data;
+  // Past the guard `c` is live data, so the console is connected and mutating actions are enabled.
   const connected = true;
 
   const tripCols: Column<TripRow>[] = [

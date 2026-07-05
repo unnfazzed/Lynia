@@ -4,6 +4,7 @@
  * page degrades to the offline/empty state when `adminFetch` returns null. Monetary values are
  * strings (matching the existing Order.proposedFare contract) — the API owns rounding.
  */
+import type { SettlementStatus } from "@lynia/shared";
 
 /** A compact order/trip row reused in the recent-trips + recent-orders tables. */
 export interface TripRow {
@@ -70,15 +71,29 @@ export interface IssueDetail extends IssueRow {
 }
 
 /* ── Cash & settlements (A-06 — model UNCONFIRMED) ─────────── */
+/**
+ * One rider's settlement for the current cycle (`GET /admin/cash/settlements`). The money model is
+ * still an assumption (see the caveat in cash/page.tsx): `commission` = commissionPct of `grossFares`,
+ * `refundsNetted` = customer refunds deducted before billing, `amountDue` = the net the rider owes.
+ * `status` is the canonical `SettlementStatus` from `@lynia/shared` (pending | paid | overdue). All
+ * monetary values are API-owned strings — the console renders, it does not compute them.
+ */
 export interface SettlementRow {
   id: string;
+  /** Optional deep-link target — the rider whose settlement this is. */
+  riderId?: string;
   name: string;
-  trips: number;
-  cash: string;
+  /** Gross agreed fares on completed cash orders this cycle. */
+  grossFares: string;
+  /** Commission Lynia bills on the gross fares. */
   commission: string;
-  adjustment?: string;
-  status: "due" | "overdue" | "settled" | "none";
-  note: string;
+  /** Customer refunds netted off the commission before billing ("0" when none). */
+  refundsNetted: string;
+  /** Net owed after netting refunds — the amount the record-payment action settles. */
+  amountDue: string;
+  status: SettlementStatus;
+  /** Cycle due date (settlement day), pre-formatted by the API. */
+  dueDate: string;
 }
 
 export interface SettlementWeek {

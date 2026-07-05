@@ -1,3 +1,4 @@
+import type { KycDeclineReason } from "@lynia/shared";
 import { apiFetch } from "./client";
 
 export interface OtpRequestResult {
@@ -34,6 +35,11 @@ export interface Me {
   rider: {
     bikeReg: string;
     kycStatus: "pending" | "verified" | "failed";
+    // KYC decline detail (A-02), exposed on the rider/me path. `kycDeclineReason` is the canonical
+    // reason for a `failed` check (null while pending/verified); `kycAttempts` is how many times the
+    // rider has submitted — at/above KYC_LOCK_ATTEMPTS self-resubmit is locked and they contact support.
+    kycDeclineReason?: KycDeclineReason | null;
+    kycAttempts?: number;
     ratingAvg: number;
     ratingCount: number;
     tripsCount: number;

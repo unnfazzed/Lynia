@@ -21,12 +21,13 @@ import { ZodBody } from "../common/zod.pipe";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { RiderService } from "../riders/rider.service";
-import { diditTimestampFresh, mapDiditStatus, verifyDiditSignature, verifyDiditSignatureV2 } from "./didit";
+import { decideDiditKyc, diditTimestampFresh, extractDiditScore, verifyDiditSignature, verifyDiditSignatureV2 } from "./didit";
 
 // A-02: a decline MUST carry the reason code (recorded on the rider + audit log — a compliance
-// invariant, so it's server-enforced here, not only in the admin ConfirmModal). Free string (the
-// admin sends the reason label from KYC_DECLINE_REASONS) — capped, not enum-bound, so the admin's
-// mirrored list can evolve without 400ing here.
+// invariant, so it's server-enforced here, not only in the admin ConfirmModal). The admin sends a
+// canonical KycDeclineReason KEY (e.g. `face_mismatch`), which the rider app maps back to copy via
+// KYC_DECLINE_REASON_LABELS; kept a capped free string here (not enum-bound) so the shared list can
+// grow without 400ing an older admin build.
 const AdminKyc = z
   .object({
     status: z.enum(["pending", "verified", "failed"]),
@@ -90,16 +91,25 @@ export class KycController {
       throw new BadRequestException("Missing session_id or status");
     }
 
-    const mapped = mapDiditStatus(payload.status);
-    if (mapped === "pending") return { ignored: true, status: mapped };
+    // Auto-decision (Didit thresholds): key off the numeric face-match score when the payload exposes
+    // one (KYC_THRESHOLDS bands), else fall back to the status-string mapping. A `needsReview` band —
+    // like any non-terminal status — stays `pending`: it's held for the admin backstop, never
+    // auto-verified. `failed` from a sub-threshold score carries a decline reason for the rider app.
+    const decision = decideDiditKyc(payload.status, extractDiditScore(payload));
+    if (decision.status === "pending") return { ignored: true, status: decision.status };
 
     // Event time drives the monotonic guard. The timestamp is part of the signed body (Unix seconds),
     // so it can't be forged; fall back to now() only if a delivery omits it.
     const eventAt = typeof payload.timestamp === "number" ? new Date(payload.timestamp * 1000) : new Date();
-    const res = await this.riders.applyKycResult(payload.session_id, mapped, eventAt);
+    const res = await this.riders.applyKycResult(
+      payload.session_id,
+      decision.status,
+      eventAt,
+      decision.reason ?? null,
+    );
     if (res.updated === 0) {
       // No rider has this ref, or the event was stale/duplicate — surface for reconciliation.
-      this.logger.warn(`KYC webhook for session ${payload.session_id} (${mapped}) matched no rider or was stale`);
+      this.logger.warn(`KYC webhook for session ${payload.session_id} (${decision.status}) matched no rider or was stale`);
     }
     return res;
   }

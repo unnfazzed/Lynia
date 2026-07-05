@@ -63,6 +63,20 @@ enum KycStatus {
   failed
 }
 
+// Rider account standing (A-04) — distinct from KYC + the reliability on_hold flag.
+enum RiderAccountStatus {
+  active
+  suspended
+  banned
+}
+
+// Weekly cash settlement status (A-06).
+enum SettlementStatus {
+  pending
+  paid
+  overdue
+}
+
 model Profile {
   id              String    @id @default(uuid()) @db.Uuid
   role            Role      @default(customer)
@@ -132,12 +146,48 @@ model Rider {
   // The reason code from the most recent admin decline (admin A-02). Surfaced to the rider app so they
   // know what to fix on a resubmit, and recorded alongside the audit-log row. Cleared on approve.
   kycDeclineReason String?  @map("kyc_decline_reason")
+  // Account standing (A-04) — only `active` may go online. suspended/banned are admin actions or a
+  // settlement auto-pause (A-06). suspendReason carries the admin reason code / "settlement_overdue".
+  accountStatus   RiderAccountStatus @default(active) @map("account_status")
+  suspendReason   String?   @map("suspend_reason")
+  // Reliability (Q2). Starts at 100; cancels/no-shows/low-ratings decrement, clean deliveries recover.
+  // onHold is the derived auto-gate (score < threshold) — a separate axis from accountStatus; a rider
+  // can be active-but-on-hold. Both the online-gate reads. See packages/shared/src/policy.ts RELIABILITY.
+  reliabilityScore Int      @default(100) @map("reliability_score")
+  onHold          Boolean   @default(false) @map("on_hold")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  orders Order[] @relation("riderOrders")
-  offers Offer[]
+  orders      Order[]      @relation("riderOrders")
+  offers      Offer[]
+  settlements Settlement[]
 
   @@map("riders")
+}
+
+// Weekly cash settlement (A-06). One row per rider per settlement period: gross agreed fares on
+// completed orders in the window, the commission billed, refunds netted off, the amount due, and
+// its lifecycle. A row 7+ days overdue auto-pauses the rider (policy.ts SETTLEMENT.overduePauseDays).
+model Settlement {
+  id            String           @id @default(uuid()) @db.Uuid
+  riderId       String           @map("rider_id") @db.Uuid
+  rider         Rider            @relation(fields: [riderId], references: [profileId], onDelete: Cascade)
+  periodStart   DateTime         @map("period_start")
+  periodEnd     DateTime         @map("period_end")
+  grossFares    Decimal          @default(0) @map("gross_fares") @db.Decimal(10, 2)
+  commission    Decimal          @default(0) @db.Decimal(10, 2)
+  refundsNetted Decimal          @default(0) @map("refunds_netted") @db.Decimal(10, 2)
+  amountDue     Decimal          @default(0) @map("amount_due") @db.Decimal(10, 2)
+  status        SettlementStatus @default(pending)
+  dueDate       DateTime         @map("due_date")
+  paidAt        DateTime?        @map("paid_at")
+  method        String?
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  // One settlement per rider per period — idempotent regeneration of a window updates in place.
+  @@unique([riderId, periodStart])
+  @@index([status])
+  @@index([riderId])
+  @@map("settlements")
 }
 
 model Order {
@@ -273,6 +323,26 @@ model Session {
 
   @@index([profileId])
   @@map("sessions")
+}
+
+// Admin audit trail (INTERFACE-AUDIT A-01, compliance). Every destructive console action
+// (suspend / lift / ban / decline / refund / cancel / flag / clear / settle) writes one row here so
+// the intent is recorded server-side and queryable — closing the "UI-only seam" where the console
+// posted an action nowhere. `actor` is the authenticated admin's profile id; `action` + `target`
+// identify what was done to whom; `reasonCode` + `note` carry the ConfirmModal justification. Plain
+// columns (no FK on actor/target) so an audit row survives even if the referenced row is later
+// deleted — an audit log must be append-only and outlive its subjects.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actor      String
+  action     String
+  target     String
+  reasonCode String?  @map("reason_code")
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("audit_logs")
 }
 
 // §5b superapp seams — reserved, unused at launch.

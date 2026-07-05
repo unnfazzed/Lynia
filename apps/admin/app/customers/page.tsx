@@ -1,10 +1,10 @@
 import { tokens } from "@lynia/shared";
-import { adminFetch } from "../lib/api";
+import { adminFetchResult } from "../lib/api";
 import type { Customer } from "../lib/adminTypes";
 import { DataTable, type Column } from "../components/DataTable";
 import { Pill } from "../components/StatusPill";
 import { FilterNav } from "../components/FilterNav";
-import { Conn, EmptyState, OfflineBanner } from "../components/states";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { IconUser } from "../components/icons";
 
 /**
@@ -32,7 +32,9 @@ export default async function CustomersPage({
   const raw = searchParams.filter;
   const active = typeof raw === "string" && FILTERS.some((f) => f.value === raw) ? raw : "all";
   const query = active === "all" ? "" : `?filter=${active}`;
-  const customers = await adminFetch<Customer[]>(`/admin/customers${query}`);
+  const res = await adminFetchResult<Customer[]>(`/admin/customers${query}`);
+  const customers = "data" in res ? res.data : null;
+  const reason = "data" in res ? undefined : res.reason;
   const connected = customers !== null;
 
   const columns: Column<Customer>[] = [
@@ -70,10 +72,10 @@ export default async function CustomersPage({
         <span className="sub">
           {customers ? `${customers.length} customers · Harare pilot` : "Harare pilot"}
         </span>
-        <Conn connected={connected} />
+        <Conn connected={connected} reason={reason} />
       </header>
 
-      {!connected ? <OfflineBanner /> : null}
+      {!connected ? <OfflineBanner reason={reason} /> : null}
 
       <FilterNav items={FILTERS} active={active} hrefFor={(v) => (v === "all" ? "/customers" : `/customers?filter=${v}`)} />
 
@@ -94,8 +96,8 @@ export default async function CustomersPage({
             ) : (
               <EmptyState
                 icon={<IconUser />}
-                title="Customer directory not connected"
-                line="Set API_BASE_URL (and ADMIN_API_TOKEN) to show live data."
+                title={reasonTitle(reason ?? "unconfigured", "Customer directory")}
+                line={reasonLine(reason ?? "unconfigured", "the directory")}
               />
             )
           }

@@ -8,11 +8,12 @@ import { adminPost } from "../lib/api";
  * refund / cancel / resolve / settle). <ConfirmModal> submits its form here carrying
  * `{ action, target, reasonCode, note }` plus the `path` to revalidate.
  *
- * TODO(A-01): audit-log write path — api-side table pending. The `/admin/audit-actions` endpoint
- * does not exist yet; `adminPost` no-ops (returns false) when API_BASE_URL is unset, so the console
- * degrades gracefully in the offline/demo path instead of throwing. When A-01 lands api-side, the
- * mutation + the audit row must be written in the SAME transaction (see plan §B "Audit"). This is
- * the UI seam only — do NOT implement the API side here.
+ * A-01: audit-log write path — the `POST /admin/audit-actions` endpoint now EXISTS api-side, so this
+ * write path is live (it persists the audit row from `{ action, target, reasonCode, note }`). When
+ * API_BASE_URL is unset `adminPost` still no-ops (returns false), so the console keeps degrading
+ * gracefully in the offline/demo path instead of throwing. FUTURE: once a real console-driven
+ * mutation is wired up, that mutation + the audit row must be written in the SAME transaction (see
+ * plan §B "Audit"). This is the UI seam only — do NOT implement the API side here.
  */
 export async function submitAdminAction(formData: FormData): Promise<void> {
   const action = String(formData.get("action") ?? "");

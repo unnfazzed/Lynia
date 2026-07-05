@@ -1,9 +1,9 @@
-import { adminFetch } from "../lib/api";
+import { adminFetchResult } from "../lib/api";
 import type { IssueRow } from "../lib/adminTypes";
 import { DataTable, type Column } from "../components/DataTable";
 import { Pill } from "../components/StatusPill";
 import { FilterNav } from "../components/FilterNav";
-import { Conn, EmptyState, OfflineBanner } from "../components/states";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { IconAlert, IconCheck } from "../components/icons";
 
 /** Issues / disputes queue (kit `issues.html`). Reports from customers, recipients and riders, each
@@ -28,7 +28,9 @@ export default async function IssuesPage({
   const raw = searchParams.status;
   const active = typeof raw === "string" && FILTERS.some((f) => f.value === raw) ? raw : "all";
   const query = active === "all" ? "" : `?status=${active}`;
-  const issues = await adminFetch<IssueRow[]>(`/admin/issues${query}`);
+  const res = await adminFetchResult<IssueRow[]>(`/admin/issues${query}`);
+  const issues = "data" in res ? res.data : null;
+  const reason = "data" in res ? undefined : res.reason;
   const connected = issues !== null;
 
   const columns: Column<IssueRow>[] = [
@@ -45,10 +47,10 @@ export default async function IssuesPage({
       <header className="page">
         <h1>Issues</h1>
         <span className="sub">Disputes and reports from customers, recipients and riders</span>
-        <Conn connected={connected} />
+        <Conn connected={connected} reason={reason} />
       </header>
 
-      {!connected ? <OfflineBanner /> : null}
+      {!connected ? <OfflineBanner reason={reason} /> : null}
 
       <FilterNav items={FILTERS} active={active} hrefFor={(v) => (v === "all" ? "/issues" : `/issues?status=${v}`)} />
 
@@ -69,8 +71,8 @@ export default async function IssuesPage({
             ) : (
               <EmptyState
                 icon={<IconAlert />}
-                title="Issue queue not connected"
-                line="Set API_BASE_URL (and ADMIN_API_TOKEN) to show live disputes."
+                title={reasonTitle(reason ?? "unconfigured", "Issue queue")}
+                line={reasonLine(reason ?? "unconfigured", "the dispute queue")}
               />
             )
           }

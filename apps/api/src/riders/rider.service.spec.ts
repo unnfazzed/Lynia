@@ -3,7 +3,7 @@ import type { Env } from "../config/env";
 import type { KycVendor } from "../kyc/kyc-vendor";
 import { StubKycVendor } from "../kyc/kyc-vendor";
 import { PrismaService } from "../prisma/prisma.service";
-import { canGoOnline, RiderService } from "./rider.service";
+import { canGoOnline, onlineRefusalReason, RiderService } from "./rider.service";
 
 describe("canGoOnline (rider gating, §5d)", () => {
   it("allows only verified riders online", () => {
@@ -192,7 +192,7 @@ describe("RiderService.setOnline", () => {
     let data: Record<string, unknown> | undefined;
     const prisma = {
       rider: {
-        findUnique: async () => ({ kycStatus: "verified" }),
+        findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
         update: async (args: { data: Record<string, unknown> }) => { data = args.data; return {}; },
       },
     };
@@ -212,17 +212,70 @@ describe("RiderService.setOnline", () => {
 
   it("blocks going online while on a no-show cooldown", async () => {
     const future = new Date(Date.now() + 60_000);
-    const s = svc({ rider: { findUnique: async () => ({ kycStatus: "verified", cooldownUntil: future }) } }, {});
+    const s = svc(
+      { rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: future }) } },
+      {},
+    );
     await expect(s.setOnline("p1", true)).rejects.toThrow(/cooldown/i);
   });
 
   it("allows going online once the cooldown has passed", async () => {
     const past = new Date(Date.now() - 60_000);
     const s = svc(
-      { rider: { findUnique: async () => ({ kycStatus: "verified", cooldownUntil: past }), update: async () => ({}) } },
+      {
+        rider: {
+          findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: past }),
+          update: async () => ({}),
+        },
+      },
       {},
     );
     expect(await s.setOnline("p1", true)).toEqual({ online: true });
+  });
+
+  it("refuses (reason: suspended) when the admin has suspended the account — read-only here", async () => {
+    const s = svc(
+      { rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "suspended", onHold: false, cooldownUntil: null }) } },
+      {},
+    );
+    await expect(s.setOnline("p1", true)).rejects.toThrow(/suspended/i);
+  });
+
+  it("refuses (reason: on_hold) when reliability tripped on_hold", async () => {
+    let threw: unknown;
+    const s = svc(
+      { rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: true, cooldownUntil: null }) } },
+      {},
+    );
+    try {
+      await s.setOnline("p1", true);
+    } catch (e) {
+      threw = e;
+    }
+    // The refusal carries a machine-readable `reason` the app keys off (not just the message string).
+    expect((threw as { getResponse: () => { reason: string } }).getResponse().reason).toBe("on_hold");
+  });
+});
+
+describe("onlineRefusalReason (pure online-gate, Q2)", () => {
+  const base = { kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null };
+  it("returns null when every precondition passes", () => {
+    expect(onlineRefusalReason(base)).toBeNull();
+  });
+  it("prioritises kyc → suspended → on_hold → cooldown", () => {
+    expect(onlineRefusalReason({ ...base, kycStatus: "pending" })).toBe("kyc");
+    expect(onlineRefusalReason({ ...base, accountStatus: "suspended" })).toBe("suspended");
+    expect(onlineRefusalReason({ ...base, accountStatus: "banned" })).toBe("suspended");
+    expect(onlineRefusalReason({ ...base, onHold: true })).toBe("on_hold");
+    expect(onlineRefusalReason({ ...base, cooldownUntil: new Date(Date.now() + 60_000) })).toBe("cooldown");
+  });
+  it("kyc outranks a simultaneous suspend + on_hold + cooldown", () => {
+    expect(
+      onlineRefusalReason({ kycStatus: "failed", accountStatus: "suspended", onHold: true, cooldownUntil: new Date(Date.now() + 60_000) }),
+    ).toBe("kyc");
+  });
+  it("treats an elapsed cooldown as passed", () => {
+    expect(onlineRefusalReason({ ...base, cooldownUntil: new Date(Date.now() - 60_000) })).toBeNull();
   });
 });
 

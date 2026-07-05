@@ -1,5 +1,6 @@
 import { OrderStatus, tokens } from "@lynia/shared";
-import { adminFetch } from "../lib/api";
+import { adminFetchResult } from "../lib/api";
+import { connOffLabel, reasonLine } from "../components/states";
 
 interface Order {
   id: string;
@@ -30,7 +31,9 @@ export default async function OrdersPage({
 }) {
   const raw = searchParams.status;
   const active = typeof raw === "string" && (STATUSES as string[]).includes(raw) ? raw : "";
-  const orders = await adminFetch<Order[]>(`/admin/orders${active ? `?status=${active}` : ""}`);
+  const res = await adminFetchResult<Order[]>(`/admin/orders${active ? `?status=${active}` : ""}`);
+  const orders = "data" in res ? res.data : null;
+  const reason = "data" in res ? undefined : res.reason;
 
   return (
     <main style={{ maxWidth: 1040, margin: "0 auto", padding: tokens.space.xl }}>
@@ -39,7 +42,7 @@ export default async function OrdersPage({
         {/* Dense-console page header sits on --text-h2 (20/700). */}
         <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Orders monitor</h1>
         <span style={{ marginLeft: "auto", fontSize: 12, color: orders ? tokens.color.accentText : tokens.color.muted }}>
-          {orders ? "● live" : "○ API not connected"}
+          {orders ? "● live" : connOffLabel(reason)}
         </span>
       </header>
 
@@ -101,7 +104,7 @@ export default async function OrdersPage({
           </table>
         ) : (
           <div style={{ fontSize: 14, color: tokens.color.muted }}>
-            {orders ? "No orders in this view." : "Set API_BASE_URL (and ADMIN_API_TOKEN) to show live data."}
+            {orders ? "No orders in this view." : reasonLine(reason ?? "unconfigured", "orders")}
           </div>
         )}
       </section>

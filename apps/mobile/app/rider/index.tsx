@@ -11,6 +11,7 @@ import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { retryKyc, setOnline } from "../../src/api/riders";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
+import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason } from "../../src/logic/gates";
 import { Button, Card, EmptyState, ErrorText, Field, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 import { parseNum } from "../../src/util";
 
@@ -75,7 +76,15 @@ export default function RiderHome(): React.ReactElement {
     refetchInterval: (query) => (query.state.data?.rider?.kycStatus === "pending" ? 5000 : false),
   });
   const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
-  const kyc = meQ.data?.rider?.kycStatus;
+  const rider = meQ.data?.rider;
+  const kyc = rider?.kycStatus;
+  // KYC decline detail (item 4): the specific reason + whether self-resubmit is locked (2+ attempts).
+  const kycReasonLabel = kycDeclineLabel(rider?.kycDeclineReason);
+  const kycLocked = isKycLocked(rider?.kycAttempts);
+
+  // Online-gate refusal (item 2): the reason the rules API blocked going online (kyc / suspended /
+  // on_hold / cooldown). Set from the mutation's onError, cleared once the rider is online.
+  const [gate, setGate] = useState<OnlineGateReason | null>(null);
 
   // Re-check verification whenever this screen regains focus (e.g. back from the Didit browser flow), so a
   // freshly-verified rider isn't trapped behind the gate by a stale ["me"] cache.
@@ -89,9 +98,24 @@ export default function RiderHome(): React.ReactElement {
     mutationFn: (next: boolean) => setOnline(next),
     onSuccess: (res) => {
       setOnlineState(res.online);
+      setGate(null);
       setError(null);
     },
-    onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't change your status."),
+    onError: (e) => {
+      // The rules API refuses going online with a reason — surface the matching state (on hold /
+      // suspended / cooldown / KYC) instead of a generic error. Falls through to the error text when
+      // the refusal isn't a recognised gate reason (e.g. a plain network failure).
+      const reason = e instanceof ApiError ? onlineGateReason(e) : null;
+      if (reason) {
+        setGate(reason);
+        setError(null);
+        // A KYC refusal means our ["me"] view is stale (they lost verified) — refetch to drop into the gate.
+        if (reason === "kyc") void qc.invalidateQueries({ queryKey: ["me"] });
+        return;
+      }
+      setGate(null);
+      setError(e instanceof ApiError ? e.message : "Couldn't change your status.");
+    },
   });
 
   // Pending/failed riders re-run KYC: mint a FRESH Didit session and open it (no re-keying the form).
@@ -253,15 +277,35 @@ export default function RiderHome(): React.ReactElement {
               <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           ) : kyc === "failed" ? (
-            // Honest declined state with a real retry (a fresh session) — no silent "pending" loop.
-            <EmptyState
-              icon="triangle-alert"
-              title="We couldn't verify your ID"
-              message="The check didn't pass — often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing."
-            >
-              <Button label="Try again" onPress={() => retryM.mutate()} loading={retryM.isPending} />
-              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
-            </EmptyState>
+            kycLocked ? (
+              // Two+ failed attempts (A-02): self-resubmit is locked — hand off to support, no "Try again"
+              // so the rider isn't stuck re-running a check the system won't accept again.
+              <EmptyState
+                icon="triangle-alert"
+                title="We couldn't verify your ID"
+                message={
+                  kycReasonLabel
+                    ? `Your ID check didn't pass: ${kycReasonLabel.toLowerCase()}. You've reached the retry limit — contact support to finish verifying.`
+                    : "Your ID check didn't pass and you've reached the retry limit. Contact support to finish verifying."
+                }
+              >
+                <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+              </EmptyState>
+            ) : (
+              // Honest declined state with the specific reason + a real retry (a fresh session).
+              <EmptyState
+                icon="triangle-alert"
+                title="We couldn't verify your ID"
+                message={
+                  kycReasonLabel
+                    ? `${kycReasonLabel}. Fix that and try again — or contact support if it keeps failing.`
+                    : "The check didn't pass — often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing."
+                }
+              >
+                <Button label="Try again" onPress={() => retryM.mutate()} loading={retryM.isPending} />
+                <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+              </EmptyState>
+            )
           ) : (
             // Pending — let them re-open a working verification session instead of re-keying the form.
             <EmptyState
@@ -273,6 +317,22 @@ export default function RiderHome(): React.ReactElement {
               <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           )
+        ) : (
+          <>
+        {gate ? (
+          // The rules API refused going online — a distinct, calm state per reason (on hold / suspended /
+          // cooldown / KYC), not a red error. Cooldown is temporary so it keeps a retry; the others are
+          // resolved elsewhere (support / recovery) so they just explain and offer a status refresh.
+          <EmptyState
+            icon={gate === "suspended" ? "triangle-alert" : gate === "cooldown" ? "clock" : gate === "kyc" ? "id-card" : "circle-alert"}
+            title={ONLINE_GATE_COPY[gate].title}
+            message={ONLINE_GATE_COPY[gate].message}
+          >
+            {gate === "cooldown" ? (
+              <Button label="Try again" onPress={() => onlineM.mutate(true)} loading={onlineM.isPending} />
+            ) : null}
+            <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+          </EmptyState>
         ) : (
           <>
         <Card>
@@ -382,6 +442,8 @@ export default function RiderHome(): React.ReactElement {
         ) : null}
 
         <Button label="View earnings" variant="ghost" onPress={() => router.push("/earnings")} />
+          </>
+        )}
           </>
         )}
 
