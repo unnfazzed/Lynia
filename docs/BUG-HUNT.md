@@ -35,6 +35,26 @@ security/integrity/operational impact, bounded trigger · **P3** = defense-in-de
 
 ---
 
+## Status update — 2026-07-05, after PR #98
+
+PR **#98** ("Trust & safety (Issues/A-05, Report/block, SOS), settlement netting, Places addressing")
+merged around the same time as this report. It was not aimed at these findings; verified against merged
+`main`, its only overlap with this report is:
+
+- **P2-1 (banned / suspended riders can still bid and be assigned)** — ❌ **still open.** #98 added a
+  distinct **`banned`** reason to the *go-online* gate (copy only), but `makeOffer` still gates on just
+  `kycStatus === "verified" && isOnline` (`offers.service.ts:38`) and `suspendRider`/`banRider` still
+  never set `isOnline = false` (`admin.service.ts`) — so a rider online at ban-time keeps bidding. The
+  root cause is untouched.
+- **Refund-netting deferral** (noted in P2-4's context / the settlement engine comments) is now
+  **implemented** — #98 makes `refundsNetted` real and floors `amountDue` at 0. Not one of this report's
+  ranked findings, but the "netting wired, source stubbed" caveat no longer applies.
+
+Every other finding in this report (P1-1, P1-2, P2-2 through P2-7, and all P3s) is **unchanged / still
+open** — #98 touched none of the auth, IDOR, config, migration-lock, or gateway code they describe.
+
+---
+
 ## P1 — fix before pilot
 
 ### P1-1 · Insecure default JWT signing secret, no production boot-guard
@@ -76,7 +96,7 @@ saved order draft (`lynia.orderDraft`), or the disclaimer flag (`lynia.disclaime
 
 ## P2 — real impact, bounded trigger
 
-### P2-1 · Banned / suspended / on-hold riders can still bid and be assigned
+### P2-1 · Banned / suspended / on-hold riders can still bid and be assigned — ❌ STILL OPEN after PR #98 (banned gate-copy added; root cause untouched)
 `apps/api/src/offers/offers.service.ts:38` · `apps/api/src/matching/matching.service.ts:61` · `apps/api/src/admin/admin.service.ts:315,370`
 
 `makeOffer` gates only on `kycStatus === "verified" && isOnline`; `selectOffer` liveness checks only

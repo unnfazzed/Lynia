@@ -20,11 +20,34 @@ The happy paths are well-built, but **both journeys have hard dead-ends off the 
 
 ---
 
+## Status update — 2026-07-05, after PR #98
+
+PR **#98** ("Trust & safety (Issues/A-05, Report/block, SOS), settlement netting, Places addressing")
+merged around the same time as this report. It was built on a parallel branch, so it did **not** target
+these findings — but it happens to fix or soften a few. Verified against the merged `main`:
+
+| Finding | Status after #98 | Evidence |
+| --- | --- | --- |
+| **R7** — no navigation handoff | ✅ **Fixed** | `src/logic/maps.ts` `mapsDirectionsUrl`; rider "Follow route in Google Maps" (`job.tsx:293`, no key needed) + customer map link (`order/[id].tsx:536`). |
+| **C1** — map is the only way to set a pin | 🟡 **Partially fixed** | `src/ui/AddressSearch.tsx` now sits above each map (`home.tsx:448`), **but key-gated** — renders nothing unless `EXPO_PUBLIC_GOOGLE_PLACES_KEY` is set, so today's keyless build is still pin-only and the "map fails → dead" case remains. |
+| **R1** — no rider undelivered flow | 🟡 **Softened, not fixed** | `GetHelpControl` + `SosControl` are now on the job screen (`job.tsx:390,397`), so a stranded rider can at least raise a help issue / SOS — but `orders.ts` still has **no `markUndelivered`** and there's still no way to *record* an undelivered outcome and close the job. |
+| **R2** — Cancel shown post-pickup | ❌ **Still open** | `job.tsx:392` still gates the Cancel button on `ACTIVE_RIDE_STATUSES` (through `en_route_dropoff`), not `RIDER_CANCELLABLE_STATUSES`. Unchanged. |
+| **R4** — "contact support" is a dead instruction | ❌ **Still open** | The new SOS/get-help are *live-trip* surfaces; the KYC-lock / suspended / on_hold gate states (`rider/index.tsx`) still have only "Refresh status" and no tappable support link. |
+| **C4** — stale rider GPS shown as "live" | ❌ **Still open** | No `updatedAt` / `PRESENCE_ESCALATION_MS` reference on the customer order screen. Unchanged. |
+| **C6** — delivery code on terminal orders | ❌ **Still open** | `order/[id].tsx:390` still renders the code card whenever the code is in state, no status gate. Unchanged. |
+
+New surfaces #98 added (context for future reports): order-level **Get help / raise issue**, **Report + block**
+a counterparty, **SOS** with `tel:` "Call 999" on live trips, **address search** (key-gated), and **Google
+Maps directions** deep-links. Findings not listed above (R3, R5, R6, R8–R10, C2, C3, C5, C7–C12, S1, and the
+P3s) are **unchanged / still open**.
+
+---
+
 ## RIDER JOURNEY
 
 ### P1 — blockers
 
-**R1 · There is no "mark undelivered" flow anywhere in the rider app.**
+**R1 · There is no "mark undelivered" flow anywhere in the rider app.** — 🟡 SOFTENED by PR #98 (get-help/SOS added; undelivered outcome still missing)
 `apps/mobile/src/api/orders.ts` (no `markUndelivered`) · `apps/mobile/app/rider/job.tsx` (no UI)
 The backend supports it (`order-lifecycle.service.ts markUndelivered`), the shared enum
 `UndeliveredReason` exists, `OrderSnapshot` carries `undeliveredReason`/`undeliveredAttempts`, and the
@@ -36,7 +59,7 @@ outcome and is stranded on a job they can't close.
 **Fix:** add a "Can't complete delivery" action on `picked_up`/`en_route_dropoff` that POSTs a reason to
 the undelivered endpoint and resolves to a terminal + back-to-board.
 
-**R2 · "Cancel job" is shown post-pickup, where the server rejects it — and it's the only visible exit.**
+**R2 · "Cancel job" is shown post-pickup, where the server rejects it — and it's the only visible exit.** — ❌ STILL OPEN after PR #98
 `apps/mobile/app/rider/job.tsx:196,373`
 The button is gated on `isActive = ACTIVE_RIDE_STATUSES.includes(status)` (assigned … **en_route_dropoff**),
 but riders may only cancel through `en_route_pickup` — `RIDER_CANCELLABLE_STATUSES` (`enums.ts:96`)
@@ -84,7 +107,7 @@ tap. There's no `addNotificationResponseReceivedListener`, and the board socket 
 not the job; up to 8s idle (or missed) while the customer waits.
 **Fix:** on the selection push/socket event, `router.push("/rider/job")`.
 
-**R7 · No navigation/directions handoff to pickup or drop-off.**
+**R7 · No navigation/directions handoff to pickup or drop-off.** — ✅ FIXED by PR #98
 `apps/mobile/app/rider/job.tsx:282` · `src/ui/LiveMap.tsx:37`
 `LiveMap` is a read-only tracking map (Expand + Recenter only). The job screen gives phone dialers and
 landmark text but no "Open in Maps" / turn-by-turn.
@@ -143,7 +166,7 @@ the switch bounces back to Offline with no reason.
 
 ### P1 — blockers
 
-**C1 · The map is the only way to set a pin; if it fails to load, the whole order flow is dead.**
+**C1 · The map is the only way to set a pin; if it fails to load, the whole order flow is dead.** — 🟡 PARTIALLY FIXED by PR #98 (key-gated address search)
 `apps/mobile/src/ui/MapPicker.tsx:112-127`
 The only way to set pickup/drop-off is tapping the `MapView` (`onPress`). There's no address search and no
 manual coordinate entry, and the file notes the map "needs the dev build + a Google Maps key on Android."
