@@ -46,8 +46,17 @@ export class ReportsService {
 
     const subject = subjectProfileId;
     return this.prisma.$transaction(async (tx) => {
-      const report = await tx.report.create({
-        data: {
+      // Upsert on (order, reporter, subject) — one report per trip per reporter; re-reporting the same
+      // trip updates the reason/note instead of stacking rows (which would inflate the fault count).
+      const report = await tx.report.upsert({
+        where: {
+          orderId_reporterProfileId_subjectProfileId: {
+            orderId,
+            reporterProfileId: callerId,
+            subjectProfileId: subject,
+          },
+        },
+        create: {
           orderId,
           reporterProfileId: callerId,
           reporterRole,
@@ -56,6 +65,7 @@ export class ReportsService {
           reason: body.reason,
           note: body.note ?? null,
         },
+        update: { reason: body.reason, note: body.note ?? null },
         select: { id: true },
       });
 

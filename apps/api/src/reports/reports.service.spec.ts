@@ -19,27 +19,31 @@ const reportBody: ReportUserRequest = { orderId: "ord-1", reason: "rude" };
 
 describe("ReportsService.report", () => {
   it("rejects a caller who wasn't on the order", async () => {
-    const tx = { report: { create: vi.fn() }, block: { upsert: vi.fn() } };
+    const tx = { report: { upsert: vi.fn() }, block: { upsert: vi.fn() } };
     await expect(svc(tx).report("ord-1", reportBody, "stranger")).rejects.toBeInstanceOf(ForbiddenException);
-    expect(tx.report.create).not.toHaveBeenCalled();
+    expect(tx.report.upsert).not.toHaveBeenCalled();
   });
 
-  it("creates a Report deriving the subject (counterparty) from the order — no block by default", async () => {
-    let createArgs: { data: Record<string, unknown> } | undefined;
-    const upsert = vi.fn(async () => ({}));
+  it("upserts a Report deriving the subject (counterparty) from the order — no block by default", async () => {
+    let upsertArgs: { where: Record<string, unknown>; create: Record<string, unknown>; update: Record<string, unknown> } | undefined;
+    const blockUpsert = vi.fn(async () => ({}));
     const tx = {
       report: {
-        create: async (args: { data: Record<string, unknown> }) => {
-          createArgs = args;
+        upsert: async (args: { where: Record<string, unknown>; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+          upsertArgs = args;
           return { id: "rep-1" };
         },
       },
-      block: { upsert },
+      block: { upsert: blockUpsert },
     };
     // Customer reports the rider.
     const res = await svc(tx).report("ord-1", { ...reportBody, note: "hostile" }, "cust-1");
 
-    expect(createArgs!.data).toMatchObject({
+    // One report per (order, reporter, subject) — upsert keyed on the unique, create carries the row.
+    expect(upsertArgs!.where).toEqual({
+      orderId_reporterProfileId_subjectProfileId: { orderId: "ord-1", reporterProfileId: "cust-1", subjectProfileId: "rider-1" },
+    });
+    expect(upsertArgs!.create).toMatchObject({
       orderId: "ord-1",
       reporterProfileId: "cust-1",
       reporterRole: "customer",
@@ -48,13 +52,14 @@ describe("ReportsService.report", () => {
       reason: "rude",
       note: "hostile",
     });
+    expect(upsertArgs!.update).toEqual({ reason: "rude", note: "hostile" });
     expect(res).toEqual({ id: "rep-1", blocked: false });
-    expect(upsert).not.toHaveBeenCalled();
+    expect(blockUpsert).not.toHaveBeenCalled();
   });
 
   it("also upserts a Block (idempotent on the unique) when block:true", async () => {
     const upsert = vi.fn(async () => ({}));
-    const tx = { report: { create: async () => ({ id: "rep-1" }) }, block: { upsert } };
+    const tx = { report: { upsert: async () => ({ id: "rep-1" }) }, block: { upsert } };
     // Rider reports the customer, with a block.
     const res = await svc(tx).report("ord-1", { ...reportBody, block: true }, "rider-1");
 

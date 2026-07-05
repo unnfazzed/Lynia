@@ -258,10 +258,13 @@ export class SettlementsService {
       const gross = Number(s.grossFares);
       const commission = Number(s.commission);
       const refunds = Number(s.refundsNetted);
+      const amountDue = Number(s.amountDue);
       const status = rowStatus(s.status);
       cashCollected += gross;
-      if (status === "settled") settledThisWeek += commission;
-      else commissionOwed += commission; // due + overdue are still owed
+      // The rider pays amountDue (commission net of refunds), not gross commission — the KPIs must
+      // reflect the collectible cash, otherwise "commission owed" overstates it by the netted refunds.
+      if (status === "settled") settledThisWeek += amountDue;
+      else commissionOwed += amountDue; // due + overdue are still owed (net of refunds)
       if (status === "overdue") overdueCount += 1;
 
       return {

@@ -31,6 +31,7 @@ export function ResolveActions({
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <ConfirmModal
         action="issue.refund"
+        auditInEndpoint
         target={id}
         path={path}
         triggerLabel="Refund the fare…"
@@ -54,6 +55,7 @@ export function ResolveActions({
       />
       <ConfirmModal
         action="issue.strike_rider"
+        auditInEndpoint
         target={rider}
         path={path}
         triggerLabel="Strike the rider…"
@@ -72,6 +74,7 @@ export function ResolveActions({
       />
       <ConfirmModal
         action="issue.close_no_action"
+        auditInEndpoint
         target={id}
         path={path}
         triggerLabel="Close — no action…"

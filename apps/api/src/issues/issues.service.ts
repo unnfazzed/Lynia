@@ -161,8 +161,10 @@ export class IssuesService {
       fare: (order?.agreedFare ?? order?.proposedFare)?.toString() ?? "0",
       rider: riderName,
       customer: customerName,
-      // Masked unless the order is live in its reveal window — an issue is usually raised post-trip, so
-      // these are masked in the common case, but the rule is identical to orders.service/admin.
+      // Revealed inside PHONE_REVEAL_STATUSES (which includes the post-trip delivered/completed/
+      // undelivered states a dispute is usually raised in), masked otherwise — same rule as
+      // orders.service/admin. So for the common completed-order dispute ops CAN see the numbers to
+      // call the parties (AdminGuard-gated); this is intended, not a leak.
       riderPhone: order?.rider ? (revealed ? order.rider.profile.phone : maskPhone(order.rider.profile.phone)) : undefined,
       customerPhone: order ? (revealed ? order.customer.phone : maskPhone(order.customer.phone)) : undefined,
       facts: issue.description,
@@ -189,19 +191,23 @@ export class IssuesService {
         select: { id: true, status: true, orderId: true },
       });
       if (!issue) throw new NotFoundException("Issue not found");
-      if (issue.status === "resolved") throw new ConflictException("This issue is already resolved");
 
-      const updated = await tx.issue.update({
-        where: { id },
+      // Guarded transition (CAS): flip to resolved ONLY from a not-yet-resolved row, so two
+      // concurrent resolves (double-click, retry, two ops on the queue) can't both pass a
+      // check-then-act guard and each run the side-effect (double refund / double strike). Only the
+      // writer that actually flipped the row (count===1) proceeds; the loser gets the conflict.
+      const resolvedAt = new Date();
+      const claimed = await tx.issue.updateMany({
+        where: { id, status: { not: "resolved" } },
         data: {
           status: "resolved",
           resolution: body.resolution,
           resolutionNote: body.note ?? null,
           resolvedByAdminId: adminId,
-          resolvedAt: new Date(),
+          resolvedAt,
         },
-        select: { id: true, status: true, resolution: true, resolvedAt: true },
       });
+      if (claimed.count === 0) throw new ConflictException("This issue is already resolved");
 
       if (body.resolution === "refund") {
         // A refund is owed to the customer and netted off the rider's settlement — so it needs the
@@ -225,10 +231,10 @@ export class IssuesService {
       });
 
       return {
-        id: updated.id,
-        status: updated.status,
-        resolution: updated.resolution,
-        resolvedAt: updated.resolvedAt?.toISOString() ?? null,
+        id,
+        status: "resolved" as const,
+        resolution: body.resolution,
+        resolvedAt: resolvedAt.toISOString(),
       };
     });
   }

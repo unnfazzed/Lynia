@@ -216,8 +216,8 @@ describe("SettlementsService.currentWeek (SettlementWeek shape + KPIs)", () => {
         findUnique: async () => null,
         upsert: async () => ({ id: "s-new" }),
         findMany: async () => [
-          { id: "s1", riderId: "r1", grossFares: 100, commission: 15, refundsNetted: 0, status: "pending", rider: rider("Tendai") },
-          { id: "s2", riderId: "r2", grossFares: 40, commission: 6, refundsNetted: 0, status: "paid", rider: rider("Rudo") },
+          { id: "s1", riderId: "r1", grossFares: 100, commission: 15, refundsNetted: 0, amountDue: 15, status: "pending", rider: rider("Tendai") },
+          { id: "s2", riderId: "r2", grossFares: 40, commission: 6, refundsNetted: 0, amountDue: 6, status: "paid", rider: rider("Rudo") },
         ],
       },
       refund: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
@@ -233,7 +233,8 @@ describe("SettlementsService.currentWeek (SettlementWeek shape + KPIs)", () => {
     expect(week.rows).toHaveLength(2);
     expect(week.rows[0]).toMatchObject({ id: "s1", name: "Tendai M", trips: 5, cash: "100.00", commission: "15.00", status: "due", note: "due" });
     expect(week.rows[1]).toMatchObject({ id: "s2", name: "Rudo M", trips: 2, status: "settled" });
-    // cash = 100 + 40; owed = pending commission (15); settled = paid commission (6).
+    // cash = 100 + 40; owed = pending amountDue (15); settled = paid amountDue (6). With no refunds
+    // amountDue == commission, so the KPIs are unchanged — but they now derive from the net figure.
     expect(week.kpis.cashCollected).toBe("140.00");
     expect(week.kpis.commissionOwed).toBe("15.00");
     expect(week.kpis.settledThisWeek).toBe("6.00");

@@ -378,6 +378,9 @@ model Report {
   note              String?
   createdAt         DateTime     @default(now()) @map("created_at")
 
+  // One report per (order, reporter, subject) — a party can't inflate the other's fault count by
+  // reporting the same trip repeatedly. Re-reporting updates the reason/note in place (upsert).
+  @@unique([orderId, reporterProfileId, subjectProfileId])
   @@index([subjectProfileId])
   @@map("reports")
 }
