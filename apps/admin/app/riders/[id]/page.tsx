@@ -6,6 +6,7 @@ import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { RiderActions } from "./RiderActions";
+import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconBike } from "../../components/icons";
 
@@ -86,6 +87,8 @@ export default async function RiderProfilePage({ params }: { params: { id: strin
           </span>
         </div>
       ) : null}
+
+      <ReportsCallout reports={r.reports} subject="rider" />
 
       <section className="panels" style={{ marginBottom: tokens.space.lg }}>
         <KpiCard label="Trips" value={r.trips} hint={`since ${r.joined}`} size={22} />

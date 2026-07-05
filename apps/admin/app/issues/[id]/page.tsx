@@ -1,19 +1,26 @@
-import { tokens } from "@lynia/shared";
+import { tokens, ISSUE_TYPE_LABELS, type IssueResolution } from "@lynia/shared";
 import { adminFetchResult } from "../../lib/api";
-import { REASONS } from "../../lib/reasons";
 import type { IssueDetail } from "../../lib/adminTypes";
 import { KeyValue } from "../../components/KeyValue";
 import { Pill } from "../../components/StatusPill";
-import { ConfirmModal } from "../../components/ConfirmModal";
+import { ResolveActions } from "./ResolveActions";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert } from "../../components/icons";
 
-/** Dispute investigation (kit `issues.html` detail): what happened, OTP-not-entered evidence
- *  callout, both statements, photo evidence, and resolve → refund / strike / close, each reason-coded
- *  through <ConfirmModal>. */
+/** Dispute investigation (kit `issues.html` detail): what happened, the OTP-not-entered evidence
+ *  callout + delivery timeline, both statements, masked phones, and resolve → refund / rider strike /
+ *  close, each reason-coded through <ConfirmModal>. A resolved issue shows its outcome read-only. */
+const RESOLUTION_LABELS: Record<IssueResolution, string> = {
+  refund: "Fare refunded to the customer",
+  rider_strike: "Rider given a strike",
+  close_no_action: "Closed — no action",
+};
+
+/** Status pill: open/investigating stay active (neutral), resolved goes muted. */
+const statusPill = (status: IssueDetail["status"]) => <Pill kind={status === "resolved" ? "mut" : ""}>{status}</Pill>;
+
 export default async function IssueDetailPage({ params }: { params: { id: string } }) {
   const res = await adminFetchResult<IssueDetail>(`/admin/issues/${params.id}`);
-  const path = `/issues/${params.id}`;
 
   if (!("data" in res)) {
     const reason = res.reason;
@@ -41,7 +48,7 @@ export default async function IssueDetailPage({ params }: { params: { id: string
   const i = res.data;
   // Past the guard `i` is live data → connected; resolve actions are enabled.
   const connected = true;
-  const issuePill = <Pill kind={i.status === "resolved" ? "mut" : i.status === "open" ? "bad" : ""}>{i.status}</Pill>;
+  const typeLabel = ISSUE_TYPE_LABELS[i.type] ?? i.type;
 
   return (
     <main className="content">
@@ -50,9 +57,9 @@ export default async function IssueDetailPage({ params }: { params: { id: string
           ← Issues
         </a>
         <h1 style={{ fontSize: 18 }}>
-          {i.id} — {i.type}
+          <span className="mono">{i.id}</span> — {typeLabel}
         </h1>
-        <span>{issuePill}</span>
+        <span>{statusPill(i.status)}</span>
         <Conn connected={connected} />
       </header>
 
@@ -65,8 +72,8 @@ export default async function IssueDetailPage({ params }: { params: { id: string
               <div className="warnbar" style={{ margin: "14px 0 0" }}>
                 <IconAlert />
                 <span className="t">
-                  <b>Delivery code was not entered.</b> A completed hand-off normally requires the recipient's code —
-                  treat a manual close as unconfirmed delivery.
+                  <b>Delivery code was not entered.</b> A completed hand-off normally requires the recipient&apos;s
+                  one-time code — treat a manual close as unconfirmed delivery.
                 </span>
               </div>
             ) : null}
@@ -79,14 +86,38 @@ export default async function IssueDetailPage({ params }: { params: { id: string
             ) : null}
           </section>
 
+          {i.timeline && i.timeline.length > 0 ? (
+            <section className="card">
+              <div className="block-title">Delivery evidence</div>
+              <ul className="tl">
+                {i.timeline.map((s, idx) => (
+                  <li key={idx} className={s.state ?? ""}>
+                    <span className="node">{s.state === "done" ? "✓" : s.state === "stall" ? "!" : String(idx + 1)}</span>
+                    <span>
+                      <span className="lbl">{s.label}</span>
+                      {s.note ? <div className="note">{s.note}</div> : null}
+                    </span>
+                    <span className="ts">{s.ts ?? ""}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           <section className="card">
             <div className="block-title">Statements</div>
-            {i.statements.map((s, idx) => (
-              <div key={idx} style={{ padding: "10px 0", borderTop: `1px solid ${tokens.color.line}` }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: tokens.color.muted, marginBottom: 3 }}>{s.who}</div>
-                <div style={{ fontSize: 13 }}>{s.text}</div>
+            {i.statements.length > 0 ? (
+              i.statements.map((s, idx) => (
+                <div key={idx} style={{ padding: "10px 0", borderTop: `1px solid ${tokens.color.line}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: tokens.color.muted, marginBottom: 3 }}>{s.who}</div>
+                  <div style={{ fontSize: 13 }}>{s.text}</div>
+                </div>
+              ))
+            ) : (
+              <div className="mut" style={{ fontSize: 13 }}>
+                No statements yet — neither party has responded.
               </div>
-            ))}
+            )}
           </section>
         </div>
 
@@ -102,7 +133,9 @@ export default async function IssueDetailPage({ params }: { params: { id: string
                   label: "Rider",
                   value: (
                     <span>
-                      {i.rider} · <a href="/riders" style={{ color: tokens.color.accentText }}>profile</a>
+                      {i.rider}
+                      {i.riderPhone ? <span className="mono mut"> {i.riderPhone}</span> : null} ·{" "}
+                      <a href="/riders" style={{ color: tokens.color.accentText }}>profile</a>
                     </span>
                   ),
                 },
@@ -110,7 +143,17 @@ export default async function IssueDetailPage({ params }: { params: { id: string
                   label: "Customer",
                   value: (
                     <span>
-                      {i.customer} · <a href="/customers" style={{ color: tokens.color.accentText }}>profile</a>
+                      {i.customer}
+                      {i.customerPhone ? <span className="mono mut"> {i.customerPhone}</span> : null} ·{" "}
+                      <a href="/customers" style={{ color: tokens.color.accentText }}>profile</a>
+                    </span>
+                  ),
+                },
+                {
+                  label: "Privacy",
+                  value: (
+                    <span className="mut" style={{ fontSize: 12 }}>
+                      Full numbers show to ops only during an active order.
                     </span>
                   ),
                 },
@@ -125,58 +168,25 @@ export default async function IssueDetailPage({ params }: { params: { id: string
             <div className="block-title">Resolution</div>
             {i.status === "resolved" ? (
               <div style={{ fontSize: 13 }}>
-                <span style={{ color: tokens.color.accentText, fontWeight: 600 }}>✓ Resolved.</span>{" "}
-                <span className="mut">{i.resolution}</span>
+                <div>
+                  <span style={{ color: tokens.color.accentText, fontWeight: 600 }}>✓ Resolved.</span>{" "}
+                  {i.resolution ? RESOLUTION_LABELS[i.resolution] ?? i.resolution : "Outcome recorded."}
+                  {i.resolution === "refund" && i.refundAmount ? (
+                    <span className="num"> · ${i.refundAmount} refunded</span>
+                  ) : null}
+                </div>
+                {i.resolutionNote ? (
+                  <div className="mut" style={{ marginTop: 6 }}>
+                    {i.resolutionNote}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <>
                 <div style={{ fontSize: 13, color: tokens.color.muted, marginBottom: 14 }}>
                   Pick an outcome — each is recorded on the order, the rider and the customer.
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <ConfirmModal
-                    action="issue.refund"
-                    target={i.id}
-                    path={path}
-                    triggerLabel="Refund the fare…"
-                    triggerVariant="ghost"
-                    disabled={!connected}
-                    title={`Refund $${i.fare} to the customer?`}
-                    consequence={
-                      <span>
-                        Cash refunds are handed to the customer by ops or netted off the rider&apos;s next settlement.
-                        Order <b>{i.order}</b>.
-                      </span>
-                    }
-                    reasons={REASONS.issueRefund}
-                    confirmLabel="Record refund"
-                  />
-                  <ConfirmModal
-                    action="issue.strike_rider"
-                    target={i.rider}
-                    path={path}
-                    triggerLabel="Strike the rider…"
-                    triggerVariant="danger"
-                    danger
-                    disabled={!connected}
-                    title={`Give ${i.rider} a strike?`}
-                    consequence="Three strikes trigger an automatic cooldown. Consider a suspension instead if this involves safety or fraud."
-                    reasons={REASONS.issueStrike}
-                    confirmLabel="Add strike"
-                  />
-                  <ConfirmModal
-                    action="issue.close_no_action"
-                    target={i.id}
-                    path={path}
-                    triggerLabel="Close — no action…"
-                    triggerVariant="quiet"
-                    disabled={!connected}
-                    title={`Close ${i.id} with no action?`}
-                    consequence="Both sides are notified that the issue is closed. It stays on record and reopens if new evidence arrives."
-                    reasons={REASONS.issueClose}
-                    confirmLabel="Close issue"
-                  />
-                </div>
+                <ResolveActions id={i.id} order={i.order} rider={i.rider} fare={i.fare} connected={connected} />
               </>
             )}
           </section>

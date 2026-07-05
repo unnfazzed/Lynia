@@ -241,6 +241,21 @@ describe("RiderService.setOnline", () => {
     await expect(s.setOnline("p1", true)).rejects.toThrow(/suspended/i);
   });
 
+  it("refuses (reason: banned) with a distinct tag when the account is banned", async () => {
+    let threw: unknown;
+    const s = svc(
+      { rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "banned", onHold: false, cooldownUntil: null }) } },
+      {},
+    );
+    try {
+      await s.setOnline("p1", true);
+    } catch (e) {
+      threw = e;
+    }
+    // Banned surfaces its own machine-readable `reason`, not the suspended branch.
+    expect((threw as { getResponse: () => { reason: string } }).getResponse().reason).toBe("banned");
+  });
+
   it("refuses (reason: on_hold) when reliability tripped on_hold", async () => {
     let threw: unknown;
     const s = svc(
@@ -262,12 +277,17 @@ describe("onlineRefusalReason (pure online-gate, Q2)", () => {
   it("returns null when every precondition passes", () => {
     expect(onlineRefusalReason(base)).toBeNull();
   });
-  it("prioritises kyc → suspended → on_hold → cooldown", () => {
+  it("prioritises kyc → banned → suspended → on_hold → cooldown", () => {
     expect(onlineRefusalReason({ ...base, kycStatus: "pending" })).toBe("kyc");
+    expect(onlineRefusalReason({ ...base, accountStatus: "banned" })).toBe("banned");
     expect(onlineRefusalReason({ ...base, accountStatus: "suspended" })).toBe("suspended");
-    expect(onlineRefusalReason({ ...base, accountStatus: "banned" })).toBe("suspended");
     expect(onlineRefusalReason({ ...base, onHold: true })).toBe("on_hold");
     expect(onlineRefusalReason({ ...base, cooldownUntil: new Date(Date.now() + 60_000) })).toBe("cooldown");
+  });
+
+  it("reports a banned account as its own `banned` reason (not the suspended catch-all)", () => {
+    // A banned rider outranks a simultaneous on_hold/cooldown and is never mislabelled `suspended`.
+    expect(onlineRefusalReason({ ...base, accountStatus: "banned", onHold: true })).toBe("banned");
   });
   it("kyc outranks a simultaneous suspend + on_hold + cooldown", () => {
     expect(

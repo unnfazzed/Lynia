@@ -247,8 +247,12 @@ describe("AdminService.getRiderDetail (D-2)", () => {
     profile: { firstName: "Tendai", lastName: "M", phone: "+263782000001", createdAt: new Date("2026-01-15T00:00:00Z") },
     ...over,
   });
-  const prismaFor = (rider: unknown, liveCount: number) => ({
+  const prismaFor = (rider: unknown, liveCount: number, reports: Array<Record<string, unknown>> = []) => ({
     rider: { findUnique: async () => rider },
+    report: {
+      count: async () => reports.length,
+      findMany: async () => reports,
+    },
     order: {
       count: async () => liveCount,
       groupBy: async () => [
@@ -293,6 +297,22 @@ describe("AdminService.getRiderDetail (D-2)", () => {
     expect(r.phone).toBe("+263782000001");
     expect(r.status).toBe("cooldown");
     expect(r.cooldown).toMatch(/h .*m|m$/);
+  });
+
+  it("counts the rider's Report rows and lists the recent ones (repeat-offender signal)", async () => {
+    const reports = [
+      { id: "rep1", reason: "unsafe", note: "cut me off", createdAt: new Date("2026-06-25T00:00:00Z") },
+      { id: "rep2", reason: "rude", note: null, createdAt: new Date("2026-06-24T00:00:00Z") },
+    ];
+    const svc = new AdminService(prismaFor(riderRow(), 0, reports) as unknown as PrismaService);
+    const r = (await svc.getRiderDetail("r1"))! as unknown as {
+      reports: number;
+      reportLog: Array<{ date: string; text: string; issueId?: string }>;
+    };
+    expect(r.reports).toBe(2);
+    // Reason label + free-text note when present; label only otherwise.
+    expect(r.reportLog[0]).toEqual({ date: "2026-06-25", text: "Unsafe behaviour — cut me off", issueId: "rep1" });
+    expect(r.reportLog[1]).toEqual({ date: "2026-06-24", text: "Rude or hostile", issueId: "rep2" });
   });
 });
 
@@ -340,33 +360,52 @@ describe("AdminService.listCustomers + getCustomerDetail (D-2)", () => {
     expect(await svc.getCustomerDetail("nope")).toBeNull();
   });
 
+  const customerOrders = {
+    count: async (args: { where: { status?: string } }) => (args.where.status === "cancelled" ? 0 : 2),
+    aggregate: async () => ({ _sum: { agreedFare: dec("10.00") } }),
+    findMany: async () => [
+      {
+        id: "o1",
+        status: "completed",
+        proposedFare: dec("5.00"),
+        agreedFare: dec("5.00"),
+        pickup: { landmark: "A" },
+        dropoff: { landmark: "B" },
+        createdAt: new Date("2026-03-03T00:00:00Z"),
+      },
+    ],
+  };
+
   it("detail adds publicName, empty flagLog and the recent-orders trail", async () => {
     const prisma = {
       profile: { findFirst: async () => profile },
-      order: {
-        count: async (args: { where: { status?: string } }) => (args.where.status === "cancelled" ? 0 : 2),
-        aggregate: async () => ({ _sum: { agreedFare: dec("10.00") } }),
-        findMany: async () => [
-          {
-            id: "o1",
-            status: "completed",
-            proposedFare: dec("5.00"),
-            agreedFare: dec("5.00"),
-            pickup: { landmark: "A" },
-            dropoff: { landmark: "B" },
-            createdAt: new Date("2026-03-03T00:00:00Z"),
-          },
-        ],
-      },
+      report: { count: async () => 0, findMany: async () => [] },
+      order: customerOrders,
     };
     const svc = new AdminService(prisma as unknown as PrismaService);
     const c = (await svc.getCustomerDetail("c1"))!;
     expect(c.publicName).toBe("Rudo");
     expect(c.flagLog).toEqual([]);
+    expect(c.flags).toBe(0);
     expect(c.orders).toBe(2);
     expect(c.spend).toBe("10.00");
     expect(c.cancelRatePct).toBe(0);
     expect(c.trail[0]).toMatchObject({ id: "o1", route: "A → B", fare: "5.00" });
+  });
+
+  it("detail surfaces the customer's Report count in `flags` and the rows in `flagLog`", async () => {
+    const reports = [
+      { id: "rep9", reason: "fraud", note: "chargeback scam", createdAt: new Date("2026-03-05T00:00:00Z") },
+    ];
+    const prisma = {
+      profile: { findFirst: async () => profile },
+      report: { count: async () => reports.length, findMany: async () => reports },
+      order: customerOrders,
+    };
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    const c = (await svc.getCustomerDetail("c1"))!;
+    expect(c.flags).toBe(1);
+    expect(c.flagLog).toEqual([{ date: "2026-03-05", text: "Fraud or scam — chargeback scam", issueId: "rep9" }]);
   });
 });
 

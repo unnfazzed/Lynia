@@ -7,6 +7,7 @@ import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { ConfirmModal } from "../../components/ConfirmModal";
+import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconUser } from "../../components/icons";
 
@@ -72,6 +73,8 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
           <span className="t" dangerouslySetInnerHTML={{ __html: c.warn }} />
         </div>
       ) : null}
+
+      <ReportsCallout reports={c.reports} subject="customer" />
 
       <section className="panels" style={{ marginBottom: tokens.space.lg }}>
         <KpiCard label="Orders" value={c.orders} hint={`since ${c.joined}`} size={22} />

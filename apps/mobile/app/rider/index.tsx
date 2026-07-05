@@ -321,8 +321,10 @@ export default function RiderHome(): React.ReactElement {
           <>
         {gate ? (
           // The rules API refused going online — a distinct, calm state per reason (on hold / suspended /
-          // cooldown / KYC), not a red error. Cooldown is temporary so it keeps a retry; the others are
-          // resolved elsewhere (support / recovery) so they just explain and offer a status refresh.
+          // banned / cooldown / KYC), not a red error. Cooldown is temporary so it keeps a retry; the
+          // others are resolved elsewhere (support / recovery) so they just explain and offer a status
+          // refresh. Banned is the hardest state (permanent) and reads as circle-alert, distinct from
+          // suspended's triangle-alert.
           <EmptyState
             icon={gate === "suspended" ? "triangle-alert" : gate === "cooldown" ? "clock" : gate === "kyc" ? "id-card" : "circle-alert"}
             title={ONLINE_GATE_COPY[gate].title}

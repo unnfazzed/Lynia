@@ -1,3 +1,4 @@
+import { ISSUE_TYPE_LABELS } from "@lynia/shared";
 import { adminFetchResult } from "../lib/api";
 import type { IssueRow } from "../lib/adminTypes";
 import { DataTable, type Column } from "../components/DataTable";
@@ -15,9 +16,10 @@ const FILTERS = [
   { value: "resolved", label: "resolved" },
 ];
 
+/** Status pill: open/investigating stay active (neutral fill), resolved goes muted. Never `bad` —
+ *  an open dispute isn't a failure state, it's work in the queue. */
 function issuePill(status: IssueRow["status"]) {
-  const kind = status === "resolved" ? "mut" : status === "open" ? "bad" : "";
-  return <Pill kind={kind}>{status}</Pill>;
+  return <Pill kind={status === "resolved" ? "mut" : ""}>{status}</Pill>;
 }
 
 export default async function IssuesPage({
@@ -35,7 +37,7 @@ export default async function IssuesPage({
 
   const columns: Column<IssueRow>[] = [
     { key: "id", header: "Issue", className: "mono", cell: (i) => i.id },
-    { key: "type", header: "Type", cell: (i) => i.type },
+    { key: "type", header: "Type", cell: (i) => <Pill>{ISSUE_TYPE_LABELS[i.type] ?? i.type}</Pill> },
     { key: "order", header: "Order", className: "mono", cell: (i) => i.order },
     { key: "by", header: "Opened by", cell: (i) => i.openedBy },
     { key: "opened", header: "Opened", className: "mut", cell: (i) => i.opened },

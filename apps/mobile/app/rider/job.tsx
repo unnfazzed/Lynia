@@ -5,11 +5,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { collectedItemCount } from "../../src/logic/journey";
+import { mapsDirectionsUrl } from "../../src/logic/maps";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, type OrderSnapshot } from "../../src/api/orders";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, ErrorText, Field, Heading, Icon, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
+import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
 const NEXT: Record<string, { to: AdvanceStatusRequest["to"]; label: string }> = {
@@ -284,6 +286,19 @@ export default function RiderJob(): React.ReactElement {
             dropoff={{ lat: order.dropoff.point.lat, lng: order.dropoff.point.lng }}
             rider={riderPoint}
           />
+          {/* Maps-sync (§3·2): hand the rider turn-by-turn navigation for the pickup → drop-off leg in
+              Google Maps. No Places key needed — a universal Maps URL. Shown while the run is active. */}
+          {isActive ? (
+            <Pressable
+              onPress={() => void Linking.openURL(mapsDirectionsUrl(order.pickup.point, order.dropoff.point))}
+              accessibilityRole="button"
+              accessibilityLabel="Follow the route in Google Maps"
+              style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+            >
+              <Icon name="navigation" size={16} color={tokens.color.accentText} />
+              <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Follow route in Google Maps</Text>
+            </Pressable>
+          ) : null}
           <Stepper events={order.events} currentStatus={order.status} view="rider" />
         </Card>
 
@@ -370,9 +385,17 @@ export default function RiderJob(): React.ReactElement {
           </Card>
         ) : null}
 
+        {/* SOS on a live run (R-16/F-13) — a deliberate danger control, highest value at the cash
+            hand-off. Passes the rider's own live GPS when available. */}
+        {isActive ? <SosControl orderId={order.id} lat={riderPoint?.lat} lng={riderPoint?.lng} /> : null}
+
         {isActive ? (
           <Button label="Cancel job" variant="ghost" onPress={() => cancelM.mutate()} loading={cancelM.isPending} />
         ) : null}
+
+        {/* Order-level support (active) + report/block after the trip (rider → sender). */}
+        {isActive || order.status === "delivered" ? <GetHelpControl orderId={order.id} /> : null}
+        {order.status === "delivered" ? <ReportControl orderId={order.id} counterpartyNoun="sender" /> : null}
         <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
         <ErrorText message={error} />
         <View style={{ height: tokens.space.xxl }} />

@@ -22,34 +22,98 @@ describe("weeklyPeriod (A-06 period math)", () => {
   });
 });
 
+// A per-rider $transaction tx double: records the settlement upsert + refund query/stamp. `refunds`
+// seeds the rows refund.findMany returns; `existing` is what settlement.findUnique returns (the current
+// open row, if any, so a regeneration re-nets the already-stamped rows).
+function genTx(opts: { refunds?: Array<{ id: string; amount: number }>; existing?: { id: string } | null } = {}) {
+  const captured: {
+    upsert: { where: unknown; create: Record<string, unknown>; update: Record<string, unknown> } | null;
+    refundWhere: Record<string, unknown> | null;
+    stamped: { where: Record<string, unknown>; data: Record<string, unknown> } | null;
+  } = { upsert: null, refundWhere: null, stamped: null };
+  const tx = {
+    settlement: {
+      findUnique: async () => opts.existing ?? null,
+      upsert: async (args: NonNullable<typeof captured.upsert>) => { captured.upsert = args; return { id: "s-new" }; },
+    },
+    refund: {
+      findMany: async (args: { where: Record<string, unknown> }) => { captured.refundWhere = args.where; return opts.refunds ?? []; },
+      updateMany: async (args: NonNullable<typeof captured.stamped>) => { captured.stamped = args; return { count: (opts.refunds ?? []).length }; },
+    },
+  };
+  return { tx, captured };
+}
+
 describe("SettlementsService.generateForPeriod (math + idempotent upsert)", () => {
   it("computes gross/commission/amountDue from policy and upserts one row per rider", async () => {
-    let upsertArgs: { where: unknown; create: Record<string, unknown>; update: Record<string, unknown> } | null = null;
+    const { tx, captured } = genTx(); // no refunds
     const prisma = {
-      order: {
-        groupBy: async () => [{ riderId: "r1", _sum: { agreedFare: 200 } }],
-      },
-      settlement: {
-        upsert: async (args: typeof upsertArgs) => { upsertArgs = args; return {}; },
-      },
+      order: { groupBy: async () => [{ riderId: "r1", _sum: { agreedFare: 200 } }] },
+      $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
     };
     const svc = new SettlementsService(prisma as unknown as PrismaService);
     await svc.generateForPeriod(new Date("2026-07-08T00:00:00Z"));
 
-    expect(upsertArgs!.create).toMatchObject({
+    expect(captured.upsert!.create).toMatchObject({
       riderId: "r1",
       grossFares: 200,
       commission: commissionOn(200), // 15% → 30
       refundsNetted: 0,
-      amountDue: commissionOn(200), // commission − 0
+      amountDue: commissionOn(200), // max(0, commission − 0)
       status: "pending",
     });
     // Idempotent regeneration must NOT reset an already-actioned settlement's status/paidAt/method.
-    expect(upsertArgs!.update).not.toHaveProperty("status");
-    expect(upsertArgs!.update).not.toHaveProperty("paidAt");
-    expect(upsertArgs!.update).toMatchObject({ grossFares: 200, commission: commissionOn(200) });
+    expect(captured.upsert!.update).not.toHaveProperty("status");
+    expect(captured.upsert!.update).not.toHaveProperty("paidAt");
+    expect(captured.upsert!.update).toMatchObject({ grossFares: 200, commission: commissionOn(200) });
     // Keyed on the (riderId, periodStart) unique index.
-    expect(upsertArgs!.where).toHaveProperty("riderId_periodStart");
+    expect(captured.upsert!.where).toHaveProperty("riderId_periodStart");
+    // Nothing to net → no refund rows stamped.
+    expect(captured.stamped).toBeNull();
+  });
+
+  it("nets in-window refunds off the commission and stamps them with the settlement id", async () => {
+    const { tx, captured } = genTx({ refunds: [{ id: "rf1", amount: 5 }, { id: "rf2", amount: 7.5 }] });
+    const prisma = {
+      order: { groupBy: async () => [{ riderId: "r1", _sum: { agreedFare: 200 } }] },
+      $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+    };
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
+    await svc.generateForPeriod(new Date("2026-07-08T00:00:00Z"));
+
+    // refundsNetted = 5 + 7.5 = 12.5; amountDue = 30 − 12.5 = 17.5.
+    expect(captured.upsert!.create).toMatchObject({ refundsNetted: 12.5, amountDue: commissionOn(200) - 12.5 }); // 30 − 12.5 = 17.5
+    // Refund window is the settlement period; only un-netted rows are eligible on a first generation.
+    expect(captured.refundWhere).toMatchObject({ riderId: "r1", OR: [{ settlementId: null }] });
+    expect((captured.refundWhere!.createdAt as { gte: Date; lt: Date }).gte.toISOString().slice(0, 10)).toBe("2026-06-26");
+    // Netted rows are stamped exactly once with the settlement id (netted once).
+    expect(captured.stamped!.where).toEqual({ id: { in: ["rf1", "rf2"] } });
+    expect(captured.stamped!.data).toEqual({ settlementId: "s-new" });
+  });
+
+  it("floors amountDue at 0 when refunds exceed the commission (never bills negative)", async () => {
+    const { tx, captured } = genTx({ refunds: [{ id: "rf1", amount: 999 }] });
+    const prisma = {
+      order: { groupBy: async () => [{ riderId: "r1", _sum: { agreedFare: 200 } }] },
+      $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+    };
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
+    await svc.generateForPeriod(new Date("2026-07-08T00:00:00Z"));
+    expect(captured.upsert!.create).toMatchObject({ refundsNetted: 999, amountDue: 0 });
+  });
+
+  it("re-nets the current open period by including refunds already stamped to THIS settlement", async () => {
+    // Regeneration: the settlement already exists (id s-open) and its refunds carry that id — they must
+    // stay in the sum, so the netting query matches settlementId null OR the existing settlement id.
+    const { tx, captured } = genTx({ existing: { id: "s-open" }, refunds: [{ id: "rf1", amount: 4 }] });
+    const prisma = {
+      order: { groupBy: async () => [{ riderId: "r1", _sum: { agreedFare: 200 } }] },
+      $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+    };
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
+    await svc.generateForPeriod(new Date("2026-07-08T00:00:00Z"));
+    expect(captured.refundWhere!.OR).toEqual([{ settlementId: null }, { settlementId: "s-open" }]);
+    expect(captured.upsert!.update).toMatchObject({ refundsNetted: 4 });
   });
 });
 
@@ -149,12 +213,18 @@ describe("SettlementsService.currentWeek (SettlementWeek shape + KPIs)", () => {
         },
       },
       settlement: {
-        upsert: async () => ({}),
+        findUnique: async () => null,
+        upsert: async () => ({ id: "s-new" }),
         findMany: async () => [
-          { id: "s1", riderId: "r1", grossFares: 100, commission: 15, refundsNetted: 0, status: "pending", rider: rider("Tendai") },
-          { id: "s2", riderId: "r2", grossFares: 40, commission: 6, refundsNetted: 0, status: "paid", rider: rider("Rudo") },
+          { id: "s1", riderId: "r1", grossFares: 100, commission: 15, refundsNetted: 0, amountDue: 15, status: "pending", rider: rider("Tendai") },
+          { id: "s2", riderId: "r2", grossFares: 40, commission: 6, refundsNetted: 0, amountDue: 6, status: "paid", rider: rider("Rudo") },
         ],
       },
+      refund: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
+      $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn({
+        settlement: { findUnique: async () => null, upsert: async () => ({ id: "s-new" }) },
+        refund: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
+      }),
     };
     const svc = new SettlementsService(prisma as unknown as PrismaService);
     const week = await svc.currentWeek(new Date("2026-07-08T00:00:00Z"));
@@ -163,7 +233,8 @@ describe("SettlementsService.currentWeek (SettlementWeek shape + KPIs)", () => {
     expect(week.rows).toHaveLength(2);
     expect(week.rows[0]).toMatchObject({ id: "s1", name: "Tendai M", trips: 5, cash: "100.00", commission: "15.00", status: "due", note: "due" });
     expect(week.rows[1]).toMatchObject({ id: "s2", name: "Rudo M", trips: 2, status: "settled" });
-    // cash = 100 + 40; owed = pending commission (15); settled = paid commission (6).
+    // cash = 100 + 40; owed = pending amountDue (15); settled = paid amountDue (6). With no refunds
+    // amountDue == commission, so the KPIs are unchanged — but they now derive from the net figure.
     expect(week.kpis.cashCollected).toBe("140.00");
     expect(week.kpis.commissionOwed).toBe("15.00");
     expect(week.kpis.settledThisWeek).toBe("6.00");

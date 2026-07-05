@@ -50,7 +50,18 @@ export interface OrderSnapshot {
   undeliveredAttempts?: number | null;
 }
 
-export function createOrder(body: CreateOrderRequest): Promise<CreateOrderResult> {
+/**
+ * The create payload as SENT: CreateOrderRequest plus an OPTIONAL `placeId` riding on each waypoint.
+ * Search-first addressing (§1·3) stores the Google `place_id` alongside `{point, landmark, contactPhone}`
+ * in the waypoint JSON — no shared-schema change, the server persists the waypoint object as JSON. The
+ * field is absent on the pin-on-map path, so this is a pure superset (old flow unaffected).
+ */
+export type CreateOrderBody = CreateOrderRequest & {
+  pickup: CreateOrderRequest["pickup"] & { placeId?: string };
+  dropoff: CreateOrderRequest["dropoff"] & { placeId?: string };
+};
+
+export function createOrder(body: CreateOrderBody): Promise<CreateOrderResult> {
   return apiFetch<CreateOrderResult>("/orders", { method: "POST", body });
 }
 

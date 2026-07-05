@@ -4,6 +4,7 @@ import { TokenService } from "../auth/token.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { blockedPairWhere } from "../reports/blocks";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 
 /** Rider must have a heartbeat newer than this to be selectable (ET3 liveness). */
@@ -53,6 +54,16 @@ export class MatchingService {
 
         if (!offer) throw new NotFoundException("Offer not found for this order");
         if (offer.order.customerId !== customerId) throw new ForbiddenException("Not your order");
+
+        // Block enforcement (server-side, in-tx): a blocked pair never re-matches. If the customer has
+        // blocked this rider — or the rider has blocked the customer — the offer can't be selected. Read
+        // on `tx` so the check is part of the same atomic assignment decision as the CAS below.
+        const blocked = await tx.block.findFirst({
+          where: blockedPairWhere(offer.order.customerId, offer.riderId),
+          select: { id: true },
+        });
+        if (blocked) throw new ForbiddenException("You've blocked this rider — pick another offer");
+
         if (offer.order.status !== "open_for_offers") {
           throw new ConflictException("This order is no longer open for offers");
         }
