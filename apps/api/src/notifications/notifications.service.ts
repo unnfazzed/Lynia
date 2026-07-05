@@ -110,6 +110,35 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Best-effort push to an explicit set of profiles (trust & safety fan-outs — e.g. the SOS
+   * counterparty alert). Empty/duplicate ids are handled by `send`. Never throws.
+   */
+  async notifyProfiles(
+    profileIds: string[],
+    msg: { title: string; body: string; data?: Record<string, string> },
+  ): Promise<void> {
+    try {
+      await this.send(profileIds, msg);
+    } catch (err) {
+      this.logger.warn(`notifyProfiles failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Best-effort escalation push to every ops/admin profile (trust & safety: a raised issue, an SOS).
+   * Resolves the admin audience server-side (role=admin) so callers never carry an ops recipient list.
+   * Never throws — an ops-push failure can't roll back the safety event that triggered it.
+   */
+  async notifyOps(msg: { title: string; body: string; data?: Record<string, string> }): Promise<void> {
+    try {
+      const admins = await this.prisma.profile.findMany({ where: { role: "admin" }, select: { id: true } });
+      await this.send(admins.map((a) => a.id), msg);
+    } catch (err) {
+      this.logger.warn(`notifyOps failed: ${(err as Error).message}`);
+    }
+  }
+
   /** Fan a message out to every device of the given profiles, and prune any token the provider
    *  reports as permanently dead. Private; all callers pre-wrap in try/catch. */
   private async send(

@@ -72,6 +72,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           rider: { isOnline: true, lastHeartbeatAt: new Date() },
         }),
       },
+      block: { findFirst: async () => null },
     });
     await expect(service.selectOffer(orderId, offerId, "cust")).rejects.toThrow(/no longer open/i);
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "not_open" satisfies MatchSelectOutcome);
@@ -88,6 +89,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           rider: { isOnline: true, lastHeartbeatAt: new Date() },
         }),
       },
+      block: { findFirst: async () => null },
     });
     await expect(service.selectOffer(orderId, offerId, "cust")).rejects.toThrow(/no longer available/i);
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "unavailable" satisfies MatchSelectOutcome);
@@ -108,9 +110,37 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
       },
       order: { updateMany: async () => ({ count: 1 }) },
       orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => null },
     });
     const res = await service.selectOffer(orderId, offerId, "cust");
     expect(res).toMatchObject({ orderId, riderId: "r1", status: "assigned", deliveryCode: "000000" });
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "assigned" satisfies MatchSelectOutcome);
+  });
+});
+
+describe("MatchingService.selectOffer — block enforcement (a blocked pair never re-matches)", () => {
+  it("rejects selecting an offer from a blocked rider and never assigns the order", async () => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    // A block row exists between this customer and rider — the symmetric predicate matches either
+    // direction, so the offer can't be selected.
+    const { service, metrics } = svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "2.50" },
+          order: { status: "open_for_offers", customerId: "cust" },
+          rider: { isOnline: true, lastHeartbeatAt: new Date() },
+        }),
+      },
+      order: { updateMany: orderUpdateMany },
+      orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => ({ id: "blk-1" }) },
+    });
+
+    await expect(service.selectOffer(orderId, offerId, "cust")).rejects.toBeInstanceOf(ForbiddenException);
+    // Enforcement fires before the assignment CAS — the order is never claimed.
+    expect(orderUpdateMany).not.toHaveBeenCalled();
+    expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "forbidden" satisfies MatchSelectOutcome);
   });
 });

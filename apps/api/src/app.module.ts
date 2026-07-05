@@ -7,6 +7,7 @@ import { SecretsModule } from "./adapters/secrets/secrets.module";
 import { StorageModule } from "./adapters/storage/storage.module";
 import { ConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
+import { IssuesModule } from "./issues/issues.module";
 import { MatchingModule } from "./matching/matching.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ClientMetricsModule } from "./observability/client-metrics.module";
@@ -15,8 +16,10 @@ import { ObservabilityModule } from "./observability/metrics.service";
 import { OffersModule } from "./offers/offers.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { ReportsModule } from "./reports/reports.module";
 import { RidersModule } from "./riders/riders.module";
 import { SettlementsModule } from "./settlements/settlements.module";
+import { SosModule } from "./sos/sos.module";
 import { TrackingModule } from "./tracking/tracking.module";
 import { UploadsModule } from "./uploads/uploads.module";
 
@@ -49,6 +52,10 @@ import { UploadsModule } from "./uploads/uploads.module";
     UploadsModule,
     // A-06 — cash settlement engine (weekly commission, auto-pause). Consumed by AdminModule.
     SettlementsModule,
+    // Trust & safety — disputes/order-level support (A-05), report/block, SOS (R-16/F-13).
+    IssuesModule,
+    ReportsModule,
+    SosModule,
     // Lane F — admin read API for the monitor dashboard.
     AdminModule,
   ],
