@@ -173,3 +173,61 @@ export const SettlementStatus = {
   OVERDUE: "overdue",
 } as const;
 export type SettlementStatus = (typeof SettlementStatus)[keyof typeof SettlementStatus];
+
+/** Dispute / order-level support (A-05). */
+export const IssueType = {
+  NOT_DELIVERED: "not_delivered",
+  WRONG_ITEM: "wrong_item",
+  DAMAGED: "damaged",
+  PAYMENT_DISPUTE: "payment_dispute",
+  RIDER_CONDUCT: "rider_conduct",
+  CUSTOMER_CONDUCT: "customer_conduct",
+  OTHER: "other",
+} as const;
+export type IssueType = (typeof IssueType)[keyof typeof IssueType];
+
+export const ISSUE_TYPE_LABELS: Record<IssueType, string> = {
+  not_delivered: "Parcel not delivered",
+  wrong_item: "Wrong item collected/delivered",
+  damaged: "Parcel damaged",
+  payment_dispute: "Payment dispute",
+  rider_conduct: "Problem with the rider",
+  customer_conduct: "Problem with the sender/recipient",
+  other: "Something else",
+};
+
+export const IssueStatus = {
+  OPEN: "open",
+  INVESTIGATING: "investigating",
+  RESOLVED: "resolved",
+} as const;
+export type IssueStatus = (typeof IssueStatus)[keyof typeof IssueStatus];
+
+/** How ops closed an issue. `rider_strike` adds a strike (3 → auto-cooldown, per the mobile contract);
+ *  `refund` records a refund netted off the rider's settlement (A-06). */
+export const IssueResolution = {
+  REFUND: "refund",
+  RIDER_STRIKE: "rider_strike",
+  CLOSE_NO_ACTION: "close_no_action",
+} as const;
+export type IssueResolution = (typeof IssueResolution)[keyof typeof IssueResolution];
+
+/** Report-a-user reasons (both roles), after a trip. Conduct/safety, distinct from an order dispute. */
+export const ReportReason = {
+  RUDE: "rude",
+  UNSAFE: "unsafe",
+  FRAUD: "fraud",
+  NO_SHOW: "no_show",
+  INAPPROPRIATE: "inappropriate",
+  OTHER: "other",
+} as const;
+export type ReportReason = (typeof ReportReason)[keyof typeof ReportReason];
+
+export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
+  rude: "Rude or hostile",
+  unsafe: "Unsafe behaviour",
+  fraud: "Fraud or scam",
+  no_show: "No-show",
+  inappropriate: "Inappropriate conduct",
+  other: "Other",
+};

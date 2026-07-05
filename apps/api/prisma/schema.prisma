@@ -77,6 +77,40 @@ enum SettlementStatus {
   overdue
 }
 
+// Disputes / order-level support (A-05). A customer, recipient or rider raises an Issue against an
+// order; ops investigates and resolves it.
+enum IssueType {
+  not_delivered
+  wrong_item
+  damaged
+  payment_dispute
+  rider_conduct
+  customer_conduct
+  other
+}
+
+enum IssueStatus {
+  open
+  investigating
+  resolved
+}
+
+enum IssueResolution {
+  refund
+  rider_strike
+  close_no_action
+}
+
+// Report-a-user after a trip (both roles). Distinct from an order dispute — a conduct/safety report.
+enum ReportReason {
+  rude
+  unsafe
+  fraud
+  no_show
+  inappropriate
+  other
+}
+
 model Profile {
   id              String    @id @default(uuid()) @db.Uuid
   role            Role      @default(customer)
@@ -308,6 +342,89 @@ model Rating {
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("ratings")
+}
+
+// A dispute / help request raised against an order (A-05). Party IDs are plain UUIDs (no relation) so
+// the row survives a profile delete for the audit trail; the order + OTP/events are the evidence.
+model Issue {
+  id                String           @id @default(uuid()) @db.Uuid
+  orderId           String           @map("order_id") @db.Uuid
+  openedByProfileId String           @map("opened_by_profile_id") @db.Uuid
+  openedByRole      Role             @map("opened_by_role")
+  type              IssueType
+  status            IssueStatus      @default(open)
+  description       String
+  resolution        IssueResolution?
+  resolutionNote    String?          @map("resolution_note")
+  resolvedByAdminId String?          @map("resolved_by_admin_id") @db.Uuid
+  resolvedAt        DateTime?        @map("resolved_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@index([orderId])
+  @@map("issues")
+}
+
+// Report-a-user after a trip (both roles). subjectProfileId is indexed so ops can count reports per
+// party (feeds fault attribution alongside the reliability score).
+model Report {
+  id                String       @id @default(uuid()) @db.Uuid
+  orderId           String?      @map("order_id") @db.Uuid
+  reporterProfileId String       @map("reporter_profile_id") @db.Uuid
+  reporterRole      Role         @map("reporter_role")
+  subjectProfileId  String       @map("subject_profile_id") @db.Uuid
+  subjectRole       Role         @map("subject_role")
+  reason            ReportReason
+  note              String?
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  @@index([subjectProfileId])
+  @@map("reports")
+}
+
+// A block prevents a future rematch between the two parties (server-enforced in matching/broadcast).
+model Block {
+  id               String   @id @default(uuid()) @db.Uuid
+  blockerProfileId String   @map("blocker_profile_id") @db.Uuid
+  blockedProfileId String   @map("blocked_profile_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([blockerProfileId, blockedProfileId])
+  @@index([blockerProfileId])
+  @@map("blocks")
+}
+
+// An SOS raised on a live trip by either party (safety, R-16/F-13). Logged + pushed to ops; the app
+// surfaces the emergency contacts (policy.ts SOS_POLICY). acknowledgedAt when ops responds.
+model SosEvent {
+  id                String    @id @default(uuid()) @db.Uuid
+  orderId           String    @map("order_id") @db.Uuid
+  raisedByProfileId String    @map("raised_by_profile_id") @db.Uuid
+  raisedByRole      Role      @map("raised_by_role")
+  lat               Float?
+  lng               Float?
+  acknowledgedAt    DateTime? @map("acknowledged_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("sos_events")
+}
+
+// A refund owed to a customer, netted off the rider's weekly commission (A-06 settlement netting).
+// settlementId links the refund to the settlement window that absorbed it (null until netted).
+model Refund {
+  id           String   @id @default(uuid()) @db.Uuid
+  orderId      String   @map("order_id") @db.Uuid
+  riderId      String   @map("rider_id") @db.Uuid
+  amount       Decimal  @db.Decimal(10, 2)
+  reason       String?
+  settlementId String?  @map("settlement_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([riderId, createdAt])
+  @@index([settlementId])
+  @@map("refunds")
 }
 
 // Server-side sessions so we own revoke/ban/logout (ET5).

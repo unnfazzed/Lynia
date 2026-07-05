@@ -137,6 +137,48 @@ export const CancelRequest = z.object({
 });
 export type CancelRequest = z.infer<typeof CancelRequest>;
 
+/** Either party raises a dispute / help request against an order (A-05, "get help with this trip").
+ *  The server derives the opener + role from the auth context; the subject is the order counterparty. */
+export const RaiseIssueRequest = z.object({
+  orderId: z.string().uuid(),
+  type: z.enum(["not_delivered", "wrong_item", "damaged", "payment_dispute", "rider_conduct", "customer_conduct", "other"]),
+  description: z.string().min(1).max(1000),
+});
+export type RaiseIssueRequest = z.infer<typeof RaiseIssueRequest>;
+
+/** Ops resolves an issue (A-05). `refund` records a refund netted off the rider's settlement (A-06)
+ *  and needs `refundAmount`; `rider_strike` adds a strike; `close_no_action` just closes it. */
+export const ResolveIssueRequest = z
+  .object({
+    resolution: z.enum(["refund", "rider_strike", "close_no_action"]),
+    note: z.string().max(1000).optional(),
+    refundAmount: z.number().positive().max(1000).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.resolution === "refund" && v.refundAmount === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["refundAmount"], message: "A refund needs an amount." });
+    }
+  });
+export type ResolveIssueRequest = z.infer<typeof ResolveIssueRequest>;
+
+/** Report the order counterparty after a trip (both roles). Subject is derived from the order. */
+export const ReportUserRequest = z.object({
+  orderId: z.string().uuid(),
+  reason: z.enum(["rude", "unsafe", "fraud", "no_show", "inappropriate", "other"]),
+  note: z.string().max(500).optional(),
+  /** Also block a future rematch with this counterparty. */
+  block: z.boolean().optional(),
+});
+export type ReportUserRequest = z.infer<typeof ReportUserRequest>;
+
+/** Raise an SOS on a live trip (both roles, R-16/F-13). Location optional (may be denied). */
+export const RaiseSosRequest = z.object({
+  orderId: z.string().uuid(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+});
+export type RaiseSosRequest = z.infer<typeof RaiseSosRequest>;
+
 /** Mobile registers (or clears) its device push token so the API can deliver FCM notifications. */
 export const RegisterDeviceTokenRequest = z.object({
   token: z.string().min(1).max(4096),

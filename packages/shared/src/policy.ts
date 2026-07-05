@@ -78,3 +78,21 @@ export const SETTLEMENT = {
 export function commissionOn(grossFares: number): number {
   return Math.round(grossFares * (SETTLEMENT.commissionPct / 100) * 100) / 100;
 }
+
+/**
+ * Q3 — SOS behaviour on a live trip (R-16/F-13). What the button does: surface the local emergency
+ * number, offer the Lynia safety line, log the event + push to ops for follow-up. NOTE (product Q3):
+ * confirm the real safety-line number (currently env `SOS_SAFETY_LINE`, falling back to the emergency
+ * number) and whether a WhatsApp escalation is wired. `emergencyNumber` is Zimbabwe's 999.
+ */
+export const SOS_POLICY = {
+  emergencyNumber: "999",
+  /** Env var the API/app read for the staffed Lynia safety line; falls back to the emergency number. */
+  safetyLineEnv: "SOS_SAFETY_LINE",
+  /** Notify ops + the counterparty when an SOS is raised. */
+  notifyOps: true,
+} as const;
+
+/** Rider strikes that trip an auto-cooldown (mirrors the lifecycle CANCEL_STRIKE_LIMIT). A
+ *  `rider_strike` issue resolution increments the strike count toward this. */
+export const RIDER_STRIKE_LIMIT = 3;
