@@ -32,8 +32,27 @@ describe("loadEnv — production REDIS_URL boot-guard", () => {
     expect(() => loadEnv({ ...base, NODE_ENV: "production" })).toThrow(/REDIS_URL/);
   });
 
-  it("accepts production when REDIS_URL is set", () => {
-    const env = loadEnv({ ...base, NODE_ENV: "production", REDIS_URL: "redis://localhost:6379" });
+  it("rejects production when JWT_SIGNING_SECRET is unset/default (the repo default is public)", () => {
+    expect(() =>
+      loadEnv({ ...base, NODE_ENV: "production", REDIS_URL: "redis://localhost:6379" }),
+    ).toThrow(/JWT_SIGNING_SECRET/);
+    expect(() =>
+      loadEnv({
+        ...base,
+        NODE_ENV: "production",
+        REDIS_URL: "redis://localhost:6379",
+        JWT_SIGNING_SECRET: "dev-insecure-secret-change-me-please",
+      }),
+    ).toThrow(/JWT_SIGNING_SECRET/);
+  });
+
+  it("accepts production when REDIS_URL and a real JWT_SIGNING_SECRET are set", () => {
+    const env = loadEnv({
+      ...base,
+      NODE_ENV: "production",
+      REDIS_URL: "redis://localhost:6379",
+      JWT_SIGNING_SECRET: "a-strong-production-secret-32-chars-long",
+    });
     expect(env.NODE_ENV).toBe("production");
     expect(env.REDIS_URL).toBe("redis://localhost:6379");
   });

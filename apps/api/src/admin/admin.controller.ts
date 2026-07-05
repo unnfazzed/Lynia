@@ -192,8 +192,9 @@ export class AdminController {
   paySettlement(
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodBody(RecordPayment)) body: z.infer<typeof RecordPayment>,
+    @CurrentUser() actor: string,
   ) {
-    return this.settlements.recordPayment(id, body.method);
+    return this.settlements.recordPayment(id, body.method, actor);
   }
 
   /**

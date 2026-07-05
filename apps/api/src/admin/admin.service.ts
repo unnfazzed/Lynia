@@ -8,6 +8,7 @@ import {
   REPORT_REASON_LABELS,
   type ReportReason,
   RiderAccountStatus,
+  SettlementStatus,
   TERMINAL_STATUSES,
 } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
@@ -320,7 +321,10 @@ export class AdminService {
       if (!rider) throw new NotFoundException("Rider not found");
       await tx.rider.update({
         where: { profileId },
-        data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: input.reason },
+        // P2-1: force offline in the same write so a rider online at suspend-time is pulled off the
+        // board immediately and can't keep bidding/being selected (accountStatus alone is a no-op
+        // against an already-online rider).
+        data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: input.reason, isOnline: false },
       });
       const audit = await tx.auditLog.create({
         data: this.auditData(actor, "rider.suspend", profileId, input.reason, input.note),
@@ -375,7 +379,9 @@ export class AdminService {
       if (!rider) throw new NotFoundException("Rider not found");
       await tx.rider.update({
         where: { profileId },
-        data: { accountStatus: RiderAccountStatus.BANNED, suspendReason: input.reason },
+        // P2-1: force offline in the same write so a rider online at ban-time is pulled off the board
+        // immediately and can't keep bidding/being selected.
+        data: { accountStatus: RiderAccountStatus.BANNED, suspendReason: input.reason, isOnline: false },
       });
       const audit = await tx.auditLog.create({
         data: this.auditData(actor, "rider.ban", profileId, input.reason, input.note),
@@ -406,6 +412,9 @@ export class AdminService {
           cancelledAt: new Date(),
         },
       });
+      // P2-3: decline any still-pending offers so they don't linger against a terminal order (riders
+      // otherwise keep seeing a live "offer sent" on an order that's dead). Same transaction as the cancel.
+      await tx.offer.updateMany({ where: { orderId, status: "pending" }, data: { status: "declined" } });
       await tx.orderEvent.create({ data: { orderId, status: "cancelled" } });
       const audit = await tx.auditLog.create({
         data: this.auditData(actor, "order.cancel", orderId, input.reason, input.note),
@@ -421,8 +430,26 @@ export class AdminService {
    */
   async adjustFare(actor: string, orderId: string, input: { agreedFare: number; reason: string; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true } });
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { id: true, status: true, riderId: true, completedAt: true },
+      });
       if (!order) throw new NotFoundException("Order not found");
+      // Guard retroactive commission drift: a completed order whose settlement week is already PAID must
+      // not have its fare rewritten under a settled period (the settlement engine never regenerates a
+      // paid period, so the collected commission would silently no longer match the fare on record).
+      if (order.status === "completed" && order.riderId && order.completedAt) {
+        const paid = await tx.settlement.findFirst({
+          where: {
+            riderId: order.riderId,
+            status: SettlementStatus.PAID,
+            periodStart: { lte: order.completedAt },
+            periodEnd: { gt: order.completedAt },
+          },
+          select: { id: true },
+        });
+        if (paid) throw new ConflictException("This order's settlement is already paid — the fare can't be adjusted.");
+      }
       await tx.order.update({ where: { id: orderId }, data: { agreedFare: input.agreedFare } });
       const audit = await tx.auditLog.create({
         data: this.auditData(actor, "order.fare_adjust", orderId, input.reason, input.note),

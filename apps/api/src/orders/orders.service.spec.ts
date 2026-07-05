@@ -379,12 +379,10 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBeNull();
   });
 
-  it("never leaks a phone to a third party", async () => {
-    const snap = await svc(row()).getSnapshot("ord-1", "stranger");
-    expect(snap.counterpartyPhone).toBeNull();
-    // The waypoint reveal is assigned-rider-only — a stranger in-window still gets the redaction.
-    expect(snap.pickup).not.toHaveProperty("contactPhone");
-    expect(snap.dropoff).not.toHaveProperty("contactPhone");
+  it("rejects a third-party caller entirely (P2-2 — no snapshot to a non-party)", async () => {
+    // A caller who is neither the customer nor the assigned rider gets no snapshot at all — the
+    // response carries live rider GPS + waypoint coordinates, so it's party-gated, not just phone-redacted.
+    await expect(svc(row()).getSnapshot("ord-1", "stranger")).rejects.toThrow(/not your order/i);
   });
 
   it("returns expiresAt = createdAt + OFFER_WINDOW_MS while open_for_offers (auction countdown)", async () => {
