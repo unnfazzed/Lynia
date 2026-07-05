@@ -27,10 +27,12 @@ duplicated across them — `PILOT-READINESS.md` holds it once.
 | [`DESIGN-SYSTEM.md`](./DESIGN-SYSTEM.md) | 🟢 Living | Design-system adoption record: how the LyniaGo system in `packages/design/` was vendored, the token reconciliation into `packages/shared`, what is wired into the apps, and the device/build follow-ups. |
 | [`OBSERVABILITY.md`](./OBSERVABILITY.md) | 🟢 Living (spec) | Observability spec: latency SLOs, the metric vocabulary (fixed-cardinality labels), and the OTLP-push collector runbook (`OTEL_EXPORTER_OTLP_ENDPOINT`). |
 | [`PILOT-READINESS.md`](./PILOT-READINESS.md) | 🟢 Living (current) | Where the build actually stands: T0–T13 scorecard and the remaining gates, plus the **founder action runbook** (WhatsApp BSP / Didit / FCM wiring) and the **vendor-free QA-testing** guide. **The single source of truth for status.** |
+| [`LAUNCH-READINESS.md`](./LAUNCH-READINESS.md) | 🟢 Living (campaign) | The pilot-ready → **launch-ready review strategy**: three tracks (Engineering hardening · Performance proof · UI/device QA) as the stable `LR1`–`LR21` gates with machine-checkable exit tests, the parallel agentic (Claude/gstack) execution model, and the final go/no-go checklist. |
 
 ## Reading order
 
 - **Just want the status?** → `PILOT-READINESS.md`.
+- **What stands between the pilot and a real launch?** → `LAUNCH-READINESS.md` (the LR1–LR21 gate campaign).
 - **New to the project?** → `CONCEPT.md` (what & why) → `DESIGN.md` (how it looks) →
   `PILOT-READINESS.md` (where it stands).
 - **How is it built?** → `ARCHITECTURE.md` (system diagrams, data model, the offer-loop flow).
