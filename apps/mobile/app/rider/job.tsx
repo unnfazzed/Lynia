@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { collectedItemCount } from "../../src/logic/journey";
+import { mapsDirectionsUrl } from "../../src/logic/maps";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, type OrderSnapshot } from "../../src/api/orders";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
@@ -285,6 +286,19 @@ export default function RiderJob(): React.ReactElement {
             dropoff={{ lat: order.dropoff.point.lat, lng: order.dropoff.point.lng }}
             rider={riderPoint}
           />
+          {/* Maps-sync (§3·2): hand the rider turn-by-turn navigation for the pickup → drop-off leg in
+              Google Maps. No Places key needed — a universal Maps URL. Shown while the run is active. */}
+          {isActive ? (
+            <Pressable
+              onPress={() => void Linking.openURL(mapsDirectionsUrl(order.pickup.point, order.dropoff.point))}
+              accessibilityRole="button"
+              accessibilityLabel="Follow the route in Google Maps"
+              style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+            >
+              <Icon name="navigation" size={16} color={tokens.color.accentText} />
+              <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Follow route in Google Maps</Text>
+            </Pressable>
+          ) : null}
           <Stepper events={order.events} currentStatus={order.status} view="rider" />
         </Card>
 

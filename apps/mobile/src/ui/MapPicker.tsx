@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared";
 import * as Location from "expo-location";
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import MapView, {
   type LatLng,
@@ -14,6 +14,9 @@ import { Button, Label } from "./index";
 export interface PickedPoint {
   lat: number;
   lng: number;
+  /** Google Places place_id when the point came from address search (§1·2). Absent for a pin-on-map
+   *  point — and a subsequent tap/drag re-emits WITHOUT it, correctly invalidating a stale place. */
+  placeId?: string;
 }
 
 /** Harare CBD — the pilot corridor. The map opens here until a pin is set. */
@@ -52,6 +55,23 @@ export function MapPicker(props: {
   const initialRegion: Region = props.value
     ? { latitude: props.value.lat, longitude: props.value.lng, latitudeDelta: 0.02, longitudeDelta: 0.02 }
     : HARARE;
+
+  // Recenter when the value jumps to a new place (address search sets a far-away point). `initialRegion`
+  // only positions the map on mount, so without this the pin would land off-screen after a search. We
+  // skip near-identical updates (a tap/drag lands on ~the same spot) so we don't fight the user's pin.
+  const { value } = props;
+  const centered = useRef<PickedPoint | null>(value ?? null);
+  useEffect(() => {
+    if (!value) return;
+    const prev = centered.current;
+    const moved = !prev || Math.abs(prev.lat - value.lat) > 1e-4 || Math.abs(prev.lng - value.lng) > 1e-4;
+    if (!moved) return;
+    centered.current = value;
+    mapRef.current?.animateToRegion(
+      { latitude: value.lat, longitude: value.lng, latitudeDelta: 0.02, longitudeDelta: 0.02 },
+      400,
+    );
+  }, [value]);
 
   // Best-effort reverse geocode on final placement only (not per drag frame). Geocoding can fail
   // offline — on failure we do nothing and leave the field as the user left it.

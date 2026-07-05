@@ -9,7 +9,9 @@ import { acceptDisclaimer, createOrder, type OrderSnapshot } from "../src/api/or
 import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/session";
 import { isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import { orderKey } from "../src/query/client";
+import type { ResolvedPlace } from "../src/api/places";
 import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Label, Screen, Sub } from "../src/ui";
+import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
@@ -241,6 +243,26 @@ export default function HomeScreen(): React.ReactElement {
     [dropLandmarkTouched],
   );
 
+  // Search-first addressing (§1·2): a resolved place sets the point (with its place_id) AND fills the
+  // landmark from the chosen address — the same picked-point the MapPicker feeds, just via search. The
+  // map recenters on the new value; a later pin tap/drag re-emits without the placeId, invalidating it.
+  const onPickupResolved = useCallback((place: ResolvedPlace): void => {
+    setPickupPoint({ lat: place.lat, lng: place.lng, placeId: place.placeId });
+    if (place.landmark) {
+      setPickupLandmark(place.landmark);
+      setPickupLandmarkFromMap(true);
+      setPickupLandmarkTouched(false);
+    }
+  }, []);
+  const onDropResolved = useCallback((place: ResolvedPlace): void => {
+    setDropPoint({ lat: place.lat, lng: place.lng, placeId: place.placeId });
+    if (place.landmark) {
+      setDropLandmark(place.landmark);
+      setDropLandmarkFromMap(true);
+      setDropLandmarkTouched(false);
+    }
+  }, []);
+
   const clearForm = useCallback((): void => {
     setPickupPoint(null);
     setPickupLandmark("");
@@ -306,9 +328,17 @@ export default function HomeScreen(): React.ReactElement {
       setError(parsed.error.issues[0]?.message ?? "Please complete the form.");
       return;
     }
+    // Re-attach the Google place_id onto each waypoint. Zod's Waypoint object STRIPS unknown keys, so a
+    // placeId on `candidate` wouldn't survive safeParse — we splice it back onto the validated data. It
+    // rides in the waypoint JSON (no schema change); absent on the pin path, so this is a no-op there.
+    const payload = {
+      ...parsed.data,
+      pickup: pickupPoint.placeId ? { ...parsed.data.pickup, placeId: pickupPoint.placeId } : parsed.data.pickup,
+      dropoff: dropPoint.placeId ? { ...parsed.data.dropoff, placeId: dropPoint.placeId } : parsed.data.dropoff,
+    };
     setBusy(true);
     try {
-      const order = await createOrder(parsed.data);
+      const order = await createOrder(payload);
       // Seed the order cache from the response + the form we already have, so the order screen
       // paints the auction immediately instead of blank → skeleton → content on navigate.
       qc.setQueryData<OrderSnapshot>(orderKey(order.id), {
@@ -411,8 +441,11 @@ export default function HomeScreen(): React.ReactElement {
             </View>
           ) : null}
 
-          {/* Required path — the pins. Drop pickup + drop-off; these gate the CTA. */}
+          {/* Required path — the pins. Search-first: an address search sits above each map (only when a
+              Places key is configured — otherwise it renders nothing and the pin stays the primary path).
+              Drop pickup + drop-off; these gate the CTA. */}
           <Card>
+            <AddressSearch label="Pickup" placeholder="Search pickup address" onResolved={onPickupResolved} />
             <MapPicker
               label="Pickup"
               value={pickupPoint}
@@ -421,6 +454,7 @@ export default function HomeScreen(): React.ReactElement {
               showMyLocation
               height={180}
             />
+            <AddressSearch label="Drop-off" placeholder="Search drop-off address" onResolved={onDropResolved} />
             <MapPicker
               label="Drop-off"
               value={dropPoint}

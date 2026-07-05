@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { isPendingCounter } from "../../src/logic/journey";
+import { mapsPlaceUrl } from "../../src/logic/maps";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
@@ -529,6 +530,17 @@ export default function OrderScreen(): React.ReactElement {
             {order.rider ? (
               <Text style={{ fontSize: 14, color: tokens.color.muted }}>{trackingHint}</Text>
             ) : null}
+            {/* Maps-sync (§3·2): open the drop-off location in Google Maps so the customer can follow
+                along. No Places key needed — a universal Maps URL built from the stored drop-off point. */}
+            <Pressable
+              onPress={() => void Linking.openURL(mapsPlaceUrl(order.dropoff.point))}
+              accessibilityRole="button"
+              accessibilityLabel="Open the drop-off in Google Maps"
+              style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+            >
+              <Icon name="navigation" size={16} color={tokens.color.accentText} />
+              <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Open drop-off in Maps</Text>
+            </Pressable>
             {order.counterpartyPhone ? (
               <>
                 <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>

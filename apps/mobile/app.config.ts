@@ -67,6 +67,11 @@ const config: ExpoConfig = {
   },
   extra: {
     apiUrl: "https://lyniago.lyniafinance.com",
+    // Google Places key for search-first addressing (OPTIONAL). Prefer the EXPO_PUBLIC_ env var, which
+    // is inlined into the JS bundle at build; this `extra` entry is the parity fallback (mirrors apiUrl).
+    // When unset the address-search UI hides and the pin-on-map picker stays the primary path — an
+    // unkeyed build runs fully. See src/config.ts (placesEnabled).
+    googlePlacesKey: process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY,
     // Test-build marker: only the QA APK workflow (.github/workflows/android-test-apk.yml) sets
     // LYNIA_TEST_BUILD=1, so a normal EAS release build leaves this false and the TEST BUILD banner
     // (src/ui Screen) never renders. Testers get a visible signal they're on a bypass build hitting
