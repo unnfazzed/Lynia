@@ -5,6 +5,8 @@ import {
   type OrderStatus,
   PHONE_REVEAL_STATUSES,
   RELIABILITY,
+  REPORT_REASON_LABELS,
+  type ReportReason,
   RiderAccountStatus,
   TERMINAL_STATUSES,
 } from "@lynia/shared";
@@ -548,7 +550,7 @@ export class AdminService {
     if (!rider) return null;
 
     const now = Date.now();
-    const [liveOrders, statusCounts, recent] = await Promise.all([
+    const [liveOrders, statusCounts, recent, reports] = await Promise.all([
       this.prisma.order.count({ where: { riderId: id, status: { in: ACTIVE_RIDE_STATUSES } } }),
       this.prisma.order.groupBy({ by: ["status"], where: { riderId: id }, _count: { _all: true } }),
       this.prisma.order.findMany({
@@ -565,6 +567,7 @@ export class AdminService {
           createdAt: true,
         },
       }),
+      this.reportsFor(id),
     ]);
 
     const onCooldown = !!rider.cooldownUntil && rider.cooldownUntil.getTime() > now;
@@ -593,6 +596,10 @@ export class AdminService {
       completion,
       strikes: rider.cancelStrikes,
       cashOwed: "0.00", // TODO(A-06): settlement/commission model deferred
+      // How many times this rider has been reported by customers, plus the recent entries (fault signal
+      // for ops). Additive to the D-2 RiderDetail shape.
+      reports: reports.count,
+      reportLog: reports.recent,
       joined: fmtDate(rider.profile.createdAt),
       trail: recent.map((o) => this.toTripRow(o)),
     };
@@ -641,9 +648,8 @@ export class AdminService {
 
   /**
    * Single customer detail. All the directory fields for one customer plus the recent-orders trail and
-   * the (empty) flag log. Returns null when the id isn't a customer profile.
-   *
-   * TODO(A-05): reports/flags need the Issue model (deferred) — flagLog is []; warn/status stay clear.
+   * the flag log — the customer's `Report` rows (times a rider reported them). `flags` overrides the
+   * directory default with the real report count. Returns null when the id isn't a customer profile.
    */
   async getCustomerDetail(id: string) {
     const profile = await this.prisma.profile.findFirst({
@@ -652,7 +658,7 @@ export class AdminService {
     });
     if (!profile) return null;
 
-    const [total, cancelled, spend, recent] = await Promise.all([
+    const [total, cancelled, spend, recent, reports] = await Promise.all([
       this.prisma.order.count({ where: { customerId: id } }),
       this.prisma.order.count({ where: { customerId: id, status: "cancelled" } }),
       this.prisma.order.aggregate({ where: { customerId: id, status: "completed" }, _sum: { agreedFare: true } }),
@@ -670,14 +676,18 @@ export class AdminService {
           createdAt: true,
         },
       }),
+      this.reportsFor(id),
     ]);
 
     const base = this.toCustomer(profile, total, cancelled, spend._sum.agreedFare);
     return {
       ...base,
+      // How many times this customer has been reported by riders — overrides the toCustomer default,
+      // and populates the flag log the CustomerDetail shape already carries (CustomerFlag[]).
+      flags: reports.count,
       publicName: profile.firstName, // what riders see — first name only (§5d contact minimization)
       warn: undefined,
-      flagLog: [] as Array<{ date: string; text: string; issueId?: string }>, // TODO(A-05): Issue model
+      flagLog: reports.recent,
       trail: recent.map((o) => this.toTripRow(o)),
     };
   }
@@ -699,6 +709,32 @@ export class AdminService {
       flags: 0, // TODO(A-05): reports/flags need the Issue model
       joined: fmtDate(p.createdAt),
       status: "active" as const, // TODO(A-05): no ban/flag state on Profile yet
+    };
+  }
+
+  /**
+   * How many times a profile (rider or customer) has been reported by the other party, plus a short
+   * recent list. `subjectProfileId` is indexed for exactly this count (see the Report model). Feeds the
+   * detail screens so ops can see a repeat-offender pattern at a glance.
+   */
+  private async reportsFor(profileId: string): Promise<{ count: number; recent: Array<{ date: string; text: string; issueId?: string }> }> {
+    const [count, recent] = await Promise.all([
+      this.prisma.report.count({ where: { subjectProfileId: profileId } }),
+      this.prisma.report.findMany({
+        where: { subjectProfileId: profileId },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        select: { id: true, reason: true, note: true, createdAt: true },
+      }),
+    ]);
+    return {
+      count,
+      recent: recent.map((r) => ({
+        date: fmtDate(r.createdAt),
+        // Human label for the reason + the free-text note when present (e.g. "No-show — never arrived").
+        text: r.note ? `${REPORT_REASON_LABELS[r.reason as ReportReason]} — ${r.note}` : REPORT_REASON_LABELS[r.reason as ReportReason],
+        issueId: r.id,
+      })),
     };
   }
 

@@ -71,11 +71,12 @@ function rowStatus(s: string): SettlementRow["status"] {
  * A-06 cash settlement engine. Riders collect fares in cash; Lynia bills a weekly commission
  * ({@link SETTLEMENT.commissionPct}). Every figure here derives from policy.ts — no magic numbers.
  *
+ * REFUND NETTING (A-06): `refundsNetted` = the sum of the rider's un-netted {@link Refund} rows whose
+ * `createdAt` falls in the settlement window. Those rows are stamped with this settlement's id in the
+ * same transaction so each refund is netted exactly once; `amountDue = max(0, commission −
+ * refundsNetted)` (floored so a refund-heavy week never bills the rider a negative amount).
+ *
  * DEFERRALS (documented, pilot-simple):
- *  - `refundsNetted` is always 0: there is no refund ledger in the schema yet. `amountDue` therefore
- *    equals `commission` today; the netting arithmetic (`commission − refundsNetted`) is already wired
- *    so a real refund source drops straight in. Product/Finance still owe the whole model (see the
- *    cash-console caveat banner).
  *  - Auto-pause runs on demand via {@link autoPauseOverdue} (exposed as a method + the admin callable
  *    endpoint POST /admin/cash/settlements/auto-pause). No @nestjs/schedule interval is wired — for the
  *    pilot the pause is triggered by that endpoint (or a cron hitting it) rather than an in-process timer.
@@ -87,12 +88,16 @@ export class SettlementsService {
   /**
    * Generate (idempotent upsert) one settlement row per rider who completed at least one order in the
    * window. `grossFares` = sum of `agreedFare` on that rider's orders completed in `[periodStart,
-   * periodEnd)`; `commission = commissionOn(grossFares)`; `refundsNetted` = 0 (stub); `amountDue =
-   * commission − refundsNetted`; `dueDate` = the period's settle weekday; status `pending`.
+   * periodEnd)`; `commission = commissionOn(grossFares)`; `refundsNetted` = sum of the rider's un-netted
+   * refunds created in the window; `amountDue = max(0, commission − refundsNetted)`; `dueDate` = the
+   * period's settle weekday; status `pending`. Each rider's upsert and the stamping of its netted
+   * refunds commit in one `$transaction`.
    *
    * Idempotent: keyed on the `(riderId, periodStart)` unique index, re-running recomputes the money
    * fields in place. It deliberately does NOT touch `status`/`paidAt`/`method` on update, so a
-   * regeneration can never un-pay or un-overdue a settlement that was already actioned.
+   * regeneration can never un-pay or un-overdue a settlement that was already actioned. The refund sum
+   * matches rows that are un-netted (`settlementId IS NULL`) OR already stamped to THIS settlement, so
+   * re-generating the open period re-nets to the same figure (a stamp doesn't drop out of the sum).
    */
   async generateForPeriod(ref: Date = new Date()): Promise<void> {
     const { periodStart, periodEnd, dueDate } = weeklyPeriod(ref);
@@ -107,27 +112,57 @@ export class SettlementsService {
       if (!riderId) continue;
       const grossFares = round(Number(g._sum.agreedFare ?? 0));
       const commission = commissionOn(grossFares);
-      const refundsNetted = 0; // no refund ledger yet (A-06 deferral) — netting wired, source stubbed
-      const amountDue = round(commission - refundsNetted);
-      await this.prisma.settlement.upsert({
-        where: { riderId_periodStart: { riderId, periodStart } },
-        create: {
-          riderId,
-          periodStart,
-          periodEnd,
-          grossFares,
-          commission,
-          refundsNetted,
-          amountDue,
-          dueDate,
-          status: SettlementStatus.PENDING,
-        },
-        // Recompute money only — never reset an already-actioned status/paidAt/method (idempotency).
-        // INVARIANT: only call generateForPeriod for the current OPEN period. Regenerating a past
-        // period whose rows are already `paid` would recompute the money upward (e.g. a late-completing
-        // order) while the status stays `paid` → silent under-collection. currentWeek() only ever
-        // generates the current (pending) period, so this holds.
-        update: { periodEnd, grossFares, commission, refundsNetted, amountDue, dueDate },
+
+      await this.prisma.$transaction(async (tx) => {
+        // Net refunds created in this window. Match un-netted rows OR ones already stamped to this
+        // settlement (found by its (riderId, periodStart) key) so a regeneration re-nets to the same
+        // figure instead of dropping stamped rows to 0. Refunds absorbed by a PAST (paid) settlement
+        // carry that settlement's id → excluded here, so a paid row's money is never re-netted.
+        const existing = await tx.settlement.findUnique({
+          where: { riderId_periodStart: { riderId, periodStart } },
+          select: { id: true },
+        });
+        const settlementIdFilter = existing
+          ? [{ settlementId: null }, { settlementId: existing.id }]
+          : [{ settlementId: null }];
+        const refunds = await tx.refund.findMany({
+          where: { riderId, createdAt: { gte: periodStart, lt: periodEnd }, OR: settlementIdFilter },
+          select: { id: true, amount: true },
+        });
+        const refundsNetted = round(refunds.reduce((sum, r) => sum + Number(r.amount), 0));
+        // Floor at 0 — a refund-heavy week nets the commission to nothing, never bills the rider negative.
+        const amountDue = round(Math.max(0, commission - refundsNetted));
+
+        const settlement = await tx.settlement.upsert({
+          where: { riderId_periodStart: { riderId, periodStart } },
+          create: {
+            riderId,
+            periodStart,
+            periodEnd,
+            grossFares,
+            commission,
+            refundsNetted,
+            amountDue,
+            dueDate,
+            status: SettlementStatus.PENDING,
+          },
+          // Recompute money only — never reset an already-actioned status/paidAt/method (idempotency).
+          // INVARIANT: only call generateForPeriod for the current OPEN period. Regenerating a past
+          // period whose rows are already `paid` would recompute the money upward (e.g. a late-completing
+          // order) while the status stays `paid` → silent under-collection. currentWeek() only ever
+          // generates the current (pending) period, so this holds.
+          update: { periodEnd, grossFares, commission, refundsNetted, amountDue, dueDate },
+          select: { id: true },
+        });
+
+        // Stamp the netted refunds with this settlement's id so they're absorbed exactly once. Re-runs
+        // re-stamp the same (already-linked) rows — a no-op change — keeping the operation idempotent.
+        if (refunds.length > 0) {
+          await tx.refund.updateMany({
+            where: { id: { in: refunds.map((r) => r.id) } },
+            data: { settlementId: settlement.id },
+          });
+        }
       });
     }
   }
