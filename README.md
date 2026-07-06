@@ -22,8 +22,8 @@ pnpm + Turborepo. Backend is an own NestJS API on PostgreSQL (no BaaS) on **Goog
 Storage + Secret Manager in `africa-south1`, fronted by an external HTTPS load balancer). The infra is
 Terraform ([`infra/terraform/`](infra/terraform/)) with keyless CI auth (Workload Identity Federation),
 deployed by [`.github/workflows/release.yml`](.github/workflows/release.yml). Cloud-specific code lives
-behind adapters (`apps/api/src/adapters`), and the Azure impl is kept as the portability proof — so the
-cloud is a `CLOUD_PROVIDER` switch, not a rewrite.
+behind adapters (`apps/api/src/adapters`) — so a future cloud move is a new adapter impl, not a
+rewrite.
 
 ```
 packages/shared   @lynia/shared  — enums, API contracts (zod), design tokens (shared by all apps)

@@ -1,5 +1,5 @@
 /**
- * Push seam (D7). FCM directly (not Azure Notification Hubs) — the same SDK works on both clouds,
+ * Push seam (D7). FCM directly (no cloud-specific notification hub) — the SDK works from any host,
  * so push is portable by construction.
  */
 export interface PushMessage {

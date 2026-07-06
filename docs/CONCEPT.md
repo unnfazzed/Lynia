@@ -407,8 +407,8 @@ number is simply gated by order state.
 - ✅ **Review** — comprehensive post-build eng + design conformance pass, fixes merged.
 - ✅ **Revenue model decided** (§6) — rider commission, 0% for ~6–8 months, infra built later.
 - ✅ **Cloud chosen, provisioned + deployed — Google Cloud** (chosen 2026-06-27, live 2026-06-29):
-  region Johannesburg `africa-south1`, default `CLOUD_PROVIDER=gcp`, Azure adapter kept as the D7
-  portability proof. The project (`lynia-500911`) is Terraform-provisioned and the API is CI-deployed to
+  region Johannesburg `africa-south1`, default `CLOUD_PROVIDER=gcp` behind the D7 adapter seam
+  (GCS-only since the Azure impl was removed). The project (`lynia-500911`) is Terraform-provisioned and the API is CI-deployed to
   Cloud Run behind an external HTTPS load balancer (`https://lyniago.lyniafinance.com`). Closes T0.
 - ✅ **Phase-3 build shipped (2026-06-30 → 07-01)** — native map + tap-to-pin for pickup/drop-off and a
   **live tracking map** on the customer order and rider job screens; rider-broadcast push + batched FCM;

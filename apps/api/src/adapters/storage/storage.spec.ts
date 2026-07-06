@@ -8,7 +8,7 @@ const base = {
   NODE_ENV: "test",
   PORT: 3000,
   DATABASE_URL: "postgresql://localhost/lynia",
-  CLOUD_PROVIDER: "azure",
+  CLOUD_PROVIDER: "gcp",
   STORAGE_BUCKET: "lynia-media",
   OTEL_SERVICE_NAME: "lynia-api",
 } as Env;
@@ -26,19 +26,9 @@ const testGcs = () =>
     credentials: { client_email: "signer@test-project.iam.gserviceaccount.com", private_key: privateKey as string },
   });
 
-describe("storage adapter selection (D7 portability)", () => {
-  it("selects Azure Blob when CLOUD_PROVIDER=azure", () => {
-    expect(selectStorage({ ...base, CLOUD_PROVIDER: "azure" }).provider()).toBe("azure");
-  });
-
-  it("selects GCS when CLOUD_PROVIDER=gcp — a config-only switch", () => {
-    expect(selectStorage({ ...base, CLOUD_PROVIDER: "gcp" }).provider()).toBe("gcp");
-  });
-
-  it("Azure honours the upload-URL contract (stub — real SAS lands with the Azure portability run)", async () => {
-    const azure = await selectStorage({ ...base, CLOUD_PROVIDER: "azure" }).createUploadUrl("k", "image/jpeg");
-    expect(azure.key).toBe("k");
-    expect(azure.url).toContain("blob.core.windows.net");
+describe("storage adapter selection (D7 seam)", () => {
+  it("binds GCS behind the StorageAdapter interface", () => {
+    expect(selectStorage(base).provider()).toBe("gcp");
   });
 });
 

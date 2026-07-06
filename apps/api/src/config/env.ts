@@ -24,8 +24,9 @@ export const envSchema = z.object({
   DATABASE_CONNECTION_LIMIT: z.coerce.number().int().positive().optional(),
   DATABASE_POOL_TIMEOUT: z.coerce.number().int().nonnegative().optional(),
   REDIS_URL: z.string().min(1).optional(),
-  // Cloud chosen: GCP (2026-06-27). Azure impl retained behind the adapters as the portability proof (D7).
-  CLOUD_PROVIDER: z.enum(["azure", "gcp"]).default("gcp"),
+  // Cloud chosen: GCP (2026-06-27). Single value today; the adapter seam (D7) is where a second
+  // cloud would slot in.
+  CLOUD_PROVIDER: z.enum(["gcp"]).default("gcp"),
   STORAGE_BUCKET: z.string().default("lynia-media"),
   // GCS signing: project id for the Storage client. Signing creds come from ADC on Cloud Run
   // (the attached SA + IAM signBlob), so no private key lives in env.

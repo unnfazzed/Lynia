@@ -120,7 +120,7 @@ signup from a BSP slip; KYC stays async + manual backstop so riders onboard whil
 | ET5 | P1 | WhatsApp/SMS OTP send-adapter; hashed codes; per-phone/IP/global limit; rotating refresh + session table | brute-force locks; flag flip switches channel; logout revokes |
 | ET6 | P1 | PostGIS `geography(Point)` + GiST index; `ST_DWithin` broadcast query | `EXPLAIN` uses GiST index; nearby-rider within radius |
 | ET7 | P1 | Schema constraints (unique offers, `offered_fare>0`, enums, FKs, hashed OTP, counter writer) | duplicate offer rejected; counters consistent under concurrent ratings |
-| ET8 | P1 | Storage/secrets/push adapters (one interface, two impls) | unit tests pass against both Azure and GCP impls |
+| ET8 | P1 | Storage/secrets/push adapters (one interface per seam) | unit tests pass against the adapter impls *(the second-cloud impl was later removed — GCS-only)* |
 | ET9 | P2 | Seal D7 leaks (URL-gen, env secrets, conn-string auth) + T13 CI smoke-deploy on GCP | CI boots the API on Cloud Run with config-only changes |
 | ET10 | P1 | Monorepo scaffold (pnpm + Turborepo): app, API, admin, shared types, CI | one CI run builds all three; types shared |
 
@@ -244,7 +244,7 @@ the matching `release.yml` edits. **Verdict: LAND WITH FIXES** — three P1 corr
 runbook and a Cloud Run service that actually boots, all fixed in the change.
 
 **Confirmed correct:** D7 portability preserved (ET9 — secrets via `--set-secrets`, plain connection-string
-DB auth, storage abstracts URL generation; the Azure adapter stays drop-in); the PostGIS path (`0001_init`
+DB auth, storage abstracts URL generation behind the adapter seam); the PostGIS path (`0001_init`
 runs `CREATE EXTENSION IF NOT EXISTS postgis`, app user has `cloudsqlsuperuser`); least-privilege runtime SA
 (bucket-scoped, per-secret, Cloud SQL Client only).
 

@@ -1,6 +1,6 @@
 import type { SecretsProvider } from "./secrets.interface";
 
-/** Reads deploy-injected env. Portable across Azure Container Apps and GCP Cloud Run. */
+/** Reads deploy-injected env. Portable to any container runtime that injects secrets as env. */
 export class EnvSecrets implements SecretsProvider {
   constructor(private readonly source: NodeJS.ProcessEnv = process.env) {}
 
