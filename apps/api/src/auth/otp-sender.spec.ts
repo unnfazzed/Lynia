@@ -87,8 +87,8 @@ describe("WhatsAppOtpSender.send", () => {
     }) as unknown as typeof fetch;
     await withFetch(fetchMock, () => new WhatsAppOtpSender(cfg()).send("+263770000001", "123456"));
     expect(called?.url).toBe("https://graph.example/v21.0/PNID/messages");
-    expect((called?.init.headers as Record<string, string>).authorization).toBe("Bearer TOKEN");
-    expect(JSON.parse(called?.init.body as string).to).toBe("263770000001");
+    expect((called!.init.headers as Record<string, string>).authorization).toBe("Bearer TOKEN");
+    expect(JSON.parse(called!.init.body as string).to).toBe("263770000001");
   });
 
   it("throws when Meta rejects the send (so requestOtp errors, not a silent non-delivery)", async () => {

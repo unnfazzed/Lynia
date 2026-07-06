@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from "@nestjs/common";
+import { ForbiddenException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { TokenService } from "../auth/token.service";
 import type { NotificationsService } from "../notifications/notifications.service";

@@ -23,5 +23,5 @@ export function retryKyc(): Promise<{ kycStatus: BecomeResult["kycStatus"]; veri
 /** Going online sends the rider's position (when known) so the server can corridor-check it and refuse
  *  with an `out_of_area` reason if they're outside the launch area (Q1). Location is optional. */
 export function setOnline(online: boolean, location?: { lat: number; lng: number }): Promise<{ online: boolean }> {
-  return apiFetch("/riders/online", { method: "PATCH", body: { online, ...(location ?? {}) } });
+  return apiFetch("/riders/online", { method: "PATCH", body: { online, ...location } });
 }
