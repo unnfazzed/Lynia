@@ -217,6 +217,26 @@ describe("AuthService.verifyOtp", () => {
     await expect(svc.verifyOtp("+263770000012", "222222")).rejects.toThrow(/invalid code/i);
   });
 
+  it("caps concurrent wrong-guess verifies at MAX_OTP_ATTEMPTS (TOCTOU)", async () => {
+    // Fire many concurrent verifies with wrong codes against one live OTP. Because each verify
+    // atomically consumes an attempt before comparing, only the first 5 can reach the compare and
+    // return "invalid"; every later request is locked out — a stale attempts==0 gate would instead
+    // let all of them compare and defeat the 5-attempt cap.
+    const { svc, store } = make(baseEnv, fakePrisma());
+    await store.put("+263770000030", tokens.hash("654321"), 300);
+    const results = await Promise.allSettled(
+      Array.from({ length: 20 }, () => svc.verifyOtp("+263770000030", "000000")),
+    );
+    const reasons = results.map((r) =>
+      r.status === "rejected" ? (r.reason as Error).message : "resolved",
+    );
+    expect(reasons.filter((m) => /invalid code/i.test(m))).toHaveLength(5);
+    expect(reasons.filter((m) => /too many/i.test(m))).toHaveLength(15);
+    expect(reasons.some((m) => m === "resolved")).toBe(false);
+    // The record is cleared once locked.
+    expect(await store.get("+263770000030")).toBeNull();
+  });
+
   it("verifies a correct code and flags needsProfile when the name is empty", async () => {
     const { svc, store } = make(baseEnv, fakePrisma());
     await store.put("+263770000013", tokens.hash("654321"), 300);

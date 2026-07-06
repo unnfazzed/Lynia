@@ -42,9 +42,7 @@ export function RecordPayment({
       }
       reasons={REASONS.cashSettle}
       confirmLabel="Mark settled"
-      onConfirm={(r) => {
-        void recordSettlement(id, name, r.reasonCode, r.note);
-      }}
+      onConfirm={(r) => recordSettlement(id, name, r.reasonCode, r.note)}
     />
   );
 }

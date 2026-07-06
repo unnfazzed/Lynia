@@ -6,6 +6,7 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { onlineRefusalReason } from "../riders/rider.service";
 
 export interface NearbyRider {
   profileId: string;
@@ -135,13 +136,20 @@ export class TrackingService implements OnModuleDestroy {
     return new Set(rows.map((r) => r.id));
   }
 
-  /** Only a KYC-verified, online rider may join the open-order board (mirrors the offer gating §5d). */
+  /**
+   * Only a rider in good standing AND online may join the open-order board — the SAME gate offers use
+   * (offers.service §5d). Board-eligibility must not be looser than the offer gate: a rider who can't
+   * make an offer must not receive new-order board broadcasts. `onlineRefusalReason` is the shared
+   * standing authority (KYC + banned/suspended + reliability on_hold + no-show cooldown); the separate
+   * `isOnline` check mirrors the offer gate's online invariant. NB an on_hold rider stays isOnline:true
+   * (a reliability drop sets onHold without forcing offline), so the standing check is load-bearing here.
+   */
   async isBoardEligible(riderId: string): Promise<boolean> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId: riderId },
-      select: { kycStatus: true, isOnline: true },
+      select: { kycStatus: true, isOnline: true, accountStatus: true, onHold: true, cooldownUntil: true },
     });
-    return !!rider && rider.kycStatus === "verified" && rider.isOnline === true;
+    return !!rider && onlineRefusalReason(rider) === null && rider.isOnline === true;
   }
 
   /**
