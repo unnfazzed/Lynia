@@ -25,9 +25,9 @@ function issuePill(status: IssueRow["status"]) {
 export default async function IssuesPage({
   searchParams,
 }: {
-  searchParams: { [key: string]: string | string[] | undefined };
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const raw = searchParams.status;
+  const raw = (await searchParams).status;
   const active = typeof raw === "string" && FILTERS.some((f) => f.value === raw) ? raw : "all";
   const query = active === "all" ? "" : `?status=${active}`;
   const res = await adminFetchResult<IssueRow[]>(`/admin/issues${query}`);

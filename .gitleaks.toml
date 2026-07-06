@@ -1,0 +1,24 @@
+# gitleaks configuration for Lynia.
+#
+# The CI `security` job runs `gitleaks detect --source . --exit-code 1` over the full git
+# history to catch any real credential committed to source. gitleaks auto-loads this file
+# from the repo root.
+#
+# We keep the full default ruleset (extend.useDefault) and only add a narrowly-scoped
+# allowlist: unit/integration test files use DETERMINISTIC, obviously-fake fixture secrets
+# (e.g. JWT_SIGNING_SECRET = "test-secret-0123456789") so the JWT/OTP/KYC code paths can be
+# exercised without a real secret. The generic-api-key rule flags these as false positives.
+# Excluding *.spec.ts test files stops that noise while leaving real source, config, infra,
+# and history fully scanned.
+
+title = "Lynia gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures use deterministic fake secrets (e.g. \"test-secret-0123456789\"); not real credentials."
+paths = [
+  # Unit and integration test specs (…​.spec.ts and …​.int.spec.ts both end in .spec.ts).
+  '''.*\.spec\.ts$''',
+]

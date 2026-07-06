@@ -46,8 +46,9 @@ function statusPill(status: KycReview["status"]) {
   return <Pill kind="mut">pending</Pill>;
 }
 
-export default async function KycReviewPage({ params }: { params: { id: string } }) {
-  const res = await adminFetchResult<KycReview>(`/admin/riders/${params.id}/kyc`);
+export default async function KycReviewPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const res = await adminFetchResult<KycReview>(`/admin/riders/${id}/kyc`);
 
   if (!("data" in res)) {
     const reason = res.reason;

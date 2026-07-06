@@ -27,9 +27,9 @@ function custPill(status: Customer["status"]) {
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: { [key: string]: string | string[] | undefined };
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const raw = searchParams.filter;
+  const raw = (await searchParams).filter;
   const active = typeof raw === "string" && FILTERS.some((f) => f.value === raw) ? raw : "all";
   const query = active === "all" ? "" : `?filter=${active}`;
   const res = await adminFetchResult<Customer[]>(`/admin/customers${query}`);
