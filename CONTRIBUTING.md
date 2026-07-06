@@ -119,6 +119,18 @@ Per-workspace (filter):
    hashed OTP), hand-edit the generated SQL to match `migrations/0001_init` — those are raw SQL, and
    **CI re-asserts they applied** (see below).
 4. Keep the Prisma enums and `packages/shared/src/enums.ts` **in lockstep** — they're mirror copies.
+5. **Write online-safe migrations** — a migration must not take a long lock on a populated table, or a
+   deploy stalls all writes for its duration. A guard test (`src/prisma/migration-safety.spec.ts`)
+   fails the build if a new migration repeats the hazards that `0006`/`0007` shipped (they predate the
+   guard and are grandfathered). On an existing table:
+   - **Add a column nullable**, then backfill in batches — never `ADD COLUMN … GENERATED ALWAYS AS (…)
+     STORED` or `ADD COLUMN … NOT NULL DEFAULT …`, both of which rewrite the whole table under
+     `ACCESS EXCLUSIVE`.
+   - **Build indexes `CONCURRENTLY`** (out-of-band, so keep that statement in its own non-transactional
+     migration — Prisma wraps a migration in a transaction and `CONCURRENTLY` can't run inside one).
+   - **`DROP INDEX IF EXISTS`** so a half-applied migration stays re-runnable.
+   An index (or stored column) on a table `CREATE`d in the *same* migration is exempt — it's empty and
+   not yet visible to other transactions.
 
 ---
 

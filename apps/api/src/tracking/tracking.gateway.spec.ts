@@ -28,12 +28,17 @@ function fakeSocket(user?: { sub: string; role: string }, rooms: string[] = [], 
 
 /** Minimal server fake exposing a chainable `to().to().emit()` so we can assert every targeted room
  *  plus the event + payload. `to` records each room and returns the same chainable handle. */
-function fakeServer() {
+function fakeServer(remoteSockets: Array<{ data?: unknown }> = []) {
   const emit = vi.fn();
   const chain = { emit, to: vi.fn() as ReturnType<typeof vi.fn> };
   const to = vi.fn(() => chain);
   chain.to = to;
-  return { server: { to } as unknown, to, emit };
+  // `server.in(room).fetchSockets()` — cluster-wide room membership used by the customer-presence
+  // false-positive guard. Defaults to empty (no customer present), so existing escalation tests are
+  // unaffected; pass sockets to simulate a customer live on another instance.
+  const fetchSockets = vi.fn(async () => remoteSockets);
+  const inFn = vi.fn(() => ({ fetchSockets }));
+  return { server: { to, in: inFn } as unknown, to, emit, fetchSockets, in: inFn };
 }
 
 /** Spy metrics fake — position-emit recording is best-effort; keep tests off the OTel path. */
@@ -471,6 +476,29 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       // Still dark on the next scan → no repeat (escalate once, no spam).
       await g.scanPresence();
       expect(emit).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does NOT escalate role:customer when the customer is live on another instance (cluster membership)", async () => {
+    vi.useFakeTimers();
+    try {
+      // The customer reconnected to a PEER instance, so a customer-role socket sits in the order room
+      // cluster-wide even though this instance's in-memory presence shows them dark.
+      const { server, emit, in: inFn } = fakeServer([{ data: { user: { sub: "c1", role: "customer" } } }]);
+      const g = gateway(customerTracking());
+      g.server = server as never;
+      const client = fakeSocket({ sub: "c1", role: "customer" });
+
+      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      g.handleDisconnect(client as never); // drops on THIS instance → local dark clock starts
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence();
+
+      // The adapter shows the customer live elsewhere → suppress the false "customer offline".
+      expect(inFn).toHaveBeenCalledWith(orderRoom("ord-1"));
+      expect(emit).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
