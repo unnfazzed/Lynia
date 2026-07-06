@@ -63,6 +63,16 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   }
 }
 
+/**
+ * True when a tapped notification marks the rider as hired/selected for a job. The API's
+ * `notifyOrderStatus` sends `data: { orderId, status, ... }`, and the rider's "You got the job" push
+ * is the `assigned` transition (notifications.service.ts `STATUS_NOTICES.assigned`) — so we key on
+ * `status === "assigned"`. Fully defensive: any other/unknown shape returns false (a no-op).
+ */
+export function isRiderSelectedNotification(data: unknown): boolean {
+  return typeof data === "object" && data !== null && (data as { status?: unknown }).status === "assigned";
+}
+
 /** Best-effort: drop this device's token server-side on sign-out. */
 export async function unregisterForPushNotificationsAsync(token: string): Promise<void> {
   try {

@@ -266,6 +266,17 @@ export default function RiderHome(): React.ReactElement {
           <View style={{ marginTop: tokens.space.lg }}>
             <SkeletonList count={2} />
           </View>
+        ) : meQ.isError ? (
+          // getMe failed — knownUnverified is false with no data, so without this branch we'd render the
+          // online dashboard as if verified and let the rider go online into a backend that then refuses.
+          // Show an explicit error/retry instead of optimistically trusting an unknown KYC state.
+          <EmptyState
+            icon="wifi-off"
+            title="Couldn't load your rider status"
+            message="Check your connection and try again."
+          >
+            <Button label="Retry" onPress={() => void meQ.refetch()} loading={meQ.isFetching} />
+          </EmptyState>
         ) : knownUnverified ? (
           !meQ.data?.rider ? (
             // Not a rider yet → the full onboarding form (name, ID, bike, photo).
