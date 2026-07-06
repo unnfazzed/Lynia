@@ -71,17 +71,17 @@ residual risk is concentrated:
 | LR7 | Eng | Deferred infra hardening executed + backup/restore drill | founder (agent-prepped) | ⬜ |
 | LR8 | Eng | PII/data-protection review (retention, encryption, ZW CDPA) | agent + founder | 🛠️ national IDs AES-GCM-encrypted at rest; **retention schedule + right-to-erasure built** (`docs/DATA-RETENTION.md`); founder ratifies windows + enables KYC-media lifecycle |
 | LR9 | Perf | Observability live: collector sidecar in release path, alerts paging | founder (agent-prepped) | ⬜ |
-| LR10 | Perf | Load model: the launch envelope, in numbers | agent + founder | ⬜ |
-| LR11 | Perf | Load-test harness (k6) + staging stack; SLO table measured green | agent | ⬜ |
+| LR10 | Perf | Load model: the launch envelope, in numbers | agent + founder | 🛠️ envelope + SLO thresholds authored (`docs/LOAD-MODEL.md`); founder ratifies |
+| LR11 | Perf | Load-test harness (k6) + staging stack; SLO table measured green | agent | 🛠️ **k6 harness authored** (`apps/api/load/`); needs a staging stack + OTEL live (founder) to run |
 | LR12 | Perf | Contention at load: offer storm, select races, pool vs max_connections | agent | ⬜ |
 | LR13 | Perf | Soak + reconnect-storm + deploy-under-load runs | agent | ⬜ |
 | LR14 | Perf | Capacity ceilings documented with break points + levers + triggers | agent | ⬜ |
 | LR15 | Perf | Cost model at 1× / 5× / 20× envelope | agent | ⬜ |
-| LR16 | UI | On-device `/qa`: dev build, maps, FCM, GPS degradation, bg/resume | founder (device) + agent | ⬜ |
-| LR17 | UI | Real-network pass: low-end Android, 3G/EDGE, offline honesty | founder (device) + agent | ⬜ |
+| LR16 | UI | On-device `/qa`: dev build, maps, FCM, GPS degradation, bg/resume | founder (device) + agent | 🛠️ device checklist authored (`docs/QA-DEVICE-CHECKLIST.md`); needs hardware |
+| LR17 | UI | Real-network pass: low-end Android, 3G/EDGE, offline honesty | founder (device) + agent | 🛠️ checklist authored; needs a low-end device + throttled network |
 | LR18 | UI | Journey audits ×3 (customer / rider / admin) — error-state honesty | agent | 🛠️ mobile auction + rider-job honest error+retry **shipped**; admin dead-refund-write flagged |
 | LR19 | UI | Design-system adherence + accessibility (TalkBack, scaling, AA) | agent + device | ⬜ |
-| LR20 | UI | Crash telemetry + store readiness (listing, privacy, data-safety) | agent + founder | ⬜ |
+| LR20 | UI | Crash telemetry + store readiness (listing, privacy, data-safety) | agent + founder | 🛠️ Sentry wiring runbook + store/privacy checklist authored; founder executes on the dev build |
 | LR21 | All | Go/no-go: QA off, vendors on, one clean end-to-end real delivery | founder | ⬜ |
 
 ---
