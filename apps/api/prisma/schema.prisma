@@ -290,7 +290,7 @@ model Order {
   events OrderEvent[]
   // Two-way rating (BUG-HUNT P3): an order can now carry one rating per rater (customer + rider),
   // so this is a list — the single-row unique on ratings.order_id was widened to (order_id,
-  // by_profile_id) in migration 0015.
+  // by_profile_id) in migration 0015. The rider's "rate the sender" (4·7) is the rider-direction row.
   rating Rating[]
 
   @@index([status])

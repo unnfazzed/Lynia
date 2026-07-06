@@ -6,10 +6,10 @@ import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { collectedItemCount } from "../../src/logic/journey";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
-import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, type OrderSnapshot } from "../../src/api/orders";
+import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, OfflineBanner, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
@@ -51,6 +51,8 @@ export default function RiderJob(): React.ReactElement {
   const [undeliveredDone, setUndeliveredDone] = useState<UndeliveredReason | null>(null);
   // R9: count wrong delivery-code tries to show attempts-remaining and lock the field at the cap.
   const [otpTries, setOtpTries] = useState(0);
+  // Rate-the-sender (4·7): an OPTIONAL post-delivery star, recorded-only — tap-then-submit, no undo.
+  const [senderScore, setSenderScore] = useState(0);
 
   const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 6000 });
   const order = jobQ.data ?? null;
@@ -71,13 +73,16 @@ export default function RiderJob(): React.ReactElement {
   const [customerStale, setCustomerStale] = useState(false);
   const orderRef = useRef<OrderSnapshot | null>(order);
   orderRef.current = order;
-  useRiderJobSocket(
+  const { connected: jobSocketConnected } = useRiderJobSocket(
     order && ACTIVE.includes(order.status) ? orderId : null,
     (e) => {
       if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current });
     },
     () => setCustomerStale(true),
   );
+  // 4·b4: only read "reconnecting" after we've been live once (avoid a connect-window flash on mount).
+  const wasJobConnected = useRef(false);
+  if (jobSocketConnected) wasJobConnected.current = true;
   // A status advance means the ride is moving again — drop a stale customer-presence warning.
   useEffect(() => {
     setCustomerStale(false);
@@ -129,6 +134,11 @@ export default function RiderJob(): React.ReactElement {
     },
   });
   const cancelM = useMutation({ mutationFn: () => cancelOrder(orderId!), onSuccess: refresh, onError: fail });
+  // 4·7: optional, recorded-only rate-the-sender. Doesn't change status or gate anything.
+  const senderRateM = useMutation({
+    mutationFn: (score: number) => rateSender(orderId!, { score }),
+    onError: fail,
+  });
   // R1: record a failed hand-off. On success we freeze a terminal (the order leaves the active feed).
   const undeliverM = useMutation({
     mutationFn: (reason: UndeliveredReason) => markUndelivered(orderId!, reason),
@@ -279,14 +289,27 @@ export default function RiderJob(): React.ReactElement {
       ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
       : null;
 
+  const jobReconnecting = isActive && wasJobConnected.current && !jobSocketConnected;
+
   return (
     <Screen>
+      {/* 4·b4: socket dropped mid-job — a muted "live paused" banner, never a red alarm. The job is
+          saved locally and syncs on reconnect; the rider keeps riding. */}
+      {jobReconnecting ? <OfflineBanner state="reconnecting" /> : null}
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Your job</Heading>
           <View style={{ flex: 1 }} />
-          <StatusPill status={order.status} />
+          <StatusPill status={order.status} tone={jobReconnecting ? "reconnecting" : undefined} />
         </View>
+
+        {jobReconnecting ? (
+          <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
+            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
+              Live paused — reconnecting. Your job is saved; keep riding and it&apos;ll sync when you&apos;re back on.
+            </Text>
+          </Card>
+        ) : null}
 
         {/* C5: the customer's app went dark — they may not be seeing your live updates. Soft, muted
             warning (a state, not an alarm); it clears itself on the next status change. */}
@@ -353,6 +376,13 @@ export default function RiderJob(): React.ReactElement {
                   {it.quantity}× {it.description}
                 </Text>
               ))}
+            </View>
+          ) : null}
+          {/* The sender's note ("ask for Rita at reception") — shown to the assigned rider only. */}
+          {order.note ? (
+            <View style={{ marginTop: tokens.space.sm }}>
+              <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginBottom: 2 }}>Sender&apos;s note</Text>
+              <Text style={{ fontSize: 14, color: tokens.color.ink, lineHeight: 20 }}>{order.note}</Text>
             </View>
           ) : null}
           <View style={{ height: tokens.space.sm }} />
@@ -512,9 +542,40 @@ export default function RiderJob(): React.ReactElement {
         ) : null}
 
         {order.status === "delivered" ? (
-          <Card>
-            <Text style={{ fontWeight: "700", color: tokens.color.accentText }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
-          </Card>
+          <>
+            <Card>
+              <Text style={{ fontWeight: "700", color: tokens.color.accentText }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
+            </Card>
+            {/* Rate the sender (4·7) — OPTIONAL, recorded-only ("a no-show or cash problem here
+                protects other riders"). Tap a star to submit; swaps to a thank-you on success. */}
+            <Card>
+              <Text style={{ fontWeight: "700", marginBottom: 2 }}>Rate the sender</Text>
+              <Sub>Optional — a no-show or cash problem here protects other riders.</Sub>
+              {senderRateM.isSuccess ? (
+                <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600" }}>Thanks for the feedback.</Text>
+              ) : (
+                <View style={{ flexDirection: "row", gap: 4 }}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Pressable
+                      key={n}
+                      onPress={() => {
+                        setSenderScore(n);
+                        senderRateM.mutate(n);
+                      }}
+                      disabled={senderRateM.isPending}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Rate the sender ${n} star${n === 1 ? "" : "s"}`}
+                      accessibilityState={{ selected: n <= senderScore }}
+                      hitSlop={8}
+                      style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
+                    >
+                      <Text style={{ fontSize: 30, color: n <= senderScore ? tokens.color.highlight : tokens.color.line }}>★</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </Card>
+          </>
         ) : null}
 
         {/* SOS on a live run (R-16/F-13) — a deliberate danger control, highest value at the cash

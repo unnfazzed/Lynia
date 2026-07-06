@@ -20,6 +20,7 @@ import {
   boardCellNeighborhood,
   type JobCancelledEvent,
   type OrderRebroadcastEvent,
+  type OrderTakenEvent,
   PRESENCE_ESCALATION_MS,
   type PresenceStaleEvent,
   WS_EVENTS,
@@ -366,6 +367,22 @@ export class TrackingGateway
       target = target.to(boardGeoRoom(boardCell(pickupLat as number, pickupLng as number)));
     }
     target?.emit(WS_EVENTS.bidExpired, payload);
+  }
+
+  /**
+   * A customer picked a rider — signal `order:taken` to the BOARD with `emitBidExpired`'s exact
+   * distribution (geo-cell + city-wide), so every rider who saw the card sees it close (rider-journey
+   * 2·b1 / 3·b1): browsers drop the now-taken card, bidders who weren't picked show "not chosen"
+   * (distinct from `bid:expired`, where NObody was picked). The selected rider learns they won via
+   * the `assigned` push + their active-job feed, not this event. Best-effort; never throws.
+   */
+  emitOrderTaken(orderId: string, pickupLat?: number, pickupLng?: number): void {
+    const payload: OrderTakenEvent = { orderId, at: new Date().toISOString() };
+    let target = this.server?.to(BOARD_ROOM);
+    if (target && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
+      target = target.to(boardGeoRoom(boardCell(pickupLat as number, pickupLng as number)));
+    }
+    target?.emit(WS_EVENTS.orderTaken, payload);
   }
 
   /**

@@ -66,6 +66,8 @@ export function Field(props: {
   // right value.
   autoComplete?: TextInputProps["autoComplete"];
   textContentType?: TextInputProps["textContentType"];
+  // Optional caption under the input (the DS Field's `hint`) — guidance, never an error.
+  hint?: string;
 }): React.ReactElement {
   return (
     <View style={{ marginBottom: tokens.space.md }}>
@@ -92,6 +94,9 @@ export function Field(props: {
           backgroundColor: tokens.color.bg,
         }}
       />
+      {props.hint ? (
+        <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, marginTop: 4, lineHeight: 16 }}>{props.hint}</Text>
+      ) : null}
     </View>
   );
 }

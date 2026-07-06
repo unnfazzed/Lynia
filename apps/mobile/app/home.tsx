@@ -40,6 +40,7 @@ interface FormDraft {
   dropPoint: PickedPoint | null;
   dropLandmark: string;
   items: ItemRow[];
+  note: string;
   declaredValue: string;
   proposedFare: string;
 }
@@ -121,6 +122,7 @@ function draftFromParams(p: RebroadcastParams): FormDraft | null {
     dropPoint: { lat: dLat, lng: dLng },
     dropLandmark: first(p.rbDropLandmark) ?? "",
     items,
+    note: "",
     declaredValue: "",
     proposedFare: first(p.rbFare) ?? "",
   };
@@ -140,6 +142,7 @@ export default function HomeScreen(): React.ReactElement {
   const [dropLandmark, setDropLandmark] = useState("");
   const [dropPhone, setDropPhone] = useState("");
   const [items, setItems] = useState<ItemRow[]>([emptyItem()]);
+  const [note, setNote] = useState("");
   const [declaredValue, setDeclaredValue] = useState("");
   const [proposedFare, setProposedFare] = useState("");
   const [busy, setBusy] = useState(false);
@@ -212,6 +215,7 @@ export default function HomeScreen(): React.ReactElement {
         setDropPoint(draft.dropPoint);
         setDropLandmark(draft.dropLandmark);
         setItems(draft.items);
+        setNote(draft.note ?? "");
         setDeclaredValue(draft.declaredValue);
         setProposedFare(draft.proposedFare);
         // Restored landmarks are user-owned text (not live from the map): treat them as typed.
@@ -235,10 +239,11 @@ export default function HomeScreen(): React.ReactElement {
       dropPoint,
       dropLandmark,
       items,
+      note,
       declaredValue,
       proposedFare,
     });
-  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, declaredValue, proposedFare]);
+  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, note, declaredValue, proposedFare]);
 
   // Moving either pin is the fix for an out-of-area result — drop the state so it doesn't linger over
   // a now-valid route. Only fires on a real pin change (not on the submit that set it).
@@ -313,6 +318,7 @@ export default function HomeScreen(): React.ReactElement {
     setDropPoint(null);
     setDropLandmark("");
     setItems([emptyItem()]);
+    setNote("");
     setDeclaredValue("");
     setProposedFare("");
     setPickupLandmarkTouched(false);
@@ -366,6 +372,7 @@ export default function HomeScreen(): React.ReactElement {
       // Line-items are the payload (the contract accepts either shape; `items` alone is the new
       // clients' path — the server derives the itemDesc summary).
       items: items.map((it) => ({ description: it.description.trim(), quantity: it.quantity })),
+      note: note.trim() || undefined,
       declaredValue: parseNum(declaredValue) ?? 0,
       proposedFare: fare,
       // A1-8: bind the accepted disclaimer version onto the order itself; the server stamps the
@@ -451,6 +458,7 @@ export default function HomeScreen(): React.ReactElement {
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
             <Heading>Send a parcel</Heading>
             <View style={{ flex: 1 }} />
+            <Button label="Alerts" variant="ghost" onPress={() => router.push("/notifications")} />
             <Button label="Trips" variant="ghost" onPress={() => router.push("/history")} />
             <Button label="Account" variant="ghost" onPress={() => router.push("/profile")} />
           </View>
@@ -653,6 +661,15 @@ export default function HomeScreen(): React.ReactElement {
             // The control never just vanishes — say why it's gone (every dead-end explains itself).
             <Text style={{ fontSize: 12, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Up to 10 items per order.</Text>
           )}
+          {/* Sender's note for the rider (contract `note`, ≤280) — the mockup's "ask for Rita at the
+              pharmacy counter; keep it upright." Optional; shown to the assigned rider on the job. */}
+          <Field
+            label="Note for the rider (optional)"
+            value={note}
+            onChangeText={setNote}
+            placeholder="Ask for Rita at reception; keep it upright."
+            maxLength={280}
+          />
           {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
               "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
           <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />

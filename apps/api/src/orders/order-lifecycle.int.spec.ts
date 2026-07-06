@@ -30,6 +30,7 @@ const jobCancelledEmits: Array<{ orderId: string; collected: boolean }> = [];
 const gateway = {
   emitOrderStatus: () => undefined,
   emitBidExpired: () => undefined,
+  emitOrderTaken: () => undefined,
   emitJobCancelled: (orderId: string, collected: boolean) => jobCancelledEmits.push({ orderId, collected }),
   emitOrderRebroadcast: () => undefined,
 } as unknown as TrackingGateway;
@@ -166,7 +167,8 @@ describe("delivery lifecycle", () => {
     }
 
     const wrong = deliveryCode === "000000" ? "111111" : "000000";
-    await expect(lifecycle.confirmDelivery(orderId, rider, wrong)).rejects.toThrow(/incorrect/i);
+    // 4·b1: the wrong-code error now carries the remaining attempt count instead of a bare "incorrect".
+    await expect(lifecycle.confirmDelivery(orderId, rider, wrong)).rejects.toThrow(/attempts left/i);
     const after = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { deliveryOtpAttempts: true } });
     expect(after.deliveryOtpAttempts).toBe(1); // persisted despite the throw
 

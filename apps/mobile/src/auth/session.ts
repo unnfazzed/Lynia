@@ -84,6 +84,26 @@ export async function loadRolePreference(): Promise<StartRole | null> {
   }
 }
 
+// Whether the first-install onboarding carousel (customer/rider 0·2) has been shown on this device.
+// Persisted so the intro appears exactly once per install, before auth. Best-effort — a read failure
+// just re-shows the carousel once (harmless) and a write failure never traps the hand-off to /phone.
+const ONBOARDING_KEY = "lynia.onboardingSeen";
+
+export async function saveOnboardingSeen(): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(ONBOARDING_KEY, "1");
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadOnboardingSeen(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(ONBOARDING_KEY)) === "1";
+  } catch {
+    return false;
+  }
+}
+
 // Latest liability-disclaimer policy version the customer has accepted on this device (A1-8). Stored
 // so the accept-to-continue gate isn't re-shown every broadcast. Best-effort — a read failure just
 // re-shows the gate, which is safe.

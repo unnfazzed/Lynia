@@ -17,7 +17,7 @@ const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-012345678
 // Push is fire-and-forget; a no-op stub keeps the concurrency proof off the notification path.
 const noopNotifications = { notifyOrderStatus: async () => {} } as unknown as NotificationsService;
 // bid:expired is best-effort; a no-op gateway keeps the concurrency proof off the socket path.
-const noopGateway = { emitBidExpired: () => {} } as unknown as TrackingGateway;
+const noopGateway = { emitBidExpired: () => {}, emitOrderTaken: () => {} } as unknown as TrackingGateway;
 // Real MetricsService is NoopMeter-safe with no OTLP endpoint (every record is a cheap no-op).
 const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), noopGateway);
 

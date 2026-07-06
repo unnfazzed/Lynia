@@ -1,6 +1,6 @@
 import { JobCancelledEvent, PresenceStaleEvent, WS_EVENTS } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { useAuth } from "../auth/auth-context";
 import { createSocket } from "./socket";
@@ -20,10 +20,13 @@ export function useRiderJobSocket(
   orderId: string | null,
   onCancelled: (e: JobCancelledEvent) => void,
   onCustomerStale?: () => void,
-): void {
+): { connected: boolean } {
   const { session } = useAuth();
   const token = session?.accessToken;
   const qc = useQueryClient();
+  // Expose connection state so the job screen can show the "live paused" banner (4·b4) when the
+  // socket drops mid-job — the job stays saved locally and syncs on reconnect.
+  const [connected, setConnected] = useState(false);
   // Hold the latest callbacks in refs so re-subscribing isn't tied to their identity.
   const cbRef = useRef(onCancelled);
   cbRef.current = onCancelled;
@@ -31,12 +34,18 @@ export function useRiderJobSocket(
   staleRef.current = onCustomerStale;
 
   useEffect(() => {
-    if (!orderId || !token) return;
+    if (!orderId || !token) {
+      setConnected(false);
+      return;
+    }
     const socket: Socket = createSocket(token);
 
     socket.on("connect", () => {
+      setConnected(true);
       socket.emit(WS_EVENTS.subscribeOrder, { orderId });
     });
+    socket.on("disconnect", () => setConnected(false));
+    socket.on("connect_error", () => setConnected(false));
     socket.on(WS_EVENTS.orderStatus, () => void qc.invalidateQueries({ queryKey: ["activeJob"] }));
     socket.on(WS_EVENTS.jobCancelled, (raw: unknown) => {
       const parsed = JobCancelledEvent.safeParse(raw);
@@ -55,4 +64,6 @@ export function useRiderJobSocket(
       socket.disconnect();
     };
   }, [orderId, token, qc]);
+
+  return { connected };
 }
