@@ -2,7 +2,7 @@ import { ACTIVE_RIDE_STATUSES, type AdvanceStatusRequest, RIDER_CANCELLABLE_STAT
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { AppState, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { collectedItemCount } from "../../src/logic/journey";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
@@ -87,6 +87,17 @@ export default function RiderJob(): React.ReactElement {
   useEffect(() => {
     setCustomerStale(false);
   }, [order?.status]);
+
+  // Warm-resume: refetch the active job the moment the app returns to foreground. Without this, a job
+  // the customer cancelled while we were backgrounded serves its stale (still-live) cache for up to the
+  // 6s poll — briefly re-exposing advance/OTP controls on a dead order — before flipping to the R8
+  // hand-back. Invalidating on resume makes the terminal appear immediately.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") void qc.invalidateQueries({ queryKey: ["activeJob"] });
+    });
+    return () => sub.remove();
+  }, [qc]);
 
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
   const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Something went wrong.");
@@ -185,10 +196,14 @@ export default function RiderJob(): React.ReactElement {
     advanceM.mutate("picked_up");
   };
 
-  // Terminal: the customer cancelled. Rendered from the frozen snapshot so the hand-back path keeps
-  // the sender contact even after the order leaves the active-job feed.
-  if (cancelledJob) {
-    const snap = cancelledJob.snapshot;
+  // Terminal: the customer cancelled. Rendered from the frozen WS snapshot (keeps the sender contact
+  // after the order leaves the active feed), OR — R8 — from a fetched cancelled order when the rider
+  // reopens after missing the `job:cancelled` push while backgrounded. activeForRider only surfaces a
+  // cancelled order this rider had COLLECTED, so `collected` is true on that reopen path.
+  const handback =
+    cancelledJob ?? (order && order.status === "cancelled" ? { collected: true, snapshot: order } : null);
+  if (handback) {
+    const snap = handback.snapshot;
     const senderPhone = snap.counterpartyPhone ?? snap.pickup.contactPhone ?? null;
     return (
       <Screen>
@@ -205,7 +220,7 @@ export default function RiderJob(): React.ReactElement {
               </View>
               <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>The customer cancelled</Text>
             </View>
-            {cancelledJob.collected ? (
+            {handback.collected ? (
               <>
                 <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
                   This job has ended. You still have the parcel — arrange the hand-back directly with the sender. This doesn&apos;t affect your reliability score.

@@ -8,14 +8,16 @@ interface MaybeAuthedRequest {
 /**
  * Resolve the authenticated profile id from a request.
  *
- * Source of truth is the JWT subject set by `JwtAuthGuard` (lane B). Outside production we also
- * accept an `x-user-id` header so local dev and tests can act as a user without minting a JWT.
- * **In production the header is ignored entirely** — identity is only ever the JWT subject — so a
- * spoofed `x-user-id` can never stand in for a real user. Extracted as a pure function so the
+ * Source of truth is the JWT subject set by `JwtAuthGuard` (lane B). In the `development`/`test`
+ * environments only, we also accept an `x-user-id` header so local dev and tests can act as a user
+ * without minting a JWT. The fallback is gated on an EXPLICIT allowlist (not `!== "production"`): an
+ * unset or unexpected `NODE_ENV` — e.g. a prod deploy that forgot to set it — grants NO header fallback,
+ * so a spoofed `x-user-id` can never stand in for a real user. Extracted as a pure function so the
  * fallback gating is unit-testable.
  */
 export function resolveCurrentUser(req: MaybeAuthedRequest, nodeEnv: string | undefined = process.env.NODE_ENV): string {
-  const devFallback = nodeEnv === "production" ? undefined : req.headers["x-user-id"];
+  const devEnv = nodeEnv === "development" || nodeEnv === "test";
+  const devFallback = devEnv ? req.headers["x-user-id"] : undefined;
   const id = req.user?.sub ?? devFallback;
   if (!id) throw new UnauthorizedException("Not authenticated");
   return id;

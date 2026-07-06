@@ -607,4 +607,34 @@ describe("OrdersService.activeForRider", () => {
     // rider sees the customer's phone in the active window
     expect(res?.counterpartyPhone).toBe("+263771111111");
   });
+
+  it("R8: surfaces a recently cancelled+collected order for the hand-back when there's no active job", async () => {
+    const snap = {
+      id: "o9",
+      status: "cancelled",
+      agreedFare: null,
+      proposedFare: 2.5,
+      customerId: "cust-1",
+      riderId: "rider-1",
+      createdAt: new Date("2026-06-26T00:00:00Z"),
+      collectedAt: new Date("2026-06-26T00:10:00Z"),
+      customer: { phone: "+263771111111" },
+      rider: { profileId: "rider-1", currentLat: null, currentLng: null, updatedAt: null, profile: { phone: "+263782000000" } },
+      events: [],
+    };
+    const prisma = {
+      order: {
+        // First findFirst = active statuses (none); second = the cancelled hand-back (status: "cancelled").
+        findFirst: async (args: { where: { status: unknown } }) => (args.where.status === "cancelled" ? { id: "o9" } : null),
+        findUnique: async () => snap,
+      },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    const res = await svc.activeForRider("rider-1");
+    expect(res).toMatchObject({ id: "o9", status: "cancelled" });
+    // R8: the collected-cancel hand-back must reveal the sender's phone to the assigned rider so the
+    // reopen terminal can offer a "call sender" (cancelled ∉ PHONE_REVEAL_STATUSES, so this is the
+    // scoped rider-only reveal — the whole point of the fix).
+    expect(res?.counterpartyPhone).toBe("+263771111111");
+  });
 });
