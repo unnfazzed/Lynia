@@ -37,6 +37,13 @@ export const envSchema = z.object({
   FCM_PROJECT_ID: z.string().optional(),
   // --- Auth (lane B) ---
   JWT_SIGNING_SECRET: z.string().min(16).default(INSECURE_JWT_DEFAULT),
+  // Optional previous signing secret, accepted on verify only, for a zero-downtime rotation window
+  // (see docs/SECRET-ROTATION.md). Remove it once older access tokens have expired (> ACCESS_TTL).
+  JWT_SIGNING_SECRET_PREVIOUS: z.string().min(16).optional(),
+  // Optional dedicated key for HMAC-hashing OTP codes + refresh tokens. Separating it from the JWT
+  // signing secret lets the signing secret rotate without invalidating stored refresh-token hashes.
+  // Defaults to JWT_SIGNING_SECRET when unset (backward-compatible).
+  TOKEN_HASH_SECRET: z.string().min(16).optional(),
   ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
@@ -93,12 +100,21 @@ export const envSchema = z.object({
   if (env.NODE_ENV === "production") {
     // A publicly-known or low-entropy JWT secret means anyone can forge access tokens (incl. admin).
     // Reject the shipped default and anything below MIN_PROD_SECRET_LEN — a missing Secret Manager
-    // value that falls back to the default must NOT boot.
-    if (env.JWT_SIGNING_SECRET === INSECURE_JWT_DEFAULT || env.JWT_SIGNING_SECRET.length < MIN_PROD_SECRET_LEN) {
+    // value that falls back to the default must NOT boot. The same bar applies to the optional
+    // rotation/hash secrets when present, so a weak one can't sneak in through the side door.
+    const weakInProd = (value: string): boolean =>
+      value === INSECURE_JWT_DEFAULT || value.length < MIN_PROD_SECRET_LEN;
+    if (weakInProd(env.JWT_SIGNING_SECRET)) {
       reject(
         "JWT_SIGNING_SECRET",
         `JWT_SIGNING_SECRET must be a unique secret of at least ${MIN_PROD_SECRET_LEN} chars in production (the dev default is rejected) — set it from Secret Manager`,
       );
+    }
+    if (env.JWT_SIGNING_SECRET_PREVIOUS !== undefined && weakInProd(env.JWT_SIGNING_SECRET_PREVIOUS)) {
+      reject("JWT_SIGNING_SECRET_PREVIOUS", `JWT_SIGNING_SECRET_PREVIOUS, when set, must also be a strong secret (>= ${MIN_PROD_SECRET_LEN} chars)`);
+    }
+    if (env.TOKEN_HASH_SECRET !== undefined && weakInProd(env.TOKEN_HASH_SECRET)) {
+      reject("TOKEN_HASH_SECRET", `TOKEN_HASH_SECRET, when set, must also be a strong secret (>= ${MIN_PROD_SECRET_LEN} chars)`);
     }
     // The console channel logs codes and pairs with the devCode escape hatch; never in production.
     if (env.OTP_CHANNEL === "console") {

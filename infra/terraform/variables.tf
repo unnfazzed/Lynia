@@ -97,6 +97,24 @@ variable "bucket_cors_origins" {
   default     = []
 }
 
+variable "kyc_cmek_enabled" {
+  description = "Encrypt the media bucket (KYC selfies + item photos) with a customer-managed KMS key (CMEK) instead of Google-managed keys, so key custody + rotation is ours. Default false (Google-managed, still encrypted at rest). Enabling creates a KMS keyring/key; applies to NEW objects. See docs/SECURITY.md P3-4."
+  type        = bool
+  default     = false
+}
+
+variable "kyc_retention_days" {
+  description = "If > 0, auto-delete media-bucket objects older than this many days (data-minimization / privacy). 0 = disabled (default) — enable deliberately, mindful that KYC evidence may be needed for disputes/compliance. Objects are archived at this age then purged shortly after (bucket is versioned)."
+  type        = number
+  default     = 0
+}
+
+variable "db_public_ip_enabled" {
+  description = "Cloud SQL public IP. Default true (needed by the GitHub-runner Auth-Proxy migration path). Set false for a PRIVATE-ONLY instance — then run the release workflow with the DB_PRIVATE_ONLY=true repo variable so migrations execute in-VPC as a Cloud Run job. Coordinated rollout; see docs/SECURITY.md P2-1."
+  type        = bool
+  default     = true
+}
+
 variable "redis_tls_enabled" {
   description = "Enable Memorystore in-transit TLS (transit_encryption_mode=SERVER_AUTHENTICATION) and switch REDIS_URL to rediss://. Default false to match the current deployed instance. Flip to true as a COORDINATED rollout: apply, then verify the app reconnects over TLS (the client honours rediss:// automatically; supply REDIS_CA_CERT if the managed CA isn't trusted). See docs/SECURITY.md P2-1."
   type        = bool

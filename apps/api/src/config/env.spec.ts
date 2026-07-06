@@ -83,6 +83,25 @@ describe("loadEnv — production JWT-secret boot-guard", () => {
     const env = loadEnv({ ...base, NODE_ENV: "development" });
     expect(env.JWT_SIGNING_SECRET).toBe("dev-insecure-secret-change-me-please");
   });
+
+  it("rejects a weak JWT_SIGNING_SECRET_PREVIOUS in production when set", () => {
+    expect(() => loadEnv({ ...prodBase, JWT_SIGNING_SECRET_PREVIOUS: "too-short" })).toThrow(
+      /JWT_SIGNING_SECRET_PREVIOUS/,
+    );
+  });
+
+  it("rejects a weak TOKEN_HASH_SECRET in production when set", () => {
+    expect(() => loadEnv({ ...prodBase, TOKEN_HASH_SECRET: "too-short" })).toThrow(/TOKEN_HASH_SECRET/);
+  });
+
+  it("accepts strong rotation + hash secrets in production", () => {
+    const env = loadEnv({
+      ...prodBase,
+      JWT_SIGNING_SECRET_PREVIOUS: "another-strong-previous-secret-0123456789",
+      TOKEN_HASH_SECRET: "a-strong-dedicated-hash-secret-0123456789",
+    });
+    expect(env.TOKEN_HASH_SECRET).toBeDefined();
+  });
 });
 
 describe("loadEnv — production launch-hygiene boot-guards", () => {

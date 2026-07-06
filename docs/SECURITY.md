@@ -197,12 +197,14 @@ take effect · ⬜ deferred (needs a vendor/platform not available in-repo).
 | P1-3 Edge headers / CORS / strict bodies | ✅ | `security-headers.middleware.ts`, `cors.ts` allow-list (HTTP + WS), strict auth zod + tests |
 | P1-4 Log redaction | ✅ | OTP senders mask phone / drop code + tests |
 | P1-5 IDOR sweep | ✅ (verified) | Ownership already enforced service-side (`getSnapshot(orderId, callerId)` etc.); no gap found |
-| P2-1 Redis TLS | 🟨 | Opt-in via `redis_tls_enabled` (default off) + TLS-aware client; coordinated rollout |
-| P2-1 Private Cloud SQL | ⬜ | Deferred — needs the CI migration path moved off the public IP first (documented risk) |
+| P2-1 Redis TLS | 🟨 | Opt-in via `redis_tls_enabled` (default off) + TLS-aware client; rollout in [SECURITY-OPS §E2](SECURITY-OPS.md) |
+| P2-1 Private Cloud SQL | 🟨 | Gated `db_public_ip_enabled` + in-VPC Cloud Run migrate job (`release.yml` `DB_PRIVATE_ONLY`); rollout in [SECURITY-OPS §E1](SECURITY-OPS.md) |
 | P2-2 GCS CORS tighten | 🟨 | Default flipped to `[]` (deny) in `variables.tf`; needs apply |
 | P2-3 Pin JWT algorithm | ✅ | `token.service.ts` HS256 pinned + alg:none-rejection test |
 | P2-4 Launch fail-closed guards | ✅ | `config/env.ts` rejects console OTP / test-phones / KYC-stub in prod + tests |
-| P3-* Cert pinning, CMEK, rotation, pentest | ⬜ | Ongoing / founder + platform work |
+| P3-2 Secret rotation | ✅ (code) 🟨 (runbook) | Dual-secret JWT + hash-key separation in `token.service.ts`/`env.ts` + tests; [SECRET-ROTATION](SECRET-ROTATION.md) |
+| P3-4 KYC bucket CMEK + retention | 🟨 | Gated `kyc_cmek_enabled` / `kyc_retention_days` (`kms.tf`, `storage.tf`); rollout in [SECURITY-OPS §E3](SECURITY-OPS.md) |
+| P0-2 Admin SSO+MFA (IAP) · P3-1 mobile cert pinning · P3-3 Maps-key restriction · P3-5 WAF tuning · P3-6 pentest | 📋 | Precise founder/platform runbooks in [SECURITY-OPS](SECURITY-OPS.md); IR runbook in [IR-RUNBOOK](IR-RUNBOOK.md) |
 
 The subsections below keep the full design detail (the "what & why & acceptance test") for each item.
 

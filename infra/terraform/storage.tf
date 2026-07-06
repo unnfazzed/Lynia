@@ -14,8 +14,46 @@ resource "google_storage_bucket" "media" {
     enabled = true
   }
 
-  # Needed for browser-based signed-URL PUT/GET (admin web). Native uploads are
-  # unaffected. Tighten bucket_cors_origins to real origins before launch.
+  # CMEK: encrypt objects with our own KMS key when enabled (var.kyc_cmek_enabled). Default off leaves
+  # Google-managed encryption (still encrypted at rest). Applies to newly-written objects.
+  dynamic "encryption" {
+    for_each = var.kyc_cmek_enabled ? [1] : []
+    content {
+      default_kms_key_name = google_kms_crypto_key.media[0].id
+    }
+  }
+
+  # Optional data-minimization retention (var.kyc_retention_days > 0). On this versioned bucket the age
+  # rule archives the live object; the second rule purges the archived version shortly after, so data
+  # is fully removed a little after the retention age. Disabled by default.
+  dynamic "lifecycle_rule" {
+    for_each = var.kyc_retention_days > 0 ? [1] : []
+    content {
+      condition {
+        age        = var.kyc_retention_days
+        with_state = "LIVE"
+      }
+      action {
+        type = "Delete"
+      }
+    }
+  }
+
+  dynamic "lifecycle_rule" {
+    for_each = var.kyc_retention_days > 0 ? [1] : []
+    content {
+      condition {
+        days_since_noncurrent_time = 7
+        with_state                 = "ARCHIVED"
+      }
+      action {
+        type = "Delete"
+      }
+    }
+  }
+
+  # Needed for browser-based signed-URL PUT/GET (admin web). Native uploads are unaffected; defaults to
+  # [] (deny cross-origin) — set bucket_cors_origins to real origins only if you do browser uploads.
   cors {
     origin          = var.bucket_cors_origins
     method          = ["GET", "PUT", "HEAD"]
