@@ -17,7 +17,8 @@ export default defineConfig({
     path: "prisma/migrations",
     seed: "tsx prisma/seed.ts",
   },
-  datasource: {
-    url: env("DATABASE_URL"),
-  },
+  // env() resolves eagerly at config load, so an unconditional datasource would make even
+  // `prisma generate` (which needs no database) crash where DATABASE_URL is unset — e.g. the CI
+  // build job. Omit the block when the var is absent; Migrate contexts always set it.
+  ...(process.env.DATABASE_URL ? { datasource: { url: env("DATABASE_URL") } } : {}),
 });
