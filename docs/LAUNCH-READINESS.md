@@ -69,7 +69,7 @@ residual risk is concentrated:
 | LR5 | Eng | Money-path re-audit + settlement auto-pause scheduler | agent | 🛠️ prepaid per-ride model (`main`, read-only); admin fare/refund/cancel/ban 400s **fixed** (R2) |
 | LR6 | Eng | Chaos drills: Redis / SQL / vendor outage / deploy-mid-delivery | agent + founder | ⬜ |
 | LR7 | Eng | Deferred infra hardening executed + backup/restore drill | founder (agent-prepped) | ⬜ |
-| LR8 | Eng | PII/data-protection review (retention, encryption, ZW CDPA) | agent + founder | 🛠️ national IDs now AES-GCM-encrypted at rest + HMAC dedup; retention/deletion policy still TODO |
+| LR8 | Eng | PII/data-protection review (retention, encryption, ZW CDPA) | agent + founder | 🛠️ national IDs AES-GCM-encrypted at rest; **retention schedule + right-to-erasure built** (`docs/DATA-RETENTION.md`); founder ratifies windows + enables KYC-media lifecycle |
 | LR9 | Perf | Observability live: collector sidecar in release path, alerts paging | founder (agent-prepped) | ⬜ |
 | LR10 | Perf | Load model: the launch envelope, in numbers | agent + founder | ⬜ |
 | LR11 | Perf | Load-test harness (k6) + staging stack; SLO table measured green | agent | ⬜ |

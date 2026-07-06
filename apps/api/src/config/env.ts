@@ -87,6 +87,11 @@ export const envSchema = z.object({
   // refused). Set to the admin console / any browser client origins in prod. See common/cors.ts.
   CORS_ALLOWED_ORIGINS: z.string().default(""),
   DIDIT_BASE_URL: z.string().url().default("https://verification.didit.me"),
+  // --- Data retention (LR8, docs/DATA-RETENTION.md) ---
+  // GPS coords on order_events are scrubbed this many days after the event; expired sessions are
+  // hard-deleted this many days after they lapse. Driven by the POST /admin/retention/purge sweep.
+  GPS_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  SESSION_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 }).superRefine((env, ctx) => {
   // The boot-guards below fail LOUD in production rather than let the API come up in an insecure or
   // half-configured state. Each stays permissive in dev/test so local work and CI are unaffected.
