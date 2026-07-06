@@ -144,6 +144,41 @@ export async function loadDisclaimerAccepted(): Promise<string | null> {
   }
 }
 
+// Orders the rider has already handed back (acknowledged the hand-back terminal for) on this device
+// (R8 follow-up). A cancelled order stays reopenable for 24h, so its snapshot keeps surfacing on the
+// board as a "hand this parcel back" prompt; once the rider taps "Back to board" we record the id here
+// so the already-returned parcel doesn't nag them again. Bounded to the most recent ids to keep the
+// blob tiny. Best-effort — a read failure just re-shows the prompt (safe), a write never traps the tap.
+const HANDBACK_ACK_KEY = "lynia.handbackAck";
+const HANDBACK_ACK_MAX = 20;
+
+async function readHandbackAcks(): Promise<string[]> {
+  try {
+    const raw = await SecureStore.getItemAsync(HANDBACK_ACK_KEY);
+    if (!raw) return [];
+    const v = JSON.parse(raw) as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function acknowledgeHandback(orderId: string): Promise<void> {
+  try {
+    const acks = await readHandbackAcks();
+    if (acks.includes(orderId)) return;
+    // Keep the newest ids, drop the oldest so the list can't grow without bound.
+    const next = [...acks, orderId].slice(-HANDBACK_ACK_MAX);
+    await SecureStore.setItemAsync(HANDBACK_ACK_KEY, JSON.stringify(next));
+  } catch {
+    /* best-effort */
+  }
+}
+
+export async function loadAcknowledgedHandbacks(): Promise<string[]> {
+  return readHandbackAcks();
+}
+
 // The saved order-compose draft (home.tsx owns the write under this same key). Named here so sign-out
 // can clear it — on a shared device the next user must not rehydrate the previous user's addresses.
 const DRAFT_KEY = "lynia.orderDraft";
@@ -160,6 +195,7 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(DISCLAIMER_KEY),
       SecureStore.deleteItemAsync(ROLE_PREF_KEY),
       SecureStore.deleteItemAsync(CODE_INDEX_KEY),
+      SecureStore.deleteItemAsync(HANDBACK_ACK_KEY),
       ...codes.map((id) => SecureStore.deleteItemAsync(codeKey(id))),
     ]);
   } catch {

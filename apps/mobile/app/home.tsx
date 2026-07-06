@@ -163,10 +163,16 @@ export default function HomeScreen(): React.ReactElement {
   // tap time, not a render dependency) plus the modal's own visibility state.
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const disclaimerAccepted = useRef(false);
+  // Has the async read of the persisted flag settled yet? Without this, a fast tapper who hits
+  // "Broadcast request" before the SecureStore read resolves is re-shown the disclaimer they already
+  // accepted. onBroadcast awaits the read (once) when this is still false before deciding to gate.
+  const disclaimerLoaded = useRef(false);
   useEffect(() => {
     let alive = true;
     void loadDisclaimerAccepted().then((v) => {
-      if (alive && v === DISCLAIMER_POLICY_VERSION) disclaimerAccepted.current = true;
+      if (!alive) return;
+      if (v === DISCLAIMER_POLICY_VERSION) disclaimerAccepted.current = true;
+      disclaimerLoaded.current = true;
     });
     return () => {
       alive = false;
@@ -436,7 +442,14 @@ export default function HomeScreen(): React.ReactElement {
 
   // Broadcast tap: the disclaimer is an accept-to-continue GATE in front of the first order create.
   // If the customer has already accepted the current policy version, go straight to submit.
-  const onBroadcast = (): void => {
+  const onBroadcast = async (): Promise<void> => {
+    // Guard the race: if the persisted-flag read hasn't settled yet, resolve it now so a customer who
+    // already accepted isn't re-shown the sheet just for tapping quickly.
+    if (!disclaimerLoaded.current) {
+      const v = await loadDisclaimerAccepted().catch(() => null);
+      if (v === DISCLAIMER_POLICY_VERSION) disclaimerAccepted.current = true;
+      disclaimerLoaded.current = true;
+    }
     if (disclaimerAccepted.current) {
       void submit();
       return;
@@ -572,7 +585,7 @@ export default function HomeScreen(): React.ReactElement {
                   </View>
                 </View>
               ) : null}
-              <Button label="Broadcast request" onPress={onBroadcast} loading={busy} disabled={!canSubmit} />
+              <Button label="Broadcast request" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
               <ErrorText message={error} />
             </>
           }
