@@ -16,7 +16,13 @@ const BecomeRider = z.object({
   // demand). Kept the column/field name `photoUrl`; the value it carries is now the object key.
   photoUrl: z.string().min(1).max(256),
 });
-const SetOnline = z.object({ online: z.boolean() });
+// lat/lng are optional — when the going-online request carries the rider's position we corridor-check it
+// (Q1 out-of-area gate); an older client that omits them just skips the check.
+const SetOnline = z.object({
+  online: z.boolean(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+});
 
 @Controller("riders")
 @UseGuards(JwtAuthGuard)
@@ -41,6 +47,7 @@ export class RidersController {
 
   @Patch("online")
   online(@Body(new ZodBody(SetOnline)) body: z.infer<typeof SetOnline>, @CurrentUser() id: string) {
-    return this.riders.setOnline(id, body.online);
+    const location = body.lat != null && body.lng != null ? { lat: body.lat, lng: body.lng } : undefined;
+    return this.riders.setOnline(id, body.online, location);
   }
 }

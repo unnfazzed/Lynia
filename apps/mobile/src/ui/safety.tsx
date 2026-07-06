@@ -412,6 +412,13 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on open; m is stable enough here.
   }, [open]);
 
+  // Reset the mutation on close so a SECOND SOS later in the same trip re-arms the isIdle guard and
+  // re-alerts ops — the alert is not one-shot — and a first attempt that failed offline can retry.
+  const close = (): void => {
+    setOpen(false);
+    m.reset();
+  };
+
   // Both numbers fall back to the final SOS_POLICY constants so the call rows render even when the
   // best-effort POST fails or hasn't returned yet (offline). A safety control must never dead-end on
   // the network — the numbers are client-side constants for exactly this reason.
@@ -447,7 +454,7 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
         </Pressable>
       </View>
 
-      <Sheet visible={open} onClose={() => setOpen(false)} title="Emergency help">
+      <Sheet visible={open} onClose={close} title="Emergency help">
         <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
           <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
             <Icon name="shield-alert" size={18} color={tokens.color.danger} />
@@ -467,7 +474,7 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
         <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 16, marginTop: tokens.space.md }}>
           {SOS_POLICY.emergencyNumber} reaches local emergency services. The safety line is staffed by Lynia.
         </Text>
-        <Button label="I'm safe now" variant="ghost" onPress={() => setOpen(false)} />
+        <Button label="I'm safe now" variant="ghost" onPress={close} />
       </Sheet>
     </>
   );

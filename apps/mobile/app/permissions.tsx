@@ -93,7 +93,7 @@ export default function PermissionsScreen(): React.ReactElement {
   }
   return (
     <Prime
-      icon="phone"
+      icon="inbox"
       title="Stay in the loop"
       message="Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered."
       primaryLabel="Turn on notifications"
