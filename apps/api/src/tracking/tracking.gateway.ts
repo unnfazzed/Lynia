@@ -529,6 +529,18 @@ export class TrackingGateway
       // every instance via the Redis adapter).
       for (const orderId of candidates) {
         if (!active.has(orderId)) continue; // pruned above
+        // Multi-instance false-positive guard: `customerPresence`/`darkSince` is per-instance in-memory,
+        // so a customer who reconnected to a DIFFERENT instance still looks dark here. The Socket.IO
+        // Redis adapter makes room membership cluster-wide, so confirm via the adapter that no customer
+        // socket sits in the order room before escalating; if one does, the customer is live elsewhere —
+        // clear our stale local dark state, drop the (would-be) escalation, and release the claim.
+        if (await this.customerLiveInRoom(orderId)) {
+          const p = this.customerPresence.get(orderId);
+          if (p) p.darkSince = null;
+          this.customerStaleNotified.delete(orderId);
+          void this.tracking.releasePresenceEscalation(`customer:${orderId}`);
+          continue;
+        }
         this.customerStaleNotified.add(orderId);
         if (await this.tracking.claimPresenceEscalation(`customer:${orderId}`, PRESENCE_STALE_DEDUP_TTL_S)) {
           const p = this.customerPresence.get(orderId);
@@ -537,6 +549,24 @@ export class TrackingGateway
       }
     } catch (err) {
       this.logger.warn(`customer presence scan failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Is a customer socket currently joined to the order room anywhere in the cluster? With the Socket.IO
+   * Redis adapter, `fetchSockets()` returns matching sockets across ALL instances, so this sees a
+   * customer connected to a peer instance that this instance's in-memory `customerPresence` can't. Only
+   * the order's customer can subscribe as customer-role to its room (subscribeOrder gates on
+   * canAccessOrder + role), so any customer-role socket in the room IS that order's customer. Best-effort:
+   * a missing server or a fetch error returns false, falling back to the per-instance dark decision.
+   */
+  private async customerLiveInRoom(orderId: string): Promise<boolean> {
+    if (!this.server) return false;
+    try {
+      const sockets = await this.server.in(orderRoom(orderId)).fetchSockets();
+      return sockets.some((s) => (s.data as { user?: SocketUser } | undefined)?.user?.role === "customer");
+    } catch {
+      return false;
     }
   }
 }
