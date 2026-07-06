@@ -27,7 +27,12 @@ const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 
 const LOCATE_TIMEOUT_MS = 9_000;
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error("location-timeout")), ms))]);
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("location-timeout")), ms);
+  });
+  // Clear the timer on the winning path so a resolved fix doesn't leave a dangling 9s timeout.
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
 }
 
 function landmarkFrom(r: Location.LocationGeocodedAddress): string {
@@ -49,6 +54,16 @@ export function ComposeMap(props: {
   const mapRef = useRef<MapView>(null);
   const [locating, setLocating] = useState(false);
   const [locateMsg, setLocateMsg] = useState<string | null>(null);
+  // Map-load fallback (C1): if the map never signals ready within a few seconds — a missing Google Maps
+  // key or blocked tiles leaves a blank grey box — surface a card pointing to the address search / the
+  // required-landmark path, so addressing is never a silent dead end.
+  const [mapReady, setMapReady] = useState(false);
+  const [mapTimedOut, setMapTimedOut] = useState(false);
+  useEffect(() => {
+    if (mapReady) return;
+    const t = setTimeout(() => setMapTimedOut(true), 6_000);
+    return () => clearTimeout(t);
+  }, [mapReady]);
 
   const activePoint = active === "pickup" ? pickup : drop;
   const setActive = (c: LatLng): void => {
@@ -130,7 +145,13 @@ export function ComposeMap(props: {
 
   return (
     <View style={{ flex: 1 }}>
-      <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={initialRegion} onPress={(e: MapPressEvent) => setActive(e.nativeEvent.coordinate)}>
+      <MapView
+        ref={mapRef}
+        style={{ flex: 1 }}
+        initialRegion={initialRegion}
+        onMapReady={() => setMapReady(true)}
+        onPress={(e: MapPressEvent) => setActive(e.nativeEvent.coordinate)}
+      >
         {pickup ? (
           <Marker
             identifier="pickup"
@@ -191,8 +212,39 @@ export function ComposeMap(props: {
       ) : null}
 
       {locateMsg ? (
-        <View style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, bottom: 64, backgroundColor: tokens.color.bg, borderRadius: tokens.radius.input, padding: tokens.space.sm, ...tokens.shadow.card }}>
+        <View
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, bottom: 64, backgroundColor: tokens.color.bg, borderRadius: tokens.radius.input, padding: tokens.space.sm, ...tokens.shadow.card }}
+        >
           <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.danger }}>{locateMsg}</Text>
+        </View>
+      ) : null}
+
+      {/* Pin-discoverability hint: the full-bleed map dropped MapPicker's "tap to drop a pin" caption, so
+          a first-time user has no cue the map itself is the input. Show it until the active slot has a pin. */}
+      {mapReady && !activePoint ? (
+        <View
+          pointerEvents="none"
+          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, top: tokens.space.md, backgroundColor: tokens.color.bg, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, alignSelf: "center", ...tokens.shadow.card }}
+        >
+          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center" }}>
+            Tap the map to drop your {active === "pickup" ? "pickup" : "drop-off"} pin.
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Map-load failure fallback (C1): the manual path (address search above + the required landmark
+          field under "Add details") stays usable even when the tiles never render. */}
+      {!mapReady && mapTimedOut ? (
+        <View
+          accessibilityRole="alert"
+          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, top: tokens.space.md, backgroundColor: tokens.color.bg, borderRadius: tokens.radius.input, padding: tokens.space.md, ...tokens.shadow.card }}
+        >
+          <Text style={{ fontSize: tokens.font.size.caption, fontWeight: "700", color: tokens.color.ink, marginBottom: 2 }}>Map didn&apos;t load</Text>
+          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 16 }}>
+            Search for an address above, or type your landmark under &ldquo;Add details&rdquo; and we&apos;ll use that.
+          </Text>
         </View>
       ) : null}
     </View>

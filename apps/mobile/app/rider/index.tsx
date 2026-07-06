@@ -106,7 +106,7 @@ export default function RiderHome(): React.ReactElement {
   );
 
   const onlineM = useMutation({
-    mutationFn: (next: boolean) => setOnline(next),
+    mutationFn: (next: boolean) => setOnline(next, loc ?? undefined),
     onSuccess: (res) => {
       setOnlineState(res.online);
       setGate(null);
@@ -391,13 +391,26 @@ export default function RiderHome(): React.ReactElement {
             title={ONLINE_GATE_COPY[gate].title}
             message={ONLINE_GATE_COPY[gate].message}
           >
-            {gate === "cooldown" ? (
+            {/* Recoverable-by-retry states re-DRIVE the online toggle (the server re-checks and either
+                lets them through or re-gates) — cooldown elapses, on-hold recovers, and out-of-area
+                clears once they ride back into the corridor. "Refresh status" alone only refetched
+                ["me"], which never cleared `gate`, so these used to be dead ends. */}
+            {gate === "cooldown" || gate === "out_of_area" || gate === "on_hold" ? (
               <Button label="Try again" onPress={() => onlineM.mutate(true)} loading={onlineM.isPending} />
             ) : null}
             {/* R4: suspended / on hold / banned all say "contact support" — a real `tel:` call row, not
                 a dead mailto button. */}
             {gate === "suspended" || gate === "on_hold" || gate === "banned" ? <SupportCallRow /> : null}
-            <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+            {/* Clear the gate too, so after support lifts a suspension/ban (or KYC verifies) the
+                "Go online" card comes back instead of the rider being pinned on the gate screen. */}
+            <Button
+              label="Refresh status"
+              variant="ghost"
+              onPress={() => {
+                setGate(null);
+                void meQ.refetch();
+              }}
+            />
           </EmptyState>
         ) : (
           <>
