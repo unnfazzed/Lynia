@@ -1,4 +1,5 @@
 import { Logger, ServiceUnavailableException } from "@nestjs/common";
+import { maskPhone } from "../common/phone-mask";
 import type { Env } from "../config/env";
 
 export type OtpChannel = "whatsapp" | "sms" | "console";
@@ -89,20 +90,23 @@ export class SmsOtpSender implements OtpSender {
   channel(): OtpChannel {
     return "sms";
   }
-  async send(phone: string, code: string): Promise<void> {
-    // TODO: call the SMS gateway.
-    this.logger.debug(`SMS OTP → ${phone}: ${code}`);
+  async send(phone: string, _code: string): Promise<void> {
+    // TODO: call the SMS gateway. NEVER log the live code (this is a real delivery channel that can
+    // run in prod) and mask the number — a log is not an out-of-band OTP delivery mechanism.
+    this.logger.debug(`SMS OTP → ${maskPhone(phone)} (code redacted)`);
   }
 }
 
-/** Dev/test channel: logs the code (no provider). Pair with the non-prod devCode in requestOtp. */
+/** Dev/test channel: logs the code so a local developer can complete signup with no provider. The
+ *  production boot-guard rejects OTP_CHANNEL=console (config/env.ts), so this only ever runs in
+ *  dev/test/CI; even so we mask the phone number in the log line. */
 export class ConsoleOtpSender implements OtpSender {
   private readonly logger = new Logger("ConsoleOtpSender");
   channel(): OtpChannel {
     return "console";
   }
   async send(phone: string, code: string): Promise<void> {
-    this.logger.log(`DEV OTP for ${phone}: ${code}`);
+    this.logger.log(`DEV OTP for ${maskPhone(phone)}: ${code}`);
   }
 }
 

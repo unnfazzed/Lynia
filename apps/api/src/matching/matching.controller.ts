@@ -1,6 +1,7 @@
 import { Controller, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { MatchingService, type SelectResult } from "./matching.service";
 
 // Guarded: selection assigns the order and returns the one-time delivery code — only the
@@ -12,6 +13,7 @@ export class MatchingController {
 
   /** Customer selects this offer; assignment is the guarded CAS (ET1/ET2/ET3). */
   @Post("select")
+  @Throttle({ limit: 30, windowSec: 60, keyPrefix: "offer-select" })
   async select(
     @Param("orderId", ParseUUIDPipe) orderId: string,
     @Param("offerId", ParseUUIDPipe) offerId: string,

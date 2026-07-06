@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { Logger } from "@nestjs/common";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
-import { buildWhatsAppOtpRequest, selectOtpSender, WhatsAppOtpSender } from "./otp-sender";
+import {
+  buildWhatsAppOtpRequest,
+  ConsoleOtpSender,
+  selectOtpSender,
+  SmsOtpSender,
+  WhatsAppOtpSender,
+} from "./otp-sender";
 
 const env = (channel: Env["OTP_CHANNEL"]) => ({ OTP_CHANNEL: channel }) as Env;
 
@@ -90,5 +97,29 @@ describe("WhatsAppOtpSender.send", () => {
     await expect(
       withFetch(fetchMock, () => new WhatsAppOtpSender(cfg()).send("+263770000001", "123456")),
     ).rejects.toThrow(/couldn't send/i);
+  });
+});
+
+describe("OTP sender log hygiene (P1-4)", () => {
+  const phone = "+263771234567";
+  const code = "123456";
+  afterEach(() => vi.restoreAllMocks());
+
+  it("ConsoleOtpSender masks the phone number rather than logging it in cleartext", async () => {
+    const spy = vi.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
+    await new ConsoleOtpSender().send(phone, code);
+    const line = spy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(line).not.toContain(phone); // the full number never appears
+    expect(line).toContain("•"); // masked form
+    expect(line).toContain("4567"); // last-4 retained for support correlation
+  });
+
+  it("SmsOtpSender redacts the live code and masks the phone (a real, prod-capable channel)", async () => {
+    const spy = vi.spyOn(Logger.prototype, "debug").mockImplementation(() => undefined);
+    await new SmsOtpSender().send(phone, code);
+    const line = spy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(line).not.toContain(code); // the OTP code must never hit a log on a prod channel
+    expect(line).not.toContain(phone);
+    expect(line).toContain("redacted");
   });
 });

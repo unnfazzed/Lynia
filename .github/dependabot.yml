@@ -1,0 +1,22 @@
+# Automated dependency-update PRs so security patches land promptly (docs/SECURITY.md P1-1).
+version: 2
+updates:
+  # npm / pnpm workspace — grouped to keep PR volume manageable; security updates always come through.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      production-dependencies:
+        dependency-type: production
+
+  # Keep GitHub Actions pinned versions current (also surfaces action security advisories).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday

@@ -10,8 +10,11 @@ resource "google_redis_instance" "main" {
   authorized_network = google_compute_network.vpc.id
   connect_mode       = "PRIVATE_SERVICE_ACCESS"
   auth_enabled       = true
-  project            = local.project_id
-  labels             = var.labels
+  # In-transit TLS. Opt-in (default DISABLED) so this matches the currently deployed instance; enabling
+  # it is a coordinated rollout paired with the rediss:// URL in secrets.tf (see var.redis_tls_enabled).
+  transit_encryption_mode = var.redis_tls_enabled ? "SERVER_AUTHENTICATION" : "DISABLED"
+  project                 = local.project_id
+  labels                  = var.labels
 
   # Reuse the same service-networking peering as Cloud SQL.
   depends_on = [google_service_networking_connection.private_vpc]

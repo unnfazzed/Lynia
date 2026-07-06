@@ -1,5 +1,5 @@
 import { Global, Module } from "@nestjs/common";
-import IORedis from "ioredis";
+import { createRedisClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { AdminGuard } from "./admin.guard";
@@ -23,9 +23,11 @@ import { TokenService } from "./token.service";
       provide: OTP_STORE,
       inject: [ENV],
       useFactory: (env: Env): OtpStore =>
-        env.REDIS_URL ? new RedisOtpStore(new IORedis(env.REDIS_URL)) : new InMemoryOtpStore(),
+        env.REDIS_URL ? new RedisOtpStore(createRedisClient(env.REDIS_URL)) : new InMemoryOtpStore(),
     },
   ],
-  exports: [TokenService, JwtAuthGuard, AdminGuard],
+  // OTP_STORE is exported so the global ThrottleGuard (registered in AppModule) can reuse the same
+  // Redis-backed fixed-window counter this module already provides.
+  exports: [TokenService, JwtAuthGuard, AdminGuard, OTP_STORE],
 })
 export class AuthModule {}

@@ -2,6 +2,8 @@ import "reflect-metadata";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
+import { corsOriginResolver, parseAllowedOrigins } from "./common/cors";
+import { securityHeaders } from "./common/security-headers.middleware";
 import { loadEnv } from "./config/env";
 import { initObservability } from "./observability/otel";
 
@@ -12,6 +14,20 @@ async function bootstrap(): Promise<void> {
 
   // rawBody enables HMAC verification of the Didit KYC webhook against the unparsed body.
   const app = await NestFactory.create(AppModule, { bufferLogs: false, rawBody: true });
+
+  // Security response headers (Helmet-equivalent, dependency-free) on every response.
+  app.use(securityHeaders);
+
+  // Explicit CORS allow-list (replaces the implicit default): native apps send no Origin and are
+  // allowed; browser origins must be listed in CORS_ALLOWED_ORIGINS, else the request is refused.
+  const allowedOrigins = parseAllowedOrigins(env.CORS_ALLOWED_ORIGINS);
+  app.enableCors({
+    origin: corsOriginResolver(allowedOrigins),
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["authorization", "content-type"],
+    maxAge: 600,
+  });
+
   app.enableShutdownHooks();
   await app.listen(env.PORT);
 

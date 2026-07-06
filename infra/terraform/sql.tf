@@ -25,11 +25,13 @@ resource "google_sql_database_instance" "main" {
     user_labels       = var.labels
 
     ip_configuration {
-      # Private IP for in-VPC access (the hardening path). Public IP stays ON so
-      # the GitHub-hosted runner's Cloud SQL Auth Proxy can reach the instance
-      # for `prisma migrate deploy`; the proxy still IAM-auths + encrypts, and no
-      # authorized_networks are opened. ssl_mode rejects any non-proxy plaintext.
-      ipv4_enabled                                  = true
+      # Public IP is gated by var.db_public_ip_enabled (default true = current behavior). It exists
+      # ONLY so the GitHub-hosted runner's Cloud SQL Auth Proxy can reach the instance for
+      # `prisma migrate deploy`. Set db_public_ip_enabled=false to make the instance PRIVATE-ONLY —
+      # then migrations must run in-VPC (the release workflow's DB_PRIVATE_ONLY path runs them as a
+      # Cloud Run job over the same unix socket the runtime service uses). See docs/SECURITY.md P2-1.
+      # No authorized_networks are ever opened, and ssl_mode rejects any non-proxy plaintext.
+      ipv4_enabled                                  = var.db_public_ip_enabled
       private_network                               = google_compute_network.vpc.id
       enable_private_path_for_google_cloud_services = true
       ssl_mode                                      = "ENCRYPTED_ONLY"

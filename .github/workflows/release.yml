@@ -75,7 +75,13 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          for v in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO CLOUD_RUN_SERVICE CLOUD_SQL_INSTANCE VPC_CONNECTOR CLOUD_RUN_SERVICE_ACCOUNT GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT MIGRATE_DATABASE_URL; do
+          required="GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO CLOUD_RUN_SERVICE CLOUD_SQL_INSTANCE VPC_CONNECTOR CLOUD_RUN_SERVICE_ACCOUNT GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT"
+          # MIGRATE_DATABASE_URL (the Auth-Proxy URL) is only needed for the public-IP migration path.
+          # In DB_PRIVATE_ONLY mode migrations run as an in-VPC Cloud Run job over the DATABASE_URL secret.
+          if [ "${{ vars.DB_PRIVATE_ONLY }}" != "true" ]; then
+            required="$required MIGRATE_DATABASE_URL"
+          fi
+          for v in $required; do
             [ -n "${!v:-}" ] || missing+=("$v")
           done
           if [ ${#missing[@]} -gt 0 ]; then
@@ -116,7 +122,10 @@ jobs:
             -t "$IMAGE:${GITHUB_SHA}" -t "$IMAGE:latest" \
             --push .
 
+      # PUBLIC-IP migration path (default): the GitHub runner reaches Cloud SQL over the Auth Proxy.
+      # Requires the instance to have a public IP (var.db_public_ip_enabled = true).
       - name: Apply database migrations (via Cloud SQL Auth Proxy)
+        if: ${{ vars.DB_PRIVATE_ONLY != 'true' }}
         env:
           DATABASE_URL: ${{ secrets.MIGRATE_DATABASE_URL }}
         run: |
@@ -133,6 +142,35 @@ jobs:
           pnpm --filter @lynia/api prisma:generate
           pnpm --filter @lynia/api migrate:deploy
           kill "$PROXY_PID" || true
+
+      # PRIVATE-ONLY migration path: no public IP on Cloud SQL. Migrations run as a Cloud Run JOB inside
+      # the VPC, reaching the instance over the SAME `/cloudsql/<conn>` unix socket the runtime service
+      # uses (the DATABASE_URL secret), so nothing has to traverse the public internet. The job reuses
+      # the freshly-pushed image (which contains the prisma CLI + migrations + engines) and runs as the
+      # runtime SA (already has cloudsql.client + secretAccessor on DATABASE_URL). Deploy is idempotent
+      # create-or-update; execute --wait fails the release if a migration fails. Enable by setting the
+      # DB_PRIVATE_ONLY=true repo variable together with db_public_ip_enabled=false in Terraform.
+      - name: Apply database migrations (in-VPC Cloud Run job)
+        if: ${{ vars.DB_PRIVATE_ONLY == 'true' }}
+        run: |
+          set -euo pipefail
+          gcloud run jobs deploy lynia-migrate \
+            --image "$IMAGE:${GITHUB_SHA}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --service-account "${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}" \
+            --set-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
+            --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
+            --vpc-egress private-ranges-only \
+            --set-secrets "DATABASE_URL=DATABASE_URL:latest" \
+            --max-retries 1 \
+            --task-timeout 600 \
+            --command sh \
+            --args '-c,cd /repo/apps/api && PATH="/repo/apps/api/node_modules/.bin:/repo/node_modules/.bin:$PATH" prisma migrate deploy'
+          gcloud run jobs execute lynia-migrate \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --wait
 
       # --ingress internal-and-cloud-load-balancing: the service is fronted by the
       # external HTTPS ALB (infra/terraform/lb.tf) and the org disables the default

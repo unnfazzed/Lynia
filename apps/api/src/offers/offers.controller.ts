@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@n
 import { MakeOfferRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { OffersService } from "./offers.service";
 
@@ -16,6 +17,7 @@ export class OffersController {
   constructor(private readonly offers: OffersService) {}
 
   @Post()
+  @Throttle({ limit: 60, windowSec: 60, keyPrefix: "offer-make" })
   make(
     @Param("orderId", ParseUUIDPipe) orderId: string,
     @Body(new ZodBody(MakeOfferBody)) body: Omit<MakeOfferRequest, "orderId">,

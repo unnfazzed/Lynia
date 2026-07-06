@@ -92,9 +92,52 @@ variable "bucket_name" {
 }
 
 variable "bucket_cors_origins" {
-  description = "Origins allowed to PUT/GET via V4 signed URLs (admin web + any browser uploader). Native app uploads do not need CORS; tighten this to real origins before launch."
+  description = "Browser origins allowed to PUT/GET via V4 signed URLs. Native app uploads do NOT use CORS, so this defaults to [] (deny all cross-origin browser access). Add a specific admin/web-uploader origin only if you do browser-side uploads — never re-widen to [\"*\"]."
   type        = list(string)
-  default     = ["*"]
+  default     = []
+}
+
+variable "kyc_cmek_enabled" {
+  description = "Encrypt the media bucket (KYC selfies + item photos) with a customer-managed KMS key (CMEK) instead of Google-managed keys, so key custody + rotation is ours. Default false (Google-managed, still encrypted at rest). Enabling creates a KMS keyring/key; applies to NEW objects. See docs/SECURITY.md P3-4."
+  type        = bool
+  default     = false
+}
+
+variable "kyc_retention_days" {
+  description = "If > 0, auto-delete media-bucket objects older than this many days (data-minimization / privacy). 0 = disabled (default) — enable deliberately, mindful that KYC evidence may be needed for disputes/compliance. Objects are archived at this age then purged shortly after (bucket is versioned)."
+  type        = number
+  default     = 0
+}
+
+variable "db_public_ip_enabled" {
+  description = "Cloud SQL public IP. Default true (needed by the GitHub-runner Auth-Proxy migration path). Set false for a PRIVATE-ONLY instance — then run the release workflow with the DB_PRIVATE_ONLY=true repo variable so migrations execute in-VPC as a Cloud Run job. Coordinated rollout; see docs/SECURITY.md P2-1."
+  type        = bool
+  default     = true
+}
+
+variable "redis_tls_enabled" {
+  description = "Enable Memorystore in-transit TLS (transit_encryption_mode=SERVER_AUTHENTICATION) and switch REDIS_URL to rediss://. Default false to match the current deployed instance. Flip to true as a COORDINATED rollout: apply, then verify the app reconnects over TLS (the client honours rediss:// automatically; supply REDIS_CA_CERT if the managed CA isn't trusted). See docs/SECURITY.md P2-1."
+  type        = bool
+  default     = false
+}
+
+# --- Cloud Armor (armor.tf) ---
+variable "armor_rate_limit_count" {
+  description = "Cloud Armor per-IP request budget per interval before edge throttling (429)."
+  type        = number
+  default     = 600
+}
+
+variable "armor_rate_limit_interval_sec" {
+  description = "Cloud Armor rate-limit window, in seconds (paired with armor_rate_limit_count)."
+  type        = number
+  default     = 60
+}
+
+variable "armor_waf_preview" {
+  description = "Run the OWASP WAF rulesets in PREVIEW (log-only) instead of enforcing (deny 403). Default true so a launch can observe false positives against real traffic first; set false to enforce."
+  type        = bool
+  default     = true
 }
 
 # --- Artifact Registry / Cloud Run ---
