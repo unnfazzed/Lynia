@@ -25,7 +25,10 @@ export class OffersController {
   }
 
   @Get()
-  list(@Param("orderId", ParseUUIDPipe) orderId: string) {
-    return this.offers.listForOrder(orderId);
+  list(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @CurrentUser() callerId: string,
+  ) {
+    return this.offers.listForOrder(orderId, callerId);
   }
 }

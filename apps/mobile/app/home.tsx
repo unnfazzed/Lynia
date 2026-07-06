@@ -1,19 +1,18 @@
 import { CreateOrderRequest, quoteFare, tokens } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
 import { ApiError } from "../src/api/client";
 import { acceptDisclaimer, createOrder, type OrderSnapshot } from "../src/api/orders";
 import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/session";
-import { clearDraft, type ComposeItemRow as ItemRow, emptyItem, type FormDraft, loadDraft, MAX_ITEMS, MAX_QTY, saveDraft } from "../src/logic/compose-draft";
 import { isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import { orderKey } from "../src/query/client";
 import type { ResolvedPlace } from "../src/api/places";
 import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Label, Screen, Sub } from "../src/ui";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
-import { AddressSummary, MapHomeTopBar } from "../src/ui/MapHome";
 import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
 
@@ -22,13 +21,119 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// One compose row of "what are you sending?" — mirrors the contract's OrderItem.
+interface ItemRow {
+  description: string;
+  quantity: number;
+}
+const emptyItem = (): ItemRow => ({ description: "", quantity: 1 });
+// Contract caps: ≤10 rows, qty 1–99, description ≤140 (OrderItem).
+const MAX_ITEMS = 10;
+const MAX_QTY = 99;
+
+// The form draft persisted between visits. PII (the two contact phone numbers) is DELIBERATELY
+// excluded — a courier app must not stash a third party's phone in on-device storage. Everything
+// here is the sender's own routing/pricing intent, which is safe to restore.
+interface FormDraft {
+  pickupPoint: PickedPoint | null;
+  pickupLandmark: string;
+  dropPoint: PickedPoint | null;
+  dropLandmark: string;
+  items: ItemRow[];
+  note: string;
+  declaredValue: string;
+  proposedFare: string;
+}
+
 // The liability-disclaimer policy the customer must accept before a first broadcast (A1-8). Bump this
 // string when the disclaimer copy/terms change and the accept-to-continue gate re-shows.
 const DISCLAIMER_POLICY_VERSION = "2026-07-01";
 
+// Reuse the same on-device primitive the auth session uses (expo-secure-store); a single key.
+const DRAFT_KEY = "lynia.orderDraft";
+// All three are best-effort: a SecureStore reject (native read/write failure) must never reject —
+// otherwise a failed read would leave `hydrated` unset and silently disable draft saving for the
+// whole session. A draft is a convenience, never load-bearing.
+async function loadDraft(): Promise<FormDraft | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as FormDraft & { itemDescription?: string };
+    // Pre-line-items drafts stored a single `itemDescription` string — hydrate it as one row.
+    // Rows are re-clamped to the contract caps in case a stale/foreign draft slips through.
+    const rows = Array.isArray(d.items) ? d.items : [{ description: d.itemDescription ?? "", quantity: 1 }];
+    d.items = rows.slice(0, MAX_ITEMS).map((r) => ({
+      description: (typeof r?.description === "string" ? r.description : "").slice(0, 140),
+      quantity: Math.min(MAX_QTY, Math.max(1, Math.round(Number(r?.quantity) || 1))),
+    }));
+    if (d.items.length === 0) d.items = [emptyItem()];
+    return d;
+  } catch {
+    return null;
+  }
+}
+async function saveDraft(draft: FormDraft): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    /* best-effort */
+  }
+}
+async function clearDraft(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(DRAFT_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
+// C5: a re-broadcast from the order screen carries THAT order's route/landmarks/items/price in as
+// route params (`rb…`), so we can prefill the compose form instead of dumping the user on a blank one.
+// Reuses the FormDraft shape the draft-restore path already consumes. Returns null when the params
+// aren't a valid re-broadcast (normal home entry) so we fall back to the stored draft.
+type RebroadcastParams = Partial<Record<
+  "rbPickupLat" | "rbPickupLng" | "rbPickupLandmark" | "rbDropLat" | "rbDropLng" | "rbDropLandmark" | "rbItems" | "rbFare",
+  string | string[]
+>>;
+function first(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+function draftFromParams(p: RebroadcastParams): FormDraft | null {
+  const pLat = Number(first(p.rbPickupLat));
+  const pLng = Number(first(p.rbPickupLng));
+  const dLat = Number(first(p.rbDropLat));
+  const dLng = Number(first(p.rbDropLng));
+  if (![pLat, pLng, dLat, dLng].every(Number.isFinite)) return null;
+  let items: ItemRow[] = [emptyItem()];
+  try {
+    const parsed = JSON.parse(first(p.rbItems) ?? "[]") as ItemRow[];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      items = parsed.slice(0, MAX_ITEMS).map((r) => ({
+        description: (typeof r?.description === "string" ? r.description : "").slice(0, 140),
+        quantity: Math.min(MAX_QTY, Math.max(1, Math.round(Number(r?.quantity) || 1))),
+      }));
+    }
+  } catch {
+    /* malformed items param — fall back to one empty row */
+  }
+  return {
+    pickupPoint: { lat: pLat, lng: pLng },
+    pickupLandmark: first(p.rbPickupLandmark) ?? "",
+    dropPoint: { lat: dLat, lng: dLng },
+    dropLandmark: first(p.rbDropLandmark) ?? "",
+    items,
+    note: "",
+    declaredValue: "",
+    proposedFare: first(p.rbFare) ?? "",
+  };
+}
+
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
+  // C5: re-broadcast params from the order screen (rb…). Read once at mount and prefer them over any
+  // stored draft — the customer explicitly asked to re-send THIS order.
+  const rbParams = useLocalSearchParams<RebroadcastParams>();
 
   const [pickupPoint, setPickupPoint] = useState<PickedPoint | null>(null);
   const [pickupLandmark, setPickupLandmark] = useState("");
@@ -98,7 +203,8 @@ export default function HomeScreen(): React.ReactElement {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const draft = await loadDraft();
+      // A re-broadcast (rb… params) wins over the stored draft; otherwise fall back to the last draft.
+      const draft = draftFromParams(rbParams) ?? (await loadDraft());
       if (cancelled) {
         hydrated.current = true;
         return;
@@ -240,7 +346,12 @@ export default function HomeScreen(): React.ReactElement {
   // Landmarks are contract-required too (Waypoint.landmark min 1). They're normally auto-filled
   // from the reverse geocode, but that can fail offline / keyless — same never-fail-Zod rule.
   const landmarksOk = pickupLandmark.trim().length > 0 && dropLandmark.trim().length > 0;
-  const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk;
+  // C10: declaredValue is optional (defaults to 0) but the contract caps it at 150 — validate inline so
+  // a `500` doesn't leave Broadcast enabled only to bounce off a raw server Zod error on a field that's
+  // collapsed out of view. Empty/blank is fine; a set value must be ≤ 150.
+  const declaredValueNum = parseNum(declaredValue);
+  const declaredValueOk = declaredValueNum === null || declaredValueNum <= 150;
+  const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk && declaredValueOk;
 
   const submit = async (): Promise<void> => {
     setError(null);
@@ -340,20 +451,18 @@ export default function HomeScreen(): React.ReactElement {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView
           style={{ flex: 1 }}
-          // paddingTop clears the absolutely-positioned floating top bar (44px control + a gap) so the
-          // first address row starts just below the brand pill.
-          contentContainerStyle={{ paddingTop: tokens.touchTargetMin + tokens.space.md, paddingBottom: tokens.space.lg }}
+          contentContainerStyle={{ paddingBottom: tokens.space.lg }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* The two stacked address rows (Pickup = green dot, Drop-off = red square) floating over the
-              map — a live summary of the points/landmarks set via the search + map pin below. */}
-          <AddressSummary
-            pickupValue={pickupLandmark.trim() || (pickupPoint ? "Pin set on the map" : "")}
-            pickupSet={pickupPoint != null}
-            dropValue={dropLandmark.trim() || (dropPoint ? "Pin set on the map" : "")}
-            dropSet={dropPoint != null}
-          />
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
+            <Heading>Send a parcel</Heading>
+            <View style={{ flex: 1 }} />
+            <Button label="Alerts" variant="ghost" onPress={() => router.push("/notifications")} />
+            <Button label="Trips" variant="ghost" onPress={() => router.push("/history")} />
+            <Button label="Account" variant="ghost" onPress={() => router.push("/profile")} />
+          </View>
+          <Sub>Drop a pin for pickup and drop-off, name your price, and riders will offer.</Sub>
 
           {draftRestored ? (
             <View
@@ -419,14 +528,20 @@ export default function HomeScreen(): React.ReactElement {
               onPress={toggleDetails}
               accessibilityRole="button"
               accessibilityState={{ expanded: detailsOpen }}
-              accessibilityLabel="Add details (optional)"
+              // C11: landmarks are contract-required and live in here, so this section can't be labeled
+              // "(optional)". Name it for its contents and, when a landmark is still missing (auto-fill
+              // failed offline / keyless), flag that it's required.
+              accessibilityLabel={landmarksOk ? "Landmarks and details" : "Landmarks and details, landmarks required"}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
                 minHeight: tokens.touchTargetMin,
               }}
             >
-              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Add details (optional)</Text>
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>
+                Landmarks &amp; details
+                {!landmarksOk ? <Text style={{ color: tokens.color.danger, fontWeight: "700" }}> — landmarks required</Text> : null}
+              </Text>
               <Icon name={detailsOpen ? "chevron-down" : "chevron-right"} size={16} color={tokens.color.muted} />
             </Pressable>
 
@@ -569,13 +684,6 @@ export default function HomeScreen(): React.ReactElement {
           ) : null}
           <Field label="Your price (USD)" value={proposedFare} onChangeText={setProposedFare} placeholder="2.50" keyboardType="decimal-pad" />
         </BottomSheet>
-
-        {/* Floating top bar over the map hero — brand pill (left), notifications + account (right).
-            Rendered last so it sits above the scrolling content; box-none lets scroll/taps pass
-            through the gaps while the pill and buttons stay tappable. */}
-        <View pointerEvents="box-none" style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
-          <MapHomeTopBar onAccount={() => router.push("/profile")} onNotifications={() => router.push("/notifications")} />
-        </View>
       </KeyboardAvoidingView>
       <DisclaimerSheet visible={showDisclaimer} onAgree={onAgreeAndBroadcast} onBack={() => setShowDisclaimer(false)} />
     </Screen>

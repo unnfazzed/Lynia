@@ -373,7 +373,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   /** Rider rates the sender after delivery (rider-journey 4·7). Recorded-only — unlike the customer's
    *  rate() this does NOT change the order status or any score; it's an optional flag that protects
-   *  other riders (a no-show / cash problem). One rating per order, enforced by the unique order_id. */
+   *  other riders (a no-show / cash problem). It writes the OTHER direction of the two-way `ratings`
+   *  table (byProfileId = the rider), so the (orderId, byProfileId) composite unique (migration 0015)
+   *  lets it coexist with the customer's rating and makes a repeat a conflict, not a duplicate. */
   async rateSender(orderId: string, riderId: string, score: number, comment?: string): Promise<LifecycleResult> {
     const status = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
@@ -387,10 +389,13 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       if (order.status !== "delivered" && order.status !== "completed")
         throw new ConflictException("Order is not awaiting a rating");
 
-      // One rating per order — the unique order_id makes a repeat attempt a conflict, not a duplicate.
-      const existing = await tx.senderRating.findUnique({ where: { orderId }, select: { id: true } });
+      // One rating per rater — the (orderId, byProfileId) composite unique makes a repeat a conflict.
+      const existing = await tx.rating.findUnique({
+        where: { orderId_byProfileId: { orderId, byProfileId: riderId } },
+        select: { id: true },
+      });
       if (existing) throw new ConflictException("Order already rated");
-      await tx.senderRating.create({ data: { orderId, byProfileId: riderId, score, comment: comment ?? null } });
+      await tx.rating.create({ data: { orderId, byProfileId: riderId, score, comment: comment ?? null } });
       return order.status;
     });
 

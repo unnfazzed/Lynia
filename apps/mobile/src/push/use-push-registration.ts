@@ -1,6 +1,8 @@
+import * as Notifications from "expo-notifications";
+import { router } from "expo-router";
 import { useEffect } from "react";
 import type { Session } from "../auth/session";
-import { registerForPushNotificationsAsync, unregisterForPushNotificationsAsync } from "./push";
+import { isRiderSelectedNotification, registerForPushNotificationsAsync, unregisterForPushNotificationsAsync } from "./push";
 
 /**
  * Keep this device's push token in sync with auth: register it once a profile is signed in, and drop
@@ -34,4 +36,16 @@ export function usePushRegistration(session: Session | null): void {
       if (registered) void unregisterForPushNotificationsAsync(registered);
     };
   }, [profileId]);
+
+  // R6: tapping the "You got the job" push (the `assigned` transition) should open the job, not dump the
+  // rider wherever the app happened to be. Independent of the token effect above — the listener lives for
+  // the app's lifetime and is a no-op for any notification that isn't a rider-selected payload.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      if (isRiderSelectedNotification(response.notification.request.content.data)) {
+        router.push("/rider/job");
+      }
+    });
+    return () => sub.remove();
+  }, []);
 }

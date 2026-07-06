@@ -49,15 +49,20 @@ export default function BecomeRiderScreen(): React.ReactElement {
     const asset = result.assets[0];
     if (!asset) return;
     const contentType: ImageContentType = asset.mimeType === "image/png" ? "image/png" : "image/jpeg";
-    setPhotoUri(asset.uri);
-    setPhotoKey(null);
+    // Keep the previously-uploaded photo intact until the retake succeeds — a failed retry must NOT wipe
+    // a good photo (which would drop canSubmit to false). Only commit the new uri/key on success; on
+    // failure roll back to whatever we already had.
+    const prevUri = photoUri;
+    const prevKey = photoKey;
     setUploading(true);
     try {
       const { uploadUrl, key } = await requestKycPhotoUpload(contentType);
       await uploadImage(uploadUrl, asset.uri, contentType);
+      setPhotoUri(asset.uri);
       setPhotoKey(key);
     } catch (e) {
-      setPhotoUri(null);
+      setPhotoUri(prevUri);
+      setPhotoKey(prevKey);
       setError(e instanceof ApiError ? e.message : "Couldn't upload the photo. Check your connection and try again.");
     } finally {
       setUploading(false);

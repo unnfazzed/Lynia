@@ -29,6 +29,12 @@ export function useRiderLocationStream(orderId: string | null): void {
           socket?.emit(WS_EVENTS.riderLocation, { orderId, lat: loc.coords.latitude, lng: loc.coords.longitude });
         },
       );
+      // Unmounted / orderId cleared during the first-fix await — cleanup already ran and won't see this
+      // subscription, so remove it here or it leaks and keeps emitting after teardown.
+      if (cancelled) {
+        sub.remove();
+        return;
+      }
     })();
 
     return () => {

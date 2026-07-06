@@ -5,6 +5,10 @@ import { z } from "zod";
  *  `undefined`, so a bare `.url().optional()` would reject it and crash boot. Coerce "" → undefined. */
 const optionalUrl = z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional());
 
+/** Public repo default for the JWT signing secret — safe for dev/test, must never reach production
+ *  (it signs every access JWT and HMAC-hashes every OTP/refresh token). Boot-guarded below. */
+const DEFAULT_JWT_SECRET = "dev-insecure-secret-change-me-please";
+
 /** Validated environment. Secrets are injected as env at deploy (D7: no managed-identity lock-in). */
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -30,7 +34,7 @@ export const envSchema = z.object({
   // Optional project override. On Cloud Run ADC supplies the project, so this is usually unset.
   FCM_PROJECT_ID: z.string().optional(),
   // --- Auth (lane B) ---
-  JWT_SIGNING_SECRET: z.string().min(16).default("dev-insecure-secret-change-me-please"),
+  JWT_SIGNING_SECRET: z.string().min(16).default(DEFAULT_JWT_SECRET),
   ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
@@ -75,6 +79,17 @@ export const envSchema = z.object({
       path: ["REDIS_URL"],
       message:
         "REDIS_URL is required in production — the in-memory OTP/rate-limit store and Socket.IO adapter are per-instance without it",
+    });
+  }
+  // Boot-guard: the repo-default JWT secret is public — it signs every access JWT (forgeable admin
+  // takeover) and HMAC-hashes every OTP/refresh token. Refuse to boot prod on the default (or an
+  // unset secret) rather than silently fall back to a known key on a config drop.
+  if (env.NODE_ENV === "production" && (!env.JWT_SIGNING_SECRET || env.JWT_SIGNING_SECRET === DEFAULT_JWT_SECRET)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["JWT_SIGNING_SECRET"],
+      message:
+        "JWT_SIGNING_SECRET must be set to a non-default value in production — the repo default is public and signs every access JWT and hashes every OTP/refresh token",
     });
   }
 });

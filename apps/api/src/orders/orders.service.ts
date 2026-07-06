@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -372,7 +372,9 @@ export class OrdersService {
         agreedFare: o.agreedFare ? o.agreedFare.toString() : null,
         status: o.status,
         createdAt: o.createdAt.toISOString(),
-        rating: o.rating ? { score: o.rating.score, comment: o.rating.comment } : null,
+        // `rating` is now a to-many relation (two-way rating support): one rating per order today
+        // (customer→rider), so take the first. Widened by migration 0015's composite unique.
+        rating: o.rating[0] ? { score: o.rating[0].score, comment: o.rating[0].comment } : null,
         counterpartyName,
       };
     });
@@ -423,6 +425,9 @@ export class OrdersService {
 
     const isCustomer = order.customerId === callerId;
     const isRider = order.riderId === callerId;
+    // P2-2: the snapshot carries live rider GPS + pickup/drop-off coordinates + the event timeline, so
+    // only a party on the order may read it — not any authenticated caller holding the order id (IDOR).
+    if (!isCustomer && !isRider) throw new ForbiddenException("Not your order");
     const revealed = REVEAL.has(order.status);
     // Only a party on the order, only during the active window, sees the other side's phone.
     let counterpartyPhone: string | null = null;

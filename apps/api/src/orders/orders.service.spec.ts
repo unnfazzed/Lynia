@@ -379,12 +379,10 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBeNull();
   });
 
-  it("never leaks a phone to a third party", async () => {
-    const snap = await svc(row()).getSnapshot("ord-1", "stranger");
-    expect(snap.counterpartyPhone).toBeNull();
-    // The waypoint reveal is assigned-rider-only — a stranger in-window still gets the redaction.
-    expect(snap.pickup).not.toHaveProperty("contactPhone");
-    expect(snap.dropoff).not.toHaveProperty("contactPhone");
+  it("rejects a third-party caller entirely (P2-2 — no snapshot to a non-party)", async () => {
+    // A caller who is neither the customer nor the assigned rider gets no snapshot at all — the
+    // response carries live rider GPS + waypoint coordinates, so it's party-gated, not just phone-redacted.
+    await expect(svc(row()).getSnapshot("ord-1", "stranger")).rejects.toThrow(/not your order/i);
   });
 
   it("returns expiresAt = createdAt + OFFER_WINDOW_MS while open_for_offers (auction countdown)", async () => {
@@ -540,7 +538,8 @@ describe("OrdersService.historyForUser", () => {
     agreedFare: { toString: () => "2.50" },
     status: "completed",
     createdAt: new Date("2026-06-26T00:00:00Z"),
-    rating: { score: 5, comment: "great" },
+    // Prisma returns a to-many rating relation as an array (migration 0015 widened the unique).
+    rating: [{ score: 5, comment: "great" }],
     customer: { firstName: "Tatenda", lastName: "M" },
     rider: { profile: { firstName: "Rugare", lastName: "C" } },
     ...over,
@@ -572,7 +571,7 @@ describe("OrdersService.historyForUser", () => {
   });
 
   it("tolerates a null agreedFare, missing rating, and an unassigned order", async () => {
-    const rows = await svc([row({ agreedFare: null, rating: null, riderId: null, rider: null })]).historyForUser("cust-1");
+    const rows = await svc([row({ agreedFare: null, rating: [], riderId: null, rider: null })]).historyForUser("cust-1");
     expect(rows[0]!.agreedFare).toBeNull();
     expect(rows[0]!.rating).toBeNull();
     expect(rows[0]!.counterpartyName).toBeNull();

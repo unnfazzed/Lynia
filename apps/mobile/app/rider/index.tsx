@@ -10,6 +10,7 @@ import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { retryKyc, setOnline } from "../../src/api/riders";
+import { SUPPORT_URL } from "../../src/config";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason } from "../../src/logic/gates";
 import { Button, Card, EmptyState, ErrorText, Field, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
@@ -290,6 +291,17 @@ export default function RiderHome(): React.ReactElement {
           <View style={{ marginTop: tokens.space.lg }}>
             <SkeletonList count={2} />
           </View>
+        ) : meQ.isError ? (
+          // getMe failed — knownUnverified is false with no data, so without this branch we'd render the
+          // online dashboard as if verified and let the rider go online into a backend that then refuses.
+          // Show an explicit error/retry instead of optimistically trusting an unknown KYC state.
+          <EmptyState
+            icon="wifi-off"
+            title="Couldn't load your rider status"
+            message="Check your connection and try again."
+          >
+            <Button label="Retry" onPress={() => void meQ.refetch()} loading={meQ.isFetching} />
+          </EmptyState>
         ) : knownUnverified ? (
           !meQ.data?.rider ? (
             // Not a rider yet → the full onboarding form (name, ID, bike, photo).
@@ -314,6 +326,9 @@ export default function RiderHome(): React.ReactElement {
                     : "Your ID check didn't pass and you've reached the retry limit. Contact support to finish verifying."
                 }
               >
+                {/* R4: the lock tells the rider to "contact support" — make that a real, tappable action
+                    instead of dead copy, so they aren't stranded with only a no-op "Refresh status". */}
+                <Button label="Contact support" onPress={() => void Linking.openURL(SUPPORT_URL)} />
                 <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
               </EmptyState>
             ) : (
@@ -368,6 +383,10 @@ export default function RiderHome(): React.ReactElement {
           >
             {gate === "cooldown" ? (
               <Button label="Try again" onPress={() => onlineM.mutate(true)} loading={onlineM.isPending} />
+            ) : null}
+            {/* R4: suspended / on hold / banned all say "contact support" — give them a real action. */}
+            {gate === "suspended" || gate === "on_hold" || gate === "banned" ? (
+              <Button label="Contact support" onPress={() => void Linking.openURL(SUPPORT_URL)} />
             ) : null}
             <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
           </EmptyState>

@@ -1,6 +1,7 @@
 import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 import { AdminService, computeFunnel, fmtUntil } from "./admin.service";
 
 /** Decimal-like stub — Prisma returns Decimal objects whose `.toString()`/`.toFixed()` we serialize. */
@@ -429,6 +430,8 @@ describe("AdminService admin mutations (Item 1 — mutation + audit in ONE $tran
         findUnique: async () => ("order" in over ? over.order : { id: "o1", status: "assigned" }),
         update: async (args: Calls["orderUpdate"]) => { calls.orderUpdate = args; return {}; },
       },
+      offer: { updateMany: async () => ({ count: 0 }) },
+      settlement: { findFirst: async () => null },
       orderEvent: { create: async (args: Calls["orderEvent"]) => { calls.orderEvent = args; return {}; } },
       auditLog: { create: async (args: Calls["audit"]) => { calls.audit = args; return { id: "audit-9" }; } },
     };
@@ -440,7 +443,7 @@ describe("AdminService admin mutations (Item 1 — mutation + audit in ONE $tran
     const { prisma, calls } = makeTx();
     const svc = new AdminService(prisma as unknown as PrismaService);
     const res = await svc.suspendRider("admin-1", "r1", { reason: "safety report", note: "incident #7" });
-    expect(calls.riderUpdate!.data).toEqual({ accountStatus: "suspended", suspendReason: "safety report" });
+    expect(calls.riderUpdate!.data).toEqual({ accountStatus: "suspended", suspendReason: "safety report", isOnline: false });
     // The audit row committed in the SAME transaction as the state change (both non-null here).
     expect(calls.audit!.data).toMatchObject({ actor: "admin-1", action: "rider.suspend", target: "r1", reasonCode: "safety report", note: "incident #7" });
     expect(res).toEqual({ id: "r1", accountStatus: "suspended", auditId: "audit-9" });
@@ -450,7 +453,7 @@ describe("AdminService admin mutations (Item 1 — mutation + audit in ONE $tran
     const { prisma, calls } = makeTx();
     const svc = new AdminService(prisma as unknown as PrismaService);
     await svc.banRider("admin-1", "r1", { reason: "fraud" });
-    expect(calls.riderUpdate!.data).toEqual({ accountStatus: "banned", suspendReason: "fraud" });
+    expect(calls.riderUpdate!.data).toEqual({ accountStatus: "banned", suspendReason: "fraud", isOnline: false });
     expect(calls.audit!.data).toMatchObject({ action: "rider.ban", reasonCode: "fraud", note: null });
   });
 
@@ -492,6 +495,25 @@ describe("AdminService admin mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.orderEvent!.data).toEqual({ orderId: "o1", status: "cancelled" });
     expect(calls.audit!.data).toMatchObject({ action: "order.cancel", target: "o1", reasonCode: "duplicate order" });
     expect(res).toMatchObject({ id: "o1", status: "cancelled", auditId: "audit-9" });
+  });
+
+  it("cancelOrder pushes job:cancelled to an assigned rider post-commit (P2-3), with the collected flag", async () => {
+    const { prisma } = makeTx({ order: { id: "o1", status: "picked_up", riderId: "r1", collectedAt: new Date() } });
+    const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn() };
+    const svc = new AdminService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway);
+    await svc.cancelOrder("admin-1", "o1", { reason: "duplicate order" });
+    expect(gateway.emitOrderStatus).toHaveBeenCalledWith("o1", "cancelled");
+    // Post-pickup (collectedAt set) → collected=true drives the rider's hand-back path.
+    expect(gateway.emitJobCancelled).toHaveBeenCalledWith("o1", true);
+  });
+
+  it("cancelOrder does NOT push job:cancelled when no rider is assigned", async () => {
+    const { prisma } = makeTx({ order: { id: "o1", status: "open_for_offers", riderId: null, collectedAt: null } });
+    const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn() };
+    const svc = new AdminService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway);
+    await svc.cancelOrder("admin-1", "o1", { reason: "spam" });
+    expect(gateway.emitOrderStatus).toHaveBeenCalledWith("o1", "cancelled");
+    expect(gateway.emitJobCancelled).not.toHaveBeenCalled();
   });
 
   it("cancelOrder rejects an order already in a terminal state (nothing written)", async () => {

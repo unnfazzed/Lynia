@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Headers, Ip, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Ip, Patch, Post, UseGuards } from "@nestjs/common";
+import { UpdateProfileRequest } from "@lynia/shared";
 import { z } from "zod";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
@@ -31,13 +32,25 @@ export class AuthController {
 
   @Post("logout")
   @UseGuards(JwtAuthGuard)
-  logout(@Body(new ZodBody(Logout)) body: z.infer<typeof Logout>) {
-    return this.auth.logout(body.sessionId);
+  logout(@Body(new ZodBody(Logout)) body: z.infer<typeof Logout>, @CurrentUser() profileId: string) {
+    return this.auth.logout(body.sessionId, profileId);
   }
 
   @Get("me")
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() profileId: string) {
     return this.auth.getProfile(profileId);
+  }
+
+  // Post-OTP profile setup: a freshly-verified account has an empty name (verifyOtp seeds firstName "")
+  // and gets routed to "Tell us who you are". This is the only way it sets that name — scoped to the
+  // caller's own profile (JwtAuthGuard + @CurrentUser), and it can touch nothing but firstName/lastName.
+  @Patch("me")
+  @UseGuards(JwtAuthGuard)
+  updateProfile(
+    @Body(new ZodBody(UpdateProfileRequest)) body: UpdateProfileRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.auth.updateProfile(profileId, body);
   }
 }

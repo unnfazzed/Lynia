@@ -177,27 +177,45 @@ describe("SettlementsService.autoPauseOverdue (overdue → suspend rider)", () =
 describe("SettlementsService.recordPayment", () => {
   it("sets status=paid, paidAt and the method", async () => {
     let updateArgs: { where: unknown; data: Record<string, unknown> } | null = null;
+    let auditCreated = false;
     const paidAt = new Date("2026-07-03T10:00:00Z");
-    const prisma = {
+    const prisma: Record<string, unknown> = {
       settlement: {
-        findUnique: async () => ({ id: "s1" }),
+        findUnique: async () => ({ id: "s1", status: "pending" }),
         update: async (args: typeof updateArgs) => {
           updateArgs = args;
           return { id: "s1", status: "paid", paidAt, method: "EcoCash" };
         },
       },
+      auditLog: {
+        create: async () => {
+          auditCreated = true;
+        },
+      },
     };
+    prisma.$transaction = async (fn: (t: typeof prisma) => Promise<unknown>) => fn(prisma);
     const svc = new SettlementsService(prisma as unknown as PrismaService);
-    const res = await svc.recordPayment("s1", "EcoCash");
+    const res = await svc.recordPayment("s1", "EcoCash", "admin-1");
     expect(updateArgs!.data).toMatchObject({ status: "paid", method: "EcoCash" });
     expect(updateArgs!.data.paidAt).toBeInstanceOf(Date);
+    expect(auditCreated).toBe(true);
     expect(res).toEqual({ id: "s1", status: "paid", paidAt: paidAt.toISOString(), method: "EcoCash" });
   });
 
   it("404s when the settlement is missing", async () => {
-    const prisma = { settlement: { findUnique: async () => null } };
+    const prisma: Record<string, unknown> = { settlement: { findUnique: async () => null } };
+    prisma.$transaction = async (fn: (t: typeof prisma) => Promise<unknown>) => fn(prisma);
     const svc = new SettlementsService(prisma as unknown as PrismaService);
-    await expect(svc.recordPayment("nope", "netted")).rejects.toThrow("Settlement not found");
+    await expect(svc.recordPayment("nope", "netted", "admin-1")).rejects.toThrow("Settlement not found");
+  });
+
+  it("rejects re-paying an already-paid settlement", async () => {
+    const prisma: Record<string, unknown> = {
+      settlement: { findUnique: async () => ({ id: "s1", status: "paid" }) },
+    };
+    prisma.$transaction = async (fn: (t: typeof prisma) => Promise<unknown>) => fn(prisma);
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
+    await expect(svc.recordPayment("s1", "EcoCash", "admin-1")).rejects.toThrow(/already paid/i);
   });
 });
 

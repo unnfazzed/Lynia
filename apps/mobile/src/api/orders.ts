@@ -5,7 +5,6 @@ import type {
   ConfirmItemsRequest,
   CreateOrderRequest,
   LatLng,
-  MarkUndeliveredRequest,
   OrderStatus,
   RateRequest,
   RateSenderRequest,
@@ -129,15 +128,12 @@ export function confirmDelivery(orderId: string, code: string): Promise<{ orderI
 }
 
 /**
- * Rider marks a hand-off as failed → terminal `undelivered` (rider-journey 4·b2 / C6). Post-pickup
- * only (server-enforced): once the parcel is on the bike, the exits are deliver or this — never a
- * cancel. The reason is shown verbatim on the customer's terminal screen.
+ * Rider marks a post-pickup hand-off as failed → terminal `undelivered` (R1 / INTERFACE-AUDIT C6).
+ * POSTs the reason enum; the server stamps it on the order + frees the rider for the next job, exactly
+ * like a clean delivery. Allowed only on `picked_up` / `en_route_dropoff` — a closed order answers 409.
  */
-export function markUndelivered(
-  orderId: string,
-  body: MarkUndeliveredRequest,
-): Promise<{ orderId: string; status: "undelivered" }> {
-  return apiFetch(`/orders/${orderId}/undelivered`, { method: "POST", body });
+export function markUndelivered(orderId: string, reason: UndeliveredReason): Promise<{ orderId: string; status: "undelivered" }> {
+  return apiFetch(`/orders/${orderId}/undelivered`, { method: "POST", body: { reason } });
 }
 
 export function rateOrder(orderId: string, body: RateRequest): Promise<{ orderId: string; status: "completed" }> {

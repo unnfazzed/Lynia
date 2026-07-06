@@ -102,12 +102,21 @@ describe("TrackingGateway.boardSubscribe", () => {
 });
 
 describe("TrackingGateway.boardLeave", () => {
-  it("leaves the board room", async () => {
+  it("leaves the board room AND every geo-cell room, but not the order room", async () => {
     const g = gateway();
-    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    const client = fakeSocket({ sub: "rider-1", role: "rider" }, [
+      BOARD_ROOM,
+      "board:geo:1:2",
+      "board:geo:1:3",
+      orderRoom("ord-1"),
+    ]);
     const res = await g.boardLeave(client as never);
     expect(res).toEqual({ left: "board" });
     expect(client.leave).toHaveBeenCalledWith(BOARD_ROOM);
+    expect(client.leave).toHaveBeenCalledWith("board:geo:1:2");
+    expect(client.leave).toHaveBeenCalledWith("board:geo:1:3");
+    // The order room is a different concern (customer tracking) — boardLeave must not touch it.
+    expect(client.leave).not.toHaveBeenCalledWith(orderRoom("ord-1"));
   });
 });
 

@@ -1,4 +1,4 @@
-import { ACTIVE_RIDE_STATUSES, type AdvanceStatusRequest, type MarkUndeliveredRequest, RIDER_CANCELLABLE_STATUSES, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type AdvanceStatusRequest, RIDER_CANCELLABLE_STATUSES, UndeliveredReason, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -9,22 +9,14 @@ import { mapsDirectionsUrl } from "../../src/logic/maps";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Label, OfflineBanner, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, OfflineBanner, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
-// A rider may cancel ONLY pre-pickup (assigned…en_route_pickup); once the parcel is collected the
-// exits are deliver or mark-undelivered, never a cancel — same set the server enforces (4·b3).
-const RIDER_CANCELLABLE = new Set<string>(RIDER_CANCELLABLE_STATUSES);
-// A hand-off can only fail after the parcel is on the bike (4·b2). Reason chips per the mockup.
-const CAN_MARK_UNDELIVERED = new Set<string>(["picked_up", "en_route_dropoff"]);
-const UNDELIVERED_REASONS: { key: MarkUndeliveredRequest["reason"]; icon: IconName; label: string }[] = [
-  { key: "unreachable", icon: "circle-alert", label: "Recipient unreachable" },
-  { key: "refused", icon: "circle-alert", label: "Recipient refused" },
-  { key: "wrong_address", icon: "map-pin", label: "Wrong address" },
-  { key: "breakdown", icon: "bike", label: "Couldn't complete (breakdown)" },
-];
+// R2: the rider may only cancel pre-pickup — the server rejects a cancel once the parcel is collected,
+// so the button must hide there (post-pickup, "Can't complete delivery" is the exit, not Cancel).
+const RIDER_CANCELLABLE = RIDER_CANCELLABLE_STATUSES as string[];
 const NEXT: Record<string, { to: AdvanceStatusRequest["to"]; label: string }> = {
   assigned: { to: "confirmed", label: "Confirm the job" },
   confirmed: { to: "en_route_pickup", label: "Head to pickup" },
@@ -32,27 +24,34 @@ const NEXT: Record<string, { to: AdvanceStatusRequest["to"]; label: string }> = 
   picked_up: { to: "en_route_dropoff", label: "Head to drop-off" },
 };
 
+// Delivery-OTP cap (R9). Mirrors the server's DELIVERY_OTP_MAX_ATTEMPTS: the server enforces the lock;
+// the client counts wrong tries to show attempts-remaining and disable the field at the cap.
+const DELIVERY_OTP_MAX_ATTEMPTS = 5;
+
+// The post-pickup "can't complete delivery" reasons (R1) — the shared UndeliveredReason enum paired
+// with rider-facing copy + an icon, mirroring the "Couldn't deliver" mockup (rider-screens.jsx).
+const UNDELIVERED_OPTIONS: { reason: UndeliveredReason; label: string; icon: IconName }[] = [
+  { reason: UndeliveredReason.UNREACHABLE, label: "Recipient unreachable", icon: "phone" },
+  { reason: UndeliveredReason.REFUSED, label: "Recipient refused", icon: "circle-alert" },
+  { reason: UndeliveredReason.WRONG_ADDRESS, label: "Wrong address", icon: "map-pin" },
+  { reason: UndeliveredReason.BREAKDOWN, label: "Couldn't complete (breakdown)", icon: "bike" },
+];
+const UNDELIVERED_LABEL = Object.fromEntries(UNDELIVERED_OPTIONS.map((o) => [o.reason, o.label])) as Record<UndeliveredReason, string>;
+
 export default function RiderJob(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
-  // 4·b2: the "can't deliver" reason picker is a gated sheet — opening it names the mockup's four
-  // reasons; confirming marks the parcel undeliverable (terminal, own-risk hand-back).
-  const [undeliverOpen, setUndeliverOpen] = useState(false);
-  const [undeliverReason, setUndeliverReason] = useState<MarkUndeliveredRequest["reason"]>("unreachable");
-  // Wrong-code attempts-left (4·b1): the server's 401 message carries the remaining count; show it
-  // inline on the code field rather than as a generic red error.
-  const [codeError, setCodeError] = useState<string | null>(null);
-  // Rider-bail confirm (4·b3): pre-pickup cancel opens a confirm card with an optional reason and a
-  // reliability-score warning, rather than firing on one tap (the strike + cooldown are real).
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState("");
   // Pickup item verification: which line-items the rider has ticked as physically collected. Indexes
   // into order.items; defaults to all ticked when the rider reaches the pickup-verification step.
   const [checkedItems, setCheckedItems] = useState<Set<number>>(() => new Set());
-  // Rate-the-sender (4·7): an OPTIONAL post-delivery star. Simple tap-then-submit (no undo window) —
-  // it's recorded-only and doesn't gate anything, so there's nothing to race back.
+  // R1: the post-pickup "can't complete delivery" reason picker + the frozen terminal once it commits.
+  const [undelivering, setUndelivering] = useState(false);
+  const [undeliveredDone, setUndeliveredDone] = useState<UndeliveredReason | null>(null);
+  // R9: count wrong delivery-code tries to show attempts-remaining and lock the field at the cap.
+  const [otpTries, setOtpTries] = useState(0);
+  // Rate-the-sender (4·7): an OPTIONAL post-delivery star, recorded-only — tap-then-submit, no undo.
   const [senderScore, setSenderScore] = useState(0);
 
   const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 6000 });
@@ -115,44 +114,49 @@ export default function RiderJob(): React.ReactElement {
     mutationFn: () => confirmDelivery(orderId!, code.trim()),
     onSuccess: () => {
       setCode("");
-      setCodeError(null);
+      setOtpTries(0);
       refresh();
     },
     onError: (e) => {
-      // 403 = the 5-attempt lockout; the customer must re-issue the code. 401 = wrong code — the
-      // server's message carries "N attempts left" (4·b1), shown inline on the field, not as a
-      // page-level red error.
+      // 403 = the 5-attempt lockout; the customer must re-issue the code. 401 = a wrong code — count it
+      // so the rider sees how many tries remain and the field locks at the cap instead of hammering a
+      // dead endpoint. Anything else is an unexpected failure.
       if (e instanceof ApiError && e.status === 403) {
-        setCodeError("Too many attempts — ask the customer to re-issue the delivery code.");
+        setOtpTries(DELIVERY_OTP_MAX_ATTEMPTS);
+        setError("Too many attempts — ask the customer to re-issue the delivery code.");
       } else if (e instanceof ApiError && e.status === 401) {
-        setCodeError(e.message);
+        setOtpTries((n) => n + 1);
+        setError(null);
       } else {
         fail(e);
       }
       refresh();
     },
   });
-  const cancelM = useMutation({
-    mutationFn: () => cancelOrder(orderId!, cancelReason.trim() ? { reason: cancelReason.trim() } : {}),
-    onSuccess: () => {
-      setCancelOpen(false);
-      setCancelReason("");
-      refresh();
-    },
-    onError: fail,
-  });
-  const undeliverM = useMutation({
-    mutationFn: () => markUndelivered(orderId!, { reason: undeliverReason }),
-    onSuccess: () => {
-      setUndeliverOpen(false);
-      refresh();
-    },
-    onError: fail,
-  });
+  const cancelM = useMutation({ mutationFn: () => cancelOrder(orderId!), onSuccess: refresh, onError: fail });
+  // 4·7: optional, recorded-only rate-the-sender. Doesn't change status or gate anything.
   const senderRateM = useMutation({
-    mutationFn: (value: number) => rateSender(orderId!, { score: value }),
+    mutationFn: (score: number) => rateSender(orderId!, { score }),
     onError: fail,
   });
+  // R1: record a failed hand-off. On success we freeze a terminal (the order leaves the active feed).
+  const undeliverM = useMutation({
+    mutationFn: (reason: UndeliveredReason) => markUndelivered(orderId!, reason),
+    onSuccess: (_res, reason) => {
+      setUndelivering(false);
+      setUndeliveredDone(reason);
+    },
+    onError: (e) => {
+      setUndelivering(false);
+      fail(e);
+      refresh();
+    },
+  });
+  // Reset the per-order UI counters whenever the active job changes.
+  useEffect(() => {
+    setOtpTries(0);
+    setUndelivering(false);
+  }, [orderId]);
 
   // Default every item ticked when the rider enters the pickup-verification step — they untick only
   // what's missing. Keyed on primitives so a 6s poll (new object identity, same data) doesn't reset
@@ -230,6 +234,31 @@ export default function RiderJob(): React.ReactElement {
     );
   }
 
+  // Terminal: the rider recorded a failed hand-off (R1). Frozen locally — an `undelivered` order leaves
+  // the active-job feed, so a refetch would drop to "No active job" with no acknowledgement.
+  if (undeliveredDone) {
+    return (
+      <Screen>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
+            <Heading>Your job</Heading>
+            <View style={{ flex: 1 }} />
+            <StatusPill status="undelivered" tone="offline" dot />
+          </View>
+          <Card>
+            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.sm }}>
+              Marked as not delivered
+            </Text>
+            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
+              Recorded as &ldquo;{UNDELIVERED_LABEL[undeliveredDone]}&rdquo;. The customer has been told. You&apos;re free for the next job.
+            </Text>
+          </Card>
+          <Button label="Back to board" onPress={() => router.replace("/rider")} />
+        </ScrollView>
+      </Screen>
+    );
+  }
+
   if (jobQ.isLoading) {
     return (
       <Screen>
@@ -249,6 +278,9 @@ export default function RiderJob(): React.ReactElement {
 
   const next = NEXT[order.status];
   const isActive = ACTIVE.includes(order.status);
+  const otpLocked = otpTries >= DELIVERY_OTP_MAX_ATTEMPTS;
+  const attemptsLeft = Math.max(0, DELIVERY_OTP_MAX_ATTEMPTS - otpTries);
+  const canUndeliver = order.status === "picked_up" || order.status === "en_route_dropoff";
   // Total quantity across the ticked items — the collect CTA counts pieces, not rows ("Confirm 3
   // items collected" for a 1× + 2× selection).
   const collectedCount = collectedItemCount(items, checkedItems);
@@ -257,19 +289,21 @@ export default function RiderJob(): React.ReactElement {
       ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
       : null;
 
+  const jobReconnecting = isActive && wasJobConnected.current && !jobSocketConnected;
+
   return (
     <Screen>
       {/* 4·b4: socket dropped mid-job — a muted "live paused" banner, never a red alarm. The job is
           saved locally and syncs on reconnect; the rider keeps riding. */}
-      {isActive && wasJobConnected.current && !jobSocketConnected ? <OfflineBanner state="reconnecting" /> : null}
+      {jobReconnecting ? <OfflineBanner state="reconnecting" /> : null}
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Your job</Heading>
           <View style={{ flex: 1 }} />
-          <StatusPill status={order.status} tone={isActive && !jobSocketConnected && wasJobConnected.current ? "reconnecting" : undefined} />
+          <StatusPill status={order.status} tone={jobReconnecting ? "reconnecting" : undefined} />
         </View>
 
-        {isActive && wasJobConnected.current && !jobSocketConnected ? (
+        {jobReconnecting ? (
           <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
             <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
               Live paused — reconnecting. Your job is saved; keep riding and it&apos;ll sync when you&apos;re back on.
@@ -442,40 +476,84 @@ export default function RiderJob(): React.ReactElement {
         ) : null}
 
         {order.status === "en_route_dropoff" ? (
-          <Card style={codeError ? { borderColor: tokens.color.danger } : undefined}>
+          <Card>
             <Text style={{ fontWeight: "700", marginBottom: tokens.space.sm }}>Confirm hand-off</Text>
             <Sub>Ask the recipient for the 6-digit delivery code.</Sub>
-            <Field
-              label="Delivery code"
-              value={code}
-              onChangeText={(t) => {
-                setCode(t);
-                if (codeError) setCodeError(null);
-              }}
-              keyboardType="number-pad"
-              maxLength={6}
+            <Field label="Delivery code" value={code} onChangeText={setCode} keyboardType="number-pad" maxLength={6} />
+            {/* R9: show how many tries remain, and once locked stop inviting more taps into a dead endpoint. */}
+            {otpLocked ? (
+              <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.danger, marginTop: 4, lineHeight: 18 }}>
+                Too many attempts. Ask the customer to re-issue the code, then enter the new one.
+              </Text>
+            ) : otpTries > 0 ? (
+              <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, marginTop: 4 }}>
+                That code didn&apos;t match — {attemptsLeft} attempt{attemptsLeft === 1 ? "" : "s"} left.
+              </Text>
+            ) : null}
+            <Button
+              label="Confirm delivery"
+              onPress={() => deliverM.mutate()}
+              loading={deliverM.isPending}
+              disabled={otpLocked || code.trim().length !== 6}
             />
-            {codeError ? <ErrorText message={codeError} /> : null}
-            <Button label="Confirm delivery" onPress={() => deliverM.mutate()} loading={deliverM.isPending} disabled={code.trim().length !== 6} />
           </Card>
         ) : null}
 
-        {order.status === "delivered" ? (
-          <Card>
-            <Text style={{ fontWeight: "700", color: tokens.color.accentText }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
-          </Card>
+        {/* R1: post-pickup, the rider needs a way to record a hand-off that can't happen — otherwise a
+            refused / unreachable / wrong-address / breakdown job is a dead end. Opens a reason picker
+            that commits the terminal `undelivered` state and frees the rider for the next job. */}
+        {canUndeliver ? (
+          undelivering ? (
+            <Card style={{ borderColor: tokens.color.line }}>
+              <Text style={{ fontWeight: "700", marginBottom: 2 }}>Can&apos;t complete this delivery?</Text>
+              <Sub>Pick the reason — this ends the job, so only use it if the hand-off truly can&apos;t happen.</Sub>
+              <View style={{ gap: tokens.space.sm, marginTop: tokens.space.sm }}>
+                {UNDELIVERED_OPTIONS.map((o) => (
+                  <Pressable
+                    key={o.reason}
+                    onPress={() => undeliverM.mutate(o.reason)}
+                    disabled={undeliverM.isPending}
+                    accessibilityRole="button"
+                    accessibilityLabel={o.label}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: tokens.space.md,
+                      minHeight: tokens.touchTargetMin,
+                      paddingHorizontal: tokens.space.md,
+                      paddingVertical: tokens.space.sm,
+                      borderRadius: tokens.radius.input,
+                      borderWidth: 1,
+                      borderColor: tokens.color.line,
+                      backgroundColor: tokens.color.surface,
+                      opacity: undeliverM.isPending ? 0.6 : 1,
+                    }}
+                  >
+                    <Icon name={o.icon} size={16} color={tokens.color.muted} />
+                    <Text style={{ flex: 1, fontSize: tokens.font.size.body, color: tokens.color.ink }}>{o.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Button label="Never mind" variant="ghost" onPress={() => setUndelivering(false)} disabled={undeliverM.isPending} />
+            </Card>
+          ) : (
+            <Button label="Can't complete delivery" variant="ghost" onPress={() => setUndelivering(true)} />
+          )
         ) : null}
 
-        {/* Rate the sender (4·7) — OPTIONAL, recorded-only. A star arms the submit immediately; once
-            saved we swap to a thank-you so the rider can't double-rate the same drop. */}
         {order.status === "delivered" ? (
-          <Card>
-            {senderRateM.isSuccess ? (
-              <Text style={{ fontSize: 14, color: tokens.color.muted }}>Thanks for the feedback.</Text>
-            ) : (
-              <>
-                <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: 2 }}>Rate the sender</Text>
-                <Sub>Optional — a no-show or cash problem here protects other riders.</Sub>
+          <>
+            <Card>
+              <Text style={{ fontWeight: "700", color: tokens.color.accentText }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
+            </Card>
+            {/* Rate the sender (4·7) — OPTIONAL, recorded-only ("a no-show or cash problem here
+                protects other riders"). Tap a star to submit; swaps to a thank-you on success. */}
+            <Card>
+              <Text style={{ fontWeight: "700", marginBottom: 2 }}>Rate the sender</Text>
+              <Sub>Optional — a no-show or cash problem here protects other riders.</Sub>
+              {senderRateM.isSuccess ? (
+                <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600" }}>Thanks for the feedback.</Text>
+              ) : (
                 <View style={{ flexDirection: "row", gap: 4 }}>
                   {[1, 2, 3, 4, 5].map((n) => (
                     <Pressable
@@ -488,87 +566,24 @@ export default function RiderJob(): React.ReactElement {
                       accessibilityRole="button"
                       accessibilityLabel={`Rate the sender ${n} star${n === 1 ? "" : "s"}`}
                       accessibilityState={{ selected: n <= senderScore }}
-                      hitSlop={12}
+                      hitSlop={8}
                       style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
                     >
-                      <Text style={{ fontSize: 28, color: n <= senderScore ? tokens.color.highlight : tokens.color.line }}>★</Text>
+                      <Text style={{ fontSize: 30, color: n <= senderScore ? tokens.color.highlight : tokens.color.line }}>★</Text>
                     </Pressable>
                   ))}
                 </View>
-                {senderRateM.isPending ? <Text style={{ fontSize: 14, color: tokens.color.muted }}>Saving your feedback…</Text> : null}
-              </>
-            )}
-          </Card>
+              )}
+            </Card>
+          </>
         ) : null}
 
         {/* SOS on a live run (R-16/F-13) — a deliberate danger control, highest value at the cash
             hand-off. Passes the rider's own live GPS when available. */}
         {isActive ? <SosControl orderId={order.id} lat={riderPoint?.lat} lng={riderPoint?.lng} /> : null}
 
-        {/* Cancel is pre-pickup ONLY (4·b3) — the server rejects it once the parcel is collected, so
-            the affordance must disappear then rather than offer a tap that 409s. A confirm card with
-            an optional reason + the reliability-score warning, never a one-tap bail. */}
-        {RIDER_CANCELLABLE.has(order.status) ? (
-          cancelOpen ? (
-            <Card style={{ borderColor: tokens.color.danger }}>
-              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: 2 }}>Cancel this job?</Text>
-              <Sub>The customer&apos;s order is re-broadcast at the same price so another rider can take it. You can only cancel before pickup.</Sub>
-              <Field label="Reason (optional)" value={cancelReason} onChangeText={setCancelReason} placeholder="Bike trouble" maxLength={280} />
-              <View style={{ flexDirection: "row", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.highlightWash, borderWidth: 1, borderColor: tokens.color.highlightBorder, marginBottom: tokens.space.sm }}>
-                <Icon name="triangle-alert" size={16} color={tokens.color.highlightInk} />
-                <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.highlightInk, lineHeight: 18 }}>
-                  Cancelling an accepted job affects your reliability score. Too many cancels can pause your account.
-                </Text>
-              </View>
-              <Button label="Confirm cancellation" onPress={() => cancelM.mutate()} loading={cancelM.isPending} />
-              <Button label="Keep job" variant="ghost" onPress={() => { setCancelOpen(false); setCancelReason(""); }} />
-            </Card>
-          ) : (
-            <Button label="Cancel job" variant="ghost" onPress={() => setCancelOpen(true)} />
-          )
-        ) : null}
-
-        {/* Post-pickup the only failure exit is "can't deliver" → terminal undelivered (4·b2). The
-            reason picker is a gated sheet so it can't fire on a stray tap. */}
-        {CAN_MARK_UNDELIVERED.has(order.status) ? (
-          undeliverOpen ? (
-            <Card style={{ borderColor: tokens.color.danger }}>
-              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: 2 }}>Can&apos;t deliver this parcel?</Text>
-              <Sub>Pick the reason — it&apos;s shown to the customer. The parcel stays with you; arrange the hand-back directly, settled off-platform.</Sub>
-              <Label>Reason</Label>
-              <View style={{ gap: tokens.space.sm }}>
-                {UNDELIVERED_REASONS.map((r) => {
-                  const on = undeliverReason === r.key;
-                  return (
-                    <Pressable
-                      key={r.key}
-                      onPress={() => setUndeliverReason(r.key)}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected: on }}
-                      accessibilityLabel={r.label}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: tokens.space.sm,
-                        minHeight: tokens.touchTargetMin,
-                        paddingHorizontal: tokens.space.md,
-                        borderRadius: tokens.radius.input,
-                        backgroundColor: on ? tokens.color.accentWash : tokens.color.surface,
-                      }}
-                    >
-                      <Icon name={on ? "check" : r.icon} size={16} color={on ? tokens.color.accentText : tokens.color.muted} />
-                      <Text style={{ flex: 1, fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: on ? tokens.color.accentText : tokens.color.ink }}>{r.label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-              <View style={{ height: tokens.space.sm }} />
-              <Button label="Mark undeliverable" onPress={() => undeliverM.mutate()} loading={undeliverM.isPending} />
-              <Button label="Keep trying" variant="ghost" onPress={() => setUndeliverOpen(false)} />
-            </Card>
-          ) : (
-            <Button label="Can't deliver?" variant="ghost" onPress={() => setUndeliverOpen(true)} />
-          )
+        {RIDER_CANCELLABLE.includes(order.status) ? (
+          <Button label="Cancel job" variant="ghost" onPress={() => cancelM.mutate()} loading={cancelM.isPending} />
         ) : null}
 
         {/* Order-level support (active) + report/block after the trip (rider → sender). */}

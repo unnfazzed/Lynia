@@ -25,7 +25,7 @@ export class TokenService {
   }
 
   verifyAccess(token: string): AccessClaims {
-    const payload = jwt.verify(token, this.secret);
+    const payload = jwt.verify(token, this.secret, { algorithms: ["HS256"] });
     if (typeof payload === "string" || typeof payload.sub !== "string" || typeof payload.role !== "string") {
       throw new Error("Malformed access token claims");
     }

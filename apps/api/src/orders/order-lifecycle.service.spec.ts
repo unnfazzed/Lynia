@@ -194,7 +194,7 @@ describe("OrderLifecycleService.rateSender", () => {
   it("409s when the sender was already rated", async () => {
     const { svc } = build({
       order: { findUnique: async () => ({ status: "delivered", riderId: "r1" }) },
-      senderRating: { findUnique: async () => ({ id: "sr1" }) },
+      rating: { findUnique: async () => ({ id: "sr1" }) },
     });
     await expect(svc.rateSender("o1", "r1", 5)).rejects.toThrow(/already rated/i);
   });
@@ -203,7 +203,7 @@ describe("OrderLifecycleService.rateSender", () => {
     let created: Record<string, unknown> | undefined;
     const { svc, emits } = build({
       order: { findUnique: async () => ({ status: "delivered", riderId: "r1" }) },
-      senderRating: {
+      rating: {
         findUnique: async () => null,
         create: async (args: { data: Record<string, unknown> }) => { created = args.data; return {}; },
       },
@@ -217,7 +217,7 @@ describe("OrderLifecycleService.rateSender", () => {
   it("still records after the customer's rate() closed the order to completed", async () => {
     const { svc } = build({
       order: { findUnique: async () => ({ status: "completed", riderId: "r1" }) },
-      senderRating: { findUnique: async () => null, create: async () => ({}) },
+      rating: { findUnique: async () => null, create: async () => ({}) },
     });
     expect(await svc.rateSender("o1", "r1", 5)).toEqual({ orderId: "o1", status: "completed" });
   });

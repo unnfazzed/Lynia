@@ -5,6 +5,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { blockedPairWhere } from "../reports/blocks";
+import { onlineRefusalReason } from "../riders/rider.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 
 /** Rider must have a heartbeat newer than this to be selectable (ET3 liveness). */
@@ -50,8 +51,19 @@ export class MatchingService {
             status: true,
             riderId: true,
             offeredFare: true,
+            // `pickup` (HEAD) feeds the post-commit order:taken board emit; the expanded rider
+            // account-standing fields (origin/main) gate a banned/suspended/held rider at select time.
             order: { select: { status: true, customerId: true, pickup: true } },
-            rider: { select: { isOnline: true, lastHeartbeatAt: true } },
+            rider: {
+              select: {
+                isOnline: true,
+                lastHeartbeatAt: true,
+                kycStatus: true,
+                accountStatus: true,
+                onHold: true,
+                cooldownUntil: true,
+              },
+            },
           },
         });
 
@@ -76,6 +88,13 @@ export class MatchingService {
         const hb = offer.rider.lastHeartbeatAt?.getTime() ?? 0;
         const fresh = Date.now() - hb < HEARTBEAT_TTL_MS;
         if (!offer.rider.isOnline || !fresh) {
+          throw new ConflictException("Rider just became unavailable, pick another");
+        }
+        // P2-1 account-standing gate (ET3): a rider banned/suspended/put on-hold/cooled-down AFTER
+        // bidding (e.g. an admin ban while they were still flagged online) must not be selectable.
+        // Same shared online-gate as makeOffer/setOnline; surfaced as the same "pick another" conflict
+        // as a liveness miss, since the customer isn't at fault.
+        if (onlineRefusalReason(offer.rider)) {
           throw new ConflictException("Rider just became unavailable, pick another");
         }
 

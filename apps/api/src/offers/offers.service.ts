@@ -4,6 +4,7 @@ import type { MakeOfferRequest } from "@lynia/shared";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { onlineRefusalReason } from "../riders/rider.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 
 @Injectable()
@@ -29,18 +30,25 @@ export class OffersService {
       throw new ConflictException("This order is not open for offers");
     }
 
-    // Gating (CONCEPT §5d): only a KYC-verified, online rider can offer. A gating rejection is a
+    // Gating (CONCEPT §5d): only a KYC-verified, online rider IN GOOD STANDING can offer. Reuses the
+    // shared online-gate (P2-1): kyc + account standing (banned/suspended) + reliability on_hold +
+    // cooldown — so a rider banned/suspended while online can't keep bidding. A gating rejection is a
     // forbidden outcome for the offers-made counter (no latency histogram — it never reached create).
     const rider = await this.prisma.rider.findUnique({
       where: { profileId: riderId },
-      select: { kycStatus: true, isOnline: true },
+      select: { kycStatus: true, isOnline: true, accountStatus: true, onHold: true, cooldownUntil: true },
     });
-    if (!rider || rider.kycStatus !== "verified" || !rider.isOnline) {
+    const refusal = rider ? onlineRefusalReason(rider) : null;
+    if (!rider || refusal || !rider.isOnline) {
       this.metrics.incOffersMade("forbidden");
       if (!rider) throw new ForbiddenException("Not a rider");
-      if (rider.kycStatus !== "verified") throw new ForbiddenException("Rider is not verified yet");
+      if (refusal === "kyc") throw new ForbiddenException("Rider is not verified yet");
+      if (refusal === "banned") throw new ForbiddenException("Your rider account has been banned");
+      if (refusal === "suspended") throw new ForbiddenException("Your rider account is suspended");
+      if (refusal === "on_hold") throw new ForbiddenException("You're on hold — complete deliveries to raise your reliability score");
+      if (refusal === "cooldown") throw new ForbiddenException("On cooldown after repeated cancellations — try again later");
       // Enforce the online invariant the gating comment claims (was selected but never checked) — an
-      // offline/cooled-down rider's offer is un-selectable anyway and just pollutes the customer's list.
+      // offline rider's offer is un-selectable anyway and just pollutes the customer's list.
       throw new ForbiddenException("Go online to make offers");
     }
 
@@ -85,8 +93,16 @@ export class OffersService {
     }
   }
 
-  /** Pending offers for the customer's selection list (best-match sorting happens client-side, D-d). */
-  async listForOrder(orderId: string) {
+  /** Pending offers for the customer's selection list (best-match sorting happens client-side, D-d).
+   *  Ownership-gated: the offer list carries rider PII (name, photo, ratings, bids), so only the
+   *  order's customer may read it — not any authenticated caller holding the order id (IDOR). */
+  async listForOrder(orderId: string, callerId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { customerId: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    if (order.customerId !== callerId) throw new ForbiddenException("Not your order");
     const offers = await this.prisma.offer.findMany({
       where: { orderId, status: "pending" },
       select: {

@@ -6,6 +6,7 @@ import { NotificationsService } from "./notifications.service";
 function makeDeps() {
   const prisma = {
     deviceToken: {
+      findUnique: vi.fn().mockResolvedValue(null),
       upsert: vi.fn().mockResolvedValue({}),
       deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
       findMany: vi.fn().mockResolvedValue([]),
@@ -25,14 +26,21 @@ function makeDeps() {
 }
 
 describe("NotificationsService — token registry", () => {
-  it("upserts by token so re-registering re-homes it to the current profile", async () => {
+  it("registers a new/own token without ever reassigning profileId (no silent re-home)", async () => {
     const { prisma, service } = makeDeps();
     await service.registerToken("p1", "tok-a", "android");
     expect(prisma.deviceToken.upsert).toHaveBeenCalledWith({
       where: { token: "tok-a" },
       create: { profileId: "p1", token: "tok-a", platform: "android" },
-      update: { profileId: "p1", platform: "android" },
+      update: { platform: "android" },
     });
+  });
+
+  it("rejects registering a token already owned by another profile (no re-home)", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.deviceToken.findUnique.mockResolvedValue({ profileId: "p2" });
+    await expect(service.registerToken("p1", "tok-a", "android")).rejects.toThrow(/another account/i);
+    expect(prisma.deviceToken.upsert).not.toHaveBeenCalled();
   });
 
   it("unregister only deletes a token owned by the caller", async () => {

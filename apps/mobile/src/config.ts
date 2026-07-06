@@ -33,6 +33,16 @@ export const WS_URL: string = API_URL;
 const placesKeyFromExtra = (Constants.expoConfig?.extra as { googlePlacesKey?: string } | undefined)?.googlePlacesKey;
 export const GOOGLE_PLACES_KEY: string | null = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? placesKeyFromExtra ?? null;
 
+/**
+ * Support contact for the rider dead-end states (KYC attempt-lock, suspended, on hold, banned) where the
+ * only honest instruction is "contact support". A `tel:` / `mailto:` / `https://wa.me/...` URL, opened
+ * with Linking. Override per deploy with EXPO_PUBLIC_SUPPORT_URL (or extra.supportUrl); the default is the
+ * pilot support inbox so the button is never dead.
+ */
+const supportFromExtra = (Constants.expoConfig?.extra as { supportUrl?: string } | undefined)?.supportUrl;
+export const SUPPORT_URL: string =
+  process.env.EXPO_PUBLIC_SUPPORT_URL ?? supportFromExtra ?? "mailto:support@lyniafinance.com";
+
 /** True only when a non-empty Places key is configured — the single gate for showing the search UI. */
 export function placesEnabled(): boolean {
   return typeof GOOGLE_PLACES_KEY === "string" && GOOGLE_PLACES_KEY.length > 0;
