@@ -65,12 +65,30 @@ export class RiderService {
     @Inject(KYC_VENDOR) private readonly vendor: KycVendor,
   ) {}
 
+  /**
+   * How many OTHER accounts already carry this national ID (A-04 duplicate-account / ban-evasion
+   * signal). A national ID can repeat across accounts because `phone`, not `id_number`, is the unique
+   * account key — so a rider with a second SIM can register again under the same ID. A legitimate
+   * re-entry, a typo, and a deliberate second account are indistinguishable here, which is why callers
+   * FLAG rather than block. Returns 0 for a missing ID (nothing to collide on).
+   */
+  private async duplicateIdAccountCount(profileId: string, idNumber: string | null | undefined): Promise<number> {
+    if (!idNumber) return 0;
+    return this.prisma.profile.count({ where: { idNumber, id: { not: profileId } } });
+  }
+
   /** Low-friction signup completion: name + national ID (CONCEPT §5d). */
   async completeProfile(
     profileId: string,
     data: { firstName: string; lastName: string; idNumber: string },
   ): Promise<{ ok: true }> {
     await this.prisma.profile.update({ where: { id: profileId }, data });
+    // A-04 duplicate-ID signal. The rider row may not exist yet (this often runs before becomeRider),
+    // so there's nothing to flag on here — log for the audit trail; becomeRider persists the reviewer
+    // flag. We don't tell the applicant: surfacing it would only coach a ban-evader to change the ID.
+    if ((await this.duplicateIdAccountCount(profileId, data.idNumber)) > 0) {
+      this.logger.warn(`Profile ${profileId} completed signup with a national ID already on another account (A-04)`);
+    }
     return { ok: true };
   }
 
@@ -84,6 +102,20 @@ export class RiderService {
       select: { profileId: true },
     });
     if (existing) throw new ConflictException("Already registered as a rider");
+
+    // A-04 duplicate-account guard: does this rider's national ID already sit on another account? A
+    // FLAG for the KYC reviewer, never a block — the ID isn't a unique key (phone is), so we can't
+    // tell a ban-evading second SIM from a legit re-entry, and hard-rejecting would lock out honest
+    // re-registrations. The reviewer already compares the ID on the doc-review screen, where
+    // admin.getKycReview surfaces the colliding accounts. Snapshot here; the review recomputes it live.
+    const profile = await this.prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { idNumber: true },
+    });
+    const duplicateIdFlag = (await this.duplicateIdAccountCount(profileId, profile?.idNumber)) > 0;
+    if (duplicateIdFlag) {
+      this.logger.warn(`Rider ${profileId} onboarding with a national ID already on another account — flagged for KYC review (A-04)`);
+    }
 
     let kycRef: string | null = null;
     let verificationUrl: string | undefined;
@@ -118,6 +150,7 @@ export class RiderService {
           kycStatus: initialKyc,
           idVerified: stubAutoPass,
           kycRef,
+          duplicateIdFlag,
         },
       }),
     ]);

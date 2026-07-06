@@ -120,6 +120,38 @@ export default async function KycReviewPage({ params }: { params: { id: string }
         </div>
       ) : null}
 
+      {/* A-04 duplicate-account guard: this national ID is already on other account(s). A flag, not a
+          block — a legit re-entry and a ban-evading second SIM look identical, so ops decides. */}
+      {r.duplicateIdAccounts.length > 0 || r.duplicateIdFlag ? (
+        <div className="warnbar">
+          <IconAlert />
+          <span className="t">
+            <b>Duplicate ID — needs review.</b>{" "}
+            {r.duplicateIdAccounts.length > 0 ? (
+              <>
+                This national ID (<span className="mono">{r.idNumber ?? "—"}</span>) is also on{" "}
+                {r.duplicateIdAccounts.length} other account
+                {r.duplicateIdAccounts.length === 1 ? "" : "s"}:{" "}
+                {r.duplicateIdAccounts
+                  .map(
+                    (a) =>
+                      `${a.name || "(no name)"} · ${a.phone} · ${a.role}${
+                        a.accountStatus ? ` (${a.accountStatus})` : ""
+                      }`,
+                  )
+                  .join("; ")}
+                . Confirm this isn&apos;t a banned rider re-registering on a new number before approving.
+              </>
+            ) : (
+              <>
+                This ID matched another account at onboarding but no collision remains now (the other
+                account was edited or removed). Verify before approving.
+              </>
+            )}
+          </span>
+        </div>
+      ) : null}
+
       <div className="detail-grid">
         <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.lg }}>
           <section className="card">

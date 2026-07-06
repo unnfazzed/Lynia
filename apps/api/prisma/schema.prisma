@@ -185,6 +185,11 @@ model Rider {
   // settlement auto-pause (A-06). suspendReason carries the admin reason code / "settlement_overdue".
   accountStatus   RiderAccountStatus @default(active) @map("account_status")
   suspendReason   String?   @map("suspend_reason")
+  // Duplicate-account guard (A-04). Set true at onboarding when this rider's national ID already
+  // appears on another account — a ban-evasion / second-SIM signal. A FLAG, not a block: the ID isn't
+  // unique (phone is the account key), so a legit re-entry and a deliberate duplicate look identical;
+  // ops decides on the KYC review. Snapshot at become-rider; admin.getKycReview recomputes it live.
+  duplicateIdFlag Boolean   @default(false) @map("duplicate_id_flag")
   // Reliability (Q2). Starts at 100; cancels/no-shows/low-ratings decrement, clean deliveries recover.
   // onHold is the derived auto-gate (score < threshold) — a separate axis from accountStatus; a rider
   // can be active-but-on-hold. Both the online-gate reads. See packages/shared/src/policy.ts RELIABILITY.

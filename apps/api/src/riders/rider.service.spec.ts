@@ -35,7 +35,7 @@ describe("RiderService.becomeRider", () => {
     };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}) },
-      profile: { update: async () => ({}) },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumber: "63-1-A" }), count: async () => 0 },
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
@@ -54,13 +54,70 @@ describe("RiderService.becomeRider", () => {
           return {};
         },
       },
-      profile: { update: async () => ({}) },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumber: "63-1-A" }), count: async () => 0 },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
     const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" });
     expect(res.kycStatus).toBe("verified");
-    expect(created).toMatchObject({ kycStatus: "verified", idVerified: true });
+    // A unique ID → not flagged.
+    expect(created).toMatchObject({ kycStatus: "verified", idVerified: true, duplicateIdFlag: false });
+  });
+
+  it("flags (does not reject) a rider whose national ID already sits on another account (A-04)", async () => {
+    let created: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        findUnique: async () => null,
+        create: async (args: { data: Record<string, unknown> }) => {
+          created = args.data;
+          return {};
+        },
+      },
+      profile: {
+        update: async () => ({}),
+        findUnique: async () => ({ idNumber: "63-123456-A-42" }),
+        // Another account already carries this ID.
+        count: async (args: { where: Record<string, unknown> }) => {
+          expect(args.where).toMatchObject({ idNumber: "63-123456-A-42", id: { not: "p1" } });
+          return 1;
+        },
+      },
+      $transaction: async (ops: unknown[]) => ops,
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
+    const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" });
+    // Onboarding still succeeds — flag, don't block.
+    expect(res.kycStatus).toBe("verified");
+    expect(created).toMatchObject({ duplicateIdFlag: true });
+  });
+
+  it("does not flag when the account has no national ID yet (A-04)", async () => {
+    let created: Record<string, unknown> | undefined;
+    let counted = false;
+    const prisma = {
+      rider: {
+        findUnique: async () => null,
+        create: async (args: { data: Record<string, unknown> }) => {
+          created = args.data;
+          return {};
+        },
+      },
+      profile: {
+        update: async () => ({}),
+        findUnique: async () => ({ idNumber: null }),
+        count: async () => {
+          counted = true;
+          return 0;
+        },
+      },
+      $transaction: async (ops: unknown[]) => ops,
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
+    await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" });
+    // No ID → nothing to collide on; the count query is skipped entirely.
+    expect(counted).toBe(false);
+    expect(created).toMatchObject({ duplicateIdFlag: false });
   });
 
   it("manual mode skips the vendor and returns no url", async () => {
@@ -69,7 +126,7 @@ describe("RiderService.becomeRider", () => {
     };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}) },
-      profile: { update: async () => ({}) },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumber: "63-1-A" }), count: async () => 0 },
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "manual" }, vendor);
@@ -82,7 +139,7 @@ describe("RiderService.becomeRider", () => {
     const vendor: KycVendor = { submit: async () => { throw new Error("didit 502"); } };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => { created = true; return {}; } },
-      profile: { update: async () => ({}) },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumber: "63-1-A" }), count: async () => 0 },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
@@ -90,6 +147,45 @@ describe("RiderService.becomeRider", () => {
       /couldn't start id verification/i,
     );
     expect(created).toBe(false);
+  });
+});
+
+describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
+  const data = { firstName: "Chipo", lastName: "M", idNumber: "63-123456-A-42" };
+
+  it("writes the profile and succeeds even when the ID is a duplicate (flag, never block)", async () => {
+    let updated: Record<string, unknown> | undefined;
+    const prisma = {
+      profile: {
+        update: async (args: { data: Record<string, unknown> }) => {
+          updated = args.data;
+          return {};
+        },
+        count: async (args: { where: Record<string, unknown> }) => {
+          expect(args.where).toMatchObject({ idNumber: "63-123456-A-42", id: { not: "p1" } });
+          return 2;
+        },
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto" });
+    expect(await s.completeProfile("p1", data)).toEqual({ ok: true });
+    expect(updated).toMatchObject(data);
+  });
+
+  it("does not run the collision query when the ID is unique", async () => {
+    let counted = false;
+    const prisma = {
+      profile: {
+        update: async () => ({}),
+        count: async () => {
+          counted = true;
+          return 0;
+        },
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto" });
+    expect(await s.completeProfile("p1", data)).toEqual({ ok: true });
+    expect(counted).toBe(true);
   });
 });
 
