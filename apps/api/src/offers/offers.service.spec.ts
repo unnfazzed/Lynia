@@ -19,11 +19,22 @@ function fakeGateway() {
   return { emitOffersChanged: vi.fn(), emitBoardNewOrder: vi.fn() };
 }
 
-/** Per-test Prisma fake — only the methods makeOffer/listForOrder touch. No DB. */
+/** Per-test Prisma fake — only the methods makeOffer/listForOrder touch. No DB. The FOR UPDATE
+ *  re-lock inside makeOffer runs through `$transaction`, so provide it (delegating to the same fake)
+ *  plus a `$queryRaw` default that reports the order still open; a test can override `$queryRaw` to
+ *  simulate the order closing under the lock. */
 function svc(prisma: Partial<Record<string, unknown>>, gateway = fakeGateway(), metrics = fakeMetrics()) {
+  const tx: Record<string, unknown> = {
+    $queryRaw: async () => [{ status: "open_for_offers" }],
+    ...prisma,
+  };
+  const full: Record<string, unknown> = {
+    ...tx,
+    $transaction: async (fn: (t: unknown) => unknown) => fn(tx),
+  };
   return {
     service: new OffersService(
-      prisma as unknown as PrismaService,
+      full as unknown as PrismaService,
       noopNotifications,
       gateway as unknown as TrackingGateway,
       metrics,
@@ -107,6 +118,21 @@ describe("OffersService.makeOffer", () => {
     });
     const res = await service.makeOffer(offerInput, "rider-1");
     expect(res).toEqual({ id: "o1", type: "accept", offeredFare: "2.50", etaMinutes: 10, status: "pending" });
+  });
+
+  it("rejects (no orphan offer) when the order closes under the FOR UPDATE re-check", async () => {
+    // Passes the initial pre-check (open) + gating, but the locked re-read reports it just got assigned
+    // — so the offer is never inserted and the rider gets a conflict, not a stranded pending row.
+    const create = vi.fn();
+    const { service, metrics } = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers" }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
+      $queryRaw: async () => [{ status: "assigned" }],
+      offer: { create },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/not open for offers/i);
+    expect(create).not.toHaveBeenCalled();
+    expect(metrics.incOffersMade).toHaveBeenCalledWith("conflict");
   });
 
   it("labels the offers_made_total counter by outcome (created / forbidden / conflict)", async () => {

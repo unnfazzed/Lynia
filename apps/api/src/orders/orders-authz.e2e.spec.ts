@@ -10,10 +10,11 @@ import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { bearer, buildAuthzApp } from "../common/testing/authz-e2e";
+import { TrackingService } from "../tracking/tracking.service";
 import { OrdersController } from "./orders.controller";
 import { OrdersService } from "./orders.service";
 
-Reflect.defineMetadata("design:paramtypes", [OrdersService], OrdersController);
+Reflect.defineMetadata("design:paramtypes", [OrdersService, TrackingService], OrdersController);
 
 // A real-looking UUID so the controller's ParseUUIDPipe accepts the path param.
 const ORDER_ID = "2f1e9b3c-0000-4000-8000-000000000001";
@@ -44,7 +45,9 @@ const orderRow = {
 
 const prisma = { order: { findUnique: vi.fn(async () => orderRow) } };
 // External deps getSnapshot may touch — none are reached on these paths, but wire them safely.
-const tracking = { getLivePosition: vi.fn(async () => null) };
+// isBoardEligible backs the controller's /orders/open gate (not exercised here; these tests hit
+// GET /orders/:orderId).
+const tracking = { getLivePosition: vi.fn(async () => null), isBoardEligible: vi.fn(async () => true) };
 const noop = {} as never;
 
 describe("GET /orders/:orderId — HTTP authz (R1 IDOR net)", () => {
@@ -52,7 +55,13 @@ describe("GET /orders/:orderId — HTTP authz (R1 IDOR net)", () => {
 
   beforeAll(async () => {
     const orders = new OrdersService(prisma as never, noop, tracking as never, noop, noop);
-    app = await buildAuthzApp([OrdersController], [{ provide: OrdersService, useValue: orders }]);
+    app = await buildAuthzApp(
+      [OrdersController],
+      [
+        { provide: OrdersService, useValue: orders },
+        { provide: TrackingService, useValue: tracking },
+      ],
+    );
   });
   afterAll(async () => {
     await app?.close();

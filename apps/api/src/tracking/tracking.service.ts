@@ -68,6 +68,45 @@ export class TrackingService implements OnModuleDestroy {
     this.redisInit = true;
   }
 
+  private static presenceKey(token: string): string {
+    return `presence:stale:${token}`;
+  }
+
+  /**
+   * Cluster-wide one-shot gate for a presence escalation (C5, multi-instance). Every API instance runs
+   * the presence watchdog, so without coordination a dark counterparty is escalated once PER INSTANCE —
+   * each broadcast fans out cluster-wide through the Socket.IO Redis adapter, so the counterparty's app
+   * gets N "live paused" events instead of one. A `SET NX` with a TTL lets only the FIRST instance to
+   * notice a given (role, order) staleness emit. The key is released on recovery (see
+   * {@link releasePresenceEscalation}) so a later re-dark re-arms; the TTL is a backstop if the
+   * releasing instance dies first. With no Redis (single instance / dev / test) there is nothing to
+   * coordinate — always grant, preserving today's single-instance behaviour exactly. A Redis hiccup
+   * also grants: a duplicate escalation is a far better failure than a silenced one.
+   */
+  async claimPresenceEscalation(token: string, ttlSeconds: number): Promise<boolean> {
+    const redis = this.getRedis();
+    if (!redis) return true;
+    try {
+      const res = await redis.set(TrackingService.presenceKey(token), "1", "EX", ttlSeconds, "NX");
+      return res === "OK";
+    } catch {
+      return true;
+    }
+  }
+
+  /** Release a presence-escalation claim so the next dark period for the same (role, order) re-arms
+   *  cluster-wide. Called when the counterparty recovers or the ride ends. Best-effort / idempotent —
+   *  a no-op without Redis, and a DEL failure just leaves the TTL backstop to expire the key. */
+  async releasePresenceEscalation(token: string): Promise<void> {
+    const redis = this.getRedis();
+    if (!redis) return;
+    try {
+      await redis.del(TrackingService.presenceKey(token));
+    } catch {
+      /* best-effort: the TTL backstop still expires the key */
+    }
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.redis?.quit();
   }

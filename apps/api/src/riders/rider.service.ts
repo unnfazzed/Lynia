@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -115,6 +116,13 @@ export class RiderService {
       select: { profileId: true },
     });
     if (existing) throw new ConflictException("Already registered as a rider");
+
+    // The photo key must live under this caller's own KYC namespace — POST /uploads/kyc-photo mints
+    // keys as `kyc/<callerId>/<uuid>` — so a rider can't persist a key that points at another user's
+    // KYC object (harmless until the reviewer console mints a signed read URL from the stored key).
+    if (!data.photoUrl.startsWith(`kyc/${profileId}/`)) {
+      throw new BadRequestException("Invalid photo key");
+    }
 
     // A-04 duplicate-account guard: does this rider's national ID already sit on another account? A
     // FLAG for the KYC reviewer, never a block — the ID isn't a unique key (phone is), so we can't

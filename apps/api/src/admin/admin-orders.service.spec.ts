@@ -118,7 +118,7 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     const calls: Calls = { orderUpdate: null, orderEvent: null, audit: null };
     const tx = {
       order: {
-        findUnique: async () => ("order" in over ? over.order : { id: "o1", status: "assigned" }),
+        findUnique: async () => ("order" in over ? over.order : { id: "o1", status: "assigned", agreedFare: dec("6.00") }),
         update: async (args: Calls["orderUpdate"]) => { calls.orderUpdate = args; return {}; },
       },
       offer: { updateMany: async () => ({ count: 0 }) },
@@ -173,5 +173,13 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.orderUpdate!.data).toEqual({ agreedFare: 7.5 });
     expect(calls.audit!.data).toMatchObject({ action: "order.fare_adjust", target: "o1", reasonCode: "GPS overcharge" });
     expect(res).toMatchObject({ id: "o1", agreedFare: "7.50", auditId: "audit-9" });
+  });
+
+  it("adjustFare rejects an order that never had an agreed fare (nothing written)", async () => {
+    const { prisma, calls } = makeTx({ order: { id: "o1", status: "open_for_offers", agreedFare: null } });
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService);
+    await expect(svc.adjustFare("admin-1", "o1", { agreedFare: 7.5, reason: "x" })).rejects.toThrow(/no agreed fare/i);
+    expect(calls.orderUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
   });
 });

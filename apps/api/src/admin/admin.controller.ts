@@ -37,9 +37,11 @@ const ReasonOptional = z.object({
   reason: z.string().max(160).nullish(),
   note: z.string().max(2000).nullish(),
 });
-// Positive money value (2dp handled server-side) for a manual fare correction.
+// Positive money value for a manual fare correction. Constrained to whole cents (matches the
+// CreateOrderRequest / MakeOfferRequest contracts) so a sub-cent value can't silently round on the way
+// into NUMERIC(10,2) and diverge from the value echoed back to the admin.
 const FareAdjust = z.object({
-  agreedFare: z.number().positive().max(100000),
+  agreedFare: z.number().positive().max(100000).multipleOf(0.01),
   reason: z.string().min(1).max(160),
   note: z.string().max(2000).nullish(),
 });

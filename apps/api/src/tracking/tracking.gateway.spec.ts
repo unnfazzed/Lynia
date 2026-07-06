@@ -41,10 +41,17 @@ const fakeMetrics = () =>
   ({ startTimer: () => () => 0, recordPositionEmit: vi.fn() }) as unknown as MetricsService;
 
 function gateway(tracking: Partial<TrackingService> = {}) {
+  // Default the cluster-wide presence-escalation gate to "always claim" (single-instance semantics) so
+  // tests that don't care about multi-instance dedup behave exactly as before; a test can override.
+  const withGate: Partial<TrackingService> = {
+    claimPresenceEscalation: vi.fn(async () => true),
+    releasePresenceEscalation: vi.fn(async () => {}),
+    ...tracking,
+  };
   const g = new TrackingGateway(
     {} as Env,
     {} as TokenService,
-    tracking as unknown as TrackingService,
+    withGate as unknown as TrackingService,
     fakeMetrics(),
   );
   return g;
@@ -374,6 +381,32 @@ describe("TrackingGateway.scanPresence (C5 watchdog)", () => {
     });
     const g = gateway({ findStaleRiderPresence });
     await expect(g.scanPresence()).resolves.toBeUndefined();
+  });
+
+  it("stays silent when a peer instance already claimed the escalation (multi-instance dedup)", async () => {
+    const findStaleRiderPresence = vi.fn(async () => [{ orderId: "ord-1", riderId: "r1", lastSeenAt: null }]);
+    const claimPresenceEscalation = vi.fn(async () => false); // a peer instance won the cluster-wide claim
+    const { server, emit } = fakeServer();
+    const g = gateway({ findStaleRiderPresence, claimPresenceEscalation });
+    g.server = server as never;
+    await g.scanPresence();
+    expect(claimPresenceEscalation).toHaveBeenCalledWith("rider:ord-1", expect.any(Number));
+    expect(emit).not.toHaveBeenCalled(); // the peer's broadcast already reached this instance via the adapter
+  });
+
+  it("releases the cluster claim when a dark order recovers, so a re-dark re-arms cross-instance", async () => {
+    const stale = [{ orderId: "ord-1", riderId: "r1", lastSeenAt: null }];
+    let round = 0;
+    const findStaleRiderPresence = vi.fn(async () => (round === 1 ? [] : stale));
+    const releasePresenceEscalation = vi.fn(async () => {});
+    const { server } = fakeServer();
+    const g = gateway({ findStaleRiderPresence, releasePresenceEscalation });
+    g.server = server as never;
+    round = 0;
+    await g.scanPresence();
+    round = 1;
+    await g.scanPresence(); // recovered → release the cluster-wide claim
+    expect(releasePresenceEscalation).toHaveBeenCalledWith("rider:ord-1");
   });
 });
 

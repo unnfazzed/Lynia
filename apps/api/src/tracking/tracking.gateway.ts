@@ -53,6 +53,11 @@ export const POSITION_COALESCE_MS = 1_000;
  *  threshold itself is the shared `PRESENCE_ESCALATION_MS`; this is only the poll cadence. */
 export const PRESENCE_SCAN_INTERVAL_MS = 30_000;
 
+/** TTL (seconds) for the cluster-wide presence-escalation dedup key. Long enough to outlast a single
+ *  continuous dark period so a peer instance can't re-emit; the primary re-arm is the explicit release
+ *  on recovery, this is just the backstop if the releasing instance dies. */
+export const PRESENCE_STALE_DEDUP_TTL_S = 600;
+
 /** A per-order `positionEmit` coalesce entry with no fix for this long is stale (the ride ended or the
  *  rider went offline) — pruned on the presence scan so the map can't grow unbounded over an instance's
  *  lifetime. A later fix simply re-creates the entry as a fresh leading edge. */
@@ -456,12 +461,22 @@ export class TrackingGateway
     try {
       const stale = await this.tracking.findStaleRiderPresence(PRESENCE_ESCALATION_MS);
       const staleIds = new Set(stale.map((s) => s.orderId));
-      // Drop recovered/ended orders so a reconnect re-arms the one-shot escalation.
-      for (const id of this.staleNotified) if (!staleIds.has(id)) this.staleNotified.delete(id);
+      // Drop recovered/ended orders so a reconnect re-arms the one-shot escalation — and release the
+      // cluster-wide claim so the re-arm works across instances, not just this one.
+      for (const id of this.staleNotified) {
+        if (!staleIds.has(id)) {
+          this.staleNotified.delete(id);
+          void this.tracking.releasePresenceEscalation(`rider:${id}`);
+        }
+      }
       for (const s of stale) {
-        if (this.staleNotified.has(s.orderId)) continue; // already escalated — don't spam every scan
+        if (this.staleNotified.has(s.orderId)) continue; // already handled here — don't spam every scan
         this.staleNotified.add(s.orderId);
-        this.emitPresenceStale(s.orderId, "rider", s.lastSeenAt);
+        // Cluster-wide one-shot (multi-instance): only the instance that wins the claim emits; the
+        // broadcast already fans out to every instance via the Redis adapter, so peers must stay quiet.
+        if (await this.tracking.claimPresenceEscalation(`rider:${s.orderId}`, PRESENCE_STALE_DEDUP_TTL_S)) {
+          this.emitPresenceStale(s.orderId, "rider", s.lastSeenAt);
+        }
       }
     } catch (err) {
       this.logger.warn(`presence scan failed: ${(err as Error).message}`);
@@ -506,14 +521,19 @@ export class TrackingGateway
         if (!active.has(orderId)) {
           this.customerPresence.delete(orderId);
           this.customerStaleNotified.delete(orderId);
+          void this.tracking.releasePresenceEscalation(`customer:${orderId}`); // re-arm cluster-wide
         }
       }
-      // Escalate the fresh candidates that are still active (one-shot; re-arms on reconnect).
+      // Escalate the fresh candidates that are still active (one-shot; re-arms on reconnect). The
+      // cluster-wide claim collapses N instances' escalations into one (each broadcast already reaches
+      // every instance via the Redis adapter).
       for (const orderId of candidates) {
         if (!active.has(orderId)) continue; // pruned above
-        const p = this.customerPresence.get(orderId);
         this.customerStaleNotified.add(orderId);
-        this.emitPresenceStale(orderId, "customer", p?.darkSince != null ? new Date(p.darkSince) : null);
+        if (await this.tracking.claimPresenceEscalation(`customer:${orderId}`, PRESENCE_STALE_DEDUP_TTL_S)) {
+          const p = this.customerPresence.get(orderId);
+          this.emitPresenceStale(orderId, "customer", p?.darkSince != null ? new Date(p.darkSince) : null);
+        }
       }
     } catch (err) {
       this.logger.warn(`customer presence scan failed: ${(err as Error).message}`);
