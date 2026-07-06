@@ -195,6 +195,12 @@ export class AdminRidersService {
       if (rider.accountStatus === RiderAccountStatus.BANNED) {
         throw new ConflictException("A banned rider can't be lifted — reinstating a ban is a separate action.");
       }
+      // Lift is an un-suspend. Applying it to an active (incl. active-but-on_hold) rider would erase an
+      // auto reliability hold and reset the score to the clear threshold, bypassing the reliability
+      // state machine — the reliability recovery path is separate from an admin suspension lift.
+      if (rider.accountStatus !== RiderAccountStatus.SUSPENDED) {
+        throw new ConflictException("Rider is not suspended");
+      }
       await tx.rider.update({
         where: { profileId },
         data: {

@@ -109,10 +109,16 @@ export class AdminOrdersService {
    */
   async adjustFare(actor: string, orderId: string, input: { agreedFare: number; reason: string; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true } });
+      const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, agreedFare: true } });
       if (!order) throw new NotFoundException("Order not found");
-      // (Under the prepaid per-ride model there is no settled billing period to lock a fare against —
-      // the old "settlement already paid" guard was removed with the weekly cash-settlement engine.)
+      // Only correct a fare that was actually agreed. Writing agreedFare onto an order that never had
+      // one (open_for_offers / requested / expired, or a pre-assignment cancel) would mint a
+      // non-null agreed fare on an order that was never agreed — integrity drift in the monitor.
+      // (Under the prepaid per-ride model there is no settled billing period to lock against — the old
+      // "settlement already paid" guard was removed with the weekly cash-settlement engine.)
+      if (order.agreedFare == null) {
+        throw new ConflictException("Order has no agreed fare to adjust");
+      }
       await tx.order.update({ where: { id: orderId }, data: { agreedFare: input.agreedFare } });
       const audit = await tx.auditLog.create({
         data: auditData(actor, "order.fare_adjust", orderId, input.reason, input.note),

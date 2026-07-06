@@ -303,3 +303,44 @@ describe("TrackingService.nearbyRiders (Redis prefilter path)", () => {
     expect(hits).toEqual([{ profileId: "rider-1", distanceM: 42 }]);
   });
 });
+
+describe("TrackingService.claimPresenceEscalation / releasePresenceEscalation (multi-instance dedup)", () => {
+  const svcOnly = () => new TrackingService({ REDIS_URL: "redis://x" } as Env, {} as PrismaService, fakeMetrics());
+
+  it("grants unconditionally with no Redis (single-instance / dev / test)", async () => {
+    const s = new TrackingService(noRedisEnv, {} as PrismaService, fakeMetrics());
+    s.setRedisClient(null);
+    expect(await s.claimPresenceEscalation("rider:ord-1", 600)).toBe(true);
+  });
+
+  it("claims via SET NX EX and grants only the first caller (winner true, loser false)", async () => {
+    const store = new Set<string>();
+    const redis = {
+      set: vi.fn(async (k: string, _v: string, _ex: string, _ttl: number, nx: string) => {
+        if (nx === "NX" && store.has(k)) return null; // key already present → NX fails
+        store.add(k);
+        return "OK";
+      }),
+      del: vi.fn(async (k: string) => (store.delete(k) ? 1 : 0)),
+    };
+    const s = svcOnly();
+    s.setRedisClient(redis as never);
+
+    expect(await s.claimPresenceEscalation("rider:ord-1", 600)).toBe(true); // first wins
+    expect(await s.claimPresenceEscalation("rider:ord-1", 600)).toBe(false); // second loses
+    const [key, one, ex, ttl, nx] = redis.set.mock.calls[0]!;
+    expect(key).toBe("presence:stale:rider:ord-1");
+    expect([one, ex, ttl, nx]).toEqual(["1", "EX", 600, "NX"]);
+
+    await s.releasePresenceEscalation("rider:ord-1"); // release → the next dark period re-arms
+    expect(redis.del).toHaveBeenCalledWith("presence:stale:rider:ord-1");
+    expect(await s.claimPresenceEscalation("rider:ord-1", 600)).toBe(true);
+  });
+
+  it("grants (not silences) on a Redis error — a duplicate beats a missed escalation", async () => {
+    const redis = { set: vi.fn(async () => { throw new Error("redis down"); }), del: vi.fn(async () => 0) };
+    const s = svcOnly();
+    s.setRedisClient(redis as never);
+    expect(await s.claimPresenceEscalation("customer:ord-1", 600)).toBe(true);
+  });
+});

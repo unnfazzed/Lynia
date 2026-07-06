@@ -53,15 +53,31 @@ export class OffersService {
     }
 
     try {
-      const offer = await this.prisma.offer.create({
-        data: {
-          orderId: input.orderId,
-          riderId,
-          type: input.type,
-          offeredFare: input.offeredFare,
-          etaMinutes: input.etaMinutes,
-        },
-        select: { id: true, type: true, offeredFare: true, etaMinutes: true, status: true },
+      const offer = await this.prisma.$transaction(async (tx) => {
+        // Re-lock the order row and re-verify it's still open INSIDE the transaction. The status read
+        // above and the insert are otherwise a check-then-act with a gap: a concurrent selectOffer can
+        // assign (or offer-expiry can close) the order in between, leaving this `pending` offer stranded
+        // on a no-longer-open order (never selectable — selectOffer's CAS guards that — but real DB
+        // drift that surfaces in the customer's offer list). selectOffer assigns via a guarded CAS that
+        // row-locks the order, so taking FOR UPDATE here serializes the two: either the assign commits
+        // first (we then read a non-open status and reject) or it waits for us (and its decline-pending
+        // sweep then includes our just-created offer).
+        const locked = await tx.$queryRaw<Array<{ status: string }>>(
+          Prisma.sql`SELECT status FROM orders WHERE id = ${input.orderId}::uuid FOR UPDATE`,
+        );
+        if (locked.length === 0 || locked[0].status !== "open_for_offers") {
+          throw new ConflictException("This order is not open for offers");
+        }
+        return tx.offer.create({
+          data: {
+            orderId: input.orderId,
+            riderId,
+            type: input.type,
+            offeredFare: input.offeredFare,
+            etaMinutes: input.etaMinutes,
+          },
+          select: { id: true, type: true, offeredFare: true, etaMinutes: true, status: true },
+        });
       });
       // Post-commit, best-effort: nudge the customer that an offer arrived (§5c).
       void this.notifications.notifyNewOffer(input.orderId, order.customerId);
@@ -77,6 +93,12 @@ export class OffersService {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         this.metrics.incOffersMade("conflict");
         throw new ConflictException("You already responded to this order (one round only)");
+      }
+      // Lost the race under the row lock — the order closed between the pre-check and the insert. That's
+      // a conflict (the rider just missed the window), not a server error.
+      if (err instanceof ConflictException) {
+        this.metrics.incOffersMade("conflict");
+        throw err;
       }
       this.metrics.incOffersMade("error");
       throw err;

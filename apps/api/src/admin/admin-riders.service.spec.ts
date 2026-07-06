@@ -326,6 +326,15 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     await expect(svc.liftRider("admin-1", "r1", {})).rejects.toThrow(/banned/i);
   });
 
+  it("liftRider refuses an active (not-suspended) rider — won't erase an auto reliability hold", async () => {
+    // active-but-on_hold: a lift here would silently clear the reliability penalty and reset the score.
+    const { prisma, calls } = makeTx({ rider: { accountStatus: "active", reliabilityScore: 55 } });
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    await expect(svc.liftRider("admin-1", "r1", {})).rejects.toThrow(/not suspended/i);
+    expect(calls.riderUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
+  });
+
   it("suspendRider 404s when the id isn't a rider and writes NOTHING", async () => {
     const { prisma, calls } = makeTx({ rider: null });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
