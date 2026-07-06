@@ -13,6 +13,40 @@ updates:
         dependency-type: development
       production-dependencies:
         dependency-type: production
+    # Majors on these stacks are coupled migrations, not routine bumps — a grouped major here has
+    # broken CI before (prisma CLI 7 against @prisma/client 5; jest-expo 57 against Expo SDK 52).
+    # Each is upgraded deliberately in its own PR: Prisma with prisma.config.ts/adapters, Nest with
+    # the Express major it drags in, the jest/react-test-renderer stack only with the Expo SDK,
+    # TypeScript majors with the deprecations they hard-error on.
+    ignore:
+      - dependency-name: "prisma"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@prisma/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@nestjs/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "jest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "jest-expo"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/jest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-test-renderer"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # Keep GitHub Actions pinned versions current (also surfaces action security advisories).
   - package-ecosystem: github-actions
