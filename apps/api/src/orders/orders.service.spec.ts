@@ -538,7 +538,8 @@ describe("OrdersService.historyForUser", () => {
     agreedFare: { toString: () => "2.50" },
     status: "completed",
     createdAt: new Date("2026-06-26T00:00:00Z"),
-    rating: { score: 5, comment: "great" },
+    // Prisma returns a to-many rating relation as an array (migration 0015 widened the unique).
+    rating: [{ score: 5, comment: "great" }],
     customer: { firstName: "Tatenda", lastName: "M" },
     rider: { profile: { firstName: "Rugare", lastName: "C" } },
     ...over,
@@ -570,7 +571,7 @@ describe("OrdersService.historyForUser", () => {
   });
 
   it("tolerates a null agreedFare, missing rating, and an unassigned order", async () => {
-    const rows = await svc([row({ agreedFare: null, rating: null, riderId: null, rider: null })]).historyForUser("cust-1");
+    const rows = await svc([row({ agreedFare: null, rating: [], riderId: null, rider: null })]).historyForUser("cust-1");
     expect(rows[0]!.agreedFare).toBeNull();
     expect(rows[0]!.rating).toBeNull();
     expect(rows[0]!.counterpartyName).toBeNull();

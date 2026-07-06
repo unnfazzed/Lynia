@@ -58,6 +58,13 @@ export default function VerifyScreen(): React.ReactElement {
         profileId: res.profileId,
         role: res.role,
       });
+      // A brand-new account has no name yet (verifyOtp seeds firstName ""); collect it on the
+      // profile-setup step FIRST (finding C12) before the role fork / home. That screen routes onward
+      // to /role or /home itself once the name is saved.
+      if (res.needsProfile) {
+        router.replace("/profile/setup");
+        return;
+      }
       // Show the role fork once per account (RIDER-JOURNEY-AUDIT R0-4). A returning user who already
       // picked a role goes straight home rather than being re-prompted every sign-in.
       const chosen = await loadRolePreference();

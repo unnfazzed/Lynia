@@ -1,4 +1,4 @@
-import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, rankOffers, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, PRESENCE_ESCALATION_MS, rankOffers, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -43,6 +43,11 @@ const SORT_MODES: { key: SortMode; label: string }[] = [
 const URGENT_MS = 20_000;
 // Rating-on-tap undo window (D3): how long a tapped rating stays cancellable before it commits.
 const RATE_UNDO_MS = 4_000;
+// C2: after a rider bail the order flips to `cancelled` and the server pushes `order:rebroadcast` on the
+// (now dead) order's room to move the customer to the fresh auction. Hold the socket open for this grace
+// window past `cancelled` so that push can still land — bounded, so a genuinely terminal cancel doesn't
+// keep the socket alive forever.
+const CANCELLED_GRACE_MS = 20_000;
 
 /** mm:ss for the auction timer. */
 function formatClock(ms: number): string {
@@ -154,9 +159,26 @@ export default function OrderScreen(): React.ReactElement {
   const status = orderQ.data?.status;
   const isActive = status !== undefined && ACTIVE.includes(status);
 
+  // C2: keep the socket subscribed through `cancelled` for a bounded grace window so a rider-bail
+  // `order:rebroadcast` can still arrive and navigate the customer to the fresh auction (below).
+  // `cancelledExpired` starts false and is only flipped true by the timer AFTER we've been cancelled
+  // for the grace window — so entering `cancelled` keeps `socketExpected` true on the SAME render (no
+  // one-render disconnect that could miss the push), and a genuinely terminal cancel still tears the
+  // socket down once the window lapses.
+  const [cancelledExpired, setCancelledExpired] = useState(false);
+  useEffect(() => {
+    if (status !== "cancelled") {
+      setCancelledExpired(false);
+      return;
+    }
+    const t = setTimeout(() => setCancelledExpired(true), CANCELLED_GRACE_MS);
+    return () => clearTimeout(t);
+  }, [status]);
+
   // Open the socket during the AUCTION too (not just once active): `offers:changed` streams new
   // bids in, and `order:status` reflects the assignment. Expose connection state for the UI.
-  const socketExpected = isActive || status === "delivered" || status === "open_for_offers";
+  const socketExpected =
+    isActive || status === "delivered" || status === "open_for_offers" || (status === "cancelled" && !cancelledExpired);
   // F-01: on a rider bail the server re-broadcasts a NEW order and pushes `order:rebroadcast` here;
   // move the customer to the fresh auction (replace, so the dead cancelled order isn't in the stack).
   const { connected } = useOrderSocket(socketExpected ? orderId : null, (newOrderId) => {
@@ -360,8 +382,18 @@ export default function OrderScreen(): React.ReactElement {
     order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
       ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
       : null;
+  // C4: a rider fix is only "live" while it's fresh. Past PRESENCE_ESCALATION_MS with no new fix the
+  // rider's GPS has gone dark — mute the pin (below, via LiveMap's reconnecting treatment) and stop
+  // claiming it "updates live," escalating instead to a "call your rider" warning.
+  const riderUpdatedAt = order.rider?.updatedAt ?? null;
+  const riderStale =
+    isActive && riderUpdatedAt != null && Date.now() - new Date(riderUpdatedAt).getTime() > PRESENCE_ESCALATION_MS;
   const bidCount = orderedOffers.length;
-  const trackingHint = riderPoint ? "Rider is on the move — the gold pin updates live." : "Waiting for the rider's GPS…";
+  const trackingHint = !riderPoint
+    ? "Waiting for the rider's GPS…"
+    : riderStale
+      ? "Your rider's location looks paused — call them to check in."
+      : "Rider is on the move — the gold pin updates live.";
 
   // Counter-offer (F-07): a `counter` bid ABOVE the customer's ask surfaces as Accept/Decline. A
   // declined one reverts to a normal choosable bid (its Accept treatment removed), so it drops out of
@@ -559,7 +591,9 @@ export default function OrderScreen(): React.ReactElement {
               pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}
               dropoff={{ lat: order.dropoff.point.lat, lng: order.dropoff.point.lng }}
               rider={riderPoint}
-              connectionState={isActive ? connectionState : "live"}
+              // C4: a stale rider fix mutes the pin just like a reconnecting socket does — a dark GPS
+              // must not render as a full-opacity "live" position.
+              connectionState={riderStale ? "reconnecting" : isActive ? connectionState : "live"}
             />
             {order.rider ? (
               <Text style={{ fontSize: 14, color: tokens.color.muted }}>{trackingHint}</Text>
