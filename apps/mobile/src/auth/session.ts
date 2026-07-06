@@ -104,6 +104,26 @@ export async function loadOnboardingSeen(): Promise<boolean> {
   }
 }
 
+// Whether we've shown the first-run permission-priming explainers (0·7/0·8) on this install. Stored
+// so a user who's already been primed (and switches role later) isn't re-walked through them. Best-
+// effort — a read failure just re-primes, which is harmless.
+const PERMISSIONS_PRIMED_KEY = "lynia.permissionsPrimed";
+
+export async function savePermissionsPrimed(): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PERMISSIONS_PRIMED_KEY, "1");
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadPermissionsPrimed(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(PERMISSIONS_PRIMED_KEY)) === "1";
+  } catch {
+    return false;
+  }
+}
+
 // Latest liability-disclaimer policy version the customer has accepted on this device (A1-8). Stored
 // so the accept-to-continue gate isn't re-shown every broadcast. Best-effort — a read failure just
 // re-shows the gate, which is safe.
