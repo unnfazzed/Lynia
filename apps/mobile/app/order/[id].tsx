@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
-import { isPendingCounter } from "../../src/logic/journey";
+import { isPendingCounter, shouldShowOffersError } from "../../src/logic/journey";
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
@@ -574,12 +574,21 @@ export default function OrderScreen(): React.ReactElement {
               </Text>
             ) : null}
             {orderedOffers.length === 0 ? (
-              // Live-but-empty: a "working" state (pulsing placeholder) distinct from the expired
-              // dead-end, so streaming-into-empty reads as "finding", not "broken".
-              <View style={{ marginTop: tokens.space.sm }}>
-                <SkeletonCard />
-                <Sub>No offers yet — riders nearby have been pinged. Hang tight.</Sub>
-              </View>
+              shouldShowOffersError(offersQ.isError, orderedOffers.length, order.status === "open_for_offers") ? (
+                // Honest error: the offers fetch failed and there's nothing to show — don't paint the
+                // calm "finding riders" working state over a dead fetch. Mirrors the rider board's
+                // `openQ.isError` branch (wifi-off EmptyState + a Retry that refetches).
+                <EmptyState icon="wifi-off" title="Couldn't load offers" message="Check your connection and try again.">
+                  <Button label="Retry" onPress={() => void offersQ.refetch()} loading={offersQ.isFetching} />
+                </EmptyState>
+              ) : (
+                // Live-but-empty: a "working" state (pulsing placeholder) distinct from the expired
+                // dead-end, so streaming-into-empty reads as "finding", not "broken".
+                <View style={{ marginTop: tokens.space.sm }}>
+                  <SkeletonCard />
+                  <Sub>No offers yet — riders nearby have been pinged. Hang tight.</Sub>
+                </View>
+              )
             ) : null}
           </View>
         ) : null}

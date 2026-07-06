@@ -4,13 +4,13 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { AppState, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
-import { collectedItemCount } from "../../src/logic/journey";
+import { collectedItemCount, shouldShowJobError } from "../../src/logic/journey";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { acknowledgeHandback, loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, OfflineBanner, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, Heading, Icon, type IconName, OfflineBanner, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
@@ -301,6 +301,20 @@ export default function RiderJob(): React.ReactElement {
     return (
       <Screen>
         <SkeletonList />
+      </Screen>
+    );
+  }
+  // Cold-start fetch failure with NOTHING cached: the job fetch failed, which is not the same as
+  // "you have no work". Ordered AFTER the loading and cancelled-terminal (handback / undelivered)
+  // checks so those still win — and gated on `!order` so a warm refetch that retains the job (or a
+  // successful empty fetch) never lands here. Mirrors the rider board's honest error+retry pattern.
+  if (shouldShowJobError(jobQ.isError, order != null)) {
+    return (
+      <Screen>
+        <EmptyState icon="wifi-off" title="Couldn't load your job" message="Check your connection and try again.">
+          <Button label="Retry" onPress={() => void jobQ.refetch()} loading={jobQ.isFetching} />
+        </EmptyState>
+        <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
       </Screen>
     );
   }
