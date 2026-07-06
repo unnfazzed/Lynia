@@ -14,6 +14,7 @@ import {
 import { maskPhone } from "../common/phone-mask";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
@@ -95,7 +96,12 @@ export function computeFunnel(i: {
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  // The gateway is optional so unit tests can construct AdminService with just Prisma; in the app it's
+  // provided via TrackingModule (AdminModule imports it) and used for best-effort post-commit WS pushes.
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway?: TrackingGateway,
+  ) {}
 
   /** Single read for the monitor dashboard: status counts, rider stats, pilot funnel, recent orders. */
   async overview() {
@@ -397,8 +403,11 @@ export class AdminService {
    * Rejects an order already in a terminal state (nothing to cancel). Reason required.
    */
   async cancelOrder(actor: string, orderId: string, input: { reason: string; note?: string | null }) {
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId }, select: { status: true } });
+    const result = await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { status: true, riderId: true, collectedAt: true },
+      });
       if (!order) throw new NotFoundException("Order not found");
       if (TERMINAL_STATUSES.includes(order.status)) {
         throw new ConflictException("Order is already in a terminal state");
@@ -420,8 +429,23 @@ export class AdminService {
         data: this.auditData(actor, "order.cancel", orderId, input.reason, input.note),
         select: { id: true },
       });
-      return { id: orderId, status: "cancelled" as const, auditId: audit.id };
+      return {
+        id: orderId,
+        status: "cancelled" as const,
+        auditId: audit.id,
+        // Carried out of the tx for the post-commit WS pushes below.
+        riderId: order.riderId,
+        collected: order.collectedAt != null,
+      };
     });
+
+    // P2-3 post-commit, best-effort: push the cancellation to everyone watching the order, and — if a
+    // rider was assigned — `job:cancelled` so they leave the (now dead) job screen instead of being
+    // stranded on it. `collected` drives their UI (post-pickup hand-back vs. straight back to the board).
+    // A WS failure must never fail the already-committed cancel, so both are guarded no-ops without a gateway.
+    this.gateway?.emitOrderStatus(orderId, "cancelled");
+    if (result.riderId) this.gateway?.emitJobCancelled(orderId, result.collected);
+    return { id: result.id, status: result.status, auditId: result.auditId };
   }
 
   /**

@@ -1,6 +1,7 @@
 import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 import { AdminService, computeFunnel, fmtUntil } from "./admin.service";
 
 /** Decimal-like stub — Prisma returns Decimal objects whose `.toString()`/`.toFixed()` we serialize. */
@@ -494,6 +495,25 @@ describe("AdminService admin mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.orderEvent!.data).toEqual({ orderId: "o1", status: "cancelled" });
     expect(calls.audit!.data).toMatchObject({ action: "order.cancel", target: "o1", reasonCode: "duplicate order" });
     expect(res).toMatchObject({ id: "o1", status: "cancelled", auditId: "audit-9" });
+  });
+
+  it("cancelOrder pushes job:cancelled to an assigned rider post-commit (P2-3), with the collected flag", async () => {
+    const { prisma } = makeTx({ order: { id: "o1", status: "picked_up", riderId: "r1", collectedAt: new Date() } });
+    const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn() };
+    const svc = new AdminService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway);
+    await svc.cancelOrder("admin-1", "o1", { reason: "duplicate order" });
+    expect(gateway.emitOrderStatus).toHaveBeenCalledWith("o1", "cancelled");
+    // Post-pickup (collectedAt set) → collected=true drives the rider's hand-back path.
+    expect(gateway.emitJobCancelled).toHaveBeenCalledWith("o1", true);
+  });
+
+  it("cancelOrder does NOT push job:cancelled when no rider is assigned", async () => {
+    const { prisma } = makeTx({ order: { id: "o1", status: "open_for_offers", riderId: null, collectedAt: null } });
+    const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn() };
+    const svc = new AdminService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway);
+    await svc.cancelOrder("admin-1", "o1", { reason: "spam" });
+    expect(gateway.emitOrderStatus).toHaveBeenCalledWith("o1", "cancelled");
+    expect(gateway.emitJobCancelled).not.toHaveBeenCalled();
   });
 
   it("cancelOrder rejects an order already in a terminal state (nothing written)", async () => {
