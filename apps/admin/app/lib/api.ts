@@ -38,9 +38,22 @@ export async function adminFetch<T>(path: string): Promise<T | null> {
   return "data" in r ? r.data : null;
 }
 
-export async function adminPost(path: string, body: unknown): Promise<boolean> {
+/**
+ * Result of a write. Distinguishes an intentional offline no-op (`unconfigured` — API_BASE_URL unset,
+ * the demo path) from a genuine failure (`unreachable` network error, or `http` non-2xx). Callers that
+ * must not fail-open (audit / compliance writes) can treat a real failure as an error while leaving the
+ * offline path a silent no-op. `adminPost` keeps the legacy boolean shape for callers that only need
+ * ok/not-ok (and which already gate behind a live-connection check).
+ */
+export type AdminPostResult =
+  | { ok: true }
+  | { ok: false; reason: "unconfigured" }
+  | { ok: false; reason: "unreachable" }
+  | { ok: false; reason: "http"; status: number };
+
+export async function adminPostResult(path: string, body: unknown): Promise<AdminPostResult> {
   const b = base();
-  if (!b) return false;
+  if (!b) return { ok: false, reason: "unconfigured" };
   try {
     const res = await fetch(`${b}${path}`, {
       method: "POST",
@@ -48,8 +61,14 @@ export async function adminPost(path: string, body: unknown): Promise<boolean> {
       cache: "no-store",
       body: JSON.stringify(body),
     });
-    return res.ok;
+    if (!res.ok) return { ok: false, reason: "http", status: res.status };
+    return { ok: true };
   } catch {
-    return false;
+    return { ok: false, reason: "unreachable" };
   }
+}
+
+export async function adminPost(path: string, body: unknown): Promise<boolean> {
+  const r = await adminPostResult(path, body);
+  return r.ok;
 }

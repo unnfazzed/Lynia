@@ -516,6 +516,36 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     }
   });
 
+  it("counts a same-socket double-subscribe to the SAME order once, so one disconnect returns to dark", async () => {
+    vi.useFakeTimers();
+    try {
+      const { server, to, emit } = fakeServer();
+      const g = gateway(customerTracking());
+      g.server = server as never;
+      const client = fakeSocket({ sub: "c1", role: "customer" });
+
+      // Duplicate subscribe from the SAME socket to the SAME order (e.g. a client retry). Presence
+      // must stay idempotent: live goes to 1, not 2 — otherwise the single disconnect below can't
+      // bring live back to 0 and the dark clock / escalation never fires.
+      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      const presence = (g as unknown as { customerPresence: Map<string, { live: number }> }).customerPresence;
+      expect(presence.get("ord-1")?.live).toBe(1);
+
+      // One disconnect → live back to 0 → dark clock starts → escalation fires past the window.
+      g.handleDisconnect(client as never);
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence();
+      expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+      expect(emit).toHaveBeenCalledWith(
+        WS_EVENTS.presenceStale,
+        expect.objectContaining({ orderId: "ord-1", role: "customer" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not track a rider-role subscriber as customer presence", async () => {
     vi.useFakeTimers();
     try {

@@ -94,6 +94,82 @@ describe("AdminService.listRiders", () => {
   });
 });
 
+describe("AdminService.getKycReview (A-04 duplicate ID)", () => {
+  const riderRow = (over: Record<string, unknown> = {}) => ({
+    profileId: "r1",
+    bikeReg: "ABZ 1",
+    kycStatus: "pending",
+    kycRef: "sess_1",
+    kycAttempts: 0,
+    kycDeclineReason: null,
+    idVerified: false,
+    duplicateIdFlag: true,
+    updatedAt: new Date("2026-07-01T00:00:00Z"),
+    profile: { firstName: "Tendai", lastName: "M", phone: "+263782000001", idNumber: "63-123456-A-42" },
+    ...over,
+  });
+
+  it("returns the masked colliding accounts sharing the national ID", async () => {
+    let where: unknown;
+    const prisma = {
+      rider: { findUnique: async () => riderRow() },
+      profile: {
+        findMany: async (args: { where: unknown }) => {
+          where = args.where;
+          return [
+            {
+              id: "p2",
+              firstName: "Banned",
+              lastName: "Rider",
+              phone: "+263782000999",
+              role: "rider",
+              rider: { kycStatus: "verified", accountStatus: "banned" },
+            },
+            {
+              id: "p3",
+              firstName: "Some",
+              lastName: "Customer",
+              phone: "+263782000888",
+              role: "customer",
+              rider: null,
+            },
+          ];
+        },
+      },
+    };
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    const r = (await svc.getKycReview("r1"))!;
+    // Only OTHER accounts with the same ID are queried.
+    expect(where).toMatchObject({ idNumber: "63-123456-A-42", id: { not: "r1" } });
+    expect(r.duplicateIdFlag).toBe(true);
+    expect(r.duplicateIdAccounts).toHaveLength(2);
+    // Phones masked (A-03); a banned rider surfaces its standing so the reviewer catches ban-evasion.
+    expect(r.duplicateIdAccounts[0]).toMatchObject({
+      id: "p2",
+      name: "Banned Rider",
+      role: "rider",
+      accountStatus: "banned",
+      kycStatus: "verified",
+    });
+    expect(r.duplicateIdAccounts[0]!.phone).toBe("+263•••••0999");
+    // A non-rider collision (customer) reports null rider fields.
+    expect(r.duplicateIdAccounts[1]).toMatchObject({ id: "p3", role: "customer", kycStatus: null, accountStatus: null });
+  });
+
+  it("skips the collision query and returns an empty set when the applicant has no ID", async () => {
+    let queried = false;
+    const prisma = {
+      rider: { findUnique: async () => riderRow({ duplicateIdFlag: false, profile: { firstName: "No", lastName: "Id", phone: "+263782000001", idNumber: null } }) },
+      profile: { findMany: async () => { queried = true; return []; } },
+    };
+    const svc = new AdminService(prisma as unknown as PrismaService);
+    const r = (await svc.getKycReview("r1"))!;
+    expect(queried).toBe(false);
+    expect(r.duplicateIdAccounts).toEqual([]);
+    expect(r.duplicateIdFlag).toBe(false);
+  });
+});
+
 describe("AdminService.listOrders", () => {
   it("filters by status and serializes fares", async () => {
     let where: unknown;

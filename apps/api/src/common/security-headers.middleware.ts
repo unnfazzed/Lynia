@@ -22,7 +22,10 @@ export function securityHeaders(_req: Request, res: Response, next: NextFunction
   res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
   // Drop the ambient-authority surface for a JSON API: no reason for any browser feature to be usable.
   res.setHeader("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=()");
-  // Remove the framework fingerprint (defense in depth / less attacker recon).
+  // Remove the framework fingerprint (defense in depth / less attacker recon). Note: Express sets
+  // X-Powered-By at send-time, so this middleware call cannot actually strip it — the authoritative
+  // suppression is `app.getHttpAdapter().getInstance().disable("x-powered-by")` in main.ts. This
+  // line is kept as a harmless belt-and-braces for any header already present at this point.
   res.removeHeader("X-Powered-By");
   next();
 }

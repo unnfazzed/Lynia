@@ -49,9 +49,7 @@ export function ResolveActions({
         noteRequired
         notePlaceholder="Required — what was agreed and why."
         confirmLabel="Record refund"
-        onConfirm={(r) => {
-          void resolveIssue(id, IssueResolution.REFUND, r.note, r.amount);
-        }}
+        onConfirm={(r) => resolveIssue(id, IssueResolution.REFUND, r.note, r.amount)}
       />
       <ConfirmModal
         action="issue.strike_rider"
@@ -68,9 +66,7 @@ export function ResolveActions({
         noteRequired
         notePlaceholder="Required — what the rider did and the evidence."
         confirmLabel="Add strike"
-        onConfirm={(r) => {
-          void resolveIssue(id, IssueResolution.RIDER_STRIKE, r.note);
-        }}
+        onConfirm={(r) => resolveIssue(id, IssueResolution.RIDER_STRIKE, r.note)}
       />
       <ConfirmModal
         action="issue.close_no_action"
@@ -86,9 +82,7 @@ export function ResolveActions({
         noteRequired
         notePlaceholder="Required — why no action is warranted."
         confirmLabel="Close issue"
-        onConfirm={(r) => {
-          void resolveIssue(id, IssueResolution.CLOSE_NO_ACTION, r.note);
-        }}
+        onConfirm={(r) => resolveIssue(id, IssueResolution.CLOSE_NO_ACTION, r.note)}
       />
     </div>
   );

@@ -50,9 +50,7 @@ export function KycDecision({
           </span>
         }
         confirmLabel="Approve rider"
-        onConfirm={() => {
-          void decideKyc(profileId, "verified", null);
-        }}
+        onConfirm={() => decideKyc(profileId, "verified", null)}
       />
       <ConfirmModal
         action="rider.kyc_decline"
@@ -78,9 +76,7 @@ export function KycDecision({
         }
         reasons={REASONS.kycDecline}
         confirmLabel="Decline application"
-        onConfirm={(r) => {
-          void decideKyc(profileId, "failed", r.reasonCode);
-        }}
+        onConfirm={(r) => decideKyc(profileId, "failed", r.reasonCode)}
       />
     </div>
   );

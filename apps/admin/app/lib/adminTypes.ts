@@ -4,7 +4,7 @@
  * page degrades to the offline/empty state when `adminFetch` returns null. Monetary values are
  * strings (matching the existing Order.proposedFare contract) — the API owns rounding.
  */
-import type { IssueType, IssueStatus, IssueResolution, ReportReason } from "@lynia/shared";
+import type { IssueType, IssueStatus, IssueResolution, ReportReason, Role } from "@lynia/shared";
 
 /** A compact order/trip row reused in the recent-trips + recent-orders tables. */
 export interface TripRow {
@@ -170,6 +170,23 @@ export interface KycReview {
   locked: boolean;
   declineReason: string | null;
   submittedAt: string;
+  /** A-04: true if this rider's national ID already sat on another account at onboarding (snapshot). */
+  duplicateIdFlag: boolean;
+  /** A-04: the live set of OTHER accounts sharing this national ID — empty ⇒ no collision now. */
+  duplicateIdAccounts: DuplicateIdAccount[];
+}
+
+/** One other account sharing this rider's national ID (A-04 duplicate-account guard). */
+export interface DuplicateIdAccount {
+  id: string;
+  name: string;
+  /** Server-masked (A-03). */
+  phone: string;
+  role: Role;
+  /** The other account's KYC state, when it is itself a rider — null for a non-rider (e.g. customer). */
+  kycStatus: "pending" | "verified" | "failed" | null;
+  /** The other account's rider standing, when it is a rider — null otherwise. */
+  accountStatus: "active" | "suspended" | "banned" | null;
 }
 
 /* ── Order detail (kit orders.html) ────────────────────────── */

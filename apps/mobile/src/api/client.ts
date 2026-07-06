@@ -113,7 +113,9 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
     // 401s take the refresh path; everything else surfaces as the domain error it is.
     const text = await res.text().catch(() => "");
     if (!isAuthGuard401(text)) {
-      throw new ApiError(401, friendlyMessage(401, text));
+      // Carry the machine-readable code (same as the generic error path below) so domain screens can
+      // branch on err.code for a 401-tagged business error (e.g. a wrong delivery code).
+      throw new ApiError(401, friendlyMessage(401, text), errorCode(text));
     }
     const refreshed = await refreshSession(session.refreshToken);
     if (refreshed) {
