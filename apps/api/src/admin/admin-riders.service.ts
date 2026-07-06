@@ -242,8 +242,8 @@ export class AdminRidersService {
    * (ACTIVE_RIDE_STATUSES — live-only, not the terminal-inclusive set, so a rider who once finished an
    * order isn't unmasked forever; same rule as listRiders). Returns null when the id isn't a rider.
    *
-   * TODO(A-04): `suspended`/`suspendReason` need a rider ban/suspend state machine + schema fields
-   * (deferred — see plan "out of scope"); status here is derived from cooldownUntil + isOnline only.
+   * `status` reports the A-04 account state machine first (suspended/banned, with the stored admin
+   * reason), then the cooldown/online derivation for active riders.
    * Commission is prepaid per-ride at 0% during the launch period, so nothing is owed — `commission`
    * is "0.00" until the rate turns on and the prepaid wallet ships (deferred).
    */
@@ -260,6 +260,8 @@ export class AdminRidersService {
         tripsCount: true,
         cancelStrikes: true,
         cooldownUntil: true,
+        accountStatus: true,
+        suspendReason: true,
         profile: { select: { firstName: true, lastName: true, phone: true, createdAt: true } },
       },
     });
@@ -287,7 +289,18 @@ export class AdminRidersService {
     ]);
 
     const onCooldown = !!rider.cooldownUntil && rider.cooldownUntil.getTime() > now;
-    const status: "online" | "offline" | "cooldown" = onCooldown ? "cooldown" : rider.isOnline ? "online" : "offline";
+    // Account state (A-04) outranks the activity derivation: a suspended/banned rider can't go online,
+    // so showing "offline" would hide the reason they're off the board.
+    const status: "online" | "offline" | "cooldown" | "suspended" | "banned" =
+      rider.accountStatus === RiderAccountStatus.SUSPENDED
+        ? "suspended"
+        : rider.accountStatus === RiderAccountStatus.BANNED
+          ? "banned"
+          : onCooldown
+            ? "cooldown"
+            : rider.isOnline
+              ? "online"
+              : "offline";
 
     // Completion = delivered-or-completed over every order ever assigned to this rider. Approximate
     // (a customer-side cancel still counts in the denominator) but real, schema-backed data.
@@ -305,7 +318,8 @@ export class AdminRidersService {
       kyc: rider.kycStatus,
       status,
       cooldown: onCooldown ? fmtUntil(rider.cooldownUntil!, now) : undefined,
-      suspendReason: undefined, // TODO(A-04): no suspend state machine yet
+      // The admin reason recorded at suspend/ban time (or "settlement_overdue" from the auto-pause).
+      suspendReason: rider.suspendReason ?? undefined,
       trips: rider.tripsCount,
       rating: rider.ratingCount > 0 ? rider.ratingAvg.toFixed(1) : null,
       ratingCount: rider.ratingCount,

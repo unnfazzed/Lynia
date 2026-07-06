@@ -19,6 +19,7 @@ function ratingTxt(r: RiderDetail): string {
 function riderPill(r: RiderDetail) {
   if (r.status === "online") return <Pill kind="good" dot>online</Pill>;
   if (r.status === "suspended") return <Pill kind="bad">suspended</Pill>;
+  if (r.status === "banned") return <Pill kind="bad">banned</Pill>;
   if (r.status === "cooldown") return <Pill>cooldown · {r.cooldown}</Pill>;
   return <Pill kind="mut">offline</Pill>;
 }
