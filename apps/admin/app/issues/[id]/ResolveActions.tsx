@@ -40,8 +40,9 @@ export function ResolveActions({
         title={`Refund the customer for order ${order}?`}
         consequence={
           <span>
-            Cash refunds are handed to the customer by ops or netted off the rider&apos;s next settlement. Order{" "}
-            <b>{order}</b>.
+            Repay the customer directly for now — this <b>records</b> the amount owed against the rider on order{" "}
+            <b>{order}</b>. Automatic netting off the rider&apos;s settlement arrives with the commission/billing
+            infra (not yet live), which will then consume this record.
           </span>
         }
         reasons={REASONS.issueRefund}
