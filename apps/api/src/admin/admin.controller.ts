@@ -6,6 +6,10 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { SettlementsService } from "../settlements/settlements.service";
+import { AdminAuditService } from "./admin-audit.service";
+import { AdminCustomersService } from "./admin-customers.service";
+import { AdminOrdersService } from "./admin-orders.service";
+import { AdminRidersService } from "./admin-riders.service";
 import { AdminService } from "./admin.service";
 
 const KYC_VALUES = Object.values(KycStatus) as string[];
@@ -44,6 +48,10 @@ const FareAdjust = z.object({
 export class AdminController {
   constructor(
     private readonly admin: AdminService,
+    private readonly ordersService: AdminOrdersService,
+    private readonly ridersService: AdminRidersService,
+    private readonly customersService: AdminCustomersService,
+    private readonly audit: AdminAuditService,
     private readonly settlements: SettlementsService,
   ) {}
 
@@ -56,13 +64,13 @@ export class AdminController {
   @Get("riders")
   riders(@Query("kyc") kyc?: string) {
     const filter = kyc && KYC_VALUES.includes(kyc) ? (kyc as KycStatus) : undefined;
-    return this.admin.listRiders(filter);
+    return this.ridersService.listRiders(filter);
   }
 
   /** KYC doc-review detail for one rider (A-02). 404s when the profile isn't a rider. */
   @Get("riders/:profileId/kyc")
   async kycReview(@Param("profileId", ParseUUIDPipe) profileId: string) {
-    const review = await this.admin.getKycReview(profileId);
+    const review = await this.ridersService.getKycReview(profileId);
     if (!review) throw new NotFoundException("Rider not found");
     return review;
   }
@@ -71,13 +79,13 @@ export class AdminController {
   @Get("orders")
   orders(@Query("status") status?: string) {
     const filter = status && ORDER_STATUS_VALUES.includes(status) ? (status as OrderStatus) : undefined;
-    return this.admin.listOrders(filter);
+    return this.ordersService.listOrders(filter);
   }
 
   /** Order detail (D-2): 8-step timeline, parcel, fares, masked people. 404s when not found. */
   @Get("orders/:id")
   async orderDetail(@Param("id", ParseUUIDPipe) id: string) {
-    const order = await this.admin.getOrderDetail(id);
+    const order = await this.ordersService.getOrderDetail(id);
     if (!order) throw new NotFoundException("Order not found");
     return order;
   }
@@ -85,7 +93,7 @@ export class AdminController {
   /** Rider detail (D-2): stats, strikes, cooldown, bike, recent trips; phone masked off a live order. */
   @Get("riders/:profileId")
   async riderDetail(@Param("profileId", ParseUUIDPipe) profileId: string) {
-    const rider = await this.admin.getRiderDetail(profileId);
+    const rider = await this.ridersService.getRiderDetail(profileId);
     if (!rider) throw new NotFoundException("Rider not found");
     return rider;
   }
@@ -96,13 +104,13 @@ export class AdminController {
     const f = (CUSTOMER_FILTERS as readonly string[]).includes(filter ?? "")
       ? (filter as (typeof CUSTOMER_FILTERS)[number])
       : undefined;
-    return this.admin.listCustomers(f);
+    return this.customersService.listCustomers(f);
   }
 
   /** Customer detail (D-2): aggregates + recent orders. 404s when the id isn't a customer. */
   @Get("customers/:profileId")
   async customerDetail(@Param("profileId", ParseUUIDPipe) profileId: string) {
-    const customer = await this.admin.getCustomerDetail(profileId);
+    const customer = await this.customersService.getCustomerDetail(profileId);
     if (!customer) throw new NotFoundException("Customer not found");
     return customer;
   }
@@ -117,7 +125,7 @@ export class AdminController {
     @Body(new ZodBody(AuditAction)) body: z.infer<typeof AuditAction>,
     @CurrentUser() actor: string,
   ) {
-    return this.admin.recordAuditAction(actor, body);
+    return this.audit.recordAuditAction(actor, body);
   }
 
   /* ── A-04 rider account state machine (mutation + audit in one $transaction) ─────────── */
@@ -129,7 +137,7 @@ export class AdminController {
     @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
     @CurrentUser() actor: string,
   ) {
-    return this.admin.suspendRider(actor, id, body);
+    return this.ridersService.suspendRider(actor, id, body);
   }
 
   /** Lift a suspension → active, clearing the suspend reason. Reason optional. */
@@ -139,7 +147,7 @@ export class AdminController {
     @Body(new ZodBody(ReasonOptional)) body: z.infer<typeof ReasonOptional>,
     @CurrentUser() actor: string,
   ) {
-    return this.admin.liftRider(actor, id, body);
+    return this.ridersService.liftRider(actor, id, body);
   }
 
   /** Permanently ban a rider (accountStatus=banned + reason). Reason required. */
@@ -149,7 +157,7 @@ export class AdminController {
     @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
     @CurrentUser() actor: string,
   ) {
-    return this.admin.banRider(actor, id, body);
+    return this.ridersService.banRider(actor, id, body);
   }
 
   /* ── Order admin actions (mutation + event + audit in one $transaction) ──────────────── */
@@ -161,7 +169,7 @@ export class AdminController {
     @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
     @CurrentUser() actor: string,
   ) {
-    return this.admin.cancelOrder(actor, id, body);
+    return this.ordersService.cancelOrder(actor, id, body);
   }
 
   /** Adjust an order's agreed fare (manual correction / dispute). Reason required. */
@@ -171,7 +179,7 @@ export class AdminController {
     @Body(new ZodBody(FareAdjust)) body: z.infer<typeof FareAdjust>,
     @CurrentUser() actor: string,
   ) {
-    return this.admin.adjustFare(actor, id, body);
+    return this.ordersService.adjustFare(actor, id, body);
   }
 
   /* ── Commission (prepaid per-ride, delegated to SettlementsService) ──────────────────────── */

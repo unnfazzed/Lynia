@@ -8,7 +8,6 @@
     "types": ["react", "react-native", "jest"],
     "noEmit": true,
     "declaration": false,
-    "baseUrl": ".",
     "paths": {
       "@lynia/shared": ["../../packages/shared/src/index.ts"]
     }

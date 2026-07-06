@@ -7,7 +7,7 @@ export function SkeletonRows({ cols, rows = 6 }: { cols: number; rows?: number }
       <tbody>
         {Array.from({ length: rows }).map((_, r) => (
           <tr key={r}>
-            {Array.from({ length: cols }).map((_, c) => (
+            {Array.from({ length: cols }).map((_c, c) => (
               <td key={c}>
                 <span className="skel">{"—".repeat(c === 1 ? 8 : 4)}</span>
               </td>

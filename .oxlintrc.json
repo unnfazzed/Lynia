@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    // NestJS @Module()/@Injectable() classes are declaration sites, not "extraneous" classes.
+    "typescript/no-extraneous-class": ["warn", { "allowWithDecorator": true }],
+    // Prisma's aggregate API (_count/_sum/_all) and the deliberate __lynia* font-patch globals
+    // make a blanket underscore ban pure noise here.
+    "eslint/no-underscore-dangle": "off",
+    // Local helpers inside specs/handlers are scoped for readability, not by accident.
+    "unicorn/consistent-function-scoping": "off",
+    // toSorted()/toReversed() need lib ES2023; the repo targets ES2022.
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.spec.ts", "**/__tests__/**"],
+      "rules": {
+        // Empty classes in specs are intentional test doubles (metadata targets, guard stand-ins).
+        "typescript/no-extraneous-class": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["**/dist/**", "**/.next/**", "**/.expo/**", "**/node_modules/**"]
+}

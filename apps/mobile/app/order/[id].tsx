@@ -6,6 +6,7 @@ import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View
 import { ApiError } from "../../src/api/client";
 import { isPendingCounter, shouldShowOffersError } from "../../src/logic/journey";
 import { mapsPlaceUrl } from "../../src/logic/maps";
+import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
@@ -14,6 +15,9 @@ import { useOrderSocket } from "../../src/realtime/use-order-socket";
 import { Button, Card, EmptyState, ErrorText, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
+import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
+import { RatingCard } from "../../src/ui/order/RatingCard";
+import { useReduceMotion } from "../../src/ui/useReduceMotion";
 
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
@@ -22,91 +26,12 @@ const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
 // getting the parcel back directly with the rider.
 const POST_PICKUP_CANCEL = new Set<string>(["picked_up", "en_route_dropoff"]);
 
-// A rider's `undelivered` reason code → the verbatim line shown on the customer's terminal card. The
-// stored code is authoritative; this only makes it readable (mirrors new-flows.html "recipient
-// unreachable · N attempts").
-const UNDELIVERED_REASON_LABEL: Record<string, string> = {
-  unreachable: "recipient unreachable",
-  refused: "recipient refused delivery",
-  wrong_address: "address was wrong",
-  breakdown: "rider breakdown",
-};
-
-type SortMode = "best" | "cheapest" | "fastest" | "rated";
-const SORT_MODES: { key: SortMode; label: string }[] = [
-  { key: "best", label: "Best match" },
-  { key: "cheapest", label: "Cheapest" },
-  { key: "fastest", label: "Fastest" },
-  { key: "rated", label: "Top rated" },
-];
-
 const URGENT_MS = 20_000;
-// Rating-on-tap undo window (D3): how long a tapped rating stays cancellable before it commits.
-const RATE_UNDO_MS = 4_000;
 // C2: after a rider bail the order flips to `cancelled` and the server pushes `order:rebroadcast` on the
 // (now dead) order's room to move the customer to the fresh auction. Hold the socket open for this grace
 // window past `cancelled` so that push can still land — bounded, so a genuinely terminal cancel doesn't
 // keep the socket alive forever.
 const CANCELLED_GRACE_MS = 20_000;
-
-/** mm:ss for the auction timer. */
-function formatClock(ms: number): string {
-  const total = Math.floor(ms / 1000);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-/** Spoken form for the timer's accessibilityLabel, e.g. "1 minute 20 seconds left". */
-function spokenRemaining(ms: number): string {
-  const total = Math.floor(ms / 1000);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  const parts: string[] = [];
-  if (m > 0) parts.push(`${m} minute${m === 1 ? "" : "s"}`);
-  parts.push(`${s} second${s === 1 ? "" : "s"}`);
-  return `Offer window: ${parts.join(" ")} left`;
-}
-
-/** Live-auction: OS reduce-motion preference, so the bid entrance animation degrades to instant. */
-function useReduceMotion(): boolean {
-  const [reduce, setReduce] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((r) => {
-      if (alive) setReduce(r);
-    });
-    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduce);
-    return () => {
-      alive = false;
-      sub.remove();
-    };
-  }, []);
-  return reduce;
-}
-
-/**
- * A single bid, animated in. A newly-arrived offer mounts with a fresh key, so this runs its
- * slide+fade entrance exactly once — existing cards keep their key and don't re-animate on re-sort
- * or poll. Honors reduce-motion (renders at rest). useNativeDriver so it stays cheap on low-end
- * Android; we deliberately avoid animating border colour (JS-thread) to keep it smooth.
- */
-function BidEntrance({ animate, children }: { animate: boolean; children: React.ReactNode }): React.ReactElement {
-  const v = useRef(new Animated.Value(animate ? 0 : 1)).current;
-  useEffect(() => {
-    if (animate) Animated.timing(v, { toValue: 1, duration: 220, useNativeDriver: true }).start();
-  }, [animate, v]);
-  return (
-    <Animated.View
-      style={{
-        opacity: v,
-        transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
-      }}
-    >
-      {children}
-    </Animated.View>
-  );
-}
 
 export default function OrderScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -115,11 +40,6 @@ export default function OrderScreen(): React.ReactElement {
   const router = useRouter();
   const reduceMotion = useReduceMotion();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
-  const [score, setScore] = useState(5);
-  // Rating-on-tap (D3): a star tap arms the submit; a short undo window lets the customer change or
-  // cancel before it commits (rating is terminal server-side → completed, so we hold, not un-rate).
-  const [ratePending, setRatePending] = useState(false);
-  const rateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("best");
   // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
   const [selectNotice, setSelectNotice] = useState<string | null>(null);
@@ -330,27 +250,6 @@ export default function OrderScreen(): React.ReactElement {
     mutationFn: () => cancelOrder(orderId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
   });
-
-  // Rating-on-tap handlers (D3). Tapping a star sets the score and (re)arms a short commit window;
-  // Undo cancels it. The window is cleared on unmount so a pending submit can't fire after teardown.
-  useEffect(() => () => { if (rateTimer.current) clearTimeout(rateTimer.current); }, []);
-  function tapStar(n: number) {
-    setScore(n);
-    if (rateTimer.current) clearTimeout(rateTimer.current);
-    setRatePending(true);
-    rateTimer.current = setTimeout(() => {
-      rateTimer.current = null;
-      setRatePending(false);
-      rateM.mutate(n);
-    }, RATE_UNDO_MS);
-    AccessibilityInfo.announceForAccessibility(`${n} star${n === 1 ? "" : "s"} — submitting, tap Undo to change`);
-  }
-  function undoRate() {
-    if (rateTimer.current) clearTimeout(rateTimer.current);
-    rateTimer.current = null;
-    setRatePending(false);
-    AccessibilityInfo.announceForAccessibility("Rating cancelled");
-  }
 
   if (orderQ.isLoading) {
     return (
@@ -648,36 +547,7 @@ export default function OrderScreen(): React.ReactElement {
         {isActive ? <SosControl orderId={orderId} /> : null}
 
         {order.status === "delivered" ? (
-          <Card>
-            <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: tokens.space.sm }}>Rate your rider</Text>
-            <View style={{ flexDirection: "row", gap: 4, marginBottom: tokens.space.sm }}>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <Pressable
-                  key={n}
-                  onPress={() => tapStar(n)}
-                  disabled={rateM.isPending}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Rate ${n} star${n === 1 ? "" : "s"}`}
-                  accessibilityState={{ selected: n <= score }}
-                  hitSlop={12}
-                  style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
-                >
-                  <Text style={{ fontSize: 28, color: n <= score ? tokens.color.highlight : tokens.color.line }}>★</Text>
-                </Pressable>
-              ))}
-            </View>
-            {ratePending ? (
-              // Tap-to-rate is armed: submitting shortly, still cancellable.
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>Submitting {score}★…</Text>
-                <Button label="Undo" variant="ghost" onPress={undoRate} />
-              </View>
-            ) : rateM.isPending ? (
-              <Text style={{ fontSize: 14, color: tokens.color.muted }}>Saving your rating…</Text>
-            ) : (
-              <Text style={{ fontSize: 14, color: tokens.color.muted }}>Tap a star to rate</Text>
-            )}
-          </Card>
+          <RatingCard saving={rateM.isPending} onRate={(n) => rateM.mutate(n)} />
         ) : null}
 
         {order.status === "completed" ? (
@@ -784,67 +654,5 @@ export default function OrderScreen(): React.ReactElement {
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
     </Screen>
-  );
-}
-
-/**
- * F-07 counter-offer card. A rider bidding ABOVE the ask surfaces as ask-vs-counter (+delta) with an
- * Accept (assigns at the counter price) and a Decline. Decline is client-side dismissal only — the
- * bid stays live server-side and reverts to a normal choosable card at the countered price (one round,
- * no counter-back). Never shows an auto-charge above the customer's price.
- */
-function CounterOfferCard({
-  offer,
-  ask,
-  onAccept,
-  onDecline,
-  loading,
-  disabled,
-}: {
-  offer: OfferRow;
-  ask: number;
-  onAccept: () => void;
-  onDecline: () => void;
-  loading: boolean;
-  disabled: boolean;
-}): React.ReactElement {
-  const counter = Number(offer.offeredFare);
-  const delta = counter - ask;
-  const name = `${offer.rider.profile.firstName} ${offer.rider.profile.lastName}`;
-  return (
-    <Card style={{ borderColor: tokens.color.accent }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
-        <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
-          <Icon name="user" size={20} color={tokens.color.accentText} />
-        </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{name}</Text>
-          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-            ★ {offer.rider.ratingCount > 0 ? Number(offer.rider.ratingAvg).toFixed(1) : "new"} · {offer.rider.tripsCount} trips · ETA {offer.etaMinutes} min
-          </Text>
-        </View>
-      </View>
-      <View style={{ flexDirection: "row", alignItems: "stretch", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
-        <View style={{ flex: 1, backgroundColor: tokens.color.surface, borderRadius: tokens.radius.input, padding: tokens.space.sm }}>
-          <Text style={{ fontSize: tokens.font.size.micro, fontWeight: tokens.font.weight.bold, letterSpacing: 0.4, color: tokens.color.muted }}>YOUR PRICE</Text>
-          <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>${ask.toFixed(2)}</Text>
-        </View>
-        <View style={{ alignItems: "center", justifyContent: "center" }}>
-          <Icon name="arrow-right" size={16} color={tokens.color.muted} />
-        </View>
-        <View style={{ flex: 1, backgroundColor: tokens.color.accentWash, borderRadius: tokens.radius.input, padding: tokens.space.sm }}>
-          <Text style={{ fontSize: tokens.font.size.micro, fontWeight: tokens.font.weight.bold, letterSpacing: 0.4, color: tokens.color.accentText }}>THEIR OFFER</Text>
-          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6 }}>
-            <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>${counter.toFixed(2)}</Text>
-            <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.bold, color: tokens.color.highlightInk, fontVariant: ["tabular-nums"] }}>+${delta.toFixed(2)}</Text>
-          </View>
-        </View>
-      </View>
-      <Button label={`Accept $${counter.toFixed(2)}`} onPress={onAccept} loading={loading} disabled={disabled} />
-      <Button label="Decline" variant="ghost" onPress={onDecline} disabled={disabled} />
-      <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center", marginTop: 2 }}>
-        Declining keeps {offer.rider.profile.firstName} in your list at ${counter.toFixed(2)} — one counter round, no counter-back.
-      </Text>
-    </Card>
   );
 }

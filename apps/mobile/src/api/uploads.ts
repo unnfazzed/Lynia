@@ -32,7 +32,7 @@ export async function uploadImage(uploadUrl: string, fileUri: string, contentTyp
     res = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": contentType }, body: blob, signal: controller.signal });
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("The upload timed out — check your connection and try again.");
+      throw new Error("The upload timed out — check your connection and try again.", { cause: err });
     }
     throw err;
   } finally {
