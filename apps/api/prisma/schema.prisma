@@ -10,9 +10,10 @@ generator client {
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
+// The connection URL lives in prisma.config.ts (CLI/Migrate) and the pg driver adapter in
+// PrismaService (runtime) — Prisma 7 removed `url` from schema datasource blocks.
 datasource db {
   provider   = "postgresql"
-  url        = env("DATABASE_URL")
   extensions = [postgis]
 }
 

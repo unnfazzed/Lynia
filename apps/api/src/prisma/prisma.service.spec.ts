@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { withPoolConfig } from "./prisma.service";
+import { poolConfig } from "./prisma.service";
 
-describe("withPoolConfig (E6)", () => {
+describe("poolConfig (E6, Prisma 7 pg-adapter pool options)", () => {
   const saved = { limit: process.env.DATABASE_CONNECTION_LIMIT, timeout: process.env.DATABASE_POOL_TIMEOUT };
 
   beforeEach(() => {
@@ -15,32 +15,34 @@ describe("withPoolConfig (E6)", () => {
     else process.env.DATABASE_POOL_TIMEOUT = saved.timeout;
   });
 
-  it("sets a deterministic default connection_limit when unset, preserving existing params", () => {
-    const out = new URL(withPoolConfig("postgresql://u:p@host:5432/db?schema=public"));
-    expect(out.searchParams.get("connection_limit")).toBe("10");
-    expect(out.searchParams.get("schema")).toBe("public"); // existing query params survive
+  it("sets a deterministic default pool size and passes the URL through verbatim", () => {
+    const out = poolConfig("postgresql://u:p@host:5432/db?schema=public");
+    expect(out.max).toBe(10);
+    expect(out.connectionString).toBe("postgresql://u:p@host:5432/db?schema=public");
   });
 
-  it("honours DATABASE_CONNECTION_LIMIT + DATABASE_POOL_TIMEOUT overrides", () => {
+  it("honours DATABASE_CONNECTION_LIMIT + DATABASE_POOL_TIMEOUT overrides (timeout seconds -> ms)", () => {
     process.env.DATABASE_CONNECTION_LIMIT = "25";
     process.env.DATABASE_POOL_TIMEOUT = "20";
-    const out = new URL(withPoolConfig("postgresql://u:p@host:5432/db"));
-    expect(out.searchParams.get("connection_limit")).toBe("25");
-    expect(out.searchParams.get("pool_timeout")).toBe("20");
+    const out = poolConfig("postgresql://u:p@host:5432/db");
+    expect(out.max).toBe(25);
+    expect(out.connectionTimeoutMillis).toBe(20000);
   });
 
-  it("never overrides a connection_limit already present in the URL", () => {
+  it("a connection_limit already present in the URL wins over the env var", () => {
     process.env.DATABASE_CONNECTION_LIMIT = "25";
-    const out = new URL(withPoolConfig("postgresql://u:p@host:5432/db?connection_limit=5"));
-    expect(out.searchParams.get("connection_limit")).toBe("5");
+    const out = poolConfig("postgresql://u:p@host:5432/db?connection_limit=5");
+    expect(out.max).toBe(5);
   });
 
-  it("leaves pool_timeout unset when the env var is absent (falls back to Prisma's default)", () => {
-    const out = new URL(withPoolConfig("postgresql://u:p@host:5432/db"));
-    expect(out.searchParams.has("pool_timeout")).toBe(false);
+  it("leaves connectionTimeoutMillis unset when no timeout is configured (pg default applies)", () => {
+    const out = poolConfig("postgresql://u:p@host:5432/db");
+    expect(out.connectionTimeoutMillis).toBeUndefined();
   });
 
-  it("returns an unparseable URL untouched rather than throwing (never blocks boot)", () => {
-    expect(withPoolConfig("not a url")).toBe("not a url");
+  it("falls back to defaults on an unparseable URL rather than throwing (never blocks boot)", () => {
+    const out = poolConfig("not a url");
+    expect(out.max).toBe(10);
+    expect(out.connectionString).toBe("not a url");
   });
 });

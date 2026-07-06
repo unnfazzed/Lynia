@@ -3,9 +3,12 @@
  * sample open order — so the offer loop, nearby-rider query, and admin dashboard have data.
  *   pnpm db:seed   (after db:up + db:migrate)
  */
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+// Prisma 7: the client needs a driver adapter; the pool is lazy so a missing DATABASE_URL
+// still fails at first query (with a clear pg error), not at import time.
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 const CORRIDOR = { lat: -17.8292, lng: 31.0522 }; // Harare CBD
 
 async function main(): Promise<void> {

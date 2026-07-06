@@ -10,11 +10,14 @@
  * plaintext through) → run this with --apply → all rows are ciphertext + hashed and dedup is fully
  * effective. Requires the SAME `PII_ENCRYPTION_KEY` the running service uses. Take a DB backup first.
  */
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import { loadEnv } from "../src/config/env";
 import { PiiCryptoService } from "../src/common/pii-crypto.service";
 
-const prisma = new PrismaClient();
+// Prisma 7: the client needs a driver adapter; the pool is lazy so a missing DATABASE_URL
+// still fails at first query (with a clear pg error), not at import time.
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 const APPLY = process.argv.includes("--apply");
 const crypto = new PiiCryptoService(loadEnv());
 
