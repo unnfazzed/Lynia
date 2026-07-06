@@ -186,6 +186,15 @@ export const RegisterDeviceTokenRequest = z.object({
 });
 export type RegisterDeviceTokenRequest = z.infer<typeof RegisterDeviceTokenRequest>;
 
+/** A freshly-verified account has an empty name (verifyOtp creates the profile with firstName ""),
+ *  so the app collects it once on the "Tell us who you are" step and PATCHes it here. Both names are
+ *  required and length-capped — trimmed, non-empty, and bounded so a name can't grow unbounded text. */
+export const UpdateProfileRequest = z.object({
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().min(1).max(80),
+});
+export type UpdateProfileRequest = z.infer<typeof UpdateProfileRequest>;
+
 export const ApiError = z.object({
   statusCode: z.number(),
   code: z.string(),
