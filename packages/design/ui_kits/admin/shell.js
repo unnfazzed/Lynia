@@ -8,7 +8,7 @@
     { id: "kyc", label: "KYC review", icon: "id-card", href: "kyc.html", badge: 3 },
     { id: "customers", label: "Customers", icon: "user", href: "customers.html" },
     { id: "issues", label: "Issues", icon: "triangle-alert", href: "issues.html", badge: 2 },
-    { id: "cash", label: "Cash", icon: "banknote", href: "cash.html" },
+    { id: "cash", label: "Commission", icon: "banknote", href: "cash.html" },
   ];
 
   const LS_KEY = "lyniaAdminTweaks";
