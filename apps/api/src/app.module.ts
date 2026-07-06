@@ -18,6 +18,7 @@ import { ObservabilityModule } from "./observability/metrics.service";
 import { OffersModule } from "./offers/offers.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { PrivacyModule } from "./privacy/privacy.module";
 import { ThrottleGuard } from "./common/throttle.guard";
 import { ReportsModule } from "./reports/reports.module";
 import { RidersModule } from "./riders/riders.module";
@@ -61,6 +62,8 @@ import { UploadsModule } from "./uploads/uploads.module";
     IssuesModule,
     ReportsModule,
     SosModule,
+    // LR8 — data retention + right-to-erasure (docs/DATA-RETENTION.md).
+    PrivacyModule,
     // Lane F — admin read API for the monitor dashboard.
     AdminModule,
   ],
