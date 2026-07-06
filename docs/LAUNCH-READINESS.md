@@ -508,8 +508,28 @@ but the endpoints bind `{reason}`/`{agreedFare}`/`{refundAmount}`:
   honest. **PII note:** national IDs are stored/compared in plaintext (duplicate-ID flag) — an LR8 item.
 
 **Verification (local, current `main` + this branch):** typecheck ✅ 5/5 · build ✅ · **API 496 tests**
-· **mobile 65 tests**. Next: a **Round 3** verify pass (loop-until-dry), then the performance track
-(LR9–LR15, founder infra).
+· **mobile 65 tests**.
+
+### Round 3 — 2026-07-06 (verify + full contract sweep) → CLEAN
+
+Independently verified all four Round-2 admin fixes (each PASS against its endpoint's zod schema —
+field names, required fields, number-vs-string coercion, and `.optional()`-vs-`.nullish()` null
+handling all correct), then swept **every** client→API write path in the repo for the recurring
+"wrong body shape" class: all admin server actions, and all `apps/mobile/src/api/*.ts` request bodies
+vs the shared contracts (including the `.strict()` refresh + RUM schemas). **No new confirmed
+wire-shape bug** — the class has **converged**. Only two minor non-blockers noted: a dead/defensive
+`setKyc` failed-branch (decline is routed through `decideKyc`, which sends the reason correctly), and
+a refund cap ($1000) vs fare cap ($100k) inconsistency (likely intentional for the pilot).
+
+**CI on the rebased branch is fully green** — typecheck·build·test, the PostGIS integration suite,
+dependency-audit + gitleaks, and CodeQL all pass. (One CI-only miss was caught and fixed: the rebase
+dropped the `supertest` devDep the e2e suite needs — it passed locally on stale `node_modules` but
+failed CI's frozen-lockfile install; re-added.)
+
+**Track status:** Round 3 is the **first clean round** after Round 2. The engineering-audit surface
+(authz, admin money-path contracts, error-honesty) is **converging** — one more clean round formally
+closes it under loop-until-dry. The remaining campaign work is the **performance track (LR9–LR15)**,
+which needs a staging stack + the OTEL collector (founder infra), and the device/UI track (LR16–LR20).
 
 ---
 
