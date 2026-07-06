@@ -27,9 +27,9 @@ const card = {
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: { [key: string]: string | string[] | undefined };
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const raw = searchParams.status;
+  const raw = (await searchParams).status;
   const active = typeof raw === "string" && (STATUSES as string[]).includes(raw) ? raw : "";
   const res = await adminFetchResult<Order[]>(`/admin/orders${active ? `?status=${active}` : ""}`);
   const orders = "data" in res ? res.data : null;

@@ -31,9 +31,9 @@ const card = {
 export default async function RidersPage({
   searchParams,
 }: {
-  searchParams: { [key: string]: string | string[] | undefined };
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const raw = searchParams.kyc;
+  const raw = (await searchParams).kyc;
   const active = typeof raw === "string" && (TABS as readonly string[]).includes(raw) ? raw : "pending";
   const query = active === "all" ? "" : `?kyc=${active}`;
   const res = await adminFetchResult<Rider[]>(`/admin/riders${query}`);

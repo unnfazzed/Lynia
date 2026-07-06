@@ -23,8 +23,9 @@ function riderPill(r: RiderDetail) {
   return <Pill kind="mut">offline</Pill>;
 }
 
-export default async function RiderProfilePage({ params }: { params: { id: string } }) {
-  const res = await adminFetchResult<RiderDetail>(`/admin/riders/${params.id}`);
+export default async function RiderProfilePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const res = await adminFetchResult<RiderDetail>(`/admin/riders/${id}`);
 
   if (!("data" in res)) {
     const reason = res.reason;

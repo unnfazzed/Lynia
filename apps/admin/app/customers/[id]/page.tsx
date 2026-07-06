@@ -13,9 +13,10 @@ import { IconAlert, IconUser } from "../../components/icons";
 
 /** Customer profile (kit `customers.html` detail): masked phone, spend, cancel pattern, rider
  *  reports, and flag / clear / ban actions — each reason-coded through <ConfirmModal>. */
-export default async function CustomerProfilePage({ params }: { params: { id: string } }) {
-  const res = await adminFetchResult<CustomerDetail>(`/admin/customers/${params.id}`);
-  const path = `/customers/${params.id}`;
+export default async function CustomerProfilePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const res = await adminFetchResult<CustomerDetail>(`/admin/customers/${id}`);
+  const path = `/customers/${id}`;
 
   if (!("data" in res)) {
     const reason = res.reason;

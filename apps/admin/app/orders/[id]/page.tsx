@@ -85,8 +85,9 @@ function deriveSteps(o: OrderDetail): Step[] {
   return steps;
 }
 
-export default async function OrderDetailPage({ params }: { params: { id: string } }) {
-  const res = await adminFetchResult<OrderDetail>(`/admin/orders/${params.id}`);
+export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const res = await adminFetchResult<OrderDetail>(`/admin/orders/${id}`);
 
   if (!("data" in res)) {
     const reason = res.reason;
@@ -97,7 +98,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             ← Orders
           </a>
           <h1 className="mono" style={{ fontSize: 18 }}>
-            {params.id}
+            {id}
           </h1>
           <Conn connected={false} reason={reason} />
         </header>

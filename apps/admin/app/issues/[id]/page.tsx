@@ -19,8 +19,9 @@ const RESOLUTION_LABELS: Record<IssueResolution, string> = {
 /** Status pill: open/investigating stay active (neutral), resolved goes muted. */
 const statusPill = (status: IssueDetail["status"]) => <Pill kind={status === "resolved" ? "mut" : ""}>{status}</Pill>;
 
-export default async function IssueDetailPage({ params }: { params: { id: string } }) {
-  const res = await adminFetchResult<IssueDetail>(`/admin/issues/${params.id}`);
+export default async function IssueDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const res = await adminFetchResult<IssueDetail>(`/admin/issues/${id}`);
 
   if (!("data" in res)) {
     const reason = res.reason;
