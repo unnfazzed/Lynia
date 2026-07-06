@@ -1,29 +1,34 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
 /** Default connection-pool size when `DATABASE_CONNECTION_LIMIT` is unset. Set explicitly (rather than
- *  leaning on Prisma's cpu-derived default) so pool behaviour is deterministic across Cloud Run
+ *  leaning on the driver's cpu-derived default) so pool behaviour is deterministic across Cloud Run
  *  instance sizes — E6. Graceful shutdown is already handled by onModuleDestroy + enableShutdownHooks. */
 const DEFAULT_CONNECTION_LIMIT = "10";
 
 /**
- * Apply an explicit connection-pool config to the datasource URL. `connection_limit` is fixed to a
- * predictable default (overridable via env), and `pool_timeout` is passed through only when set. Any
- * value already present in the URL wins, and an unparseable URL is returned untouched so a bad value
- * can never block boot. Prisma reads these as query params on the Postgres connection string.
+ * Pool options for the pg driver adapter (Prisma 7 — the engine's `connection_limit`/`pool_timeout`
+ * URL params no longer apply; pg's `max`/`connectionTimeoutMillis` are their equivalents). The same
+ * precedence as the old URL rewrite: a value already in the URL wins, then the env var, then the
+ * deterministic default. `pool_timeout` was seconds; connectionTimeoutMillis is ms. An unparseable
+ * URL falls back to defaults so a bad value can never block boot.
  */
-export function withPoolConfig(url: string): string {
+export function poolConfig(url: string): { connectionString: string; max: number; connectionTimeoutMillis?: number } {
+  const out: { connectionString: string; max: number; connectionTimeoutMillis?: number } = {
+    connectionString: url,
+    max: Number(process.env.DATABASE_CONNECTION_LIMIT ?? DEFAULT_CONNECTION_LIMIT),
+  };
   try {
     const u = new URL(url);
-    if (!u.searchParams.has("connection_limit")) {
-      u.searchParams.set("connection_limit", process.env.DATABASE_CONNECTION_LIMIT ?? DEFAULT_CONNECTION_LIMIT);
-    }
-    const timeout = process.env.DATABASE_POOL_TIMEOUT;
-    if (timeout && !u.searchParams.has("pool_timeout")) u.searchParams.set("pool_timeout", timeout);
-    return u.toString();
+    const limit = u.searchParams.get("connection_limit");
+    if (limit) out.max = Number(limit);
+    const timeout = u.searchParams.get("pool_timeout") ?? process.env.DATABASE_POOL_TIMEOUT;
+    if (timeout) out.connectionTimeoutMillis = Number(timeout) * 1000;
   } catch {
-    return url;
+    // keep defaults
   }
+  return out;
 }
 
 @Injectable()
@@ -32,9 +37,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor() {
     const url = process.env.DATABASE_URL;
-    // Only override the datasource when a URL is present, so unit tests that instantiate the service
-    // without DATABASE_URL keep Prisma's default env resolution.
-    super(url ? { datasources: { db: { url: withPoolConfig(url) } } } : {});
+    // Prisma 7 always wants a driver adapter. pg's Pool is lazy — it opens nothing until the first
+    // query — so constructing with an empty config when DATABASE_URL is absent keeps unit tests and
+    // tooling that never touch the DB working exactly as before.
+    super({ adapter: new PrismaPg(url ? poolConfig(url) : {}) });
   }
 
   async onModuleInit(): Promise<void> {

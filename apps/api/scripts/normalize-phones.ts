@@ -16,10 +16,13 @@
  *
  * Take a DB backup before --apply.
  */
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import { plan, type ProfileForBackfill } from "../src/auth/phone-backfill";
 
-const prisma = new PrismaClient();
+// Prisma 7: the client needs a driver adapter; the pool is lazy so a missing DATABASE_URL
+// still fails at first query (with a clear pg error), not at import time.
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 const APPLY = process.argv.includes("--apply");
 
 async function main(): Promise<void> {
