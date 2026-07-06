@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminPost } from "../lib/api";
+import { adminPostResult } from "../lib/api";
 
 /**
  * The single write path behind every destructive console action (suspend / lift / ban / decline /
@@ -24,9 +24,18 @@ export async function submitAdminAction(formData: FormData): Promise<void> {
 
   if (!action || !target) return;
 
-  await adminPost("/admin/audit-actions", { action, target, reasonCode, note });
+  const result = await adminPostResult("/admin/audit-actions", { action, target, reasonCode, note });
+
+  // Distinguish an intentional offline no-op from a real failure. `unconfigured` (API_BASE_URL unset,
+  // the demo/offline path) stays a silent no-op so the console degrades gracefully. A genuine write
+  // failure (network error or non-2xx) MUST throw so the awaiting <ConfirmModal> keeps the dialog open
+  // and tells the operator the action was NOT recorded — a swallowed audit-write is unacceptable.
+  if (!result.ok && result.reason !== "unconfigured") {
+    const detail = result.reason === "http" ? `HTTP ${result.status}` : "API unreachable";
+    throw new Error(`Failed to record audit action "${action}" for ${target} (${detail}).`);
+  }
 
   // Refresh the originating page so a live console reflects the mutation. Safe no-op effect on the
-  // degraded path (nothing changed server-side because adminPost returned false).
+  // degraded/offline path (nothing changed server-side because the write was skipped).
   revalidatePath(path);
 }

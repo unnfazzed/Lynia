@@ -10,13 +10,21 @@ import { PrismaService } from "../prisma/prisma.service";
  */
 export interface SettlementRow {
   id: string;
+  /** Deep-link target — the rider whose settlement this is. */
+  riderId: string;
   name: string;
-  trips: number;
-  cash: string;
+  /** Gross agreed fares on completed cash orders this cycle (2dp string). */
+  grossFares: string;
+  /** Commission Lynia bills on the gross fares (2dp string). */
   commission: string;
-  adjustment?: string;
-  status: "due" | "overdue" | "settled" | "none";
-  note: string;
+  /** Customer refunds netted off the commission before billing ("0.00" when none). */
+  refundsNetted: string;
+  /** Net owed after netting refunds — the amount record-payment settles (2dp string). */
+  amountDue: string;
+  /** Canonical SettlementStatus — pending | paid | overdue. */
+  status: SettlementStatus;
+  /** Cycle due date (settlement day), pre-formatted by the API. */
+  dueDate: string;
 }
 
 export interface SettlementWeek {
@@ -58,13 +66,6 @@ export function weeklyPeriod(ref: Date = new Date()): { periodStart: Date; perio
   const periodStart = new Date(periodEnd);
   periodStart.setUTCDate(periodEnd.getUTCDate() - 7);
   return { periodStart, periodEnd, dueDate: new Date(periodEnd) };
-}
-
-/** Map a persisted SettlementStatus to the admin console's cash-row status vocabulary. */
-function rowStatus(s: string): SettlementRow["status"] {
-  if (s === SettlementStatus.PAID) return "settled";
-  if (s === SettlementStatus.OVERDUE) return "overdue";
-  return "due"; // pending
 }
 
 /**
@@ -243,47 +244,44 @@ export class SettlementsService {
     await this.generateForPeriod(ref);
     const { periodStart, periodEnd } = weeklyPeriod(ref);
 
-    const [settlements, tripGroups] = await Promise.all([
-      this.prisma.settlement.findMany({
-        where: { periodStart },
-        orderBy: { commission: "desc" },
-        include: { rider: { select: { profile: { select: { firstName: true, lastName: true } } } } },
-      }),
-      this.prisma.order.groupBy({
-        by: ["riderId"],
-        where: { status: "completed", completedAt: { gte: periodStart, lt: periodEnd }, riderId: { not: null } },
-        _count: { _all: true },
-      }),
-    ]);
-    const tripsBy = new Map(tripGroups.map((g) => [g.riderId, g._count._all]));
+    const settlements = await this.prisma.settlement.findMany({
+      where: { periodStart },
+      orderBy: { commission: "desc" },
+      include: { rider: { select: { profile: { select: { firstName: true, lastName: true } } } } },
+    });
 
     let cashCollected = 0;
     let commissionOwed = 0;
     let settledThisWeek = 0;
     let overdueCount = 0;
 
+    // Every row in this batch shares the current window, so the due date (period close / settle
+    // weekday) is the same for all — matches the `weekLabel` end (fmtDate(periodEnd)).
+    const dueDate = fmtDate(periodEnd);
+
     const rows: SettlementRow[] = settlements.map((s) => {
       const gross = Number(s.grossFares);
       const commission = Number(s.commission);
       const refunds = Number(s.refundsNetted);
       const amountDue = Number(s.amountDue);
-      const status = rowStatus(s.status);
+      const status = s.status as SettlementStatus;
       cashCollected += gross;
       // The rider pays amountDue (commission net of refunds), not gross commission — the KPIs must
       // reflect the collectible cash, otherwise "commission owed" overstates it by the netted refunds.
-      if (status === "settled") settledThisWeek += amountDue;
-      else commissionOwed += amountDue; // due + overdue are still owed (net of refunds)
-      if (status === "overdue") overdueCount += 1;
+      if (status === SettlementStatus.PAID) settledThisWeek += amountDue;
+      else commissionOwed += amountDue; // pending + overdue are still owed (net of refunds)
+      if (status === SettlementStatus.OVERDUE) overdueCount += 1;
 
       return {
         id: s.id,
+        riderId: s.riderId,
         name: `${s.rider.profile.firstName} ${s.rider.profile.lastName}`.trim(),
-        trips: tripsBy.get(s.riderId) ?? 0,
-        cash: gross.toFixed(2),
+        grossFares: gross.toFixed(2),
         commission: commission.toFixed(2),
-        adjustment: refunds > 0 ? `−$${refunds.toFixed(2)} refunds` : undefined,
+        refundsNetted: refunds.toFixed(2),
+        amountDue: amountDue.toFixed(2),
         status,
-        note: status === "overdue" ? "past settlement day" : status === "settled" ? "settled" : "due",
+        dueDate,
       };
     });
 

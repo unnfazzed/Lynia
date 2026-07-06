@@ -39,9 +39,7 @@ export function FareAdjust({
       reasons={REASONS.orderAdjustFare}
       amount={{ label: "New fare", prefix: "$", placeholder: agreedOrProposed, required: true }}
       confirmLabel="Record adjustment"
-      onConfirm={(r) => {
-        void adjustFare(id, r.amount, r.reasonCode, r.note);
-      }}
+      onConfirm={(r) => adjustFare(id, r.amount, r.reasonCode, r.note)}
     />
   );
 }
@@ -66,9 +64,7 @@ export function CancelOrder({ id, connected }: { id: string; connected: boolean 
       }
       reasons={REASONS.orderCancel}
       confirmLabel="Cancel order"
-      onConfirm={(r) => {
-        void cancelOrder(id, r.reasonCode, r.note);
-      }}
+      onConfirm={(r) => cancelOrder(id, r.reasonCode, r.note)}
     />
   );
 }

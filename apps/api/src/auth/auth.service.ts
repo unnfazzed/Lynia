@@ -171,15 +171,20 @@ export class AuthService {
         record("expired");
         throw new UnauthorizedException("Code expired or never requested");
       }
-      if (rec.attempts >= MAX_OTP_ATTEMPTS) {
+
+      // Atomically consume one attempt BEFORE evaluating the guess. incrAttempts is a single
+      // Redis HINCRBY (one round-trip) or a single synchronous mutation in memory, so N concurrent
+      // verifies receive N distinct counts and only the first MAX_OTP_ATTEMPTS can ever reach the
+      // compare below. This closes the check-then-increment TOCTOU where concurrent guesses all
+      // passed a stale attempts==0 gate, defeating the 5-attempt cap.
+      const attempts = await this.store.incrAttempts(phone);
+      if (attempts > MAX_OTP_ATTEMPTS) {
         await this.store.del(phone);
         record("locked");
         throw new UnauthorizedException("Too many attempts — request a new code");
       }
 
-      const attempts = await this.store.incrAttempts(phone);
       if (!this.tokens.safeEqualHex(this.tokens.hash(code), rec.hash)) {
-        if (attempts >= MAX_OTP_ATTEMPTS) await this.store.del(phone);
         record("invalid");
         throw new UnauthorizedException("Invalid code");
       }

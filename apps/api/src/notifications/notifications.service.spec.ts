@@ -94,6 +94,23 @@ describe("NotificationsService — order-status notices", () => {
     });
   });
 
+  it("notifies the CUSTOMER (only) on `undelivered` — a terminal failure they must learn about", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+
+    await service.notifyOrderStatus("o1", "undelivered");
+
+    // Rider marked it themselves → push goes to the customer only, mirroring the in-app feed row.
+    expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
+      where: { profileId: { in: ["cust"] } },
+      select: { token: true },
+    });
+    expect(push.sendEach).toHaveBeenCalledWith([
+      expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "undelivered" } }),
+    ]);
+  });
+
   it("stays silent for un-mapped statuses (no order lookup, no send)", async () => {
     const { prisma, push, service } = makeDeps();
     await service.notifyOrderStatus("o1", "open_for_offers");

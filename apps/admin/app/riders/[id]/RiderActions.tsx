@@ -42,9 +42,7 @@ export function RiderActions({
           consequence="They can go online again immediately. Their strike count stays as it is."
           reasons={REASONS.riderLift}
           confirmLabel="Lift suspension"
-          onConfirm={(r) => {
-            void mutateRider(id, "lift", name, r.reasonCode, r.note);
-          }}
+          onConfirm={(r) => mutateRider(id, "lift", name, r.reasonCode, r.note)}
         />
         <ConfirmModal
           action="rider.ban"
@@ -66,9 +64,7 @@ export function RiderActions({
           noteRequired
           notePlaceholder="Required — describe the incident and evidence."
           confirmLabel="Ban rider"
-          onConfirm={(r) => {
-            void mutateRider(id, "ban", name, r.reasonCode, r.note);
-          }}
+          onConfirm={(r) => mutateRider(id, "ban", name, r.reasonCode, r.note)}
         />
       </>
     );
@@ -102,9 +98,7 @@ export function RiderActions({
         noteRequired
         notePlaceholder="What happened? The rider sees this context when they contact support."
         confirmLabel="Suspend rider"
-        onConfirm={(r) => {
-          void mutateRider(id, "suspend", name, r.reasonCode, r.note);
-        }}
+        onConfirm={(r) => mutateRider(id, "suspend", name, r.reasonCode, r.note)}
       />
     </>
   );

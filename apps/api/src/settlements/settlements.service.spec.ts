@@ -249,8 +249,20 @@ describe("SettlementsService.currentWeek (SettlementWeek shape + KPIs)", () => {
 
     expect(week.settlementDay).toBe("Friday");
     expect(week.rows).toHaveLength(2);
-    expect(week.rows[0]).toMatchObject({ id: "s1", name: "Tendai M", trips: 5, cash: "100.00", commission: "15.00", status: "due", note: "due" });
-    expect(week.rows[1]).toMatchObject({ id: "s2", name: "Rudo M", trips: 2, status: "settled" });
+    // Wire shape mirrors adminTypes SettlementRow exactly — canonical status, 2dp money strings,
+    // riderId deep-link and a pre-formatted dueDate (= period end = weekLabel end).
+    expect(week.rows[0]).toEqual({
+      id: "s1",
+      riderId: "r1",
+      name: "Tendai M",
+      grossFares: "100.00",
+      commission: "15.00",
+      refundsNetted: "0.00",
+      amountDue: "15.00",
+      status: "pending",
+      dueDate: "2026-07-03",
+    });
+    expect(week.rows[1]).toMatchObject({ id: "s2", riderId: "r2", name: "Rudo M", status: "paid", amountDue: "6.00" });
     // cash = 100 + 40; owed = pending amountDue (15); settled = paid amountDue (6). With no refunds
     // amountDue == commission, so the KPIs are unchanged — but they now derive from the net figure.
     expect(week.kpis.cashCollected).toBe("140.00");

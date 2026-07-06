@@ -15,6 +15,11 @@ async function bootstrap(): Promise<void> {
   // rawBody enables HMAC verification of the Didit KYC webhook against the unparsed body.
   const app = await NestFactory.create(AppModule, { bufferLogs: false, rawBody: true });
 
+  // Strip the Express `X-Powered-By` fingerprint at the adapter level. Express sets this header at
+  // send-time, so removing it in middleware is a no-op — disabling the setting on the underlying
+  // Express instance is the only way to actually suppress it.
+  app.getHttpAdapter().getInstance().disable("x-powered-by");
+
   // Security response headers (Helmet-equivalent, dependency-free) on every response.
   app.use(securityHeaders);
 

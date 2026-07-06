@@ -77,17 +77,47 @@ describe("TrackingService.isAssignedRider", () => {
 });
 
 describe("TrackingService.isBoardEligible", () => {
+  // A rider in good standing + online (the eligible baseline the negative cases mutate one field from).
+  const goodStanding = {
+    kycStatus: "verified",
+    isOnline: true,
+    accountStatus: "active",
+    onHold: false,
+    cooldownUntil: null,
+  };
+
   it("denies a non-rider (no row)", async () => {
     expect(await riderSvc(null).isBoardEligible("u1")).toBe(false);
   });
   it("denies an unverified rider", async () => {
-    expect(await riderSvc({ kycStatus: "pending", isOnline: true }).isBoardEligible("u1")).toBe(false);
+    expect(await riderSvc({ ...goodStanding, kycStatus: "pending" }).isBoardEligible("u1")).toBe(false);
   });
   it("denies a verified rider who is offline", async () => {
-    expect(await riderSvc({ kycStatus: "verified", isOnline: false }).isBoardEligible("u1")).toBe(false);
+    expect(await riderSvc({ ...goodStanding, isOnline: false }).isBoardEligible("u1")).toBe(false);
   });
-  it("allows a verified, online rider", async () => {
-    expect(await riderSvc({ kycStatus: "verified", isOnline: true }).isBoardEligible("u1")).toBe(true);
+  // The board gate MUST mirror the offer gate (offers.service §5d): a rider who can't make an offer
+  // must not receive board broadcasts. These four mirror onlineRefusalReason's standing checks.
+  it("denies a suspended rider (account standing)", async () => {
+    expect(await riderSvc({ ...goodStanding, accountStatus: "suspended" }).isBoardEligible("u1")).toBe(false);
+  });
+  it("denies a banned rider (account standing)", async () => {
+    expect(await riderSvc({ ...goodStanding, accountStatus: "banned" }).isBoardEligible("u1")).toBe(false);
+  });
+  it("denies an on_hold rider even though they stay isOnline:true (reliability gate)", async () => {
+    // The exact bug: a reliability drop sets onHold without forcing offline, so an on_hold rider is
+    // still isOnline:true and would slip through a kyc+online-only check — but can't make offers.
+    expect(await riderSvc({ ...goodStanding, onHold: true }).isBoardEligible("u1")).toBe(false);
+  });
+  it("denies a rider on an active no-show cooldown", async () => {
+    const future = new Date(Date.now() + 60_000);
+    expect(await riderSvc({ ...goodStanding, cooldownUntil: future }).isBoardEligible("u1")).toBe(false);
+  });
+  it("allows a rider on an EXPIRED cooldown (past → no longer gating)", async () => {
+    const past = new Date(Date.now() - 60_000);
+    expect(await riderSvc({ ...goodStanding, cooldownUntil: past }).isBoardEligible("u1")).toBe(true);
+  });
+  it("allows a verified, online rider in good standing", async () => {
+    expect(await riderSvc(goodStanding).isBoardEligible("u1")).toBe(true);
   });
 });
 

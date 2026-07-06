@@ -199,16 +199,22 @@ export class TrackingGateway
   /** Record that a customer socket is live on an order room (C5). Increments the live count, clears
    *  the dark clock, indexes the socket for disconnect cleanup, and re-arms a future escalation. */
   private markCustomerPresent(socketId: string, orderId: string): void {
-    const p = this.customerPresence.get(orderId) ?? { live: 0, darkSince: null };
-    p.live += 1;
-    p.darkSince = null;
-    this.customerPresence.set(orderId, p);
     let orders = this.customerSocketOrders.get(socketId);
     if (!orders) {
       orders = new Set();
       this.customerSocketOrders.set(socketId, orders);
     }
+    // Idempotent per (socket, order): the disconnect path decrements `live` exactly once per order
+    // tracked in this Set, so a same-socket re-subscribe to the SAME order must NOT increment again —
+    // otherwise `live` reaches 2 while the Set holds one entry, `live` never returns to 0 on disconnect,
+    // and the dark clock (darkSince) / presence:stale escalation never fires. If already tracked the
+    // socket is already counted live (darkSince already null), so this is a safe no-op.
+    if (orders.has(orderId)) return;
     orders.add(orderId);
+    const p = this.customerPresence.get(orderId) ?? { live: 0, darkSince: null };
+    p.live += 1;
+    p.darkSince = null;
+    this.customerPresence.set(orderId, p);
     this.customerStaleNotified.delete(orderId); // back on the room → re-arm the one-shot escalation
   }
 

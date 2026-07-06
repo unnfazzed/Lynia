@@ -64,6 +64,10 @@ const STATUS_NOTICES: Record<string, Notice> = {
   delivered: { to: ["customer"], title: "Delivered", body: "Your parcel was delivered — tap to rate your rider." },
   completed: { to: ["rider"], title: "Delivery complete", body: "Nice work — you're free for the next job." },
   expired: { to: ["customer"], title: "No riders yet", body: "No rider took your price. Nudge it up and re-broadcast." },
+  // Terminal hand-off failure (C6/F-02): the RIDER marked it (they already know), so this pushes the
+  // CUSTOMER only — the party who must learn their parcel wasn't delivered. Mirrors the FEED_NOTICES
+  // `undelivered` copy so the in-app feed row matches the push the customer saw (the feed↔push contract).
+  undelivered: { to: ["customer"], title: "Delivery couldn't be completed", body: "Your rider couldn't hand the parcel over — tap for details." },
   cancelled: { to: ["customer", "rider"], title: "Order cancelled", body: "This delivery was cancelled." },
 };
 

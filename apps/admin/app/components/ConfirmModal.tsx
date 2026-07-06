@@ -51,7 +51,7 @@ export interface ConfirmModalProps {
    */
   amount?: { label: string; prefix?: string; placeholder?: string; required?: boolean };
 
-  onConfirm?: (result: { reasonCode: string | null; note: string; amount: string }) => void;
+  onConfirm?: (result: { reasonCode: string | null; note: string; amount: string }) => void | Promise<void>;
 }
 
 export function ConfirmModal(props: ConfirmModalProps) {
@@ -80,6 +80,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const [reason, setReason] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [amountVal, setAmountVal] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -95,6 +96,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
     setReason(null);
     setNote("");
     setAmountVal("");
+    setError(null);
   }
 
   // Normalize to {value,label}: a plain string submits its own text; a pair submits the stable value.
@@ -112,13 +114,22 @@ export function ConfirmModal(props: ConfirmModalProps) {
     fd.set("path", path);
     if (reason) fd.set("reasonCode", reason);
     fd.set("note", note);
+    setError(null);
     startTransition(async () => {
-      // Skip the standalone audit POST when the domain endpoint records the audit row in its own
-      // transaction (A-01) — otherwise the action is double-recorded in the audit log.
-      if (!auditInEndpoint) await submitAdminAction(fd);
-      onConfirm?.({ reasonCode: reason, note, amount: amountVal });
-      setOpen(false);
-      reset();
+      try {
+        // Skip the standalone audit POST when the domain endpoint records the audit row in its own
+        // transaction (A-01) — otherwise the action is double-recorded in the audit log.
+        if (!auditInEndpoint) await submitAdminAction(fd);
+        // Await the caller's domain mutation so a thrown server-action rejection surfaces here instead
+        // of escaping unhandled — a failed KYC / settlement / refund write must NOT report success.
+        await onConfirm?.({ reasonCode: reason, note, amount: amountVal });
+        setOpen(false);
+        reset();
+      } catch (e) {
+        // Keep the dialog open and tell the operator the action was NOT recorded, so a failed audit
+        // or domain write is never mistaken for success.
+        setError(e instanceof Error ? e.message : "The action could not be recorded. Please try again.");
+      }
     });
   }
 
@@ -204,6 +215,22 @@ export function ConfirmModal(props: ConfirmModalProps) {
               placeholder={notePlaceholder}
               onChange={(e) => setNote(e.target.value)}
             />
+
+            {error ? (
+              <div
+                role="alert"
+                style={{
+                  background: "var(--danger-wash)",
+                  color: "var(--danger)",
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                  fontSize: 13,
+                  marginTop: 4,
+                }}
+              >
+                {error}
+              </div>
+            ) : null}
 
             <div className="actions">
               <button type="button" className="btn quiet" onClick={() => setOpen(false)}>

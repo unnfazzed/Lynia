@@ -63,8 +63,15 @@ export class RedisOtpStore implements OtpStore {
     return `otp:${phone}`;
   }
   async put(phone: string, hash: string, ttlSec: number): Promise<void> {
-    await this.redis.hset(this.key(phone), { hash, attempts: 0 });
-    await this.redis.expire(this.key(phone), ttlSec);
+    // hset + expire in one atomic Lua call so a crash/failure between them can never strand the OTP
+    // record with no TTL (which would leave a stale hash + attempt counter alive indefinitely).
+    await this.redis.eval(
+      "redis.call('hset', KEYS[1], 'hash', ARGV[1], 'attempts', 0); redis.call('expire', KEYS[1], ARGV[2]); return 1",
+      1,
+      this.key(phone),
+      hash,
+      ttlSec,
+    );
   }
   async get(phone: string): Promise<OtpRecord | null> {
     const h = await this.redis.hgetall(this.key(phone));
@@ -78,8 +85,14 @@ export class RedisOtpStore implements OtpStore {
     await this.redis.del(this.key(phone));
   }
   async hit(key: string, windowSec: number): Promise<number> {
-    const n = await this.redis.incr(key);
-    if (n === 1) await this.redis.expire(key, windowSec);
-    return n;
+    // incr + first-hit expire in one atomic Lua call. A crash/failure between the two would strand
+    // the counter with no TTL — for the shared rl:global key that is a permanent OTP-send outage.
+    const n = await this.redis.eval(
+      "local n = redis.call('incr', KEYS[1]); if n == 1 then redis.call('expire', KEYS[1], ARGV[1]) end; return n",
+      1,
+      key,
+      windowSec,
+    );
+    return Number(n);
   }
 }
