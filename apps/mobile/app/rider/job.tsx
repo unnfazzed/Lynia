@@ -6,7 +6,7 @@ import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { collectedItemCount } from "../../src/logic/journey";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
-import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, type OrderSnapshot } from "../../src/api/orders";
+import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Label, OfflineBanner, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
@@ -51,6 +51,9 @@ export default function RiderJob(): React.ReactElement {
   // Pickup item verification: which line-items the rider has ticked as physically collected. Indexes
   // into order.items; defaults to all ticked when the rider reaches the pickup-verification step.
   const [checkedItems, setCheckedItems] = useState<Set<number>>(() => new Set());
+  // Rate-the-sender (4·7): an OPTIONAL post-delivery star. Simple tap-then-submit (no undo window) —
+  // it's recorded-only and doesn't gate anything, so there's nothing to race back.
+  const [senderScore, setSenderScore] = useState(0);
 
   const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 6000 });
   const order = jobQ.data ?? null;
@@ -144,6 +147,10 @@ export default function RiderJob(): React.ReactElement {
       setUndeliverOpen(false);
       refresh();
     },
+    onError: fail,
+  });
+  const senderRateM = useMutation({
+    mutationFn: (value: number) => rateSender(orderId!, { score: value }),
     onError: fail,
   });
 
@@ -456,6 +463,41 @@ export default function RiderJob(): React.ReactElement {
         {order.status === "delivered" ? (
           <Card>
             <Text style={{ fontWeight: "700", color: tokens.color.accentText }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
+          </Card>
+        ) : null}
+
+        {/* Rate the sender (4·7) — OPTIONAL, recorded-only. A star arms the submit immediately; once
+            saved we swap to a thank-you so the rider can't double-rate the same drop. */}
+        {order.status === "delivered" ? (
+          <Card>
+            {senderRateM.isSuccess ? (
+              <Text style={{ fontSize: 14, color: tokens.color.muted }}>Thanks for the feedback.</Text>
+            ) : (
+              <>
+                <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: 2 }}>Rate the sender</Text>
+                <Sub>Optional — a no-show or cash problem here protects other riders.</Sub>
+                <View style={{ flexDirection: "row", gap: 4 }}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Pressable
+                      key={n}
+                      onPress={() => {
+                        setSenderScore(n);
+                        senderRateM.mutate(n);
+                      }}
+                      disabled={senderRateM.isPending}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Rate the sender ${n} star${n === 1 ? "" : "s"}`}
+                      accessibilityState={{ selected: n <= senderScore }}
+                      hitSlop={12}
+                      style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
+                    >
+                      <Text style={{ fontSize: 28, color: n <= senderScore ? tokens.color.highlight : tokens.color.line }}>★</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {senderRateM.isPending ? <Text style={{ fontSize: 14, color: tokens.color.muted }}>Saving your feedback…</Text> : null}
+              </>
+            )}
           </Card>
         ) : null}
 

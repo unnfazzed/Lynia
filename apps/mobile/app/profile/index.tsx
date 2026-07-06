@@ -63,6 +63,7 @@ export default function ProfileScreen(): React.ReactElement {
 
       <Card>
         <Button label="Trip history" onPress={() => router.push("/history")} />
+        <Button label="Notifications" variant="ghost" onPress={() => router.push("/notifications")} />
         {isRider ? <Button label="Earnings" variant="ghost" onPress={() => router.push("/earnings")} /> : null}
         {isRider ? <Button label="Bike & documents" variant="ghost" onPress={() => router.push("/rider/documents")} /> : null}
         <Button label="Send a parcel" variant="ghost" onPress={() => router.replace("/home")} />

@@ -371,6 +371,32 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     return { orderId, status: "completed" };
   }
 
+  /** Rider rates the sender after delivery (rider-journey 4·7). Recorded-only — unlike the customer's
+   *  rate() this does NOT change the order status or any score; it's an optional flag that protects
+   *  other riders (a no-show / cash problem). One rating per order, enforced by the unique order_id. */
+  async rateSender(orderId: string, riderId: string, score: number, comment?: string): Promise<LifecycleResult> {
+    const status = await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { status: true, riderId: true },
+      });
+      if (!order) throw new NotFoundException("Order not found");
+      if (order.riderId !== riderId) throw new ForbiddenException("Not your order");
+      // A post-delivery signal — allowed once delivered, and still after the customer's rate() has
+      // closed the order to `completed` (the two ratings are independent, so completion mustn't block it).
+      if (order.status !== "delivered" && order.status !== "completed")
+        throw new ConflictException("Order is not awaiting a rating");
+
+      // One rating per order — the unique order_id makes a repeat attempt a conflict, not a duplicate.
+      const existing = await tx.senderRating.findUnique({ where: { orderId }, select: { id: true } });
+      if (existing) throw new ConflictException("Order already rated");
+      await tx.senderRating.create({ data: { orderId, byProfileId: riderId, score, comment: comment ?? null } });
+      return order.status;
+    });
+
+    return { orderId, status };
+  }
+
   /**
    * Either party cancels an order (T4 / INTERFACE-AUDIT C3). The cancellation matrix is server-
    * enforced (CUSTOMER_CANCELLABLE / RIDER_CANCELLABLE):

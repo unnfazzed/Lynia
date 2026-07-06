@@ -13,6 +13,7 @@ import type { ResolvedPlace } from "../src/api/places";
 import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Label, Screen, Sub } from "../src/ui";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
+import { AddressSummary, MapHomeTopBar } from "../src/ui/MapHome";
 import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
 
@@ -339,17 +340,20 @@ export default function HomeScreen(): React.ReactElement {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: tokens.space.lg }}
+          // paddingTop clears the absolutely-positioned floating top bar (44px control + a gap) so the
+          // first address row starts just below the brand pill.
+          contentContainerStyle={{ paddingTop: tokens.touchTargetMin + tokens.space.md, paddingBottom: tokens.space.lg }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-            <Heading>Send a parcel</Heading>
-            <View style={{ flex: 1 }} />
-            <Button label="Trips" variant="ghost" onPress={() => router.push("/history")} />
-            <Button label="Account" variant="ghost" onPress={() => router.push("/profile")} />
-          </View>
-          <Sub>Drop a pin for pickup and drop-off, name your price, and riders will offer.</Sub>
+          {/* The two stacked address rows (Pickup = green dot, Drop-off = red square) floating over the
+              map — a live summary of the points/landmarks set via the search + map pin below. */}
+          <AddressSummary
+            pickupValue={pickupLandmark.trim() || (pickupPoint ? "Pin set on the map" : "")}
+            pickupSet={pickupPoint != null}
+            dropValue={dropLandmark.trim() || (dropPoint ? "Pin set on the map" : "")}
+            dropSet={dropPoint != null}
+          />
 
           {draftRestored ? (
             <View
@@ -565,6 +569,13 @@ export default function HomeScreen(): React.ReactElement {
           ) : null}
           <Field label="Your price (USD)" value={proposedFare} onChangeText={setProposedFare} placeholder="2.50" keyboardType="decimal-pad" />
         </BottomSheet>
+
+        {/* Floating top bar over the map hero — brand pill (left), notifications + account (right).
+            Rendered last so it sits above the scrolling content; box-none lets scroll/taps pass
+            through the gaps while the pill and buttons stay tappable. */}
+        <View pointerEvents="box-none" style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
+          <MapHomeTopBar onAccount={() => router.push("/profile")} onNotifications={() => router.push("/notifications")} />
+        </View>
       </KeyboardAvoidingView>
       <DisclaimerSheet visible={showDisclaimer} onAgree={onAgreeAndBroadcast} onBack={() => setShowDisclaimer(false)} />
     </Screen>

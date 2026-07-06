@@ -130,6 +130,7 @@ model Profile {
   sessions       Session[]
   addresses      Address[]
   ratingsGiven   Rating[]      @relation("ratingBy")
+  senderRatingsGiven SenderRating[] @relation("senderRatingBy")
   deviceTokens   DeviceToken[]
 
   @@map("profiles")
@@ -285,6 +286,7 @@ model Order {
   offers Offer[]
   events OrderEvent[]
   rating Rating?
+  senderRating SenderRating?
 
   @@index([status])
   @@index([rebroadcastOfId])
@@ -342,6 +344,22 @@ model Rating {
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("ratings")
+}
+
+// Rider rates the sender after delivery (rider-journey 4·7). Mirror of Rating but the other direction
+// (rider → sender) and additive: a separate table so the customer→rider rating logic is untouched. It's
+// a recorded-only flag — one per order, it does NOT change the order status.
+model SenderRating {
+  id          String   @id @default(uuid()) @db.Uuid
+  orderId     String   @unique @map("order_id") @db.Uuid
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  byProfileId String   @map("by_profile_id") @db.Uuid
+  by          Profile  @relation("senderRatingBy", fields: [byProfileId], references: [id])
+  score       Int
+  comment     String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("sender_ratings")
 }
 
 // A dispute / help request raised against an order (A-05). Party IDs are plain UUIDs (no relation) so

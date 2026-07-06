@@ -131,6 +131,14 @@ export const RateRequest = z.object({
 });
 export type RateRequest = z.infer<typeof RateRequest>;
 
+/** Rider rates the sender after delivery (rider-journey 4·7). Optional, recorded-only — a no-show or
+ *  cash problem here protects other riders; it does NOT change the order status. */
+export const RateSenderRequest = z.object({
+  score: z.number().int().min(1).max(5),
+  comment: z.string().max(500).optional(),
+});
+export type RateSenderRequest = z.infer<typeof RateSenderRequest>;
+
 /** Either party cancels an in-flight order. A rider-initiated cancel counts as a no-show strike. */
 export const CancelRequest = z.object({
   reason: z.string().max(280).optional(),

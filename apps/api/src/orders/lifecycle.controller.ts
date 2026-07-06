@@ -1,5 +1,5 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
-import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, ConfirmItemsRequest, MarkUndeliveredRequest, RateRequest } from "@lynia/shared";
+import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, ConfirmItemsRequest, MarkUndeliveredRequest, RateRequest, RateSenderRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
@@ -61,6 +61,16 @@ export class LifecycleController {
     @CurrentUser() customerId: string,
   ) {
     return this.lifecycle.rate(orderId, customerId, body.score, body.comment);
+  }
+
+  /** Rider rates the sender (rider-journey 4·7) — recorded-only, doesn't change the order status. */
+  @Post("sender-rating")
+  rateSender(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(RateSenderRequest)) body: RateSenderRequest,
+    @CurrentUser() riderId: string,
+  ) {
+    return this.lifecycle.rateSender(orderId, riderId, body.score, body.comment);
   }
 
   /** Customer re-issues the delivery code (after a lockout or a lost code). */

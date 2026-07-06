@@ -175,6 +175,54 @@ describe("OrderLifecycleService.rate", () => {
   });
 });
 
+describe("OrderLifecycleService.rateSender", () => {
+  it("404s for a missing order", async () => {
+    const { svc } = build({ order: { findUnique: async () => null } });
+    await expect(svc.rateSender("o1", "r1", 5)).rejects.toThrow(/not found/i);
+  });
+
+  it("403s when the caller is not the assigned rider", async () => {
+    const { svc } = build({ order: { findUnique: async () => ({ status: "delivered", riderId: "r1" }) } });
+    await expect(svc.rateSender("o1", "other", 5)).rejects.toThrow(/not your order/i);
+  });
+
+  it("409s when the order is not awaiting a rating", async () => {
+    const { svc } = build({ order: { findUnique: async () => ({ status: "assigned", riderId: "r1" }) } });
+    await expect(svc.rateSender("o1", "r1", 5)).rejects.toThrow(/awaiting a rating/i);
+  });
+
+  it("409s when the sender was already rated", async () => {
+    const { svc } = build({
+      order: { findUnique: async () => ({ status: "delivered", riderId: "r1" }) },
+      senderRating: { findUnique: async () => ({ id: "sr1" }) },
+    });
+    await expect(svc.rateSender("o1", "r1", 5)).rejects.toThrow(/already rated/i);
+  });
+
+  it("records the rating without changing the order status (delivered)", async () => {
+    let created: Record<string, unknown> | undefined;
+    const { svc, emits } = build({
+      order: { findUnique: async () => ({ status: "delivered", riderId: "r1" }) },
+      senderRating: {
+        findUnique: async () => null,
+        create: async (args: { data: Record<string, unknown> }) => { created = args.data; return {}; },
+      },
+    });
+    expect(await svc.rateSender("o1", "r1", 4, "cash was short")).toEqual({ orderId: "o1", status: "delivered" });
+    expect(created).toMatchObject({ orderId: "o1", byProfileId: "r1", score: 4, comment: "cash was short" });
+    // Recorded-only: it never emits a status change (unlike the customer's rate()).
+    expect(emits).toEqual([]);
+  });
+
+  it("still records after the customer's rate() closed the order to completed", async () => {
+    const { svc } = build({
+      order: { findUnique: async () => ({ status: "completed", riderId: "r1" }) },
+      senderRating: { findUnique: async () => null, create: async () => ({}) },
+    });
+    expect(await svc.rateSender("o1", "r1", 5)).toEqual({ orderId: "o1", status: "completed" });
+  });
+});
+
 describe("OrderLifecycleService.completeOrder (auto-close)", () => {
   it("completes a delivered order and recovers reliability (clean unrated completion, Q2)", async () => {
     let riderData: Record<string, unknown> | undefined;

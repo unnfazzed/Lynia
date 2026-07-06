@@ -52,3 +52,37 @@ export const SUPPORT_WHATSAPP: string | null =
 export function supportWhatsAppUrl(): string | null {
   return SUPPORT_WHATSAPP ? `https://wa.me/${SUPPORT_WHATSAPP}` : null;
 }
+
+/**
+ * Minimum app version the API still supports — the hard force-update gate (customer/rider S·3). OPTIONAL
+ * and OFF by default: unset (or "0.0.0") makes the gate inert, so the app builds and runs with no config.
+ * Set it, above the shipped build's version, only when you must force everyone onto a newer binary. Read
+ * from `EXPO_PUBLIC_MIN_APP_VERSION` (inlined at build) or `extra.minAppVersion` in app.config.ts.
+ */
+const minVersionFromExtra = (Constants.expoConfig?.extra as { minAppVersion?: string } | undefined)?.minAppVersion;
+export const MIN_SUPPORTED_VERSION: string = process.env.EXPO_PUBLIC_MIN_APP_VERSION ?? minVersionFromExtra ?? "0.0.0";
+
+/**
+ * App/Play Store URL the force-update screen's "Update now" opens. OPTIONAL — when null the button hides
+ * rather than opening a dead link. Set via `EXPO_PUBLIC_STORE_URL` or `extra.storeUrl` in app.config.ts.
+ */
+const storeUrlFromExtra = (Constants.expoConfig?.extra as { storeUrl?: string } | undefined)?.storeUrl;
+export const STORE_URL: string | null = process.env.EXPO_PUBLIC_STORE_URL ?? storeUrlFromExtra ?? null;
+
+/**
+ * True when `current` is older than MIN_SUPPORTED_VERSION — the single gate for the force-update screen.
+ * Compares semver-ish dotted versions numerically, field by field. Returns false when the minimum is
+ * unset/"0.0.0", so the gate is a no-op unless a minimum is explicitly configured above the current build.
+ */
+export function isUpdateRequired(current: string): boolean {
+  if (!MIN_SUPPORTED_VERSION || MIN_SUPPORTED_VERSION === "0.0.0") return false;
+  const min = MIN_SUPPORTED_VERSION.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const cur = current.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(min.length, cur.length); i++) {
+    const a = cur[i] ?? 0;
+    const b = min[i] ?? 0;
+    if (a < b) return true;
+    if (a > b) return false;
+  }
+  return false; // equal — no update needed
+}

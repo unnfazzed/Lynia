@@ -6,10 +6,12 @@ import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../src/auth/auth-context";
+import { isUpdateRequired } from "../src/config";
 import { queryClient } from "../src/query/client";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { start as startRum } from "../src/telemetry/rum";
 import { useAppFonts } from "../src/ui/fonts";
+import ForceUpdateScreen from "./force-update";
 
 // Keep the native splash up until the fonts register (nothing else holds it — expo-router's
 // keep-alive no-ops without expo-splash-screen). Rejects if already prevented (e.g. Fast Refresh).
@@ -19,6 +21,17 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 function PushSync(): null {
   usePushRegistration(useAuth().session);
   return null;
+}
+
+/**
+ * The navigation tree, gated by the hard version check (customer/rider S·3). When a
+ * MIN_SUPPORTED_VERSION above the installed build is configured, the force-update screen replaces the
+ * whole Stack — there's no route past it. Inert by default: isUpdateRequired returns false unless a
+ * minimum is explicitly set above the current version, so this is a no-op in normal builds.
+ */
+function AppNavigator(): React.ReactElement {
+  if (isUpdateRequired(Constants.expoConfig?.version ?? "0.0.0")) return <ForceUpdateScreen />;
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
 
 export default function RootLayout(): React.ReactElement | null {
@@ -47,7 +60,7 @@ export default function RootLayout(): React.ReactElement | null {
         <AuthProvider>
           <PushSync />
           <StatusBar style="dark" />
-          <Stack screenOptions={{ headerShown: false }} />
+          <AppNavigator />
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

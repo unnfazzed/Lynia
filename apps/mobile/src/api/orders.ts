@@ -8,6 +8,7 @@ import type {
   MarkUndeliveredRequest,
   OrderStatus,
   RateRequest,
+  RateSenderRequest,
   UndeliveredReason,
 } from "@lynia/shared";
 import { apiFetch } from "./client";
@@ -141,6 +142,15 @@ export function markUndelivered(
 
 export function rateOrder(orderId: string, body: RateRequest): Promise<{ orderId: string; status: "completed" }> {
   return apiFetch(`/orders/${orderId}/rating`, { method: "POST", body });
+}
+
+/**
+ * Rider rates the sender after delivery (rider-journey 4·7). Optional and recorded-only — it does NOT
+ * change the order status (unlike the customer's rateOrder), so the returned status is whatever the
+ * order already is (`delivered`, or `completed` once the customer has rated).
+ */
+export function rateSender(orderId: string, body: RateSenderRequest): Promise<{ orderId: string; status: OrderStatus }> {
+  return apiFetch(`/orders/${orderId}/sender-rating`, { method: "POST", body });
 }
 
 export function rotateDeliveryCode(orderId: string): Promise<{ deliveryCode: string }> {
