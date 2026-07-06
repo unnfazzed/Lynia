@@ -21,11 +21,12 @@ export interface GateError {
  * The reasons the rules API can refuse a rider going online (the online-gate). Mirrors the documented
  * contract: `kyc` (not verified), `suspended` (admin/settlement pause, recoverable via support),
  * `banned` (permanent admin removal — a harder state than suspended), `on_hold` (reliability auto-hold,
- * Q2), `cooldown` (recent cancel cool-off).
+ * Q2), `cooldown` (recent cancel cool-off), `out_of_area` (rider is outside the launch service corridor,
+ * Q1 — recoverable by moving back into the coverage area).
  */
-export type OnlineGateReason = "kyc" | "suspended" | "banned" | "on_hold" | "cooldown";
+export type OnlineGateReason = "kyc" | "suspended" | "banned" | "on_hold" | "cooldown" | "out_of_area";
 
-const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = ["kyc", "suspended", "banned", "on_hold", "cooldown"];
+const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = ["kyc", "suspended", "banned", "on_hold", "cooldown", "out_of_area"];
 
 function isOnlineGateReason(v: string): v is OnlineGateReason {
   return (ONLINE_GATE_REASONS as readonly string[]).includes(v);
@@ -42,6 +43,10 @@ export function onlineGateReason(err: GateError | null | undefined): OnlineGateR
   if (!err) return null;
   const code = (err.code ?? "").toLowerCase();
   if (isOnlineGateReason(code)) return code;
+  // Out-of-area (Q1): the corridor refusal can carry a corridor-specific code/message (e.g.
+  // `outside_service_area`) that isn't the literal `out_of_area` token — reuse the corridor sniff so it
+  // still lands on the out-of-area gate rather than a bare error.
+  if (isOutOfServiceArea(err)) return "out_of_area";
   const m = (err.message ?? "").toLowerCase();
   if (m.includes("on hold") || m.includes("on-hold") || m.includes("on_hold")) return "on_hold";
   // Check banned before suspended: they're distinct states and a message could mention both.
@@ -78,6 +83,10 @@ export const ONLINE_GATE_COPY: Record<OnlineGateReason, GateCopy> = {
   cooldown: {
     title: "You're on a short cooldown",
     message: "You were taken offline after a recent cancellation. Wait a few minutes, then tap Go online to try again.",
+  },
+  out_of_area: {
+    title: "You're outside the service area",
+    message: "You can only go online inside the Harare service area for now. Head back toward the city, then refresh.",
   },
 };
 

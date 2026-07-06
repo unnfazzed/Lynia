@@ -1,4 +1,4 @@
-import { ISSUE_TYPE_LABELS, REPORT_REASON_LABELS } from "@lynia/shared";
+import { ISSUE_TYPE_LABELS, REPORT_REASON_LABELS, SOS_POLICY } from "@lynia/shared";
 import {
   ISSUE_TYPE_OPTIONS,
   REPORT_REASON_OPTIONS,
@@ -53,5 +53,21 @@ describe("telUri", () => {
     expect(telUri(undefined)).toBeNull();
     expect(telUri("")).toBeNull();
     expect(telUri("n/a")).toBeNull();
+  });
+});
+
+describe("SOS contact constants (Q3 resolved 5 Jul 2026)", () => {
+  it("pins the final emergency + safety-line numbers as client-side constants", () => {
+    // These must be present client-side so the SOS control + support rows render offline — a safety
+    // control can never dead-end on the network.
+    expect(SOS_POLICY.emergencyNumber).toBe("999");
+    expect(SOS_POLICY.safetyLine).toBe("+263 77 883 1938");
+    // The safety line is a distinct staffed number, not a re-label of the emergency line.
+    expect(SOS_POLICY.safetyLine).not.toBe(SOS_POLICY.emergencyNumber);
+  });
+
+  it("both numbers are dial-safe once run through telUri", () => {
+    expect(telUri(SOS_POLICY.emergencyNumber)).toBe("tel:999");
+    expect(telUri(SOS_POLICY.safetyLine)).toBe("tel:+263778831938");
   });
 });

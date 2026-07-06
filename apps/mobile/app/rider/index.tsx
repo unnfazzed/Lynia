@@ -10,10 +10,10 @@ import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { retryKyc, setOnline } from "../../src/api/riders";
-import { SUPPORT_URL } from "../../src/config";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason } from "../../src/logic/gates";
 import { Button, Card, EmptyState, ErrorText, Field, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { SupportCallRow } from "../../src/ui/safety";
 import { parseNum } from "../../src/util";
 
 /** mm:ss for the offer-sent auction countdown. */
@@ -327,8 +327,9 @@ export default function RiderHome(): React.ReactElement {
                 }
               >
                 {/* R4: the lock tells the rider to "contact support" — make that a real, tappable action
-                    instead of dead copy, so they aren't stranded with only a no-op "Refresh status". */}
-                <Button label="Contact support" onPress={() => void Linking.openURL(SUPPORT_URL)} />
+                    instead of dead copy, so they aren't stranded with only a no-op "Refresh status". The
+                    5 Jul design makes contact-support a `tel:` call, not a mailto dead end. */}
+                <SupportCallRow />
                 <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
               </EmptyState>
             ) : (
@@ -372,22 +373,30 @@ export default function RiderHome(): React.ReactElement {
           <>
         {gate ? (
           // The rules API refused going online — a distinct, calm state per reason (on hold / suspended /
-          // banned / cooldown / KYC), not a red error. Cooldown is temporary so it keeps a retry; the
-          // others are resolved elsewhere (support / recovery) so they just explain and offer a status
-          // refresh. Banned is the hardest state (permanent) and reads as circle-alert, distinct from
-          // suspended's triangle-alert.
+          // banned / cooldown / out-of-area / KYC), not a red error. The recoverable states keep a
+          // retry (cooldown → try again; out-of-area → refresh once back in range); the terminal ones
+          // (suspended / on hold / banned) expose a `tel:` support call row — the mandatory exit so no
+          // state is a dead end. Suspended + banned read as triangle-alert (harder states); out-of-area
+          // + on-hold as circle-alert.
           <EmptyState
-            icon={gate === "suspended" ? "triangle-alert" : gate === "cooldown" ? "clock" : gate === "kyc" ? "id-card" : "circle-alert"}
+            icon={
+              gate === "suspended" || gate === "banned"
+                ? "triangle-alert"
+                : gate === "cooldown"
+                  ? "clock"
+                  : gate === "kyc"
+                    ? "id-card"
+                    : "circle-alert"
+            }
             title={ONLINE_GATE_COPY[gate].title}
             message={ONLINE_GATE_COPY[gate].message}
           >
             {gate === "cooldown" ? (
               <Button label="Try again" onPress={() => onlineM.mutate(true)} loading={onlineM.isPending} />
             ) : null}
-            {/* R4: suspended / on hold / banned all say "contact support" — give them a real action. */}
-            {gate === "suspended" || gate === "on_hold" || gate === "banned" ? (
-              <Button label="Contact support" onPress={() => void Linking.openURL(SUPPORT_URL)} />
-            ) : null}
+            {/* R4: suspended / on hold / banned all say "contact support" — a real `tel:` call row, not
+                a dead mailto button. */}
+            {gate === "suspended" || gate === "on_hold" || gate === "banned" ? <SupportCallRow /> : null}
             <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
           </EmptyState>
         ) : (

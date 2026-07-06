@@ -8,6 +8,13 @@ describe("onlineGateReason (rider online-gate refusal)", () => {
     expect(onlineGateReason({ code: "banned" })).toBe("banned");
     expect(onlineGateReason({ code: "cooldown" })).toBe("cooldown");
     expect(onlineGateReason({ code: "kyc" })).toBe("kyc");
+    expect(onlineGateReason({ code: "out_of_area" })).toBe("out_of_area");
+  });
+
+  it("maps a corridor refusal onto the out-of-area gate, incl. aliases + message", () => {
+    expect(onlineGateReason({ code: "outside_service_area" })).toBe("out_of_area");
+    expect(onlineGateReason({ code: "service_corridor" })).toBe("out_of_area");
+    expect(onlineGateReason({ message: "You're outside our service area." })).toBe("out_of_area");
   });
 
   it("falls back to sniffing the friendly message when no code is tagged", () => {
@@ -16,6 +23,11 @@ describe("onlineGateReason (rider online-gate refusal)", () => {
     expect(onlineGateReason({ message: "Your account has been banned." })).toBe("banned");
     expect(onlineGateReason({ message: "You're on a cooldown after cancelling." })).toBe("cooldown");
     expect(onlineGateReason({ message: "Finish KYC before going online." })).toBe("kyc");
+  });
+
+  it("has calm copy for every gate reason, including out-of-area", () => {
+    expect(ONLINE_GATE_COPY.out_of_area.title).toBeTruthy();
+    expect(ONLINE_GATE_COPY.out_of_area.message).toContain("service area");
   });
 
   it("keeps banned distinct from suspended (they are different states)", () => {

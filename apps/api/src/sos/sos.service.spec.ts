@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
-import type { RaiseSosRequest } from "@lynia/shared";
+import { type RaiseSosRequest, SOS_POLICY } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -57,10 +57,11 @@ describe("SosService.raise", () => {
     // Ops always; the counterparty (the rider, here) gets the alert too.
     expect(notifications.notifyOps).toHaveBeenCalledTimes(1);
     expect(notifications.notifyProfiles).toHaveBeenCalledWith(["rider-1"], expect.objectContaining({ title: expect.any(String) }));
-    // Contacts surfaced for the app: emergency number always present, safety line falls back to it.
+    // Contacts surfaced for the app: emergency number always present, safety line defaults to the
+    // final SOS_POLICY constant (no env override here) — not the emergency number.
     expect(res.emergencyNumber).toBe("999");
-    expect(typeof res.safetyLine).toBe("string");
-    expect(res.safetyLine.length).toBeGreaterThan(0);
+    expect(res.safetyLine).toBe(SOS_POLICY.safetyLine);
+    expect(res.safetyLine).not.toBe(res.emergencyNumber);
   });
 
   it("reads the safety line from the env var when set", async () => {
