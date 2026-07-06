@@ -10,11 +10,13 @@ import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/sess
 import { isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import { orderKey } from "../src/query/client";
 import type { ResolvedPlace } from "../src/api/places";
-import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Label, Screen, Sub } from "../src/ui";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Button, ErrorText, Field, Heading, Icon, type IconName, Label, Sub, TestBuildBanner } from "../src/ui";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
+import { ComposeMap } from "../src/ui/ComposeMap";
 import { AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
-import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
+import type { PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
 
 // LayoutAnimation needs an explicit opt-in on old-architecture Android; a no-op on iOS / Fabric.
@@ -132,6 +134,7 @@ function draftFromParams(p: RebroadcastParams): FormDraft | null {
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
+  const insets = useSafeAreaInsets();
   // C5: re-broadcast params from the order screen (rb…). Read once at mount and prefer them over any
   // stored draft — the customer explicitly asked to re-send THIS order.
   const rbParams = useLocalSearchParams<RebroadcastParams>();
@@ -451,17 +454,26 @@ export default function HomeScreen(): React.ReactElement {
   };
 
   return (
-    <Screen>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: tokens.space.lg }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+    <View style={{ flex: 1, backgroundColor: tokens.color.surface }}>
+      <TestBuildBanner />
+      {/* Full-bleed map hero (1·1): ONE map carrying both pins (pickup green, drop-off red) + the route
+          line, with the floating chrome (brand pill, notifications, account, and the search-first
+          address rows) laid over its top. Tapping a row picks which pin the map edits. */}
+      <View style={{ flex: 1 }}>
+        <ComposeMap
+          pickup={pickupPoint}
+          drop={dropPoint}
+          active={activePin}
+          onChangePickup={setPickupPoint}
+          onChangeDrop={setDropPoint}
+          onReverseGeocodePickup={onPickupReverseGeocode}
+          onReverseGeocodeDrop={onDropReverseGeocode}
+        />
+        {/* box-none: the map stays pannable/tappable everywhere except on the actual controls. */}
+        <View
+          pointerEvents="box-none"
+          style={{ position: "absolute", top: insets.top + tokens.space.sm, left: tokens.space.screen, right: tokens.space.screen }}
         >
-          {/* Map-anchored chrome (1·1): floating brand pill + notifications/account, then the search-
-              first pickup/drop rows, then the single map hero for the active pin. Trip history lives
-              on the account screen now. */}
           <MapHomeTopBar onNotifications={() => router.push("/notifications")} onAccount={() => router.push("/profile")} />
 
           {draftRestored ? (
@@ -471,14 +483,13 @@ export default function HomeScreen(): React.ReactElement {
                 flexDirection: "row",
                 alignItems: "center",
                 alignSelf: "flex-start",
-                backgroundColor: tokens.color.surface,
-                borderWidth: 1,
-                borderColor: tokens.color.line,
+                backgroundColor: tokens.color.bg,
                 borderRadius: tokens.radius.pill,
                 paddingLeft: 10,
                 paddingRight: 4,
                 paddingVertical: 4,
-                marginBottom: tokens.space.md,
+                marginBottom: tokens.space.sm,
+                ...tokens.shadow.card,
               }}
             >
               <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accentText }}>Draft restored</Text>
@@ -498,81 +509,26 @@ export default function HomeScreen(): React.ReactElement {
             </View>
           ) : null}
 
-          {/* Search-first address rows: tapping one chooses which pin the map hero below edits (pickup
-              = green dot, drop-off = red square). The CTA is gated on both points being set. */}
-          <AddressRows
-            pickup={pickupLandmark}
-            drop={dropLandmark}
-            active={activePin}
-            onPick={setActivePin}
-          />
+          {/* Search-first address rows: tapping one chooses which pin the map edits (pickup = green
+              dot, drop-off = red square). The CTA is gated on both points being set. */}
+          <AddressRows pickup={pickupLandmark} drop={dropLandmark} active={activePin} onPick={setActivePin} />
 
-          {/* The active slot's search (key-gated; renders nothing without a Places key) + the single
-              map hero. Both bind to the active pin, so one map serves both addresses — the mockup's
-              map-anchored home rather than two stacked map boxes. */}
+          {/* The active slot's search (key-gated; renders nothing without a Places key), floating over
+              the map so a resolved place drops the active pin. */}
           {activePin === "pickup" ? (
             <AddressSearch key="pickup-search" label="Pickup" placeholder="Search pickup address" onResolved={onPickupResolved} />
           ) : (
             <AddressSearch key="drop-search" label="Drop-off" placeholder="Search drop-off address" onResolved={onDropResolved} />
           )}
-          <MapPicker
-            label={activePin === "pickup" ? "Pickup" : "Drop-off"}
-            value={activePin === "pickup" ? pickupPoint : dropPoint}
-            onChange={activePin === "pickup" ? setPickupPoint : setDropPoint}
-            onReverseGeocode={activePin === "pickup" ? onPickupReverseGeocode : onDropReverseGeocode}
-            showMyLocation={activePin === "pickup"}
-            height={300}
-          />
-          <View style={{ height: tokens.space.sm }} />
+        </View>
+      </View>
 
-          {/* Secondary fields — collapsed by default under a tap-to-expand toggle so the required
-              path stays short. Landmarks keep their "• from map" auto-fill hint (unchanged). */}
-          <Card>
-            <Pressable
-              onPress={toggleDetails}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: detailsOpen }}
-              // C11: landmarks are contract-required and live in here, so this section can't be labeled
-              // "(optional)". Name it for its contents and, when a landmark is still missing (auto-fill
-              // failed offline / keyless), flag that it's required.
-              accessibilityLabel={landmarksOk ? "Landmarks and details" : "Landmarks and details, landmarks required"}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                minHeight: tokens.touchTargetMin,
-              }}
-            >
-              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>
-                Landmarks &amp; details
-                {!landmarksOk ? <Text style={{ color: tokens.color.danger, fontWeight: "700" }}> — landmarks required</Text> : null}
-              </Text>
-              <Icon name={detailsOpen ? "chevron-down" : "chevron-right"} size={16} color={tokens.color.muted} />
-            </Pressable>
-
-            {detailsOpen ? (
-              <View style={{ marginTop: tokens.space.sm }}>
-                <Field
-                  label={pickupLandmarkFromMap ? "Pickup landmark  • from map" : "Pickup landmark"}
-                  value={pickupLandmark}
-                  onChangeText={editPickupLandmark}
-                  placeholder="Eastgate Mall, CBD"
-                  maxLength={160}
-                />
-                <Field
-                  label={dropLandmarkFromMap ? "Drop-off landmark  • from map" : "Drop-off landmark"}
-                  value={dropLandmark}
-                  onChangeText={editDropLandmark}
-                  placeholder="14 Glenara Ave, Avenues"
-                  maxLength={160}
-                />
-                <Field label="Declared value (USD, max 150)" value={declaredValue} onChangeText={setDeclaredValue} placeholder="10" keyboardType="decimal-pad" />
-              </View>
-            ) : null}
-          </Card>
-        </ScrollView>
-
-        {/* Hero action in the thumb zone: what you're sending, name your price, broadcast. */}
+      {/* Docked compose sheet BELOW the map — a flex sibling (not an overlay), so KeyboardAvoidingView
+          lifts it cleanly when the price/phone fields are focused. The form scrolls inside; the
+          Broadcast CTA stays pinned in the footer, always reachable. */}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <BottomSheet
+          style={{ paddingBottom: tokens.space.lg + insets.bottom }}
           footer={
             <>
               {!canSubmit ? (
@@ -584,7 +540,7 @@ export default function HomeScreen(): React.ReactElement {
                     !itemsOk ? (items.length > 1 ? "a description for every item" : "an item") : null,
                     !pickupPhoneOk ? "a pickup contact phone" : null,
                     !dropPhoneOk ? "a recipient phone" : null,
-                    !landmarksOk ? "pickup & drop-off landmarks (under \u201cAdd details\u201d)" : null,
+                    !landmarksOk ? "pickup & drop-off landmarks (under \u201cLandmarks & details\u201d)" : null,
                     !(fare !== null && fare > 0) ? "a price" : null,
                   ]
                     .filter(Boolean)
@@ -621,6 +577,9 @@ export default function HomeScreen(): React.ReactElement {
             </>
           }
         >
+          {/* The form scrolls inside the sheet (capped height) so it never pushes the pinned CTA off
+              the bottom, and the map behind stays visible above the sheet. */}
+          <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* Line items — repeatable description + quantity rows (ITEM-DESIGN-REVIEW: multiple
               {description, quantity}, nothing more for the pilot). Description stacks above the
               qty stepper so a row still works at 320px. */}
@@ -687,10 +646,46 @@ export default function HomeScreen(): React.ReactElement {
             </View>
           ) : null}
           <Field label="Your price (USD)" value={proposedFare} onChangeText={setProposedFare} placeholder="2.50" keyboardType="decimal-pad" />
+
+          {/* Landmarks (contract-required, normally auto-filled from the pin) + optional declared value,
+              behind a tap-to-expand toggle so the required path stays short. */}
+          <Pressable
+            onPress={toggleDetails}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: detailsOpen }}
+            accessibilityLabel={landmarksOk ? "Landmarks and details" : "Landmarks and details, landmarks required"}
+            style={{ flexDirection: "row", alignItems: "center", minHeight: tokens.touchTargetMin }}
+          >
+            <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>
+              Landmarks &amp; details
+              {!landmarksOk ? <Text style={{ color: tokens.color.danger, fontWeight: "700" }}> — landmarks required</Text> : null}
+            </Text>
+            <Icon name={detailsOpen ? "chevron-down" : "chevron-right"} size={16} color={tokens.color.muted} />
+          </Pressable>
+          {detailsOpen ? (
+            <View style={{ marginTop: tokens.space.sm }}>
+              <Field
+                label={pickupLandmarkFromMap ? "Pickup landmark  • from map" : "Pickup landmark"}
+                value={pickupLandmark}
+                onChangeText={editPickupLandmark}
+                placeholder="Eastgate Mall, CBD"
+                maxLength={160}
+              />
+              <Field
+                label={dropLandmarkFromMap ? "Drop-off landmark  • from map" : "Drop-off landmark"}
+                value={dropLandmark}
+                onChangeText={editDropLandmark}
+                placeholder="14 Glenara Ave, Avenues"
+                maxLength={160}
+              />
+              <Field label="Declared value (USD, max 150)" value={declaredValue} onChangeText={setDeclaredValue} placeholder="10" keyboardType="decimal-pad" />
+            </View>
+          ) : null}
+          </ScrollView>
         </BottomSheet>
       </KeyboardAvoidingView>
       <DisclaimerSheet visible={showDisclaimer} onAgree={onAgreeAndBroadcast} onBack={() => setShowDisclaimer(false)} />
-    </Screen>
+    </View>
   );
 }
 
