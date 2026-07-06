@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import { corsOriginResolver, parseAllowedOrigins } from "./common/cors";
 import { securityHeaders } from "./common/security-headers.middleware";
@@ -13,7 +14,12 @@ async function bootstrap(): Promise<void> {
   await initObservability(env.OTEL_SERVICE_NAME, env.OTEL_EXPORTER_OTLP_ENDPOINT);
 
   // rawBody enables HMAC verification of the Didit KYC webhook against the unparsed body.
-  const app = await NestFactory.create(AppModule, { bufferLogs: false, rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false, rawBody: true });
+
+  // Bound request bodies (defense-in-depth against oversized-payload abuse). rawBody stays intact for
+  // the KYC webhook HMAC — Nest re-applies it when re-registering the parser.
+  app.useBodyParser("json", { limit: "1mb" });
+  app.useBodyParser("urlencoded", { limit: "1mb", extended: true });
 
   // Strip the Express `X-Powered-By` fingerprint at the adapter level. Express sets this header at
   // send-time, so removing it in middleware is a no-op — disabling the setting on the underlying

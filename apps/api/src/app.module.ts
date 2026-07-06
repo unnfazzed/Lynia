@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
-import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { AllExceptionsFilter } from "./common/all-exceptions.filter";
 import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
 import { PushModule } from "./adapters/push/push.module";
@@ -63,6 +64,9 @@ import { UploadsModule } from "./uploads/uploads.module";
   providers: [
     // Time every HTTP request into http_request_duration_ms (route template + status class labels).
     { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
+    // Global safety net — HttpExceptions pass through with their status; anything else becomes a safe
+    // generic 500 with a correlation id (no stack/internal detail leaked to the client).
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
     // Global per-route rate limiting. No-op unless a handler carries @Throttle(...) metadata; backed
     // by the Redis fixed-window counter exported from AuthModule (OTP_STORE).
     { provide: APP_GUARD, useClass: ThrottleGuard },
