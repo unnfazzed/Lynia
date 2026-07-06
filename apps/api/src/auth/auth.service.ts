@@ -12,6 +12,7 @@ import { normalizePhone, type UpdateProfileRequest } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { OTP_SENDER, type OtpSender } from "./otp-sender";
 import { OTP_STORE, type OtpStore } from "./otp-store";
@@ -42,6 +43,7 @@ export class AuthService {
     @Inject(OTP_STORE) private readonly store: OtpStore,
     @Inject(OTP_SENDER) private readonly sender: OtpSender,
     private readonly metrics: MetricsService,
+    private readonly pii: PiiCryptoService,
   ) {}
 
   /** Full profile for the authenticated caller (GET /auth/me) — adds the rider record when present. */
@@ -109,7 +111,8 @@ export class AuthService {
       data: {
         firstName: body.firstName,
         lastName: body.lastName,
-        ...(body.idNumber ? { idNumber: body.idNumber } : {}),
+        // Store the national ID encrypted at rest + its dedup hash (LR8); never the raw number.
+        ...(body.idNumber ? { idNumber: this.pii.encryptId(body.idNumber), idNumberHash: this.pii.hashId(body.idNumber) } : {}),
       },
       select: { id: true },
     });

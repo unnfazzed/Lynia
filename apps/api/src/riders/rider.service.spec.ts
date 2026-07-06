@@ -3,7 +3,11 @@ import type { Env } from "../config/env";
 import type { KycVendor } from "../kyc/kyc-vendor";
 import { StubKycVendor } from "../kyc/kyc-vendor";
 import { PrismaService } from "../prisma/prisma.service";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { canGoOnline, onlineRefusalReason, RiderService } from "./rider.service";
+
+/** Real crypto with a fixed test key so hashId(...) is deterministic across the assertions below. */
+const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env);
 
 describe("canGoOnline (rider gating, §5d)", () => {
   it("allows only verified riders online", () => {
@@ -16,7 +20,7 @@ describe("canGoOnline (rider gating, §5d)", () => {
 });
 
 function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor: KycVendor = new StubKycVendor()) {
-  return new RiderService(prisma as unknown as PrismaService, env as Env, vendor);
+  return new RiderService(prisma as unknown as PrismaService, env as Env, vendor, pii);
 }
 
 describe("RiderService.becomeRider", () => {
@@ -76,10 +80,10 @@ describe("RiderService.becomeRider", () => {
       },
       profile: {
         update: async () => ({}),
-        findUnique: async () => ({ idNumber: "63-123456-A-42" }),
-        // Another account already carries this ID.
+        findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42") }),
+        // Another account already carries this ID — matched on the HMAC hash, not the raw number.
         count: async (args: { where: Record<string, unknown> }) => {
-          expect(args.where).toMatchObject({ idNumber: "63-123456-A-42", id: { not: "p1" } });
+          expect(args.where).toMatchObject({ idNumberHash: pii.hashId("63-123456-A-42"), id: { not: "p1" } });
           return 1;
         },
       },
@@ -162,14 +166,17 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
           return {};
         },
         count: async (args: { where: Record<string, unknown> }) => {
-          expect(args.where).toMatchObject({ idNumber: "63-123456-A-42", id: { not: "p1" } });
+          expect(args.where).toMatchObject({ idNumberHash: pii.hashId("63-123456-A-42"), id: { not: "p1" } });
           return 2;
         },
       },
     };
     const s = svc(prisma, { KYC_MODE: "auto" });
     expect(await s.completeProfile("p1", data)).toEqual({ ok: true });
-    expect(updated).toMatchObject(data);
+    // The raw ID is never written: id_number is ciphertext, plus the dedup hash.
+    expect(updated).toMatchObject({ firstName: "Chipo", lastName: "M", idNumberHash: pii.hashId("63-123456-A-42") });
+    expect(pii.isEncrypted(updated?.idNumber as string)).toBe(true);
+    expect(pii.decryptId(updated?.idNumber as string)).toBe("63-123456-A-42");
   });
 
   it("does not run the collision query when the ID is unique", async () => {

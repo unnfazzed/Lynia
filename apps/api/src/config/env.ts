@@ -3,6 +3,9 @@ import { z } from "zod";
 /** The dev/CI default JWT secret. Booting production with this (or any short secret) means tokens are
  *  signed with a publicly-known key → universal forgery, so the production boot-guard rejects it. */
 export const INSECURE_JWT_DEFAULT = "dev-insecure-secret-change-me-please";
+/** The dev/CI default PII-encryption key. Booting production with it (or any short key) would encrypt
+ *  national IDs under a publicly-known key — no better than plaintext — so the prod boot-guard rejects it. */
+export const INSECURE_PII_KEY_DEFAULT = "dev-insecure-pii-key-change-me-please";
 /** Minimum entropy we require of a production signing secret (bytes ≈ chars for the ASCII secrets we mint). */
 const MIN_PROD_SECRET_LEN = 32;
 
@@ -44,6 +47,9 @@ export const envSchema = z.object({
   // signing secret lets the signing secret rotate without invalidating stored refresh-token hashes.
   // Defaults to JWT_SIGNING_SECRET when unset (backward-compatible).
   TOKEN_HASH_SECRET: z.string().min(16).optional(),
+  // PII at-rest key (LR8): HKDF-derived AES-256-GCM (encrypt national IDs) + HMAC (dedup hash). Same bar
+  // as the JWT secret — the dev default / any <32-char key is rejected in production (see boot-guard).
+  PII_ENCRYPTION_KEY: z.string().min(16).default(INSECURE_PII_KEY_DEFAULT),
   ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
@@ -112,6 +118,14 @@ export const envSchema = z.object({
     }
     if (env.JWT_SIGNING_SECRET_PREVIOUS !== undefined && weakInProd(env.JWT_SIGNING_SECRET_PREVIOUS)) {
       reject("JWT_SIGNING_SECRET_PREVIOUS", `JWT_SIGNING_SECRET_PREVIOUS, when set, must also be a strong secret (>= ${MIN_PROD_SECRET_LEN} chars)`);
+    }
+    // The PII key encrypts national IDs at rest; the dev default (or a short key) is publicly known, so
+    // encrypting under it is no better than plaintext. Require a real key from Secret Manager in prod.
+    if (env.PII_ENCRYPTION_KEY === INSECURE_PII_KEY_DEFAULT || env.PII_ENCRYPTION_KEY.length < MIN_PROD_SECRET_LEN) {
+      reject(
+        "PII_ENCRYPTION_KEY",
+        `PII_ENCRYPTION_KEY must be a unique secret of at least ${MIN_PROD_SECRET_LEN} chars in production — set it from Secret Manager`,
+      );
     }
     if (env.TOKEN_HASH_SECRET !== undefined && weakInProd(env.TOKEN_HASH_SECRET)) {
       reject("TOKEN_HASH_SECRET", `TOKEN_HASH_SECRET, when set, must also be a strong secret (>= ${MIN_PROD_SECRET_LEN} chars)`);

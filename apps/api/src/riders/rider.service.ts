@@ -11,6 +11,7 @@ import { KycStatus, RiderAccountStatus, SERVICE_CORRIDOR, haversineKm } from "@l
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 type Kyc = "pending" | "verified" | "failed";
@@ -63,6 +64,7 @@ export class RiderService {
     private readonly prisma: PrismaService,
     @Inject(ENV) private readonly env: Env,
     @Inject(KYC_VENDOR) private readonly vendor: KycVendor,
+    private readonly pii: PiiCryptoService,
   ) {}
 
   /**
@@ -72,9 +74,10 @@ export class RiderService {
    * re-entry, a typo, and a deliberate second account are indistinguishable here, which is why callers
    * FLAG rather than block. Returns 0 for a missing ID (nothing to collide on).
    */
-  private async duplicateIdAccountCount(profileId: string, idNumber: string | null | undefined): Promise<number> {
-    if (!idNumber) return 0;
-    return this.prisma.profile.count({ where: { idNumber, id: { not: profileId } } });
+  private async duplicateIdAccountCount(profileId: string, idNumberHash: string | null | undefined): Promise<number> {
+    if (!idNumberHash) return 0;
+    // Match on the HMAC hash, never the raw (now-encrypted) id_number (LR8).
+    return this.prisma.profile.count({ where: { idNumberHash, id: { not: profileId } } });
   }
 
   /** Low-friction signup completion: name + national ID (CONCEPT §5d). */
@@ -82,11 +85,21 @@ export class RiderService {
     profileId: string,
     data: { firstName: string; lastName: string; idNumber: string },
   ): Promise<{ ok: true }> {
-    await this.prisma.profile.update({ where: { id: profileId }, data });
+    // Store the national ID encrypted at rest + its dedup hash (LR8); never the raw number.
+    const idNumberHash = this.pii.hashId(data.idNumber);
+    await this.prisma.profile.update({
+      where: { id: profileId },
+      data: {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        idNumber: this.pii.encryptId(data.idNumber),
+        idNumberHash,
+      },
+    });
     // A-04 duplicate-ID signal. The rider row may not exist yet (this often runs before becomeRider),
     // so there's nothing to flag on here — log for the audit trail; becomeRider persists the reviewer
     // flag. We don't tell the applicant: surfacing it would only coach a ban-evader to change the ID.
-    if ((await this.duplicateIdAccountCount(profileId, data.idNumber)) > 0) {
+    if ((await this.duplicateIdAccountCount(profileId, idNumberHash)) > 0) {
       this.logger.warn(`Profile ${profileId} completed signup with a national ID already on another account (A-04)`);
     }
     return { ok: true };
@@ -110,9 +123,9 @@ export class RiderService {
     // admin.getKycReview surfaces the colliding accounts. Snapshot here; the review recomputes it live.
     const profile = await this.prisma.profile.findUnique({
       where: { id: profileId },
-      select: { idNumber: true },
+      select: { idNumberHash: true },
     });
-    const duplicateIdFlag = (await this.duplicateIdAccountCount(profileId, profile?.idNumber)) > 0;
+    const duplicateIdFlag = (await this.duplicateIdAccountCount(profileId, profile?.idNumberHash)) > 0;
     if (duplicateIdFlag) {
       this.logger.warn(`Rider ${profileId} onboarding with a national ID already on another account — flagged for KYC review (A-04)`);
     }

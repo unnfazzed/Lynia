@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
 import { StubKycVendor } from "../kyc/kyc-vendor";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { MatchingService } from "../matching/matching.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
@@ -40,7 +41,7 @@ const matching = new MatchingService(prisma, tokens, noopNotifications, new Metr
 const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersService;
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
 const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders);
-const riders = new RiderService(prisma, {} as Env, new StubKycVendor());
+const riders = new RiderService(prisma, {} as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env));
 
 async function clean(): Promise<void> {
   await prisma.orderEvent.deleteMany({});
