@@ -24,7 +24,7 @@ const NAV: NavEntry[] = [
   { label: "KYC review", href: "/riders?kyc=pending", icon: <IconIdCard />, match: "/kyc" },
   { label: "Customers", href: "/customers", icon: <IconUser />, match: "/customers" },
   { label: "Issues", href: "/issues", icon: <IconAlert />, match: "/issues" },
-  { label: "Cash", href: "/cash", icon: <IconBanknote />, match: "/cash" },
+  { label: "Commission", href: "/cash", icon: <IconBanknote />, match: "/cash" },
 ];
 
 function isActive(pathname: string, match: string): boolean {

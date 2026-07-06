@@ -1,35 +1,40 @@
-<!-- @dsCard group="Admin console" viewport="1280x800" name="Cash & settlements" subtitle="Cash-market model: rider-collected fares, weekly 15% commission settlement, overdue state" -->
+<!-- @dsCard group="Admin console" viewport="1280x800" name="Commission" subtitle="Prepaid per-ride commission — 0% launch, riders pre-fund an account, deducted per ride" -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Lynia ops — cash & settlements</title>
+<title>Lynia ops — commission</title>
 <link rel="stylesheet" href="../../styles.css" />
 <link rel="stylesheet" href="admin.css" />
 </head>
 <body>
 <div class="shell">
   <aside class="sidenav" id="sidenav"></aside>
-  <main class="content" data-screen-label="Cash & settlements">
+  <main class="content" data-screen-label="Commission">
     <nav class="topnav" id="topnav"></nav>
     <header class="page">
-      <h1>Cash &amp; settlements</h1>
-      <span class="sub">Riders collect fares in cash — the 15% commission settles weekly</span>
+      <h1>Commission</h1>
+      <span class="sub">Prepaid per-ride — riders pre-fund an account, commission is deducted per ride</span>
       <span class="conn" id="conn">● live</span>
     </header>
     <div class="offline-banner" id="offline-banner"></div>
 
+    <div style="display:flex;gap:10px;align-items:flex-start;background:var(--highlight-wash);border:1px solid var(--highlight-border);border-radius:12px;padding:10px 14px;margin-bottom:var(--space-lg);font-size:13px;color:var(--highlight-ink)">
+      <span aria-hidden="true">⚠</span>
+      <span><b>Commission is 0% during the launch period.</b> Riders keep the full agreed fare; nothing is collected yet. The prepaid wallet (top-ups and the per-ride deduction) is not built — the figures below are informational ride volume, not money owed.</span>
+    </div>
+
     <section class="panels stale-dim" id="kpis" style="margin-bottom:var(--space-lg)"></section>
 
     <section class="card stale-dim">
-      <div class="block-title">This week — by rider <span class="right">Week of 29 Jun – 5 Jul · settlement day Friday</span></div>
+      <div class="block-title">By rider <span class="right" id="period">29 Jun – 5 Jul</span></div>
       <table class="data">
-        <thead><tr><th>Rider</th><th>Trips</th><th>Cash collected</th><th>Commission 15%</th><th>Adjustments</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Rider</th><th>Rides</th><th>Fares delivered</th><th>Commission</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
       <div id="rows-empty"></div>
-      <div style="font-size:12px;color:var(--muted);margin-top:12px">Refunds owed to customers are netted off a rider's commission before settlement. A settlement 7+ days overdue pauses the rider's account automatically.</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:12px">Once the rate turns on, each completed ride will deduct its commission from the rider's pre-funded account; a low balance blocks going online until they top up. Balance, top-ups and the per-ride deduction ledger are a later build.</div>
     </section>
   </main>
 </div>
@@ -45,26 +50,20 @@
 </script>
 <script src="shell.js"></script>
 <script>
+  // Rides + gross fares per rider this period. Commission is $0.00 for everyone while the launch rate
+  // is 0% — riders keep the full fare; this console is a read-only view of ride volume, not billing.
   const ROWS = [
-    { name: "Tendai Moyo", trips: 22, cash: "54.60", comm: "8.20", adj: null, status: "due", due: "due Friday" },
-    { name: "Kudzai Ncube", trips: 17, cash: "32.70", comm: "4.90", adj: null, status: "due", due: "due Friday" },
-    { name: "Farai Rusike", trips: 9, cash: "26.10", comm: "12.40", adj: "+ $8.50 carried over", status: "overdue", due: "3 days overdue" },
-    { name: "Tinashe Bere", trips: 0, cash: "0.00", comm: "0.00", adj: null, status: "none", due: "suspended — no activity" },
-    { name: "Nyasha Gumbo", trips: 8, cash: "20.70", comm: "3.10", adj: "− $0.10 refund netted", status: "settled", due: "settled Tue · EcoCash" },
+    { name: "Tendai Moyo", rides: 22, fares: "54.60" },
+    { name: "Kudzai Ncube", rides: 17, fares: "32.70" },
+    { name: "Farai Rusike", rides: 9, fares: "26.10" },
+    { name: "Nyasha Gumbo", rides: 8, fares: "20.70" },
   ];
   const ROWS_GROWTH = [
-    { name: "Simba Mutasa", trips: 19, cash: "44.80", comm: "6.70", adj: null, status: "due", due: "due Friday" },
-    { name: "Rutendo Dube", trips: 3, cash: "6.40", comm: "0.96", adj: null, status: "due", due: "first settlement" },
+    { name: "Simba Mutasa", rides: 19, fares: "44.80" },
+    { name: "Rutendo Dube", rides: 3, fares: "6.40" },
   ];
 
   let envNow = { state: "live", volume: "pilot" };
-
-  function settPill(r) {
-    if (r.status === "settled") return AdminShell.pill("settled", "good");
-    if (r.status === "overdue") return AdminShell.pill(r.due, "bad");
-    if (r.status === "none") return AdminShell.pill("—", "mut");
-    return AdminShell.pill(r.due, "mut");
-  }
 
   function render(env) {
     envNow = env;
@@ -73,40 +72,25 @@
     const sk = `<span class="skel">————</span>`;
     const kpi = (l, v, h) => `<div class="card kpi"><div class="label">${l}</div><div class="value">${loading ? sk : v}</div><div class="hint">${loading ? sk : h}</div></div>`;
     document.getElementById("kpis").innerHTML = empty
-      ? kpi("Cash collected", "$0.00", "no trips this week yet") + kpi("Commission owed", "$0.00", "15% of fares") + kpi("Settled this week", "$0.00", "—") + kpi("Overdue", "0", "riders past settlement day")
-      : kpi("Cash collected", g ? "$682.40" : "$134.10", "this week, rider-held")
-        + kpi("Commission owed", g ? "$96.70" : "$25.50", "15% of agreed fares")
-        + kpi("Settled this week", g ? "$41.20" : "$3.10", "cash at agent + EcoCash")
-        + kpi("Overdue", "1", '<span style="color:var(--danger)">Farai R. — 3 days</span>');
+      ? kpi("Commission rate", "0%", "% of the amount paid, per ride") + kpi("Rides", "0", "completed, this period") + kpi("Fares delivered", "$0.00", "riders keep this at 0%") + kpi("Commission accrued", "$0.00", "at the current rate")
+      : kpi("Commission rate", "0%", "% of the amount paid, per ride")
+        + kpi("Rides", g ? "78" : "56", "completed, this period")
+        + kpi("Fares delivered", g ? "$185.30" : "$134.10", "riders keep this at 0%")
+        + kpi("Commission accrued", "$0.00", "at the current rate");
 
     const rows = AdminShell.vol(env, ROWS, ROWS_GROWTH);
     const tb = document.getElementById("rows"), em = document.getElementById("rows-empty");
     em.innerHTML = "";
-    const off = env.state === "offline" ? "disabled" : "";
-    if (loading) tb.innerHTML = AdminShell.skelRows(7, 5);
-    else if (empty) { tb.innerHTML = ""; em.innerHTML = AdminShell.emptyState("banknote", "Nothing to settle", "Commission builds here as riders complete cash trips."); }
-    else tb.innerHTML = rows.map((r, i) =>
+    if (loading) tb.innerHTML = AdminShell.skelRows(4, 5);
+    else if (empty) { tb.innerHTML = ""; em.innerHTML = AdminShell.emptyState("banknote", "No rides yet this period", "Ride volume builds here as riders complete deliveries."); }
+    else tb.innerHTML = rows.map((r) =>
       `<tr>
         <td><a href="riders.html" style="color:inherit;text-decoration:none;font-weight:500">${r.name}</a></td>
-        <td class="num">${r.trips}</td><td class="num">$${r.cash}</td><td class="num" style="font-weight:600">$${r.comm}</td>
-        <td class="mut" style="font-size:12px">${r.adj || "—"}</td>
-        <td>${settPill(r)}</td>
-        <td style="text-align:right">${r.status === "due" || r.status === "overdue"
-          ? `<span style="display:inline-flex;gap:6px"><button class="btn ghost" ${off} style="padding:4px 12px" onclick="recordPayment(${i})">Record payment…</button>${r.status === "overdue" ? `<button class="btn quiet" ${off} style="padding:4px 12px" onclick="AdminShell.toast('Reminder sent to ${r.name} — SMS + push')">Remind</button>` : ""}</span>`
-          : ""}</td>
+        <td class="num">${r.rides}</td>
+        <td class="num">$${r.fares}</td>
+        <td class="num" style="font-weight:600">$0.00</td>
       </tr>`).join("");
     if (window.lucide) lucide.createIcons();
-  }
-
-  function recordPayment(i) {
-    const r = AdminShell.vol(envNow, ROWS, ROWS_GROWTH)[i];
-    AdminShell.confirmAction({
-      title: "Record settlement — " + r.name,
-      body: `Commission owed: <b>$${r.comm}</b>${r.adj ? ` <span style="color:var(--muted)">(${r.adj})</span>` : ""}. Confirm only after the money is received.`,
-      reasons: ["Cash at agent", "EcoCash transfer", "Netted against refund owed to their customer"],
-      confirmLabel: "Mark settled",
-      onConfirm: (method) => { r.status = "settled"; r.due = "settled today · " + method.toLowerCase(); AdminShell.toast(`${r.name} settled $${r.comm} — ${method}`); render(envNow); },
-    });
   }
 
   AdminShell.init({ page: "cash", onRender: render });

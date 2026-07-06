@@ -651,7 +651,7 @@ function Earnings() {
         </Card>
       ))}
       <Card style={{ background: "var(--highlight-wash)", border: "1px solid var(--highlight-border)", boxShadow: "none" }}>
-        <div style={{ fontSize: 12, color: "var(--highlight-ink)", lineHeight: 1.5 }}>A record of work done — not a payout balance. You keep the full agreed fare during the launch period (no commission for the first few months); payment is cash, outside the app.</div>
+        <div style={{ fontSize: 12, color: "var(--highlight-ink)", lineHeight: 1.5 }}>A record of work done — not a payout balance. You keep the full agreed fare during the launch period (0% commission for the first few months); payment is cash, outside the app. Later, a small commission — a percentage of each delivery — will be deducted per ride from a commission account you top up in advance.</div>
       </Card>
     </Pad>
   );

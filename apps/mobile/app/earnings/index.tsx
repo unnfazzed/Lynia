@@ -67,12 +67,15 @@ export default function EarningsScreen(): React.ReactElement {
             </Card>
           ))}
 
-          {/* §6 decided: rider commission, but 0% for the launch period — riders keep the full fare for now. */}
+          {/* §6 decided: rider commission = % of the amount paid per ride, deducted from a pre-funded
+              commission account (prepaid per-ride model). 0% for the launch period — riders keep the full
+              fare for now. Copy tracks COMMISSION.ratePct in @lynia/shared. */}
           <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
             <Text style={{ fontSize: 12, color: tokens.color.highlightInk, lineHeight: 18 }}>
               A record of work done — not a payout balance. You keep the full agreed fare during the launch period
-              (no commission for the first few months); payment is cash, outside the app. A commission line will
-              appear here once settlement goes live.
+              (0% commission for the first few months); payment is cash, outside the app. Later, a small commission —
+              a percentage of each delivery — will be deducted per ride from a commission account you top up in
+              advance. When that goes live, a per-ride commission line and your account balance will appear here.
             </Text>
           </Card>
           <View style={{ height: tokens.space.xxl }} />

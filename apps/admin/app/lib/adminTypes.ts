@@ -4,7 +4,7 @@
  * page degrades to the offline/empty state when `adminFetch` returns null. Monetary values are
  * strings (matching the existing Order.proposedFare contract) — the API owns rounding.
  */
-import type { SettlementStatus, IssueType, IssueStatus, IssueResolution, ReportReason, Role } from "@lynia/shared";
+import type { IssueType, IssueStatus, IssueResolution, ReportReason, Role } from "@lynia/shared";
 
 /** A compact order/trip row reused in the recent-trips + recent-orders tables. */
 export interface TripRow {
@@ -108,43 +108,41 @@ export interface ReportEntry {
   orderId?: string;
 }
 
-/* ── Cash & settlements (A-06 — model UNCONFIRMED) ─────────── */
+/* ── Commission (prepaid per-ride — 0% at launch) ──────────── */
 /**
- * One rider's settlement for the current cycle (`GET /admin/cash/settlements`). The money model is
- * still an assumption (see the caveat in cash/page.tsx): `commission` = commissionPct of `grossFares`,
- * `refundsNetted` = customer refunds deducted before billing, `amountDue` = the net the rider owes.
- * `status` is the canonical `SettlementStatus` from `@lynia/shared` (pending | paid | overdue). All
- * monetary values are API-owned strings — the console renders, it does not compute them.
+ * Commission overview (`GET /admin/cash/settlements`). The model is **prepaid per-ride**: riders
+ * pre-fund a commission account and each completed ride debits a percentage of the amount paid. The
+ * rate is **0% for the launch period**, so nothing is collected — this is a read-only view of ride
+ * volume and the commission that *would* accrue at the current rate. There is no weekly billing,
+ * refund-netting, record-payment or overdue state (all removed with the old cash-settlement engine);
+ * the prepaid wallet + top-ups are a later build. All monetary values are API-owned strings.
  */
-export interface SettlementRow {
-  id: string;
-  /** Optional deep-link target — the rider whose settlement this is. */
-  riderId?: string;
+export interface CommissionRiderRow {
+  /** Deep-link target — the rider these figures belong to. */
+  riderId: string;
   name: string;
-  /** Gross agreed fares on completed cash orders this cycle. */
-  grossFares: string;
-  /** Commission Lynia bills on the gross fares. */
+  /** Completed rides in the window. */
+  rides: number;
+  /** Gross agreed fares on those rides — the rider keeps this in full at 0%. */
+  fares: string;
+  /** Commission that would accrue at the current rate ("0.00" while the launch rate is 0%). */
   commission: string;
-  /** Customer refunds netted off the commission before billing ("0" when none). */
-  refundsNetted: string;
-  /** Net owed after netting refunds — the amount the record-payment action settles. */
-  amountDue: string;
-  status: SettlementStatus;
-  /** Cycle due date (settlement day), pre-formatted by the API. */
-  dueDate: string;
 }
 
-export interface SettlementWeek {
-  weekLabel: string;
-  settlementDay: string;
+export interface CommissionOverview {
+  /** Collection model — always `prepaid_per_ride`. */
+  model: string;
+  /** Current commission rate as a % of the amount paid per ride (0 during launch). */
+  ratePct: number;
+  /** The window these figures cover, pre-formatted by the API. */
+  periodLabel: string;
   kpis: {
-    cashCollected: string;
-    commissionOwed: string;
-    settledThisWeek: string;
-    overdueCount: number;
-    overdueNote?: string;
+    ratePct: number;
+    rides: number;
+    fares: string;
+    commission: string;
   };
-  rows: SettlementRow[];
+  rows: CommissionRiderRow[];
 }
 
 /* ── KYC review (kit kyc.html — admin A-02) ─────────────────── */
@@ -225,8 +223,8 @@ export interface RiderDetail {
   ratingCount: number;
   completion: string;
   strikes: number;
-  cashOwed: string;
-  cashOverdue?: boolean;
+  /** Commission owed under the prepaid per-ride model — "0.00" while the launch rate is 0%. */
+  commission: string;
   joined: string;
   /** Conduct/safety reports filed against this rider (A-05). Absent/empty ⇒ never reported. */
   reports?: ReportEntry[];

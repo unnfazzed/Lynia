@@ -51,7 +51,7 @@ import { UploadsModule } from "./uploads/uploads.module";
     RidersModule,
     // Client-direct media uploads (signed URLs) — rider KYC/profile photo.
     UploadsModule,
-    // A-06 — cash settlement engine (weekly commission, auto-pause). Consumed by AdminModule.
+    // Prepaid per-ride commission — read-only overview (0% at launch). Consumed by AdminModule.
     SettlementsModule,
     // Trust & safety — disputes/order-level support (A-05), report/block, SOS (R-16/F-13).
     IssuesModule,

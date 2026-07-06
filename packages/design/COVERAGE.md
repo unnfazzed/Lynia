@@ -90,7 +90,7 @@ scope for this phase.
 | Customers directory + profile (masked phone, spend, reports) | ✅ |
 | Edge — cancel-pattern flag / clear / ban | ✅ |
 | Issues queue + investigation (OTP evidence, statements, resolve) | ✅ |
-| Cash & settlements (weekly commission, overdue, record payment) | ✅ |
+| Commission (prepaid per-ride, 0% launch — read-only ride/commission overview) | ✅ |
 | States on every page — live / empty / loading / offline | ✅ |
 
 ## Support / onboarding / edge (`ui_kits/support/`)

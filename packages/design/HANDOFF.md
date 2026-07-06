@@ -316,10 +316,14 @@ lane F). Tickets:
   OTP evidence attached; resolutions (**refund / rider strike / close-no-action**) must write to the
   order, the rider's strike count (3 → auto-cooldown, per mobile contract) and the customer record.
   The "delivery code not entered = unconfirmed delivery" rule should be a server flag, not a note.
-- **A-06 · Cash settlement engine.** Weekly **15% commission** on agreed fares, settlement day Friday,
-  refunds **netted** off a rider's commission, 7-days-overdue **auto-pauses** the rider account. These
-  are assumptions baked into `cash.html` — **product must confirm the rate, cycle, netting and
-  auto-pause rules** before this is built. Record-payment method enum: cash-at-agent / EcoCash / netted.
+- **A-06 · Commission (prepaid per-ride).** Commission is a **percentage of the amount paid per ride**,
+  deducted per completed ride from a **commission account the rider pre-funds**; a low balance blocks
+  going online until they top up. The rate is **0% for the launch period** (nothing collected), so
+  `cash.html` is a read-only overview of ride volume + commission accrued at the current rate. This
+  **replaced** the old weekly 15% cash-settlement engine (no more weekly billing, refund-netting,
+  record-payment or overdue auto-pause). Rate/gating live in `@lynia/shared` `COMMISSION`; the prepaid
+  wallet (balance, top-ups, per-ride deduction ledger) is a later build — see
+  `docs/plans/2026-biker-prepaid-commission.md`.
 - **A-07 · Offline / stale discipline.** On socket drop the console shows the reconnecting banner,
   dims data and **disables all mutating actions** — mirror this: never let an action fire against
   stale state; re-enable on reconnect.

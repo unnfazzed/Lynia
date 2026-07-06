@@ -1,4 +1,4 @@
-<!-- @dsCard group="Admin console" viewport="1280x800" name="Riders — directory & profile" subtitle="Rider record: trips, strikes, cooldown, cash owed; suspend / lift with reason codes" -->
+<!-- @dsCard group="Admin console" viewport="1280x800" name="Riders — directory & profile" subtitle="Rider record: trips, strikes, cooldown, commission; suspend / lift with reason codes" -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -158,7 +158,7 @@
       + stat("Rating", ratingTxt(r), r.ratingN ? r.ratingN + " ratings" : "no ratings yet")
       + stat("Completion", r.completion, "accepted → delivered")
       + stat("Cancel strikes", r.strikes, r.status === "cooldown" ? "cooldown " + r.cooldown : "3 strikes = auto-cooldown")
-      + stat("Cash owed", "$" + r.owed, r.owedOverdue ? '<span style="color:var(--danger)">settlement overdue</span>' : "commission to settle");
+      + stat("Commission", "$0.00", "0% at launch · prepaid per ride");
 
     document.getElementById("d-trips").innerHTML = r.trail.length
       ? r.trail.map((t) => `<tr class="rowlink" onclick="location.href='orders.html'"><td class="mono">${t[0]}</td><td>${t[1]}</td><td>${AdminShell.statusPill(t[2])}</td><td class="num">$${t[3]}</td><td class="mut">${t[4]}</td></tr>`).join("")
@@ -169,7 +169,7 @@
        <dt>Bike reg</dt><dd class="mono">${r.bike}</dd>
        <dt>Joined</dt><dd>${r.joined}</dd>
        <dt>KYC</dt><dd>${r.kyc}${r.kyc === "verified" ? ` · <a href="kyc.html" style="color:var(--accent-text)">view record</a>` : ` · <a href="kyc.html" style="color:var(--accent-text)">in queue</a>`}</dd>
-       <dt>Settlement</dt><dd>$${r.owed} owed · <a href="cash.html" style="color:var(--accent-text)">cash & settlements</a></dd>`;
+       <dt>Commission</dt><dd>$0.00 owed · <a href="cash.html" style="color:var(--accent-text)">commission</a></dd>`;
 
     const off = envNow.state === "offline" ? "disabled" : "";
     document.getElementById("d-actions").innerHTML = r.status === "suspended"
