@@ -159,6 +159,7 @@ export class AdminService {
         tripsCount: true,
         cancelStrikes: true,
         cooldownUntil: true,
+        duplicateIdFlag: true,
         profile: { select: { firstName: true, lastName: true, phone: true } },
       },
     });
@@ -192,6 +193,7 @@ export class AdminService {
       tripsCount: r.tripsCount,
       cancelStrikes: r.cancelStrikes,
       cooldownUntil: r.cooldownUntil?.toISOString() ?? null,
+      duplicateIdFlag: r.duplicateIdFlag,
     }));
   }
 
@@ -216,11 +218,41 @@ export class AdminService {
         kycAttempts: true,
         kycDeclineReason: true,
         idVerified: true,
+        duplicateIdFlag: true,
         updatedAt: true,
         profile: { select: { firstName: true, lastName: true, phone: true, idNumber: true } },
       },
     });
     if (!rider) return null;
+
+    // A-04 duplicate-account guard: the live set of OTHER accounts sharing this national ID, so the
+    // reviewer can compare them before approving (a national ID isn't unique — phone is — so a second
+    // SIM can re-onboard under the same ID). Recomputed here rather than trusting the become-rider
+    // snapshot: a colliding account may have been created, edited or deleted since. Phones are masked
+    // (A-03) — the reviewer matches on the ID, not the phone.
+    const duplicateIdAccounts = rider.profile.idNumber
+      ? (
+          await this.prisma.profile.findMany({
+            where: { idNumber: rider.profile.idNumber, id: { not: rider.profileId } },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              role: true,
+              rider: { select: { kycStatus: true, accountStatus: true } },
+            },
+            orderBy: { createdAt: "asc" },
+          })
+        ).map((p) => ({
+          id: p.id,
+          name: `${p.firstName} ${p.lastName}`.trim(),
+          phone: maskPhone(p.phone),
+          role: p.role,
+          kycStatus: p.rider?.kycStatus ?? null,
+          accountStatus: p.rider?.accountStatus ?? null,
+        }))
+      : [];
 
     // kycAttempts counts declines. The current attempt number is declines + 1 (1 on first review, 2 on
     // the single allowed resubmit). >= 2 declines = locked → support, no further attempts.
@@ -238,6 +270,11 @@ export class AdminService {
       locked,
       declineReason: rider.kycDeclineReason,
       submittedAt: rider.updatedAt.toISOString(),
+      // A-04: the flag persisted at onboarding, and the live collision set the reviewer acts on.
+      // duplicateIdFlag reflects onboarding; duplicateIdAccounts.length reflects now — either non-empty
+      // means "review the ID before approving".
+      duplicateIdFlag: rider.duplicateIdFlag,
+      duplicateIdAccounts,
     };
   }
 
