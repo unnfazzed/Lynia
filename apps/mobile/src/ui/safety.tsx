@@ -321,6 +321,54 @@ export function ReportControl({
   );
 }
 
+// ── Support call row (rider dead-end / gate states) ───────────────────────────
+/**
+ * A calm `tel:` "contact support" row for the states where the only honest instruction is "call us"
+ * (rider banned / KYC attempt-lock / suspended / on hold). The design decision (5 Jul) makes every
+ * contact-support action a real phone call, not a `mailto:`/WhatsApp dead end — so this dials the
+ * staffed Lynia safety line. Accent phone circle (a graphic fill, not text), name + number alongside.
+ */
+export function SupportCallRow({
+  phone = SOS_POLICY.safetyLine,
+  name = "Lynia support",
+  label = "Support",
+}: {
+  phone?: string;
+  name?: string;
+  label?: string;
+}): React.ReactElement | null {
+  const uri = telUri(phone);
+  if (!uri) return null;
+  return (
+    <Pressable
+      onPress={() => void Linking.openURL(uri)}
+      accessibilityRole="button"
+      accessibilityLabel={`Call ${name} on ${phone}`}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: tokens.space.md,
+        minHeight: tokens.touchTargetPrimary,
+        paddingHorizontal: tokens.space.md,
+        paddingVertical: tokens.space.sm,
+        borderRadius: tokens.radius.input,
+        backgroundColor: tokens.color.surface,
+      }}
+    >
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 11, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>{label}</Text>
+        <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }} numberOfLines={1}>
+          {name}
+        </Text>
+        <Text style={{ fontSize: tokens.font.size.label, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{phone}</Text>
+      </View>
+      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
+        <Icon name="phone" size={18} color={tokens.color.onAccent} />
+      </View>
+    </Pressable>
+  );
+}
+
 // ── 3. SOS on a live trip ─────────────────────────────────────────────────────
 /** A full-width danger call button (white on danger fill — the one place white-on-fill is allowed). */
 function CallButton({ label, uri, prominent }: { label: string; uri: string; prominent: boolean }): React.ReactElement {
@@ -364,9 +412,12 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on open; m is stable enough here.
   }, [open]);
 
+  // Both numbers fall back to the final SOS_POLICY constants so the call rows render even when the
+  // best-effort POST fails or hasn't returned yet (offline). A safety control must never dead-end on
+  // the network — the numbers are client-side constants for exactly this reason.
   const emergencyNumber = m.data?.emergencyNumber ?? SOS_POLICY.emergencyNumber;
   const emergencyUri = telUri(emergencyNumber);
-  const safetyLine = m.data?.safetyLine ?? null;
+  const safetyLine = m.data?.safetyLine ?? SOS_POLICY.safetyLine;
   const safetyUri = telUri(safetyLine);
 
   return (
