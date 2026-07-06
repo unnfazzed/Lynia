@@ -8,7 +8,6 @@ import {
   REPORT_REASON_LABELS,
   type ReportReason,
   RiderAccountStatus,
-  SettlementStatus,
   TERMINAL_STATUSES,
 } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
@@ -341,8 +340,8 @@ export class AdminService {
   }
 
   /**
-   * A-04 lift a suspension → back to `active`, clearing the suspend reason (including a
-   * `settlement_overdue` auto-pause). Reason is optional. Mutation + audit in one transaction.
+   * A-04 lift a suspension → back to `active`, clearing the suspend reason. Reason is optional.
+   * Mutation + audit in one transaction.
    */
   async liftRider(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
@@ -454,26 +453,10 @@ export class AdminService {
    */
   async adjustFare(actor: string, orderId: string, input: { agreedFare: number; reason: string; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        select: { id: true, status: true, riderId: true, completedAt: true },
-      });
+      const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true } });
       if (!order) throw new NotFoundException("Order not found");
-      // Guard retroactive commission drift: a completed order whose settlement week is already PAID must
-      // not have its fare rewritten under a settled period (the settlement engine never regenerates a
-      // paid period, so the collected commission would silently no longer match the fare on record).
-      if (order.status === "completed" && order.riderId && order.completedAt) {
-        const paid = await tx.settlement.findFirst({
-          where: {
-            riderId: order.riderId,
-            status: SettlementStatus.PAID,
-            periodStart: { lte: order.completedAt },
-            periodEnd: { gt: order.completedAt },
-          },
-          select: { id: true },
-        });
-        if (paid) throw new ConflictException("This order's settlement is already paid — the fare can't be adjusted.");
-      }
+      // (Under the prepaid per-ride model there is no settled billing period to lock a fare against —
+      // the old "settlement already paid" guard was removed with the weekly cash-settlement engine.)
       await tx.order.update({ where: { id: orderId }, data: { agreedFare: input.agreedFare } });
       const audit = await tx.auditLog.create({
         data: this.auditData(actor, "order.fare_adjust", orderId, input.reason, input.note),
@@ -580,7 +563,8 @@ export class AdminService {
    *
    * TODO(A-04): `suspended`/`suspendReason` need a rider ban/suspend state machine + schema fields
    * (deferred — see plan "out of scope"); status here is derived from cooldownUntil + isOnline only.
-   * TODO(A-06): cashOwed needs the settlement/commission model (deferred) — returned as "0.00".
+   * Commission is prepaid per-ride at 0% during the launch period, so nothing is owed — `commission`
+   * is "0.00" until the rate turns on and the prepaid wallet ships (deferred).
    */
   async getRiderDetail(id: string) {
     const rider = await this.prisma.rider.findUnique({
@@ -646,7 +630,7 @@ export class AdminService {
       ratingCount: rider.ratingCount,
       completion,
       strikes: rider.cancelStrikes,
-      cashOwed: "0.00", // TODO(A-06): settlement/commission model deferred
+      commission: "0.00", // prepaid per-ride at 0% during launch — nothing owed (wallet deferred)
       // How many times this rider has been reported by customers, plus the recent entries (fault signal
       // for ops). Additive to the D-2 RiderDetail shape.
       reports: reports.count,

@@ -199,9 +199,10 @@ model Rider {
   @@map("riders")
 }
 
-// Weekly cash settlement (A-06). One row per rider per settlement period: gross agreed fares on
-// completed orders in the window, the commission billed, refunds netted off, the amount due, and
-// its lifecycle. A row 7+ days overdue auto-pauses the rider (policy.ts SETTLEMENT.overduePauseDays).
+// DORMANT — the weekly cash-settlement model this table backed has been replaced by prepaid per-ride
+// commission (see @lynia/shared COMMISSION + docs/plans/2026-biker-prepaid-commission.md). No code
+// reads or writes it any more; it's left in place only to avoid a destructive migration and will be
+// dropped (or repurposed for the prepaid ledger) when the wallet is built. Do not build against it.
 model Settlement {
   id            String           @id @default(uuid()) @db.Uuid
   riderId       String           @map("rider_id") @db.Uuid

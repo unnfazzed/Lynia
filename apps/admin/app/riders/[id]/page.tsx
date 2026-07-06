@@ -101,9 +101,9 @@ export default async function RiderProfilePage({ params }: { params: { id: strin
           size={22}
         />
         <KpiCard
-          label="Cash owed"
-          value={`$${r.cashOwed}`}
-          hint={r.cashOverdue ? <span style={{ color: tokens.color.danger }}>settlement overdue</span> : "commission to settle"}
+          label="Commission"
+          value={`$${r.commission}`}
+          hint="0% at launch · prepaid per ride"
           size={22}
         />
       </section>
@@ -144,12 +144,12 @@ export default async function RiderProfilePage({ params }: { params: { id: strin
                   ),
                 },
                 {
-                  label: "Settlement",
+                  label: "Commission",
                   value: (
                     <span>
-                      ${r.cashOwed} owed ·{" "}
+                      ${r.commission} owed ·{" "}
                       <a href="/cash" style={{ color: tokens.color.accentText }}>
-                        cash &amp; settlements
+                        commission
                       </a>
                     </span>
                   ),

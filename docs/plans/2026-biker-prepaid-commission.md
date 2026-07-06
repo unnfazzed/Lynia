@@ -18,8 +18,8 @@ This plan pins down **how commission is collected** once the rate turns on, and 
 > ride debits `perRideCommission(amountPaid)` from that balance. When the balance drops below a floor,
 > the rider is gated from going online until they top up.
 
-This **supersedes** the earlier post-paid **weekly cash-settlement** idea (the `SETTLEMENT` engine in
-`apps/api/src/settlements/*`, now marked legacy/dormant in `policy.ts`). A prepaid float fits a cash,
+This **supersedes** the earlier post-paid **weekly cash-settlement** idea (the `SETTLEMENT` engine),
+whose code + admin surface have been removed in favour of this model. A prepaid float fits a cash,
 low-trust market better: no per-rider credit risk, no weekly collection/chasing, and the balance can
 never go negative because a rider with too little float simply cannot accept new rides.
 
@@ -29,16 +29,36 @@ later phase (Phase 2/3 below).
 
 ## What landed in this change (no wallet)
 
+The prepaid per-ride model at 0% now **fully overrides** the old weekly cash-settlement model — every
+surface that presented the abandoned 15% weekly billing was replaced, not left running alongside it.
+
+*Policy + rider app:*
+
 1. **`packages/shared/src/policy.ts`** — new `COMMISSION` block: `model: "prepaid_per_ride"`,
    `ratePct: 0` (launch), `lowBalanceBlockBelow`, `minTopUp`; plus `perRideCommission(amountPaid)`
-   (0 at the launch rate, so nothing is deducted). The legacy `SETTLEMENT`/`commissionOn` weekly engine
-   is retained but doc-commented as superseded. One source of truth — no magic numbers in consumers.
+   (0 at the launch rate, so nothing is deducted). The old `SETTLEMENT` const + `commissionOn` helper
+   (the 15% weekly rate) were **deleted** — one source of truth, no contradicting rate.
 2. **`apps/mobile/app/earnings/index.tsx`** — the earnings explainer now describes the real direction:
-   0% today, and *later* a per-ride commission deducted from a **pre-funded commission account**, with a
-   per-ride commission line + balance appearing here when the wallet ships. Removes the stale
-   "weekly settlement" framing.
+   0% today, and *later* a per-ride commission deducted from a **pre-funded commission account**.
 
-Both are inert at `ratePct: 0` — no money moves, no schema change, no new gate.
+*Admin console + API (the weekly model removed):*
+
+3. **`apps/api/src/settlements/settlements.service.ts`** — the weekly engine (`generateForPeriod`,
+   `currentWeek`, `recordPayment`, `autoPauseOverdue`, `weeklyPeriod`, refund-netting) was replaced by a
+   single read-only **`commissionOverview()`**: rides + fares per rider over a trailing 7-day window and
+   the commission that would accrue at the current rate ($0 at 0%). No money is billed, settled or paused.
+4. **`apps/api/src/admin/admin.controller.ts`** — dropped `POST cash/settlements/:id/pay` and
+   `POST cash/settlements/auto-pause`; `GET cash/settlements` now returns the overview.
+5. **`apps/admin`** — `cash/page.tsx` reworked to a "Commission" overview (rate, rides, fares, accrued —
+   no record-payment / overdue / due-date / refund-netting); `RecordPayment.tsx` + `cash/actions.ts`
+   deleted; sidebar label `Cash` → `Commission`; rider detail's "Cash owed / settlement overdue" →
+   "Commission · 0% at launch · prepaid per ride"; `adminTypes` swapped `Settlement*` for `Commission*`.
+6. **`apps/api/src/admin/admin.service.ts`** — rider detail returns `commission: "0.00"` (was `cashOwed`);
+   removed the now-moot "settlement already paid" fare-adjust guard (no settled periods exist any more).
+7. **`apps/api/prisma/schema.prisma`** — the `Settlement` table is marked **dormant** (no code touches
+   it). Left in place to avoid a destructive migration; dropped/repurposed when the wallet is built.
+
+Everything is inert at `ratePct: 0` — no money moves, no new gate, no schema migration.
 
 ## Target data model (Phase 2 — the wallet)
 
@@ -79,21 +99,22 @@ wallet from Phase 2 is live).
 
 ## Phasing
 
-- **Phase 1 (this change).** Policy single-source-of-truth + honest UI copy. `ratePct: 0`. No wallet.
+- **Phase 1 (this change).** Policy single-source-of-truth + honest UI copy + the admin console/API
+  migrated off the weekly model onto the read-only commission overview. `ratePct: 0`. No wallet.
 - **Phase 2 (wallet core).** `CommissionAccount` + `CommissionLedger` + migration; per-ride debit in the
   completion transaction; low-balance online-gate; rider balance/history UI on the earnings screen;
-  admin visibility. Still shippable at `ratePct: 0` (exercises the plumbing, debits are 0).
+  admin visibility. Still shippable at `ratePct: 0` (exercises the plumbing, debits are 0). This is also
+  where the dormant `Settlement` table is dropped or repurposed for the ledger (one destructive migration).
 - **Phase 3 (top-ups + rails).** Payment-rail integration for pre-funding; top-up UI; then calibrate and
   raise `ratePct`.
-- **Legacy cleanup.** Once Phase 2 lands, retire or repurpose the weekly `SETTLEMENT` engine and its
-  admin cash console (or keep it purely for historical settlement records) so there is one commission
-  model, not two.
 
 ## Out of scope (surfaced, not silently built)
 
 Payment-rail integration, the top-up transaction, the balance ledger tables/migration, the low-balance
-gate wiring, reconciliation/reporting, refund interaction with prepaid commission, and retiring the
-weekly `SETTLEMENT` engine — all Phase 2/3, per "we are not building the wallet yet."
+gate wiring, reconciliation/reporting, refund interaction with prepaid commission, and dropping the
+dormant `Settlement` table — all Phase 2/3, per "we are not building the wallet yet." The vendored admin
+design mockups (`packages/design/ui_kits/admin/*.html`) still show the old weekly model and are a
+non-functional follow-up.
 
 ## Definition of done (this change)
 

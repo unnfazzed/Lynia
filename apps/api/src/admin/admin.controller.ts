@@ -39,11 +39,6 @@ const FareAdjust = z.object({
   reason: z.string().min(1).max(160),
   note: z.string().max(2000).nullish(),
 });
-// Settlement payment method (A-06). Free but capped — the taxonomy can evolve without a 400.
-const RecordPayment = z.object({
-  method: z.enum(["cash-at-agent", "EcoCash", "netted"]),
-});
-
 @Controller("admin")
 @UseGuards(JwtAuthGuard, AdminGuard)
 export class AdminController {
@@ -179,30 +174,16 @@ export class AdminController {
     return this.admin.adjustFare(actor, id, body);
   }
 
-  /* ── A-06 cash & settlements (delegated to SettlementsService) ────────────────────────── */
-
-  /** Current-period settlement rows + KPIs in the console's SettlementWeek shape. */
-  @Get("cash/settlements")
-  cashSettlements() {
-    return this.settlements.currentWeek();
-  }
-
-  /** Record a settlement as paid (cash-at-agent / EcoCash / netted). */
-  @Post("cash/settlements/:id/pay")
-  paySettlement(
-    @Param("id", ParseUUIDPipe) id: string,
-    @Body(new ZodBody(RecordPayment)) body: z.infer<typeof RecordPayment>,
-    @CurrentUser() actor: string,
-  ) {
-    return this.settlements.recordPayment(id, body.method, actor);
-  }
+  /* ── Commission (prepaid per-ride, delegated to SettlementsService) ──────────────────────── */
 
   /**
-   * A-06 auto-pause sweep: overdue settlements (>overduePauseDays past due) → overdue + suspend rider.
-   * Callable (pilot has no in-process scheduler); a cron/ops can hit this on the settlement cadence.
+   * Read-only commission overview in the console's `CommissionOverview` shape: current rate (0% at
+   * launch), ride volume and the commission that would accrue at that rate. The prepaid model has no
+   * weekly billing, record-payment or auto-pause — those were removed with the old cash-settlement
+   * engine; the prepaid wallet (top-ups + per-ride deduction) is a later build.
    */
-  @Post("cash/settlements/auto-pause")
-  autoPauseSettlements() {
-    return this.settlements.autoPauseOverdue();
+  @Get("cash/settlements")
+  cashSettlements() {
+    return this.settlements.commissionOverview();
   }
 }

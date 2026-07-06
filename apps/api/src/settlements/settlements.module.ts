@@ -2,8 +2,9 @@ import { Module } from "@nestjs/common";
 import { SettlementsService } from "./settlements.service";
 
 /**
- * A-06 cash settlement engine. Exports SettlementsService so the admin cash endpoints
- * (AdminController, in the AdminModule) can delegate the settlement reads/writes to it.
+ * Prepaid per-ride commission. Exports SettlementsService so the admin commission endpoint
+ * (AdminController, in the AdminModule) can delegate the read-only overview to it. (Replaces the old
+ * A-06 weekly cash-settlement engine.)
  */
 @Module({
   providers: [SettlementsService],

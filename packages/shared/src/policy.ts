@@ -61,11 +61,12 @@ export const SERVICE_CORRIDOR = {
  * on each completed parcel delivery (per ride, inDrive-style, deducted from the rider's side — not a
  * customer surcharge).
  *
- * COLLECTION MODEL = **prepaid per-ride** (planned): the rider pre-funds a commission account; when a
- * ride completes, {@link perRideCommission} is deducted from that balance. When the balance falls
- * below {@link COMMISSION.lowBalanceBlockBelow} the rider is gated from going online until they top up.
- * This replaces the earlier post-paid weekly-billing idea (the legacy {@link SETTLEMENT} engine, kept
- * dormant below) — a prepaid float suits a cash, low-trust market: no per-rider credit risk, no
+ * COLLECTION MODEL = **prepaid per-ride**: the rider pre-funds a commission account; when a ride
+ * completes, {@link perRideCommission} is deducted from that balance. When the balance falls below
+ * {@link COMMISSION.lowBalanceBlockBelow} the rider is gated from going online until they top up. This
+ * is the ONLY commission model — it fully replaces the earlier post-paid weekly cash-settlement engine
+ * (removed: no more `SETTLEMENT`/`commissionOn`, no weekly billing, refund-netting, record-payment or
+ * overdue auto-pause). A prepaid float suits a cash, low-trust market: no per-rider credit risk, no
  * weekly collection/chasing, no negative balances.
  *
  * **ratePct is 0 for the launch period** (~6–8 months): riders keep the full agreed fare while the
@@ -97,33 +98,6 @@ export const COMMISSION = {
  */
 export function perRideCommission(amountPaid: number): number {
   return Math.round(amountPaid * (COMMISSION.ratePct / 100) * 100) / 100;
-}
-
-/**
- * A-06 — LEGACY weekly cash-settlement engine (post-paid). Superseded by the prepaid per-ride
- * {@link COMMISSION} model above and NOT the launch direction; retained only because the admin cash
- * console + settlements service still project it. Do not build new flows against it — new commission
- * work targets the prepaid model (docs/plans/2026-biker-prepaid-commission.md).
- *
- * ALL of these are unconfirmed assumptions from the design kit — product/finance MUST confirm the
- * rate, cycle, netting and auto-pause before this is treated as policy (surfaced as a caveat in the
- * admin cash console).
- */
-export const SETTLEMENT = {
-  /** Commission as a percentage of agreed fares on completed orders. */
-  commissionPct: 15,
-  /** Settlement cadence + the weekday the period closes / payment is due (0=Sun … 5=Fri … 6=Sat). */
-  cycle: "weekly" as const,
-  settleWeekday: 5,
-  /** Refunds owed to customers are netted off the rider's commission before billing. */
-  netRefunds: true,
-  /** A settlement this many days past its due date auto-pauses (suspends) the rider account. */
-  overduePauseDays: 7,
-} as const;
-
-/** Compute commission on a gross-fares total using the configured rate. Returns a 2dp number. */
-export function commissionOn(grossFares: number): number {
-  return Math.round(grossFares * (SETTLEMENT.commissionPct / 100) * 100) / 100;
 }
 
 /**
