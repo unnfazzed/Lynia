@@ -19,8 +19,11 @@ export default function RoleScreen(): React.ReactElement {
   const go = (choice: StartRole): void => {
     setRole(choice);
     void saveRolePreference(choice);
-    // Rider → the rider home, which itself gates into /rider/become (KYC) when they haven't set up yet.
-    router.replace(choice === "rider" ? "/rider" : "/home");
+    // First-run permission priming (0·7/0·8) sits between the role fork and the destination. It self-
+    // skips once primed, so routing through it every time is safe. Rider → /rider (which gates into
+    // /rider/become KYC when unset); customer → /home.
+    const dest = choice === "rider" ? "/rider" : "/home";
+    router.replace(`/permissions?next=${dest}`);
   };
 
   return (

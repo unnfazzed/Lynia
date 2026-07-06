@@ -104,7 +104,13 @@ export class AuthService {
   async updateProfile(profileId: string, body: UpdateProfileRequest) {
     await this.prisma.profile.update({
       where: { id: profileId },
-      data: { firstName: body.firstName, lastName: body.lastName },
+      // idNumber is stored on the account record (0·6), not verified. Only write it when provided so
+      // a name-only edit (or the returning-user path) never clears an existing value.
+      data: {
+        firstName: body.firstName,
+        lastName: body.lastName,
+        ...(body.idNumber ? { idNumber: body.idNumber } : {}),
+      },
       select: { id: true },
     });
     return this.getProfile(profileId);

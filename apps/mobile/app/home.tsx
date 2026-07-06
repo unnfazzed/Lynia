@@ -13,6 +13,7 @@ import type { ResolvedPlace } from "../src/api/places";
 import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Label, Screen, Sub } from "../src/ui";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
+import { AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
 import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
 
@@ -141,6 +142,9 @@ export default function HomeScreen(): React.ReactElement {
   const [dropPoint, setDropPoint] = useState<PickedPoint | null>(null);
   const [dropLandmark, setDropLandmark] = useState("");
   const [dropPhone, setDropPhone] = useState("");
+  // Map-anchored home (1·1): a single map hero edits whichever address the customer is placing. The
+  // two address rows switch it; the search + map + "use my location" all bind to the active slot.
+  const [activePin, setActivePin] = useState<AddressSlot>("pickup");
   const [items, setItems] = useState<ItemRow[]>([emptyItem()]);
   const [note, setNote] = useState("");
   const [declaredValue, setDeclaredValue] = useState("");
@@ -455,14 +459,10 @@ export default function HomeScreen(): React.ReactElement {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-            <Heading>Send a parcel</Heading>
-            <View style={{ flex: 1 }} />
-            <Button label="Alerts" variant="ghost" onPress={() => router.push("/notifications")} />
-            <Button label="Trips" variant="ghost" onPress={() => router.push("/history")} />
-            <Button label="Account" variant="ghost" onPress={() => router.push("/profile")} />
-          </View>
-          <Sub>Drop a pin for pickup and drop-off, name your price, and riders will offer.</Sub>
+          {/* Map-anchored chrome (1·1): floating brand pill + notifications/account, then the search-
+              first pickup/drop rows, then the single map hero for the active pin. Trip history lives
+              on the account screen now. */}
+          <MapHomeTopBar onNotifications={() => router.push("/notifications")} onAccount={() => router.push("/profile")} />
 
           {draftRestored ? (
             <View
@@ -498,28 +498,32 @@ export default function HomeScreen(): React.ReactElement {
             </View>
           ) : null}
 
-          {/* Required path — the pins. Search-first: an address search sits above each map (only when a
-              Places key is configured — otherwise it renders nothing and the pin stays the primary path).
-              Drop pickup + drop-off; these gate the CTA. */}
-          <Card>
-            <AddressSearch label="Pickup" placeholder="Search pickup address" onResolved={onPickupResolved} />
-            <MapPicker
-              label="Pickup"
-              value={pickupPoint}
-              onChange={setPickupPoint}
-              onReverseGeocode={onPickupReverseGeocode}
-              showMyLocation
-              height={180}
-            />
-            <AddressSearch label="Drop-off" placeholder="Search drop-off address" onResolved={onDropResolved} />
-            <MapPicker
-              label="Drop-off"
-              value={dropPoint}
-              onChange={setDropPoint}
-              onReverseGeocode={onDropReverseGeocode}
-              height={180}
-            />
-          </Card>
+          {/* Search-first address rows: tapping one chooses which pin the map hero below edits (pickup
+              = green dot, drop-off = red square). The CTA is gated on both points being set. */}
+          <AddressRows
+            pickup={pickupLandmark}
+            drop={dropLandmark}
+            active={activePin}
+            onPick={setActivePin}
+          />
+
+          {/* The active slot's search (key-gated; renders nothing without a Places key) + the single
+              map hero. Both bind to the active pin, so one map serves both addresses — the mockup's
+              map-anchored home rather than two stacked map boxes. */}
+          {activePin === "pickup" ? (
+            <AddressSearch key="pickup-search" label="Pickup" placeholder="Search pickup address" onResolved={onPickupResolved} />
+          ) : (
+            <AddressSearch key="drop-search" label="Drop-off" placeholder="Search drop-off address" onResolved={onDropResolved} />
+          )}
+          <MapPicker
+            label={activePin === "pickup" ? "Pickup" : "Drop-off"}
+            value={activePin === "pickup" ? pickupPoint : dropPoint}
+            onChange={activePin === "pickup" ? setPickupPoint : setDropPoint}
+            onReverseGeocode={activePin === "pickup" ? onPickupReverseGeocode : onDropReverseGeocode}
+            showMyLocation={activePin === "pickup"}
+            height={300}
+          />
+          <View style={{ height: tokens.space.sm }} />
 
           {/* Secondary fields — collapsed by default under a tap-to-expand toggle so the required
               path stays short. Landmarks keep their "• from map" auto-fill hint (unchanged). */}

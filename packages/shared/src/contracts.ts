@@ -200,6 +200,10 @@ export type RegisterDeviceTokenRequest = z.infer<typeof RegisterDeviceTokenReque
 export const UpdateProfileRequest = z.object({
   firstName: z.string().trim().min(1).max(80),
   lastName: z.string().trim().min(1).max(80),
+  // National ID stored on the account record (customer-journey 0·6) — NOT verified (riders KYC
+  // separately). Optional so existing callers and the returning-user path are unaffected; same 4–40
+  // bound as the rider KYC id field. Absent/empty leaves the stored value untouched.
+  idNumber: z.string().trim().min(4).max(40).optional(),
 });
 export type UpdateProfileRequest = z.infer<typeof UpdateProfileRequest>;
 
