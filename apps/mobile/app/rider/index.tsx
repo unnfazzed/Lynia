@@ -9,6 +9,7 @@ import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
+import { loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { retryKyc, setOnline } from "../../src/api/riders";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason } from "../../src/logic/gates";
@@ -76,6 +77,23 @@ export default function RiderHome(): React.ReactElement {
   }, [requestLocation]);
 
   const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 8000 });
+  // R8 follow-up: hide the "active job" card for a cancelled order the rider has already handed back.
+  // activeForRider keeps surfacing a collected-then-cancelled order for 24h (so a backgrounded rider
+  // can reopen it), but once they've acknowledged the hand-back it must not keep nagging as "active".
+  const [ackedHandbacks, setAckedHandbacks] = useState<Set<string>>(() => new Set());
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      void loadAcknowledgedHandbacks().then((ids) => {
+        if (alive) setAckedHandbacks(new Set(ids));
+      });
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
+  const activeJob =
+    activeQ.data && !(activeQ.data.status === "cancelled" && ackedHandbacks.has(activeQ.data.id)) ? activeQ.data : null;
 
   // Gate the dashboard behind KYC: a rider goes online only once verified (the backend enforces it on
   // makeOffer too — the UI shouldn't pretend otherwise). `rider: null` = hasn't started rider setup.
@@ -266,9 +284,9 @@ export default function RiderHome(): React.ReactElement {
           <Button label="Rider setup" variant="ghost" onPress={() => router.push("/rider/become")} />
         </View>
 
-        {activeQ.data ? (
+        {activeJob ? (
           <Card style={{ borderColor: tokens.color.accent }}>
-            {activeQ.data.status === "assigned" ? (
+            {activeJob.status === "assigned" ? (
               // The win state (3·3): a customer just picked this rider — say so, don't mumble.
               <>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: 2 }}>
@@ -276,11 +294,11 @@ export default function RiderHome(): React.ReactElement {
                   <Text style={{ fontWeight: "700", color: tokens.color.ink }}>A customer picked you!</Text>
                 </View>
                 <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                  {activeQ.data.pickup.landmark} → {activeQ.data.dropoff.landmark} · ${activeQ.data.agreedFare ?? activeQ.data.proposedFare}
+                  {activeJob.pickup.landmark} → {activeJob.dropoff.landmark} · ${activeJob.agreedFare ?? activeJob.proposedFare}
                 </Text>
               </>
             ) : (
-              <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({activeQ.data.status.replace(/_/g, " ")})</Text>
+              <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({activeJob.status.replace(/_/g, " ")})</Text>
             )}
             {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
             <Button label="Open job" variant="ghost" onPress={() => router.push("/rider/job")} />
@@ -448,11 +466,11 @@ export default function RiderHome(): React.ReactElement {
           </Text>
         </Card>
 
-        {online && sentOffers.some((s) => s.order.id !== activeQ.data?.id) ? (
+        {online && sentOffers.some((s) => s.order.id !== activeJob?.id) ? (
           <View>
             <Sub>Your offers</Sub>
             {sentOffers
-              .filter((s) => s.order.id !== activeQ.data?.id)
+              .filter((s) => s.order.id !== activeJob?.id)
               .map((s) => {
                 const expired = board.expiredOrderIds.has(s.order.id);
                 const taken = board.takenOrderIds.has(s.order.id);

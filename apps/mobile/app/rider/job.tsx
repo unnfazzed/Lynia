@@ -7,6 +7,7 @@ import { ApiError } from "../../src/api/client";
 import { collectedItemCount } from "../../src/logic/journey";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
+import { acknowledgeHandback, loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, OfflineBanner, Screen, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
@@ -53,6 +54,19 @@ export default function RiderJob(): React.ReactElement {
   const [otpTries, setOtpTries] = useState(0);
   // Rate-the-sender (4·7): an OPTIONAL post-delivery star, recorded-only — tap-then-submit, no undo.
   const [senderScore, setSenderScore] = useState(0);
+  // R8 follow-up: order ids the rider has already handed back (tapped "Back to board" on). A cancelled
+  // order stays reopenable for 24h, so without this its snapshot keeps re-showing the hand-back prompt
+  // on every reopen. Loaded once from the device; a fresh WS cancel is never suppressed (only reopens).
+  const [ackedHandbacks, setAckedHandbacks] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let alive = true;
+    void loadAcknowledgedHandbacks().then((ids) => {
+      if (alive) setAckedHandbacks(new Set(ids));
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 6000 });
   const order = jobQ.data ?? null;
@@ -201,7 +215,8 @@ export default function RiderJob(): React.ReactElement {
   // reopens after missing the `job:cancelled` push while backgrounded. activeForRider only surfaces a
   // cancelled order this rider had COLLECTED, so `collected` is true on that reopen path.
   const handback =
-    cancelledJob ?? (order && order.status === "cancelled" ? { collected: true, snapshot: order } : null);
+    cancelledJob ??
+    (order && order.status === "cancelled" && !ackedHandbacks.has(order.id) ? { collected: true, snapshot: order } : null);
   if (handback) {
     const snap = handback.snapshot;
     const senderPhone = snap.counterpartyPhone ?? snap.pickup.contactPhone ?? null;
@@ -243,7 +258,15 @@ export default function RiderJob(): React.ReactElement {
               </Text>
             )}
           </Card>
-          <Button label="Back to board" onPress={() => router.replace("/rider")} />
+          {/* Record that this parcel was handed back so the 24h reopen window doesn't re-prompt the
+              rider on their next visit — then drop back to the board. */}
+          <Button
+            label="Back to board"
+            onPress={() => {
+              void acknowledgeHandback(snap.id);
+              router.replace("/rider");
+            }}
+          />
         </ScrollView>
       </Screen>
     );
@@ -281,7 +304,10 @@ export default function RiderJob(): React.ReactElement {
       </Screen>
     );
   }
-  if (!order) {
+  // No live job — either genuinely nothing, or an already-acknowledged hand-back whose cancelled
+  // snapshot still lingers in the 24h reopen window (handback resolved to null above). Either way
+  // there's nothing to act on, so show the calm empty terminal rather than the collect/deliver flow.
+  if (!order || order.status === "cancelled") {
     return (
       <Screen>
         <Heading>No active job</Heading>
