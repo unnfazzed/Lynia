@@ -138,7 +138,9 @@ describe("delivery lifecycle", () => {
     expect(r.ratingCount).toBe(1);
     expect(r.ratingAvg).toBe(5);
     expect(r.tripsCount).toBe(1);
-    const rating = await prisma.rating.findUnique({ where: { orderId } });
+    // orderId is no longer a standalone unique (migration 0015 widened it to (orderId, byProfileId)
+    // for two-way rating), so query by findFirst.
+    const rating = await prisma.rating.findFirst({ where: { orderId } });
     expect(rating?.score).toBe(5);
   });
 

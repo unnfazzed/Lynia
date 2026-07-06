@@ -372,7 +372,9 @@ export class OrdersService {
         agreedFare: o.agreedFare ? o.agreedFare.toString() : null,
         status: o.status,
         createdAt: o.createdAt.toISOString(),
-        rating: o.rating ? { score: o.rating.score, comment: o.rating.comment } : null,
+        // `rating` is now a to-many relation (two-way rating support): one rating per order today
+        // (customer→rider), so take the first. Widened by migration 0015's composite unique.
+        rating: o.rating[0] ? { score: o.rating[0].score, comment: o.rating[0].comment } : null,
         counterpartyName,
       };
     });
