@@ -5,11 +5,6 @@
     "lib": ["ES2022"],
     "declaration": true,
     "strict": true,
-    // TS 5.6+ deprecates the classic `moduleResolution: "Node"` (node10) the CommonJS packages
-    // (shared/api) use, and a 5.9 toolchain turns that deprecation into a hard error that breaks
-    // `pnpm build` / CI. Silence just that deprecation until those packages migrate to
-    // "node16"/"bundler"; module resolution behavior is unchanged.
-    "ignoreDeprecations": "5.0",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
