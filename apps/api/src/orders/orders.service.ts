@@ -421,6 +421,7 @@ export class OrdersService {
         deliveryAttempts: true,
         cancelReason: true,
         cancelledBy: true,
+        collectedAt: true,
         customer: { select: { phone: true } },
         rider: {
           select: {
@@ -445,10 +446,15 @@ export class OrdersService {
     // only a party on the order may read it — not any authenticated caller holding the order id (IDOR).
     if (!isCustomer && !isRider) throw new ForbiddenException("Not your order");
     const revealed = REVEAL.has(order.status);
-    // Only a party on the order, only during the active window, sees the other side's phone.
+    // R8: on a cancelled order the assigned rider had already COLLECTED, still reveal the sender's phone
+    // to that rider so the reopen hand-back can offer a "call sender". Scoped to the rider on a
+    // collected-cancel only — deliberately NOT a broad PHONE_REVEAL_STATUSES change (which would also
+    // reveal to the customer and on pre-pickup cancels).
+    const handbackReveal = order.status === "cancelled" && isRider && order.collectedAt != null;
+    // Only a party on the order, only during the reveal window, sees the other side's phone.
     let counterpartyPhone: string | null = null;
     if (revealed && isCustomer) counterpartyPhone = order.rider?.profile.phone ?? null;
-    else if (revealed && isRider) counterpartyPhone = order.customer.phone;
+    else if ((revealed || handbackReveal) && isRider) counterpartyPhone = order.customer.phone;
 
     // Freshest rider position: the live-position index (Redis) leads the PG columns, which only
     // hold the last throttled flush. Fall back to the PG snapshot on a miss / no-Redis.

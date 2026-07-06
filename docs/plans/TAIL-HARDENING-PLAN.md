@@ -74,5 +74,27 @@ This is 2/3 backend hardening with **one** user-facing surface: R8's reopen hand
 
 **Verdict: mergeable, proceed.** No P0/P1. One tracked follow-up (reveal the sender to the assigned rider on a collected-cancel) if product wants the one-tap call on the reopen path.
 
-<!-- work-done review summary appended after implementation -->
+## GSTACK REVIEW REPORT (work done)
+
+Post-implementation review of the diff (engineering + design), then fixes applied.
+
+**Engineering review — one P1, fixed.** The R8 reopen hand-back originally rendered with **no sender
+phone** (`cancelled ∉ PHONE_REVEAL_STATUSES`, so `getSnapshot` redacted it) — the exact path R8 exists
+for delivered a hand-back with no way to contact the sender. **Fixed** with a scoped reveal: `getSnapshot`
+now surfaces the counterparty phone to the **assigned rider only, on a collected-cancel** (`collectedAt`
+added to the select; `handbackReveal` condition), avoiding a broad `PHONE_REVEAL_STATUSES` change. A test
+now asserts `counterpartyPhone` survives on the R8 snapshot. SEC-1 and SEC-2 were cleared as correct (the
+prune's `!state.timer` guard is race-free on Node's single loop; the dev-auth allowlist fails safe).
+
+**Design review — two P2s.** (1) Same root cause as the P1 — the "arrange the hand-back with the sender"
+copy had no actionable path without the phone; the reveal fix restores the "Call sender" button, making
+the copy honest. (2) **Warm-resume flash** — on foreground resume the stale live snapshot briefly
+re-exposed advance/OTP controls on a cancelled order before the 6s poll; **fixed** with an `AppState`
+`active` → `invalidateQueries(["activeJob"])` listener so the terminal appears immediately.
+
+**Deferred (noted, non-blocking):** the 24h reopen window has no "handed back" acknowledgement, so a rider
+who already returned the parcel could be re-prompted within the window — acceptable for the pilot; a
+client-side dismissal or a server "handed back" marker is the follow-up.
+
+**Final gate:** typecheck 5/5 · 440 API tests · 57 mobile tests · lint.
 

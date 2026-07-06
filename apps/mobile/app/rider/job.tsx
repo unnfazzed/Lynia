@@ -2,7 +2,7 @@ import { ACTIVE_RIDE_STATUSES, type AdvanceStatusRequest, RIDER_CANCELLABLE_STAT
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { AppState, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { collectedItemCount } from "../../src/logic/journey";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
@@ -87,6 +87,17 @@ export default function RiderJob(): React.ReactElement {
   useEffect(() => {
     setCustomerStale(false);
   }, [order?.status]);
+
+  // Warm-resume: refetch the active job the moment the app returns to foreground. Without this, a job
+  // the customer cancelled while we were backgrounded serves its stale (still-live) cache for up to the
+  // 6s poll — briefly re-exposing advance/OTP controls on a dead order — before flipping to the R8
+  // hand-back. Invalidating on resume makes the terminal appear immediately.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") void qc.invalidateQueries({ queryKey: ["activeJob"] });
+    });
+    return () => sub.remove();
+  }, [qc]);
 
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
   const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Something went wrong.");

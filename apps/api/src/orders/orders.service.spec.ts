@@ -617,6 +617,7 @@ describe("OrdersService.activeForRider", () => {
       customerId: "cust-1",
       riderId: "rider-1",
       createdAt: new Date("2026-06-26T00:00:00Z"),
+      collectedAt: new Date("2026-06-26T00:10:00Z"),
       customer: { phone: "+263771111111" },
       rider: { profileId: "rider-1", currentLat: null, currentLng: null, updatedAt: null, profile: { phone: "+263782000000" } },
       events: [],
@@ -631,5 +632,9 @@ describe("OrdersService.activeForRider", () => {
     const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
     const res = await svc.activeForRider("rider-1");
     expect(res).toMatchObject({ id: "o9", status: "cancelled" });
+    // R8: the collected-cancel hand-back must reveal the sender's phone to the assigned rider so the
+    // reopen terminal can offer a "call sender" (cancelled ∉ PHONE_REVEAL_STATUSES, so this is the
+    // scoped rider-only reveal — the whole point of the fix).
+    expect(res?.counterpartyPhone).toBe("+263771111111");
   });
 });
