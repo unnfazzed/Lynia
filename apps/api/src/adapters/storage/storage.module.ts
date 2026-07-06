@@ -1,15 +1,13 @@
 import { Global, Module } from "@nestjs/common";
 import { ENV } from "../../config/config.module";
 import type { Env } from "../../config/env";
-import { AzureBlobStorage } from "./azure-blob.storage";
 import { GcsStorage } from "./gcs.storage";
 import { STORAGE, type StorageAdapter } from "./storage.interface";
 
-/** Binds the StorageAdapter to the Azure or GCP impl based on CLOUD_PROVIDER (D7). */
+/** Binds the StorageAdapter to the GCS impl — the adapter seam (D7) stays, so a second cloud is a
+ *  new impl + selector, not a rewrite. */
 export function selectStorage(env: Env): StorageAdapter {
-  return env.CLOUD_PROVIDER === "gcp"
-    ? new GcsStorage(env.STORAGE_BUCKET, { projectId: env.GCP_STORAGE_PROJECT_ID })
-    : new AzureBlobStorage(env.STORAGE_BUCKET);
+  return new GcsStorage(env.STORAGE_BUCKET, { projectId: env.GCP_STORAGE_PROJECT_ID });
 }
 
 @Global()

@@ -177,6 +177,8 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     tripsCount: 30,
     cancelStrikes: 1,
     cooldownUntil: null,
+    accountStatus: "active",
+    suspendReason: null,
     profile: { firstName: "Tendai", lastName: "M", phone: "+263782000001", createdAt: new Date("2026-01-15T00:00:00Z") },
     ...over,
   });
@@ -230,6 +232,21 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     expect(r.phone).toBe("+263782000001");
     expect(r.status).toBe("cooldown");
     expect(r.cooldown).toMatch(/h .*m|m$/);
+  });
+
+  it("reports the A-04 account state over the activity derivation, with the stored reason", async () => {
+    // A suspended rider who happens to be flagged online in the stale row: account state wins.
+    const suspended = riderRow({ accountStatus: "suspended", suspendReason: "safety report", isOnline: true });
+    const svc = new AdminRidersService(prismaFor(suspended, 0) as unknown as PrismaService, pii);
+    const r = (await svc.getRiderDetail("r1"))!;
+    expect(r.status).toBe("suspended");
+    expect(r.suspendReason).toBe("safety report");
+
+    const banned = riderRow({ accountStatus: "banned", suspendReason: "fraud", isOnline: false });
+    const svc2 = new AdminRidersService(prismaFor(banned, 0) as unknown as PrismaService, pii);
+    const r2 = (await svc2.getRiderDetail("r1"))!;
+    expect(r2.status).toBe("banned");
+    expect(r2.suspendReason).toBe("fraud");
   });
 
   it("counts the rider's Report rows and lists the recent ones (repeat-offender signal)", async () => {

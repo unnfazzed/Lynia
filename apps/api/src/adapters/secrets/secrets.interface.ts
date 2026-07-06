@@ -1,5 +1,5 @@
 /**
- * Secrets seam (D7). We read secrets from injected env rather than Azure Key Vault managed-identity
+ * Secrets seam (D7). We read secrets from injected env rather than a cloud secret-manager SDK
  * (which has no line-for-line GCP equal), so the secret source is identical on both clouds.
  */
 export interface SecretsProvider {

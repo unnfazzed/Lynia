@@ -37,7 +37,7 @@ export function buildFcmMessage(message: PushMessage): FcmMessage {
 }
 
 /**
- * FCM-direct push (portable across clouds — the same SDK works on Azure or GCP, D7).
+ * FCM-direct push (portable — the SDK works from any host, D7).
  *
  * firebase-admin is loaded lazily on the first send so the dependency never loads on the noop path
  * (dev/test) or at boot. Credentials come from Application Default Credentials — on Cloud Run that's

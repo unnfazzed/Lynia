@@ -1,7 +1,7 @@
 /**
  * OpenTelemetry bootstrap — portable observability (D7). Tracing is exported over OTLP/HTTP to
  * whatever OTEL_EXPORTER_OTLP_ENDPOINT points at, so the collector is the only thing that differs
- * between Cloud Monitoring and Azure Monitor — no vendor SDK lock-in.
+ * between monitoring backends — no vendor SDK lock-in.
  *
  * The SDK is loaded lazily and only when an endpoint is configured: with no endpoint this is a
  * no-op and the (heavy) SDK tree never loads — keeping dev/test boot light, as before.

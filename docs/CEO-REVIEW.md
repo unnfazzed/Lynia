@@ -94,8 +94,8 @@ Redis on the critical path (no proprietary extensions).
 
 **Switch trigger (decision gate at T0):** if the primary cloud's eligibility/billing from Zimbabwe fails or
 credits don't land, switch. The decision is made at the spike, before any build commits to one cloud. *(At
-Ship this gate fired toward Google Cloud — the Azure adapter is kept green in CI as the live portability
-proof. Detail in the Ship-stage engineering review.)*
+Ship this gate fired toward Google Cloud; the D7 adapter seam is what keeps a future cloud move
+tractable. Detail in the Ship-stage engineering review.)*
 
 **Carried into the engineering review:** treat portability as an architecture constraint (cloud adapters,
 single Docker image, standard Postgres/PostGIS/Redis) and wire the portability exit-test (T13) as a CI

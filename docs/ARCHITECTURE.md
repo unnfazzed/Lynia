@@ -340,8 +340,8 @@ Key facts:
   The Socket.IO tracking connection's max lifetime is governed by Cloud Run's own request timeout
   (`--timeout 3600`), not the LB.
 
-The Azure Blob / env-secrets adapter implementations are retained as the **portability proof**
-([§12](#12-the-cloud-portable-adapter-seam)).
+Cloud-specific code stays behind the adapter seam ([§12](#12-the-cloud-portable-adapter-seam));
+GCS is the single implemented storage target.
 
 ---
 
@@ -359,7 +359,7 @@ graph TB
     end
 
     subgraph seam["Cloud adapter seam (D7)"]
-        storage["StorageModule<br/>GCS / Azure"]
+        storage["StorageModule<br/>GCS"]
         secrets["SecretsModule<br/>env / Key Vault"]
         push["PushModule<br/>FCM / noop"]
     end
@@ -808,7 +808,7 @@ sequenceDiagram
     autonumber
     actor Client
     participant API as UploadsController
-    participant Store as StorageAdapter (GCS/Azure)
+    participant Store as StorageAdapter (GCS)
     participant Blob as Object storage
 
     Client->>API: POST /uploads/kyc-photo { contentType }
@@ -833,8 +833,8 @@ sequenceDiagram
 
 The three things a cloud actually locks you into — object storage, secret access, and push — sit
 behind interfaces. Business logic depends only on the interface; the concrete impl is chosen by env
-(`CLOUD_PROVIDER` / `PUSH_PROVIDER`). GCP is live; the Azure/env implementations are kept as the
-**portability proof** that swapping clouds is a config change, not a rewrite (D7).
+(`CLOUD_PROVIDER` / `PUSH_PROVIDER`). GCP is live and the only implemented target; the seam is what
+makes a future cloud move a new adapter impl rather than a rewrite (D7).
 
 ```mermaid
 graph TB
@@ -855,7 +855,6 @@ graph TB
     cfg --> sec
 
     si --> gcs["GcsStorage ✅ live"]
-    si --> az["AzureBlobStorage<br/>(portability proof)"]
     pi --> fcm["FcmPush ✅"]
     pi --> noop["NoopPush (dev/test)"]
     sec --> envsec["EnvSecrets ✅"]
@@ -866,7 +865,7 @@ graph TB
 
 | Seam | Interface | Impls | Selector |
 |---|---|---|---|
-| Storage | `StorageAdapter` (`createUploadUrl`, `createReadUrl`) | `GcsStorage`, `AzureBlobStorage` | `CLOUD_PROVIDER` |
+| Storage | `StorageAdapter` (`createUploadUrl`, `createReadUrl`) | `GcsStorage` | `CLOUD_PROVIDER` |
 | Push | `PushAdapter` (`sendEach`, batched ≤500) | `FcmPush`, `NoopPush` | `PUSH_PROVIDER` |
 | Secrets | `SecretsAdapter` | `EnvSecrets` (secrets injected as env at deploy) | — |
 

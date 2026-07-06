@@ -8,7 +8,7 @@ const dec = (s: string) => ({ toString: () => s, toFixed: (_n: number) => s });
 describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => {
   const profile = { id: "c1", firstName: "Rudo", lastName: "K", phone: "+263771112222", createdAt: new Date("2026-02-01T00:00:00Z") };
 
-  it("aggregates orders/spend/cancel-rate and MASKS the phone", async () => {
+  it("aggregates orders/spend/cancel-rate/flags and MASKS the phone", async () => {
     const prisma = {
       profile: { findMany: async () => [profile] },
       order: {
@@ -18,6 +18,8 @@ describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => 
           return [{ customerId: "c1", _count: { _all: 4 } }];
         },
       },
+      // Two riders have reported this customer — the directory surfaces the real count (A-05).
+      report: { groupBy: async () => [{ subjectProfileId: "c1", _count: { _all: 2 } }] },
     };
     const svc = new AdminCustomersService(prisma as unknown as PrismaService);
     const rows = await svc.listCustomers();
@@ -28,17 +30,18 @@ describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => 
       orders: 4,
       spend: "42.00",
       cancelRatePct: 25,
-      flags: 0,
+      flags: 2,
       status: "active",
       joined: "2026-02-01",
     });
     expect(rows[0]!.phoneMasked).not.toContain("111");
   });
 
-  it("returns [] for a flagged filter (no ban/flag model yet)", async () => {
+  it("returns [] for a flagged filter (no ban/flag state on Profile yet)", async () => {
     const prisma = {
       profile: { findMany: async () => [profile] },
       order: { groupBy: async () => [] },
+      report: { groupBy: async () => [] },
     };
     const svc = new AdminCustomersService(prisma as unknown as PrismaService);
     expect(await svc.listCustomers("flagged")).toEqual([]);

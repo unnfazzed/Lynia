@@ -14,7 +14,7 @@ export interface GcsStorageOptions {
 
 /**
  * Google Cloud Storage adapter (primary — GCP is the chosen cloud). Generates V4 signed URLs so the
- * client PUTs/GETs the object directly and the API never proxies bytes. Same interface as Azure Blob —
+ * client PUTs/GETs the object directly and the API never proxies bytes. Everything behind the seam —
  * switching clouds is a `CLOUD_PROVIDER` change, no business-logic edits (D7).
  */
 export class GcsStorage implements StorageAdapter {

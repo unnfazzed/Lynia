@@ -1,8 +1,8 @@
 /**
- * Storage seam (D7). The adapter abstracts time-limited URL *generation* — Azure Blob SAS vs
- * GCS signed URLs differ in API and semantics, so the rest of the app only ever sees this interface.
+ * Storage seam (D7). The adapter abstracts time-limited URL *generation* — signed-URL APIs and
+ * semantics differ per provider, so the rest of the app only ever sees this interface.
  */
-export type CloudProvider = "azure" | "gcp";
+export type CloudProvider = "gcp";
 
 export interface UploadTarget {
   /** Pre-authorized URL the client PUTs the object to. */

@@ -215,7 +215,7 @@ export interface RiderDetail {
   phone: string;
   bike: string;
   kyc: "pending" | "verified" | "failed";
-  status: "online" | "offline" | "suspended" | "cooldown";
+  status: "online" | "offline" | "suspended" | "banned" | "cooldown";
   cooldown?: string;
   suspendReason?: string;
   trips: number;

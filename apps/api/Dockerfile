@@ -1,4 +1,4 @@
-# One image, portable across Azure Container Apps and GCP Cloud Run (D7).
+# One image, runs on GCP Cloud Run; no cloud-specific build steps (D7).
 FROM node:22-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
