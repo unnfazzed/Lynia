@@ -26,21 +26,27 @@ function makeDeps() {
 }
 
 describe("NotificationsService — token registry", () => {
-  it("registers a new/own token without ever reassigning profileId (no silent re-home)", async () => {
+  it("registers a token, claiming it for the authenticated caller on both create and update", async () => {
     const { prisma, service } = makeDeps();
     await service.registerToken("p1", "tok-a", "android");
     expect(prisma.deviceToken.upsert).toHaveBeenCalledWith({
       where: { token: "tok-a" },
       create: { profileId: "p1", token: "tok-a", platform: "android" },
-      update: { platform: "android" },
+      update: { profileId: "p1", platform: "android" },
     });
   });
 
-  it("rejects registering a token already owned by another profile (no re-home)", async () => {
+  it("re-homes a token previously owned by another profile (shared-device account switch)", async () => {
     const { prisma, service } = makeDeps();
+    // A token last seen on p2's account is claimed by p1 signing in on the same physical device.
     prisma.deviceToken.findUnique.mockResolvedValue({ profileId: "p2" });
-    await expect(service.registerToken("p1", "tok-a", "android")).rejects.toThrow(/another account/i);
-    expect(prisma.deviceToken.upsert).not.toHaveBeenCalled();
+    await service.registerToken("p1", "tok-a", "android");
+    // The upsert reassigns profileId to the authenticated caller — no ConflictException.
+    expect(prisma.deviceToken.upsert).toHaveBeenCalledWith({
+      where: { token: "tok-a" },
+      create: { profileId: "p1", token: "tok-a", platform: "android" },
+      update: { profileId: "p1", platform: "android" },
+    });
   });
 
   it("unregister only deletes a token owned by the caller", async () => {

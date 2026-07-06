@@ -26,7 +26,14 @@ function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor
 describe("RiderService.becomeRider", () => {
   it("409s if already registered as a rider", async () => {
     const s = svc({ rider: { findUnique: async () => ({ profileId: "p1" }) } }, { KYC_MODE: "auto" });
-    await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" })).rejects.toThrow(/already registered/i);
+    await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" })).rejects.toThrow(/already registered/i);
+  });
+
+  it("400s if the photo key is not under the caller's own kyc namespace (no cross-user key)", async () => {
+    const s = svc({ rider: { findUnique: async () => null } }, { KYC_MODE: "auto" });
+    await expect(
+      s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/victim/photo.jpg" }),
+    ).rejects.toThrow(/invalid photo key/i);
   });
 
   it("auto mode submits to the vendor and returns the verification url", async () => {
@@ -43,7 +50,7 @@ describe("RiderService.becomeRider", () => {
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
-    const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" });
+    const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
     expect(submitted).toBe("p1");
     expect(res).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/sess_1" });
   });
@@ -62,7 +69,7 @@ describe("RiderService.becomeRider", () => {
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
-    const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" });
+    const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
     expect(res.kycStatus).toBe("verified");
     // A unique ID → not flagged.
     expect(created).toMatchObject({ kycStatus: "verified", idVerified: true, duplicateIdFlag: false });
@@ -90,7 +97,7 @@ describe("RiderService.becomeRider", () => {
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
-    const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" });
+    const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
     // Onboarding still succeeds — flag, don't block.
     expect(res.kycStatus).toBe("verified");
     expect(created).toMatchObject({ duplicateIdFlag: true });
@@ -118,7 +125,7 @@ describe("RiderService.becomeRider", () => {
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
-    await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" });
+    await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
     // No ID → nothing to collide on; the count query is skipped entirely.
     expect(counted).toBe(false);
     expect(created).toMatchObject({ duplicateIdFlag: false });
@@ -134,7 +141,7 @@ describe("RiderService.becomeRider", () => {
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "manual" }, vendor);
-    const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" });
+    const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
     expect(res).toEqual({ kycStatus: "pending", mode: "manual", verificationUrl: undefined });
   });
 
@@ -147,7 +154,7 @@ describe("RiderService.becomeRider", () => {
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
-    await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "x" })).rejects.toThrow(
+    await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" })).rejects.toThrow(
       /couldn't start id verification/i,
     );
     expect(created).toBe(false);

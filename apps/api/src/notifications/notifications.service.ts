@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -128,22 +128,20 @@ export class NotificationsService {
     return rows.slice(0, FEED_ROW_CAP);
   }
 
-  /** Register a device token to the calling profile. Idempotent for the SAME owner. A token already
-   *  homed to a different profile is a conflict — never silently re-homed, or an attacker who posts a
-   *  victim's FCM token would redirect the victim's pushes to their own device. */
+  /** Register a device token to the calling profile, re-homing it if it was owned by someone else.
+   *  An FCM token is per physical install, so on a SHARED device (common in-market) user A signs out
+   *  and user B signs in on the same token — B must claim it, or B gets no pushes AND A's private
+   *  notifications keep flowing to what is now B's phone. Re-homing is safe here because the request is
+   *  authenticated as the claimant (a valid session for B proves possession of the device) and the FCM
+   *  token itself is an unguessable per-install secret — so this is not the "post a victim's token"
+   *  hijack the old conflict-throw guarded against; it just moves delivery to the account currently
+   *  signed in on the device, which is exactly what we want. */
   async registerToken(profileId: string, token: string, platform?: string): Promise<{ ok: true }> {
-    const existing = await this.prisma.deviceToken.findUnique({
-      where: { token },
-      select: { profileId: true },
-    });
-    if (existing && existing.profileId !== profileId) {
-      throw new ConflictException("Device token is already registered to another account");
-    }
-    // Owner unchanged (or new token) — upsert without ever reassigning profileId.
+    // Upsert keyed on the token; on an existing row reassign it to the authenticated caller.
     await this.prisma.deviceToken.upsert({
       where: { token },
       create: { profileId, token, platform: platform ?? null },
-      update: { platform: platform ?? null },
+      update: { profileId, platform: platform ?? null },
     });
     return { ok: true };
   }

@@ -6,6 +6,11 @@ import { PrismaClient } from "@prisma/client";
  *  leaning on the driver's cpu-derived default) so pool behaviour is deterministic across Cloud Run
  *  instance sizes — E6. Graceful shutdown is already handled by onModuleDestroy + enableShutdownHooks. */
 const DEFAULT_CONNECTION_LIMIT = "10";
+/** Default wait-for-connection timeout (ms) when neither the URL nor `DATABASE_POOL_TIMEOUT` sets one.
+ *  Prisma's old query engine fast-failed a pool-acquire at 10s; node-postgres' `Pool` default is `0`
+ *  (wait forever), so under pool exhaustion requests would queue indefinitely and Cloud Run would pile
+ *  up hung requests instead of shedding load. Restore the fast-fail explicitly — E6. */
+const DEFAULT_POOL_ACQUIRE_TIMEOUT_MS = 10_000;
 
 /**
  * Pool options for the pg driver adapter (Prisma 7 — the engine's `connection_limit`/`pool_timeout`
@@ -14,10 +19,13 @@ const DEFAULT_CONNECTION_LIMIT = "10";
  * deterministic default. `pool_timeout` was seconds; connectionTimeoutMillis is ms. An unparseable
  * URL falls back to defaults so a bad value can never block boot.
  */
-export function poolConfig(url: string): { connectionString: string; max: number; connectionTimeoutMillis?: number } {
-  const out: { connectionString: string; max: number; connectionTimeoutMillis?: number } = {
+export function poolConfig(url: string): { connectionString: string; max: number; connectionTimeoutMillis: number } {
+  const out: { connectionString: string; max: number; connectionTimeoutMillis: number } = {
     connectionString: url,
     max: Number(process.env.DATABASE_CONNECTION_LIMIT ?? DEFAULT_CONNECTION_LIMIT),
+    // Explicit default so an unconfigured pool fast-fails on acquire rather than waiting forever (pg's
+    // `connectionTimeoutMillis` default of 0). Overridden below when the URL / env sets pool_timeout.
+    connectionTimeoutMillis: DEFAULT_POOL_ACQUIRE_TIMEOUT_MS,
   };
   try {
     const u = new URL(url);

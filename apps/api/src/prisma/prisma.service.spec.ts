@@ -35,9 +35,11 @@ describe("poolConfig (E6, Prisma 7 pg-adapter pool options)", () => {
     expect(out.max).toBe(5);
   });
 
-  it("leaves connectionTimeoutMillis unset when no timeout is configured (pg default applies)", () => {
+  it("defaults connectionTimeoutMillis to a 10s fast-fail when no timeout is configured", () => {
+    // Restores Prisma's old query-engine behaviour: without this, pg's Pool default of 0 = wait
+    // forever, so an exhausted pool queues requests indefinitely instead of shedding load.
     const out = poolConfig("postgresql://u:p@host:5432/db");
-    expect(out.connectionTimeoutMillis).toBeUndefined();
+    expect(out.connectionTimeoutMillis).toBe(10000);
   });
 
   it("falls back to defaults on an unparseable URL rather than throwing (never blocks boot)", () => {
