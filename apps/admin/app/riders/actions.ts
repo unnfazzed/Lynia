@@ -47,11 +47,11 @@ export async function mutateRider(
   reasonCode: string | null,
   note: string,
 ): Promise<void> {
-  const auditAction = action === "lift" ? "rider.lift_suspension" : `rider.${action}`;
+  // The suspend/ban/lift endpoints bind ReasonRequired/ReasonOptional = { reason, note? } — NOT the
+  // audit envelope. Send `reason` (the reason-code radio), not `reasonCode`, or the write 400s
+  // (suspend/ban need a non-empty reason, which the modal enforces; lift's is optional).
   const ok = await adminPost(`/admin/riders/${profileId}/${action}`, {
-    action: auditAction,
-    target,
-    reasonCode,
+    reason: reasonCode ?? "",
     note: note || null,
   });
   if (!ok) throw new Error(`Failed to ${action} rider ${profileId} (check API_BASE_URL / admin token).`);

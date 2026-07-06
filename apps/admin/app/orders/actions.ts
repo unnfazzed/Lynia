@@ -11,10 +11,10 @@ import { adminPost } from "../lib/api";
  * note }` the endpoints accept, plus the mutation-specific field.
  */
 export async function cancelOrder(id: string, reasonCode: string | null, note: string): Promise<void> {
+  // Binds ReasonRequired = { reason, note? } — send `reason` (not the audit envelope's `reasonCode`),
+  // else the cancel 400s on the missing required field.
   const ok = await adminPost(`/admin/orders/${id}/cancel`, {
-    action: "order.cancel",
-    target: id,
-    reasonCode,
+    reason: reasonCode ?? "",
     note: note || null,
   });
   if (!ok) throw new Error(`Failed to cancel order ${id} (check API_BASE_URL / admin token).`);
@@ -28,12 +28,13 @@ export async function adjustFare(
   reasonCode: string | null,
   note: string,
 ): Promise<void> {
+  // The endpoint binds FareAdjust = { agreedFare: number, reason: string(min1), note? } — NOT the
+  // audit envelope. Send exactly that shape: coerce the numeric-string input to a number and map the
+  // reason-code radio to `reason` (a mismatch here is a silent 400 the audit row can't reveal).
   const ok = await adminPost(`/admin/orders/${id}/fare`, {
-    action: "order.adjust_fare",
-    target: id,
-    reasonCode,
+    agreedFare: Number(newFare),
+    reason: reasonCode ?? "",
     note: note || null,
-    newFare,
   });
   if (!ok) throw new Error(`Failed to adjust fare for order ${id} (check API_BASE_URL / admin token).`);
   revalidatePath(`/orders/${id}`);

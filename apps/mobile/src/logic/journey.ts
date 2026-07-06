@@ -22,3 +22,27 @@ export function isPendingCounter(type: OfferType, offeredFare: number, ask: numb
 export function collectedItemCount(items: readonly { quantity: number }[], checked: ReadonlySet<number>): number {
   return items.reduce((sum, it, i) => (checked.has(i) ? sum + it.quantity : sum), 0);
 }
+
+/**
+ * Customer-auction honesty: while the order is still open for offers with zero offers to show, the
+ * calm "finding riders / hang tight" working state is only truthful when the offers fetch actually
+ * succeeded. If the offers query is in an ERROR state with nothing to show, surface an honest
+ * error+retry instead of pretending we're still looking. A WS-streamed or cached bid makes
+ * `offerCount > 0`, so this never fires while there are offers on screen; and once the order leaves
+ * `open_for_offers` (e.g. an optimistic select flips it to `assigned`) the whole auction block is
+ * gone, so this can't disrupt that path either.
+ */
+export function shouldShowOffersError(isError: boolean, offerCount: number, isOpenForOffers: boolean): boolean {
+  return isError && offerCount === 0 && isOpenForOffers;
+}
+
+/**
+ * Rider cold-start honesty: an active-job fetch that fails with NO data must not fall through to the
+ * "No active job" empty state — that tells the rider they have no work when the fetch merely failed.
+ * Only an error with no data (a cold start) is an honest error; a warm refetch that retains the job
+ * keeps `hasData` true and flows to the normal job UI, and a successful empty fetch is the genuine
+ * no-job state.
+ */
+export function shouldShowJobError(isError: boolean, hasData: boolean): boolean {
+  return isError && !hasData;
+}

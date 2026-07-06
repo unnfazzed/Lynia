@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { IssueResolution } from "@lynia/shared";
+import type { IssueResolution, ResolveIssueRequest } from "@lynia/shared";
 import { adminPost } from "../lib/api";
 
 /**
@@ -18,8 +18,14 @@ export async function resolveIssue(
   note: string,
   refundAmount?: string,
 ): Promise<void> {
-  const body: Record<string, unknown> = { resolution, note: note || null };
-  if (resolution === "refund") body.refundAmount = refundAmount || null;
+  // Typed against the shared schema so a shape drift is a compile error, not a silent 400. `note` is
+  // `.optional()` (string|undefined — NOT nullable), so omit it when empty rather than sending null;
+  // `refundAmount` is a `number`, so coerce the numeric-string input.
+  const body: ResolveIssueRequest = {
+    resolution,
+    ...(note ? { note } : {}),
+    ...(resolution === "refund" && refundAmount ? { refundAmount: Number(refundAmount) } : {}),
+  };
 
   const ok = await adminPost(`/admin/issues/${id}/resolve`, body);
   if (!ok) throw new Error(`Failed to resolve issue ${id} as ${resolution} (check API_BASE_URL / admin token).`);
