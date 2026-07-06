@@ -6,12 +6,14 @@ import { NotificationsService } from "./notifications.service";
 function makeDeps() {
   const prisma = {
     deviceToken: {
+      findUnique: vi.fn().mockResolvedValue(null),
       upsert: vi.fn().mockResolvedValue({}),
       deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
       findMany: vi.fn().mockResolvedValue([]),
     },
     order: {
       findUnique: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
     },
   };
   // The service fans out through the batched `sendEach`; the default mock accepts every message.
@@ -24,14 +26,21 @@ function makeDeps() {
 }
 
 describe("NotificationsService — token registry", () => {
-  it("upserts by token so re-registering re-homes it to the current profile", async () => {
+  it("registers a new/own token without ever reassigning profileId (no silent re-home)", async () => {
     const { prisma, service } = makeDeps();
     await service.registerToken("p1", "tok-a", "android");
     expect(prisma.deviceToken.upsert).toHaveBeenCalledWith({
       where: { token: "tok-a" },
       create: { profileId: "p1", token: "tok-a", platform: "android" },
-      update: { profileId: "p1", platform: "android" },
+      update: { platform: "android" },
     });
+  });
+
+  it("rejects registering a token already owned by another profile (no re-home)", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.deviceToken.findUnique.mockResolvedValue({ profileId: "p2" });
+    await expect(service.registerToken("p1", "tok-a", "android")).rejects.toThrow(/another account/i);
+    expect(prisma.deviceToken.upsert).not.toHaveBeenCalled();
   });
 
   it("unregister only deletes a token owned by the caller", async () => {
@@ -131,6 +140,79 @@ describe("NotificationsService — dead-token pruning", () => {
     (push.sendEach as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network blip"));
     await service.notifyOrderStatus("o1", "delivered");
     expect(prisma.deviceToken.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("NotificationsService — derived in-app feed (A·3)", () => {
+  const NOW = new Date("2026-07-06T12:00:00.000Z");
+
+  it("maps recognised order events to feed rows, newest first, and skips silent statuses", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o1",
+        events: [
+          { status: "open_for_offers", createdAt: new Date("2026-07-06T09:00:00.000Z") }, // silent → skipped
+          { status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") },
+          { status: "delivered", createdAt: new Date("2026-07-06T11:00:00.000Z") },
+        ],
+      },
+    ]);
+
+    const feed = await service.feedForUser("me", NOW);
+
+    // Only the two mapped events surface; open_for_offers is silent (as it is for push).
+    expect(feed.map((r) => r.title)).toEqual(["Delivered", "Rider assigned"]);
+    expect(feed[0]).toMatchObject({ icon: "check", at: "2026-07-06T11:00:00.000Z", unread: true });
+    // Each row carries a stable, unique id keyed by order + status + time.
+    expect(new Set(feed.map((r) => r.id)).size).toBe(feed.length);
+  });
+
+  it("reads orders across both roles (customer OR rider), newest first, capped", async () => {
+    const { prisma, service } = makeDeps();
+    await service.feedForUser("me", NOW);
+    const arg = prisma.order.findMany.mock.calls[0][0];
+    expect(arg.where).toEqual({ OR: [{ customerId: "me" }, { riderId: "me" }] });
+    expect(arg.orderBy).toEqual({ createdAt: "desc" });
+    expect(arg.take).toBeGreaterThan(0);
+  });
+
+  it("marks recent events unread and old events read (deterministic recency window)", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o1",
+        events: [
+          { status: "delivered", createdAt: new Date("2026-07-06T11:30:00.000Z") }, // 30 min ago
+          { status: "cancelled", createdAt: new Date("2026-07-01T00:00:00.000Z") }, // days ago
+        ],
+      },
+    ]);
+    const feed = await service.feedForUser("me", NOW);
+    const byTitle = Object.fromEntries(feed.map((r) => [r.title, r.unread]));
+    expect(byTitle["Delivered"]).toBe(true);
+    expect(byTitle["Order cancelled"]).toBe(false);
+  });
+
+  it("returns an empty feed when the caller has no orders", async () => {
+    const { service } = makeDeps();
+    await expect(service.feedForUser("me", NOW)).resolves.toEqual([]);
+  });
+
+  it("caps the feed at 30 rows", async () => {
+    const { prisma, service } = makeDeps();
+    // One order with 60 delivered events → 60 candidate rows, capped to 30.
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o1",
+        events: Array.from({ length: 60 }, (_, i) => ({
+          status: "delivered",
+          createdAt: new Date(NOW.getTime() - i * 60_000),
+        })),
+      },
+    ]);
+    const feed = await service.feedForUser("me", NOW);
+    expect(feed).toHaveLength(30);
   });
 });
 

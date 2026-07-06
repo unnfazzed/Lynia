@@ -37,6 +37,17 @@ export function normalizePhone(raw: string, countryCode: string = DEFAULT_COUNTR
     digits = countryCode + digits;
   }
 
+  // A country code can never begin with 0 in E.164 — a leading 0 here is a bogus "+0…" form
+  // (e.g. "+0771234567"), not a real country code. Reject it instead of minting a junk identity.
+  if (digits.startsWith("0")) return null;
+
+  // Strip a trunk 0 that survived directly after the country code — the same subscriber may write
+  // their number as "+263 0771234567" / "2630771234567" (country code AND the retained trunk 0). It
+  // must collapse to the same national number as the trunk-form "0771234567".
+  if (digits.startsWith(countryCode) && digits[countryCode.length] === "0") {
+    digits = countryCode + digits.slice(countryCode.length + 1);
+  }
+
   const e164 = `+${digits}`;
   return /^\+\d{8,15}$/.test(e164) ? e164 : null;
 }

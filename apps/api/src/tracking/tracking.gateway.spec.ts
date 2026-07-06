@@ -7,7 +7,7 @@ import type { MetricsService } from "../observability/metrics.service";
 import type { TrackingService } from "./tracking.service";
 import { boardCell, boardCellNeighborhood } from "@lynia/shared";
 import { BOARD_ROOM, boardGeoRoom, orderRoom } from "./tracking.constants";
-import { POSITION_COALESCE_MS, TrackingGateway } from "./tracking.gateway";
+import { POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, TrackingGateway } from "./tracking.gateway";
 
 /** Minimal socket fake: maintains a live `rooms` Set (like a real Socket) as join/leave run, and
  *  carries the authenticated user in `data`. */
@@ -102,12 +102,21 @@ describe("TrackingGateway.boardSubscribe", () => {
 });
 
 describe("TrackingGateway.boardLeave", () => {
-  it("leaves the board room", async () => {
+  it("leaves the board room AND every geo-cell room, but not the order room", async () => {
     const g = gateway();
-    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    const client = fakeSocket({ sub: "rider-1", role: "rider" }, [
+      BOARD_ROOM,
+      "board:geo:1:2",
+      "board:geo:1:3",
+      orderRoom("ord-1"),
+    ]);
     const res = await g.boardLeave(client as never);
     expect(res).toEqual({ left: "board" });
     expect(client.leave).toHaveBeenCalledWith(BOARD_ROOM);
+    expect(client.leave).toHaveBeenCalledWith("board:geo:1:2");
+    expect(client.leave).toHaveBeenCalledWith("board:geo:1:3");
+    // The order room is a different concern (customer tracking) — boardLeave must not touch it.
+    expect(client.leave).not.toHaveBeenCalledWith(orderRoom("ord-1"));
   });
 });
 
@@ -202,6 +211,25 @@ describe("TrackingGateway.riderLocation", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("TrackingGateway.prunePositionRooms", () => {
+  it("drops a coalesce entry gone quiet past the TTL, keeps a recent one (bounds map growth)", async () => {
+    const { server } = fakeServer();
+    const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix: vi.fn(async () => {}) });
+    g.server = server as never;
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    await g.riderLocation(client as never, { orderId: "ord-1", lat: 1, lng: 1 });
+    const map = (g as unknown as { positionEmit: Map<string, { lastEmit: number }> }).positionEmit;
+    const st = map.get(orderRoom("ord-1"));
+    expect(st).toBeTruthy();
+    // Recent → kept.
+    g.prunePositionRooms(st!.lastEmit + 1);
+    expect(map.has(orderRoom("ord-1"))).toBe(true);
+    // Quiet past the TTL → pruned so the map can't grow unbounded.
+    g.prunePositionRooms(st!.lastEmit + POSITION_ROOM_TTL_MS + 1);
+    expect(map.has(orderRoom("ord-1"))).toBe(false);
   });
 });
 

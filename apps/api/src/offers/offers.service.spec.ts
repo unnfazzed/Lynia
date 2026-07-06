@@ -74,7 +74,7 @@ describe("OffersService.makeOffer", () => {
   it("403s when the rider is offline", async () => {
     const { service, gateway } = svc({
       order: { findUnique: async () => ({ status: "open_for_offers" }) },
-      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: false }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: false, accountStatus: "active", onHold: false, cooldownUntil: null }) },
     });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/go online/i);
     expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
@@ -84,7 +84,7 @@ describe("OffersService.makeOffer", () => {
     const dup = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
     const { service, gateway } = svc({
       order: { findUnique: async () => ({ status: "open_for_offers" }) },
-      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: { create: async () => { throw dup; } },
     });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/already responded/i);
@@ -94,7 +94,7 @@ describe("OffersService.makeOffer", () => {
   it("creates the offer and serializes the fare to a string", async () => {
     const { service } = svc({
       order: { findUnique: async () => ({ status: "open_for_offers" }) },
-      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: {
         create: async () => ({
           id: "o1",
@@ -112,7 +112,7 @@ describe("OffersService.makeOffer", () => {
   it("labels the offers_made_total counter by outcome (created / forbidden / conflict)", async () => {
     const ok = {
       order: { findUnique: async () => ({ status: "open_for_offers" }) },
-      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: { create: async () => ({ id: "o1", type: "accept", offeredFare: { toString: () => "2.50" }, etaMinutes: 10, status: "pending" }) },
     };
     const created = svc(ok);
@@ -121,7 +121,7 @@ describe("OffersService.makeOffer", () => {
 
     const offline = svc({
       order: { findUnique: async () => ({ status: "open_for_offers" }) },
-      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: false }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: false, accountStatus: "active", onHold: false, cooldownUntil: null }) },
     });
     await expect(offline.service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/go online/i);
     expect(offline.metrics.incOffersMade).toHaveBeenCalledWith("forbidden");
@@ -129,7 +129,7 @@ describe("OffersService.makeOffer", () => {
     const dup = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
     const conflict = svc({
       order: { findUnique: async () => ({ status: "open_for_offers" }) },
-      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: { create: async () => { throw dup; } },
     });
     await expect(conflict.service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/already responded/i);
@@ -139,7 +139,7 @@ describe("OffersService.makeOffer", () => {
   it("signals offers:changed for the order room on a successful offer", async () => {
     const { service, gateway } = svc({
       order: { findUnique: async () => ({ status: "open_for_offers", customerId: "cust-1" }) },
-      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: {
         create: async () => ({
           id: "o1",
@@ -162,7 +162,7 @@ describe("OffersService.makeOffer", () => {
     const { service } = svc(
       {
         order: { findUnique: async () => ({ status: "open_for_offers", customerId: "cust-1" }) },
-        rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true }) },
+        rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
         offer: {
           create: async () => ({
             id: "o1",
@@ -183,13 +183,14 @@ describe("OffersService.makeOffer", () => {
 describe("OffersService.listForOrder", () => {
   it("serializes each offer's Decimal fare to a string", async () => {
     const { service } = svc({
+      order: { findUnique: async () => ({ customerId: "cust-1" }) },
       offer: {
         findMany: async () => [
           { id: "o1", type: "accept", offeredFare: { toString: () => "3.00" }, etaMinutes: 8, rider: { profileId: "r1" } },
         ],
       },
     });
-    const res = await service.listForOrder("order-1");
+    const res = await service.listForOrder("order-1", "cust-1");
     expect(res[0]!.offeredFare).toBe("3.00");
   });
 });

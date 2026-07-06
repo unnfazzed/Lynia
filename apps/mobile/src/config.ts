@@ -33,7 +33,66 @@ export const WS_URL: string = API_URL;
 const placesKeyFromExtra = (Constants.expoConfig?.extra as { googlePlacesKey?: string } | undefined)?.googlePlacesKey;
 export const GOOGLE_PLACES_KEY: string | null = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? placesKeyFromExtra ?? null;
 
+/**
+ * Support contact for the rider dead-end states (KYC attempt-lock, suspended, on hold, banned) where the
+ * only honest instruction is "contact support". A `tel:` / `mailto:` / `https://wa.me/...` URL, opened
+ * with Linking. Override per deploy with EXPO_PUBLIC_SUPPORT_URL (or extra.supportUrl); the default is the
+ * pilot support inbox so the button is never dead.
+ */
+const supportFromExtra = (Constants.expoConfig?.extra as { supportUrl?: string } | undefined)?.supportUrl;
+export const SUPPORT_URL: string =
+  process.env.EXPO_PUBLIC_SUPPORT_URL ?? supportFromExtra ?? "mailto:support@lyniafinance.com";
+
 /** True only when a non-empty Places key is configured — the single gate for showing the search UI. */
 export function placesEnabled(): boolean {
   return typeof GOOGLE_PLACES_KEY === "string" && GOOGLE_PLACES_KEY.length > 0;
+}
+
+/**
+ * Support WhatsApp number in international digits (no "+"), e.g. "263771234567". OPTIONAL — the help
+ * hub's "Chat on WhatsApp" row is gated on it (help routes to WhatsApp by product decision): with no
+ * number the row hides rather than opening a dead link. Set via `EXPO_PUBLIC_SUPPORT_WHATSAPP` or
+ * `extra.supportWhatsApp` in app.config.ts.
+ */
+const supportWaFromExtra = (Constants.expoConfig?.extra as { supportWhatsApp?: string } | undefined)?.supportWhatsApp;
+export const SUPPORT_WHATSAPP: string | null =
+  (process.env.EXPO_PUBLIC_SUPPORT_WHATSAPP ?? supportWaFromExtra ?? "").replace(/[^\d]/g, "") || null;
+
+/** A wa.me deep link to support, or null when no number is configured (the row then hides). */
+export function supportWhatsAppUrl(): string | null {
+  return SUPPORT_WHATSAPP ? `https://wa.me/${SUPPORT_WHATSAPP}` : null;
+}
+
+/**
+ * Minimum app version the API still supports — the hard force-update gate (customer/rider S·3). OPTIONAL
+ * and OFF by default: unset (or "0.0.0") makes the gate inert, so the app builds and runs with no config.
+ * Set it, above the shipped build's version, only when you must force everyone onto a newer binary. Read
+ * from `EXPO_PUBLIC_MIN_APP_VERSION` (inlined at build) or `extra.minAppVersion` in app.config.ts.
+ */
+const minVersionFromExtra = (Constants.expoConfig?.extra as { minAppVersion?: string } | undefined)?.minAppVersion;
+export const MIN_SUPPORTED_VERSION: string = process.env.EXPO_PUBLIC_MIN_APP_VERSION ?? minVersionFromExtra ?? "0.0.0";
+
+/**
+ * App/Play Store URL the force-update screen's "Update now" opens. OPTIONAL — when null the button hides
+ * rather than opening a dead link. Set via `EXPO_PUBLIC_STORE_URL` or `extra.storeUrl` in app.config.ts.
+ */
+const storeUrlFromExtra = (Constants.expoConfig?.extra as { storeUrl?: string } | undefined)?.storeUrl;
+export const STORE_URL: string | null = process.env.EXPO_PUBLIC_STORE_URL ?? storeUrlFromExtra ?? null;
+
+/**
+ * True when `current` is older than MIN_SUPPORTED_VERSION — the single gate for the force-update screen.
+ * Compares semver-ish dotted versions numerically, field by field. Returns false when the minimum is
+ * unset/"0.0.0", so the gate is a no-op unless a minimum is explicitly configured above the current build.
+ */
+export function isUpdateRequired(current: string): boolean {
+  if (!MIN_SUPPORTED_VERSION || MIN_SUPPORTED_VERSION === "0.0.0") return false;
+  const min = MIN_SUPPORTED_VERSION.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const cur = current.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(min.length, cur.length); i++) {
+    const a = cur[i] ?? 0;
+    const b = min[i] ?? 0;
+    if (a < b) return true;
+    if (a > b) return false;
+  }
+  return false; // equal — no update needed
 }

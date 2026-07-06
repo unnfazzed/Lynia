@@ -66,7 +66,13 @@ export function Field(props: {
   // right value.
   autoComplete?: TextInputProps["autoComplete"];
   textContentType?: TextInputProps["textContentType"];
+  // Inline validation (design Field slots): `error` draws a danger border + a specific caption right
+  // under the field (announced to screen readers); `hint` is a muted helper line, suppressed while an
+  // error shows. Honest and specific — never a placeholder-as-error.
+  error?: string;
+  hint?: string;
 }): React.ReactElement {
+  const hasError = props.error != null && props.error !== "";
   return (
     <View style={{ marginBottom: tokens.space.md }}>
       {props.label ? <Label>{props.label}</Label> : null}
@@ -84,7 +90,7 @@ export function Field(props: {
         accessibilityLabel={props.label ?? props.placeholder}
         style={{
           borderWidth: 1,
-          borderColor: tokens.color.line,
+          borderColor: hasError ? tokens.color.danger : tokens.color.line,
           borderRadius: tokens.radius.input,
           padding: tokens.space.md,
           fontSize: tokens.font.size.bodyLg,
@@ -92,6 +98,13 @@ export function Field(props: {
           backgroundColor: tokens.color.bg,
         }}
       />
+      {hasError ? (
+        <Text accessibilityLiveRegion="assertive" style={{ marginTop: 4, fontSize: tokens.font.size.caption, color: tokens.color.danger }}>
+          {props.error}
+        </Text>
+      ) : props.hint ? (
+        <Text style={{ marginTop: 4, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 16 }}>{props.hint}</Text>
+      ) : null}
     </View>
   );
 }

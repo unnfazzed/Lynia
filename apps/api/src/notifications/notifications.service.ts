@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger } from "@nestjs/common";
 import { PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -14,6 +14,47 @@ interface Notice {
  * (e.g. `requested`, `open_for_offers`) are intentionally silent. The customer is the §5c "initiator"
  * watching the trip; the rider hears about being hired and being freed.
  */
+/**
+ * A single row in the derived in-app notifications feed (customer-journey A·3). Notifications are
+ * PUSH-ONLY (FCM) — there is no Notification table — so the feed is READ-ONLY and reconstructed from
+ * the caller's own order events on read. `icon` is a mobile IconName; `at` is ISO-8601.
+ */
+export interface NotificationRow {
+  id: string;
+  icon: string;
+  title: string;
+  message: string;
+  at: string;
+  unread: boolean;
+}
+
+/**
+ * How an order-status event renders as a feed row. Deliberately mirrors {@link STATUS_NOTICES} copy so
+ * the in-app centre reads the same as the push the user already saw. Statuses absent here (e.g.
+ * `requested`, `open_for_offers`) are silent in the feed exactly as they are for push. Icons are valid
+ * mobile IconNames (see apps/mobile/src/ui/Icon.tsx).
+ */
+const FEED_NOTICES: Record<string, { icon: string; title: string; message: string }> = {
+  assigned: { icon: "bike", title: "Rider assigned", message: "A rider took your delivery and is confirming the details." },
+  confirmed: { icon: "check", title: "Rider confirmed your items", message: "Your rider has reviewed the parcel details." },
+  en_route_pickup: { icon: "bike", title: "Rider on the way", message: "Your rider is heading to the pickup point." },
+  picked_up: { icon: "check", title: "Parcel collected", message: "Your rider has your parcel and is on the move." },
+  en_route_dropoff: { icon: "navigation", title: "On the way to drop-off", message: "Your parcel is en route to the destination." },
+  delivered: { icon: "check", title: "Delivered", message: "Your parcel was delivered — rate your rider." },
+  completed: { icon: "check", title: "Delivery complete", message: "This trip is done. Thanks for using Lynia." },
+  expired: { icon: "clock", title: "No riders yet", message: "No rider took your price. Nudge it up and re-broadcast." },
+  undelivered: { icon: "triangle-alert", title: "Delivery couldn't be completed", message: "Your rider couldn't hand the parcel over — tap for details." },
+  cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "This delivery was cancelled." },
+};
+
+/** How recent an event must be to count as "unread" in the derived feed — a deterministic window over
+ *  the event time (there is no per-user read state to persist). */
+const FEED_UNREAD_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** How many orders back the feed reaches, and the cap on rows returned (A·3 shows the most recent). */
+const FEED_ORDER_LOOKBACK = 30;
+const FEED_ROW_CAP = 30;
+
 const STATUS_NOTICES: Record<string, Notice> = {
   assigned: { to: ["rider"], title: "You got the job", body: "You've been selected for a delivery — open it to confirm the details." },
   confirmed: { to: ["customer"], title: "Rider confirmed your items", body: "Your rider has reviewed the parcel details." },
@@ -40,12 +81,65 @@ export class NotificationsService {
     @Inject(PUSH) private readonly push: PushAdapter,
   ) {}
 
-  /** Register (or re-home) a device token to the calling profile. Idempotent per token. */
+  /**
+   * The caller's in-app notifications feed (customer-journey A·3) — a READ-ONLY view derived from the
+   * events of their own recent orders (across both roles), newest first and capped at
+   * {@link FEED_ROW_CAP}. There is no Notification table: this reconstructs the same lifecycle beats
+   * the user was pushed. `now` is injectable so unread-recency is deterministic under test.
+   */
+  async feedForUser(userId: string, now: Date = new Date()): Promise<NotificationRow[]> {
+    const orders = await this.prisma.order.findMany({
+      where: { OR: [{ customerId: userId }, { riderId: userId }] },
+      orderBy: { createdAt: "desc" },
+      take: FEED_ORDER_LOOKBACK,
+      select: {
+        id: true,
+        events: {
+          select: { status: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+
+    const rows: NotificationRow[] = [];
+    for (const order of orders) {
+      for (const event of order.events) {
+        const notice = FEED_NOTICES[event.status];
+        if (!notice) continue; // silent statuses (requested/open_for_offers) never surface, as with push
+        const at = event.createdAt.toISOString();
+        rows.push({
+          // Stable per (order, status, time): an order can revisit a status, so the timestamp keys it.
+          id: `${order.id}:${event.status}:${at}`,
+          icon: notice.icon,
+          title: notice.title,
+          message: notice.message,
+          at,
+          unread: now.getTime() - event.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        });
+      }
+    }
+
+    // Newest first. ISO-8601 UTC strings sort lexicographically in time order.
+    rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    return rows.slice(0, FEED_ROW_CAP);
+  }
+
+  /** Register a device token to the calling profile. Idempotent for the SAME owner. A token already
+   *  homed to a different profile is a conflict — never silently re-homed, or an attacker who posts a
+   *  victim's FCM token would redirect the victim's pushes to their own device. */
   async registerToken(profileId: string, token: string, platform?: string): Promise<{ ok: true }> {
+    const existing = await this.prisma.deviceToken.findUnique({
+      where: { token },
+      select: { profileId: true },
+    });
+    if (existing && existing.profileId !== profileId) {
+      throw new ConflictException("Device token is already registered to another account");
+    }
+    // Owner unchanged (or new token) — upsert without ever reassigning profileId.
     await this.prisma.deviceToken.upsert({
       where: { token },
       create: { profileId, token, platform: platform ?? null },
-      update: { profileId, platform: platform ?? null },
+      update: { platform: platform ?? null },
     });
     return { ok: true };
   }

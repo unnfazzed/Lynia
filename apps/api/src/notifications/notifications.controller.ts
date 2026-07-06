@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Post, UseGuards } from "@nestjs/common";
 import { RegisterDeviceTokenRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
@@ -12,6 +12,15 @@ const UnregisterBody = RegisterDeviceTokenRequest.pick({ token: true });
 @UseGuards(JwtAuthGuard)
 export class NotificationsController {
   constructor(private readonly notifications: NotificationsService) {}
+
+  /**
+   * The caller's in-app notifications feed (customer-journey A·3). Read-only rows derived from their
+   * own recent order events — there is no Notification table (push-only, FCM). Newest first.
+   */
+  @Get("feed")
+  feed(@CurrentUser() profileId: string) {
+    return this.notifications.feedForUser(profileId);
+  }
 
   /** Mobile posts its FCM device token after login (and on token refresh). */
   @Post("device-token")

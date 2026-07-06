@@ -4,15 +4,17 @@ import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
+import { loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { retryKyc, setOnline } from "../../src/api/riders";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason } from "../../src/logic/gates";
 import { Button, Card, EmptyState, ErrorText, Field, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { SupportCallRow } from "../../src/ui/safety";
 import { parseNum } from "../../src/util";
 
 /** mm:ss for the offer-sent auction countdown. */
@@ -41,9 +43,14 @@ export default function RiderHome(): React.ReactElement {
   const [online, setOnlineState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
+  // S·4 no-GPS gate: location permission was denied — riding needs GPS (parcels near you, navigate
+  // to pickups), so this blocks going online with an "open settings" recovery, per the journey map.
+  const [locDenied, setLocDenied] = useState(false);
   const [selected, setSelected] = useState<OpenOrder | null>(null);
   const [fare, setFare] = useState("");
   const [eta, setEta] = useState("");
+  // Offer mode (3·1): "accept" takes the asking price in one tap; "counter" opens the fare field.
+  const [offerMode, setOfferMode] = useState<"accept" | "counter">("accept");
   const [bidIds, setBidIds] = useState<Set<string>>(() => new Set());
   // Offers the rider has sent this session — rendered with a live "customer's window closes in"
   // countdown, and flipped to a distinct "that window closed" state on a `bid:expired` push.
@@ -51,20 +58,42 @@ export default function RiderHome(): React.ReactElement {
   // 1s clock for the countdowns (only advanced while there are live sent offers).
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  useEffect(() => {
-    void (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
-      try {
-        const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setLoc({ lat: p.coords.latitude, lng: p.coords.longitude });
-      } catch {
-        /* leave unsorted */
-      }
-    })();
+  const requestLocation = useCallback(async (): Promise<void> => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") {
+      setLocDenied(true);
+      return;
+    }
+    setLocDenied(false);
+    try {
+      const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setLoc({ lat: p.coords.latitude, lng: p.coords.longitude });
+    } catch {
+      /* leave unsorted */
+    }
   }, []);
+  useEffect(() => {
+    void requestLocation();
+  }, [requestLocation]);
 
   const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 8000 });
+  // R8 follow-up: hide the "active job" card for a cancelled order the rider has already handed back.
+  // activeForRider keeps surfacing a collected-then-cancelled order for 24h (so a backgrounded rider
+  // can reopen it), but once they've acknowledged the hand-back it must not keep nagging as "active".
+  const [ackedHandbacks, setAckedHandbacks] = useState<Set<string>>(() => new Set());
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      void loadAcknowledgedHandbacks().then((ids) => {
+        if (alive) setAckedHandbacks(new Set(ids));
+      });
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
+  const activeJob =
+    activeQ.data && !(activeQ.data.status === "cancelled" && ackedHandbacks.has(activeQ.data.id)) ? activeQ.data : null;
 
   // Gate the dashboard behind KYC: a rider goes online only once verified (the backend enforces it on
   // makeOffer too — the UI shouldn't pretend otherwise). `rider: null` = hasn't started rider setup.
@@ -95,7 +124,7 @@ export default function RiderHome(): React.ReactElement {
   );
 
   const onlineM = useMutation({
-    mutationFn: (next: boolean) => setOnline(next),
+    mutationFn: (next: boolean) => setOnline(next, loc ?? undefined),
     onSuccess: (res) => {
       setOnlineState(res.online);
       setGate(null);
@@ -234,6 +263,8 @@ export default function RiderHome(): React.ReactElement {
 
   const chooseOrder = (o: OpenOrder): void => {
     setSelected(o);
+    // One-tap accept is the default (3·1); countering opens the fare field.
+    setOfferMode("accept");
     setFare(o.proposedFare);
     // Seed the ETA from the real distance to pickup instead of a constant "10", so the customer's
     // "Fastest" sort ranks on something real. Rider can still edit before sending.
@@ -253,9 +284,22 @@ export default function RiderHome(): React.ReactElement {
           <Button label="Rider setup" variant="ghost" onPress={() => router.push("/rider/become")} />
         </View>
 
-        {activeQ.data ? (
+        {activeJob ? (
           <Card style={{ borderColor: tokens.color.accent }}>
-            <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({activeQ.data.status.replace(/_/g, " ")})</Text>
+            {activeJob.status === "assigned" ? (
+              // The win state (3·3): a customer just picked this rider — say so, don't mumble.
+              <>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: 2 }}>
+                  <Icon name="check" size={18} color={tokens.color.accentText} />
+                  <Text style={{ fontWeight: "700", color: tokens.color.ink }}>A customer picked you!</Text>
+                </View>
+                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                  {activeJob.pickup.landmark} → {activeJob.dropoff.landmark} · ${activeJob.agreedFare ?? activeJob.proposedFare}
+                </Text>
+              </>
+            ) : (
+              <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({activeJob.status.replace(/_/g, " ")})</Text>
+            )}
             {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
             <Button label="Open job" variant="ghost" onPress={() => router.push("/rider/job")} />
           </Card>
@@ -265,6 +309,17 @@ export default function RiderHome(): React.ReactElement {
           <View style={{ marginTop: tokens.space.lg }}>
             <SkeletonList count={2} />
           </View>
+        ) : meQ.isError ? (
+          // getMe failed — knownUnverified is false with no data, so without this branch we'd render the
+          // online dashboard as if verified and let the rider go online into a backend that then refuses.
+          // Show an explicit error/retry instead of optimistically trusting an unknown KYC state.
+          <EmptyState
+            icon="wifi-off"
+            title="Couldn't load your rider status"
+            message="Check your connection and try again."
+          >
+            <Button label="Retry" onPress={() => void meQ.refetch()} loading={meQ.isFetching} />
+          </EmptyState>
         ) : knownUnverified ? (
           !meQ.data?.rider ? (
             // Not a rider yet → the full onboarding form (name, ID, bike, photo).
@@ -289,6 +344,10 @@ export default function RiderHome(): React.ReactElement {
                     : "Your ID check didn't pass and you've reached the retry limit. Contact support to finish verifying."
                 }
               >
+                {/* R4: the lock tells the rider to "contact support" — make that a real, tappable action
+                    instead of dead copy, so they aren't stranded with only a no-op "Refresh status". The
+                    5 Jul design makes contact-support a `tel:` call, not a mailto dead end. */}
+                <SupportCallRow />
                 <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
               </EmptyState>
             ) : (
@@ -317,23 +376,59 @@ export default function RiderHome(): React.ReactElement {
               <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           )
+        ) : locDenied ? (
+          // S·4 no-GPS gate: riding needs location (parcels near you, navigation) — a calm blocking
+          // state with the real recovery (OS settings), not a silent city-wide fallback.
+          <EmptyState
+            icon="wifi-off"
+            title="Can't find your location"
+            message="Turn on location so we can show parcels near you and navigate to pickups. You can't go online without it."
+          >
+            <Button label="Open location settings" onPress={() => void Linking.openSettings()} />
+            <Button label="I've turned it on" variant="ghost" onPress={() => void requestLocation()} />
+          </EmptyState>
         ) : (
           <>
         {gate ? (
           // The rules API refused going online — a distinct, calm state per reason (on hold / suspended /
-          // banned / cooldown / KYC), not a red error. Cooldown is temporary so it keeps a retry; the
-          // others are resolved elsewhere (support / recovery) so they just explain and offer a status
-          // refresh. Banned is the hardest state (permanent) and reads as circle-alert, distinct from
-          // suspended's triangle-alert.
+          // banned / cooldown / out-of-area / KYC), not a red error. The recoverable states keep a
+          // retry (cooldown → try again; out-of-area → refresh once back in range); the terminal ones
+          // (suspended / on hold / banned) expose a `tel:` support call row — the mandatory exit so no
+          // state is a dead end. Suspended + banned read as triangle-alert (harder states); out-of-area
+          // + on-hold as circle-alert.
           <EmptyState
-            icon={gate === "suspended" ? "triangle-alert" : gate === "cooldown" ? "clock" : gate === "kyc" ? "id-card" : "circle-alert"}
+            icon={
+              gate === "suspended" || gate === "banned"
+                ? "triangle-alert"
+                : gate === "cooldown"
+                  ? "clock"
+                  : gate === "kyc"
+                    ? "id-card"
+                    : "circle-alert"
+            }
             title={ONLINE_GATE_COPY[gate].title}
             message={ONLINE_GATE_COPY[gate].message}
           >
-            {gate === "cooldown" ? (
+            {/* Recoverable-by-retry states re-DRIVE the online toggle (the server re-checks and either
+                lets them through or re-gates) — cooldown elapses, on-hold recovers, and out-of-area
+                clears once they ride back into the corridor. "Refresh status" alone only refetched
+                ["me"], which never cleared `gate`, so these used to be dead ends. */}
+            {gate === "cooldown" || gate === "out_of_area" || gate === "on_hold" ? (
               <Button label="Try again" onPress={() => onlineM.mutate(true)} loading={onlineM.isPending} />
             ) : null}
-            <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+            {/* R4: suspended / on hold / banned all say "contact support" — a real `tel:` call row, not
+                a dead mailto button. */}
+            {gate === "suspended" || gate === "on_hold" || gate === "banned" ? <SupportCallRow /> : null}
+            {/* Clear the gate too, so after support lifts a suspension/ban (or KYC verifies) the
+                "Go online" card comes back instead of the rider being pinned on the gate screen. */}
+            <Button
+              label="Refresh status"
+              variant="ghost"
+              onPress={() => {
+                setGate(null);
+                void meQ.refetch();
+              }}
+            />
           </EmptyState>
         ) : (
           <>
@@ -371,13 +466,14 @@ export default function RiderHome(): React.ReactElement {
           </Text>
         </Card>
 
-        {online && sentOffers.some((s) => s.order.id !== activeQ.data?.id) ? (
+        {online && sentOffers.some((s) => s.order.id !== activeJob?.id) ? (
           <View>
             <Sub>Your offers</Sub>
             {sentOffers
-              .filter((s) => s.order.id !== activeQ.data?.id)
+              .filter((s) => s.order.id !== activeJob?.id)
               .map((s) => {
                 const expired = board.expiredOrderIds.has(s.order.id);
+                const taken = board.takenOrderIds.has(s.order.id);
                 const remaining = new Date(s.expiresAt).getTime() - nowMs;
                 return (
                   <Card key={s.order.id}>
@@ -387,7 +483,16 @@ export default function RiderHome(): React.ReactElement {
                     <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                       Your offer ${s.fare} · ETA {s.etaMinutes} min
                     </Text>
-                    {expired ? (
+                    {taken ? (
+                      // Not chosen (3·b1): someone else was picked. Never framed as failure — the
+                      // rider is still online and first in line for the next one.
+                      <View style={{ flexDirection: "row", gap: tokens.space.sm, marginTop: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}>
+                        <Icon name="user" size={16} color={tokens.color.muted} />
+                        <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+                          Not this time — the customer picked another rider. It happens; you&apos;re still online and first in line for the next one.
+                        </Text>
+                      </View>
+                    ) : expired ? (
                       // Distinct from "not chosen": the whole auction closed with nobody picked (C2).
                       <View style={{ flexDirection: "row", gap: tokens.space.sm, marginTop: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}>
                         <Icon name="inbox" size={16} color={tokens.color.muted} />
@@ -435,10 +540,75 @@ export default function RiderHome(): React.ReactElement {
 
         {selected ? (
           <Card style={{ borderColor: tokens.color.accent }}>
-            <Text style={{ fontWeight: "700", marginBottom: tokens.space.sm }}>Offer on {selected.pickup.landmark}</Text>
-            <Field label="Your fare (USD)" value={fare} onChangeText={setFare} keyboardType="decimal-pad" />
+            <Text style={{ fontWeight: "700", marginBottom: 2 }}>
+              {selected.pickup.landmark} → {selected.dropoff.landmark}
+            </Text>
+            <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: tokens.space.md, fontVariant: ["tabular-nums"] }}>
+              {selected.itemDesc} · asking ${selected.proposedFare}
+            </Text>
+            {/* Segmented accept-or-counter (3·1): take the asking price in one tap, OR counter with
+                your own fare. One offer per order either way. */}
+            <View
+              accessibilityRole="tablist"
+              style={{
+                flexDirection: "row",
+                gap: 4,
+                padding: 4,
+                backgroundColor: tokens.color.surface,
+                borderRadius: tokens.radius.pill,
+                marginBottom: tokens.space.md,
+              }}
+            >
+              {(
+                [
+                  { key: "accept" as const, label: `Accept $${selected.proposedFare}` },
+                  { key: "counter" as const, label: "Counter your fare" },
+                ]
+              ).map((seg) => {
+                const on = offerMode === seg.key;
+                return (
+                  <Pressable
+                    key={seg.key}
+                    onPress={() => {
+                      setOfferMode(seg.key);
+                      // Accept = the customer's price, exactly; switching back re-seeds it.
+                      if (seg.key === "accept") setFare(selected.proposedFare);
+                    }}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: on }}
+                    style={{
+                      flex: 1,
+                      minHeight: tokens.touchTargetMin,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: tokens.radius.pill,
+                      backgroundColor: on ? tokens.color.bg : "transparent",
+                      ...(on ? tokens.shadow.card : null),
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: on ? tokens.color.accentText : tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                      {seg.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {offerMode === "counter" ? (
+              <Field
+                label="Your fare (USD)"
+                value={fare}
+                onChangeText={setFare}
+                keyboardType="decimal-pad"
+                hint="Counter higher if the trip's worth more — the customer accepts or declines."
+              />
+            ) : null}
             <Field label="ETA to pickup (min)" value={eta} onChangeText={setEta} keyboardType="number-pad" maxLength={3} />
-            <Button label="Send offer" onPress={() => offerM.mutate()} loading={offerM.isPending} disabled={!canOffer} />
+            <Button
+              label={offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send counter-offer"}
+              onPress={() => offerM.mutate()}
+              loading={offerM.isPending}
+              disabled={!canOffer}
+            />
             <Button label="Cancel" variant="ghost" onPress={() => setSelected(null)} />
           </Card>
         ) : null}

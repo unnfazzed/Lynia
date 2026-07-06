@@ -25,6 +25,14 @@ describe("resolveCurrentUser", () => {
     expect(() => resolveCurrentUser(reqWith({ xUserId: "attacker" }), "production")).toThrow(UnauthorizedException);
   });
 
+  it("ignores x-user-id for any NODE_ENV outside the dev/test allowlist (fail-safe against a misconfigured prod)", () => {
+    // The allowlist is explicit dev/test only, so a deploy with an empty or unexpected NODE_ENV (e.g. one
+    // that forgot to set it to production) still can't be spoofed via the header. (Can't pass `undefined`
+    // here — it triggers the process.env default — but an unset var resolves to the same empty branch.)
+    expect(() => resolveCurrentUser(reqWith({ xUserId: "attacker" }), "")).toThrow(UnauthorizedException);
+    expect(() => resolveCurrentUser(reqWith({ xUserId: "attacker" }), "staging")).toThrow(UnauthorizedException);
+  });
+
   it("throws when there is no identity at all", () => {
     expect(() => resolveCurrentUser(reqWith({}), "development")).toThrow(UnauthorizedException);
   });

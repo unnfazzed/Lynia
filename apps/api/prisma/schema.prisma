@@ -125,12 +125,13 @@ model Profile {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  rider          Rider?
-  customerOrders Order[]       @relation("customerOrders")
-  sessions       Session[]
-  addresses      Address[]
-  ratingsGiven   Rating[]      @relation("ratingBy")
-  deviceTokens   DeviceToken[]
+  rider           Rider?
+  customerOrders  Order[]       @relation("customerOrders")
+  cancelledOrders Order[]       @relation("cancelledByOrders")
+  sessions        Session[]
+  addresses       Address[]
+  ratingsGiven    Rating[]      @relation("ratingBy")
+  deviceTokens    DeviceToken[]
 
   @@map("profiles")
 }
@@ -267,6 +268,9 @@ model Order {
   completedAt         DateTime?   @map("completed_at")
   cancelledAt         DateTime?   @map("cancelled_at")
   cancelledBy         String?     @map("cancelled_by") @db.Uuid
+  // FK → profiles(id). Nullable pointer to whoever cancelled; ON DELETE SET NULL so deleting a
+  // profile doesn't block on this reference. See migration 0015.
+  cancelledByProfile  Profile?    @relation("cancelledByOrders", fields: [cancelledBy], references: [id], onDelete: SetNull)
   cancelReason        String?     @map("cancel_reason")
   // Failed hand-off terminal (INTERFACE-AUDIT C6). Reason enum kept as text (shared UndeliveredReason);
   // deliveryAttempts is the recipient-contact attempt count shown to the customer.
@@ -284,7 +288,10 @@ model Order {
 
   offers Offer[]
   events OrderEvent[]
-  rating Rating?
+  // Two-way rating (BUG-HUNT P3): an order can now carry one rating per rater (customer + rider),
+  // so this is a list — the single-row unique on ratings.order_id was widened to (order_id,
+  // by_profile_id) in migration 0015. The rider's "rate the sender" (4·7) is the rider-direction row.
+  rating Rating[]
 
   @@index([status])
   @@index([rebroadcastOfId])
@@ -333,7 +340,7 @@ model OrderEvent {
 
 model Rating {
   id          String   @id @default(uuid()) @db.Uuid
-  orderId     String   @unique @map("order_id") @db.Uuid
+  orderId     String   @map("order_id") @db.Uuid
   order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   byProfileId String   @map("by_profile_id") @db.Uuid
   by          Profile  @relation("ratingBy", fields: [byProfileId], references: [id])
@@ -341,6 +348,9 @@ model Rating {
   comment     String?
   createdAt   DateTime @default(now()) @map("created_at")
 
+  // One rating per order per rater (BUG-HUNT P3) — replaces the single-column order_id unique
+  // that capped an order at one rating and so blocked two-way (customer<->rider) rating.
+  @@unique([orderId, byProfileId])
   @@map("ratings")
 }
 

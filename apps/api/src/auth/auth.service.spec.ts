@@ -157,6 +157,40 @@ describe("AuthService.getProfile", () => {
   });
 });
 
+describe("AuthService.updateProfile", () => {
+  const row = { id: "p1", role: "customer", firstName: "Chipo", lastName: "Marufu", phone: "+263771111111", email: null, photoUrl: null, ordersCount: 0, rider: null };
+
+  it("writes the national ID onto the account record when provided (0·6)", async () => {
+    let written: Record<string, unknown> | undefined;
+    const { svc } = make(baseEnv, {
+      profile: {
+        update: async (a: { data: Record<string, unknown> }) => {
+          written = a.data;
+          return { id: "p1" };
+        },
+        findUnique: async () => row,
+      },
+    });
+    await svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-123456-A-42" });
+    expect(written).toMatchObject({ firstName: "Chipo", lastName: "Marufu", idNumber: "63-123456-A-42" });
+  });
+
+  it("leaves idNumber untouched on a name-only update (never clears a stored value)", async () => {
+    let written: Record<string, unknown> | undefined;
+    const { svc } = make(baseEnv, {
+      profile: {
+        update: async (a: { data: Record<string, unknown> }) => {
+          written = a.data;
+          return { id: "p1" };
+        },
+        findUnique: async () => row,
+      },
+    });
+    await svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu" });
+    expect(written).not.toHaveProperty("idNumber");
+  });
+});
+
 describe("AuthService.verifyOtp", () => {
   const profileRow = { id: "p1", role: "customer", firstName: "" };
   const fakePrisma = () => ({
@@ -288,11 +322,11 @@ describe("AuthService.refresh", () => {
 describe("AuthService.logout", () => {
   it("reports revoked=false when no live session matched", async () => {
     const { svc } = make(baseEnv, { session: { updateMany: async () => ({ count: 0 }) } });
-    expect(await svc.logout("sid")).toEqual({ revoked: false });
+    expect(await svc.logout("sid", "pid")).toEqual({ revoked: false });
   });
 
   it("reports revoked=true when a live session was revoked", async () => {
     const { svc } = make(baseEnv, { session: { updateMany: async () => ({ count: 1 }) } });
-    expect(await svc.logout("sid")).toEqual({ revoked: true });
+    expect(await svc.logout("sid", "pid")).toEqual({ revoked: true });
   });
 });

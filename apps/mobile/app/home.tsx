@@ -1,6 +1,6 @@
 import { CreateOrderRequest, quoteFare, tokens } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
@@ -10,10 +10,13 @@ import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/sess
 import { isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import { orderKey } from "../src/query/client";
 import type { ResolvedPlace } from "../src/api/places";
-import { Button, Card, ErrorText, Field, Heading, Icon, type IconName, Label, Screen, Sub } from "../src/ui";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Button, ErrorText, Field, Heading, Icon, type IconName, Label, Sub, TestBuildBanner } from "../src/ui";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
-import { MapPicker, type PickedPoint } from "../src/ui/MapPicker";
+import { ComposeMap } from "../src/ui/ComposeMap";
+import { AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
+import type { PickedPoint } from "../src/ui/MapPicker";
 import { parseNum } from "../src/util";
 
 // LayoutAnimation needs an explicit opt-in on old-architecture Android; a no-op on iOS / Fabric.
@@ -40,6 +43,7 @@ interface FormDraft {
   dropPoint: PickedPoint | null;
   dropLandmark: string;
   items: ItemRow[];
+  note: string;
   declaredValue: string;
   proposedFare: string;
 }
@@ -86,9 +90,54 @@ async function clearDraft(): Promise<void> {
   }
 }
 
+// C5: a re-broadcast from the order screen carries THAT order's route/landmarks/items/price in as
+// route params (`rb…`), so we can prefill the compose form instead of dumping the user on a blank one.
+// Reuses the FormDraft shape the draft-restore path already consumes. Returns null when the params
+// aren't a valid re-broadcast (normal home entry) so we fall back to the stored draft.
+type RebroadcastParams = Partial<Record<
+  "rbPickupLat" | "rbPickupLng" | "rbPickupLandmark" | "rbDropLat" | "rbDropLng" | "rbDropLandmark" | "rbItems" | "rbFare",
+  string | string[]
+>>;
+function first(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+function draftFromParams(p: RebroadcastParams): FormDraft | null {
+  const pLat = Number(first(p.rbPickupLat));
+  const pLng = Number(first(p.rbPickupLng));
+  const dLat = Number(first(p.rbDropLat));
+  const dLng = Number(first(p.rbDropLng));
+  if (![pLat, pLng, dLat, dLng].every(Number.isFinite)) return null;
+  let items: ItemRow[] = [emptyItem()];
+  try {
+    const parsed = JSON.parse(first(p.rbItems) ?? "[]") as ItemRow[];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      items = parsed.slice(0, MAX_ITEMS).map((r) => ({
+        description: (typeof r?.description === "string" ? r.description : "").slice(0, 140),
+        quantity: Math.min(MAX_QTY, Math.max(1, Math.round(Number(r?.quantity) || 1))),
+      }));
+    }
+  } catch {
+    /* malformed items param — fall back to one empty row */
+  }
+  return {
+    pickupPoint: { lat: pLat, lng: pLng },
+    pickupLandmark: first(p.rbPickupLandmark) ?? "",
+    dropPoint: { lat: dLat, lng: dLng },
+    dropLandmark: first(p.rbDropLandmark) ?? "",
+    items,
+    note: "",
+    declaredValue: "",
+    proposedFare: first(p.rbFare) ?? "",
+  };
+}
+
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
+  const insets = useSafeAreaInsets();
+  // C5: re-broadcast params from the order screen (rb…). Read once at mount and prefer them over any
+  // stored draft — the customer explicitly asked to re-send THIS order.
+  const rbParams = useLocalSearchParams<RebroadcastParams>();
 
   const [pickupPoint, setPickupPoint] = useState<PickedPoint | null>(null);
   const [pickupLandmark, setPickupLandmark] = useState("");
@@ -96,7 +145,11 @@ export default function HomeScreen(): React.ReactElement {
   const [dropPoint, setDropPoint] = useState<PickedPoint | null>(null);
   const [dropLandmark, setDropLandmark] = useState("");
   const [dropPhone, setDropPhone] = useState("");
+  // Map-anchored home (1·1): a single map hero edits whichever address the customer is placing. The
+  // two address rows switch it; the search + map + "use my location" all bind to the active slot.
+  const [activePin, setActivePin] = useState<AddressSlot>("pickup");
   const [items, setItems] = useState<ItemRow[]>([emptyItem()]);
+  const [note, setNote] = useState("");
   const [declaredValue, setDeclaredValue] = useState("");
   const [proposedFare, setProposedFare] = useState("");
   const [busy, setBusy] = useState(false);
@@ -110,10 +163,16 @@ export default function HomeScreen(): React.ReactElement {
   // tap time, not a render dependency) plus the modal's own visibility state.
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const disclaimerAccepted = useRef(false);
+  // Has the async read of the persisted flag settled yet? Without this, a fast tapper who hits
+  // "Broadcast request" before the SecureStore read resolves is re-shown the disclaimer they already
+  // accepted. onBroadcast awaits the read (once) when this is still false before deciding to gate.
+  const disclaimerLoaded = useRef(false);
   useEffect(() => {
     let alive = true;
     void loadDisclaimerAccepted().then((v) => {
-      if (alive && v === DISCLAIMER_POLICY_VERSION) disclaimerAccepted.current = true;
+      if (!alive) return;
+      if (v === DISCLAIMER_POLICY_VERSION) disclaimerAccepted.current = true;
+      disclaimerLoaded.current = true;
     });
     return () => {
       alive = false;
@@ -157,7 +216,8 @@ export default function HomeScreen(): React.ReactElement {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const draft = await loadDraft();
+      // A re-broadcast (rb… params) wins over the stored draft; otherwise fall back to the last draft.
+      const draft = draftFromParams(rbParams) ?? (await loadDraft());
       if (cancelled) {
         hydrated.current = true;
         return;
@@ -168,6 +228,7 @@ export default function HomeScreen(): React.ReactElement {
         setDropPoint(draft.dropPoint);
         setDropLandmark(draft.dropLandmark);
         setItems(draft.items);
+        setNote(draft.note ?? "");
         setDeclaredValue(draft.declaredValue);
         setProposedFare(draft.proposedFare);
         // Restored landmarks are user-owned text (not live from the map): treat them as typed.
@@ -191,10 +252,11 @@ export default function HomeScreen(): React.ReactElement {
       dropPoint,
       dropLandmark,
       items,
+      note,
       declaredValue,
       proposedFare,
     });
-  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, declaredValue, proposedFare]);
+  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, note, declaredValue, proposedFare]);
 
   // Moving either pin is the fix for an out-of-area result — drop the state so it doesn't linger over
   // a now-valid route. Only fires on a real pin change (not on the submit that set it).
@@ -269,6 +331,7 @@ export default function HomeScreen(): React.ReactElement {
     setDropPoint(null);
     setDropLandmark("");
     setItems([emptyItem()]);
+    setNote("");
     setDeclaredValue("");
     setProposedFare("");
     setPickupLandmarkTouched(false);
@@ -296,7 +359,12 @@ export default function HomeScreen(): React.ReactElement {
   // Landmarks are contract-required too (Waypoint.landmark min 1). They're normally auto-filled
   // from the reverse geocode, but that can fail offline / keyless — same never-fail-Zod rule.
   const landmarksOk = pickupLandmark.trim().length > 0 && dropLandmark.trim().length > 0;
-  const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk;
+  // C10: declaredValue is optional (defaults to 0) but the contract caps it at 150 — validate inline so
+  // a `500` doesn't leave Broadcast enabled only to bounce off a raw server Zod error on a field that's
+  // collapsed out of view. Empty/blank is fine; a set value must be ≤ 150.
+  const declaredValueNum = parseNum(declaredValue);
+  const declaredValueOk = declaredValueNum === null || declaredValueNum <= 150;
+  const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk && declaredValueOk;
 
   const submit = async (): Promise<void> => {
     setError(null);
@@ -317,6 +385,7 @@ export default function HomeScreen(): React.ReactElement {
       // Line-items are the payload (the contract accepts either shape; `items` alone is the new
       // clients' path — the server derives the itemDesc summary).
       items: items.map((it) => ({ description: it.description.trim(), quantity: it.quantity })),
+      note: note.trim() || undefined,
       declaredValue: parseNum(declaredValue) ?? 0,
       proposedFare: fare,
       // A1-8: bind the accepted disclaimer version onto the order itself; the server stamps the
@@ -373,7 +442,14 @@ export default function HomeScreen(): React.ReactElement {
 
   // Broadcast tap: the disclaimer is an accept-to-continue GATE in front of the first order create.
   // If the customer has already accepted the current policy version, go straight to submit.
-  const onBroadcast = (): void => {
+  const onBroadcast = async (): Promise<void> => {
+    // Guard the race: if the persisted-flag read hasn't settled yet, resolve it now so a customer who
+    // already accepted isn't re-shown the sheet just for tapping quickly.
+    if (!disclaimerLoaded.current) {
+      const v = await loadDisclaimerAccepted().catch(() => null);
+      if (v === DISCLAIMER_POLICY_VERSION) disclaimerAccepted.current = true;
+      disclaimerLoaded.current = true;
+    }
     if (disclaimerAccepted.current) {
       void submit();
       return;
@@ -391,21 +467,27 @@ export default function HomeScreen(): React.ReactElement {
   };
 
   return (
-    <Screen>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: tokens.space.lg }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+    <View style={{ flex: 1, backgroundColor: tokens.color.surface }}>
+      <TestBuildBanner />
+      {/* Full-bleed map hero (1·1): ONE map carrying both pins (pickup green, drop-off red) + the route
+          line, with the floating chrome (brand pill, notifications, account, and the search-first
+          address rows) laid over its top. Tapping a row picks which pin the map edits. */}
+      <View style={{ flex: 1 }}>
+        <ComposeMap
+          pickup={pickupPoint}
+          drop={dropPoint}
+          active={activePin}
+          onChangePickup={setPickupPoint}
+          onChangeDrop={setDropPoint}
+          onReverseGeocodePickup={onPickupReverseGeocode}
+          onReverseGeocodeDrop={onDropReverseGeocode}
+        />
+        {/* box-none: the map stays pannable/tappable everywhere except on the actual controls. */}
+        <View
+          pointerEvents="box-none"
+          style={{ position: "absolute", top: insets.top + tokens.space.sm, left: tokens.space.screen, right: tokens.space.screen }}
         >
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-            <Heading>Send a parcel</Heading>
-            <View style={{ flex: 1 }} />
-            <Button label="Trips" variant="ghost" onPress={() => router.push("/history")} />
-            <Button label="Account" variant="ghost" onPress={() => router.push("/profile")} />
-          </View>
-          <Sub>Drop a pin for pickup and drop-off, name your price, and riders will offer.</Sub>
+          <MapHomeTopBar onNotifications={() => router.push("/notifications")} onAccount={() => router.push("/profile")} />
 
           {draftRestored ? (
             <View
@@ -414,14 +496,13 @@ export default function HomeScreen(): React.ReactElement {
                 flexDirection: "row",
                 alignItems: "center",
                 alignSelf: "flex-start",
-                backgroundColor: tokens.color.surface,
-                borderWidth: 1,
-                borderColor: tokens.color.line,
+                backgroundColor: tokens.color.bg,
                 borderRadius: tokens.radius.pill,
                 paddingLeft: 10,
                 paddingRight: 4,
                 paddingVertical: 4,
-                marginBottom: tokens.space.md,
+                marginBottom: tokens.space.sm,
+                ...tokens.shadow.card,
               }}
             >
               <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accentText }}>Draft restored</Text>
@@ -441,71 +522,26 @@ export default function HomeScreen(): React.ReactElement {
             </View>
           ) : null}
 
-          {/* Required path — the pins. Search-first: an address search sits above each map (only when a
-              Places key is configured — otherwise it renders nothing and the pin stays the primary path).
-              Drop pickup + drop-off; these gate the CTA. */}
-          <Card>
-            <AddressSearch label="Pickup" placeholder="Search pickup address" onResolved={onPickupResolved} />
-            <MapPicker
-              label="Pickup"
-              value={pickupPoint}
-              onChange={setPickupPoint}
-              onReverseGeocode={onPickupReverseGeocode}
-              showMyLocation
-              height={180}
-            />
-            <AddressSearch label="Drop-off" placeholder="Search drop-off address" onResolved={onDropResolved} />
-            <MapPicker
-              label="Drop-off"
-              value={dropPoint}
-              onChange={setDropPoint}
-              onReverseGeocode={onDropReverseGeocode}
-              height={180}
-            />
-          </Card>
+          {/* Search-first address rows: tapping one chooses which pin the map edits (pickup = green
+              dot, drop-off = red square). The CTA is gated on both points being set. */}
+          <AddressRows pickup={pickupLandmark} drop={dropLandmark} active={activePin} onPick={setActivePin} />
 
-          {/* Secondary fields — collapsed by default under a tap-to-expand toggle so the required
-              path stays short. Landmarks keep their "• from map" auto-fill hint (unchanged). */}
-          <Card>
-            <Pressable
-              onPress={toggleDetails}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: detailsOpen }}
-              accessibilityLabel="Add details (optional)"
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                minHeight: tokens.touchTargetMin,
-              }}
-            >
-              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Add details (optional)</Text>
-              <Icon name={detailsOpen ? "chevron-down" : "chevron-right"} size={16} color={tokens.color.muted} />
-            </Pressable>
+          {/* The active slot's search (key-gated; renders nothing without a Places key), floating over
+              the map so a resolved place drops the active pin. */}
+          {activePin === "pickup" ? (
+            <AddressSearch key="pickup-search" label="Pickup" placeholder="Search pickup address" onResolved={onPickupResolved} />
+          ) : (
+            <AddressSearch key="drop-search" label="Drop-off" placeholder="Search drop-off address" onResolved={onDropResolved} />
+          )}
+        </View>
+      </View>
 
-            {detailsOpen ? (
-              <View style={{ marginTop: tokens.space.sm }}>
-                <Field
-                  label={pickupLandmarkFromMap ? "Pickup landmark  • from map" : "Pickup landmark"}
-                  value={pickupLandmark}
-                  onChangeText={editPickupLandmark}
-                  placeholder="Eastgate Mall, CBD"
-                  maxLength={160}
-                />
-                <Field
-                  label={dropLandmarkFromMap ? "Drop-off landmark  • from map" : "Drop-off landmark"}
-                  value={dropLandmark}
-                  onChangeText={editDropLandmark}
-                  placeholder="14 Glenara Ave, Avenues"
-                  maxLength={160}
-                />
-                <Field label="Declared value (USD, max 150)" value={declaredValue} onChangeText={setDeclaredValue} placeholder="10" keyboardType="decimal-pad" />
-              </View>
-            ) : null}
-          </Card>
-        </ScrollView>
-
-        {/* Hero action in the thumb zone: what you're sending, name your price, broadcast. */}
+      {/* Docked compose sheet BELOW the map — a flex sibling (not an overlay), so KeyboardAvoidingView
+          lifts it cleanly when the price/phone fields are focused. The form scrolls inside; the
+          Broadcast CTA stays pinned in the footer, always reachable. */}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <BottomSheet
+          style={{ paddingBottom: tokens.space.lg + insets.bottom }}
           footer={
             <>
               {!canSubmit ? (
@@ -517,7 +553,7 @@ export default function HomeScreen(): React.ReactElement {
                     !itemsOk ? (items.length > 1 ? "a description for every item" : "an item") : null,
                     !pickupPhoneOk ? "a pickup contact phone" : null,
                     !dropPhoneOk ? "a recipient phone" : null,
-                    !landmarksOk ? "pickup & drop-off landmarks (under \u201cAdd details\u201d)" : null,
+                    !landmarksOk ? "pickup & drop-off landmarks (under \u201cLandmarks & details\u201d)" : null,
                     !(fare !== null && fare > 0) ? "a price" : null,
                   ]
                     .filter(Boolean)
@@ -549,11 +585,14 @@ export default function HomeScreen(): React.ReactElement {
                   </View>
                 </View>
               ) : null}
-              <Button label="Broadcast request" onPress={onBroadcast} loading={busy} disabled={!canSubmit} />
+              <Button label="Broadcast request" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
               <ErrorText message={error} />
             </>
           }
         >
+          {/* The form scrolls inside the sheet (capped height) so it never pushes the pinned CTA off
+              the bottom, and the map behind stays visible above the sheet. */}
+          <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* Line items — repeatable description + quantity rows (ITEM-DESIGN-REVIEW: multiple
               {description, quantity}, nothing more for the pilot). Description stacks above the
               qty stepper so a row still works at 320px. */}
@@ -598,6 +637,15 @@ export default function HomeScreen(): React.ReactElement {
             // The control never just vanishes — say why it's gone (every dead-end explains itself).
             <Text style={{ fontSize: 12, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Up to 10 items per order.</Text>
           )}
+          {/* Sender's note for the rider (contract `note`, ≤280) — the mockup's "ask for Rita at the
+              pharmacy counter; keep it upright." Optional; shown to the assigned rider on the job. */}
+          <Field
+            label="Note for the rider (optional)"
+            value={note}
+            onChangeText={setNote}
+            placeholder="Ask for Rita at reception; keep it upright."
+            maxLength={280}
+          />
           {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
               "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
           <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
@@ -611,10 +659,46 @@ export default function HomeScreen(): React.ReactElement {
             </View>
           ) : null}
           <Field label="Your price (USD)" value={proposedFare} onChangeText={setProposedFare} placeholder="2.50" keyboardType="decimal-pad" />
+
+          {/* Landmarks (contract-required, normally auto-filled from the pin) + optional declared value,
+              behind a tap-to-expand toggle so the required path stays short. */}
+          <Pressable
+            onPress={toggleDetails}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: detailsOpen }}
+            accessibilityLabel={landmarksOk ? "Landmarks and details" : "Landmarks and details, landmarks required"}
+            style={{ flexDirection: "row", alignItems: "center", minHeight: tokens.touchTargetMin }}
+          >
+            <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>
+              Landmarks &amp; details
+              {!landmarksOk ? <Text style={{ color: tokens.color.danger, fontWeight: "700" }}> — landmarks required</Text> : null}
+            </Text>
+            <Icon name={detailsOpen ? "chevron-down" : "chevron-right"} size={16} color={tokens.color.muted} />
+          </Pressable>
+          {detailsOpen ? (
+            <View style={{ marginTop: tokens.space.sm }}>
+              <Field
+                label={pickupLandmarkFromMap ? "Pickup landmark  • from map" : "Pickup landmark"}
+                value={pickupLandmark}
+                onChangeText={editPickupLandmark}
+                placeholder="Eastgate Mall, CBD"
+                maxLength={160}
+              />
+              <Field
+                label={dropLandmarkFromMap ? "Drop-off landmark  • from map" : "Drop-off landmark"}
+                value={dropLandmark}
+                onChangeText={editDropLandmark}
+                placeholder="14 Glenara Ave, Avenues"
+                maxLength={160}
+              />
+              <Field label="Declared value (USD, max 150)" value={declaredValue} onChangeText={setDeclaredValue} placeholder="10" keyboardType="decimal-pad" />
+            </View>
+          ) : null}
+          </ScrollView>
         </BottomSheet>
       </KeyboardAvoidingView>
       <DisclaimerSheet visible={showDisclaimer} onAgree={onAgreeAndBroadcast} onBack={() => setShowDisclaimer(false)} />
-    </Screen>
+    </View>
   );
 }
 

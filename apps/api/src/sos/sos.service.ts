@@ -6,7 +6,7 @@ import { PrismaService } from "../prisma/prisma.service";
 export interface SosContacts {
   /** Local emergency number the app surfaces immediately (Zimbabwe 999). */
   emergencyNumber: string;
-  /** Staffed Lynia safety line (env-configured), falling back to the emergency number. */
+  /** Staffed Lynia safety line — the SOS_POLICY constant, overridable per deploy via `SOS_SAFETY_LINE`. */
   safetyLine: string;
 }
 
@@ -76,7 +76,7 @@ export class SosService {
 
     return {
       emergencyNumber: SOS_POLICY.emergencyNumber,
-      safetyLine: process.env[SOS_POLICY.safetyLineEnv] ?? SOS_POLICY.emergencyNumber,
+      safetyLine: process.env[SOS_POLICY.safetyLineEnv] ?? SOS_POLICY.safetyLine,
     };
   }
 }

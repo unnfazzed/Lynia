@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -8,6 +8,10 @@ import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
+
+/** R8: how far back activeForRider looks for a cancelled-but-collected order to surface the hand-back
+ *  state on reopen (a job the rider still physically holds after a missed `job:cancelled`). One day. */
+const HANDBACK_LOOKBACK_MS = 24 * 60 * 60 * 1_000;
 
 /** Q1 — Launch service corridor: the coverage disc's centre (from policy.ts SERVICE_CORRIDOR). */
 const CORRIDOR_CENTRE: LatLng = { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng };
@@ -330,8 +334,20 @@ export class OrdersService {
       orderBy: { updatedAt: "desc" },
       select: { id: true },
     });
-    if (!order) return null;
-    return this.getSnapshot(order.id, riderId);
+    if (order) return this.getSnapshot(order.id, riderId);
+    // R8: a job the rider had already COLLECTED but the customer cancelled while the rider's app was
+    // backgrounded (the `job:cancelled` push was missed) drops out of the active feed — so on reopen the
+    // rider would see "No active job" while still holding the parcel. Surface a recently-cancelled order
+    // this rider had collected so the app can render the hand-back state instead of a dead end. Bounded
+    // to the last day so an old cancellation never resurfaces.
+    const cutoff = new Date(Date.now() - HANDBACK_LOOKBACK_MS);
+    const handback = await this.prisma.order.findFirst({
+      where: { riderId, status: "cancelled", collectedAt: { not: null }, cancelledAt: { gt: cutoff } },
+      orderBy: { cancelledAt: "desc" },
+      select: { id: true },
+    });
+    if (handback) return this.getSnapshot(handback.id, riderId);
+    return null;
   }
 
   /** A caller's order history across both roles (any order where they're the customer or the rider),
@@ -372,7 +388,9 @@ export class OrdersService {
         agreedFare: o.agreedFare ? o.agreedFare.toString() : null,
         status: o.status,
         createdAt: o.createdAt.toISOString(),
-        rating: o.rating ? { score: o.rating.score, comment: o.rating.comment } : null,
+        // `rating` is now a to-many relation (two-way rating support): one rating per order today
+        // (customer→rider), so take the first. Widened by migration 0015's composite unique.
+        rating: o.rating[0] ? { score: o.rating[0].score, comment: o.rating[0].comment } : null,
         counterpartyName,
       };
     });
@@ -397,9 +415,13 @@ export class OrdersService {
         pickup: true,
         dropoff: true,
         items: true,
+        note: true,
         itemsCollected: true,
         undeliveredReason: true,
         deliveryAttempts: true,
+        cancelReason: true,
+        cancelledBy: true,
+        collectedAt: true,
         customer: { select: { phone: true } },
         rider: {
           select: {
@@ -420,11 +442,19 @@ export class OrdersService {
 
     const isCustomer = order.customerId === callerId;
     const isRider = order.riderId === callerId;
+    // P2-2: the snapshot carries live rider GPS + pickup/drop-off coordinates + the event timeline, so
+    // only a party on the order may read it — not any authenticated caller holding the order id (IDOR).
+    if (!isCustomer && !isRider) throw new ForbiddenException("Not your order");
     const revealed = REVEAL.has(order.status);
-    // Only a party on the order, only during the active window, sees the other side's phone.
+    // R8: on a cancelled order the assigned rider had already COLLECTED, still reveal the sender's phone
+    // to that rider so the reopen hand-back can offer a "call sender". Scoped to the rider on a
+    // collected-cancel only — deliberately NOT a broad PHONE_REVEAL_STATUSES change (which would also
+    // reveal to the customer and on pre-pickup cancels).
+    const handbackReveal = order.status === "cancelled" && isRider && order.collectedAt != null;
+    // Only a party on the order, only during the reveal window, sees the other side's phone.
     let counterpartyPhone: string | null = null;
     if (revealed && isCustomer) counterpartyPhone = order.rider?.profile.phone ?? null;
-    else if (revealed && isRider) counterpartyPhone = order.customer.phone;
+    else if ((revealed || handbackReveal) && isRider) counterpartyPhone = order.customer.phone;
 
     // Freshest rider position: the live-position index (Redis) leads the PG columns, which only
     // hold the last throttled flush. Fall back to the PG snapshot on a miss / no-Redis.
@@ -455,12 +485,24 @@ export class OrdersService {
       // client falls back to nothing). Listing paths deliberately stay on the itemDesc summary
       // (data budget); no PII lives in items.
       items: (order.items as OrderItem[] | null) ?? null,
+      // The sender's note for the rider ("ask for Rita at reception") — parties on the order only;
+      // listing paths stay on the itemDesc summary and never carry it.
+      note: order.note,
       // Per-item pickup confirmation, so the rider's checklist state survives a reconnect/refetch.
       itemsCollected: (order.itemsCollected as number[] | null) ?? null,
       // C6: the failed-hand-off reason + attempt count, shown verbatim on the customer's terminal
       // screen. Null until the order is `undelivered`.
       undeliveredReason: order.undeliveredReason,
       undeliveredAttempts: order.deliveryAttempts,
+      // 3·b3: the recorded cancel reason + who cancelled, shown on the cancelled terminal. The DB
+      // stores the canceller's profile id; the wire carries only their role (no id leak).
+      cancelReason: order.status === "cancelled" ? order.cancelReason : null,
+      cancelledBy:
+        order.status === "cancelled" && order.cancelledBy
+          ? order.cancelledBy === order.customerId
+            ? ("customer" as const)
+            : ("rider" as const)
+          : null,
       rider,
       events: order.events,
       counterpartyPhone,

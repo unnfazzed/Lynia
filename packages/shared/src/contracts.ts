@@ -57,7 +57,7 @@ export const CreateOrderRequest = z
     note: z.string().max(280).optional(),
     itemPhotoUrl: z.string().url().optional(),
     declaredValue: z.number().nonnegative().max(150), // pilot cap (CONCEPT §3.5)
-    proposedFare: z.number().positive(),
+    proposedFare: z.number().positive().max(100_000).multipleOf(0.01), // sane cap + 2dp (money is NUMERIC(10,2))
     // Pre-broadcast liability disclaimer consent (A1-8). The version the customer accepted; the
     // server stamps the acceptance time on the order. Optional for back-compat with old clients.
     disclaimerVersion: z.string().min(1).max(40).optional(),
@@ -77,7 +77,7 @@ export type CreateOrderRequest = z.infer<typeof CreateOrderRequest>;
 export const MakeOfferRequest = z.object({
   orderId: z.string().uuid(),
   type: z.enum(["accept", "counter"]),
-  offeredFare: z.number().positive(),
+  offeredFare: z.number().positive().max(100_000).multipleOf(0.01), // sane cap + 2dp (money is NUMERIC(10,2))
   etaMinutes: z.number().int().positive().max(180),
 });
 export type MakeOfferRequest = z.infer<typeof MakeOfferRequest>;
@@ -130,6 +130,14 @@ export const RateRequest = z.object({
   comment: z.string().max(500).optional(),
 });
 export type RateRequest = z.infer<typeof RateRequest>;
+
+/** Rider rates the sender after delivery (rider-journey 4·7). Optional, recorded-only — a no-show or
+ *  cash problem here protects other riders; it does NOT change the order status. */
+export const RateSenderRequest = z.object({
+  score: z.number().int().min(1).max(5),
+  comment: z.string().max(500).optional(),
+});
+export type RateSenderRequest = z.infer<typeof RateSenderRequest>;
 
 /** Either party cancels an in-flight order. A rider-initiated cancel counts as a no-show strike. */
 export const CancelRequest = z.object({
@@ -186,6 +194,19 @@ export const RegisterDeviceTokenRequest = z.object({
 });
 export type RegisterDeviceTokenRequest = z.infer<typeof RegisterDeviceTokenRequest>;
 
+/** A freshly-verified account has an empty name (verifyOtp creates the profile with firstName ""),
+ *  so the app collects it once on the "Tell us who you are" step and PATCHes it here. Both names are
+ *  required and length-capped — trimmed, non-empty, and bounded so a name can't grow unbounded text. */
+export const UpdateProfileRequest = z.object({
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().min(1).max(80),
+  // National ID stored on the account record (customer-journey 0·6) — NOT verified (riders KYC
+  // separately). Optional so existing callers and the returning-user path are unaffected; same 4–40
+  // bound as the rider KYC id field. Absent/empty leaves the stored value untouched.
+  idNumber: z.string().trim().min(4).max(40).optional(),
+});
+export type UpdateProfileRequest = z.infer<typeof UpdateProfileRequest>;
+
 export const ApiError = z.object({
   statusCode: z.number(),
   code: z.string(),
@@ -219,6 +240,9 @@ export const WS_EVENTS = {
   /** server→client: the auction window closed with no pick — pushed to ALL bidders on that order
    *  (INTERFACE-AUDIT C2). Distinct from `not_chosen` (someone else was picked). */
   bidExpired: "bid:expired",
+  /** server→client: a customer picked a rider — pushed to the board (rider-journey 2·b1 / 3·b1).
+   *  Browsers drop the now-taken card; bidders who weren't picked show the "not chosen" state. */
+  orderTaken: "order:taken",
   /** server→client: the customer cancelled — pushed to the assigned rider (INTERFACE-AUDIT C3).
    *  Carries whether the parcel was already collected so the rider UI can show the hand-back path. */
   jobCancelled: "job:cancelled",
@@ -280,6 +304,13 @@ export type BoardNewOrderEvent = z.infer<typeof BoardNewOrderEvent>;
 /** `bid:expired` payload — the auction closed with no pick (INTERFACE-AUDIT C2). */
 export const BidExpiredEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
 export type BidExpiredEvent = z.infer<typeof BidExpiredEvent>;
+
+/** `order:taken` payload — a customer picked a rider for this order (rider-journey 2·b1 / 3·b1).
+ *  Pushed to the board with `emitBidExpired`'s distribution so every rider who saw the card sees it
+ *  close: browsers drop the card ("taken first"), bidders show "not chosen" (someone else was picked
+ *  — distinct from `bid:expired`, where nobody was). */
+export const OrderTakenEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
+export type OrderTakenEvent = z.infer<typeof OrderTakenEvent>;
 
 /** `job:cancelled` payload — the customer cancelled an assigned job (INTERFACE-AUDIT C3). `collected`
  *  distinguishes the pre-pickup path (rider returns to the board) from post-pickup (sender contact

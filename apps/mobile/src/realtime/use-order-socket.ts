@@ -1,4 +1,4 @@
-import { OrderRebroadcastEvent, WS_EVENTS, type OffersChangedEvent } from "@lynia/shared";
+import { OrderRebroadcastEvent, PresenceStaleEvent, WS_EVENTS, type OffersChangedEvent } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
@@ -22,14 +22,17 @@ import { createSocket } from "./socket";
 export function useOrderSocket(
   orderId: string | null,
   onRebroadcast?: (newOrderId: string) => void,
+  onRiderStale?: () => void,
 ): { connected: boolean } {
   const { session } = useAuth();
   const token = session?.accessToken;
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
-  // Hold the latest callback in a ref so re-subscribing isn't tied to its identity.
+  // Hold the latest callbacks in refs so re-subscribing isn't tied to their identity.
   const rebroadcastRef = useRef(onRebroadcast);
   rebroadcastRef.current = onRebroadcast;
+  const riderStaleRef = useRef(onRiderStale);
+  riderStaleRef.current = onRiderStale;
 
   useEffect(() => {
     if (!orderId || !token) return;
@@ -60,6 +63,15 @@ export function useOrderSocket(
       const parsed = OrderRebroadcastEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId) return;
       rebroadcastRef.current?.(parsed.data.newOrderId);
+    });
+
+    // C5 / 3·b1: the RIDER's app has gone dark past the escalation threshold. Escalate the customer's
+    // "live paused" treatment to a "call your rider" notice. Ignore role:"customer" — that's this
+    // app's OWN staleness, meant for the rider's screen, not a self-escalation.
+    socket.on(WS_EVENTS.presenceStale, (raw: unknown) => {
+      const parsed = PresenceStaleEvent.safeParse(raw);
+      if (!parsed.success || parsed.data.orderId !== orderId || parsed.data.role !== "rider") return;
+      riderStaleRef.current?.();
     });
 
     // New live-auction signal: the offer set changed. Payload is signal-only; refetch the offer list.

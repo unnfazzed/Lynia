@@ -19,6 +19,7 @@ import {
   boardCellNeighborhood,
   type JobCancelledEvent,
   type OrderRebroadcastEvent,
+  type OrderTakenEvent,
   PRESENCE_ESCALATION_MS,
   type PresenceStaleEvent,
   WS_EVENTS,
@@ -51,6 +52,11 @@ export const POSITION_COALESCE_MS = 1_000;
  *  Pilot-simple: ONE Nest interval over `ACTIVE_RIDE_STATUSES` orders, no new infra. The escalation
  *  threshold itself is the shared `PRESENCE_ESCALATION_MS`; this is only the poll cadence. */
 export const PRESENCE_SCAN_INTERVAL_MS = 30_000;
+
+/** A per-order `positionEmit` coalesce entry with no fix for this long is stale (the ride ended or the
+ *  rider went offline) — pruned on the presence scan so the map can't grow unbounded over an instance's
+ *  lifetime. A later fix simply re-creates the entry as a fresh leading edge. */
+export const POSITION_ROOM_TTL_MS = 60_000;
 
 interface CoalesceState {
   lastEmit: number;
@@ -242,7 +248,11 @@ export class TrackingGateway
   /** Rider leaves the board (go-offline / unmount). */
   @SubscribeMessage(WS_EVENTS.boardLeave)
   async boardLeave(@ConnectedSocket() client: Socket): Promise<{ left: string }> {
-    await client.leave(BOARD_ROOM);
+    // Leave the city-wide room AND every geo-cell room a located subscribe joined (boardSubscribe joins
+    // a 3×3 neighbourhood) — otherwise an offline rider keeps receiving new-order pushes on those rooms.
+    for (const room of client.rooms) {
+      if (room.startsWith("board:geo:") || room === BOARD_ROOM) await client.leave(room);
+    }
     return { left: "board" };
   }
 
@@ -369,6 +379,22 @@ export class TrackingGateway
   }
 
   /**
+   * A customer picked a rider — signal `order:taken` to the BOARD with `emitBidExpired`'s exact
+   * distribution (geo-cell + city-wide), so every rider who saw the card sees it close (rider-journey
+   * 2·b1 / 3·b1): browsers drop the now-taken card, bidders who weren't picked show "not chosen"
+   * (distinct from `bid:expired`, where NObody was picked). The selected rider learns they won via
+   * the `assigned` push + their active-job feed, not this event. Best-effort; never throws.
+   */
+  emitOrderTaken(orderId: string, pickupLat?: number, pickupLng?: number): void {
+    const payload: OrderTakenEvent = { orderId, at: new Date().toISOString() };
+    let target = this.server?.to(BOARD_ROOM);
+    if (target && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
+      target = target.to(boardGeoRoom(boardCell(pickupLat as number, pickupLng as number)));
+    }
+    target?.emit(WS_EVENTS.orderTaken, payload);
+  }
+
+  /**
    * The customer cancelled an assigned job — push `job:cancelled` to the order room so the assigned
    * rider leaves the (now dead) job screen (INTERFACE-AUDIT C3). `collected` tells the rider UI which
    * path to show: pre-pickup → back to the board; post-pickup → sender contact for the hand-back. No
@@ -434,7 +460,19 @@ export class TrackingGateway
     } catch (err) {
       this.logger.warn(`presence scan failed: ${(err as Error).message}`);
     }
+    this.prunePositionRooms();
     await this.scanCustomerPresence();
+  }
+
+  /** Drop `positionEmit` coalesce entries that have gone quiet (no fix for POSITION_ROOM_TTL_MS and no
+   *  pending trailing flush) so the map is bounded by CURRENTLY-active rides, not by every ride the
+   *  instance has ever served. Public for unit testing without driving real timers. */
+  prunePositionRooms(now: number = Date.now()): void {
+    for (const [room, state] of this.positionEmit) {
+      if (!state.timer && now - state.lastEmit > POSITION_ROOM_TTL_MS) {
+        this.positionEmit.delete(room);
+      }
+    }
   }
 
   /** Customer half of the watchdog (C5 mirror). Split out so a failure in either direction can't

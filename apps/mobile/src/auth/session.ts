@@ -33,8 +33,30 @@ export async function clearSession(): Promise<void> {
 // survives a remount/relaunch (the server keeps only the hash and can't re-send it).
 const codeKey = (orderId: string): string => `lynia.deliveryCode.${orderId}`;
 
+// SecureStore can't enumerate keys, so we keep a tiny index of order ids that have a stored code.
+// That lets sign-out delete every per-order code on a shared device (S1). Best-effort like the rest.
+const CODE_INDEX_KEY = "lynia.deliveryCode.index";
+
+async function readCodeIndex(): Promise<string[]> {
+  try {
+    const raw = await SecureStore.getItemAsync(CODE_INDEX_KEY);
+    if (!raw) return [];
+    const v = JSON.parse(raw) as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function saveDeliveryCode(orderId: string, code: string): Promise<void> {
   await SecureStore.setItemAsync(codeKey(orderId), code);
+  // Record the order id so sign-out can clear it later — best-effort, never block the code save.
+  try {
+    const idx = await readCodeIndex();
+    if (!idx.includes(orderId)) await SecureStore.setItemAsync(CODE_INDEX_KEY, JSON.stringify([...idx, orderId]));
+  } catch {
+    /* best-effort */
+  }
 }
 export async function loadDeliveryCode(orderId: string): Promise<string | null> {
   return SecureStore.getItemAsync(codeKey(orderId));
@@ -62,6 +84,46 @@ export async function loadRolePreference(): Promise<StartRole | null> {
   }
 }
 
+// Whether the first-install onboarding carousel (customer/rider 0·2) has been shown on this device.
+// Persisted so the intro appears exactly once per install, before auth. Best-effort — a read failure
+// just re-shows the carousel once (harmless) and a write failure never traps the hand-off to /phone.
+const ONBOARDING_KEY = "lynia.onboardingSeen";
+
+export async function saveOnboardingSeen(): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(ONBOARDING_KEY, "1");
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadOnboardingSeen(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(ONBOARDING_KEY)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+// Whether we've shown the first-run permission-priming explainers (0·7/0·8) on this install. Stored
+// so a user who's already been primed (and switches role later) isn't re-walked through them. Best-
+// effort — a read failure just re-primes, which is harmless.
+const PERMISSIONS_PRIMED_KEY = "lynia.permissionsPrimed";
+
+export async function savePermissionsPrimed(): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PERMISSIONS_PRIMED_KEY, "1");
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadPermissionsPrimed(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(PERMISSIONS_PRIMED_KEY)) === "1";
+  } catch {
+    return false;
+  }
+}
+
 // Latest liability-disclaimer policy version the customer has accepted on this device (A1-8). Stored
 // so the accept-to-continue gate isn't re-shown every broadcast. Best-effort — a read failure just
 // re-shows the gate, which is safe.
@@ -79,6 +141,65 @@ export async function loadDisclaimerAccepted(): Promise<string | null> {
     return await SecureStore.getItemAsync(DISCLAIMER_KEY);
   } catch {
     return null;
+  }
+}
+
+// Orders the rider has already handed back (acknowledged the hand-back terminal for) on this device
+// (R8 follow-up). A cancelled order stays reopenable for 24h, so its snapshot keeps surfacing on the
+// board as a "hand this parcel back" prompt; once the rider taps "Back to board" we record the id here
+// so the already-returned parcel doesn't nag them again. Bounded to the most recent ids to keep the
+// blob tiny. Best-effort — a read failure just re-shows the prompt (safe), a write never traps the tap.
+const HANDBACK_ACK_KEY = "lynia.handbackAck";
+const HANDBACK_ACK_MAX = 20;
+
+async function readHandbackAcks(): Promise<string[]> {
+  try {
+    const raw = await SecureStore.getItemAsync(HANDBACK_ACK_KEY);
+    if (!raw) return [];
+    const v = JSON.parse(raw) as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function acknowledgeHandback(orderId: string): Promise<void> {
+  try {
+    const acks = await readHandbackAcks();
+    if (acks.includes(orderId)) return;
+    // Keep the newest ids, drop the oldest so the list can't grow without bound.
+    const next = [...acks, orderId].slice(-HANDBACK_ACK_MAX);
+    await SecureStore.setItemAsync(HANDBACK_ACK_KEY, JSON.stringify(next));
+  } catch {
+    /* best-effort */
+  }
+}
+
+export async function loadAcknowledgedHandbacks(): Promise<string[]> {
+  return readHandbackAcks();
+}
+
+// The saved order-compose draft (home.tsx owns the write under this same key). Named here so sign-out
+// can clear it — on a shared device the next user must not rehydrate the previous user's addresses.
+const DRAFT_KEY = "lynia.orderDraft";
+
+// Wipe all per-device, per-user state that must NOT survive a sign-out on a shared device (S1): the
+// saved order draft (addresses), the accepted-disclaimer flag (so the next user still sees the
+// liability gate), the role preference, and every stored one-time delivery code. The session key is
+// cleared separately by `clearSession()`. Best-effort — a native failure must never trap sign-out.
+export async function clearDeviceState(): Promise<void> {
+  try {
+    const codes = await readCodeIndex();
+    await Promise.all([
+      SecureStore.deleteItemAsync(DRAFT_KEY),
+      SecureStore.deleteItemAsync(DISCLAIMER_KEY),
+      SecureStore.deleteItemAsync(ROLE_PREF_KEY),
+      SecureStore.deleteItemAsync(CODE_INDEX_KEY),
+      SecureStore.deleteItemAsync(HANDBACK_ACK_KEY),
+      ...codes.map((id) => SecureStore.deleteItemAsync(codeKey(id))),
+    ]);
+  } catch {
+    /* best-effort */
   }
 }
 

@@ -5,6 +5,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { blockedPairWhere } from "../reports/blocks";
+import { onlineRefusalReason } from "../riders/rider.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 
 /** Rider must have a heartbeat newer than this to be selectable (ET3 liveness). */
@@ -39,6 +40,9 @@ export class MatchingService {
    */
   async selectOffer(orderId: string, offerId: string, customerId: string): Promise<SelectResult> {
     const done = this.metrics.startTimer();
+    // Captured in-tx for the post-commit `order:taken` board emit (same pickup-cell distribution as
+    // `bid:expired`) — saves a re-read of a row the tx already has.
+    let pickupPt: { lat: number; lng: number } | undefined;
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         const offer = await tx.offer.findFirst({
@@ -47,8 +51,19 @@ export class MatchingService {
             status: true,
             riderId: true,
             offeredFare: true,
-            order: { select: { status: true, customerId: true } },
-            rider: { select: { isOnline: true, lastHeartbeatAt: true } },
+            // `pickup` (HEAD) feeds the post-commit order:taken board emit; the expanded rider
+            // account-standing fields (origin/main) gate a banned/suspended/held rider at select time.
+            order: { select: { status: true, customerId: true, pickup: true } },
+            rider: {
+              select: {
+                isOnline: true,
+                lastHeartbeatAt: true,
+                kycStatus: true,
+                accountStatus: true,
+                onHold: true,
+                cooldownUntil: true,
+              },
+            },
           },
         });
 
@@ -67,11 +82,19 @@ export class MatchingService {
         if (offer.order.status !== "open_for_offers") {
           throw new ConflictException("This order is no longer open for offers");
         }
+        pickupPt = (offer.order.pickup as { point?: { lat: number; lng: number } } | null)?.point;
         if (offer.status !== "pending") throw new ConflictException("That offer is no longer available");
 
         const hb = offer.rider.lastHeartbeatAt?.getTime() ?? 0;
         const fresh = Date.now() - hb < HEARTBEAT_TTL_MS;
         if (!offer.rider.isOnline || !fresh) {
+          throw new ConflictException("Rider just became unavailable, pick another");
+        }
+        // P2-1 account-standing gate (ET3): a rider banned/suspended/put on-hold/cooled-down AFTER
+        // bidding (e.g. an admin ban while they were still flagged online) must not be selectable.
+        // Same shared online-gate as makeOffer/setOnline; surfaced as the same "pick another" conflict
+        // as a liveness miss, since the customer isn't at fault.
+        if (onlineRefusalReason(offer.rider)) {
           throw new ConflictException("Rider just became unavailable, pick another");
         }
 
@@ -110,6 +133,13 @@ export class MatchingService {
 
       // Post-commit, best-effort: tell the selected rider they're hired (§5c). Never blocks the assign.
       void this.notifications.notifyOrderStatus(orderId, "assigned");
+      // Close the card on every OTHER rider's board (rider-journey 2·b1 / 3·b1): browsers drop it,
+      // bidders who weren't picked show "not chosen". Same distribution as bid:expired; best-effort.
+      try {
+        this.gateway.emitOrderTaken(orderId, pickupPt?.lat, pickupPt?.lng);
+      } catch (err) {
+        this.logger.warn(`order:taken emit failed for order ${orderId}: ${(err as Error).message}`);
+      }
       this.metrics.recordMatchSelect(done(), "assigned");
       return result;
     } catch (err) {

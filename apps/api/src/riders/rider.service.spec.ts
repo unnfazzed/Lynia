@@ -233,6 +233,26 @@ describe("RiderService.setOnline", () => {
     expect(await s.setOnline("p1", true)).toEqual({ online: true });
   });
 
+  it("refuses going online outside the service corridor (out_of_area) when a location is sent", async () => {
+    const s = svc(
+      { rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null }) } },
+      {},
+    );
+    // Null Island — far outside the Harare corridor.
+    await expect(s.setOnline("p1", true, { lat: 0, lng: 0 })).rejects.toThrow(/service area/i);
+  });
+
+  it("allows going online with a location inside the corridor", async () => {
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null }),
+        update: async () => ({}),
+      },
+    };
+    const s = svc(prisma, {});
+    expect(await s.setOnline("p1", true, { lat: -17.8292, lng: 31.0522 })).toEqual({ online: true });
+  });
+
   it("refuses (reason: suspended) when the admin has suspended the account — read-only here", async () => {
     const s = svc(
       { rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "suspended", onHold: false, cooldownUntil: null }) } },

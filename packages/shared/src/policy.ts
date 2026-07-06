@@ -81,13 +81,18 @@ export function commissionOn(grossFares: number): number {
 
 /**
  * Q3 — SOS behaviour on a live trip (R-16/F-13). What the button does: surface the local emergency
- * number, offer the Lynia safety line, log the event + push to ops for follow-up. NOTE (product Q3):
- * confirm the real safety-line number (currently env `SOS_SAFETY_LINE`, falling back to the emergency
- * number) and whether a WhatsApp escalation is wired. `emergencyNumber` is Zimbabwe's 999.
+ * number, offer the Lynia safety line, log the event + push to ops for follow-up. **RESOLVED 5 Jul 2026**
+ * (product decision Q3): both numbers are FINAL, client-side constants so the SOS control works offline —
+ * a safety control must never dead-end on the network. `emergencyNumber` is Zimbabwe's 999; `safetyLine`
+ * reaches the staffed Lynia safety team and is also the `tel:` target for the "contact support" rows on
+ * the rider dead-end/gate states. A deploy can still override the safety line via the `SOS_SAFETY_LINE`
+ * env, but the constant is the default (no fallback to the emergency number).
  */
 export const SOS_POLICY = {
   emergencyNumber: "999",
-  /** Env var the API/app read for the staffed Lynia safety line; falls back to the emergency number. */
+  /** Staffed Lynia safety line — the final launch number, dialled as a `tel:` for SOS + support rows. */
+  safetyLine: "+263 77 883 1938",
+  /** Env var a deploy can set to override {@link SOS_POLICY.safetyLine}; the constant is the default. */
   safetyLineEnv: "SOS_SAFETY_LINE",
   /** Notify ops + the counterparty when an SOS is raised. */
   notifyOps: true,

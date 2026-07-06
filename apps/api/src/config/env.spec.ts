@@ -43,6 +43,13 @@ describe("loadEnv — production REDIS_URL boot-guard", () => {
     expect(() => loadEnv({ ...base, NODE_ENV: "production" })).toThrow(/REDIS_URL/);
   });
 
+  it("rejects production when JWT_SIGNING_SECRET is unset/default (the repo default is public)", () => {
+    // Preserved from main (PR #108): the unset case falls back to the default and must be rejected.
+    expect(() =>
+      loadEnv({ ...base, NODE_ENV: "production", REDIS_URL: "redis://localhost:6379" }),
+    ).toThrow(/JWT_SIGNING_SECRET/);
+  });
+
   it("accepts a fully-configured production environment", () => {
     const env = loadEnv(prodBase);
     expect(env.NODE_ENV).toBe("production");

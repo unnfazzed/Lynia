@@ -7,6 +7,7 @@ import type {
   LatLng,
   OrderStatus,
   RateRequest,
+  RateSenderRequest,
   UndeliveredReason,
 } from "@lynia/shared";
 import { apiFetch } from "./client";
@@ -38,6 +39,8 @@ export interface OrderSnapshot {
   dropoff: { point: LatLng; landmark: string; contactPhone?: string | null };
   // Line-items — null/absent on orders created before the items column (clients render nothing).
   items?: { description: string; quantity: number }[] | null;
+  // The sender's note for the rider ("ask for Rita at reception") — parties on the order only.
+  note?: string | null;
   rider: { profileId: string; currentLat: number | null; currentLng: number | null; updatedAt: string | null } | null;
   events: OrderEvent[];
   counterpartyPhone: string | null;
@@ -48,6 +51,9 @@ export interface OrderSnapshot {
   // Absent/null on every other status.
   undeliveredReason?: UndeliveredReason | null;
   undeliveredAttempts?: number | null;
+  // Set only on the terminal `cancelled` status (3·b3): the recorded reason + which side cancelled.
+  cancelReason?: string | null;
+  cancelledBy?: "customer" | "rider" | null;
 }
 
 /**
@@ -121,8 +127,26 @@ export function confirmDelivery(orderId: string, code: string): Promise<{ orderI
   return apiFetch(`/orders/${orderId}/deliver`, { method: "POST", body: { code } });
 }
 
+/**
+ * Rider marks a post-pickup hand-off as failed → terminal `undelivered` (R1 / INTERFACE-AUDIT C6).
+ * POSTs the reason enum; the server stamps it on the order + frees the rider for the next job, exactly
+ * like a clean delivery. Allowed only on `picked_up` / `en_route_dropoff` — a closed order answers 409.
+ */
+export function markUndelivered(orderId: string, reason: UndeliveredReason): Promise<{ orderId: string; status: "undelivered" }> {
+  return apiFetch(`/orders/${orderId}/undelivered`, { method: "POST", body: { reason } });
+}
+
 export function rateOrder(orderId: string, body: RateRequest): Promise<{ orderId: string; status: "completed" }> {
   return apiFetch(`/orders/${orderId}/rating`, { method: "POST", body });
+}
+
+/**
+ * Rider rates the sender after delivery (rider-journey 4·7). Optional and recorded-only — it does NOT
+ * change the order status (unlike the customer's rateOrder), so the returned status is whatever the
+ * order already is (`delivered`, or `completed` once the customer has rated).
+ */
+export function rateSender(orderId: string, body: RateSenderRequest): Promise<{ orderId: string; status: OrderStatus }> {
+  return apiFetch(`/orders/${orderId}/sender-rating`, { method: "POST", body });
 }
 
 export function rotateDeliveryCode(orderId: string): Promise<{ deliveryCode: string }> {

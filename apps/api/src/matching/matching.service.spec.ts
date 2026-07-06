@@ -7,8 +7,9 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { MatchingService } from "./matching.service";
 
-/** bid:expired is best-effort; a no-op gateway keeps selectOffer's unit tests off the socket path. */
-const noopGateway = { emitBidExpired: () => {} } as unknown as TrackingGateway;
+/** bid:expired / order:taken are best-effort; a no-op gateway keeps selectOffer's unit tests off the
+ *  socket path. `order:taken` (rider-journey 2·b1 / 3·b1) fires on a successful assign. */
+const noopGateway = { emitBidExpired: () => {}, emitOrderTaken: () => {} } as unknown as TrackingGateway;
 
 /**
  * selectOffer wraps its transaction in a metrics timer. The wrapper MUST classify the failure for the
@@ -27,12 +28,12 @@ function fakeMetrics() {
 }
 
 /** A Prisma fake whose $transaction runs the passed callback against a per-test `tx` object. */
-function svc(tx: Record<string, unknown>) {
+function svc(tx: Record<string, unknown>, gateway: TrackingGateway = noopGateway) {
   const metrics = fakeMetrics();
   const prisma = {
     $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
   } as unknown as PrismaService;
-  return { service: new MatchingService(prisma, noopTokens, noopNotifications, metrics, noopGateway), metrics };
+  return { service: new MatchingService(prisma, noopTokens, noopNotifications, metrics, gateway), metrics };
 }
 
 const orderId = "11111111-1111-1111-1111-111111111111";
@@ -53,7 +54,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           riderId: "r1",
           offeredFare: { toString: () => "2.50" },
           order: { status: "open_for_offers", customerId: "someone-else" },
-          rider: { isOnline: true, lastHeartbeatAt: new Date() },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
         }),
       },
     });
@@ -69,7 +70,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           riderId: "r1",
           offeredFare: { toString: () => "2.50" },
           order: { status: "assigned", customerId: "cust" },
-          rider: { isOnline: true, lastHeartbeatAt: new Date() },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
         }),
       },
       block: { findFirst: async () => null },
@@ -86,7 +87,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           riderId: "r1",
           offeredFare: { toString: () => "2.50" },
           order: { status: "open_for_offers", customerId: "cust" },
-          rider: { isOnline: true, lastHeartbeatAt: new Date() },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
         }),
       },
       block: { findFirst: async () => null },
@@ -103,7 +104,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           riderId: "r1",
           offeredFare: { toString: () => "2.50" },
           order: { status: "open_for_offers", customerId: "cust" },
-          rider: { isOnline: true, lastHeartbeatAt: new Date() },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
         }),
         update: async () => ({}),
         updateMany: async () => ({ count: 0 }),
@@ -115,6 +116,33 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
     const res = await service.selectOffer(orderId, offerId, "cust");
     expect(res).toMatchObject({ orderId, riderId: "r1", status: "assigned", deliveryCode: "000000" });
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "assigned" satisfies MatchSelectOutcome);
+  });
+
+  it("fires order:taken to the board on a successful assign, scoped to the pickup cell (2·b1 / 3·b1)", async () => {
+    const emitOrderTaken = vi.fn();
+    const gateway = { emitBidExpired: () => {}, emitOrderTaken } as unknown as TrackingGateway;
+    const { service } = svc(
+      {
+        offer: {
+          findFirst: async () => ({
+            status: "pending",
+            riderId: "r1",
+            offeredFare: { toString: () => "2.50" },
+            order: { status: "open_for_offers", customerId: "cust", pickup: { point: { lat: -17.8, lng: 31.05 } } },
+            rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
+          }),
+          update: async () => ({}),
+          updateMany: async () => ({ count: 0 }),
+        },
+        order: { updateMany: async () => ({ count: 1 }) },
+        orderEvent: { create: async () => ({}) },
+        block: { findFirst: async () => null },
+      },
+      gateway,
+    );
+    await service.selectOffer(orderId, offerId, "cust");
+    // Same pickup-cell distribution as bid:expired so every rider who saw the card sees it close.
+    expect(emitOrderTaken).toHaveBeenCalledWith(orderId, -17.8, 31.05);
   });
 });
 
@@ -130,7 +158,7 @@ describe("MatchingService.selectOffer — block enforcement (a blocked pair neve
           riderId: "r1",
           offeredFare: { toString: () => "2.50" },
           order: { status: "open_for_offers", customerId: "cust" },
-          rider: { isOnline: true, lastHeartbeatAt: new Date() },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
         }),
       },
       order: { updateMany: orderUpdateMany },

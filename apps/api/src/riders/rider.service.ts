@@ -7,7 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { KycStatus, RiderAccountStatus } from "@lynia/shared";
+import { KycStatus, RiderAccountStatus, SERVICE_CORRIDOR, haversineKm } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
@@ -22,7 +22,7 @@ export function canGoOnline(kycStatus: string): boolean {
 
 /** Why a rider was refused going online — a machine-readable tag the app keys off to show the right
  *  state (verify your ID / account banned / suspended / on hold / on cooldown). */
-export type OnlineRefusal = "kyc" | "banned" | "suspended" | "on_hold" | "cooldown";
+export type OnlineRefusal = "kyc" | "banned" | "suspended" | "on_hold" | "cooldown" | "out_of_area";
 
 /**
  * The online-gate (Q2): the FIRST failed precondition, or null when the rider may go online. A rider
@@ -52,6 +52,7 @@ const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
   suspended: "Your rider account is suspended",
   on_hold: "You're on hold — complete deliveries to raise your reliability score",
   cooldown: "On cooldown after repeated cancellations — try again later",
+  out_of_area: "You're outside the service area — go online from inside the Harare corridor",
 };
 
 @Injectable()
@@ -161,7 +162,11 @@ export class RiderService {
     return { kycStatus: next, verificationUrl: submission.url };
   }
 
-  async setOnline(profileId: string, online: boolean): Promise<{ online: boolean }> {
+  async setOnline(
+    profileId: string,
+    online: boolean,
+    location?: { lat: number; lng: number },
+  ): Promise<{ online: boolean }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
       select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
@@ -173,6 +178,15 @@ export class RiderService {
     if (online) {
       const reason = onlineRefusalReason(rider);
       if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
+      // Q1 service corridor: when the client sends its position, refuse going online outside the launch
+      // area so a rider can't take jobs we can't route. Location-optional (skipped if not sent) since an
+      // older client may not carry it; the same SERVICE_CORRIDOR the customer order-create gate uses.
+      if (location) {
+        const center = { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng };
+        if (haversineKm(center, location) > SERVICE_CORRIDOR.radiusKm) {
+          throw new ForbiddenException({ reason: "out_of_area", message: REFUSAL_MESSAGE.out_of_area });
+        }
+      }
     }
     await this.prisma.rider.update({
       where: { profileId },

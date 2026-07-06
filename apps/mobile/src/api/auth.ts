@@ -50,3 +50,9 @@ export interface Me {
 export function getMe(): Promise<Me> {
   return apiFetch<Me>("/auth/me");
 }
+
+// Post-OTP profile setup ("Tell us who you are"): set the name on a freshly-verified account. The
+// server (PATCH /auth/me) validates + trims the names and returns the refreshed profile.
+export function updateProfile(body: { firstName: string; lastName: string; idNumber?: string }): Promise<Me> {
+  return apiFetch<Me>("/auth/me", { method: "PATCH", body });
+}

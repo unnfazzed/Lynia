@@ -8,7 +8,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { normalizePhone } from "@lynia/shared";
+import { normalizePhone, type UpdateProfileRequest } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
@@ -96,6 +96,24 @@ export class AuthService {
           }
         : null,
     };
+  }
+
+  /** Set the caller's name on the post-OTP profile-setup step (PATCH /auth/me). Scoped to their own
+   *  profileId; only firstName/lastName are touched. Names are already trimmed + length-capped by the
+   *  UpdateProfileRequest contract. Returns the same shape as getProfile so the client can refresh. */
+  async updateProfile(profileId: string, body: UpdateProfileRequest) {
+    await this.prisma.profile.update({
+      where: { id: profileId },
+      // idNumber is stored on the account record (0·6), not verified. Only write it when provided so
+      // a name-only edit (or the returning-user path) never clears an existing value.
+      data: {
+        firstName: body.firstName,
+        lastName: body.lastName,
+        ...(body.idNumber ? { idNumber: body.idNumber } : {}),
+      },
+      select: { id: true },
+    });
+    return this.getProfile(profileId);
   }
 
   async requestOtp(rawPhone: string, ip: string): Promise<{ sent: true; channel: string; devCode?: string }> {
@@ -217,9 +235,11 @@ export class AuthService {
     return this.issueSession(s.profileId, s.profile.role, userAgent);
   }
 
-  async logout(sessionId: string): Promise<{ revoked: boolean }> {
+  async logout(sessionId: string, profileId: string): Promise<{ revoked: boolean }> {
+    // Scope by the caller's profileId so a user can only revoke their OWN session — otherwise a
+    // leaked session UUID is a targeted forced-logout of any account.
     const res = await this.prisma.session.updateMany({
-      where: { id: sessionId, revokedAt: null },
+      where: { id: sessionId, profileId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
     return { revoked: res.count > 0 };
