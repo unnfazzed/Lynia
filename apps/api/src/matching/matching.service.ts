@@ -39,6 +39,9 @@ export class MatchingService {
    */
   async selectOffer(orderId: string, offerId: string, customerId: string): Promise<SelectResult> {
     const done = this.metrics.startTimer();
+    // Captured in-tx for the post-commit `order:taken` board emit (same pickup-cell distribution as
+    // `bid:expired`) — saves a re-read of a row the tx already has.
+    let pickupPt: { lat: number; lng: number } | undefined;
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         const offer = await tx.offer.findFirst({
@@ -47,7 +50,7 @@ export class MatchingService {
             status: true,
             riderId: true,
             offeredFare: true,
-            order: { select: { status: true, customerId: true } },
+            order: { select: { status: true, customerId: true, pickup: true } },
             rider: { select: { isOnline: true, lastHeartbeatAt: true } },
           },
         });
@@ -67,6 +70,7 @@ export class MatchingService {
         if (offer.order.status !== "open_for_offers") {
           throw new ConflictException("This order is no longer open for offers");
         }
+        pickupPt = (offer.order.pickup as { point?: { lat: number; lng: number } } | null)?.point;
         if (offer.status !== "pending") throw new ConflictException("That offer is no longer available");
 
         const hb = offer.rider.lastHeartbeatAt?.getTime() ?? 0;
@@ -110,6 +114,13 @@ export class MatchingService {
 
       // Post-commit, best-effort: tell the selected rider they're hired (§5c). Never blocks the assign.
       void this.notifications.notifyOrderStatus(orderId, "assigned");
+      // Close the card on every OTHER rider's board (rider-journey 2·b1 / 3·b1): browsers drop it,
+      // bidders who weren't picked show "not chosen". Same distribution as bid:expired; best-effort.
+      try {
+        this.gateway.emitOrderTaken(orderId, pickupPt?.lat, pickupPt?.lng);
+      } catch (err) {
+        this.logger.warn(`order:taken emit failed for order ${orderId}: ${(err as Error).message}`);
+      }
       this.metrics.recordMatchSelect(done(), "assigned");
       return result;
     } catch (err) {

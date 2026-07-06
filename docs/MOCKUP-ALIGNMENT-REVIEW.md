@@ -1,5 +1,19 @@
 # Mockup ↔ Code Alignment Review — Customer & Rider Journeys
 
+> **Update 2026-07-06 — code brought into line with the designs.** The designs are the source of
+> truth, so the inconsistencies below were fixed in code. Shipped in this branch: **P0** — rider
+> undeliverable flow (client + reason picker; post-pickup cancel hidden, keyed off the shared
+> `RIDER_CANCELLABLE_STATUSES`); `order:taken` WS event → rider "not chosen" state + board card removal;
+> cancel-anytime confirm with reason (both roles) + reason/who-cancelled on the terminal + rider-bail
+> reliability warning. **P1/P2** — wrong-code "N attempts left"; rider job "live paused" banner;
+> sender's note field (compose → rider job); "nudge & re-broadcast" re-seeds the compose draft; rider-bail
+> interstitial (3·b0); customer-side presence escalation (3·b1); one-tap **Accept $X** offer segment;
+> "a customer picked you!" win state; no-GPS gate; customer registration (0·6); permission priming
+> (0·7/0·8); Settings, Help (WhatsApp), Bike & documents; green splash; WhatsApp OTP copy; earnings
+> zero-state hero. Verified: typecheck (shared/api/mobile) + tests (api 419, mobile 53) green. The
+> gap table below is the pre-fix baseline; **rate-the-sender (4·7) is the one designed item still
+> deferred** — it needs a rider-rates-customer endpoint that doesn't exist yet.
+
 **Date:** 2026-07-05
 **Scope:** the two journey-map mockups (`packages/design/explorations/journey/` — `screens.jsx` + `map.jsx` for the customer, `rider-screens.jsx` + `rider-map.jsx` for the rider) compared against the shipped mobile app (`apps/mobile/`), with server contracts (`packages/shared/src/contracts.ts`) and lifecycle endpoints (`apps/api/src/orders/`) checked wherever a screen depends on them.
 **Method:** every node in both journey maps (40 customer, 46 rider) was checked against the actual code — screen by screen, state by state, including WS events, push notifications, and API endpoints.

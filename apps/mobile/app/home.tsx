@@ -1,12 +1,12 @@
 import { CreateOrderRequest, quoteFare, tokens } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
 import { ApiError } from "../src/api/client";
 import { acceptDisclaimer, createOrder, type OrderSnapshot } from "../src/api/orders";
 import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/session";
+import { clearDraft, type ComposeItemRow as ItemRow, emptyItem, type FormDraft, loadDraft, MAX_ITEMS, MAX_QTY, saveDraft } from "../src/logic/compose-draft";
 import { isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import { orderKey } from "../src/query/client";
 import type { ResolvedPlace } from "../src/api/places";
@@ -21,70 +21,9 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// One compose row of "what are you sending?" — mirrors the contract's OrderItem.
-interface ItemRow {
-  description: string;
-  quantity: number;
-}
-const emptyItem = (): ItemRow => ({ description: "", quantity: 1 });
-// Contract caps: ≤10 rows, qty 1–99, description ≤140 (OrderItem).
-const MAX_ITEMS = 10;
-const MAX_QTY = 99;
-
-// The form draft persisted between visits. PII (the two contact phone numbers) is DELIBERATELY
-// excluded — a courier app must not stash a third party's phone in on-device storage. Everything
-// here is the sender's own routing/pricing intent, which is safe to restore.
-interface FormDraft {
-  pickupPoint: PickedPoint | null;
-  pickupLandmark: string;
-  dropPoint: PickedPoint | null;
-  dropLandmark: string;
-  items: ItemRow[];
-  declaredValue: string;
-  proposedFare: string;
-}
-
 // The liability-disclaimer policy the customer must accept before a first broadcast (A1-8). Bump this
 // string when the disclaimer copy/terms change and the accept-to-continue gate re-shows.
 const DISCLAIMER_POLICY_VERSION = "2026-07-01";
-
-// Reuse the same on-device primitive the auth session uses (expo-secure-store); a single key.
-const DRAFT_KEY = "lynia.orderDraft";
-// All three are best-effort: a SecureStore reject (native read/write failure) must never reject —
-// otherwise a failed read would leave `hydrated` unset and silently disable draft saving for the
-// whole session. A draft is a convenience, never load-bearing.
-async function loadDraft(): Promise<FormDraft | null> {
-  try {
-    const raw = await SecureStore.getItemAsync(DRAFT_KEY);
-    if (!raw) return null;
-    const d = JSON.parse(raw) as FormDraft & { itemDescription?: string };
-    // Pre-line-items drafts stored a single `itemDescription` string — hydrate it as one row.
-    // Rows are re-clamped to the contract caps in case a stale/foreign draft slips through.
-    const rows = Array.isArray(d.items) ? d.items : [{ description: d.itemDescription ?? "", quantity: 1 }];
-    d.items = rows.slice(0, MAX_ITEMS).map((r) => ({
-      description: (typeof r?.description === "string" ? r.description : "").slice(0, 140),
-      quantity: Math.min(MAX_QTY, Math.max(1, Math.round(Number(r?.quantity) || 1))),
-    }));
-    if (d.items.length === 0) d.items = [emptyItem()];
-    return d;
-  } catch {
-    return null;
-  }
-}
-async function saveDraft(draft: FormDraft): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(DRAFT_KEY, JSON.stringify(draft));
-  } catch {
-    /* best-effort */
-  }
-}
-async function clearDraft(): Promise<void> {
-  try {
-    await SecureStore.deleteItemAsync(DRAFT_KEY);
-  } catch {
-    /* best-effort */
-  }
-}
 
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
@@ -97,6 +36,7 @@ export default function HomeScreen(): React.ReactElement {
   const [dropLandmark, setDropLandmark] = useState("");
   const [dropPhone, setDropPhone] = useState("");
   const [items, setItems] = useState<ItemRow[]>([emptyItem()]);
+  const [note, setNote] = useState("");
   const [declaredValue, setDeclaredValue] = useState("");
   const [proposedFare, setProposedFare] = useState("");
   const [busy, setBusy] = useState(false);
@@ -168,6 +108,7 @@ export default function HomeScreen(): React.ReactElement {
         setDropPoint(draft.dropPoint);
         setDropLandmark(draft.dropLandmark);
         setItems(draft.items);
+        setNote(draft.note ?? "");
         setDeclaredValue(draft.declaredValue);
         setProposedFare(draft.proposedFare);
         // Restored landmarks are user-owned text (not live from the map): treat them as typed.
@@ -191,10 +132,11 @@ export default function HomeScreen(): React.ReactElement {
       dropPoint,
       dropLandmark,
       items,
+      note,
       declaredValue,
       proposedFare,
     });
-  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, declaredValue, proposedFare]);
+  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, note, declaredValue, proposedFare]);
 
   // Moving either pin is the fix for an out-of-area result — drop the state so it doesn't linger over
   // a now-valid route. Only fires on a real pin change (not on the submit that set it).
@@ -269,6 +211,7 @@ export default function HomeScreen(): React.ReactElement {
     setDropPoint(null);
     setDropLandmark("");
     setItems([emptyItem()]);
+    setNote("");
     setDeclaredValue("");
     setProposedFare("");
     setPickupLandmarkTouched(false);
@@ -317,6 +260,7 @@ export default function HomeScreen(): React.ReactElement {
       // Line-items are the payload (the contract accepts either shape; `items` alone is the new
       // clients' path — the server derives the itemDesc summary).
       items: items.map((it) => ({ description: it.description.trim(), quantity: it.quantity })),
+      note: note.trim() || undefined,
       declaredValue: parseNum(declaredValue) ?? 0,
       proposedFare: fare,
       // A1-8: bind the accepted disclaimer version onto the order itself; the server stamps the
@@ -598,6 +542,15 @@ export default function HomeScreen(): React.ReactElement {
             // The control never just vanishes — say why it's gone (every dead-end explains itself).
             <Text style={{ fontSize: 12, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Up to 10 items per order.</Text>
           )}
+          {/* Sender's note for the rider (contract `note`, ≤280) — the mockup's "ask for Rita at the
+              pharmacy counter; keep it upright." Optional; shown to the assigned rider on the job. */}
+          <Field
+            label="Note for the rider (optional)"
+            value={note}
+            onChangeText={setNote}
+            placeholder="Ask for Rita at reception; keep it upright."
+            maxLength={280}
+          />
           {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
               "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
           <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />

@@ -239,7 +239,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       const ok = !!o.otp_hash && this.tokens.safeEqualHex(expectedHash, o.otp_hash);
       if (!ok) {
         await tx.order.update({ where: { id: orderId }, data: { deliveryOtpAttempts: { increment: 1 } } });
-        return { ok: false as const };
+        // Committed count AFTER this failure — the 401 message tells the rider how many tries remain
+        // before the lockout (rider-journey 4·b1 "That code doesn't match. N attempts left.").
+        return { ok: false as const, attemptsUsed: o.delivery_otp_attempts + 1 };
       }
       // Row is locked and validated en_route_dropoff — safe to flip directly.
       await tx.order.update({ where: { id: orderId }, data: { status: "delivered", deliveredAt: new Date() } });
@@ -247,7 +249,14 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       return { ok: true as const };
     });
 
-    if (!outcome.ok) throw new UnauthorizedException("Incorrect delivery code");
+    if (!outcome.ok) {
+      const remaining = Math.max(0, DELIVERY_OTP_MAX_ATTEMPTS - outcome.attemptsUsed);
+      throw new UnauthorizedException(
+        remaining > 0
+          ? `That code doesn't match. ${remaining} attempt${remaining === 1 ? "" : "s"} left.`
+          : "That code doesn't match — no attempts left. Ask the customer to re-issue the code.",
+      );
+    }
     this.safeEmit(orderId, "delivered");
     await this.scheduleAutoClose(orderId);
     return { orderId, status: "delivered" };

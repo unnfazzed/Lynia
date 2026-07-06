@@ -96,8 +96,18 @@ describe("OrderLifecycleService.confirmDelivery", () => {
         },
       },
     });
-    await expect(svc.confirmDelivery("o1", "r1", "222222")).rejects.toThrow(/incorrect/i);
+    // 4·b1: the wrong-code error now carries the remaining attempt count (5 max − 1 used = 4 left).
+    await expect(svc.confirmDelivery("o1", "r1", "222222")).rejects.toThrow(/4 attempts left/i);
     expect(incremented).toBe(true);
+  });
+
+  it("tells the rider no attempts are left on the final wrong guess", async () => {
+    const { svc } = build({
+      // Fourth attempt already recorded (0-indexed: 4 used) — this wrong guess is the 5th and last.
+      $queryRaw: async () => row({ otp_hash: tokens.hash("111111"), delivery_otp_attempts: 4 }),
+      order: { update: async () => ({}) },
+    });
+    await expect(svc.confirmDelivery("o1", "r1", "222222")).rejects.toThrow(/no attempts left/i);
   });
 
   it("accepts the correct code and marks the order delivered", async () => {

@@ -397,9 +397,12 @@ export class OrdersService {
         pickup: true,
         dropoff: true,
         items: true,
+        note: true,
         itemsCollected: true,
         undeliveredReason: true,
         deliveryAttempts: true,
+        cancelReason: true,
+        cancelledBy: true,
         customer: { select: { phone: true } },
         rider: {
           select: {
@@ -455,12 +458,24 @@ export class OrdersService {
       // client falls back to nothing). Listing paths deliberately stay on the itemDesc summary
       // (data budget); no PII lives in items.
       items: (order.items as OrderItem[] | null) ?? null,
+      // The sender's note for the rider ("ask for Rita at reception") — parties on the order only;
+      // listing paths stay on the itemDesc summary and never carry it.
+      note: order.note,
       // Per-item pickup confirmation, so the rider's checklist state survives a reconnect/refetch.
       itemsCollected: (order.itemsCollected as number[] | null) ?? null,
       // C6: the failed-hand-off reason + attempt count, shown verbatim on the customer's terminal
       // screen. Null until the order is `undelivered`.
       undeliveredReason: order.undeliveredReason,
       undeliveredAttempts: order.deliveryAttempts,
+      // 3·b3: the recorded cancel reason + who cancelled, shown on the cancelled terminal. The DB
+      // stores the canceller's profile id; the wire carries only their role (no id leak).
+      cancelReason: order.status === "cancelled" ? order.cancelReason : null,
+      cancelledBy:
+        order.status === "cancelled" && order.cancelledBy
+          ? order.cancelledBy === order.customerId
+            ? ("customer" as const)
+            : ("rider" as const)
+          : null,
       rider,
       events: order.events,
       counterpartyPhone,

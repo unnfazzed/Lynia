@@ -1,5 +1,5 @@
 import { tokens } from "@lynia/shared";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { saveRolePreference, type StartRole } from "../src/auth/session";
@@ -14,13 +14,22 @@ import { Button, Heading, Icon, type IconName, Screen, Sub } from "../src/ui";
  */
 export default function RoleScreen(): React.ReactElement {
   const router = useRouter();
+  const { needsProfile } = useLocalSearchParams<{ needsProfile?: string }>();
+  const isNewAccount = needsProfile === "1";
   const [role, setRole] = useState<StartRole>("customer");
 
   const go = (choice: StartRole): void => {
     setRole(choice);
     void saveRolePreference(choice);
-    // Rider → the rider home, which itself gates into /rider/become (KYC) when they haven't set up yet.
-    router.replace(choice === "rider" ? "/rider" : "/home");
+    if (choice === "rider") {
+      // Rider → the rider home, which gates into /rider/become (KYC) when they haven't set up yet;
+      // the KYC form collects the name + ID, so no separate registration step is needed.
+      router.replace("/rider");
+    } else {
+      // Customer → registration (0·6) on a fresh account (name + national ID for the account record,
+      // not KYC), else straight home for a returning user.
+      router.replace(isNewAccount ? "/register" : "/home");
+    }
   };
 
   return (

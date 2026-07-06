@@ -4,7 +4,7 @@ import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
@@ -41,9 +41,14 @@ export default function RiderHome(): React.ReactElement {
   const [online, setOnlineState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
+  // S·4 no-GPS gate: location permission was denied — riding needs GPS (parcels near you, navigate
+  // to pickups), so this blocks going online with an "open settings" recovery, per the journey map.
+  const [locDenied, setLocDenied] = useState(false);
   const [selected, setSelected] = useState<OpenOrder | null>(null);
   const [fare, setFare] = useState("");
   const [eta, setEta] = useState("");
+  // Offer mode (3·1): "accept" takes the asking price in one tap; "counter" opens the fare field.
+  const [offerMode, setOfferMode] = useState<"accept" | "counter">("accept");
   const [bidIds, setBidIds] = useState<Set<string>>(() => new Set());
   // Offers the rider has sent this session — rendered with a live "customer's window closes in"
   // countdown, and flipped to a distinct "that window closed" state on a `bid:expired` push.
@@ -51,18 +56,23 @@ export default function RiderHome(): React.ReactElement {
   // 1s clock for the countdowns (only advanced while there are live sent offers).
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  useEffect(() => {
-    void (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
-      try {
-        const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setLoc({ lat: p.coords.latitude, lng: p.coords.longitude });
-      } catch {
-        /* leave unsorted */
-      }
-    })();
+  const requestLocation = useCallback(async (): Promise<void> => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") {
+      setLocDenied(true);
+      return;
+    }
+    setLocDenied(false);
+    try {
+      const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setLoc({ lat: p.coords.latitude, lng: p.coords.longitude });
+    } catch {
+      /* leave unsorted */
+    }
   }, []);
+  useEffect(() => {
+    void requestLocation();
+  }, [requestLocation]);
 
   const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 8000 });
 
@@ -234,6 +244,8 @@ export default function RiderHome(): React.ReactElement {
 
   const chooseOrder = (o: OpenOrder): void => {
     setSelected(o);
+    // One-tap accept is the default (3·1); countering opens the fare field.
+    setOfferMode("accept");
     setFare(o.proposedFare);
     // Seed the ETA from the real distance to pickup instead of a constant "10", so the customer's
     // "Fastest" sort ranks on something real. Rider can still edit before sending.
@@ -255,7 +267,20 @@ export default function RiderHome(): React.ReactElement {
 
         {activeQ.data ? (
           <Card style={{ borderColor: tokens.color.accent }}>
-            <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({activeQ.data.status.replace(/_/g, " ")})</Text>
+            {activeQ.data.status === "assigned" ? (
+              // The win state (3·3): a customer just picked this rider — say so, don't mumble.
+              <>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: 2 }}>
+                  <Icon name="check" size={18} color={tokens.color.accentText} />
+                  <Text style={{ fontWeight: "700", color: tokens.color.ink }}>A customer picked you!</Text>
+                </View>
+                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                  {activeQ.data.pickup.landmark} → {activeQ.data.dropoff.landmark} · ${activeQ.data.agreedFare ?? activeQ.data.proposedFare}
+                </Text>
+              </>
+            ) : (
+              <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({activeQ.data.status.replace(/_/g, " ")})</Text>
+            )}
             {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
             <Button label="Open job" variant="ghost" onPress={() => router.push("/rider/job")} />
           </Card>
@@ -317,6 +342,17 @@ export default function RiderHome(): React.ReactElement {
               <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           )
+        ) : locDenied ? (
+          // S·4 no-GPS gate: riding needs location (parcels near you, navigation) — a calm blocking
+          // state with the real recovery (OS settings), not a silent city-wide fallback.
+          <EmptyState
+            icon="wifi-off"
+            title="Can't find your location"
+            message="Turn on location so we can show parcels near you and navigate to pickups. You can't go online without it."
+          >
+            <Button label="Open location settings" onPress={() => void Linking.openSettings()} />
+            <Button label="I've turned it on" variant="ghost" onPress={() => void requestLocation()} />
+          </EmptyState>
         ) : (
           <>
         {gate ? (
@@ -378,6 +414,7 @@ export default function RiderHome(): React.ReactElement {
               .filter((s) => s.order.id !== activeQ.data?.id)
               .map((s) => {
                 const expired = board.expiredOrderIds.has(s.order.id);
+                const taken = board.takenOrderIds.has(s.order.id);
                 const remaining = new Date(s.expiresAt).getTime() - nowMs;
                 return (
                   <Card key={s.order.id}>
@@ -387,7 +424,16 @@ export default function RiderHome(): React.ReactElement {
                     <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                       Your offer ${s.fare} · ETA {s.etaMinutes} min
                     </Text>
-                    {expired ? (
+                    {taken ? (
+                      // Not chosen (3·b1): someone else was picked. Never framed as failure — the
+                      // rider is still online and first in line for the next one.
+                      <View style={{ flexDirection: "row", gap: tokens.space.sm, marginTop: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}>
+                        <Icon name="user" size={16} color={tokens.color.muted} />
+                        <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+                          Not this time — the customer picked another rider. It happens; you&apos;re still online and first in line for the next one.
+                        </Text>
+                      </View>
+                    ) : expired ? (
                       // Distinct from "not chosen": the whole auction closed with nobody picked (C2).
                       <View style={{ flexDirection: "row", gap: tokens.space.sm, marginTop: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}>
                         <Icon name="inbox" size={16} color={tokens.color.muted} />
@@ -435,10 +481,75 @@ export default function RiderHome(): React.ReactElement {
 
         {selected ? (
           <Card style={{ borderColor: tokens.color.accent }}>
-            <Text style={{ fontWeight: "700", marginBottom: tokens.space.sm }}>Offer on {selected.pickup.landmark}</Text>
-            <Field label="Your fare (USD)" value={fare} onChangeText={setFare} keyboardType="decimal-pad" />
+            <Text style={{ fontWeight: "700", marginBottom: 2 }}>
+              {selected.pickup.landmark} → {selected.dropoff.landmark}
+            </Text>
+            <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: tokens.space.md, fontVariant: ["tabular-nums"] }}>
+              {selected.itemDesc} · asking ${selected.proposedFare}
+            </Text>
+            {/* Segmented accept-or-counter (3·1): take the asking price in one tap, OR counter with
+                your own fare. One offer per order either way. */}
+            <View
+              accessibilityRole="tablist"
+              style={{
+                flexDirection: "row",
+                gap: 4,
+                padding: 4,
+                backgroundColor: tokens.color.surface,
+                borderRadius: tokens.radius.pill,
+                marginBottom: tokens.space.md,
+              }}
+            >
+              {(
+                [
+                  { key: "accept" as const, label: `Accept $${selected.proposedFare}` },
+                  { key: "counter" as const, label: "Counter your fare" },
+                ]
+              ).map((seg) => {
+                const on = offerMode === seg.key;
+                return (
+                  <Pressable
+                    key={seg.key}
+                    onPress={() => {
+                      setOfferMode(seg.key);
+                      // Accept = the customer's price, exactly; switching back re-seeds it.
+                      if (seg.key === "accept") setFare(selected.proposedFare);
+                    }}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: on }}
+                    style={{
+                      flex: 1,
+                      minHeight: tokens.touchTargetMin,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: tokens.radius.pill,
+                      backgroundColor: on ? tokens.color.bg : "transparent",
+                      ...(on ? tokens.shadow.card : null),
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: on ? tokens.color.accentText : tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                      {seg.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {offerMode === "counter" ? (
+              <Field
+                label="Your fare (USD)"
+                value={fare}
+                onChangeText={setFare}
+                keyboardType="decimal-pad"
+                hint="Counter higher if the trip's worth more — the customer accepts or declines."
+              />
+            ) : null}
             <Field label="ETA to pickup (min)" value={eta} onChangeText={setEta} keyboardType="number-pad" maxLength={3} />
-            <Button label="Send offer" onPress={() => offerM.mutate()} loading={offerM.isPending} disabled={!canOffer} />
+            <Button
+              label={offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send counter-offer"}
+              onPress={() => offerM.mutate()}
+              loading={offerM.isPending}
+              disabled={!canOffer}
+            />
             <Button label="Cancel" variant="ghost" onPress={() => setSelected(null)} />
           </Card>
         ) : null}

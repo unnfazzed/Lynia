@@ -31,9 +31,18 @@ export default function EarningsScreen(): React.ReactElement {
           <Button label="Retry" onPress={() => void q.refetch()} />
         </EmptyState>
       ) : trips.length === 0 ? (
-        <EmptyState icon="banknote" title="No earnings yet" message="Completed deliveries and their agreed fares show up here.">
-          <Button label="Find work" onPress={() => router.replace("/rider")} />
-        </EmptyState>
+        // 5·2 zero-state: the $0.00 hero card + a warm "your first fare starts here", not a bare empty
+        // ledger — the earnings surface should still feel like a record waiting to fill.
+        <View>
+          <Card style={{ backgroundColor: tokens.color.cta, borderColor: tokens.color.cta }}>
+            <Text style={{ color: tokens.color.onAccent, fontSize: 12, fontWeight: "600", opacity: 0.9 }}>Agreed &amp; delivered · total</Text>
+            <Text style={{ color: tokens.color.onAccent, fontSize: 28, fontWeight: "700", marginTop: 2, fontVariant: ["tabular-nums"] }}>$0.00</Text>
+            <Text style={{ color: tokens.color.onAccent, fontSize: 12, opacity: 0.9, marginTop: 2 }}>No trips yet</Text>
+          </Card>
+          <EmptyState icon="banknote" title="Your first fare starts here" message="Go online and make an offer — every delivery you complete shows up here as a record of your work.">
+            <Button label="Go online" onPress={() => router.replace("/rider")} />
+          </EmptyState>
+        </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
           <Card style={{ backgroundColor: tokens.color.cta, borderColor: tokens.color.cta }}>

@@ -219,6 +219,9 @@ export const WS_EVENTS = {
   /** server→client: the auction window closed with no pick — pushed to ALL bidders on that order
    *  (INTERFACE-AUDIT C2). Distinct from `not_chosen` (someone else was picked). */
   bidExpired: "bid:expired",
+  /** server→client: a customer picked a rider — pushed to the board (rider-journey 2·b1 / 3·b1).
+   *  Browsers drop the now-taken card; bidders who weren't picked show the "not chosen" state. */
+  orderTaken: "order:taken",
   /** server→client: the customer cancelled — pushed to the assigned rider (INTERFACE-AUDIT C3).
    *  Carries whether the parcel was already collected so the rider UI can show the hand-back path. */
   jobCancelled: "job:cancelled",
@@ -280,6 +283,13 @@ export type BoardNewOrderEvent = z.infer<typeof BoardNewOrderEvent>;
 /** `bid:expired` payload — the auction closed with no pick (INTERFACE-AUDIT C2). */
 export const BidExpiredEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
 export type BidExpiredEvent = z.infer<typeof BidExpiredEvent>;
+
+/** `order:taken` payload — a customer picked a rider for this order (rider-journey 2·b1 / 3·b1).
+ *  Pushed to the board with `emitBidExpired`'s distribution so every rider who saw the card sees it
+ *  close: browsers drop the card ("taken first"), bidders show "not chosen" (someone else was picked
+ *  — distinct from `bid:expired`, where nobody was). */
+export const OrderTakenEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
+export type OrderTakenEvent = z.infer<typeof OrderTakenEvent>;
 
 /** `job:cancelled` payload — the customer cancelled an assigned job (INTERFACE-AUDIT C3). `collected`
  *  distinguishes the pre-pickup path (rider returns to the board) from post-pickup (sender contact

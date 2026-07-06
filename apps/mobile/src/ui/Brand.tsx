@@ -9,17 +9,22 @@ import { WORDMARK_ASPECT, WORDMARK_GO_D, WORDMARK_LYNIA_D, WORDMARK_VIEWBOX } fr
  * dart that is also a dove; the crease lines cross at the upper third (the hidden cross). Brand rule:
  * the creases (and the cross) only render at ≥ 32px — below that use the silhouette alone.
  */
-export function DoveMark({ size = 28 }: { size?: number }): React.ReactElement {
+export function DoveMark({ size = 28, on = "white" }: { size?: number; on?: "white" | "green" }): React.ReactElement {
   const showCrease = size >= 32;
+  // On the brand-green splash the mark inverts (DS Dove `on="green"`): white body, translucent-white
+  // keel, and the crease switches to the accent green so it stays visible against the white body.
+  const body = on === "green" ? tokens.color.onAccent : tokens.color.accent;
+  const keel = on === "green" ? "rgba(255,255,255,0.62)" : tokens.color.accentPressed;
+  const crease = on === "green" ? tokens.color.accent : tokens.color.onAccent;
   return (
     <Svg width={size} height={size} viewBox="0 0 96 96">
-      <Polygon points="28,6 58,32 38,42" fill={tokens.color.accent} />
-      <Polygon points="90,26 14,52 48,60" fill={tokens.color.accent} />
-      <Polygon points="90,26 48,60 42,84" fill={tokens.color.accentPressed} />
+      <Polygon points="28,6 58,32 38,42" fill={body} />
+      <Polygon points="90,26 14,52 48,60" fill={body} />
+      <Polygon points="90,26 48,60 42,84" fill={keel} />
       {showCrease ? (
         <>
-          <Path d="M90 26 L48 60" stroke={tokens.color.onAccent} strokeWidth={2.4} fill="none" />
-          <Path d="M70.5 30.2 L81.5 43.8" stroke={tokens.color.onAccent} strokeWidth={2.4} fill="none" />
+          <Path d="M90 26 L48 60" stroke={crease} strokeWidth={2.4} fill="none" />
+          <Path d="M70.5 30.2 L81.5 43.8" stroke={crease} strokeWidth={2.4} fill="none" />
         </>
       ) : null}
     </Svg>

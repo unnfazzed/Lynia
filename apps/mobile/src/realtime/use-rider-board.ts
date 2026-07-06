@@ -1,4 +1,4 @@
-import { BidExpiredEvent, BoardNewOrderEvent, WS_EVENTS } from "@lynia/shared";
+import { BidExpiredEvent, BoardNewOrderEvent, OrderTakenEvent, WS_EVENTS } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
@@ -17,7 +17,7 @@ import { createSocket } from "./socket";
 export function useRiderBoard(
   online: boolean,
   loc: { lat: number; lng: number } | null,
-): { connected: boolean; expiredOrderIds: Set<string> } {
+): { connected: boolean; expiredOrderIds: Set<string>; takenOrderIds: Set<string> } {
   const { session } = useAuth();
   const token = session?.accessToken;
   const qc = useQueryClient();
@@ -26,6 +26,9 @@ export function useRiderBoard(
   // The rider screen uses this to show a distinct "that window closed" state on a sent offer (vs.
   // "not chosen", which means someone else was picked).
   const [expiredOrderIds, setExpiredOrderIds] = useState<Set<string>>(() => new Set());
+  // Orders a customer assigned to SOMEONE (rider-journey 2·b1 / 3·b1) — the card leaves the board;
+  // a rider who bid on one shows the "not chosen" state (distinct from `expiredOrderIds` above).
+  const [takenOrderIds, setTakenOrderIds] = useState<Set<string>>(() => new Set());
   // Hold the live socket + latest loc in refs so the loc-change effect can re-subscribe (re-scope the
   // geo rooms) without tearing down and rebuilding the connection.
   const socketRef = useRef<Socket | null>(null);
@@ -77,6 +80,20 @@ export function useRiderBoard(
       qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => prev?.filter((o) => o.id !== orderId));
     });
 
+    // A customer picked a rider: the card is no longer biddable — drop it, and record the id so a
+    // rider who bid on it sees "not chosen" instead of a countdown that dead-ends at 0:00 (3·b1).
+    // The winning rider also receives this; their screen ignores it (the order is their active job).
+    socket.on(WS_EVENTS.orderTaken, (raw: unknown) => {
+      const parsed = OrderTakenEvent.safeParse(raw);
+      if (!parsed.success) return;
+      const { orderId } = parsed.data;
+      setTakenOrderIds((prev) => (prev.has(orderId) ? prev : new Set(prev).add(orderId)));
+      qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => prev?.filter((o) => o.id !== orderId));
+      // If WE are the picked rider this order is now our active job — refetch it immediately so the
+      // dashboard swaps to the win state instead of briefly mislabelling our own bid "not chosen".
+      void qc.invalidateQueries({ queryKey: ["activeJob"] });
+    });
+
     return () => {
       socketRef.current = null;
       socket.emit(WS_EVENTS.boardLeave);
@@ -92,5 +109,5 @@ export function useRiderBoard(
     socket.emit(WS_EVENTS.boardSubscribe, loc ? { lat: loc.lat, lng: loc.lng } : {});
   }, [loc?.lat, loc?.lng]);
 
-  return { connected, expiredOrderIds };
+  return { connected, expiredOrderIds, takenOrderIds };
 }

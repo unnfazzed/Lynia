@@ -9,9 +9,10 @@ import { mapsPlaceUrl } from "../../src/logic/maps";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
+import { seedDraftFromOrder } from "../../src/logic/compose-draft";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, EmptyState, ErrorText, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
@@ -104,8 +105,11 @@ function BidEntrance({ animate, children }: { animate: boolean; children: React.
 }
 
 export default function OrderScreen(): React.ReactElement {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, rebroadcast: rebroadcastParam } = useLocalSearchParams<{ id: string; rebroadcast?: string }>();
   const orderId = typeof id === "string" ? id : "";
+  // 3·b0: shown once when we arrive on a re-broadcast auction after a rider bailed (F-01). Dismissable;
+  // also self-clears once the order leaves the auction (a rider was picked / it expired).
+  const [showRebroadcastNotice, setShowRebroadcastNotice] = useState(rebroadcastParam === "1");
   const qc = useQueryClient();
   const router = useRouter();
   const reduceMotion = useReduceMotion();
@@ -125,8 +129,10 @@ export default function OrderScreen(): React.ReactElement {
   // stays live server-side, so we just drop the prominent Accept/Decline treatment and the offer
   // reverts to a normal choosable bid at the countered price. One round, no counter-back.
   const [declinedCounterIds, setDeclinedCounterIds] = useState<Set<string>>(() => new Set());
-  // Post-pickup cancel confirmation gate (the hand-back warning).
+  // Cancel confirmation gate (3·b2): a confirm at ANY stage with an optional reason; post-pickup it
+  // also carries the hand-back warning. Opening it captures the reason; confirming sends it.
   const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
 
   // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash).
   useEffect(() => {
@@ -159,9 +165,23 @@ export default function OrderScreen(): React.ReactElement {
   const socketExpected = isActive || status === "delivered" || status === "open_for_offers";
   // F-01: on a rider bail the server re-broadcasts a NEW order and pushes `order:rebroadcast` here;
   // move the customer to the fresh auction (replace, so the dead cancelled order isn't in the stack).
-  const { connected } = useOrderSocket(socketExpected ? orderId : null, (newOrderId) => {
-    router.replace(`/order/${newOrderId}`);
-  });
+  // 3·b1: the rider's app has gone dark past the escalation threshold — escalate from the calm
+  // "reconnecting" pause to a "call your rider" notice. Cleared on the next status change (below).
+  const [riderStale, setRiderStale] = useState(false);
+  const { connected } = useOrderSocket(
+    socketExpected ? orderId : null,
+    (newOrderId) => {
+      // F-01 / 3·b0: the assigned rider bailed and the server auto re-broadcast at the same price.
+      // Carry a flag onto the fresh auction so it opens with the "your rider had to cancel — finding
+      // another at the same price" notice, instead of silently swapping the customer onto a new order.
+      router.replace(`/order/${newOrderId}?rebroadcast=1`);
+    },
+    () => setRiderStale(true),
+  );
+  // A status advance means things are moving again — drop a stale rider-presence warning.
+  useEffect(() => {
+    setRiderStale(false);
+  }, [status]);
   // "Reconnecting" only reads truthfully after we've been live once — the initial connect window
   // would otherwise flash the banner on every mount.
   const wasConnected = React.useRef(false);
@@ -305,8 +325,12 @@ export default function OrderScreen(): React.ReactElement {
     },
   });
   const cancelM = useMutation({
-    mutationFn: () => cancelOrder(orderId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
+    mutationFn: (reason: string) => cancelOrder(orderId, reason.trim() ? { reason: reason.trim() } : {}),
+    onSuccess: () => {
+      setCancelConfirm(false);
+      setCancelReason("");
+      void qc.invalidateQueries({ queryKey: orderKey(orderId) });
+    },
   });
 
   // Rating-on-tap handlers (D3). Tapping a star sets the score and (re)arms a short commit window;
@@ -370,6 +394,12 @@ export default function OrderScreen(): React.ReactElement {
   const isActiveCounter = (o: OfferRow): boolean =>
     isPendingCounter(o.type, Number(o.offeredFare), ask, declinedCounterIds.has(o.id));
   const hasActiveCounter = orderedOffers.some(({ offer }) => isActiveCounter(offer));
+  // 2·b3 "Nudge price & re-broadcast": seed the compose draft from THIS order (routing, items, note,
+  // a nudged price) so the customer lands on a pre-filled form instead of re-typing everything — then
+  // go home to broadcast the fresh request. Phones are re-asked (PII isn't kept in the draft).
+  const rebroadcast = (): void => {
+    void seedDraftFromOrder(order).finally(() => router.replace("/home"));
+  };
   const chooseOffer = (offerId: string): void => {
     setSelectNotice(null); // a new attempt clears the stale "just taken" notice
     setSelectingId(offerId);
@@ -391,6 +421,21 @@ export default function OrderScreen(): React.ReactElement {
           <Card style={{ borderColor: tokens.color.accent }}>
             <Text style={{ fontSize: 14, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
             <Text style={{ fontSize: 28, fontWeight: "700", letterSpacing: 6, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>{deliveryCode}</Text>
+          </Card>
+        ) : null}
+
+        {order.status === "open_for_offers" && showRebroadcastNotice ? (
+          // 3·b0: the previous rider bailed; the server re-broadcast at the same price. Reassure the
+          // customer they didn't have to start over — a muted "reconnecting"-toned card, not an alarm.
+          <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
+              <Icon name="bike" size={18} color={tokens.color.muted} />
+              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>Your rider had to cancel</Text>
+            </View>
+            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
+              Sometimes a rider can&apos;t make it. We&apos;re finding you another at the same price — no need to start over.
+            </Text>
+            <Button label="Got it" variant="ghost" onPress={() => setShowRebroadcastNotice(false)} />
           </Card>
         ) : null}
 
@@ -427,7 +472,7 @@ export default function OrderScreen(): React.ReactElement {
             {urgent ? (
               // Pre-surface the recovery affordance BEFORE the dead-end — same destination as the
               // expired state's "Send another request". Ghost so it doesn't compete with "Choose".
-              <Button label="Nudge price & re-broadcast" variant="ghost" onPress={() => router.replace("/home")} />
+              <Button label="Nudge price & re-broadcast" variant="ghost" onPress={rebroadcast} />
             ) : null}
             {orderedOffers.length > 1 ? (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
@@ -530,6 +575,20 @@ export default function OrderScreen(): React.ReactElement {
             {order.rider ? (
               <Text style={{ fontSize: 14, color: tokens.color.muted }}>{trackingHint}</Text>
             ) : null}
+            {/* 3·b1: rider dark past the escalation threshold — escalate the calm pause to a "call
+                your rider" notice. Muted, not a red alarm; clears on the next status change. */}
+            {isActive && riderStale ? (
+              <View
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+                style={{ flexDirection: "row", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginTop: tokens.space.sm }}
+              >
+                <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
+                <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+                  We haven&apos;t heard from your rider&apos;s app for a couple of minutes. They&apos;re likely still riding — give them a call if you need an update.
+                </Text>
+              </View>
+            ) : null}
             {/* Maps-sync (§3·2): open the drop-off location in Google Maps so the customer can follow
                 along. No Places key needed — a universal Maps URL built from the stored drop-off point. */}
             <Pressable
@@ -614,13 +673,24 @@ export default function OrderScreen(): React.ReactElement {
             title="No riders took this price yet"
             message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
           >
-            <Button label="Send another request" onPress={() => router.replace("/home")} />
+            <Button label="Nudge price & re-broadcast" onPress={rebroadcast} />
           </EmptyState>
         ) : null}
         {order.status === "cancelled" ? (
-          <Card>
-            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>This order is cancelled.</Text>
-          </Card>
+          <>
+            <Card>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: order.cancelReason ? tokens.space.xs : 0 }}>
+                <Icon name="circle-alert" size={18} color={tokens.color.danger} />
+                <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
+                  {order.cancelledBy === "rider" ? "Your rider cancelled this order." : "This order was cancelled."}
+                </Text>
+              </View>
+              {order.cancelReason ? (
+                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>Reason: {order.cancelReason}</Text>
+              ) : null}
+            </Card>
+            <Button label="Send a new request" onPress={() => router.replace("/home")} />
+          </>
         ) : null}
 
         {/* Undeliverable terminal (F-02 / C6): the rider couldn't complete the hand-off. Reason +
@@ -670,28 +740,29 @@ export default function OrderScreen(): React.ReactElement {
           </>
         ) : null}
 
-        {/* Cancel-anytime (C3). Post-pickup the parcel is on the bike, so a cancel gets a hand-back
-            warning before it fires; pre-pickup cancels straight through. */}
+        {/* Cancel-anytime (C3 / 3·b2). A confirm at ANY stage with an optional reason (recorded and
+            shown on the cancelled terminal); post-pickup it also carries the hand-back warning, since
+            the parcel is already on the bike. */}
         {CUSTOMER_CANCELLABLE.has(order.status) ? (
-          cancelConfirm && POST_PICKUP_CANCEL.has(order.status) ? (
+          cancelConfirm ? (
             <Card style={{ borderColor: tokens.color.danger }}>
-              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>Cancel after pickup?</Text>
-              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
-                Your rider already has the parcel. If you cancel now, you&apos;ll arrange getting it back directly with them — Lynia can&apos;t recover it, and an agreed fare isn&apos;t refunded.
+              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>
+                {POST_PICKUP_CANCEL.has(order.status) ? "Cancel after pickup?" : "Cancel this order?"}
               </Text>
-              <Button label="Yes, cancel this order" onPress={() => { setCancelConfirm(false); cancelM.mutate(); }} loading={cancelM.isPending} />
-              <Button label="Keep my order" variant="ghost" onPress={() => setCancelConfirm(false)} />
+              <Field label="Reason (optional)" value={cancelReason} onChangeText={setCancelReason} placeholder="Sending it another way" maxLength={280} />
+              <View style={{ flexDirection: "row", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.sm }}>
+                <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
+                <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+                  {POST_PICKUP_CANCEL.has(order.status)
+                    ? "Your rider already has the parcel. If you cancel now, you'll arrange getting it back directly with them — Lynia can't recover it, and an agreed fare isn't refunded."
+                    : "You can cancel at any point. If your rider has already collected the parcel, you'll arrange the hand-back directly with them — at your own risk, off-platform."}
+                </Text>
+              </View>
+              <Button label="Confirm cancellation" onPress={() => cancelM.mutate(cancelReason)} loading={cancelM.isPending} />
+              <Button label="Keep my order" variant="ghost" onPress={() => { setCancelConfirm(false); setCancelReason(""); }} />
             </Card>
           ) : (
-            <Button
-              label="Cancel order"
-              variant="ghost"
-              onPress={() => {
-                if (POST_PICKUP_CANCEL.has(order.status)) setCancelConfirm(true);
-                else cancelM.mutate();
-              }}
-              loading={cancelM.isPending}
-            />
+            <Button label="Cancel order" variant="ghost" onPress={() => setCancelConfirm(true)} />
           )
         ) : null}
         {/* Order-level support — replaces the generic-help dead-end for an active or completed trip. */}

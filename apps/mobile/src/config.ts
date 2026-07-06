@@ -37,3 +37,18 @@ export const GOOGLE_PLACES_KEY: string | null = process.env.EXPO_PUBLIC_GOOGLE_P
 export function placesEnabled(): boolean {
   return typeof GOOGLE_PLACES_KEY === "string" && GOOGLE_PLACES_KEY.length > 0;
 }
+
+/**
+ * Support WhatsApp number in international digits (no "+"), e.g. "263771234567". OPTIONAL — the help
+ * hub's "Chat on WhatsApp" row is gated on it (help routes to WhatsApp by product decision): with no
+ * number the row hides rather than opening a dead link. Set via `EXPO_PUBLIC_SUPPORT_WHATSAPP` or
+ * `extra.supportWhatsApp` in app.config.ts.
+ */
+const supportWaFromExtra = (Constants.expoConfig?.extra as { supportWhatsApp?: string } | undefined)?.supportWhatsApp;
+export const SUPPORT_WHATSAPP: string | null =
+  (process.env.EXPO_PUBLIC_SUPPORT_WHATSAPP ?? supportWaFromExtra ?? "").replace(/[^\d]/g, "") || null;
+
+/** A wa.me deep link to support, or null when no number is configured (the row then hides). */
+export function supportWhatsAppUrl(): string | null {
+  return SUPPORT_WHATSAPP ? `https://wa.me/${SUPPORT_WHATSAPP}` : null;
+}

@@ -5,6 +5,7 @@ import type {
   ConfirmItemsRequest,
   CreateOrderRequest,
   LatLng,
+  MarkUndeliveredRequest,
   OrderStatus,
   RateRequest,
   UndeliveredReason,
@@ -38,6 +39,8 @@ export interface OrderSnapshot {
   dropoff: { point: LatLng; landmark: string; contactPhone?: string | null };
   // Line-items — null/absent on orders created before the items column (clients render nothing).
   items?: { description: string; quantity: number }[] | null;
+  // The sender's note for the rider ("ask for Rita at reception") — parties on the order only.
+  note?: string | null;
   rider: { profileId: string; currentLat: number | null; currentLng: number | null; updatedAt: string | null } | null;
   events: OrderEvent[];
   counterpartyPhone: string | null;
@@ -48,6 +51,9 @@ export interface OrderSnapshot {
   // Absent/null on every other status.
   undeliveredReason?: UndeliveredReason | null;
   undeliveredAttempts?: number | null;
+  // Set only on the terminal `cancelled` status (3·b3): the recorded reason + which side cancelled.
+  cancelReason?: string | null;
+  cancelledBy?: "customer" | "rider" | null;
 }
 
 /**
@@ -119,6 +125,18 @@ export function advanceStatus(orderId: string, to: AdvanceStatusRequest["to"]): 
 
 export function confirmDelivery(orderId: string, code: string): Promise<{ orderId: string; status: "delivered" }> {
   return apiFetch(`/orders/${orderId}/deliver`, { method: "POST", body: { code } });
+}
+
+/**
+ * Rider marks a hand-off as failed → terminal `undelivered` (rider-journey 4·b2 / C6). Post-pickup
+ * only (server-enforced): once the parcel is on the bike, the exits are deliver or this — never a
+ * cancel. The reason is shown verbatim on the customer's terminal screen.
+ */
+export function markUndelivered(
+  orderId: string,
+  body: MarkUndeliveredRequest,
+): Promise<{ orderId: string; status: "undelivered" }> {
+  return apiFetch(`/orders/${orderId}/undelivered`, { method: "POST", body });
 }
 
 export function rateOrder(orderId: string, body: RateRequest): Promise<{ orderId: string; status: "completed" }> {

@@ -29,9 +29,15 @@ export default function VerifyScreen(): React.ReactElement {
         role: res.role,
       });
       // Show the role fork once per account (RIDER-JOURNEY-AUDIT R0-4). A returning user who already
-      // picked a role goes straight home rather than being re-prompted every sign-in.
+      // picked a role goes straight home rather than being re-prompted every sign-in. A brand-new
+      // account (needsProfile) carries that flag into the fork so a customer lands on registration
+      // (0·6) before home; a returning one skips it.
       const chosen = await loadRolePreference();
-      router.replace(chosen ? "/home" : "/role");
+      if (chosen) {
+        router.replace("/home");
+      } else {
+        router.replace({ pathname: "/role", params: { needsProfile: res.needsProfile ? "1" : "" } });
+      }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't verify the code.");
     } finally {
@@ -41,10 +47,10 @@ export default function VerifyScreen(): React.ReactElement {
 
   return (
     <Screen>
-      <Heading>Enter your code</Heading>
+      <Heading>Check your WhatsApp</Heading>
       {/* On a QA build the code arrives pre-filled (console OTP channel) — no message was sent, so
-          don't claim one was. Real users still see the "we sent a code" copy. */}
-      <Sub>{prefilled ? "Test build: code pre-filled — tap Verify." : `We sent a 6-digit code to ${phone || "your phone"}.`}</Sub>
+          don't claim one was. Real users still see the "we sent a code on WhatsApp" copy. */}
+      <Sub>{prefilled ? "Test build: code pre-filled — tap Verify." : `We sent a 6-digit code to ${phone || "your phone"} on WhatsApp.`}</Sub>
       <Field
         label="6-digit code"
         value={code}
@@ -54,6 +60,7 @@ export default function VerifyScreen(): React.ReactElement {
         maxLength={6}
         autoComplete="one-time-code"
         textContentType="oneTimeCode"
+        hint="No WhatsApp on this number? Contact support to sign up."
       />
       <Button label="Verify" onPress={submit} loading={busy} disabled={code.trim().length !== 6} />
       <Button label="Back" variant="ghost" onPress={() => router.back()} />

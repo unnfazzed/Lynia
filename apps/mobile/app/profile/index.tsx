@@ -64,12 +64,18 @@ export default function ProfileScreen(): React.ReactElement {
       <Card>
         <Button label="Trip history" onPress={() => router.push("/history")} />
         {isRider ? <Button label="Earnings" variant="ghost" onPress={() => router.push("/earnings")} /> : null}
+        {isRider ? <Button label="Bike & documents" variant="ghost" onPress={() => router.push("/rider/documents")} /> : null}
         <Button label="Send a parcel" variant="ghost" onPress={() => router.replace("/home")} />
         <Button
           label={isRider ? "Rider dashboard" : "Become a rider"}
           variant="ghost"
           onPress={() => router.push(isRider ? "/rider" : "/rider/become")}
         />
+      </Card>
+
+      <Card>
+        <Button label="Settings" variant="ghost" onPress={() => router.push("/settings")} />
+        <Button label="Help & support" variant="ghost" onPress={() => router.push("/help")} />
       </Card>
 
       <Button label="Sign out" variant="ghost" onPress={() => void signOut()} />
