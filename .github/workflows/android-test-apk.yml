@@ -56,7 +56,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
 
       # pnpm's symlinked store can break RN Gradle autolinking in a monorepo. Force a hoisted layout
       # for THIS build (repo-wide install stays default) so expo prebuild + Gradle resolve react-native
