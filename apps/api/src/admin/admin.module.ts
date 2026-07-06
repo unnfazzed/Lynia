@@ -1,7 +1,11 @@
 import { Module } from "@nestjs/common";
 import { SettlementsModule } from "../settlements/settlements.module";
 import { TrackingModule } from "../tracking/tracking.module";
+import { AdminAuditService } from "./admin-audit.service";
 import { AdminController } from "./admin.controller";
+import { AdminCustomersService } from "./admin-customers.service";
+import { AdminOrdersService } from "./admin-orders.service";
+import { AdminRidersService } from "./admin-riders.service";
 import { AdminService } from "./admin.service";
 
 @Module({
@@ -9,6 +13,6 @@ import { AdminService } from "./admin.service";
   // TrackingModule exports TrackingGateway — admin cancelOrder pushes job:cancelled to the assigned rider (P2-3).
   imports: [SettlementsModule, TrackingModule],
   controllers: [AdminController],
-  providers: [AdminService],
+  providers: [AdminService, AdminOrdersService, AdminRidersService, AdminCustomersService, AdminAuditService],
 })
 export class AdminModule {}

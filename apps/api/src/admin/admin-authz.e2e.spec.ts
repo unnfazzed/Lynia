@@ -10,10 +10,18 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { bearer, buildAuthzApp } from "../common/testing/authz-e2e";
 import { SettlementsService } from "../settlements/settlements.service";
+import { AdminAuditService } from "./admin-audit.service";
 import { AdminController } from "./admin.controller";
+import { AdminCustomersService } from "./admin-customers.service";
+import { AdminOrdersService } from "./admin-orders.service";
+import { AdminRidersService } from "./admin-riders.service";
 import { AdminService } from "./admin.service";
 
-Reflect.defineMetadata("design:paramtypes", [AdminService, SettlementsService], AdminController);
+Reflect.defineMetadata(
+  "design:paramtypes",
+  [AdminService, AdminOrdersService, AdminRidersService, AdminCustomersService, AdminAuditService, SettlementsService],
+  AdminController,
+);
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ADMIN_ID = "99999999-9999-4999-8999-999999999999";
@@ -27,6 +35,10 @@ describe("GET /admin/overview — HTTP authz (AdminGuard net)", () => {
   beforeAll(async () => {
     app = await buildAuthzApp([AdminController], [
       { provide: AdminService, useValue: adminService },
+      { provide: AdminOrdersService, useValue: {} },
+      { provide: AdminRidersService, useValue: {} },
+      { provide: AdminCustomersService, useValue: {} },
+      { provide: AdminAuditService, useValue: {} },
       { provide: SettlementsService, useValue: settlements },
     ]);
   });

@@ -1,0 +1,323 @@
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ACTIVE_RIDE_STATUSES,
+  type KycStatus,
+  RELIABILITY,
+  RiderAccountStatus,
+} from "@lynia/shared";
+import { maskPhone } from "../common/phone-mask";
+import { PiiCryptoService } from "../common/pii-crypto.service";
+import { PrismaService } from "../prisma/prisma.service";
+import { auditData, fmtDate, fmtUntil, reportsFor, round, toTripRow } from "./admin.shared";
+
+@Injectable()
+export class AdminRidersService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pii: PiiCryptoService,
+  ) {}
+
+  /** Rider roster for ops — the KYC review queue when filtered to `pending`. */
+  async listRiders(kyc?: KycStatus) {
+    const riders = await this.prisma.rider.findMany({
+      where: kyc ? { kycStatus: kyc } : {},
+      orderBy: { updatedAt: "desc" },
+      take: 100,
+      select: {
+        profileId: true,
+        bikeReg: true,
+        kycStatus: true,
+        kycRef: true,
+        idVerified: true,
+        isOnline: true,
+        ratingAvg: true,
+        ratingCount: true,
+        tripsCount: true,
+        cancelStrikes: true,
+        cooldownUntil: true,
+        duplicateIdFlag: true,
+        profile: { select: { firstName: true, lastName: true, phone: true } },
+      },
+    });
+
+    // A-03 (P0): mask each rider's phone UNLESS they're on a LIVE order right now. The reveal set is
+    // ACTIVE_RIDE_STATUSES (mid-delivery) — NOT PHONE_REVEAL_STATUSES, which includes the permanent
+    // terminal states (delivered/completed/undelivered): using those would leave any rider who ever
+    // finished one order unmasked forever, defeating the roster-scrape protection. The per-order
+    // reveal window (getSnapshot) still uses PHONE_REVEAL_STATUSES — that's scoped to one live order.
+    const revealingRiderIds = new Set(
+      (
+        await this.prisma.order.findMany({
+          where: { riderId: { in: riders.map((r) => r.profileId) }, status: { in: ACTIVE_RIDE_STATUSES } },
+          select: { riderId: true },
+          distinct: ["riderId"],
+        })
+      ).flatMap((o) => (o.riderId ? [o.riderId] : [])),
+    );
+
+    return riders.map((r) => ({
+      profileId: r.profileId,
+      name: `${r.profile.firstName} ${r.profile.lastName}`.trim(),
+      phone: revealingRiderIds.has(r.profileId) ? r.profile.phone : maskPhone(r.profile.phone),
+      bikeReg: r.bikeReg,
+      kycStatus: r.kycStatus,
+      kycRef: r.kycRef,
+      idVerified: r.idVerified,
+      isOnline: r.isOnline,
+      ratingAvg: r.ratingAvg,
+      ratingCount: r.ratingCount,
+      tripsCount: r.tripsCount,
+      cancelStrikes: r.cancelStrikes,
+      cooldownUntil: r.cooldownUntil?.toISOString() ?? null,
+      duplicateIdFlag: r.duplicateIdFlag,
+    }));
+  }
+
+  /**
+   * Single-rider KYC review detail (admin A-02) — the doc-review screen behind the KYC queue. Returns
+   * the real, persisted KYC state: status, the resubmission counter + derived lock/attempt, the last
+   * decline reason, and the applicant fields ops compare against the documents. Phone is masked (A-03)
+   * — the reviewer matches the ID number, not the phone.
+   *
+   * Didit's granular scores (face-match, doc authenticity, liveness) are NOT persisted in the pilot —
+   * only the overall verdict flows through the webhook into `kycStatus`. Those fields are therefore
+   * omitted here; the console renders the checks panel from `kycStatus` + the reviewer's own compare.
+   */
+  async getKycReview(profileId: string) {
+    const rider = await this.prisma.rider.findUnique({
+      where: { profileId },
+      select: {
+        profileId: true,
+        bikeReg: true,
+        kycStatus: true,
+        kycRef: true,
+        kycAttempts: true,
+        kycDeclineReason: true,
+        idVerified: true,
+        duplicateIdFlag: true,
+        updatedAt: true,
+        profile: { select: { firstName: true, lastName: true, phone: true, idNumber: true, idNumberHash: true } },
+      },
+    });
+    if (!rider) return null;
+
+    // A-04 duplicate-account guard: the live set of OTHER accounts sharing this national ID, so the
+    // reviewer can compare them before approving (a national ID isn't unique — phone is — so a second
+    // SIM can re-onboard under the same ID). Recomputed here rather than trusting the become-rider
+    // snapshot: a colliding account may have been created, edited or deleted since. Phones are masked
+    // (A-03) — the reviewer matches on the ID, not the phone.
+    const duplicateIdAccounts = rider.profile.idNumberHash
+      ? (
+          await this.prisma.profile.findMany({
+            where: { idNumberHash: rider.profile.idNumberHash, id: { not: rider.profileId } },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              role: true,
+              rider: { select: { kycStatus: true, accountStatus: true } },
+            },
+            orderBy: { createdAt: "asc" },
+          })
+        ).map((p) => ({
+          id: p.id,
+          name: `${p.firstName} ${p.lastName}`.trim(),
+          phone: maskPhone(p.phone),
+          role: p.role,
+          kycStatus: p.rider?.kycStatus ?? null,
+          accountStatus: p.rider?.accountStatus ?? null,
+        }))
+      : [];
+
+    // kycAttempts counts declines. The current attempt number is declines + 1 (1 on first review, 2 on
+    // the single allowed resubmit). >= 2 declines = locked → support, no further attempts.
+    const locked = rider.kycAttempts >= 2;
+    return {
+      id: rider.profileId,
+      name: `${rider.profile.firstName} ${rider.profile.lastName}`.trim(),
+      phone: maskPhone(rider.profile.phone),
+      // Decrypt for the reviewer — the KYC review is the one place the full national ID is shown (LR8).
+      idNumber: this.pii.decryptId(rider.profile.idNumber),
+      bike: rider.bikeReg,
+      status: rider.kycStatus,
+      kycRef: rider.kycRef,
+      kycAttempts: rider.kycAttempts,
+      attempt: Math.min(rider.kycAttempts + 1, 2),
+      locked,
+      declineReason: rider.kycDeclineReason,
+      submittedAt: rider.updatedAt.toISOString(),
+      // A-04: the flag persisted at onboarding, and the live collision set the reviewer acts on.
+      // duplicateIdFlag reflects onboarding; duplicateIdAccounts.length reflects now — either non-empty
+      // means "review the ID before approving".
+      duplicateIdFlag: rider.duplicateIdFlag,
+      duplicateIdAccounts,
+    };
+  }
+
+  /**
+   * A-04 rider suspend. Sets `accountStatus=suspended` + the admin reason (only `active` riders may go
+   * online, so this pulls them offline-eligible) AND writes the audit row in ONE transaction. Reason is
+   * required (enforced by the controller's zod body). 404s when the id isn't a rider.
+   */
+  async suspendRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { profileId: true } });
+      if (!rider) throw new NotFoundException("Rider not found");
+      await tx.rider.update({
+        where: { profileId },
+        // P2-1: force offline in the same write so a rider online at suspend-time is pulled off the
+        // board immediately and can't keep bidding/being selected (accountStatus alone is a no-op
+        // against an already-online rider).
+        data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: input.reason, isOnline: false },
+      });
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, "rider.suspend", profileId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: profileId, accountStatus: RiderAccountStatus.SUSPENDED, auditId: audit.id };
+    });
+  }
+
+  /**
+   * A-04 lift a suspension → back to `active`, clearing the suspend reason. Reason is optional.
+   * Mutation + audit in one transaction.
+   */
+  async liftRider(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findUnique({
+        where: { profileId },
+        select: { accountStatus: true, reliabilityScore: true },
+      });
+      if (!rider) throw new NotFoundException("Rider not found");
+      // A lift restores access and clears a reliability hold. It does NOT undo a permanent ban —
+      // reinstating a banned rider must be a separate, deliberate action, not a side effect of "lift".
+      if (rider.accountStatus === RiderAccountStatus.BANNED) {
+        throw new ConflictException("A banned rider can't be lifted — reinstating a ban is a separate action.");
+      }
+      await tx.rider.update({
+        where: { profileId },
+        data: {
+          accountStatus: RiderAccountStatus.ACTIVE,
+          suspendReason: null,
+          // Clear the reliability lockout: on_hold otherwise has no escape (recovery needs online
+          // completions, which the hold blocks). Raise the score to the clear threshold if it's below.
+          onHold: false,
+          reliabilityScore: Math.max(rider.reliabilityScore, RELIABILITY.ON_HOLD_CLEAR_AT),
+        },
+      });
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, "rider.lift", profileId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: profileId, accountStatus: RiderAccountStatus.ACTIVE, auditId: audit.id };
+    });
+  }
+
+  /**
+   * A-04 permanent ban → `accountStatus=banned` with the reason recorded in `suspendReason`. Reason is
+   * required. Mutation + audit in one transaction.
+   */
+  async banRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { profileId: true } });
+      if (!rider) throw new NotFoundException("Rider not found");
+      await tx.rider.update({
+        where: { profileId },
+        // P2-1: force offline in the same write so a rider online at ban-time is pulled off the board
+        // immediately and can't keep bidding/being selected.
+        data: { accountStatus: RiderAccountStatus.BANNED, suspendReason: input.reason, isOnline: false },
+      });
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, "rider.ban", profileId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: profileId, accountStatus: RiderAccountStatus.BANNED, auditId: audit.id };
+    });
+  }
+
+  /**
+   * Rider detail (roster drill-in). Real stats (trips, rating, cancel strikes, cooldown), bike/docs,
+   * and the recent-trips table. Phone is masked UNLESS the rider is on a LIVE order right now
+   * (ACTIVE_RIDE_STATUSES — live-only, not the terminal-inclusive set, so a rider who once finished an
+   * order isn't unmasked forever; same rule as listRiders). Returns null when the id isn't a rider.
+   *
+   * TODO(A-04): `suspended`/`suspendReason` need a rider ban/suspend state machine + schema fields
+   * (deferred — see plan "out of scope"); status here is derived from cooldownUntil + isOnline only.
+   * Commission is prepaid per-ride at 0% during the launch period, so nothing is owed — `commission`
+   * is "0.00" until the rate turns on and the prepaid wallet ships (deferred).
+   */
+  async getRiderDetail(id: string) {
+    const rider = await this.prisma.rider.findUnique({
+      where: { profileId: id },
+      select: {
+        profileId: true,
+        bikeReg: true,
+        kycStatus: true,
+        isOnline: true,
+        ratingAvg: true,
+        ratingCount: true,
+        tripsCount: true,
+        cancelStrikes: true,
+        cooldownUntil: true,
+        profile: { select: { firstName: true, lastName: true, phone: true, createdAt: true } },
+      },
+    });
+    if (!rider) return null;
+
+    const now = Date.now();
+    const [liveOrders, statusCounts, recent, reports] = await Promise.all([
+      this.prisma.order.count({ where: { riderId: id, status: { in: ACTIVE_RIDE_STATUSES } } }),
+      this.prisma.order.groupBy({ by: ["status"], where: { riderId: id }, _count: { _all: true } }),
+      this.prisma.order.findMany({
+        where: { riderId: id },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true,
+          status: true,
+          proposedFare: true,
+          agreedFare: true,
+          pickup: true,
+          dropoff: true,
+          createdAt: true,
+        },
+      }),
+      reportsFor(this.prisma, id),
+    ]);
+
+    const onCooldown = !!rider.cooldownUntil && rider.cooldownUntil.getTime() > now;
+    const status: "online" | "offline" | "cooldown" = onCooldown ? "cooldown" : rider.isOnline ? "online" : "offline";
+
+    // Completion = delivered-or-completed over every order ever assigned to this rider. Approximate
+    // (a customer-side cancel still counts in the denominator) but real, schema-backed data.
+    const totalAssigned = statusCounts.reduce((n, r) => n + r._count._all, 0);
+    const succeeded = statusCounts
+      .filter((r) => r.status === "completed" || r.status === "delivered")
+      .reduce((n, r) => n + r._count._all, 0);
+    const completion = totalAssigned ? `${round((succeeded / totalAssigned) * 100)}%` : "—";
+
+    return {
+      id: rider.profileId,
+      name: `${rider.profile.firstName} ${rider.profile.lastName}`.trim(),
+      phone: liveOrders > 0 ? rider.profile.phone : maskPhone(rider.profile.phone),
+      bike: rider.bikeReg,
+      kyc: rider.kycStatus,
+      status,
+      cooldown: onCooldown ? fmtUntil(rider.cooldownUntil!, now) : undefined,
+      suspendReason: undefined, // TODO(A-04): no suspend state machine yet
+      trips: rider.tripsCount,
+      rating: rider.ratingCount > 0 ? rider.ratingAvg.toFixed(1) : null,
+      ratingCount: rider.ratingCount,
+      completion,
+      strikes: rider.cancelStrikes,
+      commission: "0.00", // prepaid per-ride at 0% during launch — nothing owed (wallet deferred)
+      // How many times this rider has been reported by customers, plus the recent entries (fault signal
+      // for ops). Additive to the D-2 RiderDetail shape.
+      reports: reports.count,
+      reportLog: reports.recent,
+      joined: fmtDate(rider.profile.createdAt),
+      trail: recent.map((o) => toTripRow(o)),
+    };
+  }
+}
