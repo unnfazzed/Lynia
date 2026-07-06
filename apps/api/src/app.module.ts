@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { AllExceptionsFilter } from "./common/all-exceptions.filter";
+import { PiiCryptoModule } from "./common/pii-crypto.module";
 import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
 import { PushModule } from "./adapters/push/push.module";
@@ -28,6 +29,8 @@ import { UploadsModule } from "./uploads/uploads.module";
 @Module({
   imports: [
     ConfigModule,
+    // @Global PII at-rest crypto (national-ID encrypt/decrypt + dedup hash) — injectable app-wide.
+    PiiCryptoModule,
     // Latency/SLO metrics (@Global) — MetricsService is injectable app-wide with no per-module import.
     ObservabilityModule,
     // Client RUM ingest (POST /client-metrics) — consumes the @Global MetricsService.

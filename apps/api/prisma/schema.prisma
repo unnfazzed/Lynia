@@ -118,7 +118,11 @@ model Profile {
   lastName        String    @map("last_name")
   phone           String    @unique
   email           String?
+  // National ID (LR8): `idNumber` now holds AES-GCM ciphertext (PiiCryptoService, `v1:` prefix);
+  // `idNumberHash` is the deterministic HMAC used as the equality key for duplicate-ID detection, so
+  // the raw number is never the lookup key. Legacy rows stay plaintext until the backfill runs.
   idNumber        String?   @map("id_number")
+  idNumberHash    String?   @map("id_number_hash")
   photoUrl        String?   @map("photo_url")
   phoneVerifiedAt DateTime? @map("phone_verified_at")
   ordersCount     Int       @default(0) @map("orders_count")
@@ -133,6 +137,7 @@ model Profile {
   ratingsGiven    Rating[]      @relation("ratingBy")
   deviceTokens    DeviceToken[]
 
+  @@index([idNumberHash])
   @@map("profiles")
 }
 

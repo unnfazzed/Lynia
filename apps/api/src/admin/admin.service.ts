@@ -11,6 +11,7 @@ import {
   TERMINAL_STATUSES,
 } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -99,6 +100,7 @@ export class AdminService {
   // provided via TrackingModule (AdminModule imports it) and used for best-effort post-commit WS pushes.
   constructor(
     private readonly prisma: PrismaService,
+    private readonly pii: PiiCryptoService,
     private readonly gateway?: TrackingGateway,
   ) {}
 
@@ -219,7 +221,7 @@ export class AdminService {
         idVerified: true,
         duplicateIdFlag: true,
         updatedAt: true,
-        profile: { select: { firstName: true, lastName: true, phone: true, idNumber: true } },
+        profile: { select: { firstName: true, lastName: true, phone: true, idNumber: true, idNumberHash: true } },
       },
     });
     if (!rider) return null;
@@ -229,10 +231,10 @@ export class AdminService {
     // SIM can re-onboard under the same ID). Recomputed here rather than trusting the become-rider
     // snapshot: a colliding account may have been created, edited or deleted since. Phones are masked
     // (A-03) — the reviewer matches on the ID, not the phone.
-    const duplicateIdAccounts = rider.profile.idNumber
+    const duplicateIdAccounts = rider.profile.idNumberHash
       ? (
           await this.prisma.profile.findMany({
-            where: { idNumber: rider.profile.idNumber, id: { not: rider.profileId } },
+            where: { idNumberHash: rider.profile.idNumberHash, id: { not: rider.profileId } },
             select: {
               id: true,
               firstName: true,
@@ -260,7 +262,8 @@ export class AdminService {
       id: rider.profileId,
       name: `${rider.profile.firstName} ${rider.profile.lastName}`.trim(),
       phone: maskPhone(rider.profile.phone),
-      idNumber: rider.profile.idNumber,
+      // Decrypt for the reviewer — the KYC review is the one place the full national ID is shown (LR8).
+      idNumber: this.pii.decryptId(rider.profile.idNumber),
       bike: rider.bikeReg,
       status: rider.kycStatus,
       kycRef: rider.kycRef,

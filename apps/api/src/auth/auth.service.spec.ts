@@ -2,10 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { AuthService } from "./auth.service";
 import { ConsoleOtpSender } from "./otp-sender";
 import { InMemoryOtpStore } from "./otp-store";
 import { TokenService } from "./token.service";
+
+/** Real crypto with a fixed test key so encrypt/decrypt + hashId are deterministic in the assertions. */
+const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env);
 
 /**
  * AuthService branch coverage. Uses the real TokenService (hashing/JWT) and the real
@@ -37,6 +41,7 @@ function make(env: Env, prisma: Partial<Record<string, unknown>>) {
     store,
     new ConsoleOtpSender(),
     metrics,
+    pii,
   );
   return { svc, store, metrics };
 }
@@ -172,7 +177,10 @@ describe("AuthService.updateProfile", () => {
       },
     });
     await svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-123456-A-42" });
-    expect(written).toMatchObject({ firstName: "Chipo", lastName: "Marufu", idNumber: "63-123456-A-42" });
+    // The raw national ID is never persisted: id_number is ciphertext + a dedup hash (LR8).
+    expect(written).toMatchObject({ firstName: "Chipo", lastName: "Marufu", idNumberHash: pii.hashId("63-123456-A-42") });
+    expect(pii.isEncrypted(written?.idNumber as string)).toBe(true);
+    expect(pii.decryptId(written?.idNumber as string)).toBe("63-123456-A-42");
   });
 
   it("leaves idNumber untouched on a name-only update (never clears a stored value)", async () => {

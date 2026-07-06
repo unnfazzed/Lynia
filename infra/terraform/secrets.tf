@@ -30,6 +30,10 @@ locals {
     DATABASE_URL       = local.database_url
     REDIS_URL          = local.redis_url
     JWT_SIGNING_SECRET = random_password.jwt.result
+    # At-rest encryption key for national IDs (LR8). The API refuses to boot in production without a
+    # strong value, so it is generated + stored here alongside the JWT secret. Rotating it requires
+    # re-encrypting existing rows (decrypt-with-old → encrypt-with-new) — do not rotate casually.
+    PII_ENCRYPTION_KEY = random_password.pii.result
   }
 
   # When TLS is on, inject the managed server CA so the client can validate the connection even if the
@@ -45,6 +49,11 @@ locals {
 resource "random_password" "jwt" {
   length  = 48
   special = false # base62 — avoids any quoting/escaping surprises downstream
+}
+
+resource "random_password" "pii" {
+  length  = 48
+  special = false # base62 — HKDF-derived into the AES + HMAC keys by PiiCryptoService
 }
 
 resource "google_secret_manager_secret" "runtime" {

@@ -11,6 +11,7 @@ const prodBase = {
   NODE_ENV: "production",
   REDIS_URL: "redis://localhost:6379",
   JWT_SIGNING_SECRET: "a-very-long-unique-production-secret-value-32+",
+  PII_ENCRYPTION_KEY: "a-very-long-unique-production-pii-key-value-32+",
   OTP_CHANNEL: "whatsapp",
   KYC_PROVIDER: "didit",
 } as NodeJS.ProcessEnv;
@@ -108,6 +109,28 @@ describe("loadEnv — production JWT-secret boot-guard", () => {
       TOKEN_HASH_SECRET: "a-strong-dedicated-hash-secret-0123456789",
     });
     expect(env.TOKEN_HASH_SECRET).toBeDefined();
+  });
+});
+
+describe("loadEnv — production PII-encryption-key boot-guard", () => {
+  it("rejects the dev-default PII key in production (encrypting under a public key ≈ plaintext)", () => {
+    expect(() =>
+      loadEnv({ ...prodBase, PII_ENCRYPTION_KEY: "dev-insecure-pii-key-change-me-please" }),
+    ).toThrow(/PII_ENCRYPTION_KEY/);
+  });
+
+  it("rejects a too-short PII key (<32 chars) in production", () => {
+    expect(() => loadEnv({ ...prodBase, PII_ENCRYPTION_KEY: "short-pii-key-0123456789" })).toThrow(
+      /PII_ENCRYPTION_KEY/,
+    );
+  });
+
+  it("accepts a strong unique PII key in production", () => {
+    expect(loadEnv(prodBase).PII_ENCRYPTION_KEY).toBe("a-very-long-unique-production-pii-key-value-32+");
+  });
+
+  it("keeps the PII key optional (defaulted) outside production", () => {
+    expect(loadEnv(base).PII_ENCRYPTION_KEY).toBe("dev-insecure-pii-key-change-me-please");
   });
 });
 
