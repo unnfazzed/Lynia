@@ -180,7 +180,10 @@ export class IssuesService {
    * Ops resolves an issue. In ONE transaction: mark the issue resolved (+ resolution, note, resolver,
    * timestamp), apply the resolution side-effect, and write the audit row — so the state change, its
    * consequence, and the record commit atomically or not at all.
-   *   refund         → a Refund row (orderId, riderId, amount); the settlement agent nets it off (A-06).
+   *   refund         → a Refund row (orderId, riderId, amount) as a durable ledger of what the rider
+   *                    owes. Ops repay the customer out-of-band today; automatic netting off the rider's
+   *                    settlement is deferred until the commission/settlement infra ships (A-06), which
+   *                    will consume these rows. Nothing reads Refund yet — intentional, not a dead write.
    *   rider_strike   → increment the rider's cancelStrikes toward RIDER_STRIKE_LIMIT (inline tx.rider.update).
    *   close_no_action→ no side-effect.
    */
@@ -210,8 +213,8 @@ export class IssuesService {
       if (claimed.count === 0) throw new ConflictException("This issue is already resolved");
 
       if (body.resolution === "refund") {
-        // A refund is owed to the customer and netted off the rider's settlement — so it needs the
-        // order's rider. refundAmount is contract-guaranteed present for a refund.
+        // A refund is owed to the customer and (once settlement billing is live) netted off the rider's
+        // settlement — so the row needs the order's rider. refundAmount is contract-guaranteed for a refund.
         const order = await tx.order.findUnique({ where: { id: issue.orderId }, select: { riderId: true } });
         if (!order?.riderId) throw new BadRequestException("Can't refund an order with no assigned rider");
         await tx.refund.create({
