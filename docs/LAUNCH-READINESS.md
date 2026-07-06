@@ -58,13 +58,15 @@ residual risk is concentrated:
 
 ## 2. The launch scorecard
 
+> **Status legend:** ⬜ not started · 🔍 audited — findings open · 🛠️ fixes landed, gate not fully closed · ✅ closed. **Rounds 1–2 executed — see §6.**
+
 | ID | Track | Gate | Owner | Status |
 |----|-------|------|-------|--------|
-| LR1 | Eng | Full-surface authorization matrix + HTTP-level authz test suite | agent | ⬜ |
-| LR2 | Eng | Launch-mode boot guard (QA bypasses provably off) | agent | ⬜ |
-| LR3 | Eng | Abuse hardening: global throttling, exception filter, payload caps | agent | ⬜ |
-| LR4 | Eng | Secrets & supply-chain sweep + branch protection | agent + founder | ⬜ |
-| LR5 | Eng | Money-path re-audit + settlement auto-pause scheduler | agent | ⬜ |
+| LR1 | Eng | Full-surface authorization matrix + HTTP-level authz test suite | agent | 🛠️ IDOR/ban fixed (on `main`); **HTTP e2e authz suite landed**; full-matrix expansion TODO |
+| LR2 | Eng | Launch-mode boot guard (QA bypasses provably off) | agent | ✅ `main`'s prod env-guard rejects default JWT secret + console OTP + test-phones + stub KYC |
+| LR3 | Eng | Abuse hardening: global throttling, exception filter, payload caps | agent | 🛠️ Redis throttle (`main`) + **exception filter + 1 MB body cap** (this branch) |
+| LR4 | Eng | Secrets & supply-chain sweep + branch protection | agent + founder | 🛠️ `main` CI: pnpm-audit + gitleaks + codeql; branch protection (founder) pending |
+| LR5 | Eng | Money-path re-audit + settlement auto-pause scheduler | agent | 🛠️ prepaid per-ride model (`main`, read-only); admin fare/refund/cancel/ban 400s **fixed** (R2) |
 | LR6 | Eng | Chaos drills: Redis / SQL / vendor outage / deploy-mid-delivery | agent + founder | ⬜ |
 | LR7 | Eng | Deferred infra hardening executed + backup/restore drill | founder (agent-prepped) | ⬜ |
 | LR8 | Eng | PII/data-protection review (retention, encryption, ZW CDPA) | agent + founder | ⬜ |
@@ -77,7 +79,7 @@ residual risk is concentrated:
 | LR15 | Perf | Cost model at 1× / 5× / 20× envelope | agent | ⬜ |
 | LR16 | UI | On-device `/qa`: dev build, maps, FCM, GPS degradation, bg/resume | founder (device) + agent | ⬜ |
 | LR17 | UI | Real-network pass: low-end Android, 3G/EDGE, offline honesty | founder (device) + agent | ⬜ |
-| LR18 | UI | Journey audits ×3 (customer / rider / admin) — error-state honesty | agent | ⬜ |
+| LR18 | UI | Journey audits ×3 (customer / rider / admin) — error-state honesty | agent | 🛠️ mobile auction + rider-job honest error+retry **shipped**; admin dead-refund-write flagged |
 | LR19 | UI | Design-system adherence + accessibility (TalkBack, scaling, AA) | agent + device | ⬜ |
 | LR20 | UI | Crash telemetry + store readiness (listing, privacy, data-safety) | agent + founder | ⬜ |
 | LR21 | All | Go/no-go: QA off, vendors on, one clean end-to-end real delivery | founder | ⬜ |
@@ -452,6 +454,62 @@ proof run is green).
 - [ ] Restore drill done within the target RTO; backups verified current.
 - [ ] Play Store track approved; crash telemetry receiving from the release build.
 - [ ] Rollback decision pre-agreed: what metric/incident triggers pausing signups vs full rollback.
+
+---
+
+## 6. Round log
+
+> Each round: verifiable gates + an adversarial audit fan-out, findings independently verified before
+> they become fix tasks, fixes land with a regression test. Loop until two consecutive clean rounds.
+
+### Round 1 — 2026-07-06
+
+Audited LR1–LR5 + LR18 with adversarial verification. Found **7 shipping-blockers under a green CI**:
+two IDOR (order snapshot leaked live GPS/parcel to any authenticated non-party; offers list exposed
+the bid sheet + rider PII), a mid-session ban bypass, a broken admin mutation path, an
+error-swallowing admin modal, a default-JWT-secret boot gap, and no launch guard for the QA bypasses.
+Fixed across 6 parallel lanes; an eng+design review then caught 3 more (a cash-enum bug, a
+WS-throttler regression, a launch-guard gap), all fixed.
+
+**Convergence note:** while this branch was in review, `main` **independently fixed the same IDOR + ban
+issues** (its merged `codebase-bug-review` + `security` branches), added its **own Redis-backed
+throttle guard** and a **stricter production env boot-guard** (rejects the default/weak JWT secret,
+console OTP, `OTP_TEST_PHONES`, and stub KYC in prod — which closes LR2 more cleanly than a separate
+flag), and **replaced the weekly settlement model** with prepaid per-ride commission. So Round 1's
+fixes are largely **already on `main`** by a different hand — the campaign's value was confirming the
+holes were real, and it converged with the parallel work.
+
+**Rebased onto `main`.** Rather than merge a now-redundant branch (it would have re-introduced the old
+settlement model + a duplicate throttler), this branch was rebased onto current `main` and carries only
+what `main` still lacks:
+- **Global exception filter** (`AllExceptionsFilter`, `APP_FILTER`) — safe generic 500 + correlation
+  id, no stack/internal leak. (`main` had none.)
+- **1 MB request-body cap** in `main.ts` (rawBody KYC-HMAC path intact).
+- **HTTP-level authz e2e suite** (`*-authz.e2e.spec.ts`, supertest, infra-free) — locks in `main`'s
+  IDOR fixes: order-snapshot stranger→403/party→200, offers-list non-owner→403, AdminGuard, logout.
+
+### Round 2 — 2026-07-06 (on `main`'s expanded surface)
+
+Adversarial audit of `main`'s **new** code (trust/safety Issues/Reports/SOS modules, prepaid
+commission, the new throttle guard, duplicate-ID KYC). The T&S modules audited **clean** (JWT identity,
+server-derived subjects, `ParseUUIDPipe`, admin guards, CAS on `issues.resolve`). The real bugs were the
+recurring **admin body-shape class** — the console posts the audit envelope `{action,target,reasonCode}`
+but the endpoints bind `{reason}`/`{agreedFare}`/`{refundAmount}`:
+
+- **Every destructive admin mutation 400'd** — cancel, fare, suspend, ban (only `lift` worked, by
+  accident via `ReasonOptional`), and the dispute **refund**. Ops could not correct a fare, cancel an
+  order, suspend/ban a rider, or record a refund through the console. **All fixed**; the refund body is
+  now typed against the shared `ResolveIssueRequest`, so this class is a **compile error** going forward.
+  *(Audit reported fare+refund; verifying against the code found the wider cancel/suspend/ban set too.)*
+- **Mobile error-honesty** re-applied on `main`'s screens (auction + rider-job → honest error+retry).
+- **Flagged, not silently changed (needs a product decision):** dispute **refund rows are dead writes**
+  — nothing consumes them since the settlement rewrite went read-only, yet the console copy still
+  promises "netted off the rider's next settlement." Either wire refund consumption or make the copy
+  honest. **PII note:** national IDs are stored/compared in plaintext (duplicate-ID flag) — an LR8 item.
+
+**Verification (local, current `main` + this branch):** typecheck ✅ 5/5 · build ✅ · **API 496 tests**
+· **mobile 65 tests**. Next: a **Round 3** verify pass (loop-until-dry), then the performance track
+(LR9–LR15, founder infra).
 
 ---
 
