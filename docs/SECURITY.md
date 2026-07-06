@@ -181,6 +181,31 @@ Priorities: **P0** = do before/at the top of the next sprint (perimeter & critic
 this sprint; **P2** = next sprint; **P3** = ongoing hardening. Each item is concrete enough to
 turn into a ticket, with the file to change and the acceptance test.
 
+### Implementation status
+
+Much of this roadmap has now **landed in code** on this branch. Legend: ✅ implemented &
+test-verified here · 🟨 implemented as code, needs `terraform apply` / a CI run / founder wiring to
+take effect · ⬜ deferred (needs a vendor/platform not available in-repo).
+
+| Item | Status | Notes |
+|---|---|---|
+| P0-1 JWT secret fail-closed | ✅ | `config/env.ts` prod boot-guard + tests |
+| P0-2 Admin console auth | 🟨 | Fail-closed proxy-auth middleware shipped (`apps/admin/middleware.ts`); IAP/SSO+MFA is the founder step. Audit-log write path already existed (A-01) |
+| P0-3 WAF / Cloud Armor | 🟨 | `infra/terraform/armor.tf` + backend attachment; needs `terraform apply` |
+| P1-1 CI security scanning | 🟨 | `ci.yml` audit+gitleaks job, `codeql.yml`, `dependabot.yml`, minimized perms; runs on next CI |
+| P1-2 Global rate limiting | ✅ | `ThrottleGuard` + `@Throttle` on refresh/order/offer/select + tests |
+| P1-3 Edge headers / CORS / strict bodies | ✅ | `security-headers.middleware.ts`, `cors.ts` allow-list (HTTP + WS), strict auth zod + tests |
+| P1-4 Log redaction | ✅ | OTP senders mask phone / drop code + tests |
+| P1-5 IDOR sweep | ✅ (verified) | Ownership already enforced service-side (`getSnapshot(orderId, callerId)` etc.); no gap found |
+| P2-1 Redis TLS | 🟨 | Opt-in via `redis_tls_enabled` (default off) + TLS-aware client; coordinated rollout |
+| P2-1 Private Cloud SQL | ⬜ | Deferred — needs the CI migration path moved off the public IP first (documented risk) |
+| P2-2 GCS CORS tighten | 🟨 | Default flipped to `[]` (deny) in `variables.tf`; needs apply |
+| P2-3 Pin JWT algorithm | ✅ | `token.service.ts` HS256 pinned + alg:none-rejection test |
+| P2-4 Launch fail-closed guards | ✅ | `config/env.ts` rejects console OTP / test-phones / KYC-stub in prod + tests |
+| P3-* Cert pinning, CMEK, rotation, pentest | ⬜ | Ongoing / founder + platform work |
+
+The subsections below keep the full design detail (the "what & why & acceptance test") for each item.
+
 ### P0 — Critical (close first)
 
 **P0-1 · Fail closed on a weak JWT signing secret**

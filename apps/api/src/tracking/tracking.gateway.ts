@@ -10,7 +10,6 @@ import {
   WebSocketServer,
 } from "@nestjs/websockets";
 import { createAdapter } from "@socket.io/redis-adapter";
-import IORedis from "ioredis";
 import { Server, Socket } from "socket.io";
 import {
   type BidExpiredEvent,
@@ -25,6 +24,8 @@ import {
   WS_EVENTS,
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
+import { corsOriginResolver } from "../common/cors";
+import { createRedisClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
@@ -61,7 +62,10 @@ interface CoalesceState {
  * Live tracking (ET4). WS is best-effort PUSH only — GET /orders/:id (lane C) stays the source of
  * truth on reconnect. The Redis adapter fans events out across API instances.
  */
-@WebSocketGateway({ cors: { origin: "*" } })
+// CORS mirrors the HTTP allow-list (common/cors.ts): native clients (no Origin) connect; browser
+// origins must be allow-listed via CORS_ALLOWED_ORIGINS. Replaces the previous wildcard `origin: "*"`.
+// JWT is still verified on the handshake regardless — this is defense in depth at the transport edge.
+@WebSocketGateway({ cors: { origin: corsOriginResolver() } })
 export class TrackingGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
 {
@@ -110,7 +114,7 @@ export class TrackingGateway
 
   afterInit(server: Server): void {
     if (this.env.REDIS_URL) {
-      const pub = new IORedis(this.env.REDIS_URL, { maxRetriesPerRequest: null });
+      const pub = createRedisClient(this.env.REDIS_URL);
       const sub = pub.duplicate();
       server.adapter(createAdapter(pub, sub));
       this.logger.log("Socket.IO Redis adapter enabled");

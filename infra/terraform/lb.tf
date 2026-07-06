@@ -49,6 +49,10 @@ resource "google_compute_backend_service" "api" {
   load_balancing_scheme = "EXTERNAL_MANAGED"
   protocol              = "HTTP"
 
+  # Cloud Armor WAF + per-IP rate limiting at the edge (armor.tf). Without this the public backend had
+  # no perimeter protection — floods and injection probes reached Cloud Run directly.
+  security_policy = google_compute_security_policy.api.id
+
   # NO timeout_sec here: GCP rejects it on a backend service backed by a SERVERLESS
   # NEG ("Timeout sec is not supported for a backend service with Serverless network
   # endpoint groups"). For serverless backends the effective request/stream deadline —

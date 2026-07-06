@@ -1,3 +1,4 @@
+import jwt from "jsonwebtoken";
 import { describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
 import { TokenService } from "./token.service";
@@ -10,6 +11,12 @@ describe("TokenService", () => {
     const token = tokens.signAccess("profile-1", "rider");
     const claims = tokens.verifyAccess(token);
     expect(claims).toEqual({ sub: "profile-1", role: "rider" });
+  });
+
+  it("rejects an unsigned alg:none token (algorithm is pinned to HS256)", () => {
+    // A classic algorithm-confusion attempt: forge claims with alg:none and no signature.
+    const forged = jwt.sign({ role: "admin" }, "", { subject: "attacker", algorithm: "none" });
+    expect(() => tokens.verifyAccess(forged)).toThrow();
   });
 
   it("rejects a token signed with a different secret", () => {

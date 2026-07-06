@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } f
 import { AcceptDisclaimerRequest, CreateOrderRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { OrdersService } from "./orders.service";
 
@@ -12,7 +13,10 @@ import { OrdersService } from "./orders.service";
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
+  // Cap order creation per caller/IP — an authenticated user shouldn't be able to flood the offer
+  // board (each order fans out a push to nearby riders, so this is also a spam/cost control).
   @Post()
+  @Throttle({ limit: 20, windowSec: 60, keyPrefix: "order-create" })
   create(
     @Body(new ZodBody(CreateOrderRequest)) body: CreateOrderRequest,
     @CurrentUser() customerId: string,

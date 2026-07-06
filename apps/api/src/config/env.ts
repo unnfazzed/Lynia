@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+/** The dev/CI default JWT secret. Booting production with this (or any short secret) means tokens are
+ *  signed with a publicly-known key → universal forgery, so the production boot-guard rejects it. */
+export const INSECURE_JWT_DEFAULT = "dev-insecure-secret-change-me-please";
+/** Minimum entropy we require of a production signing secret (bytes ≈ chars for the ASCII secrets we mint). */
+const MIN_PROD_SECRET_LEN = 32;
+
 /** Optional URL that treats an empty string as absent. The deploy injects some optional vars with an
  *  empty value when their repo Variable is unset (e.g. `--set-env-vars DIDIT_CALLBACK_URL=`); "" is not
  *  `undefined`, so a bare `.url().optional()` would reject it and crash boot. Coerce "" → undefined. */
@@ -30,7 +36,7 @@ export const envSchema = z.object({
   // Optional project override. On Cloud Run ADC supplies the project, so this is usually unset.
   FCM_PROJECT_ID: z.string().optional(),
   // --- Auth (lane B) ---
-  JWT_SIGNING_SECRET: z.string().min(16).default("dev-insecure-secret-change-me-please"),
+  JWT_SIGNING_SECRET: z.string().min(16).default(INSECURE_JWT_DEFAULT),
   ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
@@ -63,19 +69,55 @@ export const envSchema = z.object({
   DIDIT_WORKFLOW_ID: z.string().optional(),
   DIDIT_WEBHOOK_SECRET: z.string().optional(),
   DIDIT_CALLBACK_URL: optionalUrl,
+  // Explicit browser-origin allow-list for HTTP + WebSocket CORS (comma-separated). Empty = deny all
+  // cross-origin (native mobile clients send no Origin and are unaffected; a stray browser origin is
+  // refused). Set to the admin console / any browser client origins in prod. See common/cors.ts.
+  CORS_ALLOWED_ORIGINS: z.string().default(""),
   DIDIT_BASE_URL: z.string().url().default("https://verification.didit.me"),
 }).superRefine((env, ctx) => {
+  // The boot-guards below fail LOUD in production rather than let the API come up in an insecure or
+  // half-configured state. Each stays permissive in dev/test so local work and CI are unaffected.
+  const reject = (path: string, message: string): void =>
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+
   // Boot-guard: several consumers silently degrade to in-memory without REDIS_URL. Critically the
   // OTP/rate-limit store (auth/otp-store.ts InMemoryOtpStore is per-process), so on multi-instance
   // prod the brute-force cap is multiplied per instance, and the Socket.IO adapter is per-instance.
-  // Fail the boot loudly rather than degrade silently. Stays optional in dev/test.
   if (env.NODE_ENV === "production" && !env.REDIS_URL) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["REDIS_URL"],
-      message:
-        "REDIS_URL is required in production — the in-memory OTP/rate-limit store and Socket.IO adapter are per-instance without it",
-    });
+    reject(
+      "REDIS_URL",
+      "REDIS_URL is required in production — the in-memory OTP/rate-limit store and Socket.IO adapter are per-instance without it",
+    );
+  }
+
+  if (env.NODE_ENV === "production") {
+    // A publicly-known or low-entropy JWT secret means anyone can forge access tokens (incl. admin).
+    // Reject the shipped default and anything below MIN_PROD_SECRET_LEN — a missing Secret Manager
+    // value that falls back to the default must NOT boot.
+    if (env.JWT_SIGNING_SECRET === INSECURE_JWT_DEFAULT || env.JWT_SIGNING_SECRET.length < MIN_PROD_SECRET_LEN) {
+      reject(
+        "JWT_SIGNING_SECRET",
+        `JWT_SIGNING_SECRET must be a unique secret of at least ${MIN_PROD_SECRET_LEN} chars in production (the dev default is rejected) — set it from Secret Manager`,
+      );
+    }
+    // The console channel logs codes and pairs with the devCode escape hatch; never in production.
+    if (env.OTP_CHANNEL === "console") {
+      reject("OTP_CHANNEL", "OTP_CHANNEL=console is a dev-only channel and must not be used in production");
+    }
+    // OTP_TEST_PHONES returns the live OTP in the response for listed numbers — a takeover vector if
+    // it ever leaks into prod. Must be empty in production (it is only honoured on the console channel,
+    // which is itself now rejected above, but this guards it independently as defense in depth).
+    if (env.OTP_TEST_PHONES.trim() !== "") {
+      reject("OTP_TEST_PHONES", "OTP_TEST_PHONES must be empty in production — it exposes live OTP codes in the response");
+    }
+    // The stub KYC provider auto-passes verification in auto mode — shipping it to prod would verify
+    // every rider without any ID check. Require the real vendor (or manual admin review).
+    if (env.KYC_PROVIDER === "stub" && env.KYC_MODE === "auto") {
+      reject(
+        "KYC_PROVIDER",
+        "KYC_PROVIDER=stub auto-passes verification; production must use the real vendor (KYC_PROVIDER=didit) or manual review (KYC_MODE=manual)",
+      );
+    }
   }
 });
 

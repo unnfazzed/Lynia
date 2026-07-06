@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
 import { PushModule } from "./adapters/push/push.module";
@@ -16,6 +16,7 @@ import { ObservabilityModule } from "./observability/metrics.service";
 import { OffersModule } from "./offers/offers.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { ThrottleGuard } from "./common/throttle.guard";
 import { ReportsModule } from "./reports/reports.module";
 import { RidersModule } from "./riders/riders.module";
 import { SettlementsModule } from "./settlements/settlements.module";
@@ -62,6 +63,9 @@ import { UploadsModule } from "./uploads/uploads.module";
   providers: [
     // Time every HTTP request into http_request_duration_ms (route template + status class labels).
     { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
+    // Global per-route rate limiting. No-op unless a handler carries @Throttle(...) metadata; backed
+    // by the Redis fixed-window counter exported from AuthModule (OTP_STORE).
+    { provide: APP_GUARD, useClass: ThrottleGuard },
   ],
 })
 export class AppModule {}

@@ -15,19 +15,31 @@ locals {
     google_sql_database_instance.main.connection_name,
   )
 
-  # Memorystore AUTH: password-only (no username), per Redis AUTH semantics.
+  # Memorystore AUTH: password-only (no username), per Redis AUTH semantics. Scheme is rediss:// only
+  # when in-transit TLS is enabled (var.redis_tls_enabled), matching the instance's encryption mode.
+  redis_scheme = var.redis_tls_enabled ? "rediss" : "redis"
   redis_url = format(
-    "redis://:%s@%s:%d",
+    "%s://:%s@%s:%d",
+    local.redis_scheme,
     google_redis_instance.main.auth_string,
     google_redis_instance.main.host,
     google_redis_instance.main.port,
   )
 
-  secret_values = {
+  base_secret_values = {
     DATABASE_URL       = local.database_url
     REDIS_URL          = local.redis_url
     JWT_SIGNING_SECRET = random_password.jwt.result
   }
+
+  # When TLS is on, inject the managed server CA so the client can validate the connection even if the
+  # CA isn't in the base image's trust store (common/redis.ts reads REDIS_CA_CERT). server_ca_certs is
+  # only populated once transit encryption is enabled, so this key is conditional.
+  redis_ca_secret = var.redis_tls_enabled ? {
+    REDIS_CA_CERT = google_redis_instance.main.server_ca_certs[0].cert
+  } : {}
+
+  secret_values = merge(local.base_secret_values, local.redis_ca_secret)
 }
 
 resource "random_password" "jwt" {

@@ -19,13 +19,14 @@ export class TokenService {
     this.accessTtl = env.ACCESS_TTL_SECONDS;
   }
 
-  /** Short-lived access JWT (HS256). role is checked server-side per request, not trusted blindly. */
+  /** Short-lived access JWT. HS256 is pinned on both sign and verify — pinning the verify algorithm
+   *  closes any algorithm-confusion vector (a token must be HS256, never "none" or an asymmetric alg). */
   signAccess(sub: string, role: string): string {
-    return jwt.sign({ role }, this.secret, { subject: sub, expiresIn: this.accessTtl });
+    return jwt.sign({ role }, this.secret, { subject: sub, expiresIn: this.accessTtl, algorithm: "HS256" });
   }
 
   verifyAccess(token: string): AccessClaims {
-    const payload = jwt.verify(token, this.secret);
+    const payload = jwt.verify(token, this.secret, { algorithms: ["HS256"] });
     if (typeof payload === "string" || typeof payload.sub !== "string" || typeof payload.role !== "string") {
       throw new Error("Malformed access token claims");
     }
