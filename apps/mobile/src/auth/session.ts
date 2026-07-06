@@ -33,8 +33,30 @@ export async function clearSession(): Promise<void> {
 // survives a remount/relaunch (the server keeps only the hash and can't re-send it).
 const codeKey = (orderId: string): string => `lynia.deliveryCode.${orderId}`;
 
+// SecureStore can't enumerate keys, so we keep a tiny index of order ids that have a stored code.
+// That lets sign-out delete every per-order code on a shared device (S1). Best-effort like the rest.
+const CODE_INDEX_KEY = "lynia.deliveryCode.index";
+
+async function readCodeIndex(): Promise<string[]> {
+  try {
+    const raw = await SecureStore.getItemAsync(CODE_INDEX_KEY);
+    if (!raw) return [];
+    const v = JSON.parse(raw) as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function saveDeliveryCode(orderId: string, code: string): Promise<void> {
   await SecureStore.setItemAsync(codeKey(orderId), code);
+  // Record the order id so sign-out can clear it later — best-effort, never block the code save.
+  try {
+    const idx = await readCodeIndex();
+    if (!idx.includes(orderId)) await SecureStore.setItemAsync(CODE_INDEX_KEY, JSON.stringify([...idx, orderId]));
+  } catch {
+    /* best-effort */
+  }
 }
 export async function loadDeliveryCode(orderId: string): Promise<string | null> {
   return SecureStore.getItemAsync(codeKey(orderId));
@@ -79,6 +101,29 @@ export async function loadDisclaimerAccepted(): Promise<string | null> {
     return await SecureStore.getItemAsync(DISCLAIMER_KEY);
   } catch {
     return null;
+  }
+}
+
+// The saved order-compose draft (home.tsx owns the write under this same key). Named here so sign-out
+// can clear it — on a shared device the next user must not rehydrate the previous user's addresses.
+const DRAFT_KEY = "lynia.orderDraft";
+
+// Wipe all per-device, per-user state that must NOT survive a sign-out on a shared device (S1): the
+// saved order draft (addresses), the accepted-disclaimer flag (so the next user still sees the
+// liability gate), the role preference, and every stored one-time delivery code. The session key is
+// cleared separately by `clearSession()`. Best-effort — a native failure must never trap sign-out.
+export async function clearDeviceState(): Promise<void> {
+  try {
+    const codes = await readCodeIndex();
+    await Promise.all([
+      SecureStore.deleteItemAsync(DRAFT_KEY),
+      SecureStore.deleteItemAsync(DISCLAIMER_KEY),
+      SecureStore.deleteItemAsync(ROLE_PREF_KEY),
+      SecureStore.deleteItemAsync(CODE_INDEX_KEY),
+      ...codes.map((id) => SecureStore.deleteItemAsync(codeKey(id))),
+    ]);
+  } catch {
+    /* best-effort */
   }
 }
 

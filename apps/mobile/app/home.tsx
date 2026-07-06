@@ -1,6 +1,6 @@
 import { CreateOrderRequest, quoteFare, tokens } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
@@ -86,9 +86,52 @@ async function clearDraft(): Promise<void> {
   }
 }
 
+// C5: a re-broadcast from the order screen carries THAT order's route/landmarks/items/price in as
+// route params (`rb…`), so we can prefill the compose form instead of dumping the user on a blank one.
+// Reuses the FormDraft shape the draft-restore path already consumes. Returns null when the params
+// aren't a valid re-broadcast (normal home entry) so we fall back to the stored draft.
+type RebroadcastParams = Partial<Record<
+  "rbPickupLat" | "rbPickupLng" | "rbPickupLandmark" | "rbDropLat" | "rbDropLng" | "rbDropLandmark" | "rbItems" | "rbFare",
+  string | string[]
+>>;
+function first(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+function draftFromParams(p: RebroadcastParams): FormDraft | null {
+  const pLat = Number(first(p.rbPickupLat));
+  const pLng = Number(first(p.rbPickupLng));
+  const dLat = Number(first(p.rbDropLat));
+  const dLng = Number(first(p.rbDropLng));
+  if (![pLat, pLng, dLat, dLng].every(Number.isFinite)) return null;
+  let items: ItemRow[] = [emptyItem()];
+  try {
+    const parsed = JSON.parse(first(p.rbItems) ?? "[]") as ItemRow[];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      items = parsed.slice(0, MAX_ITEMS).map((r) => ({
+        description: (typeof r?.description === "string" ? r.description : "").slice(0, 140),
+        quantity: Math.min(MAX_QTY, Math.max(1, Math.round(Number(r?.quantity) || 1))),
+      }));
+    }
+  } catch {
+    /* malformed items param — fall back to one empty row */
+  }
+  return {
+    pickupPoint: { lat: pLat, lng: pLng },
+    pickupLandmark: first(p.rbPickupLandmark) ?? "",
+    dropPoint: { lat: dLat, lng: dLng },
+    dropLandmark: first(p.rbDropLandmark) ?? "",
+    items,
+    declaredValue: "",
+    proposedFare: first(p.rbFare) ?? "",
+  };
+}
+
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
+  // C5: re-broadcast params from the order screen (rb…). Read once at mount and prefer them over any
+  // stored draft — the customer explicitly asked to re-send THIS order.
+  const rbParams = useLocalSearchParams<RebroadcastParams>();
 
   const [pickupPoint, setPickupPoint] = useState<PickedPoint | null>(null);
   const [pickupLandmark, setPickupLandmark] = useState("");
@@ -157,7 +200,8 @@ export default function HomeScreen(): React.ReactElement {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const draft = await loadDraft();
+      // A re-broadcast (rb… params) wins over the stored draft; otherwise fall back to the last draft.
+      const draft = draftFromParams(rbParams) ?? (await loadDraft());
       if (cancelled) {
         hydrated.current = true;
         return;
@@ -296,7 +340,12 @@ export default function HomeScreen(): React.ReactElement {
   // Landmarks are contract-required too (Waypoint.landmark min 1). They're normally auto-filled
   // from the reverse geocode, but that can fail offline / keyless — same never-fail-Zod rule.
   const landmarksOk = pickupLandmark.trim().length > 0 && dropLandmark.trim().length > 0;
-  const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk;
+  // C10: declaredValue is optional (defaults to 0) but the contract caps it at 150 — validate inline so
+  // a `500` doesn't leave Broadcast enabled only to bounce off a raw server Zod error on a field that's
+  // collapsed out of view. Empty/blank is fine; a set value must be ≤ 150.
+  const declaredValueNum = parseNum(declaredValue);
+  const declaredValueOk = declaredValueNum === null || declaredValueNum <= 150;
+  const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk && declaredValueOk;
 
   const submit = async (): Promise<void> => {
     setError(null);
@@ -471,14 +520,20 @@ export default function HomeScreen(): React.ReactElement {
               onPress={toggleDetails}
               accessibilityRole="button"
               accessibilityState={{ expanded: detailsOpen }}
-              accessibilityLabel="Add details (optional)"
+              // C11: landmarks are contract-required and live in here, so this section can't be labeled
+              // "(optional)". Name it for its contents and, when a landmark is still missing (auto-fill
+              // failed offline / keyless), flag that it's required.
+              accessibilityLabel={landmarksOk ? "Landmarks and details" : "Landmarks and details, landmarks required"}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
                 minHeight: tokens.touchTargetMin,
               }}
             >
-              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Add details (optional)</Text>
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>
+                Landmarks &amp; details
+                {!landmarksOk ? <Text style={{ color: tokens.color.danger, fontWeight: "700" }}> — landmarks required</Text> : null}
+              </Text>
               <Icon name={detailsOpen ? "chevron-down" : "chevron-right"} size={16} color={tokens.color.muted} />
             </Pressable>
 

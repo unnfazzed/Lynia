@@ -288,11 +288,11 @@ describe("AuthService.refresh", () => {
 describe("AuthService.logout", () => {
   it("reports revoked=false when no live session matched", async () => {
     const { svc } = make(baseEnv, { session: { updateMany: async () => ({ count: 0 }) } });
-    expect(await svc.logout("sid")).toEqual({ revoked: false });
+    expect(await svc.logout("sid", "pid")).toEqual({ revoked: false });
   });
 
   it("reports revoked=true when a live session was revoked", async () => {
     const { svc } = make(baseEnv, { session: { updateMany: async () => ({ count: 1 }) } });
-    expect(await svc.logout("sid")).toEqual({ revoked: true });
+    expect(await svc.logout("sid", "pid")).toEqual({ revoked: true });
   });
 });

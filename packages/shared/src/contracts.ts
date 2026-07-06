@@ -57,7 +57,7 @@ export const CreateOrderRequest = z
     note: z.string().max(280).optional(),
     itemPhotoUrl: z.string().url().optional(),
     declaredValue: z.number().nonnegative().max(150), // pilot cap (CONCEPT §3.5)
-    proposedFare: z.number().positive(),
+    proposedFare: z.number().positive().max(100_000).multipleOf(0.01), // sane cap + 2dp (money is NUMERIC(10,2))
     // Pre-broadcast liability disclaimer consent (A1-8). The version the customer accepted; the
     // server stamps the acceptance time on the order. Optional for back-compat with old clients.
     disclaimerVersion: z.string().min(1).max(40).optional(),
@@ -77,7 +77,7 @@ export type CreateOrderRequest = z.infer<typeof CreateOrderRequest>;
 export const MakeOfferRequest = z.object({
   orderId: z.string().uuid(),
   type: z.enum(["accept", "counter"]),
-  offeredFare: z.number().positive(),
+  offeredFare: z.number().positive().max(100_000).multipleOf(0.01), // sane cap + 2dp (money is NUMERIC(10,2))
   etaMinutes: z.number().int().positive().max(180),
 });
 export type MakeOfferRequest = z.infer<typeof MakeOfferRequest>;

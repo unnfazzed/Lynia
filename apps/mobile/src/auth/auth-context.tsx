@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { configureApi } from "../api/client";
-import { clearSession, loadSession, saveSession, type Session } from "./session";
+import { queryClient } from "../query/client";
+import { clearDeviceState, clearSession, loadSession, saveSession, type Session } from "./session";
 
 interface AuthState {
   session: Session | null;
@@ -30,6 +31,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
         ref.current = null;
         setSession(null);
         void clearSession();
+        // A token-expiry sign-out must scrub the previous user's device state too (S1).
+        void clearDeviceState();
+        queryClient.clear();
       },
     });
     void loadSession().then((s) => {
@@ -48,6 +52,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     ref.current = null;
     setSession(null);
     await clearSession();
+    // Shared devices are common in the target market: also clear the previous user's cached queries
+    // and per-device state (draft addresses, disclaimer flag, role, delivery codes) so the next user
+    // doesn't inherit them or skip the liability disclaimer (S1).
+    await clearDeviceState();
+    queryClient.clear();
   };
 
   return <AuthContext.Provider value={{ session, loading, signIn, signOut }}>{children}</AuthContext.Provider>;

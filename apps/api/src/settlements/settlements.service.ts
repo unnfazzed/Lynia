@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { RiderAccountStatus, SETTLEMENT, SettlementStatus, commissionOn } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -216,14 +216,22 @@ export class SettlementsService {
    * netted). Does not auto-lift a `settlement_overdue` suspension: an admin lifts the rider explicitly
    * (POST /admin/riders/:id/lift) so the reinstatement is a deliberate, audited action.
    */
-  async recordPayment(settlementId: string, method: string) {
-    const existing = await this.prisma.settlement.findUnique({ where: { id: settlementId }, select: { id: true } });
-    if (!existing) throw new NotFoundException("Settlement not found");
-    const s = await this.prisma.settlement.update({
-      where: { id: settlementId },
-      data: { status: SettlementStatus.PAID, paidAt: new Date(), method },
+  async recordPayment(settlementId: string, method: string, actor: string) {
+    // P2-4: the one destructive money action must be attributed and idempotent — write the audit row in
+    // the same transaction as the status flip, and reject a re-pay of an already-paid settlement.
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.settlement.findUnique({ where: { id: settlementId }, select: { id: true, status: true } });
+      if (!existing) throw new NotFoundException("Settlement not found");
+      if (existing.status === SettlementStatus.PAID) throw new ConflictException("Settlement is already paid");
+      const s = await tx.settlement.update({
+        where: { id: settlementId },
+        data: { status: SettlementStatus.PAID, paidAt: new Date(), method },
+      });
+      await tx.auditLog.create({
+        data: { actor, action: "settlement.pay", target: settlementId, reasonCode: null, note: `method ${method}` },
+      });
+      return { id: s.id, status: s.status, paidAt: s.paidAt?.toISOString() ?? null, method: s.method };
     });
-    return { id: s.id, status: s.status, paidAt: s.paidAt?.toISOString() ?? null, method: s.method };
   }
 
   /**

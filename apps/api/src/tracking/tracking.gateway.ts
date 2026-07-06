@@ -238,7 +238,11 @@ export class TrackingGateway
   /** Rider leaves the board (go-offline / unmount). */
   @SubscribeMessage(WS_EVENTS.boardLeave)
   async boardLeave(@ConnectedSocket() client: Socket): Promise<{ left: string }> {
-    await client.leave(BOARD_ROOM);
+    // Leave the city-wide room AND every geo-cell room a located subscribe joined (boardSubscribe joins
+    // a 3×3 neighbourhood) — otherwise an offline rider keeps receiving new-order pushes on those rooms.
+    for (const room of client.rooms) {
+      if (room.startsWith("board:geo:") || room === BOARD_ROOM) await client.leave(room);
+    }
     return { left: "board" };
   }
 

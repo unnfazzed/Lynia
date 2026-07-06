@@ -121,6 +121,15 @@ export function confirmDelivery(orderId: string, code: string): Promise<{ orderI
   return apiFetch(`/orders/${orderId}/deliver`, { method: "POST", body: { code } });
 }
 
+/**
+ * Rider marks a post-pickup hand-off as failed → terminal `undelivered` (R1 / INTERFACE-AUDIT C6).
+ * POSTs the reason enum; the server stamps it on the order + frees the rider for the next job, exactly
+ * like a clean delivery. Allowed only on `picked_up` / `en_route_dropoff` — a closed order answers 409.
+ */
+export function markUndelivered(orderId: string, reason: UndeliveredReason): Promise<{ orderId: string; status: "undelivered" }> {
+  return apiFetch(`/orders/${orderId}/undelivered`, { method: "POST", body: { reason } });
+}
+
 export function rateOrder(orderId: string, body: RateRequest): Promise<{ orderId: string; status: "completed" }> {
   return apiFetch(`/orders/${orderId}/rating`, { method: "POST", body });
 }

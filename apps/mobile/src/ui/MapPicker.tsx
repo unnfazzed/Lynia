@@ -22,6 +22,17 @@ export interface PickedPoint {
 /** Harare CBD — the pilot corridor. The map opens here until a pin is set. */
 const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
 
+// GPS fix bound (C9): every REST call is capped at 15s, but `getCurrentPositionAsync` has no timeout of
+// its own and a cold fix can hang forever. Race it against this and fall back to the tap-the-map hint.
+const LOCATE_TIMEOUT_MS = 9_000;
+/** Reject if `p` doesn't settle within `ms` — used to bound the GPS fix so "Locating…" can't hang. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("location-timeout")), ms)),
+  ]);
+}
+
 /**
  * Tap-to-pin location picker (DESIGN.md D-b: map-anchored). Tap the map to drop a pin, drag the pin to
  * fine-tune, or center on the device's GPS. Controlled: it owns no coordinate state, only emits the
@@ -50,6 +61,9 @@ export function MapPicker(props: {
 }): React.ReactElement {
   const mapRef = useRef<MapView>(null);
   const [locating, setLocating] = useState(false);
+  // C8/C9: a one-line reason shown when "Use my location" can't produce a fix (permission denied or a
+  // timed-out GPS lookup) — otherwise the button just flickers "Locating…" and goes silent.
+  const [locateMsg, setLocateMsg] = useState<string | null>(null);
   const height = props.height ?? 200;
 
   const initialRegion: Region = props.value
@@ -92,16 +106,26 @@ export function MapPicker(props: {
   };
 
   const set = (c: LatLng): void => {
+    setLocateMsg(null); // a placed pin resolves the "couldn't locate" hint
     props.onChange({ lat: c.latitude, lng: c.longitude });
     reverseGeocode(c);
   };
 
   const useMyLocation = async (): Promise<void> => {
     setLocating(true);
+    setLocateMsg(null);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (status !== "granted") {
+        // C8: don't fail silently — point the user at the map / Settings.
+        setLocateMsg("Location is off — tap the map to drop your pin, or turn on location in Settings.");
+        return;
+      }
+      // C9: bound the fix so "Locating…" can't hang; a timeout falls through to the catch below.
+      const loc = await withTimeout(
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        LOCATE_TIMEOUT_MS,
+      );
       const region: Region = {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
@@ -111,7 +135,8 @@ export function MapPicker(props: {
       set(region);
       mapRef.current?.animateToRegion(region, 400);
     } catch {
-      /* leave the pin where it is — the user can still tap to place one */
+      // Denied-after-prompt, no GPS, or the timeout — leave any existing pin and point them at the map.
+      setLocateMsg("Couldn't get your location — tap the map to drop your pin.");
     } finally {
       setLocating(false);
     }
@@ -152,6 +177,9 @@ export function MapPicker(props: {
           onPress={() => void useMyLocation()}
           loading={locating}
         />
+      ) : null}
+      {locateMsg ? (
+        <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.danger, marginTop: tokens.space.xs }}>{locateMsg}</Text>
       ) : null}
       <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, marginTop: tokens.space.xs }}>
         {props.value

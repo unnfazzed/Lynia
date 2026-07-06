@@ -1,10 +1,14 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
-import { verifyOtp } from "../src/api/auth";
+import React, { useEffect, useState } from "react";
+import { requestOtp, verifyOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
 import { loadRolePreference } from "../src/auth/session";
 import { Button, ErrorText, Field, Heading, Screen, Sub } from "../src/ui";
+
+// Seconds to wait before a resend is allowed again (C3) — starts ticking on arrival since a code was
+// just sent from the phone screen, and resets after each resend.
+const RESEND_COOLDOWN_S = 30;
 
 export default function VerifyScreen(): React.ReactElement {
   const router = useRouter();
@@ -15,6 +19,32 @@ export default function VerifyScreen(): React.ReactElement {
   const [code, setCode] = useState(prefilled ? (params.devCode as string) : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Resend affordance (C3): a visible cooldown so the user isn't left tapping "Back" when the code
+  // never arrives / expires / locks. `resent` shows a calm confirmation after a successful resend.
+  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_S);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  const resend = async (): Promise<void> => {
+    if (cooldown > 0 || resending || phone.length === 0) return;
+    setError(null);
+    setResending(true);
+    try {
+      await requestOtp(phone);
+      setResent(true);
+      setCooldown(RESEND_COOLDOWN_S);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't resend the code.");
+    } finally {
+      setResending(false);
+    }
+  };
 
   const submit = async (): Promise<void> => {
     setError(null);
@@ -31,7 +61,9 @@ export default function VerifyScreen(): React.ReactElement {
       // Show the role fork once per account (RIDER-JOURNEY-AUDIT R0-4). A returning user who already
       // picked a role goes straight home rather than being re-prompted every sign-in.
       const chosen = await loadRolePreference();
-      router.replace(chosen ? "/home" : "/role");
+      // Route to the saved role's home (mirrors role.tsx's go()): a returning rider lands on the rider
+      // dashboard, a customer on compose, and a brand-new account still sees the role fork (R3).
+      router.replace(chosen === "rider" ? "/rider" : chosen ? "/home" : "/role");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't verify the code.");
     } finally {
@@ -56,6 +88,14 @@ export default function VerifyScreen(): React.ReactElement {
         textContentType="oneTimeCode"
       />
       <Button label="Verify" onPress={submit} loading={busy} disabled={code.trim().length !== 6} />
+      <Button
+        label={cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}
+        variant="ghost"
+        onPress={resend}
+        loading={resending}
+        disabled={cooldown > 0}
+      />
+      {resent && cooldown > 0 ? <Sub>New code sent.</Sub> : null}
       <Button label="Back" variant="ghost" onPress={() => router.back()} />
       <ErrorText message={error} />
     </Screen>

@@ -31,8 +31,8 @@ export class AuthController {
 
   @Post("logout")
   @UseGuards(JwtAuthGuard)
-  logout(@Body(new ZodBody(Logout)) body: z.infer<typeof Logout>) {
-    return this.auth.logout(body.sessionId);
+  logout(@Body(new ZodBody(Logout)) body: z.infer<typeof Logout>, @CurrentUser() profileId: string) {
+    return this.auth.logout(body.sessionId, profileId);
   }
 
   @Get("me")
