@@ -9,6 +9,10 @@ import { TrackingService } from "../tracking/tracking.service";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
 
+/** R8: how far back activeForRider looks for a cancelled-but-collected order to surface the hand-back
+ *  state on reopen (a job the rider still physically holds after a missed `job:cancelled`). One day. */
+const HANDBACK_LOOKBACK_MS = 24 * 60 * 60 * 1_000;
+
 /** Q1 — Launch service corridor: the coverage disc's centre (from policy.ts SERVICE_CORRIDOR). */
 const CORRIDOR_CENTRE: LatLng = { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng };
 
@@ -330,8 +334,20 @@ export class OrdersService {
       orderBy: { updatedAt: "desc" },
       select: { id: true },
     });
-    if (!order) return null;
-    return this.getSnapshot(order.id, riderId);
+    if (order) return this.getSnapshot(order.id, riderId);
+    // R8: a job the rider had already COLLECTED but the customer cancelled while the rider's app was
+    // backgrounded (the `job:cancelled` push was missed) drops out of the active feed — so on reopen the
+    // rider would see "No active job" while still holding the parcel. Surface a recently-cancelled order
+    // this rider had collected so the app can render the hand-back state instead of a dead end. Bounded
+    // to the last day so an old cancellation never resurfaces.
+    const cutoff = new Date(Date.now() - HANDBACK_LOOKBACK_MS);
+    const handback = await this.prisma.order.findFirst({
+      where: { riderId, status: "cancelled", collectedAt: { not: null }, cancelledAt: { gt: cutoff } },
+      orderBy: { cancelledAt: "desc" },
+      select: { id: true },
+    });
+    if (handback) return this.getSnapshot(handback.id, riderId);
+    return null;
   }
 
   /** A caller's order history across both roles (any order where they're the customer or the rider),

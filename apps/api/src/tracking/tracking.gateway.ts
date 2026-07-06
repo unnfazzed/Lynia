@@ -52,6 +52,11 @@ export const POSITION_COALESCE_MS = 1_000;
  *  threshold itself is the shared `PRESENCE_ESCALATION_MS`; this is only the poll cadence. */
 export const PRESENCE_SCAN_INTERVAL_MS = 30_000;
 
+/** A per-order `positionEmit` coalesce entry with no fix for this long is stale (the ride ended or the
+ *  rider went offline) — pruned on the presence scan so the map can't grow unbounded over an instance's
+ *  lifetime. A later fix simply re-creates the entry as a fresh leading edge. */
+export const POSITION_ROOM_TTL_MS = 60_000;
+
 interface CoalesceState {
   lastEmit: number;
   timer?: ReturnType<typeof setTimeout>;
@@ -451,7 +456,19 @@ export class TrackingGateway
     } catch (err) {
       this.logger.warn(`presence scan failed: ${(err as Error).message}`);
     }
+    this.prunePositionRooms();
     await this.scanCustomerPresence();
+  }
+
+  /** Drop `positionEmit` coalesce entries that have gone quiet (no fix for POSITION_ROOM_TTL_MS and no
+   *  pending trailing flush) so the map is bounded by CURRENTLY-active rides, not by every ride the
+   *  instance has ever served. Public for unit testing without driving real timers. */
+  prunePositionRooms(now: number = Date.now()): void {
+    for (const [room, state] of this.positionEmit) {
+      if (!state.timer && now - state.lastEmit > POSITION_ROOM_TTL_MS) {
+        this.positionEmit.delete(room);
+      }
+    }
   }
 
   /** Customer half of the watchdog (C5 mirror). Split out so a failure in either direction can't

@@ -7,7 +7,7 @@ import type { MetricsService } from "../observability/metrics.service";
 import type { TrackingService } from "./tracking.service";
 import { boardCell, boardCellNeighborhood } from "@lynia/shared";
 import { BOARD_ROOM, boardGeoRoom, orderRoom } from "./tracking.constants";
-import { POSITION_COALESCE_MS, TrackingGateway } from "./tracking.gateway";
+import { POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, TrackingGateway } from "./tracking.gateway";
 
 /** Minimal socket fake: maintains a live `rooms` Set (like a real Socket) as join/leave run, and
  *  carries the authenticated user in `data`. */
@@ -211,6 +211,25 @@ describe("TrackingGateway.riderLocation", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("TrackingGateway.prunePositionRooms", () => {
+  it("drops a coalesce entry gone quiet past the TTL, keeps a recent one (bounds map growth)", async () => {
+    const { server } = fakeServer();
+    const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix: vi.fn(async () => {}) });
+    g.server = server as never;
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    await g.riderLocation(client as never, { orderId: "ord-1", lat: 1, lng: 1 });
+    const map = (g as unknown as { positionEmit: Map<string, { lastEmit: number }> }).positionEmit;
+    const st = map.get(orderRoom("ord-1"));
+    expect(st).toBeTruthy();
+    // Recent → kept.
+    g.prunePositionRooms(st!.lastEmit + 1);
+    expect(map.has(orderRoom("ord-1"))).toBe(true);
+    // Quiet past the TTL → pruned so the map can't grow unbounded.
+    g.prunePositionRooms(st!.lastEmit + POSITION_ROOM_TTL_MS + 1);
+    expect(map.has(orderRoom("ord-1"))).toBe(false);
   });
 });
 

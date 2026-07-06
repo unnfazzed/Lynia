@@ -185,10 +185,14 @@ export default function RiderJob(): React.ReactElement {
     advanceM.mutate("picked_up");
   };
 
-  // Terminal: the customer cancelled. Rendered from the frozen snapshot so the hand-back path keeps
-  // the sender contact even after the order leaves the active-job feed.
-  if (cancelledJob) {
-    const snap = cancelledJob.snapshot;
+  // Terminal: the customer cancelled. Rendered from the frozen WS snapshot (keeps the sender contact
+  // after the order leaves the active feed), OR — R8 — from a fetched cancelled order when the rider
+  // reopens after missing the `job:cancelled` push while backgrounded. activeForRider only surfaces a
+  // cancelled order this rider had COLLECTED, so `collected` is true on that reopen path.
+  const handback =
+    cancelledJob ?? (order && order.status === "cancelled" ? { collected: true, snapshot: order } : null);
+  if (handback) {
+    const snap = handback.snapshot;
     const senderPhone = snap.counterpartyPhone ?? snap.pickup.contactPhone ?? null;
     return (
       <Screen>
@@ -205,7 +209,7 @@ export default function RiderJob(): React.ReactElement {
               </View>
               <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>The customer cancelled</Text>
             </View>
-            {cancelledJob.collected ? (
+            {handback.collected ? (
               <>
                 <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
                   This job has ended. You still have the parcel — arrange the hand-back directly with the sender. This doesn&apos;t affect your reliability score.
