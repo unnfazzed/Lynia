@@ -5,6 +5,10 @@ export type ImageContentType = "image/jpeg" | "image/png";
 export interface UploadTarget {
   uploadUrl: string;
   key: string;
+  /** Exact headers the signed PUT must carry (Content-Type + the size-range bound). The signature is
+   *  minted over these, so the PUT fails if they don't match. Optional for backward-compat with an
+   *  older API that only signed the content type. */
+  headers?: Record<string, string>;
 }
 
 // Mirrors client.ts REQUEST_TIMEOUT_MS — the signed-URL PUT bypasses apiFetch (raw binary to GCS)
@@ -18,10 +22,16 @@ export function requestKycPhotoUpload(contentType: ImageContentType): Promise<Up
 
 /**
  * PUT the local image file straight to the signed URL — NOT via apiFetch: this is a raw binary upload
- * to GCS with no bearer token, and the Content-Type must match the one the signature was minted for.
+ * to GCS with no bearer token. The signature is minted over an exact header set (Content-Type, and now
+ * a size-range bound), so the PUT must send those exact `headers` from the mint response or GCS rejects
+ * it. Falls back to just the Content-Type for an older API that didn't return headers.
  * (If on-device blob upload proves flaky, swap to expo-file-system `uploadAsync` with BINARY_CONTENT.)
  */
-export async function uploadImage(uploadUrl: string, fileUri: string, contentType: ImageContentType): Promise<void> {
+export async function uploadImage(
+  uploadUrl: string,
+  fileUri: string,
+  headers: Record<string, string>,
+): Promise<void> {
   const blob = await (await fetch(fileUri)).blob();
   // Same 15s bound apiFetch puts on every request: on a constrained link a stalled PUT would
   // otherwise hang behind the in-button spinner for the OS default (tens of seconds, or forever).
@@ -29,7 +39,7 @@ export async function uploadImage(uploadUrl: string, fileUri: string, contentTyp
   const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": contentType }, body: blob, signal: controller.signal });
+    res = await fetch(uploadUrl, { method: "PUT", headers, body: blob, signal: controller.signal });
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error("The upload timed out — check your connection and try again.", { cause: err });

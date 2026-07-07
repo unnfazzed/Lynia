@@ -13,8 +13,14 @@ export interface UploadTarget {
 
 export interface StorageAdapter {
   provider(): CloudProvider;
-  /** Time-limited upload URL (rider selfie/KYC, item photo). */
-  createUploadUrl(key: string, contentType: string, expiresInSeconds?: number): Promise<UploadTarget>;
+  /** Time-limited upload URL (rider selfie/KYC, item photo). When `maxBytes` is set the signed URL
+   *  binds an upper size bound the client must echo and the store enforces (no arbitrary-size uploads). */
+  createUploadUrl(
+    key: string,
+    contentType: string,
+    expiresInSeconds?: number,
+    maxBytes?: number,
+  ): Promise<UploadTarget>;
   /** Time-limited read URL. */
   createReadUrl(key: string, expiresInSeconds?: number): Promise<string>;
 }

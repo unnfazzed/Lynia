@@ -42,6 +42,13 @@ describe("GcsStorage — real V4 signing", () => {
     expect(target.url).toContain("X-Goog-Expires=600");
   });
 
+  it("createUploadUrl binds a content-length range into the signature when maxBytes is given", async () => {
+    const target = await testGcs().createUploadUrl("kyc/rider-1/selfie.jpg", "image/jpeg", 600, 8 * 1024 * 1024);
+    // The size-range extension header is part of the V4 signed-headers set, so the client must echo it
+    // and GCS enforces the bound — its presence in X-Goog-SignedHeaders proves it was signed.
+    expect(decodeURIComponent(target.url)).toContain("x-goog-content-length-range");
+  });
+
   it("createReadUrl returns a V4-signed GET URL", async () => {
     const url = await testGcs().createReadUrl("kyc/rider-1/selfie.jpg");
     expect(url).toContain("storage.googleapis.com/lynia-media/");

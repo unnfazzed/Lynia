@@ -56,8 +56,10 @@ export default function BecomeRiderScreen(): React.ReactElement {
     const prevKey = photoKey;
     setUploading(true);
     try {
-      const { uploadUrl, key } = await requestKycPhotoUpload(contentType);
-      await uploadImage(uploadUrl, asset.uri, contentType);
+      const { uploadUrl, key, headers } = await requestKycPhotoUpload(contentType);
+      // Send the exact headers the signature was minted over (Content-Type + size range); fall back to
+      // just the content type for an older API that didn't return them.
+      await uploadImage(uploadUrl, asset.uri, headers ?? { "Content-Type": contentType });
       setPhotoUri(asset.uri);
       setPhotoKey(key);
     } catch (e) {
