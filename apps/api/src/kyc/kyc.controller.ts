@@ -17,6 +17,7 @@ import type { Request } from "express";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { AdminActor } from "../common/admin-actor.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -32,6 +33,8 @@ const AdminKyc = z
   .object({
     status: z.enum(["pending", "verified", "failed"]),
     reasonCode: z.string().min(1).max(160).optional(),
+    // Optional ConfirmModal free-text, recorded on the audit row the decision now writes in-transaction.
+    note: z.string().max(2000).nullish(),
   })
   .superRefine((v, ctx) => {
     if (v.status === "failed" && !v.reasonCode) {
@@ -114,13 +117,15 @@ export class KycController {
     return res;
   }
 
-  /** Manual-review backstop (T7): admin sets a rider's KYC status directly. */
+  /** Manual-review backstop (T7): admin sets a rider's KYC status directly. The decision + its audit
+   *  row commit in one transaction (A-01), attributed to the forwarded operator. */
   @Post("admin/riders/:profileId/kyc")
   @UseGuards(JwtAuthGuard, AdminGuard)
   adminSet(
     @Param("profileId", ParseUUIDPipe) profileId: string,
     @Body(new ZodBody(AdminKyc)) body: z.infer<typeof AdminKyc>,
+    @AdminActor() actor: string,
   ) {
-    return this.riders.adminSetKyc(profileId, body.status, body.reasonCode ?? null);
+    return this.riders.adminSetKyc(profileId, body.status, body.reasonCode ?? null, actor, body.note ?? null);
   }
 }

@@ -9,11 +9,11 @@ export class AdminAuditService {
    * A-01 audit trail. Persists one row for a destructive console action so the intent is recorded
    * server-side and queryable — this is the write path behind every ConfirmModal (submitAdminAction).
    *
-   * The plan's ideal is mutation + audit in ONE transaction where a real mutation endpoint exists
-   * (e.g. the KYC decision in RiderService.adminSetKyc, or a future rider-suspend / order-cancel /
-   * fare-adjust). Those state-machine mutations mostly need new schema and are deferred; when one
-   * lands, wrap it and THIS create in a single `this.prisma.$transaction([...])` so the action and its
-   * audit row commit atomically. Until then the audit row is written on its own and always persists.
+   * Where a real mutation endpoint exists the audit row commits in that endpoint's OWN transaction
+   * (rider suspend/lift/ban, order cancel/fare, issue resolve, and now the KYC decision) — mutation +
+   * audit are one `$transaction`, never one without the other. This standalone path remains only for
+   * actions that have no domain endpoint yet, and the console skips it (`auditInEndpoint`) for the ones
+   * that do, so nothing is double-recorded.
    */
   async recordAuditAction(
     actor: string,

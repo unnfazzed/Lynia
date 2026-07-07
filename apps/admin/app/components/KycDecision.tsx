@@ -6,9 +6,11 @@ import { ConfirmModal } from "./ConfirmModal";
 import { IconCheck } from "./icons";
 
 /**
- * A-02 KYC decision pair (kit kyc.html `approve()` / `decline()`). Two reason-coded <ConfirmModal>s
- * over the audit seam; each `onConfirm` additionally writes the real KYC decision via the `decideKyc`
- * server action (approve → verified, decline → failed + reason + attempt increment).
+ * A-02 KYC decision pair (kit kyc.html `approve()` / `decline()`). Two reason-coded <ConfirmModal>s;
+ * each `onConfirm` writes the real KYC decision via the `decideKyc` server action (approve → verified,
+ * decline → failed + reason + attempt increment). The endpoint records the audit row in the SAME
+ * transaction as the decision (A-01), so both modals set `auditInEndpoint` — no standalone audit POST,
+ * which previously could persist a decision that never took effect.
  *
  * Approve carries no reason (it's not destructive); decline REQUIRES a code from `REASONS.kycDecline`.
  * On the single-resubmit-left attempt the decline consequence warns that a second decline locks the
@@ -38,6 +40,7 @@ export function KycDecision({
         action="rider.kyc_approve"
         target={name}
         path={path}
+        auditInEndpoint
         triggerLabel="Approve rider"
         triggerVariant="solid"
         triggerIcon={<IconCheck />}
@@ -50,12 +53,13 @@ export function KycDecision({
           </span>
         }
         confirmLabel="Approve rider"
-        onConfirm={() => decideKyc(profileId, "verified", null)}
+        onConfirm={(r) => decideKyc(profileId, "verified", null, r.note)}
       />
       <ConfirmModal
         action="rider.kyc_decline"
         target={name}
         path={path}
+        auditInEndpoint
         triggerLabel="Decline…"
         triggerVariant="danger"
         danger
@@ -76,7 +80,7 @@ export function KycDecision({
         }
         reasons={REASONS.kycDecline}
         confirmLabel="Decline application"
-        onConfirm={(r) => decideKyc(profileId, "failed", r.reasonCode)}
+        onConfirm={(r) => decideKyc(profileId, "failed", r.reasonCode, r.note)}
       />
     </div>
   );

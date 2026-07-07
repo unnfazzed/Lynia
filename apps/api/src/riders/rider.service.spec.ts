@@ -19,8 +19,19 @@ describe("canGoOnline (rider gating, §5d)", () => {
   });
 });
 
+/** setOnline(false) evicts the rider from the geo index via TrackingService — a no-op stub keeps these
+ *  unit tests off Redis. */
+const trackingStub = { evictFromGeo: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
+
 function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor: KycVendor = new StubKycVendor()) {
-  return new RiderService(prisma as unknown as PrismaService, env as Env, vendor, pii);
+  const p = prisma as Record<string, unknown>;
+  // adminSetKyc now wraps its read+update+audit in a callback `$transaction`; give the fake one that
+  // runs the callback against itself (or returns an array, the becomeRider form) unless a test set its own.
+  if (!p.$transaction) {
+    p.$transaction = async (arg: unknown) =>
+      typeof arg === "function" ? (arg as (tx: unknown) => unknown)(p) : arg;
+  }
+  return new RiderService(p as unknown as PrismaService, env as Env, vendor, pii, trackingStub);
 }
 
 describe("RiderService.becomeRider", () => {
@@ -510,5 +521,40 @@ describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
     const s = svc(prisma, {});
     const res = await s.adminSetKyc("p1", "failed", "Suspected fraud or stolen identity");
     expect(res).toMatchObject({ kycStatus: "failed", kycAttempts: 2, locked: true });
+  });
+
+  it("writes the audit row in the SAME transaction, attributed to the forwarded operator (A-01)", async () => {
+    let auditData: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 0 }),
+        update: async () => ({ kycAttempts: 1 }),
+      },
+      auditLog: { create: async (args: { data: Record<string, unknown> }) => { auditData = args.data; return {}; } },
+    };
+    const s = svc(prisma, {});
+    await s.adminSetKyc("p1", "failed", "face_mismatch", "alice@corp.com", "second review");
+    // The decision + its audit row commit together; the actor is the real operator, not the shared token.
+    expect(auditData).toMatchObject({
+      actor: "alice@corp.com",
+      action: "rider.kyc_decline",
+      target: "p1",
+      reasonCode: "face_mismatch",
+      note: "second review",
+    });
+  });
+
+  it("does NOT write an audit row when no operator is supplied (older callers)", async () => {
+    let audited = false;
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 0 }),
+        update: async () => ({}),
+      },
+      auditLog: { create: async () => { audited = true; return {}; } },
+    };
+    const s = svc(prisma, {});
+    await s.adminSetKyc("p1", "verified");
+    expect(audited).toBe(false);
   });
 });

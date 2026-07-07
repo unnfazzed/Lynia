@@ -2,7 +2,7 @@ import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Q
 import { ResolveIssueRequest } from "@lynia/shared";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { CurrentUser } from "../common/current-user.decorator";
+import { AdminActor } from "../common/admin-actor.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { IssuesService } from "./issues.service";
 
@@ -34,7 +34,7 @@ export class AdminIssuesController {
   resolve(
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodBody(ResolveIssueRequest)) body: ResolveIssueRequest,
-    @CurrentUser() actor: string,
+    @AdminActor() actor: string,
   ) {
     return this.issues.resolve(actor, id, body);
   }
