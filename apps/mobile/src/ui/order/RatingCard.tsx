@@ -16,16 +16,31 @@ export function RatingCard({ saving, onRate }: { saving: boolean; onRate: (score
   const [score, setScore] = useState(5);
   const [ratePending, setRatePending] = useState(false);
   const rateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The armed-but-not-yet-committed score, and a ref to the latest onRate so the unmount cleanup (which
+  // captures only the initial render) flushes the current values.
+  const pendingScore = useRef<number | null>(null);
+  const onRateRef = useRef(onRate);
+  onRateRef.current = onRate;
 
   // Rating-on-tap handlers (D3). Tapping a star sets the score and (re)arms a short commit window;
-  // Undo cancels it. The window is cleared on unmount so a pending submit can't fire after teardown.
-  useEffect(() => () => { if (rateTimer.current) clearTimeout(rateTimer.current); }, []);
+  // Undo cancels it. On unmount we FLUSH a still-armed rating rather than drop it: the customer saw
+  // "Submitting {n}★", so leaving the screen (e.g. "Back home") within the window must still submit the
+  // rating they intended — only Undo cancels it. The rating is terminal server-side, so firing the
+  // mutation from the queryClient after teardown is safe and fires at most once.
+  useEffect(() => () => {
+    if (rateTimer.current) {
+      clearTimeout(rateTimer.current);
+      if (pendingScore.current != null) onRateRef.current(pendingScore.current);
+    }
+  }, []);
   function tapStar(n: number) {
     setScore(n);
     if (rateTimer.current) clearTimeout(rateTimer.current);
     setRatePending(true);
+    pendingScore.current = n;
     rateTimer.current = setTimeout(() => {
       rateTimer.current = null;
+      pendingScore.current = null;
       setRatePending(false);
       onRate(n);
     }, RATE_UNDO_MS);
@@ -34,6 +49,7 @@ export function RatingCard({ saving, onRate }: { saving: boolean; onRate: (score
   function undoRate() {
     if (rateTimer.current) clearTimeout(rateTimer.current);
     rateTimer.current = null;
+    pendingScore.current = null;
     setRatePending(false);
     AccessibilityInfo.announceForAccessibility("Rating cancelled");
   }

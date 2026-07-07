@@ -279,7 +279,10 @@ export default function OrderScreen(): React.ReactElement {
   });
   const cancelM = useMutation({
     mutationFn: () => cancelOrder(orderId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: orderKey(orderId) });
+      void qc.invalidateQueries({ queryKey: ["history"] }); // the Trips list must reflect the cancel, not the stale live status
+    },
   });
 
   if (orderQ.isLoading) {

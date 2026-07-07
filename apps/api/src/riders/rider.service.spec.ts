@@ -509,6 +509,37 @@ describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
       kycDeclineReason: "Selfie doesn't match the ID",
       kycAttempts: { increment: 1 },
     });
+    // The human decline stamps kycResolvedAt so a later/replayed vendor webhook (monotonic on eventAt)
+    // can't flip the rider back to verified over the admin's decision.
+    expect(data!.kycResolvedAt).toBeInstanceOf(Date);
+  });
+
+  it("approve stamps kycResolvedAt so a stale vendor webhook can't override the manual decision", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 0 }),
+        update: async (args: { data: Record<string, unknown> }) => { data = args.data; return {}; },
+      },
+    };
+    const s = svc(prisma, {});
+    await s.adminSetKyc("p1", "verified");
+    expect(data).toMatchObject({ kycStatus: "verified", idVerified: true, kycDeclineReason: null });
+    expect(data!.kycResolvedAt).toBeInstanceOf(Date);
+  });
+
+  it("a `pending` reset leaves kycResolvedAt untouched (it invites a fresh vendor result)", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 0 }),
+        update: async (args: { data: Record<string, unknown> }) => { data = args.data; return {}; },
+      },
+    };
+    const s = svc(prisma, {});
+    await s.adminSetKyc("p1", "pending");
+    expect(data).toMatchObject({ kycStatus: "pending", idVerified: false });
+    expect(data!.kycResolvedAt).toBeUndefined();
   });
 
   it("a SECOND decline lands at kycAttempts >= 2 and reports locked", async () => {
