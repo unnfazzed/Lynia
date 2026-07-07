@@ -13,7 +13,7 @@ import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
 import { PickupChecklist } from "../../src/ui/rider/PickupChecklist";
@@ -403,7 +403,8 @@ export default function RiderJob(): React.ReactElement {
         {order.status === "delivered" ? (
           <>
             <Card>
-              <Text style={{ fontWeight: "700", color: tokens.color.accentText }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
+              <Celebrate />
+              <Text style={{ fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
             </Card>
             {/* Rate the sender (4·7) — OPTIONAL, recorded-only ("a no-show or cash problem here
                 protects other riders"). Tap a star to submit; swaps to a thank-you on success. */}

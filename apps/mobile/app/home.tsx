@@ -19,6 +19,8 @@ import {
   saveDraft,
 } from "../src/logic/order-draft";
 import { orderKey } from "../src/query/client";
+import { fareBand, fareBandHint, isBelowBand } from "../src/logic/fare-band";
+import { loadRecipients, type Recipient, rememberRecipient } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button, ErrorText, Field, haptic, Icon, Label, TestBuildBanner } from "../src/ui";
@@ -50,6 +52,12 @@ export default function HomeScreen(): React.ReactElement {
   const [dropPoint, setDropPoint] = useState<PickedPoint | null>(null);
   const [dropLandmark, setDropLandmark] = useState("");
   const [dropPhone, setDropPhone] = useState("");
+  // Recent recipients (on-device, PII, sign-out-cleared) — one-tap chips so a repeat send doesn't re-type
+  // a phone. Loaded once on mount; the freshest is remembered after a successful broadcast.
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
+  useEffect(() => {
+    void loadRecipients().then(setRecipients);
+  }, []);
   // Map-anchored home (1·1): a single map hero edits whichever address the customer is placing. The
   // two address rows switch it; the search + map + "use my location" all bind to the active slot.
   const [activePin, setActivePin] = useState<AddressSlot>("pickup");
@@ -255,6 +263,9 @@ export default function HomeScreen(): React.ReactElement {
         { lat: dropPoint.lat, lng: dropPoint.lng },
       )
     : null;
+  // Acceptance-band guidance around the suggestion + a soft "this may be too low" nudge.
+  const priceBand = quote ? fareBand(quote.suggestedFare) : null;
+  const belowBand = priceBand != null && isBelowBand(fare, priceBand);
   // Mirror the contract's contactPhone floor (min 6, both waypoints) so Broadcast can't enable and
   // then bounce off a raw Zod message on submit.
   const pickupPhoneOk = pickupPhone.trim().length >= 6;
@@ -315,6 +326,8 @@ export default function HomeScreen(): React.ReactElement {
       const order = await createOrder(payload);
       // A light confirming tick the instant the request goes live — the broadcast is away.
       haptic("tap");
+      // Remember this recipient for a one-tap re-send next time (best-effort, on-device only).
+      void rememberRecipient({ name: "", phone: dropPhone.trim() });
       // Seed the order cache from the response + the form we already have, so the order screen
       // paints the auction immediately instead of blank → skeleton → content on navigate.
       qc.setQueryData<OrderSnapshot>(orderKey(order.id), {
@@ -556,16 +569,57 @@ export default function HomeScreen(): React.ReactElement {
           {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
               "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
           <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
+          {/* Recent-recipient quick-fill: one tap drops a past drop-off number into the field instead of
+              re-typing. Only shown before the customer starts typing one, so it never fights their input. */}
+          {recipients.length > 0 && dropPhone.trim().length === 0 ? (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: tokens.space.xs, marginBottom: tokens.space.sm }}>
+              {recipients.map((r) => (
+                <Pressable
+                  key={r.phone}
+                  onPress={() => setDropPhone(r.phone)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Use recipient ${r.name || r.phone}`}
+                  style={({ pressed }) => ({
+                    minHeight: tokens.touchTargetMin,
+                    justifyContent: "center",
+                    paddingHorizontal: tokens.space.md,
+                    borderRadius: tokens.radius.pill,
+                    borderWidth: 1,
+                    borderColor: tokens.color.line,
+                    backgroundColor: pressed ? tokens.color.accentWash : tokens.color.surface,
+                  })}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>
+                    {r.name ? `${r.name} · ${r.phone}` : r.phone}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
           {quote ? (
             <View style={{ marginBottom: tokens.space.sm }}>
               <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                 Suggested fare ${quote.suggestedFare.toFixed(2)} · {quote.distanceKm} km
               </Text>
+              {priceBand ? (
+                // Soft acceptance band (guidance, never a hard floor) — anchors the customer away from an
+                // unfillable lowball. "usually", not "must".
+                <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 1, fontVariant: ["tabular-nums"] }}>{fareBandHint(priceBand)}</Text>
+              ) : null}
               <Button label={`Use suggested $${quote.suggestedFare.toFixed(2)}`} variant="ghost" onPress={() => setProposedFare(quote.suggestedFare.toFixed(2))} />
             </View>
           ) : null}
-          <Field label="Your price (USD)" value={proposedFare} onChangeText={setProposedFare} placeholder="2.50" keyboardType="decimal-pad" />
+          <Field
+            label="Your price (USD)"
+            value={proposedFare}
+            onChangeText={setProposedFare}
+            placeholder="2.50"
+            keyboardType="decimal-pad"
+            // Below the band is not an error (there's no hard floor) — a gentle hint that a low ask may
+            // draw no riders, so it reads as guidance under the field, not a red validation failure.
+            hint={belowBand ? "That's below what riders usually take — they may pass. Nudge it up for a faster match." : undefined}
+          />
 
           {/* Landmarks (contract-required, normally auto-filled from the pin) + optional declared value,
               behind a tap-to-expand toggle so the required path stays short. */}
