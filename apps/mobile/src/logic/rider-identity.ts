@@ -13,7 +13,8 @@ import * as SecureStore from "expo-secure-store";
  * previous order never paints on a new one. Best-effort throughout.
  */
 
-const KEY = "lynia.riderIdentity.v1";
+/** SecureStore key — exported so sign-out (auth/session `clearDeviceState`) clears the same slot. */
+export const RIDER_IDENTITY_KEY = "lynia.riderIdentity.v1";
 
 export interface RiderIdentity {
   orderId: string;
@@ -29,7 +30,7 @@ export interface RiderIdentity {
 
 export async function saveRiderIdentity(identity: RiderIdentity): Promise<void> {
   try {
-    await SecureStore.setItemAsync(KEY, JSON.stringify(identity));
+    await SecureStore.setItemAsync(RIDER_IDENTITY_KEY, JSON.stringify(identity));
   } catch {
     /* best-effort — the tracker just falls back to no identity card */
   }
@@ -38,7 +39,7 @@ export async function saveRiderIdentity(identity: RiderIdentity): Promise<void> 
 /** Load the cached identity IFF it belongs to `orderId` (a mismatch means it's a stale other-order slot). */
 export async function loadRiderIdentity(orderId: string): Promise<RiderIdentity | null> {
   try {
-    const raw = await SecureStore.getItemAsync(KEY);
+    const raw = await SecureStore.getItemAsync(RIDER_IDENTITY_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<RiderIdentity>;
     if (!parsed || parsed.orderId !== orderId || typeof parsed.firstName !== "string") return null;
@@ -59,7 +60,7 @@ export async function loadRiderIdentity(orderId: string): Promise<RiderIdentity 
 
 export async function clearRiderIdentity(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(KEY);
+    await SecureStore.deleteItemAsync(RIDER_IDENTITY_KEY);
   } catch {
     /* best-effort */
   }

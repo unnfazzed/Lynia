@@ -1,12 +1,11 @@
 import { tokens } from "@lynia/shared";
-import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { getHistory, type OrderHistoryRow } from "../../src/api/orders";
+import type { OrderHistoryRow } from "../../src/api/orders";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatMoney } from "../../src/logic/money";
-import { loadHistorySnapshot, saveHistorySnapshot } from "../../src/net/history-store";
+import { useHistoryFeed } from "../../src/query/use-history-feed";
 import { Button, Card, EmptyState, Heading, Icon, Screen, SkeletonRows, StatusPill, Sub } from "../../src/ui";
 
 function fmtDate(iso: string): string {
@@ -68,18 +67,8 @@ function Row({ o, onPress, onReorder }: { o: OrderHistoryRow; onPress: () => voi
 
 export default function HistoryScreen(): React.ReactElement {
   const router = useRouter();
-  const historyQ = useQuery({ queryKey: ["history"], queryFn: getHistory });
-
-  // Warm paint: the last-known trips list, loaded from SecureStore on mount, so a cold start renders
-  // instantly (esp. offline) instead of a skeleton/error. The live fetch replaces it the moment it lands.
-  const [cached, setCached] = useState<OrderHistoryRow[] | null>(null);
-  useEffect(() => {
-    void loadHistorySnapshot().then(setCached);
-  }, []);
-  // Persist each successful fetch so the NEXT cold start has something to paint.
-  useEffect(() => {
-    if (historyQ.data) void saveHistorySnapshot(historyQ.data);
-  }, [historyQ.data]);
+  // Shared warm-paint feed (load + persist + offline-paused rule live in one place).
+  const { rows, showingStale, isFetching, isError, hasLiveData, refetch } = useHistoryFeed();
 
   const reorder = (o: OrderHistoryRow): void => {
     router.push({
@@ -88,13 +77,6 @@ export default function HistoryScreen(): React.ReactElement {
     });
   };
 
-  // Live data always wins; otherwise paint the cached snapshot. Keyed on the ABSENCE of live data (not
-  // isLoading/isError), so it also covers React Query's PAUSED state — a query that mounts offline is
-  // `pending`+`paused` (isLoading false), which the old gate missed, dropping the cache and showing a
-  // false "No trips yet". A genuinely-empty fresh fetch (`[]`) still wins over a stale cache.
-  const rows = historyQ.data ?? cached;
-  // We're painting the cache because live data hasn't arrived (cold start / offline / error-no-refetch).
-  const showingStale = historyQ.data == null && cached != null;
   // A customer can re-send any parcel they sent — offer the shortcut on their own trips.
   const canReorder = (o: OrderHistoryRow): boolean => o.role === "customer";
 
@@ -112,7 +94,7 @@ export default function HistoryScreen(): React.ReactElement {
               <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
                 Showing your last saved trips — we&apos;ll refresh when you&apos;re back online.
               </Text>
-              {historyQ.isError ? <Button label="Retry" variant="ghost" onPress={() => void historyQ.refetch()} loading={historyQ.isFetching} /> : null}
+              {isError ? <Button label="Retry" variant="ghost" onPress={refetch} loading={isFetching} /> : null}
             </View>
           ) : null}
           {rows.map((o) => (
@@ -120,16 +102,19 @@ export default function HistoryScreen(): React.ReactElement {
           ))}
           <View style={{ height: tokens.space.xxl }} />
         </ScrollView>
-      ) : historyQ.isError ? (
-        <EmptyState icon="wifi-off" title="Couldn't load your trips" message="Check your connection and try again.">
-          <Button label="Retry" onPress={() => void historyQ.refetch()} loading={historyQ.isFetching} />
-        </EmptyState>
-      ) : historyQ.isPending ? (
-        // Covers both the first-load spinner AND the offline paused state (no cache to paint).
+      ) : isFetching ? (
+        // A genuine first load is in flight — skeleton (NOT shown for the offline paused state below).
         <SkeletonRows />
-      ) : (
+      ) : hasLiveData ? (
+        // Live data arrived and it's empty — a genuine "no trips".
         <EmptyState icon="package" title="No trips yet" message="Your sent and delivered parcels will show up here.">
           <Button label="Send a parcel" onPress={() => router.replace("/home")} />
+        </EmptyState>
+      ) : (
+        // No data and NOT fetching — an errored fetch or the offline paused state with no cache. Offer a
+        // retry rather than an endless skeleton or a misleading "No trips yet".
+        <EmptyState icon="wifi-off" title="Couldn't load your trips" message="Check your connection and try again.">
+          <Button label="Retry" onPress={refetch} loading={isFetching} />
         </EmptyState>
       )}
       <Button label="Back" variant="ghost" onPress={() => router.back()} />

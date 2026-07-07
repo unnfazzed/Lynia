@@ -2,13 +2,12 @@ import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, PRESENCE_ESCALATIO
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Share, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { etaHeadline, liveEta } from "../../src/logic/eta";
 import { isPendingCounter, shouldShowOffersError } from "../../src/logic/journey";
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
-import { buildReceiptText, formatReceiptDate } from "../../src/logic/receipt";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
@@ -19,10 +18,11 @@ import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Avatar, Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub, useToast } from "../../src/ui";
+import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub, useToast } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
+import { ReceiptCard } from "../../src/ui/order/ReceiptCard";
 import { RatingCard } from "../../src/ui/order/RatingCard";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
 
@@ -587,17 +587,16 @@ export default function OrderScreen(): React.ReactElement {
                     ) : null}
                     {/* Face-first: the rider's photo (or an initials monogram) anchors the bid the way
                         inDrive/Uber front the person, not a row of text. */}
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}>
-                      <Avatar photoUrl={o.rider.profile.photoUrl} firstName={o.rider.profile.firstName} lastName={o.rider.profile.lastName} seed={o.rider.profileId} />
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-                          {o.rider.profile.firstName} {o.rider.profile.lastName}
-                        </Text>
-                        <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                          ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
-                        </Text>
-                      </View>
-                    </View>
+                    <RiderMini
+                      profileId={o.rider.profileId}
+                      firstName={o.rider.profile.firstName}
+                      lastName={o.rider.profile.lastName}
+                      photoUrl={o.rider.profile.photoUrl}
+                      ratingAvg={o.rider.ratingAvg}
+                      ratingCount={o.rider.ratingCount}
+                      tripsCount={o.rider.tripsCount}
+                      etaMinutes={o.etaMinutes}
+                    />
                     <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, marginVertical: 4, fontVariant: ["tabular-nums"] }}>{formatMoney(o.offeredFare)}</Text>
                     <Button
                       label="Choose this rider"
@@ -640,16 +639,16 @@ export default function OrderScreen(): React.ReactElement {
             {/* Who's coming: the chosen rider's face + name + rating, cached from the offer they were
                 picked from (the assigned-order snapshot doesn't carry it). The trust anchor for tracking. */}
             {riderIdentity ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
-                <Avatar photoUrl={riderIdentity.photoUrl} firstName={riderIdentity.firstName} lastName={riderIdentity.lastName} seed={riderIdentity.profileId || riderIdentity.orderId} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-                    {riderIdentity.firstName} {riderIdentity.lastName}
-                  </Text>
-                  <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                    ★ {riderIdentity.ratingCount > 0 ? Number(riderIdentity.ratingAvg).toFixed(1) : "new"} · {riderIdentity.tripsCount} trips
-                  </Text>
-                </View>
+              <View style={{ marginBottom: tokens.space.sm }}>
+                <RiderMini
+                  profileId={riderIdentity.profileId || riderIdentity.orderId}
+                  firstName={riderIdentity.firstName}
+                  lastName={riderIdentity.lastName}
+                  photoUrl={riderIdentity.photoUrl}
+                  ratingAvg={riderIdentity.ratingAvg}
+                  ratingCount={riderIdentity.ratingCount}
+                  tripsCount={riderIdentity.tripsCount}
+                />
               </View>
             ) : null}
             {eta ? (
@@ -721,63 +720,18 @@ export default function OrderScreen(): React.ReactElement {
               <Celebrate />
               <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered &amp; completed. Thank you!</Text>
             </Card>
-            {(() => {
-              // A shareable delivery receipt — the "proof it happened" summary. Honest for a cash market:
-              // a delivery record, not a payment receipt (money settles offline).
-              const completedAt =
+            <ReceiptCard
+              orderId={order.id}
+              pickupLandmark={order.pickup.landmark}
+              dropoffLandmark={order.dropoff.landmark}
+              fare={fare}
+              riderName={riderIdentity ? `${riderIdentity.firstName} ${riderIdentity.lastName}`.trim() : null}
+              completedAt={
                 order.events?.find((e) => e.status === "completed")?.createdAt ??
                 order.events?.find((e) => e.status === "delivered")?.createdAt ??
-                null;
-              const riderName = riderIdentity ? `${riderIdentity.firstName} ${riderIdentity.lastName}`.trim() : null;
-              const when = formatReceiptDate(completedAt);
-              const shareReceipt = (): void => {
-                void Share.share({
-                  message: buildReceiptText({
-                    orderId,
-                    pickupLandmark: order.pickup.landmark,
-                    dropoffLandmark: order.dropoff.landmark,
-                    fare,
-                    riderName,
-                    completedAt,
-                    delivered: true,
-                  }),
-                }).catch(() => undefined);
-              };
-              return (
-                <Card>
-                  <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.sm }}>Receipt</Text>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>Order</Text>
-                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{order.id.slice(0, 8)}</Text>
-                  </View>
-                  <View style={{ marginBottom: 4 }}>
-                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink }}>
-                      {order.pickup.landmark || "Pickup"} → {order.dropoff.landmark || "Drop-off"}
-                    </Text>
-                  </View>
-                  {riderName ? (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>Rider</Text>
-                      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink }}>{riderName}</Text>
-                    </View>
-                  ) : null}
-                  {when ? (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>Delivered</Text>
-                      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{when}</Text>
-                    </View>
-                  ) : null}
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2, paddingTop: tokens.space.sm, borderTopWidth: 1, borderTopColor: tokens.color.line }}>
-                    <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>Fare</Text>
-                    <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(fare)}</Text>
-                  </View>
-                  <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 16, marginTop: tokens.space.sm }}>
-                    Fare agreed in-app; paid in cash, outside the app — a delivery record, not a payment receipt.
-                  </Text>
-                  <Button label="Share receipt" variant="ghost" onPress={shareReceipt} />
-                </Card>
-              );
-            })()}
+                null
+              }
+            />
           </>
         ) : null}
         {order.status === "expired" ? (

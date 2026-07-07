@@ -1,11 +1,9 @@
 import { tokens } from "@lynia/shared";
-import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { ScrollView, Text, View } from "react-native";
-import { getHistory, type OrderHistoryRow } from "../../src/api/orders";
 import { formatMoney } from "../../src/logic/money";
-import { loadHistorySnapshot } from "../../src/net/history-store";
+import { useHistoryFeed } from "../../src/query/use-history-feed";
 import { Button, Card, EmptyState, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
 
 function fmtDate(iso: string): string {
@@ -16,19 +14,10 @@ function fmtDate(iso: string): string {
 
 export default function EarningsScreen(): React.ReactElement {
   const router = useRouter();
-  const q = useQuery({ queryKey: ["history"], queryFn: getHistory });
-  // Warm paint: earnings shares the ["history"] query, so the same on-device snapshot the trips list
-  // persists lets this screen render instantly on a cold start (and offline) instead of a skeleton. The
-  // live fetch takes over on arrival; keyed on the ABSENCE of live data so it also covers the offline
-  // paused state (a query mounting offline is pending+paused, isLoading false).
-  const [cached, setCached] = useState<OrderHistoryRow[] | null>(null);
-  useEffect(() => {
-    void loadHistorySnapshot().then(setCached);
-  }, []);
-  const source = q.data ?? cached;
-  const showingStale = q.data == null && cached != null;
+  // Shared warm-paint feed (same on-device snapshot as the trips list; load+persist+paused rule shared).
+  const { rows, showingStale, isFetching, isError, refetch } = useHistoryFeed();
   // Earnings = the agreed fare on deliveries I completed as the rider. A record of work, not a balance.
-  const trips = (source ?? []).filter((o) => o.role === "rider" && o.status === "completed");
+  const trips = (rows ?? []).filter((o) => o.role === "rider" && o.status === "completed");
   const total = trips.reduce((sum, o) => sum + (Number(o.agreedFare ?? o.proposedFare) || 0), 0);
 
   return (
@@ -41,17 +30,20 @@ export default function EarningsScreen(): React.ReactElement {
           <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
             Showing your last saved earnings — we&apos;ll refresh when you&apos;re back online.
           </Text>
-          {q.isError ? <Button label="Retry" variant="ghost" onPress={() => void q.refetch()} loading={q.isFetching} /> : null}
+          {isError ? <Button label="Retry" variant="ghost" onPress={refetch} loading={isFetching} /> : null}
         </View>
       ) : null}
 
-      {source == null ? (
-        q.isError ? (
-          <EmptyState icon="wifi-off" title="Couldn't load your earnings" message="Check your connection and try again.">
-            <Button label="Retry" onPress={() => void q.refetch()} />
-          </EmptyState>
-        ) : (
+      {rows == null ? (
+        isFetching ? (
+          // A genuine first load is in flight.
           <SkeletonList />
+        ) : (
+          // No data and NOT fetching — an errored fetch or the offline paused state with no cache. Offer
+          // a retry rather than an endless skeleton.
+          <EmptyState icon="wifi-off" title="Couldn't load your earnings" message="Check your connection and try again.">
+            <Button label="Retry" onPress={refetch} loading={isFetching} />
+          </EmptyState>
         )
       ) : trips.length === 0 ? (
         // 5·2 zero-state: the $0.00 hero card + a warm "your first fare starts here", not a bare empty
