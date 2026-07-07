@@ -34,6 +34,19 @@ function assertWithinServiceCorridor(pickup: LatLng, dropoff: LatLng): void {
  *  scale; the REST nearby endpoint defaults to the same neighbourhood. */
 const BROADCAST_RADIUS_M = 5000;
 
+/** The fields `create`'s response is built from, shared by the fresh-create path and both
+ *  idempotent-replay paths (pre-existing match, and the loser of a concurrent create race). */
+const CREATE_RESPONSE_SELECT = {
+  id: true,
+  status: true,
+  itemDesc: true,
+  proposedFare: true,
+  suggestedFare: true,
+  distanceKm: true,
+  createdAt: true,
+} satisfies Prisma.OrderSelect;
+type CreateResponseOrder = Prisma.OrderGetPayload<{ select: typeof CREATE_RESPONSE_SELECT }>;
+
 /** Strip a stored Waypoint down to what a browsing rider may see — point + landmark, no contactPhone. */
 function publicWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown } {
   const o = (w ?? {}) as { point?: unknown; landmark?: unknown };
@@ -85,6 +98,17 @@ export class OrdersService {
       throw new ForbiddenException({ reason: "on_hold", message: "Your account is on hold." });
     }
 
+    // Idempotent replay (BUG-HUNT): a client-generated key lets a timeout+retry or a double-tap on
+    // "Broadcast" return the SAME order instead of opening a second live auction — and double-pushing
+    // every nearby rider — for one physical trip. Checked before any other work so a replay is cheap.
+    if (input.idempotencyKey) {
+      const existing = await this.prisma.order.findFirst({
+        where: { customerId, idempotencyKey: input.idempotencyKey },
+        select: CREATE_RESPONSE_SELECT,
+      });
+      if (existing) return this.toCreateResponse(existing, null);
+    }
+
     // Q1: gate on the service corridor before doing any work — both waypoints must be in coverage.
     assertWithinServiceCorridor(input.pickup.point, input.dropoff.point);
 
@@ -100,37 +124,44 @@ export class OrdersService {
     // so stored `items` JSON always round-trips through the contract; itemDesc keeps the raw string.
     const items: OrderItem[] = input.items ?? [{ description: (input.itemDescription ?? "").slice(0, 140), quantity: 1 }];
 
-    const order = await this.prisma.order.create({
-      data: {
-        customerId,
-        orderType: "parcel",
-        pickup: input.pickup as unknown as Prisma.InputJsonValue,
-        dropoff: input.dropoff as unknown as Prisma.InputJsonValue,
-        itemDesc: input.items ? summarizeItems(input.items) : (input.itemDescription ?? ""),
-        items: items as unknown as Prisma.InputJsonValue,
-        note: input.note ?? null,
-        itemPhotoUrl: input.itemPhotoUrl ?? null,
-        declaredValue: input.declaredValue,
-        distanceKm,
-        suggestedFare,
-        proposedFare: input.proposedFare,
-        // A1-8: record the liability-disclaimer consent on the order (version + timestamp) so it
-        // survives with the order, not just as a client-side flag. Absent for old clients → null.
-        disclaimerVersion: input.disclaimerVersion ?? null,
-        disclaimerAcceptedAt: input.disclaimerVersion ? new Date() : null,
-        status: "open_for_offers",
-        events: { create: { status: "open_for_offers" } },
-      },
-      select: {
-        id: true,
-        status: true,
-        itemDesc: true,
-        proposedFare: true,
-        suggestedFare: true,
-        distanceKm: true,
-        createdAt: true,
-      },
-    });
+    let order;
+    try {
+      order = await this.prisma.order.create({
+        data: {
+          customerId,
+          orderType: "parcel",
+          pickup: input.pickup as unknown as Prisma.InputJsonValue,
+          dropoff: input.dropoff as unknown as Prisma.InputJsonValue,
+          itemDesc: input.items ? summarizeItems(input.items) : (input.itemDescription ?? ""),
+          items: items as unknown as Prisma.InputJsonValue,
+          note: input.note ?? null,
+          itemPhotoUrl: input.itemPhotoUrl ?? null,
+          declaredValue: input.declaredValue,
+          distanceKm,
+          suggestedFare,
+          proposedFare: input.proposedFare,
+          // A1-8: record the liability-disclaimer consent on the order (version + timestamp) so it
+          // survives with the order, not just as a client-side flag. Absent for old clients → null.
+          disclaimerVersion: input.disclaimerVersion ?? null,
+          disclaimerAcceptedAt: input.disclaimerVersion ? new Date() : null,
+          idempotencyKey: input.idempotencyKey ?? null,
+          status: "open_for_offers",
+          events: { create: { status: "open_for_offers" } },
+        },
+        select: CREATE_RESPONSE_SELECT,
+      });
+    } catch (err) {
+      // A concurrent replay of the same idempotency key raced us and won (P2002 on the partial unique
+      // (customer_id, idempotency_key) index) — return their order instead of a spurious 5xx.
+      if (input.idempotencyKey && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const winner = await this.prisma.order.findFirst({
+          where: { customerId, idempotencyKey: input.idempotencyKey },
+          select: CREATE_RESPONSE_SELECT,
+        });
+        if (winner) return this.toCreateResponse(winner, null);
+      }
+      throw err;
+    }
 
     // Server-side window expiry (ET1). No-op if Redis isn't configured.
     await this.expiry.schedule(order.id);
@@ -149,6 +180,13 @@ export class OrdersService {
       createdAt: order.createdAt.toISOString(),
     });
 
+    return this.toCreateResponse(order, ridersNearby);
+  }
+
+  /** Shared response shape for `create`, on both a fresh broadcast and an idempotent replay (either
+   *  a pre-existing match or one that won a concurrent create race). `ridersNearby` is null on a
+   *  replay — it's supply info for a fresh broadcast, not meaningful for a returned old order. */
+  private toCreateResponse(order: CreateResponseOrder, ridersNearby: number | null) {
     return {
       id: order.id,
       status: order.status,

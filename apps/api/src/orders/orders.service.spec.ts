@@ -1,4 +1,5 @@
 import { BoardNewOrderEvent, type CreateOrderRequest, OFFER_WINDOW_MS, quoteFare } from "@lynia/shared";
+import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { OfferExpiryService } from "../matching/offer-expiry.service";
 import type { NotificationsService } from "../notifications/notifications.service";
@@ -321,6 +322,96 @@ describe("OrdersService.create", () => {
 
     await expect(svc.create(orderInput, "cust-1")).resolves.toMatchObject({ id: "ord-1" });
     await flush();
+  });
+});
+
+describe("OrdersService.create idempotency (BUG-HUNT: duplicate orders on client retry)", () => {
+  const withKey: CreateOrderRequest = { ...orderInput, idempotencyKey: "11111111-1111-1111-1111-111111111111" };
+  const existingRow = {
+    id: "ord-existing",
+    status: "open_for_offers",
+    itemDesc: "Documents",
+    proposedFare: { toString: () => "2.50" },
+    suggestedFare: { toString: () => "2.40" },
+    distanceKm: 1.5,
+    createdAt: new Date("2026-06-26T00:00:00Z"),
+  };
+
+  it("returns the pre-existing order for a replayed key instead of creating a second one", async () => {
+    const create = vi.fn();
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: { findFirst: async () => existingRow, create },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+
+    const res = await svc.create(withKey, "cust-1");
+
+    expect(res).toMatchObject({ id: "ord-existing", status: "open_for_offers", proposedFare: "2.50" });
+    expect(create).not.toHaveBeenCalled(); // no second auction opened, no second rider broadcast
+  });
+
+  it("proceeds to create when no order matches the key yet", async () => {
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: { findFirst: async () => null, create: async () => existingRow },
+    };
+    const expiry = { schedule: async () => {} } as unknown as OfferExpiryService;
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry, noTracking, noNotifications, noGateway);
+
+    await expect(svc.create(withKey, "cust-1")).resolves.toMatchObject({ id: "ord-existing" });
+  });
+
+  it("without a key, never checks for a pre-existing match (old-client back-compat)", async () => {
+    const findFirst = vi.fn();
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: { findFirst, create: async () => existingRow },
+    };
+    const expiry = { schedule: async () => {} } as unknown as OfferExpiryService;
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry, noTracking, noNotifications, noGateway);
+
+    await svc.create(orderInput, "cust-1");
+
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("on a concurrent replay race (P2002 on the partial unique index), returns the winner instead of a 5xx", async () => {
+    const dup = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
+    let findFirstCalls = 0;
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: {
+        // First call: the pre-check (no match yet, another request hasn't committed). Second call:
+        // the post-P2002 lookup, after the racing request won.
+        findFirst: async () => {
+          findFirstCalls += 1;
+          return findFirstCalls === 1 ? null : existingRow;
+        },
+        create: async () => {
+          throw dup;
+        },
+      },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+
+    await expect(svc.create(withKey, "cust-1")).resolves.toMatchObject({ id: "ord-existing" });
+    expect(findFirstCalls).toBe(2);
+  });
+
+  it("re-throws a P2002 that isn't the idempotency race (e.g. no key was sent at all)", async () => {
+    const dup = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: {
+        create: async () => {
+          throw dup;
+        },
+      },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+
+    await expect(svc.create(orderInput, "cust-1")).rejects.toBe(dup);
   });
 });
 

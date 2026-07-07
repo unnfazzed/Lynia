@@ -1,7 +1,7 @@
 import { CreateOrderRequest, quoteFare, tokens } from "@lynia/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
 import { ApiError } from "../src/api/client";
 import { getMe } from "../src/api/auth";
@@ -33,7 +33,7 @@ import { DisclaimerSheet } from "../src/ui/home/DisclaimerSheet";
 import { QtyStepper } from "../src/ui/home/QtyStepper";
 import { AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
 import type { PickedPoint } from "../src/ui/MapPicker";
-import { parseNum } from "../src/util";
+import { parseNum, randomUuidV4 } from "../src/util";
 
 // LayoutAnimation needs an explicit opt-in on old-architecture Android; a no-op on iOS / Fabric.
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -300,6 +300,15 @@ export default function HomeScreen(): React.ReactElement {
   const declaredValueOk = declaredValueNum === null || declaredValueNum <= 150;
   const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk && declaredValueOk;
 
+  // Idempotency key (BUG-HUNT): one per compose ATTEMPT, not per tap — stable across a timeout+retry
+  // or a double-tap on Broadcast (the server dedupes on it and returns the original order instead of
+  // opening a second live auction), but a fresh key whenever the trip's actual content changes, so a
+  // genuinely new order is never mistaken for a stale retry of an old one.
+  const idempotencyKey = useMemo(
+    () => randomUuidV4(),
+    [pickupPoint?.lat, pickupPoint?.lng, dropPoint?.lat, dropPoint?.lng, JSON.stringify(items), note, declaredValue, proposedFare],
+  );
+
   const submit = async (): Promise<void> => {
     setError(null);
     setOutOfArea(false);
@@ -325,6 +334,7 @@ export default function HomeScreen(): React.ReactElement {
       // A1-8: bind the accepted disclaimer version onto the order itself; the server stamps the
       // acceptance time. The accept-to-continue gate guarantees this is set before broadcast.
       disclaimerVersion: DISCLAIMER_POLICY_VERSION,
+      idempotencyKey,
     };
     const parsed = CreateOrderRequest.safeParse(candidate);
     if (!parsed.success) {

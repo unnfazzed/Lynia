@@ -66,6 +66,12 @@ export const CreateOrderRequest = z
     // Pre-broadcast liability disclaimer consent (A1-8). The version the customer accepted; the
     // server stamps the acceptance time on the order. Optional for back-compat with old clients.
     disclaimerVersion: z.string().min(1).max(40).optional(),
+    // Client-generated, one per compose attempt (a fresh uuid each time the customer opens/edits the
+    // form — NOT per tap). A client-side timeout+retry or a double-tap on "Broadcast" replays the
+    // same key; the server dedupes on (customerId, idempotencyKey) and returns the original order
+    // instead of opening a second live auction for the same trip. Optional for back-compat with old
+    // clients, who keep the prior no-dedupe behavior.
+    idempotencyKey: z.string().uuid().optional(),
   })
   .superRefine((v, ctx) => {
     if (v.items === undefined && v.itemDescription === undefined) {
