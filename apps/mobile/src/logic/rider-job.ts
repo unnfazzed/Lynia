@@ -1,4 +1,10 @@
-import { ACTIVE_RIDE_STATUSES, type AdvanceStatusRequest, RIDER_CANCELLABLE_STATUSES, UndeliveredReason } from "@lynia/shared";
+import {
+  ACTIVE_RIDE_STATUSES,
+  type AdvanceStatusRequest,
+  DELIVERY_OTP_MAX_ATTEMPTS,
+  RIDER_CANCELLABLE_STATUSES,
+  UndeliveredReason,
+} from "@lynia/shared";
 import type { IconName } from "../ui/Icon";
 
 export const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
@@ -12,9 +18,9 @@ export const NEXT: Record<string, { to: AdvanceStatusRequest["to"]; label: strin
   picked_up: { to: "en_route_dropoff", label: "Head to drop-off" },
 };
 
-// Delivery-OTP cap (R9). Mirrors the server's DELIVERY_OTP_MAX_ATTEMPTS: the server enforces the lock;
-// the client counts wrong tries to show attempts-remaining and disable the field at the cap.
-export const DELIVERY_OTP_MAX_ATTEMPTS = 5;
+// Delivery-OTP cap (R9), re-exported from @lynia/shared so the server's lock and the client's
+// attempts-remaining display can't drift apart.
+export { DELIVERY_OTP_MAX_ATTEMPTS };
 
 // The post-pickup "can't complete delivery" reasons (R1) — the shared UndeliveredReason enum paired
 // with rider-facing copy + an icon, mirroring the "Couldn't deliver" mockup (rider-screens.jsx).

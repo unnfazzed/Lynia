@@ -15,6 +15,11 @@ export const OFFER_WINDOW_MS = 90_000;
  *  position older than this must not be rendered as live on the customer's tracking. */
 export const PRESENCE_ESCALATION_MS = 120_000;
 
+/** Delivery-OTP attempt cap (R9). One shared constant: the server enforces the lock at this count,
+ *  the client mirrors it to show attempts-remaining and disable the field at the cap — a single
+ *  source so the two can't drift apart. */
+export const DELIVERY_OTP_MAX_ATTEMPTS = 5;
+
 export const LatLng = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
