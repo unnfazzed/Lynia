@@ -3,6 +3,7 @@ import React from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";
 import { mapsDirectionsUrl } from "../../logic/maps";
+import { formatMoney } from "../../logic/money";
 import { Card, Icon, Stepper } from "../index";
 import { LiveMap } from "../LiveMap";
 
@@ -19,7 +20,7 @@ export function JobDetailsCard({
 }): React.ReactElement {
   return (
     <Card>
-      <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>Agreed fare ${order.agreedFare ?? order.proposedFare}</Text>
+      <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>Agreed fare {formatMoney(order.agreedFare ?? order.proposedFare)}</Text>
       {order.counterpartyPhone ? (
         <>
           <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>Customer phone: {order.counterpartyPhone}</Text>

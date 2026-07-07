@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { getHistory, type OrderHistoryRow } from "../../src/api/orders";
+import { formatMoney } from "../../src/logic/money";
 import { Button, Card, EmptyState, Heading, Screen, SkeletonRows, StatusPill, Sub } from "../../src/ui";
 
 function fmtDate(iso: string): string {
@@ -29,7 +30,7 @@ function Row({ o, onPress }: { o: OrderHistoryRow; onPress: () => void }): React
             </Text>
           </View>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>${fare}</Text>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(fare)}</Text>
             <View style={{ height: 4 }} />
             <StatusPill status={o.status} />
           </View>

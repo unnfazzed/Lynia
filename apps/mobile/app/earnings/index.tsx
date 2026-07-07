@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { getHistory } from "../../src/api/orders";
+import { formatMoney } from "../../src/logic/money";
 import { Button, Card, EmptyState, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
 
 function fmtDate(iso: string): string {
@@ -62,7 +63,7 @@ export default function EarningsScreen(): React.ReactElement {
                   </Text>
                   <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>{fmtDate(o.createdAt)}</Text>
                 </View>
-                <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>${o.agreedFare ?? o.proposedFare}</Text>
+                <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(o.agreedFare ?? o.proposedFare)}</Text>
               </View>
             </Card>
           ))}

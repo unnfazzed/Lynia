@@ -80,18 +80,22 @@ export function useRiderBoard(
       qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => prev?.filter((o) => o.id !== orderId));
     });
 
-    // A customer picked a rider: the card is no longer biddable — drop it, and record the id so a
-    // rider who bid on it sees "not chosen" instead of a countdown that dead-ends at 0:00 (3·b1).
-    // The winning rider also receives this; their screen ignores it (the order is their active job).
+    // A customer picked a rider: the card is no longer biddable — drop it from the board, and (for a
+    // rider who bid on it) surface "not chosen" instead of a countdown that dead-ends at 0:00 (3·b1).
+    // The winning rider ALSO receives this event, so we must NOT flip their sent-offer card to "not
+    // chosen": resolve who was picked first by refetching the active job, and only mark the order taken
+    // if it did not become OUR active job — otherwise the winner briefly reads "the customer picked
+    // another rider" on the very order they just won. Until then the card keeps its neutral countdown.
     socket.on(WS_EVENTS.orderTaken, (raw: unknown) => {
       const parsed = OrderTakenEvent.safeParse(raw);
       if (!parsed.success) return;
       const { orderId } = parsed.data;
-      setTakenOrderIds((prev) => (prev.has(orderId) ? prev : new Set(prev).add(orderId)));
       qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => prev?.filter((o) => o.id !== orderId));
-      // If WE are the picked rider this order is now our active job — refetch it immediately so the
-      // dashboard swaps to the win state instead of briefly mislabelling our own bid "not chosen".
-      void qc.invalidateQueries({ queryKey: ["activeJob"] });
+      void qc.invalidateQueries({ queryKey: ["activeJob"] }).then(() => {
+        const active = qc.getQueryData<{ id: string } | null>(["activeJob"]);
+        if (active?.id === orderId) return; // we won — never mark our own order "not chosen"
+        setTakenOrderIds((prev) => (prev.has(orderId) ? prev : new Set(prev).add(orderId)));
+      });
     });
 
     return () => {

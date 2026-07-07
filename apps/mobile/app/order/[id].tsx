@@ -6,6 +6,7 @@ import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View
 import { ApiError } from "../../src/api/client";
 import { isPendingCounter, shouldShowOffersError } from "../../src/logic/journey";
 import { mapsPlaceUrl } from "../../src/logic/maps";
+import { formatMoney } from "../../src/logic/money";
 import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
@@ -135,7 +136,10 @@ export default function OrderScreen(): React.ReactElement {
   // freeze the last value (we can't trust wall-clock drift vs. the server), so the ticker skips.
   const expiresAt = orderQ.data?.expiresAt ?? null;
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
-  const frozen = connectionState === "reconnecting";
+  // Only freeze once the socket has genuinely dropped AFTER being live — same gate as the
+  // "reconnecting" banner. Freezing on the pre-first-connect window (plain !connected) would leave the
+  // countdown static with no indication on a slow link until the WS finally connects.
+  const frozen = wasConnected.current && !connected;
   useEffect(() => {
     if (status !== "open_for_offers" || expiresAt == null) {
       setRemainingMs(null);
@@ -455,7 +459,7 @@ export default function OrderScreen(): React.ReactElement {
                     <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                       ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
                     </Text>
-                    <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, marginVertical: 4, fontVariant: ["tabular-nums"] }}>${o.offeredFare}</Text>
+                    <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, marginVertical: 4, fontVariant: ["tabular-nums"] }}>{formatMoney(o.offeredFare)}</Text>
                     <Button
                       label="Choose this rider"
                       variant={primaryPick ? "primary" : "ghost"}
@@ -494,7 +498,7 @@ export default function OrderScreen(): React.ReactElement {
 
         {isActive || order.status === "delivered" || order.status === "completed" ? (
           <Card>
-            <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm, fontVariant: ["tabular-nums"] }}>Agreed fare ${fare}</Text>
+            <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm, fontVariant: ["tabular-nums"] }}>Agreed fare {formatMoney(fare)}</Text>
             <LiveMap
               pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}
               dropoff={{ lat: order.dropoff.point.lat, lng: order.dropoff.point.lng }}
