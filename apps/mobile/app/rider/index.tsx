@@ -12,6 +12,7 @@ import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { retryKyc, setOnline } from "../../src/api/riders";
+import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason } from "../../src/logic/gates";
 import { formatMoney } from "../../src/logic/money";
@@ -249,6 +250,12 @@ export default function RiderHome(): React.ReactElement {
     if (!online || !loc) return;
     void qc.invalidateQueries({ queryKey: ["openOrders"] });
   }, [loc?.lat, loc?.lng, online, qc]);
+
+  // Warm-resume: refetch the board the moment the app returns to foreground. Without this, an order
+  // taken/expired while backgrounded serves a stale board for up to the 15s poll — the live-board
+  // socket usually beats that, but a reconnect can lag behind the OS reporting the app foregrounded
+  // (mirrors rider/job.tsx's and order/[id].tsx's warm-resume).
+  useForegroundRefetch(() => void qc.invalidateQueries({ queryKey: ["openOrders"] }), online);
 
   // Client-side haversine sort. Now largely a no-op when the server already distance-sorted, but it's
   // kept as the sort for the loc-absent (city-wide) fallback and to visually reconcile live WS pushes
