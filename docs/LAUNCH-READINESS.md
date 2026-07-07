@@ -99,8 +99,9 @@ specs with **no HTTP-level e2e layer**, so guard *wiring* (vs guard *logic*) is 
   order-state gate (§5d reveal window), rate limit} — from the code, not the docs. Then attack it:
   IDOR on every `:id` param, role escalation, state-gate bypass, WS room-join spoofing
   (`tracking.gateway.ts` handshake + room names), admin mutation reachability.
-- **Build:** a **supertest-based HTTP e2e suite** (`apps/api/test/e2e/`) asserting 401/403/404 for
-  every cell of the matrix — this is the missing test layer, and it makes the matrix regression-proof.
+- **Build:** a **supertest-based HTTP e2e suite** (per-module `apps/api/src/**/*-authz.e2e.spec.ts`,
+  e.g. `orders/orders-authz.e2e.spec.ts`) asserting 401/403/404 for every cell of the matrix — this is
+  the missing test layer, and it makes the matrix regression-proof.
 - **Exit test:** matrix doc appended to `ENG-REVIEW.md`; e2e suite in CI; zero CONFIRMED authz
   findings open.
 

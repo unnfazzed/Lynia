@@ -115,7 +115,7 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
 | T3 | Order auto-close on rating deadlock | ❌ not built | ✅ **done** (rating + auto-close + reconciler) |
 | T4 | No-show / cancellation reputation + cooldown | ❌ not built | ✅ **done** |
 | T5 | API authorization (JWT-claim scoping) | ✅ | ✅ **hardened** (spoof holes closed) |
-| T6 | OTP auth (mint → send → verify → JWT) | ◐ partial | ◐ partial — **WhatsApp/SMS still stubbed (external)** |
+| T6 | OTP auth (mint → send → verify → JWT) | ◐ partial | ◐ partial — **SMS still stubbed; WhatsApp send is fully implemented** against the Meta Cloud API, gated on vendor account/template approval (external), not code |
 | T7 | KYC + manual-review backstop | ✅ | ✅ |
 | T8 | Error/rescue for external calls | ◐ partial | ◐ partial |
 | T9 | Metrics instrumentation | ◐ partial | ◐ partial — **OTEL needs a collector (external)** |
@@ -190,9 +190,10 @@ wiring, not code:
    parallel — each a *create account → set secret → flip flag* step. The full flow is exercisable today
    vendor-free via the opt-in QA test mode.
 4. **Greenlight a dev build** — then Phase 3 native map + `/qa` on a real device.
-5. Mobile profile-edit + a Firebase project fold in next (profile-update endpoint — genuinely absent — and
-   live FCM send). *(Device-token registration is already shipped: `POST/DELETE /notifications/device-token`,
-   the `device_tokens` table, and the mobile `src/push` wiring.)*
+5. A Firebase project fold in next (live FCM send). *(Device-token registration is already shipped:
+   `POST/DELETE /notifications/device-token`, the `device_tokens` table, and the mobile `src/push`
+   wiring. The one-time post-OTP name-entry profile step also shipped — `PATCH /auth/me` (C12) — a
+   general profile-settings-edit screen, if still wanted, remains open.)*
 6. **~6–8 months out:** build the commission/settlement infrastructure when monetization begins (CONCEPT §6).
 
 **Bottom line (06-29):** the engineering spine and both app surfaces are built and CI-green, **the API is

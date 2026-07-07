@@ -211,7 +211,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
 ### P0 — Critical (close first)
 
 **P0-1 · Fail closed on a weak JWT signing secret**
-`apps/api/src/config/env.ts:33,67`
+`apps/api/src/config/env.ts:57` (default), `:139-144` (prod `superRefine` guard)
 - Remove the `.default("dev-insecure-secret-change-me-please")` fallback, or add a
   `superRefine` (next to the existing `REDIS_URL` guard) that **rejects boot in production**
   when `JWT_SIGNING_SECRET` is the known default, is < 32 chars, or is unset.
@@ -222,7 +222,8 @@ The subsections below keep the full design detail (the "what & why & acceptance 
   `Invalid environment configuration` and the container never serves traffic.
 
 **P0-2 · Real authentication + audit on the admin console**
-`apps/admin/` (no `middleware.ts`, no login), `apps/admin/app/lib/api.ts:15`
+Pre-remediation state, now fixed — see the implementation-status table above
+(`apps/admin/middleware.ts`, `apps/admin/app/lib/console-auth.ts`).
 - Put the console behind **per-operator identity** — Google Workspace SSO / OIDC (IAP in
   front of Cloud Run is the fastest GCP-native option), not a single shared `ADMIN_API_TOKEN`.
 - Every privileged mutation (KYC approve/decline, ban, fare override, settlement pay) records
@@ -233,7 +234,8 @@ The subsections below keep the full design detail (the "what & why & acceptance 
   is attributable to a named human in the audit log.
 
 **P0-3 · WAF / Cloud Armor on the public load balancer**
-`infra/terraform/lb.tf:46` (backend has no `security_policy`)
+Pre-remediation state, now fixed — see the implementation-status table above
+(`infra/terraform/lb.tf:60` attaches `google_compute_security_policy.api` from `armor.tf`).
 - Add a `google_compute_security_policy` (Cloud Armor) attached to the API backend service:
   per-IP rate limiting (adaptive), the preconfigured OWASP rulesets (SQLi/XSS/LFI), and a
   bot/geo posture appropriate for a Zimbabwe-first launch.
@@ -279,7 +281,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
   unlisted origin is refused; a body with an unknown field is rejected.
 
 **P1-4 · Stop logging OTP codes and phone numbers**
-`apps/api/src/auth/otp-sender.ts:94,105`
+`apps/api/src/auth/otp-sender.ts:96,109`
 - Remove/redact the `DEV OTP for {phone}: {code}` (console sender) and `SMS OTP → {phone}:
   {code}` (SMS stub) log lines, or gate them behind `NODE_ENV !== "production"` **and** run
   them through the existing `phone-mask.ts` helper. Never log a live OTP at info level.
@@ -320,7 +322,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
 - *Accept:* a token signed with any other alg is rejected.
 
 **P2-4 · Launch-hygiene fail-closed guards**
-`apps/api/src/config/env.ts:39,45`
+`apps/api/src/config/env.ts:159-176`
 - Add a production `superRefine`: reject boot if `OTP_CHANNEL !== "whatsapp"` **or**
   `OTP_TEST_PHONES` is non-empty in production (today these are enforced only by a comment).
   Same treatment for `KYC_PROVIDER === "stub"` in production.
