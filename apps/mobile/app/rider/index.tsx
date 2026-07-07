@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
@@ -14,7 +14,7 @@ import { retryKyc, setOnline } from "../../src/api/riders";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason } from "../../src/logic/gates";
 import { formatMoney } from "../../src/logic/money";
-import { Button, Card, EmptyState, ErrorText, Field, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 import { SupportCallRow } from "../../src/ui/safety";
 import { parseNum } from "../../src/util";
 
@@ -95,6 +95,16 @@ export default function RiderHome(): React.ReactElement {
   );
   const activeJob =
     activeQ.data && !(activeQ.data.status === "cancelled" && ackedHandbacks.has(activeQ.data.id)) ? activeQ.data : null;
+
+  // The win: a customer just picked this rider. Fire the warm success cue on the transition INTO
+  // `assigned` (not on every poll of an already-assigned job), so "A customer picked you!" lands with
+  // a buzz even if the phone is in a jacket while riding.
+  const prevJobStatus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const s = activeJob?.status;
+    if (s === "assigned" && prevJobStatus.current !== "assigned") haptic("success");
+    prevJobStatus.current = s;
+  }, [activeJob?.status]);
 
   // Gate the dashboard behind KYC: a rider goes online only once verified (the backend enforces it on
   // makeOffer too — the UI shouldn't pretend otherwise). `rider: null` = hasn't started rider setup.
@@ -234,6 +244,26 @@ export default function RiderHome(): React.ReactElement {
     .filter((o) => !bidIds.has(o.id)) // hide orders we've already bid on (one round per rider)
     .map((o) => ({ o, km: loc ? haversineKm(loc, o.pickup.point) : null }))
     .sort((a, b) => (a.km ?? Number.MAX_SAFE_INTEGER) - (b.km ?? Number.MAX_SAFE_INTEGER));
+
+  // A new nearby order opened while online — a single attention buzz so the rider doesn't have to
+  // stare at the board. We SEED the count on going online (so the initial board populate is silent),
+  // then buzz on any later increase; a decrease (bid on one / it left the board) never buzzes.
+  const prevOpenCount = useRef(0);
+  const openSeeded = useRef(false);
+  useEffect(() => {
+    if (!online) {
+      prevOpenCount.current = 0;
+      openSeeded.current = false;
+      return;
+    }
+    if (!openSeeded.current) {
+      prevOpenCount.current = ranked.length;
+      openSeeded.current = true;
+      return;
+    }
+    if (ranked.length > prevOpenCount.current) haptic("notify");
+    prevOpenCount.current = ranked.length;
+  }, [online, ranked.length]);
 
   const fareNum = parseNum(fare);
   const etaNum = parseNum(eta);

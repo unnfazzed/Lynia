@@ -196,6 +196,14 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(ROLE_PREF_KEY),
       SecureStore.deleteItemAsync(CODE_INDEX_KEY),
       SecureStore.deleteItemAsync(HANDBACK_ACK_KEY),
+      // Address book: the saved Home/Work + recent places (addresses) and the recent recipients (the one
+      // place we hold contact PII) must not survive to the next user on a shared device — exactly the
+      // "next user must not rehydrate the previous user's addresses" rule above, now including recipients.
+      SecureStore.deleteItemAsync("lynia.savedPlaces.recents"),
+      SecureStore.deleteItemAsync("lynia.savedPlaces.saved"),
+      SecureStore.deleteItemAsync("lynia.savedRecipients.v1"),
+      // The cached trips list (holds this user's route landmarks) must not paint for the next user.
+      SecureStore.deleteItemAsync("lynia.history.snapshot.v1"),
       ...codes.map((id) => SecureStore.deleteItemAsync(codeKey(id))),
     ]);
   } catch {

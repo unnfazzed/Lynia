@@ -13,7 +13,7 @@ import { useReachability } from "../src/net/use-reachability";
 import { queryClient } from "../src/query/client";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { start as startRum } from "../src/telemetry/rum";
-import { OfflineBanner } from "../src/ui";
+import { OfflineBanner, ToastProvider } from "../src/ui";
 import { useAppFonts } from "../src/ui/fonts";
 import ForceUpdateScreen from "./force-update";
 
@@ -83,12 +83,16 @@ export default function RootLayout(): React.ReactElement | null {
         <AuthProvider>
           <PushSync />
           <StatusBar style="dark" />
-          <View style={{ flex: 1 }}>
-            <ConnectivityBanner />
+          {/* ToastProvider wraps the navigator so any screen can raise an in-app toast; it renders its
+              strip above the app (below the connectivity banner's ink bar in the stacking order). */}
+          <ToastProvider>
             <View style={{ flex: 1 }}>
-              <AppNavigator />
+              <ConnectivityBanner />
+              <View style={{ flex: 1 }}>
+                <AppNavigator />
+              </View>
             </View>
-          </View>
+          </ToastProvider>
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

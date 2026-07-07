@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared";
 import React, { useEffect, useRef } from "react";
 import { Animated, Text, View } from "react-native";
 import type { OfferRow } from "../../api/offers";
-import { Button, Card, Icon } from "../index";
+import { Avatar, Button, Card, Icon } from "../index";
 
 /**
  * A single bid, animated in. A newly-arrived offer mounts with a fresh key, so this runs its
@@ -54,9 +54,7 @@ export function CounterOfferCard({
   return (
     <Card style={{ borderColor: tokens.color.accent }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
-        <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
-          <Icon name="user" size={20} color={tokens.color.accentText} />
-        </View>
+        <Avatar photoUrl={offer.rider.profile.photoUrl} firstName={offer.rider.profile.firstName} lastName={offer.rider.profile.lastName} seed={offer.rider.profileId} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{name}</Text>
           <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>

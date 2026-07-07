@@ -78,6 +78,38 @@ export type RebroadcastParams = Partial<Record<
 export function first(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
+/**
+ * Build the `rb…` route params that prefill the compose form from an existing order — the shared core of
+ * both "re-broadcast this order" (the tracker's expired/bail recovery) and "send again" (a one-tap
+ * reorder from trip history). Structured line-items ride as JSON; a history row that only has the
+ * `itemDesc` summary is wrapped into a single item so the reorder still lands on a filled form. All
+ * values are strings because route params are strings.
+ */
+export function buildRebroadcastParams(o: {
+  pickup: { point: { lat: number; lng: number }; landmark?: string | null };
+  dropoff: { point: { lat: number; lng: number }; landmark?: string | null };
+  items?: { description: string; quantity: number }[] | null;
+  itemDesc?: string | null;
+  proposedFare?: string | number | null;
+}): RebroadcastParams {
+  const items =
+    o.items && o.items.length > 0
+      ? o.items
+      : o.itemDesc && o.itemDesc.trim().length > 0
+        ? [{ description: o.itemDesc.trim(), quantity: 1 }]
+        : [];
+  return {
+    rbPickupLat: String(o.pickup.point.lat),
+    rbPickupLng: String(o.pickup.point.lng),
+    rbPickupLandmark: o.pickup.landmark ?? "",
+    rbDropLat: String(o.dropoff.point.lat),
+    rbDropLng: String(o.dropoff.point.lng),
+    rbDropLandmark: o.dropoff.landmark ?? "",
+    rbItems: JSON.stringify(items),
+    rbFare: o.proposedFare != null ? String(o.proposedFare) : "",
+  };
+}
+
 export function draftFromParams(p: RebroadcastParams): FormDraft | null {
   const pLat = Number(first(p.rbPickupLat));
   const pLng = Number(first(p.rbPickupLng));

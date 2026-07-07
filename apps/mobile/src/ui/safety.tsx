@@ -16,7 +16,7 @@ import {
   canSubmitReport,
   telUri,
 } from "../logic/safety";
-import { Button, ErrorText, Field, Icon } from "./index";
+import { Button, ErrorText, Field, haptic, Icon } from "./index";
 
 /**
  * Trust & safety surfaces shared across the customer order screen and the rider job screen (both roles):
@@ -408,7 +408,11 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
   // actions on the network. The emergency number falls back to the shared SOS_POLICY constant so
   // "Call 999" is live before (and even if) the request comes back.
   useEffect(() => {
-    if (open && m.isIdle) m.mutate();
+    if (open && m.isIdle) {
+      // The one cue that must feel unmistakably different — a long, urgent triple as ops is alerted.
+      haptic("alert");
+      m.mutate();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on open; m is stable enough here.
   }, [open]);
 

@@ -11,6 +11,10 @@ export { fontFamilies, interFamily } from "./fonts";
 export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 
 export { isTestBuild } from "./test-build";
+export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./haptics";
+export { Avatar } from "./Avatar";
+export { Celebrate } from "./Celebrate";
+export { ToastProvider, useToast, pushToast, TOAST_DURATION_MS, type ToastTone } from "./Toast";
 
 /**
  * A gold attention bar shown only on the QA test build (isTestBuild). It tells a tester the app is a

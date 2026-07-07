@@ -4,9 +4,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
+import { etaHeadline, liveEta } from "../../src/logic/eta";
 import { isPendingCounter, shouldShowOffersError } from "../../src/logic/journey";
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
+import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
@@ -15,7 +17,7 @@ import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, EmptyState, ErrorText, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Avatar, Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub, useToast } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
@@ -42,6 +44,7 @@ export default function OrderScreen(): React.ReactElement {
   const qc = useQueryClient();
   const router = useRouter();
   const reduceMotion = useReduceMotion();
+  const toast = useToast();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("best");
   // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
@@ -130,6 +133,9 @@ export default function OrderScreen(): React.ReactElement {
   // F-01: on a rider bail the server re-broadcasts a NEW order and pushes `order:rebroadcast` here;
   // move the customer to the fresh auction (replace, so the dead cancelled order isn't in the stack).
   const { connected } = useOrderSocket(socketExpected ? orderId : null, (newOrderId) => {
+    // The assigned rider bailed and we auto-re-broadcast at the same price — without a word the customer
+    // just gets teleported to a "finding riders" screen. A toast explains the sudden change of screen.
+    toast.show("Your rider dropped off — we've re-broadcast your parcel to nearby riders.", "warning");
     router.replace(`/order/${newOrderId}`);
   });
   // "Reconnecting" only reads truthfully after we've been live once — the initial connect window
@@ -151,12 +157,29 @@ export default function OrderScreen(): React.ReactElement {
   const prevBidCount = useRef(0);
   useEffect(() => {
     if (liveBidCount > prevBidCount.current && status === "open_for_offers") {
+      // A single attention buzz so a new bid registers even with the phone in a pocket / screen dark.
+      haptic("notify");
       AccessibilityInfo.announceForAccessibility(
         liveBidCount === 1 ? "A rider is bidding on your order" : `${liveBidCount} riders bidding`,
       );
     }
     prevBidCount.current = liveBidCount;
   }, [liveBidCount, status]);
+
+  // Warm success cue at the two moments that land emotionally: a rider is assigned (the auction paid
+  // off) and the parcel is delivered. Fires only on a real transition, never on mount or a re-render.
+  const prevStatus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevStatus.current;
+    if (status && prev && status !== prev && (status === "assigned" || status === "delivered")) {
+      haptic("success");
+      // Name the transition — the offer list collapses into the tracking view, so a toast confirms what
+      // just happened rather than leaving the change of layout unexplained.
+      if (status === "assigned") toast.show("You're matched — tracking your rider now.", "success");
+    }
+    prevStatus.current = status;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on status transition only; toast is stable.
+  }, [status]);
 
   // --- Auction countdown ---
   // Tick a 1s clock ONLY while open_for_offers with a known expiry. During a socket reconnect we
@@ -356,6 +379,10 @@ export default function OrderScreen(): React.ReactElement {
     : riderStale
       ? "Your rider's location looks paused — call them to check in."
       : "Rider is on the move — the gold pin updates live.";
+  // Live "arriving in ~N min" headline — the glanceable number modern trackers lead with. Suppressed
+  // when the rider's GPS has gone stale (we won't claim a fresh ETA off a dark position) or before the
+  // first fix; the prose `trackingHint` covers those.
+  const eta = isActive && !riderStale ? liveEta({ status: order.status, rider: riderPoint, pickup: order.pickup.point, dropoff: order.dropoff.point }) : null;
 
   // Counter-offer (F-07): a `counter` bid ABOVE the customer's ask surfaces as Accept/Decline. A
   // declined one reverts to a normal choosable bid (its Accept treatment removed), so it drops out of
@@ -377,16 +404,12 @@ export default function OrderScreen(): React.ReactElement {
   const rebroadcast = (): void =>
     router.replace({
       pathname: "/home",
-      params: {
-        rbPickupLat: String(order.pickup.point.lat),
-        rbPickupLng: String(order.pickup.point.lng),
-        rbPickupLandmark: order.pickup.landmark ?? "",
-        rbDropLat: String(order.dropoff.point.lat),
-        rbDropLng: String(order.dropoff.point.lng),
-        rbDropLandmark: order.dropoff.landmark ?? "",
-        rbItems: JSON.stringify(order.items ?? []),
-        rbFare: String(order.proposedFare ?? ""),
-      },
+      params: buildRebroadcastParams({
+        pickup: order.pickup,
+        dropoff: order.dropoff,
+        items: order.items,
+        proposedFare: order.proposedFare,
+      }),
     });
 
   return (
@@ -512,12 +535,19 @@ export default function OrderScreen(): React.ReactElement {
                         ★ RECOMMENDED
                       </Text>
                     ) : null}
-                    <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-                      {o.rider.profile.firstName} {o.rider.profile.lastName}
-                    </Text>
-                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                      ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
-                    </Text>
+                    {/* Face-first: the rider's photo (or an initials monogram) anchors the bid the way
+                        inDrive/Uber front the person, not a row of text. */}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}>
+                      <Avatar photoUrl={o.rider.profile.photoUrl} firstName={o.rider.profile.firstName} lastName={o.rider.profile.lastName} seed={o.rider.profileId} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
+                          {o.rider.profile.firstName} {o.rider.profile.lastName}
+                        </Text>
+                        <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                          ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
+                        </Text>
+                      </View>
+                    </View>
                     <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, marginVertical: 4, fontVariant: ["tabular-nums"] }}>{formatMoney(o.offeredFare)}</Text>
                     <Button
                       label="Choose this rider"
@@ -557,6 +587,13 @@ export default function OrderScreen(): React.ReactElement {
 
         {isActive || order.status === "delivered" || order.status === "completed" ? (
           <Card>
+            {eta ? (
+              // The big glanceable ETA — leads the tracking card, styled as the screen's live headline.
+              <View accessibilityRole="text" style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
+                <Icon name="bike" size={20} color={tokens.color.accentText} />
+                <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{etaHeadline(eta)}</Text>
+              </View>
+            ) : null}
             <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm, fontVariant: ["tabular-nums"] }}>Agreed fare {formatMoney(fare)}</Text>
             <LiveMap
               pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}
@@ -615,7 +652,8 @@ export default function OrderScreen(): React.ReactElement {
 
         {order.status === "completed" ? (
           <Card>
-            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accentText }}>Delivered &amp; completed. Thank you!</Text>
+            <Celebrate />
+            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered &amp; completed. Thank you!</Text>
           </Card>
         ) : null}
         {order.status === "expired" ? (
