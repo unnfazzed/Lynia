@@ -18,7 +18,8 @@
     "seed": "tsx prisma/seed.ts",
     "didit:setup": "tsx scripts/didit-setup.ts",
     "phones:normalize": "tsx scripts/normalize-phones.ts",
-    "encrypt-ids": "tsx scripts/encrypt-national-ids.ts"
+    "encrypt-ids": "tsx scripts/encrypt-national-ids.ts",
+    "ids:rehash": "tsx scripts/rehash-national-ids.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.14.0",
