@@ -1,5 +1,6 @@
 import type { Session } from "../auth/session";
 import { API_URL } from "../config";
+import { reportReachable, reportUnreachable } from "../net/reachability";
 import { CLIENT_METRICS_PATH, enqueueApiFetch } from "../telemetry/rum";
 
 /** Hooks the AuthProvider registers so the client can read/rotate tokens without a circular import. */
@@ -57,8 +58,16 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    const res = await fetch(input, { ...init, signal: controller.signal });
+    // We got an HTTP response — even a 4xx/5xx proves the link is alive. Clears the offline state and
+    // cancels the recovery probe, so a passing request is all it takes to come back online.
+    reportReachable();
+    return res;
   } catch (err) {
+    // No response at all (DNS / connection refused / aborted timeout): the network is down or stalled.
+    // Flip the app to offline so React Query stops hammering the dead link and the banner shows, then
+    // let the /health probe drive recovery. Still throws the same friendly ApiError the caller expects.
+    reportUnreachable();
     if (err instanceof Error && err.name === "AbortError") {
       throw new ApiError(0, "The network is slow — check your connection and try again.");
     }

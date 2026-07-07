@@ -1,15 +1,19 @@
+import { tokens } from "@lynia/shared";
 import { QueryClientProvider } from "@tanstack/react-query";
 import Constants from "expo-constants";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { View } from "react-native";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../src/auth/auth-context";
 import { isUpdateRequired } from "../src/config";
+import { useReachability } from "../src/net/use-reachability";
 import { queryClient } from "../src/query/client";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { start as startRum } from "../src/telemetry/rum";
+import { OfflineBanner } from "../src/ui";
 import { useAppFonts } from "../src/ui/fonts";
 import ForceUpdateScreen from "./force-update";
 
@@ -21,6 +25,25 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 function PushSync(): null {
   usePushRegistration(useAuth().session);
   return null;
+}
+
+/**
+ * App-wide offline strip, driven by REAL reachability (a failed request flips it; a passing one or the
+ * /health probe clears it) rather than any single screen's socket state. Rendered at the root above the
+ * navigator so every screen shows it, on ordinary layout flow (not an overlay): when online it returns
+ * null and takes zero height, so it never covers a header; when offline it pushes the app down by a
+ * calm ink bar. The ink safe-area pad keeps the strip flush under the notch/status bar. This is the
+ * "your app didn't break, the network did" cue that keeps a blip from reading as a crash.
+ */
+function ConnectivityBanner(): React.ReactElement | null {
+  const reachable = useReachability();
+  const insets = useSafeAreaInsets();
+  if (reachable) return null;
+  return (
+    <View style={{ paddingTop: insets.top, backgroundColor: tokens.color.ink }}>
+      <OfflineBanner state="offline" />
+    </View>
+  );
 }
 
 /**
@@ -60,7 +83,12 @@ export default function RootLayout(): React.ReactElement | null {
         <AuthProvider>
           <PushSync />
           <StatusBar style="dark" />
-          <AppNavigator />
+          <View style={{ flex: 1 }}>
+            <ConnectivityBanner />
+            <View style={{ flex: 1 }}>
+              <AppNavigator />
+            </View>
+          </View>
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
