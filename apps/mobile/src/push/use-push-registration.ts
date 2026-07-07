@@ -2,7 +2,7 @@ import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect } from "react";
 import type { Session } from "../auth/session";
-import { isRiderSelectedNotification, registerForPushNotificationsAsync, unregisterForPushNotificationsAsync } from "./push";
+import { pushDestination, registerForPushNotificationsAsync, unregisterForPushNotificationsAsync } from "./push";
 
 /**
  * Keep this device's push token in sync with auth: register it once a profile is signed in, and drop
@@ -37,15 +37,25 @@ export function usePushRegistration(session: Session | null): void {
     };
   }, [profileId]);
 
-  // R6: tapping the "You got the job" push (the `assigned` transition) should open the job, not dump the
-  // rider wherever the app happened to be. Independent of the token effect above — the listener lives for
-  // the app's lifetime and is a no-op for any notification that isn't a rider-selected payload.
+  // R6: tapping ANY status-driven push should open the order it's about — not just the rider's "You
+  // got the job" — since the copy on most of them ("tap to rate your rider", "tap for details")
+  // promises exactly that. Independent of the token effect above — the listener lives for the app's
+  // lifetime and is a no-op for any notification that carries no navigable orderId (pushDestination
+  // returns null).
+  const isRider = session?.role === "rider";
   useEffect(() => {
+    // Cold start: the response that LAUNCHED the app (fully killed, not just backgrounded) never
+    // fires addNotificationResponseReceivedListener — it has to be read back explicitly on mount.
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (!response) return;
+      const to = pushDestination(response.notification.request.content.data, isRider);
+      if (to) router.push(to);
+    });
+
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      if (isRiderSelectedNotification(response.notification.request.content.data)) {
-        router.push("/rider/job");
-      }
+      const to = pushDestination(response.notification.request.content.data, isRider);
+      if (to) router.push(to);
     });
     return () => sub.remove();
-  }, []);
+  }, [isRider]);
 }

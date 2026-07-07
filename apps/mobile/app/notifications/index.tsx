@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { getNotificationsFeed, type NotificationRow } from "../../src/api/notifications";
 import { Button, EmptyState, Heading, Icon, Screen, SkeletonList } from "../../src/ui";
 
@@ -25,10 +25,17 @@ function fmtRelative(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-/** One notification: mint-wash icon tile, title, message, relative time, and an unread dot. */
-function Row({ n }: { n: NotificationRow }): React.ReactElement {
+/** One notification: mint-wash icon tile, title, message, relative time, and an unread dot. Tapping
+ *  opens the order it's about — the row's whole point (e.g. "tap to rate your rider", "tap for
+ *  details") was previously a dead end with no way to reach that order from the centre itself. */
+function Row({ n, onPress }: { n: NotificationRow; onPress: () => void }): React.ReactElement {
   return (
-    <View style={{ flexDirection: "row", gap: tokens.space.md, paddingVertical: tokens.space.md, borderBottomWidth: 1, borderBottomColor: tokens.color.line }}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${n.title}: ${n.message}`}
+      style={{ flexDirection: "row", gap: tokens.space.md, paddingVertical: tokens.space.md, borderBottomWidth: 1, borderBottomColor: tokens.color.line }}
+    >
       <View
         style={{
           width: 38,
@@ -50,7 +57,7 @@ function Row({ n }: { n: NotificationRow }): React.ReactElement {
       {n.unread ? (
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tokens.color.accent, flexShrink: 0, marginTop: 6 }} />
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -72,7 +79,7 @@ export default function NotificationsScreen(): React.ReactElement {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
           {(feedQ.data ?? []).map((n) => (
-            <Row key={n.id} n={n} />
+            <Row key={n.id} n={n} onPress={() => router.push(`/order/${n.orderId}`)} />
           ))}
           <View style={{ height: tokens.space.xxl }} />
         </ScrollView>

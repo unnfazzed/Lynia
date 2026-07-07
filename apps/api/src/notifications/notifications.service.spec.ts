@@ -191,6 +191,25 @@ describe("NotificationsService — derived in-app feed (A·3)", () => {
     expect(new Set(feed.map((r) => r.id)).size).toBe(feed.length);
   });
 
+  it("carries the parent orderId on every row, so the client can navigate a tapped notification", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o1",
+        events: [{ status: "delivered", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+      },
+      {
+        id: "o2",
+        events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
+      },
+    ]);
+
+    const feed = await service.feedForUser("me", NOW);
+
+    expect(feed.find((r) => r.title === "Delivered")?.orderId).toBe("o1");
+    expect(feed.find((r) => r.title === "Rider assigned")?.orderId).toBe("o2");
+  });
+
   it("reads orders across both roles (customer OR rider), newest first, capped", async () => {
     const { prisma, service } = makeDeps();
     await service.feedForUser("me", NOW);
