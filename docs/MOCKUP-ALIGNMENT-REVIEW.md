@@ -19,12 +19,21 @@
 
 - **Customer:** the full arc is built — first-run/auth, search-first compose, the 90-second auction (incl. counter-offers and the rider-raced-away race), live tracking with hand-off code, every terminal outcome (cancelled / undelivered / delivered / completed), and the persistent account cluster (account, history, notifications, settings, help). The code frequently exceeds the design (OTP recovery, draft restore, reorder, live ETA, offline cold-start, in-app safety).
 - **Rider:** the full arc is built — KYC, online/board, accept-or-counter offers, the assigned→pickup→verify→collect→drop-off→OTP hand-off→rate job flow, and all terminal states. All three previously-flagged P0 gaps are resolved: the post-pickup **undeliverable** flow exists end-to-end, the losing-bidder **"not chosen"** and auction-**expired** states are driven off real WS events, and the post-pickup **customer-cancel hand-back** is correctly frozen and acknowledged. Several safety surfaces (SOS, report/block, get-help) are built *ahead* of the mockups.
-- **Remaining gaps are edge polish, not core flow.** The biggest are a supply-empty "no riders online" auction state (customer) and the rider bail screen lacking its designed reason + reliability warning.
+- **Remaining gaps are edge polish, not core flow.** The four still-open items (supply-empty "no riders online", customer account-on-hold, rider KYC-expiry, and the rider "order taken" board notice) all need a server/contract change or a product decision — see the follow-up note below.
 
 | | ✅ Aligned | 🟡 Partial | ❌ Missing | Total designed |
 |---|---|---|---|---|
-| Customer | 33 | 5 | 2 | 40 |
-| Rider | 40 | 4 | 2 | 46 |
+| Customer | 34 | 4 | 2 | 40 |
+| Rider | 42 | 2 | 2 | 46 |
+
+> **2026-07-07 follow-up — three more gaps closed in this pass.** Rider bail (4·b3) now opens a
+> confirm sheet with a reason field and a reliability-score warning before the strike lands; the
+> customer rider-cancelled hand-off (3·b0) now shows the "your rider had to cancel — same price, no
+> need to start over" reassurance card on the fresh auction; and the wrong-code hand-off (4·b1) now
+> offers a one-tap "call sender to re-send code" action. Verified: mobile typecheck + lint clean, 140
+> tests green. The four remaining open items below (no-riders-online, customer account-on-hold,
+> KYC-expiry, order-taken board notice) each need a **server/contract change or a product decision**,
+> so they're left for a backend pass rather than faked client-side.
 
 ---
 
@@ -56,7 +65,7 @@
 | auction_expired (2·b3) | 90s closed, re-broadcast | ✅ | `app/order/[id].tsx:674-682` expired EmptyState + prefilled `rebroadcast()` |
 | track_code (3·1) | Rider assigned, hand-off code | ✅ | `app/order/[id].tsx:444-460` code card + re-issue; recovers persisted code |
 | track_active (3·2) | Live tracking, call rider, Maps sync | ✅ | `app/order/[id].tsx:603-657` `LiveMap`, live ETA, Open-in-Maps, call rider |
-| rider_cancelled (3·b0) | Rider bailed → re-broadcast same price | 🟡 | Behavior built (server re-clone `order-lifecycle.service.ts:502-523`; `order:rebroadcast` socket + toast `order/[id].tsx:133-140`), but no dedicated "Tendai had to cancel · re-broadcasting" reassurance card |
+| rider_cancelled (3·b0) | Rider bailed → re-broadcast same price | ✅ | Server re-clone (`order-lifecycle.service.ts:502-523`) + `order:rebroadcast` teleport carrying a `rebroadcast`/`fare` flag; fresh auction opens with the "your rider had to cancel — same price, no need to start over" card (`order/[id].tsx:463-479`), dismissed on the first fresh bid |
 | track_paused (3·b1) | Live paused / reconnecting | ✅ | `app/order/[id].tsx:433` reconnecting banner; stale-fix "call them" (`:389-396`) |
 | cancel (3·b2) | Cancel + reason | ✅ | `app/order/[id].tsx:738-758` cancel-anytime; post-pickup hand-back warning gate |
 | cancelled (3·b3) | Terminal cancelled | ✅ | `app/order/[id].tsx:683-687` |
@@ -110,10 +119,10 @@
 | job_dropoff (4·5) | En route to drop-off | ✅ | `app/rider/job.tsx:384-390` advance + OTP entry at en_route_dropoff |
 | job_handoff (4·6) | Delivery-OTP hand-off | ✅ | `src/ui/rider/DeliveryOtp.tsx:24-46` 6-digit → confirmDelivery |
 | job_delivered (4·7) | Delivered + rate sender | ✅ | `app/rider/job.tsx:403-438` Celebrate + optional recorded-only rate-the-sender |
-| job_bail (4·b3) | Rider cancels (pre-pickup) | 🟡 | Gated pre-pickup (`app/rider/job.tsx:445-447`), but fires `cancelOrder` with no reason input, no confirm sheet, no reliability-score warning (mockup has all three) |
+| job_bail (4·b3) | Rider cancels (pre-pickup) | ✅ | Gated pre-pickup; taps open `BailSheet` (`src/ui/rider/BailSheet.tsx`) — reason field + reliability-score warning + explicit confirm — before `cancelOrder({ reason })` lands the strike (`app/rider/job.tsx:452-476`) |
 | job_offline (4·b4) | Connection lost mid-job | ✅ | `app/rider/job.tsx:333-353` `jobReconnecting` banner + "Live paused" |
 | undelivered (4·b2) | Not delivered (terminal) | ✅ | `markUndelivered` (`src/api/orders.ts:135-137`) + `UndeliveredSheet.tsx` reason picker + `terminals.tsx:65-86` — **prior P0 now built** |
-| handoff_wrong (4·b1) | Wrong code · lockout | 🟡 | Attempts-remaining + 5-try lock built (`DeliveryOtp.tsx:22-38`), but no "ask customer to re-send the code" action button — only static copy |
+| handoff_wrong (4·b1) | Wrong code · lockout | ✅ | Attempts-remaining + 5-try lock (`DeliveryOtp.tsx:22-38`) plus a one-tap "call sender to re-send code" action once a code misses (`DeliveryOtp.tsx:49-56`, wired to `order.counterpartyPhone`) |
 | job_cancelled (4·b5) | Customer cancelled | ✅ | `CancelledHandback` (`terminals.tsx:15-61`) frozen snapshot + call-sender; suppressed after ack — **prior P0 now built** |
 | earnings (5·1) | Earnings | ✅ | `app/earnings/index.tsx:47-84` total + trip list + commission disclaimer |
 | earnings_new (5·2) | Earnings · new rider | ✅ | `app/earnings/index.tsx:34-46` $0.00 hero + "your first fare starts here" |
@@ -132,21 +141,18 @@
 
 ## Genuinely remaining gaps (current)
 
-### Customer
-- **P1 — "No riders online" supply state missing (2·b1).** In a zero-supply corridor the customer sees the calm "finding riders…" state for the full 90s then a generic `expired` dead-end that advises nudging the price — misleading when the real cause is no supply. No "no riders online right now / Notify me" path exists (`app/order/[id].tsx:583-682`).
-- **P1 — Rider-cancelled hand-off has no explanatory screen (3·b0).** The re-broadcast works, but the customer is silently swapped to a fresh "finding" auction with only a transient toast (`app/order/[id].tsx:133-140`); the designed reassurance card ("Tendai had to cancel — same price, no need to start over") never renders.
-- **P2 — Customer account-on-hold unhandled (S·2).** Only riders get a blocking on-hold state (`app/rider/index.tsx:446-451`). Confirm the API can even hold a customer before prioritizing.
-- **P2 — No customer no-GPS guidance screen (S·4).** Non-blocking (customer can always pin/search manually), but there's no explicit "Open location settings" affordance.
+Each of the four below needs a **server/contract change or a product decision** — none is a pure client fix, so they were deliberately left for a backend pass rather than stubbed in the app.
 
-### Rider
-- **P1 — Rider bail screen is bare (4·b3).** Pre-pickup cancel works but omits the mockup's reason field, confirm sheet, and reliability-score warning (`app/rider/job.tsx:445-447`). The warning is a stated product promise, so its absence is a real gap.
-- **P2 — KYC-expiry state absent (1·b2).** No `expired` status (`packages/shared/src/enums.ts:126-131`) and no "Your ID has expired · Re-verify" UI; a lapsed verified rider has no dedicated recovery screen.
-- **P2 — Wrong-code "re-send" action missing (4·b1).** Lockout logic is correct but there's no button to ping the customer to re-issue the code — only instructional copy (`src/ui/rider/DeliveryOtp.tsx:30-33`).
-- **P3 — "Order taken first" is a silent removal (2·b1).** An un-bid order the rider was eyeing just disappears; no muted "taken by another rider" notice (`src/realtime/use-rider-board.ts:89-99`).
+- **P1 — Customer "No riders online" supply state (2·b1).** In a zero-supply corridor the customer sees the calm "finding riders…" state for the full 90s then a generic `expired` dead-end that advises nudging the price — misleading when the real cause is no supply. Needs a server supply signal (how many riders are in the geo room) before the client can render "no riders online right now / Notify me" (`app/order/[id].tsx:596-615`).
+- **P2 — Customer account-on-hold unhandled (S·2).** Only riders get a blocking on-hold state (`app/rider/index.tsx:446-451`) because only riders carry an online-gate. Needs the API to model + return a customer hold before there's anything to gate on.
+- **P2 — Rider KYC-expiry state absent (1·b2).** No `expired` KYC status exists (`packages/shared/src/enums.ts:126-131`); a lapsed verified rider has no dedicated "Your ID has expired · Re-verify" recovery. Needs the enum + a server expiry transition first.
+- **P3 — Rider "order taken first" is a silent removal (2·b1).** An un-bid order the rider was eyeing just disappears (`src/realtime/use-rider-board.ts:89-99`). A muted "taken by another rider" notice is easy to add, but risks being noisy on a busy board — it needs a product call on whether to surface it at all.
 
-### Shared / design polish
-- **Map-first vs form-first home (1·1)** is now closed on the customer side — `home.tsx` renders a full-bleed `ComposeMap` with address rows, matching the ride-hailing paradigm.
+### Shared / design polish (intentional, non-blocking)
+- **Address search / pin-confirm as inline over-map (1·2 / 1·3)** — the customer home is map-first (`home.tsx` full-bleed `ComposeMap` + address rows), so search and pin-confirm live inline on the map rather than as dedicated screens. This is the ride-hailing paradigm the design asked for; the separate screens were a mockup convenience, not a requirement.
+- **No-GPS is intentionally graceful on the customer (S·4)** — the customer can always pin/search manually, so a blocking "open location settings" screen (which riders get, because they *need* GPS to see the board) would regress good behavior. Left as a soft fallback by design.
 - **Generic catch-all error (S·5)** — both roles cover failures with honest per-surface error+retry rather than the single designed "your active job is safe" catch-all component. Functionally covered; not a unified component.
+- **KYC "you're verified" win-state (1·4)** — verified riders drop straight to the "Go online" card; the celebration confirmation lives on the become-a-rider flow, not a separate dashboard state. Cosmetic.
 
 ---
 

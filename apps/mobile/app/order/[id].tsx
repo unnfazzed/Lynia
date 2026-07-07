@@ -41,8 +41,12 @@ const URGENT_MS = 20_000;
 const CANCELLED_GRACE_MS = 20_000;
 
 export default function OrderScreen(): React.ReactElement {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, rebroadcast: rebroadcastParam, fare: rebroadcastFare } = useLocalSearchParams<{ id: string; rebroadcast?: string; fare?: string }>();
   const orderId = typeof id === "string" ? id : "";
+  // 3·b0: this auction was auto-created because the assigned rider bailed. The `rebroadcast=1` flag
+  // (carried on the teleport from the dead order) tells us to reassure the customer with a "your rider
+  // had to cancel — same price, no need to start over" card until the first fresh bid arrives.
+  const [showRebroadcast, setShowRebroadcast] = useState(rebroadcastParam === "1");
   const qc = useQueryClient();
   const router = useRouter();
   const reduceMotion = useReduceMotion();
@@ -152,9 +156,12 @@ export default function OrderScreen(): React.ReactElement {
   // move the customer to the fresh auction (replace, so the dead cancelled order isn't in the stack).
   const { connected } = useOrderSocket(socketExpected ? orderId : null, (newOrderId) => {
     // The assigned rider bailed and we auto-re-broadcast at the same price — without a word the customer
-    // just gets teleported to a "finding riders" screen. A toast explains the sudden change of screen.
-    toast.show("Your rider dropped off — we've re-broadcast your parcel to nearby riders.", "warning");
-    router.replace(`/order/${newOrderId}`);
+    // just gets teleported to a "finding riders" screen. Carry a `rebroadcast` flag (+ the agreed fare)
+    // so the fresh auction opens with the 3·b0 reassurance card instead of a bare, unexplained restart.
+    const snap = qc.getQueryData<OrderSnapshot>(orderKey(orderId));
+    const carriedFare = snap?.agreedFare ?? snap?.proposedFare ?? "";
+    const query = carriedFare ? `?rebroadcast=1&fare=${encodeURIComponent(carriedFare)}` : "?rebroadcast=1";
+    router.replace(`/order/${newOrderId}${query}`);
   });
   // "Reconnecting" only reads truthfully after we've been live once — the initial connect window
   // would otherwise flash the banner on every mount.
@@ -192,6 +199,12 @@ export default function OrderScreen(): React.ReactElement {
     }
     prevBidCount.current = liveBidCount;
   }, [liveBidCount, status, offersQ.isSuccess]);
+
+  // 3·b0: the reassurance card gives way to the live auction the moment a fresh rider bids — from there
+  // the customer is choosing again, and the "no need to start over" message has done its job.
+  useEffect(() => {
+    if (liveBidCount > 0) setShowRebroadcast(false);
+  }, [liveBidCount]);
 
   // Warm success cue at the two moments that land emotionally: a rider is assigned (the auction paid
   // off) and the parcel is delivered. Fires only on a real transition, never on mount or a re-render.
@@ -497,6 +510,21 @@ export default function OrderScreen(): React.ReactElement {
 
         {order.status === "open_for_offers" ? (
           <View>
+            {/* 3·b0: rider-bail reassurance. Shown only when this auction was auto-created by a bail
+                (the `rebroadcast` flag) and no fresh bid has landed yet — explains the sudden restart
+                and that the price is unchanged, so the customer doesn't think they lost their order. */}
+            {showRebroadcast ? (
+              <Card style={{ borderColor: tokens.color.line }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
+                  <Icon name="bike" size={18} color={tokens.color.muted} />
+                  <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>Your rider had to cancel</Text>
+                </View>
+                <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 19 }}>
+                  Sometimes a rider can&apos;t make it. We&apos;re finding you another rider at the same
+                  price{rebroadcastFare ? <Text style={{ fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}> — {formatMoney(rebroadcastFare)}</Text> : null}. No need to start over.
+                </Text>
+              </Card>
+            ) : null}
             {/* Live header: bid count the moment the first bid lands, else a "finding" state; a
                 reconnecting hint when the auction socket is down and we're on the poll fallback.
                 Right-aligned countdown shares the baseline — calm (muted) until the last 20s, then

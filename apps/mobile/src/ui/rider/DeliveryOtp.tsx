@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
-import { Text } from "react-native";
+import { Linking, Text } from "react-native";
 import { DELIVERY_OTP_MAX_ATTEMPTS } from "../../logic/rider-job";
 import { Button, Card, Field, Sub } from "../index";
 
@@ -12,12 +12,17 @@ export function DeliveryOtp({
   otpTries,
   pending,
   onConfirm,
+  senderPhone,
 }: {
   code: string;
   onChangeCode: (code: string) => void;
   otpTries: number;
   pending: boolean;
   onConfirm: () => void;
+  // 4·b1: the assigned rider's line to the customer (reveal window). When the code won't match, the
+  // rider can call the sender to have them re-issue it — the mockup's "ask the customer to re-send"
+  // action, not just static copy.
+  senderPhone?: string | null;
 }): React.ReactElement {
   const otpLocked = otpTries >= DELIVERY_OTP_MAX_ATTEMPTS;
   const attemptsLeft = Math.max(0, DELIVERY_OTP_MAX_ATTEMPTS - otpTries);
@@ -42,6 +47,15 @@ export function DeliveryOtp({
         loading={pending}
         disabled={otpLocked || code.trim().length !== 6}
       />
+      {/* 4·b1: the re-send action. Surfaced once a code has missed (and always in the locked state) so
+          the rider has a one-tap way to reach the customer instead of being told to "ask" with no means. */}
+      {otpTries > 0 && senderPhone ? (
+        <Button
+          label="Call sender to re-send code"
+          variant="ghost"
+          onPress={() => void Linking.openURL(`tel:${senderPhone}`)}
+        />
+      ) : null}
     </Card>
   );
 }
