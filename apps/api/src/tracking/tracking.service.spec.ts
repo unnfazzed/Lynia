@@ -344,3 +344,57 @@ describe("TrackingService.claimPresenceEscalation / releasePresenceEscalation (m
     expect(await s.claimPresenceEscalation("customer:ord-1", 600)).toBe(true);
   });
 });
+
+describe("TrackingService notify-me waiting list (2·b1)", () => {
+  const noRedis = () => new TrackingService(noRedisEnv, {} as PrismaService, fakeMetrics());
+  const withRedis = () => new TrackingService({ REDIS_URL: "redis://x" } as Env, {} as PrismaService, fakeMetrics());
+  // A fake exposing the geo + zset surface the notify-me store uses. `members` is what geosearch
+  // returns (bare member strings — the drain omits WITHDIST); `expired` is what a prune finds.
+  function notifyRedis(members: string[] = [], expired: string[] = []) {
+    return {
+      geoadd: vi.fn(async (..._a: unknown[]) => 1),
+      geosearch: vi.fn(async (..._a: unknown[]) => members),
+      zadd: vi.fn(async (..._a: unknown[]) => 1),
+      zrem: vi.fn(async (..._a: unknown[]) => 1),
+      zrangebyscore: vi.fn(async (..._a: unknown[]) => expired),
+    };
+  }
+
+  it("addNotifyRequest indexes the customer at the pickup + stamps an expiry (Redis path)", async () => {
+    const redis = notifyRedis();
+    const s = withRedis();
+    s.setRedisClient(redis as never);
+    expect(await s.addNotifyRequest("cust-1", -17.8, 31.0, 1000)).toBe(true);
+    // ioredis geoadd order is (key, lng, lat, member).
+    expect(redis.geoadd).toHaveBeenCalledWith("notify:geo", 31.0, -17.8, "cust-1");
+    // zadd stamps expiry = now + TTL (1h) as the score.
+    expect(redis.zadd).toHaveBeenCalledWith("notify:exp", 1000 + 60 * 60 * 1000, "cust-1");
+  });
+
+  it("addNotifyRequest is a no-op (false) without Redis", async () => {
+    expect(await noRedis().addNotifyRequest("cust-1", -17.8, 31.0)).toBe(false);
+  });
+
+  it("drainNotifyNear returns nearby waiters and removes them from BOTH structures", async () => {
+    const redis = notifyRedis(["cust-1", "cust-2"]);
+    const s = withRedis();
+    s.setRedisClient(redis as never);
+    const drained = await s.drainNotifyNear(-17.8, 31.0, 5000);
+    expect(drained).toEqual(["cust-1", "cust-2"]);
+    // Removed from the geo index AND the expiry zset, so each is pinged exactly once.
+    expect(redis.zrem).toHaveBeenCalledWith("notify:geo", "cust-1", "cust-2");
+    expect(redis.zrem).toHaveBeenCalledWith("notify:exp", "cust-1", "cust-2");
+  });
+
+  it("drainNotifyNear prunes expired entries first, and returns [] with no Redis / on no matches", async () => {
+    const redis = notifyRedis([], ["stale-1"]);
+    const s = withRedis();
+    s.setRedisClient(redis as never);
+    expect(await s.drainNotifyNear(-17.8, 31.0, 5000, 9999)).toEqual([]);
+    // The prune removed the expired member from both structures before searching.
+    expect(redis.zrem).toHaveBeenCalledWith("notify:exp", "stale-1");
+    expect(redis.zrem).toHaveBeenCalledWith("notify:geo", "stale-1");
+    // No Redis → empty, never throws.
+    expect(await noRedis().drainNotifyNear(-17.8, 31.0, 5000)).toEqual([]);
+  });
+});

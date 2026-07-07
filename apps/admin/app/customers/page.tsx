@@ -15,11 +15,13 @@ import { IconUser } from "../components/icons";
 const FILTERS = [
   { value: "all", label: "all" },
   { value: "active", label: "active" },
+  { value: "on_hold", label: "on hold" },
   { value: "flagged", label: "flagged" },
 ];
 
 function custPill(status: Customer["status"]) {
   if (status === "banned") return <Pill kind="bad">banned</Pill>;
+  if (status === "on_hold") return <Pill kind="bad">on hold</Pill>;
   if (status === "flagged") return <Pill kind="bad">flagged</Pill>;
   return <Pill kind="good">active</Pill>;
 }

@@ -205,7 +205,21 @@ export default function RiderHome(): React.ReactElement {
   }, [online]);
 
   // Board push: new orders arrive live over WS while online; the poll is the 15s self-heal fallback.
-  const board = useRiderBoard(online, loc);
+  // Pass `bidIds` so the board can tell an un-bid order taken by someone else (a muted board notice)
+  // from a bid the rider lost (its sent-offer card already shows "not chosen").
+  const board = useRiderBoard(online, loc, bidIds);
+
+  // 2·b1: a single, self-clearing "a nearby order was just taken" line. Ticks up each time an un-bid
+  // board order is assigned to another rider; the timer resets so a flurry stays one calm line, then
+  // clears after a few seconds. Silent removal was the old behaviour — this gives the "why did that
+  // card vanish?" answer without permanent clutter.
+  const [takenNotice, setTakenNotice] = useState(false);
+  useEffect(() => {
+    if (board.boardTakenNudge === 0) return;
+    setTakenNotice(true);
+    const t = setTimeout(() => setTakenNotice(false), 4500);
+    return () => clearTimeout(t);
+  }, [board.boardTakenNudge]);
 
   // Sent offers are a live-board artifact: clear them when the rider goes offline (the board room is
   // gone and the countdowns are meaningless).
@@ -359,6 +373,18 @@ export default function RiderHome(): React.ReactElement {
               message="Verify your ID and register your bike to start accepting deliveries."
             >
               <Button label="Become a rider" onPress={() => router.push("/rider/become")} />
+              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+            </EmptyState>
+          ) : kyc === "expired" ? (
+            // 1·b2: a previously-verified rider whose ID lapsed. Distinct from the first-time "verify"
+            // and the "declined" states — the rider was good, the document aged out. Re-verify mints a
+            // fresh Didit session (the A-02 counter was reset server-side, so they're never locked out).
+            <EmptyState
+              icon="triangle-alert"
+              title="Your ID has expired"
+              message="You can't go online until you re-verify. Re-submit a valid national ID to keep riding."
+            >
+              <Button label="Re-verify my ID" onPress={() => retryM.mutate()} loading={retryM.isPending} />
               <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           ) : kyc === "failed" ? (
@@ -545,6 +571,21 @@ export default function RiderHome(): React.ReactElement {
         {online ? (
           <View>
             <Sub>Open orders{openQ.isFetching ? " …" : ""}</Sub>
+            {/* 2·b1: muted, self-clearing notice when a nearby order the rider hadn't bid on is taken by
+                someone else — so a card vanishing off the board reads as "someone was faster", not a
+                glitch. Never an alarm; one line regardless of how many go at once. */}
+            {takenNotice ? (
+              <View
+                accessibilityRole="text"
+                accessibilityLiveRegion="polite"
+                style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.sm }}
+              >
+                <Icon name="bike" size={15} color={tokens.color.muted} />
+                <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+                  A nearby order was just taken by another rider. Stay online — more come through fast.
+                </Text>
+              </View>
+            ) : null}
             {ranked.map(({ o, km }) => (
               <Card key={o.id}>
                 <Text style={{ fontWeight: "700", color: tokens.color.ink }}>{o.pickup.landmark} → {o.dropoff.landmark}</Text>

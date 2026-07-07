@@ -127,6 +127,10 @@ export const KycStatus = {
   PENDING: "pending",
   VERIFIED: "verified",
   FAILED: "failed",
+  // A previously-VERIFIED rider whose national ID later lapsed (rider-journey 1·b2). Distinct from
+  // `failed` (a verification-time decline): the rider was good, their document aged out, and they must
+  // re-verify to keep riding. Blocks going online exactly like the other non-verified states.
+  EXPIRED: "expired",
 } as const;
 export type KycStatus = (typeof KycStatus)[keyof typeof KycStatus];
 

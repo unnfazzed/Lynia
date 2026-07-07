@@ -13,15 +13,20 @@ describe("canGoOnline (rider gating, §5d)", () => {
   it("allows only verified riders online", () => {
     expect(canGoOnline("verified")).toBe(true);
   });
-  it("blocks pending and failed riders", () => {
+  it("blocks pending, failed and expired riders", () => {
     expect(canGoOnline("pending")).toBe(false);
     expect(canGoOnline("failed")).toBe(false);
+    expect(canGoOnline("expired")).toBe(false);
   });
 });
 
-/** setOnline(false) evicts the rider from the geo index via TrackingService — a no-op stub keeps these
- *  unit tests off Redis. */
-const trackingStub = { evictFromGeo: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
+/** setOnline evicts the offline rider from the geo index and drains the "notify me" waiting list on
+ *  online — no-op stubs keep these unit tests off Redis + push. */
+const trackingStub = {
+  evictFromGeo: async () => {},
+  drainNotifyNear: async () => [],
+} as unknown as import("../tracking/tracking.service").TrackingService;
+const notificationsStub = { notifyRidersAvailable: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
 
 function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor: KycVendor = new StubKycVendor()) {
   const p = prisma as Record<string, unknown>;
@@ -31,7 +36,7 @@ function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor
     p.$transaction = async (arg: unknown) =>
       typeof arg === "function" ? (arg as (tx: unknown) => unknown)(p) : arg;
   }
-  return new RiderService(p as unknown as PrismaService, env as Env, vendor, pii, trackingStub);
+  return new RiderService(p as unknown as PrismaService, env as Env, vendor, pii, trackingStub, notificationsStub);
 }
 
 describe("RiderService.becomeRider", () => {
@@ -323,6 +328,54 @@ describe("RiderService.setOnline", () => {
     expect(data!.lastHeartbeatAt).toBeInstanceOf(Date);
   });
 
+  it("drains the notify-me waiting list and pushes those customers when going online with a location (2·b1)", async () => {
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
+        update: async () => ({}),
+      },
+    };
+    let drainedAt: { lat: number; lng: number; radius: number } | null = null;
+    let pushed: string[] | null = null;
+    const tracking = {
+      evictFromGeo: async () => {},
+      drainNotifyNear: async (lat: number, lng: number, radius: number) => {
+        drainedAt = { lat, lng, radius };
+        return ["cust-1", "cust-2"];
+      },
+    } as unknown as import("../tracking/tracking.service").TrackingService;
+    const notifications = {
+      notifyRidersAvailable: async (ids: string[]) => { pushed = ids; },
+    } as unknown as import("../notifications/notifications.service").NotificationsService;
+    const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, notifications);
+
+    // Inside the Harare corridor so the online gate passes.
+    expect(await s.setOnline("p1", true, { lat: -17.83, lng: 31.05 })).toEqual({ online: true });
+    // The drain is fire-and-forget — let the microtask settle, then assert it pinged the waiters.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(drainedAt).toEqual({ lat: -17.83, lng: 31.05, radius: 5000 });
+    expect(pushed).toEqual(["cust-1", "cust-2"]);
+  });
+
+  it("does NOT drain the notify list when going online without a location (older client)", async () => {
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
+        update: async () => ({}),
+      },
+    };
+    let drained = false;
+    const tracking = {
+      evictFromGeo: async () => {},
+      drainNotifyNear: async () => { drained = true; return []; },
+    } as unknown as import("../tracking/tracking.service").TrackingService;
+    const notifications = { notifyRidersAvailable: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
+    const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, notifications);
+    await s.setOnline("p1", true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(drained).toBe(false);
+  });
+
   it("lets any rider go offline regardless of verification", async () => {
     const prisma = {
       rider: { findUnique: async () => ({ kycStatus: "pending" }), update: async () => ({}) },
@@ -418,8 +471,10 @@ describe("onlineRefusalReason (pure online-gate, Q2)", () => {
   it("returns null when every precondition passes", () => {
     expect(onlineRefusalReason(base)).toBeNull();
   });
-  it("prioritises kyc → banned → suspended → on_hold → cooldown", () => {
+  it("prioritises kyc_expired → kyc → banned → suspended → on_hold → cooldown", () => {
     expect(onlineRefusalReason({ ...base, kycStatus: "pending" })).toBe("kyc");
+    // A lapsed ID (1·b2) is reported distinctly from a first-time unverified rider.
+    expect(onlineRefusalReason({ ...base, kycStatus: "expired" })).toBe("kyc_expired");
     expect(onlineRefusalReason({ ...base, accountStatus: "banned" })).toBe("banned");
     expect(onlineRefusalReason({ ...base, accountStatus: "suspended" })).toBe("suspended");
     expect(onlineRefusalReason({ ...base, onHold: true })).toBe("on_hold");
@@ -466,6 +521,21 @@ describe("RiderService.applyKycResult", () => {
   it("reports updated:0 for a stale/duplicate event or unknown ref", async () => {
     const s = svc({ rider: { updateMany: async () => ({ count: 0 }) } }, {});
     expect(await s.applyKycResult("sess_x", "failed", new Date())).toEqual({ updated: 0 });
+  });
+
+  it("an `expired` result clears idVerified + decline reason and resets the A-02 attempt counter (1·b2)", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+      },
+    };
+    expect(await svc(prisma, {}).applyKycResult("sess_1", "expired", new Date())).toEqual({ updated: 1 });
+    // Not a decline: idVerified false, no decline reason, and kycAttempts reset so re-verify isn't locked.
+    expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, kycDeclineReason: null, kycAttempts: 0 });
   });
 });
 
@@ -525,6 +595,22 @@ describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
     const s = svc(prisma, {});
     await s.adminSetKyc("p1", "verified");
     expect(data).toMatchObject({ kycStatus: "verified", idVerified: true, kycDeclineReason: null });
+    expect(data!.kycResolvedAt).toBeInstanceOf(Date);
+  });
+
+  it("expire (1·b2 ops backstop) → expired, clears the reason, stamps the time, and resets kycAttempts", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 1 }),
+        update: async (args: { data: Record<string, unknown> }) => { data = args.data; return {}; },
+      },
+    };
+    const s = svc(prisma, {});
+    const res = await s.adminSetKyc("p1", "expired");
+    // Attempt counter reset to 0 so the rider can re-verify; not locked.
+    expect(res).toMatchObject({ profileId: "p1", kycStatus: "expired", kycAttempts: 0, locked: false });
+    expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, kycDeclineReason: null, kycAttempts: 0 });
     expect(data!.kycResolvedAt).toBeInstanceOf(Date);
   });
 

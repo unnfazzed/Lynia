@@ -1,25 +1,27 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { KYC_THRESHOLDS, KycDeclineReason } from "@lynia/shared";
 
-export type RiderKyc = "verified" | "failed" | "pending";
+export type RiderKyc = "verified" | "failed" | "pending" | "expired";
 
 /**
  * Map a Didit verification status to our rider kyc_status. Statuses are exact, case-sensitive
  * literals (V3): Not Started, In Progress, Awaiting User, In Review, Approved, Declined,
  * Resubmitted, Abandoned, Expired, Kyc Expired.
  *
- * Approved → verified. Declined and "Kyc Expired" (a previously-verified rider whose KYC has aged
- * out per retention policy → must re-verify) → failed. Everything else — including session "Expired"
- * (the hosted URL aged out before the rider finished, so they can simply retry) — stays pending, and
- * the admin manual-review backstop (T7) resolves anything stuck.
+ * Approved → verified. Declined → failed. "Kyc Expired" (a previously-verified rider whose national
+ * ID has aged out → must re-verify, rider-journey 1·b2) → its own terminal `expired` state, distinct
+ * from a verification-time decline. Everything else — including session "Expired" (the hosted URL aged
+ * out before the rider finished, so they can simply retry) — stays pending, and the admin
+ * manual-review backstop (T7) resolves anything stuck.
  */
 export function mapDiditStatus(status: string): RiderKyc {
   switch (status.trim().toLowerCase()) {
     case "approved":
       return "verified";
     case "declined":
-    case "kyc expired":
       return "failed";
+    case "kyc expired":
+      return "expired";
     default:
       // Not Started | In Progress | Awaiting User | In Review | Resubmitted | Abandoned | Expired
       return "pending";

@@ -6,7 +6,7 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { onlineRefusalReason } from "../riders/rider.service";
+import { onlineRefusalReason } from "../riders/online-gate";
 
 export interface NearbyRider {
   profileId: string;
@@ -36,6 +36,18 @@ const GEO_KEY = "rider:geo";
 /** Cap on GEOSEARCH candidates fed into the PG is_online filter. Over-fetches (vs the PG LIMIT 50)
  *  so the online filter still has ≥50 after dropping offline members; the result is then sliced to 50. */
 const GEO_SEARCH_COUNT = 100;
+
+/** 2·b1 "notify me when a rider's online" waiting list. `notify:geo` is a geo index keyed by the
+ *  customer's profile id at their pickup point; `notify:exp` is a companion sorted set (member =
+ *  profile id, score = expiry epoch ms) that gives the per-entry TTL the geo set lacks. Both are pruned
+ *  of expired entries on every add/drain, and a drained/expired entry is removed from BOTH. */
+const NOTIFY_GEO_KEY = "notify:geo";
+const NOTIFY_EXP_KEY = "notify:exp";
+/** How long a waiting-list entry lives before it's pruned (1h — past the ~90s auction, generous for a
+ *  customer who'll come back when pinged, bounded so a stale entry can't ping hours later). */
+const NOTIFY_TTL_MS = 60 * 60 * 1000;
+/** Cap on waiting customers drained per rider-online event — a backstop against a pathological set. */
+const NOTIFY_DRAIN_COUNT = 200;
 
 @Injectable()
 export class TrackingService implements OnModuleDestroy {
@@ -405,6 +417,72 @@ export class TrackingService implements OnModuleDestroy {
       return res.map((row) => ({ profileId: row[0], distanceM: Number(row[1]) }));
     } catch {
       return null;
+    }
+  }
+
+  /** Prune expired waiting-list entries from BOTH the geo index and the expiry ZSET (the geo set has no
+   *  per-member TTL, so `notify:exp` is the source of truth for expiry). Best-effort. */
+  private async pruneNotify(redis: IORedis, now: number): Promise<void> {
+    try {
+      const expired = await redis.zrangebyscore(NOTIFY_EXP_KEY, 0, now);
+      if (expired.length > 0) {
+        await redis.zrem(NOTIFY_EXP_KEY, ...expired);
+        await redis.zrem(NOTIFY_GEO_KEY, ...expired);
+      }
+    } catch {
+      /* best-effort: a prune miss only means a stale entry lingers until the next drain */
+    }
+  }
+
+  /**
+   * 2·b1: register a customer to be pinged when a rider comes online near `(lat, lng)` (their pickup).
+   * Indexes the customer's profile id at that point + stamps its expiry. Idempotent — re-registering the
+   * same customer just refreshes their point/expiry (GEOADD/ZADD overwrite the member). Best-effort and
+   * a no-op without Redis (returns false), so it can never fail the request that triggered it.
+   */
+  async addNotifyRequest(profileId: string, lat: number, lng: number, now: number = Date.now()): Promise<boolean> {
+    const redis = this.getRedis();
+    if (!redis) return false;
+    try {
+      await this.pruneNotify(redis, now);
+      await redis.geoadd(NOTIFY_GEO_KEY, lng, lat, profileId);
+      await redis.zadd(NOTIFY_EXP_KEY, now + NOTIFY_TTL_MS, profileId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 2·b1: drain the waiting customers within `radiusM` of `(lat, lng)` — a rider just came online here,
+   * so everyone who was waiting for supply nearby should be pinged and removed from the list (removed so
+   * they're pinged once, not on every subsequent rider that comes online). Returns their profile ids for
+   * the caller to push. Best-effort and a no-op without Redis (returns []); a Redis error yields [].
+   */
+  async drainNotifyNear(lat: number, lng: number, radiusM: number, now: number = Date.now()): Promise<string[]> {
+    const redis = this.getRedis();
+    if (!redis) return [];
+    try {
+      await this.pruneNotify(redis, now);
+      const members = (await redis.geosearch(
+        NOTIFY_GEO_KEY,
+        "FROMLONLAT",
+        lng,
+        lat,
+        "BYRADIUS",
+        radiusM,
+        "m",
+        "ASC",
+        "COUNT",
+        NOTIFY_DRAIN_COUNT,
+      )) as string[];
+      if (members.length === 0) return [];
+      // Remove drained entries from BOTH structures so each customer is pinged exactly once.
+      await redis.zrem(NOTIFY_GEO_KEY, ...members);
+      await redis.zrem(NOTIFY_EXP_KEY, ...members);
+      return members;
+    } catch {
+      return [];
     }
   }
 }

@@ -8,56 +8,28 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { KycStatus, RiderAccountStatus, SERVICE_CORRIDOR, haversineKm } from "@lynia/shared";
+import { SERVICE_CORRIDOR, haversineKm } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
 import { auditData } from "../admin/admin.shared";
 import { PiiCryptoService } from "../common/pii-crypto.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
+import { canGoOnline, onlineRefusalReason, type OnlineRefusal, REFUSAL_MESSAGE } from "./online-gate";
 
-type Kyc = "pending" | "verified" | "failed";
+// Re-export the online-gate helpers so existing importers (matching/offers/tests) keep their
+// `from "./rider.service"` path. The definitions live in ./online-gate — importing them from here
+// would re-form the rider↔tracking cycle those services' imports are designed to avoid.
+export { canGoOnline, onlineRefusalReason, type OnlineRefusal };
 
-/** A rider may go online only once KYC has passed (CONCEPT §5d gating). Pure for unit tests. */
-export function canGoOnline(kycStatus: string): boolean {
-  return kycStatus === KycStatus.VERIFIED;
-}
+type Kyc = "pending" | "verified" | "failed" | "expired";
 
-/** Why a rider was refused going online — a machine-readable tag the app keys off to show the right
- *  state (verify your ID / account banned / suspended / on hold / on cooldown). */
-export type OnlineRefusal = "kyc" | "banned" | "suspended" | "on_hold" | "cooldown" | "out_of_area";
-
-/**
- * The online-gate (Q2): the FIRST failed precondition, or null when the rider may go online. A rider
- * goes online only when KYC is verified, the account is `active` (admin-owned — read here, never
- * written), reliability is not `on_hold`, and any no-show cooldown has elapsed. Pure for unit tests.
- *
- * A `banned` account is reported as its own `banned` reason (a terminal, non-appealable state) so the
- * app shows the right copy — it is checked before the catch-all `suspended` branch, which then only
- * ever fires for a genuine suspension.
- */
-export function onlineRefusalReason(
-  rider: { kycStatus: string; accountStatus: string; onHold: boolean; cooldownUntil: Date | null },
-  now: Date = new Date(),
-): OnlineRefusal | null {
-  if (!canGoOnline(rider.kycStatus)) return "kyc";
-  if (rider.accountStatus === RiderAccountStatus.BANNED) return "banned";
-  if (rider.accountStatus !== RiderAccountStatus.ACTIVE) return "suspended";
-  if (rider.onHold) return "on_hold";
-  if (rider.cooldownUntil && rider.cooldownUntil > now) return "cooldown";
-  return null;
-}
-
-/** Rider-facing copy per refusal reason. The structured `reason` (not this string) is the contract. */
-const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
-  kyc: "Rider is not verified yet",
-  banned: "Your rider account has been banned",
-  suspended: "Your rider account is suspended",
-  on_hold: "You're on hold — complete deliveries to raise your reliability score",
-  cooldown: "On cooldown after repeated cancellations — try again later",
-  out_of_area: "You're outside the service area — go online from inside the Harare corridor",
-};
+/** 2·b1: radius (m) around a newly-online rider within which waiting "notify me" customers are pinged.
+ *  The SAME 5 km the customer broadcast + rider board use, so "a rider's online near you" means the
+ *  rider could actually have received that customer's broadcast. */
+const NOTIFY_RADIUS_M = 5000;
 
 @Injectable()
 export class RiderService {
@@ -69,6 +41,7 @@ export class RiderService {
     @Inject(KYC_VENDOR) private readonly vendor: KycVendor,
     private readonly pii: PiiCryptoService,
     private readonly tracking: TrackingService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -253,7 +226,25 @@ export class RiderService {
     // connected, so we can't rely on the disconnect flush). Best-effort — PG's is_online is the
     // authority for nearbyRiders; this just stops a now-offline rider lingering in GEOSEARCH results.
     if (!online) await this.tracking.evictFromGeo(profileId);
+    // 2·b1: a rider just came online with a position — ping any customers who were waiting for supply
+    // near here ("notify me" on the no-riders state) and clear them from the list. Fire-and-forget and
+    // fully best-effort (no Redis → empty drain), so it can never affect the go-online response.
+    if (online && location) void this.drainNotifyWaiters(location.lat, location.lng);
     return { online };
+  }
+
+  /**
+   * 2·b1: drain the "notify me" waiting list near a newly-online rider and push those customers. Fully
+   * best-effort — swallows everything (no Redis, a geo miss, a push outage) so it can never disturb the
+   * setOnline that spawned it. Separated out (not inlined) so the fire-and-forget has its own try/catch.
+   */
+  private async drainNotifyWaiters(lat: number, lng: number): Promise<void> {
+    try {
+      const waiters = await this.tracking.drainNotifyNear(lat, lng, NOTIFY_RADIUS_M);
+      if (waiters.length > 0) await this.notifications.notifyRidersAvailable(waiters);
+    } catch {
+      /* best-effort: a notify-drain failure never affects the rider going online */
+    }
   }
 
   /**
@@ -265,7 +256,7 @@ export class RiderService {
    */
   async applyKycResult(
     kycRef: string,
-    status: "verified" | "failed",
+    status: "verified" | "failed" | "expired",
     eventAt: Date,
     reason?: string | null,
   ): Promise<{ updated: number }> {
@@ -279,6 +270,9 @@ export class RiderService {
         // why, and clear any stale reason on a verify. NOT a kycAttempts change — the attempt counter
         // is the admin A-02 decline path's, not the vendor webhook's.
         ...(status === "failed" ? { kycDeclineReason: reason ?? null } : { kycDeclineReason: null }),
+        // An expiry (1·b2) is not a decline: reset the A-02 attempt counter so re-verification isn't
+        // trapped by an ancient decline the rider already recovered from before they were verified.
+        ...(status === "expired" ? { kycAttempts: 0 } : {}),
       },
     });
     return { updated: res.count };
@@ -307,9 +301,16 @@ export class RiderService {
     actor?: string,
     note?: string | null,
   ): Promise<{ profileId: string; kycStatus: Kyc; kycAttempts: number; locked: boolean }> {
-    // verified → approve, failed → decline, pending → reset (matches the ConfirmModal action names).
+    // verified → approve, failed → decline, expired → expire (1·b2 ops backstop), pending → reset
+    // (matches the ConfirmModal action names).
     const action =
-      status === "verified" ? "rider.kyc_approve" : status === "failed" ? "rider.kyc_decline" : "rider.kyc_reset";
+      status === "verified"
+        ? "rider.kyc_approve"
+        : status === "failed"
+          ? "rider.kyc_decline"
+          : status === "expired"
+            ? "rider.kyc_expire"
+            : "rider.kyc_reset";
 
     return this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({
@@ -350,9 +351,13 @@ export class RiderService {
             // vendor webhook can't override it (mirrors the decline path). A `pending` RESET is
             // deliberately inviting a fresh vendor result, so it leaves kycResolvedAt untouched.
             ...(status === "verified" ? { kycDeclineReason: null, kycResolvedAt: new Date() } : {}),
+            // A manual EXPIRE (1·b2 ops backstop) is also terminal: stamp the time, clear any stale
+            // decline reason, and reset the A-02 counter so re-verification isn't blocked by an old lock.
+            ...(status === "expired" ? { kycDeclineReason: null, kycResolvedAt: new Date(), kycAttempts: 0 } : {}),
           },
         });
-        result = { profileId, kycStatus: status, kycAttempts: rider.kycAttempts, locked: rider.kycAttempts >= 2 };
+        const nextAttempts = status === "expired" ? 0 : rider.kycAttempts;
+        result = { profileId, kycStatus: status, kycAttempts: nextAttempts, locked: nextAttempts >= 2 };
       }
 
       // Same transaction as the decision — never one without the other. `actor` is absent only in older

@@ -59,6 +59,7 @@ export class AuthService {
         email: true,
         photoUrl: true,
         ordersCount: true,
+        onHold: true,
         rider: {
           select: {
             bikeReg: true,
@@ -85,6 +86,8 @@ export class AuthService {
       email: p.email,
       photoUrl: p.photoUrl,
       ordersCount: p.ordersCount,
+      // S·2: customer account standing — true blocks new broadcasts (the app shows the on-hold screen).
+      onHold: p.onHold,
       rider: p.rider
         ? {
             bikeReg: p.rider.bikeReg,

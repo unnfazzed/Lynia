@@ -77,6 +77,14 @@ export class OrdersService {
 
   /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */
   async create(input: CreateOrderRequest, customerId: string) {
+    // S·2: a held customer can't broadcast. Checked first — before the corridor gate and any write —
+    // and thrown in the same { reason, message } shape the rider online-gate uses, so the app's
+    // ApiError.code pipeline routes it straight to the "account on hold" screen (gates.ts).
+    const account = await this.prisma.profile.findUnique({ where: { id: customerId }, select: { onHold: true } });
+    if (account?.onHold) {
+      throw new ForbiddenException({ reason: "on_hold", message: "Your account is on hold." });
+    }
+
     // Q1: gate on the service corridor before doing any work — both waypoints must be in coverage.
     assertWithinServiceCorridor(input.pickup.point, input.dropoff.point);
 
@@ -127,6 +135,10 @@ export class OrdersService {
     // Server-side window expiry (ET1). No-op if Redis isn't configured.
     await this.expiry.schedule(order.id);
 
+    // 2·b1 supply signal: resolve how many online riders are nearby BEFORE returning, so the auction
+    // opens knowing whether anyone was actually pinged. Best-effort (null = unknown → calm fallback).
+    const ridersNearby = await this.countNearbyForPickup(input.pickup as unknown as Prisma.JsonValue);
+
     // Post-commit, best-effort: push the broadcast to nearby online riders (CONCEPT §3.10 — push is
     // the primary new-order channel for riders, alongside the WS board). Never blocks the create.
     void this.broadcastToNearbyRiders(order.id, input.pickup as unknown as Prisma.JsonValue, input.dropoff as unknown as Prisma.JsonValue, {
@@ -146,6 +158,8 @@ export class OrdersService {
       // Auction countdown: the client renders the window off createdAt + OFFER_WINDOW_MS (the same
       // window the server schedules expiry against). Status is open_for_offers on create.
       expiresAt: new Date(order.createdAt.getTime() + OFFER_WINDOW_MS).toISOString(),
+      // 2·b1: online riders within the broadcast radius at broadcast time. null = supply unknown.
+      ridersNearby,
     };
   }
 
@@ -154,6 +168,17 @@ export class OrdersService {
    *  returns the server-authoritative acceptance timestamp for the gate the client shows first. */
   acceptDisclaimer(policyVersion: string, _customerId: string): { policyVersion: string; acceptedAt: string } {
     return { policyVersion, acceptedAt: new Date().toISOString() };
+  }
+
+  /**
+   * 2·b1: register the customer to be pinged when a rider comes online near their pickup — the "notify
+   * me" affordance on the no-riders-online auction state. Best-effort: the waiting-list store is
+   * Redis-backed, so without Redis this simply doesn't persist (the customer just won't get the ping).
+   * `queued` reflects whether it was actually stored, so the client can be honest if it wasn't.
+   */
+  async requestNotifyWhenAvailable(customerId: string, pickup: { lat: number; lng: number }): Promise<{ queued: boolean }> {
+    const queued = await this.tracking.addNotifyRequest(customerId, pickup.lat, pickup.lng);
+    return { queued };
   }
 
   /**
@@ -195,6 +220,24 @@ export class OrdersService {
       this.safeEmitBoardNewOrder(boardEvent, pt.lat, pt.lng);
     } catch {
       /* best-effort: a broadcast-push failure never affects the created order */
+    }
+  }
+
+  /**
+   * Supply signal for the "no riders online" state (2·b1): how many online riders are within the same
+   * {@link BROADCAST_RADIUS_M} the push + board use, so the client can tell "no offers yet, riders were
+   * pinged" (calm wait) apart from "there's nobody nearby to ping" (honest empty). Best-effort — a
+   * malformed point or a geo-query failure returns `null` ("supply unknown"), and the client then falls
+   * back to today's calm "finding riders" state rather than a false "nobody's here".
+   */
+  private async countNearbyForPickup(pickup: Prisma.JsonValue): Promise<number | null> {
+    try {
+      const pt = pickupPoint(pickup);
+      if (!pt) return null;
+      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, BROADCAST_RADIUS_M);
+      return nearby.length;
+    } catch {
+      return null; // supply unknown — never let a geo blip surface a false "no riders online"
     }
   }
 
@@ -476,6 +519,11 @@ export class OrdersService {
       };
     }
 
+    // 2·b1: live supply count while the auction is open, so a 15s poll self-heals a transient "no
+    // riders online" the moment a rider comes online. Null on every non-open status (like expiresAt),
+    // and best-effort — a geo blip yields null → the client keeps the calm "finding riders" state.
+    const ridersNearby = order.status === "open_for_offers" ? await this.countNearbyForPickup(order.pickup) : null;
+
     return {
       id: order.id,
       status: order.status,
@@ -516,6 +564,8 @@ export class OrdersService {
         order.status === "open_for_offers"
           ? new Date(order.createdAt.getTime() + OFFER_WINDOW_MS).toISOString()
           : null,
+      // 2·b1 supply signal: online riders nearby while open (null otherwise / on a geo miss).
+      ridersNearby,
     };
   }
 }

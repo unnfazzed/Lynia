@@ -1,7 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
-import { fmtDate, reportsFor, round, toTripRow } from "./admin.shared";
+import { auditData, fmtDate, reportsFor, round, toTripRow } from "./admin.shared";
 
 @Injectable()
 export class AdminCustomersService {
@@ -16,12 +16,12 @@ export class AdminCustomersService {
    * customer is `active`, so `?filter=flagged` legitimately returns none (TODO(A-05): the
    * flagged/banned states need schema on Profile). `flags` is the customer's real Report count.
    */
-  async listCustomers(filter?: "active" | "flagged" | "banned") {
+  async listCustomers(filter?: "active" | "flagged" | "banned" | "on_hold") {
     const profiles = await this.prisma.profile.findMany({
       where: { role: "customer" },
       orderBy: { createdAt: "desc" },
       take: 100,
-      select: { id: true, firstName: true, lastName: true, phone: true, createdAt: true },
+      select: { id: true, firstName: true, lastName: true, phone: true, createdAt: true, onHold: true, holdReason: true },
     });
     const ids = profiles.map((p) => p.id);
 
@@ -53,7 +53,8 @@ export class AdminCustomersService {
     const rows = profiles.map((p) =>
       this.toCustomer(p, totalBy.get(p.id) ?? 0, cancelledBy.get(p.id) ?? 0, spendBy.get(p.id) ?? null, flagsBy.get(p.id) ?? 0),
     );
-    // Every customer is `active` today (no ban/flag model), so a flagged/banned filter yields none.
+    // `on_hold` is a real state now; `flagged`/`banned` still have no backing model, so those filters
+    // legitimately return none. `active` (and no filter) returns everyone.
     return filter && filter !== "active" ? rows.filter((c) => (c.status as string) === filter) : rows;
   }
 
@@ -65,7 +66,7 @@ export class AdminCustomersService {
   async getCustomerDetail(id: string) {
     const profile = await this.prisma.profile.findFirst({
       where: { id, role: "customer" },
-      select: { id: true, firstName: true, lastName: true, phone: true, createdAt: true },
+      select: { id: true, firstName: true, lastName: true, phone: true, createdAt: true, onHold: true, holdReason: true },
     });
     if (!profile) return null;
 
@@ -102,7 +103,7 @@ export class AdminCustomersService {
 
   /** Shared Customer projection for the directory + detail — aggregates in, masked row out. */
   private toCustomer(
-    p: { id: string; firstName: string; lastName: string; phone: string; createdAt: Date },
+    p: { id: string; firstName: string; lastName: string; phone: string; createdAt: Date; onHold?: boolean; holdReason?: string | null },
     total: number,
     cancelled: number,
     spend: { toFixed: (n: number) => string } | null,
@@ -117,7 +118,42 @@ export class AdminCustomersService {
       cancelRatePct: total ? round((cancelled / total) * 100) : 0,
       flags, // the customer's Report count (how many times riders reported them)
       joined: fmtDate(p.createdAt),
-      status: "active" as const, // TODO(A-05): no ban/flag state on Profile yet
+      // S·2: real standing now — `on_hold` blocks the customer from broadcasting (OrdersService.create).
+      status: p.onHold ? ("on_hold" as const) : ("active" as const),
+      holdReason: p.holdReason ?? null,
     };
+  }
+
+  /**
+   * S·2: place a customer on hold (blocks new broadcasts) + write the audit row in ONE transaction.
+   * Mirrors the rider suspend/lift pattern. Reason required (enforced by the controller's zod body).
+   * 404s when the id isn't a customer profile.
+   */
+  async holdCustomer(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { id: true } });
+      if (!customer) throw new NotFoundException("Customer not found");
+      await tx.profile.update({ where: { id: profileId }, data: { onHold: true, holdReason: input.reason } });
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, "customer.hold", profileId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: profileId, status: "on_hold" as const, auditId: audit.id };
+    });
+  }
+
+  /** S·2: lift a customer hold → back to active, clearing the reason. Reason optional. Mutation + audit
+   *  in one transaction. 404s when the id isn't a customer. */
+  async liftCustomerHold(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { id: true } });
+      if (!customer) throw new NotFoundException("Customer not found");
+      await tx.profile.update({ where: { id: profileId }, data: { onHold: false, holdReason: null } });
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, "customer.lift", profileId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: profileId, status: "active" as const, auditId: audit.id };
+    });
   }
 }

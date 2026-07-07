@@ -7,6 +7,7 @@ import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { ConfirmModal } from "../../components/ConfirmModal";
+import { CustomerActions } from "./CustomerActions";
 import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconUser } from "../../components/icons";
@@ -54,6 +55,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
   ];
 
   const flagged = c.status === "flagged";
+  const onHold = c.status === "on_hold";
 
   return (
     <main className="content">
@@ -63,7 +65,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
         </a>
         <h1 style={{ fontSize: 18 }}>{c.name}</h1>
         <span style={{ display: "flex", gap: 6 }}>
-          {c.status === "banned" ? <Pill kind="bad">banned</Pill> : flagged ? <Pill kind="bad">flagged</Pill> : <Pill kind="good">active</Pill>}
+          {c.status === "banned" ? <Pill kind="bad">banned</Pill> : onHold ? <Pill kind="bad">on hold</Pill> : flagged ? <Pill kind="bad">flagged</Pill> : <Pill kind="good">active</Pill>}
         </span>
         <Conn connected={connected} />
       </header>
@@ -161,7 +163,15 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
 
           <section className="card">
             <div className="block-title">Actions</div>
+            {onHold && c.holdReason ? (
+              <div className="mut" style={{ fontSize: 12, marginBottom: 8 }}>
+                On hold — {c.holdReason}. They can&apos;t broadcast until the hold is lifted.
+              </div>
+            ) : null}
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {/* S·2: the real, blocking hold/lift (mutates Profile.onHold + audit in one tx). The
+                  flag/ban controls below remain audit-only placeholders (no backing model yet). */}
+              <CustomerActions id={c.id} name={c.name} onHold={onHold} connected={connected} />
               {flagged ? (
                 <ConfirmModal
                   action="customer.clear_flag"

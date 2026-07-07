@@ -16,7 +16,9 @@ describe("mapDiditStatus", () => {
     expect(mapDiditStatus("Approved")).toBe("verified");
     expect(mapDiditStatus("approved")).toBe("verified");
     expect(mapDiditStatus("Declined")).toBe("failed");
-    expect(mapDiditStatus("Kyc Expired")).toBe("failed");
+    // A previously-verified ID that later lapsed → its own `expired` state (1·b2), not a decline.
+    expect(mapDiditStatus("Kyc Expired")).toBe("expired");
+    expect(mapDiditStatus("kyc expired")).toBe("expired");
     // session "Expired" = the hosted URL aged out before completion → retryable, not a rejection
     expect(mapDiditStatus("Expired")).toBe("pending");
     expect(mapDiditStatus("In Review")).toBe("pending");

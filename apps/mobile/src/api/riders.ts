@@ -1,7 +1,7 @@
 import { apiFetch } from "./client";
 
 export interface BecomeResult {
-  kycStatus: "pending" | "verified" | "failed";
+  kycStatus: "pending" | "verified" | "failed" | "expired";
   mode: "auto" | "manual";
   verificationUrl?: string;
 }

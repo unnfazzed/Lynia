@@ -5,13 +5,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { etaHeadline, liveEta } from "../../src/logic/eta";
-import { isPendingCounter, shouldShowOffersError } from "../../src/logic/journey";
+import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../src/logic/journey";
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
-import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
+import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import type { LastActive } from "../../src/logic/last-active";
@@ -41,8 +41,12 @@ const URGENT_MS = 20_000;
 const CANCELLED_GRACE_MS = 20_000;
 
 export default function OrderScreen(): React.ReactElement {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, rebroadcast: rebroadcastParam, fare: rebroadcastFare } = useLocalSearchParams<{ id: string; rebroadcast?: string; fare?: string }>();
   const orderId = typeof id === "string" ? id : "";
+  // 3·b0: this auction was auto-created because the assigned rider bailed. The `rebroadcast=1` flag
+  // (carried on the teleport from the dead order) tells us to reassure the customer with a "your rider
+  // had to cancel — same price, no need to start over" card until the first fresh bid arrives.
+  const [showRebroadcast, setShowRebroadcast] = useState(rebroadcastParam === "1");
   const qc = useQueryClient();
   const router = useRouter();
   const reduceMotion = useReduceMotion();
@@ -152,9 +156,12 @@ export default function OrderScreen(): React.ReactElement {
   // move the customer to the fresh auction (replace, so the dead cancelled order isn't in the stack).
   const { connected } = useOrderSocket(socketExpected ? orderId : null, (newOrderId) => {
     // The assigned rider bailed and we auto-re-broadcast at the same price — without a word the customer
-    // just gets teleported to a "finding riders" screen. A toast explains the sudden change of screen.
-    toast.show("Your rider dropped off — we've re-broadcast your parcel to nearby riders.", "warning");
-    router.replace(`/order/${newOrderId}`);
+    // just gets teleported to a "finding riders" screen. Carry a `rebroadcast` flag (+ the agreed fare)
+    // so the fresh auction opens with the 3·b0 reassurance card instead of a bare, unexplained restart.
+    const snap = qc.getQueryData<OrderSnapshot>(orderKey(orderId));
+    const carriedFare = snap?.agreedFare ?? snap?.proposedFare ?? "";
+    const query = carriedFare ? `?rebroadcast=1&fare=${encodeURIComponent(carriedFare)}` : "?rebroadcast=1";
+    router.replace(`/order/${newOrderId}${query}`);
   });
   // "Reconnecting" only reads truthfully after we've been live once — the initial connect window
   // would otherwise flash the banner on every mount.
@@ -192,6 +199,12 @@ export default function OrderScreen(): React.ReactElement {
     }
     prevBidCount.current = liveBidCount;
   }, [liveBidCount, status, offersQ.isSuccess]);
+
+  // 3·b0: the reassurance card gives way to the live auction the moment a fresh rider bids — from there
+  // the customer is choosing again, and the "no need to start over" message has done its job.
+  useEffect(() => {
+    if (liveBidCount > 0) setShowRebroadcast(false);
+  }, [liveBidCount]);
 
   // Warm success cue at the two moments that land emotionally: a rider is assigned (the auction paid
   // off) and the parcel is delivered. Fires only on a real transition, never on mount or a re-render.
@@ -340,6 +353,15 @@ export default function OrderScreen(): React.ReactElement {
       void qc.invalidateQueries({ queryKey: ["history"] }); // the Trips list must reflect the cancel, not the stale live status
     },
   });
+  // 2·b1: "notify me when a rider's online" — registers a waiting-list entry keyed to the pickup so the
+  // server pushes when a rider comes online nearby. Reads the pickup from the live snapshot at call time.
+  const notifyM = useMutation({
+    mutationFn: () => {
+      const pickup = qc.getQueryData<OrderSnapshot>(orderKey(orderId))?.pickup.point;
+      if (!pickup) throw new Error("No pickup on this order yet.");
+      return notifyWhenRiderOnline(pickup);
+    },
+  });
 
   if (orderQ.isLoading) {
     return (
@@ -407,6 +429,10 @@ export default function OrderScreen(): React.ReactElement {
   const riderStale =
     isActive && riderUpdatedAt != null && Date.now() - new Date(riderUpdatedAt).getTime() > PRESENCE_ESCALATION_MS;
   const bidCount = orderedOffers.length;
+  // 2·b1: the server said there are no online riders nearby and no bid has landed — an honest "nobody
+  // to ping right now" state, distinct from the calm "riders pinged, hang tight" wait. Non-terminal:
+  // the 15s poll refreshes ridersNearby and any landing bid clears it.
+  const noRiders = noRidersOnline(order.ridersNearby, bidCount, order.status === "open_for_offers");
   const trackingHint = !riderPoint
     ? "Waiting for the rider's GPS…"
     : riderStale
@@ -497,6 +523,21 @@ export default function OrderScreen(): React.ReactElement {
 
         {order.status === "open_for_offers" ? (
           <View>
+            {/* 3·b0: rider-bail reassurance. Shown only when this auction was auto-created by a bail
+                (the `rebroadcast` flag) and no fresh bid has landed yet — explains the sudden restart
+                and that the price is unchanged, so the customer doesn't think they lost their order. */}
+            {showRebroadcast ? (
+              <Card style={{ borderColor: tokens.color.line }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
+                  <Icon name="bike" size={18} color={tokens.color.muted} />
+                  <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>Your rider had to cancel</Text>
+                </View>
+                <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 19 }}>
+                  Sometimes a rider can&apos;t make it. We&apos;re finding you another rider at the same
+                  price{rebroadcastFare ? <Text style={{ fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}> — {formatMoney(rebroadcastFare)}</Text> : null}. No need to start over.
+                </Text>
+              </Card>
+            ) : null}
             {/* Live header: bid count the moment the first bid lands, else a "finding" state; a
                 reconnecting hint when the auction socket is down and we're on the poll fallback.
                 Right-aligned countdown shares the baseline — calm (muted) until the last 20s, then
@@ -505,7 +546,9 @@ export default function OrderScreen(): React.ReactElement {
               <Text style={{ flex: 1, fontSize: 14, color: tokens.color.muted }}>
                 {bidCount > 0
                   ? `${bidCount} ${bidCount === 1 ? "rider" : "riders"} bidding${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
-                  : `Finding riders near you…${connectionState === "reconnecting" ? " reconnecting…" : ""}`}
+                  : noRiders
+                    ? `No riders online nearby right now${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
+                    : `Finding riders near you…${connectionState === "reconnecting" ? " reconnecting…" : ""}`}
               </Text>
               {remainingMs != null ? (
                 <Animated.Text
@@ -622,6 +665,33 @@ export default function OrderScreen(): React.ReactElement {
                 <EmptyState icon="wifi-off" title="Couldn't load offers" message="Check your connection and try again.">
                   <Button label="Retry" onPress={() => void offersQ.refetch()} loading={offersQ.isFetching} />
                 </EmptyState>
+              ) : noRiders ? (
+                // 2·b1: honest supply-empty. No online riders were nearby to ping — so the calm
+                // "riders were pinged, hang tight" copy would be a lie. Non-terminal: the auction keeps
+                // running (the header still counts down), the poll self-heals if a rider comes online,
+                // and the nudge widens interest. "Notify me" registers a waiting-list entry so the
+                // customer gets a push the moment a rider comes online near their pickup.
+                <View style={{ marginTop: tokens.space.sm }}>
+                  <EmptyState
+                    icon="bike"
+                    title="No riders online nearby right now"
+                    message="Nobody's online near you this minute. We'll keep looking while the window's open — a rider may come on any moment. You can also nudge the price to widen interest."
+                  >
+                    {notifyM.isSuccess && notifyM.data?.queued ? (
+                      <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600", textAlign: "center" }}>
+                        We&apos;ll ping you when a rider&apos;s online near your pickup.
+                      </Text>
+                    ) : (
+                      <Button
+                        label="Notify me when a rider's online"
+                        variant="ghost"
+                        onPress={() => notifyM.mutate()}
+                        loading={notifyM.isPending}
+                      />
+                    )}
+                    <Button label="Nudge price & re-broadcast" variant="ghost" onPress={rebroadcast} />
+                  </EmptyState>
+                </View>
               ) : (
                 // Live-but-empty: a "working" state (pulsing placeholder) distinct from the expired
                 // dead-end, so streaming-into-empty reads as "finding", not "broken".

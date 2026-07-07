@@ -26,7 +26,10 @@ export interface Customer {
   cancelRatePct: number;
   flags: number;
   joined: string;
-  status: "active" | "flagged" | "banned";
+  // `on_hold` (S·2) is a real, blocking state now; `flagged`/`banned` remain display-only placeholders.
+  status: "active" | "flagged" | "banned" | "on_hold";
+  /** The recorded reason for a hold (S·2), null otherwise. */
+  holdReason?: string | null;
 }
 
 export interface CustomerFlag {
@@ -160,7 +163,7 @@ export interface KycReview {
   phone: string;
   idNumber: string | null;
   bike: string;
-  status: "pending" | "verified" | "failed";
+  status: "pending" | "verified" | "failed" | "expired";
   kycRef: string | null;
   /** Decline counter. 0 = first review, 1 = one resubmit used, >= 2 = locked. */
   kycAttempts: number;
@@ -184,7 +187,7 @@ export interface DuplicateIdAccount {
   phone: string;
   role: Role;
   /** The other account's KYC state, when it is itself a rider — null for a non-rider (e.g. customer). */
-  kycStatus: "pending" | "verified" | "failed" | null;
+  kycStatus: "pending" | "verified" | "failed" | "expired" | null;
   /** The other account's rider standing, when it is a rider — null otherwise. */
   accountStatus: "active" | "suspended" | "banned" | null;
 }
@@ -214,7 +217,7 @@ export interface RiderDetail {
   name: string;
   phone: string;
   bike: string;
-  kyc: "pending" | "verified" | "failed";
+  kyc: "pending" | "verified" | "failed" | "expired";
   status: "online" | "offline" | "suspended" | "banned" | "cooldown";
   cooldown?: string;
   suspendReason?: string;

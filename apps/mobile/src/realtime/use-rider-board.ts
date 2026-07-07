@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import type { OpenOrder } from "../api/orders";
+import { shouldNoticeTakenOrder } from "../logic/journey";
 import { useAuth } from "../auth/auth-context";
 import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
 import { createSocket } from "./socket";
@@ -17,7 +18,8 @@ import { createSocket } from "./socket";
 export function useRiderBoard(
   online: boolean,
   loc: { lat: number; lng: number } | null,
-): { connected: boolean; expiredOrderIds: Set<string>; takenOrderIds: Set<string> } {
+  bidIds?: Set<string>,
+): { connected: boolean; expiredOrderIds: Set<string>; takenOrderIds: Set<string>; boardTakenNudge: number } {
   const { session } = useAuth();
   const token = session?.accessToken;
   const qc = useQueryClient();
@@ -29,11 +31,20 @@ export function useRiderBoard(
   // Orders a customer assigned to SOMEONE (rider-journey 2·b1 / 3·b1) — the card leaves the board;
   // a rider who bid on one shows the "not chosen" state (distinct from `expiredOrderIds` above).
   const [takenOrderIds, setTakenOrderIds] = useState<Set<string>>(() => new Set());
+  // 2·b1: a monotonic nudge that ticks each time an UN-BID order the rider had on their board is taken
+  // by someone else. Drives a single, self-clearing "a nearby order was just taken" board notice — one
+  // line no matter how many go at once (the timer just resets), so a busy board never spams. Orders the
+  // rider DID bid on are excluded here: their sent-offer card already shows the "not chosen" state.
+  const [boardTakenNudge, setBoardTakenNudge] = useState(0);
   // Hold the live socket + latest loc in refs so the loc-change effect can re-subscribe (re-scope the
   // geo rooms) without tearing down and rebuilding the connection.
   const socketRef = useRef<Socket | null>(null);
   const locRef = useRef(loc);
   locRef.current = loc;
+  // The rider's own bid ids in a ref, so the taken-order handler can tell "a bid I lost" (card shows
+  // 'not chosen') from "an order I never bid on" (the board notice) without re-running the socket effect.
+  const bidIdsRef = useRef(bidIds);
+  bidIdsRef.current = bidIds;
 
   useEffect(() => {
     if (!online || !token) {
@@ -90,11 +101,18 @@ export function useRiderBoard(
       const parsed = OrderTakenEvent.safeParse(raw);
       if (!parsed.success) return;
       const { orderId } = parsed.data;
+      // Was this order actually on the rider's board (so its disappearance is worth a word)?
+      const wasOnBoard = (qc.getQueryData<OpenOrder[]>(["openOrders"]) ?? []).some((o) => o.id === orderId);
       qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => prev?.filter((o) => o.id !== orderId));
       void qc.invalidateQueries({ queryKey: ["activeJob"] }).then(() => {
         const active = qc.getQueryData<{ id: string } | null>(["activeJob"]);
         if (active?.id === orderId) return; // we won — never mark our own order "not chosen"
         setTakenOrderIds((prev) => (prev.has(orderId) ? prev : new Set(prev).add(orderId)));
+        // 2·b1: if it was on the board and we hadn't bid on it, nudge the muted "taken" notice. A bid
+        // we lost is skipped — its sent-offer card is already flipping to "not this time".
+        if (shouldNoticeTakenOrder(wasOnBoard, bidIdsRef.current?.has(orderId) ?? false)) {
+          setBoardTakenNudge((n) => n + 1);
+        }
       });
     });
 
@@ -113,5 +131,5 @@ export function useRiderBoard(
     socket.emit(WS_EVENTS.boardSubscribe, loc ? { lat: loc.lat, lng: loc.lng } : {});
   }, [loc?.lat, loc?.lng]);
 
-  return { connected, expiredOrderIds, takenOrderIds };
+  return { connected, expiredOrderIds, takenOrderIds, boardTakenNudge };
 }

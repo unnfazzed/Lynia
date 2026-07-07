@@ -19,6 +19,7 @@ import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
 import { PickupChecklist } from "../../src/ui/rider/PickupChecklist";
 import { CancelledHandback, UndeliveredDone } from "../../src/ui/rider/terminals";
 import { UndeliveredSheet } from "../../src/ui/rider/UndeliveredSheet";
+import { BailSheet } from "../../src/ui/rider/BailSheet";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
 export default function RiderJob(): React.ReactElement {
@@ -32,6 +33,10 @@ export default function RiderJob(): React.ReactElement {
   // R1: the post-pickup "can't complete delivery" reason picker + the frozen terminal once it commits.
   const [undelivering, setUndelivering] = useState(false);
   const [undeliveredDone, setUndeliveredDone] = useState<UndeliveredReason | null>(null);
+  // 4·b3: the pre-pickup bail flow — open the reason + reliability-warning sheet before cancelling,
+  // and carry the (optional) reason to the server so the customer's re-broadcast has a "why".
+  const [bailing, setBailing] = useState(false);
+  const [bailReason, setBailReason] = useState("");
   // R9: count wrong delivery-code tries to show attempts-remaining and lock the field at the cap.
   const [otpTries, setOtpTries] = useState(0);
   // Rate-the-sender (4·7): an OPTIONAL post-delivery star, recorded-only — tap-then-submit, no undo.
@@ -176,7 +181,14 @@ export default function RiderJob(): React.ReactElement {
       refresh();
     },
   });
-  const cancelM = useMutation({ mutationFn: () => cancelOrder(orderId!), onSuccess: refresh, onError: fail });
+  const cancelM = useMutation({
+    mutationFn: () => {
+      const reason = bailReason.trim();
+      return cancelOrder(orderId!, reason ? { reason } : {});
+    },
+    onSuccess: refresh,
+    onError: fail,
+  });
   // 4·7: optional, recorded-only rate-the-sender. Doesn't change status or gate anything.
   const senderRateM = useMutation({
     mutationFn: (score: number) => rateSender(orderId!, { score }),
@@ -386,7 +398,7 @@ export default function RiderJob(): React.ReactElement {
         ) : null}
 
         {order.status === "en_route_dropoff" ? (
-          <DeliveryOtp code={code} onChangeCode={setCode} otpTries={otpTries} pending={deliverM.isPending} onConfirm={() => deliverM.mutate()} />
+          <DeliveryOtp code={code} onChangeCode={setCode} otpTries={otpTries} pending={deliverM.isPending} onConfirm={() => deliverM.mutate()} senderPhone={order.counterpartyPhone} />
         ) : null}
 
         {/* R1: post-pickup, the rider needs a way to record a hand-off that can't happen — otherwise a
@@ -442,8 +454,22 @@ export default function RiderJob(): React.ReactElement {
             hand-off. Passes the rider's own live GPS when available. */}
         {isActive ? <SosControl orderId={order.id} lat={riderPoint?.lat} lng={riderPoint?.lng} /> : null}
 
+        {/* 4·b3: pre-pickup bail. The confirm sheet warns about the reliability hit and captures an
+            optional reason before the (real, server-side) strike + cooldown land — no more silent
+            one-tap penalty. Hidden once the parcel is collected (RIDER_CANCELLABLE), where the escape
+            hatch becomes "Can't complete delivery" above. */}
         {RIDER_CANCELLABLE.includes(order.status) ? (
-          <Button label="Cancel job" variant="ghost" onPress={() => cancelM.mutate()} loading={cancelM.isPending} />
+          bailing ? (
+            <BailSheet
+              reason={bailReason}
+              onChangeReason={setBailReason}
+              pending={cancelM.isPending}
+              onConfirm={() => cancelM.mutate()}
+              onDismiss={() => setBailing(false)}
+            />
+          ) : (
+            <Button label="Cancel job" variant="ghost" onPress={() => setBailing(true)} />
+          )
         ) : null}
 
         {/* Order-level support (active) + report/block after the trip (rider → sender). */}

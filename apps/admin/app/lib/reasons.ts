@@ -49,6 +49,9 @@ export const REASONS = {
   ],
   customerClearFlag: ["Behaviour improved", "Reports not substantiated"],
   customerBan: ["Confirmed fraud", "Repeated no-shows after warnings", "Abuse of riders", "Safety incident"],
+  // S·2 customer hold — a reversible pause on broadcasting while ops reviews recent activity.
+  customerHold: ["Cancel pattern hurting riders", "Suspected fraud — under review", "Payment dispute open", "Awaiting identity check"],
+  customerLift: ["Review complete — no issue", "Dispute resolved", "Customer contacted and cleared"],
 
   // issues.html
   issueRefund: ["Parcel lost — delivery unconfirmed", "Parcel damaged in transit", "Overcharge confirmed"],

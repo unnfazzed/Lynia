@@ -9,14 +9,23 @@ import { Button, Card, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
 
 // Custom pill (not StatusPill) only because the failed state needs danger, which the shared tones
 // deliberately exclude — but it follows the DS pill spec: full radius, 12px/600, wash backgrounds.
-function KycBadge({ status }: { status: "pending" | "verified" | "failed" }): React.ReactElement {
-  const color = status === "verified" ? tokens.color.accentText : status === "failed" ? tokens.color.danger : tokens.color.muted;
+function KycBadge({ status }: { status: "pending" | "verified" | "failed" | "expired" }): React.ReactElement {
+  // Expired reads like failed (danger) — the rider isn't currently ridable and must act — but with its
+  // own "ID expired" label so it's not mistaken for a first-time verification failure.
+  const bad = status === "failed" || status === "expired";
+  const color = status === "verified" ? tokens.color.accentText : bad ? tokens.color.danger : tokens.color.muted;
   const bg = status === "verified" ? tokens.color.accentWash : tokens.color.surface;
+  const label =
+    status === "verified"
+      ? "Verified rider"
+      : status === "expired"
+        ? "ID expired"
+        : status === "failed"
+          ? "Verification failed"
+          : "Verification pending";
   return (
     <View style={{ alignSelf: "flex-start", borderRadius: tokens.radius.pill, borderWidth: 1, borderColor: tokens.color.line, paddingHorizontal: tokens.space.md, paddingVertical: 4, backgroundColor: bg, marginTop: 4 }}>
-      <Text style={{ fontSize: 12, fontWeight: "600", color }}>
-        {status === "verified" ? "Verified rider" : status === "failed" ? "Verification failed" : "Verification pending"}
-      </Text>
+      <Text style={{ fontSize: 12, fontWeight: "600", color }}>{label}</Text>
     </View>
   );
 }

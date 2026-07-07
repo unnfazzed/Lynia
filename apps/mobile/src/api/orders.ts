@@ -20,6 +20,8 @@ export interface CreateOrderResult {
   distanceKm: number;
   /** ISO end of the offer window (createdAt + OFFER_WINDOW_MS) — drives the auction countdown. */
   expiresAt: string | null;
+  /** Online riders within the broadcast radius at broadcast time (2·b1); null = supply unknown. */
+  ridersNearby?: number | null;
 }
 
 export interface OrderEvent {
@@ -46,6 +48,8 @@ export interface OrderSnapshot {
   counterpartyPhone: string | null;
   /** ISO end of the offer window while `open_for_offers`, else null — drives the auction countdown. */
   expiresAt: string | null;
+  /** Live count of online riders nearby while `open_for_offers` (2·b1); null otherwise / supply unknown. */
+  ridersNearby?: number | null;
   // Set only on the terminal `undelivered` status (INTERFACE-AUDIT C6 / F-02): the reason the rider
   // recorded + how many hand-off attempts were made, shown verbatim on the customer's terminal card.
   // Absent/null on every other status.
@@ -168,6 +172,15 @@ export function cancelOrder(
  */
 export function acceptDisclaimer(body: AcceptDisclaimerRequest): Promise<{ policyVersion: string; acceptedAt: string }> {
   return apiFetch(`/orders/disclaimer`, { method: "POST", body });
+}
+
+/**
+ * 2·b1: register to be pinged when a rider comes online near the pickup — the "notify me" on the
+ * no-riders-online auction state. `queued` is false when the server has no waiting-list store (no
+ * Redis), so the UI can stay honest rather than promise a ping it can't send.
+ */
+export function notifyWhenRiderOnline(pickup: LatLng): Promise<{ queued: boolean }> {
+  return apiFetch(`/orders/notify-me`, { method: "POST", body: { pickup } });
 }
 
 /**
