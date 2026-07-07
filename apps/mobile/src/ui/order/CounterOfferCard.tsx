@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared";
 import React, { useEffect, useRef } from "react";
 import { Animated, Text, View } from "react-native";
 import type { OfferRow } from "../../api/offers";
-import { Avatar, Button, Card, Icon } from "../index";
+import { Button, Card, Icon, RiderMini } from "../index";
 
 /**
  * A single bid, animated in. A newly-arrived offer mounts with a fresh key, so this runs its
@@ -50,17 +50,19 @@ export function CounterOfferCard({
 }): React.ReactElement {
   const counter = Number(offer.offeredFare);
   const delta = counter - ask;
-  const name = `${offer.rider.profile.firstName} ${offer.rider.profile.lastName}`;
   return (
     <Card style={{ borderColor: tokens.color.accent }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
-        <Avatar photoUrl={offer.rider.profile.photoUrl} firstName={offer.rider.profile.firstName} lastName={offer.rider.profile.lastName} seed={offer.rider.profileId} />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{name}</Text>
-          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-            ★ {offer.rider.ratingCount > 0 ? Number(offer.rider.ratingAvg).toFixed(1) : "new"} · {offer.rider.tripsCount} trips · ETA {offer.etaMinutes} min
-          </Text>
-        </View>
+      <View style={{ marginBottom: tokens.space.sm }}>
+        <RiderMini
+          profileId={offer.rider.profileId}
+          firstName={offer.rider.profile.firstName}
+          lastName={offer.rider.profile.lastName}
+          photoUrl={offer.rider.profile.photoUrl}
+          ratingAvg={offer.rider.ratingAvg}
+          ratingCount={offer.rider.ratingCount}
+          tripsCount={offer.rider.tripsCount}
+          etaMinutes={offer.etaMinutes}
+        />
       </View>
       <View style={{ flexDirection: "row", alignItems: "stretch", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
         <View style={{ flex: 1, backgroundColor: tokens.color.surface, borderRadius: tokens.radius.input, padding: tokens.space.sm }}>

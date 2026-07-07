@@ -13,14 +13,16 @@ import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_RE
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
+import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Avatar, Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub, useToast } from "../../src/ui";
+import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub, useToast } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
+import { ReceiptCard } from "../../src/ui/order/ReceiptCard";
 import { RatingCard } from "../../src/ui/order/RatingCard";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
 
@@ -46,6 +48,9 @@ export default function OrderScreen(): React.ReactElement {
   const reduceMotion = useReduceMotion();
   const toast = useToast();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
+  // The chosen rider's public identity (name/photo/rating), cached at selection so the tracking card can
+  // show a face — the assigned-order snapshot only carries profileId + GPS, not the profile.
+  const [riderIdentity, setRiderIdentity] = useState<RiderIdentity | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("best");
   // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
   const [selectNotice, setSelectNotice] = useState<string | null>(null);
@@ -64,6 +69,19 @@ export default function OrderScreen(): React.ReactElement {
     let alive = true;
     void loadDeliveryCode(orderId).then((c) => {
       if (alive && c) setDeliveryCode(c);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [orderId]);
+
+  // Recover the chosen rider's cached identity across remount/relaunch (it's only stored for the order it
+  // belongs to, so a stale other-order identity never paints here).
+  useEffect(() => {
+    let alive = true;
+    setRiderIdentity(null); // drop any prior order's identity when the id changes (rider-bail rebroadcast)
+    void loadRiderIdentity(orderId).then((i) => {
+      if (alive && i) setRiderIdentity(i);
     });
     return () => {
       alive = false;
@@ -409,6 +427,23 @@ export default function OrderScreen(): React.ReactElement {
   const chooseOffer = (offerId: string): void => {
     setSelectNotice(null); // a new attempt clears the stale "just taken" notice
     setSelectingId(offerId);
+    // Cache the chosen rider's public identity so the tracking card can show their face + name (the
+    // assigned-order snapshot won't carry it). Best-effort; the tracker degrades to no identity card.
+    const chosen = offersQ.data?.find((o) => o.id === offerId);
+    if (chosen) {
+      const identity: RiderIdentity = {
+        orderId,
+        profileId: chosen.rider.profileId,
+        firstName: chosen.rider.profile.firstName,
+        lastName: chosen.rider.profile.lastName,
+        photoUrl: chosen.rider.profile.photoUrl,
+        ratingAvg: chosen.rider.ratingAvg,
+        ratingCount: chosen.rider.ratingCount,
+        tripsCount: chosen.rider.tripsCount,
+      };
+      setRiderIdentity(identity);
+      void saveRiderIdentity(identity);
+    }
     selectM.mutate(offerId);
   };
 
@@ -552,17 +587,16 @@ export default function OrderScreen(): React.ReactElement {
                     ) : null}
                     {/* Face-first: the rider's photo (or an initials monogram) anchors the bid the way
                         inDrive/Uber front the person, not a row of text. */}
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}>
-                      <Avatar photoUrl={o.rider.profile.photoUrl} firstName={o.rider.profile.firstName} lastName={o.rider.profile.lastName} seed={o.rider.profileId} />
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-                          {o.rider.profile.firstName} {o.rider.profile.lastName}
-                        </Text>
-                        <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                          ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
-                        </Text>
-                      </View>
-                    </View>
+                    <RiderMini
+                      profileId={o.rider.profileId}
+                      firstName={o.rider.profile.firstName}
+                      lastName={o.rider.profile.lastName}
+                      photoUrl={o.rider.profile.photoUrl}
+                      ratingAvg={o.rider.ratingAvg}
+                      ratingCount={o.rider.ratingCount}
+                      tripsCount={o.rider.tripsCount}
+                      etaMinutes={o.etaMinutes}
+                    />
                     <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, marginVertical: 4, fontVariant: ["tabular-nums"] }}>{formatMoney(o.offeredFare)}</Text>
                     <Button
                       label="Choose this rider"
@@ -602,6 +636,21 @@ export default function OrderScreen(): React.ReactElement {
 
         {isActive || order.status === "delivered" || order.status === "completed" ? (
           <Card>
+            {/* Who's coming: the chosen rider's face + name + rating, cached from the offer they were
+                picked from (the assigned-order snapshot doesn't carry it). The trust anchor for tracking. */}
+            {riderIdentity ? (
+              <View style={{ marginBottom: tokens.space.sm }}>
+                <RiderMini
+                  profileId={riderIdentity.profileId || riderIdentity.orderId}
+                  firstName={riderIdentity.firstName}
+                  lastName={riderIdentity.lastName}
+                  photoUrl={riderIdentity.photoUrl}
+                  ratingAvg={riderIdentity.ratingAvg}
+                  ratingCount={riderIdentity.ratingCount}
+                  tripsCount={riderIdentity.tripsCount}
+                />
+              </View>
+            ) : null}
             {eta ? (
               // The big glanceable ETA — leads the tracking card, styled as the screen's live headline.
               <View accessibilityRole="text" style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
@@ -666,10 +715,24 @@ export default function OrderScreen(): React.ReactElement {
         ) : null}
 
         {order.status === "completed" ? (
-          <Card>
-            <Celebrate />
-            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered &amp; completed. Thank you!</Text>
-          </Card>
+          <>
+            <Card>
+              <Celebrate />
+              <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered &amp; completed. Thank you!</Text>
+            </Card>
+            <ReceiptCard
+              orderId={order.id}
+              pickupLandmark={order.pickup.landmark}
+              dropoffLandmark={order.dropoff.landmark}
+              fare={fare}
+              riderName={riderIdentity ? `${riderIdentity.firstName} ${riderIdentity.lastName}`.trim() : null}
+              completedAt={
+                order.events?.find((e) => e.status === "completed")?.createdAt ??
+                order.events?.find((e) => e.status === "delivered")?.createdAt ??
+                null
+              }
+            />
+          </>
         ) : null}
         {order.status === "expired" ? (
           <EmptyState
