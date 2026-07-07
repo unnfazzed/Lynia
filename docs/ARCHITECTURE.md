@@ -383,9 +383,9 @@ graph TB
     orders --> prisma & auth & tracking & notif
     offers --> prisma & notif
     tracking --> prisma & auth
-    riders --> prisma & config
+    riders --> prisma & config & tracking & notif
     uploads --> storage & auth
-    admin --> prisma & auth
+    admin --> prisma & auth & tracking
     matching -.->|schedules| orders
 
     config -.-> features
@@ -417,6 +417,11 @@ super-app seams, unused at launch. The **line-items seam is now realized**: `Ord
 (nullable line-items JSON, migration `0008`) makes the §5b "line-items, not a single item field"
 decision concrete — `itemDesc` stays as the derived compact summary so existing consumers are
 unaffected.
+
+The ERD below is deliberately scoped to the core offer-loop/lifecycle tables. Since built, the
+schema has grown a full trust-&-safety and audit layer not pictured here: `Issue`, `Report`,
+`Block`, `SosEvent`, `Refund`, and `AuditLog` (plus the dormant, unused-at-launch `Settlement`
+table) — see `apps/api/prisma/schema.prisma` for the complete model.
 
 ```mermaid
 erDiagram
@@ -607,13 +612,17 @@ stateDiagram-v2
     assigned --> cancelled : either party
     confirmed --> cancelled
     en_route_pickup --> cancelled
-    picked_up --> cancelled : rider only
-    en_route_dropoff --> cancelled : rider only
+    picked_up --> cancelled : customer only
+    en_route_dropoff --> cancelled : customer only
     open_for_offers --> cancelled : customer
+
+    picked_up --> undelivered : rider gives up
+    en_route_dropoff --> undelivered : rider gives up
 
     completed --> [*]
     cancelled --> [*]
     expired --> [*]
+    undelivered --> [*]
 ```
 
 Rules encoded around the transitions:
@@ -622,9 +631,13 @@ Rules encoded around the transitions:
   gate, the constant-time hash compare, and the increment are point-in-time consistent — no
   concurrent-guess bypass of the 5-attempt cap. A wrong code is **committed** (the increment
   persists); only the error path rolls back. After a lockout the customer can `rotate` a fresh code.
-- **Cancellation windows** differ by party: a customer may cancel up to `en_route_pickup` (before the
-  parcel is collected); a rider may cancel any time before `delivered`. A **rider cancel is a
-  no-show strike** — every 3rd strike forces the rider offline on a 2-hour cooldown (T4).
+- **Cancellation windows** differ by party: a customer may cancel at any live status, pre- or
+  post-pickup; a rider may cancel only up to `en_route_pickup` — once the parcel is on the bike, a
+  rider giving up moves the order to `undelivered` instead (below), not `cancelled`. A **rider
+  cancel is a no-show strike** — every 3rd strike forces the rider offline on a 2-hour cooldown (T4).
+- **Undelivered**: from `picked_up` or `en_route_dropoff`, a rider who cannot complete the hand-off
+  moves the order to the terminal `undelivered` state via a guarded CAS (`markUndelivered`), with a
+  reason and attempt count recorded and shown to the customer.
 - **Rating closes the order** and updates the rider's running `ratingAvg`/`ratingCount`/`tripsCount`
   in the same transaction. If the customer never rates, the auto-close backstop still completes the
   order so metrics don't stall ([§14](#14-background-jobs--self-healing)).
@@ -734,6 +747,9 @@ sequenceDiagram
   raw request body (why `rawBody` is enabled at bootstrap), with a timestamp-freshness check.
 - **Stub provider** (`KYC_PROVIDER=stub`, default) auto-passes in `auto` mode, so the full rider flow
   (online → bid → deliver → OTP) is testable in CI with no Didit account. Flip to `didit` before launch.
+- **A fourth status, `expired`** (migration `0018`), covers a previously-verified rider whose national
+  ID has since lapsed — reachable via the same webhook/admin-override paths as `failed`, and gates
+  `online`/offers exactly like `pending`/`failed` until the rider re-verifies.
 
 ---
 
@@ -958,16 +974,20 @@ graph TB
 
 ## 15. CI / CD pipeline
 
-Two GitHub Actions workflows. **CI** gates every PR/push; **Release** ships the API container to
-Cloud Run. It is **armed and live** — `GCP_DEPLOY_ENABLED` is set, WIF is active, and a push to `main`
-deploys to the running service at `https://lyniago.lyniafinance.com`.
+Four GitHub Actions workflows. The two central to this pipeline are **CI** (`ci.yml`), which gates
+every PR/push, and **Release** (`release.yml`), which ships the API container to Cloud Run — it is
+**armed and live**: `GCP_DEPLOY_ENABLED` is set, WIF is active, and a push to `main` deploys to the
+running service at `https://lyniago.lyniafinance.com`. The other two are out of scope for this
+diagram: `codeql.yml` (weekly + per-PR SAST, [SECURITY.md](./SECURITY.md) P1-1) and
+`android-test-apk.yml` (manual, sideloadable QA APK build — see `docs/plans/TEST-APK-BUILD-PLAN.md`).
 
 ```mermaid
 graph LR
     pr["PR / push to main"]
 
     subgraph ci["ci.yml"]
-        build["build job:<br/>typecheck · build · test<br/>(all workspaces)"]
+        sec["security job:<br/>pnpm audit (high+) + gitleaks secret scan"]
+        build["build job:<br/>typecheck · lint · build · test<br/>(all workspaces)"]
         schema["schema job:<br/>migrate:deploy against real PostGIS<br/>+ assert one_active_ride, GiST, otp_hash"]
     end
 
@@ -977,6 +997,7 @@ graph LR
         dep["gcloud run deploy<br/>(WIF keyless auth)"]
     end
 
+    pr --> sec
     pr --> build
     pr --> schema
     build --> img
@@ -1011,7 +1032,10 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | `POST /auth/refresh` | Auth | Rotate refresh token → new session |
 | `POST /auth/logout` | Auth | Revoke the current session |
 | `GET /auth/me` | Auth | Authenticated profile (+ rider record) |
+| `PATCH /auth/me` | Auth | Post-OTP profile setup (name) |
 | `POST /orders` | Orders | Create a delivery, name a price → `open_for_offers` |
+| `POST /orders/disclaimer` | Orders | Acknowledge the pre-broadcast disclaimer (A1-8) |
+| `POST /orders/notify-me` | Orders | Register to be pinged when a rider comes online nearby (2·b1) |
 | `GET /orders/open` | Orders | Open orders a rider can bid on |
 | `GET /orders/mine/active` | Orders | Caller's active order |
 | `GET /orders/history` | Orders | Caller's past orders |
@@ -1020,23 +1044,50 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | `GET /orders/:id/offers` | Offers | Pending offers for the customer's list |
 | `POST /orders/:id/offers/:offerId/select` | Matching | Customer selects → guarded assign |
 | `POST /orders/:id/status` | Lifecycle | Rider advances one forward step |
+| `POST /orders/:id/items/confirm` | Lifecycle | Rider ticks off sender's items at pickup |
 | `POST /orders/:id/deliver` | Lifecycle | Rider submits delivery OTP → `delivered` |
+| `POST /orders/:id/undelivered` | Lifecycle | Rider marks a failed hand-off → terminal `undelivered` (C6/F-02) |
 | `POST /orders/:id/rating` | Lifecycle | Customer rates → `completed` |
+| `POST /orders/:id/sender-rating` | Lifecycle | Rider rates the sender (recorded-only, rider-journey 4·7) |
 | `POST /orders/:id/delivery-code/rotate` | Lifecycle | Customer re-issues delivery code |
 | `POST /orders/:id/cancel` | Lifecycle | Either party cancels (rider = strike) |
+| `POST /orders/:orderId/issues` | Issues | Party-facing "get help with this trip" (A-05) |
+| `POST /orders/:orderId/report` | Reports | Report the order counterparty after a trip (A-05 adjacent) |
+| `POST /orders/:orderId/sos` | SOS | Raise an SOS on a live trip (R-16/F-13) |
 | `PATCH /riders/profile` | Riders | Complete signup (name + national ID) |
 | `POST /riders/become` | Riders | Upgrade to rider; start KYC |
 | `POST /riders/kyc/retry` | Riders | Re-run KYC (pending/failed) |
 | `PATCH /riders/online` | Riders | Go online/offline (gated on KYC + cooldown) |
 | `GET /riders/nearby` | Tracking | Nearby online riders (PostGIS radius) |
 | `POST /uploads/kyc-photo` | Uploads | Mint a signed PUT URL for a photo |
+| `GET /notifications/feed` | Notifications | Caller's in-app notifications feed (customer-journey A·3) |
 | `POST /notifications/device-token` | Notifications | Register an FCM device token |
 | `DELETE /notifications/device-token` | Notifications | Drop a device token |
+| `POST /client-metrics` | Observability | Client RUM ingest (glass-to-glass / REST latency samples) |
+| `DELETE /auth/me` | Privacy | Right to erasure — caller deletes their own account (CDPA) |
+| `POST /admin/retention/purge` | Privacy | Retention sweep (admin-only, daily Cloud Scheduler) |
 | `POST /kyc/callback` | KYC | Didit HMAC-signed webhook |
 | `POST /admin/riders/:id/kyc` | KYC | Admin KYC override (manual backstop) |
 | `GET /admin/overview` | Admin | Dashboard counts |
-| `GET /admin/riders` | Admin | Rider list for the console |
-| `GET /admin/orders` | Admin | Order list for the console |
+| `GET /admin/riders` | Admin | Rider roster / KYC review queue (`?kyc=`) |
+| `GET /admin/riders/:profileId/kyc` | Admin | KYC doc-review detail for one rider (A-02) |
+| `GET /admin/riders/:profileId` | Admin | Rider detail: stats, strikes, cooldown, bike, recent trips (D-2) |
+| `POST /admin/riders/:id/suspend` | Admin | Suspend a rider (reason required) |
+| `POST /admin/riders/:id/lift` | Admin | Lift a rider suspension (reason optional) |
+| `POST /admin/riders/:id/ban` | Admin | Permanently ban a rider (reason required) |
+| `GET /admin/orders` | Admin | Order list for the console (`?status=`) |
+| `GET /admin/orders/:id` | Admin | Order detail: 8-step timeline, parcel, fares, masked people (D-2) |
+| `POST /admin/orders/:id/cancel` | Admin | Admin-cancel an order (reason required) |
+| `POST /admin/orders/:id/fare` | Admin | Adjust an order's agreed fare (manual correction / dispute) |
+| `GET /admin/customers` | Admin | Customers directory (D-2, `?filter=`) |
+| `GET /admin/customers/:profileId` | Admin | Customer detail: aggregates + recent orders (D-2) |
+| `POST /admin/customers/:id/hold` | Admin | Place a customer on hold — blocks new broadcasts (S·2) |
+| `POST /admin/customers/:id/lift` | Admin | Lift a customer hold (reason optional) |
+| `POST /admin/audit-actions` | Admin | Persist a console ConfirmModal audit action (A-01) |
+| `GET /admin/cash/settlements` | Admin | Read-only commission overview (prepaid model) |
+| `GET /admin/issues` | Admin | Disputes queue, newest first (A-05, `?status=`) |
+| `GET /admin/issues/:id` | Admin | Per-issue detail incl. order evidence + masked phones |
+| `POST /admin/issues/:id/resolve` | Admin | Resolve an issue (refund / rider_strike / close_no_action) |
 | `GET /healthz` | Health | Liveness (`{status, db, redis}`) |
 
 ### WebSocket (Socket.IO)

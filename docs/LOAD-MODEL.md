@@ -26,17 +26,18 @@ fire once per order-create.
 
 ## SLO thresholds (from `docs/OBSERVABILITY.md`)
 
-The k6 run asserts these as p95 thresholds (client-side RTT; the true server SLOs come from the LR9
-OTEL pipeline once live — treat k6 timings as the ceiling, OTEL as truth):
+`offer-loop.js`'s `thresholds` block (client-side RTT) directly asserts p95 for **3** of the 6 server
+SLOs; the true server SLOs for all 6 come from the LR9 OTEL pipeline once live — treat k6 timings as
+the ceiling, OTEL as truth:
 
-| Flow | Metric | p95 target |
-|---|---|---|
-| Offer make (server handling) | `offer_received_latency_ms` | < 2000 ms |
-| Offer select (guarded CAS) | `match_select_duration_ms` | < 300 ms |
-| Nearby-rider broadcast | `broadcast_nearby_duration_ms` | < 400 ms |
-| OTP verify | `otp_verify_duration_ms` | < 800 ms |
-| Any HTTP request | `http_request_duration_ms` | < 1000 ms |
-| Position emit (in-process) | `position_emit_latency_ms` | < 500 ms |
+| Flow | Metric | p95 target | Asserted by k6? |
+|---|---|---|---|
+| Offer make (server handling) | `offer_received_latency_ms` | < 2000 ms | ✅ `{name:offer}` |
+| Offer select (guarded CAS) | `match_select_duration_ms` | < 300 ms | ✅ `{name:select}` |
+| Nearby-rider broadcast | `broadcast_nearby_duration_ms` | < 400 ms | ⬜ OTEL only — no isolable k6 request |
+| OTP verify | `otp_verify_duration_ms` | < 800 ms | ⬜ OTEL only — no isolable k6 request |
+| Any HTTP request | `http_request_duration_ms` | < 1000 ms | ✅ overall `http_req_duration` |
+| Position emit (in-process) | `position_emit_latency_ms` | < 500 ms | ⬜ OTEL only — no isolable k6 request |
 
 ## Scenarios (`apps/api/load/`)
 

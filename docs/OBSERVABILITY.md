@@ -33,10 +33,10 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `broadcast_nearby_duration_ms`  | histogram | ms   | `source`                        | < 400 ms   |
 | `otp_verify_duration_ms`        | histogram | ms   | `result`                        | < 800 ms   |
 | `http_request_duration_ms`      | histogram | ms   | `route`, `method`, `status_class` | < 1000 ms |
-| `client_position_glass_latency_ms` | histogram | ms | `role`                         | (glass-to-glass) |
-| `client_offer_glass_latency_ms` | histogram | ms   | `role`                          | (glass-to-glass) |
-| `client_board_glass_latency_ms` | histogram | ms   | `role`                          | (glass-to-glass) |
-| `client_apifetch_latency_ms`    | histogram | ms   | `role`                          | (client RTT)     |
+| `client_position_glass_latency_ms` | histogram | ms | `role`, `version`             | (glass-to-glass) |
+| `client_offer_glass_latency_ms` | histogram | ms   | `role`, `version`               | (glass-to-glass) |
+| `client_board_glass_latency_ms` | histogram | ms   | `role`, `version`               | (glass-to-glass) |
+| `client_apifetch_latency_ms`    | histogram | ms   | `role`, `version`               | (client RTT)     |
 | `match_select_total`            | counter   | 1    | `outcome`                       | —          |
 | `offers_made_total`             | counter   | 1    | `outcome`                       | —          |
 | `client_samples_dropped_total`  | counter   | 1    | `role`                          | —          |
@@ -64,6 +64,8 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 - `offers_made` `outcome` ∈ `created | conflict | forbidden | error`
 - `http` `status_class` ∈ `2xx | 3xx | 4xx | 5xx`; `route` is the **route template** (e.g. `/orders/:id`),
   **never** the raw URL — that keeps the histogram's cardinality bounded.
+- Client RUM `version` is the app's `major.minor` (else `other`), and is itself bounded: at most 16
+  distinct version buckets are ever admitted (`bucketAppVersion`/`boundVersion` in `metrics.service.ts`).
 
 ### Explicit histogram buckets
 
@@ -78,6 +80,10 @@ around each metric's p95 SLO:
 | `broadcast_nearby_duration_ms` | 50, 100, 200, 300, 400, 600, 1000         |
 | `otp_verify_duration_ms`       | 100, 250, 500, 800, 1200, 2000            |
 | `http_request_duration_ms`     | 50, 100, 250, 500, 1000, 2000, 5000       |
+| `client_position_glass_latency_ms` | 100, 250, 500, 1000, 2000, 3000, 5000, 10000 |
+| `client_offer_glass_latency_ms`    | 100, 250, 500, 1000, 2000, 3000, 5000, 10000 |
+| `client_board_glass_latency_ms`    | 100, 250, 500, 1000, 2000, 3000, 5000, 10000 |
+| `client_apifetch_latency_ms`       | 50, 100, 250, 500, 1000, 2000, 5000, 10000   |
 
 ## PromQL — p95 per histogram
 
