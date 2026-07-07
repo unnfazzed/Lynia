@@ -8,6 +8,9 @@ import { collectedItemCount, shouldShowJobError } from "../../src/logic/journey"
 import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { acknowledgeHandback, loadAcknowledgedHandbacks } from "../../src/auth/session";
+import { formatMoney } from "../../src/logic/money";
+import type { LastActive } from "../../src/logic/last-active";
+import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, EmptyState, ErrorText, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
@@ -51,6 +54,37 @@ export default function RiderJob(): React.ReactElement {
   const order = jobQ.data ?? null;
   const orderId = order?.id ?? null;
   const items = order?.items ?? [];
+
+  // Load the last-known job summary (persisted below) so an OFFLINE COLD START shows it instead of a
+  // bare "couldn't load your job" — only ever rendered in the fetch-error branch, never over live data.
+  const [lastKnownJob, setLastKnownJob] = useState<LastActive | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadLastActiveJob().then((la) => {
+      if (alive) setLastKnownJob(la);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Persist the single last-known-job slot for offline cold-start recovery — ONCE per status transition
+  // (not per 6s poll / GPS tick). A successful empty fetch (no job) or a terminal status clears it, so a
+  // finished job never resurfaces offline; a fetch error leaves undefined data and the slot untouched.
+  const persistedJobStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const d = jobQ.data;
+    if (d === undefined) return; // loading or errored — keep whatever's stored
+    if (d === null) {
+      persistedJobStatus.current = null;
+      void clearLastActiveJob();
+      return;
+    }
+    if (d.status === persistedJobStatus.current) return;
+    persistedJobStatus.current = d.status;
+    if (ACTIVE.includes(d.status)) void saveLastActiveJob(d);
+    else void clearLastActiveJob(); // terminal (delivered / cancelled / undelivered / completed)
+  }, [jobQ.data]);
 
   // Stream GPS only while the ride is genuinely active — stops on delivered AND cancelled/completed
   // (don't blocklist a single terminal state, or a cancelled job keeps broadcasting the rider's GPS).
@@ -230,6 +264,34 @@ export default function RiderJob(): React.ReactElement {
   // checks so those still win — and gated on `!order` so a warm refetch that retains the job (or a
   // successful empty fetch) never lands here. Mirrors the rider board's honest error+retry pattern.
   if (shouldShowJobError(jobQ.isError, order != null)) {
+    // Offline cold-start: the fetch failed but we have the last-known job summary. Show it (the root
+    // offline banner already explains why it's stale) instead of a bare error — the live query takes
+    // over the moment we reconnect.
+    if (lastKnownJob) {
+      return (
+        <Screen>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
+              <Heading>Your job</Heading>
+              <View style={{ flex: 1 }} />
+              <StatusPill status={lastKnownJob.status} />
+            </View>
+            <Card>
+              <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.xs, fontVariant: ["tabular-nums"] }}>
+                Fare {formatMoney(lastKnownJob.fare)}
+              </Text>
+              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink }}>
+                {lastKnownJob.pickupLandmark || "Pickup"} → {lastKnownJob.dropoffLandmark || "Drop-off"}
+              </Text>
+              <View style={{ height: tokens.space.sm }} />
+              <Sub>Showing your last saved job — we&apos;ll refresh the moment you&apos;re back online.</Sub>
+            </Card>
+            <Button label="Retry now" onPress={() => void jobQ.refetch()} loading={jobQ.isFetching} />
+            <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
+          </ScrollView>
+        </Screen>
+      );
+    }
     return (
       <Screen>
         <EmptyState icon="wifi-off" title="Couldn't load your job" message="Check your connection and try again.">
