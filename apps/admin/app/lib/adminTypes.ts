@@ -162,6 +162,9 @@ export interface KycReview {
   /** Server-masked (A-03) — the reviewer matches the ID number, not the phone. */
   phone: string;
   idNumber: string | null;
+  /** Short-lived signed GET URL for the rider's submitted document photo, or null (no photo yet, or
+   *  the storage adapter failed to sign — the review still loads without it). */
+  photoUrl: string | null;
   bike: string;
   status: "pending" | "verified" | "failed" | "expired";
   kycRef: string | null;

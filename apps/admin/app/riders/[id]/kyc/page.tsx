@@ -160,11 +160,24 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             <div className="block-title">Documents</div>
             <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: tokens.space.md }}>
               <div>
-                <div className="doc-ph" style={{ height: 170 }}>
-                  national ID — front
-                  <br />
-                  (photo from rider&apos;s phone)
-                </div>
+                {r.photoUrl ? (
+                  // A short-lived signed GCS URL — not a static asset, so a plain <img> (matching the
+                  // brand mark elsewhere in this app), not next/image.
+                  <img
+                    src={r.photoUrl}
+                    alt="Rider's submitted ID document"
+                    style={{ width: "100%", height: 170, objectFit: "cover", borderRadius: tokens.radius.input, border: `1px solid ${tokens.color.line}` }}
+                  />
+                ) : (
+                  <div className="doc-ph" style={{ height: 170 }}>
+                    national ID — front
+                    <br />
+                    {/* Either no photo was ever submitted (legacy/incomplete signup), or the signed
+                        URL failed to mint (see AdminRidersService.getKycReview) — either way, the
+                        review doesn't hard-fail on it. */}
+                    (photo unavailable)
+                  </div>
+                )}
                 <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 6 }}>
                   National ID · <span className="mono">{r.idNumber ?? "—"}</span>
                 </div>

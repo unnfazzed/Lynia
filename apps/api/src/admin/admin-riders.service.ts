@@ -1,20 +1,26 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   ACTIVE_RIDE_STATUSES,
   type KycStatus,
   RELIABILITY,
   RiderAccountStatus,
 } from "@lynia/shared";
+import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData, fmtDate, fmtUntil, reportsFor, round, toTripRow } from "./admin.shared";
+
+// Long enough that a reviewer working through the queue doesn't have the image expire mid-review;
+// short enough that a leaked/cached admin response can't be used to fetch the photo indefinitely.
+const KYC_PHOTO_READ_URL_TTL_SECONDS = 15 * 60;
 
 @Injectable()
 export class AdminRidersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pii: PiiCryptoService,
+    @Inject(STORAGE) private readonly storage: StorageAdapter,
   ) {}
 
   /** Rider roster for ops — the KYC review queue when filtered to `pending`. */
@@ -96,10 +102,20 @@ export class AdminRidersService {
         idVerified: true,
         duplicateIdFlag: true,
         updatedAt: true,
+        photoUrl: true,
         profile: { select: { firstName: true, lastName: true, phone: true, idNumber: true, idNumberHash: true } },
       },
     });
     if (!rider) return null;
+
+    // The reviewer's whole job is comparing this photo against the applicant fields below — without
+    // it they're approving/declining blind. `photoUrl` on the row is the GCS object KEY (uploads.
+    // controller mints the write URL at capture time; this mints the matching read URL on demand, so
+    // the object store is never public and the URL is only ever live for one review session).
+    // Best-effort: a signing failure shouldn't block the rest of the review from loading.
+    const photoUrl = rider.photoUrl
+      ? await this.storage.createReadUrl(rider.photoUrl, KYC_PHOTO_READ_URL_TTL_SECONDS).catch(() => null)
+      : null;
 
     // A-04 duplicate-account guard: the live set of OTHER accounts sharing this national ID, so the
     // reviewer can compare them before approving (a national ID isn't unique — phone is — so a second
@@ -139,6 +155,9 @@ export class AdminRidersService {
       phone: maskPhone(rider.profile.phone),
       // Decrypt for the reviewer — the KYC review is the one place the full national ID is shown (LR8).
       idNumber: this.pii.decryptId(rider.profile.idNumber),
+      // Short-lived signed GET URL (or null: no photo yet, or signing failed) — never the raw object
+      // key, and never a public bucket URL.
+      photoUrl,
       bike: rider.bikeReg,
       status: rider.kycStatus,
       kycRef: rider.kycRef,

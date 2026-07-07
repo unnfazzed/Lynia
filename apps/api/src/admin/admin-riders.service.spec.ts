@@ -1,5 +1,6 @@
 import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { StorageAdapter } from "../adapters/storage/storage.interface";
 import { PrismaService } from "../prisma/prisma.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import type { Env } from "../config/env";
@@ -7,6 +8,8 @@ import { AdminRidersService } from "./admin-riders.service";
 
 /** Real crypto with a fixed test key so hashId(...) matches the values the service computes. */
 const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env);
+/** Every test except the getKycReview photo ones is off the storage path entirely. */
+const noStorage = { createReadUrl: async () => "unused://" } as unknown as StorageAdapter;
 
 /** Decimal-like stub — Prisma returns Decimal objects whose `.toString()`/`.toFixed()` we serialize. */
 const dec = (s: string) => ({ toString: () => s, toFixed: (_n: number) => s });
@@ -40,7 +43,7 @@ describe("AdminRidersService.listRiders", () => {
       // No order in a reveal-status window ⇒ the phone must be masked.
       order: { findMany: async () => [] },
     };
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     const rows = await svc.listRiders("pending");
     expect(where).toEqual({ kycStatus: "pending" });
     expect(rows[0]).toMatchObject({ profileId: "r1", name: "Tendai M", kycStatus: "pending" });
@@ -61,7 +64,7 @@ describe("AdminRidersService.listRiders", () => {
         },
       },
     };
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     const rows = await svc.listRiders();
     expect(rows[0]!.phone).toBe("+263782000001");
     // The reveal set MUST be live-only (ACTIVE_RIDE_STATUSES) — NOT the terminal-inclusive
@@ -78,7 +81,7 @@ describe("AdminRidersService.listRiders", () => {
       rider: { findMany: async (args: { where: unknown }) => { where = args.where; return []; } },
       order: { findMany: async () => [] },
     };
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     await svc.listRiders();
     expect(where).toEqual({});
   });
@@ -133,7 +136,7 @@ describe("AdminRidersService.getKycReview (A-04 duplicate ID)", () => {
         },
       },
     };
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     const r = (await svc.getKycReview("r1"))!;
     // Only OTHER accounts with the same ID are queried — matched on the HMAC hash, not the raw number.
     expect(where).toMatchObject({ idNumberHash: pii.hashId("63-123456-A-42"), id: { not: "r1" } });
@@ -158,11 +161,61 @@ describe("AdminRidersService.getKycReview (A-04 duplicate ID)", () => {
       rider: { findUnique: async () => riderRow({ duplicateIdFlag: false, profile: { firstName: "No", lastName: "Id", phone: "+263782000001", idNumber: null } }) },
       profile: { findMany: async () => { queried = true; return []; } },
     };
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     const r = (await svc.getKycReview("r1"))!;
     expect(queried).toBe(false);
     expect(r.duplicateIdAccounts).toEqual([]);
     expect(r.duplicateIdFlag).toBe(false);
+  });
+});
+
+describe("AdminRidersService.getKycReview — document photo (BUG-HUNT)", () => {
+  const riderRow = (over: Record<string, unknown> = {}) => ({
+    profileId: "r1",
+    bikeReg: "ABZ 1",
+    kycStatus: "pending",
+    kycRef: "sess_1",
+    kycAttempts: 0,
+    kycDeclineReason: null,
+    idVerified: false,
+    duplicateIdFlag: false,
+    updatedAt: new Date("2026-07-01T00:00:00Z"),
+    photoUrl: "kyc/r1/photo.jpg",
+    profile: { firstName: "Tendai", lastName: "M", phone: "+263782000001", idNumber: null, idNumberHash: null },
+    ...over,
+  });
+
+  it("mints a signed read URL from the stored object key — the reviewer can actually see the document", async () => {
+    const createReadUrl = vi.fn(async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`);
+    const prisma = { rider: { findUnique: async () => riderRow() }, profile: { findMany: async () => [] } };
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, { createReadUrl } as unknown as StorageAdapter);
+
+    const r = (await svc.getKycReview("r1"))!;
+
+    expect(createReadUrl).toHaveBeenCalledWith("kyc/r1/photo.jpg", expect.any(Number));
+    expect(r.photoUrl).toBe("https://signed.example/kyc/r1/photo.jpg?ttl=900");
+  });
+
+  it("returns null (not the raw object key) when the rider has no photo yet", async () => {
+    const createReadUrl = vi.fn();
+    const prisma = { rider: { findUnique: async () => riderRow({ photoUrl: null }) }, profile: { findMany: async () => [] } };
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, { createReadUrl } as unknown as StorageAdapter);
+
+    const r = (await svc.getKycReview("r1"))!;
+
+    expect(createReadUrl).not.toHaveBeenCalled();
+    expect(r.photoUrl).toBeNull();
+  });
+
+  it("degrades to null instead of failing the whole review when signing throws", async () => {
+    const prisma = { rider: { findUnique: async () => riderRow() }, profile: { findMany: async () => [] } };
+    const failingStorage = { createReadUrl: async () => { throw new Error("GCS down"); } } as unknown as StorageAdapter;
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, failingStorage);
+
+    const r = (await svc.getKycReview("r1"))!;
+
+    expect(r.photoUrl).toBeNull();
+    expect(r.name).toBe("Tendai M"); // the rest of the review still loads
   });
 });
 
@@ -209,12 +262,12 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
   });
 
   it("returns null when the id isn't a rider", async () => {
-    const svc = new AdminRidersService({ rider: { findUnique: async () => null } } as unknown as PrismaService, pii);
+    const svc = new AdminRidersService({ rider: { findUnique: async () => null } } as unknown as PrismaService, pii, noStorage);
     expect(await svc.getRiderDetail("nope")).toBeNull();
   });
 
   it("MASKS the phone off a live order and projects stats + trail (A-03)", async () => {
-    const svc = new AdminRidersService(prismaFor(riderRow(), 0) as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prismaFor(riderRow(), 0) as unknown as PrismaService, pii, noStorage);
     const r = (await svc.getRiderDetail("r1"))!;
     expect(r.phone).toBe("+263•••••0001");
     expect(r.rating).toBe("4.8");
@@ -227,7 +280,7 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
 
   it("REVEALS the phone when the rider is on a live order, and reports cooldown", async () => {
     const cooldownUntil = new Date(Date.now() + 90 * 60 * 1000);
-    const svc = new AdminRidersService(prismaFor(riderRow({ isOnline: false, cooldownUntil }), 1) as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prismaFor(riderRow({ isOnline: false, cooldownUntil }), 1) as unknown as PrismaService, pii, noStorage);
     const r = (await svc.getRiderDetail("r1"))!;
     expect(r.phone).toBe("+263782000001");
     expect(r.status).toBe("cooldown");
@@ -237,13 +290,13 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
   it("reports the A-04 account state over the activity derivation, with the stored reason", async () => {
     // A suspended rider who happens to be flagged online in the stale row: account state wins.
     const suspended = riderRow({ accountStatus: "suspended", suspendReason: "safety report", isOnline: true });
-    const svc = new AdminRidersService(prismaFor(suspended, 0) as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prismaFor(suspended, 0) as unknown as PrismaService, pii, noStorage);
     const r = (await svc.getRiderDetail("r1"))!;
     expect(r.status).toBe("suspended");
     expect(r.suspendReason).toBe("safety report");
 
     const banned = riderRow({ accountStatus: "banned", suspendReason: "fraud", isOnline: false });
-    const svc2 = new AdminRidersService(prismaFor(banned, 0) as unknown as PrismaService, pii);
+    const svc2 = new AdminRidersService(prismaFor(banned, 0) as unknown as PrismaService, pii, noStorage);
     const r2 = (await svc2.getRiderDetail("r1"))!;
     expect(r2.status).toBe("banned");
     expect(r2.suspendReason).toBe("fraud");
@@ -254,7 +307,7 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
       { id: "rep1", reason: "unsafe", note: "cut me off", createdAt: new Date("2026-06-25T00:00:00Z") },
       { id: "rep2", reason: "rude", note: null, createdAt: new Date("2026-06-24T00:00:00Z") },
     ];
-    const svc = new AdminRidersService(prismaFor(riderRow(), 0, reports) as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prismaFor(riderRow(), 0, reports) as unknown as PrismaService, pii, noStorage);
     const r = (await svc.getRiderDetail("r1"))! as unknown as {
       reports: number;
       reportLog: Array<{ date: string; text: string; issueId?: string }>;
@@ -288,7 +341,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
 
   it("suspendRider sets accountStatus=suspended + reason AND writes the audit row atomically", async () => {
     const { prisma, calls } = makeTx();
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     const res = await svc.suspendRider("admin-1", "r1", { reason: "safety report", note: "incident #7" });
     expect(calls.riderUpdate!.data).toEqual({ accountStatus: "suspended", suspendReason: "safety report", isOnline: false });
     // The audit row committed in the SAME transaction as the state change (both non-null here).
@@ -298,7 +351,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
 
   it("banRider sets accountStatus=banned + reason and audits", async () => {
     const { prisma, calls } = makeTx();
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     await svc.banRider("admin-1", "r1", { reason: "fraud" });
     expect(calls.riderUpdate!.data).toEqual({ accountStatus: "banned", suspendReason: "fraud", isOnline: false });
     expect(calls.audit!.data).toMatchObject({ action: "rider.ban", reasonCode: "fraud", note: null });
@@ -307,7 +360,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
   it("liftRider returns to active, CLEARS the suspend reason + reliability hold, audits", async () => {
     // A suspended, reliability-held rider (score 55 < clear-at 70).
     const { prisma, calls } = makeTx({ rider: { accountStatus: "suspended", reliabilityScore: 55 } });
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     await svc.liftRider("admin-1", "r1", {});
     // Clears the suspension AND the on_hold lockout, raising the score to the clear threshold (the
     // only escape for on_hold, which otherwise needs online completions the hold itself blocks).
@@ -322,14 +375,14 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
 
   it("liftRider refuses to un-ban a banned rider", async () => {
     const { prisma } = makeTx({ rider: { accountStatus: "banned", reliabilityScore: 100 } });
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     await expect(svc.liftRider("admin-1", "r1", {})).rejects.toThrow(/banned/i);
   });
 
   it("liftRider refuses an active (not-suspended) rider — won't erase an auto reliability hold", async () => {
     // active-but-on_hold: a lift here would silently clear the reliability penalty and reset the score.
     const { prisma, calls } = makeTx({ rider: { accountStatus: "active", reliabilityScore: 55 } });
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     await expect(svc.liftRider("admin-1", "r1", {})).rejects.toThrow(/not suspended/i);
     expect(calls.riderUpdate).toBeNull();
     expect(calls.audit).toBeNull();
@@ -337,7 +390,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
 
   it("suspendRider 404s when the id isn't a rider and writes NOTHING", async () => {
     const { prisma, calls } = makeTx({ rider: null });
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     await expect(svc.suspendRider("admin-1", "nope", { reason: "x" })).rejects.toThrow("Rider not found");
     expect(calls.riderUpdate).toBeNull();
     expect(calls.audit).toBeNull();
