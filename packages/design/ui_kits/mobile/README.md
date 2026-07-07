@@ -7,7 +7,7 @@ An interactive, mainly-cosmetic recreation of the **Lynia** Expo app (Android-fi
 - `app.js` — the screen state machine (login → WhatsApp OTP → DT5 map-anchored home → auction → tracking → rate; rider: online → board → offer → job).
 - `kit-parts.js` — kit-only composites: `FauxMap` (stylised tap-to-pin map placeholder, not real tiles), `MapSheet` (peek/expanded bottom sheet), `PinToggle`, `OfferCard`, `SortChips`, phone chrome.
 
-**Composes** the design-system primitives from `_ds_bundle.js`: `Button`, `Card`, `Field`, `StatusPill`, `Stepper`, `EmptyState`, `Heading`, `Sub`, `Label`, `SkeletonList`.
+**Composes** the design-system primitives from `_ds_bundle.js`: `Button`, `Card`, `Field`, `StatusPill`, `Stepper`, `EmptyState`, `Heading`, `Sub`, `Label`, `SkeletonList`, `Icon`, `OfflineBanner`.
 
 **Flow to demo**
 1. Enter any phone (6+ digits) → Send code → any 6 digits → Verify (WhatsApp OTP copy).

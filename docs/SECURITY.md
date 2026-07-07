@@ -115,14 +115,14 @@ uploads, the admin console, the mobile clients, and the CI/CD pipeline. Mapped t
 
 | STRIDE threat | Concrete Lynia scenario | Primary control | Status |
 |---|---|---|---|
-| **S**poofing | Forge an admin JWT with the dev-default secret | Strong, rotated `JWT_SIGNING_SECRET`; pin `algorithms` | ⚠️ **gap** (P0-1) |
+| **S**poofing | Forge an admin JWT with the dev-default secret | Strong, rotated `JWT_SIGNING_SECRET`; pin `algorithms` | ✅ solid (P0-1) |
 | **S**poofing | Spoof the Didit KYC webhook → fake "verified" rider | HMAC-V2 + timestamp freshness + fail-closed | ✅ solid |
 | **T**ampering | SQL injection via geo/query params | Parameterized `$queryRaw` tagged templates | ✅ solid |
-| **T**ampering | Assign yourself another user's order (IDOR) | Per-object ownership checks in services | ⚠️ verify (P1-5) |
-| **R**epudiation | Admin acts with no attributable identity | Per-operator SSO + audit log | ⚠️ **gap** (P0-2) |
-| **I**nfo disclosure | Live OTP / phone in application logs | Log redaction / masking | ⚠️ **gap** (P1-4) |
+| **T**ampering | Assign yourself another user's order (IDOR) | Per-object ownership checks in services | ✅ solid (P1-5, verified — no gap found) |
+| **R**epudiation | Admin acts with no attributable identity | Per-operator SSO + audit log | 🟡 partial (P0-2 — fail-closed proxy-auth + audit log shipped; IAP/SSO+MFA is the founder step) |
+| **I**nfo disclosure | Live OTP / phone in application logs | Log redaction / masking | ✅ solid (P1-4) |
 | **I**nfo disclosure | Public bucket / broad CORS leaks media | Private bucket (done) + tighten CORS | 🟡 partial |
-| **D**enial of service | Flood public API / offer loop / OTP | WAF + global throttling | ⚠️ **gap** (P0-3, P1-2) |
+| **D**enial of service | Flood public API / offer loop / OTP | WAF + global throttling | 🟡 partial (global throttling ✅ P1-2; WAF policy attached in Terraform, needs `apply` — P0-3) |
 | **E**levation of privilege | Reach admin API without admin role | Server-side role guard on every admin route | ✅ solid |
 | **E**levation of privilege | Over-broad cloud IAM after a pod compromise | Least-privilege SA (no editor/owner) | ✅ solid |
 
@@ -211,7 +211,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
 ### P0 — Critical (close first)
 
 **P0-1 · Fail closed on a weak JWT signing secret**
-`apps/api/src/config/env.ts:33,67`
+`apps/api/src/config/env.ts:57,139-144`
 - Remove the `.default("dev-insecure-secret-change-me-please")` fallback, or add a
   `superRefine` (next to the existing `REDIS_URL` guard) that **rejects boot in production**
   when `JWT_SIGNING_SECRET` is the known default, is < 32 chars, or is unset.
@@ -222,7 +222,8 @@ The subsections below keep the full design detail (the "what & why & acceptance 
   `Invalid environment configuration` and the container never serves traffic.
 
 **P0-2 · Real authentication + audit on the admin console**
-`apps/admin/` (no `middleware.ts`, no login), `apps/admin/app/lib/api.ts:15`
+`apps/admin/middleware.ts` (fail-closed proxy-auth gate now shipped — see status table above),
+`apps/admin/app/lib/api.ts:26`
 - Put the console behind **per-operator identity** — Google Workspace SSO / OIDC (IAP in
   front of Cloud Run is the fastest GCP-native option), not a single shared `ADMIN_API_TOKEN`.
 - Every privileged mutation (KYC approve/decline, ban, fare override, settlement pay) records
@@ -233,7 +234,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
   is attributable to a named human in the audit log.
 
 **P0-3 · WAF / Cloud Armor on the public load balancer**
-`infra/terraform/lb.tf:46` (backend has no `security_policy`)
+`infra/terraform/lb.tf:60` (`armor.tf` policy now attached — see status table above; needs `terraform apply`)
 - Add a `google_compute_security_policy` (Cloud Armor) attached to the API backend service:
   per-IP rate limiting (adaptive), the preconfigured OWASP rulesets (SQLi/XSS/LFI), and a
   bot/geo posture appropriate for a Zimbabwe-first launch.
@@ -266,7 +267,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
   the threshold.
 
 **P1-3 · Edge hardening: Helmet, CORS allow-list, ValidationPipe**
-`apps/api/src/main.ts`, `apps/api/src/tracking/tracking.gateway.ts:64`
+`apps/api/src/main.ts`, `apps/api/src/tracking/tracking.gateway.ts:79`
 - Add **Helmet** for security headers (HSTS, `X-Content-Type-Options`, referrer policy, a
   conservative CSP for the JSON API).
 - Replace the implicit CORS with an **explicit pinned origin allow-list** (mobile app origins
@@ -279,7 +280,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
   unlisted origin is refused; a body with an unknown field is rejected.
 
 **P1-4 · Stop logging OTP codes and phone numbers**
-`apps/api/src/auth/otp-sender.ts:94,105`
+`apps/api/src/auth/otp-sender.ts:96,109`
 - Remove/redact the `DEV OTP for {phone}: {code}` (console sender) and `SMS OTP → {phone}:
   {code}` (SMS stub) log lines, or gate them behind `NODE_ENV !== "production"` **and** run
   them through the existing `phone-mask.ts` helper. Never log a live OTP at info level.
@@ -299,7 +300,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
 ### P2 — Medium (next sprint)
 
 **P2-1 · Network-isolate the datastores**
-`infra/terraform/sql.tf:32`, `redis.tf`
+`infra/terraform/sql.tf:34`, `redis.tf`
 - Move Cloud SQL to **private IP only** (`ipv4_enabled = false`); run CI migrations through the
   Cloud SQL Auth Proxy over private access or a short-lived authorized path instead of a
   standing public IP.
@@ -314,13 +315,13 @@ The subsections below keep the full design detail (the "what & why & acceptance 
 - *Accept:* the bucket CORS lists only known origins.
 
 **P2-3 · Pin JWT algorithm**
-`apps/api/src/auth/token.service.ts:28`
+`apps/api/src/auth/token.service.ts:50,53`
 - Pass `{ algorithms: ["HS256"] }` to `jwt.verify` (defense in depth against algorithm
   confusion, even though `alg:none` is already rejected).
 - *Accept:* a token signed with any other alg is rejected.
 
 **P2-4 · Launch-hygiene fail-closed guards**
-`apps/api/src/config/env.ts:39,45`
+`apps/api/src/config/env.ts:159-176`
 - Add a production `superRefine`: reject boot if `OTP_CHANNEL !== "whatsapp"` **or**
   `OTP_TEST_PHONES` is non-empty in production (today these are enforced only by a comment).
   Same treatment for `KYC_PROVIDER === "stub"` in production.

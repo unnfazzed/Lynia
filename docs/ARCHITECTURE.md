@@ -84,7 +84,7 @@ flowchart TB
             TRK["Tracking<br/>geo · access checks"]
             NOTIF["Notifications<br/>push + device tokens"]
             UP["Uploads<br/>signed URLs"]
-            ADM["Admin read API"]
+            ADM["Admin API"]
         end
         subgraph SEAM["Cloud adapter seam (D7)"]
             direction LR
@@ -117,7 +117,7 @@ flowchart TB
     %% ---------- Clients → API ----------
     CUST -->|"REST: create order · select offer · rate"| REST
     RIDER -->|"REST: make offer · advance · deliver OTP"| REST
-    ADMIN -->|"admin JWT (read)"| REST
+    ADMIN -->|"admin JWT"| REST
     CUST <-->|"WS: order:status · position · offers:changed"| GW
     RIDER <-->|"WS: rider:location · board:subscribe → board:new-order"| GW
 
@@ -221,7 +221,7 @@ graph TB
     customer -->|"REST + WS"| api
     rider -->|"REST + WS"| api
     ops --> admin
-    admin -->|"admin JWT, read API"| api
+    admin -->|"admin JWT"| api
 
     api --> db
     api --> redis
@@ -272,7 +272,7 @@ graph TD
 | Workspace | Package | Stack | Role |
 |---|---|---|---|
 | `packages/shared` | `@lynia/shared` | TypeScript, zod | Domain enums, API contracts (zod schemas + inferred types), suggested-fare pricing, offer-ranking, design tokens. Single source of truth, built first. |
-| `apps/api` | `@lynia/api` | NestJS, Prisma, Socket.IO, BullMQ | The backend: auth, offer loop, lifecycle, tracking, KYC, admin read API, cloud adapters, OpenTelemetry. |
+| `apps/api` | `@lynia/api` | NestJS, Prisma, Socket.IO, BullMQ | The backend: auth, offer loop, lifecycle, tracking, KYC, admin API, cloud adapters, OpenTelemetry. |
 | `apps/mobile` | `@lynia/mobile` | Expo (React Native), expo-router, React Query, socket.io-client | Android-first customer + rider app. |
 | `apps/admin` | `@lynia/admin` | Next.js (App Router, server components) | Internal monitor/support console. |
 | `infra/terraform` | — | Terraform | GCP provisioning (Cloud Run, Cloud SQL, Memorystore, GCS, Secret Manager, ALB, WIF). |
@@ -360,7 +360,7 @@ graph TB
 
     subgraph seam["Cloud adapter seam (D7)"]
         storage["StorageModule<br/>GCS"]
-        secrets["SecretsModule<br/>env / Key Vault"]
+        secrets["SecretsModule<br/>env"]
         push["PushModule<br/>FCM / noop"]
     end
 
@@ -373,7 +373,7 @@ graph TB
         riders["RidersModule (E)<br/>onboarding · KYC"]
         notif["NotificationsModule<br/>push + device tokens"]
         uploads["UploadsModule<br/>signed URLs"]
-        admin["AdminModule (F)<br/>read API"]
+        admin["AdminModule (F)"]
         health["HealthModule"]
     end
 
@@ -595,9 +595,9 @@ stateDiagram-v2
     open_for_offers --> assigned : select (guarded CAS)
     open_for_offers --> expired : offer window elapses
 
-    assigned --> confirmed : rider confirms items
+    assigned --> confirmed : status CAS (stamp only)
     confirmed --> en_route_pickup
-    en_route_pickup --> picked_up
+    en_route_pickup --> picked_up : rider confirms items (confirmItems, status-neutral)
     picked_up --> en_route_dropoff
     en_route_dropoff --> delivered : rider enters delivery OTP ✓
 
@@ -607,13 +607,17 @@ stateDiagram-v2
     assigned --> cancelled : either party
     confirmed --> cancelled
     en_route_pickup --> cancelled
-    picked_up --> cancelled : rider only
-    en_route_dropoff --> cancelled : rider only
+    picked_up --> cancelled : customer only
+    en_route_dropoff --> cancelled : customer only
     open_for_offers --> cancelled : customer
+
+    picked_up --> undelivered : hand-off fails (rider gives up)
+    en_route_dropoff --> undelivered : hand-off fails (rider gives up)
 
     completed --> [*]
     cancelled --> [*]
     expired --> [*]
+    undelivered --> [*]
 ```
 
 Rules encoded around the transitions:
@@ -622,9 +626,13 @@ Rules encoded around the transitions:
   gate, the constant-time hash compare, and the increment are point-in-time consistent — no
   concurrent-guess bypass of the 5-attempt cap. A wrong code is **committed** (the increment
   persists); only the error path rolls back. After a lockout the customer can `rotate` a fresh code.
-- **Cancellation windows** differ by party: a customer may cancel up to `en_route_pickup` (before the
-  parcel is collected); a rider may cancel any time before `delivered`. A **rider cancel is a
+- **Cancellation windows** differ by party: a **rider** may cancel only up to `en_route_pickup` (before
+  the parcel is collected) — from `picked_up` onward a failed hand-off is an `undelivered`, not a
+  cancel. A **customer** may cancel any time before `delivered`. A **rider cancel is a
   no-show strike** — every 3rd strike forces the rider offline on a 2-hour cooldown (T4).
+- **Undelivered**: `markUndelivered` is a guarded CAS from `picked_up`/`en_route_dropoff` for a hand-off
+  that can't be completed (recipient unreachable, etc.); it's terminal, records an attempt count and
+  reason, and dings the rider's reliability only when the failure is the rider's fault.
 - **Rating closes the order** and updates the rider's running `ratingAvg`/`ratingCount`/`tripsCount`
   in the same transaction. If the customer never rates, the auto-close backstop still completes the
   order so metrics don't stall ([§14](#14-background-jobs--self-healing)).
@@ -679,7 +687,8 @@ Security properties baked in:
 - **Rate limiting** on OTP send is three-tiered (phone / IP / global) because each WhatsApp send
   costs money — enumeration is a budget-DoS, not just spam (ET5).
 - The **response never reveals whether a phone exists** (always "sent"). A dev/QA escape hatch
-  returns the code inline, but only on the `console` channel and only for allowlisted test numbers.
+  returns the code inline on the `console` channel: in dev/test (`NODE_ENV !== "production"`) for
+  *any* phone, in production only for numbers on the `OTP_TEST_PHONES` allowlist.
 - On the client, `apiFetch` **single-flights concurrent 401 refreshes** so two pollers don't both
   refresh (the second would use a token the first just rotated away and trigger a false sign-out).
 
@@ -690,7 +699,10 @@ Security properties baked in:
 A customer upgrades to a rider by submitting bike details + a photo; ID verification runs through
 Didit (Zimbabwean national IDs). The webhook is HMAC-verified and applied **monotonically** so a
 replayed or out-of-order delivery can't overwrite a newer decision. `KYC_MODE` and `KYC_PROVIDER`
-switch between real vendor, manual admin review, and a CI/QA stub.
+switch between real vendor, manual admin review, and a CI/QA stub. `kycStatus` is a 4-way enum —
+`pending | verified | failed | expired` — the `expired` value covers a Didit-side ID lapse and gates
+online-status separately from a plain `failed`; a rider on `failed`/`expired` can call
+`POST /riders/kyc/retry` to resubmit, capped at 2 attempts before the account locks (A-02).
 
 ```mermaid
 sequenceDiagram
@@ -712,11 +724,11 @@ sequenceDiagram
         R->>V: complete ID check in hosted flow
         V->>API: POST /kyc/callback (HMAC-signed)
         API->>API: verify signature + timestamp freshness
-        API->>DB: applyKycResult(ref, verified|failed, eventAt)<br/>only if eventAt newer than kycResolvedAt
+        API->>DB: applyKycResult(ref, verified|failed|expired, eventAt, reason?)<br/>only if eventAt newer than kycResolvedAt
     else KYC_MODE = manual (T7 backstop)
         API->>DB: create rider (kycStatus=pending)
-        A->>API: POST /admin/riders/:id/kyc { verified }
-        API->>DB: adminSetKyc
+        A->>API: POST /admin/riders/:id/kyc { status, reasonCode?, note? }
+        API->>DB: adminSetKyc (reasonCode required on decline; 2-attempt lock)
     end
 
     Note over R,DB: only a verified rider may go online & make offers
@@ -724,14 +736,16 @@ sequenceDiagram
     API->>DB: reject if not verified OR on cooldown
 ```
 
-- **Gating**: `PATCH /riders/online` and `POST /orders/:id/offers` both require `kycStatus=verified`
-  (and not on cooldown / actually online). An unverified or offline rider's offer is un-selectable
+- **Gating**: `PATCH /riders/online` and `POST /orders/:id/offers` both require `kycStatus=verified`,
+  and are further refused (in order) for an expired KYC, a banned or suspended account, a reliability
+  on-hold, or an active no-show cooldown. An unverified or offline rider's offer is un-selectable
   anyway, so it's rejected up front.
 - **Webhook idempotency**: `applyKycResult` updates only when `kycResolvedAt` is null or older than
   the incoming `eventAt`. `kycRef` is unique → matches at most one rider. An exact replay has the
   same timestamp → not newer → ignored.
-- **Signature**: the webhook body is canonicalized (recursive key sort) and HMAC-verified against the
-  raw request body (why `rawBody` is enabled at bootstrap), with a timestamp-freshness check.
+- **Signature**: the webhook prefers a canonicalized (recursive key sort), HMAC-verified `X-Signature-V2`
+  header, falling back to a legacy `X-Signature` verified against the raw request body (why `rawBody`
+  is enabled at bootstrap) for older senders; both paths enforce a 300s timestamp-freshness check.
 - **Stub provider** (`KYC_PROVIDER=stub`, default) auto-passes in `auto` mode, so the full rider flow
   (online → bid → deliver → OTP) is testable in CI with no Didit account. Flip to `didit` before launch.
 
@@ -779,8 +793,10 @@ Flow details:
 - **`subscribe:order`**: server checks the caller is the order's customer *or* its assigned rider
   before joining the room (`canAccessOrder`).
 - **`rider:location`**: only the **assigned rider on an active ride** may stream position
-  (`isAssignedRider`). The position is persisted (`geog = ST_SetSRID(ST_MakePoint(...))`) so a
-  reconnecting client's REST snapshot is fresh, then re-emitted to the room.
+  (`isAssignedRider`). The fix is **emitted to the room first, then persisted** (`geog =
+  ST_SetSRID(ST_MakePoint(...))`) — the live push is never gated on the DB write; the emit is
+  server-side coalesced to ≤1/sec per room, but the underlying fix is still persisted on every message
+  so a reconnecting client's REST snapshot stays fresh.
 - **`order:status`**: emitted by the lifecycle service after a committed transition — wrapped so it
   can never throw into the caller's transaction.
 - **`offers:changed`** (auction is **push, not poll**): during `open_for_offers` the offers service
@@ -907,7 +923,7 @@ Where the pattern is applied:
 | Make offer | insert with unique `(order_id, rider_id)` | rejects a second offer as 409 |
 | Forward lifecycle step | `UPDATE ... WHERE status=<prior>` + rider check | one event row per real transition |
 | Delivery OTP | `SELECT ... FOR UPDATE` row lock | 5-attempt cap, constant-time compare |
-| Rate → complete | `UPDATE ... WHERE status='delivered'` | one `Rating` per order (unique) |
+| Rate → complete | `UPDATE ... WHERE status='delivered'` | one `Rating` per (order, rater) — unique on `(orderId, byProfileId)`, so a customer→rider and a rider→customer rating can coexist |
 | KYC webhook | `updateMany ... WHERE kycResolvedAt < eventAt` | monotonic by event time |
 
 The rule of thumb the codebase follows: **check-then-act is never split across statements** for

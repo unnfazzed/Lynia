@@ -6,7 +6,7 @@
 <Label>Your price (USD)</Label>
 ```
 
-- **Heading** — 24px / 800, one per screen.
+- **Heading** — 24px / 700, one per screen.
 - **Sub** — 14px muted lede under the heading.
 - **Label** — 12px / 600 muted caption above inputs and small groups.
 

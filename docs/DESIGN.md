@@ -217,13 +217,16 @@ components; none needs a device to design.
 
 Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checklist instead of rediscovering:
 
-- **§5c 7-step stepper** is specced (customer + now rider) but **not built** in `app/order/[id].tsx` /
-  `app/rider/job.tsx` — both render plainer status lists today.
+- **§5c 7-step stepper** is specced (customer + now rider) and **built on the customer side**
+  (`app/order/[id].tsx` renders `<Stepper view="customer" />`) — the **rider side is not wired**;
+  `app/rider/job.tsx` still renders a plain `StatusPill` even though the `Stepper` component already
+  supports `view="rider"`.
 - **Designed empty-states** (no-offers / no-riders, and the new rider ones) are **not all built**.
-- **API-contract fields with no UI:** `itemPhotoUrl`, `note` (create order); `comment` (rating);
+- **API-contract fields with no UI:** `itemPhotoUrl` (create order); `comment` (rating);
   `reason` (cancel) — all in `@lynia/shared` contracts, no field on screen. Either surface or consciously
   defer per flow.
-- **Sign-out** lives on `home` today; spec moves it to **profile/settings**.
+- **Sign-out** now lives on **profile/settings** (`app/profile/index.tsx`, `app/settings/index.tsx`),
+  matching the spec.
 
 ## Responsive & accessibility
 
@@ -251,7 +254,7 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 | DT7 | P2 | Run `/design-review` (visual QA) post-implementation | ⬜ deferred — needs a dev build |
 | DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` | ✅ done |
 | DT9 | P1 | Rider interaction-states + two rider empty-states (no-orders / not-verified) | ✅ done |
-| DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support | ◐ **partial** — history/profile/earnings shipped; notifications, support, and the *public* rider rating profile not yet |
+| DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support | ◐ **partial** — history/profile/earnings/notifications/support shipped; only the *public* rider rating profile not yet |
 | DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done — §6 decided (rider commission, 0% for ~6–8 months); the ledger gains a commission/settlement line when that infra is built (deferred — CONCEPT §6) |
 | DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ✅ done (contract-only fields + rider pickup-photo still deferred) |
 | DT13 | P2 | Post-Phase-3: regen `/design-html`, then DT7 visual review + `/qa` on a device build | ⬜ deferred (device-gated) |

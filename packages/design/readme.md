@@ -104,7 +104,7 @@ Files in `assets/brand/`: `lyniago-mark.svg` (master), `lyniago-mark-mono.svg` (
 
 **Root**
 - `styles.css` — the single entry point consumers link (`@import` list only).
-- `tokens/` — `colors.css`, `typography.css`, `spacing.css`, `fonts.css`.
+- `tokens/` — `colors.css`, `typography.css`, `spacing.css`, `fonts.css`, `icons.css`.
 - `guidelines/` — foundation specimen cards (Colors, Type, Spacing, Brand incl. the device & data budget).
 - `assets/` — `lynia-icons.js` (self-hosted 22-icon subset), `icons/` raw SVGs, `fonts/` (self-hosted Inter 400/600/700 woff2).
 - `components/` — reusable React primitives (below).

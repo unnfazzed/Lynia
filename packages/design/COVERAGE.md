@@ -111,7 +111,7 @@ scope for this phase.
 | Item | Status |
 |---|---|
 | Tokens (colors, type, spacing, radii, shadows, icons) | ✅ |
-| 12 reusable components (+ specimen cards) | ✅ |
+| 14 reusable components (+ specimen cards) | ✅ |
 | Logo (Paper Dove) — mark, mono, icon, favicon/PNG set, one-pager | ✅ |
 | Splash & loader animation | ✅ |
 | `templates/app-screen` starter | ✅ |

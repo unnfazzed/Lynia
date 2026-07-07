@@ -115,7 +115,7 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
 | T3 | Order auto-close on rating deadlock | ❌ not built | ✅ **done** (rating + auto-close + reconciler) |
 | T4 | No-show / cancellation reputation + cooldown | ❌ not built | ✅ **done** |
 | T5 | API authorization (JWT-claim scoping) | ✅ | ✅ **hardened** (spoof holes closed) |
-| T6 | OTP auth (mint → send → verify → JWT) | ◐ partial | ◐ partial — **WhatsApp/SMS still stubbed (external)** |
+| T6 | OTP auth (mint → send → verify → JWT) | ◐ partial | ◐ partial — **WhatsApp is fully wired (Meta Graph API); SMS still stubbed (external)** |
 | T7 | KYC + manual-review backstop | ✅ | ✅ |
 | T8 | Error/rescue for external calls | ◐ partial | ◐ partial |
 | T9 | Metrics instrumentation | ◐ partial | ◐ partial — **OTEL needs a collector (external)** |
@@ -428,7 +428,7 @@ Everything codeable through P0/P1 is shipped and CI-green. What remains, grouped
 - [x] **E6** — explicit Prisma connection pool (deterministic `connection_limit`, `DATABASE_CONNECTION_LIMIT`
       / `DATABASE_POOL_TIMEOUT` overrides; graceful shutdown already covered by `enableShutdownHooks`).
 - [x] **D3** — rating-on-tap (optimistic star-tap submit behind a short undo window; Undo cancels,
-      unmount clears the pending submit).
+      unmount flushes a still-armed rating rather than dropping it — only Undo cancels).
 
 ### 🟢 Deferred by decision (not now)
 - [ ] **OTEL collector** — exporter wired; point it at a collector when trip volume needs traces (CEO-deferred).

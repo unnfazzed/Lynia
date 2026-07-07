@@ -24,7 +24,7 @@ and re-runnable. It went through an engineering/cloud review pass —
 | Deployer SA | `lynia-deployer@…` | Run Admin, AR Writer, Cloud SQL Client, actAs runtime SA |
 | Workload Identity pool/provider | `github-pool` / `github-provider` | **keyless CI auth**; OIDC scoped to `unnfazzed/Lynia` (no SA key) |
 | External HTTPS load balancer | `lynia-api-*` | global ALB + managed cert fronting Cloud Run (`api_domain`); stable HTTPS for device builds |
-| Secrets | `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET` | generated + populated |
+| Secrets | `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET`, `PII_ENCRYPTION_KEY` | generated + populated |
 
 ## The one thing Terraform can't do: billing
 
@@ -76,6 +76,6 @@ Push to `main` → first Cloud Run deploy.
 
 - **Drop Cloud SQL public IP.** It exists only so the GitHub-hosted runner's Auth Proxy
   can migrate. Move migrations to a VPC-internal runner (or a Cloud Run Job) and set
-  `ipv4_enabled = false`.
+  `db_public_ip_enabled = false`.
 - **Redis STANDARD_HA + Cloud SQL REGIONAL** before launch (pilot uses BASIC/ZONAL).
 - **Tighten `bucket_cors_origins`** from `*` to the real admin origin.

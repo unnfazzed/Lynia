@@ -58,7 +58,7 @@ residual risk is concentrated:
 
 ## 2. The launch scorecard
 
-> **Status legend:** ⬜ not started · 🔍 audited — findings open · 🛠️ fixes landed, gate not fully closed · ✅ closed. **Rounds 1–2 executed — see §6.**
+> **Status legend:** ⬜ not started · 🔍 audited — findings open · 🛠️ fixes landed, gate not fully closed · ✅ closed. **Rounds 1–3 executed — see §6.**
 
 | ID | Track | Gate | Owner | Status |
 |----|-------|------|-------|--------|
@@ -99,7 +99,8 @@ specs with **no HTTP-level e2e layer**, so guard *wiring* (vs guard *logic*) is 
   order-state gate (§5d reveal window), rate limit} — from the code, not the docs. Then attack it:
   IDOR on every `:id` param, role escalation, state-gate bypass, WS room-join spoofing
   (`tracking.gateway.ts` handshake + room names), admin mutation reachability.
-- **Build:** a **supertest-based HTTP e2e suite** (`apps/api/test/e2e/`) asserting 401/403/404 for
+- **Build:** a **supertest-based HTTP e2e suite** (co-located as `*.e2e.spec.ts` next to each module,
+  e.g. `apps/api/src/orders/orders-authz.e2e.spec.ts`) asserting 401/403/404 for
   every cell of the matrix — this is the missing test layer, and it makes the matrix regression-proof.
 - **Exit test:** matrix doc appended to `ENG-REVIEW.md`; e2e suite in CI; zero CONFIRMED authz
   findings open.
@@ -147,9 +148,10 @@ internals), and no explicit body-size caps.
 Settlements are idempotent-by-design (`@@unique([riderId, periodStart])`, never-reset-actioned-status)
 but two seams need closing before money matters:
 
-- **Auto-pause has no scheduler** — `POST /admin/cash/settlements/auto-pause` is callable-only. Wire
-  Cloud Scheduler → the endpoint (OIDC-authed) or a BullMQ repeatable job; overdue riders must pause
-  without a human remembering.
+- **Auto-pause endpoint is gone, not just unscheduled** — the old weekly settlement engine (and its
+  `POST /admin/cash/settlements/auto-pause`, record-payment, and billing routes) was removed when the
+  model moved to prepaid per-ride commission; `GET /admin/cash/settlements` is now the only surviving
+  route, and it's read-only. There is nothing left to schedule.
 - **`GET /admin/cash/settlements` regenerates the period on every read** — fine at pilot rider
   counts, a write-amplifying read at scale; move generation to the scheduled job, make the read a
   read.
@@ -338,13 +340,14 @@ class (a systemic P1 once already, ENG-REVIEW §2):
 - **Admin:** all pages × the four failure banners (`unconfigured`/`unreachable`/`not-implemented`/
   `error`), mutation confirm flows, cash console, audit-trail visibility.
 - Every state: loading skeleton, empty, error (honest, retryable), success; copy consistency.
-- **Exit test:** per-journey state matrices appended to `DESIGN-REVIEW.md`; zero CONFIRMED
+- **Exit test:** per-journey state matrices appended to §6 of this doc; zero CONFIRMED
   dishonest-state findings open.
 
 ### LR19 — Design-system adherence + accessibility
 
-`/design-review` over both apps against `DESIGN.md`/`packages/design` (token drift is already
-CI-guarded — extend adherence linting via the existing oxlint config); then an accessibility pass:
+`/design-review` over both apps against `DESIGN.md`/`packages/design` (`packages/design/_adherence.oxlintrc.json`
+has token/component-drift rules authored but not yet wired into any CI lint step — see LR4; wire it up
+as part of this gate); then an accessibility pass:
 TalkBack on the core journeys, ≥44px targets (spec'd — verify), font-scaling ×1.3, WCAG AA contrast
 on both themes, focus order on admin.
 

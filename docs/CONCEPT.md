@@ -174,7 +174,7 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 > **No payments tables in the MVP** (`rider_ledger`, balances, top-ups, gateway refs) — revenue/settlement is deferred to a later phase (§6). The fare fields above (`suggested_fare`/`proposed_fare`/`agreed_fare`) exist only to drive the **matching/bidding loop**; the app never moves money.
 
 ### Order status flow
-`requested → open_for_offers → assigned → confirmed → en_route_pickup → picked_up → en_route_dropoff → delivered (OTP verified) → completed` (plus `cancelled` and `expired`). The customer sets `proposed_fare` (from the adjustable `suggested_fare`) and broadcasts → `open_for_offers`. Nearby riders submit `offers` (`accept` at the proposed price or a `counter`); all `pending` offers are shown to the customer, who **selects one** → that offer becomes `selected`, its fare becomes `agreed_fare`, `rider_id` is set, status → `assigned`. If the offer window lapses with no offers (or the customer doesn't select), status → `expired` and the customer is prompted to nudge the price and re-broadcast. The `agreed_fare` is shown in-app for reference, but **how it is settled is out of scope** — the app moves no money and takes no commission in the pilot (§6).
+`requested → open_for_offers → assigned → confirmed → en_route_pickup → picked_up → en_route_dropoff → delivered (OTP verified) → completed` (plus `cancelled`, `expired`, and `undelivered` for a hand-off the rider can't complete). The customer sets `proposed_fare` (from the adjustable `suggested_fare`) and broadcasts → `open_for_offers`. Nearby riders submit `offers` (`accept` at the proposed price or a `counter`); all `pending` offers are shown to the customer, who **selects one** → that offer becomes `selected`, its fare becomes `agreed_fare`, `rider_id` is set, status → `assigned`. If the offer window lapses with no offers (or the customer doesn't select), status → `expired` and the customer is prompted to nudge the price and re-broadcast. The `agreed_fare` is shown in-app for reference, but **how it is settled is out of scope** — the app moves no money and takes no commission in the pilot (§6).
 
 The two post-assignment states — **`confirmed`** (rider has reviewed and confirmed the item description + customer note) and **`en_route_pickup`** (rider has tapped "start ride" and is travelling to the pickup) — exist so the **initiator** (the customer who created the transaction) gets a continuous, legible view of the rider's progress from acceptance to handover. **Live rider location streams from `assigned` through `delivered`**, so the customer sees the bike the moment they select a rider. The single old `en_route` is split into **`en_route_pickup`** (rider → sender) and **`en_route_dropoff`** (rider → receiver) so the tracking window can show *which leg* the rider is on. See §5c.
 
@@ -332,7 +332,7 @@ number is simply gated by order state.
 
 > **Resolved (2026-06-27):** model = rider commission (% of agreed fare), 0% for ~6–8 months, infra built
 > later. **Still to calibrate on real corridor data before charging:** the take-rate %, and the base +
-> per-km suggested-price guide (placeholder: base $1.50 + $0.50/km — a matching guide, not a revenue figure).
+> per-km suggested-price guide (placeholder: base $1.50 + $0.60/km — a matching guide, not a revenue figure).
 
 ---
 
