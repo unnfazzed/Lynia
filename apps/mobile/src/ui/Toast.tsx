@@ -29,9 +29,10 @@ export interface ToastMessage {
 export const TOAST_DURATION_MS = 4000;
 
 /**
- * Reduce a raise into the visible queue: newest-first, capped so a burst can't stack endlessly. Pure so
- * the queue behaviour is unit-testable without rendering. We show only the head, but keep a small tail
- * so a rapid second raise has something to fall back to when the first dismisses.
+ * Reduce a raise into the visible queue: newest-first, capped. Pure so the behaviour is unit-testable
+ * without rendering. The provider caps to 1 (single strip, newest wins) — a larger cap would let an
+ * OLDER, already-stale message re-appear after the newest one dismisses, which is worse than dropping
+ * it. The `max` parameter stays general for testing/other callers.
  */
 export function pushToast(queue: ToastMessage[], msg: ToastMessage, max = 3): ToastMessage[] {
   return [msg, ...queue.filter((m) => m.id !== msg.id)].slice(0, max);
@@ -64,7 +65,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }): Reac
 
   const show = useCallback((text: string, tone: ToastTone = "info"): void => {
     const msg: ToastMessage = { id: nextId.current++, text, tone };
-    setQueue((q) => pushToast(q, msg));
+    // Cap to 1: a new raise replaces the visible strip (newest wins) rather than queuing behind it,
+    // so an older message can never re-surface after the newest dismisses.
+    setQueue((q) => pushToast(q, msg, 1));
     AccessibilityInfo.announceForAccessibility(text);
   }, []);
 

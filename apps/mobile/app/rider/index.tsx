@@ -1,4 +1,5 @@
 import { haversineKm, OFFER_WINDOW_MS, tokens } from "@lynia/shared";
+import { ETA_SPEED_KMH } from "../../src/logic/eta";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
@@ -35,8 +36,6 @@ interface SentOffer {
   expiresAt: string;
 }
 
-/** Urban motorbike cruising speed for a rough pickup-ETA seed (min = distance / speed). */
-const AVG_PICKUP_KMH = 22;
 
 export default function RiderHome(): React.ReactElement {
   const router = useRouter();
@@ -246,24 +245,24 @@ export default function RiderHome(): React.ReactElement {
     .sort((a, b) => (a.km ?? Number.MAX_SAFE_INTEGER) - (b.km ?? Number.MAX_SAFE_INTEGER));
 
   // A new nearby order opened while online — a single attention buzz so the rider doesn't have to
-  // stare at the board. We SEED the count on going online (so the initial board populate is silent),
-  // then buzz on any later increase; a decrease (bid on one / it left the board) never buzzes.
-  const prevOpenCount = useRef(0);
-  const openSeeded = useRef(false);
+  // stare at the board. We seed the baseline on the FIRST SUCCESSFUL board load (not merely on going
+  // online, when the fetch hasn't returned and the count is still 0), so the initial populate is
+  // silent; only a genuine later increase buzzes, and a decrease (bid on one / it left) never does.
+  // `-1` is the "not yet seeded" sentinel — one ref, reset when the rider goes offline.
+  const prevOpenCount = useRef(-1);
   useEffect(() => {
     if (!online) {
-      prevOpenCount.current = 0;
-      openSeeded.current = false;
+      prevOpenCount.current = -1;
       return;
     }
-    if (!openSeeded.current) {
+    if (!openQ.isSuccess) return; // wait for a real load before seeding/buzzing
+    if (prevOpenCount.current === -1) {
       prevOpenCount.current = ranked.length;
-      openSeeded.current = true;
       return;
     }
     if (ranked.length > prevOpenCount.current) haptic("notify");
     prevOpenCount.current = ranked.length;
-  }, [online, ranked.length]);
+  }, [online, openQ.isSuccess, ranked.length]);
 
   const fareNum = parseNum(fare);
   const etaNum = parseNum(eta);
@@ -300,7 +299,7 @@ export default function RiderHome(): React.ReactElement {
     // Seed the ETA from the real distance to pickup instead of a constant "10", so the customer's
     // "Fastest" sort ranks on something real. Rider can still edit before sending.
     const km = loc ? haversineKm(loc, o.pickup.point) : null;
-    setEta(km != null ? String(Math.max(3, Math.round((km / AVG_PICKUP_KMH) * 60))) : "10");
+    setEta(km != null ? String(Math.max(3, Math.round((km / ETA_SPEED_KMH) * 60))) : "10");
   };
 
   return (

@@ -11,6 +11,10 @@ describe("initials", () => {
     expect(initials("Tinashe", "")).toBe("TI");
     expect(initials("Tinashe", null)).toBe("TI");
   });
+  it("lastName only (empty firstName) → first two of the last name", () => {
+    expect(initials("", "Moyo")).toBe("MO");
+    expect(initials(null, "Moyo")).toBe("MO");
+  });
   it("falls back to a neutral dot when there's no name", () => {
     expect(initials("", "")).toBe("•");
     expect(initials(null, null)).toBe("•");

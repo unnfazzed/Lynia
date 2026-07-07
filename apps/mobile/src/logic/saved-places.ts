@@ -16,8 +16,9 @@ import type { ResolvedPlace } from "../api/places";
  * compose-draft rule), so a stashed Home address is a place, not a person.
  */
 
-const RECENTS_KEY = "lynia.savedPlaces.recents";
-const SAVED_KEY = "lynia.savedPlaces.saved";
+// Exported so sign-out (auth/session `clearDeviceState`) clears the same slots — these hold addresses.
+export const RECENTS_KEY = "lynia.savedPlaces.recents";
+export const SAVED_KEY = "lynia.savedPlaces.saved";
 
 /** Keep the recents list short — the idle panel is a shortcut, not a history log. */
 export const MAX_RECENTS = 5;

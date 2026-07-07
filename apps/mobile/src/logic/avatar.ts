@@ -15,11 +15,10 @@ export function initials(firstName?: string | null, lastName?: string | null): s
   const a = [...first][0];
   const b = [...last][0];
   if (a && b) return (a + b).toUpperCase();
-  if (a) {
-    // Single name → first two letters (so "Tinashe" → "TI", not just "T").
-    const two = [...first].slice(0, 2).join("");
-    return two.toUpperCase();
-  }
+  // Only one name present (either slot) → first two letters of whichever it is, so a lastName-only
+  // record ("", "Moyo") still yields "MO" rather than the neutral dot.
+  const single = a ? first : last;
+  if (single) return [...single].slice(0, 2).join("").toUpperCase();
   return "•";
 }
 

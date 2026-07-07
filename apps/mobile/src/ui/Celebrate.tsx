@@ -64,13 +64,15 @@ export function Celebrate({ size = 72 }: { size?: number }): React.ReactElement 
           />
         );
       })}
-      {/* The check badge — accent fill (a graphic fill, white glyph allowed here, same as the CTA). */}
+      {/* The check badge carries a WHITE glyph, so its fill is `cta` (#00812F, white ≈4.7:1) not the
+          brand `accent` (#00B14F, white ≈2.9:1) — the same rule the Stepper's done-node follows, keeping
+          white off the low-contrast brand green. The radiating dots above stay `accent` (a pure fill). */}
       <Animated.View
         style={{
           width: size * 0.66,
           height: size * 0.66,
           borderRadius: (size * 0.66) / 2,
-          backgroundColor: tokens.color.accent,
+          backgroundColor: tokens.color.cta,
           alignItems: "center",
           justifyContent: "center",
           transform: [{ scale: badgeScale }],
