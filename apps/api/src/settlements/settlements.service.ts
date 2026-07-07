@@ -76,15 +76,29 @@ export class SettlementsService {
     const periodStart = new Date(periodEnd);
     periodStart.setUTCDate(periodEnd.getUTCDate() - 7);
 
-    const groups = await this.prisma.order.groupBy({
-      by: ["riderId"],
+    // Read the individual completed rides (not a groupBy _sum) so commission is summed PER RIDE:
+    // perRideCommission is applied+rounded on each ride's fare, then summed — matching the prepaid
+    // wallet, which debits per completed ride. Applying the rate to a rider's ROUNDED aggregate fare
+    // instead diverges by rounding once the rate is non-zero, so the console would never reconcile with
+    // the ledger. At the 7-day window's pilot volume this per-ride read is cheap.
+    const orders = await this.prisma.order.findMany({
       where: { status: "completed", completedAt: { gte: periodStart, lt: periodEnd }, riderId: { not: null } },
-      _sum: { agreedFare: true },
-      _count: { _all: true },
-      orderBy: { _sum: { agreedFare: "desc" } },
+      select: { riderId: true, agreedFare: true },
     });
 
-    const riderIds = groups.map((g) => g.riderId).filter((id): id is string => id !== null);
+    // Aggregate per rider in JS: ride count, gross fares, and per-ride-summed commission.
+    const byRider = new Map<string, { rides: number; fares: number; commission: number }>();
+    for (const o of orders) {
+      if (!o.riderId) continue;
+      const fare = Number(o.agreedFare ?? 0);
+      const agg = byRider.get(o.riderId) ?? { rides: 0, fares: 0, commission: 0 };
+      agg.rides += 1;
+      agg.fares += fare;
+      agg.commission += perRideCommission(fare);
+      byRider.set(o.riderId, agg);
+    }
+
+    const riderIds = [...byRider.keys()];
     const profiles = riderIds.length
       ? await this.prisma.profile.findMany({
           where: { id: { in: riderIds } },
@@ -97,21 +111,20 @@ export class SettlementsService {
     let totalFares = 0;
     let totalCommission = 0;
 
-    const rows: CommissionRiderRow[] = groups
-      .filter((g): g is typeof g & { riderId: string } => g.riderId !== null)
-      .map((g) => {
-        const rides = g._count._all;
-        const fares = round(Number(g._sum.agreedFare ?? 0));
-        const commission = perRideCommission(fares);
-        totalRides += rides;
-        totalFares += fares;
-        totalCommission += commission;
+    const rows: CommissionRiderRow[] = [...byRider.entries()]
+      // Order by fares delivered, descending (was the DB orderBy _sum.agreedFare desc).
+      .sort((a, b) => b[1].fares - a[1].fares)
+      .map(([riderId, agg]) => {
+        totalRides += agg.rides;
+        totalFares += agg.fares;
+        totalCommission += agg.commission;
         return {
-          riderId: g.riderId,
-          name: nameBy.get(g.riderId) ?? "Unknown rider",
-          rides,
-          fares: fares.toFixed(2),
-          commission: commission.toFixed(2),
+          riderId,
+          name: nameBy.get(riderId) ?? "Unknown rider",
+          rides: agg.rides,
+          fares: round(agg.fares).toFixed(2),
+          // agg.commission is the sum of already-rounded per-ride amounts; round() only cleans float drift.
+          commission: round(agg.commission).toFixed(2),
         };
       });
 
