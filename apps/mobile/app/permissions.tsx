@@ -83,7 +83,7 @@ export default function PermissionsScreen(): React.ReactElement {
       <Prime
         icon="navigation"
         title="Turn on location"
-        message="Lynia uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery."
+        message="LyniaGo uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery."
         primaryLabel="Allow location"
         onPrimary={primeLocation}
         onSkip={() => setStep("notifications")}

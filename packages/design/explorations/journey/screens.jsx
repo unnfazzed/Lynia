@@ -440,9 +440,9 @@ function AddrConfirm() {
 /* ── A1-8 · PRE-BROADCAST LIABILITY DISCLAIMER (accept-to-continue sheet over home) ── */
 function Disclaimer() {
   const rows = [
-    ["triangle-alert", "Sending is at your own risk", "If your parcel is lost, damaged or not delivered, Lynia isn't liable — you're hiring an independent rider."],
-    ["banknote", "Payment is between you and your rider", "You agree the price in the app and pay cash directly. Lynia isn't involved in payment or any money dispute."],
-    ["user", "Lynia connects you — that's all", "We match you with a nearby rider. We don't carry, insure or guarantee your parcel."],
+    ["triangle-alert", "Sending is at your own risk", "If your parcel is lost, damaged or not delivered, LyniaGo isn't liable — you're hiring an independent rider."],
+    ["banknote", "Payment is between you and your rider", "You agree the price in the app and pay cash directly. LyniaGo isn't involved in payment or any money dispute."],
+    ["user", "LyniaGo connects you — that's all", "We match you with a nearby rider. We don't carry, insure or guarantee your parcel."],
   ];
   return (
     <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
@@ -559,7 +559,7 @@ function Undelivered() {
         </div>
         <div style={{ display: "flex", gap: 8, padding: "9px 11px", borderRadius: "var(--radius-input)", background: "var(--surface)", marginBottom: 12 }}>
           <Icon name="triangle-alert" size={15} color="var(--muted)" />
-          <span style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.45 }}>Sending is at your own risk — arrange the parcel directly with your rider. Lynia isn't liable for non-delivery.</span>
+          <span style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.45 }}>Sending is at your own risk — arrange the parcel directly with your rider. LyniaGo isn't liable for non-delivery.</span>
         </div>
         <CallRow label="Your rider" name="Tendai M." phone="+263 78 202 1180" />
       </Card>
@@ -578,7 +578,7 @@ const Splash = () => (
 const Login = () => (
   <Pad>
     <Lockup />
-    <Heading>Welcome to Lynia</Heading>
+    <Heading>Sign in to get started</Heading>
     <Sub>We'll WhatsApp a one-time code to this number.</Sub>
     <Field label="Phone number" value="+263 77 245 1180" onChange={noop} inputMode="tel" />
     <Button label="Send code" onClick={noop} />
@@ -598,7 +598,7 @@ const Otp = () => (
 const Register = () => (
   <Pad>
     <Heading>Tell us who you are</Heading>
-    <Sub>You're sending parcels. Just a name and ID for your account record — no documents, no verification.</Sub>
+    <Sub>You're sending parcels. Just a name and ID for your account record.</Sub>
     <Field label="Full name" value="Chipo Marufu" onChange={noop} />
     <div style={{ position: "relative" }}>
       <Field label="Phone number" value="+263 77 245 1180" onChange={noop} inputMode="tel" hint="Verified on WhatsApp ✓" />
@@ -606,7 +606,7 @@ const Register = () => (
         <Icon name="check" size={13} color="var(--accent-text)" /> Verified
       </span>
     </div>
-    <Field label="National ID number" value="63-123456-A-42" onChange={noop} hint="Stored on your account only — we don't verify it. Riders go through a separate ID check." />
+    <Field label="National ID number" value="63-123456-A-42" onChange={noop} hint="Stored on your account record." />
     <Button label="Continue" onClick={noop} />
   </Pad>
 );

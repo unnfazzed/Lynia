@@ -330,7 +330,7 @@ export function ReportControl({
  */
 export function SupportCallRow({
   phone = SOS_POLICY.safetyLine,
-  name = "Lynia support",
+  name = "LyniaGo support",
   label = "Support",
 }: {
   phone?: string;
@@ -466,17 +466,17 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
           <Text style={{ flex: 1, fontSize: tokens.font.size.body, color: tokens.color.ink, lineHeight: 20 }}>
             {m.isError
               ? "We couldn't reach our team automatically — please call for help below."
-              : "We've alerted the Lynia team — help is on the way. If you're in danger, call now."}
+              : "We've alerted the LyniaGo team — help is on the way. If you're in danger, call now."}
           </Text>
         </View>
 
         {emergencyUri ? <CallButton label={`Call ${emergencyNumber}`} uri={emergencyUri} prominent /> : null}
         {safetyUri && safetyLine !== emergencyNumber ? (
-          <CallButton label={`Call the Lynia safety line (${safetyLine})`} uri={safetyUri} prominent={false} />
+          <CallButton label={`Call the LyniaGo safety line (${safetyLine})`} uri={safetyUri} prominent={false} />
         ) : null}
 
         <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 16, marginTop: tokens.space.md }}>
-          {SOS_POLICY.emergencyNumber} reaches local emergency services. The safety line is staffed by Lynia.
+          {SOS_POLICY.emergencyNumber} reaches local emergency services. The safety line is staffed by LyniaGo.
         </Text>
         <Button label="I'm safe now" variant="ghost" onPress={close} />
       </Sheet>

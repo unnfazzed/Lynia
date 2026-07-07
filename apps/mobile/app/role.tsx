@@ -29,7 +29,7 @@ export default function RoleScreen(): React.ReactElement {
   return (
     <Screen>
       <Heading>How do you want to start?</Heading>
-      <Sub>It&apos;s one account — pick how you&apos;ll use Lynia now, and switch anytime.</Sub>
+      <Sub>It&apos;s one account — pick how you&apos;ll use LyniaGo now, and switch anytime.</Sub>
 
       <RoleOption
         icon="package"

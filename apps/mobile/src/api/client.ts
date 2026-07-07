@@ -71,7 +71,7 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
     if (err instanceof Error && err.name === "AbortError") {
       throw new ApiError(0, "The network is slow — check your connection and try again.");
     }
-    throw new ApiError(0, "Can't reach Lynia — check your connection and try again.");
+    throw new ApiError(0, "Can't reach LyniaGo — check your connection and try again.");
   } finally {
     clearTimeout(timer);
   }

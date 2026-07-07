@@ -697,7 +697,7 @@ export default function OrderScreen(): React.ReactElement {
               <View style={{ flexDirection: "row", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.sm }}>
                 <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
                 <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
-                  Sending is at your own risk — arrange the parcel directly with your rider. Lynia isn&apos;t liable for non-delivery.
+                  Sending is at your own risk — arrange the parcel directly with your rider. LyniaGo isn&apos;t liable for non-delivery.
                 </Text>
               </View>
               {order.counterpartyPhone ? (
@@ -725,7 +725,7 @@ export default function OrderScreen(): React.ReactElement {
             <Card style={{ borderColor: tokens.color.danger }}>
               <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>Cancel after pickup?</Text>
               <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
-                Your rider already has the parcel. If you cancel now, you&apos;ll arrange getting it back directly with them — Lynia can&apos;t recover it, and an agreed fare isn&apos;t refunded.
+                Your rider already has the parcel. If you cancel now, you&apos;ll arrange getting it back directly with them — LyniaGo can&apos;t recover it, and an agreed fare isn&apos;t refunded.
               </Text>
               <Button label="Yes, cancel this order" onPress={() => { setCancelConfirm(false); cancelM.mutate(); }} loading={cancelM.isPending} />
               <Button label="Keep my order" variant="ghost" onPress={() => setCancelConfirm(false)} />

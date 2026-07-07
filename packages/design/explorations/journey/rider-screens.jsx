@@ -119,7 +119,7 @@ function Onboard() {
 const Login = () => (
   <Pad>
     <Lockup />
-    <Heading>Sign in to ride</Heading>
+    <Heading>Sign in to get started</Heading>
     <Sub>We'll WhatsApp a one-time code to this number.</Sub>
     <Field label="Phone number" value="+263 78 202 1180" onChange={noop} inputMode="tel" />
     <Button label="Send code" onClick={noop} />
@@ -134,8 +134,8 @@ const Otp = () => (
     <Button label="Back" variant="ghost" onClick={noop} />
   </Pad>
 );
-const PermLoc = () => <SystemState icon="navigation" title="Turn on location" message="LyniaGo uses your location to show parcels near you and to match you with the closest pickups. It's only used while you're online." primary="Allow location" secondary="Not now" />;
-const PermNotif = () => <SystemState icon="phone" title="Never miss an order" message="Get a ping the moment a new parcel is posted near you, and when a customer picks your offer." primary="Turn on notifications" secondary="Not now" />;
+const PermLoc = () => <SystemState icon="navigation" title="Turn on location" message="LyniaGo uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery." primary="Allow location" secondary="Not now" />;
+const PermNotif = () => <SystemState icon="phone" title="Stay in the loop" message="Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered." primary="Turn on notifications" secondary="Not now" />;
 
 /* Role fork — initial flow is identical to the customer; this is where a signed-in user says
    they want to ride. One account, switchable later. */
@@ -195,7 +195,7 @@ function KycForm() {
         <div style={{ display: "flex", gap: 8 }}>
           <Icon name="id-card" size={18} color="var(--accent-text)" style={{ marginTop: 1 }} />
           <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.5 }}>
-            Your national ID is checked by our verification partner <b style={{ color: "var(--ink)", fontWeight: 600 }}>Didit</b> — an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers.{" "}
+            Your national ID is verified — an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers.{" "}
             <span style={{ color: "var(--accent-text)", fontWeight: 600, textDecoration: "underline" }}>Privacy policy</span>
           </div>
         </div>
@@ -207,7 +207,7 @@ function KycForm() {
 const KycPending = () => (
   <Pad>
     <RiderHead />
-    <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute.">
+    <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is under way — riders go online once it's verified. This usually takes under a minute.">
       <Button label="Continue in browser" variant="ghost" onClick={noop} />
     </EmptyState>
   </Pad>
@@ -715,7 +715,7 @@ function BikeDocs() {
         <Row icon="user" label="Rider photo" value="Added" />
       </Card>
       <Card style={{ background: "var(--surface)", border: "1px solid transparent", boxShadow: "none" }}>
-        <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5 }}>Your documents are checked by Didit and stored securely. To change your bike or re-verify, contact support.</div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5 }}>Your documents are verified and stored securely. To change your bike or re-verify, contact support.</div>
       </Card>
     </Pad>
   );
