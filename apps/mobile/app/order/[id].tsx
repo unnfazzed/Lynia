@@ -11,7 +11,7 @@ import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
-import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
+import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import type { LastActive } from "../../src/logic/last-active";
@@ -353,6 +353,15 @@ export default function OrderScreen(): React.ReactElement {
       void qc.invalidateQueries({ queryKey: ["history"] }); // the Trips list must reflect the cancel, not the stale live status
     },
   });
+  // 2·b1: "notify me when a rider's online" — registers a waiting-list entry keyed to the pickup so the
+  // server pushes when a rider comes online nearby. Reads the pickup from the live snapshot at call time.
+  const notifyM = useMutation({
+    mutationFn: () => {
+      const pickup = qc.getQueryData<OrderSnapshot>(orderKey(orderId))?.pickup.point;
+      if (!pickup) throw new Error("No pickup on this order yet.");
+      return notifyWhenRiderOnline(pickup);
+    },
+  });
 
   if (orderQ.isLoading) {
     return (
@@ -660,14 +669,26 @@ export default function OrderScreen(): React.ReactElement {
                 // 2·b1: honest supply-empty. No online riders were nearby to ping — so the calm
                 // "riders were pinged, hang tight" copy would be a lie. Non-terminal: the auction keeps
                 // running (the header still counts down), the poll self-heals if a rider comes online,
-                // and the nudge widens interest. A true "notify me" needs a push-subscription backend
-                // (deferred); until then the recovery is the same re-broadcast path as expiry.
+                // and the nudge widens interest. "Notify me" registers a waiting-list entry so the
+                // customer gets a push the moment a rider comes online near their pickup.
                 <View style={{ marginTop: tokens.space.sm }}>
                   <EmptyState
                     icon="bike"
                     title="No riders online nearby right now"
                     message="Nobody's online near you this minute. We'll keep looking while the window's open — a rider may come on any moment. You can also nudge the price to widen interest."
                   >
+                    {notifyM.isSuccess && notifyM.data?.queued ? (
+                      <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600", textAlign: "center" }}>
+                        We&apos;ll ping you when a rider&apos;s online near your pickup.
+                      </Text>
+                    ) : (
+                      <Button
+                        label="Notify me when a rider's online"
+                        variant="ghost"
+                        onPress={() => notifyM.mutate()}
+                        loading={notifyM.isPending}
+                      />
+                    )}
                     <Button label="Nudge price & re-broadcast" variant="ghost" onPress={rebroadcast} />
                   </EmptyState>
                 </View>

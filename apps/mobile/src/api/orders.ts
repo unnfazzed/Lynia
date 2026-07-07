@@ -175,6 +175,15 @@ export function acceptDisclaimer(body: AcceptDisclaimerRequest): Promise<{ polic
 }
 
 /**
+ * 2·b1: register to be pinged when a rider comes online near the pickup — the "notify me" on the
+ * no-riders-online auction state. `queued` is false when the server has no waiting-list store (no
+ * Redis), so the UI can stay honest rather than promise a ping it can't send.
+ */
+export function notifyWhenRiderOnline(pickup: LatLng): Promise<{ queued: boolean }> {
+  return apiFetch(`/orders/notify-me`, { method: "POST", body: { pickup } });
+}
+
+/**
  * Rider confirms which of the sender's line-items were physically collected at pickup (rider-journey
  * "pickup item verification"). `confirmedIndexes` indexes into the order's `items` array; the server
  * persists them on the order (`itemsCollected`) at `en_route_pickup`, before the advance to picked_up.

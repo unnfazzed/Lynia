@@ -1,4 +1,4 @@
-import { noRidersOnline, shouldShowJobError, shouldShowOffersError } from "../journey";
+import { noRidersOnline, shouldNoticeTakenOrder, shouldShowJobError, shouldShowOffersError } from "../journey";
 
 describe("shouldShowOffersError (customer auction honesty)", () => {
   // Decision table: only an errored fetch with zero offers, while still open for offers, is honest error.
@@ -37,6 +37,20 @@ describe("noRidersOnline (customer supply-empty state, 2·b1)", () => {
 
   it("never fires outside open_for_offers", () => {
     expect(noRidersOnline(0, 0, false)).toBe(false);
+  });
+});
+
+describe("shouldNoticeTakenOrder (rider board 'order taken first', 2·b1)", () => {
+  it("notices an un-bid board order taken by someone else", () => {
+    expect(shouldNoticeTakenOrder(true, false)).toBe(true);
+  });
+
+  it("stays silent for a bid the rider LOST (its sent-offer card shows 'not chosen' instead)", () => {
+    expect(shouldNoticeTakenOrder(true, true)).toBe(false);
+  });
+
+  it("stays silent for an order that was never on this rider's board", () => {
+    expect(shouldNoticeTakenOrder(false, false)).toBe(false);
   });
 });
 

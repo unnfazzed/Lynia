@@ -209,6 +209,24 @@ export class NotificationsService {
   }
 
   /**
+   * 2·b1: ping customers who asked to be told when a rider comes online near their pickup (the
+   * "notify me" on the no-riders-online auction state). Fan-out to the drained waiting list; the deep
+   * link brings them back to re-broadcast. Best-effort, never throws.
+   */
+  async notifyRidersAvailable(customerProfileIds: string[]): Promise<void> {
+    if (customerProfileIds.length === 0) return;
+    try {
+      await this.send(customerProfileIds, {
+        title: "A rider's online near you",
+        body: "Riders are back near your pickup — re-broadcast your parcel to get offers.",
+        data: { kind: "riders_available" },
+      });
+    } catch (err) {
+      this.logger.warn(`notifyRidersAvailable failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
    * Best-effort push to an explicit set of profiles (trust & safety fan-outs — e.g. the SOS
    * counterparty alert). Empty/duplicate ids are handled by `send`. Never throws.
    */

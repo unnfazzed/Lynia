@@ -124,6 +124,13 @@ export const AcceptDisclaimerRequest = z.object({
 });
 export type AcceptDisclaimerRequest = z.infer<typeof AcceptDisclaimerRequest>;
 
+/** 2·b1 "notify me when a rider's online": the customer registers their pickup point so the server can
+ *  ping them the moment a rider comes online nearby (on the no-riders-online auction state). */
+export const NotifyWhenAvailableRequest = z.object({
+  pickup: LatLng,
+});
+export type NotifyWhenAvailableRequest = z.infer<typeof NotifyWhenAvailableRequest>;
+
 /** Customer rates the rider after delivery; this also closes the order (`completed`). */
 export const RateRequest = z.object({
   score: z.number().int().min(1).max(5),

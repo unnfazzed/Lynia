@@ -20,9 +20,13 @@ describe("canGoOnline (rider gating, §5d)", () => {
   });
 });
 
-/** setOnline(false) evicts the rider from the geo index via TrackingService — a no-op stub keeps these
- *  unit tests off Redis. */
-const trackingStub = { evictFromGeo: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
+/** setOnline evicts the offline rider from the geo index and drains the "notify me" waiting list on
+ *  online — no-op stubs keep these unit tests off Redis + push. */
+const trackingStub = {
+  evictFromGeo: async () => {},
+  drainNotifyNear: async () => [],
+} as unknown as import("../tracking/tracking.service").TrackingService;
+const notificationsStub = { notifyRidersAvailable: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
 
 function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor: KycVendor = new StubKycVendor()) {
   const p = prisma as Record<string, unknown>;
@@ -32,7 +36,7 @@ function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor
     p.$transaction = async (arg: unknown) =>
       typeof arg === "function" ? (arg as (tx: unknown) => unknown)(p) : arg;
   }
-  return new RiderService(p as unknown as PrismaService, env as Env, vendor, pii, trackingStub);
+  return new RiderService(p as unknown as PrismaService, env as Env, vendor, pii, trackingStub, notificationsStub);
 }
 
 describe("RiderService.becomeRider", () => {
@@ -322,6 +326,54 @@ describe("RiderService.setOnline", () => {
     expect(await s.setOnline("p1", true)).toEqual({ online: true });
     expect(data).toMatchObject({ isOnline: true });
     expect(data!.lastHeartbeatAt).toBeInstanceOf(Date);
+  });
+
+  it("drains the notify-me waiting list and pushes those customers when going online with a location (2·b1)", async () => {
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
+        update: async () => ({}),
+      },
+    };
+    let drainedAt: { lat: number; lng: number; radius: number } | null = null;
+    let pushed: string[] | null = null;
+    const tracking = {
+      evictFromGeo: async () => {},
+      drainNotifyNear: async (lat: number, lng: number, radius: number) => {
+        drainedAt = { lat, lng, radius };
+        return ["cust-1", "cust-2"];
+      },
+    } as unknown as import("../tracking/tracking.service").TrackingService;
+    const notifications = {
+      notifyRidersAvailable: async (ids: string[]) => { pushed = ids; },
+    } as unknown as import("../notifications/notifications.service").NotificationsService;
+    const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, notifications);
+
+    // Inside the Harare corridor so the online gate passes.
+    expect(await s.setOnline("p1", true, { lat: -17.83, lng: 31.05 })).toEqual({ online: true });
+    // The drain is fire-and-forget — let the microtask settle, then assert it pinged the waiters.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(drainedAt).toEqual({ lat: -17.83, lng: 31.05, radius: 5000 });
+    expect(pushed).toEqual(["cust-1", "cust-2"]);
+  });
+
+  it("does NOT drain the notify list when going online without a location (older client)", async () => {
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
+        update: async () => ({}),
+      },
+    };
+    let drained = false;
+    const tracking = {
+      evictFromGeo: async () => {},
+      drainNotifyNear: async () => { drained = true; return []; },
+    } as unknown as import("../tracking/tracking.service").TrackingService;
+    const notifications = { notifyRidersAvailable: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
+    const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, notifications);
+    await s.setOnline("p1", true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(drained).toBe(false);
   });
 
   it("lets any rider go offline regardless of verification", async () => {

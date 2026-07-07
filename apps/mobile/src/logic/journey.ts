@@ -55,6 +55,17 @@ export function noRidersOnline(
 }
 
 /**
+ * 2·b1: whether an `order:taken` event should raise the muted "a nearby order was just taken" board
+ * notice. Only when the order was actually ON the rider's board (so its vanishing is worth a word) AND
+ * the rider had NOT bid on it — a bid the rider lost is excluded here because its sent-offer card is
+ * already flipping to the "not chosen" state, and two messages for one event would be noise. The
+ * rider's own win is handled upstream (the order becomes their active job), so it never reaches here.
+ */
+export function shouldNoticeTakenOrder(wasOnBoard: boolean, didBid: boolean): boolean {
+  return wasOnBoard && !didBid;
+}
+
+/**
  * Rider cold-start honesty: an active-job fetch that fails with NO data must not fall through to the
  * "No active job" empty state — that tells the rider they have no work when the fetch merely failed.
  * Only an error with no data (a cold start) is an honest error; a warm refetch that retains the job

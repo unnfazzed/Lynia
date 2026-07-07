@@ -171,6 +171,17 @@ export class OrdersService {
   }
 
   /**
+   * 2·b1: register the customer to be pinged when a rider comes online near their pickup — the "notify
+   * me" affordance on the no-riders-online auction state. Best-effort: the waiting-list store is
+   * Redis-backed, so without Redis this simply doesn't persist (the customer just won't get the ping).
+   * `queued` reflects whether it was actually stored, so the client can be honest if it wasn't.
+   */
+  async requestNotifyWhenAvailable(customerId: string, pickup: { lat: number; lng: number }): Promise<{ queued: boolean }> {
+    const queued = await this.tracking.addNotifyRequest(customerId, pickup.lat, pickup.lng);
+    return { queued };
+  }
+
+  /**
    * Resolve the online riders within {@link BROADCAST_RADIUS_M} of the pickup (PostGIS ST_DWithin, ET6)
    * and push them the new order. Fully best-effort: any failure here — no nearby riders, a geo-query
    * error, a push outage — is swallowed so it can never affect the order the customer just created.

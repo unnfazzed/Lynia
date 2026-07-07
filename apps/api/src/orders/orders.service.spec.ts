@@ -748,3 +748,20 @@ describe("OrdersService.activeForRider", () => {
     expect(res?.counterpartyPhone).toBe("+263771111111");
   });
 });
+
+describe("OrdersService.requestNotifyWhenAvailable (2·b1 notify-me)", () => {
+  it("registers the customer at their pickup and returns whether it was queued", async () => {
+    const addNotifyRequest = vi.fn(async () => true);
+    const tracking = { addNotifyRequest } as unknown as TrackingService;
+    const svc = new OrdersService({} as unknown as PrismaService, {} as OfferExpiryService, tracking, noNotifications, noGateway);
+    const res = await svc.requestNotifyWhenAvailable("cust-1", { lat: -17.8, lng: 31.0 });
+    expect(addNotifyRequest).toHaveBeenCalledWith("cust-1", -17.8, 31.0);
+    expect(res).toEqual({ queued: true });
+  });
+
+  it("reports queued:false when the store isn't available (no Redis)", async () => {
+    const tracking = { addNotifyRequest: async () => false } as unknown as TrackingService;
+    const svc = new OrdersService({} as unknown as PrismaService, {} as OfferExpiryService, tracking, noNotifications, noGateway);
+    expect(await svc.requestNotifyWhenAvailable("cust-1", { lat: -17.8, lng: 31.0 })).toEqual({ queued: false });
+  });
+});

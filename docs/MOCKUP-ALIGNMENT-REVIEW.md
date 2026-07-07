@@ -19,12 +19,23 @@
 
 - **Customer:** the full arc is built — first-run/auth, search-first compose, the 90-second auction (incl. counter-offers and the rider-raced-away race), live tracking with hand-off code, every terminal outcome (cancelled / undelivered / delivered / completed), and the persistent account cluster (account, history, notifications, settings, help). The code frequently exceeds the design (OTP recovery, draft restore, reorder, live ETA, offline cold-start, in-app safety).
 - **Rider:** the full arc is built — KYC, online/board, accept-or-counter offers, the assigned→pickup→verify→collect→drop-off→OTP hand-off→rate job flow, and all terminal states. All three previously-flagged P0 gaps are resolved: the post-pickup **undeliverable** flow exists end-to-end, the losing-bidder **"not chosen"** and auction-**expired** states are driven off real WS events, and the post-pickup **customer-cancel hand-back** is correctly frozen and acknowledged. Several safety surfaces (SOS, report/block, get-help) are built *ahead* of the mockups.
-- **Remaining gaps are edge polish, not core flow.** After the 2026-07-07 backend pass, one designed state is left open: the rider "order taken first" board notice (P3), deliberately deferred as a product call — see the follow-up note below.
+- **Every designed state is now built.** After the 2026-07-07 backend + follow-up passes there are **no ❌ missing states left** on either journey. The only open items are 🟡 partials — intentional design/altitude choices (map-first search inlined, graceful no-GPS, per-surface error handling) documented below, not gaps.
 
 | | ✅ Aligned | 🟡 Partial | ❌ Missing | Total designed |
 |---|---|---|---|---|
 | Customer | 36 | 4 | 0 | 40 |
-| Rider | 43 | 2 | 1 | 46 |
+| Rider | 44 | 2 | 0 | 46 |
+
+> **2026-07-07 follow-up pass — the last two deferred items are now built.** **Order-taken notice (2·b1):**
+> the rider board no longer silently drops an un-bid order that someone else takes — a muted,
+> self-clearing "A nearby order was just taken by another rider" line surfaces (one line no matter how
+> many go at once; a bid the rider *lost* is excluded, since its sent-offer card already shows "not
+> chosen"). **Notify-me (2·b1):** the "No riders online" state now offers "Notify me when a rider's
+> online", which registers a Redis-backed waiting-list entry keyed to the pickup geo cell; when a rider
+> goes online nearby (`setOnline` with a location), the list is drained within the 5 km broadcast radius
+> and those customers get a push. Everything designed in both journey maps is now built (the remaining
+> 🟡 partials are intentional polish — see below). Verified: shared/api/mobile/admin typecheck + lint
+> clean; API 571 tests, mobile 151 tests green.
 
 > **2026-07-07 backend pass — the three server-dependent gaps are now built.** **KYC-expiry (1·b2):**
 > Didit's "Kyc Expired" webhook now maps to a distinct `expired` KycStatus (shared enum + Prisma
@@ -36,8 +47,8 @@
 > **Customer account-on-hold (S·2):** a `Profile.onHold` flag (migration `0019`) gates `OrdersService.create`
 > with a `{ reason: "on_hold" }` 403, surfaced on `/auth/me` and as a blocking on-hold screen in the app,
 > with a real admin hold/lift action. Verified: shared/api/mobile/admin typecheck + lint clean; API 563
-> tests, mobile 148 tests green. The one remaining ❌ (rider "order taken first" board notice, P3) is a
-> deliberate product call — see below.
+> tests, mobile 148 tests green. (The two items still open at the time of this note — the rider
+> "order taken" board notice and a true "notify me" — were built in the follow-up pass above.)
 
 > **2026-07-07 follow-up — three more gaps closed in this pass.** Rider bail (4·b3) now opens a
 > confirm sheet with a reason field and a reliability-score warning before the strike lands; the
@@ -119,7 +130,7 @@
 | rider_offline (2·1) | Rider offline | ✅ | `app/rider/index.tsx:465-497` offline chip + Go online |
 | online_empty (2·2) | Online · no orders | ✅ | `app/rider/index.tsx:561-567` "No open orders near you… busiest 7–9am & 5–7pm" |
 | board (2·3) | Order board | ✅ | `app/rider/index.tsx:545-556` live list; route/items/km/asking price |
-| missed_order (2·b1) | Order taken first | ❌ | `src/realtime/use-rider-board.ts:89-99` silently filters a taken order out; no muted "that order was taken" notice for an un-bid order |
+| missed_order (2·b1) | Order taken first | ✅ | Un-bid board order taken by someone else raises a muted, self-clearing "A nearby order was just taken" notice (`use-rider-board.ts` `boardTakenNudge` → `rider/index.tsx`); `shouldNoticeTakenOrder` excludes a lost bid (its card shows "not chosen") |
 | offer_compose (3·1) | Make an offer | ✅ | `app/rider/index.tsx:571-644` segmented Accept/Counter + fare + ETA |
 | offer_sent (3·2) | Offer sent · waiting | ✅ | `app/rider/index.tsx:499-543` "Your offers" + live countdown |
 | picked (3·3) | Customer picked you | ✅ | `app/rider/index.tsx:319-329` "A customer picked you!" + success haptic |
@@ -154,12 +165,10 @@
 
 ## Genuinely remaining gaps (current)
 
-The three server-dependent gaps (no-riders-online, customer account-on-hold, KYC-expiry) were built in the 2026-07-07 backend pass — see the note under the summary table. One designed state is left, deliberately:
+**None missing.** Every designed node on both journey maps is built. The 2026-07-07 backend pass closed the three server-dependent gaps (no-riders-online, customer account-on-hold, KYC-expiry); the follow-up pass closed the last two deferred items:
 
-- **P3 — Rider "order taken first" is a silent removal (2·b1).** An un-bid order the rider was eyeing just disappears when someone else takes it (`src/realtime/use-rider-board.ts:89-99`). A muted "taken by another rider" notice is easy to add, but on a busy board it would fire constantly for every order the rider merely *saw* taken by others — reading as noise, not information. Left as a **product call** on whether the signal is worth the churn; the silent removal is defensible default UX until then.
-
-### "Notify me" on the no-riders state — deferred seam
-The 2·b1 "No riders online" state offers the existing re-broadcast recovery, not a true "ping me when a rider comes online" — a real notify-me needs a push-subscription backend (a customer waiting-list keyed to a geo cell, drained when a rider goes online nearby). Flagged as a follow-up, not built.
+- **Rider "order taken first" (2·b1) — built.** The board no longer silently drops an un-bid order taken by someone else; it raises a muted, self-clearing "A nearby order was just taken by another rider" line. The noise concern is handled: one line regardless of how many go at once (the clear-timer just resets), and a bid the rider *lost* is excluded (its sent-offer card already shows "not chosen"). See `boardTakenNudge` in `use-rider-board.ts` and `shouldNoticeTakenOrder`.
+- **"Notify me" on the no-riders state (2·b1) — built.** The state now offers "Notify me when a rider's online": `POST /orders/notify-me` registers a Redis-backed waiting-list entry (geo index + expiry ZSET, 1h TTL) keyed to the pickup; `RiderService.setOnline` (online + location) drains the list within the 5 km broadcast radius via `TrackingService.drainNotifyNear` and pushes those customers (`notifyRidersAvailable`). Fully best-effort — without Redis it degrades to no-persist and the client stays honest (`queued: false`).
 
 ### Shared / design polish (intentional, non-blocking)
 - **Address search / pin-confirm as inline over-map (1·2 / 1·3)** — the customer home is map-first (`home.tsx` full-bleed `ComposeMap` + address rows), so search and pin-confirm live inline on the map rather than as dedicated screens. This is the ride-hailing paradigm the design asked for; the separate screens were a mockup convenience, not a requirement.

@@ -1,5 +1,5 @@
 import { Body, Controller, ForbiddenException, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { AcceptDisclaimerRequest, CreateOrderRequest } from "@lynia/shared";
+import { AcceptDisclaimerRequest, CreateOrderRequest, NotifyWhenAvailableRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
@@ -37,6 +37,17 @@ export class OrdersController {
     @CurrentUser() customerId: string,
   ) {
     return this.orders.acceptDisclaimer(body.policyVersion, customerId);
+  }
+
+  /** 2·b1: register to be pinged when a rider comes online near the pickup (the "notify me" on the
+   *  no-riders-online auction state). Throttled — it's a lightweight best-effort write, not a spam hose. */
+  @Post("notify-me")
+  @Throttle({ limit: 10, windowSec: 60, keyPrefix: "order-notify-me" })
+  notifyWhenAvailable(
+    @Body(new ZodBody(NotifyWhenAvailableRequest)) body: NotifyWhenAvailableRequest,
+    @CurrentUser() customerId: string,
+  ) {
+    return this.orders.requestNotifyWhenAvailable(customerId, body.pickup);
   }
 
   // Static routes MUST precede the :orderId param route, or "open"/"mine" get parsed as an order id.

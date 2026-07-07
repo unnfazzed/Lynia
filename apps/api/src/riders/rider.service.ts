@@ -14,10 +14,16 @@ import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
 import { auditData } from "../admin/admin.shared";
 import { PiiCryptoService } from "../common/pii-crypto.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
 
 type Kyc = "pending" | "verified" | "failed" | "expired";
+
+/** 2·b1: radius (m) around a newly-online rider within which waiting "notify me" customers are pinged.
+ *  The SAME 5 km the customer broadcast + rider board use, so "a rider's online near you" means the
+ *  rider could actually have received that customer's broadcast. */
+const NOTIFY_RADIUS_M = 5000;
 
 /** A rider may go online only once KYC has passed (CONCEPT §5d gating). Pure for unit tests. */
 export function canGoOnline(kycStatus: string): boolean {
@@ -73,6 +79,7 @@ export class RiderService {
     @Inject(KYC_VENDOR) private readonly vendor: KycVendor,
     private readonly pii: PiiCryptoService,
     private readonly tracking: TrackingService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -257,7 +264,25 @@ export class RiderService {
     // connected, so we can't rely on the disconnect flush). Best-effort — PG's is_online is the
     // authority for nearbyRiders; this just stops a now-offline rider lingering in GEOSEARCH results.
     if (!online) await this.tracking.evictFromGeo(profileId);
+    // 2·b1: a rider just came online with a position — ping any customers who were waiting for supply
+    // near here ("notify me" on the no-riders state) and clear them from the list. Fire-and-forget and
+    // fully best-effort (no Redis → empty drain), so it can never affect the go-online response.
+    if (online && location) void this.drainNotifyWaiters(location.lat, location.lng);
     return { online };
+  }
+
+  /**
+   * 2·b1: drain the "notify me" waiting list near a newly-online rider and push those customers. Fully
+   * best-effort — swallows everything (no Redis, a geo miss, a push outage) so it can never disturb the
+   * setOnline that spawned it. Separated out (not inlined) so the fire-and-forget has its own try/catch.
+   */
+  private async drainNotifyWaiters(lat: number, lng: number): Promise<void> {
+    try {
+      const waiters = await this.tracking.drainNotifyNear(lat, lng, NOTIFY_RADIUS_M);
+      if (waiters.length > 0) await this.notifications.notifyRidersAvailable(waiters);
+    } catch {
+      /* best-effort: a notify-drain failure never affects the rider going online */
+    }
   }
 
   /**
