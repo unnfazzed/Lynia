@@ -217,8 +217,9 @@ components; none needs a device to design.
 
 Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checklist instead of rediscovering:
 
-- **§5c 7-step stepper** is specced (customer + now rider) but **not built** in `app/order/[id].tsx` /
-  `app/rider/job.tsx` — both render plainer status lists today.
+- **§5c 7-step stepper** is specced (customer + now rider); the customer side is built
+  (`app/order/[id].tsx` renders `Stepper`), the rider side is **not** — `app/rider/job.tsx` still
+  renders a plainer `StatusPill`.
 - **Designed empty-states** (no-offers / no-riders, and the new rider ones) are **not all built**.
 - **API-contract fields with no UI:** `itemPhotoUrl`, `note` (create order); `comment` (rating);
   `reason` (cancel) — all in `@lynia/shared` contracts, no field on screen. Either surface or consciously
@@ -246,20 +247,21 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 | DT2 | P1 | Two empty states (no-offers / no-riders) with warmth + primary action | ✅ done |
 | DT3 | P1 | Interaction-state coverage (loading/error/partial) for broadcast, offers, tracking, OTP | ✅ done (error states landed in the post-build review fixes) |
 | DT4 | P1 | Offer list best-match default sort + recommended marker (D-d) | ✅ done — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector (best/cheapest/fastest/top-rated) and a RECOMMENDED badge on the customer offer screen |
-| DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) | ◐ **partial** — the IA slice shipped (`home.tsx`: pins + item + price + Broadcast are the hero in a thumb-zone `BottomSheet`; landmarks/phones/declared-value collapse under "Add details", reduce-motion-aware). The full **single full-bleed map + draggable sheet + two-pin toggle** is spec'd below and deferred to the device-gated build (its drag/snap/keyboard physics + sunlight legibility are only tunable on-device). |
+| DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) | ◐ **partial** — the single full-bleed two-pin map + target toggle is **done** (`ComposeMap.tsx`, wired into `home.tsx`); the **draggable overlay `MapSheet`** (peek/expanded snap points) spec'd below is still deferred to the device-gated build — `BottomSheet` today docks as a flex sibling below the map at a single static snap, not a draggable overlay (its drag/snap/keyboard physics + sunlight legibility are only tunable on-device). |
 | DT6 | P2 | A11y + sunlight + data-light pass (targets, contrast, labels, tile caching) | ⬜ deferred (device-gated) |
 | DT7 | P2 | Run `/design-review` (visual QA) post-implementation | ⬜ deferred — needs a dev build |
 | DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` | ✅ done |
 | DT9 | P1 | Rider interaction-states + two rider empty-states (no-orders / not-verified) | ✅ done |
-| DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support | ◐ **partial** — history/profile/earnings shipped; notifications, support, and the *public* rider rating profile not yet |
+| DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support | ◐ **partial** — history/profile/earnings/notifications/support shipped; only the *public* rider rating profile (tap-to-expand card with bike reg) not yet |
 | DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done — §6 decided (rider commission, 0% for ~6–8 months); the ledger gains a commission/settlement line when that infra is built (deferred — CONCEPT §6) |
-| DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ✅ done (contract-only fields + rider pickup-photo still deferred) |
+| DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ◐ **partial** — customer-side `Stepper` built (`order/[id].tsx`); rider-side `job.tsx` still shows a single `StatusPill`, not the timeline (contract-only fields + rider pickup-photo also still deferred) |
 | DT13 | P2 | Post-Phase-3: regen `/design-html`, then DT7 visual review + `/qa` on a device build | ⬜ deferred (device-gated) |
 
-### DT5 — deferred full spec (single full-bleed map + draggable sheet)
+### DT5 — deferred full spec (draggable sheet)
 
-The shipped slice keeps the two `MapPicker`s and a static thumb-zone sheet. The device-gated build
-replaces that with the locked D-b design; build it on a device where the drag/snap/keyboard physics
+The single full-bleed two-pin map has shipped (`ComposeMap.tsx`); what's still deferred is the
+draggable `MapSheet` overlay below. The device-gated build replaces today's static thumb-zone
+`BottomSheet` with the locked D-b sheet; build it on a device where the drag/snap/keyboard physics
 and sunlight legibility can actually be tuned (Eng + Design plan reviews, batch-3):
 
 - **Layers:** z0 full-bleed `MapView`; z1 top-left "Draft restored · Clear" chip + top-right "Use my
