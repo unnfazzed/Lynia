@@ -296,7 +296,8 @@ describe("AuthService.refresh", () => {
     return {
       session: {
         findUnique: async () => row,
-        update: async () => ({}),
+        // Rotation revokes atomically via updateMany (WHERE revokedAt IS NULL) → { count }.
+        updateMany: async () => ({ count: 1 }),
         create: async () => ({ id: "rotated" }),
       },
     };
@@ -332,18 +333,34 @@ describe("AuthService.refresh", () => {
 
   it("rotates a valid session into fresh tokens", async () => {
     const row = { id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future, profile: { role: "customer" } };
-    let revoked = false;
+    let revokeWhere: Record<string, unknown> | undefined;
     const prisma = {
       session: {
         findUnique: async () => row,
-        update: async () => { revoked = true; return {}; },
+        updateMany: async (a: { where: Record<string, unknown> }) => { revokeWhere = a.where; return { count: 1 }; },
         create: async () => ({ id: "rotated" }),
       },
     };
     const { svc } = make(baseEnv, prisma);
     const res = await svc.refresh("sid.secret");
-    expect(revoked).toBe(true);
+    // Revocation is a guarded compare-and-swap on the still-un-revoked row, not a blind update.
+    expect(revokeWhere).toMatchObject({ id: "sid", revokedAt: null });
     expect(res.refreshToken).toMatch(/^rotated\./);
+  });
+
+  it("rejects a concurrent double-rotate (guarded revoke claims zero rows) instead of minting two sessions", async () => {
+    const row = { id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future, profile: { role: "customer" } };
+    let created = 0;
+    const prisma = {
+      session: {
+        findUnique: async () => row, // read still sees it un-revoked (advisory)
+        updateMany: async () => ({ count: 0 }), // but the other request already rotated it
+        create: async () => { created++; return { id: "rotated" }; },
+      },
+    };
+    const { svc } = make(baseEnv, prisma);
+    await expect(svc.refresh("sid.secret")).rejects.toThrow(/invalid or expired/i);
+    expect(created).toBe(0); // no second session minted from the reused token
   });
 });
 

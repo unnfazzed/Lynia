@@ -65,6 +65,10 @@ export class PiiCryptoService {
   }
 
   private normalize(v: string): string {
-    return v.trim().toUpperCase();
+    // Strip ALL non-alphanumerics (spaces, dashes, dots) then upper-case, so the same physical ID
+    // hashes identically no matter how it was punctuated — `63-123456-A-42`, `63123456A42`, and
+    // `63 123456 A 42` must collide, or the duplicate-ID / ban-evasion control (which keys off this
+    // hash) is defeated by trivially reformatting the number on the second account.
+    return v.replace(/[^a-z0-9]/gi, "").toUpperCase();
   }
 }
