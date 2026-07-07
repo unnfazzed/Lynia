@@ -125,6 +125,16 @@ export default function HomeScreen(): React.ReactElement {
     setDetailsOpen((v) => !v);
   }, [reduceMotion]);
 
+  // Collapse-to-peek: let the customer fold the compose form away to give the MAP room to breathe while
+  // placing pins, then bring it back to fill in details. We hide the form BODY only — the Broadcast CTA
+  // and its "what's still missing" hint stay pinned in the footer, so collapsing never drags the primary
+  // action off-screen (the exact regression that deferred a full drag re-architecture of this sheet).
+  const [composeCollapsed, setComposeCollapsed] = useState(false);
+  const toggleCompose = useCallback((): void => {
+    if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setComposeCollapsed((v) => !v);
+  }, [reduceMotion]);
+
   // Rehydrate the draft once on mount.
   useEffect(() => {
     let cancelled = false;
@@ -510,8 +520,21 @@ export default function HomeScreen(): React.ReactElement {
             </>
           }
         >
+          {/* Collapse header — tap to fold the form away and give the map room, or bring it back. The
+              footer CTA stays pinned regardless, so this never hides the primary action. */}
+          <Pressable
+            onPress={toggleCompose}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: !composeCollapsed }}
+            accessibilityLabel={composeCollapsed ? "Show delivery details" : "Hide delivery details to see more of the map"}
+            style={{ flexDirection: "row", alignItems: "center", minHeight: tokens.touchTargetMin }}
+          >
+            <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Delivery details</Text>
+            <Icon name={composeCollapsed ? "chevron-up" : "chevron-down"} size={16} color={tokens.color.muted} />
+          </Pressable>
           {/* The form scrolls inside the sheet (capped height) so it never pushes the pinned CTA off
-              the bottom, and the map behind stays visible above the sheet. */}
+              the bottom, and the map behind stays visible above the sheet. Hidden when collapsed. */}
+          {composeCollapsed ? null : (
           <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* Line items — repeatable description + quantity rows (ITEM-DESIGN-REVIEW: multiple
               {description, quantity}, nothing more for the pilot). Description stacks above the
@@ -656,6 +679,7 @@ export default function HomeScreen(): React.ReactElement {
             </View>
           ) : null}
           </ScrollView>
+          )}
         </BottomSheet>
       </KeyboardAvoidingView>
       <DisclaimerSheet visible={showDisclaimer} onAgree={onAgreeAndBroadcast} onBack={() => setShowDisclaimer(false)} />

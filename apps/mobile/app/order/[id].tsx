@@ -2,17 +2,19 @@ import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, PRESENCE_ESCALATIO
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Share, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { etaHeadline, liveEta } from "../../src/logic/eta";
 import { isPendingCounter, shouldShowOffersError } from "../../src/logic/journey";
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
+import { buildReceiptText, formatReceiptDate } from "../../src/logic/receipt";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
+import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { offersKey, orderKey } from "../../src/query/client";
@@ -46,6 +48,9 @@ export default function OrderScreen(): React.ReactElement {
   const reduceMotion = useReduceMotion();
   const toast = useToast();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
+  // The chosen rider's public identity (name/photo/rating), cached at selection so the tracking card can
+  // show a face — the assigned-order snapshot only carries profileId + GPS, not the profile.
+  const [riderIdentity, setRiderIdentity] = useState<RiderIdentity | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("best");
   // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
   const [selectNotice, setSelectNotice] = useState<string | null>(null);
@@ -64,6 +69,19 @@ export default function OrderScreen(): React.ReactElement {
     let alive = true;
     void loadDeliveryCode(orderId).then((c) => {
       if (alive && c) setDeliveryCode(c);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [orderId]);
+
+  // Recover the chosen rider's cached identity across remount/relaunch (it's only stored for the order it
+  // belongs to, so a stale other-order identity never paints here).
+  useEffect(() => {
+    let alive = true;
+    setRiderIdentity(null); // drop any prior order's identity when the id changes (rider-bail rebroadcast)
+    void loadRiderIdentity(orderId).then((i) => {
+      if (alive && i) setRiderIdentity(i);
     });
     return () => {
       alive = false;
@@ -409,6 +427,23 @@ export default function OrderScreen(): React.ReactElement {
   const chooseOffer = (offerId: string): void => {
     setSelectNotice(null); // a new attempt clears the stale "just taken" notice
     setSelectingId(offerId);
+    // Cache the chosen rider's public identity so the tracking card can show their face + name (the
+    // assigned-order snapshot won't carry it). Best-effort; the tracker degrades to no identity card.
+    const chosen = offersQ.data?.find((o) => o.id === offerId);
+    if (chosen) {
+      const identity: RiderIdentity = {
+        orderId,
+        profileId: chosen.rider.profileId,
+        firstName: chosen.rider.profile.firstName,
+        lastName: chosen.rider.profile.lastName,
+        photoUrl: chosen.rider.profile.photoUrl,
+        ratingAvg: chosen.rider.ratingAvg,
+        ratingCount: chosen.rider.ratingCount,
+        tripsCount: chosen.rider.tripsCount,
+      };
+      setRiderIdentity(identity);
+      void saveRiderIdentity(identity);
+    }
     selectM.mutate(offerId);
   };
 
@@ -602,6 +637,21 @@ export default function OrderScreen(): React.ReactElement {
 
         {isActive || order.status === "delivered" || order.status === "completed" ? (
           <Card>
+            {/* Who's coming: the chosen rider's face + name + rating, cached from the offer they were
+                picked from (the assigned-order snapshot doesn't carry it). The trust anchor for tracking. */}
+            {riderIdentity ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+                <Avatar photoUrl={riderIdentity.photoUrl} firstName={riderIdentity.firstName} lastName={riderIdentity.lastName} seed={riderIdentity.profileId || riderIdentity.orderId} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
+                    {riderIdentity.firstName} {riderIdentity.lastName}
+                  </Text>
+                  <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                    ★ {riderIdentity.ratingCount > 0 ? Number(riderIdentity.ratingAvg).toFixed(1) : "new"} · {riderIdentity.tripsCount} trips
+                  </Text>
+                </View>
+              </View>
+            ) : null}
             {eta ? (
               // The big glanceable ETA — leads the tracking card, styled as the screen's live headline.
               <View accessibilityRole="text" style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
@@ -666,10 +716,69 @@ export default function OrderScreen(): React.ReactElement {
         ) : null}
 
         {order.status === "completed" ? (
-          <Card>
-            <Celebrate />
-            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered &amp; completed. Thank you!</Text>
-          </Card>
+          <>
+            <Card>
+              <Celebrate />
+              <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered &amp; completed. Thank you!</Text>
+            </Card>
+            {(() => {
+              // A shareable delivery receipt — the "proof it happened" summary. Honest for a cash market:
+              // a delivery record, not a payment receipt (money settles offline).
+              const completedAt =
+                order.events?.find((e) => e.status === "completed")?.createdAt ??
+                order.events?.find((e) => e.status === "delivered")?.createdAt ??
+                null;
+              const riderName = riderIdentity ? `${riderIdentity.firstName} ${riderIdentity.lastName}`.trim() : null;
+              const when = formatReceiptDate(completedAt);
+              const shareReceipt = (): void => {
+                void Share.share({
+                  message: buildReceiptText({
+                    orderId,
+                    pickupLandmark: order.pickup.landmark,
+                    dropoffLandmark: order.dropoff.landmark,
+                    fare,
+                    riderName,
+                    completedAt,
+                    delivered: true,
+                  }),
+                }).catch(() => undefined);
+              };
+              return (
+                <Card>
+                  <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.sm }}>Receipt</Text>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>Order</Text>
+                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{order.id.slice(0, 8)}</Text>
+                  </View>
+                  <View style={{ marginBottom: 4 }}>
+                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink }}>
+                      {order.pickup.landmark || "Pickup"} → {order.dropoff.landmark || "Drop-off"}
+                    </Text>
+                  </View>
+                  {riderName ? (
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>Rider</Text>
+                      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink }}>{riderName}</Text>
+                    </View>
+                  ) : null}
+                  {when ? (
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>Delivered</Text>
+                      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{when}</Text>
+                    </View>
+                  ) : null}
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2, paddingTop: tokens.space.sm, borderTopWidth: 1, borderTopColor: tokens.color.line }}>
+                    <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>Fare</Text>
+                    <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(fare)}</Text>
+                  </View>
+                  <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 16, marginTop: tokens.space.sm }}>
+                    Fare agreed in-app; paid in cash, outside the app — a delivery record, not a payment receipt.
+                  </Text>
+                  <Button label="Share receipt" variant="ghost" onPress={shareReceipt} />
+                </Card>
+              );
+            })()}
+          </>
         ) : null}
         {order.status === "expired" ? (
           <EmptyState
