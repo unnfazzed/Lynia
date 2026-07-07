@@ -25,6 +25,9 @@ function build(methods: Record<string, unknown>) {
   const orders = { announceOpenOrder: vi.fn(async () => {}) };
   const prisma = { ...methods } as Record<string, unknown>;
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
+  // Rider aggregate mutations take a `SELECT … FOR UPDATE` row lock via $executeRaw before their
+  // read-modify-write; give the fake a no-op unless a test overrides it.
+  if (!prisma.$executeRaw) prisma.$executeRaw = async () => 0;
   const svc = new OrderLifecycleService(
     {} as Env,
     prisma as unknown as PrismaService,

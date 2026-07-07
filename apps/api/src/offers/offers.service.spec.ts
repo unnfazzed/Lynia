@@ -204,6 +204,26 @@ describe("OffersService.makeOffer", () => {
     await expect(service.makeOffer(offerInput, "rider-1")).resolves.toMatchObject({ id: "o1" });
     expect(gateway.emitOffersChanged).toHaveBeenCalled();
   });
+
+  it("403s a rider bidding on their own order (no self-bid)", async () => {
+    const { service, gateway } = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers", customerId: "rider-1", proposedFare: 2.5 }) },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/your own order/i);
+    expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
+  });
+
+  it("403s an accept whose fare doesn't match the customer's proposed price", async () => {
+    const create = vi.fn();
+    const { service } = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers", customerId: "cust-1", proposedFare: 3 }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
+      offer: { create },
+    });
+    // offerInput is type "accept" with offeredFare 2.5 ≠ proposedFare 3 → rejected, no offer inserted.
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/match the customer's proposed fare/i);
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
 describe("OffersService.listForOrder", () => {
