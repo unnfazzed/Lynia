@@ -1,148 +1,177 @@
 # Mockup ↔ Code Alignment Review — Customer & Rider Journeys
 
-> **Update 2026-07-06 — code brought into line with the designs.** The designs are the source of
-> truth, so the inconsistencies below were fixed in code. Shipped in this branch: **P0** — rider
-> undeliverable flow (client + reason picker; post-pickup cancel hidden, keyed off the shared
-> `RIDER_CANCELLABLE_STATUSES`); `order:taken` WS event → rider "not chosen" state + board card removal;
-> cancel-anytime confirm with reason (both roles) + reason/who-cancelled on the terminal + rider-bail
-> reliability warning. **P1/P2** — wrong-code "N attempts left"; rider job "live paused" banner;
-> sender's note field (compose → rider job); "nudge & re-broadcast" re-seeds the compose draft; rider-bail
-> interstitial (3·b0); customer-side presence escalation (3·b1); one-tap **Accept $X** offer segment;
-> "a customer picked you!" win state; no-GPS gate; customer registration (0·6); permission priming
-> (0·7/0·8); Settings, Help (WhatsApp), Bike & documents; green splash; WhatsApp OTP copy; earnings
-> zero-state hero. Verified: typecheck (shared/api/mobile) + tests (api 419, mobile 53) green. The
-> gap table below is the pre-fix baseline; **rate-the-sender (4·7) is the one designed item still
-> deferred** — it needs a rider-rates-customer endpoint that doesn't exist yet.
+> **Re-audited 2026-07-07 against the current branch.** This replaces the earlier pre-fix baseline.
+> Every node in both journey maps was re-checked screen-by-screen against the live code. The shell
+> screens the first review flagged as "missing" (onboarding carousel, customer registration,
+> permission priming, notifications, settings, help hub, bike & documents, force-update, no-GPS) are
+> now built, and all three original P0 journey-integrity breaks are resolved. See the history note at
+> the foot of this file for what changed.
 
-**Date:** 2026-07-05
+**Date:** 2026-07-07 (re-audit) · original review 2026-07-05
 **Scope:** the two journey-map mockups (`packages/design/explorations/journey/` — `screens.jsx` + `map.jsx` for the customer, `rider-screens.jsx` + `rider-map.jsx` for the rider) compared against the shipped mobile app (`apps/mobile/`), with server contracts (`packages/shared/src/contracts.ts`) and lifecycle endpoints (`apps/api/src/orders/`) checked wherever a screen depends on them.
-**Method:** every node in both journey maps (40 customer, 46 rider) was checked against the actual code — screen by screen, state by state, including WS events, push notifications, and API endpoints.
+**Method:** every node in both journey maps (40 customer, 46 rider) was re-checked against the actual code — screen by screen, state by state, including WS events, push notifications, and API endpoints. Each row carries a `file:line` citation for the implementing code (or evidence of absence).
 
 ---
 
 ## Verdict
 
-**The core transactional loop is faithfully implemented — the shell around it is not.**
+**The mockups and the built screens are now substantially aligned.** The core transactional loop was always faithful — often line-for-line on copy — and the surrounding shell has since been built out to match the designs. What remains is a short tail of edge/branch states and polish, none of which block the pilot happy path.
 
-- The happy path (compose → disclaimer → 90s auction → counter-offers → select → track → OTP hand-off → rate) is aligned with the mockups, often line-for-line on copy, and in several places the code is *ahead* of the design (SOS, report/block, rating-undo, KYC retry lockout, online-gate states).
-- The **first-run shell** (onboarding carousel, customer registration, permission priming) and the **persistent shell** (notifications centre, settings, help hub, bike & documents, force-update / no-GPS gates) are largely **not built**.
-- Three **journey-integrity breaks** exist where a designed state is unreachable or dead-ends in the real app — the worst being that a rider **cannot mark a parcel undeliverable at all**, despite the API supporting it and the customer app rendering the terminal state.
+- **Customer:** the full arc is built — first-run/auth, search-first compose, the 90-second auction (incl. counter-offers and the rider-raced-away race), live tracking with hand-off code, every terminal outcome (cancelled / undelivered / delivered / completed), and the persistent account cluster (account, history, notifications, settings, help). The code frequently exceeds the design (OTP recovery, draft restore, reorder, live ETA, offline cold-start, in-app safety).
+- **Rider:** the full arc is built — KYC, online/board, accept-or-counter offers, the assigned→pickup→verify→collect→drop-off→OTP hand-off→rate job flow, and all terminal states. All three previously-flagged P0 gaps are resolved: the post-pickup **undeliverable** flow exists end-to-end, the losing-bidder **"not chosen"** and auction-**expired** states are driven off real WS events, and the post-pickup **customer-cancel hand-back** is correctly frozen and acknowledged. Several safety surfaces (SOS, report/block, get-help) are built *ahead* of the mockups.
+- **Remaining gaps are edge polish, not core flow.** The biggest are a supply-empty "no riders online" auction state (customer) and the rider bail screen lacking its designed reason + reliability warning.
 
-| | ✅ Aligned | 🟡 Partial | ❌ Missing |
+| | ✅ Aligned | 🟡 Partial | ❌ Missing | Total designed |
+|---|---|---|---|---|
+| Customer | 33 | 5 | 2 | 40 |
+| Rider | 40 | 4 | 2 | 46 |
+
+---
+
+## Customer journey — state-by-state
+
+**Summary: ✅ 33 · 🟡 5 · ❌ 2 of 40.**
+
+| Node (ID) | State | Status | Evidence (file:line) |
 |---|---|---|---|
-| Customer (40 designed states) | 15 | 16 | 9 |
-| Rider (46 designed states) | 20 | 13 | 13 |
+| splash (0·1) | Brand splash while booting | ✅ | `app/index.tsx:26-31` green dove + wordmark boot screen |
+| onboard (0·2) | 3-slide intro carousel | ✅ | `app/onboarding.tsx:11-96` skippable slides, dot progress, once-per-install |
+| login (0·3) | Phone login → OTP | ✅ | `app/phone.tsx:33-45` WhatsApp copy, Send code |
+| otp (0·4) | WhatsApp 6-digit verify | ✅ | `app/verify.tsx:104-176` verify + resend + lockout recovery |
+| role_select (0·5) | Choose role (send/earn) | ✅ | `app/role.tsx:29-51` two options, customer default, persists preference |
+| register (0·6) | Profile registration (name + ID, not KYC) | ✅ | `app/profile/setup.tsx:45-79` name + national ID, stored not verified |
+| perm_loc (0·7) | Prime location | ✅ | `app/permissions.tsx:81-92` "Turn on location" step |
+| perm_notif (0·8) | Prime notifications | ✅ | `app/permissions.tsx:94-104` "Stay in the loop" step |
+| home_empty (1·1) | Map home, no address | ✅ | `app/home.tsx:396-456` full-bleed `ComposeMap` + address rows + top bar |
+| addr_search (1·2) | Address search (saved/recents/Places) | 🟡 | `src/ui/AddressSearch.tsx` Places autocomplete + SAVED/RECENTS, but as an inline dropdown over the map (`home.tsx:451-455`), key-gated; no dedicated full-screen search with "use my location"/"set on map" rows + Google attribution |
+| addr_map_confirm (1·3) | Confirm pin on map | 🟡 | Pin drag is inline on `ComposeMap` (`ComposeMap.tsx:23-44`) with landmark auto-fill; no dedicated "Drag to adjust · Confirm drop-off" sheet |
+| home_pins (1·4) | Home, both addresses set | ✅ | `app/home.tsx:283` `canSubmit` gate drives Broadcast |
+| home_expanded (1·5) | Sheet expanded, declared value | ✅ | `app/home.tsx:626-656` collapsible landmarks + declared value (max 150) |
+| disclaimer (1·6) | Pre-broadcast liability gate | ✅ | `app/home.tsx:661` `DisclaimerSheet`, version-stamped accept-to-continue |
+| auction_finding (2·1) | Auction open, no offers | ✅ | `app/order/[id].tsx:583-598` "Finding riders…" + skeleton + countdown |
+| auction_live (2·2) | Offers streaming, sort, recommended | ✅ | `app/order/[id].tsx:498-577` sort chips, `rankOffers`, Choose |
+| auction_counter (2·3) | Counter-offer accept/decline | ✅ | `app/order/[id].tsx:528-540` `CounterOfferCard`, one round |
+| no_riders (2·b1) | No riders online (supply-empty) | ❌ | No supply-detection state; auction shows "finding" then generic `expired` (`order/[id].tsx:583-682`) |
+| select_race (2·b2) | Chosen rider just taken | ✅ | `app/order/[id].tsx:290-297` 409 → muted "that rider was just taken" |
+| auction_expired (2·b3) | 90s closed, re-broadcast | ✅ | `app/order/[id].tsx:674-682` expired EmptyState + prefilled `rebroadcast()` |
+| track_code (3·1) | Rider assigned, hand-off code | ✅ | `app/order/[id].tsx:444-460` code card + re-issue; recovers persisted code |
+| track_active (3·2) | Live tracking, call rider, Maps sync | ✅ | `app/order/[id].tsx:603-657` `LiveMap`, live ETA, Open-in-Maps, call rider |
+| rider_cancelled (3·b0) | Rider bailed → re-broadcast same price | 🟡 | Behavior built (server re-clone `order-lifecycle.service.ts:502-523`; `order:rebroadcast` socket + toast `order/[id].tsx:133-140`), but no dedicated "Tendai had to cancel · re-broadcasting" reassurance card |
+| track_paused (3·b1) | Live paused / reconnecting | ✅ | `app/order/[id].tsx:433` reconnecting banner; stale-fix "call them" (`:389-396`) |
+| cancel (3·b2) | Cancel + reason | ✅ | `app/order/[id].tsx:738-758` cancel-anytime; post-pickup hand-back warning gate |
+| cancelled (3·b3) | Terminal cancelled | ✅ | `app/order/[id].tsx:683-687` |
+| undelivered (3·b5) | Not delivered (terminal, reason + attempts) | ✅ | `app/order/[id].tsx:692-734` reason label + attempt count + own-risk copy |
+| delivered_rate (4·1) | Delivered, rate rider | ✅ | `app/order/[id].tsx:664-666` `RatingCard` on `delivered` |
+| completed (4·2) | Completed, send another | ✅ | `app/order/[id].tsx:668-673` Celebrate + "Send another" via rebroadcast |
+| profile (A·1) | Account | ✅ | `app/profile/index.tsx:32-85` name/phone/role, history, sign-out |
+| history (A·2) | Trip history | ✅ | `app/history/index.tsx:101-137` sent trips, fare, rating, status |
+| notifications (A·3) | Notifications with items | ✅ | `app/notifications/index.tsx:57-83` feed rows, icon tiles, unread dot |
+| notif_empty (A·4) | Notifications empty | ✅ | `app/notifications/index.tsx:70-71` "No notifications yet" |
+| help (A·5) | Help & support → WhatsApp | ✅ | `app/help/index.tsx:20-58` topic list + WhatsApp row |
+| settings (A·6) | Settings | ✅ | `app/settings/index.tsx:51-77` profile/notifications/language/payment/sign-out + version |
+| offline (S·1) | Global offline banner | ✅ | `app/_layout.tsx:38-47` `ConnectivityBanner` over the navigator |
+| on_hold (S·2) | Account on hold (blocking) | ❌ | Built only for riders (`app/rider/index.tsx:446-451`); no customer-facing account-hold screen |
+| force_update (S·3) | Hard version gate | ✅ | `app/force-update.tsx:13-53` + root gate `_layout.tsx:56` |
+| no_gps (S·4) | Location off / no GPS | 🟡 | Customer degrades to manual pin/search (`src/ui/MapPicker.tsx:143`); no explicit "Open location settings" screen (riders have one) |
+| generic_error (S·5) | Catch-all load failure | 🟡 | Honest per-screen error+retry is pervasive (`order/[id].tsx:365-371`); no single unified catch-all component |
+
+## Rider journey — state-by-state
+
+**Summary: ✅ 40 · 🟡 4 · ❌ 2 of 46.**
+
+| Node (ID) | State | Status | Evidence (file:line) |
+|---|---|---|---|
+| splash (0·1) | Brand boot moment | ✅ | `app/index.tsx:22-32` accent-green dove splash |
+| onboard (0·2) | Onboarding carousel | ✅ | `app/onboarding.tsx:11-97` slide 3 = "Earn as a rider" |
+| login (0·3) | Phone sign-in | ✅ | `app/phone.tsx:28-48` "We'll WhatsApp a one-time code" |
+| otp (0·4) | WhatsApp OTP | ✅ | `app/verify.tsx:104-181` verify + resend/lockout recovery |
+| role_select (0·5) | Choose role | ✅ | `app/role.tsx:29-51` persists preference |
+| perm_loc (0·6) | Location priming | ✅ | `app/permissions.tsx:81-92` |
+| perm_notif (0·7) | Notification priming | ✅ | `app/permissions.tsx:94-104` |
+| kyc_intro (1·1) | Become a rider (empty) | ✅ | `app/rider/index.tsx:354-363` "Set up as a rider" → `/rider/become` |
+| kyc_form (1·2) | KYC form + consent | ✅ | `app/rider/become.tsx:99-145` name/ID/bike/photo + Didit consent |
+| kyc_pending (1·3) | Verification pending | ✅ | `app/rider/index.tsx:398-408` "Continue verification" reopens Didit |
+| kyc_verified (1·4) | Verified · go online | 🟡 | Verified drops straight to offline "Go online" card (`rider/index.tsx:465-497`); "You're verified" confirmation lives only on the become flow, not a dashboard win-state |
+| kyc_failed (1·b1) | Verification failed | ✅ | `app/rider/index.tsx:364-397` reason + "Try again"; lock→support at 2 attempts |
+| kyc_expired (1·b2) | ID expired (later) | ❌ | No `expired` KYC status exists (`packages/shared/src/enums.ts:126-131`); lapsed doc has no dedicated "Re-verify" state |
+| rider_offline (2·1) | Rider offline | ✅ | `app/rider/index.tsx:465-497` offline chip + Go online |
+| online_empty (2·2) | Online · no orders | ✅ | `app/rider/index.tsx:561-567` "No open orders near you… busiest 7–9am & 5–7pm" |
+| board (2·3) | Order board | ✅ | `app/rider/index.tsx:545-556` live list; route/items/km/asking price |
+| missed_order (2·b1) | Order taken first | ❌ | `src/realtime/use-rider-board.ts:89-99` silently filters a taken order out; no muted "that order was taken" notice for an un-bid order |
+| offer_compose (3·1) | Make an offer | ✅ | `app/rider/index.tsx:571-644` segmented Accept/Counter + fare + ETA |
+| offer_sent (3·2) | Offer sent · waiting | ✅ | `app/rider/index.tsx:499-543` "Your offers" + live countdown |
+| picked (3·3) | Customer picked you | ✅ | `app/rider/index.tsx:319-329` "A customer picked you!" + success haptic |
+| not_chosen (3·b1) | Not chosen | ✅ | `app/rider/index.tsx:516-524` `takenOrderIds` → "Not this time… still first in line" |
+| bid_expired (3·b2) | Auction expired · no pick | ✅ | `app/rider/index.tsx:525-532` `expiredOrderIds` → "That window closed" |
+| job_assigned (4·1) | Job · assigned | ✅ | `app/rider/job.tsx:322-334` + `JobDetailsCard.tsx:22-101` items/note/contacts |
+| job_pickup (4·2) | En route to pickup | ✅ | `src/logic/rider-job.ts:8-13` + `JobDetailsCard.tsx:82-99` LiveMap + Maps deep-link |
+| job_verify (4·3) | Verify items at pickup | ✅ | `src/ui/rider/PickupChecklist.tsx:24-84` |
+| job_collect (4·4) | Parcel collected | ✅ | `src/logic/rider-job.ts:12` picked_up → "Head to drop-off" |
+| job_dropoff (4·5) | En route to drop-off | ✅ | `app/rider/job.tsx:384-390` advance + OTP entry at en_route_dropoff |
+| job_handoff (4·6) | Delivery-OTP hand-off | ✅ | `src/ui/rider/DeliveryOtp.tsx:24-46` 6-digit → confirmDelivery |
+| job_delivered (4·7) | Delivered + rate sender | ✅ | `app/rider/job.tsx:403-438` Celebrate + optional recorded-only rate-the-sender |
+| job_bail (4·b3) | Rider cancels (pre-pickup) | 🟡 | Gated pre-pickup (`app/rider/job.tsx:445-447`), but fires `cancelOrder` with no reason input, no confirm sheet, no reliability-score warning (mockup has all three) |
+| job_offline (4·b4) | Connection lost mid-job | ✅ | `app/rider/job.tsx:333-353` `jobReconnecting` banner + "Live paused" |
+| undelivered (4·b2) | Not delivered (terminal) | ✅ | `markUndelivered` (`src/api/orders.ts:135-137`) + `UndeliveredSheet.tsx` reason picker + `terminals.tsx:65-86` — **prior P0 now built** |
+| handoff_wrong (4·b1) | Wrong code · lockout | 🟡 | Attempts-remaining + 5-try lock built (`DeliveryOtp.tsx:22-38`), but no "ask customer to re-send the code" action button — only static copy |
+| job_cancelled (4·b5) | Customer cancelled | ✅ | `CancelledHandback` (`terminals.tsx:15-61`) frozen snapshot + call-sender; suppressed after ack — **prior P0 now built** |
+| earnings (5·1) | Earnings | ✅ | `app/earnings/index.tsx:47-84` total + trip list + commission disclaimer |
+| earnings_new (5·2) | Earnings · new rider | ✅ | `app/earnings/index.tsx:34-46` $0.00 hero + "your first fare starts here" |
+| profile (A·1) | Account | ✅ | `app/profile/index.tsx:32-84` identity, rating, KYC badge, nav |
+| bike_docs (A·2) | Bike & documents | ✅ | `app/rider/documents.tsx:35-62` masked ID + bike reg + photo, verified pills |
+| history (A·3) | Trip history | ✅ | `app/history/index.tsx:69-137` |
+| settings (A·4) | Settings | ✅ | `app/settings/index.tsx:43-78` bike/docs, notifications, language, cash, version |
+| help (A·5) | Help & support | ✅ | `app/help/index.tsx:20-58` rider-framed topics + WhatsApp |
+| offline (S·1) | Offline banner | ✅ | `app/rider/index.tsx:306-308` reconnecting banner over the board |
+| on_hold (S·2) | Account on hold | ✅ | `app/rider/index.tsx:422-462` + `src/logic/gates.ts:78-82` (retry + support call) |
+| force_update (S·3) | Force update | ✅ | `app/force-update.tsx:13-53` brand-green hard gate |
+| no_gps (S·4) | Location off / no GPS | ✅ | `app/rider/index.tsx:409-419` `locDenied` → "Open location settings" |
+| generic_error (S·5) | Generic error | 🟡 | Honest per-surface error+retry (`rider/index.tsx:342-352`, `job.tsx:300-307`); no unified catch-all component |
 
 ---
 
-## P0 — Journey-integrity breaks (designed flow exists, real flow dead-ends)
+## Genuinely remaining gaps (current)
 
-### 1. Rider cannot mark a job undeliverable (mockup 4·b2)
-- The mockup designs a full "Couldn't deliver" flow: reason picker (unreachable / refused / wrong address / breakdown), attempt count, own-risk hand-back note.
-- The contract (`MarkUndeliveredRequest`, `packages/shared/src/contracts.ts:106`) and the endpoint (`POST /orders/:id/undelivered`, `apps/api/src/orders/lifecycle.controller.ts:47`) **both exist**.
-- The mobile app has **no client function and no UI** for it (`apps/mobile/src/api/orders.ts` has no `markUndelivered`; `app/rider/job.tsx` has no control).
-- Compounding it: the server correctly **rejects rider cancels post-pickup** (`order-lifecycle.service.ts:371`), but the rider UI still shows "Cancel job" at every active stage. So a rider who genuinely can't deliver after pickup taps the only escape hatch shown, gets a 409, and is **stuck on the job forever**. The customer-side `undelivered` terminal card (`app/order/[id].tsx:629`) is fully built — and unreachable from the app.
-- **Fix:** add `markUndelivered()` to the API client and a post-pickup "Can't deliver?" flow (reason chips per the mockup) on `rider/job.tsx`; hide "Cancel job" once status ≥ `picked_up`.
+### Customer
+- **P1 — "No riders online" supply state missing (2·b1).** In a zero-supply corridor the customer sees the calm "finding riders…" state for the full 90s then a generic `expired` dead-end that advises nudging the price — misleading when the real cause is no supply. No "no riders online right now / Notify me" path exists (`app/order/[id].tsx:583-682`).
+- **P1 — Rider-cancelled hand-off has no explanatory screen (3·b0).** The re-broadcast works, but the customer is silently swapped to a fresh "finding" auction with only a transient toast (`app/order/[id].tsx:133-140`); the designed reassurance card ("Tendai had to cancel — same price, no need to start over") never renders.
+- **P2 — Customer account-on-hold unhandled (S·2).** Only riders get a blocking on-hold state (`app/rider/index.tsx:446-451`). Confirm the API can even hold a customer before prioritizing.
+- **P2 — No customer no-GPS guidance screen (S·4).** Non-blocking (customer can always pin/search manually), but there's no explicit "Open location settings" affordance.
 
-### 2. Rider "not chosen" state doesn't exist — sent offers dead-end at 0:00 (mockup 3·b1)
-- Designed: "Customer picked another rider. You're still online and first for the next one."
-- Reality: the only board push is `bid:expired` (nobody picked). When the customer picks **someone else**, no event reaches the losing bidders; the sent-offer card on `app/rider/index.tsx` keeps counting down and then sits at **"Customer's window closes in 0:00" forever** (the order also silently stays in `sentOffers` until the rider goes offline).
-- **Fix:** push an `offer:not-chosen` (or reuse an order-assigned board event) to losing bidders; render the mockup's muted "Not this time" state and clear the card.
+### Rider
+- **P1 — Rider bail screen is bare (4·b3).** Pre-pickup cancel works but omits the mockup's reason field, confirm sheet, and reliability-score warning (`app/rider/job.tsx:445-447`). The warning is a stated product promise, so its absence is a real gap.
+- **P2 — KYC-expiry state absent (1·b2).** No `expired` status (`packages/shared/src/enums.ts:126-131`) and no "Your ID has expired · Re-verify" UI; a lapsed verified rider has no dedicated recovery screen.
+- **P2 — Wrong-code "re-send" action missing (4·b1).** Lockout logic is correct but there's no button to ping the customer to re-issue the code — only instructional copy (`src/ui/rider/DeliveryOtp.tsx:30-33`).
+- **P3 — "Order taken first" is a silent removal (2·b1).** An un-bid order the rider was eyeing just disappears; no muted "taken by another rider" notice (`src/realtime/use-rider-board.ts:89-99`).
 
-### 3. Customer cancel loses the mockup's guarantees (mockups 3·b2 / 3·b3)
-- Pre-pickup cancel fires **instantly with no confirmation** (mockup designs a confirm + optional reason at any stage; code only confirms post-pickup, `app/order/[id].tsx:675`).
-- `CancelRequest.reason` is supported by the contract and persisted by the server (`cancelReason`), but the app **never sends or displays a reason** — the cancelled terminal shows a bare "This order is cancelled." with no reason and no "Send a new request" CTA (mockup 3·b3 has both).
-
----
-
-## P1 — Designed screens that are missing outright
-
-| Screen (mockup ref) | Journey | Notes |
-|---|---|---|
-| Onboarding carousel (0·2) | both | No slides; app boots straight to phone login. |
-| Customer registration — name + national ID (0·6) | customer | `completeProfile` exists but is only called in the rider KYC flow. Customers have no name on their account; the Account screen renders an empty name and the mockup's "ID · NOT VERIFIED" row can't exist. Also breaks the designed KYC prefill ("no double entry", S12). |
-| Permission priming — location & notifications (0·7/0·8) | both | OS dialogs fire cold (`Location.requestForegroundPermissionsAsync` in `rider/index.tsx`, push on sign-in). No pre-permission explainer screens. |
-| "No riders online" empty state (2·b1) | customer | No supply check before broadcast; a customer in a dead corridor burns the 90s window instead of seeing "no riders online — notify me". |
-| Notifications centre + empty state (A·3/A·4) | customer | Push lands (FCM wired end-to-end) but there is no in-app notification list. |
-| Settings (A·6) | both | No settings screen (language, notifications, payment=cash, edit profile). Sign-out lives on Account. |
-| Help & support hub (A·5) | both | No topic list, no "Chat on WhatsApp". (Order-scoped help *is* built — see "code ahead".) |
-| Bike & documents (rider A·2) | rider | Bike reg shows as one line on Account; no document-status screen. |
-| "ID expired — re-verify" (rider 1·b2) | rider | A lapsed document lands on the generic KYC gate copy, not the designed distinct state. |
-| "Order taken first" board notice (rider 2·b1) | rider | No assignment event removes a taken order from the board; it lingers until the 15s poll and there's no muted "taken by another rider" notice. |
-| Force update (S·3) | both | No version gate anywhere. |
-| No-GPS blocking state (S·4) | both | Location denial fails silent (board silently falls back city-wide); no "open location settings" screen. |
-| Rider job offline state (4·b4) | rider | `rider/job.tsx` renders **no reconnecting banner** and has no "job saved locally, syncs on reconnect" behaviour; the customer side has the banner, the rider side doesn't. |
-| Rate the sender (4·7 / S10) | rider | Two-way rating not built (report/block exists, rating doesn't). |
-
----
-
-## P2 — Partial implementations worth closing
-
-1. **Home compose paradigm (1·1)** — the mockup is a *map-anchored* home (full-bleed map, brand pill, two Uber-style address rows, sheet over the map). The code is a *form-first* screen: two 180-px inline `MapPicker`s inside a scrolling card stack. Functionally complete (and the disclaimer/bottom-sheet/thumb-zone CTA all match), but it's the single biggest visual divergence from the designed product.
-2. **Address search (1·2)** — inline Places autocomplete exists (key-gated, session-tokened — good engineering), but the designed search screen's **saved places (Home/Work), recents, "use my current location" and "set on the map" rows, and Google attribution** are all absent.
-3. **Offer compose (rider 3·1)** — the mockup's headline interaction is a segmented **"Accept $2.50 | Counter your fare"** one-tap accept. The code prefills the fare field and infers accept-vs-counter from whether the number equals the ask (`rider/index.tsx:215`) — the semantics survive, the one-tap affordance doesn't.
-4. **Auction expired (2·b3)** — the mockup's "Nudge & re-broadcast" keeps the order and bumps the price. The code routes to `/home` — and since the draft was cleared on the successful create, the customer **re-types the whole order from scratch**. The pre-expiry ghost button (nice touch) has the same destination.
-5. **Rider-bail cancel (4·b3)** — designed: reason field + reliability-score warning + confirm. Code: a one-tap ghost "Cancel job" with no confirm, no reason, no warning (the strike + cooldown are real server-side, so the rider is penalised without ever being warned).
-6. **Wrong-code lockout (4·b1)** — 403 lockout is handled with honest copy, but no per-attempt "N attempts left" counter and no "ask customer to re-send" ping (the customer *does* have the re-issue button, so the rider must phone them).
-7. **Rider-cancelled interstitial (3·b0)** — `order:rebroadcast` correctly moves the customer to the fresh auction, but silently: the designed "Tendai had to cancel — finding you another rider at the same price" explanation never shows.
-8. **WhatsApp OTP framing (0·3/0·4)** — mockups say "We'll WhatsApp a one-time code" + a no-WhatsApp fallback hint; the code says only "a one-time code" (channel-neutral). If WhatsApp is the launch channel, the copy undersells it; if not, the mockups are stale.
-9. **Note for the rider (1·4)** — `CreateOrderRequest.note` exists in the contract (max 280) and the rider mockups display a sender's note on the job; the compose screen never offers the field, so no note can ever exist.
-10. **Presence escalation asymmetry (3·b1 / 4·b4)** — `presence:stale` is consumed on the rider job socket (`customerStale` warning, well done) but the customer's order socket ignores it, so the designed "call your rider" escalation after ~2 min dark is one-sided.
-11. **Splash (0·1)** — designed as the brand-green dove moment; the code's boot state is a white/surface `BrandLockup` + "Loading…".
-12. **Earnings zero state (5·2)** — designed as the $0.00 hero card + "your first fare starts here"; code shows a plain EmptyState (no hero card).
-13. **Counter-decline persistence** — decline is component state (`declinedCounterIds`), so leaving and reopening the order screen resurrects the prominent Accept/Decline treatment for an already-declined counter. Matches "stays live at their price", but not "declined" persistence.
+### Shared / design polish
+- **Map-first vs form-first home (1·1)** is now closed on the customer side — `home.tsx` renders a full-bleed `ComposeMap` with address rows, matching the ride-hailing paradigm.
+- **Generic catch-all error (S·5)** — both roles cover failures with honest per-surface error+retry rather than the single designed "your active job is safe" catch-all component. Functionally covered; not a unified component.
 
 ---
 
 ## Where the code is AHEAD of the mockups
 
-The mockups' own gap flags call some of these out as undesigned — the code shipped them anyway:
+The mockups' own ⚑ GAP flags call some of these out as undesigned — the code shipped them anyway:
 
-- **SOS on live trips** (`src/ui/safety.tsx`, both roles, with GPS attach) — flagged **P1 gap** in the rider map, fully built.
+- **SOS on live trips** — `src/ui/safety.tsx` (both roles, GPS attach); flagged a P1 gap in the rider map.
 - **Report / block counterparty** after a trip (both roles) and **order-scoped "Get help with this trip"** with structured issue types → ops queue — richer than the designed WhatsApp-only help.
-- **Rating with a 4-second undo window** + screen-reader announcements (D3) — beyond the mockup's static stars.
-- **KYC decline reasons, retry with a fresh Didit session, and a 2-attempt lockout → support** — richer than the mockup's single "Try again".
-- **Online-gate states** (suspended / banned / on-hold / cooldown, each with distinct copy and iconography in `src/logic/gates.ts`) — the mockup only designed "on hold".
-- **Draft persistence** (PII-free, SecureStore) with a "Draft restored" chip; **out-of-service-area** as a calm distinct state with client pre-check + server authority; **ETA seeding from real distance**; **auction accessibility** (bid announcements, threshold countdowns, reduce-motion) — none of this is in the mockups.
+- **Rating with a 4-second undo window** + screen-reader announcements — beyond the mockup's static stars.
+- **KYC decline reasons, retry with a fresh Didit session, 2-attempt lockout → support** — richer than the mockup's single "Try again".
+- **Extra online-gate states** (`suspended` / `banned` / `on_hold` / `cooldown` / `out_of_area`, each with distinct copy in `src/logic/gates.ts`) — the mockup only designed "on hold".
+- **OTP resend + expiry/lockout recovery** (`verify.tsx:42-176`), **draft persistence** with "Draft restored" chip, **recent-recipient quick-fill**, **prefilled reorder / "Send again"**, **live ETA seeding from real distance**, **offline cold-start** last-known order/job paint, **Google Maps turn-by-turn deep link**, and **auction accessibility** (bid announcements, threshold countdowns, reduce-motion) — none of this is in the mockups.
 
 ---
 
-## Design review
+## History — what changed since the 2026-07-05 baseline
 
-**System fidelity: strong.** The app consumes the same design language the mockups are built from — `tokens` from `@lynia/shared`, and DS primitives (`Button`, `Card`, `Field`, `StatusPill`, `Stepper`, `EmptyState`, `Skeleton*`, `OfflineBanner`) that mirror the kit primitives (`LyniaKit` / `LyniaSupport`) one-for-one. Copy is frequently verbatim from the mockups (disclaimer rows, counter-offer card, online-empty board, undelivered terminal, customer-cancelled hand-back). The 7-step shared status machine ("one timeline seen from two sides") is implemented exactly as designed, including paired customer/rider labels.
+The original review (2026-07-05) found the core loop faithful but the shell "largely not built," with three P0 journey-integrity breaks. Between then and this re-audit the code was brought into line with the designs (the designs are the source of truth). Shipped:
 
-**Where design intent is diluted:**
-1. **Map-first vs form-first** (P2 #1) — the designed product feels like a ride-hailing app; the built product feels like a form. This is the gap a user would notice first.
-2. **Celebration moments are flattened** — "You're verified → Go online" (1·4) and "A customer picked you!" (3·3) are designed as win states; in code both collapse into quiet dashboard cards (the push "You got the job" does exist).
-3. **The shell is bare** — no onboarding, notifications, settings, or help hub means the app has no "home" outside a transaction; every designed persistent surface funnels through ghost buttons on the header.
-4. **Terminal states lose their reasons** — cancelled shows no reason, rider-bail warns of nothing, wrong-code shows no attempts-left. The mockups are consistently explicit about *why*; the code sometimes isn't.
+- **P0 resolved** — rider undeliverable flow (client `markUndelivered` + reason picker; post-pickup cancel hidden via the shared `RIDER_CANCELLABLE` set); `order:taken` / `bid:expired` WS events → rider "not chosen" + "window closed" states + board card removal; cancel-anytime with reason + reason/who-cancelled on the terminal; post-pickup customer-cancel hand-back (frozen snapshot + ack).
+- **Shell built** — onboarding carousel, customer registration (0·6), permission priming (0·7/0·8), notifications centre, settings, help hub (WhatsApp), bike & documents, force-update gate, no-GPS gate (rider), green splash, earnings zero-state hero, map-anchored home, WhatsApp OTP copy, sender's note field, one-tap Accept segment.
 
-## Engineering review
-
-**Strengths (well above pilot bar):**
-- Shared Zod contracts + WS event schemas keep both ends of the wire honest; the client re-validates (`CreateOrderRequest.safeParse`) before submit and mirrors contract floors in `canSubmit` so the CTA can't enable and then bounce off Zod.
-- Realtime is done right: WS push with poll self-heal, cache-merge with dedupe, optimistic mutations with `cancelQueries` + rollback (select-offer, status advance), race-aware 409 handling rendered as muted notices rather than errors.
-- Accessibility is systematically applied (roles, states, announcements, reduce-motion, 44-px targets) — rare at this stage.
-- Defensive patterns: key-gated Places (app runs fully unkeyed), best-effort drafts/consent that can never block the broadcast, frozen countdown during reconnect, `.strict()` PII rejection on board waypoints.
-
-**Weaknesses / risks:**
-1. **The two P0 dead-ends above** are engineering-visible (endpoint exists, UI doesn't; countdown state never resolves) — they'd surface in the first field week.
-2. **Message-sniffing gates** — `onlineGateReason` and `isOutOfServiceArea` fall back to sniffing human-readable messages (`gates.ts` TODOs). Fine as a bridge; fragile the moment copy changes. The rules-API `code` contract should be pinned.
-3. **UI/server rule drift** — rider cancel shown post-pickup while the server rejects it is exactly the class of bug the shared-contract discipline is meant to prevent; the cancel affordance should key off the same shared status sets the server uses (they exist: the file comment says "both sets are the shared source of truth the clients import").
-4. **`confirmItems` is fire-and-forget** with a `TODO(api): route pending` comment while the endpoint appears live — worth reconciling so pickup verification is actually persisted.
-5. **Session-scoped client state** (`sentOffers`, `declinedCounterIds`, `bidIds`) evaporates on process death mid-auction — acceptable for 90-second windows, but the rider's "your offers" list disappearing on an app restart mid-window will read as a bug.
+Rate-the-sender (4·7) — noted as deferred in the baseline — is now built as a recorded-only rating (`app/rider/job.tsx:403-438`). The remaining gaps are the edge/branch states listed above.
 
 ---
 
-## Recommended order of work
-
-1. **P0-1:** rider undeliverable flow (client fn + reason picker + hide post-pickup cancel). Unblocks the already-built customer terminal.
-2. **P0-2:** not-chosen signal + state; clear dead sent-offer cards.
-3. **P0-3:** cancel confirm + reason capture (both roles) + reason on the cancelled terminal; rider-bail warning card.
-4. **P1 shell, cheapest-first:** permission priming (2 static screens), rider job offline banner (component exists), no-GPS state, "nudge & re-broadcast" (retain the draft or re-create server-side), customer registration screen, note-for-rider field (contract already accepts it).
-5. **P1 shell, larger:** notifications centre, settings, help hub, bike & documents, onboarding carousel, force-update gate.
-6. **P2 polish:** map-anchored home, saved places/recents in search, one-tap Accept segment, celebration states, WhatsApp copy decision, earnings zero-state hero.
-
----
-
-*Every finding above was verified against the actual source (file:line references inline). The mockups' own ⚑ GAP flags (saved-places manager, scheduled delivery, multi-order, edit-in-flight, proof of delivery, tips, heat-map, shifts, multi-job queue, reliability dashboard, mobile-money) were treated as intentionally out of scope and are not counted as misalignments — with the exception of rider SOS, which the design flagged as a gap and the code has already shipped.*
+*Every finding above was verified against the actual source (file:line references inline). The mockups' own ⚑ GAP flags (saved-places manager, scheduled delivery, multi-order, edit-in-flight, proof of delivery, tips, heat-map, shifts, multi-job queue, reliability dashboard, mobile-money) were treated as intentionally out of scope and are not counted as misalignments.*
