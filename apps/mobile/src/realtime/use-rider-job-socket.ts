@@ -39,14 +39,21 @@ export function useRiderJobSocket(
       return;
     }
     const socket: Socket = createSocket(token);
+    // Background refetch — self-heals a push missed while the socket was down (same discipline as
+    // use-order-socket's refetchOrder on connect/connect_error).
+    const refetchJob = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
 
     socket.on("connect", () => {
       setConnected(true);
       socket.emit(WS_EVENTS.subscribeOrder, { orderId });
+      refetchJob();
     });
     socket.on("disconnect", () => setConnected(false));
-    socket.on("connect_error", () => setConnected(false));
-    socket.on(WS_EVENTS.orderStatus, () => void qc.invalidateQueries({ queryKey: ["activeJob"] }));
+    socket.on("connect_error", () => {
+      setConnected(false);
+      refetchJob();
+    });
+    socket.on(WS_EVENTS.orderStatus, refetchJob);
     socket.on(WS_EVENTS.jobCancelled, (raw: unknown) => {
       const parsed = JobCancelledEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId) return;
