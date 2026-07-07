@@ -7,8 +7,13 @@ import { PrivacyService } from "./privacy.service";
 const env = { GPS_RETENTION_DAYS: 90, SESSION_RETENTION_DAYS: 30 } as Env;
 
 /** Captures the tx.<model>.<op> calls an eraseAccount run makes, so we can assert what was scrubbed. */
-function eraseHarness(profile: { phone: string } | null, activeRide: boolean) {
+function eraseHarness(
+  profile: { phone: string } | null,
+  activeRide: boolean,
+  placedOrders: Array<{ id: string; pickup: unknown; dropoff: unknown }> = [],
+) {
   const calls: Record<string, unknown> = {};
+  const orderUpdates: Array<{ where: { id: string }; data: Record<string, unknown> }> = [];
   const tx = {
     profile: { update: vi.fn(async (a: unknown) => ((calls.profileUpdate = a), {})) },
     rider: { updateMany: vi.fn(async (a: unknown) => ((calls.riderUpdate = a), { count: 1 })) },
@@ -16,13 +21,17 @@ function eraseHarness(profile: { phone: string } | null, activeRide: boolean) {
     deviceToken: { deleteMany: vi.fn(async () => ((calls.deviceDel = true), { count: 1 })) },
     session: { deleteMany: vi.fn(async () => ((calls.sessionDel = true), { count: 2 })) },
     orderEvent: { updateMany: vi.fn(async (a: unknown) => ((calls.eventUpdate = a), { count: 3 })) },
+    order: {
+      findMany: vi.fn(async () => placedOrders),
+      update: vi.fn(async (a: { where: { id: string }; data: Record<string, unknown> }) => (orderUpdates.push(a), {})),
+    },
   };
   const prisma = {
     profile: { findUnique: async () => (profile ? { id: "p1", phone: profile.phone } : null) },
     order: { findFirst: async () => (activeRide ? { id: "o1" } : null) },
     $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
   } as unknown as PrismaService;
-  return { svc: new PrivacyService(prisma, env), calls, tx };
+  return { svc: new PrivacyService(prisma, env), calls, tx, orderUpdates };
 }
 
 describe("PrivacyService.eraseAccount", () => {
@@ -55,6 +64,25 @@ describe("PrivacyService.eraseAccount", () => {
     const { svc, tx } = eraseHarness({ phone: "erased:p1" }, false);
     await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
     expect(tx.profile.update).not.toHaveBeenCalled();
+  });
+
+  it("scrubs contactPhone from the pickup/dropoff JSON of orders the user placed (keeps coords/landmark)", async () => {
+    const { svc, orderUpdates } = eraseHarness({ phone: "+263771234567" }, false, [
+      {
+        id: "o1",
+        pickup: { point: { lat: -17.8, lng: 31.0 }, landmark: "Gate 3", contactPhone: "+263771111111" },
+        dropoff: { point: { lat: -17.9, lng: 31.1 }, landmark: "Reception", contactPhone: "+263772222222" },
+      },
+      // No contactPhone anywhere → nothing to strip → no write for this order.
+      { id: "o2", pickup: { point: { lat: -17.7, lng: 31.2 }, landmark: "Shop" }, dropoff: null },
+    ]);
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+
+    // Only o1 is rewritten; o2 has no phone to scrub.
+    expect(orderUpdates).toHaveLength(1);
+    expect(orderUpdates[0].where).toEqual({ id: "o1" });
+    expect(orderUpdates[0].data.pickup).toEqual({ point: { lat: -17.8, lng: 31.0 }, landmark: "Gate 3", contactPhone: null });
+    expect(orderUpdates[0].data.dropoff).toEqual({ point: { lat: -17.9, lng: 31.1 }, landmark: "Reception", contactPhone: null });
   });
 });
 

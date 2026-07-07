@@ -4,7 +4,7 @@
  * empty/invalid so callers can gate instead of POSTing garbage.
  */
 export function parseNum(raw: string): number | null {
-  const cleaned = raw.replace(/\s/g, "").replace(",", ".");
+  const cleaned = raw.replace(/\s/g, "").replace(/,/g, ".");
   if (cleaned === "") return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;

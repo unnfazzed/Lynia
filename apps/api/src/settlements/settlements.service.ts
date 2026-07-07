@@ -66,13 +66,18 @@ export class SettlementsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Read-only overview of completed rides in the trailing 7-day window `[ref−7d, ref)`, grouped by
-   * rider: ride count, gross fares, and the commission that would accrue at {@link COMMISSION.ratePct}
-   * ($0.00 at the launch rate). No settlement rows are written or read — the figures come straight from
+   * Read-only overview of completed rides in the last 7 UTC calendar days INCLUDING the current
+   * (partial) day — `[start of (ref − 6d), start of (ref + 1d))` — grouped by rider: ride count, gross
+   * fares, and the commission that would accrue at {@link COMMISSION.ratePct} ($0.00 at the launch
+   * rate). Windowing to whole days ending at the START of ref's day would silently drop every ride
+   * completed today while the label still advertised today as covered — an ops console must show the
+   * current day's activity. No settlement rows are written or read — the figures come straight from
    * completed orders. Rows are ordered by fares delivered, descending.
    */
   async commissionOverview(ref: Date = new Date()): Promise<CommissionOverview> {
-    const periodEnd = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate()));
+    // Exclusive end = start of TOMORROW (UTC), so the current day counts as it fills in; the label's
+    // inclusive last day is ref's own date, matching exactly what the query covers.
+    const periodEnd = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate() + 1));
     const periodStart = new Date(periodEnd);
     periodStart.setUTCDate(periodEnd.getUTCDate() - 7);
 
@@ -131,7 +136,8 @@ export class SettlementsService {
     return {
       model: COMMISSION.model,
       ratePct: COMMISSION.ratePct,
-      periodLabel: `${fmtDate(periodStart)} – ${fmtDate(periodEnd)}`,
+      // Inclusive calendar-day span: the last labeled day is ref's own date (periodEnd is exclusive).
+      periodLabel: `${fmtDate(periodStart)} – ${fmtDate(ref)}`,
       kpis: {
         ratePct: COMMISSION.ratePct,
         rides: totalRides,

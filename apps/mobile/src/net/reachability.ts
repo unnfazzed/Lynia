@@ -26,6 +26,7 @@ let reachable = true; // optimistic at cold start — the first failed request f
 const listeners = new Set<Listener>();
 let probeTimer: ReturnType<typeof setTimeout> | null = null;
 let probeAttempt = 0;
+let probing = false; // true while a probe fetch is in flight (probeTimer is null during that window)
 
 /**
  * Backoff for the `/health` recovery probe: 2s, 4s, 8s, 16s, then capped at 30s. Capped so a long
@@ -98,12 +99,18 @@ async function defaultProbeFetch(url: string): Promise<boolean> {
 }
 
 function scheduleProbe(): void {
-  if (probeTimer) return; // exactly one probe loop in flight at a time
+  // Never probe when we're already online (a `reportReachable` during an in-flight probe would otherwise
+  // let the resolve path reschedule a pointless loop), and keep exactly one loop: one timer pending OR
+  // one fetch in flight. `probing` closes the window where `probeTimer` is briefly null mid-fetch, which
+  // previously let a concurrent `reportUnreachable` spawn a second parallel loop.
+  if (reachable || probeTimer || probing) return;
   const delay = nextProbeDelayMs(probeAttempt);
   probeAttempt += 1;
   probeTimer = setTimeout(() => {
     probeTimer = null;
+    probing = true;
     void probeFetch(`${API_URL}/health`).then((ok) => {
+      probing = false;
       if (ok) reportReachable();
       else scheduleProbe();
     });
@@ -122,6 +129,7 @@ export function __resetReachability(): void {
     probeTimer = null;
   }
   probeAttempt = 0;
+  probing = false;
   reachable = true;
   onlineManager.setOnline(true);
 }

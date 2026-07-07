@@ -471,6 +471,21 @@ export class TrackingGateway
         }
       }
       for (const s of stale) {
+        // Socket-liveness refutation: a stale heartbeat only proves the rider hasn't MOVED — the client
+        // streams fixes gated on distance (25m), so a rider parked at the pickup produces none — NOT
+        // that their socket is dark. If the assigned rider's socket is joined to the order room anywhere
+        // in the cluster, they're connected: refresh the DB heartbeat so the stale state self-heals
+        // (the next scan's recovery loop then re-arms/releases as usual) and never false-alarm the
+        // customer with "rider went dark". Checked BEFORE the notified-skip so a reconnected-but-parked
+        // rider recovers even after a genuine earlier escalation.
+        if (await this.riderLiveInRoom(s.orderId, s.riderId)) {
+          try {
+            await this.tracking.touchRiderHeartbeat(s.riderId);
+          } catch (err) {
+            this.logger.warn(`heartbeat touch failed for rider ${s.riderId}: ${(err as Error).message}`);
+          }
+          continue;
+        }
         if (this.staleNotified.has(s.orderId)) continue; // already handled here — don't spam every scan
         this.staleNotified.add(s.orderId);
         // Cluster-wide one-shot (multi-instance): only the instance that wins the claim emits; the
@@ -566,6 +581,24 @@ export class TrackingGateway
     try {
       const sockets = await this.server.in(orderRoom(orderId)).fetchSockets();
       return sockets.some((s) => (s.data as { user?: SocketUser } | undefined)?.user?.role === "customer");
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Is the ASSIGNED RIDER's socket currently joined to the order room anywhere in the cluster? The
+   * rider-side mirror of {@link customerLiveInRoom} (same cluster-wide `fetchSockets`), but matched on
+   * the exact rider id rather than role — a customer profile can carry the rider role too, so role
+   * alone could mistake the watching customer for the rider. Best-effort: a missing server or a fetch
+   * error returns false, falling back to the heartbeat-only decision (escalate), because a duplicate
+   * "live paused" is a better failure than a silenced genuine one.
+   */
+  private async riderLiveInRoom(orderId: string, riderId: string): Promise<boolean> {
+    if (!this.server) return false;
+    try {
+      const sockets = await this.server.in(orderRoom(orderId)).fetchSockets();
+      return sockets.some((s) => (s.data as { user?: SocketUser } | undefined)?.user?.sub === riderId);
     } catch {
       return false;
     }

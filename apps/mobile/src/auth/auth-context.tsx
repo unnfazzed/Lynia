@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { logout } from "../api/auth";
 import { configureApi } from "../api/client";
 import { queryClient } from "../query/client";
 import { clearDeviceState, clearSession, loadSession, saveSession, type Session } from "./session";
@@ -49,6 +50,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     await saveSession(s);
   };
   const signOut = async (): Promise<void> => {
+    // Revoke the session server-side FIRST, while the token is still live (the endpoint is authed), so a
+    // deliberate sign-out actually kills the refresh token instead of leaving it valid for REFRESH_TTL
+    // (30 days). Best-effort: an offline/failed revoke must never trap the local sign-out below.
+    const current = ref.current;
+    if (current?.refreshToken) {
+      try {
+        await logout(current.refreshToken);
+      } catch {
+        /* best-effort — proceed with the local sign-out regardless */
+      }
+    }
     ref.current = null;
     setSession(null);
     await clearSession();

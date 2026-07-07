@@ -4,6 +4,7 @@ import type { MakeOfferRequest } from "@lynia/shared";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { blockedPairWhere } from "../reports/blocks";
 import { onlineRefusalReason } from "../riders/rider.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 
@@ -36,6 +37,20 @@ export class OffersService {
     if (order.customerId === riderId) {
       this.metrics.incOffersMade("forbidden");
       throw new ForbiddenException("You can't bid on your own order");
+    }
+
+    // Block enforcement at CREATION, not just at selection (selectOffer). A blocked pair must never
+    // re-match, and a block is a safety feature — so a rider the customer blocked (or who blocked the
+    // customer) must not even be able to bid: otherwise they still trigger a "new offer" push to the
+    // blocker and surface with their name/photo/ratings in the blocker's offer list before the 403 at
+    // selection. Symmetric via blockedPairWhere, the same predicate selectOffer uses.
+    const blocked = await this.prisma.block.findFirst({
+      where: blockedPairWhere(order.customerId, riderId),
+      select: { id: true },
+    });
+    if (blocked) {
+      this.metrics.incOffersMade("forbidden");
+      throw new ForbiddenException("You can't bid on this order");
     }
 
     // Gating (CONCEPT §5d): only a KYC-verified, online rider IN GOOD STANDING can offer. Reuses the

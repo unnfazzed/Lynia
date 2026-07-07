@@ -26,6 +26,9 @@ function fakeGateway() {
 function svc(prisma: Partial<Record<string, unknown>>, gateway = fakeGateway(), metrics = fakeMetrics()) {
   const tx: Record<string, unknown> = {
     $queryRaw: async () => [{ status: "open_for_offers" }],
+    // Default: the customer and rider are not a blocked pair. A test overrides this to exercise the
+    // block gate. Placed before `...prisma` so a test can still override it.
+    block: { findFirst: async () => null },
     ...prisma,
   };
   const full: Record<string, unknown> = {
@@ -210,6 +213,21 @@ describe("OffersService.makeOffer", () => {
       order: { findUnique: async () => ({ status: "open_for_offers", customerId: "rider-1", proposedFare: 2.5 }) },
     });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/your own order/i);
+    expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
+  });
+
+  it("403s a rider bidding on an order whose customer is a blocked pair (no offer inserted)", async () => {
+    const create = vi.fn();
+    const { service, gateway } = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers", customerId: "cust-1", proposedFare: 2.5 }) },
+      // A block exists between cust-1 and rider-1 → the offer must be refused at creation, before the
+      // rider/standing gate and before any insert, so the blocker never gets a push or sees them listed.
+      block: { findFirst: async () => ({ id: "b1" }) },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
+      offer: { create },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/can't bid on this order/i);
+    expect(create).not.toHaveBeenCalled();
     expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
   });
 

@@ -329,6 +329,11 @@ export class RiderService {
             idVerified: false,
             kycDeclineReason: reasonCode ?? null,
             kycAttempts: { increment: 1 },
+            // Stamp the resolution time so applyKycResult's monotonic guard treats this human decision
+            // as the latest word: a later (or replayed) vendor webhook with an older eventAt can no
+            // longer flip a manually-declined rider back to verified. retryKyc clears it on a genuine
+            // resubmit, so a fresh vendor result still resolves.
+            kycResolvedAt: new Date(),
           },
           select: { kycAttempts: true },
         });
@@ -341,7 +346,10 @@ export class RiderService {
           data: {
             kycStatus: status,
             idVerified: status === "verified",
-            ...(status === "verified" ? { kycDeclineReason: null } : {}),
+            // A manual APPROVE is a terminal human decision: stamp kycResolvedAt so a later/replayed
+            // vendor webhook can't override it (mirrors the decline path). A `pending` RESET is
+            // deliberately inviting a fresh vendor result, so it leaves kycResolvedAt untouched.
+            ...(status === "verified" ? { kycDeclineReason: null, kycResolvedAt: new Date() } : {}),
           },
         });
         result = { profileId, kycStatus: status, kycAttempts: rider.kycAttempts, locked: rider.kycAttempts >= 2 };

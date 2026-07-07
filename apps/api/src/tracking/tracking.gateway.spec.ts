@@ -413,6 +413,57 @@ describe("TrackingGateway.scanPresence (C5 watchdog)", () => {
     await g.scanPresence(); // recovered → release the cluster-wide claim
     expect(releasePresenceEscalation).toHaveBeenCalledWith("rider:ord-1");
   });
+
+  it("does NOT escalate a stale-heartbeat rider whose socket is live in the order room (parked ≠ dark)", async () => {
+    // Heartbeat is stale — fixes are distance-gated, the rider just hasn't moved — but the assigned
+    // rider's socket sits in the order room cluster-wide. No false "rider went dark" to the customer;
+    // the heartbeat is refreshed instead so the DB authority self-heals.
+    const findStaleRiderPresence = vi.fn(async () => [{ orderId: "ord-1", riderId: "r1", lastSeenAt: null }]);
+    const touchRiderHeartbeat = vi.fn(async () => {});
+    const { server, emit, in: inFn } = fakeServer([{ data: { user: { sub: "r1", role: "rider" } } }]);
+    const g = gateway({ findStaleRiderPresence, touchRiderHeartbeat });
+    g.server = server as never;
+    await g.scanPresence();
+    expect(inFn).toHaveBeenCalledWith(orderRoom("ord-1"));
+    expect(touchRiderHeartbeat).toHaveBeenCalledWith("r1");
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("still escalates when the room's only socket is someone ELSE (id-matched, not role-matched)", async () => {
+    // A customer profile can carry the rider role, so a rider-role socket in the room is NOT proof the
+    // assigned rider is live — the refutation must match the exact rider id.
+    const findStaleRiderPresence = vi.fn(async () => [{ orderId: "ord-1", riderId: "r1", lastSeenAt: null }]);
+    const touchRiderHeartbeat = vi.fn(async () => {});
+    const { server, emit } = fakeServer([{ data: { user: { sub: "someone-else", role: "rider" } } }]);
+    const g = gateway({ findStaleRiderPresence, touchRiderHeartbeat });
+    g.server = server as never;
+    await g.scanPresence();
+    expect(touchRiderHeartbeat).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith(
+      WS_EVENTS.presenceStale,
+      expect.objectContaining({ orderId: "ord-1", role: "rider" }),
+    );
+  });
+
+  it("self-heals a previously-escalated order once the rider's socket returns while still parked", async () => {
+    // Genuine dark spell → escalated. The rider reconnects but stays parked (heartbeat still stale).
+    // The liveness check runs BEFORE the notified-skip, so the returning socket refreshes the heartbeat
+    // (self-heal) instead of leaving the order stuck stale — and no repeat emit fires.
+    const roomSockets: Array<{ data?: unknown }> = [];
+    const findStaleRiderPresence = vi.fn(async () => [{ orderId: "ord-1", riderId: "r1", lastSeenAt: null }]);
+    const touchRiderHeartbeat = vi.fn(async () => {});
+    const { server, emit } = fakeServer(roomSockets);
+    const g = gateway({ findStaleRiderPresence, touchRiderHeartbeat });
+    g.server = server as never;
+
+    await g.scanPresence(); // socket absent → genuine escalation
+    expect(emit).toHaveBeenCalledTimes(1);
+
+    roomSockets.push({ data: { user: { sub: "r1", role: "rider" } } }); // rider reconnects, still parked
+    await g.scanPresence();
+    expect(touchRiderHeartbeat).toHaveBeenCalledWith("r1"); // heals despite the earlier escalation
+    expect(emit).toHaveBeenCalledTimes(1); // and never re-spams
+  });
 });
 
 describe("TrackingGateway.emitOrderRebroadcast (F-01)", () => {

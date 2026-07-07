@@ -67,16 +67,28 @@ describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
     });
   });
 
-  it("windows on the trailing 7 days ending at ref and only counts completed rides", async () => {
+  it("windows on the last 7 calendar days INCLUDING the current day, and only counts completed rides", async () => {
     const { prisma, captured } = overviewPrisma([], []);
     const svc = new SettlementsService(prisma as unknown as PrismaService);
     const view = await svc.commissionOverview(new Date("2026-07-06T12:00:00Z"));
 
-    expect(view.periodLabel).toBe("2026-06-29 – 2026-07-06");
+    // The current (partial) day is covered — a ride completed this morning must show up — and the
+    // label's inclusive last day matches what the query covers (exclusive end = start of tomorrow).
+    expect(view.periodLabel).toBe("2026-06-30 – 2026-07-06");
     expect(captured.where).toMatchObject({ status: "completed", riderId: { not: null } });
     const range = captured.where!.completedAt as { gte: Date; lt: Date };
-    expect(range.gte.toISOString().slice(0, 10)).toBe("2026-06-29");
-    expect(range.lt.toISOString().slice(0, 10)).toBe("2026-07-06");
+    expect(range.gte.toISOString()).toBe("2026-06-30T00:00:00.000Z");
+    expect(range.lt.toISOString()).toBe("2026-07-07T00:00:00.000Z");
+  });
+
+  it("window month-boundary: a ref early in the month reaches back into the previous month", async () => {
+    const { prisma, captured } = overviewPrisma([], []);
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
+    const view = await svc.commissionOverview(new Date("2026-07-02T08:00:00Z"));
+    expect(view.periodLabel).toBe("2026-06-26 – 2026-07-02");
+    const range = captured.where!.completedAt as { gte: Date; lt: Date };
+    expect(range.gte.toISOString()).toBe("2026-06-26T00:00:00.000Z");
+    expect(range.lt.toISOString()).toBe("2026-07-03T00:00:00.000Z");
   });
 
   it("returns an empty overview (no riders, zeroed KPIs) when nothing completed in the window", async () => {

@@ -64,6 +64,22 @@ describe("SosService.raise", () => {
     expect(res.safetyLine).not.toBe(res.emergencyNumber);
   });
 
+  it("still returns the emergency contacts when the SosEvent DB write fails (safety-critical)", async () => {
+    const notifications = makeNotifications();
+    const prisma = {
+      order: { findUnique: async () => liveOrder },
+      sosEvent: { create: async () => { throw new Error("db down"); } },
+    } as unknown as PrismaService;
+    const s = new SosService(prisma, notifications);
+
+    // A transient DB failure must NOT withhold the static 999 / safety-line numbers.
+    const res = await s.raise("ord-1", body, "cust-1");
+    expect(res.emergencyNumber).toBe("999");
+    expect(res.safetyLine).toBe(SOS_POLICY.safetyLine);
+    // Ops is still escalated even though the audit row didn't land.
+    expect(notifications.notifyOps).toHaveBeenCalledTimes(1);
+  });
+
   it("reads the safety line from the env var when set", async () => {
     process.env.SOS_SAFETY_LINE = "+263242700000";
     try {

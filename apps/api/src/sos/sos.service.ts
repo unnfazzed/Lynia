@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PHONE_REVEAL_STATUSES, type RaiseSosRequest, SOS_POLICY } from "@lynia/shared";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -18,6 +18,8 @@ export interface SosContacts {
  */
 @Injectable()
 export class SosService {
+  private readonly logger = new Logger(SosService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
@@ -46,16 +48,26 @@ export class SosService {
       throw new ConflictException("SOS is only available on a live trip");
     }
 
-    const event = await this.prisma.sosEvent.create({
-      data: {
-        orderId,
-        raisedByProfileId: callerId,
-        raisedByRole,
-        lat: body.lat ?? null,
-        lng: body.lng ?? null,
-      },
-      select: { id: true },
-    });
+    // Log the event, but NEVER let a transient DB failure withhold the emergency contacts — the whole
+    // point of SOS is to hand back the static safety numbers, which need no DB. A create failure (a
+    // connection blip during exactly the kind of incident SOS is for) is caught and logged; the caller
+    // still gets 999 + the safety line. sosId is null when the audit write didn't land.
+    let sosId: string | null = null;
+    try {
+      const event = await this.prisma.sosEvent.create({
+        data: {
+          orderId,
+          raisedByProfileId: callerId,
+          raisedByRole,
+          lat: body.lat ?? null,
+          lng: body.lng ?? null,
+        },
+        select: { id: true },
+      });
+      sosId = event.id;
+    } catch (err) {
+      this.logger.error(`SOS event log failed for order ${orderId}: ${(err as Error).message}`);
+    }
 
     // Best-effort escalation — ops always, and the counterparty so they know help was called on this
     // trip. A push failure can never fail the SOS the user just raised.
@@ -63,14 +75,14 @@ export class SosService {
       void this.notifications.notifyOps({
         title: "SOS raised on a live trip",
         body: "A party pressed SOS on an active delivery — respond now.",
-        data: { orderId, sosId: event.id, kind: "sos" },
+        data: { orderId, kind: "sos", ...(sosId ? { sosId } : {}) },
       });
     }
     if (counterpartyId) {
       void this.notifications.notifyProfiles([counterpartyId], {
         title: "SOS on your delivery",
         body: "The other party raised an SOS on this trip. Stay safe — help has been notified.",
-        data: { orderId, sosId: event.id, kind: "sos" },
+        data: { orderId, kind: "sos", ...(sosId ? { sosId } : {}) },
       });
     }
 
