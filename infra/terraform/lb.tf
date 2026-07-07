@@ -15,6 +15,12 @@
 # compute.googleapis.com is already enabled in project.tf (google_project_service.apis),
 # which these resources depend on transitively via local.project_id + the NEG's
 # explicit depends_on below.
+#
+# X-Forwarded-For / app `trust proxy`: with this topology (client -> external ALB -> serverless NEG ->
+# Cloud Run, *.run.app disabled so ALL traffic arrives via the ALB), the app sees
+# `X-Forwarded-For: <client>, <lb>` per Google's Cloud Run contract — one trusted hop. So the API sets
+# Express `trust proxy = 1` (env TRUST_PROXY, default "1") to recover the real client IP for its per-IP
+# rate limits. If a hop is ever added in front (e.g. a CDN), bump TRUST_PROXY to match.
 
 # --- Serverless NEG: the bridge from the LB to the Cloud Run service ---
 # A regional NEG in the SAME region as the service (africa-south1). This is the

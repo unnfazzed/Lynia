@@ -48,7 +48,12 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
   await app.listen(env.PORT);
 
-  Logger.log(`Lynia API listening on :${env.PORT} (cloud=${env.CLOUD_PROVIDER})`, "Bootstrap");
+  // Surface the resolved trust-proxy setting so ops can confirm the per-IP rate limiting sees the real
+  // client IP (a mismatch with the actual proxy-hop count is otherwise silent until limits misbehave).
+  Logger.log(
+    `Lynia API listening on :${env.PORT} (cloud=${env.CLOUD_PROVIDER}, trustProxy=${env.TRUST_PROXY})`,
+    "Bootstrap",
+  );
 }
 
 void bootstrap();

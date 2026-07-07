@@ -21,8 +21,16 @@ export const envSchema = z.object({
   // Express `trust proxy` — how many reverse-proxy hops sit in front of the API, so req.ip / the
   // X-Forwarded-For client IP the per-IP rate limits key off resolves to the real caller instead of
   // the load balancer (otherwise every request shares one bucket and the caps become a global DoS).
-  // "1" = a single LB (the GCP external HTTPS LB → Cloud Run default); "false" disables it for a
-  // direct/dev deploy; a subnet list ("loopback, 10.0.0.0/8") is also accepted. See common/trust-proxy.ts.
+  //
+  // Default "1" is VERIFIED for the deployed topology (infra/terraform/lb.tf): client → global external
+  // HTTPS ALB → serverless NEG → Cloud Run, with the default *.run.app URL disabled so ALL traffic
+  // arrives via the ALB. Per Google's Cloud Run contract the app then sees `X-Forwarded-For:
+  // <client>, <lb>` — exactly one trusted hop — so trust proxy = 1 makes req.ip the real client AND is
+  // spoof-resistant (a client-injected XFF lands left of the real client and is ignored). Cloud Armor
+  // (armor.tf) also rate-limits per client IP at the edge; this app-level limiter is defence-in-depth.
+  //
+  // "false" disables it for a direct/dev deploy; a subnet list ("loopback, 10.0.0.0/8") is also
+  // accepted. Change only if the proxy chain changes (extra CDN/proxy hop). See common/trust-proxy.ts.
   TRUST_PROXY: z.string().default("1"),
   DATABASE_URL: z.string().min(1),
   // Explicit Prisma connection-pool tuning (E6). Applied to the datasource URL in PrismaService; both
