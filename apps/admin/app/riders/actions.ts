@@ -19,14 +19,18 @@ export async function setKyc(formData: FormData): Promise<void> {
  * A-02 KYC decision write from the doc-review screen. Approve → verified; decline → failed + the
  * reason code (recorded on the rider + audit log) and an attempt increment. A second decline pushes
  * `kycAttempts` to the lock (>= 2) → resubmission is blocked in the api. Called from <KycDecision>'s
- * <ConfirmModal> onConfirm (which has already written the audit-log row via submitAdminAction).
+ * <ConfirmModal> onConfirm. The endpoint now writes the audit row in the SAME transaction as the
+ * decision (A-01), so <KycDecision> sets `auditInEndpoint` and does NOT also POST a standalone row —
+ * this forwards the `note` so it lands on that in-transaction audit row.
  */
 export async function decideKyc(
   profileId: string,
   status: "verified" | "failed",
   reasonCode: string | null,
+  note?: string,
 ): Promise<void> {
-  const body = status === "failed" ? { status, reasonCode } : { status };
+  const body =
+    status === "failed" ? { status, reasonCode, note: note || null } : { status, note: note || null };
   const ok = await adminPost(`/admin/riders/${profileId}/kyc`, body);
   if (!ok) throw new Error(`Failed to record KYC ${status} for rider ${profileId} (check API_BASE_URL / admin token).`);
   revalidatePath(`/riders/${profileId}/kyc`);

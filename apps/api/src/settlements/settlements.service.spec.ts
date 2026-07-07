@@ -4,20 +4,25 @@ import { PrismaService } from "../prisma/prisma.service";
 import { SettlementsService } from "./settlements.service";
 
 /**
- * A Prisma double for the commission overview: `groupBy` returns completed-order groups (rides + fares
- * per rider) and `profile.findMany` resolves rider names. `captured` records the groupBy `where` so we
- * can assert the trailing-7-day window.
+ * A Prisma double for the commission overview: `order.findMany` returns the individual completed rides
+ * (the service now sums commission per ride, not off a groupBy aggregate) and `profile.findMany`
+ * resolves rider names. Each input group `{riderId, fares, rides}` is expanded into `rides` orders whose
+ * fares are split evenly so they sum to `fares`. `captured` records the findMany `where` so we can
+ * assert the trailing-7-day window.
  */
 function overviewPrisma(
   groups: Array<{ riderId: string | null; fares: number; rides: number }>,
   profiles: Array<{ id: string; firstName: string; lastName: string }>,
 ) {
   const captured: { where: Record<string, unknown> | null } = { where: null };
+  const orders = groups.flatMap((g) =>
+    Array.from({ length: g.rides }, () => ({ riderId: g.riderId, agreedFare: g.fares / g.rides })),
+  );
   const prisma = {
     order: {
-      groupBy: async (args: { where: Record<string, unknown> }) => {
+      findMany: async (args: { where: Record<string, unknown> }) => {
         captured.where = args.where;
-        return groups.map((g) => ({ riderId: g.riderId, _sum: { agreedFare: g.fares }, _count: { _all: g.rides } }));
+        return orders;
       },
     },
     profile: {

@@ -3,7 +3,7 @@ import { KycStatus, OrderStatus } from "@lynia/shared";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { CurrentUser } from "../common/current-user.decorator";
+import { AdminActor } from "../common/admin-actor.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { SettlementsService } from "../settlements/settlements.service";
 import { AdminAuditService } from "./admin-audit.service";
@@ -119,13 +119,13 @@ export class AdminController {
 
   /**
    * A-01 audit-action write path — every destructive ConfirmModal in the console POSTs here. Records
-   * the action server-side (actor = the authenticated admin) and returns `{ id }`. Closes the UI-only
-   * seam: audit actions are now actually persisted and queryable.
+   * the action server-side (actor = the real operator forwarded as `X-Operator`, else the admin token's
+   * subject) and returns `{ id }`. Closes the UI-only seam: audit actions are now actually persisted.
    */
   @Post("audit-actions")
   auditAction(
     @Body(new ZodBody(AuditAction)) body: z.infer<typeof AuditAction>,
-    @CurrentUser() actor: string,
+    @AdminActor() actor: string,
   ) {
     return this.audit.recordAuditAction(actor, body);
   }
@@ -137,7 +137,7 @@ export class AdminController {
   suspendRider(
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
-    @CurrentUser() actor: string,
+    @AdminActor() actor: string,
   ) {
     return this.ridersService.suspendRider(actor, id, body);
   }
@@ -147,7 +147,7 @@ export class AdminController {
   liftRider(
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodBody(ReasonOptional)) body: z.infer<typeof ReasonOptional>,
-    @CurrentUser() actor: string,
+    @AdminActor() actor: string,
   ) {
     return this.ridersService.liftRider(actor, id, body);
   }
@@ -157,7 +157,7 @@ export class AdminController {
   banRider(
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
-    @CurrentUser() actor: string,
+    @AdminActor() actor: string,
   ) {
     return this.ridersService.banRider(actor, id, body);
   }
@@ -169,7 +169,7 @@ export class AdminController {
   cancelOrder(
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
-    @CurrentUser() actor: string,
+    @AdminActor() actor: string,
   ) {
     return this.ordersService.cancelOrder(actor, id, body);
   }
@@ -179,7 +179,7 @@ export class AdminController {
   adjustFare(
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodBody(FareAdjust)) body: z.infer<typeof FareAdjust>,
-    @CurrentUser() actor: string,
+    @AdminActor() actor: string,
   ) {
     return this.ordersService.adjustFare(actor, id, body);
   }

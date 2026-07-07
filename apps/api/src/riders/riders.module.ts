@@ -4,6 +4,7 @@ import type { Env } from "../config/env";
 import { DiditKycVendor } from "../kyc/didit-kyc-vendor";
 import { KYC_VENDOR, type KycVendor, StubKycVendor } from "../kyc/kyc-vendor";
 import { KycController } from "../kyc/kyc.controller";
+import { TrackingModule } from "../tracking/tracking.module";
 import { RidersController } from "./riders.controller";
 import { RiderService } from "./rider.service";
 
@@ -27,6 +28,9 @@ function selectKycVendor(env: Env): KycVendor {
 }
 
 @Module({
+  // TrackingModule (exports TrackingService) so setOnline(false) can evict the rider from the geo
+  // index. Acyclic: TrackingModule doesn't depend on RidersModule.
+  imports: [TrackingModule],
   controllers: [RidersController, KycController],
   providers: [
     RiderService,

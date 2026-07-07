@@ -288,19 +288,25 @@ export class TrackingService implements OnModuleDestroy {
     this.lastFlush.delete(riderId);
     const pos = await this.getLivePosition(riderId);
     // The session ended — evict this rider from the geo index so a disconnected rider's stale last
-    // position can't keep occupying a nearest-first GEOSEARCH slot (the set has no per-member TTL, so
-    // without this the member lingers at its final fix forever). Best-effort; a miss is harmless
-    // (nearbyRiders still confirms is_online against PG). getRedis() is null in the no-Redis path.
-    const redis = this.getRedis();
-    if (redis) {
-      try {
-        await redis.zrem(GEO_KEY, riderId);
-      } catch {
-        /* best-effort: the PG is_online filter still drops a stale member */
-      }
-    }
+    // position can't keep occupying a nearest-first GEOSEARCH slot (see evictFromGeo).
+    await this.evictFromGeo(riderId);
     if (!pos) return;
     await this.writePosition(riderId, pos.lat, pos.lng);
+  }
+
+  /** Remove a rider from the `rider:geo` index. The geo set has no per-member TTL, so a member left
+   *  behind lingers at its last fix forever and keeps occupying a nearest-first GEOSEARCH slot — call
+   *  this whenever a rider stops being biddable (socket disconnect, or an explicit go-offline). PG
+   *  stays the is_online authority, so a missed eviction is harmless; hence best-effort. No-op without
+   *  Redis (getRedis() null — the pure-PG nearbyRiders path). */
+  async evictFromGeo(riderId: string): Promise<void> {
+    const redis = this.getRedis();
+    if (!redis) return;
+    try {
+      await redis.zrem(GEO_KEY, riderId);
+    } catch {
+      /* best-effort: the PG is_online filter still drops a stale member */
+    }
   }
 
   /**

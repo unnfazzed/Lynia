@@ -12,8 +12,10 @@ import { KycStatus, RiderAccountStatus, SERVICE_CORRIDOR, haversineKm } from "@l
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
+import { auditData } from "../admin/admin.shared";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingService } from "../tracking/tracking.service";
 
 type Kyc = "pending" | "verified" | "failed";
 
@@ -66,6 +68,7 @@ export class RiderService {
     @Inject(ENV) private readonly env: Env,
     @Inject(KYC_VENDOR) private readonly vendor: KycVendor,
     private readonly pii: PiiCryptoService,
+    private readonly tracking: TrackingService,
   ) {}
 
   /**
@@ -246,6 +249,10 @@ export class RiderService {
       where: { profileId },
       data: { isOnline: online, lastHeartbeatAt: online ? new Date() : undefined },
     });
+    // Going offline explicitly: drop the rider from the geo index right away (the socket may stay
+    // connected, so we can't rely on the disconnect flush). Best-effort — PG's is_online is the
+    // authority for nearbyRiders; this just stops a now-offline rider lingering in GEOSEARCH results.
+    if (!online) await this.tracking.evictFromGeo(profileId);
     return { online };
   }
 
@@ -287,49 +294,65 @@ export class RiderService {
    * - `pending` is the plain backstop reset (no counter change).
    *
    * `locked` is returned so the console can reflect the terminal state immediately without re-reading.
+   *
+   * A-01: the decision and its audit row commit in ONE transaction (the KYC path was previously the sole
+   * console action whose audit row was a separate, non-atomic POST — a failed decision could leave an
+   * audit row for a decision that never took effect). `actor` is the forwarded operator; `note` is the
+   * optional ConfirmModal free-text.
    */
   async adminSetKyc(
     profileId: string,
     status: Kyc,
     reasonCode?: string | null,
+    actor?: string,
+    note?: string | null,
   ): Promise<{ profileId: string; kycStatus: Kyc; kycAttempts: number; locked: boolean }> {
-    const rider = await this.prisma.rider.findUnique({
-      where: { profileId },
-      select: { profileId: true, kycAttempts: true },
-    });
-    if (!rider) throw new NotFoundException("Rider not found");
+    // verified → approve, failed → decline, pending → reset (matches the ConfirmModal action names).
+    const action =
+      status === "verified" ? "rider.kyc_approve" : status === "failed" ? "rider.kyc_decline" : "rider.kyc_reset";
 
-    if (status === "failed") {
-      // Decline: record the reason and bump the attempt counter. The increment is the lock's source of
-      // truth — a second decline lands at >= 2 and retryKyc refuses to mint a third session.
-      const updated = await this.prisma.rider.update({
+    return this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findUnique({
         where: { profileId },
-        data: {
-          kycStatus: "failed",
-          idVerified: false,
-          kycDeclineReason: reasonCode ?? null,
-          kycAttempts: { increment: 1 },
-        },
-        select: { kycAttempts: true },
+        select: { profileId: true, kycAttempts: true },
       });
-      return {
-        profileId,
-        kycStatus: "failed",
-        kycAttempts: updated.kycAttempts,
-        locked: updated.kycAttempts >= 2,
-      };
-    }
+      if (!rider) throw new NotFoundException("Rider not found");
 
-    // Approve / pending reset: no counter change. Clearing the decline reason on approve keeps the
-    // rider app from showing a stale "you were declined for …" once they're verified.
-    await this.prisma.rider.update({
-      where: { profileId },
-      data: {
-        kycStatus: status,
-        idVerified: status === "verified",
-        ...(status === "verified" ? { kycDeclineReason: null } : {}),
-      },
+      let result: { profileId: string; kycStatus: Kyc; kycAttempts: number; locked: boolean };
+      if (status === "failed") {
+        // Decline: record the reason and bump the attempt counter. The increment is the lock's source of
+        // truth — a second decline lands at >= 2 and retryKyc refuses to mint a third session.
+        const updated = await tx.rider.update({
+          where: { profileId },
+          data: {
+            kycStatus: "failed",
+            idVerified: false,
+            kycDeclineReason: reasonCode ?? null,
+            kycAttempts: { increment: 1 },
+          },
+          select: { kycAttempts: true },
+        });
+        result = { profileId, kycStatus: "failed", kycAttempts: updated.kycAttempts, locked: updated.kycAttempts >= 2 };
+      } else {
+        // Approve / pending reset: no counter change. Clearing the decline reason on approve keeps the
+        // rider app from showing a stale "you were declined for …" once they're verified.
+        await tx.rider.update({
+          where: { profileId },
+          data: {
+            kycStatus: status,
+            idVerified: status === "verified",
+            ...(status === "verified" ? { kycDeclineReason: null } : {}),
+          },
+        });
+        result = { profileId, kycStatus: status, kycAttempts: rider.kycAttempts, locked: rider.kycAttempts >= 2 };
+      }
+
+      // Same transaction as the decision — never one without the other. `actor` is absent only in older
+      // callers/tests; skip the row then rather than attribute the action to no one.
+      if (actor) {
+        await tx.auditLog.create({ data: auditData(actor, action, profileId, reasonCode ?? null, note ?? null) });
+      }
+      return result;
     });
-    return { profileId, kycStatus: status, kycAttempts: rider.kycAttempts, locked: rider.kycAttempts >= 2 };
   }
 }

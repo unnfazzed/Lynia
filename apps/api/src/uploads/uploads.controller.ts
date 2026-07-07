@@ -13,6 +13,9 @@ const EXT: Record<z.infer<typeof KycPhotoUpload>["contentType"], string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
 };
+// Cap a KYC/profile photo at 8 MiB — well above a phone-camera JPEG/PNG, far below storage-abuse/DoS
+// territory. Bound into the signed URL so the object store rejects anything larger, not just the client.
+const MAX_KYC_PHOTO_BYTES = 8 * 1024 * 1024;
 
 @Controller("uploads")
 @UseGuards(JwtAuthGuard)
@@ -29,9 +32,18 @@ export class UploadsController {
   async kycPhoto(
     @Body(new ZodBody(KycPhotoUpload)) body: z.infer<typeof KycPhotoUpload>,
     @CurrentUser() userId: string,
-  ): Promise<{ uploadUrl: string; key: string }> {
+  ): Promise<{ uploadUrl: string; key: string; headers: Record<string, string> }> {
     const key = `kyc/${userId}/${randomUUID()}.${EXT[body.contentType]}`;
-    const target = await this.storage.createUploadUrl(key, body.contentType, 600);
-    return { uploadUrl: target.url, key: target.key };
+    const target = await this.storage.createUploadUrl(key, body.contentType, 600, MAX_KYC_PHOTO_BYTES);
+    return {
+      uploadUrl: target.url,
+      key: target.key,
+      // The signed URL binds BOTH the content-type and a size range, so the PUT must send these exact
+      // headers or the V4 signature won't match. Returned so the client stays decoupled from the cap.
+      headers: {
+        "Content-Type": body.contentType,
+        "X-Goog-Content-Length-Range": `0,${MAX_KYC_PHOTO_BYTES}`,
+      },
+    };
   }
 }

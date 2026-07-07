@@ -33,7 +33,12 @@ export class GcsStorage implements StorageAdapter {
     return "gcp";
   }
 
-  async createUploadUrl(key: string, contentType: string, expiresInSeconds = 900): Promise<UploadTarget> {
+  async createUploadUrl(
+    key: string,
+    contentType: string,
+    expiresInSeconds = 900,
+    maxBytes?: number,
+  ): Promise<UploadTarget> {
     const [url] = await this.storage
       .bucket(this.bucket)
       .file(key)
@@ -43,6 +48,10 @@ export class GcsStorage implements StorageAdapter {
         // The client MUST send this exact Content-Type on the PUT, or the signature won't match.
         contentType,
         expires: Date.now() + expiresInSeconds * 1000,
+        // Bind an upper size bound into the signature: the client echoes this exact
+        // `X-Goog-Content-Length-Range` header on the PUT and GCS rejects any object outside [0,
+        // maxBytes], so a signed photo URL can't be reused to store an arbitrary multi-GB object.
+        ...(maxBytes != null ? { extensionHeaders: { "x-goog-content-length-range": `0,${maxBytes}` } } : {}),
       });
     return { url, key };
   }

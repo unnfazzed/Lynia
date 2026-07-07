@@ -11,11 +11,28 @@
  * `adminFetch` keeps the legacy `T | null` shape (data or absent) for callers that don't need the
  * reason; it is a thin wrapper over `adminFetchResult`.
  */
+import { headers } from "next/headers";
+
 const base = (): string | undefined => process.env.API_BASE_URL;
-const authHeaders = (): Record<string, string> => {
+
+/**
+ * Bearer the shared admin token, PLUS forward the real human operator the fail-closed console
+ * middleware asserted (via IAP) as `x-lynia-operator`, re-emitted here as `X-Operator`. The API's
+ * admin routes attribute the audit row to that operator instead of the shared token's subject — so the
+ * trail says which human suspended/banned/refunded, not just "the console". Best-effort: absent on the
+ * offline/demo path or outside a request scope, where the API falls back to the token subject.
+ */
+async function authHeaders(): Promise<Record<string, string>> {
   const token = process.env.ADMIN_API_TOKEN;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
+  const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  try {
+    const operator = (await headers()).get("x-lynia-operator");
+    if (operator) h["X-Operator"] = operator;
+  } catch {
+    /* not in a request scope (e.g. build-time) — no operator to forward */
+  }
+  return h;
+}
 
 export type AdminReason = "unconfigured" | "unreachable" | "not-implemented" | "error";
 export type AdminResult<T> = { data: T } | { reason: AdminReason };
@@ -24,7 +41,7 @@ export async function adminFetchResult<T>(path: string): Promise<AdminResult<T>>
   const b = base();
   if (!b) return { reason: "unconfigured" };
   try {
-    const res = await fetch(`${b}${path}`, { headers: authHeaders(), cache: "no-store" });
+    const res = await fetch(`${b}${path}`, { headers: await authHeaders(), cache: "no-store" });
     if (res.status === 404) return { reason: "not-implemented" };
     if (!res.ok) return { reason: "error" };
     return { data: (await res.json()) as T };
@@ -57,7 +74,7 @@ export async function adminPostResult(path: string, body: unknown): Promise<Admi
   try {
     const res = await fetch(`${b}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       cache: "no-store",
       body: JSON.stringify(body),
     });
