@@ -81,8 +81,10 @@ so nothing typechecks or runs until shared is built.
 
 `.env.example` is pre-wired for the compose stack — `DATABASE_URL` and `REDIS_URL` already point at
 `localhost`, `CLOUD_PROVIDER=gcp`, `PUSH_PROVIDER=noop` (logs instead of sending), `KYC_PROVIDER=stub`
-(auto-passes, no Didit account), and `OTP_CHANNEL` can be set to `console` to print codes to the log.
-**You need no cloud account and no external vendor keys to run the full flow locally.**
+(auto-passes, no Didit account). The shipped `OTP_CHANNEL` default is `whatsapp`, which needs a real
+Meta Cloud API vendor key — for local dev, follow `.env.example`'s own "Local dev quickstart (no
+cloud)" block and set `OTP_CHANNEL=console` to print codes to the log instead. **With that one
+override, you need no cloud account and no external vendor keys to run the full flow locally.**
 
 ---
 
@@ -164,12 +166,13 @@ graph LR
 
 ## 5. What CI checks
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every PR and push to `main`, in two jobs:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every PR and push to `main`, in three jobs:
 
 | Job | What it does |
 |---|---|
-| **build** | `pnpm install` → build `@lynia/shared` → `prisma:generate` → `typecheck` → `build` → API `test` → mobile `test` (`@lynia/mobile`), across all workspaces. |
+| **build** | `pnpm install` → build `@lynia/shared` → `prisma:generate` → `typecheck` → `lint` → `build` → API `test` → mobile `test` (`@lynia/mobile`), across all workspaces. |
 | **schema** | Spins up a **real PostGIS service**, runs `migrate:deploy`, **asserts the offer-loop constraints actually applied** — `one_active_ride`, the GiST geo index, and the hashed delivery OTP — then runs the offer-loop concurrency integration tests (`test:int`). |
+| **security** | Runs `pnpm audit` and a gitleaks secret scan. |
 
 The schema job is the important one to understand: the correctness of the offer loop rests on those DB
 constraints ([ARCHITECTURE §13](docs/ARCHITECTURE.md#13-concurrency-safety-model)), so CI proves they

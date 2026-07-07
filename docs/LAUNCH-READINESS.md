@@ -79,7 +79,7 @@ residual risk is concentrated:
 | LR15 | Perf | Cost model at 1× / 5× / 20× envelope | agent | ⬜ |
 | LR16 | UI | On-device `/qa`: dev build, maps, FCM, GPS degradation, bg/resume | founder (device) + agent | 🛠️ device checklist authored (`docs/QA-DEVICE-CHECKLIST.md`); needs hardware |
 | LR17 | UI | Real-network pass: low-end Android, 3G/EDGE, offline honesty | founder (device) + agent | 🛠️ checklist authored; needs a low-end device + throttled network |
-| LR18 | UI | Journey audits ×3 (customer / rider / admin) — error-state honesty | agent | 🛠️ mobile auction + rider-job honest error+retry **shipped**; admin dead-refund-write flagged |
+| LR18 | UI | Journey audits ×3 (customer / rider / admin) — error-state honesty | agent | ✅ mobile auction + rider-job honest error+retry **shipped**; admin dead-refund-write **resolved** — copy made honest, netting explicitly deferred (`69813bf`) |
 | LR19 | UI | Design-system adherence + accessibility (TalkBack, scaling, AA) | agent + device | ⬜ |
 | LR20 | UI | Crash telemetry + store readiness (listing, privacy, data-safety) | agent + founder | 🛠️ Sentry wiring runbook + store/privacy checklist authored; founder executes on the dev build |
 | LR21 | All | Go/no-go: QA off, vendors on, one clean end-to-end real delivery | founder | ⬜ |
@@ -99,8 +99,11 @@ specs with **no HTTP-level e2e layer**, so guard *wiring* (vs guard *logic*) is 
   order-state gate (§5d reveal window), rate limit} — from the code, not the docs. Then attack it:
   IDOR on every `:id` param, role escalation, state-gate bypass, WS room-join spoofing
   (`tracking.gateway.ts` handshake + room names), admin mutation reachability.
-- **Build:** a **supertest-based HTTP e2e suite** (`apps/api/test/e2e/`) asserting 401/403/404 for
-  every cell of the matrix — this is the missing test layer, and it makes the matrix regression-proof.
+- **Build:** a **supertest-based HTTP e2e suite** (colocated per module, e.g.
+  `apps/api/src/orders/orders-authz.e2e.spec.ts`, `offers/offers-authz.e2e.spec.ts`,
+  `admin/admin-authz.e2e.spec.ts`, `auth/logout-authz.e2e.spec.ts`, sharing helpers from
+  `common/testing/authz-e2e.ts`) asserting 401/403/404 for every cell of the matrix — this is the
+  missing test layer, and it makes the matrix regression-proof.
 - **Exit test:** matrix doc appended to `ENG-REVIEW.md`; e2e suite in CI; zero CONFIRMED authz
   findings open.
 
@@ -110,13 +113,13 @@ The QA bypasses are opt-in and documented (`PILOT-READINESS.md` §QA), but "laun
 four repo variables" is a human-memory gate on an account-takeover-adjacent surface
 (`OTP_TEST_PHONES` returns codes in responses; `KYC_PROVIDER=stub` auto-verifies riders).
 
-- **Do:** add `LAUNCH_MODE=true` to `config/env.ts` — when set, **boot fails** if `OTP_CHANNEL !==
-  "whatsapp"/"sms"`, `KYC_PROVIDER !== "didit"`, `PUSH_PROVIDER !== "fcm"`, `OTP_TEST_PHONES` is
-  non-empty, or `JWT_SIGNING_SECRET` is the dev default. Mirror as a fail-fast check in
-  `release.yml`'s validate step (the LR-gate version of the existing "Validate required deploy
-  config").
-- **Exit test:** unit tests for every refusal combination; a staging deploy with `LAUNCH_MODE=true` +
-  a QA var provably fails to boot.
+- **Superseded:** a standalone `LAUNCH_MODE` flag was never built — `grep`ing the repo for it only
+  hits this doc. Instead, the same guarantee landed directly in `config/env.ts`'s production
+  `superRefine` (lines 137-177): boot fails in production on a weak/default `JWT_SIGNING_SECRET` or
+  `TOKEN_HASH_SECRET`, `OTP_CHANNEL=console`, a non-empty `OTP_TEST_PHONES`, or `KYC_PROVIDER=stub`
+  with `KYC_MODE=auto` — no separate opt-in flag to remember.
+- **Exit test:** unit tests for every refusal combination exist (`env.spec.ts`); the gate is always
+  live in production, not conditional on a flag being set.
 
 ### LR3 — Abuse hardening beyond OTP
 
@@ -137,26 +140,28 @@ internals), and no explicit body-size caps.
 - **Do:** secret-scan the full git history; `pnpm audit` + lockfile review (pin/upgrade criticals);
   verify the WIF/keyless posture end-to-end (no lingering SA keys, `wif.tf` scope still
   `unnfazzed/Lynia`); **enable branch protection** on `main` (required CI checks, required review —
-  closes the ENG-REVIEW §2c red-merge class); add a lint job to CI (typecheck is currently the only
-  static gate; `packages/design/_adherence.oxlintrc.json` suggests oxlint is already in the family).
+  closes the ENG-REVIEW §2c red-merge class). ~~add a lint job to CI~~ — done: `ci.yml`'s `build`
+  job now runs `pnpm run lint` (oxlint) alongside typecheck.
 - **Exit test:** scan/audit reports clean or triaged in `ENG-REVIEW.md`; a test PR demonstrably
   cannot merge red or unreviewed.
 
-### LR5 — Money-path re-audit + the missing scheduler
+### LR5 — Money-path re-audit under the prepaid model
 
-Settlements are idempotent-by-design (`@@unique([riderId, periodStart])`, never-reset-actioned-status)
-but two seams need closing before money matters:
+The old weekly cash-settlement engine (auto-pause scheduler, per-period generate-on-read) has been
+**replaced** by the prepaid per-ride commission model (`main`): `GET /admin/cash/settlements` now
+calls `SettlementsService.commissionOverview()`, a pure read over the last 7 days of completed
+orders — no `Settlement` rows are written or read, so there is nothing left to schedule or
+regenerate. The `auto-pause` endpoint no longer exists (`admin.controller.ts` explicitly notes it was
+removed with the old engine); the `Settlement` Prisma model itself is now unreferenced in
+`apps/api/src` — dormant schema debt.
 
-- **Auto-pause has no scheduler** — `POST /admin/cash/settlements/auto-pause` is callable-only. Wire
-  Cloud Scheduler → the endpoint (OIDC-authed) or a BullMQ repeatable job; overdue riders must pause
-  without a human remembering.
-- **`GET /admin/cash/settlements` regenerates the period on every read** — fine at pilot rider
-  counts, a write-amplifying read at scale; move generation to the scheduled job, make the read a
-  read.
-- **Re-audit** the engine (`settlements.service.ts`) adversarially: concurrent
-  generate/record-payment, week-boundary/timezone edges, the documented `refundsNetted = 0` deferral
-  (confirm it stays safe-by-construction until the refund ledger exists), commission flip at the
-  0%→X% trigger.
+- **Re-audit** the new engine (`settlements.service.ts`) adversarially: the per-ride (not
+  per-rounded-aggregate) commission summation, the 7-day UTC window's day-boundary math, and the
+  `refundsNetted = 0` deferral (confirm it stays safe-by-construction until the prepaid wallet and
+  refund ledger exist — see `docs/plans/2026-biker-prepaid-commission.md`), plus the commission flip
+  at the 0%→X% trigger.
+- **Decide** whether the dormant `Settlement` model/migration should be dropped or kept for the
+  future prepaid-wallet build, so it doesn't linger as unexplained schema surface.
 - **Exit test:** scheduler observed firing in staging; concurrency tests added; findings closed in
   `ENG-REVIEW.md`.
 
@@ -435,7 +440,7 @@ P-enable → P-prove (staging + collector before any measurement) and the dev-bu
 | **1 — Audit fan-out** (parallel) | E-audit + U-audit + LR8 lanes run; findings verified adversarially | LR1/3/4/5/8/18/19 findings |
 | **2 — Fix lanes** (parallel worktrees) | CONFIRMED findings fixed with tests; LR2 boot guard; LR5 scheduler; LR20 crash telemetry; each PR through `/review`+`/codex` | LR1–LR5, LR18–LR20 |
 | **3 — Proof** | Load/contention/soak/storm runs (LR11–LR13) · chaos drills (LR6) · infra hardening applied + restore drill (LR7) · on-device `/qa` + real-network pass (LR16/LR17) · ceilings + cost committed (LR14/LR15) | LR6/7/11–17 |
-| **4 — Launch gate** | QA vars cleared + `LAUNCH_MODE=true` · vendor flags on (founder runbook) · go/no-go checklist in one sitting | LR21 |
+| **4 — Launch gate** | QA vars cleared (the always-on prod boot-guard then enforces LR2) · vendor flags on (founder runbook) · go/no-go checklist in one sitting | LR21 |
 
 Phases 1–3 overlap heavily; the phase boundary that is *hard* is 3→4 (no launch gate until every
 proof run is green).
@@ -445,7 +450,7 @@ proof run is green).
 - [ ] Scorecard LR1–LR20 all ✅ (each closed by its exit test, not by assertion).
 - [ ] `PILOT-READINESS.md` founder runbook complete: WhatsApp BSP live, real Didit ZIM-ID run done
       (false-reject rate recorded + acceptable), Firebase/FCM live.
-- [ ] QA vars cleared, `LAUNCH_MODE=true` deployed, boot green (LR2 guard passing *in prod config*).
+- [ ] QA vars cleared, boot green (LR2's always-on `config/env.ts` production guard passing *in prod config*).
 - [ ] One **real end-to-end delivery** on production: real phone signup (WhatsApp OTP) → real KYC'd
       rider → order → auction → select → live tracking → OTP hand-off → rate — while watching the
       LR9 dashboard.
@@ -506,6 +511,9 @@ but the endpoints bind `{reason}`/`{agreedFare}`/`{refundAmount}`:
   — nothing consumes them since the settlement rewrite went read-only, yet the console copy still
   promises "netted off the rider's next settlement." Either wire refund consumption or make the copy
   honest. **PII note:** national IDs are stored/compared in plaintext (duplicate-ID flag) — an LR8 item.
+  *(Resolved in `69813bf`: chose "make the copy honest" — the console now says refunds are repaid
+  out-of-band, with netting explicitly deferred until the commission/billing infra lands; the LR8 PII
+  note was separately resolved by `6a99729`'s AES-GCM encryption.)*
 
 **Verification (local, current `main` + this branch):** typecheck ✅ 5/5 · build ✅ · **API 496 tests**
 · **mobile 65 tests**.

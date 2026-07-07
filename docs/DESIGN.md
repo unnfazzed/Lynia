@@ -217,12 +217,12 @@ components; none needs a device to design.
 
 Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checklist instead of rediscovering:
 
-- **§5c 7-step stepper** is specced (customer + now rider) but **not built** in `app/order/[id].tsx` /
-  `app/rider/job.tsx` — both render plainer status lists today.
+- **§5c 7-step stepper** is specced (customer + now rider) and **built on the customer side**
+  (`app/order/[id].tsx` renders `Stepper`); `app/rider/job.tsx` still renders a plainer status list.
 - **Designed empty-states** (no-offers / no-riders, and the new rider ones) are **not all built**.
-- **API-contract fields with no UI:** `itemPhotoUrl`, `note` (create order); `comment` (rating);
-  `reason` (cancel) — all in `@lynia/shared` contracts, no field on screen. Either surface or consciously
-  defer per flow.
+- **API-contract fields with no UI:** `itemPhotoUrl` (create order); `comment` (rating); `reason`
+  (cancel) — all in `@lynia/shared` contracts, no field on screen. Either surface or consciously
+  defer per flow. (`note` now has a field on `home.tsx`.)
 - **Sign-out** lives on `home` today; spec moves it to **profile/settings**.
 
 ## Responsive & accessibility
@@ -246,7 +246,7 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 | DT2 | P1 | Two empty states (no-offers / no-riders) with warmth + primary action | ✅ done |
 | DT3 | P1 | Interaction-state coverage (loading/error/partial) for broadcast, offers, tracking, OTP | ✅ done (error states landed in the post-build review fixes) |
 | DT4 | P1 | Offer list best-match default sort + recommended marker (D-d) | ✅ done — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector (best/cheapest/fastest/top-rated) and a RECOMMENDED badge on the customer offer screen |
-| DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) | ◐ **partial** — the IA slice shipped (`home.tsx`: pins + item + price + Broadcast are the hero in a thumb-zone `BottomSheet`; landmarks/phones/declared-value collapse under "Add details", reduce-motion-aware). The full **single full-bleed map + draggable sheet + two-pin toggle** is spec'd below and deferred to the device-gated build (its drag/snap/keyboard physics + sunlight legibility are only tunable on-device). |
+| DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) | ◐ **partial** — the single full-bleed map + two-pin toggle has shipped (`home.tsx` uses `ComposeMap`, replacing the two separate `MapPicker`s); item + price + Broadcast are the hero in a thumb-zone `BottomSheet`, landmarks/phones/declared-value collapse under "Add details", reduce-motion-aware. The **draggable sheet** (drag/snap/keyboard physics) is spec'd below and still deferred to the device-gated build — sunlight legibility and gesture feel are only tunable on-device. |
 | DT6 | P2 | A11y + sunlight + data-light pass (targets, contrast, labels, tile caching) | ⬜ deferred (device-gated) |
 | DT7 | P2 | Run `/design-review` (visual QA) post-implementation | ⬜ deferred — needs a dev build |
 | DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` | ✅ done |
@@ -258,9 +258,10 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 
 ### DT5 — deferred full spec (single full-bleed map + draggable sheet)
 
-The shipped slice keeps the two `MapPicker`s and a static thumb-zone sheet. The device-gated build
-replaces that with the locked D-b design; build it on a device where the drag/snap/keyboard physics
-and sunlight legibility can actually be tuned (Eng + Design plan reviews, batch-3):
+The shipped slice already carries the single full-bleed `ComposeMap` and two-pin toggle described
+below; what's left is the static thumb-zone sheet becoming a draggable `MapSheet`. Build that on a
+device where the drag/snap/keyboard physics and sunlight legibility can actually be tuned (Eng +
+Design plan reviews, batch-3):
 
 - **Layers:** z0 full-bleed `MapView`; z1 top-left "Draft restored · Clear" chip + top-right "Use my
   location" pill on solid `bg` fills (sunlight-legible); z2 the bottom `MapSheet`.

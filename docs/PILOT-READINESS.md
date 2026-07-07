@@ -115,7 +115,7 @@ The prior checkpoint's blocking finding was that the loop stopped at `assigned`.
 | T3 | Order auto-close on rating deadlock | ❌ not built | ✅ **done** (rating + auto-close + reconciler) |
 | T4 | No-show / cancellation reputation + cooldown | ❌ not built | ✅ **done** |
 | T5 | API authorization (JWT-claim scoping) | ✅ | ✅ **hardened** (spoof holes closed) |
-| T6 | OTP auth (mint → send → verify → JWT) | ◐ partial | ◐ partial — **WhatsApp/SMS still stubbed (external)** |
+| T6 | OTP auth (mint → send → verify → JWT) | ◐ partial | ◐ partial — **WhatsApp send is implemented (Meta Cloud API), awaiting vendor account/template approval (external); SMS fallback is still stubbed** |
 | T7 | KYC + manual-review backstop | ✅ | ✅ |
 | T8 | Error/rescue for external calls | ◐ partial | ◐ partial |
 | T9 | Metrics instrumentation | ◐ partial | ◐ partial — **OTEL needs a collector (external)** |
@@ -343,7 +343,7 @@ never reach the public URL by accident.
 | Variable | Test value | Effect |
 |---|---|---|
 | `OTP_CHANNEL` | `console` | OTP codes logged, not sent via WhatsApp |
-| `OTP_TEST_PHONES` | your test numbers (comma-sep) | `POST /auth/otp` returns the code **in the response** — ONLY for these numbers |
+| `OTP_TEST_PHONES` | your test numbers (comma-sep) | `POST /auth/otp/request` returns the code **in the response** — ONLY for these numbers |
 | `KYC_PROVIDER` | `stub` | rider KYC **auto-verifies** (no Didit) so riders can go online |
 | `PUSH_PROVIDER` | `noop` | no Firebase needed; pushes logged, not sent |
 
@@ -372,7 +372,7 @@ it in GCP by package `zw.co.lynia` + the run's signing SHA-1, printed in the bui
 succeeds without them (blank map / inert push).
 
 ### Customer flow
-1. `POST /auth/otp {phone}` → response includes `devCode` (allowlisted number). `POST /auth/otp/verify
+1. `POST /auth/otp/request {phone}` → response includes `devCode` (allowlisted number). `POST /auth/otp/verify
    {phone, code}` → tokens.
 2. Complete profile → **create an order** (pickup/dropoff, item, suggested fare).
 3. From a **second (rider) account**, make an offer; back on the customer, **select** it.

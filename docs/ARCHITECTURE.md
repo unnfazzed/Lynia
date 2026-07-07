@@ -84,7 +84,7 @@ flowchart TB
             TRK["Tracking<br/>geo · access checks"]
             NOTIF["Notifications<br/>push + device tokens"]
             UP["Uploads<br/>signed URLs"]
-            ADM["Admin read API"]
+            ADM["Admin read + write API"]
         end
         subgraph SEAM["Cloud adapter seam (D7)"]
             direction LR
@@ -373,20 +373,28 @@ graph TB
         riders["RidersModule (E)<br/>onboarding · KYC"]
         notif["NotificationsModule<br/>push + device tokens"]
         uploads["UploadsModule<br/>signed URLs"]
-        admin["AdminModule (F)<br/>read API"]
+        admin["AdminModule (F)<br/>read + write API"]
         health["HealthModule"]
+    end
+
+    subgraph trustsafety["Trust & safety / privacy / settlements"]
+        issues["IssuesModule<br/>disputes"]
+        reports["ReportsModule<br/>report/block"]
+        sos["SosModule<br/>SOS"]
+        privacy["PrivacyModule<br/>retention/erasure"]
+        settlements["SettlementsModule<br/>commission overview (read-only)"]
     end
 
     auth --> prisma
     notif --> push & prisma
-    matching --> prisma & auth & notif
-    orders --> prisma & auth & tracking & notif
-    offers --> prisma & notif
+    matching --> prisma & auth & notif & tracking
+    orders --> prisma & auth & tracking & notif & matching
+    offers --> prisma & notif & tracking
     tracking --> prisma & auth
-    riders --> prisma & config
+    riders --> prisma & config & tracking
     uploads --> storage & auth
-    admin --> prisma & auth
-    matching -.->|schedules| orders
+    admin --> prisma & auth & tracking & settlements
+    matching -.->|expiry worker mutates order state| orders
 
     config -.-> features
     prisma -.-> features
@@ -402,6 +410,15 @@ Notable cross-module wiring:
   change fans out over WebSockets, plus `NotificationsService` for push — both best-effort.
 - **`OffersModule`** and **`MatchingModule`** are the two halves of the offer loop; both write the
   `orders`/`offers` tables under the same concurrency guards ([§13](#13-concurrency-safety-model)).
+- **`OrdersModule`** also has a real, synchronous DI edge on `MatchingModule` (`OrdersService` injects
+  `OfferExpiryService` to schedule/cancel the expiry job) — separate from the dashed edge above, which
+  represents the BullMQ expiry *worker* later mutating order state from inside `MatchingService`.
+- `AdminModule` performs real writes (rider suspend/lift/ban, order cancel/fare-adjust, audit-log
+  entries) — it is not a read-only API.
+- `IssuesModule`, `ReportsModule`, `SosModule` (trust & safety: disputes, report/block, SOS), and
+  `PrivacyModule` (data retention/erasure) round out the feature set; a global `PiiCryptoModule`
+  (national-ID encryption) and `ObservabilityModule`/`ClientMetricsModule` (metrics, §10 of
+  [`OBSERVABILITY.md`](OBSERVABILITY.md)) are cross-cutting infrastructure, not shown above.
 
 Bootstrap (`main.ts`) initializes OpenTelemetry **before** the Nest app (so HTTP is patched before
 the server starts), enables `rawBody` (needed to HMAC-verify the Didit webhook against the unparsed
@@ -428,9 +445,14 @@ erDiagram
     Profile ||--o{ Rating : "gives"
     Rider ||--o{ Order : "fulfils"
     Rider ||--o{ Offer : "makes"
+    Rider ||--o{ Settlement : "dormant (see note)"
     Order ||--o{ Offer : "receives"
     Order ||--o{ OrderEvent : "logs"
-    Order ||--o| Rating : "gets"
+    Order ||--o{ Rating : "gets (one per rater — two-way)"
+    Order ||--o{ Issue : "disputed via"
+    Order ||--o{ Report : "reported via"
+    Order ||--o{ SosEvent : "SOS raised on"
+    Order ||--o{ Refund : "refunded via"
     Merchant ||--o{ Order : "reserved"
 
     Profile {
@@ -447,6 +469,8 @@ erDiagram
         KycStatus kycStatus
         string kycRef UK
         datetime kycResolvedAt
+        int kycAttempts "resubmission counter (A-02)"
+        string kycDeclineReason
         bool isOnline
         datetime lastHeartbeatAt
         float currentLat
@@ -455,6 +479,11 @@ erDiagram
         int cancelStrikes
         datetime cooldownUntil
         float ratingAvg
+        RiderAccountStatus accountStatus "active/suspended/banned (A-04)"
+        string suspendReason
+        bool duplicateIdFlag "dup national-ID signal (A-04)"
+        int reliabilityScore "starts 100, decays/recovers (Q2)"
+        bool onHold "derived auto-gate, separate from accountStatus"
     }
     Order {
         uuid id PK
@@ -463,16 +492,27 @@ erDiagram
         OrderType orderType
         json pickup
         json dropoff
+        geography pickupGeog "generated column, GiST (migration 0006)"
         json items "line-items (migration 0008)"
+        json itemsCollected "per-item pickup confirmation"
         decimal suggestedFare
         decimal proposedFare
         decimal agreedFare
         string otpHash "hashed delivery code"
         int deliveryOtpAttempts
-        OrderStatus status
+        OrderStatus status "incl. undelivered terminal (§7)"
         datetime confirmedAt
         datetime deliveredAt
         datetime completedAt
+        datetime cancelledAt
+        uuid cancelledBy FK "nullable, SET NULL on profile delete"
+        string cancelReason
+        string undeliveredReason
+        datetime undeliveredAt
+        int deliveryAttempts
+        string disclaimerVersion "pre-broadcast liability consent (A1-8)"
+        datetime disclaimerAcceptedAt
+        uuid rebroadcastOfId "lineage pointer, rider-cancel auto-rebroadcast (F-01)"
     }
     Offer {
         uuid id PK
@@ -493,9 +533,53 @@ erDiagram
     }
     Rating {
         uuid id PK
-        uuid orderId UK
+        uuid orderId FK
         uuid byProfileId FK
         int score
+        string comment
+    }
+    Issue {
+        uuid id PK
+        uuid orderId
+        uuid openedByProfileId
+        Role openedByRole
+        IssueType type
+        IssueStatus status
+        IssueResolution resolution
+        uuid resolvedByAdminId
+    }
+    Report {
+        uuid id PK
+        uuid orderId "nullable"
+        uuid reporterProfileId
+        uuid subjectProfileId
+        ReportReason reason
+    }
+    Block {
+        uuid id PK
+        uuid blockerProfileId
+        uuid blockedProfileId
+    }
+    SosEvent {
+        uuid id PK
+        uuid orderId
+        uuid raisedByProfileId
+        Role raisedByRole
+        datetime acknowledgedAt
+    }
+    Refund {
+        uuid id PK
+        uuid orderId
+        uuid riderId
+        decimal amount
+        string settlementId "nullable — dormant, netting deferred (LR18)"
+    }
+    AuditLog {
+        uuid id PK
+        string actor "admin profile id, plain column"
+        string action
+        string target
+        string reasonCode
     }
     Session {
         uuid id PK
@@ -512,12 +596,21 @@ erDiagram
     }
 ```
 
+`Settlement` is **dormant**: it backed the old weekly cash-settlement engine, which prepaid
+per-ride commission ([`PRICING.md`](PRICING.md), `SettlementsService.commissionOverview`) replaced.
+Nothing reads or writes it today; it's left in place to avoid a destructive migration and may be
+dropped or repurposed for the future prepaid wallet. `Issue`/`Report`/`Block`/`SosEvent`/`AuditLog`
+back the trust-and-safety surface (`IssuesModule`/`ReportsModule`/`SosModule`) — `Issue`/`Report`/
+`SosEvent`/`Refund` reference `orderId` as a plain column (no FK), by design, so the row survives a
+profile delete for the audit trail.
+
 Load-bearing schema invariants (all enforced in the database, not just app code):
 
 | Constraint | What it guarantees |
 |---|---|
 | `one_active_ride` — partial-unique index on `orders(rider_id)` over active statuses | A rider can be on **at most one active ride** at a time. The DB rejects a double-assign even under a race (ET2). |
 | `offers` unique `(order_id, rider_id)` | **One offer per rider per order** — the "one round" rule as a constraint (ET7). |
+| `ratings` unique `(order_id, by_profile_id)` | **One rating per order per rater** — enables two-way (customer↔rider) rating on the same order (migration 0015, widened from a single-row `order_id` unique). |
 | `riders_geog_gist` — GiST on `geog geography(Point,4326)` | Fast nearby-rider radius search via `ST_DWithin` (ET6). |
 | `orders.otp_hash` (never plaintext) + `delivery_otp_attempts` | Delivery handover code is stored only as an HMAC hash, with a 5-attempt cap (ET7). |
 | `sessions.refreshTokenHash` (hashed) + `revokedAt` | Server-owned sessions → real revoke/logout/ban (ET5). |
@@ -590,8 +683,7 @@ duplicate tap or a concurrent call can never skip or repeat a step. `delivered` 
 
 ```mermaid
 stateDiagram-v2
-    [*] --> requested
-    requested --> open_for_offers : broadcast
+    [*] --> open_for_offers : broadcast
     open_for_offers --> assigned : select (guarded CAS)
     open_for_offers --> expired : offer window elapses
 
@@ -605,15 +697,19 @@ stateDiagram-v2
     delivered --> completed : auto-close after rating window
 
     assigned --> cancelled : either party
-    confirmed --> cancelled
-    en_route_pickup --> cancelled
-    picked_up --> cancelled : rider only
-    en_route_dropoff --> cancelled : rider only
+    confirmed --> cancelled : either party
+    en_route_pickup --> cancelled : either party
+    picked_up --> cancelled : customer only
+    en_route_dropoff --> cancelled : customer only
     open_for_offers --> cancelled : customer
+
+    picked_up --> undelivered : rider could not complete hand-off
+    en_route_dropoff --> undelivered : rider could not complete hand-off
 
     completed --> [*]
     cancelled --> [*]
     expired --> [*]
+    undelivered --> [*]
 ```
 
 Rules encoded around the transitions:
@@ -622,9 +718,14 @@ Rules encoded around the transitions:
   gate, the constant-time hash compare, and the increment are point-in-time consistent — no
   concurrent-guess bypass of the 5-attempt cap. A wrong code is **committed** (the increment
   persists); only the error path rolls back. After a lockout the customer can `rotate` a fresh code.
-- **Cancellation windows** differ by party: a customer may cancel up to `en_route_pickup` (before the
-  parcel is collected); a rider may cancel any time before `delivered`. A **rider cancel is a
-  no-show strike** — every 3rd strike forces the rider offline on a 2-hour cooldown (T4).
+- **Cancellation windows are asymmetric, and not the way you'd guess**: the **customer** may cancel at
+  any live status, including after pickup (`picked_up`/`en_route_dropoff`); the **rider** is blocked
+  from cancelling from `picked_up` onward — once the parcel is collected a rider who can't complete
+  the hand-off must use the separate **`undelivered`** terminal status instead of `cancelled`
+  (`POST /orders/:id/undelivered`). This is deliberate (see `CUSTOMER_CANCELLABLE_STATUSES` /
+  `RIDER_CANCELLABLE_STATUSES` in `packages/shared/src/enums.ts`): a rider "cancel" after pickup would
+  strand a collected parcel, whereas `undelivered` carries its own resolution path. A **rider cancel is
+  a no-show strike** — every 3rd strike forces the rider offline on a 2-hour cooldown (T4).
 - **Rating closes the order** and updates the rider's running `ratingAvg`/`ratingCount`/`tripsCount`
   in the same transaction. If the customer never rates, the auto-close backstop still completes the
   order so metrics don't stall ([§14](#14-background-jobs--self-healing)).
@@ -841,23 +942,21 @@ graph TB
     subgraph domain["Business logic (cloud-agnostic)"]
         up["UploadsController"]
         notif["NotificationsService"]
-        cfg["config / boot"]
     end
 
     subgraph seams["Adapter interfaces"]
         si["StorageAdapter"]
         pi["PushAdapter"]
-        sec["SecretsAdapter"]
+        sec["SecretsProvider"]
     end
 
     up --> si
     notif --> pi
-    cfg --> sec
 
     si --> gcs["GcsStorage ✅ live"]
     pi --> fcm["FcmPush ✅"]
     pi --> noop["NoopPush (dev/test)"]
-    sec --> envsec["EnvSecrets ✅"]
+    sec --> envsec["EnvSecrets ✅ (registered, unconsumed)"]
 
     classDef live fill:#bbf7d0,stroke:#15803d,color:#111;
     class gcs,fcm,envsec live;
@@ -867,10 +966,14 @@ graph TB
 |---|---|---|---|
 | Storage | `StorageAdapter` (`createUploadUrl`, `createReadUrl`) | `GcsStorage` | `CLOUD_PROVIDER` |
 | Push | `PushAdapter` (`sendEach`, batched ≤500) | `FcmPush`, `NoopPush` | `PUSH_PROVIDER` |
-| Secrets | `SecretsAdapter` | `EnvSecrets` (secrets injected as env at deploy) | — |
+| Secrets | `SecretsProvider` | `EnvSecrets` (secrets injected as env at deploy) | — |
 
 Because secrets arrive as **env vars injected at deploy** rather than through a managed-identity SDK,
-there is no cloud-specific secret-fetch code in the app at all — the most subtle lock-in avoided.
+there is no cloud-specific secret-fetch code in the app at all — the most subtle lock-in avoided. In
+practice this means **nothing currently injects `SecretsProvider`**: `ConfigModule` reads env directly
+via `loadEnv()`/zod (`config/env.ts`), bypassing the adapter entirely. The module and its `EnvSecrets`
+impl exist and are registered, but the seam is unwired — worth revisiting when a second cloud/secret
+backend is actually on the table.
 
 ---
 
@@ -1011,7 +1114,10 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | `POST /auth/refresh` | Auth | Rotate refresh token → new session |
 | `POST /auth/logout` | Auth | Revoke the current session |
 | `GET /auth/me` | Auth | Authenticated profile (+ rider record) |
+| `PATCH /auth/me` | Auth | Post-OTP name entry (C12) |
+| `DELETE /auth/me` | Privacy | Account erasure request |
 | `POST /orders` | Orders | Create a delivery, name a price → `open_for_offers` |
+| `POST /orders/disclaimer` | Orders | Record pre-broadcast liability disclaimer consent (A1-8) |
 | `GET /orders/open` | Orders | Open orders a rider can bid on |
 | `GET /orders/mine/active` | Orders | Caller's active order |
 | `GET /orders/history` | Orders | Caller's past orders |
@@ -1020,24 +1126,47 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | `GET /orders/:id/offers` | Offers | Pending offers for the customer's list |
 | `POST /orders/:id/offers/:offerId/select` | Matching | Customer selects → guarded assign |
 | `POST /orders/:id/status` | Lifecycle | Rider advances one forward step |
+| `POST /orders/:id/items/confirm` | Lifecycle | Rider confirms per-item pickup checklist |
 | `POST /orders/:id/deliver` | Lifecycle | Rider submits delivery OTP → `delivered` |
+| `POST /orders/:id/undelivered` | Lifecycle | Rider marks a failed hand-off (terminal, post-pickup) |
 | `POST /orders/:id/rating` | Lifecycle | Customer rates → `completed` |
+| `POST /orders/:id/sender-rating` | Lifecycle | Rider rates the customer ("rate the sender") |
 | `POST /orders/:id/delivery-code/rotate` | Lifecycle | Customer re-issues delivery code |
-| `POST /orders/:id/cancel` | Lifecycle | Either party cancels (rider = strike) |
+| `POST /orders/:id/cancel` | Lifecycle | Cancel — customer any live status, rider only up to `en_route_pickup` (§7) |
+| `POST /orders/:orderId/issues` | Issues | Open a dispute on an order |
+| `POST /orders/:orderId/report` | Reports | Report the other party on an order |
+| `POST /orders/:orderId/sos` | SOS | Raise an SOS on a live trip |
 | `PATCH /riders/profile` | Riders | Complete signup (name + national ID) |
 | `POST /riders/become` | Riders | Upgrade to rider; start KYC |
 | `POST /riders/kyc/retry` | Riders | Re-run KYC (pending/failed) |
 | `PATCH /riders/online` | Riders | Go online/offline (gated on KYC + cooldown) |
 | `GET /riders/nearby` | Tracking | Nearby online riders (PostGIS radius) |
 | `POST /uploads/kyc-photo` | Uploads | Mint a signed PUT URL for a photo |
+| `GET /notifications/feed` | Notifications | Caller's notification feed |
 | `POST /notifications/device-token` | Notifications | Register an FCM device token |
 | `DELETE /notifications/device-token` | Notifications | Drop a device token |
 | `POST /kyc/callback` | KYC | Didit HMAC-signed webhook |
 | `POST /admin/riders/:id/kyc` | KYC | Admin KYC override (manual backstop) |
 | `GET /admin/overview` | Admin | Dashboard counts |
 | `GET /admin/riders` | Admin | Rider list for the console |
+| `GET /admin/riders/:id` | Admin | Rider detail |
+| `GET /admin/riders/:id/kyc` | Admin | KYC review detail |
 | `GET /admin/orders` | Admin | Order list for the console |
+| `GET /admin/orders/:id` | Admin | Order detail |
+| `GET /admin/customers` | Admin | Customer list for the console |
+| `GET /admin/customers/:id` | Admin | Customer detail |
+| `POST /admin/audit-actions` | Admin | Record an admin audit-log entry |
+| `POST /admin/riders/:id/suspend` | Admin | Suspend a rider (A-04) |
+| `POST /admin/riders/:id/lift` | Admin | Lift a suspension |
+| `POST /admin/riders/:id/ban` | Admin | Ban a rider |
+| `POST /admin/orders/:id/cancel` | Admin | Admin-initiated order cancel |
+| `POST /admin/orders/:id/fare` | Admin | Admin fare adjustment |
+| `GET /admin/cash/settlements` | Admin | Commission overview (read-only, prepaid model — §5) |
+| `POST /admin/retention/purge` | Privacy | Daily GPS/session retention sweep (LR8, `DATA-RETENTION.md`) |
 | `GET /healthz` | Health | Liveness (`{status, db, redis}`) |
+
+`AdminModule` is a **read + write** API — several of the routes above are destructive, audit-logged
+mutations, not just dashboard reads.
 
 ### WebSocket (Socket.IO)
 
@@ -1051,6 +1180,11 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | server → client | `order:status { orderId, status, at }` | Order status changed |
 | server → client | `offers:changed { orderId, at }` | The order's offer set changed — signal only (no rider PII); the customer refetches the offer list |
 | server → client | `board:new-order { … }` | A new open order pushed to the rider board — redacted (point + landmark, never `contactPhone`) |
+| server → client | `bid:expired { orderId, … }` | An offer window elapsed |
+| server → client | `order:taken { orderId, … }` | An open order was assigned to another rider — drop it from the board |
+| server → client | `job:cancelled { orderId, … }` | The rider's active job was cancelled |
+| server → client | `presence:stale { riderId, … }` | A tracked rider's heartbeat went stale |
+| server → client | `order:rebroadcast { orderId, rebroadcastOfId, … }` | A rider-cancel auto-rebroadcast created a replacement order (F-01) |
 
 ---
 
