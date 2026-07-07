@@ -202,6 +202,8 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync("lynia.savedPlaces.recents"),
       SecureStore.deleteItemAsync("lynia.savedPlaces.saved"),
       SecureStore.deleteItemAsync("lynia.savedRecipients.v1"),
+      // The cached trips list (holds this user's route landmarks) must not paint for the next user.
+      SecureStore.deleteItemAsync("lynia.history.snapshot.v1"),
       ...codes.map((id) => SecureStore.deleteItemAsync(codeKey(id))),
     ]);
   } catch {

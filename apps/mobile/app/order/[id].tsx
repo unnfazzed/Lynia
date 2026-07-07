@@ -8,6 +8,7 @@ import { etaHeadline, liveEta } from "../../src/logic/eta";
 import { isPendingCounter, shouldShowOffersError } from "../../src/logic/journey";
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
+import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
@@ -16,7 +17,7 @@ import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Avatar, Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Avatar, Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub, useToast } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
@@ -43,6 +44,7 @@ export default function OrderScreen(): React.ReactElement {
   const qc = useQueryClient();
   const router = useRouter();
   const reduceMotion = useReduceMotion();
+  const toast = useToast();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("best");
   // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
@@ -131,6 +133,9 @@ export default function OrderScreen(): React.ReactElement {
   // F-01: on a rider bail the server re-broadcasts a NEW order and pushes `order:rebroadcast` here;
   // move the customer to the fresh auction (replace, so the dead cancelled order isn't in the stack).
   const { connected } = useOrderSocket(socketExpected ? orderId : null, (newOrderId) => {
+    // The assigned rider bailed and we auto-re-broadcast at the same price — without a word the customer
+    // just gets teleported to a "finding riders" screen. A toast explains the sudden change of screen.
+    toast.show("Your rider dropped off — we've re-broadcast your parcel to nearby riders.", "warning");
     router.replace(`/order/${newOrderId}`);
   });
   // "Reconnecting" only reads truthfully after we've been live once — the initial connect window
@@ -168,8 +173,12 @@ export default function OrderScreen(): React.ReactElement {
     const prev = prevStatus.current;
     if (status && prev && status !== prev && (status === "assigned" || status === "delivered")) {
       haptic("success");
+      // Name the transition — the offer list collapses into the tracking view, so a toast confirms what
+      // just happened rather than leaving the change of layout unexplained.
+      if (status === "assigned") toast.show("You're matched — tracking your rider now.", "success");
     }
     prevStatus.current = status;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on status transition only; toast is stable.
   }, [status]);
 
   // --- Auction countdown ---
@@ -395,16 +404,12 @@ export default function OrderScreen(): React.ReactElement {
   const rebroadcast = (): void =>
     router.replace({
       pathname: "/home",
-      params: {
-        rbPickupLat: String(order.pickup.point.lat),
-        rbPickupLng: String(order.pickup.point.lng),
-        rbPickupLandmark: order.pickup.landmark ?? "",
-        rbDropLat: String(order.dropoff.point.lat),
-        rbDropLng: String(order.dropoff.point.lng),
-        rbDropLandmark: order.dropoff.landmark ?? "",
-        rbItems: JSON.stringify(order.items ?? []),
-        rbFare: String(order.proposedFare ?? ""),
-      },
+      params: buildRebroadcastParams({
+        pickup: order.pickup,
+        dropoff: order.dropoff,
+        items: order.items,
+        proposedFare: order.proposedFare,
+      }),
     });
 
   return (
