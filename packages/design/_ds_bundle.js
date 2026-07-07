@@ -1427,7 +1427,7 @@ node("home_expanded", 4, B.B1, "1·5", "Home · sheet expanded", {
   c: "Broadcast request"
 });
 node("disclaimer", 5, B.B1, "1·6", "Broadcast disclaimer", {
-  p: "Accept-to-continue gate: sending is at your own risk, Lynia isn't liable for non-delivery, and isn't involved in payment or disputes. Consent recorded.",
+  p: "Accept-to-continue gate: sending is at your own risk, LyniaGo isn't liable for non-delivery, and isn't involved in payment or disputes. Consent recorded.",
   s: "Must accept",
   c: "Agree & broadcast"
 });
@@ -3530,7 +3530,7 @@ function Onboard() {
     onClick: noop
   }));
 }
-const Login = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Sign in to ride"), /*#__PURE__*/React.createElement(Sub, null, "We'll WhatsApp a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
+const Login = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Sign in to get started"), /*#__PURE__*/React.createElement(Sub, null, "We'll WhatsApp a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
   label: "Phone number",
   value: "+263 78 202 1180",
   onChange: noop,
@@ -3556,14 +3556,14 @@ const Otp = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React
 const PermLoc = () => /*#__PURE__*/React.createElement(SystemState, {
   icon: "navigation",
   title: "Turn on location",
-  message: "LyniaGo uses your location to show parcels near you and to match you with the closest pickups. It's only used while you're online.",
+  message: "LyniaGo uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery.",
   primary: "Allow location",
   secondary: "Not now"
 });
 const PermNotif = () => /*#__PURE__*/React.createElement(SystemState, {
   icon: "phone",
-  title: "Never miss an order",
-  message: "Get a ping the moment a new parcel is posted near you, and when a customer picks your offer.",
+  title: "Stay in the loop",
+  message: "Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered.",
   primary: "Turn on notifications",
   secondary: "Not now"
 });
@@ -3729,12 +3729,7 @@ function KycForm() {
       color: "var(--muted)",
       lineHeight: 1.5
     }
-  }, "Your national ID is checked by our verification partner ", /*#__PURE__*/React.createElement("b", {
-    style: {
-      color: "var(--ink)",
-      fontWeight: 600
-    }
-  }, "Didit"), " \u2014 an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers.", " ", /*#__PURE__*/React.createElement("span", {
+  }, "Your national ID is verified \u2014 an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers.", " ", /*#__PURE__*/React.createElement("span", {
     style: {
       color: "var(--accent-text)",
       fontWeight: 600,
@@ -3748,7 +3743,7 @@ function KycForm() {
 const KycPending = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(RiderHead, null), /*#__PURE__*/React.createElement(EmptyState, {
   icon: "id-card",
   title: "Finishing verification\u2026",
-  message: "Your ID check is with Didit \u2014 riders go online once it's verified. This usually takes under a minute."
+  message: "Your ID check is under way \u2014 riders go online once it's verified. This usually takes under a minute."
 }, /*#__PURE__*/React.createElement(Button, {
   label: "Continue in browser",
   variant: "ghost",
@@ -5182,7 +5177,7 @@ function BikeDocs() {
       color: "var(--muted)",
       lineHeight: 1.5
     }
-  }, "Your documents are checked by Didit and stored securely. To change your bike or re-verify, contact support.")));
+  }, "Your documents are verified and stored securely. To change your bike or re-verify, contact support.")));
 }
 const RTRIPS = [{
   from: "Borrowdale",
@@ -6923,7 +6918,7 @@ function AddrConfirm() {
 
 /* ── A1-8 · PRE-BROADCAST LIABILITY DISCLAIMER (accept-to-continue sheet over home) ── */
 function Disclaimer() {
-  const rows = [["triangle-alert", "Sending is at your own risk", "If your parcel is lost, damaged or not delivered, Lynia isn't liable — you're hiring an independent rider."], ["banknote", "Payment is between you and your rider", "You agree the price in the app and pay cash directly. Lynia isn't involved in payment or any money dispute."], ["user", "Lynia connects you — that's all", "We match you with a nearby rider. We don't carry, insure or guarantee your parcel."]];
+  const rows = [["triangle-alert", "Sending is at your own risk", "If your parcel is lost, damaged or not delivered, LyniaGo isn't liable — you're hiring an independent rider."], ["banknote", "Payment is between you and your rider", "You agree the price in the app and pay cash directly. LyniaGo isn't involved in payment or any money dispute."], ["user", "LyniaGo connects you — that's all", "We match you with a nearby rider. We don't carry, insure or guarantee your parcel."]];
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative",
@@ -7362,7 +7357,7 @@ function Undelivered() {
       color: "var(--muted)",
       lineHeight: 1.45
     }
-  }, "Sending is at your own risk \u2014 arrange the parcel directly with your rider. Lynia isn't liable for non-delivery.")), /*#__PURE__*/React.createElement(CallRow, {
+  }, "Sending is at your own risk \u2014 arrange the parcel directly with your rider. LyniaGo isn't liable for non-delivery.")), /*#__PURE__*/React.createElement(CallRow, {
     label: "Your rider",
     name: "Tendai M.",
     phone: "+263 78 202 1180"
@@ -7394,7 +7389,7 @@ const Splash = () => /*#__PURE__*/React.createElement("div", {
     color: "#fff"
   }
 }, "LyniaGo"));
-const Login = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Welcome to Lynia"), /*#__PURE__*/React.createElement(Sub, null, "We'll WhatsApp a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
+const Login = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Sign in to get started"), /*#__PURE__*/React.createElement(Sub, null, "We'll WhatsApp a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
   label: "Phone number",
   value: "+263 77 245 1180",
   onChange: noop,
@@ -7419,7 +7414,7 @@ const Otp = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React
 }));
 
 /* ── REGISTRATION (post-OTP, first sign-up only) — stored for the account record, NOT KYC ── */
-const Register = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Heading, null, "Tell us who you are"), /*#__PURE__*/React.createElement(Sub, null, "You're sending parcels. Just a name and ID for your account record \u2014 no documents, no verification."), /*#__PURE__*/React.createElement(Field, {
+const Register = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Heading, null, "Tell us who you are"), /*#__PURE__*/React.createElement(Sub, null, "You're sending parcels. Just a name and ID for your account record."), /*#__PURE__*/React.createElement(Field, {
   label: "Full name",
   value: "Chipo Marufu",
   onChange: noop
@@ -7453,7 +7448,7 @@ const Register = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/
   label: "National ID number",
   value: "63-123456-A-42",
   onChange: noop,
-  hint: "Stored on your account only \u2014 we don't verify it. Riders go through a separate ID check."
+  hint: "Stored on your account record."
 }), /*#__PURE__*/React.createElement(Button, {
   label: "Continue",
   onClick: noop
@@ -9047,7 +9042,7 @@ function App() {
         color: "#fff"
       }
     }, "LyniaGo"));
-    if (view === "login") return /*#__PURE__*/React.createElement(ScreenPad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Welcome to Lynia"), /*#__PURE__*/React.createElement(Sub, null, "We'll WhatsApp a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
+    if (view === "login") return /*#__PURE__*/React.createElement(ScreenPad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Sign in to get started"), /*#__PURE__*/React.createElement(Sub, null, "We'll WhatsApp a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
       label: "Phone number",
       value: phone,
       onChange: setPhone,
@@ -10165,12 +10160,7 @@ function App() {
             color: "var(--muted)",
             lineHeight: 1.5
           }
-        }, "Your national ID is checked by our verification partner ", /*#__PURE__*/React.createElement("b", {
-          style: {
-            color: "var(--ink)",
-            fontWeight: 600
-          }
-        }, "Didit"), " \u2014 an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers. You'll finish in your browser, then come back to go online.", " ", /*#__PURE__*/React.createElement("span", {
+        }, "Your national ID is verified \u2014 an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers. You'll finish in your browser, then come back to go online.", " ", /*#__PURE__*/React.createElement("span", {
           style: {
             color: "var(--accent-text)",
             fontWeight: 600,
@@ -10197,7 +10187,7 @@ function App() {
       }), RoleSwitch), kyc === "pending" ? /*#__PURE__*/React.createElement(EmptyState, {
         icon: "id-card",
         title: "Finishing verification\u2026",
-        message: "Your ID check is with Didit \u2014 riders go online once it's verified. This usually takes under a minute."
+        message: "Your ID check is under way \u2014 riders go online once it's verified. This usually takes under a minute."
       }, /*#__PURE__*/React.createElement(Button, {
         label: "Continue in browser",
         variant: "ghost",
