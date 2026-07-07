@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
+import { etaHeadline, liveEta } from "../../src/logic/eta";
 import { isPendingCounter, shouldShowOffersError } from "../../src/logic/journey";
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
@@ -15,7 +16,7 @@ import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, EmptyState, ErrorText, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
+import { Avatar, Button, Card, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
@@ -151,12 +152,25 @@ export default function OrderScreen(): React.ReactElement {
   const prevBidCount = useRef(0);
   useEffect(() => {
     if (liveBidCount > prevBidCount.current && status === "open_for_offers") {
+      // A single attention buzz so a new bid registers even with the phone in a pocket / screen dark.
+      haptic("notify");
       AccessibilityInfo.announceForAccessibility(
         liveBidCount === 1 ? "A rider is bidding on your order" : `${liveBidCount} riders bidding`,
       );
     }
     prevBidCount.current = liveBidCount;
   }, [liveBidCount, status]);
+
+  // Warm success cue at the two moments that land emotionally: a rider is assigned (the auction paid
+  // off) and the parcel is delivered. Fires only on a real transition, never on mount or a re-render.
+  const prevStatus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevStatus.current;
+    if (status && prev && status !== prev && (status === "assigned" || status === "delivered")) {
+      haptic("success");
+    }
+    prevStatus.current = status;
+  }, [status]);
 
   // --- Auction countdown ---
   // Tick a 1s clock ONLY while open_for_offers with a known expiry. During a socket reconnect we
@@ -356,6 +370,10 @@ export default function OrderScreen(): React.ReactElement {
     : riderStale
       ? "Your rider's location looks paused — call them to check in."
       : "Rider is on the move — the gold pin updates live.";
+  // Live "arriving in ~N min" headline — the glanceable number modern trackers lead with. Suppressed
+  // when the rider's GPS has gone stale (we won't claim a fresh ETA off a dark position) or before the
+  // first fix; the prose `trackingHint` covers those.
+  const eta = isActive && !riderStale ? liveEta({ status: order.status, rider: riderPoint, pickup: order.pickup.point, dropoff: order.dropoff.point }) : null;
 
   // Counter-offer (F-07): a `counter` bid ABOVE the customer's ask surfaces as Accept/Decline. A
   // declined one reverts to a normal choosable bid (its Accept treatment removed), so it drops out of
@@ -512,12 +530,19 @@ export default function OrderScreen(): React.ReactElement {
                         ★ RECOMMENDED
                       </Text>
                     ) : null}
-                    <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-                      {o.rider.profile.firstName} {o.rider.profile.lastName}
-                    </Text>
-                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                      ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
-                    </Text>
+                    {/* Face-first: the rider's photo (or an initials monogram) anchors the bid the way
+                        inDrive/Uber front the person, not a row of text. */}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}>
+                      <Avatar photoUrl={o.rider.profile.photoUrl} firstName={o.rider.profile.firstName} lastName={o.rider.profile.lastName} seed={o.rider.profileId} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
+                          {o.rider.profile.firstName} {o.rider.profile.lastName}
+                        </Text>
+                        <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                          ★ {o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg).toFixed(1) : "new"} · {o.rider.tripsCount} trips · ETA {o.etaMinutes} min
+                        </Text>
+                      </View>
+                    </View>
                     <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, marginVertical: 4, fontVariant: ["tabular-nums"] }}>{formatMoney(o.offeredFare)}</Text>
                     <Button
                       label="Choose this rider"
@@ -557,6 +582,13 @@ export default function OrderScreen(): React.ReactElement {
 
         {isActive || order.status === "delivered" || order.status === "completed" ? (
           <Card>
+            {eta ? (
+              // The big glanceable ETA — leads the tracking card, styled as the screen's live headline.
+              <View accessibilityRole="text" style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
+                <Icon name="bike" size={20} color={tokens.color.accentText} />
+                <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{etaHeadline(eta)}</Text>
+              </View>
+            ) : null}
             <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm, fontVariant: ["tabular-nums"] }}>Agreed fare {formatMoney(fare)}</Text>
             <LiveMap
               pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}

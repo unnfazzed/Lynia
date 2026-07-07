@@ -21,7 +21,7 @@ import {
 import { orderKey } from "../src/query/client";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Button, ErrorText, Field, Icon, Label, TestBuildBanner } from "../src/ui";
+import { Button, ErrorText, Field, haptic, Icon, Label, TestBuildBanner } from "../src/ui";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { ComposeMap } from "../src/ui/ComposeMap";
@@ -313,6 +313,8 @@ export default function HomeScreen(): React.ReactElement {
     setBusy(true);
     try {
       const order = await createOrder(payload);
+      // A light confirming tick the instant the request goes live — the broadcast is away.
+      haptic("tap");
       // Seed the order cache from the response + the form we already have, so the order screen
       // paints the auction immediately instead of blank → skeleton → content on navigate.
       qc.setQueryData<OrderSnapshot>(orderKey(order.id), {

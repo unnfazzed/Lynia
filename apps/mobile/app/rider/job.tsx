@@ -13,7 +13,7 @@ import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, EmptyState, ErrorText, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
 import { PickupChecklist } from "../../src/ui/rider/PickupChecklist";
@@ -151,6 +151,8 @@ export default function RiderJob(): React.ReactElement {
   const deliverM = useMutation({
     mutationFn: () => confirmDelivery(orderId!, code.trim()),
     onSuccess: () => {
+      // The hand-off landed — the warm success cue at the moment the delivery completes.
+      haptic("success");
       setCode("");
       setOtpTries(0);
       refresh();
@@ -160,9 +162,12 @@ export default function RiderJob(): React.ReactElement {
       // so the rider sees how many tries remain and the field locks at the cap instead of hammering a
       // dead endpoint. Anything else is an unexpected failure.
       if (e instanceof ApiError && e.status === 403) {
+        haptic("warning");
         setOtpTries(DELIVERY_OTP_MAX_ATTEMPTS);
         setError("Too many attempts — ask the customer to re-issue the delivery code.");
       } else if (e instanceof ApiError && e.status === 401) {
+        // A firmer double so a wrong code is felt, not just read — useful at a noisy hand-off.
+        haptic("warning");
         setOtpTries((n) => n + 1);
         setError(null);
       } else {
