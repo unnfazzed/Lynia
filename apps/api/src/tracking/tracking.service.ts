@@ -6,7 +6,7 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { onlineRefusalReason } from "../riders/rider.service";
+import { onlineRefusalReason } from "../riders/online-gate";
 
 export interface NearbyRider {
   profileId: string;
