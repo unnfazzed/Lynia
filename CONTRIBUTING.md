@@ -164,11 +164,12 @@ graph LR
 
 ## 5. What CI checks
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every PR and push to `main`, in two jobs:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every PR and push to `main`, in three jobs:
 
 | Job | What it does |
 |---|---|
-| **build** | `pnpm install` → build `@lynia/shared` → `prisma:generate` → `typecheck` → `build` → API `test` → mobile `test` (`@lynia/mobile`), across all workspaces. |
+| **security** | `pnpm audit --audit-level high` (dependency advisory gate) + a `gitleaks` secret scan over full git history. |
+| **build** | `pnpm install` → build `@lynia/shared` → `prisma:generate` → `typecheck` → `lint` → `build` → API `test` → mobile `test` (`@lynia/mobile`), across all workspaces. |
 | **schema** | Spins up a **real PostGIS service**, runs `migrate:deploy`, **asserts the offer-loop constraints actually applied** — `one_active_ride`, the GiST geo index, and the hashed delivery OTP — then runs the offer-loop concurrency integration tests (`test:int`). |
 
 The schema job is the important one to understand: the correctness of the offer loop rests on those DB
