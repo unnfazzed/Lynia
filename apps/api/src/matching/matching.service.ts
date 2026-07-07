@@ -69,6 +69,9 @@ export class MatchingService {
 
         if (!offer) throw new NotFoundException("Offer not found for this order");
         if (offer.order.customerId !== customerId) throw new ForbiddenException("Not your order");
+        // Belt-and-braces against self-bidding (offers.makeOffer already blocks it at creation): never
+        // let a customer select an offer their own profile placed as a rider.
+        if (offer.riderId === customerId) throw new ForbiddenException("You can't select your own offer");
 
         // Block enforcement (server-side, in-tx): a blocked pair never re-matches. If the customer has
         // blocked this rider — or the rider has blocked the customer — the offer can't be selected. Read

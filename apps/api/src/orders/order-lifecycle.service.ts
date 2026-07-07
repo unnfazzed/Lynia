@@ -156,6 +156,16 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     void this.notifications.notifyOrderStatus(orderId, status);
   }
 
+  /** Take a row lock on the rider before a read-modify-write of its aggregate columns (reliability
+   *  score, rating average/count, trips, cancel strikes). These updates compute absolute values in JS
+   *  from a prior read, so under READ COMMITTED two concurrent order transitions for the same rider
+   *  (e.g. a delivered order being rated while the rider cancels a freshly-assigned one) would each
+   *  read the same stale row and the second write would clobber the first. Locking serialises them.
+   *  Every caller CASes the order row first, so the lock order is always order→rider (no deadlock). */
+  private async lockRiderRow(tx: Prisma.TransactionClient, profileId: string): Promise<void> {
+    await tx.$executeRaw`SELECT 1 FROM riders WHERE profile_id = ${profileId}::uuid FOR UPDATE`;
+  }
+
   /** Rider advances the trip one forward step (the non-OTP, non-completion edges). */
   async advance(orderId: string, riderId: string, to: ForwardStatus): Promise<LifecycleResult> {
     const edge = FORWARD[to];
@@ -308,6 +318,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // Same transaction as the undelivered CAS.
       const penalty = undeliveredPenalty(reason);
       if (penalty > 0 && order.riderId) {
+        await this.lockRiderRow(tx, order.riderId);
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
           select: { reliabilityScore: true, onHold: true },
@@ -346,6 +357,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       await tx.orderEvent.create({ data: { orderId, status: "completed" } });
 
       if (order.riderId) {
+        await this.lockRiderRow(tx, order.riderId);
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
           select: { ratingAvg: true, ratingCount: true, tripsCount: true, reliabilityScore: true, onHold: true },
@@ -377,29 +389,39 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
    *  table (byProfileId = the rider), so the (orderId, byProfileId) composite unique (migration 0015)
    *  lets it coexist with the customer's rating and makes a repeat a conflict, not a duplicate. */
   async rateSender(orderId: string, riderId: string, score: number, comment?: string): Promise<LifecycleResult> {
-    const status = await this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        select: { status: true, riderId: true },
-      });
-      if (!order) throw new NotFoundException("Order not found");
-      if (order.riderId !== riderId) throw new ForbiddenException("Not your order");
-      // A post-delivery signal — allowed once delivered, and still after the customer's rate() has
-      // closed the order to `completed` (the two ratings are independent, so completion mustn't block it).
-      if (order.status !== "delivered" && order.status !== "completed")
-        throw new ConflictException("Order is not awaiting a rating");
+    try {
+      const status = await this.prisma.$transaction(async (tx) => {
+        const order = await tx.order.findUnique({
+          where: { id: orderId },
+          select: { status: true, riderId: true },
+        });
+        if (!order) throw new NotFoundException("Order not found");
+        if (order.riderId !== riderId) throw new ForbiddenException("Not your order");
+        // A post-delivery signal — allowed once delivered, and still after the customer's rate() has
+        // closed the order to `completed` (the two ratings are independent, so completion mustn't block it).
+        if (order.status !== "delivered" && order.status !== "completed")
+          throw new ConflictException("Order is not awaiting a rating");
 
-      // One rating per rater — the (orderId, byProfileId) composite unique makes a repeat a conflict.
-      const existing = await tx.rating.findUnique({
-        where: { orderId_byProfileId: { orderId, byProfileId: riderId } },
-        select: { id: true },
+        // One rating per rater — the (orderId, byProfileId) composite unique makes a repeat a conflict.
+        const existing = await tx.rating.findUnique({
+          where: { orderId_byProfileId: { orderId, byProfileId: riderId } },
+          select: { id: true },
+        });
+        if (existing) throw new ConflictException("Order already rated");
+        await tx.rating.create({ data: { orderId, byProfileId: riderId, score, comment: comment ?? null } });
+        return order.status;
       });
-      if (existing) throw new ConflictException("Order already rated");
-      await tx.rating.create({ data: { orderId, byProfileId: riderId, score, comment: comment ?? null } });
-      return order.status;
-    });
 
-    return { orderId, status };
+      return { orderId, status };
+    } catch (err) {
+      // The check-then-create above races a concurrent duplicate post; the (orderId, byProfileId)
+      // unique index is the real guard, so map its violation to the same conflict as the pre-check
+      // instead of leaking a 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("Order already rated");
+      }
+      throw err;
+    }
   }
 
   /**
@@ -447,6 +469,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       let cooldownUntil: Date | null = null;
       if (isRider && order.riderId) {
         // Reliability decrement for a rider-initiated cancel (cancelStrike).
+        await this.lockRiderRow(tx, order.riderId);
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
           select: { cancelStrikes: true, reliabilityScore: true, onHold: true },
@@ -578,6 +601,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // reliability recovery (Q2). NOTE(Q2): RECOVER_PER_COMPLETION in policy.ts. This is the
         // unrated counterpart to rate()'s recovery — the two completion edges are mutually exclusive
         // (both CAS on status=delivered), so recovery is never double-counted.
+        await this.lockRiderRow(tx, order.riderId);
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
           select: { reliabilityScore: true, onHold: true },

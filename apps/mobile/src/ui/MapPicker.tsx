@@ -25,12 +25,17 @@ const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 
 // GPS fix bound (C9): every REST call is capped at 15s, but `getCurrentPositionAsync` has no timeout of
 // its own and a cold fix can hang forever. Race it against this and fall back to the tap-the-map hint.
 const LOCATE_TIMEOUT_MS = 9_000;
-/** Reject if `p` doesn't settle within `ms` — used to bound the GPS fix so "Locating…" can't hang. */
+/** Reject if `p` doesn't settle within `ms` — used to bound the GPS fix so "Locating…" can't hang.
+ *  Clears the timer once the race settles (mirrors ComposeMap) so a fast fix doesn't leave a dangling
+ *  9s timeout that still fires against an already-settled race. */
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
   return Promise.race([
     p,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("location-timeout")), ms)),
-  ]);
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("location-timeout")), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 /**

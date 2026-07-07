@@ -369,7 +369,7 @@ export class OrdersService {
         agreedFare: true,
         status: true,
         createdAt: true,
-        rating: { select: { score: true, comment: true } },
+        rating: { select: { score: true, comment: true, byProfileId: true } },
         customer: { select: { firstName: true, lastName: true } },
         rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
       },
@@ -388,9 +388,14 @@ export class OrdersService {
         agreedFare: o.agreedFare ? o.agreedFare.toString() : null,
         status: o.status,
         createdAt: o.createdAt.toISOString(),
-        // `rating` is now a to-many relation (two-way rating support): one rating per order today
-        // (customer→rider), so take the first. Widened by migration 0015's composite unique.
-        rating: o.rating[0] ? { score: o.rating[0].score, comment: o.rating[0].comment } : null,
+        // `rating` is a to-many relation since two-way rating (migration 0015): both the customer's
+        // rating of the rider (byProfileId = customerId) AND the rider's rating of the sender
+        // (byProfileId = riderId) can be present. The trip row shows the customer→rider score, so pick
+        // that direction deterministically instead of an arbitrary `rating[0]`.
+        rating: (() => {
+          const r = o.rating.find((x) => x.byProfileId === o.customerId);
+          return r ? { score: r.score, comment: r.comment } : null;
+        })(),
         counterpartyName,
       };
     });

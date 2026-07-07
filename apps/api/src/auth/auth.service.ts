@@ -238,8 +238,15 @@ export class AuthService {
       this.tokens.safeEqualHex(this.tokens.hash(secret), s.refreshTokenHash);
     if (!s || !valid) throw new UnauthorizedException("Invalid or expired refresh token");
 
-    // Rotate: revoke the old session, mint a new one.
-    await this.prisma.session.update({ where: { id: s.id }, data: { revokedAt: new Date() } });
+    // Rotate atomically: revoke the old session ONLY if it's still un-revoked, so two concurrent
+    // refreshes bearing the same token can't both win and mint two live sessions from one token. The
+    // guarded updateMany is the real gate (the read above is advisory); a zero-count claim means the
+    // token was already rotated — treat it as reuse and reject rather than issuing a second session.
+    const revoked = await this.prisma.session.updateMany({
+      where: { id: s.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (revoked.count === 0) throw new UnauthorizedException("Invalid or expired refresh token");
     return this.issueSession(s.profileId, s.profile.role, userAgent);
   }
 

@@ -160,7 +160,9 @@ export const ResolveIssueRequest = z
   .object({
     resolution: z.enum(["refund", "rider_strike", "close_no_action"]),
     note: z.string().max(1000).optional(),
-    refundAmount: z.number().positive().max(1000).optional(),
+    // Money is stored as Decimal(10,2); constrain to whole cents so a sub-cent value can't be silently
+    // rounded into the durable Refund ledger. The per-order upper bound (≤ fare) is enforced server-side.
+    refundAmount: z.number().positive().max(1000).multipleOf(0.01).optional(),
   })
   .superRefine((v, ctx) => {
     if (v.resolution === "refund" && v.refundAmount === undefined) {

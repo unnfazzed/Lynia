@@ -1,10 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import {
-  ACTIVE_RIDE_STATUSES,
-  type OrderStatus,
-  PHONE_REVEAL_STATUSES,
-  TERMINAL_STATUSES,
-} from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type OrderStatus, TERMINAL_STATUSES } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -132,9 +127,13 @@ export class AdminOrdersService {
    * Order detail (admin monitor drill-in). Builds the 8-step delivery timeline from OrderEvent
    * (done/now/stall), the parcel line-items, proposed/agreed fares as strings, and the masked people.
    *
-   * A-03: the customer's and rider's full phone is revealed ONLY while this specific order is inside
-   * its reveal window (PHONE_REVEAL_STATUSES — the same per-order rule orders.service.getSnapshot
-   * uses, scoped to this one live order); otherwise both are masked. Returns null when not found.
+   * A-03: the customer's and rider's full phone is revealed to the console ONLY while this order is a
+   * LIVE ride (ACTIVE_RIDE_STATUSES) — NOT PHONE_REVEAL_STATUSES, which also includes the terminal
+   * delivered/completed/undelivered states and would leave every finished order unmasked forever (the
+   * same distinction the rider services make in admin-riders.service.ts). The counterparty app path
+   * (orders.service.getSnapshot) still uses PHONE_REVEAL_STATUSES because it's scoped to the two
+   * parties of one order; the admin console is a third party and must not see closed-order PII.
+   * Otherwise both are masked. Returns null when not found.
    */
   async getOrderDetail(id: string) {
     const order = await this.prisma.order.findUnique({
@@ -162,7 +161,7 @@ export class AdminOrdersService {
     });
     if (!order) return null;
 
-    const revealed = PHONE_REVEAL_STATUSES.includes(order.status);
+    const revealed = ACTIVE_RIDE_STATUSES.includes(order.status);
     const now = Date.now();
 
     // First event timestamp per step, so a "done" step carries the real time it was reached.

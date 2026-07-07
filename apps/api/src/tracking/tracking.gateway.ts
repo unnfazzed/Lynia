@@ -177,11 +177,12 @@ export class TrackingGateway
     }
     const user = client.data.user as SocketUser | undefined;
     if (!user) return;
-    try {
-      void this.tracking.flushToPg(user.sub);
-    } catch {
-      /* best-effort: losing the last position on disconnect is acceptable, throwing is not */
-    }
+    // flushToPg is async, so a synchronous try/catch can't catch its rejection — attach a .catch so a
+    // DB blip during the flush can't surface as an unhandledRejection (which crashes under
+    // --unhandled-rejections=strict). Losing the last position on disconnect is acceptable.
+    void this.tracking.flushToPg(user.sub).catch((err) => {
+      this.logger.warn(`disconnect flush failed for ${user.sub}: ${(err as Error).message}`);
+    });
   }
 
   @SubscribeMessage(WS_EVENTS.subscribeOrder)

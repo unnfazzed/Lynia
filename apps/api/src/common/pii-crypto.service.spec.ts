@@ -21,10 +21,14 @@ describe("PiiCryptoService", () => {
     expect(svc.decryptId(b)).toBe(ID);
   });
 
-  it("hashId is deterministic and normalises case/whitespace (so a variant can't evade dedup)", () => {
+  it("hashId is deterministic and normalises case/whitespace/punctuation (so a variant can't evade dedup)", () => {
     const h = svc.hashId(ID);
     expect(svc.hashId(ID)).toBe(h);
     expect(svc.hashId("  63-123456-a-42 ")).toBe(h);
+    // Reformatting the separators must still collide, or the duplicate-ID control is trivially bypassed.
+    expect(svc.hashId("63123456A42")).toBe(h);
+    expect(svc.hashId("63 123456 A 42")).toBe(h);
+    expect(svc.hashId("63.123456.a.42")).toBe(h);
     expect(svc.hashId("63-999999-B-11")).not.toBe(h);
     expect(h).toMatch(/^[0-9a-f]{64}$/);
   });

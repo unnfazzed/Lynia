@@ -287,6 +287,18 @@ export class TrackingService implements OnModuleDestroy {
   async flushToPg(riderId: string): Promise<void> {
     this.lastFlush.delete(riderId);
     const pos = await this.getLivePosition(riderId);
+    // The session ended — evict this rider from the geo index so a disconnected rider's stale last
+    // position can't keep occupying a nearest-first GEOSEARCH slot (the set has no per-member TTL, so
+    // without this the member lingers at its final fix forever). Best-effort; a miss is harmless
+    // (nearbyRiders still confirms is_online against PG). getRedis() is null in the no-Redis path.
+    const redis = this.getRedis();
+    if (redis) {
+      try {
+        await redis.zrem(GEO_KEY, riderId);
+      } catch {
+        /* best-effort: the PG is_online filter still drops a stale member */
+      }
+    }
     if (!pos) return;
     await this.writePosition(riderId, pos.lat, pos.lng);
   }

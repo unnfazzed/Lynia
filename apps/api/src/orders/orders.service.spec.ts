@@ -538,8 +538,13 @@ describe("OrdersService.historyForUser", () => {
     agreedFare: { toString: () => "2.50" },
     status: "completed",
     createdAt: new Date("2026-06-26T00:00:00Z"),
-    // Prisma returns a to-many rating relation as an array (migration 0015 widened the unique).
-    rating: [{ score: 5, comment: "great" }],
+    // Prisma returns a to-many rating relation as an array (migration 0015 widened the unique). Both
+    // directions can be present — the rider's rating of the sender (byProfileId = riderId) FIRST, so a
+    // naive rating[0] would surface the wrong one; the trip row must show the customer→rider score.
+    rating: [
+      { score: 2, comment: "sender issue", byProfileId: "rider-1" },
+      { score: 5, comment: "great", byProfileId: "cust-1" },
+    ],
     customer: { firstName: "Tatenda", lastName: "M" },
     rider: { profile: { firstName: "Rugare", lastName: "C" } },
     ...over,

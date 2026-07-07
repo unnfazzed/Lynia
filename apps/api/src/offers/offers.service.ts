@@ -23,11 +23,19 @@ export class OffersService {
     const done = this.metrics.startTimer();
     const order = await this.prisma.order.findUnique({
       where: { id: input.orderId },
-      select: { status: true, customerId: true },
+      select: { status: true, customerId: true, proposedFare: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.status !== "open_for_offers") {
       throw new ConflictException("This order is not open for offers");
+    }
+    // No self-bidding: order-create carries no role gate, so a rider-role profile can post its own
+    // order and then bid on it as the rider — self-selecting, self-delivering (it holds the OTP), and
+    // self-rating to farm ratings/reliability, or yanking open orders off the board. The customer and
+    // the bidding rider must be different profiles.
+    if (order.customerId === riderId) {
+      this.metrics.incOffersMade("forbidden");
+      throw new ForbiddenException("You can't bid on your own order");
     }
 
     // Gating (CONCEPT §5d): only a KYC-verified, online rider IN GOOD STANDING can offer. Reuses the
@@ -50,6 +58,19 @@ export class OffersService {
       // Enforce the online invariant the gating comment claims (was selected but never checked) — an
       // offline rider's offer is un-selectable anyway and just pollutes the customer's list.
       throw new ForbiddenException("Go online to make offers");
+    }
+
+    // An `accept` means "I'll take the customer's proposed price" — bind the fare to `proposedFare`
+    // rather than trusting the client's number, so a modified client can't send type:"accept" with an
+    // inflated `offeredFare` and have selectOffer later set that as the agreedFare. `proposedFare` is a
+    // NOT NULL column, so the null guard only relaxes minimal unit-test fixtures, never production.
+    if (
+      input.type === "accept" &&
+      order.proposedFare != null &&
+      Math.round(input.offeredFare * 100) !== Math.round(Number(order.proposedFare) * 100)
+    ) {
+      this.metrics.incOffersMade("forbidden");
+      throw new ForbiddenException("An accept must match the customer's proposed fare");
     }
 
     try {

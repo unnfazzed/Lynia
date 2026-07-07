@@ -104,6 +104,18 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
     expect(d.timeline![0]!.state).toBe("done");
     expect(d.timeline!.some((s) => s.state === "now")).toBe(false);
   });
+
+  it("MASKS both phones on a completed/delivered order (A-03: not a live ride, so no PII)", async () => {
+    // Regression: the reveal set here is ACTIVE_RIDE_STATUSES, NOT PHONE_REVEAL_STATUSES — the latter
+    // includes delivered/completed/undelivered and would leave every finished order unmasked forever.
+    for (const status of ["delivered", "completed", "undelivered"]) {
+      const prisma = { order: { findUnique: async () => baseOrder({ status }) } };
+      const svc = new AdminOrdersService(prisma as unknown as PrismaService);
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.customerPhone).toBe("+263•••••2222");
+      expect(d.riderPhone).toBe("+263•••••0001");
+    }
+  });
 });
 
 describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $transaction, A-01)", () => {

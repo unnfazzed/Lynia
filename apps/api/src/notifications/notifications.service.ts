@@ -137,11 +137,13 @@ export class NotificationsService {
    *  hijack the old conflict-throw guarded against; it just moves delivery to the account currently
    *  signed in on the device, which is exactly what we want. */
   async registerToken(profileId: string, token: string, platform?: string): Promise<{ ok: true }> {
-    // Upsert keyed on the token; on an existing row reassign it to the authenticated caller.
+    // Upsert keyed on the token; on an existing row reassign it to the authenticated caller. `platform`
+    // is optional on refresh — only overwrite it when the client actually sent one, so a token refresh
+    // that omits platform doesn't blank a previously-recorded value.
     await this.prisma.deviceToken.upsert({
       where: { token },
       create: { profileId, token, platform: platform ?? null },
-      update: { profileId, platform: platform ?? null },
+      update: { profileId, ...(platform !== undefined ? { platform } : {}) },
     });
     return { ok: true };
   }

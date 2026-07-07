@@ -13,6 +13,7 @@ import { loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { retryKyc, setOnline } from "../../src/api/riders";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason } from "../../src/logic/gates";
+import { formatMoney } from "../../src/logic/money";
 import { Button, Card, EmptyState, ErrorText, Field, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 import { SupportCallRow } from "../../src/ui/safety";
 import { parseNum } from "../../src/util";
@@ -294,7 +295,7 @@ export default function RiderHome(): React.ReactElement {
                   <Text style={{ fontWeight: "700", color: tokens.color.ink }}>A customer picked you!</Text>
                 </View>
                 <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                  {activeJob.pickup.landmark} → {activeJob.dropoff.landmark} · ${activeJob.agreedFare ?? activeJob.proposedFare}
+                  {activeJob.pickup.landmark} → {activeJob.dropoff.landmark} · {formatMoney(activeJob.agreedFare ?? activeJob.proposedFare)}
                 </Text>
               </>
             ) : (
@@ -481,7 +482,7 @@ export default function RiderHome(): React.ReactElement {
                       {s.order.pickup.landmark} → {s.order.dropoff.landmark}
                     </Text>
                     <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                      Your offer ${s.fare} · ETA {s.etaMinutes} min
+                      Your offer {formatMoney(s.fare)} · ETA {s.etaMinutes} min
                     </Text>
                     {taken ? (
                       // Not chosen (3·b1): someone else was picked. Never framed as failure — the
@@ -519,7 +520,7 @@ export default function RiderHome(): React.ReactElement {
               <Card key={o.id}>
                 <Text style={{ fontWeight: "700", color: tokens.color.ink }}>{o.pickup.landmark} → {o.dropoff.landmark}</Text>
                 <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                  {o.itemDesc} · {km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`} · asking ${o.proposedFare}
+                  {o.itemDesc} · {km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`} · asking {formatMoney(o.proposedFare)}
                 </Text>
                 <Button label="Make an offer" variant="ghost" onPress={() => chooseOrder(o)} />
               </Card>
