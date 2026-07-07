@@ -135,9 +135,12 @@ export class TrackingService implements OnModuleDestroy {
 
   /**
    * Presence watchdog query (INTERFACE-AUDIT C5): active rides whose assigned rider's heartbeat is
-   * older than `thresholdMs` (or has none) — i.e. the rider's socket has gone dark. `lastHeartbeatAt`
-   * is the DB liveness authority (written on every fix by recordFix), so it doubles as the presence
-   * signal without new infra. Pilot-scale scan (bounded `take`); the gateway runs it on one interval.
+   * older than `thresholdMs` (or has none). `lastHeartbeatAt` is the DB liveness authority (written on
+   * every fix by recordFix), so it doubles as the presence signal without new infra. NOTE these are
+   * CANDIDATES, not verdicts: fixes are distance-gated client-side, so a parked rider's heartbeat goes
+   * stale while their socket is fine — the gateway refutes each candidate against cluster-wide room
+   * membership (riderLiveInRoom) before escalating, and touches the heartbeat when refuted. Pilot-scale
+   * scan (bounded `take`); the gateway runs it on one interval.
    */
   async findStaleRiderPresence(
     thresholdMs: number,
@@ -157,6 +160,18 @@ export class TrackingService implements OnModuleDestroy {
       riderId: o.riderId as string,
       lastSeenAt: o.rider?.lastHeartbeatAt ?? null,
     }));
+  }
+
+  /** Refresh a rider's liveness heartbeat WITHOUT a position fix. The client only streams fixes when
+   *  the rider moves (`distanceInterval` gating), so a parked-but-connected rider's heartbeat goes
+   *  stale; the presence watchdog calls this when the cluster-wide socket check refutes "gone dark",
+   *  making the DB authority truthful again (same single-column write as recordFix step b). */
+  async touchRiderHeartbeat(riderId: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE riders
+      SET last_heartbeat_at = now(),
+          updated_at = now()
+      WHERE profile_id = ${riderId}::uuid`;
   }
 
   /**
