@@ -26,7 +26,7 @@ const googleServicesFile =
   (existsSync(`${__dirname}/google-services.json`) ? "./google-services.json" : undefined);
 
 const config: ExpoConfig = {
-  name: "Lynia",
+  name: "LyniaGo",
   slug: "lynia",
   scheme: "lynia",
   version: "0.1.0",
@@ -42,12 +42,12 @@ const config: ExpoConfig = {
       "expo-splash-screen",
       { image: "./assets/splash-icon.png", imageWidth: 120, resizeMode: "contain", backgroundColor: "#FFFFFF" },
     ],
-    ["expo-location", { locationWhenInUsePermission: "Lynia uses your location to set the pickup point." }],
+    ["expo-location", { locationWhenInUsePermission: "LyniaGo uses your location to set the pickup point." }],
     [
       "expo-image-picker",
       {
-        photosPermission: "Lynia needs access to your photos to add your ID/profile photo for verification.",
-        cameraPermission: "Lynia uses the camera to take your ID/profile photo for verification.",
+        photosPermission: "LyniaGo needs access to your photos to add your ID/profile photo for verification.",
+        cameraPermission: "LyniaGo uses the camera to take your ID/profile photo for verification.",
       },
     ],
     ["expo-notifications", { color: "#00B14F" }],

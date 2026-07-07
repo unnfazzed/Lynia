@@ -52,7 +52,7 @@ export default function DocumentsScreen(): React.ReactElement {
           </Card>
           <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
             <Text style={{ fontSize: 12.5, color: tokens.color.muted, lineHeight: 18 }}>
-              Your documents are checked by Didit and stored securely. To change your bike or re-verify, contact support.
+              Your documents are verified and stored securely. To change your bike or re-verify, contact support.
             </Text>
           </Card>
         </>

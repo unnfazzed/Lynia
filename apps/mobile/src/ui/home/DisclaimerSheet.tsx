@@ -13,16 +13,16 @@ const DISCLAIMER_ROWS: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "triangle-alert",
     title: "Sending is at your own risk",
-    body: "If your parcel is lost, damaged or not delivered, Lynia isn't liable — you're hiring an independent rider.",
+    body: "If your parcel is lost, damaged or not delivered, LyniaGo isn't liable — you're hiring an independent rider.",
   },
   {
     icon: "banknote",
     title: "Payment is between you and your rider",
-    body: "You agree the price in the app and pay cash directly. Lynia isn't involved in payment or any money dispute.",
+    body: "You agree the price in the app and pay cash directly. LyniaGo isn't involved in payment or any money dispute.",
   },
   {
     icon: "user",
-    title: "Lynia connects you — that's all",
+    title: "LyniaGo connects you — that's all",
     body: "We match you with a nearby rider. We don't carry, insure or guarantee your parcel.",
   },
 ];
@@ -51,7 +51,7 @@ export function DisclaimerSheet({ visible, onAgree, onBack }: { visible: boolean
         >
           <View style={{ width: 36, height: 4, borderRadius: tokens.radius.pill, backgroundColor: tokens.color.line, alignSelf: "center", marginBottom: tokens.space.md }} />
           <Heading>Before you send</Heading>
-          <Sub>Please read and accept — this is how Lynia works.</Sub>
+          <Sub>Please read and accept — this is how LyniaGo works.</Sub>
           <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1 }}>
             {DISCLAIMER_ROWS.map((r) => (
               <View key={r.title} style={{ flexDirection: "row", gap: tokens.space.md, marginBottom: tokens.space.md }}>

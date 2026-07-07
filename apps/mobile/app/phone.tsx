@@ -30,7 +30,7 @@ export default function PhoneScreen(): React.ReactElement {
       <View style={{ marginBottom: 24 }}>
         <BrandLockup size={40} />
       </View>
-      <Heading>Welcome to LyniaGo</Heading>
+      <Heading>Sign in to get started</Heading>
       <Sub>We&apos;ll WhatsApp a one-time code to this number.</Sub>
       <Field
         label="Phone number"

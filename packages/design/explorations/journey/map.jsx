@@ -29,7 +29,7 @@ node("addr_search", 1, B.B1, "1·2", "Address search", { p: "Type an address or 
 node("addr_map_confirm", 2, B.B1, "1·3", "Confirm pin on map", { p: "Refine the exact point by dragging the pin; add a building/landmark note. The point stores lat/lng + place_id.", s: "Adjusting pin", c: "Confirm drop-off" });
 node("home_pins", 3, B.B1, "1·4", "Home · both set", { p: "Both addresses resolved & Google-linked. Fill item, price and both phone numbers.", s: "Required path filled", c: "Broadcast (enabling)" });
 node("home_expanded", 4, B.B1, "1·5", "Home · sheet expanded", { p: "Optional declared value; ready to broadcast.", s: "Complete · valid", c: "Broadcast request" });
-node("disclaimer", 5, B.B1, "1·6", "Broadcast disclaimer", { p: "Accept-to-continue gate: sending is at your own risk, Lynia isn't liable for non-delivery, and isn't involved in payment or disputes. Consent recorded.", s: "Must accept", c: "Agree & broadcast" });
+node("disclaimer", 5, B.B1, "1·6", "Broadcast disclaimer", { p: "Accept-to-continue gate: sending is at your own risk, LyniaGo isn't liable for non-delivery, and isn't involved in payment or disputes. Consent recorded.", s: "Must accept", c: "Agree & broadcast" });
 // Act 2 — auction
 node("auction_finding", 0, B.B2s, "2·1", "Auction · finding", { p: "Order broadcast; 90s window open, pinging nearby riders.", s: "Open · no offers yet", c: "Cancel order" });
 node("auction_live", 1, B.B2s, "2·2", "Auction · offers live", { p: "Riders' offers stream in; sort & pick. RECOMMENDED = best blend.", s: "3 bidding · sorted best", c: "Choose this rider" });

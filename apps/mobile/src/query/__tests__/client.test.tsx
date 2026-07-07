@@ -3,7 +3,7 @@ import { shouldRetry } from "../client";
 
 describe("shouldRetry", () => {
   it("retries a network failure (status 0) a couple of times, then stops", () => {
-    const err = new ApiError(0, "Can't reach Lynia");
+    const err = new ApiError(0, "Can't reach LyniaGo");
     expect(shouldRetry(0, err)).toBe(true);
     expect(shouldRetry(1, err)).toBe(true);
     expect(shouldRetry(2, err)).toBe(false);

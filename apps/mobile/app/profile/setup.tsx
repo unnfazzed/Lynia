@@ -10,8 +10,8 @@ import { Button, ErrorText, Field, Heading, Screen, Sub } from "../../src/ui";
  * created with an empty name (verifyOtp seeds firstName ""), so verify.tsx routes here FIRST when
  * `needsProfile` is true. We collect the name once, PATCH it to /auth/me, then continue to the role
  * fork (brand-new account) or straight home (a returning user who already picked a role). Mirrors the
- * design mockup's calm copy (0·6): name + a national ID for the account record — stored, NOT verified
- * (riders KYC separately). The phone is already verified on WhatsApp.
+ * design mockup's calm copy (0·6): name + a national ID for the account record. The phone is already
+ * verified on WhatsApp.
  */
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
@@ -45,7 +45,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
   return (
     <Screen>
       <Heading>Tell us who you are</Heading>
-      <Sub>A name and ID for your account record — no documents, no verification. Your phone is already verified.</Sub>
+      <Sub>A name and ID for your account record. Your phone is already verified.</Sub>
       <Field
         label="First name"
         value={firstName}
@@ -64,7 +64,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
         autoComplete="name-family"
         textContentType="familyName"
       />
-      {/* National ID stored on the account only — never verified (0·6). Default (text) keyboard:
+      {/* National ID stored on the account record (0·6). Default (text) keyboard:
           Zimbabwean IDs are alphanumeric (e.g. "63-123456-A-42"), so a number pad would block them. */}
       <Field
         label="National ID number"
@@ -72,7 +72,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
         onChangeText={setIdNumber}
         placeholder="63-123456-A-42"
         maxLength={40}
-        hint="Stored on your account only — we don't verify it. Riders go through a separate ID check."
+        hint="Stored on your account record."
       />
       <Button label="Save and continue" onPress={submit} loading={busy} disabled={!canSubmit} />
       <ErrorText message={error} />
