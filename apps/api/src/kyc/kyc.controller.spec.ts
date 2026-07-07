@@ -51,6 +51,14 @@ describe("KycController.callback", () => {
     expect(calls).toEqual([["s_1", "verified"]]);
   });
 
+  it("maps Didit's \"Kyc Expired\" to the terminal `expired` state (1·b2)", async () => {
+    const { riders, calls } = fakeRiders();
+    const raw = JSON.stringify({ session_id: "s_exp", status: "Kyc Expired" });
+    const res = await ctl(riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(raw));
+    expect(res).toEqual({ updated: 1 });
+    expect(calls).toEqual([["s_exp", "expired"]]);
+  });
+
   it("rejects a bad signature when a secret is set", async () => {
     const { riders, calls } = fakeRiders();
     const raw = JSON.stringify({ session_id: "s_1", status: "Approved" });

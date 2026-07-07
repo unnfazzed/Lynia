@@ -1,4 +1,4 @@
-import { shouldShowJobError, shouldShowOffersError } from "../journey";
+import { noRidersOnline, shouldShowJobError, shouldShowOffersError } from "../journey";
 
 describe("shouldShowOffersError (customer auction honesty)", () => {
   // Decision table: only an errored fetch with zero offers, while still open for offers, is honest error.
@@ -17,6 +17,26 @@ describe("shouldShowOffersError (customer auction honesty)", () => {
 
   it("never fires once the order has left open_for_offers (e.g. optimistic select → assigned)", () => {
     expect(shouldShowOffersError(true, 0, false)).toBe(false);
+  });
+});
+
+describe("noRidersOnline (customer supply-empty state, 2·b1)", () => {
+  it("fires only when open, no bids, and the server reported zero riders nearby", () => {
+    expect(noRidersOnline(0, 0, true)).toBe(true);
+  });
+
+  it("stays calm ('finding riders') when supply is unknown (null) — a geo blip must not lie", () => {
+    expect(noRidersOnline(null, 0, true)).toBe(false);
+    expect(noRidersOnline(undefined, 0, true)).toBe(false);
+  });
+
+  it("never fires when riders are nearby, or once any bid has landed", () => {
+    expect(noRidersOnline(3, 0, true)).toBe(false); // riders present, just no bid yet
+    expect(noRidersOnline(0, 1, true)).toBe(false); // a bid overrides the empty state
+  });
+
+  it("never fires outside open_for_offers", () => {
+    expect(noRidersOnline(0, 0, false)).toBe(false);
   });
 });
 

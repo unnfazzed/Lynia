@@ -34,6 +34,7 @@ describe("OrdersService.create", () => {
     let scheduledId: string | undefined;
     const quote = quoteFare(orderInput.pickup.point, orderInput.dropoff.point);
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: {
         create: async (args: { data: Record<string, unknown> }) => {
           created = args.data;
@@ -72,6 +73,7 @@ describe("OrdersService.create", () => {
   it("legacy itemDescription-only create: itemDesc stays the raw string, items normalizes to one qty-1 row", async () => {
     let created: Record<string, unknown> | undefined;
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: {
         create: async (args: { data: Record<string, unknown> }) => {
           created = args.data;
@@ -101,6 +103,7 @@ describe("OrdersService.create", () => {
   it("line-items create: stores items and writes the summarized string into itemDesc", async () => {
     let created: Record<string, unknown> | undefined;
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: {
         create: async (args: { data: Record<string, unknown> }) => {
           created = args.data;
@@ -133,6 +136,7 @@ describe("OrdersService.create", () => {
 
   it("pushes the new order to nearby online riders post-commit (CONCEPT §3.10), best-effort", async () => {
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: {
         create: async () => ({
           id: "ord-1",
@@ -162,6 +166,7 @@ describe("OrdersService.create", () => {
 
   it("never fails the create when the broadcast push throws", async () => {
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: {
         create: async () => ({
           id: "ord-1",
@@ -182,9 +187,61 @@ describe("OrdersService.create", () => {
     await flush();
   });
 
+  it("returns ridersNearby = the online-rider count at broadcast time (2·b1)", async () => {
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: {
+        create: async () => ({
+          id: "ord-1",
+          status: "open_for_offers",
+          itemDesc: "Documents",
+          proposedFare: { toString: () => "2.50" },
+          suggestedFare: { toString: () => "2.40" },
+          distanceKm: 1.5,
+          createdAt: new Date("2026-06-26T00:00:00Z"),
+        }),
+      },
+    };
+    const expiry = { schedule: async () => {} } as unknown as OfferExpiryService;
+    const twoRiders = [
+      { profileId: "r-1", distanceM: 800 },
+      { profileId: "r-2", distanceM: 1200 },
+    ] as NearbyRider[];
+    const tracking = { nearbyRiders: async () => twoRiders } as unknown as TrackingService;
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry, tracking, { notifyNewBroadcast: async () => {} } as unknown as NotificationsService, noGateway);
+    await expect(svc.create(orderInput, "cust-1")).resolves.toMatchObject({ ridersNearby: 2 });
+    await flush();
+  });
+
+  it("returns ridersNearby = 0 when nobody is online nearby, and null when supply can't be resolved", async () => {
+    const mk = (tracking: TrackingService) => {
+      const prisma = {
+        profile: { findUnique: async () => ({ onHold: false }) },
+        order: {
+          create: async () => ({
+            id: "ord-1",
+            status: "open_for_offers",
+            itemDesc: "Documents",
+            proposedFare: { toString: () => "2.50" },
+            suggestedFare: { toString: () => "2.40" },
+            distanceKm: 1.5,
+            createdAt: new Date("2026-06-26T00:00:00Z"),
+          }),
+        },
+      };
+      return new OrdersService(prisma as unknown as PrismaService, { schedule: async () => {} } as unknown as OfferExpiryService, tracking, noNotifications, noGateway);
+    };
+    // Zero online riders nearby → an honest 0 (drives the "no riders online" state), not null.
+    await expect(mk({ nearbyRiders: async () => [] } as unknown as TrackingService).create(orderInput, "cust-1")).resolves.toMatchObject({ ridersNearby: 0 });
+    // A geo-query failure → null ("supply unknown"), so the client keeps the calm "finding" fallback.
+    await expect(mk({ nearbyRiders: async () => { throw new Error("postgis down"); } } as unknown as TrackingService).create(orderInput, "cust-1")).resolves.toMatchObject({ ridersNearby: null });
+    await flush();
+  });
+
   it("pushes a REDACTED board:new-order event — no contactPhone anywhere in pickup/dropoff", async () => {
     const orderId = "22222222-2222-2222-2222-222222222222";
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: {
         create: async () => ({
           id: orderId,
@@ -238,6 +295,7 @@ describe("OrdersService.create", () => {
 
   it("never fails the create when the board push throws", async () => {
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: {
         create: async () => ({
           id: "ord-1",
@@ -269,7 +327,7 @@ describe("OrdersService.create", () => {
 describe("OrdersService.create service-corridor gate (Q1)", () => {
   const svc = (createSpy: () => unknown) =>
     new OrdersService(
-      { order: { create: async () => createSpy() } } as unknown as PrismaService,
+      { profile: { findUnique: async () => ({ onHold: false }) }, order: { create: async () => createSpy() } } as unknown as PrismaService,
       { schedule: async () => {} } as unknown as OfferExpiryService,
       noTracking,
       noNotifications,
@@ -293,6 +351,40 @@ describe("OrdersService.create service-corridor gate (Q1)", () => {
 
   it("allows an order with both waypoints inside the corridor", async () => {
     const s = svc(() => ({
+      id: "ord-1",
+      status: "open_for_offers",
+      itemDesc: "Documents",
+      proposedFare: { toString: () => "2.50" },
+      suggestedFare: { toString: () => "2.40" },
+      distanceKm: 1.5,
+      createdAt: new Date("2026-06-26T00:00:00Z"),
+    }));
+    await expect(s.create(orderInput, "cust-1")).resolves.toMatchObject({ id: "ord-1" });
+  });
+});
+
+describe("OrdersService.create customer-hold gate (S·2)", () => {
+  const svc = (onHold: boolean, createSpy: () => unknown) =>
+    new OrdersService(
+      { profile: { findUnique: async () => ({ onHold }) }, order: { create: async () => createSpy() } } as unknown as PrismaService,
+      { schedule: async () => {} } as unknown as OfferExpiryService,
+      noTracking,
+      noNotifications,
+      noGateway,
+    );
+
+  it("rejects a held customer's broadcast with a 403 { reason: on_hold } and never writes the order", async () => {
+    let created = false;
+    const s = svc(true, () => { created = true; return {}; });
+    const threw = await s.create(orderInput, "cust-1").then(() => null).catch((e) => e);
+    // Same { reason, message } shape the rider online-gate throws → the app routes it to the on-hold screen.
+    expect((threw as { getResponse: () => { reason: string } }).getResponse().reason).toBe("on_hold");
+    // Gated before any write: a held customer can't broadcast, so the order is never created.
+    expect(created).toBe(false);
+  });
+
+  it("lets an un-held customer through the gate", async () => {
+    const s = svc(false, () => ({
       id: "ord-1",
       status: "open_for_offers",
       itemDesc: "Documents",
@@ -396,6 +488,15 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.expiresAt).toBeNull();
   });
 
+  it("returns a live ridersNearby count while open_for_offers, and null once assigned (2·b1)", async () => {
+    // noTracking.nearbyRiders returns [] → 0 online riders nearby while the auction is open…
+    const open = await svc(row({ status: "open_for_offers" })).getSnapshot("ord-1", "cust-1");
+    expect(open.ridersNearby).toBe(0);
+    // …and the supply signal is null on any non-open status (like expiresAt), so it never lingers.
+    const assigned = await svc(row({ status: "assigned" })).getSnapshot("ord-1", "cust-1");
+    expect(assigned.ridersNearby).toBeNull();
+  });
+
   it("prefers the Redis live rider position over the stale PG columns", async () => {
     const tracking = {
       nearbyRiders: async (): Promise<NearbyRider[]> => [],
@@ -418,6 +519,7 @@ describe("OrdersService.listOpen", () => {
   it("lists open orders for riders, serializing fares", async () => {
     let where: unknown;
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: {
         findMany: async (args: { where: unknown }) => {
           where = args.where;
@@ -444,6 +546,7 @@ describe("OrdersService.listOpen", () => {
 
   it("redacts contactPhone from pickup/dropoff — a browsing rider gets point + landmark only (§5d)", async () => {
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: {
         findMany: async () => [
           {
@@ -604,6 +707,7 @@ describe("OrdersService.activeForRider", () => {
       events: [],
     };
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: { findFirst: async () => ({ id: "o1" }), findUnique: async () => snap },
     };
     const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
@@ -628,6 +732,7 @@ describe("OrdersService.activeForRider", () => {
       events: [],
     };
     const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
       order: {
         // First findFirst = active statuses (none); second = the cancelled hand-back (status: "cancelled").
         findFirst: async (args: { where: { status: unknown } }) => (args.where.status === "cancelled" ? { id: "o9" } : null),

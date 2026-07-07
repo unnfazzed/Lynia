@@ -8,7 +8,7 @@ interface Rider {
   name: string;
   phone: string;
   bikeReg: string;
-  kycStatus: "pending" | "verified" | "failed";
+  kycStatus: "pending" | "verified" | "failed" | "expired";
   idVerified: boolean;
   isOnline: boolean;
   ratingAvg: number;
@@ -18,7 +18,7 @@ interface Rider {
   cooldownUntil: string | null;
 }
 
-const TABS = ["pending", "verified", "failed", "all"] as const;
+const TABS = ["pending", "verified", "failed", "expired", "all"] as const;
 /* DS card: white surface floating on --surface via the soft ambient shadow (no visible border). */
 const card = {
   background: tokens.color.bg,

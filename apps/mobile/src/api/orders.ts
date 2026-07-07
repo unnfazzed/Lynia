@@ -20,6 +20,8 @@ export interface CreateOrderResult {
   distanceKm: number;
   /** ISO end of the offer window (createdAt + OFFER_WINDOW_MS) — drives the auction countdown. */
   expiresAt: string | null;
+  /** Online riders within the broadcast radius at broadcast time (2·b1); null = supply unknown. */
+  ridersNearby?: number | null;
 }
 
 export interface OrderEvent {
@@ -46,6 +48,8 @@ export interface OrderSnapshot {
   counterpartyPhone: string | null;
   /** ISO end of the offer window while `open_for_offers`, else null — drives the auction countdown. */
   expiresAt: string | null;
+  /** Live count of online riders nearby while `open_for_offers` (2·b1); null otherwise / supply unknown. */
+  ridersNearby?: number | null;
   // Set only on the terminal `undelivered` status (INTERFACE-AUDIT C6 / F-02): the reason the rider
   // recorded + how many hand-off attempts were made, shown verbatim on the customer's terminal card.
   // Absent/null on every other status.

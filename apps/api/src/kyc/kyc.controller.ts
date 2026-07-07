@@ -31,7 +31,7 @@ import { decideDiditKyc, diditTimestampFresh, extractDiditScore, verifyDiditSign
 // grow without 400ing an older admin build.
 const AdminKyc = z
   .object({
-    status: z.enum(["pending", "verified", "failed"]),
+    status: z.enum(["pending", "verified", "failed", "expired"]),
     reasonCode: z.string().min(1).max(160).optional(),
     // Optional ConfirmModal free-text, recorded on the audit row the decision now writes in-transaction.
     note: z.string().max(2000).nullish(),

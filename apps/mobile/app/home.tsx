@@ -1,12 +1,13 @@
 import { CreateOrderRequest, quoteFare, tokens } from "@lynia/shared";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
 import { ApiError } from "../src/api/client";
+import { getMe } from "../src/api/auth";
 import { acceptDisclaimer, createOrder, type OrderSnapshot } from "../src/api/orders";
 import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/session";
-import { isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
+import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import {
   clearDraft,
   DISCLAIMER_POLICY_VERSION,
@@ -23,7 +24,8 @@ import { fareBand, fareBandHint, isBelowBand } from "../src/logic/fare-band";
 import { loadRecipients, type Recipient, rememberRecipient } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Button, ErrorText, Field, haptic, Icon, Label, TestBuildBanner } from "../src/ui";
+import { Button, EmptyState, ErrorText, Field, haptic, Icon, Label, Screen, TestBuildBanner } from "../src/ui";
+import { SupportCallRow } from "../src/ui/safety";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { ComposeMap } from "../src/ui/ComposeMap";
@@ -70,6 +72,12 @@ export default function HomeScreen(): React.ReactElement {
   // Q1 out-of-service-area (a distinct state, not a red error): set when a pin is outside the launch
   // corridor — either caught client-side pre-broadcast or from the server's service-corridor 4xx.
   const [outOfArea, setOutOfArea] = useState(false);
+  // S·2: customer account-on-hold gate. Proactive — a lightweight `me` fetch flags a held account so
+  // the blocking screen shows before the customer builds a whole order; the reactive flag is the
+  // belt-and-suspenders for a hold applied mid-session, caught on the broadcast 403.
+  const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const [heldFromBroadcast, setHeldFromBroadcast] = useState(false);
+  const accountOnHold = heldFromBroadcast || meQ.data?.onHold === true;
 
   // Pre-broadcast liability disclaimer (A1-8). Gate the first broadcast behind an accept-to-continue
   // sheet; once accepted for the current policy version we don't re-show it. Kept in a ref (read at
@@ -352,6 +360,9 @@ export default function HomeScreen(): React.ReactElement {
         events: [],
         counterpartyPhone: null,
         expiresAt: order.expiresAt,
+        // 2·b1: seed the supply count so the auction can render "no riders online" instantly from the
+        // create response, before the first 15s snapshot refetch.
+        ridersNearby: order.ridersNearby ?? null,
       });
       // Draft fulfilled — wipe it so the next visit starts clean.
       setDraftRestored(false);
@@ -360,7 +371,12 @@ export default function HomeScreen(): React.ReactElement {
     } catch (e) {
       // The server is the authority on coverage: a service-corridor 4xx becomes the out-of-area state
       // (not a generic error), even if the client pre-check passed (corridor edge / stale constant).
-      if (e instanceof ApiError && isOutOfServiceArea(e)) {
+      if (e instanceof ApiError && isAccountOnHold(e)) {
+        // S·2: the server refused the broadcast because the account is held — swap to the blocking
+        // on-hold screen (and refresh `me` so it stays held on the next mount too).
+        setHeldFromBroadcast(true);
+        void meQ.refetch();
+      } else if (e instanceof ApiError && isOutOfServiceArea(e)) {
         setOutOfArea(true);
       } else {
         setError(e instanceof ApiError ? e.message : "Couldn't create the order.");
@@ -395,6 +411,20 @@ export default function HomeScreen(): React.ReactElement {
     setShowDisclaimer(false);
     void submit();
   };
+
+  // S·2: a held customer can't broadcast — show a calm, blocking screen (not the compose form) with a
+  // real "contact support" affordance, matching the mockup's OnHold. Overrides the whole home so a
+  // held customer never reaches the map/compose UI.
+  if (accountOnHold) {
+    return (
+      <Screen>
+        <EmptyState icon="triangle-alert" title={ACCOUNT_ON_HOLD_COPY.title} message={ACCOUNT_ON_HOLD_COPY.message}>
+          <SupportCallRow />
+          <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} loading={meQ.isFetching} />
+        </EmptyState>
+      </Screen>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.surface }}>

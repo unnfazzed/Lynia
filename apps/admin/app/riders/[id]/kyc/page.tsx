@@ -43,6 +43,7 @@ function CheckRow({ label, value, kind }: { label: string; value: string; kind: 
 function statusPill(status: KycReview["status"]) {
   if (status === "verified") return <Pill kind="good">verified</Pill>;
   if (status === "failed") return <Pill kind="bad">failed</Pill>;
+  if (status === "expired") return <Pill kind="bad">expired</Pill>;
   return <Pill kind="mut">pending</Pill>;
 }
 

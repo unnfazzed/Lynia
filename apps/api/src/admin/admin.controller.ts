@@ -14,7 +14,7 @@ import { AdminService } from "./admin.service";
 
 const KYC_VALUES = Object.values(KycStatus) as string[];
 const ORDER_STATUS_VALUES = Object.values(OrderStatus) as string[];
-const CUSTOMER_FILTERS = ["active", "flagged", "banned"] as const;
+const CUSTOMER_FILTERS = ["active", "flagged", "banned", "on_hold"] as const;
 
 // A-01 audit-action payload (mirrors submitAdminAction in apps/admin). action + target are required;
 // reasonCode + note are the ConfirmModal justification (nullable — some actions carry neither). Capped,
@@ -115,6 +115,26 @@ export class AdminController {
     const customer = await this.customersService.getCustomerDetail(profileId);
     if (!customer) throw new NotFoundException("Customer not found");
     return customer;
+  }
+
+  /** S·2: place a customer on hold (blocks new broadcasts) + reason. Reason required. */
+  @Post("customers/:id/hold")
+  holdCustomer(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.customersService.holdCustomer(actor, id, body);
+  }
+
+  /** S·2: lift a customer hold → active, clearing the reason. Reason optional. */
+  @Post("customers/:id/lift")
+  liftCustomerHold(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonOptional)) body: z.infer<typeof ReasonOptional>,
+    @AdminActor() actor: string,
+  ) {
+    return this.customersService.liftCustomerHold(actor, id, body);
   }
 
   /**

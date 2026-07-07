@@ -361,6 +361,18 @@ export default function RiderHome(): React.ReactElement {
               <Button label="Become a rider" onPress={() => router.push("/rider/become")} />
               <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
+          ) : kyc === "expired" ? (
+            // 1·b2: a previously-verified rider whose ID lapsed. Distinct from the first-time "verify"
+            // and the "declined" states — the rider was good, the document aged out. Re-verify mints a
+            // fresh Didit session (the A-02 counter was reset server-side, so they're never locked out).
+            <EmptyState
+              icon="triangle-alert"
+              title="Your ID has expired"
+              message="You can't go online until you re-verify. Re-submit a valid national ID to keep riding."
+            >
+              <Button label="Re-verify my ID" onPress={() => retryM.mutate()} loading={retryM.isPending} />
+              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+            </EmptyState>
           ) : kyc === "failed" ? (
             kycLocked ? (
               // Two+ failed attempts (A-02): self-resubmit is locked — hand off to support, no "Try again"

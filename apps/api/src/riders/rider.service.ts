@@ -17,7 +17,7 @@ import { PiiCryptoService } from "../common/pii-crypto.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
 
-type Kyc = "pending" | "verified" | "failed";
+type Kyc = "pending" | "verified" | "failed" | "expired";
 
 /** A rider may go online only once KYC has passed (CONCEPT §5d gating). Pure for unit tests. */
 export function canGoOnline(kycStatus: string): boolean {
@@ -26,7 +26,7 @@ export function canGoOnline(kycStatus: string): boolean {
 
 /** Why a rider was refused going online — a machine-readable tag the app keys off to show the right
  *  state (verify your ID / account banned / suspended / on hold / on cooldown). */
-export type OnlineRefusal = "kyc" | "banned" | "suspended" | "on_hold" | "cooldown" | "out_of_area";
+export type OnlineRefusal = "kyc" | "kyc_expired" | "banned" | "suspended" | "on_hold" | "cooldown" | "out_of_area";
 
 /**
  * The online-gate (Q2): the FIRST failed precondition, or null when the rider may go online. A rider
@@ -41,6 +41,9 @@ export function onlineRefusalReason(
   rider: { kycStatus: string; accountStatus: string; onHold: boolean; cooldownUntil: Date | null },
   now: Date = new Date(),
 ): OnlineRefusal | null {
+  // A lapsed ID (1·b2) gets its own reason before the generic KYC branch, so a rider who was verified
+  // and later expired sees the distinct "re-verify your ID" state, not the first-time "verify" copy.
+  if (rider.kycStatus === KycStatus.EXPIRED) return "kyc_expired";
   if (!canGoOnline(rider.kycStatus)) return "kyc";
   if (rider.accountStatus === RiderAccountStatus.BANNED) return "banned";
   if (rider.accountStatus !== RiderAccountStatus.ACTIVE) return "suspended";
@@ -52,6 +55,7 @@ export function onlineRefusalReason(
 /** Rider-facing copy per refusal reason. The structured `reason` (not this string) is the contract. */
 const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
   kyc: "Rider is not verified yet",
+  kyc_expired: "Your ID has expired — re-verify to keep riding",
   banned: "Your rider account has been banned",
   suspended: "Your rider account is suspended",
   on_hold: "You're on hold — complete deliveries to raise your reliability score",
@@ -265,7 +269,7 @@ export class RiderService {
    */
   async applyKycResult(
     kycRef: string,
-    status: "verified" | "failed",
+    status: "verified" | "failed" | "expired",
     eventAt: Date,
     reason?: string | null,
   ): Promise<{ updated: number }> {
@@ -279,6 +283,9 @@ export class RiderService {
         // why, and clear any stale reason on a verify. NOT a kycAttempts change — the attempt counter
         // is the admin A-02 decline path's, not the vendor webhook's.
         ...(status === "failed" ? { kycDeclineReason: reason ?? null } : { kycDeclineReason: null }),
+        // An expiry (1·b2) is not a decline: reset the A-02 attempt counter so re-verification isn't
+        // trapped by an ancient decline the rider already recovered from before they were verified.
+        ...(status === "expired" ? { kycAttempts: 0 } : {}),
       },
     });
     return { updated: res.count };
@@ -307,9 +314,16 @@ export class RiderService {
     actor?: string,
     note?: string | null,
   ): Promise<{ profileId: string; kycStatus: Kyc; kycAttempts: number; locked: boolean }> {
-    // verified → approve, failed → decline, pending → reset (matches the ConfirmModal action names).
+    // verified → approve, failed → decline, expired → expire (1·b2 ops backstop), pending → reset
+    // (matches the ConfirmModal action names).
     const action =
-      status === "verified" ? "rider.kyc_approve" : status === "failed" ? "rider.kyc_decline" : "rider.kyc_reset";
+      status === "verified"
+        ? "rider.kyc_approve"
+        : status === "failed"
+          ? "rider.kyc_decline"
+          : status === "expired"
+            ? "rider.kyc_expire"
+            : "rider.kyc_reset";
 
     return this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({
@@ -350,9 +364,13 @@ export class RiderService {
             // vendor webhook can't override it (mirrors the decline path). A `pending` RESET is
             // deliberately inviting a fresh vendor result, so it leaves kycResolvedAt untouched.
             ...(status === "verified" ? { kycDeclineReason: null, kycResolvedAt: new Date() } : {}),
+            // A manual EXPIRE (1·b2 ops backstop) is also terminal: stamp the time, clear any stale
+            // decline reason, and reset the A-02 counter so re-verification isn't blocked by an old lock.
+            ...(status === "expired" ? { kycDeclineReason: null, kycResolvedAt: new Date(), kycAttempts: 0 } : {}),
           },
         });
-        result = { profileId, kycStatus: status, kycAttempts: rider.kycAttempts, locked: rider.kycAttempts >= 2 };
+        const nextAttempts = status === "expired" ? 0 : rider.kycAttempts;
+        result = { profileId, kycStatus: status, kycAttempts: nextAttempts, locked: nextAttempts >= 2 };
       }
 
       // Same transaction as the decision — never one without the other. `actor` is absent only in older

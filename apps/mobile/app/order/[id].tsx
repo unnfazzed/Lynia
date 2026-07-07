@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { etaHeadline, liveEta } from "../../src/logic/eta";
-import { isPendingCounter, shouldShowOffersError } from "../../src/logic/journey";
+import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../src/logic/journey";
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
@@ -420,6 +420,10 @@ export default function OrderScreen(): React.ReactElement {
   const riderStale =
     isActive && riderUpdatedAt != null && Date.now() - new Date(riderUpdatedAt).getTime() > PRESENCE_ESCALATION_MS;
   const bidCount = orderedOffers.length;
+  // 2·b1: the server said there are no online riders nearby and no bid has landed — an honest "nobody
+  // to ping right now" state, distinct from the calm "riders pinged, hang tight" wait. Non-terminal:
+  // the 15s poll refreshes ridersNearby and any landing bid clears it.
+  const noRiders = noRidersOnline(order.ridersNearby, bidCount, order.status === "open_for_offers");
   const trackingHint = !riderPoint
     ? "Waiting for the rider's GPS…"
     : riderStale
@@ -533,7 +537,9 @@ export default function OrderScreen(): React.ReactElement {
               <Text style={{ flex: 1, fontSize: 14, color: tokens.color.muted }}>
                 {bidCount > 0
                   ? `${bidCount} ${bidCount === 1 ? "rider" : "riders"} bidding${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
-                  : `Finding riders near you…${connectionState === "reconnecting" ? " reconnecting…" : ""}`}
+                  : noRiders
+                    ? `No riders online nearby right now${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
+                    : `Finding riders near you…${connectionState === "reconnecting" ? " reconnecting…" : ""}`}
               </Text>
               {remainingMs != null ? (
                 <Animated.Text
@@ -650,6 +656,21 @@ export default function OrderScreen(): React.ReactElement {
                 <EmptyState icon="wifi-off" title="Couldn't load offers" message="Check your connection and try again.">
                   <Button label="Retry" onPress={() => void offersQ.refetch()} loading={offersQ.isFetching} />
                 </EmptyState>
+              ) : noRiders ? (
+                // 2·b1: honest supply-empty. No online riders were nearby to ping — so the calm
+                // "riders were pinged, hang tight" copy would be a lie. Non-terminal: the auction keeps
+                // running (the header still counts down), the poll self-heals if a rider comes online,
+                // and the nudge widens interest. A true "notify me" needs a push-subscription backend
+                // (deferred); until then the recovery is the same re-broadcast path as expiry.
+                <View style={{ marginTop: tokens.space.sm }}>
+                  <EmptyState
+                    icon="bike"
+                    title="No riders online nearby right now"
+                    message="Nobody's online near you this minute. We'll keep looking while the window's open — a rider may come on any moment. You can also nudge the price to widen interest."
+                  >
+                    <Button label="Nudge price & re-broadcast" variant="ghost" onPress={rebroadcast} />
+                  </EmptyState>
+                </View>
               ) : (
                 // Live-but-empty: a "working" state (pulsing placeholder) distinct from the expired
                 // dead-end, so streaming-into-empty reads as "finding", not "broken".

@@ -1,5 +1,5 @@
 import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
-import { ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, kycDeclineLabel, onlineGateReason } from "../gates";
+import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, kycDeclineLabel, onlineGateReason } from "../gates";
 
 describe("onlineGateReason (rider online-gate refusal)", () => {
   it("reads a machine reason code (case-insensitive)", () => {
@@ -8,7 +8,16 @@ describe("onlineGateReason (rider online-gate refusal)", () => {
     expect(onlineGateReason({ code: "banned" })).toBe("banned");
     expect(onlineGateReason({ code: "cooldown" })).toBe("cooldown");
     expect(onlineGateReason({ code: "kyc" })).toBe("kyc");
+    expect(onlineGateReason({ code: "kyc_expired" })).toBe("kyc_expired");
     expect(onlineGateReason({ code: "out_of_area" })).toBe("out_of_area");
+  });
+
+  it("distinguishes a lapsed ID (kyc_expired) from a first-time unverified rider (1·b2)", () => {
+    // The expired copy says "re-verify" (contains `verif`) — the sniff must not collapse it into `kyc`.
+    expect(onlineGateReason({ message: "Your ID has expired — re-verify to keep riding" })).toBe("kyc_expired");
+    expect(onlineGateReason({ code: "kyc_expired", message: "whatever" })).toBe("kyc_expired");
+    expect(ONLINE_GATE_COPY.kyc_expired.title).toBeTruthy();
+    expect(ONLINE_GATE_COPY.kyc_expired.title).not.toBe(ONLINE_GATE_COPY.kyc.title);
   });
 
   it("maps a corridor refusal onto the out-of-area gate, incl. aliases + message", () => {
@@ -45,6 +54,23 @@ describe("onlineGateReason (rider online-gate refusal)", () => {
     expect(onlineGateReason({ code: "teapot" })).toBeNull();
     expect(onlineGateReason(null)).toBeNull();
     expect(onlineGateReason(undefined)).toBeNull();
+  });
+});
+
+describe("isAccountOnHold (customer account-on-hold gate, S·2)", () => {
+  it("reads the on_hold machine code (the server's create-gate 403)", () => {
+    expect(isAccountOnHold({ code: "on_hold" })).toBe(true);
+    expect(isAccountOnHold({ code: "account_on_hold" })).toBe(true);
+  });
+  it("falls back to sniffing the friendly message", () => {
+    expect(isAccountOnHold({ message: "Your account is on hold." })).toBe(true);
+  });
+  it("is false for an unrelated error, and has real copy", () => {
+    expect(isAccountOnHold({ code: "out_of_area" })).toBe(false);
+    expect(isAccountOnHold({ message: "Couldn't create the order." })).toBe(false);
+    expect(isAccountOnHold(null)).toBe(false);
+    expect(ACCOUNT_ON_HOLD_COPY.title).toBeTruthy();
+    expect(ACCOUNT_ON_HOLD_COPY.message).toBeTruthy();
   });
 });
 

@@ -37,6 +37,24 @@ export function shouldShowOffersError(isError: boolean, offerCount: number, isOp
 }
 
 /**
+ * "No riders online" supply state (2·b1): the auction is open, no bid has landed, AND the server told
+ * us there were zero online riders within the broadcast radius. This is a NON-terminal, honest empty —
+ * "nobody nearby to ping right now", distinct from the calm "riders were pinged, hang tight" wait.
+ *
+ * Deliberately conservative: `ridersNearby == null` ("supply unknown", e.g. a geo blip) and any count
+ * > 0 both keep the calm "finding riders" state, and any landing bid (`bidCount > 0` via WS/poll)
+ * immediately overrides it — the auction keeps running and the 15s snapshot poll self-heals the count
+ * the moment a rider comes online.
+ */
+export function noRidersOnline(
+  ridersNearby: number | null | undefined,
+  bidCount: number,
+  isOpenForOffers: boolean,
+): boolean {
+  return isOpenForOffers && bidCount === 0 && ridersNearby === 0;
+}
+
+/**
  * Rider cold-start honesty: an active-job fetch that fails with NO data must not fall through to the
  * "No active job" empty state — that tells the rider they have no work when the fetch merely failed.
  * Only an error with no data (a cold start) is an honest error; a warm refetch that retains the job

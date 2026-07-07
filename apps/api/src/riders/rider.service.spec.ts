@@ -13,9 +13,10 @@ describe("canGoOnline (rider gating, §5d)", () => {
   it("allows only verified riders online", () => {
     expect(canGoOnline("verified")).toBe(true);
   });
-  it("blocks pending and failed riders", () => {
+  it("blocks pending, failed and expired riders", () => {
     expect(canGoOnline("pending")).toBe(false);
     expect(canGoOnline("failed")).toBe(false);
+    expect(canGoOnline("expired")).toBe(false);
   });
 });
 
@@ -418,8 +419,10 @@ describe("onlineRefusalReason (pure online-gate, Q2)", () => {
   it("returns null when every precondition passes", () => {
     expect(onlineRefusalReason(base)).toBeNull();
   });
-  it("prioritises kyc → banned → suspended → on_hold → cooldown", () => {
+  it("prioritises kyc_expired → kyc → banned → suspended → on_hold → cooldown", () => {
     expect(onlineRefusalReason({ ...base, kycStatus: "pending" })).toBe("kyc");
+    // A lapsed ID (1·b2) is reported distinctly from a first-time unverified rider.
+    expect(onlineRefusalReason({ ...base, kycStatus: "expired" })).toBe("kyc_expired");
     expect(onlineRefusalReason({ ...base, accountStatus: "banned" })).toBe("banned");
     expect(onlineRefusalReason({ ...base, accountStatus: "suspended" })).toBe("suspended");
     expect(onlineRefusalReason({ ...base, onHold: true })).toBe("on_hold");
@@ -466,6 +469,21 @@ describe("RiderService.applyKycResult", () => {
   it("reports updated:0 for a stale/duplicate event or unknown ref", async () => {
     const s = svc({ rider: { updateMany: async () => ({ count: 0 }) } }, {});
     expect(await s.applyKycResult("sess_x", "failed", new Date())).toEqual({ updated: 0 });
+  });
+
+  it("an `expired` result clears idVerified + decline reason and resets the A-02 attempt counter (1·b2)", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+      },
+    };
+    expect(await svc(prisma, {}).applyKycResult("sess_1", "expired", new Date())).toEqual({ updated: 1 });
+    // Not a decline: idVerified false, no decline reason, and kycAttempts reset so re-verify isn't locked.
+    expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, kycDeclineReason: null, kycAttempts: 0 });
   });
 });
 
@@ -525,6 +543,22 @@ describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
     const s = svc(prisma, {});
     await s.adminSetKyc("p1", "verified");
     expect(data).toMatchObject({ kycStatus: "verified", idVerified: true, kycDeclineReason: null });
+    expect(data!.kycResolvedAt).toBeInstanceOf(Date);
+  });
+
+  it("expire (1·b2 ops backstop) → expired, clears the reason, stamps the time, and resets kycAttempts", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 1 }),
+        update: async (args: { data: Record<string, unknown> }) => { data = args.data; return {}; },
+      },
+    };
+    const s = svc(prisma, {});
+    const res = await s.adminSetKyc("p1", "expired");
+    // Attempt counter reset to 0 so the rider can re-verify; not locked.
+    expect(res).toMatchObject({ profileId: "p1", kycStatus: "expired", kycAttempts: 0, locked: false });
+    expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, kycDeclineReason: null, kycAttempts: 0 });
     expect(data!.kycResolvedAt).toBeInstanceOf(Date);
   });
 

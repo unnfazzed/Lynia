@@ -24,9 +24,9 @@ export interface GateError {
  * Q2), `cooldown` (recent cancel cool-off), `out_of_area` (rider is outside the launch service corridor,
  * Q1 — recoverable by moving back into the coverage area).
  */
-export type OnlineGateReason = "kyc" | "suspended" | "banned" | "on_hold" | "cooldown" | "out_of_area";
+export type OnlineGateReason = "kyc" | "kyc_expired" | "suspended" | "banned" | "on_hold" | "cooldown" | "out_of_area";
 
-const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = ["kyc", "suspended", "banned", "on_hold", "cooldown", "out_of_area"];
+const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = ["kyc", "kyc_expired", "suspended", "banned", "on_hold", "cooldown", "out_of_area"];
 
 function isOnlineGateReason(v: string): v is OnlineGateReason {
   return (ONLINE_GATE_REASONS as readonly string[]).includes(v);
@@ -53,6 +53,9 @@ export function onlineGateReason(err: GateError | null | undefined): OnlineGateR
   if (m.includes("banned") || m.includes("ban ")) return "banned";
   if (m.includes("suspend")) return "suspended";
   if (m.includes("cooldown") || m.includes("cool-down") || m.includes("cool down")) return "cooldown";
+  // Expired must be checked before the generic kyc sniff — the expired copy says "re-verify", which
+  // would otherwise match `verif` and collapse a lapsed ID into the first-time "verify your ID" state.
+  if (m.includes("expired")) return "kyc_expired";
   if (m.includes("kyc") || m.includes("verif")) return "kyc";
   return null;
 }
@@ -66,6 +69,10 @@ export const ONLINE_GATE_COPY: Record<OnlineGateReason, GateCopy> = {
   kyc: {
     title: "Verify your ID to go online",
     message: "Your ID isn't verified yet. Finish verification, then you can start accepting deliveries.",
+  },
+  kyc_expired: {
+    title: "Your ID has expired",
+    message: "You can't go online until you re-verify. Re-submit a valid national ID to keep riding.",
   },
   suspended: {
     title: "Your account is suspended",
@@ -118,6 +125,26 @@ export function isOutOfServiceArea(err: GateError | null | undefined): boolean {
   const m = (err.message ?? "").toLowerCase();
   return m.includes("service area") || m.includes("service corridor") || m.includes("out of area") || m.includes("outside our service");
 }
+
+/**
+ * S·2: whether an order-create error is the "your account is on hold" 403. The server throws the same
+ * `{ reason: "on_hold", message }` shape the rider online-gate uses, so this reads the machine code
+ * first (authoritative) and falls back to a message sniff. Kept narrow: only an explicit on-hold code
+ * or an "on hold" phrase counts, so an unrelated 4xx isn't mistaken for a hold.
+ */
+export function isAccountOnHold(err: GateError | null | undefined): boolean {
+  if (!err) return false;
+  const code = (err.code ?? "").toLowerCase();
+  if (code === "on_hold" || code === "account_on_hold") return true;
+  const m = (err.message ?? "").toLowerCase();
+  return m.includes("on hold") || m.includes("on-hold");
+}
+
+/** Copy for the customer account-on-hold blocking screen (S·2). */
+export const ACCOUNT_ON_HOLD_COPY: GateCopy = {
+  title: "Your account is on hold",
+  message: "We've paused your account while we review recent activity. You can't send parcels right now — contact support if you think this is a mistake.",
+};
 
 /**
  * Optional client-side pre-check (server is authority): is a point inside the launch service corridor?

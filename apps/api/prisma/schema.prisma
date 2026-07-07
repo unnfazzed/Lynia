@@ -62,6 +62,9 @@ enum KycStatus {
   pending
   verified
   failed
+  // A previously-verified rider whose national ID later lapsed (rider-journey 1·b2). Must re-verify;
+  // blocked from going online like the other non-verified states.
+  expired
 }
 
 // Rider account standing (A-04) — distinct from KYC + the reliability on_hold flag.
@@ -127,6 +130,11 @@ model Profile {
   photoUrl        String?   @map("photo_url")
   phoneVerifiedAt DateTime? @map("phone_verified_at")
   ordersCount     Int       @default(0) @map("orders_count")
+  // Customer account standing (S·2). A boolean, not an enum: unlike a rider (active/suspended/banned),
+  // a customer has exactly one moderated state — held or not. A held customer is blocked from
+  // broadcasting a new order (OrdersService.create); `holdReason` backs the audit row + admin console.
+  onHold          Boolean   @default(false) @map("on_hold")
+  holdReason      String?   @map("hold_reason")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 

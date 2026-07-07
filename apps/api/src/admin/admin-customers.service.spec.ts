@@ -99,4 +99,60 @@ describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => 
     expect(c.flags).toBe(1);
     expect(c.flagLog).toEqual([{ date: "2026-03-05", text: "Fraud or scam — chargeback scam", issueId: "rep9" }]);
   });
+
+  it("projects a held customer as status=on_hold with the recorded reason", async () => {
+    const held = { ...profile, onHold: true, holdReason: "Payment dispute open" };
+    const prisma = {
+      profile: { findFirst: async () => held },
+      report: { count: async () => 0, findMany: async () => [] },
+      order: customerOrders,
+    };
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    const c = (await svc.getCustomerDetail("c1"))!;
+    expect(c.status).toBe("on_hold");
+    expect(c.holdReason).toBe("Payment dispute open");
+  });
+});
+
+describe("AdminCustomersService hold/lift (S·2 — mutation + audit in ONE $transaction, A-01)", () => {
+  interface Calls {
+    update: { where: unknown; data: Record<string, unknown> } | null;
+    audit: { data: Record<string, unknown> } | null;
+  }
+  function makeTx(customer: unknown = { id: "c1" }) {
+    const calls: Calls = { update: null, audit: null };
+    const tx = {
+      profile: {
+        findFirst: async () => customer,
+        update: async (args: Calls["update"]) => { calls.update = args; return {}; },
+      },
+      auditLog: { create: async (args: Calls["audit"]) => { calls.audit = args; return { id: "audit-3" }; } },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    return { prisma, calls };
+  }
+
+  it("holdCustomer sets onHold + reason AND writes the audit row atomically", async () => {
+    const { prisma, calls } = makeTx();
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    const res = await svc.holdCustomer("admin-1", "c1", { reason: "suspected fraud", note: "orders #4,#5" });
+    expect(calls.update!.data).toEqual({ onHold: true, holdReason: "suspected fraud" });
+    expect(calls.audit!.data).toMatchObject({ actor: "admin-1", action: "customer.hold", target: "c1", reasonCode: "suspected fraud", note: "orders #4,#5" });
+    expect(res).toEqual({ id: "c1", status: "on_hold", auditId: "audit-3" });
+  });
+
+  it("liftCustomerHold clears onHold + reason and audits", async () => {
+    const { prisma, calls } = makeTx();
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    const res = await svc.liftCustomerHold("admin-1", "c1", {});
+    expect(calls.update!.data).toEqual({ onHold: false, holdReason: null });
+    expect(calls.audit!.data).toMatchObject({ action: "customer.lift", target: "c1", note: null });
+    expect(res).toEqual({ id: "c1", status: "active", auditId: "audit-3" });
+  });
+
+  it("404s when the id isn't a customer", async () => {
+    const { prisma } = makeTx(null);
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    await expect(svc.holdCustomer("admin-1", "c1", { reason: "x" })).rejects.toThrow(/customer not found/i);
+  });
 });
