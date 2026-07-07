@@ -11,6 +11,8 @@ import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_RE
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
+import type { LastActive } from "../../src/logic/last-active";
+import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { offersKey, orderKey } from "../../src/query/client";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
 import { Button, Card, EmptyState, ErrorText, Heading, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub } from "../../src/ui";
@@ -65,6 +67,19 @@ export default function OrderScreen(): React.ReactElement {
     };
   }, [orderId]);
 
+  // Load the last-known summary for this order (persisted below) so an OFFLINE COLD START can show it
+  // instead of a bare "couldn't load" — only ever rendered in the fetch-error branch, never over live data.
+  const [lastKnown, setLastKnown] = useState<LastActive | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadLastActiveOrder(orderId).then((la) => {
+      if (alive) setLastKnown(la);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [orderId]);
+
   const orderQ = useQuery({
     queryKey: orderKey(orderId),
     queryFn: () => getOrder(orderId),
@@ -79,6 +94,18 @@ export default function OrderScreen(): React.ReactElement {
   });
   const status = orderQ.data?.status;
   const isActive = status !== undefined && ACTIVE.includes(status);
+
+  // Persist a tiny last-known summary for offline cold-start recovery — ONCE per status transition (not
+  // on every GPS tick, which would hammer SecureStore). Cleared on a terminal status so a finished order
+  // never resurfaces as a stale "last known" card next time we're offline.
+  const persistedStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const d = orderQ.data;
+    if (!d || d.status === persistedStatus.current) return;
+    persistedStatus.current = d.status;
+    if (ACTIVE.includes(d.status) || d.status === "open_for_offers") void saveLastActiveOrder(d);
+    else void clearLastActiveOrder(d.id);
+  }, [orderQ.data]);
 
   // C2: keep the socket subscribed through `cancelled` for a bounded grace window so a rider-bail
   // `order:rebroadcast` can still arrive and navigate the customer to the fresh auction (below).
@@ -265,6 +292,35 @@ export default function OrderScreen(): React.ReactElement {
   if (!orderQ.data) {
     // Only a real 404 is "not found"; a transient fetch error gets a retry, not a dead-end.
     const notFound = orderQ.error instanceof ApiError && orderQ.error.status === 404;
+    // Offline cold-start: the fetch failed but we have this order's last-known summary. Show it (the
+    // root offline banner already explains why it's stale) instead of a bare error — the live query
+    // takes over the moment we reconnect. Never shown for a 404: a genuinely gone order isn't "offline".
+    const showLastKnown = !notFound && lastKnown != null && lastKnown.id === orderId;
+    if (showLastKnown) {
+      return (
+        <Screen>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
+              <Heading>Order {lastKnown.id.slice(0, 8)}</Heading>
+              <View style={{ flex: 1 }} />
+              <StatusPill status={lastKnown.status} />
+            </View>
+            <Card>
+              <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.xs, fontVariant: ["tabular-nums"] }}>
+                Fare {formatMoney(lastKnown.fare)}
+              </Text>
+              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink }}>
+                {lastKnown.pickupLandmark || "Pickup"} → {lastKnown.dropoffLandmark || "Drop-off"}
+              </Text>
+              <View style={{ height: tokens.space.sm }} />
+              <Sub>Showing your last saved update — we&apos;ll refresh the moment you&apos;re back online.</Sub>
+            </Card>
+            <Button label="Retry now" onPress={() => void orderQ.refetch()} loading={orderQ.isFetching} />
+            <Button label="Back home" variant="ghost" onPress={() => router.replace("/home")} />
+          </ScrollView>
+        </Screen>
+      );
+    }
     return (
       <Screen>
         <Heading>{notFound ? "Order not found" : "Couldn't load this order"}</Heading>
