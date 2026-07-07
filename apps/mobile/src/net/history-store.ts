@@ -12,12 +12,13 @@ import type { OrderHistoryRow } from "../api/orders";
  * Android) and no more than a screenful is cached.
  */
 
-const KEY = "lynia.history.snapshot.v1";
+/** SecureStore key — exported so sign-out (auth/session `clearDeviceState`) clears the same slot. */
+export const HISTORY_SNAPSHOT_KEY = "lynia.history.snapshot.v1";
 const MAX_ROWS = 20;
 
 export async function saveHistorySnapshot(rows: OrderHistoryRow[]): Promise<void> {
   try {
-    await SecureStore.setItemAsync(KEY, JSON.stringify(rows.slice(0, MAX_ROWS)));
+    await SecureStore.setItemAsync(HISTORY_SNAPSHOT_KEY, JSON.stringify(rows.slice(0, MAX_ROWS)));
   } catch {
     /* best-effort */
   }
@@ -25,7 +26,7 @@ export async function saveHistorySnapshot(rows: OrderHistoryRow[]): Promise<void
 
 export async function loadHistorySnapshot(): Promise<OrderHistoryRow[] | null> {
   try {
-    const raw = await SecureStore.getItemAsync(KEY);
+    const raw = await SecureStore.getItemAsync(HISTORY_SNAPSHOT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     // Defensive: only accept a non-empty array shape; a malformed blob returns null (falls back to live).
@@ -37,7 +38,7 @@ export async function loadHistorySnapshot(): Promise<OrderHistoryRow[] | null> {
 
 export async function clearHistorySnapshot(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(KEY);
+    await SecureStore.deleteItemAsync(HISTORY_SNAPSHOT_KEY);
   } catch {
     /* best-effort */
   }

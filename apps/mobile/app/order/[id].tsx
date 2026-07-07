@@ -155,8 +155,17 @@ export default function OrderScreen(): React.ReactElement {
   // Announce a newly-arrived bid for screen-reader users — the streaming list updates silently.
   const liveBidCount = offersQ.data?.length ?? 0;
   const prevBidCount = useRef(0);
+  // Seed the baseline on the FIRST settled offers load, so opening an auction that already has bids
+  // doesn't buzz/announce them as if they just arrived (0→N on mount). Only genuine later increases fire.
+  const bidsSeeded = useRef(false);
   useEffect(() => {
-    if (liveBidCount > prevBidCount.current && status === "open_for_offers") {
+    if (status !== "open_for_offers" || !offersQ.isSuccess) return;
+    if (!bidsSeeded.current) {
+      bidsSeeded.current = true;
+      prevBidCount.current = liveBidCount;
+      return;
+    }
+    if (liveBidCount > prevBidCount.current) {
       // A single attention buzz so a new bid registers even with the phone in a pocket / screen dark.
       haptic("notify");
       AccessibilityInfo.announceForAccessibility(
@@ -164,7 +173,7 @@ export default function OrderScreen(): React.ReactElement {
       );
     }
     prevBidCount.current = liveBidCount;
-  }, [liveBidCount, status]);
+  }, [liveBidCount, status, offersQ.isSuccess]);
 
   // Warm success cue at the two moments that land emotionally: a rider is assigned (the auction paid
   // off) and the parcel is delivered. Fires only on a real transition, never on mount or a re-render.
@@ -207,6 +216,12 @@ export default function OrderScreen(): React.ReactElement {
   const firedThresholds = useRef<Set<number>>(new Set());
   useEffect(() => {
     firedThresholds.current.clear();
+    // A rider bail navigates to a NEW order id on the SAME screen instance (expo-router reuses it on a
+    // param change), so reset the transition trackers — otherwise the new auction's bids don't buzz
+    // until they exceed the previous order's stale count, and a status cue could carry over.
+    prevBidCount.current = 0;
+    bidsSeeded.current = false;
+    prevStatus.current = undefined;
   }, [orderId]);
   useEffect(() => {
     if (remainingMs == null || status !== "open_for_offers") return;

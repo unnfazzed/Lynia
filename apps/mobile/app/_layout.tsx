@@ -83,8 +83,9 @@ export default function RootLayout(): React.ReactElement | null {
         <AuthProvider>
           <PushSync />
           <StatusBar style="dark" />
-          {/* ToastProvider wraps the navigator so any screen can raise an in-app toast; it renders its
-              strip above the app (below the connectivity banner's ink bar in the stacking order). */}
+          {/* ToastProvider wraps the navigator so any screen can raise an in-app toast. Its strip is
+              absolutely positioned at the top inset; in the rare offline-and-toasting overlap it sits
+              over the connectivity ink bar for the toast's few seconds, then clears itself. */}
           <ToastProvider>
             <View style={{ flex: 1 }}>
               <ConnectivityBanner />

@@ -17,7 +17,8 @@ import * as SecureStore from "expo-secure-store";
  *     leak the last sender's recipients to the next account.
  */
 
-const KEY = "lynia.savedRecipients.v1";
+/** SecureStore key — exported so sign-out (auth/session `clearDeviceState`) clears the same slot. */
+export const RECIPIENTS_KEY = "lynia.savedRecipients.v1";
 
 /** Keep it a shortcut, not a history log. */
 export const MAX_RECIPIENTS = 5;
@@ -65,7 +66,7 @@ export function clampRecipients(rows: unknown): Recipient[] {
 
 export async function loadRecipients(): Promise<Recipient[]> {
   try {
-    const raw = await SecureStore.getItemAsync(KEY);
+    const raw = await SecureStore.getItemAsync(RECIPIENTS_KEY);
     if (!raw) return [];
     return clampRecipients(JSON.parse(raw));
   } catch {
@@ -85,7 +86,7 @@ export async function rememberRecipient(recipient: Recipient): Promise<Recipient
   const key = normalizePhone(clean.phone);
   const next = clampRecipients([clean, ...existing.filter((r) => normalizePhone(r.phone) !== key)]);
   try {
-    await SecureStore.setItemAsync(KEY, JSON.stringify(next));
+    await SecureStore.setItemAsync(RECIPIENTS_KEY, JSON.stringify(next));
   } catch {
     /* best-effort */
   }
@@ -95,7 +96,7 @@ export async function rememberRecipient(recipient: Recipient): Promise<Recipient
 /** Wipe all saved recipients (sign-out / a "clear" affordance). Best-effort. */
 export async function clearRecipients(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(KEY);
+    await SecureStore.deleteItemAsync(RECIPIENTS_KEY);
   } catch {
     /* best-effort */
   }

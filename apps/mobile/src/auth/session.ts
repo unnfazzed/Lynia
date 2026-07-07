@@ -1,4 +1,9 @@
 import * as SecureStore from "expo-secure-store";
+// Import the on-device store keys from their owning modules so the sign-out wipe below can't drift from
+// the keys those modules actually write (type-only-adjacent leaf modules — no runtime import cycle).
+import { HISTORY_SNAPSHOT_KEY } from "../net/history-store";
+import { RECENTS_KEY as SAVED_PLACES_RECENTS_KEY, SAVED_KEY as SAVED_PLACES_SAVED_KEY } from "../logic/saved-places";
+import { RECIPIENTS_KEY } from "../logic/saved-recipients";
 
 /** The authenticated session, persisted in the device keychain (not AsyncStorage — these are secrets). */
 export interface Session {
@@ -199,11 +204,11 @@ export async function clearDeviceState(): Promise<void> {
       // Address book: the saved Home/Work + recent places (addresses) and the recent recipients (the one
       // place we hold contact PII) must not survive to the next user on a shared device — exactly the
       // "next user must not rehydrate the previous user's addresses" rule above, now including recipients.
-      SecureStore.deleteItemAsync("lynia.savedPlaces.recents"),
-      SecureStore.deleteItemAsync("lynia.savedPlaces.saved"),
-      SecureStore.deleteItemAsync("lynia.savedRecipients.v1"),
+      SecureStore.deleteItemAsync(SAVED_PLACES_RECENTS_KEY),
+      SecureStore.deleteItemAsync(SAVED_PLACES_SAVED_KEY),
+      SecureStore.deleteItemAsync(RECIPIENTS_KEY),
       // The cached trips list (holds this user's route landmarks) must not paint for the next user.
-      SecureStore.deleteItemAsync("lynia.history.snapshot.v1"),
+      SecureStore.deleteItemAsync(HISTORY_SNAPSHOT_KEY),
       ...codes.map((id) => SecureStore.deleteItemAsync(codeKey(id))),
     ]);
   } catch {

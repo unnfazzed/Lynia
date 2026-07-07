@@ -88,8 +88,13 @@ export default function HistoryScreen(): React.ReactElement {
     });
   };
 
-  // Live data wins; fall back to the cached snapshot while loading or when the fetch failed offline.
-  const rows = historyQ.data ?? (historyQ.isLoading || historyQ.isError ? cached : null);
+  // Live data always wins; otherwise paint the cached snapshot. Keyed on the ABSENCE of live data (not
+  // isLoading/isError), so it also covers React Query's PAUSED state — a query that mounts offline is
+  // `pending`+`paused` (isLoading false), which the old gate missed, dropping the cache and showing a
+  // false "No trips yet". A genuinely-empty fresh fetch (`[]`) still wins over a stale cache.
+  const rows = historyQ.data ?? cached;
+  // We're painting the cache because live data hasn't arrived (cold start / offline / error-no-refetch).
+  const showingStale = historyQ.data == null && cached != null;
   // A customer can re-send any parcel they sent — offer the shortcut on their own trips.
   const canReorder = (o: OrderHistoryRow): boolean => o.role === "customer";
 
@@ -99,22 +104,29 @@ export default function HistoryScreen(): React.ReactElement {
       <Sub>Every parcel you&apos;ve sent or delivered.</Sub>
       {rows && rows.length > 0 ? (
         <ScrollView showsVerticalScrollIndicator={false}>
-          {/* When we're painting the cached list because the live fetch failed, say so — the root
-              offline banner explains why, this just sets expectations that it may be stale. */}
-          {!historyQ.data && historyQ.isError ? (
-            <Sub>Showing your last saved trips — we&apos;ll refresh when you&apos;re back online.</Sub>
+          {/* Painting the cached list because live data is absent — set the "may be stale" expectation,
+              and keep a Retry when the live fetch actually errored (it won't self-heal without a
+              reconnect event, so the manual retry must survive even while we show cached rows). */}
+          {showingStale ? (
+            <View style={{ marginBottom: tokens.space.sm }}>
+              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
+                Showing your last saved trips — we&apos;ll refresh when you&apos;re back online.
+              </Text>
+              {historyQ.isError ? <Button label="Retry" variant="ghost" onPress={() => void historyQ.refetch()} loading={historyQ.isFetching} /> : null}
+            </View>
           ) : null}
           {rows.map((o) => (
             <Row key={o.id} o={o} onPress={() => router.push(`/order/${o.id}`)} onReorder={canReorder(o) ? () => reorder(o) : undefined} />
           ))}
           <View style={{ height: tokens.space.xxl }} />
         </ScrollView>
-      ) : historyQ.isLoading ? (
-        <SkeletonRows />
       ) : historyQ.isError ? (
         <EmptyState icon="wifi-off" title="Couldn't load your trips" message="Check your connection and try again.">
           <Button label="Retry" onPress={() => void historyQ.refetch()} loading={historyQ.isFetching} />
         </EmptyState>
+      ) : historyQ.isPending ? (
+        // Covers both the first-load spinner AND the offline paused state (no cache to paint).
+        <SkeletonRows />
       ) : (
         <EmptyState icon="package" title="No trips yet" message="Your sent and delivered parcels will show up here.">
           <Button label="Send a parcel" onPress={() => router.replace("/home")} />
