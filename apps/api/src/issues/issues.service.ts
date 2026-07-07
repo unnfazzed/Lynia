@@ -215,8 +215,18 @@ export class IssuesService {
       if (body.resolution === "refund") {
         // A refund is owed to the customer and (once settlement billing is live) netted off the rider's
         // settlement — so the row needs the order's rider. refundAmount is contract-guaranteed for a refund.
-        const order = await tx.order.findUnique({ where: { id: issue.orderId }, select: { riderId: true } });
+        const order = await tx.order.findUnique({
+          where: { id: issue.orderId },
+          select: { riderId: true, agreedFare: true, proposedFare: true },
+        });
         if (!order?.riderId) throw new BadRequestException("Can't refund an order with no assigned rider");
+        // A refund can never exceed what was charged for the trip — bound it by the agreed fare (or the
+        // proposed fare if the order never reached an agreed price), so ops can't record a Refund larger
+        // than the amount ever paid, which A-06 settlement netting would later debit off the rider.
+        const fareCap = Number(order.agreedFare ?? order.proposedFare);
+        if (body.refundAmount! > fareCap) {
+          throw new BadRequestException(`Refund can't exceed the order fare (${fareCap.toFixed(2)})`);
+        }
         await tx.refund.create({
           data: { orderId: issue.orderId, riderId: order.riderId, amount: body.refundAmount!, reason: body.note ?? null },
         });

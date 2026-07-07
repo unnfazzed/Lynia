@@ -71,8 +71,19 @@ async function main(): Promise<void> {
     data: {
       customerId: customer.id,
       orderType: "parcel",
-      pickup: { lat: CORRIDOR.lat, lng: CORRIDOR.lng, landmark: "Eastgate Mall, CBD", contactPhone: "+263771111111" },
-      dropoff: { lat: CORRIDOR.lat + 0.01, lng: CORRIDOR.lng + 0.01, landmark: "14 Glenara Ave, Avenues", contactPhone: "+263772222222" },
+      // Waypoints nest the coords under `point` (packages/shared Waypoint contract). The pickup_geog
+      // generated column extracts pickup->'point'->>'lng'/'lat', so a flat {lat,lng} would leave
+      // pickup_geog NULL and the seeded order would never surface in the ST_DWithin board query.
+      pickup: {
+        point: { lat: CORRIDOR.lat, lng: CORRIDOR.lng },
+        landmark: "Eastgate Mall, CBD",
+        contactPhone: "+263771111111",
+      },
+      dropoff: {
+        point: { lat: CORRIDOR.lat + 0.01, lng: CORRIDOR.lng + 0.01 },
+        landmark: "14 Glenara Ave, Avenues",
+        contactPhone: "+263772222222",
+      },
       itemDesc: "Documents envelope",
       declaredValue: 10,
       suggestedFare: 2.5,

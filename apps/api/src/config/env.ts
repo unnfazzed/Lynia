@@ -87,7 +87,13 @@ export const envSchema = z.object({
   // cross-origin (native mobile clients send no Origin and are unaffected; a stray browser origin is
   // refused). Set to the admin console / any browser client origins in prod. See common/cors.ts.
   CORS_ALLOWED_ORIGINS: z.string().default(""),
-  DIDIT_BASE_URL: z.string().url().default("https://verification.didit.me"),
+  // Coerce an injected empty string to "absent" so the default applies — the deploy sets some optional
+  // vars to "" when their repo Variable is unset, and a bare .url() would reject "" and fail boot (the
+  // same hazard already handled for DIDIT_CALLBACK_URL / OTEL_EXPORTER_OTLP_ENDPOINT via optionalUrl).
+  DIDIT_BASE_URL: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().url().default("https://verification.didit.me"),
+  ),
   // --- Data retention (LR8, docs/DATA-RETENTION.md) ---
   // GPS coords on order_events are scrubbed this many days after the event; expired sessions are
   // hard-deleted this many days after they lapse. Driven by the POST /admin/retention/purge sweep.
