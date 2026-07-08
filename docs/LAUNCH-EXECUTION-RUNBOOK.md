@@ -169,6 +169,55 @@ promote through closed testing in Play Console → then tag `v0.2.0` on `main` f
 production rollout (starts at 10%; advance/halt in Play Console → Releases). JS-only hotfixes:
 **Actions → "Mobile OTA Update"** (goes to installed apps on next launch, no review).
 
+### c-alt) No EAS build credits — arms mobile-release-gradle.yml instead
+
+If the EAS plan's build credits are exhausted (or you want to avoid EAS billing entirely), use
+**`mobile-release-gradle.yml`**: it builds the signed `.aab` on the GitHub runner (free CI
+minutes; same prebuild+Gradle recipe as the QA APK) and submits directly to Google Play through
+the Play Developer API service account — no EAS build or EAS Submit involved. Arm **exactly one**
+of the two mobile release pipelines (`EAS_RELEASE_ENABLED` vs `PLAY_RELEASE_ENABLED`); both
+trigger on `v*` tags and each is a no-op while its own switch is off.
+
+```bash
+# 1. Persistent upload keystore (replaces EAS-managed credentials). Generate ONCE, back it up
+#    somewhere durable off-GitHub (password manager / GCS). Play App Signing still holds the real
+#    app signing key — this is only the rotatable upload key.
+keytool -genkeypair -v -dname "CN=Lynia, O=Lynia, C=ZW" \
+  -alias lynia-upload -keystore upload.keystore \
+  -keyalg RSA -keysize 4096 -validity 9125 \
+  -storepass "<strong-password>" -keypass "<same-password>"
+base64 -w0 upload.keystore | gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64
+gh secret set ANDROID_UPLOAD_KEYSTORE_PASSWORD --body "<strong-password>"
+gh secret set ANDROID_UPLOAD_KEY_ALIAS --body "lynia-upload"
+
+# 2. Play Console (one-time): create the app (zw.co.lynia). Play App Signing is automatic for new
+#    apps — the key from step 1 becomes the upload key on first upload. Then Play Console →
+#    Setup → API access → link the GCP project → create a service account → grant it the
+#    "Release manager" permission on this app → download its JSON key:
+gh secret set PLAY_SERVICE_ACCOUNT_JSON < play-service-account.json
+
+# 3. Build-time keys move from EAS secrets to GitHub secrets (the QA APK already uses these):
+gh secret set GOOGLE_MAPS_API_KEY --body "<android maps key>"
+base64 -w0 google-services.json | gh secret set GOOGLE_SERVICES_JSON   # Firebase / FCM
+
+# 4. Arm:
+gh variable set PLAY_RELEASE_ENABLED --body "true"    # leave EAS_RELEASE_ENABLED unset/false
+```
+
+First release — the Play API **cannot upload the very first bundle of a new app**: run
+**Actions → "Mobile Release (Play, self-built)"** with `submit=false`, download the `.aab`
+artifact, upload it manually in Play Console → internal testing. Every release after that is
+automatic: dispatch with track `internal` for QA, tag `vX.Y.Z` on `main` for the staged
+production rollout (10% `inProgress`, advance/halt in Play Console).
+
+`versionCode` is derived as `ANDROID_VERSION_CODE_OFFSET` (repo variable, default 0) + the
+workflow's `run_number`. If the workflow file is ever renamed (run_number resets) or codes were
+already consumed elsewhere, set the offset above the last shipped versionCode.
+
+**OTA lane:** EAS **Update** is billed by MAU, not build credits — the free tier keeps working,
+so `mobile-ota.yml` (and step 1's `eas init` + `EXPO_TOKEN`) still apply unchanged if you want
+JS-only hotfixes. Skip it entirely and every fix ships as a store release instead.
+
 ### d) Branch protection — §6 above, plus Code Owners
 
 Run the §6 command, and additionally tick **"Require review from Code Owners"** in the branch

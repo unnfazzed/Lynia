@@ -33,6 +33,15 @@ const googleServicesFile =
  */
 const easProjectId = process.env.EAS_PROJECT_ID;
 
+/**
+ * Play `versionCode` for self-built release bundles (mobile-release-gradle.yml computes it as
+ * offset + run_number, since EAS's remote autoIncrement only applies to EAS-server builds).
+ * Absent (local dev, QA APK, EAS builds) => Expo's default / EAS remote versioning as before.
+ */
+const androidVersionCode = process.env.ANDROID_VERSION_CODE
+  ? Number(process.env.ANDROID_VERSION_CODE)
+  : undefined;
+
 const config: ExpoConfig = {
   name: "LyniaGo",
   slug: "lynia",
@@ -76,6 +85,8 @@ const config: ExpoConfig = {
   ],
   android: {
     package: "zw.co.lynia",
+    // Only pinned for self-built store bundles; see androidVersionCode above.
+    ...(androidVersionCode ? { versionCode: androidVersionCode } : {}),
     adaptiveIcon: { foregroundImage: "./assets/adaptive-icon.png", backgroundColor: "#FFFFFF" },
     // Only attach the Maps block when a key is present, so an unkeyed build doesn't ship an empty key.
     ...(googleMapsApiKey ? { config: { googleMaps: { apiKey: googleMapsApiKey } } } : {}),

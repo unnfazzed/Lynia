@@ -1,0 +1,179 @@
+name: Mobile Release (Play, self-built)
+
+# Zero-EAS-credit alternative to mobile-release.yml (docs/LAUNCH-EXECUTION-RUNBOOK.md §8c-alt).
+# Builds the signed Android App Bundle (.aab) ON THIS RUNNER — expo prebuild + Gradle, the same
+# recipe as android-test-apk.yml — and submits it straight to Google Play through the Play
+# Developer API (a GCP service account), so no EAS build credits or EAS Submit are consumed.
+#
+# Trade-offs vs the EAS pipeline (kept dormant alongside this one — arm exactly ONE):
+#   - Signing: the upload keystore lives in GitHub secrets (base64) instead of EAS-managed
+#     credentials. Play App Signing still holds the real app signing key; the upload key is
+#     rotatable via Play Console if it ever leaks. BACK THE KEYSTORE UP off-GitHub.
+#   - versionCode: EAS's remote autoIncrement is unavailable, so it is derived here as
+#     ANDROID_VERSION_CODE_OFFSET (repo variable, default 0) + this workflow's run_number —
+#     monotonic per workflow file. If the workflow is ever renamed (run_number resets), bump the
+#     offset above the last shipped versionCode.
+#   - PLAY API LIMITATION: the very FIRST bundle of a new app cannot be uploaded via the API.
+#     Run this once with submit=false, download the .aab artifact, upload it manually in Play
+#     Console (internal testing). Every release after that submits automatically.
+#
+# DORMANT until armed — gated on the repo variable PLAY_RELEASE_ENABLED == 'true'.
+# Arming (founder, one-time; full steps in docs/LAUNCH-EXECUTION-RUNBOOK.md §8c-alt):
+#   1. Generate a persistent upload keystore; set secrets ANDROID_UPLOAD_KEYSTORE_BASE64,
+#      ANDROID_UPLOAD_KEYSTORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS.
+#   2. Play Console: create the app (zw.co.lynia); API access → link the GCP project, create a
+#      service account with release permission; set its JSON key as secret PLAY_SERVICE_ACCOUNT_JSON.
+#   3. Set repo secrets GOOGLE_MAPS_API_KEY / GOOGLE_SERVICES_JSON (base64) as for the QA APK.
+#   4. gh variable set PLAY_RELEASE_ENABLED --body "true"   (leave EAS_RELEASE_ENABLED unset/false)
+#
+# Tag v<version> on main → staged production rollout (10% inProgress, advance/halt in Play
+# Console), mirroring apps/mobile/eas.json. Manual dispatch defaults to the internal track.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play track"
+        type: choice
+        options: [internal, production]
+        default: internal
+      submit:
+        description: "Submit to Play after the build (off => .aab artifact only)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: gradle bundle + play submit
+    runs-on: ubuntu-latest
+    if: ${{ vars.PLAY_RELEASE_ENABLED == 'true' }}
+    environment: production-mobile
+    env:
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+      GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON }}
+      EXPO_PUBLIC_GOOGLE_PLACES_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_PLACES_KEY }}
+      # Keeps updates.url + extra.eas.projectId in the binary when EAS Update (free tier) is used
+      # for the OTA lane; absent => updates stay disabled, build unchanged.
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+      KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Expo SDK 52 / RN 0.76 build on JDK 17 (same toolchain as android-test-apk.yml).
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      # Hoisted layout so RN Gradle autolinking resolves native modules in the pnpm monorepo
+      # (see android-test-apk.yml for the full rationale).
+      - name: Install (hoisted node_modules for RN autolinking)
+        run: pnpm install --frozen-lockfile=false --config.node-linker=hoisted
+
+      - name: Build shared package
+        run: pnpm --filter @lynia/shared build
+
+      # Play rejects a reused versionCode; run_number is monotonic per workflow file and the
+      # offset variable re-bases it if the file is ever renamed or codes were shipped elsewhere.
+      - name: Compute versionCode
+        run: |
+          OFFSET="${{ vars.ANDROID_VERSION_CODE_OFFSET || '0' }}"
+          echo "ANDROID_VERSION_CODE=$(( OFFSET + ${{ github.run_number }} ))" >> "$GITHUB_ENV"
+
+      # Materialize file-shaped secrets (GitHub has no native file secrets). app.config.ts reads
+      # GOOGLE_SERVICES_JSON as a filesystem path.
+      - name: Provide google-services.json (optional)
+        if: ${{ env.GOOGLE_SERVICES_JSON_B64 != '' }}
+        run: |
+          echo "$GOOGLE_SERVICES_JSON_B64" | base64 -d > "$RUNNER_TEMP/google-services.json"
+          echo "GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
+
+      - name: Materialize upload keystore
+        run: echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.keystore"
+
+      # Generate the native android/ project (not committed — Expo CNG/prebuild owns it).
+      - name: Expo prebuild (android)
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --platform android --no-install
+
+      # Signing injected via Gradle properties so the generated build.gradle isn't edited.
+      - name: Build signed release bundle (.aab)
+        working-directory: apps/mobile/android
+        run: |
+          ./gradlew bundleRelease \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/upload.keystore" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEYSTORE_PASSWORD"
+
+      - name: Print upload-key SHA-1 (restrict the Maps key to this in GCP)
+        run: keytool -list -v -keystore "$RUNNER_TEMP/upload.keystore" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" | grep -i "SHA1:" || true
+
+      # Always keep the bundle as an artifact — it is the manual-upload path for the first release
+      # and the audit trail for every one after.
+      - name: Upload .aab artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: lynia-release-aab-vc${{ env.ANDROID_VERSION_CODE }}
+          path: apps/mobile/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+      # Tag push => staged production rollout at 10% (inProgress), matching eas.json; manual
+      # dispatch defaults to the internal track (completed — internal has no staged rollout).
+      - name: Resolve Play track
+        if: ${{ inputs.submit != false }}
+        run: |
+          TRACK="${{ inputs.track || 'production' }}"
+          if [ "$TRACK" = "production" ]; then
+            echo "PLAY_TRACK=production" >> "$GITHUB_ENV"
+            echo "PLAY_STATUS=inProgress" >> "$GITHUB_ENV"
+            echo "PLAY_FRACTION=0.1" >> "$GITHUB_ENV"
+          else
+            echo "PLAY_TRACK=internal" >> "$GITHUB_ENV"
+            echo "PLAY_STATUS=completed" >> "$GITHUB_ENV"
+            echo "PLAY_FRACTION=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Submit to Google Play
+        if: ${{ inputs.submit != false }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: zw.co.lynia
+          releaseFiles: apps/mobile/android/app/build/outputs/bundle/release/*.aab
+          track: ${{ env.PLAY_TRACK }}
+          status: ${{ env.PLAY_STATUS }}
+          userFraction: ${{ env.PLAY_FRACTION }}
+
+      - name: Summary
+        run: |
+          {
+            echo "## Mobile release (self-built)"
+            echo "- versionCode: **${ANDROID_VERSION_CODE}**"
+            if [ "${{ inputs.submit }}" = "false" ]; then
+              echo "- Submit skipped — download the .aab artifact (first release of a new app must be uploaded manually in Play Console)."
+            else
+              echo "- Submitted to Play track **${PLAY_TRACK}** (status: ${PLAY_STATUS}${PLAY_FRACTION:+, rollout ${PLAY_FRACTION}})."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
