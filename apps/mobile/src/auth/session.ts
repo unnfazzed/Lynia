@@ -4,6 +4,7 @@ import * as SecureStore from "expo-secure-store";
 import { HISTORY_SNAPSHOT_KEY } from "../net/history-store";
 import { RECENTS_KEY as SAVED_PLACES_RECENTS_KEY, SAVED_KEY as SAVED_PLACES_SAVED_KEY } from "../logic/saved-places";
 import { MY_PICKUP_PHONE_KEY, RECIPIENTS_KEY } from "../logic/saved-recipients";
+import { KYC_DRAFT_KEY } from "../logic/kyc-draft";
 import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
 
 /** The authenticated session, persisted in the device keychain (not AsyncStorage — these are secrets). */
@@ -209,6 +210,8 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(SAVED_PLACES_SAVED_KEY),
       SecureStore.deleteItemAsync(RECIPIENTS_KEY),
       SecureStore.deleteItemAsync(MY_PICKUP_PHONE_KEY),
+      // The KYC draft holds the rider's national ID — must never survive to the next user on a shared device.
+      SecureStore.deleteItemAsync(KYC_DRAFT_KEY),
       // The cached trips list (holds this user's route landmarks) must not paint for the next user.
       SecureStore.deleteItemAsync(HISTORY_SNAPSHOT_KEY),
       // The cached chosen-rider identity (a third party's name + photo) must not survive to the next user.

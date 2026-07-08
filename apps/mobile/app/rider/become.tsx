@@ -2,10 +2,11 @@ import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as WebBrowser from "expo-web-browser";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Image, ScrollView, Text } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
+import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft } from "../../src/logic/kyc-draft";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
 import { Button, Card, ErrorText, Field, Heading, isTestBuild, Label, Screen, Sub } from "../../src/ui";
 
@@ -21,6 +22,41 @@ export default function BecomeRiderScreen(): React.ReactElement {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [draftRestored, setDraftRestored] = useState(false);
+  // Gate persistence until the initial load runs, so we don't clobber a stored draft with empty state.
+  const hydrated = useRef(false);
+
+  // Rehydrate the KYC draft once on mount — launching the camera can OOM-kill the app on a low-end
+  // phone; without this the whole form (including a re-typed national ID) would be lost on relaunch.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const d = await loadKycDraft();
+      if (cancelled) {
+        hydrated.current = true;
+        return;
+      }
+      if (d && kycDraftHasContent(d)) {
+        setFirstName(d.firstName);
+        setLastName(d.lastName);
+        setIdNumber(d.idNumber);
+        setBikeReg(d.bikeReg);
+        setPhotoKey(d.photoKey);
+        setPhotoUri(d.photoUri);
+        setDraftRestored(true);
+      }
+      hydrated.current = true;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist the draft (encrypted, on-device only) as fields change, after initial hydration.
+  useEffect(() => {
+    if (!hydrated.current) return;
+    void saveKycDraft({ firstName, lastName, idNumber, bikeReg, photoKey, photoUri });
+  }, [firstName, lastName, idNumber, bikeReg, photoKey, photoUri]);
 
   const canSubmit =
     firstName.trim().length > 0 &&
@@ -78,6 +114,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
     try {
       await completeProfile({ firstName: firstName.trim(), lastName: lastName.trim(), idNumber: idNumber.trim() });
       const res = await becomeRider({ bikeReg: bikeReg.trim(), photoUrl: photoKey });
+      // KYC is submitted — the draft has served its purpose. Wipe the stored national ID immediately
+      // rather than leaving it in the keystore any longer than needed.
+      void clearKycDraft();
       // Hand off in an in-app browser tab (not the system browser) — it returns deterministically to
       // the app when the rider finishes/closes, so the gate can re-check on focus instead of stranding
       // them in Chrome. Only ever open an https URL (defense against a bad/compromised vendor URL).
@@ -101,6 +140,12 @@ export default function BecomeRiderScreen(): React.ReactElement {
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Heading>Become a rider</Heading>
         <Sub>Verify your ID and register your bike to start accepting deliveries.</Sub>
+
+        {draftRestored && !pending ? (
+          <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, marginTop: tokens.space.xs }}>
+            We saved what you&apos;d filled in — pick up where you left off.
+          </Text>
+        ) : null}
 
         {pending ? (
           <Card style={{ borderColor: tokens.color.accent }}>
