@@ -1,9 +1,13 @@
 # SLO alert policies for the API latency histograms (docs/OBSERVABILITY.md). The app emits OTLP
 # histograms; the collector sidecar exports them to Cloud Monitoring via Managed Service for
 # Prometheus, so they're queryable in PromQL. We alert with PromQL conditions (not metric-type
-# thresholds) so the alert expression is a 1:1 copy of the SLO doc and can't drift — and, crucially,
-# a PromQL condition validates on syntax alone, so `terraform apply` succeeds BEFORE any series
-# exists (no chicken-and-egg with "the metric type isn't created until data flows").
+# thresholds) so the alert expression is a 1:1 copy of the SLO doc and can't drift.
+#
+# GATED on var.slo_alerts_enabled (default false): Cloud Monitoring VALIDATES the metric names in
+# a PromQL condition at policy-creation time ("The following PromQL metric(s) are invalid" 400 —
+# observed on the 2026-07-08 apply), so these policies CANNOT be created until the OTEL collector
+# (LR9, docs/OBSERVABILITY.md §Production activation) is live and the series exist in GMP. Flip
+# slo_alerts_enabled = true as the last step of LR9 activation and re-apply.
 #
 # Each policy fires when the metric's p95 stays above its SLO for 10 minutes. Dashboards are NOT
 # managed here — they're presentation, hand-tuned in the console, and shipped as an importable JSON
@@ -22,7 +26,7 @@ locals {
 }
 
 resource "google_monitoring_alert_policy" "slo_p95" {
-  for_each = local.slo_p95_ms
+  for_each = var.slo_alerts_enabled ? local.slo_p95_ms : {}
 
   display_name = "Lynia SLO — ${each.value.title} p95 > ${each.value.threshold}ms"
   combiner     = "OR"
@@ -54,6 +58,8 @@ resource "google_monitoring_alert_policy" "slo_p95" {
 # Error-rate alert on the match-select outcome counter (docs/OBSERVABILITY.md): page when >5% of
 # selections error over 5 minutes. Counter series in GMP; PromQL again keeps it doc-faithful.
 resource "google_monitoring_alert_policy" "match_select_error_rate" {
+  count = var.slo_alerts_enabled ? 1 : 0 # same LR9 gate as slo_p95 above
+
   display_name = "Lynia SLO — Match-select error rate > 5%"
   combiner     = "OR"
 
