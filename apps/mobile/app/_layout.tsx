@@ -13,6 +13,7 @@ import { useReachability } from "../src/net/use-reachability";
 import { useServerMinVersion } from "../src/net/use-server-version-gate";
 import { queryClient } from "../src/query/client";
 import { usePushRegistration } from "../src/push/use-push-registration";
+import { AnalyticsProvider } from "../src/telemetry/analytics";
 import { start as startRum } from "../src/telemetry/rum";
 import { OfflineBanner, ToastProvider } from "../src/ui";
 import { useAppFonts } from "../src/ui/fonts";
@@ -84,23 +85,28 @@ export default function RootLayout(): React.ReactElement | null {
 
   return (
     <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <PushSync />
-          <StatusBar style="dark" />
-          {/* ToastProvider wraps the navigator so any screen can raise an in-app toast. Its strip is
-              absolutely positioned at the top inset; in the rare offline-and-toasting overlap it sits
-              over the connectivity ink bar for the toast's few seconds, then clears itself. */}
-          <ToastProvider>
-            <View style={{ flex: 1 }}>
-              <ConnectivityBanner />
+      {/* AnalyticsProvider is a no-op passthrough until the founder provisions PostHog (see
+          src/telemetry/analytics.tsx). Inside SafeAreaProvider (the SDK reads insets) and above
+          the navigator so screen autocapture sees every route. */}
+      <AnalyticsProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <PushSync />
+            <StatusBar style="dark" />
+            {/* ToastProvider wraps the navigator so any screen can raise an in-app toast. Its strip is
+                absolutely positioned at the top inset; in the rare offline-and-toasting overlap it sits
+                over the connectivity ink bar for the toast's few seconds, then clears itself. */}
+            <ToastProvider>
               <View style={{ flex: 1 }}>
-                <AppNavigator />
+                <ConnectivityBanner />
+                <View style={{ flex: 1 }}>
+                  <AppNavigator />
+                </View>
               </View>
-            </View>
-          </ToastProvider>
-        </AuthProvider>
-      </QueryClientProvider>
+            </ToastProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </AnalyticsProvider>
     </SafeAreaProvider>
   );
 }

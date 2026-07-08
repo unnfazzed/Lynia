@@ -69,6 +69,12 @@ const config: ExpoConfig = {
       },
     ],
     ["expo-notifications", { color: "#00B14F" }],
+    // PostHog analytics needs NO config plugin — the SDK autolinks and src/telemetry/analytics.tsx
+    // key-gates it. Deliberately NOT adding "posthog-react-native/expo" (the plugin the connect
+    // command suggests): it exists only for error-tracking source-map upload and injects a gradle
+    // task that runs posthog-cli unconditionally on every release bundle — without `@posthog/cli`
+    // installed and POSTHOG_CLI_API_KEY set it FAILS the build. Add the plugin + `@posthog/cli`
+    // dep together if error tracking is ever provisioned.
     // Pin Kotlin to 1.9.25: expo-modules-core's Compose Compiler (1.5.15) requires it, and the SDK-52
     // default (1.9.24) fails :expo-modules-core:compileReleaseKotlin. prebuild regenerates android/,
     // so this must live in config, not a hand-edit of build.gradle.
@@ -99,6 +105,13 @@ const config: ExpoConfig = {
     // Defaulted so the button is never dead once the app is listed; override per-build with
     // EXPO_PUBLIC_STORE_URL if the listing URL ever changes.
     storeUrl: process.env.EXPO_PUBLIC_STORE_URL ?? "https://play.google.com/store/apps/details?id=zw.co.lynia",
+    // PostHog analytics (OPTIONAL — key-gated, see src/config.ts). Founder-provisioned by running
+    // `npx eas-cli integrations:posthog:connect` once: it syncs EXPO_PUBLIC_POSTHOG_API_KEY/_HOST
+    // into the EAS environments (and .env.local for dev), which the EXPO_PUBLIC_ path picks up at
+    // build. These `extra` entries are the parity fallback (mirrors googlePlacesKey). Unset →
+    // analytics never initializes and the app runs unchanged.
+    posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_API_KEY,
+    posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
     // EAS project link (eas-cli reads extra.eas.projectId). Attached only when provisioned.
     ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
   },
