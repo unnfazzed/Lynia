@@ -19,13 +19,14 @@ terraform {
     }
   }
 
-  # Remote state is strongly recommended (the module generates DB/JWT secrets that
-  # land in state). Uncomment and point at a GCS bucket once the project exists.
-  #
-  # backend "gcs" {
-  #   bucket = "lynia-tfstate"
-  #   prefix = "infra/terraform"
-  # }
+  # Remote state (the module generates DB/JWT secrets that land in state).
+  # Migrated 2026-07-08: state lives in the private, versioned gs://lynia-tfstate
+  # bucket — a fresh clone + `terraform init` finds the live state, so a plan can
+  # never mistake existing infra for "create everything from scratch".
+  backend "gcs" {
+    bucket = "lynia-tfstate"
+    prefix = "infra/terraform"
+  }
 }
 
 provider "google" {
