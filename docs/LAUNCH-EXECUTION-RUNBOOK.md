@@ -36,16 +36,26 @@ pnpm --filter @lynia/api encrypt-ids -- --apply # APPLY
 ## 2. LR8 — data-retention: schedule the daily purge + enable KYC-media lifecycle
 
 ```bash
+# NOTE (2026-07-08, learned executing this): Cloud Scheduler is NOT offered in africa-south1
+# ("Location 'africa-south1' is not a valid location"). The job is just a daily HTTPS cron —
+# its region is irrelevant to the API — so run it from a supported one (europe-west1 works;
+# `gcloud scheduler locations list` to confirm). Also enable the API first and pin the
+# schedule to Harare time:
+gcloud services enable cloudscheduler.googleapis.com --project=$PROJECT
+export SCHED_REGION=europe-west1
+
 # a) Daily retention sweep (GPS scrub + expired-session purge) → POST /admin/retention/purge.
 #    Cloud Scheduler with an OIDC token so the admin route accepts it.
 gcloud scheduler jobs create http lynia-retention-purge \
-  --project=$PROJECT --location=$REGION --schedule="0 3 * * *" \
+  --project=$PROJECT --location=$SCHED_REGION --schedule="0 3 * * *" \
+  --time-zone="Africa/Harare" \
   --uri="$API_URL/admin/retention/purge" --http-method=POST \
   --oidc-service-account-email=$RUNTIME_SA
 
 # b) Settlement auto-pause (LR5) — same pattern, once monetization is on:
 gcloud scheduler jobs create http lynia-settlement-autopause \
-  --project=$PROJECT --location=$REGION --schedule="0 2 * * *" \
+  --project=$PROJECT --location=$SCHED_REGION --schedule="0 2 * * *" \
+  --time-zone="Africa/Harare" \
   --uri="$API_URL/admin/cash/settlements/auto-pause" --http-method=POST \
   --oidc-service-account-email=$RUNTIME_SA
 
