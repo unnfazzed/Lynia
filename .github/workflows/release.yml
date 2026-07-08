@@ -248,15 +248,17 @@ jobs:
           # (whatsapp / didit / fcm). QA/test mode is OPT-IN by setting the matching repo
           # Variables (OTP_CHANNEL=console, KYC_PROVIDER=stub, PUSH_PROVIDER=noop, plus
           # OTP_TEST_PHONES) — so "do nothing" can never ship a vendor-free, auto-KYC build
-          # to the public URL, and flip-to-launch is just clearing those vars. The "^@^"
-          # prefix sets @ as the env delimiter so OTP_TEST_PHONES may contain commas.
+          # to the public URL, and flip-to-launch is just clearing those vars. The "^;^"
+          # prefix sets ; as the env delimiter so values may contain commas (OTP_TEST_PHONES)
+          # and @ (SCHEDULER_SERVICE_ACCOUNT is an SA email — the old @ delimiter split it
+          # mid-value and broke the deploy; no value legitimately contains a semicolon).
           # APP_ENV=production is HARDCODED (not a repo Variable) so nothing can relax the
           # launch-hygiene boot-guards on the live service; only deploy-staging.yml sets staging.
           # MIN_SUPPORTED_APP_VERSION drives the server-side force-update gate (GET /app/version-gate);
           # unset injects "" which the env schema coerces to the inert default (gate off).
           # SCHEDULER_SERVICE_ACCOUNT lets the daily Cloud Scheduler jobs (retention purge — runbook §2)
           # authenticate with a Google OIDC token minted as the runtime SA (AdminOrSchedulerGuard).
-          ENV_VARS="^@^NODE_ENV=production@APP_ENV=production@CLOUD_PROVIDER=gcp@STORAGE_BUCKET=lynia-media@GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}@OTP_CHANNEL=${{ vars.OTP_CHANNEL || 'whatsapp' }}@OTP_TEST_PHONES=${{ vars.OTP_TEST_PHONES }}@KYC_PROVIDER=${{ vars.KYC_PROVIDER || 'didit' }}@PUSH_PROVIDER=${{ vars.PUSH_PROVIDER || 'fcm' }}@MIN_SUPPORTED_APP_VERSION=${{ vars.MIN_SUPPORTED_APP_VERSION }}@SCHEDULER_SERVICE_ACCOUNT=${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}"
+          ENV_VARS="^;^NODE_ENV=production;APP_ENV=production;CLOUD_PROVIDER=gcp;STORAGE_BUCKET=lynia-media;GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }};OTP_CHANNEL=${{ vars.OTP_CHANNEL || 'whatsapp' }};OTP_TEST_PHONES=${{ vars.OTP_TEST_PHONES }};KYC_PROVIDER=${{ vars.KYC_PROVIDER || 'didit' }};PUSH_PROVIDER=${{ vars.PUSH_PROVIDER || 'fcm' }};MIN_SUPPORTED_APP_VERSION=${{ vars.MIN_SUPPORTED_APP_VERSION }};SCHEDULER_SERVICE_ACCOUNT=${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}"
           SECRETS="DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest,PII_ENCRYPTION_KEY=PII_ENCRYPTION_KEY:latest"
 
           # Didit KYC vendor wiring is OPT-IN via DIDIT_ENABLED=true. Gating it keeps launch-safe /
@@ -266,11 +268,11 @@ jobs:
           # DIDIT_ENABLED=true to activate real KYC (riders.module selects DiditKycVendor only when
           # KYC_PROVIDER=didit AND DIDIT_API_KEY is present, so until then it safely falls back to stub).
           if [ "${{ vars.DIDIT_ENABLED }}" = "true" ]; then
-            ENV_VARS="${ENV_VARS}@DIDIT_WORKFLOW_ID=${{ vars.DIDIT_WORKFLOW_ID }}"
+            ENV_VARS="${ENV_VARS};DIDIT_WORKFLOW_ID=${{ vars.DIDIT_WORKFLOW_ID }}"
             # DIDIT_CALLBACK_URL is the optional post-verification redirect. Inject it ONLY when set —
             # an empty value (`DIDIT_CALLBACK_URL=`) fails the URL schema and crashes boot.
             if [ -n "${{ vars.DIDIT_CALLBACK_URL }}" ]; then
-              ENV_VARS="${ENV_VARS}@DIDIT_CALLBACK_URL=${{ vars.DIDIT_CALLBACK_URL }}"
+              ENV_VARS="${ENV_VARS};DIDIT_CALLBACK_URL=${{ vars.DIDIT_CALLBACK_URL }}"
             fi
             SECRETS="${SECRETS},DIDIT_API_KEY=DIDIT_API_KEY:latest,DIDIT_WEBHOOK_SECRET=DIDIT_WEBHOOK_SECRET:latest"
           fi
@@ -280,9 +282,9 @@ jobs:
           # WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_TEMPLATE_NAME repo Variables and the token secret, then
           # flip WHATSAPP_ENABLED=true. (Until then OTP runs on the console/QA channel.)
           if [ "${{ vars.WHATSAPP_ENABLED }}" = "true" ]; then
-            ENV_VARS="${ENV_VARS}@WHATSAPP_PHONE_NUMBER_ID=${{ vars.WHATSAPP_PHONE_NUMBER_ID }}@WHATSAPP_TEMPLATE_NAME=${{ vars.WHATSAPP_TEMPLATE_NAME }}"
+            ENV_VARS="${ENV_VARS};WHATSAPP_PHONE_NUMBER_ID=${{ vars.WHATSAPP_PHONE_NUMBER_ID }};WHATSAPP_TEMPLATE_NAME=${{ vars.WHATSAPP_TEMPLATE_NAME }}"
             if [ -n "${{ vars.WHATSAPP_TEMPLATE_LANG }}" ]; then
-              ENV_VARS="${ENV_VARS}@WHATSAPP_TEMPLATE_LANG=${{ vars.WHATSAPP_TEMPLATE_LANG }}"
+              ENV_VARS="${ENV_VARS};WHATSAPP_TEMPLATE_LANG=${{ vars.WHATSAPP_TEMPLATE_LANG }}"
             fi
             SECRETS="${SECRETS},WHATSAPP_ACCESS_TOKEN=WHATSAPP_ACCESS_TOKEN:latest"
           fi
