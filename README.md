@@ -7,7 +7,7 @@ review logs: [CEO](docs/CEO-REVIEW.md) · [Eng](docs/ENG-REVIEW.md) ·
 [Design](docs/DESIGN-REVIEW.md) · [Design system](docs/DESIGN.md).
 
 **Status:** the API is **live and CI-deployed on GCP** at
-[`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com) (`/health` →
+[`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com) (`/healthz` →
 `{"status":"ok","db":true,"redis":true}`). The **Phase-3 mobile build** has since landed — native map +
 tap-to-pin for pickup/drop-off and a **live tracking map** on both the customer order and rider job
 screens — and the vendor integrations are now **implemented behind flags** (WhatsApp Cloud API OTP send,

@@ -190,9 +190,10 @@ wiring, not code:
    parallel — each a *create account → set secret → flip flag* step. The full flow is exercisable today
    vendor-free via the opt-in QA test mode.
 4. **Greenlight a dev build** — then Phase 3 native map + `/qa` on a real device.
-5. Mobile profile-edit + a Firebase project fold in next (profile-update endpoint — genuinely absent — and
-   live FCM send). *(Device-token registration is already shipped: `POST/DELETE /notifications/device-token`,
-   the `device_tokens` table, and the mobile `src/push` wiring.)*
+5. Mobile profile-edit + a Firebase project fold in next (a post-onboarding profile-edit UI — genuinely absent;
+   `PATCH /auth/me` exists but is only called from one-time signup — and live FCM send). *(Device-token
+   registration is already shipped: `POST/DELETE /notifications/device-token`, the `device_tokens` table, and
+   the mobile `src/push` wiring.)*
 6. **~6–8 months out:** build the commission/settlement infrastructure when monetization begins (CONCEPT §6).
 
 **Bottom line (06-29):** the engineering spine and both app surfaces are built and CI-green, **the API is

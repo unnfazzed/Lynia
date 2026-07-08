@@ -144,10 +144,11 @@ inconsistency register and phased execution plan live in
 
 ## Repo-side product tickets carried by the design (from `packages/design/ALIGNMENT-REVIEW.md`)
 
-The design shows the intended UX; these are **app-logic** changes it can't make. See
-`packages/design/HANDOFF.md` for the full P0/P1 list — highlights: enforce both contact phones on submit (P0),
-bounded request timeouts + error states on every async action, select-offer 409 rollback copy, delivery-OTP
-401/403 lockout + re-issue, one-round-per-rider board hiding, and phone-reveal gated to the active window.
+The design shows the intended UX; these were **app-logic** changes it couldn't make on its own. See
+`packages/design/HANDOFF.md` for the full P0/P1 list — the highlighted items (both contact phones enforced
+on submit, bounded request timeouts + error states on every async action, select-offer 409 rollback copy,
+delivery-OTP 401/403 lockout + re-issue, one-round-per-rider board hiding, and phone-reveal gated to the
+active window) have since landed in `apps/mobile` and `apps/api`.
 
 ## Keeping tokens in sync
 

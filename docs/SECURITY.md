@@ -211,7 +211,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
 ### P0 — Critical (close first)
 
 **P0-1 · Fail closed on a weak JWT signing secret**
-`apps/api/src/config/env.ts:33,67`
+`apps/api/src/config/env.ts:57` (default value), `apps/api/src/config/env.ts:137-144` (prod superRefine guard)
 - Remove the `.default("dev-insecure-secret-change-me-please")` fallback, or add a
   `superRefine` (next to the existing `REDIS_URL` guard) that **rejects boot in production**
   when `JWT_SIGNING_SECRET` is the known default, is < 32 chars, or is unset.
@@ -233,7 +233,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
   is attributable to a named human in the audit log.
 
 **P0-3 · WAF / Cloud Armor on the public load balancer**
-`infra/terraform/lb.tf:46` (backend has no `security_policy`)
+`infra/terraform/lb.tf:60` (`security_policy` attachment)
 - Add a `google_compute_security_policy` (Cloud Armor) attached to the API backend service:
   per-IP rate limiting (adaptive), the preconfigured OWASP rulesets (SQLi/XSS/LFI), and a
   bot/geo posture appropriate for a Zimbabwe-first launch.
@@ -266,7 +266,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
   the threshold.
 
 **P1-3 · Edge hardening: Helmet, CORS allow-list, ValidationPipe**
-`apps/api/src/main.ts`, `apps/api/src/tracking/tracking.gateway.ts:64`
+`apps/api/src/main.ts`, `apps/api/src/tracking/tracking.gateway.ts:79`
 - Add **Helmet** for security headers (HSTS, `X-Content-Type-Options`, referrer policy, a
   conservative CSP for the JSON API).
 - Replace the implicit CORS with an **explicit pinned origin allow-list** (mobile app origins
@@ -279,7 +279,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
   unlisted origin is refused; a body with an unknown field is rejected.
 
 **P1-4 · Stop logging OTP codes and phone numbers**
-`apps/api/src/auth/otp-sender.ts:94,105`
+`apps/api/src/auth/otp-sender.ts:96,109`
 - Remove/redact the `DEV OTP for {phone}: {code}` (console sender) and `SMS OTP → {phone}:
   {code}` (SMS stub) log lines, or gate them behind `NODE_ENV !== "production"` **and** run
   them through the existing `phone-mask.ts` helper. Never log a live OTP at info level.
@@ -299,7 +299,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
 ### P2 — Medium (next sprint)
 
 **P2-1 · Network-isolate the datastores**
-`infra/terraform/sql.tf:32`, `redis.tf`
+`infra/terraform/sql.tf:34`, `redis.tf`
 - Move Cloud SQL to **private IP only** (`ipv4_enabled = false`); run CI migrations through the
   Cloud SQL Auth Proxy over private access or a short-lived authorized path instead of a
   standing public IP.
@@ -314,13 +314,13 @@ The subsections below keep the full design detail (the "what & why & acceptance 
 - *Accept:* the bucket CORS lists only known origins.
 
 **P2-3 · Pin JWT algorithm**
-`apps/api/src/auth/token.service.ts:28`
+`apps/api/src/auth/token.service.ts:50,53` (`verifyWithRotation`)
 - Pass `{ algorithms: ["HS256"] }` to `jwt.verify` (defense in depth against algorithm
   confusion, even though `alg:none` is already rejected).
 - *Accept:* a token signed with any other alg is rejected.
 
 **P2-4 · Launch-hygiene fail-closed guards**
-`apps/api/src/config/env.ts:39,45`
+`apps/api/src/config/env.ts:160-162,166-168,171-176` (prod superRefine block)
 - Add a production `superRefine`: reject boot if `OTP_CHANNEL !== "whatsapp"` **or**
   `OTP_TEST_PHONES` is non-empty in production (today these are enforced only by a comment).
   Same treatment for `KYC_PROVIDER === "stub"` in production.

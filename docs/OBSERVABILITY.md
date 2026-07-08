@@ -33,10 +33,10 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `broadcast_nearby_duration_ms`  | histogram | ms   | `source`                        | < 400 ms   |
 | `otp_verify_duration_ms`        | histogram | ms   | `result`                        | < 800 ms   |
 | `http_request_duration_ms`      | histogram | ms   | `route`, `method`, `status_class` | < 1000 ms |
-| `client_position_glass_latency_ms` | histogram | ms | `role`                         | (glass-to-glass) |
-| `client_offer_glass_latency_ms` | histogram | ms   | `role`                          | (glass-to-glass) |
-| `client_board_glass_latency_ms` | histogram | ms   | `role`                          | (glass-to-glass) |
-| `client_apifetch_latency_ms`    | histogram | ms   | `role`                          | (client RTT)     |
+| `client_position_glass_latency_ms` | histogram | ms | `role`, `version`             | (glass-to-glass) |
+| `client_offer_glass_latency_ms` | histogram | ms   | `role`, `version`              | (glass-to-glass) |
+| `client_board_glass_latency_ms` | histogram | ms   | `role`, `version`              | (glass-to-glass) |
+| `client_apifetch_latency_ms`    | histogram | ms   | `role`, `version`              | (client RTT)     |
 | `match_select_total`            | counter   | 1    | `outcome`                       | —          |
 | `offers_made_total`             | counter   | 1    | `outcome`                       | —          |
 | `client_samples_dropped_total`  | counter   | 1    | `role`                          | —          |

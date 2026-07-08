@@ -430,7 +430,7 @@ erDiagram
     Rider ||--o{ Offer : "makes"
     Order ||--o{ Offer : "receives"
     Order ||--o{ OrderEvent : "logs"
-    Order ||--o| Rating : "gets"
+    Order ||--o{ Rating : "gets"
     Merchant ||--o{ Order : "reserved"
 
     Profile {
@@ -493,7 +493,7 @@ erDiagram
     }
     Rating {
         uuid id PK
-        uuid orderId UK
+        uuid orderId FK "unique with byProfileId — customer + rider each rate once"
         uuid byProfileId FK
         int score
     }
@@ -595,7 +595,7 @@ stateDiagram-v2
     open_for_offers --> assigned : select (guarded CAS)
     open_for_offers --> expired : offer window elapses
 
-    assigned --> confirmed : rider confirms items
+    assigned --> confirmed : rider advances
     confirmed --> en_route_pickup
     en_route_pickup --> picked_up
     picked_up --> en_route_dropoff
@@ -607,8 +607,8 @@ stateDiagram-v2
     assigned --> cancelled : either party
     confirmed --> cancelled
     en_route_pickup --> cancelled
-    picked_up --> cancelled : rider only
-    en_route_dropoff --> cancelled : rider only
+    picked_up --> cancelled : customer only
+    en_route_dropoff --> cancelled : customer only
     open_for_offers --> cancelled : customer
 
     completed --> [*]
@@ -622,8 +622,8 @@ Rules encoded around the transitions:
   gate, the constant-time hash compare, and the increment are point-in-time consistent — no
   concurrent-guess bypass of the 5-attempt cap. A wrong code is **committed** (the increment
   persists); only the error path rolls back. After a lockout the customer can `rotate` a fresh code.
-- **Cancellation windows** differ by party: a customer may cancel up to `en_route_pickup` (before the
-  parcel is collected); a rider may cancel any time before `delivered`. A **rider cancel is a
+- **Cancellation windows** differ by party: a rider may cancel only up to `en_route_pickup` (before the
+  parcel is collected); a customer may cancel any time before `delivered`. A **rider cancel is a
   no-show strike** — every 3rd strike forces the rider offline on a 2-hour cooldown (T4).
 - **Rating closes the order** and updates the rider's running `ratingAvg`/`ratingCount`/`tripsCount`
   in the same transaction. If the customer never rates, the auto-close backstop still completes the
@@ -779,8 +779,10 @@ Flow details:
 - **`subscribe:order`**: server checks the caller is the order's customer *or* its assigned rider
   before joining the room (`canAccessOrder`).
 - **`rider:location`**: only the **assigned rider on an active ride** may stream position
-  (`isAssignedRider`). The position is persisted (`geog = ST_SetSRID(ST_MakePoint(...))`) so a
-  reconnecting client's REST snapshot is fresh, then re-emitted to the room.
+  (`isAssignedRider`). The fix is re-emitted to the room first (emit-before-persist), then the
+  heartbeat is recorded on every message; the `geog = ST_SetSRID(ST_MakePoint(...))` write itself is
+  throttled to once per ~10s per rider so a reconnecting client's REST snapshot stays reasonably
+  fresh without writing on every fix.
 - **`order:status`**: emitted by the lifecycle service after a committed transition — wrapped so it
   can never throw into the caller's transaction.
 - **`offers:changed`** (auction is **push, not poll**): during `open_for_offers` the offers service
@@ -865,7 +867,7 @@ graph TB
 
 | Seam | Interface | Impls | Selector |
 |---|---|---|---|
-| Storage | `StorageAdapter` (`createUploadUrl`, `createReadUrl`) | `GcsStorage` | `CLOUD_PROVIDER` |
+| Storage | `StorageAdapter` (`createUploadUrl`, `createReadUrl`) | `GcsStorage` | — (GCS is wired unconditionally; `CLOUD_PROVIDER` is read for logging/health only, not as a switch) |
 | Push | `PushAdapter` (`sendEach`, batched ≤500) | `FcmPush`, `NoopPush` | `PUSH_PROVIDER` |
 | Secrets | `SecretsAdapter` | `EnvSecrets` (secrets injected as env at deploy) | — |
 
@@ -907,7 +909,7 @@ Where the pattern is applied:
 | Make offer | insert with unique `(order_id, rider_id)` | rejects a second offer as 409 |
 | Forward lifecycle step | `UPDATE ... WHERE status=<prior>` + rider check | one event row per real transition |
 | Delivery OTP | `SELECT ... FOR UPDATE` row lock | 5-attempt cap, constant-time compare |
-| Rate → complete | `UPDATE ... WHERE status='delivered'` | one `Rating` per order (unique) |
+| Rate → complete | `UPDATE ... WHERE status='delivered'` | one `Rating` per `(order, rater)` (unique) |
 | KYC webhook | `updateMany ... WHERE kycResolvedAt < eventAt` | monotonic by event time |
 
 The rule of thumb the codebase follows: **check-then-act is never split across statements** for
@@ -967,7 +969,8 @@ graph LR
     pr["PR / push to main"]
 
     subgraph ci["ci.yml"]
-        build["build job:<br/>typecheck · build · test<br/>(all workspaces)"]
+        security["security job:<br/>pnpm audit (high) · gitleaks"]
+        build["build job:<br/>typecheck · lint · build · test<br/>(all workspaces)"]
         schema["schema job:<br/>migrate:deploy against real PostGIS<br/>+ assert one_active_ride, GiST, otp_hash"]
     end
 
@@ -977,6 +980,7 @@ graph LR
         dep["gcloud run deploy<br/>(WIF keyless auth)"]
     end
 
+    pr --> security
     pr --> build
     pr --> schema
     build --> img
