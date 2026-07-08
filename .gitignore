@@ -22,6 +22,9 @@ apps/mobile/.expo/
 google-services.json
 GoogleService-Info.plist
 
+# Google Play service-account key (lives in EAS credentials only — never in the repo or CI)
+play-service-account.json
+
 # Env / secrets
 .env
 .env.*

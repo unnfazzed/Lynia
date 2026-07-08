@@ -1,7 +1,9 @@
 name: Release (Cloud Run)
 
 # Ship-stage release job (status: docs/PILOT-READINESS.md). Builds the API container, pushes it to
-# Artifact Registry, applies DB migrations, and deploys to Cloud Run.
+# Artifact Registry, applies DB migrations, and deploys to Cloud Run as a NO-TRAFFIC canary
+# revision, then health-gates promotion to 100% with automatic rollback on degradation
+# (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2; manual rollback: rollback.yml).
 #
 # DORMANT UNTIL GCP IS PROVISIONED. The deploy job is gated on the repo variable
 # `GCP_DEPLOY_ENABLED == 'true'`, so until a maintainer arms it this workflow is a clean no-op —
@@ -50,6 +52,10 @@ jobs:
     runs-on: ubuntu-latest
     # The arming switch: no-op until a maintainer sets the variable post-provisioning.
     if: ${{ vars.GCP_DEPLOY_ENABLED == 'true' }}
+    # GitHub Environment gate (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §3b). With no protection rules
+    # configured this is a no-op; once a required reviewer is added in repo Settings → Environments,
+    # every prod deploy pauses for a human approval. Prod-scoped secrets/vars can move here too.
+    environment: production
     permissions:
       contents: read
       id-token: write # mints the OIDC token the Authenticate step federates via Workload Identity
@@ -172,6 +178,21 @@ jobs:
             --region "${{ vars.GCP_REGION }}" \
             --wait
 
+      # Canary rollout (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2): remember which revision serves
+      # traffic NOW so a failed canary can route back to it in seconds. Empty on the first-ever
+      # deploy of the service (then the canary is skipped and the new revision takes 100%).
+      - name: Capture current serving revision (rollback target)
+        id: prev
+        run: |
+          set -euo pipefail
+          PREV="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --format json 2>/dev/null \
+            | jq -r '([.status.traffic[]? | select((.percent // 0) > 0)] | max_by(.percent) | .revisionName) // empty' \
+            || true)"
+          echo "revision=$PREV" >> "$GITHUB_OUTPUT"
+          echo "Current serving revision: ${PREV:-<none — first deploy>}"
+
       # --ingress internal-and-cloud-load-balancing: the service is fronted by the
       # external HTTPS ALB (infra/terraform/lb.tf) and the org disables the default
       # *.run.app edge URL, so only LB + internal traffic should reach Cloud Run.
@@ -179,9 +200,19 @@ jobs:
       # NOTE: if the org enforces domain-restricted sharing (allowedPolicyMemberDomains),
       # the allUsers bind below is rejected — drop --allow-unauthenticated and grant
       # invoker to an org-allowed principal. Check: gcloud resource-manager org-policies list.
-      - name: Deploy to Cloud Run
+      #
+      # The revision is created with NO traffic (--no-traffic, tagged `canary`): gcloud still
+      # waits for it to become Ready, so a crash-on-boot / bad-config revision (the env boot-guard
+      # fails fast) fails THIS step while prod keeps serving the old revision untouched. Traffic
+      # moves only in the canary step below. First-ever deploy skips --no-traffic (a new service
+      # must route 100% somewhere).
+      - name: Deploy to Cloud Run (new revision, no traffic)
         run: |
           set -euo pipefail
+          TRAFFIC_FLAGS="--no-traffic --tag canary"
+          if [ -z "${{ steps.prev.outputs.revision }}" ]; then
+            TRAFFIC_FLAGS=""
+          fi
           # OTP_CHANNEL / KYC_PROVIDER / PUSH_PROVIDER default to LAUNCH-SAFE values
           # (whatsapp / didit / fcm). QA/test mode is OPT-IN by setting the matching repo
           # Variables (OTP_CHANNEL=console, KYC_PROVIDER=stub, PUSH_PROVIDER=noop, plus
@@ -233,7 +264,79 @@ jobs:
             --ingress internal-and-cloud-load-balancing \
             --set-env-vars "$ENV_VARS" \
             --set-secrets "$SECRETS" \
-            --allow-unauthenticated
+            --allow-unauthenticated \
+            $TRAFFIC_FLAGS
+
+      # Progressive promotion (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2b). The candidate's tagged
+      # run.app URL is unreachable from here (default URLs disabled + LB-only ingress), so the
+      # canary is: shift a small % → observe /health THROUGH the public LB for a window → promote.
+      # Any degradation during the window fails this step and the rollback step re-points 100%
+      # to the pre-deploy revision. Tunables (repo Variables, all optional):
+      #   CANARY_PERCENT          canary traffic share (default 10)
+      #   CANARY_OBSERVE_SECONDS  observation window (default 120)
+      #   PUBLIC_HEALTH_URL       health endpoint via the LB (default the live domain)
+      #   CANARY_DISABLED         "true" → old behavior: promote to 100% immediately
+      # Note on migrations: they ran above, BEFORE any traffic moved — safe because the repo
+      # enforces expand-only/online-safe migrations (src/prisma/migration-safety.spec.ts), so the
+      # still-serving old revision keeps working against the migrated schema.
+      - name: Canary — shift, observe, promote
+        id: canary
+        run: |
+          set -euo pipefail
+          SERVICE="${{ vars.CLOUD_RUN_SERVICE }}"
+          PROJECT="${{ vars.GCP_PROJECT_ID }}"
+          REGION="${{ vars.GCP_REGION }}"
+          PREV="${{ steps.prev.outputs.revision }}"
+          CANDIDATE="$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" \
+            --format 'value(status.latestCreatedRevisionName)')"
+          echo "Candidate revision: $CANDIDATE (previous: ${PREV:-<none>})"
+
+          if [ -z "$PREV" ] || [ "${{ vars.CANARY_DISABLED }}" = "true" ]; then
+            echo "Canary skipped ($([ -z "$PREV" ] && echo 'first deploy' || echo 'CANARY_DISABLED=true')) — routing 100% to the new revision."
+            gcloud run services update-traffic "$SERVICE" --project "$PROJECT" --region "$REGION" --to-latest
+            exit 0
+          fi
+
+          PERCENT="${{ vars.CANARY_PERCENT || '10' }}"
+          OBSERVE="${{ vars.CANARY_OBSERVE_SECONDS || '120' }}"
+          HEALTH_URL="${{ vars.PUBLIC_HEALTH_URL || 'https://lyniago.lyniafinance.com/health' }}"
+
+          echo "Shifting ${PERCENT}% of traffic to $CANDIDATE (tag: canary)…"
+          gcloud run services update-traffic "$SERVICE" --project "$PROJECT" --region "$REGION" \
+            --to-tags "canary=${PERCENT}"
+
+          echo "Observing $HEALTH_URL for ${OBSERVE}s…"
+          END=$((SECONDS + OBSERVE))
+          while [ "$SECONDS" -lt "$END" ]; do
+            BODY="$(curl -fsS --max-time 10 "$HEALTH_URL")" \
+              || { echo "::error::Health check request failed during canary window."; exit 1; }
+            echo "$BODY" | grep -q '"status":"ok"' \
+              || { echo "::error::Health degraded during canary window: $BODY"; exit 1; }
+            sleep 5
+          done
+
+          # The health poll above samples the LB (canary gets only PERCENT of hits), so also
+          # assert the candidate itself is still Ready — a crash-looping canary shows up here.
+          READY="$(gcloud run revisions describe "$CANDIDATE" --project "$PROJECT" --region "$REGION" \
+            --format json | jq -r '.status.conditions[]? | select(.type=="Ready") | .status')"
+          [ "$READY" = "True" ] \
+            || { echo "::error::Candidate revision $CANDIDATE is not Ready after the observation window."; exit 1; }
+
+          echo "Canary healthy — promoting $CANDIDATE to 100%."
+          gcloud run services update-traffic "$SERVICE" --project "$PROJECT" --region "$REGION" --to-latest
+
+      # Automatic rollback: only when the canary step itself failed (a failed build/migrate never
+      # moved traffic, so there is nothing to undo). Re-points 100% to the pre-deploy revision —
+      # a traffic change, not a rebuild, so it lands in seconds. Manual path: rollback.yml.
+      - name: Roll back traffic on failed canary
+        if: ${{ failure() && steps.canary.outcome == 'failure' && steps.prev.outputs.revision != '' }}
+        run: |
+          set -euo pipefail
+          echo "::warning::Canary failed — routing 100% of traffic back to ${{ steps.prev.outputs.revision }}."
+          gcloud run services update-traffic "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --to-revisions "${{ steps.prev.outputs.revision }}=100"
 
       - name: Summary
-        run: echo "Deployed ${IMAGE}:${GITHUB_SHA} to Cloud Run service ${{ vars.CLOUD_RUN_SERVICE }} (${{ vars.GCP_REGION }})." >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "Deployed ${IMAGE}:${GITHUB_SHA} to Cloud Run service ${{ vars.CLOUD_RUN_SERVICE }} (${{ vars.GCP_REGION }}) via canary (previous revision ${{ steps.prev.outputs.revision || 'none' }})." >> "$GITHUB_STEP_SUMMARY"

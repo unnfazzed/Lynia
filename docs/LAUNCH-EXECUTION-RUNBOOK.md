@@ -117,7 +117,57 @@ gh pr comment 113 --body "@dependabot rebase"   # pnpm/action-setup 4→6 — sh
 # #116 (34 prod-dep bulk bump): rebase then REVIEW — big jump; or `@dependabot recreate` for smaller groups.
 ```
 
+## 8. Deployment pipeline arming (docs/LAUNCH-DEPLOYMENT-STRATEGY.md — landed 2026-07-08)
+
+The canary/rollback/mobile pipelines are code now; these are the founder steps that arm them.
+
+### a) GitHub Environments — the human gate before prod
+
+The deploy jobs reference environments `production` (API) and `production-mobile` (Play/OTA); the
+environments auto-create on first run but carry **no protection until you add a reviewer**:
+Repo **Settings → Environments → production → Required reviewers** → add yourself; repeat for
+`production-mobile`. Also restrict `production` to the `main` branch. From then on every prod
+deploy pauses for an approval click.
+
+### b) Canary rollout — nothing to arm, tunables optional
+
+Canary deploy → observe → promote is on by default whenever `GCP_DEPLOY_ENABLED=true`. Optional
+repo Variables: `CANARY_PERCENT` (default 10), `CANARY_OBSERVE_SECONDS` (default 120),
+`PUBLIC_HEALTH_URL` (default the live domain), `CANARY_DISABLED=true` (escape hatch — old
+immediate-100% behavior). Manual rollback: **Actions → "Rollback (Cloud Run)"** — run empty to
+list revisions, re-run with a revision name to route 100% back. **Exercise it once** (LR21).
+
+### c) EAS + Google Play — arms mobile-release.yml and mobile-ota.yml
+
+```bash
+npm i -g eas-cli && eas login                       # or use npx eas-cli
+cd apps/mobile
+eas init                                            # creates the EAS project, prints the project id
+# → commit the id as the fallback in app.config.ts (const easProjectId — it is NOT a secret)
+gh variable set EAS_PROJECT_ID --body "<the-id>"    # CI config evaluation
+
+# Play Console (one-time): create the app (zw.co.lynia), enrol in Play App Signing, create a
+# Play Developer API service account (Play Console → API access) and download its JSON key.
+eas credentials                                     # Android → production: let EAS manage the
+                                                    # upload keystore + upload the Play SA key
+# Build-time secrets live in EAS (not GitHub): GOOGLE_MAPS_API_KEY, GOOGLE_SERVICES_JSON (file).
+
+gh secret set EXPO_TOKEN --body "<token from expo.dev/settings/access-tokens>"
+gh variable set EAS_RELEASE_ENABLED --body "true"   # the arming switch
+```
+
+First release: **Actions → "Mobile Release (Play)"** with profile `preview` (internal track) →
+promote through closed testing in Play Console → then tag `v0.2.0` on `main` for the first staged
+production rollout (starts at 10%; advance/halt in Play Console → Releases). JS-only hotfixes:
+**Actions → "Mobile OTA Update"** (goes to installed apps on next launch, no review).
+
+### d) Branch protection — §6 above, plus Code Owners
+
+Run the §6 command, and additionally tick **"Require review from Code Owners"** in the branch
+protection UI so the `.github/CODEOWNERS` routing is enforced on money/auth/infra/pipeline paths.
+
 ---
 **Where each of these came from:** `docs/DATA-RETENTION.md` (§1–2), `docs/OBSERVABILITY.md` (§3),
 `docs/LOAD-MODEL.md` + `apps/api/load/` (§4), `docs/QA-DEVICE-CHECKLIST.md` (§5), `docs/LAUNCH-READINESS.md`
-scorecard (all). Nothing here changes app code — it's the founder-gated execution the agent work prepared.
+scorecard (all), `docs/LAUNCH-DEPLOYMENT-STRATEGY.md` (§8). Nothing here changes app code — it's the
+founder-gated execution the agent work prepared.

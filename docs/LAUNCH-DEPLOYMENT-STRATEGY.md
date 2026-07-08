@@ -13,6 +13,25 @@
 > (branch protection), **LR7** (VPC-internal migrator), and the go/no-go rollback line in **LR21**.
 > Date: 2026-07-08. Branch: `claude/launch-deployment-strategy-vm6rh1`.
 
+## 0.5 Implementation status (2026-07-08 — this branch)
+
+The plan below is now **largely implemented**; what remains is founder arming (accounts/settings,
+not code — see `LAUNCH-EXECUTION-RUNBOOK.md` §8) and two deliberate deferrals.
+
+| Piece | Status |
+|---|---|
+| Cloud Run canary: `--no-traffic` deploy → LB health observation → promote → **auto-rollback** | ✅ `release.yml` (on by default once armed; `CANARY_*` vars tune it) |
+| Manual one-command rollback | ✅ `rollback.yml` (list revisions / route 100% back) |
+| GitHub Environments gate on prod deploys | ✅ jobs reference `production` / `production-mobile`; founder adds required reviewers |
+| Play release pipeline: EAS build + staged submit (10% `inProgress`) | ✅ `mobile-release.yml` + `apps/mobile/eas.json` (dormant until `EAS_RELEASE_ENABLED=true`) |
+| `versionCode` discipline | ✅ `autoIncrement` + `appVersionSource: remote` in `eas.json` |
+| OTA hotfix lane | ✅ `mobile-ota.yml` + `expo-updates@~0.27.5` + `runtimeVersion: fingerprint`; updates explicitly disabled until the EAS project id exists |
+| CODEOWNERS + PR template (risk/rollback/migration checklist) | ✅ `.github/` |
+| **§2e correction:** the candidate's tagged `run.app` URL is unreachable from CI (default URLs disabled, LB-only ingress) | smoke = revision-readiness gate + %-shift + health **through the LB**, which is what `release.yml` implements |
+| Staging Cloud Run service | ⏳ deferred — needs Terraform provisioning first (LR11 prerequisite) |
+| Min-supported-version gate (§1c) | ⏳ deferred — an app+API feature; own PR through the gstack flow |
+| Metric-gated multi-step % promotion / release-please train | ⏳ Phase 4 — needs LR9 observability live |
+
 ## 0. Where we are today (the baseline this plan extends)
 
 | Surface | Today | Gap for "live & critical" |

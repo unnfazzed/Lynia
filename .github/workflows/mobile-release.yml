@@ -1,0 +1,87 @@
+name: Mobile Release (Play)
+
+# Production Android release via EAS Build + Submit (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §1b).
+# Builds a signed .aab on EAS servers and (by default) auto-submits it to Google Play as a
+# STAGED rollout (production track, releaseStatus=inProgress, starts at the rollout fraction in
+# apps/mobile/eas.json — advance/halt in Play Console as crash-free metrics hold).
+#
+# DORMANT UNTIL EAS IS PROVISIONED — gated on the repo variable EAS_RELEASE_ENABLED == 'true'.
+# Arming (founder, one-time; see docs/LAUNCH-EXECUTION-RUNBOOK.md §8):
+#   1. Create the EAS project (`eas init` in apps/mobile) and commit the project id.
+#   2. Upload the Play service-account key to EAS (`eas credentials`) and let EAS manage the
+#      upload keystore; enrol the app in Play App Signing. No key files in this repo or CI.
+#   3. Set repo secret EXPO_TOKEN, repo variables EAS_PROJECT_ID + EAS_RELEASE_ENABLED=true.
+#   4. Add build-time secrets as EAS secrets (GOOGLE_MAPS_API_KEY, GOOGLE_SERVICES_JSON file).
+#
+# versionCode is EAS-managed (autoIncrement + appVersionSource=remote in eas.json) — monotonic,
+# no human bookkeeping. `version` (versionName) in app.config.ts is bumped per release; tag the
+# release commit v<version> to trigger this workflow.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile"
+        type: choice
+        options: [production, preview]
+        default: production
+      submit:
+        description: "Auto-submit to Play after the build"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: eas build (+ staged submit)
+    runs-on: ubuntu-latest
+    if: ${{ vars.EAS_RELEASE_ENABLED == 'true' }}
+    environment: production-mobile
+    env:
+      # app.config.ts reads this to attach updates.url + extra.eas.projectId (attached only when
+      # present, so unprovisioned/test builds still succeed with updates disabled).
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # eas-cli evaluates app.config.ts locally before uploading, so workspace deps must exist.
+      # The build itself (install → prebuild → gradle) runs on EAS servers; the
+      # eas-build-post-install hook in apps/mobile/package.json builds @lynia/shared there.
+      - name: Install
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Set up EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build (and submit) via EAS
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          PROFILE="${{ inputs.profile || 'production' }}"
+          SUBMIT_FLAG="--auto-submit"
+          if [ "${{ inputs.submit }}" = "false" ]; then
+            SUBMIT_FLAG=""
+          fi
+          # --no-wait: the build/submit continues on EAS servers; progress + the staged-rollout
+          # controls live in the Expo/Play consoles, not this runner.
+          eas build --platform android --profile "$PROFILE" --non-interactive --no-wait $SUBMIT_FLAG
+          echo "EAS build queued (profile: $PROFILE, auto-submit: ${SUBMIT_FLAG:-off})." >> "$GITHUB_STEP_SUMMARY"

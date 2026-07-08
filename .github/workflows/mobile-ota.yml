@@ -1,0 +1,76 @@
+name: Mobile OTA Update (expo-updates)
+
+# Channel A of the mobile update strategy (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §1a): push a
+# JS/asset-only fix to already-installed apps in minutes, with no Play review. The bundle is
+# built HERE from the checked-out commit and published to an EAS Update branch; installed apps
+# whose runtime fingerprint matches pick it up on next cold start.
+#
+# OTA governance: this bypasses store review, so it runs ONLY from this reviewed workflow
+# (environment-gated, never from a laptop) and only ships what is already on a CI-green branch.
+# JS-ONLY RULE: an update whose native fingerprint differs from the installed binary is ignored
+# by devices (fingerprint runtimeVersion policy) — native/SDK changes need mobile-release.yml.
+#
+# DORMANT until EAS is provisioned — same arming as mobile-release.yml (EAS_RELEASE_ENABLED).
+#
+# Rollback: `eas update:republish` the previous group on the same branch (Expo console or CLI).
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "What this update ships (shows in the Expo console)"
+        required: true
+        type: string
+      branch:
+        description: "EAS Update branch (= build channel)"
+        type: choice
+        options: [production, preview]
+        default: production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ota
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: eas update → ${{ inputs.branch }}
+    runs-on: ubuntu-latest
+    if: ${{ vars.EAS_RELEASE_ENABLED == 'true' }}
+    environment: production-mobile
+    env:
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+      # EXPO_PUBLIC_* vars are inlined into the JS bundle at export time — they must match what
+      # the production binary was built with, or the OTA silently changes runtime config.
+      EXPO_PUBLIC_GOOGLE_PLACES_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_PLACES_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile=false
+
+      # The JS bundle is exported locally, so workspace deps the app imports must be built.
+      - name: Build shared package
+        run: pnpm --filter @lynia/shared build
+
+      - name: Set up EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Publish OTA update
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          eas update --branch "${{ inputs.branch }}" --message "${{ inputs.message }}" --non-interactive
+          echo "OTA update published to branch '${{ inputs.branch }}': ${{ inputs.message }}" >> "$GITHUB_STEP_SUMMARY"

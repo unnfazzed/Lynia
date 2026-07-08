@@ -1,0 +1,16 @@
+# Code ownership for review routing (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §3a).
+# With branch protection's "require review from Code Owners" enabled, PRs touching these
+# paths cannot merge without the named reviewer. Later matches win over earlier ones.
+
+# Default: everything needs a maintainer review.
+* @unnfazzed
+
+# Critical surfaces called out explicitly — money path, auth, wire contracts, infra, and the
+# deploy pipelines themselves. Add teammates per-path as the team grows instead of widening `*`.
+/apps/api/src/auth/ @unnfazzed
+/apps/api/src/cash/ @unnfazzed
+/apps/api/prisma/ @unnfazzed
+/packages/shared/src/contracts.ts @unnfazzed
+/infra/ @unnfazzed
+/.github/workflows/ @unnfazzed
+/.github/CODEOWNERS @unnfazzed
