@@ -1,9 +1,15 @@
-import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
+import { Controller, Get, Inject, ServiceUnavailableException } from "@nestjs/common";
+import type { VersionGateResponse } from "@lynia/shared";
+import { ENV } from "../config/config.module";
+import type { Env } from "../config/env";
 import { HealthService, type HealthReport } from "./health.service";
 
 @Controller()
 export class HealthController {
-  constructor(private readonly health: HealthService) {}
+  constructor(
+    private readonly health: HealthService,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   @Get("healthz")
   async healthz(): Promise<HealthReport> {
@@ -14,5 +20,16 @@ export class HealthController {
     // the PG fallbacks, so that stays 200 (a Redis blip shouldn't 503 every instance at once).
     if (!report.db) throw new ServiceUnavailableException(report);
     return report;
+  }
+
+  // Server-driven force-update minimum (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §1c). Public and
+  // unauthenticated by design: the app checks it at cold start BEFORE any sign-in, and a blocked
+  // version must still be able to learn it's blocked. "0.0.0" (the default when the
+  // MIN_SUPPORTED_APP_VERSION repo Variable is unset) keeps the gate inert; the mobile root layout
+  // swaps the whole navigator for the force-update screen when the installed version is below this.
+  // Cheap static read — no DB/Redis touched, so it can never add load-shed pressure.
+  @Get("app/version-gate")
+  versionGate(): VersionGateResponse {
+    return { minSupportedVersion: this.env.MIN_SUPPORTED_APP_VERSION };
   }
 }

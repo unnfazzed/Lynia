@@ -37,7 +37,7 @@ const config: ExpoConfig = {
   name: "LyniaGo",
   slug: "lynia",
   scheme: "lynia",
-  version: "0.1.0",
+  version: "0.1.0", // x-release-please-version
   // OTA compatibility key (expo-updates): `fingerprint` hashes the native layer (deps + native
   // config), so an OTA bundle can only ever land on a binary it was actually built against —
   // a JS update can't brick an older native install. Native changes shift the fingerprint and
@@ -95,6 +95,10 @@ const config: ExpoConfig = {
     // (src/ui Screen) never renders. Testers get a visible signal they're on a bypass build hitting
     // the live API; real releases show nothing.
     testBuild: process.env.LYNIA_TEST_BUILD === "1",
+    // Play listing the force-update screen's "Update now" button opens (src/config.ts STORE_URL).
+    // Defaulted so the button is never dead once the app is listed; override per-build with
+    // EXPO_PUBLIC_STORE_URL if the listing URL ever changes.
+    storeUrl: process.env.EXPO_PUBLIC_STORE_URL ?? "https://play.google.com/store/apps/details?id=zw.co.lynia",
     // EAS project link (eas-cli reads extra.eas.projectId). Attached only when provisioned.
     ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
   },

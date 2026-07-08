@@ -131,11 +131,16 @@ deploy pauses for an approval click.
 
 ### b) Canary rollout — nothing to arm, tunables optional
 
-Canary deploy → observe → promote is on by default whenever `GCP_DEPLOY_ENABLED=true`. Optional
-repo Variables: `CANARY_PERCENT` (default 10), `CANARY_OBSERVE_SECONDS` (default 120),
-`PUBLIC_HEALTH_URL` (default the live domain), `CANARY_DISABLED=true` (escape hatch — old
-immediate-100% behavior). Manual rollback: **Actions → "Rollback (Cloud Run)"** — run empty to
-list revisions, re-run with a revision name to route 100% back. **Exercise it once** (LR21).
+Graduated canary (default 10% → 50% → 100%, each step gated on the LB `/healthz` poll, revision
+readiness, AND the candidate's 5xx rate from Cloud Run's built-in metrics) is on by default
+whenever `GCP_DEPLOY_ENABLED=true`. The metric gate needs the deployer SA to hold
+`roles/monitoring.viewer` — covered by `terraform apply` (`iam.tf`); until then it warns and the
+health/readiness gates still hard-gate. Optional repo Variables: `CANARY_STEPS` (default
+`"10 50"`), `CANARY_OBSERVE_SECONDS` (per step, default 120), `CANARY_MIN_SAMPLE` (default 20),
+`CANARY_MAX_5XX_PCT` (default 5), `PUBLIC_HEALTH_URL` (default the live `/healthz`),
+`CANARY_DISABLED=true` (escape hatch — old immediate-100% behavior). Manual rollback:
+**Actions → "Rollback (Cloud Run)"** — run empty to list revisions, re-run with a revision name
+to route 100% back. **Exercise it once** (LR21).
 
 ### c) EAS + Google Play — arms mobile-release.yml and mobile-ota.yml
 
@@ -165,6 +170,52 @@ production rollout (starts at 10%; advance/halt in Play Console → Releases). J
 
 Run the §6 command, and additionally tick **"Require review from Code Owners"** in the branch
 protection UI so the `.github/CODEOWNERS` routing is enforced on money/auth/infra/pipeline paths.
+
+### e) Staging stack — arms deploy-staging.yml (and unblocks LR11 load runs)
+
+```bash
+# 1. Provision (infra/terraform/staging.tf — its own SQL/Redis/secrets/SA/bucket, ~zero prod risk):
+cd infra/terraform
+echo 'staging_enabled = true' >> terraform.tfvars
+terraform apply       # review: everything is new + gated; prod's only diff is the LB host rule/cert
+
+# 2. DNS: add an A record for staging.lyniafinance.com → the SAME load_balancer_ip output as prod.
+#    The staging managed cert goes ACTIVE after DNS propagates (can take ~30 min).
+
+# 3. Arm the workflow from the Terraform outputs:
+gh variable set GCP_STAGING_ENABLED --body "true"
+gh variable set STAGING_CLOUD_SQL_INSTANCE --body "$(terraform output -raw STAGING_CLOUD_SQL_INSTANCE)"
+gh variable set STAGING_CLOUD_RUN_SERVICE_ACCOUNT --body "$(terraform output -raw STAGING_CLOUD_RUN_SERVICE_ACCOUNT)"
+gh secret set MIGRATE_DATABASE_URL_STAGING --body "$(terraform output -raw MIGRATE_DATABASE_URL_STAGING)"
+gh variable set STAGING_OTP_TEST_PHONES --body "+263771234567,+263770000002"   # QA numbers
+
+# 4. First deploy: Actions → "Deploy Staging (Cloud Run)" (or push to main). The first run's smoke
+#    can fail while DNS/cert propagate — re-run once https://staging.lyniafinance.com/healthz answers.
+# 5. Point the k6 harness at it (LR11): BASE_URL=https://staging.lyniafinance.com k6 run apps/api/load/smoke.js
+```
+
+Staging runs `APP_ENV=staging`: prod-shaped (real secret-strength guards, NODE_ENV=production)
+with ONLY the launch-hygiene guards relaxed, so console OTP / stub KYC / noop push boot there for
+vendor-free QA. The prod deploy hardcodes `APP_ENV=production`, so no variable can ever relax
+prod. This replaces the old §4 advice of running QA mode on a second copy of the prod service.
+
+### f) Release train + force-update gate
+
+**Release train:** `release-please.yml` maintains a rolling release PR from Conventional Commits;
+merging it tags `vX.Y.Z` (which triggers the Play release) and writes `apps/mobile/CHANGELOG.md`.
+One-time: `gh secret set RELEASE_PLEASE_TOKEN` with a fine-grained PAT (contents: write) so the
+tag it pushes can trigger mobile-release.yml — with the default token, start the Play release
+manually from Actions after merging the release PR.
+
+**Force-update gate (server-driven):** when a breaking change must walk old installs to the Play
+Store, set the minimum and redeploy — installed apps below it get the blocking update screen at
+next cold start (fail-open: an unreachable API never blocks anyone):
+```bash
+gh variable set MIN_SUPPORTED_APP_VERSION --body "0.2.0"   # dotted version, matches app.config.ts
+gh workflow run release.yml --ref main
+# verify: curl https://lyniago.lyniafinance.com/app/version-gate → {"minSupportedVersion":"0.2.0"}
+```
+Prefer keeping API contracts backward-compatible; this gate is the escape hatch, not the routine.
 
 ---
 **Where each of these came from:** `docs/DATA-RETENTION.md` (§1–2), `docs/OBSERVABILITY.md` (§3),

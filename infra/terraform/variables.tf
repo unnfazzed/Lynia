@@ -194,3 +194,28 @@ variable "api_domain" {
   type        = string
   default     = "lyniago.lyniafinance.com"
 }
+
+# --- Staging stack (staging.tf) — all gated off by default ---
+variable "staging_enabled" {
+  description = "Provision the staging tier (staging.tf): its own Cloud SQL + Redis + secrets + runtime SA + media bucket, exposed via the existing ALB at staging_api_domain. Off by default — zero diff until armed. Arming guide: docs/LAUNCH-EXECUTION-RUNBOOK.md §8e."
+  type        = bool
+  default     = false
+}
+
+variable "staging_api_domain" {
+  description = "Hostname for the staging API on the shared load balancer (own managed cert; same LB IP as api_domain — add a second A record)."
+  type        = string
+  default     = "staging.lyniafinance.com"
+}
+
+variable "staging_cloud_run_service" {
+  description = "Name of the staging Cloud Run service (created by deploy-staging.yml, referenced by the staging serverless NEG). Must equal the STAGING_CLOUD_RUN_SERVICE repo variable."
+  type        = string
+  default     = "lynia-api-staging"
+}
+
+variable "staging_db_tier" {
+  description = "Cloud SQL machine tier for the staging instance. Shared-core by default — staging correctness matters, staging performance headroom does not (bump temporarily for load-envelope runs if the DB itself is the bottleneck under ×5)."
+  type        = string
+  default     = "db-f1-micro"
+}

@@ -76,11 +76,28 @@ resource "google_compute_backend_service" "api" {
   }
 }
 
-# --- URL map: route every host/path to the single backend ---
+# --- URL map: default host/path → prod backend; staging host → staging backend (staging.tf) ---
 resource "google_compute_url_map" "api" {
   name            = "lynia-api-urlmap"
   project         = local.project_id
   default_service = google_compute_backend_service.api.id
+
+  # Staging rides the same ALB/IP under its own hostname — zero-diff until staging_enabled.
+  dynamic "host_rule" {
+    for_each = var.staging_enabled ? [1] : []
+    content {
+      hosts        = [var.staging_api_domain]
+      path_matcher = "staging"
+    }
+  }
+
+  dynamic "path_matcher" {
+    for_each = var.staging_enabled ? [1] : []
+    content {
+      name            = "staging"
+      default_service = google_compute_backend_service.staging[0].id
+    }
+  }
 }
 
 # --- Google-managed TLS certificate for the API domain ---
@@ -97,10 +114,15 @@ resource "google_compute_managed_ssl_certificate" "api" {
 
 # --- HTTPS target proxy: terminates TLS, hands traffic to the url map ---
 resource "google_compute_target_https_proxy" "api" {
-  name             = "lynia-api-https-proxy"
-  project          = local.project_id
-  url_map          = google_compute_url_map.api.id
-  ssl_certificates = [google_compute_managed_ssl_certificate.api.id]
+  name    = "lynia-api-https-proxy"
+  project = local.project_id
+  url_map = google_compute_url_map.api.id
+  # Staging gets its OWN cert appended (staging.tf) — never added to the prod cert's domain
+  # list, which would force-replace the prod cert and churn live TLS while it re-provisions.
+  ssl_certificates = concat(
+    [google_compute_managed_ssl_certificate.api.id],
+    var.staging_enabled ? [google_compute_managed_ssl_certificate.staging[0].id] : [],
+  )
 }
 
 # --- Static global anycast IP: the single address DNS points at (A record) ---

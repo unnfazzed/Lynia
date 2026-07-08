@@ -80,19 +80,27 @@ const storeUrlFromExtra = (Constants.expoConfig?.extra as { storeUrl?: string } 
 export const STORE_URL: string | null = process.env.EXPO_PUBLIC_STORE_URL ?? storeUrlFromExtra ?? null;
 
 /**
- * True when `current` is older than MIN_SUPPORTED_VERSION — the single gate for the force-update screen.
+ * True when `current` is older than `min` — the shared comparator behind BOTH force-update gates
+ * (the build-time MIN_SUPPORTED_VERSION below and the server-driven /app/version-gate minimum).
  * Compares semver-ish dotted versions numerically, field by field. Returns false when the minimum is
- * unset/"0.0.0", so the gate is a no-op unless a minimum is explicitly configured above the current build.
+ * unset/"0.0.0", so a gate is a no-op unless a minimum is explicitly configured above the current build.
  */
-export function isUpdateRequired(current: string): boolean {
-  if (!MIN_SUPPORTED_VERSION || MIN_SUPPORTED_VERSION === "0.0.0") return false;
-  const min = MIN_SUPPORTED_VERSION.split(".").map((n) => Number.parseInt(n, 10) || 0);
+export function isVersionBelow(current: string, min: string | null | undefined): boolean {
+  if (!min || min === "0.0.0") return false;
+  const minParts = min.split(".").map((n) => Number.parseInt(n, 10) || 0);
   const cur = current.split(".").map((n) => Number.parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(min.length, cur.length); i++) {
+  for (let i = 0; i < Math.max(minParts.length, cur.length); i++) {
     const a = cur[i] ?? 0;
-    const b = min[i] ?? 0;
+    const b = minParts[i] ?? 0;
     if (a < b) return true;
     if (a > b) return false;
   }
   return false; // equal — no update needed
+}
+
+/** The build-time gate: `current` vs the inlined MIN_SUPPORTED_VERSION. Kept for builds that ship with
+ *  a minimum baked in; the server-driven gate (src/net/use-server-version-gate.ts) covers already-
+ *  installed binaries that a build-time constant can never reach retroactively. */
+export function isUpdateRequired(current: string): boolean {
+  return isVersionBelow(current, MIN_SUPPORTED_VERSION);
 }

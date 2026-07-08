@@ -67,6 +67,6 @@ jobs:
             --to-revisions "${{ inputs.revision }}=100"
           echo "Verifying service health through the LB…"
           sleep 10
-          curl -fsS --max-time 10 "${{ vars.PUBLIC_HEALTH_URL || 'https://lyniago.lyniafinance.com/health' }}" \
+          curl -fsS --max-time 10 "${{ vars.PUBLIC_HEALTH_URL || 'https://lyniago.lyniafinance.com/healthz' }}" \
             | grep -q '"status":"ok"' && echo "Health OK after rollback."
           echo "Rolled back: 100% of traffic → ${{ inputs.revision }}" >> "$GITHUB_STEP_SUMMARY"

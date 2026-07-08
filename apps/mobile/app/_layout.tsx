@@ -8,8 +8,9 @@ import React, { useEffect } from "react";
 import { View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../src/auth/auth-context";
-import { isUpdateRequired } from "../src/config";
+import { isUpdateRequired, isVersionBelow } from "../src/config";
 import { useReachability } from "../src/net/use-reachability";
+import { useServerMinVersion } from "../src/net/use-server-version-gate";
 import { queryClient } from "../src/query/client";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { start as startRum } from "../src/telemetry/rum";
@@ -47,13 +48,17 @@ function ConnectivityBanner(): React.ReactElement | null {
 }
 
 /**
- * The navigation tree, gated by the hard version check (customer/rider S·3). When a
- * MIN_SUPPORTED_VERSION above the installed build is configured, the force-update screen replaces the
- * whole Stack — there's no route past it. Inert by default: isUpdateRequired returns false unless a
- * minimum is explicitly set above the current version, so this is a no-op in normal builds.
+ * The navigation tree, gated by the hard version check (customer/rider S·3) — two minimums, one
+ * screen: the build-time MIN_SUPPORTED_VERSION (inlined at build) and the SERVER-driven
+ * /app/version-gate minimum, which reaches binaries already in the field. When either sits above
+ * the installed build, the force-update screen replaces the whole Stack — there's no route past
+ * it. Inert by default: the build-time gate is unset in normal builds and the server gate
+ * fail-opens to null until the founder sets MIN_SUPPORTED_APP_VERSION on the API.
  */
 function AppNavigator(): React.ReactElement {
-  if (isUpdateRequired(Constants.expoConfig?.version ?? "0.0.0")) return <ForceUpdateScreen />;
+  const serverMin = useServerMinVersion();
+  const current = Constants.expoConfig?.version ?? "0.0.0";
+  if (isUpdateRequired(current) || isVersionBelow(current, serverMin)) return <ForceUpdateScreen />;
   return <Stack screenOptions={{ headerShown: false }} />;
 }
 

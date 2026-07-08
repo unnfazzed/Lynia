@@ -20,17 +20,17 @@ not code — see `LAUNCH-EXECUTION-RUNBOOK.md` §8) and two deliberate deferrals
 
 | Piece | Status |
 |---|---|
-| Cloud Run canary: `--no-traffic` deploy → LB health observation → promote → **auto-rollback** | ✅ `release.yml` (on by default once armed; `CANARY_*` vars tune it) |
+| Cloud Run canary: `--no-traffic` deploy → **graduated** 10→50→100 promotion, each step gated on LB health + revision readiness + the candidate's **5xx metric rate** → **auto-rollback** | ✅ `release.yml` (on by default once armed; `CANARY_STEPS`/`CANARY_*` vars tune it; metric gate uses Cloud Run's built-in `request_count` — no OTEL needed; deployer SA gets `monitoring.viewer` via `iam.tf`) |
 | Manual one-command rollback | ✅ `rollback.yml` (list revisions / route 100% back) |
-| GitHub Environments gate on prod deploys | ✅ jobs reference `production` / `production-mobile`; founder adds required reviewers |
+| GitHub Environments gate on prod deploys | ✅ jobs reference `staging` / `production` / `production-mobile`; founder adds required reviewers |
 | Play release pipeline: EAS build + staged submit (10% `inProgress`) | ✅ `mobile-release.yml` + `apps/mobile/eas.json` (dormant until `EAS_RELEASE_ENABLED=true`) |
 | `versionCode` discipline | ✅ `autoIncrement` + `appVersionSource: remote` in `eas.json` |
 | OTA hotfix lane | ✅ `mobile-ota.yml` + `expo-updates@~0.27.5` + `runtimeVersion: fingerprint`; updates explicitly disabled until the EAS project id exists |
 | CODEOWNERS + PR template (risk/rollback/migration checklist) | ✅ `.github/` |
-| **§2e correction:** the candidate's tagged `run.app` URL is unreachable from CI (default URLs disabled, LB-only ingress) | smoke = revision-readiness gate + %-shift + health **through the LB**, which is what `release.yml` implements |
-| Staging Cloud Run service | ⏳ deferred — needs Terraform provisioning first (LR11 prerequisite) |
-| Min-supported-version gate (§1c) | ⏳ deferred — an app+API feature; own PR through the gstack flow |
-| Metric-gated multi-step % promotion / release-please train | ⏳ Phase 4 — needs LR9 observability live |
+| **§2e correction:** the candidate's tagged `run.app` URL is unreachable from CI (default URLs disabled, LB-only ingress) | smoke = revision-readiness gate + %-shift + health **through the LB** (`/healthz` — the actual route; README's `/health` is loose prose), which is what `release.yml` implements |
+| Staging stack (§2d) | ✅ `infra/terraform/staging.tf` (own SQL/Redis/secrets/SA/bucket behind `staging_enabled=false`, staging host on the shared ALB) + `deploy-staging.yml` (auto on main, `APP_ENV=staging` QA tier, smoke) — founder applies + arms (runbook §8e) |
+| Min-supported-version gate (§1c) | ✅ server-driven: `GET /app/version-gate` (env `MIN_SUPPORTED_APP_VERSION`, off by default) + shared contract + mobile fail-open fetch feeding the existing force-update screen; `APP_ENV` tier added so staging may run QA bypasses while prod hardcodes them off |
+| Release train | ✅ `release-please.yml` (release PR → `vX.Y.Z` tag → triggers the Play release; annotated version in `app.config.ts`) |
 
 ## 0. Where we are today (the baseline this plan extends)
 

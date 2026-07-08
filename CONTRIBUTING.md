@@ -181,7 +181,9 @@ merges to `main` — but only when a maintainer has armed it (`GCP_DEPLOY_ENABLE
 then it's a clean no-op. The deploy is a **canary**: the new revision starts with no traffic, takes a
 small share, is observed via `/health` through the LB, then promotes to 100% — rolling back
 automatically on degradation. Manual rollback (a traffic re-point, seconds):
-[`rollback.yml`](.github/workflows/rollback.yml). Mobile ships separately —
+[`rollback.yml`](.github/workflows/rollback.yml). Once staging is armed,
+[`deploy-staging.yml`](.github/workflows/deploy-staging.yml) also deploys every merge to a separate
+staging service (own DB/Redis/secrets, QA test mode) before the prod canary runs. Mobile ships separately —
 [`mobile-release.yml`](.github/workflows/mobile-release.yml) (EAS build → staged Play rollout, on
 `v*` tags) and [`mobile-ota.yml`](.github/workflows/mobile-ota.yml) (JS-only over-the-air hotfix).
 The full release strategy lives in

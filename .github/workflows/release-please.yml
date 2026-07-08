@@ -1,0 +1,35 @@
+name: Release Please
+
+# The release train (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §3d): maintains a rolling "release PR"
+# that accumulates Conventional-Commit changes on main into a version bump + CHANGELOG. Merging
+# that PR tags vX.Y.Z and cuts a GitHub Release — and the v* tag is what triggers the Play
+# release (mobile-release.yml). The version source of truth it bumps:
+#   apps/mobile/package.json  "version"        (release-please's anchor)
+#   apps/mobile/app.config.ts version: "…"     (the Android versionName — annotated extra-file)
+#
+# TOKEN NOTE: tags pushed with the default GITHUB_TOKEN do NOT trigger other workflows (GitHub's
+# recursion guard), so with the default token the Play release must be started manually
+# (Actions → Mobile Release). To make merge-the-PR fully hands-off, create a fine-grained PAT
+# with contents:write and store it as the RELEASE_PLEASE_TOKEN secret — it is used when present.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

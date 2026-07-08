@@ -1,0 +1,167 @@
+name: Deploy Staging (Cloud Run)
+
+# The pre-prod tier (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2d): every merge to main auto-deploys
+# the SAME image the prod canary will promote to a separate staging service — its own Cloud SQL,
+# Redis, secrets, bucket, and runtime SA (infra/terraform/staging.tf), exposed on the shared ALB
+# at the staging hostname. Runs prod-shaped (NODE_ENV=production, real secret-strength guards)
+# but in the STAGING tier (APP_ENV=staging), which permits the vendor-free QA config the k6 load
+# harness (apps/api/load/, LR11) and QA devices authenticate through.
+#
+# DORMANT UNTIL STAGING IS PROVISIONED — gated on the repo variable GCP_STAGING_ENABLED == 'true'.
+# Arming (founder): set staging_enabled = true in terraform.tfvars, `terraform apply`, create the
+# staging DNS A record, then set the repo variables/secret below from the Terraform outputs
+# (docs/LAUNCH-EXECUTION-RUNBOOK.md §8e).
+#
+#   Variables: GCP_STAGING_ENABLED, STAGING_CLOUD_SQL_INSTANCE, STAGING_CLOUD_RUN_SERVICE_ACCOUNT
+#              (optional: STAGING_CLOUD_RUN_SERVICE, STAGING_HEALTH_URL, STAGING_OTP_TEST_PHONES)
+#   Secrets:   MIGRATE_DATABASE_URL_STAGING (from the terraform output of the same name)
+#
+# NOTE: the first armed run can fail the final smoke step while the staging DNS record + managed
+# cert are still propagating (up to ~30 min) — re-run the workflow once they're live.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: build · migrate · deploy (staging)
+    runs-on: ubuntu-latest
+    if: ${{ vars.GCP_STAGING_ENABLED == 'true' }}
+    environment: staging # auto-deploys: no reviewers on staging — fast feedback is the point
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPO }}/lynia-api
+      SERVICE: ${{ vars.STAGING_CLOUD_RUN_SERVICE || 'lynia-api-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate required staging config
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
+          VPC_CONNECTOR: ${{ vars.VPC_CONNECTOR }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          STAGING_CLOUD_SQL_INSTANCE: ${{ vars.STAGING_CLOUD_SQL_INSTANCE }}
+          STAGING_CLOUD_RUN_SERVICE_ACCOUNT: ${{ vars.STAGING_CLOUD_RUN_SERVICE_ACCOUNT }}
+          MIGRATE_DATABASE_URL_STAGING: ${{ secrets.MIGRATE_DATABASE_URL_STAGING }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO VPC_CONNECTOR \
+                   GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT \
+                   STAGING_CLOUD_SQL_INSTANCE STAGING_CLOUD_RUN_SERVICE_ACCOUNT \
+                   MIGRATE_DATABASE_URL_STAGING; do
+            [ -n "${!v:-}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::GCP_STAGING_ENABLED is true but these are unset: ${missing[*]}. See docs/LAUNCH-EXECUTION-RUNBOOK.md §8e." >&2
+            exit 1
+          fi
+          echo "All required staging config present."
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Reads release.yml's registry layer cache but does NOT write it (cache ownership stays with
+      # the prod release job — avoids concurrent cache-to races when both fire on the same push).
+      # Pushes only the :sha tag; :latest belongs to prod.
+      - name: Build and push image
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            -f apps/api/Dockerfile \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            -t "$IMAGE:${GITHUB_SHA}" \
+            --push .
+
+      - name: Apply database migrations (staging, via Cloud SQL Auth Proxy)
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATE_DATABASE_URL_STAGING }}
+        run: |
+          set -euo pipefail
+          curl -sSL -o cloud-sql-proxy \
+            https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.13.0/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy "${{ vars.STAGING_CLOUD_SQL_INSTANCE }}" --port 5432 &
+          PROXY_PID=$!
+          for i in $(seq 1 30); do (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1 && break || sleep 1; done
+          corepack enable
+          pnpm install --frozen-lockfile=false
+          pnpm --filter @lynia/api prisma:generate
+          pnpm --filter @lynia/api migrate:deploy
+          kill "$PROXY_PID" || true
+
+      # Straight to 100% — staging IS the canary tier; the graduated rollout protects prod only.
+      # APP_ENV=staging relaxes ONLY the launch-hygiene guards (env.ts): console OTP + test phones
+      # + stub KYC boot here so the k6 harness and QA devices can authenticate vendor-free, while
+      # secret-strength/Redis guards still apply. --max-instances caps the cost of a runaway.
+      - name: Deploy to Cloud Run (staging)
+        run: |
+          set -euo pipefail
+          ENV_VARS="^@^NODE_ENV=production@APP_ENV=staging@CLOUD_PROVIDER=gcp@STORAGE_BUCKET=lynia-media-staging@GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}@OTP_CHANNEL=console@KYC_PROVIDER=stub@PUSH_PROVIDER=noop@OTP_TEST_PHONES=${{ vars.STAGING_OTP_TEST_PHONES }}@MIN_SUPPORTED_APP_VERSION=${{ vars.STAGING_MIN_SUPPORTED_APP_VERSION }}"
+          SECRETS="DATABASE_URL=DATABASE_URL_STAGING:latest,REDIS_URL=REDIS_URL_STAGING:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET_STAGING:latest,PII_ENCRYPTION_KEY=PII_ENCRYPTION_KEY_STAGING:latest"
+
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE:${GITHUB_SHA}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --platform managed \
+            --port 3000 \
+            --timeout 3600 \
+            --max-instances 2 \
+            --service-account "${{ vars.STAGING_CLOUD_RUN_SERVICE_ACCOUNT }}" \
+            --add-cloudsql-instances "${{ vars.STAGING_CLOUD_SQL_INSTANCE }}" \
+            --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
+            --vpc-egress private-ranges-only \
+            --ingress internal-and-cloud-load-balancing \
+            --set-env-vars "$ENV_VARS" \
+            --set-secrets "$SECRETS" \
+            --allow-unauthenticated
+
+      - name: Smoke staging /health
+        run: |
+          set -euo pipefail
+          URL="${{ vars.STAGING_HEALTH_URL || 'https://staging.lyniafinance.com/healthz' }}"
+          for i in $(seq 1 12); do
+            BODY="$(curl -fsS --max-time 10 "$URL" || true)"
+            if echo "$BODY" | grep -q '"status":"ok"'; then
+              echo "Staging healthy: $BODY"
+              exit 0
+            fi
+            echo "Attempt $i: not healthy yet (${BODY:-no response}); retrying in 10s…"
+            sleep 10
+          done
+          echo "::error::Staging /health never went green. First armed run? DNS + managed cert can take ~30 min — re-run once propagated."
+          exit 1
+
+      - name: Summary
+        run: |
+          echo "Staging deployed ${IMAGE}:${GITHUB_SHA} to ${SERVICE} (${{ vars.GCP_REGION }})." >> "$GITHUB_STEP_SUMMARY"
