@@ -34,7 +34,7 @@ resource "google_project_service" "apis" {
     "secretmanager.googleapis.com",
     "artifactregistry.googleapis.com",
     "firebase.googleapis.com",               # link Firebase to the project (FCM, A4)
-    "firebasecloudmessaging.googleapis.com", # FCM HTTP v1 send from the runtime SA
+    "fcm.googleapis.com",                    # FCM HTTP v1 send from the runtime SA (the role is firebasecloudmessaging.admin, but the SERVICE is fcm.googleapis.com — the old name 404s at enable time)
     "monitoring.googleapis.com",             # OTLP metrics → Cloud Monitoring (GMP ingest) + SLO alerts
     "cloudtrace.googleapis.com",             # OTLP traces → Cloud Trace (both via the collector sidecar)
   ])
