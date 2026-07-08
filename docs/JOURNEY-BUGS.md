@@ -98,14 +98,17 @@ go-online card (`gate` truthy → online Card never renders). Reliability only r
 which has no in-app trigger (and per R4, no support button).
 **Fix:** rewrite the copy to the real recovery mechanism and give it a working support affordance.
 
-**R6 · Getting selected doesn't move the rider to the job — no push deep-link, no socket nav.**
+**R6 · Getting selected doesn't move the rider to the job — no push deep-link, no socket nav.** — ✅ FIXED by PR #150
 `apps/mobile/app/rider/index.tsx:256-262` · `src/push/push.ts`
 On selection the rider learns only via `activeQ` polling every 8s, rendering a card they must manually
 tap. There's no `addNotificationResponseReceivedListener`, and the board socket listens only for
 `boardNewOrder`/`bidExpired`.
 → rider backgrounds the app after bidding, gets a push banner, taps it → app opens to wherever it was,
 not the job; up to 8s idle (or missed) while the customer waits.
-**Fix:** on the selection push/socket event, `router.push("/rider/job")`.
+**Fix:** on the selection push/socket event, `router.push("/rider/job")`. — landed: `pushDestination()`
+(`src/push/push.ts`) routes rider-only statuses (`assigned`/`completed`) to `/rider/job`, wired through
+both the live `addNotificationResponseReceivedListener` and a cold-start `getLastNotificationResponseAsync()`
+check (`src/push/use-push-registration.ts:49-57`).
 
 **R7 · No navigation/directions handoff to pickup or drop-off.** — ✅ FIXED by PR #98
 `apps/mobile/app/rider/job.tsx:282` · `src/ui/LiveMap.tsx:37`

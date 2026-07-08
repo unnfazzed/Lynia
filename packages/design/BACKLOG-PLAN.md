@@ -41,7 +41,7 @@ The three items every audit flagged as the concentrated risk, plus the score tha
 | Item | IDs | Type | Size |
 |---|---|---|---|
 | Auction resumption (app closed / reconnect mid-window) | F-10 | E | M |
-| Double-broadcast idempotency + guard state | F-11 | E | S |
+| ~~Double-broadcast idempotency + guard state~~ — ✅ done (`orders.service.ts` idempotency key + partial unique index, PR #150) | F-11 | E | S |
 | Pick/cancel race plumbing (both `select_race` + `job_cancelled` already designed) | F-12 / R-08 | E | S |
 | Board freshness — assigned cards drop proactively | R2-4 | E | S |
 | Deliberate go-offline / app-close with an active job → blocked with warning | R-05 | D+E | S |
