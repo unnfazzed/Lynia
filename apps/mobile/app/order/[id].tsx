@@ -427,7 +427,7 @@ export default function OrderScreen(): React.ReactElement {
   // A select 409 (rider raced away) is handled with its own muted notice, so it's excluded here;
   // any other select failure is a real error and joins the red slot.
   const selectRace = selectM.error instanceof ApiError && selectM.error.status === 409;
-  const firstError = (selectRace ? null : selectM.error) ?? rotateM.error ?? rateM.error ?? cancelM.error;
+  const firstError = (selectRace ? null : selectM.error) ?? rotateM.error ?? rateM.error ?? cancelM.error ?? notifyM.error;
   const mutationError = firstError instanceof Error ? firstError.message : null;
   const riderPoint =
     order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null

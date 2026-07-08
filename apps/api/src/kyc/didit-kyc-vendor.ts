@@ -7,6 +7,11 @@ import type { KycSubmission, KycVendor } from "./kyc-vendor";
  * the returned URL, and Didit posts an HMAC-signed status webhook to our /kyc/callback.
  * Field/header names follow Didit's v3 API; the response is read defensively to tolerate aliases.
  */
+/** Ceiling on the outbound Didit session-create call. Without it a hung Didit endpoint stalls the
+ *  rider's "start verification" request with no bound (worse than the mobile client's 15s abort,
+ *  because the server connection stays open and piles up under retries). */
+const DIDIT_SESSION_TIMEOUT_MS = 10_000;
+
 export class DiditKycVendor implements KycVendor {
   private readonly logger = new Logger(DiditKycVendor.name);
 
@@ -19,15 +24,23 @@ export class DiditKycVendor implements KycVendor {
       throw new Error("Didit not configured (DIDIT_API_KEY / DIDIT_WORKFLOW_ID)");
     }
 
-    const res = await fetch(`${this.env.DIDIT_BASE_URL}/v3/session/`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": apiKey },
-      body: JSON.stringify({
-        workflow_id: workflowId,
-        vendor_data: riderId,
-        ...(this.env.DIDIT_CALLBACK_URL ? { callback: this.env.DIDIT_CALLBACK_URL } : {}),
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${this.env.DIDIT_BASE_URL}/v3/session/`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": apiKey },
+        body: JSON.stringify({
+          workflow_id: workflowId,
+          vendor_data: riderId,
+          ...(this.env.DIDIT_CALLBACK_URL ? { callback: this.env.DIDIT_CALLBACK_URL } : {}),
+        }),
+        signal: AbortSignal.timeout(DIDIT_SESSION_TIMEOUT_MS),
+      });
+    } catch (err) {
+      // A timeout (or any network failure) surfaces as a clean vendor error rather than a hung request.
+      this.logger.error(`Didit session create network error: ${err instanceof Error ? err.message : String(err)}`);
+      throw new Error("Couldn't reach the ID-check provider", { cause: err });
+    }
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");

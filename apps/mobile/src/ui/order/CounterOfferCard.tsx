@@ -83,7 +83,7 @@ export function CounterOfferCard({
       <Button label={`Accept $${counter.toFixed(2)}`} onPress={onAccept} loading={loading} disabled={disabled} />
       <Button label="Decline" variant="ghost" onPress={onDecline} disabled={disabled} />
       <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center", marginTop: 2 }}>
-        Declining keeps {offer.rider.profile.firstName} in your list at ${counter.toFixed(2)} — one counter round, no counter-back.
+        Declining keeps {offer.rider.profile.firstName} in your list at ${counter.toFixed(2)} — you can still pick them later at this price.
       </Text>
     </Card>
   );

@@ -73,12 +73,18 @@ const RIDER_ONLY_STATUSES = new Set(["assigned", "completed"]);
  * carries `orderId`; most of them (confirmed/en_route_pickup/picked_up/en_route_dropoff/delivered/
  * expired/undelivered) are customer-facing and previously did nothing on tap despite copy like
  * "tap to rate your rider" / "tap for details". `cancelled` is pushed to BOTH parties, so it falls
- * back to `isRider` to pick the right screen. Returns null when there's no order to navigate to
- * (e.g. the new-offer/new-broadcast pushes, which carry no status).
+ * back to `isRider` to pick the right screen.
+ *
+ * Two non-status `kind`s need special routing, or they dead-end: a `broadcast` alert goes to a rider
+ * who hasn't bid yet, so `/order/:id` would 403 (a Retry that can never succeed) — send them to the
+ * board; `riders_available` carries no order at all — bring the customer home to re-broadcast.
+ * Returns null when there's genuinely nowhere to go.
  */
 export function pushDestination(data: unknown, isRider: boolean): string | null {
   if (typeof data !== "object" || data === null) return null;
-  const { orderId, status } = data as { orderId?: unknown; status?: unknown };
+  const { orderId, status, kind } = data as { orderId?: unknown; status?: unknown; kind?: unknown };
+  if (kind === "broadcast") return "/rider";
+  if (kind === "riders_available") return "/home";
   if (typeof orderId !== "string" || orderId === "") return null;
   if (typeof status === "string" && RIDER_ONLY_STATUSES.has(status)) return "/rider/job";
   if (status === "cancelled" && isRider) return "/rider/job";

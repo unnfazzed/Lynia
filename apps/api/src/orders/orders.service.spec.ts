@@ -840,6 +840,48 @@ describe("OrdersService.activeForRider", () => {
   });
 });
 
+describe("OrdersService.activeForCustomer (cold-start restore, UX review #1)", () => {
+  it("returns null when the customer has no live order", async () => {
+    const prisma = { order: { findFirst: async () => null } };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    expect(await svc.activeForCustomer("cust-1")).toBeNull();
+  });
+
+  it("returns the live-order snapshot (the auction or an active ride) so the app can restore tracking", async () => {
+    const snap = {
+      id: "o1",
+      status: "open_for_offers",
+      agreedFare: null,
+      proposedFare: 2.5,
+      customerId: "cust-1",
+      riderId: null,
+      createdAt: new Date("2026-06-26T00:00:00Z"),
+      customer: { phone: "+263771111111" },
+      rider: null,
+      events: [],
+    };
+    let whereStatus: unknown;
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: {
+        findFirst: async (args: { where: { status: { in: unknown } } }) => {
+          whereStatus = args.where.status.in;
+          return { id: "o1" };
+        },
+        findUnique: async () => snap,
+      },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    const res = await svc.activeForCustomer("cust-1");
+    expect(res).toMatchObject({ id: "o1", status: "open_for_offers" });
+    // The query scopes to the customer-active set (auction through delivered), not terminal statuses.
+    expect(whereStatus).toContain("open_for_offers");
+    expect(whereStatus).toContain("delivered");
+    expect(whereStatus).not.toContain("completed");
+    expect(whereStatus).not.toContain("cancelled");
+  });
+});
+
 describe("OrdersService.requestNotifyWhenAvailable (2·b1 notify-me)", () => {
   it("registers the customer at their pickup and returns whether it was queued", async () => {
     const addNotifyRequest = vi.fn(async () => true);

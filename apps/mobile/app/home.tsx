@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
 import { ApiError } from "../src/api/client";
 import { getMe } from "../src/api/auth";
-import { acceptDisclaimer, createOrder, type OrderSnapshot } from "../src/api/orders";
+import { acceptDisclaimer, createOrder, getActiveCustomerOrder, type OrderSnapshot } from "../src/api/orders";
 import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/session";
 import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import {
@@ -20,11 +20,13 @@ import {
   saveDraft,
 } from "../src/logic/order-draft";
 import { orderKey } from "../src/query/client";
-import { fareBand, fareBandHint, isBelowBand } from "../src/logic/fare-band";
-import { loadRecipients, type Recipient, rememberRecipient } from "../src/logic/saved-recipients";
+import { formatMoney } from "../src/logic/money";
+import { useForegroundRefetch } from "../src/realtime/use-foreground-refetch";
+import { fareBand, fareBandHint, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
+import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Button, EmptyState, ErrorText, Field, haptic, Icon, Label, Screen, TestBuildBanner } from "../src/ui";
+import { Button, EmptyState, ErrorText, Field, haptic, Icon, Label, Screen, statusPillLabel, TestBuildBanner } from "../src/ui";
 import { SupportCallRow } from "../src/ui/safety";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
@@ -33,7 +35,7 @@ import { DisclaimerSheet } from "../src/ui/home/DisclaimerSheet";
 import { QtyStepper } from "../src/ui/home/QtyStepper";
 import { AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
 import type { PickedPoint } from "../src/ui/MapPicker";
-import { parseNum, randomUuidV4 } from "../src/util";
+import { parseNum, randomUuidV4, uuidV4FromSeed } from "../src/util";
 
 // LayoutAnimation needs an explicit opt-in on old-architecture Android; a no-op on iOS / Fabric.
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -79,6 +81,22 @@ export default function HomeScreen(): React.ReactElement {
   const [heldFromBroadcast, setHeldFromBroadcast] = useState(false);
   const accountOnHold = heldFromBroadcast || meQ.data?.onHold === true;
 
+  // Restore path (UX review #1): the customer may have a live order (auction or an active ride) that a
+  // cold start / app-icon reopen would otherwise hide behind this blank compose form — the rider side
+  // has the same restore via mine/active. Poll slowly + refetch on foreground so the banner reflects a
+  // status change that happened while backgrounded. Seeds the per-order cache so tapping through paints
+  // instantly.
+  const activeOrderQ = useQuery({
+    queryKey: ["activeCustomerOrder"],
+    queryFn: getActiveCustomerOrder,
+    refetchInterval: 30_000,
+  });
+  useForegroundRefetch(() => void qc.invalidateQueries({ queryKey: ["activeCustomerOrder"] }));
+  const activeOrder = activeOrderQ.data ?? null;
+  useEffect(() => {
+    if (activeOrder) qc.setQueryData<OrderSnapshot>(orderKey(activeOrder.id), activeOrder);
+  }, [activeOrder, qc]);
+
   // Pre-broadcast liability disclaimer (A1-8). Gate the first broadcast behind an accept-to-continue
   // sheet; once accepted for the current policy version we don't re-show it. Kept in a ref (read at
   // tap time, not a render dependency) plus the modal's own visibility state.
@@ -111,6 +129,10 @@ export default function HomeScreen(): React.ReactElement {
   const [draftRestored, setDraftRestored] = useState(false);
   // Gate persistence until the initial load has run, so we don't clobber the stored draft with empties.
   const hydrated = useRef(false);
+  // Idempotency nonce: persisted with the draft so the derived create-order key survives an app kill
+  // (see uuidV4FromSeed). Seeded fresh; replaced by the restored draft's nonce on hydrate; rotated
+  // after a successful create so the next order can't dedupe against the last one.
+  const [idempotencyNonce, setIdempotencyNonce] = useState<string>(() => randomUuidV4());
 
   // "Add details (optional)" collapsible — secondary fields (landmarks, declared value) live here
   // so the required path (pins → item → phones → price → Broadcast) stays primary and always
@@ -165,8 +187,16 @@ export default function HomeScreen(): React.ReactElement {
         // Restored landmarks are user-owned text (not live from the map): treat them as typed.
         if (draft.pickupLandmark) setPickupLandmarkTouched(true);
         if (draft.dropLandmark) setDropLandmarkTouched(true);
+        // Reuse the restored draft's nonce so a retry of a killed-mid-send order derives the SAME
+        // idempotency key. A re-broadcast (rbParams) or an old draft without one keeps the fresh nonce.
+        if (draft.idempotencyNonce) setIdempotencyNonce(draft.idempotencyNonce);
         setDraftRestored(true);
       }
+      // Prefill the sender's OWN pickup phone (not third-party PII, so not in the PII-free draft) — a
+      // repeat send / re-broadcast shouldn't make them re-type their own number every time. Only when
+      // the field is still empty, so a restored/edited value always wins.
+      const myPhone = await loadMyPickupPhone();
+      if (!cancelled && myPhone) setPickupPhone((p) => p || myPhone);
       hydrated.current = true;
     })();
     return () => {
@@ -186,8 +216,9 @@ export default function HomeScreen(): React.ReactElement {
       note,
       declaredValue,
       proposedFare,
+      idempotencyNonce,
     });
-  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, note, declaredValue, proposedFare]);
+  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, note, declaredValue, proposedFare, idempotencyNonce]);
 
   // Moving either pin is the fix for an out-of-area result — drop the state so it doesn't linger over
   // a now-valid route. Only fires on a real pin change (not on the submit that set it).
@@ -284,6 +315,9 @@ export default function HomeScreen(): React.ReactElement {
   // Acceptance-band guidance around the suggestion + a soft "this may be too low" nudge.
   const priceBand = quote ? fareBand(quote.suggestedFare) : null;
   const belowBand = priceBand != null && isBelowBand(fare, priceBand);
+  // Fat-finger guard: a price far above the band ($2.50 typed as $250) earns a calm confirm hint. Never
+  // blocks (a genuinely high offer is the customer's right) — just makes an accidental extra digit visible.
+  const farAboveBand = priceBand != null && isFarAboveBand(fare, priceBand);
   // Mirror the contract's contactPhone floor (min 6, both waypoints) so Broadcast can't enable and
   // then bounce off a raw Zod message on submit.
   const pickupPhoneOk = pickupPhone.trim().length >= 6;
@@ -300,13 +334,18 @@ export default function HomeScreen(): React.ReactElement {
   const declaredValueOk = declaredValueNum === null || declaredValueNum <= 150;
   const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk && declaredValueOk;
 
-  // Idempotency key (BUG-HUNT): one per compose ATTEMPT, not per tap — stable across a timeout+retry
-  // or a double-tap on Broadcast (the server dedupes on it and returns the original order instead of
-  // opening a second live auction), but a fresh key whenever the trip's actual content changes, so a
-  // genuinely new order is never mistaken for a stale retry of an old one.
+  // Idempotency key (BUG-HUNT): derived deterministically from the persisted nonce + the trip's
+  // content, so it's stable across a timeout+retry, a double-tap on Send, AND an app kill-and-relaunch
+  // (the nonce is restored from the draft) — the server dedupes on it and returns the original order
+  // instead of opening a second live auction. Content is in the seed, so a genuinely different order
+  // yields a different key; the nonce rotates after a successful create so a deliberate identical
+  // re-send isn't mistaken for a stale retry.
   const idempotencyKey = useMemo(
-    () => randomUuidV4(),
-    [pickupPoint?.lat, pickupPoint?.lng, dropPoint?.lat, dropPoint?.lng, JSON.stringify(items), note, declaredValue, proposedFare],
+    () =>
+      uuidV4FromSeed(
+        `${idempotencyNonce}|${pickupPoint?.lat},${pickupPoint?.lng}|${dropPoint?.lat},${dropPoint?.lng}|${JSON.stringify(items)}|${note}|${declaredValue}|${proposedFare}`,
+      ),
+    [idempotencyNonce, pickupPoint?.lat, pickupPoint?.lng, dropPoint?.lat, dropPoint?.lng, JSON.stringify(items), note, declaredValue, proposedFare],
   );
 
   const submit = async (): Promise<void> => {
@@ -356,6 +395,8 @@ export default function HomeScreen(): React.ReactElement {
       haptic("tap");
       // Remember this recipient for a one-tap re-send next time (best-effort, on-device only).
       void rememberRecipient({ name: "", phone: dropPhone.trim() });
+      // Remember the sender's own pickup number so the next order prefills it instead of re-typing.
+      void saveMyPickupPhone(pickupPhone.trim());
       // Seed the order cache from the response + the form we already have, so the order screen
       // paints the auction immediately instead of blank → skeleton → content on navigate.
       qc.setQueryData<OrderSnapshot>(orderKey(order.id), {
@@ -374,8 +415,10 @@ export default function HomeScreen(): React.ReactElement {
         // create response, before the first 15s snapshot refetch.
         ridersNearby: order.ridersNearby ?? null,
       });
-      // Draft fulfilled — wipe it so the next visit starts clean.
+      // Draft fulfilled — wipe it so the next visit starts clean, and rotate the nonce so a later order
+      // with identical content can't dedupe against this one.
       setDraftRestored(false);
+      setIdempotencyNonce(randomUuidV4());
       void clearDraft();
       router.push(`/order/${order.id}`);
     } catch (e) {
@@ -459,6 +502,38 @@ export default function HomeScreen(): React.ReactElement {
         >
           <MapHomeTopBar onNotifications={() => router.push("/notifications")} onAccount={() => router.push("/profile")} />
 
+          {activeOrder ? (
+            // UX review #1: a live order the customer can be killed away from — always offer the way back.
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open your delivery in progress"
+              onPress={() => router.push(`/order/${activeOrder.id}`)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: tokens.space.sm,
+                backgroundColor: tokens.color.bg,
+                borderRadius: tokens.radius.card,
+                borderWidth: 1,
+                borderColor: tokens.color.accent,
+                padding: tokens.space.md,
+                marginBottom: tokens.space.sm,
+                ...tokens.shadow.card,
+              }}
+            >
+              <Icon name="bike" size={20} color={tokens.color.accentText} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: tokens.font.size.body, fontWeight: "700", color: tokens.color.ink }}>
+                  Delivery in progress · {statusPillLabel(activeOrder.status)}
+                </Text>
+                <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, fontVariant: ["tabular-nums"] }} numberOfLines={1}>
+                  {activeOrder.pickup.landmark || "Pickup"} → {activeOrder.dropoff.landmark || "Drop-off"} · {formatMoney(activeOrder.agreedFare ?? activeOrder.proposedFare)}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.accentText }}>Track</Text>
+            </Pressable>
+          ) : null}
+
           {draftRestored ? (
             <View
               accessibilityRole="text"
@@ -527,7 +602,7 @@ export default function HomeScreen(): React.ReactElement {
                     !(fare !== null && fare > 0) ? "a price" : null,
                   ]
                     .filter(Boolean)
-                    .join(", ")} to broadcast.`}
+                    .join(", ")} to send.`}
                 </Text>
               ) : null}
               {outOfArea ? (
@@ -550,12 +625,12 @@ export default function HomeScreen(): React.ReactElement {
                       Outside our service area
                     </Text>
                     <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18, marginTop: 1 }}>
-                      We don&apos;t cover that pickup or drop-off yet. Move your pins closer to Harare to broadcast, or check back as we expand.
+                      We don&apos;t cover that pickup or drop-off yet. Move your pins closer to Harare to send your parcel, or check back as we expand.
                     </Text>
                   </View>
                 </View>
               ) : null}
-              <Button label="Broadcast request" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
+              <Button label="Send to riders" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
               <ErrorText message={error} />
             </>
           }
@@ -680,8 +755,15 @@ export default function HomeScreen(): React.ReactElement {
             placeholder="2.50"
             keyboardType="decimal-pad"
             // Below the band is not an error (there's no hard floor) — a gentle hint that a low ask may
-            // draw no riders, so it reads as guidance under the field, not a red validation failure.
-            hint={belowBand ? "That's below what riders usually take — they may pass. Nudge it up for a faster match." : undefined}
+            // draw no riders. Far above the band nudges the "did you add a digit?" case. Both read as
+            // guidance under the field, not a red validation failure.
+            hint={
+              belowBand
+                ? "That's below what riders usually take — they may pass. Nudge it up for a faster match."
+                : farAboveBand
+                  ? "That's a lot more than usual for this trip — double-check you didn't add a digit by mistake."
+                  : undefined
+            }
           />
 
           {/* Landmarks (contract-required, normally auto-filled from the pin) + optional declared value,

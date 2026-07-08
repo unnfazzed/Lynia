@@ -76,7 +76,9 @@ async function withFetch<T>(f: typeof fetch, fn: () => Promise<T>): Promise<T> {
 describe("WhatsAppOtpSender.send", () => {
   it("throws when not configured (loud fail — never a false 'sent')", async () => {
     const sender = new WhatsAppOtpSender({ OTP_CHANNEL: "whatsapp" } as Env);
-    await expect(sender.send("+263770000001", "111222")).rejects.toThrow(/not configured/i);
+    // Still a loud fail (throws + logs the config detail); the user-facing message is now plain-language
+    // ("verification code") instead of leaking the internal "OTP … not configured".
+    await expect(sender.send("+263770000001", "111222")).rejects.toThrow(/couldn't send the verification code/i);
   });
 
   it("POSTs the template message to the Graph API and resolves on 200", async () => {

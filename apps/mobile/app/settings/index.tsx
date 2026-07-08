@@ -2,8 +2,9 @@ import { tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
+import * as Notifications from "expo-notifications";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { AppState, Linking, Pressable, Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
 import { Button, Heading, Icon, type IconName, Screen } from "../../src/ui";
@@ -12,7 +13,8 @@ import { Button, Heading, Icon, type IconName, Screen } from "../../src/ui";
  * Settings (customer + rider A·6 / A·4). A lean row list — profile, notifications, language, payment
  * (cash, by decision), and sign-out. Rows that need a write endpoint we don't have yet ("Edit
  * profile", "Language") are honest: they read as "coming soon" rather than dead taps. Payment is
- * fixed to Cash (§6) and notifications/language are display-only until their settings land.
+ * fixed to Cash (§6). Notifications reflects the REAL OS permission and taps through to OS settings;
+ * language stays display-only until per-language copy lands.
  */
 function Row(props: { icon: IconName; label: string; value?: string; danger?: boolean; onPress?: () => void }): React.ReactElement {
   return (
@@ -48,6 +50,25 @@ export default function SettingsScreen(): React.ReactElement {
   const isRider = (me?.role ?? session?.role) === "rider";
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
+  // Reflect the REAL OS notification permission instead of a hardcoded "On" (which lied to anyone who
+  // denied it). Re-read on foreground so returning from OS settings updates the row. Tapping opens the
+  // OS app settings — the only place the permission can actually be changed.
+  const [notifsOn, setNotifsOn] = React.useState<boolean | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    const read = (): void => void Notifications.getPermissionsAsync().then((p) => {
+      if (!cancelled) setNotifsOn(p.granted);
+    }).catch(() => undefined);
+    read();
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") read();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
+
   return (
     <Screen>
       <Heading>Settings</Heading>
@@ -65,7 +86,12 @@ export default function SettingsScreen(): React.ReactElement {
       </View>
 
       <Row icon={isRider ? "bike" : "user"} label={isRider ? "Bike & documents" : "Edit profile"} onPress={isRider ? () => router.push("/rider/documents") : undefined} />
-      <Row icon="phone" label="Notifications" value="On" />
+      <Row
+        icon="phone"
+        label="Notifications"
+        value={notifsOn === null ? "—" : notifsOn ? "On" : "Off"}
+        onPress={() => void Linking.openSettings()}
+      />
       <Row icon="map-pin" label="Language" value="English" />
       <Row icon="banknote" label="Payment" value="Cash" />
       <View style={{ height: tokens.space.md }} />

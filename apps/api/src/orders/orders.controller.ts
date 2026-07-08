@@ -84,6 +84,14 @@ export class OrdersController {
     return this.orders.activeForRider(riderId);
   }
 
+  /** The caller's current live order as a customer (the auction or an active ride through delivered),
+   *  or null — lets the app restore a customer to their tracking screen on a cold start instead of a
+   *  blank compose form (the rider side already has this via mine/active). */
+  @Get("mine/active-order")
+  activeOrder(@CurrentUser() customerId: string) {
+    return this.orders.activeForCustomer(customerId);
+  }
+
   /** The caller's order history across both roles (newest first). */
   @Get("history")
   history(@CurrentUser() userId: string) {

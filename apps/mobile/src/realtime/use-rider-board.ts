@@ -55,13 +55,22 @@ export function useRiderBoard(
     const socket: Socket = createSocket(token);
     socketRef.current = socket;
 
+    // Self-heal on (re)connect the way use-order-socket / use-rider-job-socket do: re-scope the board
+    // rooms AND refetch the REST snapshot, so a broadcast/expiry/taken push that landed while the socket
+    // was down (a blip with no AppState transition, so foreground-refetch never fired) is picked up
+    // immediately instead of leaving a stale board until the next 15s poll.
+    const healBoard = () => void qc.invalidateQueries({ queryKey: ["openOrders"] });
     socket.on("connect", () => {
       setConnected(true);
       const l = locRef.current;
       socket.emit(WS_EVENTS.boardSubscribe, l ? { lat: l.lat, lng: l.lng } : {});
+      healBoard();
     });
     socket.on("disconnect", () => setConnected(false));
-    socket.on("connect_error", () => setConnected(false));
+    socket.on("connect_error", () => {
+      setConnected(false);
+      healBoard();
+    });
 
     socket.on(WS_EVENTS.boardNewOrder, (raw: unknown) => {
       const parsed = BoardNewOrderEvent.safeParse(raw);

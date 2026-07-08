@@ -147,6 +147,12 @@ export default async function RidersPage({
             {riders ? "No riders in this view." : reasonLine(reason ?? "unconfigured", "riders")}
           </div>
         )}
+        {/* Capped server-side (take: 100); flag it so a full page doesn't read as "that's everyone". */}
+        {riders && riders.length >= 100 ? (
+          <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: tokens.space.md }}>
+            Showing the latest 100 riders — older records aren&apos;t listed. Filter to narrow the view.
+          </div>
+        ) : null}
       </section>
     </main>
   );

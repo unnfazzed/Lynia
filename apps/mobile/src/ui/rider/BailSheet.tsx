@@ -25,7 +25,7 @@ export function BailSheet({
       <Card style={{ borderColor: tokens.color.line }}>
         <Text style={{ fontWeight: "700", marginBottom: 6 }}>Cancel this job?</Text>
         <Sub>
-          The customer&apos;s order is re-broadcast at the same price so another rider can take it. You
+          The customer&apos;s order goes out to other riders again at the same price so another rider can take it. You
           can only cancel before pickup — once the parcel&apos;s on your bike, finish the job or mark it
           undeliverable.
         </Sub>

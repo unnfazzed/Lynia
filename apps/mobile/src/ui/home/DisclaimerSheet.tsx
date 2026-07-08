@@ -100,7 +100,7 @@ export function DisclaimerSheet({ visible, onAgree, onBack }: { visible: boolean
               I understand and accept these terms
             </Text>
           </Pressable>
-          <Button label="Agree & broadcast" onPress={onAgree} disabled={!checked} />
+          <Button label="Agree & send" onPress={onAgree} disabled={!checked} />
           <Button label="Back" variant="ghost" onPress={onBack} />
         </View>
       </View>

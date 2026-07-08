@@ -20,6 +20,12 @@ import * as SecureStore from "expo-secure-store";
 /** SecureStore key — exported so sign-out (auth/session `clearDeviceState`) clears the same slot. */
 export const RECIPIENTS_KEY = "lynia.savedRecipients.v1";
 
+/** The sender's OWN pickup contact number. Persisted separately from the PII-free draft so a repeat
+ *  send / re-broadcast doesn't force the customer to re-type their own phone every time — the exact
+ *  friction the reorder feature exists to remove. This is the customer's own number (not third-party
+ *  data), and it's cleared on sign-out with everything else so a shared device doesn't leak it. */
+export const MY_PICKUP_PHONE_KEY = "lynia.myPickupPhone.v1";
+
 /** Keep it a shortcut, not a history log. */
 export const MAX_RECIPIENTS = 5;
 
@@ -97,6 +103,27 @@ export async function rememberRecipient(recipient: Recipient): Promise<Recipient
 export async function clearRecipients(): Promise<void> {
   try {
     await SecureStore.deleteItemAsync(RECIPIENTS_KEY);
+    await SecureStore.deleteItemAsync(MY_PICKUP_PHONE_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** The sender's own last-used pickup phone, or null when none is stored / it's too short to be real. */
+export async function loadMyPickupPhone(): Promise<string | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(MY_PICKUP_PHONE_KEY);
+    return raw && isUsablePhone(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remember the sender's own pickup phone for next time. No-op for a half-typed number. Best-effort. */
+export async function saveMyPickupPhone(phone: string): Promise<void> {
+  if (!isUsablePhone(phone)) return;
+  try {
+    await SecureStore.setItemAsync(MY_PICKUP_PHONE_KEY, phone.trim().slice(0, 20));
   } catch {
     /* best-effort */
   }
