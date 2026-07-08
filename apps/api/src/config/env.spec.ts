@@ -157,4 +157,48 @@ describe("loadEnv — production launch-hygiene boot-guards", () => {
     const env = loadEnv({ ...base, OTP_CHANNEL: "console", OTP_TEST_PHONES: "+263770000011" });
     expect(env.OTP_CHANNEL).toBe("console");
   });
+
+  it("enforces the hygiene guards when APP_ENV=production is set explicitly", () => {
+    expect(() => loadEnv({ ...prodBase, APP_ENV: "production", OTP_CHANNEL: "console" })).toThrow(/OTP_CHANNEL/);
+  });
+});
+
+describe("loadEnv — staging tier (APP_ENV=staging, prod-shaped with QA bypasses)", () => {
+  const stagingBase = { ...prodBase, APP_ENV: "staging" } as NodeJS.ProcessEnv;
+
+  it("allows the vendor-free QA config (console OTP + test phones + auto stub KYC) on staging", () => {
+    const env = loadEnv({
+      ...stagingBase,
+      OTP_CHANNEL: "console",
+      OTP_TEST_PHONES: "+263770000011,+263770000012",
+      KYC_PROVIDER: "stub",
+      KYC_MODE: "auto",
+      PUSH_PROVIDER: "noop",
+    });
+    expect(env.APP_ENV).toBe("staging");
+    expect(env.OTP_CHANNEL).toBe("console");
+    expect(env.KYC_PROVIDER).toBe("stub");
+  });
+
+  it("still rejects a weak/default JWT secret on staging (secret guards are tier-independent)", () => {
+    expect(() => loadEnv({ ...stagingBase, JWT_SIGNING_SECRET: undefined })).toThrow(/JWT_SIGNING_SECRET/);
+  });
+
+  it("still rejects a weak PII key on staging", () => {
+    expect(() => loadEnv({ ...stagingBase, PII_ENCRYPTION_KEY: "short" })).toThrow(/PII_ENCRYPTION_KEY/);
+  });
+
+  it("still requires REDIS_URL on staging", () => {
+    expect(() => loadEnv({ ...stagingBase, REDIS_URL: undefined })).toThrow(/REDIS_URL/);
+  });
+
+  it("defaults APP_ENV to production so an unset tier can never relax the hygiene guards", () => {
+    const env = loadEnv(prodBase);
+    expect(env.APP_ENV).toBe("production");
+    expect(() => loadEnv({ ...prodBase, OTP_CHANNEL: "console" })).toThrow(/OTP_CHANNEL/);
+  });
+
+  it("rejects an unknown APP_ENV value", () => {
+    expect(() => loadEnv({ ...prodBase, APP_ENV: "qa" })).toThrow(/Invalid environment configuration/);
+  });
 });

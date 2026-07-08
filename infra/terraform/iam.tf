@@ -71,6 +71,7 @@ resource "google_project_iam_member" "deployer_roles" {
     "roles/run.admin",                 # deploy the Cloud Run service
     "roles/artifactregistry.writer",   # push the image
     "roles/cloudsql.client",           # Auth Proxy for `prisma migrate deploy`
+    "roles/monitoring.viewer",         # read Cloud Run request metrics for the canary error-rate gate (release.yml)
   ])
   project = local.project_id
   role    = each.value

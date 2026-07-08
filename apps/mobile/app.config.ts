@@ -25,11 +25,29 @@ const googleServicesFile =
   process.env.GOOGLE_SERVICES_JSON ??
   (existsSync(`${__dirname}/google-services.json`) ? "./google-services.json" : undefined);
 
+/**
+ * EAS project id — links the app to its EAS Build/Update project and derives the OTA updates URL
+ * (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §1). Founder-supplied: `eas init` prints it; commit it here as
+ * the literal fallback (it is NOT a secret) and set the `EAS_PROJECT_ID` repo Variable for CI. Until
+ * it exists, updates stay explicitly disabled and every build (QA APK included) succeeds unchanged.
+ */
+const easProjectId = process.env.EAS_PROJECT_ID;
+
 const config: ExpoConfig = {
   name: "LyniaGo",
   slug: "lynia",
   scheme: "lynia",
-  version: "0.1.0",
+  version: "0.1.0", // x-release-please-version
+  // OTA compatibility key (expo-updates): `fingerprint` hashes the native layer (deps + native
+  // config), so an OTA bundle can only ever land on a binary it was actually built against —
+  // a JS update can't brick an older native install. Native changes shift the fingerprint and
+  // simply require a store release (mobile-release.yml) instead.
+  runtimeVersion: { policy: "fingerprint" },
+  // OTA update endpoint — attached only once the EAS project exists; otherwise updates are
+  // explicitly disabled so the sideload QA APK and unprovisioned builds behave exactly as before.
+  updates: easProjectId
+    ? { url: `https://u.expo.dev/${easProjectId}`, fallbackToCacheTimeout: 0 }
+    : { enabled: false },
   orientation: "portrait",
   userInterfaceStyle: "light",
   platforms: ["android", "ios"],
@@ -77,6 +95,12 @@ const config: ExpoConfig = {
     // (src/ui Screen) never renders. Testers get a visible signal they're on a bypass build hitting
     // the live API; real releases show nothing.
     testBuild: process.env.LYNIA_TEST_BUILD === "1",
+    // Play listing the force-update screen's "Update now" button opens (src/config.ts STORE_URL).
+    // Defaulted so the button is never dead once the app is listed; override per-build with
+    // EXPO_PUBLIC_STORE_URL if the listing URL ever changes.
+    storeUrl: process.env.EXPO_PUBLIC_STORE_URL ?? "https://play.google.com/store/apps/details?id=zw.co.lynia",
+    // EAS project link (eas-cli reads extra.eas.projectId). Attached only when provisioned.
+    ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
   },
 };
 

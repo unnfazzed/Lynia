@@ -17,6 +17,14 @@ const optionalUrl = z.preprocess((v) => (v === "" ? undefined : v), z.string().u
 /** Validated environment. Secrets are injected as env at deploy (D7: no managed-identity lock-in). */
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // Deployment tier WITHIN NODE_ENV=production. "staging" is the pre-prod stack
+  // (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2d): it keeps every SECRET-strength/REDIS boot-guard
+  // below (staging must be prod-shaped) but relaxes only the launch-hygiene guards, so the k6
+  // load harness and QA devices can authenticate vendor-free (console OTP / stub KYC) against
+  // it. Defense against this flag ever weakening prod: it defaults to "production", and the
+  // prod deploy (release.yml) HARDCODES APP_ENV=production — no repo Variable is interpolated
+  // into it — while only deploy-staging.yml sets "staging" on the separate staging service.
+  APP_ENV: z.enum(["production", "staging"]).default("production"),
   PORT: z.coerce.number().int().positive().default(3000),
   // Express `trust proxy` — how many reverse-proxy hops sit in front of the API, so req.ip / the
   // X-Forwarded-For client IP the per-IP rate limits key off resolves to the real caller instead of
@@ -108,6 +116,16 @@ export const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.string().url().default("https://verification.didit.me"),
   ),
+  // --- App version gate (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §1c) ---
+  // Minimum mobile app version the API still supports, served by GET /app/version-gate and enforced
+  // client-side as a blocking force-update screen. Dotted-version dialect ("0.2.0"); "0.0.0" = gate
+  // off (default). Set the MIN_SUPPORTED_APP_VERSION repo Variable only when a breaking change must
+  // walk stranded installs to the Play Store — prefer keeping contracts backward-compatible instead.
+  // Empty string (deploy injects "" when the Variable is unset) coerces to the off default.
+  MIN_SUPPORTED_APP_VERSION: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().max(24).regex(/^\d+(\.\d+)*$/, "must be a dotted version like 0.2.0").default("0.0.0"),
+  ),
   // --- Data retention (LR8, docs/DATA-RETENTION.md) ---
   // GPS coords on order_events are scrubbed this many days after the event; expired sessions are
   // hard-deleted this many days after they lapse. Driven by the POST /admin/retention/purge sweep.
@@ -156,23 +174,29 @@ export const envSchema = z.object({
     if (env.TOKEN_HASH_SECRET !== undefined && weakInProd(env.TOKEN_HASH_SECRET)) {
       reject("TOKEN_HASH_SECRET", `TOKEN_HASH_SECRET, when set, must also be a strong secret (>= ${MIN_PROD_SECRET_LEN} chars)`);
     }
-    // The console channel logs codes and pairs with the devCode escape hatch; never in production.
-    if (env.OTP_CHANNEL === "console") {
-      reject("OTP_CHANNEL", "OTP_CHANNEL=console is a dev-only channel and must not be used in production");
-    }
-    // OTP_TEST_PHONES returns the live OTP in the response for listed numbers — a takeover vector if
-    // it ever leaks into prod. Must be empty in production (it is only honoured on the console channel,
-    // which is itself now rejected above, but this guards it independently as defense in depth).
-    if (env.OTP_TEST_PHONES.trim() !== "") {
-      reject("OTP_TEST_PHONES", "OTP_TEST_PHONES must be empty in production — it exposes live OTP codes in the response");
-    }
-    // The stub KYC provider auto-passes verification in auto mode — shipping it to prod would verify
-    // every rider without any ID check. Require the real vendor (or manual admin review).
-    if (env.KYC_PROVIDER === "stub" && env.KYC_MODE === "auto") {
-      reject(
-        "KYC_PROVIDER",
-        "KYC_PROVIDER=stub auto-passes verification; production must use the real vendor (KYC_PROVIDER=didit) or manual review (KYC_MODE=manual)",
-      );
+    // Launch-hygiene guards: scoped to the PRODUCTION tier only. The staging tier (APP_ENV=staging,
+    // its own service/DB/secrets — never the live one) legitimately runs the QA bypasses so load
+    // tests and QA devices can authenticate vendor-free; every guard ABOVE this line still applies
+    // to staging (prod-shaped secrets are non-negotiable on any internet-facing deploy).
+    if (env.APP_ENV !== "staging") {
+      // The console channel logs codes and pairs with the devCode escape hatch; never in production.
+      if (env.OTP_CHANNEL === "console") {
+        reject("OTP_CHANNEL", "OTP_CHANNEL=console is a dev-only channel and must not be used in production");
+      }
+      // OTP_TEST_PHONES returns the live OTP in the response for listed numbers — a takeover vector if
+      // it ever leaks into prod. Must be empty in production (it is only honoured on the console channel,
+      // which is itself now rejected above, but this guards it independently as defense in depth).
+      if (env.OTP_TEST_PHONES.trim() !== "") {
+        reject("OTP_TEST_PHONES", "OTP_TEST_PHONES must be empty in production — it exposes live OTP codes in the response");
+      }
+      // The stub KYC provider auto-passes verification in auto mode — shipping it to prod would verify
+      // every rider without any ID check. Require the real vendor (or manual admin review).
+      if (env.KYC_PROVIDER === "stub" && env.KYC_MODE === "auto") {
+        reject(
+          "KYC_PROVIDER",
+          "KYC_PROVIDER=stub auto-passes verification; production must use the real vendor (KYC_PROVIDER=didit) or manual review (KYC_MODE=manual)",
+        );
+      }
     }
   }
 });

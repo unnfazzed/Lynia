@@ -1,0 +1,72 @@
+name: Rollback (Cloud Run)
+
+# Manual, one-command rollback (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2b). Cloud Run keeps every
+# prior revision, so rolling back is a traffic re-point — seconds, no rebuild, no migration.
+# Run with no input to LIST recent revisions (find the last-good name), then re-run with the
+# revision name to route 100% of traffic to it.
+#
+# Schema note: migrations are expand-only/online-safe (CI-enforced), so an older revision keeps
+# working against the current schema. Rolling back traffic never rolls back the database.
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: "Revision name to route 100% of traffic to (leave empty to list revisions)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-cloud-run # serialize with deploys — never fight a canary mid-promotion
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: ${{ inputs.revision && 'route 100% to revision' || 'list revisions' }}
+    runs-on: ubuntu-latest
+    if: ${{ vars.GCP_DEPLOY_ENABLED == 'true' }}
+    environment: production
+    permissions:
+      contents: read
+      id-token: write # keyless WIF auth, same as release.yml
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: List revisions (no input given)
+        if: ${{ inputs.revision == '' }}
+        run: |
+          set -euo pipefail
+          echo "Current traffic assignment:"
+          gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --format 'table(status.traffic.revisionName, status.traffic.percent, status.traffic.tag)'
+          echo
+          echo "Recent revisions (newest first) — re-run this workflow with one of these names:"
+          gcloud run revisions list \
+            --service "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --limit 15 \
+            --format 'table(metadata.name, metadata.creationTimestamp, status.conditions[0].status:label=READY)'
+
+      - name: Route 100% of traffic to the requested revision
+        if: ${{ inputs.revision != '' }}
+        run: |
+          set -euo pipefail
+          gcloud run services update-traffic "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --to-revisions "${{ inputs.revision }}=100"
+          echo "Verifying service health through the LB…"
+          sleep 10
+          curl -fsS --max-time 10 "${{ vars.PUBLIC_HEALTH_URL || 'https://lyniago.lyniafinance.com/healthz' }}" \
+            | grep -q '"status":"ok"' && echo "Health OK after rollback."
+          echo "Rolled back: 100% of traffic → ${{ inputs.revision }}" >> "$GITHUB_STEP_SUMMARY"
