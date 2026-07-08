@@ -104,6 +104,12 @@ export function getActiveOrder(): Promise<OrderSnapshot | null> {
   return apiFetch<OrderSnapshot | null>("/orders/mine/active");
 }
 
+/** The signed-in customer's current live order (auction or active ride), or null — used to restore
+ *  them to their tracking screen on a cold start instead of a blank compose form. */
+export function getActiveCustomerOrder(): Promise<OrderSnapshot | null> {
+  return apiFetch<OrderSnapshot | null>("/orders/mine/active-order");
+}
+
 // A past/present order as it appears in the trip-history list — summary only, no phones (§5d).
 export interface OrderHistoryRow {
   id: string;

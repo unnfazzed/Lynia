@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -429,6 +429,19 @@ export class OrdersService {
     });
     if (handback) return this.getSnapshot(handback.id, riderId);
     return null;
+  }
+
+  /** The customer's current live order (the auction or an active ride through `delivered`), or null —
+   *  so the app can return them to their tracking screen on a cold start / app-icon reopen instead of a
+   *  blank compose form. Mirrors {@link activeForRider}; returns the same snapshot shape as getSnapshot.
+   *  Picks the most recently updated when (rarely) more than one is live. */
+  async activeForCustomer(customerId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { customerId, status: { in: CUSTOMER_ACTIVE_STATUSES } },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+    return order ? this.getSnapshot(order.id, customerId) : null;
   }
 
   /** A caller's order history across both roles (any order where they're the customer or the rider),

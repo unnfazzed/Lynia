@@ -23,6 +23,11 @@ export interface FormDraft {
   note: string;
   declaredValue: string;
   proposedFare: string;
+  // Persisted so the create-order idempotency key survives an app kill: a random nonce (rotated only
+  // after a successful create) that, combined with the order's content, derives a stable dedup key —
+  // a kill-and-relaunch retry of the same draft reuses it, so the server dedupes instead of opening a
+  // second live auction. Not PII (a random token, no phone/identity). Optional for older drafts.
+  idempotencyNonce?: string;
 }
 
 // The liability-disclaimer policy the customer must accept before a first broadcast (A1-8). Bump this

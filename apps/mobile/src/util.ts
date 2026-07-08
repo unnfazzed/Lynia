@@ -24,3 +24,29 @@ export function randomUuidV4(): string {
     return v.toString(16);
   });
 }
+
+/**
+ * A DETERMINISTIC UUID-v4-shaped id derived from `seed` — the same seed always yields the same id,
+ * across app restarts. Used for the create-order idempotency key so it can be reproduced from stable,
+ * persisted inputs (a persisted nonce + the order's content): a client timeout/double-tap OR an app
+ * kill-and-relaunch retry of the same order lands on the same key and the server dedupes it, while a
+ * genuinely different order (different content) yields a different key. Four FNV-1a-style 32-bit
+ * hashes with positional mixing → 128 bits, stamped with the v4 version/variant nibbles. Not secure
+ * and not collision-proof in theory; for a per-customer dedup token the odds are negligible.
+ */
+export function uuidV4FromSeed(seed: string): string {
+  const words = [0x811c9dc5, 0x811c9dc5, 0x811c9dc5, 0x811c9dc5];
+  for (let i = 0; i < seed.length; i++) {
+    const c = seed.charCodeAt(i);
+    const w = i % 4;
+    const nw = (w + 1) % 4;
+    words[w] = Math.imul((words[w] ?? 0) ^ c, 0x01000193) >>> 0;
+    // Mix into the neighbouring word so character position, not just the multiset, affects the digest.
+    words[nw] = ((words[nw] ?? 0) + ((c << (i % 24)) | 0)) >>> 0;
+  }
+  const chars = words.map((w) => (w >>> 0).toString(16).padStart(8, "0")).join("").split("");
+  chars[12] = "4"; // version 4
+  chars[16] = ((parseInt(chars[16] ?? "0", 16) & 0x3) | 0x8).toString(16); // variant
+  const s = chars.join("");
+  return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20, 32)}`;
+}

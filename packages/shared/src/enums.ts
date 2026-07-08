@@ -76,6 +76,16 @@ export const ACTIVE_RIDE_STATUSES: OrderStatus[] = [
   OrderStatus.EN_ROUTE_DROPOFF,
 ];
 
+/** Statuses in which the CUSTOMER has a live order to be returned to on app open / cold start — the
+ *  auction (`open_for_offers`), the whole active ride, and `delivered` (the required rating still
+ *  gates closure). Terminal statuses are excluded. Mirrors ACTIVE_RIDE_STATUSES for the rider side so
+ *  a killed-and-relaunched customer lands back on their tracking screen, not a blank compose form. */
+export const CUSTOMER_ACTIVE_STATUSES: OrderStatus[] = [
+  OrderStatus.OPEN_FOR_OFFERS,
+  ...ACTIVE_RIDE_STATUSES,
+  OrderStatus.DELIVERED,
+];
+
 /** Statuses in which the CUSTOMER may cancel. INTERFACE-AUDIT C3: the customer can cancel at ANY
  *  live status (pre- OR post-pickup). Pre-pickup returns the rider to the board; post-pickup pushes
  *  a `job_cancelled` terminal to the rider with the sender contact for the hand-back. No reliability
