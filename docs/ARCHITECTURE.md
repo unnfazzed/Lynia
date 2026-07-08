@@ -375,6 +375,14 @@ graph TB
         uploads["UploadsModule<br/>signed URLs"]
         admin["AdminModule (F)<br/>read API"]
         health["HealthModule"]
+        piiCrypto["PiiCryptoModule (@Global)<br/>PII at-rest crypto (national-ID)"]
+        observability["ObservabilityModule (@Global)<br/>latency/SLO metrics"]
+        clientMetrics["ClientMetricsModule<br/>RUM ingest (POST /client-metrics)"]
+        settlements["SettlementsModule<br/>prepaid commission overview"]
+        issues["IssuesModule<br/>trip disputes · admin resolve"]
+        reports["ReportsModule<br/>report-a-user + block"]
+        sos["SosModule<br/>SOS on a live trip"]
+        privacy["PrivacyModule<br/>retention + right-to-erasure"]
     end
 
     auth --> prisma
@@ -385,11 +393,18 @@ graph TB
     tracking --> prisma & auth
     riders --> prisma & config
     uploads --> storage & auth
-    admin --> prisma & auth
+    admin --> prisma & auth & settlements & tracking
     matching -.->|schedules| orders
+    clientMetrics --> auth
+    issues --> prisma & notif
+    reports --> prisma
+    sos --> prisma & notif
+    privacy --> prisma
 
     config -.-> features
     prisma -.-> features
+    piiCrypto -.-> features
+    observability -.-> features
 
     classDef seamc fill:#fed7aa,stroke:#c2410c,color:#111;
     class storage,secrets,push seamc;
@@ -402,6 +417,19 @@ Notable cross-module wiring:
   change fans out over WebSockets, plus `NotificationsService` for push — both best-effort.
 - **`OffersModule`** and **`MatchingModule`** are the two halves of the offer loop; both write the
   `orders`/`offers` tables under the same concurrency guards ([§13](#13-concurrency-safety-model)).
+- **`PiiCryptoModule`** and **`ObservabilityModule`** are `@Global`, exactly like `ConfigModule`/
+  `PrismaModule` — `PiiCryptoService` (national-ID encrypt/dedup, used by `AuthModule`, `RidersModule`
+  and `AdminModule`'s rider services) and `MetricsService` (used across `TrackingModule`,
+  `MatchingModule`, `OffersModule`, `AuthModule`, the global `MetricsInterceptor`, and
+  `ClientMetricsController`) are injectable app-wide with no per-module import.
+- **`ClientMetricsModule`** is controller-only (no providers of its own): `ClientMetricsController`
+  consumes the `@Global` `MetricsService` and is guarded by `AuthModule`'s `JwtAuthGuard`.
+- **`AdminModule`** imports **`SettlementsModule`** (the read-only commission overview at
+  `GET /admin/cash/settlements` delegates to `SettlementsService`) and **`TrackingModule`** (the admin
+  order-cancel action pushes `job:cancelled` to the assigned rider via `TrackingGateway`).
+- **`IssuesModule`**, **`ReportsModule`**, **`SosModule`** and **`PrivacyModule`** need no module
+  imports: `PrismaService` and `NotificationsService` are both `@Global`, and each of these lanes
+  injects only those (issues/SOS also push notifications; reports and privacy are DB-only).
 
 Bootstrap (`main.ts`) initializes OpenTelemetry **before** the Nest app (so HTTP is patched before
 the server starts), enables `rawBody` (needed to HMAC-verify the Didit webhook against the unparsed
@@ -418,6 +446,13 @@ super-app seams, unused at launch. The **line-items seam is now realized**: `Ord
 decision concrete — `itemDesc` stays as the derived compact summary so existing consumers are
 unaffected.
 
+The trust & safety / ops tables added in migration `0012`/`0013` — `Issue`, `Report`, `Block`,
+`SosEvent`, `Refund` and `AuditLog` — deliberately carry their `orderId`/party ids as **plain UUID
+columns with no Prisma relation or DB foreign key**: an issue, report, SOS event or audit row must
+survive the deletion of the order or profile it references (append-only audit trail / evidence
+that must outlive its subject). `Settlement` is the one addition of this batch that *is* a real
+relation (`riderId` FKs to `Rider`, `ON DELETE CASCADE`).
+
 ```mermaid
 erDiagram
     Profile ||--o| Rider : "is a"
@@ -428,6 +463,7 @@ erDiagram
     Profile ||--o{ Rating : "gives"
     Rider ||--o{ Order : "fulfils"
     Rider ||--o{ Offer : "makes"
+    Rider ||--o{ Settlement : "earns (prepaid commission)"
     Order ||--o{ Offer : "receives"
     Order ||--o{ OrderEvent : "logs"
     Order ||--o{ Rating : "gets"
@@ -510,6 +546,66 @@ erDiagram
         string token UK
         string platform
     }
+    Settlement {
+        uuid id PK
+        uuid riderId FK
+        decimal grossFares
+        decimal commission
+        decimal refundsNetted
+        decimal amountDue
+        SettlementStatus status
+        datetime periodStart
+        datetime periodEnd
+        datetime dueDate
+        datetime paidAt "nullable"
+    }
+    Issue {
+        uuid id PK
+        uuid orderId "no FK — survives an order/profile delete"
+        uuid openedByProfileId "no FK"
+        Role openedByRole
+        IssueType type
+        IssueStatus status "open | investigating | resolved"
+        IssueResolution resolution "nullable — refund | rider_strike | close_no_action"
+        uuid resolvedByAdminId "nullable, no FK"
+    }
+    Report {
+        uuid id PK
+        uuid orderId "nullable, no FK"
+        uuid reporterProfileId "no FK"
+        uuid subjectProfileId "no FK"
+        ReportReason reason
+    }
+    Block {
+        uuid id PK
+        uuid blockerProfileId "no FK"
+        uuid blockedProfileId "no FK; unique with blockerProfileId"
+    }
+    SosEvent {
+        uuid id PK
+        uuid orderId "no FK"
+        uuid raisedByProfileId "no FK"
+        Role raisedByRole
+        float lat "nullable"
+        float lng "nullable"
+        datetime acknowledgedAt "nullable — ops ack"
+    }
+    Refund {
+        uuid id PK
+        uuid orderId "no FK"
+        uuid riderId "no FK"
+        decimal amount
+        string reason "nullable"
+        uuid settlementId "nullable — set once netted into a Settlement"
+    }
+    AuditLog {
+        uuid id PK
+        string actor "admin profile id, no FK — append-only trail"
+        string action
+        string target
+        string reasonCode "nullable"
+        string note "nullable"
+    }
 ```
 
 Load-bearing schema invariants (all enforced in the database, not just app code):
@@ -521,6 +617,9 @@ Load-bearing schema invariants (all enforced in the database, not just app code)
 | `riders_geog_gist` — GiST on `geog geography(Point,4326)` | Fast nearby-rider radius search via `ST_DWithin` (ET6). |
 | `orders.otp_hash` (never plaintext) + `delivery_otp_attempts` | Delivery handover code is stored only as an HMAC hash, with a 5-attempt cap (ET7). |
 | `sessions.refreshTokenHash` (hashed) + `revokedAt` | Server-owned sessions → real revoke/logout/ban (ET5). |
+| `settlements` unique `(rider_id, period_start)` | One settlement per rider per period — idempotent regeneration of a window updates the row in place instead of duplicating it. |
+| `blocks` unique `(blocker_profile_id, blocked_profile_id)` | A block pair is recorded once and is server-enforced against a rematch in matching/broadcast. |
+| `reports` unique `(order_id, reporter_profile_id, subject_profile_id)` | One report per (order, reporter, subject) — re-reporting the same trip can't inflate the subject's fault count; the app upserts the reason/note instead. |
 
 ---
 
@@ -1015,7 +1114,11 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | `POST /auth/refresh` | Auth | Rotate refresh token → new session |
 | `POST /auth/logout` | Auth | Revoke the current session |
 | `GET /auth/me` | Auth | Authenticated profile (+ rider record) |
+| `PATCH /auth/me` | Auth | One-time post-OTP profile setup (first/last name only) |
+| `DELETE /auth/me` | Privacy | Right to erasure — caller deletes their own account |
 | `POST /orders` | Orders | Create a delivery, name a price → `open_for_offers` |
+| `POST /orders/disclaimer` | Orders | Register the pre-broadcast disclaimer consent (before an order exists) |
+| `POST /orders/notify-me` | Orders | Register to be pinged when a rider comes online near the pickup |
 | `GET /orders/open` | Orders | Open orders a rider can bid on |
 | `GET /orders/mine/active` | Orders | Caller's active order |
 | `GET /orders/history` | Orders | Caller's past orders |
@@ -1024,23 +1127,49 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | `GET /orders/:id/offers` | Offers | Pending offers for the customer's list |
 | `POST /orders/:id/offers/:offerId/select` | Matching | Customer selects → guarded assign |
 | `POST /orders/:id/status` | Lifecycle | Rider advances one forward step |
+| `POST /orders/:id/items/confirm` | Lifecycle | Rider ticks off the sender's items at pickup (item verification) |
 | `POST /orders/:id/deliver` | Lifecycle | Rider submits delivery OTP → `delivered` |
+| `POST /orders/:id/undelivered` | Lifecycle | Rider marks a failed hand-off → terminal `undelivered` |
 | `POST /orders/:id/rating` | Lifecycle | Customer rates → `completed` |
+| `POST /orders/:id/sender-rating` | Lifecycle | Rider rates the sender (recorded-only, no status change) |
 | `POST /orders/:id/delivery-code/rotate` | Lifecycle | Customer re-issues delivery code |
 | `POST /orders/:id/cancel` | Lifecycle | Either party cancels (rider = strike) |
+| `POST /orders/:orderId/issues` | Issues | Party raises a dispute/help request on the trip |
+| `POST /orders/:orderId/report` | Reports | Report the order counterparty after a trip |
+| `POST /orders/:orderId/sos` | SOS | Raise an SOS on a live trip |
 | `PATCH /riders/profile` | Riders | Complete signup (name + national ID) |
 | `POST /riders/become` | Riders | Upgrade to rider; start KYC |
 | `POST /riders/kyc/retry` | Riders | Re-run KYC (pending/failed) |
 | `PATCH /riders/online` | Riders | Go online/offline (gated on KYC + cooldown) |
 | `GET /riders/nearby` | Tracking | Nearby online riders (PostGIS radius) |
 | `POST /uploads/kyc-photo` | Uploads | Mint a signed PUT URL for a photo |
+| `GET /notifications/feed` | Notifications | Caller's in-app notification feed (derived from order events) |
 | `POST /notifications/device-token` | Notifications | Register an FCM device token |
 | `DELETE /notifications/device-token` | Notifications | Drop a device token |
+| `POST /client-metrics` | Client metrics | Ingest a batch of client RUM latency samples (204, fire-and-forget) |
 | `POST /kyc/callback` | KYC | Didit HMAC-signed webhook |
 | `POST /admin/riders/:id/kyc` | KYC | Admin KYC override (manual backstop) |
 | `GET /admin/overview` | Admin | Dashboard counts |
-| `GET /admin/riders` | Admin | Rider list for the console |
-| `GET /admin/orders` | Admin | Order list for the console |
+| `GET /admin/riders` | Admin | Rider list for the console (`?kyc=` filter) |
+| `GET /admin/riders/:profileId/kyc` | Admin | KYC doc-review detail for one rider |
+| `GET /admin/riders/:profileId` | Admin | Rider detail: stats, strikes, cooldown, bike, recent trips |
+| `POST /admin/riders/:id/suspend` | Admin | Suspend a rider (reason required) |
+| `POST /admin/riders/:id/lift` | Admin | Lift a rider suspension → active (reason optional; a ban can't be lifted this way) |
+| `POST /admin/riders/:id/ban` | Admin | Permanently ban a rider (reason required) |
+| `GET /admin/orders` | Admin | Order list for the console (`?status=` filter) |
+| `GET /admin/orders/:id` | Admin | Order detail: 8-step timeline, parcel, fares, masked people |
+| `POST /admin/orders/:id/cancel` | Admin | Admin-cancel an order (distinct from the customer/rider `POST /orders/:id/cancel`) |
+| `POST /admin/orders/:id/fare` | Admin | Adjust an order's agreed fare (manual correction / dispute) |
+| `GET /admin/customers` | Admin | Customer directory (`?filter=active\|flagged\|banned\|on_hold`) |
+| `GET /admin/customers/:profileId` | Admin | Customer detail: aggregates + recent orders |
+| `POST /admin/customers/:id/hold` | Admin | Place a customer on hold (blocks new broadcasts; reason required) |
+| `POST /admin/customers/:id/lift` | Admin | Lift a customer hold → active (reason optional) |
+| `POST /admin/audit-actions` | Admin | Record a ConfirmModal-driven audit action server-side |
+| `GET /admin/issues` | Issues | Disputes queue for ops (`?status=` filter) |
+| `GET /admin/issues/:id` | Issues | Per-issue detail incl. order evidence + masked phones |
+| `POST /admin/issues/:id/resolve` | Issues | Resolve a dispute (`refund` / `rider_strike` / `close_no_action`) |
+| `GET /admin/cash/settlements` | Settlements | Read-only prepaid per-ride commission overview |
+| `POST /admin/retention/purge` | Privacy | Retention sweep (admin / daily Cloud Scheduler) — erases expired data |
 | `GET /healthz` | Health | Liveness (`{status, db, redis}`) |
 
 ### WebSocket (Socket.IO)
@@ -1055,6 +1184,11 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | server → client | `order:status { orderId, status, at }` | Order status changed |
 | server → client | `offers:changed { orderId, at }` | The order's offer set changed — signal only (no rider PII); the customer refetches the offer list |
 | server → client | `board:new-order { … }` | A new open order pushed to the rider board — redacted (point + landmark, never `contactPhone`) |
+| server → client | `bid:expired { orderId, at }` | The auction window closed with no pick — pushed to every bidder on the board (geo-cell + city-wide) |
+| server → client | `order:taken { orderId, at }` | A customer picked a rider — pushed to the board so other bidders show "not chosen" |
+| server → client | `job:cancelled { orderId, collected, at }` | The customer cancelled an assigned job — pushed to the order room; `collected` picks the rider's pre/post-pickup UI path |
+| server → client | `presence:stale { orderId, role, lastSeenAt, at }` | The counterparty's socket has been dark past the escalation threshold — the receiving app shows a "live paused" warning |
+| server → client | `order:rebroadcast { orderId, newOrderId, at }` | The assigned rider bailed and the job was auto re-broadcast as a new order at the same fare — pushed to the cancelled order's room (the customer) |
 
 ---
 
@@ -1069,6 +1203,11 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | Rider onboarding + KYC | `apps/api/src/riders/rider.service.ts`, `apps/api/src/kyc/` |
 | WebSocket tracking | `apps/api/src/tracking/tracking.gateway.ts`, `tracking.service.ts` |
 | Push + device tokens | `apps/api/src/notifications/notifications.service.ts` |
+| Trust & safety — disputes, report/block, SOS | `apps/api/src/issues/`, `apps/api/src/reports/`, `apps/api/src/sos/` |
+| Prepaid commission overview | `apps/api/src/settlements/settlements.service.ts` |
+| Data retention + right-to-erasure | `apps/api/src/privacy/privacy.service.ts`, `docs/DATA-RETENTION.md` |
+| PII at-rest crypto (national-ID encrypt/dedup) | `apps/api/src/common/pii-crypto.service.ts` |
+| Metrics (server SLOs + client RUM ingest) | `apps/api/src/observability/metrics.service.ts`, `client-metrics.controller.ts` |
 | Cloud adapters | `apps/api/src/adapters/{storage,push,secrets}/` |
 | Schema + hot-path constraints | `apps/api/prisma/schema.prisma`, `prisma/migrations/0001_init/` |
 | Shared contracts / enums / pricing | `packages/shared/src/` |
