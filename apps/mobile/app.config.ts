@@ -69,10 +69,15 @@ const config: ExpoConfig = {
       },
     ],
     ["expo-notifications", { color: "#00B14F" }],
+    // LogRocket session replay (native SDK + its Maven repo; init lives in src/telemetry/logrocket.ts).
+    // Requires a dev-client/EAS build — Expo Go can't load it, and init skips itself there.
+    "@logrocket/react-native",
     // Pin Kotlin to 1.9.25: expo-modules-core's Compose Compiler (1.5.15) requires it, and the SDK-52
     // default (1.9.24) fails :expo-modules-core:compileReleaseKotlin. prebuild regenerates android/,
     // so this must live in config, not a hand-edit of build.gradle.
-    ["expo-build-properties", { android: { kotlinVersion: "1.9.25" } }],
+    // minSdkVersion 25 (SDK-52 default: 24): the LogRocket Android SDK supports API 25+ — with the
+    // default 24 the manifest merge fails at build. Drops Android 7.0 (API 24) devices only.
+    ["expo-build-properties", { android: { kotlinVersion: "1.9.25", minSdkVersion: 25 } }],
   ],
   android: {
     package: "zw.co.lynia",

@@ -13,6 +13,7 @@ import { useReachability } from "../src/net/use-reachability";
 import { useServerMinVersion } from "../src/net/use-server-version-gate";
 import { queryClient } from "../src/query/client";
 import { usePushRegistration } from "../src/push/use-push-registration";
+import { startLogRocket } from "../src/telemetry/logrocket";
 import { start as startRum } from "../src/telemetry/rum";
 import { OfflineBanner, ToastProvider } from "../src/ui";
 import { useAppFonts } from "../src/ui/fonts";
@@ -70,9 +71,11 @@ export default function RootLayout(): React.ReactElement | null {
   const fontsReady = fontsLoaded || fontError != null;
 
   // Arm the client-RUM buffer once at app root. Role is tagged per-enqueue, so a role at root isn't
-  // needed; we just pass the app version for the (server-bucketed) `appVersion` label.
+  // needed; we just pass the app version for the (server-bucketed) `appVersion` label. LogRocket
+  // session replay arms on the same pass (no-op in Expo Go — see src/telemetry/logrocket.ts).
   useEffect(() => {
     startRum(Constants.expoConfig?.version);
+    startLogRocket();
   }, []);
 
   // Drop the splash once fonts resolve (loaded or errored) — the tree renders on the same pass.
