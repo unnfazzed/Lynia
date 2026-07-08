@@ -131,6 +131,15 @@ export const envSchema = z.object({
   // hard-deleted this many days after they lapse. Driven by the POST /admin/retention/purge sweep.
   GPS_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
   SESSION_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  // Service-account email whose Google-signed OIDC identity tokens may call the scheduler-driven
+  // admin endpoints (the daily Cloud Scheduler retention sweep — docs/LAUNCH-EXECUTION-RUNBOOK.md §2).
+  // Unset/empty = the OIDC path is off and those routes accept only an admin JWT. The deploy injects
+  // the Cloud Run runtime SA here (the same SA the scheduler job mints its token as); "" coerces to
+  // absent like the other deploy-injected optionals.
+  SCHEDULER_SERVICE_ACCOUNT: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().email().optional(),
+  ),
 }).superRefine((env, ctx) => {
   // The boot-guards below fail LOUD in production rather than let the API come up in an insecure or
   // half-configured state. Each stays permissive in dev/test so local work and CI are unaffected.

@@ -40,6 +40,7 @@
     "@socket.io/redis-adapter": "^8.3.0",
     "bullmq": "^5.79.1",
     "firebase-admin": "^14.1.0",
+    "google-auth-library": "^10.5.0",
     "ioredis": "^5.4.1",
     "jsonwebtoken": "^9.0.3",
     "reflect-metadata": "^0.2.2",

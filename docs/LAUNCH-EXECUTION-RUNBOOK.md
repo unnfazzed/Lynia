@@ -36,6 +36,12 @@ pnpm --filter @lynia/api encrypt-ids -- --apply # APPLY
 ## 2. LR8 — data-retention: schedule the daily purge + enable KYC-media lifecycle
 
 ```bash
+# NOTE (2026-07-08, learned executing this): the purge route originally accepted ONLY an admin
+# JWT — JwtAuthGuard verifies our own HS256 tokens, so the scheduler's Google OIDC token 401'd.
+# AdminOrSchedulerGuard now accepts the scheduler path when SCHEDULER_SERVICE_ACCOUNT is set
+# (release.yml injects the runtime SA automatically). The API deploy carrying that guard must be
+# live BEFORE the forced test run below can succeed.
+#
 # NOTE (2026-07-08, learned executing this): Cloud Scheduler is NOT offered in africa-south1
 # ("Location 'africa-south1' is not a valid location"). The job is just a daily HTTPS cron —
 # its region is irrelevant to the API — so run it from a supported one (europe-west1 works;
