@@ -96,6 +96,37 @@ jobs:
           fi
           echo "All required deploy config present."
 
+      # Pre-flight the PRODUCTION launch-hygiene boot-guards (apps/api/src/config/env.ts) BEFORE the
+      # build. release.yml hardcodes APP_ENV=production, so these three guards reject the container at
+      # boot if a QA repo Variable leaks into prod — but that failure otherwise surfaces only after a
+      # ~3-min build + migrate as an opaque Cloud Run "container failed to start on :3000". Mirror the
+      # guards here so the misconfig fails in seconds with an actionable message. Effective values are
+      # computed exactly as the deploy step below; KYC_MODE is never injected, so it is the app default
+      # "auto" (hence KYC_PROVIDER=stub ⇒ rejected).
+      - name: Validate production launch-hygiene config
+        env:
+          OTP_CHANNEL: ${{ vars.OTP_CHANNEL || 'whatsapp' }}
+          OTP_TEST_PHONES: ${{ vars.OTP_TEST_PHONES }}
+          KYC_PROVIDER: ${{ vars.KYC_PROVIDER || 'didit' }}
+        run: |
+          set -euo pipefail
+          errors=()
+          if [ "$OTP_CHANNEL" = "console" ]; then
+            errors+=("OTP_CHANNEL=console is a dev-only channel and must not be used in production — clear the OTP_CHANNEL repo Variable (defaults to whatsapp) or set it to whatsapp/sms.")
+          fi
+          if [ -n "$(printf '%s' "$OTP_TEST_PHONES" | tr -d '[:space:]')" ]; then
+            errors+=("OTP_TEST_PHONES must be empty in production — it exposes live OTP codes in the response. Clear the OTP_TEST_PHONES repo Variable.")
+          fi
+          if [ "$KYC_PROVIDER" = "stub" ]; then
+            errors+=("KYC_PROVIDER=stub auto-passes verification and must not ship to production — clear the KYC_PROVIDER repo Variable (defaults to didit) or switch to manual review.")
+          fi
+          if [ ${#errors[@]} -gt 0 ]; then
+            for e in "${errors[@]}"; do echo "::error::$e"; done
+            echo "::error::Production launch-hygiene guards (apps/api/src/config/env.ts) would reject this deploy at container boot. Fix the repo Variables above, then re-run. See docs/PILOT-READINESS.md." >&2
+            exit 1
+          fi
+          echo "Launch-hygiene config OK (OTP_CHANNEL=$OTP_CHANNEL, KYC_PROVIDER=$KYC_PROVIDER, OTP_TEST_PHONES empty)."
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
