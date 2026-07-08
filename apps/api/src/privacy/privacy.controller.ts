@@ -1,5 +1,5 @@
 import { Controller, Delete, Post, UseGuards } from "@nestjs/common";
-import { AdminGuard } from "../auth/admin.guard";
+import { AdminOrSchedulerGuard } from "../auth/admin-or-scheduler.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { PrivacyService } from "./privacy.service";
@@ -15,9 +15,10 @@ export class PrivacyController {
     return this.privacy.eraseAccount(profileId);
   }
 
-  /** Retention sweep — admin-only; intended for a daily Cloud Scheduler (OIDC) call. */
+  /** Retention sweep — admin JWT or the daily Cloud Scheduler's Google OIDC token
+   *  (SCHEDULER_SERVICE_ACCOUNT pins the caller; see AdminOrSchedulerGuard). */
   @Post("admin/retention/purge")
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(AdminOrSchedulerGuard)
   purge() {
     return this.privacy.purgeExpiredData();
   }
