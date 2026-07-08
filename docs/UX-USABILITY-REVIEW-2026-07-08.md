@@ -9,6 +9,19 @@
 > below are the **genuine remaining gaps** — several of them in the *same class* as things those recent
 > fixes touched but didn't fully close. The top 3 were re-verified by hand against the code.
 
+> **✅ Execution status (2026-07-08).** All findings except #10 have since been **implemented** on this
+> branch across five commits, each CI-green (API 582 + mobile 195 tests, all typechecks + lint clean):
+> #1 customer cold-start restore (`activeForCustomer` + Home banner), #2 idempotency key that survives
+> an app kill (`uuidV4FromSeed` from a persisted nonce+content), #3 honest cooldown copy + concrete
+> `cooldownUntil` toast, #4 admin KYC relabel, #5 push routing for broadcast/riders-available, #6 Didit +
+> WhatsApp outbound timeouts, #7 non-silent "Notify me", #8 human StatusPill labels, #9 fat-finger price
+> hint, #11 KYC form persistence, #12 wall-clock OTP countdown, #13 persisted own pickup phone, #14 board
+> socket self-heal, #15/#16 emit-before-FCM board push + tappable help topics, #17 admin loading
+> skeletons, #18 admin cap caption, #19 real notification-permission row, plus the full copy table.
+> **#10** (client-side image downscale before upload) is **deferred**: it needs `expo-image-manipulator`
+> (a native module, not installed) and a device build to verify — outside this vendor-free pass, logged
+> for the device-gated `/qa`.
+
 ---
 
 ## 1. Summary — the five highest-impact fixes
