@@ -5,6 +5,9 @@ env:
   API_URL: ${API_URL}
 ---
 # Place a bid (accept the asking price) on a request, assert it shows as submitted under "Your offers".
+# rider-ensure-verified.js verifies the rider over the API first so this passes standalone.
+- runScript:
+    file: ../scripts/rider-ensure-verified.js
 - runFlow: subflows/login-rider.yaml
 
 - runFlow:

@@ -6,9 +6,12 @@ env:
 ---
 # See the seeded available delivery requests. The "customer" side (broadcasting an order for the
 # rider's board to show) is played over the API by customer-create-order.js — see
-# customer/04-review-bids.yaml's comment for why one emulator can't drive both apps live. Assumes
-# 02-kyc.yaml has already verified this rider account (idempotent — a KYC'd account just skips
-# straight past the "Become a rider" gate).
+# customer/04-review-bids.yaml's comment for why one emulator can't drive both apps live.
+#
+# rider-ensure-verified.js makes this account a verified rider over the API before the UI login, so
+# this flow passes standalone (not only after 02-kyc has run) — see that script's header.
+- runScript:
+    file: ../scripts/rider-ensure-verified.js
 - runFlow: subflows/login-rider.yaml
 
 - runFlow:

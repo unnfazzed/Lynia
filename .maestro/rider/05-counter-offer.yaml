@@ -8,6 +8,9 @@ env:
 # rider accepts or counters, the customer accepts/declines — see customer/05-respond-to-counter.yaml's
 # comment). The customer's accept is played over the API by customer-accept-counter.js, so this flow
 # can assert the rider side lands on an assigned job without a second device.
+# rider-ensure-verified.js verifies the rider over the API first so this passes standalone.
+- runScript:
+    file: ../scripts/rider-ensure-verified.js
 - runFlow: subflows/login-rider.yaml
 
 - runFlow:

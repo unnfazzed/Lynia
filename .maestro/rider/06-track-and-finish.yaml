@@ -8,6 +8,9 @@ env:
 # earnings summary. The delivery hand-off code is hashed server-side (order-lifecycle.service.ts) —
 # customer-rotate-code.js mints a real one via the same "Re-issue delivery code" endpoint the
 # customer's own UI uses, playing the customer's half since one emulator can't run both apps live.
+# rider-ensure-verified.js verifies the rider over the API first so this passes standalone.
+- runScript:
+    file: ../scripts/rider-ensure-verified.js
 - runFlow: subflows/login-rider.yaml
 
 - runFlow:
