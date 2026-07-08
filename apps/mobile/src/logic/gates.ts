@@ -88,8 +88,9 @@ export const ONLINE_GATE_COPY: Record<OnlineGateReason, GateCopy> = {
       "Your reliability score dropped below what's needed to accept deliveries. Complete a few clean trips to recover it, or contact support.",
   },
   cooldown: {
-    title: "You're on a short cooldown",
-    message: "You were taken offline after a recent cancellation. Wait a few minutes, then tap Go online to try again.",
+    title: "You're on a cooldown",
+    message:
+      "You were taken offline after cancelling too many jobs. The cooldown lasts about 2 hours — tap Go online once it's over to start bidding again.",
   },
   out_of_area: {
     title: "You're outside the service area",

@@ -13,6 +13,10 @@ export interface OtpSender {
 
 export const OTP_SENDER = Symbol("OTP_SENDER");
 
+/** Ceiling on the outbound WhatsApp Graph call. Without it a hung Meta endpoint stalls the OTP-request
+ *  path for every user with no bound, and connections pile up under retries. */
+const OTP_SEND_TIMEOUT_MS = 10_000;
+
 /**
  * Pure builder for the WhatsApp Cloud API template-message body. Extracted so the payload contract
  * (phone normalization + the authentication-template components) is unit-tested with no network or
@@ -56,7 +60,7 @@ export class WhatsAppOtpSender implements OtpSender {
       this.logger.error(
         "WhatsApp OTP not configured — set WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN, and WHATSAPP_TEMPLATE_NAME (or change OTP_CHANNEL).",
       );
-      throw new ServiceUnavailableException("OTP delivery is not configured");
+      throw new ServiceUnavailableException("Couldn't send the verification code — try again shortly.");
     }
     const body = buildWhatsAppOtpRequest(phone, code, {
       template,
@@ -71,6 +75,7 @@ export class WhatsAppOtpSender implements OtpSender {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(OTP_SEND_TIMEOUT_MS),
       });
     } catch (err) {
       this.logger.error(`WhatsApp OTP network error: ${err instanceof Error ? err.message : String(err)}`);

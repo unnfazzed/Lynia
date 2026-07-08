@@ -107,6 +107,13 @@ export default async function OrdersPage({
             {orders ? "No orders in this view." : reasonLine(reason ?? "unconfigured", "orders")}
           </div>
         )}
+        {/* The list is capped server-side (take: 100); without this note a full page reads as "that's
+            all there is" when older rows are simply not fetched. Pagination is a separate follow-up. */}
+        {orders && orders.length >= 100 ? (
+          <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: tokens.space.md }}>
+            Showing the latest 100 orders — older orders aren&apos;t listed. Filter by status to narrow the view.
+          </div>
+        ) : null}
       </section>
     </main>
   );

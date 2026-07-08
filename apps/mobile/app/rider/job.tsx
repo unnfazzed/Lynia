@@ -14,7 +14,7 @@ import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
 import { PickupChecklist } from "../../src/ui/rider/PickupChecklist";
@@ -23,9 +23,17 @@ import { UndeliveredSheet } from "../../src/ui/rider/UndeliveredSheet";
 import { BailSheet } from "../../src/ui/rider/BailSheet";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
+/** A short local clock label (e.g. "3:40 PM") for a cooldown-until timestamp; empty on a bad date. */
+function fmtClock(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
 export default function RiderJob(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
+  const toast = useToast();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   // Pickup item verification: which line-items the rider has ticked as physically collected. Indexes
@@ -182,7 +190,16 @@ export default function RiderJob(): React.ReactElement {
       const reason = bailReason.trim();
       return cancelOrder(orderId!, reason ? { reason } : {});
     },
-    onSuccess: refresh,
+    onSuccess: (res) => {
+      // If this cancel tripped the no-show cooldown, tell the rider now — with the concrete time they
+      // can go back online — instead of letting them discover a silent multi-hour lockout later. The
+      // server owns the duration (COOLDOWN_MS); we just surface the `cooldownUntil` it already returns.
+      if (res.cooldownUntil) {
+        haptic("warning");
+        toast.show(`You've been taken offline until ${fmtClock(res.cooldownUntil)} after cancelling too many jobs.`, "warning");
+      }
+      refresh();
+    },
     onError: fail,
   });
   // 4·7: optional, recorded-only rate-the-sender. Doesn't change status or gate anything.

@@ -21,9 +21,23 @@ describe("pushDestination", () => {
     expect(pushDestination({ orderId: "o1", status: "cancelled" }, true)).toBe("/rider/job");
   });
 
-  it("returns null for a payload with no orderId (e.g. new-offer/new-broadcast pushes)", () => {
+  it("routes a new-broadcast alert to the rider board, not the order (a rider who hasn't bid 403s on /order/:id)", () => {
+    // notifyNewBroadcast sends { orderId, kind: "broadcast" } to nearby riders who haven't bid yet.
+    expect(pushDestination({ orderId: "o1", kind: "broadcast" }, true)).toBe("/rider");
+    expect(pushDestination({ kind: "broadcast" }, true)).toBe("/rider");
+  });
+
+  it("routes the 'a rider's online near you' push home so the customer can re-broadcast", () => {
+    // notifyRidersAvailable carries no orderId — before this it dead-ended to null.
+    expect(pushDestination({ kind: "riders_available" }, false)).toBe("/home");
+  });
+
+  it("routes a new-offer push (carries orderId, no status) to that order for the customer", () => {
+    expect(pushDestination({ orderId: "o1", kind: "offer" }, false)).toBe("/order/o1");
+  });
+
+  it("returns null for a payload with no orderId and no routable kind", () => {
     expect(pushDestination({ kind: "offer" }, false)).toBeNull();
-    expect(pushDestination({ kind: "broadcast" }, true)).toBeNull();
   });
 
   it("is defensive against a malformed/missing payload", () => {

@@ -193,6 +193,31 @@ const PILL_TONE: Record<PillTone, { text: string; bg: string; dot: string }> = {
   reconnecting: { text: tokens.color.muted, bg: tokens.color.surface, dot: tokens.color.muted },
 };
 
+// Human, view-neutral labels for the order-status pill. The bare enum ("en route pickup",
+// "open for offers") is jargon and — worse — sat next to the Stepper's plain-English label for the
+// SAME status ("Heading to pickup") on the order/job/history screens. Keep these as clean status
+// nouns (not the Stepper's per-view instructions, so a completed pill in history reads "Completed",
+// not "Rate your rider"). Unknown values (e.g. a pre-humanized "Verified") fall through untouched.
+const STATUS_PILL_LABELS: Record<string, string> = {
+  requested: "Getting ready",
+  open_for_offers: "Finding riders",
+  assigned: "Rider assigned",
+  confirmed: "Confirmed",
+  en_route_pickup: "Heading to pickup",
+  picked_up: "Parcel collected",
+  en_route_dropoff: "On the way to drop-off",
+  delivered: "Delivered",
+  completed: "Completed",
+  cancelled: "Cancelled",
+  expired: "Expired",
+  undelivered: "Not delivered",
+};
+
+/** Plain-language label for an order status pill; passes non-status strings through unchanged. */
+export function statusPillLabel(status: string): string {
+  return STATUS_PILL_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
 export function StatusPill({
   status,
   tone = "neutral",
@@ -221,7 +246,7 @@ export function StatusPill({
       {dot ? (
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: t.dot, marginRight: 6 }} />
       ) : null}
-      <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.semibold, color: t.text }}>{status.replace(/_/g, " ")}</Text>
+      <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.semibold, color: t.text }}>{statusPillLabel(status)}</Text>
     </View>
   );
 }
@@ -257,7 +282,7 @@ const STEP_LABELS: Record<"customer" | "rider", Record<string, string>> = {
     en_route_pickup: "Rider on the way to pickup",
     picked_up: "Items collected",
     en_route_dropoff: "On the way to drop-off",
-    delivered: "Delivered (OTP)",
+    delivered: "Delivered",
     completed: "Rate your rider",
   },
   rider: {

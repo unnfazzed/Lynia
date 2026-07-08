@@ -527,7 +527,7 @@ export default function HomeScreen(): React.ReactElement {
                     !(fare !== null && fare > 0) ? "a price" : null,
                   ]
                     .filter(Boolean)
-                    .join(", ")} to broadcast.`}
+                    .join(", ")} to send.`}
                 </Text>
               ) : null}
               {outOfArea ? (
@@ -550,12 +550,12 @@ export default function HomeScreen(): React.ReactElement {
                       Outside our service area
                     </Text>
                     <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18, marginTop: 1 }}>
-                      We don&apos;t cover that pickup or drop-off yet. Move your pins closer to Harare to broadcast, or check back as we expand.
+                      We don&apos;t cover that pickup or drop-off yet. Move your pins closer to Harare to send your parcel, or check back as we expand.
                     </Text>
                   </View>
                 </View>
               ) : null}
-              <Button label="Broadcast request" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
+              <Button label="Send to riders" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
               <ErrorText message={error} />
             </>
           }

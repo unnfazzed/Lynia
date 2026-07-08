@@ -161,16 +161,18 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: tokens.space.md }}>
               <div>
                 {r.photoUrl ? (
-                  // A short-lived signed GCS URL — not a static asset, so a plain <img> (matching the
-                  // brand mark elsewhere in this app), not next/image.
+                  // The rider's OWN photo, captured in the app at signup ("Your photo" in become.tsx) —
+                  // NOT a scan of the physical national ID card. The ID-card scan and liveness selfie are
+                  // run and held by Didit, surfaced through the automated-checks panel below, never as an
+                  // image here. A short-lived signed GCS URL, so a plain <img>, not next/image.
                   <img
                     src={r.photoUrl}
-                    alt="Rider's submitted ID document"
+                    alt="The rider's photo, taken in the app at signup"
                     style={{ width: "100%", height: 170, objectFit: "cover", borderRadius: tokens.radius.input, border: `1px solid ${tokens.color.line}` }}
                   />
                 ) : (
                   <div className="doc-ph" style={{ height: 170 }}>
-                    national ID — front
+                    rider photo
                     <br />
                     {/* Either no photo was ever submitted (legacy/incomplete signup), or the signed
                         URL failed to mint (see AdminRidersService.getKycReview) — either way, the
@@ -179,14 +181,18 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                   </div>
                 )}
                 <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 6 }}>
-                  National ID · <span className="mono">{r.idNumber ?? "—"}</span>
+                  Rider photo (in-app) · National ID no. <span className="mono">{r.idNumber ?? "—"}</span>
                 </div>
               </div>
               <div>
                 <div className="doc-ph" style={{ height: 170 }}>
-                  live selfie
+                  ID document &amp; liveness
                   <br />
-                  (Didit liveness capture)
+                  {/* Honest placeholder: Lynia never receives the ID-card scan or the liveness capture —
+                      Didit runs and holds them. The reviewer relies on the automated-checks panel below
+                      plus the ID number, not an image comparison here. Wiring Didit's session images in is
+                      a separate vendor-integration task. */}
+                  (verified by Didit — see checks below)
                 </div>
                 <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 6 }}>
                   Submitted {new Date(r.submittedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}

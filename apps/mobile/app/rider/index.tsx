@@ -640,7 +640,7 @@ export default function RiderHome(): React.ReactElement {
               {(
                 [
                   { key: "accept" as const, label: `Accept $${selected.proposedFare}` },
-                  { key: "counter" as const, label: "Counter your fare" },
+                  { key: "counter" as const, label: "Offer a different price" },
                 ]
               ).map((seg) => {
                 const on = offerMode === seg.key;
@@ -677,12 +677,12 @@ export default function RiderHome(): React.ReactElement {
                 value={fare}
                 onChangeText={setFare}
                 keyboardType="decimal-pad"
-                hint="Counter higher if the trip's worth more — the customer accepts or declines."
+                hint="Ask for more if the trip's worth it — the customer accepts or declines."
               />
             ) : null}
             <Field label="ETA to pickup (min)" value={eta} onChangeText={setEta} keyboardType="number-pad" maxLength={3} />
             <Button
-              label={offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send counter-offer"}
+              label={offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send my price"}
               onPress={() => offerM.mutate()}
               loading={offerM.isPending}
               disabled={!canOffer}
