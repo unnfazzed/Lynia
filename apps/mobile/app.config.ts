@@ -31,7 +31,7 @@ const googleServicesFile =
  * the literal fallback (it is NOT a secret) and set the `EAS_PROJECT_ID` repo Variable for CI. Until
  * it exists, updates stay explicitly disabled and every build (QA APK included) succeeds unchanged.
  */
-const easProjectId = process.env.EAS_PROJECT_ID;
+const easProjectId = process.env.EAS_PROJECT_ID ?? "25b2785d-94e0-4ecc-9940-bd9f9d8eb27c";
 
 const config: ExpoConfig = {
   name: "LyniaGo",
