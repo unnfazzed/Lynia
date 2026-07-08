@@ -180,3 +180,29 @@ Artifacts in this repo:
 > sidecar is dropped and step 3 must be re-applied — or, once the manifest is battle-tested, fold the
 > sidecar into `release.yml`. `OTEL_EXPORTER_OTLP_ENDPOINT` deliberately lives with the sidecar so
 > "endpoint set" and "collector present" can never diverge.
+
+## Product analytics (PostHog, mobile)
+
+Everything above measures **how the system behaves**; PostHog measures **what people do in the app**
+(screens, funnels, retention). The mobile app carries a key-gated PostHog integration
+(`apps/mobile/src/telemetry/analytics.tsx`): with no key configured it mounts nothing — no SDK init,
+no network — so dev, CI, the QA APK, and unprovisioned builds are untouched.
+
+**Activation (founder, one-time):** run `npx eas-cli integrations:posthog:connect` from
+`apps/mobile/` (interactive; needs `eas login`). It links the EAS project to a PostHog org/project
+and syncs `EXPO_PUBLIC_POSTHOG_API_KEY` + `EXPO_PUBLIC_POSTHOG_HOST` into the EAS
+production/preview/development environments (and `.env.local` for local dev). The next EAS build
+lights analytics up with no code change. When prompted for features pick **Analytics only** for now:
+
+- **Session replay** needs the extra native `posthog-react-native-session-replay` package (not
+  installed) — decide deliberately; replay of KYC/phone screens is a privacy call, not a default.
+- **Error tracking** needs `@posthog/cli`, a personal API key, and the `posthog-react-native/expo`
+  config plugin. The plugin is deliberately NOT in `app.config.ts`: its gradle hook runs
+  `posthog-cli` unconditionally on every release bundle and **fails the build** when the CLI/key
+  are absent. Add the plugin + dep together if/when error tracking is provisioned.
+
+What ships today when enabled: screen views as low-cardinality route **patterns** (`/order/[id]`,
+never concrete ids) and app-lifecycle events (installed/updated/opened/backgrounded — DAU and
+retention). Touch autocapture is off by design (noise + element text from KYC/phone screens).
+Note the SDK packages are a **native-layer change**: the first analytics-enabled release shifts the
+`fingerprint` runtime version, so it ships as a store build, not an OTA update.

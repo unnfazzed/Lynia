@@ -34,6 +34,28 @@ const placesKeyFromExtra = (Constants.expoConfig?.extra as { googlePlacesKey?: s
 export const GOOGLE_PLACES_KEY: string | null = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? placesKeyFromExtra ?? null;
 
 /**
+ * PostHog product analytics. OPTIONAL and key-gated exactly like Places: with no key the provider
+ * mounts nothing and the app builds/runs fully — no SDK init, no network. Provisioning is founder-run:
+ * `npx eas-cli integrations:posthog:connect` links the EAS project to PostHog and syncs
+ * `EXPO_PUBLIC_POSTHOG_API_KEY` + `EXPO_PUBLIC_POSTHOG_HOST` into the EAS production/preview/development
+ * environments (and `.env.local` for dev), so the very next EAS build lights analytics up with no code
+ * change. The `extra.*` entries in app.config.ts are the parity fallback (mirrors googlePlacesKey).
+ * The project API key is a public write-only token, not a secret.
+ */
+const posthogKeyFromExtra = (Constants.expoConfig?.extra as { posthogApiKey?: string } | undefined)?.posthogApiKey;
+export const POSTHOG_API_KEY: string | null = process.env.EXPO_PUBLIC_POSTHOG_API_KEY ?? posthogKeyFromExtra ?? null;
+
+/** PostHog ingestion host — the connect command syncs the region's host; US cloud is the default. */
+const posthogHostFromExtra = (Constants.expoConfig?.extra as { posthogHost?: string } | undefined)?.posthogHost;
+export const POSTHOG_HOST: string =
+  process.env.EXPO_PUBLIC_POSTHOG_HOST ?? posthogHostFromExtra ?? "https://us.i.posthog.com";
+
+/** True only when a non-empty PostHog key is configured — the single gate for mounting analytics. */
+export function analyticsEnabled(): boolean {
+  return typeof POSTHOG_API_KEY === "string" && POSTHOG_API_KEY.length > 0;
+}
+
+/**
  * Support contact for the rider dead-end states (KYC attempt-lock, suspended, on hold, banned) where the
  * only honest instruction is "contact support". A `tel:` / `mailto:` / `https://wa.me/...` URL, opened
  * with Linking. Override per deploy with EXPO_PUBLIC_SUPPORT_URL (or extra.supportUrl); the default is the
