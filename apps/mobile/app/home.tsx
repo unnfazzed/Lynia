@@ -22,8 +22,8 @@ import {
 import { orderKey } from "../src/query/client";
 import { formatMoney } from "../src/logic/money";
 import { useForegroundRefetch } from "../src/realtime/use-foreground-refetch";
-import { fareBand, fareBandHint, isBelowBand } from "../src/logic/fare-band";
-import { loadRecipients, type Recipient, rememberRecipient } from "../src/logic/saved-recipients";
+import { fareBand, fareBandHint, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
+import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button, EmptyState, ErrorText, Field, haptic, Icon, Label, Screen, statusPillLabel, TestBuildBanner } from "../src/ui";
@@ -192,6 +192,11 @@ export default function HomeScreen(): React.ReactElement {
         if (draft.idempotencyNonce) setIdempotencyNonce(draft.idempotencyNonce);
         setDraftRestored(true);
       }
+      // Prefill the sender's OWN pickup phone (not third-party PII, so not in the PII-free draft) — a
+      // repeat send / re-broadcast shouldn't make them re-type their own number every time. Only when
+      // the field is still empty, so a restored/edited value always wins.
+      const myPhone = await loadMyPickupPhone();
+      if (!cancelled && myPhone) setPickupPhone((p) => p || myPhone);
       hydrated.current = true;
     })();
     return () => {
@@ -310,6 +315,9 @@ export default function HomeScreen(): React.ReactElement {
   // Acceptance-band guidance around the suggestion + a soft "this may be too low" nudge.
   const priceBand = quote ? fareBand(quote.suggestedFare) : null;
   const belowBand = priceBand != null && isBelowBand(fare, priceBand);
+  // Fat-finger guard: a price far above the band ($2.50 typed as $250) earns a calm confirm hint. Never
+  // blocks (a genuinely high offer is the customer's right) — just makes an accidental extra digit visible.
+  const farAboveBand = priceBand != null && isFarAboveBand(fare, priceBand);
   // Mirror the contract's contactPhone floor (min 6, both waypoints) so Broadcast can't enable and
   // then bounce off a raw Zod message on submit.
   const pickupPhoneOk = pickupPhone.trim().length >= 6;
@@ -387,6 +395,8 @@ export default function HomeScreen(): React.ReactElement {
       haptic("tap");
       // Remember this recipient for a one-tap re-send next time (best-effort, on-device only).
       void rememberRecipient({ name: "", phone: dropPhone.trim() });
+      // Remember the sender's own pickup number so the next order prefills it instead of re-typing.
+      void saveMyPickupPhone(pickupPhone.trim());
       // Seed the order cache from the response + the form we already have, so the order screen
       // paints the auction immediately instead of blank → skeleton → content on navigate.
       qc.setQueryData<OrderSnapshot>(orderKey(order.id), {
@@ -745,8 +755,15 @@ export default function HomeScreen(): React.ReactElement {
             placeholder="2.50"
             keyboardType="decimal-pad"
             // Below the band is not an error (there's no hard floor) — a gentle hint that a low ask may
-            // draw no riders, so it reads as guidance under the field, not a red validation failure.
-            hint={belowBand ? "That's below what riders usually take — they may pass. Nudge it up for a faster match." : undefined}
+            // draw no riders. Far above the band nudges the "did you add a digit?" case. Both read as
+            // guidance under the field, not a red validation failure.
+            hint={
+              belowBand
+                ? "That's below what riders usually take — they may pass. Nudge it up for a faster match."
+                : farAboveBand
+                  ? "That's a lot more than usual for this trip — double-check you didn't add a digit by mistake."
+                  : undefined
+            }
           />
 
           {/* Landmarks (contract-required, normally auto-filled from the pin) + optional declared value,

@@ -235,27 +235,35 @@ export class OrdersService {
       if (!pt) return;
       const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, BROADCAST_RADIUS_M);
       if (nearby.length === 0) return;
-      await this.notifications.notifyNewBroadcast(
+      // Emit the in-process WS board push FIRST — it reaches a rider already staring at the board
+      // sub-millisecond, and every second counts in the 90s window, so the FCM round-trip (for riders
+      // NOT currently on the board) must not gate it. The board-event build is guarded on its own so a
+      // schema/emit failure can't suppress the FCM push (and vice versa) — the two channels are
+      // independent. Same redaction as listOpen — point + landmark only, NEVER contactPhone; parsing
+      // through the `.strict()` schema enforces the no-PII guarantee ON THE WIRE. `expiresAt` exposes
+      // the shared auction clock (C2) so a bidder's offer-sent screen can render the same countdown.
+      try {
+        const boardEvent: BoardNewOrderEvent = BoardNewOrderEvent.parse({
+          id: orderId,
+          pickup: publicWaypoint(pickup),
+          dropoff: publicWaypoint(dropoff),
+          itemDesc: meta.itemDesc,
+          suggestedFare: meta.suggestedFare,
+          proposedFare: meta.proposedFare,
+          distanceKm: meta.distanceKm,
+          createdAt: meta.createdAt,
+          expiresAt: new Date(new Date(meta.createdAt).getTime() + OFFER_WINDOW_MS).toISOString(),
+        });
+        this.safeEmitBoardNewOrder(boardEvent, pt.lat, pt.lng);
+      } catch (err) {
+        this.logger.warn(`board event build/emit failed for order ${orderId}: ${(err as Error).message}`);
+      }
+      // FCM push for riders not currently on the board — best-effort, never throws, un-awaited.
+      void this.notifications.notifyNewBroadcast(
         orderId,
         nearby.map((r) => r.profileId),
         { pickup: pt.landmark, fare: meta.proposedFare },
       );
-      // Same redaction as listOpen — point + landmark only, NEVER contactPhone. Parsing through the
-      // `.strict()` schema enforces the no-PII guarantee ON THE WIRE (throws → swallowed best-effort
-      // by the surrounding try) rather than trusting the projection alone. `expiresAt` exposes the
-      // shared auction clock (C2) so a bidder's offer-sent screen can render the same countdown.
-      const boardEvent: BoardNewOrderEvent = BoardNewOrderEvent.parse({
-        id: orderId,
-        pickup: publicWaypoint(pickup),
-        dropoff: publicWaypoint(dropoff),
-        itemDesc: meta.itemDesc,
-        suggestedFare: meta.suggestedFare,
-        proposedFare: meta.proposedFare,
-        distanceKm: meta.distanceKm,
-        createdAt: meta.createdAt,
-        expiresAt: new Date(new Date(meta.createdAt).getTime() + OFFER_WINDOW_MS).toISOString(),
-      });
-      this.safeEmitBoardNewOrder(boardEvent, pt.lat, pt.lng);
     } catch {
       /* best-effort: a broadcast-push failure never affects the created order */
     }

@@ -51,3 +51,16 @@ export function fareBandHint(band: FareBand): string {
 export function isBelowBand(proposedFare: number | null, band: FareBand): boolean {
   return proposedFare != null && Number.isFinite(proposedFare) && proposedFare > 0 && proposedFare < band.low;
 }
+
+/** How many times the band's high edge counts as "way more than usual" — a fat-finger guard ($2.50
+ *  typed as $250), not a hard cap. Generous so a legitimately-premium ask still passes without a nudge. */
+export const BAND_FAR_ABOVE_MULT = 3;
+
+/**
+ * Whether a proposed fare is far above the band — the "did you add a digit by mistake?" case. Non-blocking:
+ * the customer can still send it (a genuinely high offer is their right); it just earns a calm confirm hint.
+ * `false` for an empty/invalid proposal.
+ */
+export function isFarAboveBand(proposedFare: number | null, band: FareBand): boolean {
+  return proposedFare != null && Number.isFinite(proposedFare) && proposedFare > band.high * BAND_FAR_ABOVE_MULT;
+}

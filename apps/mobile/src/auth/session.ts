@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 // the keys those modules actually write (type-only-adjacent leaf modules — no runtime import cycle).
 import { HISTORY_SNAPSHOT_KEY } from "../net/history-store";
 import { RECENTS_KEY as SAVED_PLACES_RECENTS_KEY, SAVED_KEY as SAVED_PLACES_SAVED_KEY } from "../logic/saved-places";
-import { RECIPIENTS_KEY } from "../logic/saved-recipients";
+import { MY_PICKUP_PHONE_KEY, RECIPIENTS_KEY } from "../logic/saved-recipients";
 import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
 
 /** The authenticated session, persisted in the device keychain (not AsyncStorage — these are secrets). */
@@ -208,6 +208,7 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(SAVED_PLACES_RECENTS_KEY),
       SecureStore.deleteItemAsync(SAVED_PLACES_SAVED_KEY),
       SecureStore.deleteItemAsync(RECIPIENTS_KEY),
+      SecureStore.deleteItemAsync(MY_PICKUP_PHONE_KEY),
       // The cached trips list (holds this user's route landmarks) must not paint for the next user.
       SecureStore.deleteItemAsync(HISTORY_SNAPSHOT_KEY),
       // The cached chosen-rider identity (a third party's name + photo) must not survive to the next user.

@@ -1,4 +1,4 @@
-import { BAND_MIN_USD, fareBand, fareBandHint, isBelowBand } from "../fare-band";
+import { BAND_FAR_ABOVE_MULT, BAND_MIN_USD, fareBand, fareBandHint, isBelowBand, isFarAboveBand } from "../fare-band";
 
 describe("fareBand", () => {
   it("returns null for a non-positive or invalid suggestion", () => {
@@ -38,6 +38,22 @@ describe("isBelowBand", () => {
   it("does not flag an empty/invalid proposal", () => {
     expect(isBelowBand(null, band)).toBe(false);
     expect(isBelowBand(0, band)).toBe(false);
+  });
+});
+
+describe("isFarAboveBand", () => {
+  const band = fareBand(3)!; // high ≈ 3.60
+  it("flags a fat-finger price far above the band (e.g. a stray extra digit)", () => {
+    expect(isFarAboveBand(band.high * BAND_FAR_ABOVE_MULT + 1, band)).toBe(true);
+    expect(isFarAboveBand(250, band)).toBe(true); // $2.50 mistyped as $250
+  });
+  it("does not flag a merely-generous price within the guard multiple", () => {
+    expect(isFarAboveBand(band.high, band)).toBe(false);
+    expect(isFarAboveBand(band.high * 2, band)).toBe(false);
+  });
+  it("does not flag an empty/invalid proposal", () => {
+    expect(isFarAboveBand(null, band)).toBe(false);
+    expect(isFarAboveBand(0, band)).toBe(false);
   });
 });
 

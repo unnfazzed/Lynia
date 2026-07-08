@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { AppState, Text, View } from "react-native";
 import { requestOtp, verifyOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
@@ -21,6 +21,10 @@ export default function VerifyScreen(): React.ReactElement {
   // Resend affordance (C3): a visible cooldown so the user isn't left tapping "Back" when the code
   // never arrives. `resent` shows a calm confirmation after a successful resend; the countdown starts
   // ticking on arrival (a code was just sent from the phone screen) and resets after each resend.
+  // Anchored to an absolute deadline (not a decrementing counter): reading the code means backgrounding
+  // to WhatsApp, which pauses JS timers — so a relative countdown would freeze and block "Resend" for
+  // longer than the real 60s. We derive the remaining seconds from the wall clock instead.
+  const [cooldownEndsAt, setCooldownEndsAt] = useState<number>(() => Date.now() + RESEND_COOLDOWN_S * 1000);
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_S);
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
@@ -31,10 +35,19 @@ export default function VerifyScreen(): React.ReactElement {
   const [locked, setLocked] = useState(false);
 
   useEffect(() => {
-    if (cooldown <= 0) return;
-    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [cooldown]);
+    const tick = (): void => setCooldown(Math.max(0, Math.ceil((cooldownEndsAt - Date.now()) / 1000)));
+    tick(); // recompute immediately (mount, resend, and — via AppState below — on foreground)
+    const iv = setInterval(tick, 1000);
+    // Backgrounding pauses the interval; recompute from the wall clock the instant we return so the
+    // countdown reflects the real elapsed time rather than resuming where it froze.
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") tick();
+    });
+    return () => {
+      clearInterval(iv);
+      sub.remove();
+    };
+  }, [cooldownEndsAt]);
 
   // Request a brand-new code. Used by both the throttled "Resend" affordance and the "Send a fresh
   // code" recovery action; the latter bypasses the UI cooldown gate because a locked/expired user needs
@@ -48,7 +61,7 @@ export default function VerifyScreen(): React.ReactElement {
       setResent(true);
       setLocked(false);
       setCode("");
-      setCooldown(RESEND_COOLDOWN_S);
+      setCooldownEndsAt(Date.now() + RESEND_COOLDOWN_S * 1000);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't send a new code.");
     } finally {
