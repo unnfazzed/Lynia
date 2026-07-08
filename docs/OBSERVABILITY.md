@@ -157,9 +157,12 @@ Artifacts in this repo:
 ### Steps (founder, one-time)
 
 1. **Terraform** (from `infra/terraform/`): `terraform plan` then `terraform apply`. This enables the
-   `monitoring`/`cloudtrace` APIs, grants the two runtime-SA roles, and creates the alert policies.
-   PromQL alert conditions validate on syntax alone, so this applies cleanly **before** any metric
-   exists. To actually get paged, create a notification channel (email/SMS) and pass its id via
+   `monitoring`/`cloudtrace` APIs and grants the two runtime-SA roles. **Leave `slo_alerts_enabled` at
+   its default `false` for now** — Cloud Monitoring validates the metric *names* inside a PromQL alert
+   condition at policy-creation time (a `400 "The following PromQL metric(s) are invalid"`, observed on
+   the 2026-07-08 apply), so the SLO alert policies (`monitoring.tf`) **cannot be created until the
+   collector has shipped series to GMP** — that is step 6 below, after verification. To actually get
+   paged then, also create a notification channel (email/SMS) and pass its id via
    `alert_notification_channels` (default `[]` = fires in-console, pages no one).
 2. **Collector config secret**: store the pipeline so the sidecar can mount it —
    `gcloud secrets create otel-collector-config --data-file=infra/otel-collector/config.yaml`
@@ -177,7 +180,13 @@ Artifacts in this repo:
    `gcloud monitoring dashboards create --config-from-file=infra/otel-collector/dashboard.json --project <PROJECT_ID>`,
    then hand-tune in the console.
 5. **Verify** in Metrics Explorer's **PromQL** tab that series like `offer_received_latency_ms_bucket`
-   are arriving (GMP can sanitize names; confirm the real series before trusting the alerts).
+   are arriving (GMP can sanitize names; confirm the real series before trusting the alerts). Note the
+   business-event histograms (offer/match/position) only emit under real or synthetic load, whereas
+   `http_request_duration_ms` / `otp_verify_duration_ms` appear on any traffic.
+6. **Enable the SLO alerts**: only once step 5 confirms the series exist, set `slo_alerts_enabled = true`
+   and `terraform apply` again. The metric names now resolve, so the policies in `monitoring.tf` create
+   cleanly. This is the step the `slo_alerts_enabled` gate (`variables.tf`, default `false`) exists for —
+   flipping it before the series exist re-triggers the `400 PromQL metric(s) are invalid` from step 1.
 
 > **Operational drift (corrected 2026-07-10):** the sidecar lives in the `services replace` manifest,
 > **not** in the release workflow. Contrary to an earlier note here, a subsequent normal `/ship` deploy
