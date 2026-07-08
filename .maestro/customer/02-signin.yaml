@@ -1,0 +1,12 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+---
+# Sign in with the existing test customer account (same phone as 01-register.yaml, already past
+# profile setup/role fork by the time this runs in a suite — login-customer.yaml's when-visible
+# branches make this pass whether or not that's true, so this flow is also safe to run alone).
+- runFlow: subflows/login-customer.yaml
+- assertVisible:
+    id: "broadcast-button"
+- assertVisible: "Delivery details"

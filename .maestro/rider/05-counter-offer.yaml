@@ -1,0 +1,54 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+  API_URL: ${API_URL}
+---
+# Counter the customer's asking price instead of accepting it (Lynia's offer loop is one round: the
+# rider accepts or counters, the customer accepts/declines — see customer/05-respond-to-counter.yaml's
+# comment). The customer's accept is played over the API by customer-accept-counter.js, so this flow
+# can assert the rider side lands on an assigned job without a second device.
+- runFlow: subflows/login-rider.yaml
+
+- runFlow:
+    when:
+      visible: "Go online"
+    commands:
+      - tapOn:
+          id: "online-toggle"
+- assertVisible:
+    text: "Go offline"
+    timeout: 15000
+
+- runScript:
+    file: ../scripts/customer-create-order.js
+
+- extendedWaitUntil:
+    visible: "Make an offer"
+    timeout: 20000
+- tapOn: "Make an offer"
+
+- tapOn:
+    id: "offer-mode-counter"
+- tapOn:
+    id: "counter-fare-input"
+- inputText: "4.5"
+- tapOn:
+    id: "offer-eta-input"
+- inputText: "8"
+- hideKeyboard
+- tapOn:
+    id: "submit-offer"
+
+- assertVisible: "Your offers"
+
+- runScript:
+    file: ../scripts/customer-accept-counter.js
+
+# The dashboard polls for the active job every 8s (app/rider/index.tsx:79) rather than pushing —
+# "A customer picked you!" is the win-state card that appears once that poll picks up the assignment.
+- extendedWaitUntil:
+    visible: "A customer picked you!"
+    timeout: 20000
+- tapOn: "Open job"
+- assertVisible: "You're assigned"

@@ -31,6 +31,7 @@ export function PickupChecklist({
           return (
             <Pressable
               key={i}
+              testID={`pickup-item-${i}`}
               onPress={() => onToggle(i)}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: on }}
@@ -76,6 +77,7 @@ export function PickupChecklist({
         </Text>
       </View>
       <Button
+        testID="confirm-pickup"
         label={`Confirm ${collectedCount} item${collectedCount === 1 ? "" : "s"} collected`}
         onPress={onConfirm}
         loading={pending}

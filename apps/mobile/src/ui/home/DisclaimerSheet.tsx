@@ -66,6 +66,7 @@ export function DisclaimerSheet({ visible, onAgree, onBack }: { visible: boolean
             ))}
           </ScrollView>
           <Pressable
+            testID="disclaimer-checkbox"
             onPress={() => setChecked((v) => !v)}
             accessibilityRole="checkbox"
             accessibilityState={{ checked }}
@@ -100,7 +101,7 @@ export function DisclaimerSheet({ visible, onAgree, onBack }: { visible: boolean
               I understand and accept these terms
             </Text>
           </Pressable>
-          <Button label="Agree & broadcast" onPress={onAgree} disabled={!checked} />
+          <Button testID="disclaimer-agree" label="Agree & broadcast" onPress={onAgree} disabled={!checked} />
           <Button label="Back" variant="ghost" onPress={onBack} />
         </View>
       </View>

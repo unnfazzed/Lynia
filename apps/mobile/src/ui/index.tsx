@@ -76,6 +76,9 @@ export function Field(props: {
   // error shows. Honest and specific — never a placeholder-as-error.
   error?: string;
   hint?: string;
+  // Stable cross-platform selector for UI test automation (Maestro). Optional — screens only set it
+  // where a flow needs to target this field.
+  testID?: string;
 }): React.ReactElement {
   const hasError = props.error != null && props.error !== "";
   return (
@@ -90,6 +93,7 @@ export function Field(props: {
         maxLength={props.maxLength}
         autoComplete={props.autoComplete}
         textContentType={props.textContentType}
+        testID={props.testID}
         // The visible Label is a sibling Text with no programmatic link, so name the input for
         // screen readers from the label (falls back to the placeholder for label-less rows).
         accessibilityLabel={props.label ?? props.placeholder}
@@ -120,10 +124,15 @@ export function Button(props: {
   disabled?: boolean;
   loading?: boolean;
   variant?: "primary" | "ghost";
+  // Stable cross-platform selector for UI test automation (Maestro). Optional — screens only set it
+  // where a flow needs to target this button (the visible label is dynamic/interpolated, or two
+  // buttons share the same text on one screen).
+  testID?: string;
 }): React.ReactElement {
   const primary = (props.variant ?? "primary") === "primary";
   return (
     <Pressable
+      testID={props.testID}
       onPress={props.onPress}
       disabled={props.disabled || props.loading}
       style={({ pressed }) => ({
@@ -152,9 +161,10 @@ export function Button(props: {
   );
 }
 
-export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }): React.ReactElement {
+export function Card({ children, style, testID }: { children: React.ReactNode; style?: ViewStyle; testID?: string }): React.ReactElement {
   return (
     <View
+      testID={testID}
       style={[
         {
           // Grab card look: white fill floating on a soft ambient shadow, no visible hairline. The

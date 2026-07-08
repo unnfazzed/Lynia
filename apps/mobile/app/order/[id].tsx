@@ -642,6 +642,7 @@ export default function OrderScreen(): React.ReactElement {
                     />
                     <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, marginVertical: 4, fontVariant: ["tabular-nums"] }}>{formatMoney(o.offeredFare)}</Text>
                     <Button
+                      testID={`choose-offer-${o.id}`}
                       label="Choose this rider"
                       variant={primaryPick ? "primary" : "ghost"}
                       onPress={() => chooseOffer(o.id)}
@@ -705,7 +706,7 @@ export default function OrderScreen(): React.ReactElement {
         ) : null}
 
         {isActive || order.status === "delivered" || order.status === "completed" ? (
-          <Card>
+          <Card testID={`order-status-${order.status}`}>
             {/* Who's coming: the chosen rider's face + name + rating, cached from the offer they were
                 picked from (the assigned-order snapshot doesn't carry it). The trust anchor for tracking. */}
             {riderIdentity ? (

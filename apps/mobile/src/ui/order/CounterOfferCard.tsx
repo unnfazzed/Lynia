@@ -80,8 +80,8 @@ export function CounterOfferCard({
           </View>
         </View>
       </View>
-      <Button label={`Accept $${counter.toFixed(2)}`} onPress={onAccept} loading={loading} disabled={disabled} />
-      <Button label="Decline" variant="ghost" onPress={onDecline} disabled={disabled} />
+      <Button testID="counter-accept" label={`Accept $${counter.toFixed(2)}`} onPress={onAccept} loading={loading} disabled={disabled} />
+      <Button testID="counter-decline" label="Decline" variant="ghost" onPress={onDecline} disabled={disabled} />
       <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center", marginTop: 2 }}>
         Declining keeps {offer.rider.profile.firstName} in your list at ${counter.toFixed(2)} — one counter round, no counter-back.
       </Text>

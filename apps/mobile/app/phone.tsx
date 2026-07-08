@@ -33,6 +33,7 @@ export default function PhoneScreen(): React.ReactElement {
       <Heading>Sign in to get started</Heading>
       <Sub>We&apos;ll WhatsApp a one-time code to this number.</Sub>
       <Field
+        testID="phone-input"
         label="Phone number"
         value={phone}
         onChangeText={setPhone}
@@ -42,7 +43,7 @@ export default function PhoneScreen(): React.ReactElement {
         autoComplete="tel"
         textContentType="telephoneNumber"
       />
-      <Button label="Send code" onPress={submit} loading={busy} disabled={phone.trim().length < 6} />
+      <Button testID="phone-submit" label="Send code" onPress={submit} loading={busy} disabled={phone.trim().length < 6} />
       <ErrorText message={error} />
     </Screen>
   );

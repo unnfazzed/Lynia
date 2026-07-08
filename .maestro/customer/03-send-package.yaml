@@ -1,0 +1,10 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+---
+# Create a delivery request (pickup, drop-off, package details, price) and assert it lands on the
+# auction screen with the right status.
+- runFlow: subflows/login-customer.yaml
+- runFlow: subflows/broadcast-order.yaml
+- assertVisible: "Order [0-9a-f]{8}"

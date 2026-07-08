@@ -30,7 +30,7 @@ export function DeliveryOtp({
     <Card>
       <Text style={{ fontWeight: "700", marginBottom: tokens.space.sm }}>Confirm hand-off</Text>
       <Sub>Ask the recipient for the 6-digit delivery code.</Sub>
-      <Field label="Delivery code" value={code} onChangeText={onChangeCode} keyboardType="number-pad" maxLength={6} />
+      <Field testID="delivery-code-input" label="Delivery code" value={code} onChangeText={onChangeCode} keyboardType="number-pad" maxLength={6} />
       {/* R9: show how many tries remain, and once locked stop inviting more taps into a dead endpoint. */}
       {otpLocked ? (
         <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.danger, marginTop: 4, lineHeight: 18 }}>
@@ -42,6 +42,7 @@ export function DeliveryOtp({
         </Text>
       ) : null}
       <Button
+        testID="confirm-delivery"
         label="Confirm delivery"
         onPress={onConfirm}
         loading={pending}

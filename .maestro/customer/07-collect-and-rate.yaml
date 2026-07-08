@@ -1,0 +1,41 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+  API_URL: ${API_URL}
+---
+# Confirm collection/delivery (played over the API — rider-advance-and-deliver.js walks the order all
+# the way to `delivered`, minting and using a real delivery code via the same "Re-issue delivery code"
+# endpoint the customer's own UI uses), rate the rider, and assert the rating was submitted.
+- runFlow: subflows/login-customer.yaml
+- runFlow: subflows/broadcast-order.yaml
+
+- runScript:
+    file: ../scripts/rider-place-offer.js
+    env:
+      OFFER_MODE: "accept"
+- extendedWaitUntil:
+    visible:
+      text: "Choose this rider"
+    timeout: 20000
+- tapOn: "Choose this rider"
+- extendedWaitUntil:
+    visible:
+      id: "order-status-assigned"
+    timeout: 15000
+
+- runScript:
+    file: ../scripts/rider-advance-and-deliver.js
+- extendedWaitUntil:
+    visible:
+      id: "order-status-delivered"
+    timeout: 20000
+- assertVisible: "Rate your rider"
+
+- tapOn:
+    id: "rate-rider-5"
+- assertVisible: "Submitting 5★…"
+# Rating-on-tap has a 4s undo window (RatingCard.tsx RATE_UNDO_MS) before it commits — wait it out.
+- extendedWaitUntil:
+    visible: "Delivered & completed. Thank you!"
+    timeout: 10000

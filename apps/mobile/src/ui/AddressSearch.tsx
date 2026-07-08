@@ -256,6 +256,7 @@ function AddressSearchInner(props: {
       >
         <Icon name="search" size={16} color={tokens.color.muted} />
         <TextInput
+          testID="address-search-input"
           value={query}
           onChangeText={onChangeText}
           placeholder={props.placeholder ?? "Search an address or place"}
@@ -300,6 +301,7 @@ function AddressSearchInner(props: {
           {suggestions.map((s, i) => (
             <Pressable
               key={s.placeId}
+              testID={`address-suggestion-${i}`}
               onPress={() => choose(s)}
               accessibilityRole="button"
               accessibilityLabel={`${s.primary}${s.secondary ? `, ${s.secondary}` : ""}`}

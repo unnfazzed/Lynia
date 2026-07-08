@@ -131,6 +131,7 @@ export default function VerifyScreen(): React.ReactElement {
       ) : null}
 
       <Field
+        testID="otp-input"
         label="6-digit code"
         value={code}
         onChangeText={(v) => {
@@ -164,7 +165,7 @@ export default function VerifyScreen(): React.ReactElement {
         </>
       ) : (
         <>
-          <Button label="Verify" onPress={submit} loading={busy} disabled={code.trim().length !== 6} />
+          <Button testID="otp-verify" label="Verify" onPress={submit} loading={busy} disabled={code.trim().length !== 6} />
           <Button
             label={cooldown > 0 ? `Resend code in ${formatCountdown(cooldown)}` : "Resend code"}
             variant="ghost"

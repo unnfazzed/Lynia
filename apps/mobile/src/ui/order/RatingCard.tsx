@@ -61,6 +61,7 @@ export function RatingCard({ saving, onRate }: { saving: boolean; onRate: (score
         {[1, 2, 3, 4, 5].map((n) => (
           <Pressable
             key={n}
+            testID={`rate-rider-${n}`}
             onPress={() => tapStar(n)}
             disabled={saving}
             accessibilityRole="button"

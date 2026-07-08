@@ -1,0 +1,63 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+  API_URL: ${API_URL}
+---
+# Accept a bid, open tracking, and assert the tracking elements render as the order's status advances
+# — the rider side is played over the API by rider-advance-status.js (see 04-review-bids.yaml's
+# comment on why: one emulator can't drive both apps live).
+#
+# The Stepper (src/ui/index.tsx) always renders every step label regardless of the CURRENT status —
+# only styling changes — so a text assertion on a step's label would pass even before that step is
+# reached. `order-status-<status>` (app/order/[id].tsx) is a testID on the tracking Card keyed to the
+# live order status specifically so this flow can assert the actual current step, not just that the
+# label exists somewhere on screen.
+- runFlow: subflows/login-customer.yaml
+- runFlow: subflows/broadcast-order.yaml
+
+- runScript:
+    file: ../scripts/rider-place-offer.js
+    env:
+      OFFER_MODE: "accept"
+- extendedWaitUntil:
+    visible:
+      text: "Choose this rider"
+    timeout: 20000
+- tapOn: "Choose this rider"
+
+- extendedWaitUntil:
+    visible:
+      id: "order-status-assigned"
+    timeout: 15000
+- assertVisible:
+    text: "Agreed fare \\$3\\.00"
+
+- runScript:
+    file: ../scripts/rider-advance-status.js
+- extendedWaitUntil:
+    visible:
+      id: "order-status-confirmed"
+    timeout: 15000
+
+- runScript:
+    file: ../scripts/rider-advance-status.js
+- extendedWaitUntil:
+    visible:
+      id: "order-status-en_route_pickup"
+    timeout: 15000
+
+- runScript:
+    file: ../scripts/rider-advance-status.js
+- extendedWaitUntil:
+    visible:
+      id: "order-status-picked_up"
+    timeout: 15000
+
+- runScript:
+    file: ../scripts/rider-advance-status.js
+- extendedWaitUntil:
+    visible:
+      id: "order-status-en_route_dropoff"
+    timeout: 15000
+- assertVisible: "Re-issue delivery code"

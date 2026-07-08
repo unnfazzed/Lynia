@@ -1,0 +1,25 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+  API_URL: ${API_URL}
+---
+# Open the seeded rider bid and assert the bid amount is visible. The "rider" side is played by
+# rider-place-offer.js over the API (docs/PILOT-READINESS.md's vendor-free QA bypass) — a single
+# emulator can't run both the customer and rider apps live at once.
+- runFlow: subflows/login-customer.yaml
+- runFlow: subflows/broadcast-order.yaml
+
+- runScript:
+    file: ../scripts/rider-place-offer.js
+    env:
+      OFFER_MODE: "accept"
+
+# Offers arrive via a live poll — give it a moment, then re-open the order to force a refetch.
+- extendedWaitUntil:
+    visible:
+      text: "\\$3\\.00"
+    timeout: 20000
+- assertVisible:
+    text: "\\$3\\.00"
+- assertVisible: "Choose this rider"

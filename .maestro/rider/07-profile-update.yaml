@@ -1,0 +1,36 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+---
+# ADAPTED FROM THE ORIGINAL PLAN: there is currently no screen to edit rider profile details —
+# app/profile/index.tsx:69 says so in-app ("Editing your details is coming soon."), and
+# src/api/riders.ts's `completeProfile` (PATCH /riders/profile) is only ever called from the KYC
+# submission step (app/rider/become.tsx), not from any profile-edit UI. Building that screen would be
+# a product feature, out of scope for adapting this test suite — flagging it here rather than
+# inventing UI that doesn't exist.
+#
+# What IS real and worth covering: the account/session state persists after a cold restart
+# (`stopApp` then `launchApp` with `clearState: false`) rather than bouncing the rider back to
+# onboarding — go online, restart, and confirm the rider lands straight back on their dashboard,
+# still signed in as a rider, with the online toggle in the state it was left in.
+- runFlow: subflows/login-rider.yaml
+
+- runFlow:
+    when:
+      visible: "Go online"
+    commands:
+      - tapOn:
+          id: "online-toggle"
+- assertVisible:
+    text: "Go offline"
+    timeout: 15000
+
+- stopApp
+- launchApp:
+    clearState: false
+
+- assertVisible:
+    text: "Go offline"
+    timeout: 15000
+- assertNotVisible: "Phone number"

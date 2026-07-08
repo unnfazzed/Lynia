@@ -394,7 +394,7 @@ export default function RiderJob(): React.ReactElement {
             onConfirm={confirmAndCollect}
           />
         ) : next ? (
-          <Button label={next.label} onPress={() => advanceM.mutate(next.to)} loading={advanceM.isPending} />
+          <Button testID="advance-status" label={next.label} onPress={() => advanceM.mutate(next.to)} loading={advanceM.isPending} />
         ) : null}
 
         {order.status === "en_route_dropoff" ? (
@@ -430,6 +430,7 @@ export default function RiderJob(): React.ReactElement {
                   {[1, 2, 3, 4, 5].map((n) => (
                     <Pressable
                       key={n}
+                      testID={`rate-sender-${n}`}
                       onPress={() => {
                         setSenderScore(n);
                         senderRateM.mutate(n);

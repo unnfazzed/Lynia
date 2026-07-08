@@ -1,0 +1,150 @@
+name: UI Tests (Maestro)
+
+# Builds the sideloadable test APK (same recipe as android-test-apk.yml — LYNIA_TEST_BUILD=1, a
+# release-variant build so the JS bundle is embedded and it runs offline on the emulator) and runs the
+# Maestro suite (.maestro/) against it in two parallel jobs, customer and rider.
+#
+# PRECONDITION — this does NOT flip the API into QA test mode itself: the target API deployment
+# (LYNIA_API_URL, default the live Cloud Run URL) must already be running with OTP_CHANNEL=console,
+# KYC_PROVIDER=stub and CUSTOMER_TEST_PHONE/RIDER_TEST_PHONE in its OTP_TEST_PHONES allowlist — the
+# "vendor-free QA testing" runbook in docs/PILOT-READINESS.md. Toggling that is a manual, deliberate
+# repo-Variables + redeploy step on the API side (a production-adjacent change), not something this
+# workflow does on your behalf. Every flow's login subflow fails fast with a clear error
+# (.maestro/scripts/api.js's signIn()) if the deploy isn't in that mode.
+#
+# Required repo secrets/variables:
+#   CUSTOMER_TEST_PHONE, RIDER_TEST_PHONE   Two numbers from the target deploy's OTP_TEST_PHONES.
+#   LYNIA_API_URL                           Optional — defaults to the live Cloud Run URL.
+# Optional (mirrors android-test-apk.yml — build still succeeds if unset):
+#   GOOGLE_MAPS_API_KEY, GOOGLE_SERVICES_JSON
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  LYNIA_TEST_BUILD: "1"
+
+jobs:
+  build-test-apk:
+    name: build sideloadable test apk
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+      GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON }}
+    outputs:
+      apk-artifact: lynia-ui-test-apk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      # See android-test-apk.yml: pnpm's symlinked store breaks RN Gradle autolinking in a monorepo.
+      - name: Install (hoisted node_modules for RN autolinking)
+        run: pnpm install --frozen-lockfile=false --config.node-linker=hoisted
+
+      - name: Build shared package
+        run: pnpm --filter @lynia/shared build
+
+      - name: Provide google-services.json (optional)
+        if: ${{ env.GOOGLE_SERVICES_JSON_B64 != '' }}
+        run: |
+          echo "$GOOGLE_SERVICES_JSON_B64" | base64 -d > "$RUNNER_TEMP/google-services.json"
+          echo "GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
+
+      - name: Expo prebuild (android)
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --platform android --no-install
+
+      - name: Generate throwaway keystore
+        run: |
+          keytool -genkeypair -dname "CN=Lynia Test, O=Lynia, C=ZW" \
+            -alias lynia-test -keystore "$RUNNER_TEMP/test.keystore" \
+            -storepass lyniatest -keypass lyniatest \
+            -keyalg RSA -keysize 2048 -validity 365
+
+      - name: Assemble signed release APK
+        working-directory: apps/mobile/android
+        run: |
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/test.keystore" \
+            -Pandroid.injected.signing.store.password=lyniatest \
+            -Pandroid.injected.signing.key.alias=lynia-test \
+            -Pandroid.injected.signing.key.password=lyniatest
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lynia-ui-test-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+  maestro:
+    name: maestro · ${{ matrix.suite }}
+    needs: build-test-apk
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [customer, rider]
+    env:
+      CUSTOMER_PHONE: ${{ secrets.CUSTOMER_TEST_PHONE }}
+      RIDER_PHONE: ${{ secrets.RIDER_TEST_PHONE }}
+      API_URL: ${{ vars.LYNIA_API_URL || 'https://lyniago.lyniafinance.com' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: lynia-ui-test-apk
+          path: apk
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      # KVM-backed emulator, animations off so waits/screenshots are deterministic, AVD snapshot
+      # cached so repeat runs skip a cold boot.
+      - name: Run Maestro suite
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          avd-name: lynia-ui-tests-${{ matrix.suite }}
+          script: |
+            adb install apk/*.apk
+            # Pin the emulator's GPS near Harare CBD — .maestro/customer/subflows/broadcast-order.yaml
+            # relies on this so "Use my location" lands inside the 25km service corridor without a
+            # live Places lookup.
+            adb emu geo fix 31.0522 -17.8292
+            maestro test .maestro/${{ matrix.suite }} \
+              --env CUSTOMER_PHONE="$CUSTOMER_PHONE" \
+              --env RIDER_PHONE="$RIDER_PHONE" \
+              --env API_URL="$API_URL"
+
+      - name: Upload Maestro screenshots/recordings
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-${{ matrix.suite }}-report
+          path: |
+            ~/.maestro/tests/**
+          if-no-files-found: ignore

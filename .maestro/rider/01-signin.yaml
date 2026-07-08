@@ -1,0 +1,9 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+---
+# Rider sign in — phone → console-OTP verify → role fork (rider) → /rider. See
+# rider/subflows/login-rider.yaml for the mechanics (idempotent, same as the customer's).
+- runFlow: subflows/login-rider.yaml
+- assertVisible: "Trips|Rider setup|Go online|Go offline"

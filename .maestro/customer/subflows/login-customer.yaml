@@ -1,0 +1,72 @@
+appId: zw.co.lynia
+---
+# Reusable customer sign-in, called via `runFlow` from every customer/*.yaml so each flow can run
+# independently (Phase 4 requirement: a flow must pass alone, not just as part of a sequence).
+#
+# Relies on the "vendor-free QA testing" bypass (docs/PILOT-READINESS.md): with OTP_CHANNEL=console and
+# ${CUSTOMER_PHONE} in the deploy's OTP_TEST_PHONES allowlist, /auth/otp/request returns the code in
+# its response and app/verify.tsx (apps/mobile/app/verify.tsx:17-18) auto-fills it — no real WhatsApp
+# code needed. Idempotent by design: `runFlow: when: visible:` branches handle both a brand-new test
+# phone (profile setup + role fork) and a returning one (straight to /home), so re-running this flow
+# twice in a row never dead-ends.
+- launchApp:
+    clearState: false
+    stopApp: true
+
+- runFlow:
+    when:
+      visible: "Phone number"
+    commands:
+      - tapOn:
+          id: "phone-input"
+      - inputText: "${CUSTOMER_PHONE}"
+      - tapOn:
+          id: "phone-submit"
+      - assertVisible:
+          id: "otp-verify"
+          timeout: 15000
+      - tapOn:
+          id: "otp-verify"
+
+# Brand-new account: profile setup ("Tell us who you are") comes before the role fork.
+- runFlow:
+    when:
+      visible: "Tell us who you are"
+    commands:
+      - tapOn:
+          id: "profile-first-name"
+      - inputText: "QA"
+      - tapOn:
+          id: "profile-last-name"
+      - inputText: "Customer"
+      - tapOn:
+          id: "profile-id-number"
+      - inputText: "63-000000-Q-00"
+      - tapOn:
+          id: "profile-submit"
+
+# Brand-new account, no saved role preference yet: pick customer.
+- runFlow:
+    when:
+      visible: "How do you want to start?"
+    commands:
+      - tapOn:
+          id: "role-customer"
+      - tapOn:
+          id: "role-continue"
+
+# First-run permission priming — decline both, we don't need real GPS/push for the scripted flows.
+- runFlow:
+    when:
+      visible: "Turn on location"
+    commands:
+      - tapOn: "Not now"
+- runFlow:
+    when:
+      visible: "Stay in the loop"
+    commands:
+      - tapOn: "Not now"
+
+- assertVisible:
+    id: "broadcast-button"
+    timeout: 15000

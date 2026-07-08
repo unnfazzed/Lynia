@@ -1,0 +1,55 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+---
+# KYC submission. The emulator has no real camera, so `addMedia` pushes a placeholder into the device
+# gallery and the flow picks it from there rather than the camera path. With KYC_PROVIDER=stub (the
+# same "vendor-free QA testing" bypass — docs/PILOT-READINESS.md) the submission is auto-verified
+# immediately, no Didit round trip, which app/rider/become.tsx:138-142 tells the tester in-app on a
+# test build ("ID verification is bypassed — submit and you'll be verified straight away").
+#
+# NOTE: the system gallery picker UI (after "Choose from gallery" opens it) is OS-chrome, not app UI —
+# `tapOn: point:` below is a best-effort tap on the first thumbnail and is the one step in this suite
+# most likely to need adjusting per Android version/gallery app once run on a real emulator.
+- runFlow: subflows/login-rider.yaml
+- addMedia:
+    - "../fixtures/kyc-test-photo.jpg"
+
+- runFlow:
+    when:
+      visible: "Become a rider"
+    commands:
+      - tapOn: "Become a rider"
+
+- runFlow:
+    when:
+      visible: "Re-verify my ID"
+    commands:
+      - tapOn: "Re-verify my ID"
+
+- tapOn:
+    id: "kyc-first-name"
+- inputText: "QA"
+- tapOn:
+    id: "kyc-last-name"
+- inputText: "Rider"
+- tapOn:
+    id: "kyc-id-number"
+- inputText: "63-000000-R-00"
+- tapOn:
+    id: "kyc-bike-reg"
+- inputText: "ABZ 1234"
+- hideKeyboard
+
+- tapOn:
+    id: "kyc-choose-gallery"
+- tapOn:
+    point: "50%, 30%"
+- assertVisible: "Photo added ✓"
+
+- tapOn:
+    id: "kyc-submit"
+- assertVisible:
+    text: "verified|Verification started"
+    timeout: 20000

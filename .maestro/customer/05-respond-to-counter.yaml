@@ -1,0 +1,32 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+  API_URL: ${API_URL}
+---
+# Lynia's offer loop is one-directional (CONCEPT §1): the customer names a price, the rider accepts
+# or counters, and the customer accepts/declines the counter — there's no customer-initiated counter-
+# offer to test. This flow exercises the customer's half of a counterbid: the rider counters (played
+# over the API, see 04-review-bids.yaml's comment), the customer sees the CounterOfferCard with the
+# countered amount, and accepts it.
+- runFlow: subflows/login-customer.yaml
+- runFlow: subflows/broadcast-order.yaml
+
+- runScript:
+    file: ../scripts/rider-place-offer.js
+    env:
+      OFFER_MODE: "counter"
+
+- extendedWaitUntil:
+    visible:
+      text: "\\$4\\.50"
+    timeout: 20000
+- assertVisible:
+    text: "\\$4\\.50"
+- assertVisible: "THEIR OFFER"
+- tapOn:
+    id: "counter-accept"
+
+- assertVisible:
+    text: "Agreed fare \\$4\\.50"
+    timeout: 15000

@@ -1,0 +1,11 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+---
+# New customer registration end to end: phone → console-OTP verify → "tell us who you are" → role
+# fork → permission priming → /home. See customer/subflows/login-customer.yaml for the mechanics
+# (idempotent — this also passes on a re-run against an already-registered test phone).
+- runFlow: subflows/login-customer.yaml
+- assertVisible:
+    id: "broadcast-button"

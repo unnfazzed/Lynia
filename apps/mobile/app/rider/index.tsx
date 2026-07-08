@@ -507,6 +507,7 @@ export default function RiderHome(): React.ReactElement {
             />
           </Pressable>
           <Button
+            testID="online-toggle"
             label={online ? "Go offline" : "Go online"}
             // Ghost while the compose card is open so "Send offer" is the screen's one primary.
             variant={online || selected != null ? "ghost" : "primary"}
@@ -592,7 +593,7 @@ export default function RiderHome(): React.ReactElement {
                 <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
                   {o.itemDesc} · {km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`} · asking {formatMoney(o.proposedFare)}
                 </Text>
-                <Button label="Make an offer" variant="ghost" onPress={() => chooseOrder(o)} />
+                <Button testID={`make-offer-${o.id}`} label="Make an offer" variant="ghost" onPress={() => chooseOrder(o)} />
               </Card>
             ))}
             {openQ.isError ? (
@@ -640,6 +641,7 @@ export default function RiderHome(): React.ReactElement {
                 return (
                   <Pressable
                     key={seg.key}
+                    testID={`offer-mode-${seg.key}`}
                     onPress={() => {
                       setOfferMode(seg.key);
                       // Accept = the customer's price, exactly; switching back re-seeds it.
@@ -666,6 +668,7 @@ export default function RiderHome(): React.ReactElement {
             </View>
             {offerMode === "counter" ? (
               <Field
+                testID="counter-fare-input"
                 label="Your fare (USD)"
                 value={fare}
                 onChangeText={setFare}
@@ -673,8 +676,9 @@ export default function RiderHome(): React.ReactElement {
                 hint="Counter higher if the trip's worth more — the customer accepts or declines."
               />
             ) : null}
-            <Field label="ETA to pickup (min)" value={eta} onChangeText={setEta} keyboardType="number-pad" maxLength={3} />
+            <Field testID="offer-eta-input" label="ETA to pickup (min)" value={eta} onChangeText={setEta} keyboardType="number-pad" maxLength={3} />
             <Button
+              testID="submit-offer"
               label={offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send counter-offer"}
               onPress={() => offerM.mutate()}
               loading={offerM.isPending}

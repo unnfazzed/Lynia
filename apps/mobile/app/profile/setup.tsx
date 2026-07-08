@@ -47,6 +47,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
       <Heading>Tell us who you are</Heading>
       <Sub>A name and ID for your account record. Your phone is already verified.</Sub>
       <Field
+        testID="profile-first-name"
         label="First name"
         value={firstName}
         onChangeText={setFirstName}
@@ -56,6 +57,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
         textContentType="givenName"
       />
       <Field
+        testID="profile-last-name"
         label="Last name"
         value={lastName}
         onChangeText={setLastName}
@@ -67,6 +69,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
       {/* National ID stored on the account record (0·6). Default (text) keyboard:
           Zimbabwean IDs are alphanumeric (e.g. "63-123456-A-42"), so a number pad would block them. */}
       <Field
+        testID="profile-id-number"
         label="National ID number"
         value={idNumber}
         onChangeText={setIdNumber}
@@ -74,7 +77,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
         maxLength={40}
         hint="Stored on your account record."
       />
-      <Button label="Save and continue" onPress={submit} loading={busy} disabled={!canSubmit} />
+      <Button testID="profile-submit" label="Save and continue" onPress={submit} loading={busy} disabled={!canSubmit} />
       <ErrorText message={error} />
     </Screen>
   );

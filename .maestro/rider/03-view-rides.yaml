@@ -1,0 +1,30 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+  API_URL: ${API_URL}
+---
+# See the seeded available delivery requests. The "customer" side (broadcasting an order for the
+# rider's board to show) is played over the API by customer-create-order.js — see
+# customer/04-review-bids.yaml's comment for why one emulator can't drive both apps live. Assumes
+# 02-kyc.yaml has already verified this rider account (idempotent — a KYC'd account just skips
+# straight past the "Become a rider" gate).
+- runFlow: subflows/login-rider.yaml
+
+- runFlow:
+    when:
+      visible: "Go online"
+    commands:
+      - tapOn:
+          id: "online-toggle"
+- assertVisible:
+    text: "Go offline"
+    timeout: 15000
+
+- runScript:
+    file: ../scripts/customer-create-order.js
+
+- assertVisible: "Open orders"
+- extendedWaitUntil:
+    visible: "Make an offer"
+    timeout: 20000

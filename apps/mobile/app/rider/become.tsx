@@ -109,14 +109,14 @@ export default function BecomeRiderScreen(): React.ReactElement {
         ) : (
           <>
             <Card>
-              <Field label="First name" value={firstName} onChangeText={setFirstName} maxLength={80} />
-              <Field label="Last name" value={lastName} onChangeText={setLastName} maxLength={80} />
+              <Field testID="kyc-first-name" label="First name" value={firstName} onChangeText={setFirstName} maxLength={80} />
+              <Field testID="kyc-last-name" label="Last name" value={lastName} onChangeText={setLastName} maxLength={80} />
               {/* Default (text) keyboard — Zimbabwean national IDs are alphanumeric (e.g. "63-123456 A 12"),
                   so a number-pad would make the letter suffix untypeable and block KYC submission. */}
-              <Field label="National ID number" value={idNumber} onChangeText={setIdNumber} maxLength={40} />
+              <Field testID="kyc-id-number" label="National ID number" value={idNumber} onChangeText={setIdNumber} maxLength={40} />
             </Card>
             <Card>
-              <Field label="Bike registration" value={bikeReg} onChangeText={setBikeReg} placeholder="ABZ 1234" maxLength={20} />
+              <Field testID="kyc-bike-reg" label="Bike registration" value={bikeReg} onChangeText={setBikeReg} placeholder="ABZ 1234" maxLength={20} />
               <Label>Your photo</Label>
               {photoUri ? (
                 <Image
@@ -125,12 +125,13 @@ export default function BecomeRiderScreen(): React.ReactElement {
                 />
               ) : null}
               <Button
+                testID="kyc-take-photo"
                 label={uploading ? "Uploading…" : photoKey ? "Retake photo" : "Take photo"}
                 variant="ghost"
                 onPress={() => void pickFrom("camera")}
                 loading={uploading}
               />
-              <Button label="Choose from gallery" variant="ghost" onPress={() => void pickFrom("library")} disabled={uploading} />
+              <Button testID="kyc-choose-gallery" label="Choose from gallery" variant="ghost" onPress={() => void pickFrom("library")} disabled={uploading} />
               {photoKey ? (
                 <Text style={{ fontSize: 12, color: tokens.color.accentText, fontWeight: "600", marginTop: 4 }}>Photo added ✓</Text>
               ) : null}
@@ -140,7 +141,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
                 ? "Test build: ID verification is bypassed — submit and you'll be verified straight away so you can go online."
                 : "By submitting, your national ID is verified — an ID photo plus a quick selfie liveness check. You'll finish in your browser, then return here to go online."}
             </Text>
-            <Button label="Submit for verification" onPress={submit} loading={busy} disabled={!canSubmit} />
+            <Button testID="kyc-submit" label="Submit for verification" onPress={submit} loading={busy} disabled={!canSubmit} />
           </>
         )}
         <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />

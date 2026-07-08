@@ -32,6 +32,7 @@ export default function RoleScreen(): React.ReactElement {
       <Sub>It&apos;s one account — pick how you&apos;ll use LyniaGo now, and switch anytime.</Sub>
 
       <RoleOption
+        testID="role-customer"
         icon="package"
         title="Send a parcel"
         desc="Post a delivery and let nearby riders bid."
@@ -39,6 +40,7 @@ export default function RoleScreen(): React.ReactElement {
         onPress={() => setRole("customer")}
       />
       <RoleOption
+        testID="role-rider"
         icon="bike"
         title="Earn as a rider"
         desc="Deliver parcels near you and get paid in cash."
@@ -46,12 +48,13 @@ export default function RoleScreen(): React.ReactElement {
         onPress={() => setRole("rider")}
       />
 
-      <Button label={role === "rider" ? "Continue as a rider" : "Continue"} onPress={() => go(role)} />
+      <Button testID="role-continue" label={role === "rider" ? "Continue as a rider" : "Continue"} onPress={() => go(role)} />
     </Screen>
   );
 }
 
 function RoleOption(props: {
+  testID?: string;
   icon: IconName;
   title: string;
   desc: string;
@@ -61,6 +64,7 @@ function RoleOption(props: {
   const { selected } = props;
   return (
     <Pressable
+      testID={props.testID}
       onPress={props.onPress}
       accessibilityRole="radio"
       accessibilityState={{ selected }}

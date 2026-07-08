@@ -1,0 +1,40 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+  API_URL: ${API_URL}
+---
+# Place a bid (accept the asking price) on a request, assert it shows as submitted under "Your offers".
+- runFlow: subflows/login-rider.yaml
+
+- runFlow:
+    when:
+      visible: "Go online"
+    commands:
+      - tapOn:
+          id: "online-toggle"
+- assertVisible:
+    text: "Go offline"
+    timeout: 15000
+
+- runScript:
+    file: ../scripts/customer-create-order.js
+
+- extendedWaitUntil:
+    visible: "Make an offer"
+    timeout: 20000
+- tapOn: "Make an offer"
+
+- tapOn:
+    id: "offer-mode-accept"
+- tapOn:
+    id: "offer-eta-input"
+- inputText: "8"
+- hideKeyboard
+- tapOn:
+    id: "submit-offer"
+
+- assertVisible: "Your offers"
+- assertVisible:
+    text: "Your offer \\$3\\.00"
+    timeout: 15000

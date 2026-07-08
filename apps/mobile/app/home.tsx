@@ -545,7 +545,7 @@ export default function HomeScreen(): React.ReactElement {
                   </View>
                 </View>
               ) : null}
-              <Button label="Broadcast request" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
+              <Button testID="broadcast-button" label="Broadcast request" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
               <ErrorText message={error} />
             </>
           }
@@ -573,6 +573,7 @@ export default function HomeScreen(): React.ReactElement {
           {items.map((it, i) => (
             <View key={i}>
               <Field
+                testID={`item-description-${i}`}
                 value={it.description}
                 onChangeText={(t) => updateItem(i, { description: t })}
                 placeholder={i === 0 ? "Documents" : "Another item"}
@@ -621,7 +622,7 @@ export default function HomeScreen(): React.ReactElement {
           />
           {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
               "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
-          <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
+          <Field testID="pickup-phone" label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
           {/* Recent-recipient quick-fill: one tap drops a past drop-off number into the field instead of
               re-typing. Only shown before the customer starts typing one, so it never fights their input. */}
           {recipients.length > 0 && dropPhone.trim().length === 0 ? (
@@ -649,7 +650,7 @@ export default function HomeScreen(): React.ReactElement {
               ))}
             </View>
           ) : null}
-          <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
+          <Field testID="drop-phone" label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
           {quote ? (
             <View style={{ marginBottom: tokens.space.sm }}>
               <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
@@ -664,6 +665,7 @@ export default function HomeScreen(): React.ReactElement {
             </View>
           ) : null}
           <Field
+            testID="price-input"
             label="Your price (USD)"
             value={proposedFare}
             onChangeText={setProposedFare}
@@ -677,6 +679,7 @@ export default function HomeScreen(): React.ReactElement {
           {/* Landmarks (contract-required, normally auto-filled from the pin) + optional declared value,
               behind a tap-to-expand toggle so the required path stays short. */}
           <Pressable
+            testID="landmarks-toggle"
             onPress={toggleDetails}
             accessibilityRole="button"
             accessibilityState={{ expanded: detailsOpen }}
@@ -692,6 +695,7 @@ export default function HomeScreen(): React.ReactElement {
           {detailsOpen ? (
             <View style={{ marginTop: tokens.space.sm }}>
               <Field
+                testID="pickup-landmark"
                 label={pickupLandmarkFromMap ? "Pickup landmark  • from map" : "Pickup landmark"}
                 value={pickupLandmark}
                 onChangeText={editPickupLandmark}
@@ -699,6 +703,7 @@ export default function HomeScreen(): React.ReactElement {
                 maxLength={160}
               />
               <Field
+                testID="drop-landmark"
                 label={dropLandmarkFromMap ? "Drop-off landmark  • from map" : "Drop-off landmark"}
                 value={dropLandmark}
                 onChangeText={editDropLandmark}

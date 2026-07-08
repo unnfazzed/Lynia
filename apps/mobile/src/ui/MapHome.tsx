@@ -94,6 +94,7 @@ function AddressRow(props: { slot: AddressSlot; value: string; active: boolean; 
   const filled = props.value.trim().length > 0;
   return (
     <Pressable
+      testID={`address-row-${props.slot}`}
       onPress={props.onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: props.active }}

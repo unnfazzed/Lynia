@@ -1,0 +1,114 @@
+appId: zw.co.lynia
+env:
+  CUSTOMER_PHONE: ${CUSTOMER_PHONE}
+  RIDER_PHONE: ${RIDER_PHONE}
+  API_URL: ${API_URL}
+---
+# Accept, walk pickup → in transit → delivered via the real UI, then finish the ride and assert the
+# earnings summary. The delivery hand-off code is hashed server-side (order-lifecycle.service.ts) —
+# customer-rotate-code.js mints a real one via the same "Re-issue delivery code" endpoint the
+# customer's own UI uses, playing the customer's half since one emulator can't run both apps live.
+- runFlow: subflows/login-rider.yaml
+
+- runFlow:
+    when:
+      visible: "Go online"
+    commands:
+      - tapOn:
+          id: "online-toggle"
+- assertVisible:
+    text: "Go offline"
+    timeout: 15000
+
+- runScript:
+    file: ../scripts/customer-create-order.js
+- extendedWaitUntil:
+    visible: "Make an offer"
+    timeout: 20000
+- tapOn: "Make an offer"
+- tapOn:
+    id: "offer-mode-accept"
+- tapOn:
+    id: "offer-eta-input"
+- inputText: "8"
+- hideKeyboard
+- tapOn:
+    id: "submit-offer"
+
+- extendedWaitUntil:
+    visible: "A customer picked you!"
+    timeout: 20000
+- tapOn: "Open job"
+
+# assigned -> confirmed -> en_route_pickup
+- assertVisible:
+    id: "advance-status"
+    timeout: 15000
+- tapOn:
+    id: "advance-status"
+- extendedWaitUntil:
+    visible:
+      id: "advance-status"
+    timeout: 15000
+- tapOn:
+    id: "advance-status"
+
+# en_route_pickup -> picked_up: a line-item order shows the pickup checklist instead of the plain
+# advance button (app/rider/job.tsx:387-398) — branch on whichever rendered.
+- extendedWaitUntil:
+    visible:
+      id: "pickup-item-0|advance-status"
+    timeout: 15000
+- runFlow:
+    when:
+      visible:
+        id: "pickup-item-0"
+    commands:
+      - tapOn:
+          id: "pickup-item-0"
+      - tapOn:
+          id: "confirm-pickup"
+- runFlow:
+    when:
+      visible:
+        id: "advance-status"
+    commands:
+      - tapOn:
+          id: "advance-status"
+
+# picked_up -> en_route_dropoff
+- extendedWaitUntil:
+    visible:
+      id: "advance-status"
+    timeout: 15000
+- tapOn:
+    id: "advance-status"
+
+# en_route_dropoff -> delivered (the recipient's 6-digit hand-off code)
+- extendedWaitUntil:
+    visible:
+      id: "delivery-code-input"
+    timeout: 15000
+- runScript:
+    file: ../scripts/customer-rotate-code.js
+- tapOn:
+    id: "delivery-code-input"
+- inputText: "${output.deliveryCode}"
+- hideKeyboard
+- tapOn:
+    id: "confirm-delivery"
+
+- assertVisible:
+    text: "Delivered. Waiting for the customer to rate"
+    timeout: 15000
+
+# The customer's rating is what flips the order to `completed` and lands it in earnings — play that
+# half over the API too.
+- runScript:
+    file: ../scripts/customer-rate-and-complete.js
+
+- tapOn: "Back"
+- tapOn: "View earnings"
+- assertVisible:
+    text: "Earnings|Total earned"
+    timeout: 15000

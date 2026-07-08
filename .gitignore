@@ -26,6 +26,7 @@ GoogleService-Info.plist
 .env
 .env.*
 !.env.example
+!.maestro/.env.test.example
 
 # Prisma
 apps/api/prisma/*.db

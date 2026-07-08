@@ -188,6 +188,7 @@ export function ComposeMap(props: {
           the drop-off). Bottom-right, clear of the address chrome up top. */}
       {active === "pickup" ? (
         <Pressable
+          testID="use-my-location"
           onPress={() => void useMyLocation()}
           accessibilityRole="button"
           accessibilityLabel="Use my current location for pickup"

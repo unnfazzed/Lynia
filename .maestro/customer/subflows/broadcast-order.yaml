@@ -1,0 +1,74 @@
+appId: zw.co.lynia
+---
+# Reusable "compose + broadcast a delivery request" flow, called from every customer flow that needs
+# a live order to react to (03 onward). Assumes login-customer.yaml already ran and /home is visible.
+#
+# Pickup/drop-off pins: home.tsx's map defaults to a Harare-centred region (ComposeMap's `HARARE`
+# constant) whenever no pickup is set yet, and the CI workflow additionally pins the emulator's GPS to
+# Harare CBD (`adb emu geo fix`) before the suite runs — so "Use my location" and a map tap near the
+# same spot both land inside the 25km SERVICE_CORRIDOR (packages/shared/src/policy.ts) without a live
+# Places lookup. Landmark text is always filled manually below rather than relied on from reverse-
+# geocoding, since that also needs a live key.
+- tapOn:
+    id: "use-my-location"
+- assertNotVisible:
+    text: "Locating…"
+    timeout: 10000
+
+- tapOn:
+    id: "address-row-drop"
+# A tap near, but not on, the pickup point — close enough to stay inside the service corridor, far
+# enough to be a distinct drop-off coordinate.
+- tapOn:
+    point: "62%, 38%"
+
+- tapOn:
+    id: "item-description-0"
+- inputText: "QA test parcel"
+- hideKeyboard
+
+- tapOn:
+    id: "pickup-phone"
+- inputText: "${CUSTOMER_PHONE}"
+- tapOn:
+    id: "drop-phone"
+- inputText: "${RIDER_PHONE}"
+- hideKeyboard
+
+- tapOn:
+    id: "price-input"
+- inputText: "3"
+- hideKeyboard
+
+- runFlow:
+    when:
+      notVisible:
+        id: "pickup-landmark"
+    commands:
+      - tapOn:
+          id: "landmarks-toggle"
+- tapOn:
+    id: "pickup-landmark"
+- eraseText
+- inputText: "Eastgate Mall, CBD"
+- tapOn:
+    id: "drop-landmark"
+- eraseText
+- inputText: "14 Glenara Ave, Avenues"
+- hideKeyboard
+
+- tapOn:
+    id: "broadcast-button"
+
+- runFlow:
+    when:
+      visible: "Before you send"
+    commands:
+      - tapOn:
+          id: "disclaimer-checkbox"
+      - tapOn:
+          id: "disclaimer-agree"
+
+- assertVisible:
+    text: "Choose this rider|No riders online|No offers yet|Couldn't load offers"
+    timeout: 20000
