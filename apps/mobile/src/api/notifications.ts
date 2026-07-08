@@ -10,6 +10,7 @@ type Platform = "android" | "ios" | "web";
  */
 export interface NotificationRow {
   id: string;
+  orderId: string;
   icon: IconName;
   title: string;
   message: string;

@@ -17,6 +17,7 @@ import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { offersKey, orderKey } from "../../src/query/client";
+import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
 import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub, useToast } from "../../src/ui";
 import { LiveMap } from "../../src/ui/LiveMap";
@@ -175,6 +176,16 @@ export default function OrderScreen(): React.ReactElement {
     enabled: status === "open_for_offers",
     // The `offers:changed` WS signal invalidates this instantly; poll is the 15s fallback.
     refetchInterval: status === "open_for_offers" ? 15_000 : false,
+  });
+
+  // Warm-resume: refetch the order (and, mid-auction, the offer list) the moment the app returns to
+  // foreground. Without this, a status change, a new/withdrawn bid, or an acceptance that arrived
+  // while backgrounded serves a stale cache for up to the 15s poll — the socket usually beats that,
+  // but a reconnect can lag behind the OS reporting the app foregrounded. Mirrors rider/job.tsx's
+  // warm-resume for the rider side.
+  useForegroundRefetch(() => {
+    void qc.invalidateQueries({ queryKey: orderKey(orderId) });
+    if (status === "open_for_offers") void qc.invalidateQueries({ queryKey: offersKey(orderId) });
   });
 
   // Announce a newly-arrived bid for screen-reader users — the streaming list updates silently.

@@ -63,14 +63,26 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   }
 }
 
+/** Order-status values whose push (STATUS_NOTICES in notifications.service.ts) is sent to the RIDER
+ *  only: "assigned" ("You got the job") and "completed" ("Nice work — you're free for the next
+ *  job"). A tap on either always belongs on the rider's active-job screen. */
+const RIDER_ONLY_STATUSES = new Set(["assigned", "completed"]);
+
 /**
- * True when a tapped notification marks the rider as hired/selected for a job. The API's
- * `notifyOrderStatus` sends `data: { orderId, status, ... }`, and the rider's "You got the job" push
- * is the `assigned` transition (notifications.service.ts `STATUS_NOTICES.assigned`) — so we key on
- * `status === "assigned"`. Fully defensive: any other/unknown shape returns false (a no-op).
+ * Where tapping a notification should navigate. Every status-driven push (`notifyOrderStatus`)
+ * carries `orderId`; most of them (confirmed/en_route_pickup/picked_up/en_route_dropoff/delivered/
+ * expired/undelivered) are customer-facing and previously did nothing on tap despite copy like
+ * "tap to rate your rider" / "tap for details". `cancelled` is pushed to BOTH parties, so it falls
+ * back to `isRider` to pick the right screen. Returns null when there's no order to navigate to
+ * (e.g. the new-offer/new-broadcast pushes, which carry no status).
  */
-export function isRiderSelectedNotification(data: unknown): boolean {
-  return typeof data === "object" && data !== null && (data as { status?: unknown }).status === "assigned";
+export function pushDestination(data: unknown, isRider: boolean): string | null {
+  if (typeof data !== "object" || data === null) return null;
+  const { orderId, status } = data as { orderId?: unknown; status?: unknown };
+  if (typeof orderId !== "string" || orderId === "") return null;
+  if (typeof status === "string" && RIDER_ONLY_STATUSES.has(status)) return "/rider/job";
+  if (status === "cancelled" && isRider) return "/rider/job";
+  return `/order/${orderId}`;
 }
 
 /** Best-effort: drop this device's token server-side on sign-out. */

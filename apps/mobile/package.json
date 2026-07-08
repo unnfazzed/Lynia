@@ -52,7 +52,7 @@
   "jest": {
     "preset": "jest-expo",
     "testMatch": [
-      "**/__tests__/**/*.test.tsx"
+      "**/__tests__/**/*.test.{ts,tsx}"
     ],
     "transformIgnorePatterns": [
       "node_modules/(?!.*(?:react-native|@react-native|expo|@expo|@unimodules|unimodules|native-base|react-navigation|@react-navigation|lucide-react-native|react-native-svg))"

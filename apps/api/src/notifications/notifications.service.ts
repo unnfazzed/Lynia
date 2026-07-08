@@ -21,6 +21,7 @@ interface Notice {
  */
 export interface NotificationRow {
   id: string;
+  orderId: string;
   icon: string;
   title: string;
   message: string;
@@ -114,6 +115,7 @@ export class NotificationsService {
         rows.push({
           // Stable per (order, status, time): an order can revisit a status, so the timestamp keys it.
           id: `${order.id}:${event.status}:${at}`,
+          orderId: order.id,
           icon: notice.icon,
           title: notice.title,
           message: notice.message,

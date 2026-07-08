@@ -9,7 +9,7 @@ import {
   type OnModuleInit,
   UnauthorizedException,
 } from "@nestjs/common";
-import { CUSTOMER_CANCELLABLE_STATUSES, RELIABILITY, RIDER_CANCELLABLE_STATUSES } from "@lynia/shared";
+import { CUSTOMER_CANCELLABLE_STATUSES, DELIVERY_OTP_MAX_ATTEMPTS, RELIABILITY, RIDER_CANCELLABLE_STATUSES } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
 import { applyReliabilityDelta, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
@@ -30,7 +30,6 @@ const FORWARD = {
   en_route_dropoff: { from: "picked_up", stamp: undefined },
 } as const;
 
-const DELIVERY_OTP_MAX_ATTEMPTS = 5;
 /** Cancellation matrix (INTERFACE-AUDIT C3), server-enforced. Customer: any live status (pre- OR
  *  post-pickup). Rider: ONLY up to arrival at pickup — blocked from `picked_up` onward (the parcel is
  *  on the bike; a post-pickup failure is an `undelivered(breakdown)`, not a cancel). Both sets are the

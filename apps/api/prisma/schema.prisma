@@ -303,6 +303,11 @@ model Order {
   // Rider-cancel auto re-broadcast (F-01): a new order cloned at the same price back-links here to
   // the order it replaced. Plain column (no relation) — a lineage pointer, not a hot-path join.
   rebroadcastOfId     String?     @map("rebroadcast_of_id") @db.Uuid
+  // Client-generated create-request dedup key (one per compose attempt). A unique index scoped to the
+  // customer lets a timeout+retry or a double-tap on "Broadcast" hit the same row (P2002) instead of
+  // opening a second live auction for the same trip. Nullable — old clients that don't send one just
+  // never dedupe (partial index, so NULLs don't collide).
+  idempotencyKey      String?     @map("idempotency_key")
   createdAt           DateTime    @default(now()) @map("created_at")
   updatedAt           DateTime    @updatedAt @map("updated_at")
 
@@ -323,6 +328,10 @@ model Order {
   @@index([riderId, createdAt])
   @@map("orders")
 }
+
+// (Partial unique index on (customer_id, idempotency_key) WHERE idempotency_key IS NOT NULL — added
+// by raw SQL migration since Prisma's schema DSL can't express a partial index; built CONCURRENTLY,
+// see migration 0021_order_idempotency_index.)
 
 model Offer {
   id          String      @id @default(uuid()) @db.Uuid

@@ -2,7 +2,7 @@ import { type AdvanceStatusRequest, UndeliveredReason, tokens } from "@lynia/sha
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { AppState, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { collectedItemCount, shouldShowJobError } from "../../src/logic/journey";
 import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE } from "../../src/logic/rider-job";
@@ -11,6 +11,7 @@ import { acknowledgeHandback, loadAcknowledgedHandbacks } from "../../src/auth/s
 import { formatMoney } from "../../src/logic/money";
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
+import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
@@ -124,12 +125,7 @@ export default function RiderJob(): React.ReactElement {
   // the customer cancelled while we were backgrounded serves its stale (still-live) cache for up to the
   // 6s poll — briefly re-exposing advance/OTP controls on a dead order — before flipping to the R8
   // hand-back. Invalidating on resume makes the terminal appear immediately.
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") void qc.invalidateQueries({ queryKey: ["activeJob"] });
-    });
-    return () => sub.remove();
-  }, [qc]);
+  useForegroundRefetch(() => void qc.invalidateQueries({ queryKey: ["activeJob"] }));
 
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
   const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Something went wrong.");

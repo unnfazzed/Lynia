@@ -22,3 +22,13 @@ paths = [
   # Unit and integration test specs (…​.spec.ts and …​.int.spec.ts both end in .spec.ts).
   '''.*\.spec\.ts$''',
 ]
+# Two historical commits where `apps/mobile/src/logic/saved-recipients.ts` assigns a SecureStore
+# storage KEY NAME (not a credential) to a constant — `const KEY = "lynia.savedRecipients.v1"`
+# (later renamed to RECIPIENTS_KEY): the generic-api-key rule flags any `KEY = "…"` assignment with
+# enough entropy, and this string has no other purpose than naming the on-device keychain slot (see
+# the file's own doc comment). History can't be rewritten to un-flag it, so it's allowlisted by
+# commit rather than broadened to a path/regex exclusion that could mask a real future secret.
+commits = [
+  "ccac6361c5485125e57a3b0187899c5587d37045", # feat(mobile): P1 UX richness — saved recipients, ...
+  "10954ec426573c2b5e791d87b70b808ce9a27f4c", # Merge pull request #145 (same line, carried through)
+]
