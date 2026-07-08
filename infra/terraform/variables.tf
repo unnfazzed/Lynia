@@ -219,3 +219,9 @@ variable "staging_db_tier" {
   type        = string
   default     = "db-f1-micro"
 }
+
+variable "slo_alerts_enabled" {
+  description = "Create the PromQL SLO alert policies (monitoring.tf). MUST stay false until the OTEL collector (LR9) is live: Cloud Monitoring validates the PromQL metric names at policy creation, so applying before the series exist in GMP fails with 'PromQL metric(s) are invalid'. Flip to true as the last step of docs/OBSERVABILITY.md §Production activation."
+  type        = bool
+  default     = false
+}

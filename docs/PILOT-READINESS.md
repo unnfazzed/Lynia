@@ -296,7 +296,7 @@ The **whole server side is built**: the adapter (`apps/api/src/adapters/push/fcm
 **device-token registry** (`device_tokens` table + `POST/DELETE /notifications/device-token`), and the
 **send wiring** — `NotificationsService` fires best-effort pushes at offer-received / assigned / each
 lifecycle status / expired / cancelled, and can never fail a transition. Terraform enables
-`firebase.googleapis.com` + `firebasecloudmessaging.googleapis.com` and grants the runtime SA
+`firebase.googleapis.com` + `fcm.googleapis.com` and grants the runtime SA
 `roles/firebasecloudmessaging.admin` (so `terraform apply` covers the old manual gcloud steps).
 1. **Enable Firebase** on the project (founder): `firebase projects:addfirebase lynia-500911`, register an
    Android app (`zw.co.lynia`), set `FCM_PROJECT_ID=lynia-500911` + `PUSH_PROVIDER=fcm` (server side).

@@ -60,7 +60,10 @@ cd infra/terraform && terraform apply
 
 Follow `docs/OBSERVABILITY.md` §Production activation:
 ```bash
-cd infra/terraform && terraform apply     # enables monitoring/cloudtrace APIs + alert policies + SA roles
+cd infra/terraform && terraform apply     # enables monitoring/cloudtrace APIs + SA roles
+# NOTE: the SLO alert policies are gated on slo_alerts_enabled (default false) because Cloud
+# Monitoring rejects PromQL policies whose metrics don't exist yet. AFTER the collector sidecar
+# is live and series arrive in GMP, set slo_alerts_enabled = true in terraform.tfvars + re-apply.
 gcloud secrets create otel-collector-config \
   --project=$PROJECT --data-file=infra/otel-collector/config.yaml
 gcloud secrets add-iam-policy-binding otel-collector-config --project=$PROJECT \
