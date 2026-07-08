@@ -39,7 +39,7 @@ export class DiditKycVendor implements KycVendor {
     } catch (err) {
       // A timeout (or any network failure) surfaces as a clean vendor error rather than a hung request.
       this.logger.error(`Didit session create network error: ${err instanceof Error ? err.message : String(err)}`);
-      throw new Error("Couldn't reach the ID-check provider");
+      throw new Error("Couldn't reach the ID-check provider", { cause: err });
     }
 
     if (!res.ok) {
