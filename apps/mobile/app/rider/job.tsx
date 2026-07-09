@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
+import { getMe } from "../../src/api/auth";
 import { collectedItemCount, shouldShowJobError } from "../../src/logic/journey";
 import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
@@ -65,6 +66,9 @@ export default function RiderJob(): React.ReactElement {
   }, []);
 
   const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 6000 });
+  // Only needed to show "this would be strike N" on the bail-confirm sheet — a light, cached read, not
+  // polled (the count only matters at the moment the rider opens the cancel sheet).
+  const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
   const order = jobQ.data ?? null;
   const orderId = order?.id ?? null;
   const items = order?.items ?? [];
@@ -479,6 +483,7 @@ export default function RiderJob(): React.ReactElement {
               pending={cancelM.isPending}
               onConfirm={() => cancelM.mutate()}
               onDismiss={() => setBailing(false)}
+              currentStrikes={meQ.data?.rider?.cancelStrikes}
             />
           ) : (
             <Button label="Cancel job" variant="ghost" onPress={() => setBailing(true)} />

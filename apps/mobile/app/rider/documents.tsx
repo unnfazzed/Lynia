@@ -19,9 +19,18 @@ function Row(props: { icon: IconName; label: string; value?: string; verified: b
         <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }}>{props.label}</Text>
         {props.value ? <Text style={{ fontSize: 12, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{props.value}</Text> : null}
       </View>
-      {props.verified ? <StatusPill status="Verified" tone="online" dot /> : null}
+      {props.verified ? <StatusPill status="Verified" tone="online" dot /> : <StatusPill status="Not verified" tone="neutral" />}
     </View>
   );
+}
+
+// The footer used to always say "verified and stored securely," even for a rider whose KYC is
+// pending or failed — false comfort right where documents.tsx's own Row already shows the real
+// state via its pill. Match the footer's claim to rider.kycStatus.
+function footerCopy(kycStatus: string | undefined): string {
+  if (kycStatus === "verified") return "Your documents are verified and stored securely. To change your bike or re-verify, contact support.";
+  if (kycStatus === "pending") return "Your documents are still being checked — this can take a little while. We'll let you know as soon as they're verified.";
+  return "Your documents haven't been verified yet. Go to your rider verification status to see what to do next.";
 }
 
 export default function DocumentsScreen(): React.ReactElement {
@@ -51,10 +60,9 @@ export default function DocumentsScreen(): React.ReactElement {
             <Row icon="user" label="Rider photo" value="Added" verified={verified} />
           </Card>
           <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
-            <Text style={{ fontSize: 12.5, color: tokens.color.muted, lineHeight: 18 }}>
-              Your documents are verified and stored securely. To change your bike or re-verify, contact support.
-            </Text>
+            <Text style={{ fontSize: 12.5, color: tokens.color.muted, lineHeight: 18 }}>{footerCopy(rider.kycStatus)}</Text>
           </Card>
+          {!verified ? <Button label="View verification status" variant="ghost" onPress={() => router.replace("/rider")} /> : null}
         </>
       )}
       <Button label="Back" variant="ghost" onPress={() => router.back()} />

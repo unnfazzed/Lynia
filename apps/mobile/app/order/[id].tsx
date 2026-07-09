@@ -826,7 +826,12 @@ export default function OrderScreen(): React.ReactElement {
         ) : null}
         {order.status === "cancelled" ? (
           <Card>
-            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>This order is cancelled.</Text>
+            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
+              {order.cancelledBy === "rider" ? "Your rider cancelled this delivery." : order.cancelledBy === "customer" ? "You cancelled this order." : "This order is cancelled."}
+            </Text>
+            {order.cancelReason ? (
+              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginTop: tokens.space.sm }}>{order.cancelReason}</Text>
+            ) : null}
           </Card>
         ) : null}
 

@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { ACTIVE_RIDE_STATUSES, type OrderStatus, TERMINAL_STATUSES } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, DELIVERY_OTP_MAX_ATTEMPTS, type OrderStatus, TERMINAL_STATUSES } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -154,6 +154,7 @@ export class AdminOrdersService {
         riderId: true,
         createdAt: true,
         updatedAt: true,
+        deliveryOtpAttempts: true,
         customer: { select: { firstName: true, lastName: true, phone: true } },
         rider: { select: { bikeReg: true, profile: { select: { firstName: true, lastName: true, phone: true } } } },
         events: { select: { status: true, createdAt: true }, orderBy: { createdAt: "asc" } },
@@ -195,12 +196,23 @@ export class AdminOrdersService {
       ? `${order.rider.profile.firstName} ${order.rider.profile.lastName}`.trim()
       : null;
 
+    // A rider stuck failing the delivery code and a rider who's simply gone silent look identical as a
+    // bare "no update in N minutes" — this distinguishes them so support knows which intervention
+    // applies (nudge the rider vs. have the customer re-issue the code).
+    const otpMismatchNote =
+      order.status === "en_route_dropoff" && order.deliveryOtpAttempts > 0
+        ? `Rider has entered the wrong delivery code ${order.deliveryOtpAttempts} of ${DELIVERY_OTP_MAX_ATTEMPTS} times.`
+        : undefined;
+
     return {
       id: order.id,
       route: routeOf(order.pickup, order.dropoff),
       status: order.status,
       stuck,
-      stuckNote: stuck ? `No GPS/status update from the rider for ${stuckMins} minutes.` : undefined,
+      stuckNote: stuck
+        ? [otpMismatchNote, `No GPS/status update from the rider for ${stuckMins} minutes.`].filter(Boolean).join(" ")
+        : otpMismatchNote,
+      deliveryOtpAttempts: order.deliveryOtpAttempts,
       rider: riderName,
       // Both phones masked unless this order is live in its reveal window — never leak PII on a
       // terminal/closed order. Provide the (masked) string either way so the UI shows the redaction.

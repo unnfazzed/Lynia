@@ -502,6 +502,32 @@ export default function HomeScreen(): React.ReactElement {
         >
           <MapHomeTopBar onNotifications={() => router.push("/notifications")} onAccount={() => router.push("/profile")} />
 
+          {meQ.data?.rider?.isOnline ? (
+            // A rider who switches to the customer view stayed online server-side with no reminder here
+            // — they could lose track of their shift or miss a broadcast while browsing as a customer.
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="You're online as a rider — go back to the rider dashboard"
+              onPress={() => router.push("/rider")}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: tokens.space.sm,
+                backgroundColor: tokens.color.accentWash,
+                borderRadius: tokens.radius.pill,
+                paddingHorizontal: tokens.space.md,
+                paddingVertical: tokens.space.sm,
+                marginBottom: tokens.space.sm,
+                alignSelf: "flex-start",
+              }}
+            >
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tokens.color.accent }} />
+              <Text style={{ fontSize: tokens.font.size.caption, fontWeight: "700", color: tokens.color.accentText }}>
+                Online as a rider — tap to go back
+              </Text>
+            </Pressable>
+          ) : null}
+
           {activeOrder ? (
             // UX review #1: a live order the customer can be killed away from — always offer the way back.
             <Pressable

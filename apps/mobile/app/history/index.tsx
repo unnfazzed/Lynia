@@ -6,7 +6,14 @@ import type { OrderHistoryRow } from "../../src/api/orders";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatMoney } from "../../src/logic/money";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
-import { Button, Card, EmptyState, Heading, Icon, Screen, SkeletonRows, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, Heading, Icon, Screen, SkeletonRows, StatusPill, statusPillLabel, Sub } from "../../src/ui";
+
+// The rider-side subtitle used to hardcode "Delivered" for every trip regardless of outcome, so a
+// bailed-on or undelivered job read "Delivered" right next to a StatusPill saying otherwise on the
+// same row. Route it through the same status labels the pill already uses.
+function riderOutcomeLabel(status: string): string {
+  return status === "delivered" || status === "completed" ? "Delivered" : statusPillLabel(status);
+}
 
 function fmtDate(iso: string): string {
   const d = new Date(iso);
@@ -25,7 +32,7 @@ function Row({ o, onPress, onReorder }: { o: OrderHistoryRow; onPress: () => voi
               {o.pickup.landmark || "Pickup"} → {o.dropoff.landmark || "Drop-off"}
             </Text>
             <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2, fontVariant: ["tabular-nums"] }}>
-              {fmtDate(o.createdAt)} · {o.role === "customer" ? "Sent" : "Delivered"}
+              {fmtDate(o.createdAt)} · {o.role === "customer" ? "Sent" : riderOutcomeLabel(o.status)}
               {o.counterpartyName ? ` · ${o.counterpartyName}` : ""}
               {o.rating ? ` · ★ ${o.rating.score}` : ""}
             </Text>

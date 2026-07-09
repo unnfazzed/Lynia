@@ -53,6 +53,8 @@ export interface Me {
     // rider has submitted — at/above KYC_LOCK_ATTEMPTS self-resubmit is locked and they contact support.
     kycDeclineReason?: KycDeclineReason | null;
     kycAttempts?: number;
+    /** Pre-pickup cancel strikes toward RIDER_STRIKE_LIMIT — resets to 0 once a cooldown lands. */
+    cancelStrikes?: number;
     ratingAvg: number;
     ratingCount: number;
     tripsCount: number;

@@ -42,6 +42,10 @@ export default function RiderHome(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
   const [online, setOnlineState] = useState(false);
+  // "Back to customer" used to be a single unconfirmed tap even while online/mid-job, unmounting the
+  // board socket + heartbeat with no warning — a rider could go browse as a customer and lose track of
+  // an accepted job, or go effectively deaf to new broadcasts while still marked online server-side.
+  const [confirmSwitch, setConfirmSwitch] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
   // S·4 no-GPS gate: location permission was denied — riding needs GPS (parcels near you, navigate
@@ -697,7 +701,26 @@ export default function RiderHome(): React.ReactElement {
           </>
         )}
 
-        <Button label="Back to customer" variant="ghost" onPress={() => router.replace("/home")} />
+        {confirmSwitch ? (
+          <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
+            <Text style={{ fontWeight: "700", marginBottom: 6, color: tokens.color.ink }}>
+              {activeJob ? "You have a job in progress" : "You're online for deliveries"}
+            </Text>
+            <Sub>
+              {activeJob
+                ? "Switching to the customer view won't cancel your job, but you'll stop seeing job updates here until you come back."
+                : "Switching to the customer view takes you offline, so you'll stop receiving nearby deliveries."}
+            </Sub>
+            <Button label="Go to customer view" onPress={() => router.replace("/home")} />
+            <Button label="Stay online as a rider" variant="ghost" onPress={() => setConfirmSwitch(false)} />
+          </Card>
+        ) : (
+          <Button
+            label="Back to customer"
+            variant="ghost"
+            onPress={() => (online || activeJob ? setConfirmSwitch(true) : router.replace("/home"))}
+          />
+        )}
         <ErrorText message={error} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
