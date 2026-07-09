@@ -85,7 +85,12 @@ export default function SettingsScreen(): React.ReactElement {
         </View>
       </View>
 
-      <Row icon={isRider ? "bike" : "user"} label={isRider ? "Bike & documents" : "Edit profile"} onPress={isRider ? () => router.push("/rider/documents") : undefined} />
+      <Row
+        icon={isRider ? "bike" : "user"}
+        label={isRider ? "Bike & documents" : "Edit profile"}
+        value={isRider ? undefined : "Coming soon"}
+        onPress={isRider ? () => router.push("/rider/documents") : undefined}
+      />
       <Row
         icon="phone"
         label="Notifications"

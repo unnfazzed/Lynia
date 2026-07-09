@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../src/logic/money";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
 import { Button, Card, EmptyState, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
@@ -70,15 +70,21 @@ export default function EarningsScreen(): React.ReactElement {
 
           {trips.map((o) => (
             <Card key={o.id}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }} numberOfLines={1}>
-                    {o.pickup.landmark || "Pickup"} → {o.dropoff.landmark || "Drop-off"}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>{fmtDate(o.createdAt)}</Text>
+              <Pressable
+                onPress={() => router.push(`/order/${o.id}`)}
+                accessibilityRole="button"
+                accessibilityLabel={`Open trip ${o.pickup.landmark || "pickup"} to ${o.dropoff.landmark || "drop-off"}`}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }} numberOfLines={1}>
+                      {o.pickup.landmark || "Pickup"} → {o.dropoff.landmark || "Drop-off"}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>{fmtDate(o.createdAt)}</Text>
+                  </View>
+                  <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(o.agreedFare ?? o.proposedFare)}</Text>
                 </View>
-                <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(o.agreedFare ?? o.proposedFare)}</Text>
-              </View>
+              </Pressable>
             </Card>
           ))}
 

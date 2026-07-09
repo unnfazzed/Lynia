@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { RIDER_STRIKE_LIMIT, tokens } from "@lynia/shared";
 import React from "react";
 import { Text, View } from "react-native";
 import { Button, Card, Field, Icon, Sub } from "../index";
@@ -13,13 +13,18 @@ export function BailSheet({
   pending,
   onConfirm,
   onDismiss,
+  currentStrikes,
 }: {
   reason: string;
   onChangeReason: (t: string) => void;
   pending: boolean;
   onConfirm: () => void;
   onDismiss: () => void;
+  /** Rider's cancel-strike count BEFORE this cancel lands, so the warning can say which strike this
+   *  would be — previously the caution never changed between the 1st and the final cancel. */
+  currentStrikes?: number;
 }): React.ReactElement {
+  const nextStrike = (currentStrikes ?? 0) + 1;
   return (
     <>
       <Card style={{ borderColor: tokens.color.line }}>
@@ -45,8 +50,9 @@ export function BailSheet({
         <View style={{ flexDirection: "row", gap: tokens.space.sm, alignItems: "flex-start" }}>
           <Icon name="triangle-alert" size={16} color={tokens.color.highlight} />
           <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.ink, lineHeight: 18 }}>
-            Cancelling an accepted job affects your reliability score. Too many cancels can pause your
-            account.
+            {nextStrike >= RIDER_STRIKE_LIMIT
+              ? `This would be cancel ${nextStrike} of ${RIDER_STRIKE_LIMIT} — you'll be paused from going online for 2 hours.`
+              : `This would be cancel ${nextStrike} of ${RIDER_STRIKE_LIMIT} before a 2-hour pause. Cancelling an accepted job affects your reliability score.`}
           </Text>
         </View>
       </Card>

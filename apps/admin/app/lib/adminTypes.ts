@@ -202,6 +202,7 @@ export interface OrderDetail {
   status: string;
   stuck?: boolean;
   stuckNote?: string;
+  deliveryOtpAttempts?: number;
   rider: string | null;
   riderPhone?: string;
   bike?: string;

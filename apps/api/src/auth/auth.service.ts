@@ -72,6 +72,9 @@ export class AuthService {
             // on a resubmit and the attempt-2 lock state (item 4).
             kycDeclineReason: true,
             kycAttempts: true,
+            // So the cancel-confirm sheet can warn "this is strike N of LIMIT" before a cancel lands,
+            // instead of the rider only learning their count at the moment they get locked out.
+            cancelStrikes: true,
           },
         },
       },
@@ -98,6 +101,7 @@ export class AuthService {
             isOnline: p.rider.isOnline,
             kycDeclineReason: p.rider.kycDeclineReason,
             kycAttempts: p.rider.kycAttempts,
+            cancelStrikes: p.rider.cancelStrikes,
           }
         : null,
     };
