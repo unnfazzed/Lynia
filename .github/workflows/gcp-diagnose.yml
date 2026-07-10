@@ -1,0 +1,78 @@
+# Read-only production diagnosis for the post-2026-07-08 deploy crash-loop
+# (docs/GCP-PROVISIONING-REVIEW.md §3). Dispatch-only; makes NO changes.
+# Auths with the same keyless WIF deployer identity as release.yml. Every probe
+# is best-effort: where the deployer SA lacks a role, the step records that
+# instead of failing, so one run maps both the crash cause and our IAM reach.
+name: GCP Diagnose (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gcp-diagnose
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: vars.GCP_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Service + revision autopsy (run.admin — should succeed)
+        run: |
+          set -uo pipefail
+          PROJECT="${{ vars.GCP_PROJECT_ID }}"
+          REGION="${{ vars.GCP_REGION }}"
+          SERVICE="${{ vars.CLOUD_RUN_SERVICE }}"
+          echo "=== service traffic / latest revisions"
+          gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" \
+            --format 'yaml(status.traffic, status.latestCreatedRevisionName, status.latestReadyRevisionName, status.conditions)'
+          LATEST="$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" \
+            --format 'value(status.latestCreatedRevisionName)')"
+          echo "=== conditions of latest created revision: $LATEST"
+          gcloud run revisions describe "$LATEST" --project "$PROJECT" --region "$REGION" \
+            --format 'yaml(status.conditions, spec.containers[0].env, spec.containers[0].image)' \
+            | sed 's/value:.*/value: <redacted>/'
+          echo "=== last 5 revisions"
+          gcloud run revisions list --service "$SERVICE" --project "$PROJECT" --region "$REGION" \
+            --limit 5 --format 'table(name, status.conditions[0].status, metadata.creationTimestamp)'
+
+      - name: Crash logs of latest failed revision (needs logging viewer — may be denied)
+        run: |
+          set -uo pipefail
+          PROJECT="${{ vars.GCP_PROJECT_ID }}"
+          REGION="${{ vars.GCP_REGION }}"
+          SERVICE="${{ vars.CLOUD_RUN_SERVICE }}"
+          LATEST="$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" \
+            --format 'value(status.latestCreatedRevisionName)')"
+          echo "=== gcloud logging read for $LATEST (stderr/stdout of the crashing container)"
+          gcloud logging read \
+            "resource.type=\"cloud_run_revision\" resource.labels.service_name=\"$SERVICE\" resource.labels.revision_name=\"$LATEST\"" \
+            --project "$PROJECT" --limit 100 --order desc \
+            --format 'value(timestamp, severity, textPayload, jsonPayload.message)' \
+            || echo "RESULT: logging.read DENIED for the deployer SA (grant roles/logging.viewer to read crash logs from CI)"
+
+      - name: Secret version freshness (needs secretmanager viewer — may be denied)
+        run: |
+          set -uo pipefail
+          PROJECT="${{ vars.GCP_PROJECT_ID }}"
+          echo "Last green prod deploy finished 2026-07-08T14:23Z; first failure 2026-07-08T15:52Z."
+          echo "Any version created in/after that window is the prime suspect."
+          for s in DATABASE_URL REDIS_URL JWT_SIGNING_SECRET PII_ENCRYPTION_KEY DIDIT_API_KEY DIDIT_WEBHOOK_SECRET; do
+            echo "=== $s"
+            gcloud secrets versions list "$s" --project "$PROJECT" \
+              --format 'table(name, state, createTime)' --limit 5 \
+              || echo "RESULT: secretmanager list DENIED for the deployer SA on $s"
+          done
