@@ -78,6 +78,20 @@ resource "google_project_iam_member" "deployer_roles" {
   member  = "serviceAccount:${google_service_account.deployer.email}"
 }
 
+# Re-pointing the :latest tag when the release reuses a staging-built image
+# (`gcloud artifacts docker tags add`, release.yml) deletes the existing tag first —
+# `artifactregistry.tags.delete` is not in roles/artifactregistry.writer, so grant
+# repoAdmin scoped to this one repository (not project-wide).
+# NOTE: already applied out-of-band with gcloud on 2026-07-10 to unblock the release;
+# this resource makes Terraform own the binding so the next apply keeps it.
+resource "google_artifact_registry_repository_iam_member" "deployer_repo_admin" {
+  project    = local.project_id
+  location   = google_artifact_registry_repository.api.location
+  repository = google_artifact_registry_repository.api.name
+  role       = "roles/artifactregistry.repoAdmin"
+  member     = "serviceAccount:${google_service_account.deployer.email}"
+}
+
 # `gcloud run deploy` must actAs the runtime SA it sets on the service.
 resource "google_service_account_iam_member" "deployer_actas_runtime" {
   service_account_id = google_service_account.runtime.name
