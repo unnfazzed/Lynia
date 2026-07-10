@@ -625,6 +625,7 @@ export default function HomeScreen(): React.ReactElement {
                     !pickupPhoneOk ? "a pickup contact phone" : null,
                     !dropPhoneOk ? "a recipient phone" : null,
                     !landmarksOk ? "pickup & drop-off landmarks (under \u201cLandmarks & details\u201d)" : null,
+                    !declaredValueOk ? "a declared value of 150 or less (under \u201cLandmarks & details\u201d)" : null,
                     !(fare !== null && fare > 0) ? "a price" : null,
                   ]
                     .filter(Boolean)
@@ -798,12 +799,22 @@ export default function HomeScreen(): React.ReactElement {
             onPress={toggleDetails}
             accessibilityRole="button"
             accessibilityState={{ expanded: detailsOpen }}
-            accessibilityLabel={landmarksOk ? "Landmarks and details" : "Landmarks and details, landmarks required"}
+            accessibilityLabel={[
+              "Landmarks and details",
+              !landmarksOk ? "landmarks required" : null,
+              !declaredValueOk ? "declared value must be 150 or less" : null,
+            ]
+              .filter(Boolean)
+              .join(", ")}
             style={{ flexDirection: "row", alignItems: "center", minHeight: tokens.touchTargetMin }}
           >
             <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>
               Landmarks &amp; details
-              {!landmarksOk ? <Text style={{ color: tokens.color.danger, fontWeight: "700" }}> — landmarks required</Text> : null}
+              {!landmarksOk || !declaredValueOk ? (
+                <Text style={{ color: tokens.color.danger, fontWeight: "700" }}>
+                  {` — ${[!landmarksOk ? "landmarks required" : null, !declaredValueOk ? "declared value too high" : null].filter(Boolean).join(", ")}`}
+                </Text>
+              ) : null}
             </Text>
             <Icon name={detailsOpen ? "chevron-down" : "chevron-right"} size={16} color={tokens.color.muted} />
           </Pressable>
@@ -824,6 +835,11 @@ export default function HomeScreen(): React.ReactElement {
                 maxLength={160}
               />
               <Field label="Declared value (USD, max 150)" value={declaredValue} onChangeText={setDeclaredValue} placeholder="10" keyboardType="decimal-pad" />
+              {!declaredValueOk ? (
+                <Text accessibilityRole="alert" style={{ fontSize: tokens.font.size.caption, color: tokens.color.danger, marginTop: -tokens.space.xs, marginBottom: tokens.space.sm }}>
+                  Declared value can&apos;t be more than $150.
+                </Text>
+              ) : null}
             </View>
           ) : null}
           </ScrollView>

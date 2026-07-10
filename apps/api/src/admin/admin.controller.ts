@@ -182,6 +182,18 @@ export class AdminController {
     return this.ridersService.banRider(actor, id, body);
   }
 
+  /** Clear an auto reliability hold on an active rider (onHold=false) — the only escape for a rider
+   *  the online-gate has locked out of ever earning back the completions that would clear it on their
+   *  own. Reason optional, matching `lift`. */
+  @Post("riders/:id/clear-hold")
+  clearHold(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonOptional)) body: z.infer<typeof ReasonOptional>,
+    @AdminActor() actor: string,
+  ) {
+    return this.ridersService.clearHold(actor, id, body);
+  }
+
   /* ── Order admin actions (mutation + event + audit in one $transaction) ──────────────── */
 
   /** Admin-cancel an order (status→cancelled, cancelledBy=admin, reason). Reason required. */

@@ -214,9 +214,9 @@ export class AdminRidersService {
       if (rider.accountStatus === RiderAccountStatus.BANNED) {
         throw new ConflictException("A banned rider can't be lifted — reinstating a ban is a separate action.");
       }
-      // Lift is an un-suspend. Applying it to an active (incl. active-but-on_hold) rider would erase an
-      // auto reliability hold and reset the score to the clear threshold, bypassing the reliability
-      // state machine — the reliability recovery path is separate from an admin suspension lift.
+      // Lift is an un-suspend, not a hold-clear — an active-but-on_hold rider (never suspended) uses
+      // `clearHold` below instead, so the two audit trails ("suspension lifted" vs "hold cleared")
+      // stay distinct.
       if (rider.accountStatus !== RiderAccountStatus.SUSPENDED) {
         throw new ConflictException("Rider is not suspended");
       }
@@ -262,13 +262,46 @@ export class AdminRidersService {
   }
 
   /**
+   * A-04 clear an auto reliability hold on an ACTIVE (never-suspended) rider. `on_hold` trips when
+   * `reliabilityScore` drops below `RELIABILITY.ON_HOLD_BELOW` and is documented to clear via
+   * `RECOVER_PER_COMPLETION` deliveries — but the online-gate (`online-gate.ts`) refuses to let an
+   * on_hold rider go online at all, so that self-recovery path can never actually run: without this
+   * action an on_hold rider has no way back, ever. `liftRider` above deliberately won't touch a
+   * non-suspended rider, so this is the only place that clears the flag for that state. Mutation +
+   * audit in one transaction.
+   */
+  async clearHold(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findUnique({
+        where: { profileId },
+        select: { accountStatus: true, onHold: true, reliabilityScore: true },
+      });
+      if (!rider) throw new NotFoundException("Rider not found");
+      if (rider.accountStatus !== RiderAccountStatus.ACTIVE) {
+        throw new ConflictException("Clear-hold only applies to an active rider — use lift/ban for suspended/banned.");
+      }
+      if (!rider.onHold) throw new ConflictException("Rider is not on hold");
+      await tx.rider.update({
+        where: { profileId },
+        data: { onHold: false, reliabilityScore: Math.max(rider.reliabilityScore, RELIABILITY.ON_HOLD_CLEAR_AT) },
+      });
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, "rider.clear_hold", profileId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: profileId, onHold: false, auditId: audit.id };
+    });
+  }
+
+  /**
    * Rider detail (roster drill-in). Real stats (trips, rating, cancel strikes, cooldown), bike/docs,
    * and the recent-trips table. Phone is masked UNLESS the rider is on a LIVE order right now
    * (ACTIVE_RIDE_STATUSES — live-only, not the terminal-inclusive set, so a rider who once finished an
    * order isn't unmasked forever; same rule as listRiders). Returns null when the id isn't a rider.
    *
    * `status` reports the A-04 account state machine first (suspended/banned, with the stored admin
-   * reason), then the cooldown/online derivation for active riders.
+   * reason), then `on_hold` (an active rider the reliability engine has locked out — see `clearHold`
+   * above), then the cooldown/online derivation for active riders.
    * Commission is prepaid per-ride at 0% during the launch period, so nothing is owed — `commission`
    * is "0.00" until the rate turns on and the prepaid wallet ships (deferred).
    */
@@ -287,6 +320,8 @@ export class AdminRidersService {
         cooldownUntil: true,
         accountStatus: true,
         suspendReason: true,
+        onHold: true,
+        reliabilityScore: true,
         profile: { select: { firstName: true, lastName: true, phone: true, createdAt: true } },
       },
     });
@@ -314,18 +349,20 @@ export class AdminRidersService {
     ]);
 
     const onCooldown = !!rider.cooldownUntil && rider.cooldownUntil.getTime() > now;
-    // Account state (A-04) outranks the activity derivation: a suspended/banned rider can't go online,
-    // so showing "offline" would hide the reason they're off the board.
-    const status: "online" | "offline" | "cooldown" | "suspended" | "banned" =
+    // Account state (A-04) outranks the activity derivation: a suspended/banned/on_hold rider can't
+    // go online, so showing "offline" would hide the reason they're off the board.
+    const status: "online" | "offline" | "cooldown" | "suspended" | "banned" | "on_hold" =
       rider.accountStatus === RiderAccountStatus.SUSPENDED
         ? "suspended"
         : rider.accountStatus === RiderAccountStatus.BANNED
           ? "banned"
-          : onCooldown
-            ? "cooldown"
-            : rider.isOnline
-              ? "online"
-              : "offline";
+          : rider.onHold
+            ? "on_hold"
+            : onCooldown
+              ? "cooldown"
+              : rider.isOnline
+                ? "online"
+                : "offline";
 
     // Completion = delivered-or-completed over every order ever assigned to this rider. Approximate
     // (a customer-side cancel still counts in the denominator) but real, schema-backed data.
@@ -345,6 +382,8 @@ export class AdminRidersService {
       cooldown: onCooldown ? fmtUntil(rider.cooldownUntil!, now) : undefined,
       // The admin reason recorded at suspend/ban time (or "settlement_overdue" from the auto-pause).
       suspendReason: rider.suspendReason ?? undefined,
+      // Only meaningful to show while on_hold — the threshold to clear is RELIABILITY.ON_HOLD_CLEAR_AT.
+      reliabilityScore: status === "on_hold" ? rider.reliabilityScore : undefined,
       trips: rider.tripsCount,
       rating: rider.ratingCount > 0 ? rider.ratingAvg.toFixed(1) : null,
       ratingCount: rider.ratingCount,

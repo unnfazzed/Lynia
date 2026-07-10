@@ -10,6 +10,8 @@ import MapView, {
   Polyline,
   type Region,
 } from "react-native-maps";
+import { placesEnabled } from "../config";
+import { mapFallbackHint } from "../logic/map-fallback";
 import type { PickedPoint } from "./MapPicker";
 import { Icon } from "./index";
 
@@ -243,7 +245,7 @@ export function ComposeMap(props: {
         >
           <Text style={{ fontSize: tokens.font.size.caption, fontWeight: "700", color: tokens.color.ink, marginBottom: 2 }}>Map didn&apos;t load</Text>
           <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 16 }}>
-            Search for an address above, or type your landmark under &ldquo;Add details&rdquo; and we&apos;ll use that.
+            {mapFallbackHint(placesEnabled(), active === "pickup")}
           </Text>
         </View>
       ) : null}

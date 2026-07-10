@@ -222,9 +222,11 @@ export interface RiderDetail {
   phone: string;
   bike: string;
   kyc: "pending" | "verified" | "failed" | "expired";
-  status: "online" | "offline" | "suspended" | "banned" | "cooldown";
+  status: "online" | "offline" | "suspended" | "banned" | "cooldown" | "on_hold";
   cooldown?: string;
   suspendReason?: string;
+  /** Only present while status is "on_hold" — the score needs to reach RELIABILITY.ON_HOLD_CLEAR_AT. */
+  reliabilityScore?: number;
   trips: number;
   rating: string | null;
   ratingCount: number;
