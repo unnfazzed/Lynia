@@ -72,7 +72,7 @@ residual risk is concentrated:
 | LR8 | Eng | PII/data-protection review (retention, encryption, ZW CDPA) | agent + founder | 🛠️ national IDs AES-GCM-encrypted at rest; **retention schedule + right-to-erasure built** (`docs/DATA-RETENTION.md`); founder ratifies windows + enables KYC-media lifecycle |
 | LR9 | Perf | Observability live: collector sidecar in release path, alerts paging | founder (agent-prepped) | ⬜ |
 | LR10 | Perf | Load model: the launch envelope, in numbers | agent + founder | 🛠️ envelope + SLO thresholds authored (`docs/LOAD-MODEL.md`); founder ratifies |
-| LR11 | Perf | Load-test harness (k6) + staging stack; SLO table measured green | agent | 🛠️ **k6 harness authored** (`apps/api/load/`); needs a staging stack + OTEL live (founder) to run |
+| LR11 | Perf | Load-test harness (k6) + staging stack; SLO table measured green | agent | 🛠️ **k6 harness authored** (`apps/api/load/`); staging stack applied and armed (`docs/GCP-PROVISIONING-REVIEW.md` §2) — needs OTEL live (LR9, founder) to run and measure |
 | LR12 | Perf | Contention at load: offer storm, select races, pool vs max_connections | agent | ⬜ |
 | LR13 | Perf | Soak + reconnect-storm + deploy-under-load runs | agent | ⬜ |
 | LR14 | Perf | Capacity ceilings documented with break points + levers + triggers | agent | ⬜ |

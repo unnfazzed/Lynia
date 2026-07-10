@@ -9,6 +9,10 @@ loses work · **P3** = polish. `file:line` given for each; "→" is _user action
 
 ## The one-line summary
 
+_Status as of the 2026-07-10 doc-sync: both dead-ends described below (rider post-pickup, customer
+rebroadcast) have since been fixed — see the status table and per-finding notes. Left as originally
+written for context on what the review found._
+
 The happy paths are well-built, but **both journeys have hard dead-ends off the happy path**:
 
 - **Rider:** once the parcel is on the bike, _every_ non-delivery outcome is a dead end — there is
@@ -30,16 +34,21 @@ these findings — but it happens to fix or soften a few. Verified against the m
 | --- | --- | --- |
 | **R7** — no navigation handoff | ✅ **Fixed** | `src/logic/maps.ts` `mapsDirectionsUrl`; rider "Follow route in Google Maps" (`job.tsx:293`, no key needed) + customer map link (`order/[id].tsx:536`). |
 | **C1** — map is the only way to set a pin | 🟡 **Partially fixed** | `src/ui/AddressSearch.tsx` now sits above each map (`home.tsx:448`), **but key-gated** — renders nothing unless `EXPO_PUBLIC_GOOGLE_PLACES_KEY` is set, so today's keyless build is still pin-only and the "map fails → dead" case remains. |
-| **R1** — no rider undelivered flow | 🟡 **Softened, not fixed** | `GetHelpControl` + `SosControl` are now on the job screen (`job.tsx:390,397`), so a stranded rider can at least raise a help issue / SOS — but `orders.ts` still has **no `markUndelivered`** and there's still no way to *record* an undelivered outcome and close the job. |
-| **R2** — Cancel shown post-pickup | ❌ **Still open** | `job.tsx:392` still gates the Cancel button on `ACTIVE_RIDE_STATUSES` (through `en_route_dropoff`), not `RIDER_CANCELLABLE_STATUSES`. Unchanged. |
-| **R4** — "contact support" is a dead instruction | ❌ **Still open** | The new SOS/get-help are *live-trip* surfaces; the KYC-lock / suspended / on_hold gate states (`rider/index.tsx`) still have only "Refresh status" and no tappable support link. |
-| **C4** — stale rider GPS shown as "live" | ❌ **Still open** | No `updatedAt` / `PRESENCE_ESCALATION_MS` reference on the customer order screen. Unchanged. |
-| **C6** — delivery code on terminal orders | ❌ **Still open** | `order/[id].tsx:390` still renders the code card whenever the code is in state, no status gate. Unchanged. |
+| **R1** — no rider undelivered flow | ✅ **Fixed** (since this table) | `markUndelivered` exists end-to-end: `apps/api/src/orders/order-lifecycle.service.ts` `markUndelivered`, `apps/mobile/src/api/orders.ts:145`, wired into `job.tsx` (mutation at `job.tsx:216`). |
+| **R2** — Cancel shown post-pickup | ✅ **Fixed** (since this table) | `job.tsx` now gates "Cancel job" on `RIDER_CANCELLABLE.includes(order.status)`, hidden once the parcel is collected (comment cites this exact finding); the post-pickup escape hatch is "Can't complete delivery" (R1's fix). |
+| **R4** — "contact support" is a dead instruction | ✅ **Fixed** (since this table) | `rider/index.tsx` renders `<SupportCallRow />` (a real `tel:` call row) for the KYC-locked, `suspended`, `on_hold`, and `banned` gate states — comments there cite this finding (R4) directly. |
+| **C4** — stale rider GPS shown as "live" | ✅ **Fixed** (since this table) | `order/[id].tsx` now computes `stale = isActive && Date.now() - riderUpdatedAt > PRESENCE_ESCALATION_MS` and mutes/escalates on it — comment cites this finding (C4) directly. |
+| **C6** — delivery code on terminal orders | ✅ **Fixed** (since this table) | The code card is now gated on `isActive`, with a comment citing this finding (C6) directly: "only while the trip is live/deliverable." |
 
 New surfaces #98 added (context for future reports): order-level **Get help / raise issue**, **Report + block**
 a counterparty, **SOS** with `tel:` "Call 999" on live trips, **address search** (key-gated), and **Google
-Maps directions** deep-links. Findings not listed above (R3, R5, R6, R8–R10, C2, C3, C5, C7–C12, S1, and the
-P3s) are **unchanged / still open**.
+Maps directions** deep-links.
+
+**2026-07-10 doc-sync update:** nearly every P1/P2 finding in this report has since been fixed by later
+work — R1–R10 (rider) and C2–C12 (customer) and S1 are all ✅ **FIXED**, verified line-level against
+current source (see each section). Only **C1** (map-pin fallback, still key-gated) remains open at P1,
+plus a handful of P3 polish items (marked per-item below). This report is kept as a historical record of
+what the original 2026-07-05 pass found — current status is annotated inline rather than rewritten.
 
 ---
 
@@ -47,56 +56,36 @@ P3s) are **unchanged / still open**.
 
 ### P1 — blockers
 
-**R1 · There is no "mark undelivered" flow anywhere in the rider app.** — 🟡 SOFTENED by PR #98 (get-help/SOS added; undelivered outcome still missing)
-`apps/mobile/src/api/orders.ts` (no `markUndelivered`) · `apps/mobile/app/rider/job.tsx` (no UI)
-The backend supports it (`order-lifecycle.service.ts markUndelivered`), the shared enum
-`UndeliveredReason` exists, `OrderSnapshot` carries `undeliveredReason`/`undeliveredAttempts`, and the
-**customer** screen renders the terminal card (`order/[id].tsx:612`) — but the rider has neither an API
-function nor a button to produce it. `orders.ts` exposes only `advanceStatus`, `confirmDelivery`,
-`cancelOrder`, `confirmItems`.
-→ recipient refuses / is unreachable / bike breaks down after pickup → the rider cannot record any
-outcome and is stranded on a job they can't close.
-**Fix:** add a "Can't complete delivery" action on `picked_up`/`en_route_dropoff` that POSTs a reason to
-the undelivered endpoint and resolves to a terminal + back-to-board.
+**R1 · There is no "mark undelivered" flow anywhere in the rider app.** — ✅ FIXED
+`apps/mobile/src/api/orders.ts:145` now exports `markUndelivered`; `apps/mobile/app/rider/job.tsx:216`
+wires it into a mutation with a "Can't complete delivery" action, resolving to the terminal +
+back-to-board flow this finding asked for.
 
-**R2 · "Cancel job" is shown post-pickup, where the server rejects it — and it's the only visible exit.** — ❌ STILL OPEN after PR #98
-`apps/mobile/app/rider/job.tsx:196,373`
-The button is gated on `isActive = ACTIVE_RIDE_STATUSES.includes(status)` (assigned … **en_route_dropoff**),
-but riders may only cancel through `en_route_pickup` — `RIDER_CANCELLABLE_STATUSES` (`enums.ts:96`)
-excludes `picked_up`/`en_route_dropoff`, and its own comment says "the rider UI removes the action outside
-this set." It doesn't.
-→ after collecting the parcel the rider taps "Cancel job" (their only escape given R1) → server 4xx →
-raw error, no progress.
-**Fix:** gate the Cancel button on `RIDER_CANCELLABLE_STATUSES`, not `ACTIVE_RIDE_STATUSES`.
-
-_R1 + R2 compound into the worst rider experience: post-pickup, there is no valid way to close a job
-that isn't a clean delivery._
+**R2 · "Cancel job" is shown post-pickup, where the server rejects it — and it's the only visible exit.** — ✅ FIXED
+`apps/mobile/app/rider/job.tsx` now gates "Cancel job" on `RIDER_CANCELLABLE.includes(order.status)`,
+hidden once the parcel is collected — the in-code comment there cites this exact finding. Post-pickup,
+the escape hatch is R1's "Can't complete delivery" action instead.
 
 ### P2 — frustrations
 
-**R3 · A returning rider always lands on the customer compose screen, never their rider home.**
-`apps/mobile/app/verify.tsx:34`
-`role.tsx` correctly routes rider → `/rider`, but after sign-in `verify.tsx` does
-`router.replace(chosen ? "/home" : "/role")` — _any_ saved role goes to `/home`. A returning rider must
-then go Account → "Rider dashboard" every session to reach work.
-**Fix:** `router.replace(chosen === "rider" ? "/rider" : chosen ? "/home" : "/role")`.
+**R3 · A returning rider always lands on the customer compose screen, never their rider home.** — ✅ FIXED
+`apps/mobile/app/verify.tsx:101` now does `router.replace(chosen === "rider" ? "/rider" : chosen ?
+"/home" : "/role")` — exactly the fix this finding proposed.
 
-**R4 · "Contact support" is a dead instruction — there is no way to contact support anywhere in the rider flow.**
-`apps/mobile/app/rider/index.tsx:283-293` · `src/logic/gates.ts:62-70`
-Three terminal states tell the rider to "contact support" — KYC attempt-cap lock, suspended, on_hold —
-but each `EmptyState` renders only a "Refresh status" button. No `mailto`/`tel`/WhatsApp link exists in
-`app/rider/`.
-→ rider fails KYC twice → told to "contact support" → nothing to tap.
-**Fix:** add a working "Contact support" button (`Linking.openURL('mailto:…' / 'https://wa.me/…')`) to
-the locked, suspended, and on_hold states.
+**R4 · "Contact support" is a dead instruction — there is no way to contact support anywhere in the rider flow.** — ✅ FIXED
+`apps/mobile/app/rider/index.tsx` now renders a real `<SupportCallRow />` (`tel:` call, not a
+mailto/WhatsApp dead end) for the KYC attempt-cap lock, `suspended`, `on_hold`, and `banned` gate
+states — the in-code comments cite this finding (R4) directly.
 
-**R5 · on_hold is a catch-22 with no in-app escape.**
-`apps/mobile/src/logic/gates.ts:66` · `app/rider/index.tsx:322`
-on_hold copy says "complete a few clean trips to recover it," but being on_hold is exactly what hides the
-go-online card (`gate` truthy → online Card never renders). Reliability only recovers via completed trips
-(`RELIABILITY.RECOVER_PER_COMPLETION`), which need going online. The only real escape is an admin lift —
-which has no in-app trigger (and per R4, no support button).
-**Fix:** rewrite the copy to the real recovery mechanism and give it a working support affordance.
+**R5 · on_hold is a catch-22 with no in-app escape.** — ✅ FIXED
+Rider side: `rider/index.tsx` now shows both a "Try again" button that re-drives the online toggle for
+the `on_hold` gate (the server re-checks and lets a recovered rider through) and the R4 `SupportCallRow`.
+Admin side: an `on_hold` rider previously had no admin action at all (only `suspended` riders got
+Lift/Ban) — `POST /admin/riders/:id/clear-hold` (`admin.controller.ts:188`,
+`admin-riders.service.ts` `clearHold`) now gives an admin a real "Clear hold" trigger, surfaced in
+`apps/admin/app/riders/[id]/RiderActions.tsx`. The on_hold copy in `gates.ts` still says "complete a
+few clean trips to recover it," which remains the literal mechanism (self-recovery is still not
+possible without going online first) — not stale, just worth knowing this is now escapable via support.
 
 **R6 · Getting selected doesn't move the rider to the job — no push deep-link, no socket nav.** — ✅ FIXED by PR #150
 `apps/mobile/app/rider/index.tsx:256-262` · `src/push/push.ts`
@@ -118,50 +107,43 @@ landmark text but no "Open in Maps" / turn-by-turn.
 **Fix:** add an "Open in Maps" button linking to a `geo:`/`google.navigation:`/`maps://` URL for the
 pickup and drop-off points.
 
-**R8 · `job:cancelled` while backgrounded strands a post-pickup rider with no hand-back info.**
-`apps/mobile/app/rider/job.tsx:40-56,185`
-The hand-back terminal is frozen only from the live `job:cancelled` socket event, and the cancelled order
-"immediately drops out of /orders/mine/active." If the app was backgrounded (socket down) when the
-customer cancels, reopening gets `getActiveOrder()` → null → a bare "No active job," with no sender phone
-and no "you still hold the parcel" guidance.
-**Fix:** keep a cancelled-but-uncollected order retrievable, or deliver the hand-back state via a durable
-push payload, not only the live socket.
+**R8 · `job:cancelled` while backgrounded strands a post-pickup rider with no hand-back info.** — ✅ FIXED
+`apps/mobile/app/rider/job.tsx:264-281` now freezes the hand-back terminal from either the live socket
+event OR a fetched `cancelled` order still in `/orders/mine/active` for a collected parcel;
+`apps/mobile/src/ui/rider/terminals.tsx` `CancelledHandback` shows "you still have the parcel" guidance
+plus a tap-to-call sender phone.
 
-**R9 · Delivery-OTP lockout gives no attempts-remaining and leaves the field inviting futile retries.**
-`apps/mobile/app/rider/job.tsx:84-99,362`
-A wrong code shows a raw error with no count of tries left; on the 5th (403) the lock message appears, but
-the field and "Confirm delivery" button stay enabled (disabled only on `code.length !== 6`), so the rider
-keeps tapping into a locked endpoint. The rider has no in-app re-issue (`rotateDeliveryCode` is
-customer-only).
-**Fix:** surface remaining attempts from the error, and disable the field once locked until the customer
-re-issues.
+**R9 · Delivery-OTP lockout gives no attempts-remaining and leaves the field inviting futile retries.** — ✅ FIXED
+`apps/mobile/src/ui/rider/DeliveryOtp.tsx:27-58` now shows "N attempts left", locks the copy at cap, and
+disables the field/button at lockout (`DELIVERY_OTP_MAX_ATTEMPTS` from shared).
 
-**R10 · Going online outside the service corridor gives a generic error + silent toggle bounce.**
-`apps/mobile/src/logic/gates.ts:25`
-`OnlineGateReason` is only `kyc | suspended | on_hold | cooldown` — there's no out-of-area reason for
-going online (`isOutOfServiceArea` is wired only to customer order-create). If the rules API refuses
-go-online for being out of area, `onlineGateReason()` returns null → "Couldn't change your status." and
-the switch bounces back to Offline with no reason.
-**Fix:** add an `out_of_area` gate reason + copy and map the corridor refusal to it.
+**R10 · Going online outside the service corridor gives a generic error + silent toggle bounce.** — ✅ FIXED
+`apps/mobile/src/logic/gates.ts:27` — `OnlineGateReason` now includes `"out_of_area"` (and
+`"kyc_expired"`/`"banned"`), with matching copy in `ONLINE_GATE_COPY` ("You're outside the service
+area… Head back toward the city, then refresh.") and a `Try again` retry button for it in
+`rider/index.tsx`, exactly the fix this finding asked for.
 
 ### P3 — polish
 
-- **Retake photo destroys the good photo before the retry.** `rider/become.tsx:52` — `setPhotoUri(uri);
-  setPhotoKey(null)` runs before the upload; on a failed retake `setPhotoUri(null)` wipes the prior
-  verified photo, dropping `canSubmit` to false. → keep the prior key/uri; overwrite only on success.
-- **"Continue verification" is a silent no-op when no URL comes back.** `rider/index.tsx:124` — opens the
-  browser only if `verificationUrl` is https, else just invalidates `["me"]` with no feedback.
-- **`getMe` failure shows the full online dashboard optimistically.** `rider/index.tsx:78` —
-  `knownUnverified` is false when `meQ.data` is null, so a network error renders the online card as if
-  verified; going online then fails at the backend. No `meQ.isError` branch. → add an error/retry state.
-- **Location denied is invisible on the board.** `rider/index.tsx:54-65` — a `catch {}` swallows a denied
-  permission; every card falls back to "? km" with no hint that location is off.
-- **All-items-unticked is a soft dead-end.** `rider/job.tsx:293-356` — the checklist replaces the advance
-  button and "Confirm N collected" disables at zero ticks; a rider with none of the items can neither
-  collect nor advance (and per R1 has no undelivered path).
-- **Compose card isn't dismissed when the selected order expires mid-compose.** `rider/index.tsx:434` vs
-  `use-rider-board.ts:72` — `bidExpired` clears the board entry but not the open offer card; Send then hits
-  a closed order.
+- ✅ FIXED — **Retake photo destroys the good photo before the retry.** `rider/become.tsx:91-107` now
+  holds the prior uri/key and only overwrites on upload success; a failed retake rolls back instead of
+  wiping the verified photo.
+- **"Continue verification" is a silent no-op when no URL comes back.** `rider/index.tsx:166-178` —
+  still opens the browser only if `verificationUrl` starts with `https://`, else silently just
+  invalidates `["me"]` with no feedback. Still open.
+- ✅ FIXED — **`getMe` failure shows the full online dashboard optimistically.** `rider/index.tsx:367-377`
+  now has an explicit `meQ.isError` branch rendering a "Couldn't load your rider status" EmptyState +
+  Retry instead of the online dashboard.
+- ✅ FIXED — **Location denied is invisible on the board.** `rider/index.tsx:53,446-456` — `locDenied`
+  now blocks the whole board behind an explicit "Can't find your location" gate with "Open location
+  settings", instead of a swallowed `catch {}`.
+- **All-items-unticked is a soft dead-end.** `apps/mobile/src/ui/rider/PickupChecklist.tsx:78-83` —
+  "Confirm N items collected" still disables at zero ticks with no alternate action. Still open (the
+  original aside "and per R1 has no undelivered path" is stale — R1 is fixed — but this specific
+  pre-pickup dead-end is unchanged).
+- **Compose card isn't dismissed when the selected order expires mid-compose.** `rider/index.tsx` —
+  the `selected` state is still never cleared when `board.expiredOrderIds`/`board.takenOrderIds`
+  contains it; only cleared on offer success or manual Cancel. Still open.
 
 ---
 
@@ -178,109 +160,78 @@ If the map fails (missing/invalid key, offline tiles, WebGL failure), the tap su
 **Fix:** add an address-search / manual-pin fallback, and detect+surface map-load failure instead of a
 silent grey box.
 
-**C2 · Rebroadcast follow can silently fail — customer stranded on the dead "cancelled" screen.**
-`apps/mobile/app/order/[id].tsx:157` · `src/realtime/use-order-socket.ts`
-On a rider bail the server cancels the order **and** emits `order:rebroadcast`. But
-`socketExpected = isActive || delivered || open_for_offers` — **`cancelled` is not included**. If the
-`order:status(cancelled)` push (or the 15s poll) refetches to `cancelled` before the rebroadcast handler
-fires, the socket disconnects and the follow event is never received.
-→ rider bails mid-trip → customer sees "This order is cancelled," never taken to the new auction.
-**Fix:** keep the socket subscribed through `cancelled` for a short grace window so the rebroadcast can
-still arrive.
+**C2 · Rebroadcast follow can silently fail — customer stranded on the dead "cancelled" screen.** — ✅ FIXED
+`apps/mobile/app/order/[id].tsx:154-155` now includes a 20s `CANCELLED_GRACE_MS` grace window in
+`socketExpected` (`... || (status === "cancelled" && !cancelledExpired)`), keeping the socket alive
+through cancellation long enough for the rebroadcast push to arrive — exactly the fix this finding
+proposed.
 
 ### P2 — frustrations
 
-**C3 · No "Resend code" and no cooldown on the OTP screen.**
-`apps/mobile/app/verify.tsx:58-59` (+ `app/phone.tsx:45`)
-The verify screen has only "Verify" and "Back." If the code never arrives, expires (300s), or locks after 5
-tries, the only recovery is tapping "Back" to re-request — undiscoverable, and `phone.tsx` has no resend
-cooldown either.
-**Fix:** add an explicit "Resend code" with a visible countdown on `verify.tsx`.
+**C3 · No "Resend code" and no cooldown on the OTP screen.** — ✅ FIXED
+`apps/mobile/app/verify.tsx:27-30,72-75,146-188` now has a full "Resend code" flow with an
+absolute-deadline countdown, cooldown gating, and a "Send a fresh code" recovery path on lock/expiry.
 
-**C4 · Stale rider position is rendered as "live"; the "rider went dark" state never surfaces.**
-`apps/mobile/app/order/[id].tsx:357,362`
-`riderPoint` is derived purely from lat/lng _existence_, not freshness. `PRESENCE_ESCALATION_MS` (120s) and
-the snapshot's `rider.updatedAt` are never referenced. A 10-minute-old fix shows a full-opacity pin with the
-copy "the gold pin updates live." The map's de-saturation keys off the _customer's_ socket, not the rider's
-presence, so the "rider offline — call your rider" escalation is missing on the customer side.
-**Fix:** compute `stale = now - updatedAt > PRESENCE_ESCALATION_MS`; mute the marker and switch to the
-warning copy when stale.
+**C4 · Stale rider position is rendered as "live"; the "rider went dark" state never surfaces.** — ✅ FIXED
+`apps/mobile/app/order/[id].tsx` now computes `stale = isActive && riderUpdatedAt != null && Date.now() -
+new Date(riderUpdatedAt).getTime() > PRESENCE_ESCALATION_MS` (in-code comment cites this finding, C4,
+directly) and uses it to mute the marker / switch to warning copy, exactly as this finding asked for.
 
-**C5 · "Nudge price & re-broadcast" / "Send another request" throw away the whole order.**
-`apps/mobile/app/order/[id].tsx:428,600`
-All three recovery CTAs are literally `router.replace("/home")`. The labels promise a re-broadcast / price
-nudge of _this_ order, but they dump the user on a blank new-order form — pickup, drop-off, items, and price
-all lost, to be re-typed. This lands exactly when the auction expired and the user is already frustrated.
-**Fix:** carry the order's params into the create flow (prefill), or call a real re-broadcast endpoint.
+**C5 · "Nudge price & re-broadcast" / "Send another request" throw away the whole order.** — ✅ FIXED
+`apps/mobile/app/order/[id].tsx:491-500` — `rebroadcast()` now calls `router.replace({ pathname:
+"/home", params: buildRebroadcastParams(...) })`, carrying pickup/dropoff/items/price into the compose
+form instead of dumping the user on a blank one.
 
-**C6 · The delivery-code card shows on cancelled / undelivered / completed orders.**
-`apps/mobile/app/order/[id].tsx:130-138,388`
-`deliveryCode` is rehydrated from SecureStore on mount regardless of status, and the card renders whenever
-that state is set. So a cancelled or undelivered order still shows "Give this code to the recipient — the
-rider enters it at hand-off" directly above "This order is cancelled." / "Parcel not delivered" — actively
-misleading on `undelivered`.
-**Fix:** gate the code card on live/deliverable statuses (`isActive`).
+**C6 · The delivery-code card shows on cancelled / undelivered / completed orders.** — ✅ FIXED
+`apps/mobile/app/order/[id].tsx` now gates the code card on `isActive`, with an in-code comment citing
+this finding (C6) directly: "only while the trip is live/deliverable... On a terminal order the code is
+meaningless and... actively misleading."
 
-**C7 · A dropped select response strands the delivery code with no prompt to re-issue.**
-`apps/mobile/app/order/[id].tsx:261-289`
-`selectOffer` returns the one-time code only in `onSuccess`. If the POST commits server-side but the
-response is lost, `onError` rolls back and the code is gone (server keeps only the hash). The 15s poll
-re-lands on `assigned` with no code card and no message; the "Re-issue delivery code" button is buried with
-no reason to tap it.
-**Fix:** when `assigned`+ and no local code, prompt "Your hand-off code — tap to reveal" wired to rotate.
+**C7 · A dropped select response strands the delivery code with no prompt to re-issue.** — ✅ FIXED
+`apps/mobile/app/order/[id].tsx:522-532` — when `isActive` and no local `deliveryCode`, a card now
+prompts "tap to re-issue" wired to the rotate mutation.
 
-**C8 · "Use my location" fails silently when permission is denied.**
-`apps/mobile/src/ui/MapPicker.tsx:82`
-`if (status !== "granted") return;` inside the try — the button flickers "Locating…" then nothing, no
-message, no "enable in Settings" hint. → add a one-line message pointing to the map / settings.
+**C8 · "Use my location" fails silently when permission is denied.** — ✅ FIXED
+`apps/mobile/src/ui/MapPicker.tsx:124-126` now sets an explicit message on denial: "Location is off —
+tap the map to drop your pin, or turn on location in Settings."
 
-**C9 · GPS lookup has no timeout — "Locating…" can hang.**
-`apps/mobile/src/ui/MapPicker.tsx:84`
-`Location.getCurrentPositionAsync({ accuracy: Balanced })` has no timeout, while every REST call is bounded
-at 15s. On a cold GPS fix the button can sit on "Locating…" indefinitely with no cancel. → race against an
-8–10s timeout and fall back to "couldn't get your location — tap the map."
+**C9 · GPS lookup has no timeout — "Locating…" can hang.** — ✅ FIXED
+`apps/mobile/src/ui/MapPicker.tsx:27,130-133` — `LOCATE_TIMEOUT_MS = 9_000` races
+`getCurrentPositionAsync` via `withTimeout()`.
 
-**C10 · A `declaredValue > 150` error points at a field hidden in a collapsed section.**
-`apps/mobile/app/home.tsx:467,305`
-Declared value lives inside "Add details (**optional**)" and isn't in `canSubmit`, but the contract enforces
-`.max(150)`. Entering `500` keeps Broadcast enabled, then the server-side zod error shows a raw message in
-the sheet while the offending field is collapsed out of view. → validate inline, or auto-expand the section
-on that error.
+**C10 · A `declaredValue > 150` error points at a field hidden in a collapsed section.** — ✅ FIXED
+`apps/mobile/app/home.tsx:333-335,618-633,813-817,838-842` — `declaredValueOk` is now folded into
+`canSubmit`, flagged in the collapsed-section header and the "what's missing" footer, plus an inline
+error under the field when expanded.
 
-**C11 · Landmarks are contract-required but sit under a section labeled "(optional)."**
-`apps/mobile/app/home.tsx:447,276`
-`canSubmit` requires both landmarks (matching `Waypoint.landmark.min(1)`). They auto-fill from reverse
-geocode, which "can fail offline / keyless" — exactly the Android-no-key case — and the user must then open
-"Add details (optional)" to satisfy a mandatory field. → relabel the section or move landmarks onto the
-required path when auto-fill is empty.
+**C11 · Landmarks are contract-required but sit under a section labeled "(optional)."** — ✅ FIXED
+`apps/mobile/app/home.tsx:811-820` — the section is now labeled "Landmarks & details" (no "optional"
+wording) and shows a red "landmarks required" inline flag when unset.
 
-**C12 · The server's `needsProfile` signal is dropped; there's no name-entry screen.**
-`apps/mobile/app/verify.tsx:24-34` · `app/profile/index.tsx:60`
-`VerifyResult.needsProfile` exists but `verify.tsx` never reads it, and the profile screen is read-only
-("Editing your details is coming soon"). A brand-new customer never enters a name and renders as the literal
-fallback "Your account." → honor `needsProfile` with a name-entry step, or stop returning it.
+**C12 · The server's `needsProfile` signal is dropped; there's no name-entry screen.** — ✅ FIXED
+`apps/mobile/app/verify.tsx:92-95` now reads `res.needsProfile` and routes to `/profile/setup`, a real
+name/ID entry screen (`apps/mobile/app/profile/setup.tsx`) that PATCHes the profile before continuing.
 
 ### P3 — polish
 
-- **Auction clock hits 0:00 but the screen stays "Finding riders…" for up to 15s.**
-  `order/[id].tsx:148` — the flip to `expired` waits for the next poll/WS; selecting in that gap fails
-  server-side. → show a "window closing…" transitional state and refetch immediately at zero.
-- **`requested` status renders a blank screen.** `order/[id].tsx:395-679` — every block is gated on a
-  specific status; `requested` (a real lifecycle state) matches none → header pill + "Back home" only.
-- **StatusPill renders every status in neutral grey.** `order/[id].tsx:385` — no `tone` passed, so
-  cancelled / undelivered / delivered / completed look identical. → map status → tone.
+- **Auction clock hits 0:00 but the screen stays "Finding riders…" for up to 15s.** Still open —
+  `order/[id].tsx:268-279`: at `remainingMs` 0 only an accessibility announcement fires, no immediate
+  refetch/transitional visual state. → show a "window closing…" transitional state and refetch
+  immediately at zero.
+- **`requested` status renders a blank screen.** Still open — `requested` still matches none of the
+  status blocks in `order/[id].tsx` (not in `ACTIVE_RIDE_STATUSES`/`isActive`/terminal blocks) → header
+  pill + "Back home" only.
+- **StatusPill renders every status in neutral grey.** Still open — `order/[id].tsx:510` still passes
+  no `tone` to `StatusPill`; `PillTone` (`src/ui/index.tsx:185-214`) has no per-order-status mapping. →
+  map status → tone.
 
 ---
 
 ## SHARED / BOTH ROLES
 
-**S1 · Sign-out leaks the previous user's data and skips the liability disclaimer (shared devices).**
-`apps/mobile/src/auth/auth-context.tsx:47`
-`signOut()` clears only the session key — not the React Query cache, the saved order draft
-(`lynia.orderDraft`), or the disclaimer flag (`lynia.disclaimerAccepted`). On a shared phone (common in the
-target market), user B rehydrates user A's pickup/drop-off addresses and **skips the liability disclaimer**
-(`home.tsx:347`) because A already accepted it. → in `signOut()`, also `queryClient.clear()` and delete the
-draft / disclaimer / delivery-code keys.
+**S1 · Sign-out leaks the previous user's data and skips the liability disclaimer (shared devices).** — ✅ FIXED
+`apps/mobile/src/auth/auth-context.tsx` — both `signOut()` and `onSignOut()` now call
+`clearDeviceState()` and `queryClient.clear()`, exactly the fix this finding proposed.
 
 ---
 
