@@ -16,6 +16,11 @@ FROM base AS deps
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
+# pnpm applies root-declared patchedDependencies (package.json → pnpm.patchedDependencies) during
+# install, so the patch files must exist in the deps stage. Without this COPY, `pnpm install` fails
+# with ENOENT on patches/*.patch the moment any patched dependency is added to the workspace (e.g.
+# @expo/cli), breaking the API image build even though the patch only affects the mobile app.
+COPY patches/ patches/
 RUN pnpm install --frozen-lockfile=false
 
 # --- build ---
