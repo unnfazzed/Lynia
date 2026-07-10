@@ -35,18 +35,27 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "react-dom"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "react-native"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "react-test-renderer"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/react*"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "expo"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "expo-*"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # Expo-SDK-managed native layer — these packages' versions are pinned by the Expo SDK, not
+      # chosen independently, and must move in lockstep during a deliberate `expo install` / SDK
+      # upgrade. They are 0.x, so Dependabot classifies a breaking bump (e.g. react-native
+      # 0.76 -> 0.86, expo-notifications 0.29 -> 0.32) as a *minor*, which a major-only ignore
+      # misses — that skew broke mobile typecheck against Expo SDK 52 (AbortSignal/global.AbortSignal
+      # and the NotificationBehavior shouldShowBanner/shouldShowList split). Hold them at patch-only;
+      # minor/major come in as part of the SDK bump, never on their own.
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "expo-*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # Keep GitHub Actions pinned versions current (also surfaces action security advisories).
   - package-ecosystem: github-actions
