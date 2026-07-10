@@ -137,6 +137,32 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v3
 
+      # A prior OTel activation (`gcloud run services replace infra/otel-collector/service.yaml`) leaves
+      # an otel-collector sidecar on the service. The `gcloud run deploy --image` step below PRESERVES
+      # existing sidecars, so a broken/misconfigured collector then fails EVERY release at container
+      # start with an opaque "container failed to start on :3000" — the app never even runs, because a
+      # sidecar that can't go healthy fails the whole instance. This wedged prod deploys 2026-07-08→07-10
+      # (see docs/OBSERVABILITY.md → Production activation). A release is single-container by contract:
+      # fail fast with the exact remediation unless the sidecar is intentionally armed.
+      - name: Guard against an orphaned collector sidecar
+        if: ${{ vars.OTEL_SIDECAR_ENABLED != 'true' }}
+        run: |
+          set -euo pipefail
+          names="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --format 'value(spec.template.spec.containers[].name)' 2>/dev/null || true)"
+          # First-ever deploy: the service doesn't exist yet — nothing to guard.
+          if [ -z "$names" ]; then
+            echo "Service not found yet (first deploy) — single-container by default."
+            exit 0
+          fi
+          count="$(printf '%s' "$names" | tr ';,' '\n\n' | grep -c '[^[:space:]]' || true)"
+          if [ "${count:-0}" -gt 1 ]; then
+            echo "::error::${{ vars.CLOUD_RUN_SERVICE }} currently has ${count} containers (${names}). A normal release is single-container and gcloud inherits the extra sidecar, wedging the deploy. Remove it first — gcloud run services update ${{ vars.CLOUD_RUN_SERVICE }} --region ${{ vars.GCP_REGION }} --remove-containers otel-collector — or set the OTEL_SIDECAR_ENABLED=true repo Variable if the sidecar is intentional. See docs/OBSERVABILITY.md → Production activation." >&2
+            exit 1
+          fi
+          echo "Single-container service confirmed (${names})."
+
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
 
@@ -428,6 +454,31 @@ jobs:
           gcloud run services update-traffic "${{ vars.CLOUD_RUN_SERVICE }}" \
             --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
             --to-revisions "${{ steps.prev.outputs.revision }}=100"
+
+      # Best-effort post-mortem so a failed deploy self-diagnoses IN the Actions log instead of needing
+      # a console dig into Cloud Logging. Dumps the failed candidate's container spec (surfaces an
+      # inherited sidecar immediately) plus its recent Cloud Run logs. Needs roles/logging.viewer on the
+      # deployer SA (infra/terraform/iam.tf); if absent it prints nothing and never fails the job —
+      # diagnostic-only, and the job is already failing here.
+      - name: Dump failed revision diagnostics
+        if: ${{ failure() }}
+        run: |
+          set +e
+          SVC="${{ vars.CLOUD_RUN_SERVICE }}"; P="${{ vars.GCP_PROJECT_ID }}"; R="${{ vars.GCP_REGION }}"
+          REV="$(gcloud run services describe "$SVC" --project "$P" --region "$R" \
+            --format 'value(status.latestCreatedRevisionName)' 2>/dev/null)"
+          if [ -z "$REV" ]; then echo "No revision to inspect."; exit 0; fi
+          echo "::group::Candidate revision $REV — containers (name / image)"
+          gcloud run revisions describe "$REV" --project "$P" --region "$R" \
+            --format 'value(spec.containers[].name, spec.containers[].image)' 2>/dev/null
+          echo "::endgroup::"
+          echo "::group::Cloud Run logs for $REV (last 60, severity>=WARNING, freshness 20m)"
+          gcloud logging read \
+            "resource.type=cloud_run_revision AND resource.labels.service_name=$SVC AND resource.labels.revision_name=$REV AND severity>=WARNING" \
+            --project "$P" --limit 60 --freshness 20m \
+            --format 'value(timestamp,severity,textPayload,jsonPayload.message)' 2>/dev/null
+          echo "::endgroup::"
+          echo "Console: https://console.cloud.google.com/run/detail/$R/$SVC/revisions?project=$P"
 
       - name: Summary
         run: |

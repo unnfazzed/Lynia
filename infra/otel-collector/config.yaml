@@ -9,6 +9,13 @@
 # ADC), so nothing here is project-specific — no id to hardcode. Run with the contrib distro, pinned:
 #   image: otel/opentelemetry-collector-contrib:0.116.0   (never :latest)
 
+extensions:
+  # Startup/liveness endpoint the Cloud Run sidecar probes (service.yaml.template startupProbe on
+  # :13133). Gives the collector an explicit health signal so a bad config surfaces as the collector
+  # failing, not an opaque whole-instance start failure.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
 receivers:
   otlp:
     protocols:
@@ -35,6 +42,7 @@ exporters:
   googlemanagedprometheus: {} # metrics → Cloud Monitoring (GMP; preserves histogram_quantile semantics)
 
 service:
+  extensions: [health_check] # must be listed here or the extension isn't started
   # Keep the collector's own logs lean; it isn't the ingress container.
   telemetry:
     logs:
