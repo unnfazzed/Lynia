@@ -120,6 +120,28 @@ connect/validation error: either fix the value (`terraform apply` re-asserts the
 TF-managed ones from state) or `gcloud secrets versions destroy` the bad version so
 `:latest` falls back — then re-run **Release (Cloud Run)** (`workflow_dispatch`).
 
+**UPDATE (2026-07-10 ~12:12Z) — live probe results supersede the secret hypothesis.**
+A read-only diagnostic run against the live service (keyless WIF via a dispatch
+workflow) showed:
+
+- **Out-of-band service modifications are the real trigger.** Revision numbering is
+  anomalous: `lynia-api-00095-ts5` / `00096-b7t` were created Jul 8 16:18/18:44 —
+  *after* `00101` (14:18) — and `00099-8wz` was created **today 11:56Z**. `gcloud run
+  deploy` alone cannot produce that; it indicates `gcloud run services replace` (the
+  OTel-collector sidecar runbook §3 — whose own warning says it interacts with normal
+  deploys) or console edits. The first anomalous revision lands exactly at the start
+  of the failure window.
+- **The problem appears fixed on the GCP side as of ~11:56Z today**: the newest
+  revisions (`00108-cox`, `00099-8wz`) are `Ready=True`. Traffic was still pinned
+  100% to `00101-hit` with a stale `canary` tag on failed `00109-pab`; a release
+  re-run was dispatched to confirm and promote through the canary gates.
+- **Deployer SA blind spots confirmed**: `logging.read` and
+  `secretmanager.versions.list` are both PERMISSION_DENIED for
+  `lynia-deployer@…` — CI can see revision states but not crash logs or secret
+  freshness. Grant `roles/logging.viewer` (and optionally
+  `roles/secretmanager.viewer`) to the deployer SA in `iam.tf` so future incidents
+  are diagnosable from CI.
+
 **Hardening follow-ups so this can't silently recur (automatable, in-repo):**
 
 1. Pin secret versions at deploy time (e.g. resolve the current version number in
