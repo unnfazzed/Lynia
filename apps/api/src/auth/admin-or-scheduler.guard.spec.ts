@@ -15,6 +15,8 @@ const tokens = new TokenService(env);
 interface FakeRequest {
   headers: Record<string, string | undefined>;
   url?: string;
+  protocol?: string;
+  hostname?: string;
   user?: { sub: string; role: string };
 }
 
@@ -22,6 +24,12 @@ const ctxFor = (req: FakeRequest): ExecutionContext =>
   ({ switchToHttp: () => ({ getRequest: () => req }) }) as unknown as ExecutionContext;
 
 const PURGE_URL = "/admin/retention/purge";
+const HOST = "lyniago.lyniafinance.com";
+const onHost = (req: Omit<FakeRequest, "protocol" | "hostname">): FakeRequest => ({
+  ...req,
+  protocol: "https",
+  hostname: HOST,
+});
 
 /** Build a guard whose Google-verification step is stubbed to yield `claims` (or reject). */
 function guardWith(claims: Record<string, unknown> | Error | null, guardEnv: Env = env): AdminOrSchedulerGuard {
@@ -38,7 +46,7 @@ function guardWith(claims: Record<string, unknown> | Error | null, guardEnv: Env
 const schedulerClaims = {
   email: SCHEDULER_SA,
   email_verified: true,
-  aud: `https://lyniago.lyniafinance.com${PURGE_URL}`,
+  aud: `https://${HOST}${PURGE_URL}`,
 };
 
 describe("AdminOrSchedulerGuard", () => {
@@ -61,9 +69,17 @@ describe("AdminOrSchedulerGuard", () => {
   });
 
   it("accepts the scheduler's Google OIDC token (email + verified + audience all match)", async () => {
-    const req: FakeRequest = { headers: { authorization: "Bearer google-oidc" }, url: PURGE_URL };
+    const req = onHost({ headers: { authorization: "Bearer google-oidc" }, url: PURGE_URL });
     await expect(guardWith(schedulerClaims).canActivate(ctxFor(req))).resolves.toBe(true);
     expect(req.user).toEqual({ sub: `scheduler:${SCHEDULER_SA}`, role: "admin" });
+  });
+
+  it("rejects an OIDC token whose audience host doesn't match this request's host (cross-host replay)", async () => {
+    // Same path, correct SA, but minted for a different scheme/host — a bare pathname compare would
+    // have let this through even though the audience never named THIS deployment's origin.
+    const req = onHost({ headers: { authorization: "Bearer google-oidc" }, url: PURGE_URL });
+    const claims = { ...schedulerClaims, aud: `https://evil.example.com${PURGE_URL}` };
+    await expect(guardWith(claims).canActivate(ctxFor(req))).rejects.toThrow("Invalid or expired token");
   });
 
   it("rejects an OIDC token from a different service account", async () => {
