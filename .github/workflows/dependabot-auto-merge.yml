@@ -1,0 +1,35 @@
+# Auto-merge Dependabot PRs once CI is green, so routine bumps land without
+# manual approval (docs/SECURITY.md P1-1). Majors are excluded here too, on
+# top of the ignore rules in dependabot.yml, as a defense-in-depth backstop.
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Approve patch/minor updates
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr review --approve "$PR_URL"
+        env:
+          PR_URL: "${{ github.event.pull_request.html_url }}"
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Enable auto-merge for patch/minor updates
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: "${{ github.event.pull_request.html_url }}"
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
