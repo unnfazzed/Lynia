@@ -20,13 +20,14 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Approve patch/minor updates
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: gh pr review --approve "$PR_URL"
-        env:
-          PR_URL: "${{ github.event.pull_request.html_url }}"
-          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-
+      # No self-approve step: the default GITHUB_TOKEN / github-actions[bot] is
+      # not permitted to approve pull requests ("GitHub Actions is not permitted
+      # to approve pull requests"), so `gh pr review --approve` always errors and
+      # blocks the merge step. This matches GitHub's documented Dependabot
+      # auto-merge pattern, which enables auto-merge without an approval. If
+      # branch protection on the base requires an approving review, exempt
+      # Dependabot PRs or supply a review from a separate token — Actions cannot
+      # satisfy it itself.
       - name: Enable auto-merge for patch/minor updates
         if: steps.metadata.outputs.update-type != 'version-update:semver-major'
         run: gh pr merge --auto --squash "$PR_URL"
