@@ -75,9 +75,10 @@ actions show.
 - **A1 · Out-of-area** (fix R10) — icon `circle-alert`; "You're outside the service area"; message: you can
   only go online inside the Harare service area; primary action **Refresh status**. _Nearest reference:_ the
   customer out-of-service-area notice + "Can't find your location".
-- **A2 · Cooldown** — icon `clock`; "You're on a short cooldown"; message: taken offline after a recent
-  cancellation, wait a few minutes; primary **Try again** (retry the toggle). _Reference:_ "Your account is
-  on hold".
+- **A2 · Cooldown** — icon `clock`; "You're on a cooldown"; message: taken offline after a recent
+  cancellation, back online in about 2 hours (render the actual `cooldownUntil` as a concrete time, per
+  the fix already shipped in `gates.ts`/`job.tsx` toast copy — never "a few minutes"); primary **Try again**
+  (retry the toggle). _Reference:_ "Your account is on hold".
 - **A3 · Banned (permanent)** — icon `triangle-alert` (danger); "Your account is closed"; message + a
   **Contact support** action. PR #98 already added the `banned` gate reason **in code with no mockup** —
   this screen aligns the shipped behaviour.
