@@ -21,7 +21,11 @@ COPY apps/api/package.json apps/api/
 # with ENOENT on patches/*.patch the moment any patched dependency is added to the workspace (e.g.
 # @expo/cli), breaking the API image build even though the patch only affects the mobile app.
 COPY patches/ patches/
-RUN pnpm install --frozen-lockfile=false
+# --config.allow-unused-patches: this stage installs a pruned workspace (shared + api only), so a
+# patch that targets a mobile-only dependency (e.g. @expo/cli) matches nothing here and pnpm
+# hard-fails with ERR_PNPM_UNUSED_PATCH. Scoped to this install so full-workspace installs
+# (CI, mobile builds) still error loudly on genuinely stale patches.
+RUN pnpm install --frozen-lockfile=false --config.allow-unused-patches=true
 
 # --- build ---
 FROM deps AS build
