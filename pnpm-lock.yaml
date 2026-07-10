@@ -15,6 +15,11 @@ overrides:
   postcss@<8.5.10: '>=8.5.10'
   '@hono/node-server@<1.19.13': '>=1.19.13'
 
+patchedDependencies:
+  '@expo/cli@0.22.28':
+    hash: 30e7f106c407e379b7c93dba6b2188a902a869e348ad36391042ad52ee664d67
+    path: patches/@expo__cli@0.22.28.patch
+
 importers:
 
   .:
@@ -8899,7 +8904,7 @@ snapshots:
     dependencies:
       uuid: 8.3.2
 
-  '@expo/cli@0.22.28':
+  '@expo/cli@0.22.28(patch_hash=30e7f106c407e379b7c93dba6b2188a902a869e348ad36391042ad52ee664d67)':
     dependencies:
       '@0no-co/graphql.web': 1.3.2
       '@babel/runtime': 7.29.7
@@ -12386,7 +12391,7 @@ snapshots:
   expo@52.0.49(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@expo/metro-runtime@4.0.1(react-native@0.76.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1)))(react-native@0.76.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))(react@18.3.1):
     dependencies:
       '@babel/runtime': 7.29.7
-      '@expo/cli': 0.22.28
+      '@expo/cli': 0.22.28(patch_hash=30e7f106c407e379b7c93dba6b2188a902a869e348ad36391042ad52ee664d67)
       '@expo/config': 10.0.11
       '@expo/config-plugins': 9.0.17
       '@expo/fingerprint': 0.11.11
