@@ -10,8 +10,12 @@
 #   gcloud run services replace infra/otel-collector/service.yaml --region <REGION> --project <PROJECT_ID>
 #
 # NOTE: exactly one container is the ingress container (the API, containerPort 3000). The collector is
-# a sidecar with NO ports block — the API reaches it over localhost:4318. After any subsequent normal
-# release-workflow deploy, the sidecar is dropped and this replace must be re-applied (documented drift).
+# a sidecar with NO ports block — the API reaches it over localhost:4318. Subsequent normal
+# release-workflow deploys do NOT drop this sidecar: `gcloud run deploy --image` PRESERVES existing
+# sidecars, so once you apply this, every release inherits it (and a broken collector then wedges all
+# deploys — this happened 2026-07-08→07-10). release.yml therefore refuses to deploy while an
+# unexpected sidecar is present unless the OTEL_SIDECAR_ENABLED=true repo Variable is set. To return to
+# single-container: `gcloud run services update lynia-api --region <REGION> --remove-containers otel-collector`.
 
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -48,13 +52,26 @@ spec:
               value: lynia-api
             # ... reproduce every other --set-env-vars / --set-secrets entry from release.yml here ...
         # --- Sidecar: the OTel Collector (no ports → not the ingress container) ---
+        # Pull THROUGH the project's Docker Hub remote-repo mirror in Artifact Registry, not docker.io
+        # directly: a direct pull hits Docker Hub's anonymous rate limit, and the first activation
+        # attempt pushed nothing to the private `lynia` repo yet referenced it, so the revision 404'd on
+        # a missing image. Once you've confirmed the tag resolves in the mirror, pin it by @sha256 digest.
         - name: otel-collector
-          image: otel/opentelemetry-collector-contrib:0.116.0 # pinned; contrib has googlecloud + GMP
+          image: <REGION>-docker.pkg.dev/<PROJECT_ID>/dockerhub-remote/otel/opentelemetry-collector-contrib:0.116.0
           args: ["--config=/etc/otelcol/config.yaml"]
           resources:
             limits:
               cpu: "1"
               memory: 256Mi
+          # Probe the collector's health_check extension (config.yaml, :13133). A crash-looping or
+          # misconfigured collector then fails ITS OWN startup and is reported as the failing container,
+          # instead of silently killing the whole instance and mis-blaming the api:3000 probe.
+          startupProbe:
+            httpGet:
+              path: /
+              port: 13133
+            periodSeconds: 5
+            failureThreshold: 12
           volumeMounts:
             - name: otel-config
               mountPath: /etc/otelcol
