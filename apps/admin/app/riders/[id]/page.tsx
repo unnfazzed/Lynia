@@ -20,6 +20,7 @@ function riderPill(r: RiderDetail) {
   if (r.status === "online") return <Pill kind="good" dot>online</Pill>;
   if (r.status === "suspended") return <Pill kind="bad">suspended</Pill>;
   if (r.status === "banned") return <Pill kind="bad">banned</Pill>;
+  if (r.status === "on_hold") return <Pill kind="bad">on hold</Pill>;
   if (r.status === "cooldown") return <Pill>cooldown · {r.cooldown}</Pill>;
   return <Pill kind="mut">offline</Pill>;
 }
@@ -65,6 +66,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
 
   const telHref = `tel:${r.phone.replace(/[^\d+]/g, "")}`;
   const suspended = r.status === "suspended";
+  const onHold = r.status === "on_hold";
 
   return (
     <main className="content">
@@ -86,6 +88,17 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
           <span className="t">
             <b>Suspended.</b> {r.suspendReason ? `${r.suspendReason} ` : ""}The rider cannot go online until the
             suspension is lifted.
+          </span>
+        </div>
+      ) : null}
+
+      {onHold ? (
+        <div className="warnbar">
+          <IconAlert />
+          <span className="t">
+            <b>On hold.</b> Reliability score {r.reliabilityScore} is below the threshold to go online — and
+            completing deliveries is the only way it recovers, which going online would let them do. Without
+            &ldquo;Clear hold&rdquo; below, this rider is stuck permanently.
           </span>
         </div>
       ) : null}
@@ -167,6 +180,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
                 id={r.id}
                 name={r.name}
                 suspended={suspended}
+                onHold={onHold}
                 suspendSummary={`${r.trips} trips · ${ratingTxt(r)}`}
                 telHref={telHref}
                 connected={connected}

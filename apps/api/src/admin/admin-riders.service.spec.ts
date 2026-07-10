@@ -232,6 +232,8 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     cooldownUntil: null,
     accountStatus: "active",
     suspendReason: null,
+    onHold: false,
+    reliabilityScore: 82,
     profile: { firstName: "Tendai", lastName: "M", phone: "+263782000001", createdAt: new Date("2026-01-15T00:00:00Z") },
     ...over,
   });
@@ -300,6 +302,21 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     const r2 = (await svc2.getRiderDetail("r1"))!;
     expect(r2.status).toBe("banned");
     expect(r2.suspendReason).toBe("fraud");
+  });
+
+  it("reports on_hold for an active rider the reliability engine has locked out, with the score", async () => {
+    // Distinct from suspended/banned (an admin action) — accountStatus stays "active" while onHold=true.
+    const held = riderRow({ onHold: true, reliabilityScore: 42, isOnline: true });
+    const svc = new AdminRidersService(prismaFor(held, 0) as unknown as PrismaService, pii, noStorage);
+    const r = (await svc.getRiderDetail("r1"))!;
+    expect(r.status).toBe("on_hold");
+    expect(r.reliabilityScore).toBe(42);
+  });
+
+  it("omits reliabilityScore when the rider isn't on_hold", async () => {
+    const svc = new AdminRidersService(prismaFor(riderRow(), 0) as unknown as PrismaService, pii, noStorage);
+    const r = (await svc.getRiderDetail("r1"))!;
+    expect(r.reliabilityScore).toBeUndefined();
   });
 
   it("counts the rider's Report rows and lists the recent ones (repeat-offender signal)", async () => {
@@ -384,6 +401,46 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     const { prisma, calls } = makeTx({ rider: { accountStatus: "active", reliabilityScore: 55 } });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
     await expect(svc.liftRider("admin-1", "r1", {})).rejects.toThrow(/not suspended/i);
+    expect(calls.riderUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
+  });
+
+  it("clearHold clears onHold + raises the score to the clear threshold, audits — the only escape for an active on_hold rider", async () => {
+    const { prisma, calls } = makeTx({ rider: { accountStatus: "active", onHold: true, reliabilityScore: 42 } });
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
+    const res = await svc.clearHold("admin-1", "r1", { reason: "reliability recovered" });
+    expect(calls.riderUpdate!.data).toEqual({ onHold: false, reliabilityScore: 70 });
+    expect(calls.audit!.data).toMatchObject({ action: "rider.clear_hold", reasonCode: "reliability recovered" });
+    expect(res).toEqual({ id: "r1", onHold: false, auditId: "audit-9" });
+  });
+
+  it("clearHold doesn't lower a score already above the clear threshold", async () => {
+    const { prisma, calls } = makeTx({ rider: { accountStatus: "active", onHold: true, reliabilityScore: 95 } });
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
+    await svc.clearHold("admin-1", "r1", {});
+    expect(calls.riderUpdate!.data).toEqual({ onHold: false, reliabilityScore: 95 });
+  });
+
+  it("clearHold refuses a rider who isn't on hold", async () => {
+    const { prisma, calls } = makeTx({ rider: { accountStatus: "active", onHold: false, reliabilityScore: 90 } });
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
+    await expect(svc.clearHold("admin-1", "r1", {})).rejects.toThrow(/not on hold/i);
+    expect(calls.riderUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
+  });
+
+  it("clearHold refuses a suspended/banned rider — those use lift/ban instead", async () => {
+    const { prisma, calls } = makeTx({ rider: { accountStatus: "suspended", onHold: true, reliabilityScore: 40 } });
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
+    await expect(svc.clearHold("admin-1", "r1", {})).rejects.toThrow(/active/i);
+    expect(calls.riderUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
+  });
+
+  it("clearHold 404s when the id isn't a rider and writes NOTHING", async () => {
+    const { prisma, calls } = makeTx({ rider: null });
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage);
+    await expect(svc.clearHold("admin-1", "nope", {})).rejects.toThrow("Rider not found");
     expect(calls.riderUpdate).toBeNull();
     expect(calls.audit).toBeNull();
   });

@@ -46,14 +46,14 @@ export async function decideKyc(
  */
 export async function mutateRider(
   profileId: string,
-  action: "suspend" | "lift" | "ban",
+  action: "suspend" | "lift" | "ban" | "clear-hold",
   target: string,
   reasonCode: string | null,
   note: string,
 ): Promise<void> {
-  // The suspend/ban/lift endpoints bind ReasonRequired/ReasonOptional = { reason, note? } — NOT the
-  // audit envelope. Send `reason` (the reason-code radio), not `reasonCode`, or the write 400s
-  // (suspend/ban need a non-empty reason, which the modal enforces; lift's is optional).
+  // The suspend/ban/lift/clear-hold endpoints bind ReasonRequired/ReasonOptional = { reason, note? } —
+  // NOT the audit envelope. Send `reason` (the reason-code radio), not `reasonCode`, or the write 400s
+  // (suspend/ban need a non-empty reason, which the modal enforces; lift/clear-hold's is optional).
   const ok = await adminPost(`/admin/riders/${profileId}/${action}`, {
     reason: reasonCode ?? "",
     note: note || null,

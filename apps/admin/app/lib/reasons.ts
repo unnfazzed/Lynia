@@ -39,6 +39,7 @@ export const REASONS = {
   ],
   riderLift: ["Issue resolved with the rider", "Report not substantiated", "Suspension period served"],
   riderBan: ["Confirmed fraud", "Serious safety incident", "Repeat offences after suspension"],
+  riderClearHold: ["Reliability recovered", "Hold applied in error", "Manual override — ops discretion"],
 
   // customers.html
   customerFlag: [

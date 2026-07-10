@@ -6,15 +6,19 @@ import { mutateRider } from "../actions";
 import { IconPhone } from "../../components/icons";
 
 /**
- * Rider account-status actions (item 1). Suspended riders get Lift + Ban; everyone else gets Call +
- * Suspend. Each destructive action is reason-coded through <ConfirmModal> (the audit seam) and, on
- * confirm, writes the real account-status change via `mutateRider` → `POST /admin/riders/:id/…`.
- * Suspend/ban additionally require a note. Triggers are inert off the connected path.
+ * Rider account-status actions (item 1). Suspended riders get Lift + Ban; an active rider the
+ * reliability engine has put on hold gets Clear hold + Call + Suspend (an on_hold rider can never earn
+ * their way back — the online-gate blocks going online at all, so `RECOVER_PER_COMPLETION` can never
+ * run — this is the only escape); everyone else gets Call + Suspend. Each destructive action is
+ * reason-coded through <ConfirmModal> (the audit seam) and, on confirm, writes the real account-status
+ * change via `mutateRider` → `POST /admin/riders/:id/…`. Suspend/ban additionally require a note.
+ * Triggers are inert off the connected path.
  */
 export function RiderActions({
   id,
   name,
   suspended,
+  onHold,
   suspendSummary,
   telHref,
   connected,
@@ -22,6 +26,8 @@ export function RiderActions({
   id: string;
   name: string;
   suspended: boolean;
+  /** Active rider locked out by the reliability engine (distinct from an admin suspension). */
+  onHold: boolean;
   /** "{trips} trips · {rating}" for the suspend consequence copy. */
   suspendSummary: string;
   telHref: string;
@@ -78,6 +84,22 @@ export function RiderActions({
         </span>
         Call rider
       </a>
+      {onHold ? (
+        <ConfirmModal
+          action="rider.clear_hold"
+          auditInEndpoint // endpoint writes the audit row in-tx (A-01) — don't double-record
+          target={name}
+          path={`/riders/${id}`}
+          triggerLabel="Clear hold…"
+          triggerVariant="solid"
+          disabled={!connected}
+          title={`Clear the reliability hold on ${name}?`}
+          consequence="They can go online again immediately. This does not reset their cancel-strike count."
+          reasons={REASONS.riderClearHold}
+          confirmLabel="Clear hold"
+          onConfirm={(r) => mutateRider(id, "clear-hold", name, r.reasonCode, r.note)}
+        />
+      ) : null}
       <ConfirmModal
         action="rider.suspend"
         auditInEndpoint // endpoint writes the audit row in-tx (A-01) — don't double-record
