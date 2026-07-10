@@ -18,6 +18,11 @@ name: Deploy Staging (Cloud Run)
 #
 # NOTE: the first armed run can fail the final smoke step while the staging DNS record + managed
 # cert are still propagating (up to ~30 min) — re-run the workflow once they're live.
+#
+# PIPELINE POSITION (docs/DEPLOYMENT-AUTOHEAL.md): when armed, this workflow is the FIRST tier of
+# every merged PR's rollout — release.yml's staging-gate holds the prod deploy until this run goes
+# green, then promotes the SAME :sha image. A failure here is auto-retried once and, if still red,
+# escalated as a `deploy-failure` issue by deploy-autoheal.yml.
 
 on:
   push:
@@ -90,15 +95,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Reads release.yml's registry layer cache but does NOT write it (cache ownership stays with
-      # the prod release job — avoids concurrent cache-to races when both fire on the same push).
-      # Pushes only the :sha tag; :latest belongs to prod.
+      # Staging now OWNS the :buildcache layer-cache write: release.yml's staging-gate serializes
+      # prod strictly after this run (no more concurrent cache-to race), and when this build
+      # succeeds prod PROMOTES this exact :sha image instead of rebuilding — so this is the only
+      # armed-mode builder. Pushes only the :sha tag; :latest is added at prod promotion.
       - name: Build and push image
         run: |
           set -euo pipefail
           docker buildx build \
             -f apps/api/Dockerfile \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max,image-manifest=true" \
             -t "$IMAGE:${GITHUB_SHA}" \
             --push .
 

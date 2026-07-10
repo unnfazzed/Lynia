@@ -5,6 +5,11 @@ name: Release (Cloud Run)
 # revision, then health-gates promotion to 100% with automatic rollback on degradation
 # (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2; manual rollback: rollback.yml).
 #
+# ORDERING (docs/DEPLOYMENT-AUTOHEAL.md): when the staging tier is armed, the `staging-gate` job
+# below holds this release until deploy-staging.yml has gone GREEN for the same commit — merged
+# PRs flow main → staging (build + migrate + deploy + smoke) → production (same image, canary).
+# Failures at either tier are auto-retried once and then escalated by deploy-autoheal.yml.
+#
 # DORMANT UNTIL GCP IS PROVISIONED. The deploy job is gated on the repo variable
 # `GCP_DEPLOY_ENABLED == 'true'`, so until a maintainer arms it this workflow is a clean no-op —
 # it never fails a push. Arming it is the literal `/ship` step once provisioning hands back the
@@ -47,9 +52,91 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Progressive-delivery ordering (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §3c: "promotion from a green
+  # staging deploy"): production only ships a commit that staging has already deployed AND
+  # smoke-tested. This gate polls the deploy-staging.yml run for THIS sha and blocks the deploy
+  # job until that run concludes green.
+  #
+  # Failure choreography (docs/DEPLOYMENT-AUTOHEAL.md): a staging failure on attempt 1 is retried
+  # automatically by deploy-autoheal.yml, so the gate keeps WAITING through a first failure and
+  # only gives up once staging is conclusively red (failed on attempt >= 2, i.e. the auto-retry
+  # also lost) or the timeout lapses. A gate failure fails this run WITHOUT deploying — prod keeps
+  # serving the previous revision untouched.
+  #
+  # Escape hatches:
+  #   - Staging unarmed (GCP_STAGING_ENABLED != 'true') → gate passes straight through; the
+  #     pre-staging direct-to-prod behavior is preserved.
+  #   - workflow_dispatch → gate is skipped (manual dispatch = human judgment; use it to release
+  #     when staging is red for a reason known to be unrelated).
+  #   - STAGING_GATE_TIMEOUT_MINUTES repo Variable tunes the wait (default 60).
+  staging-gate:
+    name: wait for green staging deploy
+    runs-on: ubuntu-latest
+    if: ${{ vars.GCP_DEPLOY_ENABLED == 'true' }}
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Wait for deploy-staging success on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_ENABLED: ${{ vars.GCP_STAGING_ENABLED }}
+          EVENT_NAME: ${{ github.event_name }}
+          GATE_TIMEOUT_MINUTES: ${{ vars.STAGING_GATE_TIMEOUT_MINUTES || '60' }}
+        run: |
+          set -euo pipefail
+          if [ "$STAGING_ENABLED" != "true" ]; then
+            echo "GCP_STAGING_ENABLED != 'true' — no staging tier to gate on; proceeding straight to prod."
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — skipping the staging wait (human judgment overrides the gate)."
+            exit 0
+          fi
+          DEADLINE=$((SECONDS + GATE_TIMEOUT_MINUTES * 60))
+          APPEAR_DEADLINE=$((SECONDS + 600))
+          while :; do
+            RUN="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-staging.yml/runs?head_sha=${GITHUB_SHA}&per_page=1" \
+              --jq '.workflow_runs[0] // empty')"
+            if [ -z "$RUN" ]; then
+              # Both workflows share the same push trigger + paths-ignore, so a missing staging run
+              # is unexpected — but give the Actions API a grace window before declaring it absent.
+              if [ "$SECONDS" -ge "$APPEAR_DEADLINE" ]; then
+                echo "::error::No deploy-staging run appeared for ${GITHUB_SHA} within 10 min. If staging was intentionally not run for this commit, release manually via workflow_dispatch (which bypasses this gate)." >&2
+                exit 1
+              fi
+              echo "No staging run for this sha yet — waiting…"
+            else
+              STATUS="$(echo "$RUN" | jq -r '.status')"
+              CONCLUSION="$(echo "$RUN" | jq -r '.conclusion // empty')"
+              ATTEMPT="$(echo "$RUN" | jq -r '.run_attempt // 1')"
+              URL="$(echo "$RUN" | jq -r '.html_url')"
+              if [ "$STATUS" != "completed" ]; then
+                echo "Staging run in progress (attempt ${ATTEMPT}): ${URL} — waiting…"
+              elif [ "$CONCLUSION" = "success" ]; then
+                echo "Staging is green for ${GITHUB_SHA} (attempt ${ATTEMPT}): ${URL} — promoting to production."
+                exit 0
+              elif [ "$ATTEMPT" -ge 2 ]; then
+                echo "::error::Staging is red for ${GITHUB_SHA} even after the automatic retry (conclusion: ${CONCLUSION}, attempt ${ATTEMPT}): ${URL}. deploy-autoheal.yml has escalated it as a deploy-failure issue — fix staging (or land the fix on main) and the next merge promotes normally. Production was NOT deployed and keeps serving the previous revision." >&2
+                exit 1
+              else
+                # First failure: deploy-autoheal.yml re-runs the failed jobs shortly. Keep waiting —
+                # the run's conclusion flips back to in-progress once the retry starts.
+                echo "Staging attempt 1 concluded ${CONCLUSION}: ${URL} — waiting for the automatic retry (deploy-autoheal.yml)…"
+              fi
+            fi
+            if [ "$SECONDS" -ge "$DEADLINE" ]; then
+              echo "::error::Staging still not green after ${GATE_TIMEOUT_MINUTES} min — giving up without deploying to production. Inspect the staging run, then either land a fix on main or release manually via workflow_dispatch." >&2
+              exit 1
+            fi
+            sleep 30
+          done
+
   deploy:
     name: build · migrate · deploy
     runs-on: ubuntu-latest
+    needs: staging-gate
     # The arming switch: no-op until a maintainer sets the variable post-provisioning.
     if: ${{ vars.GCP_DEPLOY_ENABLED == 'true' }}
     # GitHub Environment gate (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §3b). With no protection rules
@@ -170,14 +257,26 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push image
+      # Same-image promotion (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §3c: "what you tested is what
+      # ships"): with the staging-gate ordering prod AFTER a green staging run, the :<sha> tag
+      # normally already exists — built, deployed, and smoke-tested by deploy-staging.yml. Promote
+      # that exact digest (just add :latest) instead of rebuilding. Fall back to a full build only
+      # when the tag is absent (staging unarmed, or a manual dispatch of a sha staging never built).
+      - name: Promote staging image (or build if absent)
         run: |
           set -euo pipefail
+          if gcloud artifacts docker images describe "$IMAGE:${GITHUB_SHA}" >/dev/null 2>&1; then
+            echo "Reusing $IMAGE:${GITHUB_SHA} built and smoke-tested by deploy-staging — no rebuild; adding :latest."
+            gcloud artifacts docker tags add "$IMAGE:${GITHUB_SHA}" "$IMAGE:latest" --quiet
+            exit 0
+          fi
+          echo "No prebuilt image for ${GITHUB_SHA} — building from scratch."
           # Registry layer cache (mode=max caches ALL stages, incl. the heavy `deps` pnpm install and
           # the Prisma engine download — not just the final stage like inline cache). Stored as a
           # separate :buildcache tag in Artifact Registry. First run is a cold miss that seeds it;
           # later deploys with an unchanged lockfile/schema skip the slow network steps. The cache
-          # ref is missing-tolerant, so a fresh repo just builds cold.
+          # ref is missing-tolerant, so a fresh repo just builds cold. When staging is armed it owns
+          # the cache write instead (deploy-staging.yml builds first; the gate serializes the two).
           docker buildx build \
             -f apps/api/Dockerfile \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
