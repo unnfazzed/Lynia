@@ -17,9 +17,9 @@
     "db:seed": "pnpm --filter @lynia/api seed"
   },
   "devDependencies": {
+    "@types/node": "^26.1.0",
     "turbo": "^2.10.3",
-    "typescript": "^6.0.3",
-    "@types/node": "^26.1.0"
+    "typescript": "^6.0.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -38,6 +38,9 @@
       "js-yaml@<3.15.0": ">=3.15.0 <4.0.0",
       "postcss@<8.5.10": ">=8.5.10",
       "@hono/node-server@<1.19.13": ">=1.19.13"
+    },
+    "patchedDependencies": {
+      "@expo/cli@0.22.28": "patches/@expo__cli@0.22.28.patch"
     }
   }
 }
