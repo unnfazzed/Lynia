@@ -1,0 +1,202 @@
+name: Deploy Autoheal
+
+# Self-healing wrapper around the two deploy tiers (docs/DEPLOYMENT-AUTOHEAL.md):
+#
+#   deploy fails (attempt 1) → backoff → re-run ONLY the failed jobs → watch to completion
+#     ├─ retry green → done (and auto-close any open deploy-failure issue for that workflow)
+#     └─ still red   → open/refresh a `deploy-failure` issue with the failed-job log tail and an
+#                      @claude request to diagnose + land the fix on main
+#   deploy succeeds → auto-close any open deploy-failure issues for that workflow
+#
+# Rationale: most deploy reds are transient (Artifact Registry / Cloud SQL Auth Proxy blips, DNS or
+# managed-cert propagation on a freshly armed tier, Cloud Monitoring ingestion lag tripping a canary
+# gate), so ONE spaced retry of just the failed jobs recovers them with no human. Anything that
+# survives the retry needs a fix commit — so it becomes a labeled issue with logs attached instead
+# of a silent red run. Traffic safety is NOT this workflow's job: release.yml already re-points prod
+# traffic to the previous revision the moment a canary gate fails, before this workflow even fires.
+#
+# The retry is initiated AND watched to completion inside this run — never via a second
+# workflow_run event, because re-runs initiated with GITHUB_TOKEN are not guaranteed to emit one.
+# release.yml's staging-gate knows this choreography: a staging failure on attempt 1 keeps the prod
+# gate waiting for this retry instead of failing the release outright.
+#
+# Tunables (repo Variables, optional):
+#   AUTOHEAL_BACKOFF_SECONDS  wait before the re-run, lets transient conditions clear (default 90)
+
+on:
+  workflow_run:
+    workflows: ["Deploy Staging (Cloud Run)", "Release (Cloud Run)"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-autoheal-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  heal:
+    name: retry once, then escalate
+    runs-on: ubuntu-latest
+    # Only the FIRST failed attempt: the retry is initiated and watched below, so a workflow_run
+    # event for attempt >= 2 (if GitHub emits one) must not double-handle the same run.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt == 1
+    timeout-minutes: 110
+    permissions:
+      actions: write # re-run failed jobs
+      issues: write # escalation issue
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      WF_NAME: ${{ github.event.workflow_run.name }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+    steps:
+      # A release run whose ONLY failure is the staging-gate job is a symptom, not a cause: the
+      # root failure lives in the staging run, and the autoheal run watching THAT run owns the
+      # retry + escalation. Re-running the gate would just re-poll a conclusively red staging.
+      - name: Decide whether this run is the root failure
+        id: precheck
+        run: |
+          set -euo pipefail
+          FAILED="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join("|")')"
+          echo "Failed jobs (attempt 1): ${FAILED:-<none>}"
+          if [ "$FAILED" = "wait for green staging deploy" ]; then
+            echo "Only the staging gate failed — the staging workflow's own autoheal run handles retry and escalation. Nothing to heal here."
+            echo "handle=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "handle=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Re-run failed jobs after a backoff
+        if: ${{ steps.precheck.outputs.handle == 'true' }}
+        env:
+          BACKOFF: ${{ vars.AUTOHEAL_BACKOFF_SECONDS || '90' }}
+        run: |
+          set -euo pipefail
+          echo "Backing off ${BACKOFF}s before the retry (lets registry/proxy/DNS blips clear)…"
+          sleep "$BACKOFF"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/rerun-failed-jobs"
+          echo "Retry (attempt 2) requested for ${WF_NAME}: ${RUN_URL}"
+
+      - name: Watch the retry to completion
+        if: ${{ steps.precheck.outputs.handle == 'true' }}
+        id: watch
+        run: |
+          set -euo pipefail
+          # Generous ceiling: a full staging or canary release run is well under this.
+          DEADLINE=$((SECONDS + 90 * 60))
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            sleep 30
+            RUN="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}")"
+            STATUS="$(echo "$RUN" | jq -r '.status')"
+            CONCLUSION="$(echo "$RUN" | jq -r '.conclusion // empty')"
+            if [ "$STATUS" = "completed" ]; then
+              echo "Retry concluded: ${CONCLUSION}"
+              echo "conclusion=${CONCLUSION}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Retry still ${STATUS}…"
+          done
+          echo "::warning::Retry did not complete within 90 min — escalating as unresolved."
+          echo "conclusion=watch-timeout" >> "$GITHUB_OUTPUT"
+
+      - name: Close resolved deploy-failure issues (retry healed it)
+        if: ${{ steps.precheck.outputs.handle == 'true' && steps.watch.outputs.conclusion == 'success' }}
+        run: |
+          set -euo pipefail
+          echo "${WF_NAME} healed by the automatic retry — checking for stale deploy-failure issues."
+          NUMS="$(gh issue list -R "$GITHUB_REPOSITORY" --label deploy-failure --state open --json number,title \
+            | jq -r --arg wf "$WF_NAME" '.[] | select(.title | contains($wf)) | .number')"
+          for n in ${NUMS:-}; do
+            gh issue close -R "$GITHUB_REPOSITORY" "$n" \
+              --comment "✅ **${WF_NAME}** recovered on the automatic retry ([run](${RUN_URL}), \`${HEAD_SHA}\`) — closing. _(deploy-autoheal.yml)_"
+          done
+
+      - name: Escalate — file a deploy-failure issue with logs and an @claude fix request
+        if: ${{ steps.precheck.outputs.handle == 'true' && steps.watch.outputs.conclusion != 'success' }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${HEAD_SHA:0:7}"
+
+          gh label create deploy-failure -R "$GITHUB_REPOSITORY" \
+            --color B60205 --description "A deploy workflow stayed red after the automatic retry" \
+            2>/dev/null || true
+
+          FAILED_JOBS="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")' 2>/dev/null || echo "unknown")"
+
+          # Log tail of the failed jobs (latest attempt). Secrets are already masked by Actions;
+          # neutralize any ``` in the logs so they can't break out of the fenced block.
+          gh run view "$RUN_ID" -R "$GITHUB_REPOSITORY" --log-failed 2>/dev/null \
+            | tail -c 40000 | sed 's/```/`` `/g' > /tmp/log-tail.txt || true
+
+          {
+            echo "@claude The **${WF_NAME}** deploy workflow for \`${HEAD_SHA}\` is still red after an automatic re-run of its failed jobs."
+            echo
+            echo "- Run (attempt 2): ${RUN_URL}"
+            echo "- Failed jobs: ${FAILED_JOBS:-unknown}"
+            echo
+            echo "Please diagnose from the log tail below and drive this back to green:"
+            echo "1. **Code or workflow bug** → open a PR against \`main\` with the fix. The merge redeploys staging, and a green staging run auto-promotes the same image to production (release.yml staging-gate)."
+            echo "2. **Missing/invalid GCP config** (repo Variables/Secrets, IAM, Terraform) → do NOT guess values; comment here with the exact arming step from docs/LAUNCH-EXECUTION-RUNBOOK.md the founder must run."
+            echo "3. **Production canary failure** → traffic was already rolled back automatically to the previous revision (release.yml); verify \`/healthz\` first, then treat the candidate revision's defect as case 1 or 2."
+            echo
+            echo "<details><summary>Failed-job log tail (attempt 2, last 40 KB)</summary>"
+            echo
+            echo '```text'
+            cat /tmp/log-tail.txt 2>/dev/null || echo "(log retrieval failed — open the run link above)"
+            echo '```'
+            echo
+            echo "</details>"
+            echo
+            echo "_Filed automatically by deploy-autoheal.yml (docs/DEPLOYMENT-AUTOHEAL.md). The next green run of this workflow closes this issue automatically._"
+          } > /tmp/issue-body.md
+
+          # One open issue per workflow: refresh the existing one instead of stacking duplicates.
+          EXISTING="$(gh issue list -R "$GITHUB_REPOSITORY" --label deploy-failure --state open --json number,title \
+            | jq -r --arg wf "$WF_NAME" '[.[] | select(.title | contains($wf))] | first | .number // empty')"
+          if [ -n "$EXISTING" ]; then
+            echo "Refreshing existing deploy-failure issue #${EXISTING}."
+            gh issue comment -R "$GITHUB_REPOSITORY" "$EXISTING" --body-file /tmp/issue-body.md
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" \
+              --title "Deploy failure: ${WF_NAME} still red after auto-retry (${SHORT_SHA})" \
+              --label deploy-failure \
+              --body-file /tmp/issue-body.md
+          fi
+
+  # Any green run of a deploy workflow means its tier is healthy — close out stale escalations so
+  # the issue tracker reflects live state (a fix merged via a NEW sha never re-runs the old red run,
+  # so the heal job above can't be the one to close them).
+  close-resolved:
+    name: close healed deploy-failure issues
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      issues: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      WF_NAME: ${{ github.event.workflow_run.name }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+    steps:
+      - name: Close open deploy-failure issues for this workflow
+        run: |
+          set -euo pipefail
+          NUMS="$(gh issue list -R "$GITHUB_REPOSITORY" --label deploy-failure --state open --json number,title \
+            | jq -r --arg wf "$WF_NAME" '.[] | select(.title | contains($wf)) | .number')"
+          if [ -z "${NUMS:-}" ]; then
+            echo "No open deploy-failure issues for ${WF_NAME}."
+            exit 0
+          fi
+          for n in $NUMS; do
+            gh issue close -R "$GITHUB_REPOSITORY" "$n" \
+              --comment "✅ **${WF_NAME}** is green again ([run](${RUN_URL}), \`${HEAD_SHA}\`) — closing. _(deploy-autoheal.yml)_"
+          done
