@@ -13,7 +13,9 @@ const RATE_UNDO_MS = 4_000;
  * `saving` reflects the caller's in-flight rating mutation.
  */
 export function RatingCard({ saving, onRate }: { saving: boolean; onRate: (score: number) => void }): React.ReactElement {
-  const [score, setScore] = useState(5);
+  // Starts unselected — all 5 stars pre-filled read as "already rated 5★" and contradict the "Tap a
+  // star to rate" hint below, nudging toward an inflated rating the customer never chose.
+  const [score, setScore] = useState(0);
   const [ratePending, setRatePending] = useState(false);
   const rateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The armed-but-not-yet-committed score, and a ref to the latest onRate so the unmount cleanup (which

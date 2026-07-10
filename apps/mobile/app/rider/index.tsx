@@ -199,7 +199,18 @@ export default function RiderHome(): React.ReactElement {
         .catch((e: unknown) => {
           if (e instanceof ApiError && e.status === 403) {
             setOnlineState(false);
-            setError("You were taken offline (cooldown or a connection issue). Tap Go online to retry.");
+            // Same gate-resolution as onlineM.onError — a heartbeat 403 means the server has already
+            // taken the rider offline for a specific reason (cooldown/suspended/on_hold/kyc), so show
+            // that reason instead of a vague "connection issue" that invites a retry that can't work.
+            const reason = onlineGateReason(e);
+            if (reason) {
+              setGate(reason);
+              setError(null);
+              if (reason === "kyc") void qc.invalidateQueries({ queryKey: ["me"] });
+            } else {
+              setGate(null);
+              setError("You were taken offline. Tap Go online to retry.");
+            }
           } else {
             failures += 1;
             if (failures >= 2) setBeatStale(true);
@@ -293,6 +304,15 @@ export default function RiderHome(): React.ReactElement {
   const etaNum = parseNum(eta);
   const canOffer = selected != null && fareNum != null && fareNum > 0 && etaNum != null && etaNum > 0;
 
+  // Shared by onSuccess and the "already responded" reconciliation below — both mean the offer is
+  // confirmed live server-side, so both must land the rider in the same "your offer is in" state.
+  const recordSentOffer = (s: OpenOrder): void => {
+    setBidIds((prev) => new Set(prev).add(s.id));
+    // Same auction window the customer sees: createdAt + OFFER_WINDOW_MS (the shared clock).
+    const expiresAt = new Date(new Date(s.createdAt).getTime() + OFFER_WINDOW_MS).toISOString();
+    setSentOffers((prev) => [{ order: s, fare, etaMinutes: Math.round(etaNum ?? 0), expiresAt }, ...prev.filter((p) => p.order.id !== s.id)]);
+  };
+
   const offerM = useMutation({
     mutationFn: () => {
       // Accept = take the customer's price; any other fare is a counter.
@@ -300,21 +320,50 @@ export default function RiderHome(): React.ReactElement {
       return makeOffer(selected!.id, { type, offeredFare: fareNum!, etaMinutes: Math.round(etaNum!) });
     },
     onSuccess: () => {
-      if (selected) {
-        const s = selected;
-        setBidIds((prev) => new Set(prev).add(s.id));
-        // Same auction window the customer sees: createdAt + OFFER_WINDOW_MS (the shared clock).
-        const expiresAt = new Date(new Date(s.createdAt).getTime() + OFFER_WINDOW_MS).toISOString();
-        setSentOffers((prev) => [{ order: s, fare, etaMinutes: Math.round(etaNum ?? 0), expiresAt }, ...prev.filter((p) => p.order.id !== s.id)]);
-      }
+      if (selected) recordSentOffer(selected);
       setSelected(null);
       setFare("");
       setEta("");
       setError(null);
       void qc.invalidateQueries({ queryKey: ["openOrders"] });
     },
-    onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't send the offer."),
+    onError: (e) => {
+      const msg = e instanceof ApiError ? e.message : "Couldn't send the offer.";
+      // A retry after a client-side timeout can land on an offer the server already committed —
+      // the API's own idempotency guard says so verbatim. Without this the rider is told "you
+      // already responded" but the board never shows the offer as sent, so they can't tell if it
+      // actually went through.
+      if (msg === "You already responded to this order (one round only)" && selected) {
+        recordSentOffer(selected);
+        setSelected(null);
+        setFare("");
+        setEta("");
+        setError(null);
+        void qc.invalidateQueries({ queryKey: ["openOrders"] });
+        return;
+      }
+      // The 90s auction closed right as this landed — same calm framing as a live bid:expired
+      // card, not a generic error that invites a retry into the same wall.
+      if (msg === "This order is not open for offers") {
+        setError("That request's window just closed — someone else may already have it.");
+        setSelected(null);
+        return;
+      }
+      setError(msg);
+    },
   });
+
+  // A bare spinner reads as "frozen" on a slow link — after a few seconds of waiting, say so, so it
+  // reads as "still trying" instead of "stuck" during the high-anxiety 90s auction window.
+  const [offerSlow, setOfferSlow] = useState(false);
+  useEffect(() => {
+    if (!offerM.isPending) {
+      setOfferSlow(false);
+      return;
+    }
+    const t = setTimeout(() => setOfferSlow(true), 4500);
+    return () => clearTimeout(t);
+  }, [offerM.isPending]);
 
   const chooseOrder = (o: OpenOrder): void => {
     setSelected(o);
@@ -686,7 +735,7 @@ export default function RiderHome(): React.ReactElement {
             ) : null}
             <Field label="ETA to pickup (min)" value={eta} onChangeText={setEta} keyboardType="number-pad" maxLength={3} />
             <Button
-              label={offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send my price"}
+              label={offerSlow ? "Still sending — hang on" : offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send my price"}
               onPress={() => offerM.mutate()}
               loading={offerM.isPending}
               disabled={!canOffer}

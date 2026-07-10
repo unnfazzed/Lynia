@@ -336,7 +336,7 @@ describe("OrderLifecycleService.cancel", () => {
 
   it("blocks a RIDER cancel once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
     const { svc } = build({ order: { findUnique: async () => order({ status: "picked_up" }) } });
-    await expect(svc.cancel("o1", "r1")).rejects.toThrow(/cannot cancel a picked_up/i);
+    await expect(svc.cancel("o1", "r1")).rejects.toThrow(/can't be cancelled anymore/i);
   });
 
   it("counts a rider cancel as a strike (below the limit) and re-broadcasts a new open order (F-01)", async () => {

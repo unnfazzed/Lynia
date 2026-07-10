@@ -9,7 +9,7 @@ import { Button, Card, EmptyState, Heading, Screen, SkeletonList, Sub } from "..
 function fmtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " · " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 export default function EarningsScreen(): React.ReactElement {

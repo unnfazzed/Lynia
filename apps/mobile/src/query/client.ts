@@ -1,4 +1,5 @@
-import { QueryClient } from "@tanstack/react-query";
+import { focusManager, QueryClient } from "@tanstack/react-query";
+import { AppState, type AppStateStatus, Platform } from "react-native";
 import { ApiError } from "../api/client";
 
 /**
@@ -34,3 +35,17 @@ export const queryClient = new QueryClient({
 
 export const orderKey = (id: string): readonly ["order", string] => ["order", id];
 export const offersKey = (id: string): readonly ["offers", string] => ["offers", id];
+
+/**
+ * Without this, React Query's default `isFocused()` never goes false, so every screen's
+ * `refetchInterval` (order/offers polling, board polling, active-job polling) keeps firing on
+ * schedule while the app is backgrounded — burning data and battery on the exact cheap-Android,
+ * expensive-data profile this app targets. Call once at the app root.
+ */
+export function wireFocusManager(): () => void {
+  const onChange = (status: AppStateStatus): void => {
+    if (Platform.OS !== "web") focusManager.setFocused(status === "active");
+  };
+  const sub = AppState.addEventListener("change", onChange);
+  return () => sub.remove();
+}

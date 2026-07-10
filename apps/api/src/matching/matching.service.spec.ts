@@ -9,7 +9,7 @@ import { MatchingService } from "./matching.service";
 
 /** bid:expired / order:taken are best-effort; a no-op gateway keeps selectOffer's unit tests off the
  *  socket path. `order:taken` (rider-journey 2·b1 / 3·b1) fires on a successful assign. */
-const noopGateway = { emitBidExpired: () => {}, emitOrderTaken: () => {} } as unknown as TrackingGateway;
+const noopGateway = { emitBidExpired: () => {}, emitOrderTaken: () => {}, emitOrderStatus: () => {} } as unknown as TrackingGateway;
 
 /**
  * selectOffer wraps its transaction in a metrics timer. The wrapper MUST classify the failure for the

@@ -85,7 +85,7 @@ export const ONLINE_GATE_COPY: Record<OnlineGateReason, GateCopy> = {
   on_hold: {
     title: "Your account is on hold",
     message:
-      "Your reliability score dropped below what's needed to accept deliveries. Complete a few clean trips to recover it, or contact support.",
+      "Your reliability score dropped too low to keep riding automatically. Contact support to have your account reviewed.",
   },
   cooldown: {
     title: "You're on a cooldown",
