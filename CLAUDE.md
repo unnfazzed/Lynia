@@ -41,3 +41,17 @@ Conventions:
 > Note: the gstack skills themselves are NOT vendored into this repo — they are
 > installed per-developer under `~/.claude/skills/gstack` (and gitignored). Each
 > contributor installs gstack locally with the command above.
+
+## Scheduled "User experience improvements" routine — auto-merge
+
+The daily UX/usability review routine (cron trigger "User experience improvements",
+`docs/UX-USABILITY-REVIEW-*.md` output) should **auto-merge its own PRs** — per explicit user
+instruction (2026-07-11), don't leave them as draft-only waiting on manual review like earlier
+passes (#152, #164, #182) did.
+
+For that routine specifically: once `pnpm typecheck && pnpm test` are green locally and the PR
+is pushed, mark it ready for review (not draft) and enable auto-merge (or merge directly once CI
+is confirmed green and there are no unresolved review comments) — don't wait for a human click.
+This does not apply to other routines/PRs in this repo unless they've separately established
+their own auto-merge policy (e.g. the bug-hunt routine's narrower "safe to squash-merge if it
+doesn't touch bid acceptance/order assignment/agreed-price/KYC gating" rule).
