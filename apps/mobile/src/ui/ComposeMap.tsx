@@ -159,7 +159,7 @@ export function ComposeMap(props: {
             identifier="pickup"
             draggable={active === "pickup"}
             coordinate={{ latitude: pickup.lat, longitude: pickup.lng }}
-            onDragEnd={(e: MarkerDragStartEndEvent) => props.onChangePickup({ lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude })}
+            onDragEnd={(e: MarkerDragStartEndEvent) => setActive(e.nativeEvent.coordinate)}
             pinColor={tokens.color.accent}
             opacity={active === "pickup" ? 1 : 0.7}
           />
@@ -169,7 +169,7 @@ export function ComposeMap(props: {
             identifier="drop"
             draggable={active === "drop"}
             coordinate={{ latitude: drop.lat, longitude: drop.lng }}
-            onDragEnd={(e: MarkerDragStartEndEvent) => props.onChangeDrop({ lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude })}
+            onDragEnd={(e: MarkerDragStartEndEvent) => setActive(e.nativeEvent.coordinate)}
             pinColor={tokens.color.danger}
             opacity={active === "drop" ? 1 : 0.7}
           />

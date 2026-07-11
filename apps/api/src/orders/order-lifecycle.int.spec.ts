@@ -339,7 +339,7 @@ describe("seam-contract transitions", () => {
     const rider = await makeRider();
     const { orderId } = await driveTo(customer, rider, "picked_up");
 
-    await expect(lifecycle.cancel(orderId, rider, "changed my mind")).rejects.toThrow(/cannot cancel a picked_up/i);
+    await expect(lifecycle.cancel(orderId, rider, "changed my mind")).rejects.toThrow(/can't be cancelled anymore/i);
     expect(await statusOf(orderId)).toBe("picked_up");
     // Blocked cancel ⇒ no re-broadcast row.
     expect(await prisma.order.count({ where: { rebroadcastOfId: orderId } })).toBe(0);

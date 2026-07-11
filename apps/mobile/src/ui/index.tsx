@@ -283,7 +283,10 @@ const STEP_LABELS: Record<"customer" | "rider", Record<string, string>> = {
     picked_up: "Items collected",
     en_route_dropoff: "On the way to drop-off",
     delivered: "Delivered",
-    completed: "Rate your rider",
+    // A `completed` order has already been rated (or the rating window lapsed) — the RatingCard
+    // itself lives on the `delivered` card. Telling a finished trip to "Rate your rider" contradicts
+    // the "Delivered & completed. Thank you!" card right below it on the same screen.
+    completed: "Trip complete",
   },
   rider: {
     assigned: "You're assigned",

@@ -11,7 +11,7 @@ import { AuthProvider, useAuth } from "../src/auth/auth-context";
 import { isUpdateRequired, isVersionBelow } from "../src/config";
 import { useReachability } from "../src/net/use-reachability";
 import { useServerMinVersion } from "../src/net/use-server-version-gate";
-import { queryClient } from "../src/query/client";
+import { queryClient, wireFocusManager } from "../src/query/client";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { AnalyticsProvider } from "../src/telemetry/analytics";
 import { start as startRum } from "../src/telemetry/rum";
@@ -75,6 +75,9 @@ export default function RootLayout(): React.ReactElement | null {
   useEffect(() => {
     startRum(Constants.expoConfig?.version);
   }, []);
+
+  // Pause React Query's refetchInterval polling while backgrounded (see wireFocusManager).
+  useEffect(() => wireFocusManager(), []);
 
   // Drop the splash once fonts resolve (loaded or errored) — the tree renders on the same pass.
   useEffect(() => {

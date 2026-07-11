@@ -65,7 +65,11 @@ export default function RiderJob(): React.ReactElement {
     };
   }, []);
 
-  const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 6000 });
+  // The job socket (below) resyncs `activeJob` on connect/connect_error already, so only fall back to
+  // REST polling while it isn't connected — avoids a redundant round-trip every 6s on metered data for
+  // the whole duration of an active delivery.
+  const [jobPollFallback, setJobPollFallback] = useState(true);
+  const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: jobPollFallback ? 6000 : false });
   // Only needed to show "this would be strike N" on the bail-confirm sheet — a light, cached read, not
   // polled (the count only matters at the moment the rider opens the cancel sheet).
   const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
@@ -128,6 +132,9 @@ export default function RiderJob(): React.ReactElement {
   // 4·b4: only read "reconnecting" after we've been live once (avoid a connect-window flash on mount).
   const wasJobConnected = useRef(false);
   if (jobSocketConnected) wasJobConnected.current = true;
+  useEffect(() => {
+    setJobPollFallback(!jobSocketConnected);
+  }, [jobSocketConnected]);
   // A status advance means the ride is moving again — drop a stale customer-presence warning.
   useEffect(() => {
     setCustomerStale(false);
@@ -140,7 +147,7 @@ export default function RiderJob(): React.ReactElement {
   useForegroundRefetch(() => void qc.invalidateQueries({ queryKey: ["activeJob"] }));
 
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
-  const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Something went wrong.");
+  const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Couldn't update this delivery. Check your connection and try again.");
 
   // Optimistic advance: the trip step is a frequent, near-always-succeeds tap, so paint the next
   // step instantly and reconcile in the background. cancelQueries first so the 6s poller can't

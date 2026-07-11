@@ -454,7 +454,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       const isRider = order.riderId === callerId;
       if (!isCustomer && !isRider) throw new ForbiddenException("Not your order");
       const allowed = isCustomer ? CUSTOMER_CANCELLABLE : RIDER_CANCELLABLE;
-      if (!allowed.has(order.status)) throw new ConflictException(`Cannot cancel a ${order.status} order`);
+      // Plain language, no raw status enum (e.g. "en_route_dropoff") leaking to the app — the client
+      // just renders exception messages verbatim (apps/mobile/src/ui/index.tsx ErrorText).
+      if (!allowed.has(order.status)) throw new ConflictException("This order can't be cancelled anymore — it's already past that point.");
 
       const claimed = await tx.order.updateMany({
         where: { id: orderId, status: order.status },

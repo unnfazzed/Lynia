@@ -198,6 +198,10 @@ export class MatchingService {
         const ord = await this.prisma.order.findUnique({ where: { id: orderId }, select: { pickup: true } });
         const pt = (ord?.pickup as { point?: { lat: number; lng: number } } | null)?.point;
         this.gateway.emitBidExpired(orderId, pt?.lat, pt?.lng);
+        // Push the status change to the order's own room too — without this the customer's countdown
+        // just freezes at 0:00 until the 15s poll catches up, at the single most anxious moment of the
+        // journey ("did anyone take my price?").
+        this.gateway.emitOrderStatus(orderId, "expired");
       } catch (err) {
         this.logger.warn(`bid:expired emit failed for order ${orderId}: ${(err as Error).message}`);
       }

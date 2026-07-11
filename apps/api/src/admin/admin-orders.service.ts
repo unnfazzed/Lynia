@@ -162,6 +162,14 @@ export class AdminOrdersService {
     });
     if (!order) return null;
 
+    // The stuck-order banner used to unconditionally claim "the customer has not reported a problem
+    // yet" — a flatly false statement whenever a GetHelpControl report already exists for this order.
+    const openIssue = await this.prisma.issue.findFirst({
+      where: { orderId: id, status: { in: ["open", "investigating"] } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, type: true },
+    });
+
     const revealed = ACTIVE_RIDE_STATUSES.includes(order.status);
     const now = Date.now();
 
@@ -213,6 +221,7 @@ export class AdminOrdersService {
         ? [otpMismatchNote, `No GPS/status update from the rider for ${stuckMins} minutes.`].filter(Boolean).join(" ")
         : otpMismatchNote,
       deliveryOtpAttempts: order.deliveryOtpAttempts,
+      hasOpenIssue: openIssue != null,
       rider: riderName,
       // Both phones masked unless this order is live in its reveal window — never leak PII on a
       // terminal/closed order. Provide the (masked) string either way so the UI shows the redaction.

@@ -77,7 +77,7 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
       { status: "assigned", createdAt: new Date(Date.now() - 15 * 60000) },
       { status: "en_route_dropoff", createdAt: new Date(Date.now() - 2 * 60000) },
     ];
-    const prisma = { order: { findUnique: async () => baseOrder({ events }) } };
+    const prisma = { order: { findUnique: async () => baseOrder({ events }) }, issue: { findFirst: async () => null } };
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);
     const d = (await svc.getOrderDetail("o1"))!;
     expect(d.route).toBe("Avondale shops → Borrowdale");
@@ -95,7 +95,7 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
   });
 
   it("MASKS both phones once the order is terminal (outside the reveal window, A-03)", async () => {
-    const prisma = { order: { findUnique: async () => baseOrder({ status: "cancelled" }) } };
+    const prisma = { order: { findUnique: async () => baseOrder({ status: "cancelled" }) }, issue: { findFirst: async () => null } };
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);
     const d = (await svc.getOrderDetail("o1"))!;
     expect(d.customerPhone).toBe("+263•••••2222");
@@ -109,7 +109,7 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
     // Regression: the reveal set here is ACTIVE_RIDE_STATUSES, NOT PHONE_REVEAL_STATUSES — the latter
     // includes delivered/completed/undelivered and would leave every finished order unmasked forever.
     for (const status of ["delivered", "completed", "undelivered"]) {
-      const prisma = { order: { findUnique: async () => baseOrder({ status }) } };
+      const prisma = { order: { findUnique: async () => baseOrder({ status }) }, issue: { findFirst: async () => null } };
       const svc = new AdminOrdersService(prisma as unknown as PrismaService);
       const d = (await svc.getOrderDetail("o1"))!;
       expect(d.customerPhone).toBe("+263•••••2222");

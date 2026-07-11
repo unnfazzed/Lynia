@@ -144,7 +144,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <IconAlert />
           <span className="t">
             <b>This order may be stuck.</b> {o.stuckNote ?? "No recent status update."} Currently at &ldquo;
-            {STEPS[idx] ?? o.status}&rdquo;. The customer has not reported a problem yet.
+            {STEPS[idx] ?? o.status}&rdquo;.{" "}
+            {o.hasOpenIssue ? "The customer or rider has already filed a report — check Issues." : "No one has reported a problem yet."}
           </span>
         </div>
       ) : null}
@@ -274,8 +275,12 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                     <input type="hidden" name="action" value="order.nudge_rider" />
                     <input type="hidden" name="target" value={o.id} />
                     <input type="hidden" name="path" value={path} />
+                    {/* This only writes an audit-log note — no push/SMS/call reaches the rider. The old
+                        label ("Nudge rider — 'Are you OK to continue?'") implied a message was sent,
+                        which it never was; an ops agent believing they'd contacted the rider would wait
+                        for a reply that could never come. Call the rider (above) for a real nudge. */}
                     <button type="submit" className="btn ghost" disabled={!connected} style={{ width: "100%" }}>
-                      Nudge rider — “Are you OK to continue?”
+                      Log a follow-up note (doesn&apos;t contact the rider)
                     </button>
                   </form>
                 </>

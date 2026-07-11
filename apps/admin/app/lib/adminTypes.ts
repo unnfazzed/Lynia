@@ -203,6 +203,8 @@ export interface OrderDetail {
   stuck?: boolean;
   stuckNote?: string;
   deliveryOtpAttempts?: number;
+  /** Whether the customer/rider has an open (unresolved) issue filed against this order (A-05). */
+  hasOpenIssue?: boolean;
   rider: string | null;
   riderPhone?: string;
   bike?: string;

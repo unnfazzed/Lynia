@@ -209,5 +209,5 @@ function friendlyMessage(status: number, text: string): string {
   } catch {
     /* not JSON */
   }
-  return `Request failed (${status}).`;
+  return "Couldn't reach LyniaGo. Check your connection and try again.";
 }
