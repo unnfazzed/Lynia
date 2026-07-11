@@ -192,6 +192,13 @@ export const envSchema = z.object({
       if (env.OTP_CHANNEL === "console") {
         reject("OTP_CHANNEL", "OTP_CHANNEL=console is a dev-only channel and must not be used in production");
       }
+      // SmsOtpSender.send() is an unimplemented stub (see otp-sender.ts) — it logs and returns success
+      // with NO code ever delivered. This flag exists as config-only insurance against a WhatsApp BSP
+      // onboarding delay, but flipping it today would silently and completely break sign-in/sign-up for
+      // every user. Reject at boot instead of failing invisibly in production traffic.
+      if (env.OTP_CHANNEL === "sms") {
+        reject("OTP_CHANNEL", "OTP_CHANNEL=sms has no real SMS gateway wired up yet (SmsOtpSender is a stub) — implement it before using this channel in production");
+      }
       // OTP_TEST_PHONES returns the live OTP in the response for listed numbers — a takeover vector if
       // it ever leaks into prod. Must be empty in production (it is only honoured on the console channel,
       // which is itself now rejected above, but this guards it independently as defense in depth).

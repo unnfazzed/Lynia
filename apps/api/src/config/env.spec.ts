@@ -139,6 +139,10 @@ describe("loadEnv — production launch-hygiene boot-guards", () => {
     expect(() => loadEnv({ ...prodBase, OTP_CHANNEL: "console" })).toThrow(/OTP_CHANNEL/);
   });
 
+  it("rejects OTP_CHANNEL=sms in production (SmsOtpSender is an unimplemented stub)", () => {
+    expect(() => loadEnv({ ...prodBase, OTP_CHANNEL: "sms" })).toThrow(/OTP_CHANNEL/);
+  });
+
   it("rejects a non-empty OTP_TEST_PHONES in production", () => {
     expect(() => loadEnv({ ...prodBase, OTP_TEST_PHONES: "+263770000011" })).toThrow(/OTP_TEST_PHONES/);
   });

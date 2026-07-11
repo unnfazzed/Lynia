@@ -59,6 +59,9 @@ export default function OrderScreen(): React.ReactElement {
   const [sortMode, setSortMode] = useState<SortMode>("best");
   // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
   const [selectNotice, setSelectNotice] = useState<string | null>(null);
+  // A bare spinner on the single highest-stakes tap in this journey reads as "frozen" on a slow link —
+  // mirrors the rider-side "Still sending — hang on" treatment (offerSlow in rider/index.tsx).
+  const [selectSlow, setSelectSlow] = useState(false);
   // Which offer is mid-select, so only ITS button spins (the rest just disable) — set in onPress,
   // cleared when the mutation settles.
   const [selectingId, setSelectingId] = useState<string | null>(null);
@@ -106,11 +109,19 @@ export default function OrderScreen(): React.ReactElement {
     };
   }, [orderId]);
 
+  // Mirrors rider/job.tsx's jobPollFallback: while the order socket is connected, its `orderStatus`/
+  // `offersChanged` handlers already invalidate this exact query live — polling on top of that burns a
+  // redundant round-trip every 15s on metered data for the entire length of an auction or a delivery.
+  // A ref (not state) so this reads the LATEST connection state inside refetchInterval's closure
+  // without needing useOrderSocket declared before this query (its `expected` flag depends on the
+  // order's own status, which this query is what fetches — a ref sidesteps that ordering cycle).
+  const socketConnectedRef = useRef(false);
   const orderQ = useQuery({
     queryKey: orderKey(orderId),
     queryFn: () => getOrder(orderId),
     enabled: orderId !== "",
     refetchInterval: (q) => {
+      if (socketConnectedRef.current) return false;
       const s = q.state.data?.status;
       // WS pushes now drive the live states; polling is only a slow self-heal if the socket drops.
       if (s === "open_for_offers") return 15_000;
@@ -169,6 +180,8 @@ export default function OrderScreen(): React.ReactElement {
   const wasConnected = React.useRef(false);
   if (connected) wasConnected.current = true;
   const connectionState: "live" | "reconnecting" = connected ? "live" : "reconnecting";
+  // Keep the poll-gate ref (declared above orderQ) in sync every render.
+  socketConnectedRef.current = connected;
 
   const offersQ = useQuery({
     queryKey: offersKey(orderId),
@@ -225,8 +238,11 @@ export default function OrderScreen(): React.ReactElement {
     if (status && prev && status !== prev && (status === "assigned" || status === "delivered")) {
       haptic("success");
       // Name the transition — the offer list collapses into the tracking view, so a toast confirms what
-      // just happened rather than leaving the change of layout unexplained.
+      // just happened rather than leaving the change of layout unexplained. `delivered` used to get only
+      // the silent haptic above, leaving the anxiety-peak "did it arrive?" moment with no on-screen
+      // confirmation until the rating card's header quietly appeared underneath.
       if (status === "assigned") toast.show("You're matched — tracking your rider now.", "success");
+      if (status === "delivered") toast.show("Delivered! Let your rider know how it went.", "success");
     }
     prevStatus.current = status;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on status transition only; toast is stable.
@@ -343,6 +359,14 @@ export default function OrderScreen(): React.ReactElement {
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
     },
   });
+  useEffect(() => {
+    if (!selectM.isPending) {
+      setSelectSlow(false);
+      return;
+    }
+    const t = setTimeout(() => setSelectSlow(true), 4500);
+    return () => clearTimeout(t);
+  }, [selectM.isPending]);
   const rotateM = useMutation({
     mutationFn: () => rotateDeliveryCode(orderId),
     onSuccess: (res) => {
@@ -373,6 +397,20 @@ export default function OrderScreen(): React.ReactElement {
       return notifyWhenRiderOnline(pickup);
     },
   });
+
+  // A mutation error (e.g. "the network is slow, try again" after a select/rotate/rate/cancel/notify
+  // timeout) can be stale the instant the status actually changes underneath it — the request often
+  // DID succeed server-side; the refetch just landed after the client gave up waiting. Without this, the
+  // red banner sits glued to the bottom of an already-correct tracking screen with no way to clear it
+  // short of leaving the order (07-11 finding: "Choose this rider" timeout leaves a permanent false error).
+  useEffect(() => {
+    selectM.reset();
+    rotateM.reset();
+    rateM.reset();
+    cancelM.reset();
+    notifyM.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset stale mutation errors on any real status transition; mutation refs are stable.
+  }, [status]);
 
   if (orderQ.isLoading) {
     return (
@@ -582,7 +620,7 @@ export default function OrderScreen(): React.ReactElement {
             {urgent ? (
               // Pre-surface the recovery affordance BEFORE the dead-end — same destination as the
               // expired state's "Send another request". Ghost so it doesn't compete with "Choose".
-              <Button label="Nudge price & re-broadcast" variant="ghost" onPress={rebroadcast} />
+              <Button label="Raise price & send again" variant="ghost" onPress={rebroadcast} />
             ) : null}
             {orderedOffers.length > 1 ? (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
@@ -624,6 +662,7 @@ export default function OrderScreen(): React.ReactElement {
                       onDecline={() => setDeclinedCounterIds((prev) => new Set(prev).add(o.id))}
                       loading={selectingId === o.id && selectM.isPending}
                       disabled={selectM.isPending}
+                      slow={selectingId === o.id && selectSlow}
                     />
                   </BidEntrance>
                 );
@@ -653,7 +692,7 @@ export default function OrderScreen(): React.ReactElement {
                     />
                     <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, marginVertical: 4, fontVariant: ["tabular-nums"] }}>{formatMoney(o.offeredFare)}</Text>
                     <Button
-                      label="Choose this rider"
+                      label={selectingId === o.id && selectSlow ? "Still choosing — hang on" : "Choose this rider"}
                       variant={primaryPick ? "primary" : "ghost"}
                       onPress={() => chooseOffer(o.id)}
                       loading={selectingId === o.id && selectM.isPending}
@@ -700,7 +739,7 @@ export default function OrderScreen(): React.ReactElement {
                         loading={notifyM.isPending}
                       />
                     )}
-                    <Button label="Nudge price & re-broadcast" variant="ghost" onPress={rebroadcast} />
+                    <Button label="Raise price & send again" variant="ghost" onPress={rebroadcast} />
                   </EmptyState>
                 </View>
               ) : (
@@ -766,6 +805,11 @@ export default function OrderScreen(): React.ReactElement {
               <>
                 <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>
                   Rider phone: {order.counterpartyPhone}
+                </Text>
+                {/* The number is only ever revealed assigned→completed (PHONE_REVEAL_STATUSES) — a
+                    trust feature only matters if the customer can perceive it, so say so. */}
+                <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
+                  Shared only while your delivery is live — for your privacy.
                 </Text>
                 {/* One-tap dialer next to the visible number — a call beats copy/paste mid-delivery. */}
                 <Pressable
@@ -906,8 +950,17 @@ export default function OrderScreen(): React.ReactElement {
             />
           )
         ) : null}
-        {/* Order-level support — replaces the generic-help dead-end for an active or completed trip. */}
-        {isActive || order.status === "delivered" || order.status === "completed" || order.status === "undelivered" ? (
+        {/* Order-level support — replaces the generic-help dead-end for an active or completed trip.
+            Also available during the auction wait (open_for_offers/expired): the server-side `raise()`
+            already accepts a report at any status, but the control was previously hidden during the
+            single most anxious stretch of the journey — "is anyone going to take my price?" — forcing
+            a worried customer off this screen and into the generic Help flow with no orderId context. */}
+        {isActive ||
+        order.status === "open_for_offers" ||
+        order.status === "expired" ||
+        order.status === "delivered" ||
+        order.status === "completed" ||
+        order.status === "undelivered" ? (
           <GetHelpControl orderId={orderId} />
         ) : null}
         {/* Report / block after a trip (customer → rider). Terminal states only. */}

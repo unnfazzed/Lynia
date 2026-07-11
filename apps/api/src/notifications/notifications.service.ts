@@ -43,7 +43,7 @@ const FEED_NOTICES: Record<string, { icon: string; title: string; message: strin
   en_route_dropoff: { icon: "navigation", title: "On the way to drop-off", message: "Your parcel is on the way to drop-off." },
   delivered: { icon: "check", title: "Delivered", message: "Your parcel was delivered — rate your rider." },
   completed: { icon: "check", title: "Delivery complete", message: "This trip is done. Thanks for using Lynia." },
-  expired: { icon: "clock", title: "No riders yet", message: "No rider took your price. Nudge it up and re-broadcast." },
+  expired: { icon: "clock", title: "No riders yet", message: "No rider took your price yet. Try raising it and sending again." },
   undelivered: { icon: "triangle-alert", title: "Delivery couldn't be completed", message: "Your rider couldn't hand the parcel over — tap for details." },
   cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "This delivery was cancelled." },
 };
@@ -64,7 +64,7 @@ const STATUS_NOTICES: Record<string, Notice> = {
   en_route_dropoff: { to: ["customer"], title: "On the way to drop-off", body: "Your parcel is on the way to drop-off." },
   delivered: { to: ["customer"], title: "Delivered", body: "Your parcel was delivered — tap to rate your rider." },
   completed: { to: ["rider"], title: "Delivery complete", body: "Nice work — you're free for the next job." },
-  expired: { to: ["customer"], title: "No riders yet", body: "No rider took your price. Nudge it up and re-broadcast." },
+  expired: { to: ["customer"], title: "No riders yet", body: "No rider took your price yet. Try raising it and sending again." },
   // Terminal hand-off failure (C6/F-02): the RIDER marked it (they already know), so this pushes the
   // CUSTOMER only — the party who must learn their parcel wasn't delivered. Mirrors the FEED_NOTICES
   // `undelivered` copy so the in-app feed row matches the push the customer saw (the feed↔push contract).
@@ -220,7 +220,7 @@ export class NotificationsService {
     try {
       await this.send(customerProfileIds, {
         title: "A rider's online near you",
-        body: "Riders are back near your pickup — re-broadcast your parcel to get offers.",
+        body: "Riders are back near your pickup — send your parcel again to get offers.",
         data: { kind: "riders_available" },
       });
     } catch (err) {

@@ -24,6 +24,11 @@ export function JobDetailsCard({
       {order.counterpartyPhone ? (
         <>
           <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>Customer phone: {order.counterpartyPhone}</Text>
+          {/* The number is only ever revealed assigned→completed (PHONE_REVEAL_STATUSES) — a trust
+              feature only matters if the rider can perceive it, so say so. */}
+          <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
+            Shared only while this delivery is live — for their privacy.
+          </Text>
           {/* One-tap dialer next to the visible number — a call beats copy/paste mid-delivery. */}
           <Pressable
             onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}

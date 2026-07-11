@@ -16,8 +16,12 @@ export default function EarningsScreen(): React.ReactElement {
   const router = useRouter();
   // Shared warm-paint feed (same on-device snapshot as the trips list; load+persist+paused rule shared).
   const { rows, showingStale, isFetching, isError, refetch } = useHistoryFeed();
-  // Earnings = the agreed fare on deliveries I completed as the rider. A record of work, not a balance.
-  const trips = (rows ?? []).filter((o) => o.role === "rider" && o.status === "completed");
+  // Earnings = the agreed fare on deliveries I've delivered as the rider — the fare is fixed at
+  // hand-off and doesn't change based on the customer's rating, so a `delivered` trip (rated or not,
+  // up to the 6h auto-close window) counts here just like `completed`. Excluding it used to make a
+  // just-finished job briefly disappear from Earnings entirely — invisible here, yet visible right
+  // away on Trip history for the same order — right when a rider is most likely to check.
+  const trips = (rows ?? []).filter((o) => o.role === "rider" && (o.status === "completed" || o.status === "delivered"));
   const total = trips.reduce((sum, o) => sum + (Number(o.agreedFare ?? o.proposedFare) || 0), 0);
 
   return (
@@ -64,7 +68,7 @@ export default function EarningsScreen(): React.ReactElement {
             <Text style={{ color: tokens.color.onAccent, fontSize: 12, fontWeight: "600", opacity: 0.9 }}>Agreed &amp; delivered · total</Text>
             <Text style={{ color: tokens.color.onAccent, fontSize: 28, fontWeight: "700", marginTop: 2, fontVariant: ["tabular-nums"] }}>${total.toFixed(2)}</Text>
             <Text style={{ color: tokens.color.onAccent, fontSize: 12, opacity: 0.9, marginTop: 2, fontVariant: ["tabular-nums"] }}>
-              {trips.length} completed {trips.length === 1 ? "trip" : "trips"}
+              {trips.length} delivered {trips.length === 1 ? "trip" : "trips"}
             </Text>
           </Card>
 
@@ -80,7 +84,10 @@ export default function EarningsScreen(): React.ReactElement {
                     <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }} numberOfLines={1}>
                       {o.pickup.landmark || "Pickup"} → {o.dropoff.landmark || "Drop-off"}
                     </Text>
-                    <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>{fmtDate(o.createdAt)}</Text>
+                    <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
+                      {fmtDate(o.createdAt)}
+                      {o.status === "delivered" ? " · Awaiting rating" : ""}
+                    </Text>
                   </View>
                   <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(o.agreedFare ?? o.proposedFare)}</Text>
                 </View>

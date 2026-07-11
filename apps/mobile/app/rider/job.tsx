@@ -7,7 +7,7 @@ import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { collectedItemCount, shouldShowJobError } from "../../src/logic/journey";
 import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE } from "../../src/logic/rider-job";
-import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
+import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { acknowledgeHandback, loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { formatMoney } from "../../src/logic/money";
 import type { LastActive } from "../../src/logic/last-active";
@@ -178,6 +178,33 @@ export default function RiderJob(): React.ReactElement {
       refresh();
     },
     onError: (e) => {
+      // 409 = "Order is not ready for delivery" — thrown when the order isn't en_route_dropoff. A
+      // client-side timeout retry can land here after the server already committed the delivery on the
+      // FIRST attempt: the rider sees a scary generic conflict, then `refresh()` (activeForRider
+      // excludes `delivered`) drops straight to "No active job" with zero acknowledgement the parcel
+      // arrived. Reconcile by checking the order directly — if it's actually delivered/completed,
+      // that's a success, not a failure.
+      if (e instanceof ApiError && e.status === 409 && orderId) {
+        const failedOrderId = orderId;
+        void getOrder(failedOrderId)
+          .then((fresh) => {
+            if (fresh.status === "delivered" || fresh.status === "completed") {
+              haptic("success");
+              setCode("");
+              setOtpTries(0);
+              setError(null);
+              toast.show("Looks like that delivery already went through.", "success");
+            } else {
+              fail(e);
+            }
+            refresh();
+          })
+          .catch(() => {
+            fail(e);
+            refresh();
+          });
+        return;
+      }
       // 403 = the 5-attempt lockout; the customer must re-issue the code. 401 = a wrong code — count it
       // so the rider sees how many tries remain and the field locks at the cap instead of hammering a
       // dead endpoint. Anything else is an unexpected failure.
@@ -236,6 +263,18 @@ export default function RiderJob(): React.ReactElement {
     setOtpTries(0);
     setUndelivering(false);
   }, [orderId]);
+
+  // Sync the local retry counter DOWN whenever the server's committed count is lower than what we
+  // have locally — e.g. the customer just re-issued the delivery code (rotateDeliveryCode resets
+  // deliveryOtpAttempts to 0 server-side), which this screen previously had no way to learn: the
+  // lockout stayed permanently stuck on the same screen instance, contradicting its own "enter the
+  // new one" copy. The local optimistic increment on a 401 (above) stays for instant feedback; this
+  // only ever pulls the count DOWN toward the server's truth, never up.
+  useEffect(() => {
+    const serverAttempts = order?.deliveryOtpAttempts;
+    if (serverAttempts != null && serverAttempts < otpTries) setOtpTries(serverAttempts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reconcile against the server value only; otpTries itself must not retrigger this.
+  }, [order?.deliveryOtpAttempts]);
 
   // Default every item ticked when the rider enters the pickup-verification step — they untick only
   // what's missing. Keyed on primitives so a 6s poll (new object identity, same data) doesn't reset

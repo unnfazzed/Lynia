@@ -16,7 +16,7 @@ import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch"
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason } from "../../src/logic/gates";
 import { formatMoney } from "../../src/logic/money";
-import { Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../src/ui";
 import { SupportCallRow } from "../../src/ui/safety";
 import { parseNum } from "../../src/util";
 
@@ -81,7 +81,11 @@ export default function RiderHome(): React.ReactElement {
     void requestLocation();
   }, [requestLocation]);
 
-  const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 8000 });
+  // Board push (declared here, ahead of its other uses below) already invalidates ["activeJob"] live
+  // on every `orderTaken` event — so the REST poll only needs to run as a self-heal fallback while the
+  // board socket is down, the same pattern job.tsx already uses for its own active-job query.
+  const board = useRiderBoard(online, loc, bidIds);
+  const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: board.connected ? false : 8000 });
   // R8 follow-up: hide the "active job" card for a cancelled order the rider has already handed back.
   // activeForRider keeps surfacing a collected-then-cancelled order for 24h (so a backgrounded rider
   // can reopen it), but once they've acknowledged the hand-back it must not keep nagging as "active".
@@ -219,11 +223,6 @@ export default function RiderHome(): React.ReactElement {
     }, 20_000);
     return () => clearInterval(t);
   }, [online]);
-
-  // Board push: new orders arrive live over WS while online; the poll is the 15s self-heal fallback.
-  // Pass `bidIds` so the board can tell an un-bid order taken by someone else (a muted board notice)
-  // from a bid the rider lost (its sent-offer card already shows "not chosen").
-  const board = useRiderBoard(online, loc, bidIds);
 
   // 2·b1: a single, self-clearing "a nearby order was just taken" line. Ticks up each time an un-bid
   // board order is assigned to another rider; the timer resets so a flurry stays one calm line, then
@@ -402,7 +401,7 @@ export default function RiderHome(): React.ReactElement {
                 </Text>
               </>
             ) : (
-              <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({activeJob.status.replace(/_/g, " ")})</Text>
+              <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({statusPillLabel(activeJob.status)})</Text>
             )}
             {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
             <Button label="Open job" variant="ghost" onPress={() => router.push("/rider/job")} />
@@ -526,10 +525,13 @@ export default function RiderHome(): React.ReactElement {
             message={ONLINE_GATE_COPY[gate].message}
           >
             {/* Recoverable-by-retry states re-DRIVE the online toggle (the server re-checks and either
-                lets them through or re-gates) — cooldown elapses, on-hold recovers, and out-of-area
-                clears once they ride back into the corridor. "Refresh status" alone only refetched
-                ["me"], which never cleared `gate`, so these used to be dead ends. */}
-            {gate === "cooldown" || gate === "out_of_area" || gate === "on_hold" ? (
+                lets them through or re-gates) — cooldown elapses and out-of-area clears once they ride
+                back into the corridor. "Refresh status" alone only refetched ["me"], which never cleared
+                `gate`, so these used to be dead ends. `on_hold` is NOT included: only an admin's
+                `clearHold` action lifts it (see admin-riders.service.ts) — nothing this button does can
+                change the outcome, so it's dropped in favour of the support-call row below, matching the
+                "contact support" copy in ONLINE_GATE_COPY.on_hold. */}
+            {gate === "cooldown" || gate === "out_of_area" ? (
               <Button label="Try again" onPress={() => onlineM.mutate(true)} loading={onlineM.isPending} />
             ) : null}
             {/* R4: suspended / on hold / banned all say "contact support" — a real `tel:` call row, not

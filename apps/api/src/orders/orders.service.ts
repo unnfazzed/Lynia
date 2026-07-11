@@ -526,6 +526,7 @@ export class OrdersService {
         itemsCollected: true,
         undeliveredReason: true,
         deliveryAttempts: true,
+        deliveryOtpAttempts: true,
         cancelReason: true,
         cancelledBy: true,
         collectedAt: true,
@@ -606,6 +607,11 @@ export class OrdersService {
       // screen. Null until the order is `undelivered`.
       undeliveredReason: order.undeliveredReason,
       undeliveredAttempts: order.deliveryAttempts,
+      // R9/07-11: the rider's delivery-code attempt count, so the app can resync its lockout state from
+      // the server instead of a purely local counter — a customer re-issuing the code resets this to 0
+      // server-side (order-lifecycle.service.ts rotateDeliveryCode) with no other way for the rider's
+      // screen to learn that and clear its own lockout.
+      deliveryOtpAttempts: order.deliveryOtpAttempts,
       // 3·b3: the recorded cancel reason + who cancelled, shown on the cancelled terminal. The DB
       // stores the canceller's profile id; the wire carries only their role (no id leak).
       cancelReason: order.status === "cancelled" ? order.cancelReason : null,

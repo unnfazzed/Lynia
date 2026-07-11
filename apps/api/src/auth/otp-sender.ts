@@ -79,7 +79,7 @@ export class WhatsAppOtpSender implements OtpSender {
       });
     } catch (err) {
       this.logger.error(`WhatsApp OTP network error: ${err instanceof Error ? err.message : String(err)}`);
-      throw new ServiceUnavailableException("Couldn't reach the OTP provider");
+      throw new ServiceUnavailableException("Couldn't send the code — try again in a moment.");
     }
     if (!res.ok) {
       const detail = await res.text().catch(() => "");

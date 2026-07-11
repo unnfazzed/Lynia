@@ -55,6 +55,10 @@ export interface OrderSnapshot {
   // Absent/null on every other status.
   undeliveredReason?: UndeliveredReason | null;
   undeliveredAttempts?: number | null;
+  // The server's committed delivery-code attempt count — lets the rider's screen resync its lockout
+  // state (e.g. after the customer re-issues the code, which resets this to 0 server-side) instead of
+  // trusting a purely local counter that has no way to learn about a server-side reset.
+  deliveryOtpAttempts?: number | null;
   // Set only on the terminal `cancelled` status (3·b3): the recorded reason + which side cancelled.
   cancelReason?: string | null;
   cancelledBy?: "customer" | "rider" | null;

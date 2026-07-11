@@ -15,6 +15,13 @@ import { headers } from "next/headers";
 
 const base = (): string | undefined => process.env.API_BASE_URL;
 
+/** Ceiling on every outbound call to the API. Without it a stalled proxy/API on a weak connection
+ *  blocks the whole SSR render indefinitely — the `loading.tsx` skeletons never resolve into either
+ *  data or an honest error, so the founder just sees an indefinite spinner. Every other outbound call
+ *  in this codebase (mobile client, Didit, WhatsApp, Places) already has a bounded timeout; this one
+ *  didn't. An abort surfaces as `unreachable`, reusing the existing offline/error UI. */
+const ADMIN_FETCH_TIMEOUT_MS = 10_000;
+
 /**
  * Bearer the shared admin token, PLUS forward the real human operator the fail-closed console
  * middleware asserted (via IAP) as `x-lynia-operator`, re-emitted here as `X-Operator`. The API's
@@ -41,7 +48,7 @@ export async function adminFetchResult<T>(path: string): Promise<AdminResult<T>>
   const b = base();
   if (!b) return { reason: "unconfigured" };
   try {
-    const res = await fetch(`${b}${path}`, { headers: await authHeaders(), cache: "no-store" });
+    const res = await fetch(`${b}${path}`, { headers: await authHeaders(), cache: "no-store", signal: AbortSignal.timeout(ADMIN_FETCH_TIMEOUT_MS) });
     if (res.status === 404) return { reason: "not-implemented" };
     if (!res.ok) return { reason: "error" };
     return { data: (await res.json()) as T };
@@ -77,6 +84,7 @@ export async function adminPostResult(path: string, body: unknown): Promise<Admi
       headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       cache: "no-store",
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(ADMIN_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) return { ok: false, reason: "http", status: res.status };
     return { ok: true };
