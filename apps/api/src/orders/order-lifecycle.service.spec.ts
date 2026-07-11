@@ -72,6 +72,53 @@ describe("OrderLifecycleService.advance", () => {
   });
 });
 
+describe("OrderLifecycleService.confirmItems", () => {
+  it("404s for a missing order", async () => {
+    const { svc } = build({ order: { findUnique: async () => null } });
+    await expect(svc.confirmItems("o1", "r1", [0])).rejects.toThrow(/not found/i);
+  });
+
+  it("403s when the caller is not the assigned rider", async () => {
+    const { svc } = build({
+      order: { findUnique: async () => ({ status: "en_route_pickup", riderId: "r1", items: [{}, {}] }) },
+    });
+    await expect(svc.confirmItems("o1", "other", [0])).rejects.toThrow(/assigned rider/i);
+  });
+
+  it("409s when the order is not at the pickup", async () => {
+    const { svc } = build({
+      order: { findUnique: async () => ({ status: "assigned", riderId: "r1", items: [{}, {}] }) },
+    });
+    await expect(svc.confirmItems("o1", "r1", [0])).rejects.toThrow(/pickup/i);
+  });
+
+  it("de-dupes, sorts, and drops out-of-range indexes before persisting", async () => {
+    let data: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "en_route_pickup", riderId: "r1", items: [{}, {}, {}] }),
+        updateMany: async (args: { data: Record<string, unknown> }) => { data = args.data; return { count: 1 }; },
+      },
+    });
+    const result = await svc.confirmItems("o1", "r1", [2, 0, 0, 9, 1]);
+    expect(result).toEqual({ orderId: "o1", confirmedIndexes: [0, 1, 2] });
+    expect(data).toEqual({ itemsCollected: [0, 1, 2] });
+  });
+
+  // Concurrency: a rider double-tapping "confirm items" while an `advance` to picked_up races in
+  // between the read and the write must not silently persist onto the now-stale status.
+  it("409s if the order advanced past en_route_pickup between the read and the CAS write", async () => {
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "en_route_pickup", riderId: "r1", items: [{}, {}] }),
+        // A concurrent `advance` already flipped the row to picked_up — the CAS `where` no longer matches.
+        updateMany: async () => ({ count: 0 }),
+      },
+    });
+    await expect(svc.confirmItems("o1", "r1", [0])).rejects.toThrow(/changed, retry/i);
+  });
+});
+
 describe("OrderLifecycleService.confirmDelivery", () => {
   // confirmDelivery reads the row via a FOR UPDATE $queryRaw (snake_case columns).
   const row = (over: Record<string, unknown> = {}) => [
