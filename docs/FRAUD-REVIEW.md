@@ -83,7 +83,7 @@ anomaly detection on persistently-far-below-suggested fares between the same two
 ---
 
 ### P0-3 · `markUndelivered(refused|wrong_address)` — penalty-free off-books escape hatch
-**`apps/api/src/orders/order-lifecycle.service.ts:273-326` (`markUndelivered`), `apps/api/src/riders/reliability.ts:36-40` (`undeliveredPenalty`), `settlements.service.ts:106`**
+**`apps/api/src/orders/order-lifecycle.service.ts:276-329` (`markUndelivered`), `apps/api/src/riders/reliability.ts:36-40` (`undeliveredPenalty`), `settlements.service.ts:106`**
 
 `grossFares` only sums `status = "completed"` orders, so any other terminal state — notably
 `undelivered` — contributes **nothing** to commission. And `undeliveredPenalty` returns **0** for
@@ -182,7 +182,7 @@ per window; weight the ops-facing count by **distinct completed trips**, not raw
 whose reports cluster on one subject.
 
 ### P1-6 · Reputation is farmable and one-sidedly weaponisable
-**`order-lifecycle.service.ts:353-365` (`rate`), `:379-403` (`rateSender`), `reliability.ts`**
+**`order-lifecycle.service.ts:356-368` (`rate`), `:382-406` (`rateSender`), `reliability.ts`**
 
 There is no distinct-counterparty / velocity control on ratings or reliability recovery. Customer
 `rate()` drives **both** `ratingAvg` and a **−10** reliability hit; rider `rateSender()` is recorded
@@ -214,14 +214,14 @@ report) before a reliability penalty lands.
   BUG-HUNT **P2-1**.) **Fix:** revoke the profile's sessions on ban/suspend; consult account standing
   for sensitive actions.
 - **P2-4 · Strike counter is shared between cancels and dispute strikes, and resets to 0 at the limit.**
-  `order-lifecycle.service.ts:463-469` resets `cancelStrikes: 0` on hitting the limit; `issues.resolve`
+  `order-lifecycle.service.ts:468-474` resets `cancelStrikes: 0` on hitting the limit; `issues.resolve`
   (`:220-225`) increments the same field but never enforces the limit. A serial bailer never escalates;
   an unrelated cancel silently wipes admin-issued strikes. **Fix:** separate columns; enforce
   `RIDER_STRIKE_LIMIT` at increment; monotonic/escalating cooldown.
 - **P2-5 · Multi-accounting.** Only the phone binds an account; cheap SIMs → unlimited customer/rider
   identities for promo abuse, review-bombing, and sock-puppet reports (feeds P1-5). **Fix:** device
   attestation / risk scoring at signup, per-device/IP velocity limits, identity-level aggregation.
-- **P2-6 · Recipient can take the goods then withhold the OTP.** `order-lifecycle.service.ts:221-263` —
+- **P2-6 · Recipient can take the goods then withhold the OTP.** `order-lifecycle.service.ts:233-275` —
   delivery is provable *only* by the recipient-held OTP; a dishonest recipient strands the rider (no
   credit, no rating) with only a *false* `undelivered` as an exit. **Fix:** rider-side
   proof-of-delivery dispute (photo + geofence) opening an admin-reviewable state.

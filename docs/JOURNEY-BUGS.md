@@ -57,7 +57,7 @@ what the original 2026-07-05 pass found — current status is annotated inline r
 ### P1 — blockers
 
 **R1 · There is no "mark undelivered" flow anywhere in the rider app.** — ✅ FIXED
-`apps/mobile/src/api/orders.ts:145` now exports `markUndelivered`; `apps/mobile/app/rider/job.tsx:216`
+`apps/mobile/src/api/orders.ts:145` now exports `markUndelivered`; `apps/mobile/app/rider/job.tsx:223`
 wires it into a mutation with a "Can't complete delivery" action, resolving to the terminal +
 back-to-board flow this finding asked for.
 
@@ -83,12 +83,13 @@ the `on_hold` gate (the server re-checks and lets a recovered rider through) and
 Admin side: an `on_hold` rider previously had no admin action at all (only `suspended` riders got
 Lift/Ban) — `POST /admin/riders/:id/clear-hold` (`admin.controller.ts:188`,
 `admin-riders.service.ts` `clearHold`) now gives an admin a real "Clear hold" trigger, surfaced in
-`apps/admin/app/riders/[id]/RiderActions.tsx`. The on_hold copy in `gates.ts` still says "complete a
-few clean trips to recover it," which remains the literal mechanism (self-recovery is still not
-possible without going online first) — not stale, just worth knowing this is now escapable via support.
+`apps/admin/app/riders/[id]/RiderActions.tsx`. The on_hold copy in `gates.ts` no longer points at the
+impossible self-recovery path — it now reads "Your reliability score dropped too low to keep riding
+automatically. Contact support to have your account reviewed." (2026-07-10 UX pass), matching how it's
+actually escapable: support → admin `clearHold`.
 
 **R6 · Getting selected doesn't move the rider to the job — no push deep-link, no socket nav.** — ✅ FIXED by PR #150
-`apps/mobile/app/rider/index.tsx:256-262` · `src/push/push.ts`
+`apps/mobile/app/rider/index.tsx:391-409` · `src/push/push.ts`
 On selection the rider learns only via `activeQ` polling every 8s, rendering a card they must manually
 tap. There's no `addNotificationResponseReceivedListener`, and the board socket listens only for
 `boardNewOrder`/`bidExpired`.
@@ -108,7 +109,7 @@ landmark text but no "Open in Maps" / turn-by-turn.
 pickup and drop-off points.
 
 **R8 · `job:cancelled` while backgrounded strands a post-pickup rider with no hand-back info.** — ✅ FIXED
-`apps/mobile/app/rider/job.tsx:264-281` now freezes the hand-back terminal from either the live socket
+`apps/mobile/app/rider/job.tsx:271-288` now freezes the hand-back terminal from either the live socket
 event OR a fetched `cancelled` order still in `/orders/mine/active` for a collected parcel;
 `apps/mobile/src/ui/rider/terminals.tsx` `CancelledHandback` shows "you still have the parcel" guidance
 plus a tap-to-call sender phone.
@@ -131,10 +132,10 @@ area… Head back toward the city, then refresh.") and a `Try again` retry butto
 - **"Continue verification" is a silent no-op when no URL comes back.** `rider/index.tsx:166-178` —
   still opens the browser only if `verificationUrl` starts with `https://`, else silently just
   invalidates `["me"]` with no feedback. Still open.
-- ✅ FIXED — **`getMe` failure shows the full online dashboard optimistically.** `rider/index.tsx:367-377`
+- ✅ FIXED — **`getMe` failure shows the full online dashboard optimistically.** `rider/index.tsx:416-426`
   now has an explicit `meQ.isError` branch rendering a "Couldn't load your rider status" EmptyState +
   Retry instead of the online dashboard.
-- ✅ FIXED — **Location denied is invisible on the board.** `rider/index.tsx:53,446-456` — `locDenied`
+- ✅ FIXED — **Location denied is invisible on the board.** `rider/index.tsx:53,495-505` — `locDenied`
   now blocks the whole board behind an explicit "Can't find your location" gate with "Open location
   settings", instead of a swallowed `catch {}`.
 - **All-items-unticked is a soft dead-end.** `apps/mobile/src/ui/rider/PickupChecklist.tsx:78-83` —
