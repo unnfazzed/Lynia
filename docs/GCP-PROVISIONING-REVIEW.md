@@ -147,7 +147,7 @@ workflow) showed:
 1. Pin secret versions at deploy time (e.g. resolve the current version number in
    release.yml instead of `:latest`), or at minimum log `createTime` of each secret
    version in the deploy step.
-2. Make the API image build reproducible: `apps/api/Dockerfile:19` uses
+2. Make the API image build reproducible: `apps/api/Dockerfile:28` uses
    `--frozen-lockfile=false` (needed because only 3 of 6 workspace `package.json`s
    are copied). Copy all workspace manifests and use `--frozen-lockfile` so an image
    rebuild of the same sha is bit-for-bit equivalent.
@@ -188,7 +188,7 @@ at least `::warning::`) the deploy, because it ships a service whose sign-in pat
 | Gap | Impact | Fix — automatable? |
 |---|---|---|
 | **Cloud Scheduler jobs** (`lynia-retention-purge` daily → `POST /admin/retention/purge`, settlement autopause) | GDPR-ish retention purge **never runs**; `SCHEDULER_SERVICE_ACCOUNT` is injected but nothing calls the endpoint | **Yes — add `google_cloud_scheduler_job` to Terraform** (must live in `europe-west1`; africa-south1 has no Scheduler). OIDC: service account `lynia-run@…`, audience = exact endpoint URL (`admin-or-scheduler.guard.ts` pins origin+path). Currently a manual runbook step (§2) that hasn't been done |
-| **OTel collector** Cloud Run service + `otel-collector-config` secret | No traces/metrics; SLO alert policies can't be enabled (`slo_alerts_enabled=false` or apply fails); LR9/LR11 blocked | **Yes — terraform-able** (`google_cloud_run_v2_service` from `infra/otel-collector/service.yaml.template` + a `google_secret_manager_secret` from `config.yaml`), or keep the documented manual `gcloud run services replace`. Note the runbook's own warning: a normal release deploy **drops the sidecar** — folding it into release.yml is the durable fix |
+| **OTel collector** Cloud Run service + `otel-collector-config` secret | No traces/metrics; SLO alert policies can't be enabled (`slo_alerts_enabled=false` or apply fails); LR9/LR11 blocked | **Yes — terraform-able** (`google_cloud_run_v2_service` from `infra/otel-collector/service.yaml.template` + a `google_secret_manager_secret` from `config.yaml`), or keep the documented manual `gcloud run services replace`. Correction: a normal release deploy does **not** drop the sidecar — `gcloud run deploy --image` **preserves** it, which is exactly what wedged prod §3 above. `release.yml`'s "Guard against an orphaned collector sidecar" step now fails a deploy fast when a sidecar is present without `OTEL_SIDECAR_ENABLED=true`; folding the sidecar into `release.yml` under that flag is the durable fix |
 | **Monitoring dashboard + SLO alerts** | No alerting; canary 5xx gate is the only automated signal | Dashboard: one `gcloud monitoring dashboards create -f infra/otel-collector/dashboard.json`. Alerts: flip `slo_alerts_enabled=true` + `alert_notification_channels` **after** the collector is live |
 | **Push notifications**: `PUSH_PROVIDER=noop` repo Variable overrides the launch-safe `fcm` default | No push in prod despite FCM IAM + APIs being ready | Repo-var flip (`PUSH_PROVIDER` → unset/`fcm`) + Firebase app for `zw.co.lynia` + `google-services.json` into EAS (founder) |
 | **Mobile pipeline dormant**: `EAS_RELEASE_ENABLED` unset | No Play builds / OTA from CI | Founder: `eas init`, `EXPO_TOKEN`, `EAS_PROJECT_ID`, Play service account — not codeable |

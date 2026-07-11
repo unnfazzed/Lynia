@@ -242,10 +242,13 @@ report) before a reliability penalty lands.
   against the rider's live distance or actual arrival (`offer-ranking.ts:79`). Sanity-check vs `geog`.
 - **TOCTOU stale offer** — `makeOffer`'s status read and `offer.create` aren't in one tx, so an offer
   can be inserted onto a just-closed order (`offers.service.ts:24-65`); un-selectable but pollutes.
-- **`on_hold` recovery dead-end** — the only way to raise reliability requires being assigned, which
-  requires being online, which `on_hold` blocks; self-clear is impossible without an admin lift
-  (`reliability.ts` + `rider.service.ts:43`). Interacts with P0-1 (self-dealing becomes the *only*
-  self-service recovery).
+- **`on_hold` self-clear is impossible** — the only way to raise reliability requires being assigned,
+  which requires being online, which `on_hold` blocks (`reliability.ts`); a rider can never earn their
+  way out on their own. **Fixed (admin side):** `POST /admin/riders/:id/clear-hold`
+  (`admin.controller.ts:188`, `admin-riders.service.ts` `clearHold`) now gives an admin an explicit
+  escape hatch — previously an `on_hold` rider had no admin action at all (only `suspended` riders got
+  Lift/Ban). Self-service recovery is still absent, so the P0-1 interaction (self-dealing as the only
+  *self*-service recovery) still applies.
 - **Throttle keyed by IP, not subject** — the guard runs before `JwtAuthGuard` so authenticated limits
   fall back to IP (`throttle.guard.ts:41-63`); per-account offer/verify limits aren't really per
   account.

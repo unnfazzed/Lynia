@@ -28,7 +28,7 @@ not code — see `LAUNCH-EXECUTION-RUNBOOK.md` §8) and two deliberate deferrals
 | OTA hotfix lane | ✅ `mobile-ota.yml` + `expo-updates@~0.27.5` + `runtimeVersion: fingerprint`; EAS project linked (`app.config.ts` fallback `easProjectId`), so the `updates` config is live — the CI publish path is still separately gated behind `EAS_RELEASE_ENABLED` |
 | CODEOWNERS + PR template (risk/rollback/migration checklist) | ✅ `.github/` |
 | **§2e correction:** the candidate's tagged `run.app` URL is unreachable from CI (default URLs disabled, LB-only ingress) | smoke = revision-readiness gate + %-shift + health **through the LB** (`/healthz` — the actual route; README's `/health` is loose prose), which is what `release.yml` implements |
-| Staging stack (§2d) | ✅ `infra/terraform/staging.tf` (own SQL/Redis/secrets/SA/bucket behind `staging_enabled=false`, staging host on the shared ALB) + `deploy-staging.yml` (auto on main, `APP_ENV=staging` QA tier, smoke) — founder applies + arms (runbook §8e) |
+| Staging stack (§2d) | ✅ `infra/terraform/staging.tf` (own SQL/Redis/secrets/SA/bucket, `staging_enabled` default `false` in-repo) — **applied and armed**: `deploy-staging.yml` has run green on every `main` push since 2026-07-08 (`docs/GCP-PROVISIONING-REVIEW.md` §2), auto on main, `APP_ENV=staging` QA tier, smoke |
 | Min-supported-version gate (§1c) | ✅ server-driven: `GET /app/version-gate` (env `MIN_SUPPORTED_APP_VERSION`, off by default) + shared contract + mobile fail-open fetch feeding the existing force-update screen; `APP_ENV` tier added so staging may run QA bypasses while prod hardcodes them off |
 | Release train | ✅ `release-please.yml` (release PR → `vX.Y.Z` tag → triggers the Play release; annotated version in `app.config.ts`) |
 
