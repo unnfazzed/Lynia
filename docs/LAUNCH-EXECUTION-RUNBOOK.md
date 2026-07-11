@@ -163,6 +163,11 @@ to route 100% back. **Exercise it once** (LR21).
 
 ### c) EAS + Google Play — arms mobile-release.yml and mobile-ota.yml
 
+> One-shot: `scripts/eas-arm.sh` automates every scriptable step below (GitHub variables/secrets,
+> EAS secrets, the `production-mobile` environment, the arming switch) and pauses only for the
+> human-only ones (Expo login, Play Console, token paste). `scripts/eas-arm.sh --verify` is a
+> read-only audit of what's armed. The commands below remain the manual reference.
+
 ```bash
 npm i -g eas-cli && eas login                       # or use npx eas-cli
 cd apps/mobile
