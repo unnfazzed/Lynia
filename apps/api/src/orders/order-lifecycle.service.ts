@@ -219,10 +219,13 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // contract allows 0–9) can't persist a phantom row the checklist would render.
     const itemCount = Array.isArray(order.items) ? order.items.length : 0;
     const indexes = [...new Set(confirmedIndexes)].filter((i) => i < itemCount).sort((a, b) => a - b);
-    await this.prisma.order.update({
-      where: { id: orderId },
+    // CAS guard — a concurrent `advance` to picked_up between the read above and this write must not
+    // let a stale confirmItems call persist onto the now-later status.
+    const claimed = await this.prisma.order.updateMany({
+      where: { id: orderId, status: "en_route_pickup" },
       data: { itemsCollected: indexes as unknown as Prisma.InputJsonValue },
     });
+    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
     return { orderId, confirmedIndexes: indexes };
   }
 
