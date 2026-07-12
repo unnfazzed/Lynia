@@ -3,7 +3,16 @@ import * as Location from "expo-location";
 import { useEffect, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { useAuth } from "../auth/auth-context";
-import { PendingFix } from "./location-buffer";
+// This top-level import is ALSO load-bearing for its side effect: background-location-task.ts calls
+// TaskManager.defineTask at module scope (Expo requires the definition outside any React lifecycle),
+// and importing it here — from a module the job screen pulls in — guarantees the task is defined at
+// bundle load, before Android could ever deliver a background fix to it.
+import {
+  setBackgroundFixForwarder,
+  startRiderBackgroundUpdates,
+  stopRiderBackgroundUpdates,
+} from "./background-location-task";
+import { type Fix, PendingFix } from "./location-buffer";
 import { createSocket } from "./socket";
 
 /**
@@ -15,6 +24,15 @@ import { createSocket } from "./socket";
  * hold only the FRESHEST fix (PendingFix) and flush that one on reconnect — the customer's map wants
  * where the rider is now, not the breadcrumb trail. This also refreshes the server heartbeat the instant
  * the link returns, so the rider doesn't read as "gone dark" a beat longer than the outage itself.
+ *
+ * The foreground `watchPositionAsync` stream is the primary path, but it silently pauses whenever the
+ * app is backgrounded — and the job screen's "Follow route in Google Maps" hand-off backgrounds the app
+ * for most of the trip. So alongside it we start the background location task (an Android foreground
+ * service; see background-location-task.ts), strictly scoped to the same active-job window: it starts
+ * when this effect opens the stream and is stopped in the same cleanup that closes it, so streaming is
+ * provably off outside assigned→delivered. Best-effort by design — if it can't start (iOS without
+ * "always" permission, which we deliberately never request; Expo Go; OEM quirks) we degrade silently to
+ * today's foreground-only behaviour, never crash or block the job flow.
  *
  * Returns `permissionDenied` — this is a DIFFERENT check from the "go online" gate's location
  * permission check (rider/index.tsx): permission can be granted when a rider goes online and then
@@ -54,15 +72,22 @@ export function useRiderLocationStream(orderId: string | null): { permissionDeni
       socket.on("disconnect", () => {
         connected = false;
       });
+      const send = (fix: Fix): void => {
+        // Connected: emit live. Disconnected: hold only the freshest fix (don't emit, or Socket.IO
+        // would queue the whole stale trail) and let the reconnect handler flush it.
+        if (connected) socket?.emit(WS_EVENTS.riderLocation, fix);
+        else buffered.hold(fix);
+      };
+      // The background task's callback runs headless (no React context), so it can't reach this
+      // effect's socket/buffer on its own — hand it the same `send` path through the module-level
+      // bridge. Register the bridge BEFORE starting updates so no early fix lands unforwarded, and
+      // note the process stays alive under the Android foreground service, so this closure (and the
+      // socket in it) survives backgrounding.
+      setBackgroundFixForwarder(({ lat, lng }) => send({ orderId, lat, lng }));
+      void startRiderBackgroundUpdates();
       sub = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.Balanced, distanceInterval: 25, timeInterval: 10_000 },
-        (loc) => {
-          const fix = { orderId, lat: loc.coords.latitude, lng: loc.coords.longitude };
-          // Connected: emit live. Disconnected: hold only the freshest fix (don't emit, or Socket.IO
-          // would queue the whole stale trail) and let the reconnect handler flush it.
-          if (connected) socket?.emit(WS_EVENTS.riderLocation, fix);
-          else buffered.hold(fix);
-        },
+        (loc) => send({ orderId, lat: loc.coords.latitude, lng: loc.coords.longitude }),
       );
       // Unmounted / orderId cleared during the first-fix await — cleanup already ran and won't see this
       // subscription, so remove it here or it leaks and keeps emitting after teardown.
@@ -75,6 +100,13 @@ export function useRiderLocationStream(orderId: string | null): { permissionDeni
     return () => {
       cancelled = true;
       sub?.remove();
+      // The caller nulls orderId the moment the job leaves the active window, so this cleanup IS the
+      // privacy gate for the background task too. Unhook the bridge first — the native stop is async,
+      // and a straggler task invocation racing it must be dropped, not misdelivered — then stop the
+      // updates (internally guarded by hasStartedLocationUpdatesAsync and safe against a concurrent
+      // restart for a new job; see background-location-task.ts).
+      setBackgroundFixForwarder(null);
+      void stopRiderBackgroundUpdates();
       socket?.disconnect();
     };
   }, [orderId, token]);

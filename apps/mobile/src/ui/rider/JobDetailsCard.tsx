@@ -92,15 +92,22 @@ export function JobDetailsCard({
       {/* Maps-sync (§3·2): hand the rider turn-by-turn navigation for the pickup → drop-off leg in
           Google Maps. No Places key needed — a universal Maps URL. Shown while the run is active. */}
       {isActive ? (
-        <Pressable
-          onPress={() => void Linking.openURL(mapsDirectionsUrl(order.pickup.point, order.dropoff.point))}
-          accessibilityRole="button"
-          accessibilityLabel="Follow the route in Google Maps"
-          style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
-        >
-          <Icon name="navigation" size={16} color={tokens.color.accentText} />
-          <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Follow route in Google Maps</Text>
-        </Pressable>
+        <>
+          <Pressable
+            onPress={() => void Linking.openURL(mapsDirectionsUrl(order.pickup.point, order.dropoff.point))}
+            accessibilityRole="button"
+            accessibilityLabel="Follow the route in Google Maps"
+            style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+          >
+            <Icon name="navigation" size={16} color={tokens.color.accentText} />
+            <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Follow route in Google Maps</Text>
+          </Pressable>
+          {/* The hand-off backgrounds this app; the foreground-service stream (use-rider-location)
+              keeps the customer's map live meanwhile — say so, so the switch feels safe to make. */}
+          <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
+            Your live location keeps sharing with the customer while you navigate.
+          </Text>
+        </>
       ) : null}
       <Stepper events={order.events} currentStatus={order.status} view="rider" />
     </Card>
