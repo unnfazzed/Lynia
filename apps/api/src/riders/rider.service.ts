@@ -240,16 +240,17 @@ export class RiderService {
    */
   private async drainNotifyWaiters(lat: number, lng: number): Promise<void> {
     try {
-      // F-18: drainNotifyNear now claims each waiter ATOMICALLY (GEOSEARCH+ZREM in one Lua eval), so two
-      // API instances can't both ping the same customer. AT-MOST-ONCE is the deliberate trade-off: a
-      // waiter is removed the instant it's claimed, BEFORE the push below. If notifyRidersAvailable can't
-      // deliver — the customer has no device token (permanent, correctly dropped) or a transient FCM batch
-      // failure — the waiter is NOT re-queued and a later rider won't re-ping them. That transient loss is
-      // logged inside notifyRidersAvailable (it warns and never throws), so it's observable rather than
-      // silent. A durable re-queue (claim → holding set → confirm-on-push) would need a new Redis
-      // structure + a reaper and is out of this change's file set — tracked as a follow-up.
-      const waiters = await this.tracking.drainNotifyNear(lat, lng, NOTIFY_RADIUS_M);
-      if (waiters.length > 0) await this.notifications.notifyRidersAvailable(waiters);
+      // F-18 (at-least-once): CLAIM nearby waiters under a short per-waiter lock (dedups concurrent
+      // instances AND a burst of riders coming online together → one ping, not N), push, then CLEAR only
+      // the ones actually delivered. A waiter is never removed until a push lands, so a no-token /
+      // transient-FCM failure — or a crash mid-push — leaves them queued for the next nearby rider
+      // instead of being silently dropped. Undelivered claims self-release when the lock TTL lapses; the
+      // notify-list TTL bounds the total wait. All best-effort — never affects the rider going online.
+      const claimed = await this.tracking.claimNotifyWaitersNear(lat, lng, NOTIFY_RADIUS_M);
+      if (claimed.length === 0) return;
+      const delivered = await this.notifications.notifyRidersAvailable(claimed);
+      const toClear = claimed.filter((id) => delivered.has(id));
+      if (toClear.length > 0) await this.tracking.clearNotifyWaiters(toClear);
     } catch {
       /* best-effort: a notify-drain failure never affects the rider going online */
     }

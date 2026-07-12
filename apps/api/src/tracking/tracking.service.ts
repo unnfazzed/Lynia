@@ -48,6 +48,14 @@ const NOTIFY_EXP_KEY = "notify:exp";
 const NOTIFY_TTL_MS = 60 * 60 * 1000;
 /** Cap on waiting customers drained per rider-online event — a backstop against a pathological set. */
 const NOTIFY_DRAIN_COUNT = 200;
+/** Per-waiter claim lock (F-18 durability). A drain CLAIMS each nearby waiter under this short-lived
+ *  key rather than deleting them, so (a) two API instances — or a burst of riders coming online at
+ *  once — ping a given waiter at most once inside the window, and (b) the waiter isn't removed from the
+ *  list until a push actually lands, so a failed/undeliverable push leaves them queued for the next
+ *  nearby rider (at-least-once). The lock's own TTL is the retry cadence + crash recovery: a claim by an
+ *  instance that then dies simply expires and the waiter is re-claimable. */
+const NOTIFY_CLAIM_PREFIX = "notify:claim:";
+const NOTIFY_CLAIM_TTL_S = 60;
 
 @Injectable()
 export class TrackingService implements OnModuleDestroy {
@@ -461,30 +469,50 @@ export class TrackingService implements OnModuleDestroy {
    * they're pinged once, not on every subsequent rider that comes online). Returns their profile ids for
    * the caller to push. Best-effort and a no-op without Redis (returns []); a Redis error yields [].
    */
-  async drainNotifyNear(lat: number, lng: number, radiusM: number, now: number = Date.now()): Promise<string[]> {
+  async claimNotifyWaitersNear(lat: number, lng: number, radiusM: number, now: number = Date.now()): Promise<string[]> {
     const redis = this.getRedis();
     if (!redis) return [];
     try {
       await this.pruneNotify(redis, now);
-      // F-18: claim-and-remove in ONE atomic round trip via Lua (mirrors RedisOtpStore's incr+expire
-      // script). GEOSEARCH then ZREM-from-both used to be three separate calls, so two API instances
-      // draining the same newly-online rider could both read a waiter before either removed it → the
-      // customer got pinged twice. Reading and removing inside a single eval means the first instance
-      // claims each member and the second's GEOSEARCH no longer sees it — at most one ping per waiter.
-      // Removes from BOTH the geo index (KEYS[1]) and the expiry ZSET (KEYS[2]) so no half-entry lingers.
-      const members = (await redis.eval(
-        "local m = redis.call('geosearch', KEYS[1], 'FROMLONLAT', ARGV[1], ARGV[2], 'BYRADIUS', ARGV[3], 'm', 'ASC', 'COUNT', ARGV[4]); if #m > 0 then redis.call('zrem', KEYS[1], unpack(m)); redis.call('zrem', KEYS[2], unpack(m)) end; return m",
-        2,
+      // F-18 durability: GEOSEARCH then CLAIM each nearby waiter under a short per-waiter lock, in ONE
+      // atomic Lua round trip, returning only the members THIS call locked. The claim (SET NX EX) — not a
+      // delete — is what dedups: two API instances, or a burst of riders coming online together, each
+      // GEOSEARCH the waiter but only the first `SET NX` wins, so the rest skip it (no double-ping). The
+      // waiter stays in the geo/exp list; the caller removes it (clearNotifyWaiters) ONLY once a push has
+      // actually landed, so an undeliverable / transient-failed push leaves them queued for the next
+      // nearby rider — at-least-once, no silent drop. The lock's TTL bounds the retry cadence and self-
+      // heals a claimer that crashes before it can clear or push.
+      const claimed = (await redis.eval(
+        "local m = redis.call('geosearch', KEYS[1], 'FROMLONLAT', ARGV[1], ARGV[2], 'BYRADIUS', ARGV[3], 'm', 'ASC', 'COUNT', ARGV[4]); local c = {}; for i=1,#m do if redis.call('set', ARGV[5]..m[i], '1', 'NX', 'EX', tonumber(ARGV[6])) then c[#c+1]=m[i] end end; return c",
+        1,
         NOTIFY_GEO_KEY,
-        NOTIFY_EXP_KEY,
         lng,
         lat,
         radiusM,
         NOTIFY_DRAIN_COUNT,
+        NOTIFY_CLAIM_PREFIX,
+        NOTIFY_CLAIM_TTL_S,
       )) as string[];
-      return members ?? [];
+      return claimed ?? [];
     } catch {
       return [];
+    }
+  }
+
+  /** Remove waiters from the "notify me" list once they've been SUCCESSFULLY pinged (F-18). Only the
+   *  delivered ids are passed here; undelivered claims are deliberately left in place to be retried by
+   *  the next nearby rider (the claim lock expires on its own). Removes from BOTH the geo index and the
+   *  expiry ZSET so no half-entry lingers. Best-effort — a clear failure just means the waiter may get a
+   *  duplicate ping later, which is the safe direction for an at-least-once nudge. */
+  async clearNotifyWaiters(profileIds: string[]): Promise<void> {
+    if (profileIds.length === 0) return;
+    const redis = this.getRedis();
+    if (!redis) return;
+    try {
+      await redis.zrem(NOTIFY_GEO_KEY, ...profileIds);
+      await redis.zrem(NOTIFY_EXP_KEY, ...profileIds);
+    } catch {
+      /* best-effort: leaving a delivered waiter in place only risks a later duplicate ping */
     }
   }
 }

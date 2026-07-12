@@ -377,33 +377,49 @@ describe("TrackingService notify-me waiting list (2·b1)", () => {
     expect(await noRedis().addNotifyRequest("cust-1", -17.8, 31.0)).toBe(false);
   });
 
-  it("drainNotifyNear atomically claims nearby waiters in ONE eval (GEOSEARCH+ZREM) and returns them", async () => {
+  it("claimNotifyWaitersNear claims nearby waiters under a per-waiter lock in ONE eval (GEOSEARCH + SET NX) and returns them", async () => {
     const redis = notifyRedis(["cust-1", "cust-2"]);
     const s = withRedis();
     s.setRedisClient(redis as never);
-    const drained = await s.drainNotifyNear(-17.8, 31.0, 5000);
-    expect(drained).toEqual(["cust-1", "cust-2"]);
-    // F-18: a single Lua round trip over BOTH structures (numkeys=2) — reads and removes together so a
-    // concurrent instance can't re-claim the same waiter (no double-ping). The bare GEOSEARCH+ZREM pair
-    // this replaced was three separate calls and raced across instances.
+    const claimed = await s.claimNotifyWaitersNear(-17.8, 31.0, 5000);
+    expect(claimed).toEqual(["cust-1", "cust-2"]);
+    // F-18 durability: a single Lua round trip that GEOSEARCHes the geo index (numkeys=1) and SET-NX
+    // locks each hit — the claim, NOT a delete, is what dedups (concurrent instances / a burst of riders
+    // ping each waiter at most once). Removal happens later, only for delivered waiters (clearNotifyWaiters).
     expect(redis.eval).toHaveBeenCalledTimes(1);
-    const [script, numkeys, geoKey, expKey] = redis.eval.mock.calls[0] as [string, number, string, string];
-    expect(numkeys).toBe(2);
+    const [script, numkeys, geoKey] = redis.eval.mock.calls[0] as [string, number, string];
+    expect(numkeys).toBe(1);
     expect(geoKey).toBe("notify:geo");
-    expect(expKey).toBe("notify:exp");
     expect(script).toMatch(/geosearch/i);
-    expect(script).toMatch(/zrem/i);
+    expect(script).toMatch(/set/i);
+    expect(script).toMatch(/nx/i);
+    // Deliberately does NOT delete in the claim step — the waiter survives an undelivered push.
+    expect(script).not.toMatch(/zrem/i);
   });
 
-  it("drainNotifyNear prunes expired entries first, and returns [] with no Redis / on no matches", async () => {
+  it("claimNotifyWaitersNear prunes expired entries first, and returns [] with no Redis / on no matches", async () => {
     const redis = notifyRedis([], ["stale-1"]);
     const s = withRedis();
     s.setRedisClient(redis as never);
-    expect(await s.drainNotifyNear(-17.8, 31.0, 5000, 9999)).toEqual([]);
+    expect(await s.claimNotifyWaitersNear(-17.8, 31.0, 5000, 9999)).toEqual([]);
     // The prune removed the expired member from both structures before searching.
     expect(redis.zrem).toHaveBeenCalledWith("notify:exp", "stale-1");
     expect(redis.zrem).toHaveBeenCalledWith("notify:geo", "stale-1");
     // No Redis → empty, never throws.
-    expect(await noRedis().drainNotifyNear(-17.8, 31.0, 5000)).toEqual([]);
+    expect(await noRedis().claimNotifyWaitersNear(-17.8, 31.0, 5000)).toEqual([]);
+  });
+
+  it("clearNotifyWaiters removes the delivered waiters from BOTH structures (and no-ops on empty / no Redis)", async () => {
+    const redis = notifyRedis();
+    const s = withRedis();
+    s.setRedisClient(redis as never);
+    await s.clearNotifyWaiters(["cust-1", "cust-2"]);
+    expect(redis.zrem).toHaveBeenCalledWith("notify:geo", "cust-1", "cust-2");
+    expect(redis.zrem).toHaveBeenCalledWith("notify:exp", "cust-1", "cust-2");
+    // Empty list is a no-op (no Redis call); no Redis never throws.
+    redis.zrem.mockClear();
+    await s.clearNotifyWaiters([]);
+    expect(redis.zrem).not.toHaveBeenCalled();
+    await expect(noRedis().clearNotifyWaiters(["cust-1"])).resolves.toBeUndefined();
   });
 });

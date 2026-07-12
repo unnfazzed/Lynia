@@ -215,16 +215,20 @@ export class NotificationsService {
    * "notify me" on the no-riders-online auction state). Fan-out to the drained waiting list; the deep
    * link brings them back to re-broadcast. Best-effort, never throws.
    */
-  async notifyRidersAvailable(customerProfileIds: string[]): Promise<void> {
-    if (customerProfileIds.length === 0) return;
+  async notifyRidersAvailable(customerProfileIds: string[]): Promise<Set<string>> {
+    if (customerProfileIds.length === 0) return new Set();
     try {
-      await this.send(customerProfileIds, {
+      // Returns the set actually delivered to (F-18): the caller clears only those from the waiting
+      // list and leaves the rest queued for the next nearby rider — so a no-token/transient-FCM miss
+      // never silently drops a customer who asked to be told.
+      return await this.send(customerProfileIds, {
         title: "A rider's online near you",
         body: "Riders are back near your pickup — send your parcel again to get offers.",
         data: { kind: "riders_available" },
       });
     } catch (err) {
       this.logger.warn(`notifyRidersAvailable failed: ${(err as Error).message}`);
+      return new Set();
     }
   }
 
@@ -258,23 +262,33 @@ export class NotificationsService {
   }
 
   /** Fan a message out to every device of the given profiles, and prune any token the provider
-   *  reports as permanently dead. Private; all callers pre-wrap in try/catch. */
+   *  reports as permanently dead. Returns the set of profile ids the provider ACCEPTED at least one
+   *  device for (used by the F-18 "notify me" at-least-once drain to clear only delivered waiters; other
+   *  callers ignore it). Private; all callers pre-wrap in try/catch. */
   private async send(
     profileIds: string[],
     msg: { title: string; body: string; data?: Record<string, string> },
-  ): Promise<void> {
-    if (profileIds.length === 0) return;
+  ): Promise<Set<string>> {
+    if (profileIds.length === 0) return new Set();
     const tokens = await this.prisma.deviceToken.findMany({
       where: { profileId: { in: profileIds } },
-      select: { token: true },
+      select: { token: true, profileId: true },
     });
-    if (tokens.length === 0) return;
+    if (tokens.length === 0) return new Set();
 
     // One batched provider call (FCM sendEach, chunked ≤500) instead of a per-token round-trip fan-out.
-    // Results align with `tokens` order, so a dead token is pruned by position.
+    // Results align with `tokens` order, so a dead token is pruned — and a delivery credited — by position.
     const results = await this.push.sendEach(
       tokens.map((t) => ({ token: t.token, title: msg.title, body: msg.body, data: msg.data })),
     );
+
+    // A profile counts as delivered if the provider accepted at least one of its devices (`ok`). A
+    // transient whole-batch failure resolves every result to `ok:false` → nobody is credited → the F-18
+    // caller re-queues them for the next rider.
+    const delivered = new Set<string>();
+    tokens.forEach((t, i) => {
+      if (results[i]?.ok) delivered.add(t.profileId);
+    });
 
     // Drop tokens the provider says are unregistered/invalid so the table doesn't grow unbounded and
     // we stop sending to dead devices (a token FCM later reassigns won't keep delivering to the wrong user).
@@ -283,5 +297,6 @@ export class NotificationsService {
       await this.prisma.deviceToken.deleteMany({ where: { token: { in: dead } } });
       this.logger.log(`pruned ${dead.length} dead device token(s)`);
     }
+    return delivered;
   }
 }
