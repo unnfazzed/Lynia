@@ -29,6 +29,7 @@ const trackingStub = {
 } as unknown as import("../tracking/tracking.service").TrackingService;
 const notificationsStub = {
   notifyRidersAvailable: async () => new Set<string>(),
+  notifyProfiles: async () => {},
 } as unknown as import("../notifications/notifications.service").NotificationsService;
 
 function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor: KycVendor = new StubKycVendor()) {

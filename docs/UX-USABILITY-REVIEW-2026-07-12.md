@@ -9,6 +9,15 @@
 > verified against the actual code (not inferred from comments or prior docs). One finding (customer #4)
 > and one (rider #2) converged on the same root cause from two different angles — `order/[id].tsx` has no
 > viewer-role awareness — and are merged below into a single finding (#1).
+>
+> **✅ Execution status (2026-07-12).** All 16 findings below are **implemented** on this branch
+> (`pnpm typecheck` + `lint` clean across api/mobile/admin; API 688/688 tests, mobile 285/285 tests — zero
+> pre-existing failures found on either suite this pass, so nothing needed to be excluded as unrelated).
+> Finding #15 (dual-role notifications-feed voice) was implemented directly rather than via the same
+> per-finding agent pass as the others, after the four fix-agent rounds surfaced it as the one item without
+> an assigned owner. Two test files' hand-rolled `NotificationsService` stubs (`rider.service.spec.ts`,
+> `order-lifecycle.service.spec.ts`) needed a `notifyProfiles` no-op added to match the new best-effort
+> calls added by findings #6 and #8 — mechanical stub updates, no assertion or behavior changes.
 
 ---
 

@@ -33,7 +33,8 @@ export interface NotificationRow {
  * How an order-status event renders as a feed row. Deliberately mirrors {@link STATUS_NOTICES} copy so
  * the in-app centre reads the same as the push the user already saw. Statuses absent here (e.g.
  * `requested`, `open_for_offers`) are silent in the feed exactly as they are for push. Icons are valid
- * mobile IconNames (see apps/mobile/src/ui/Icon.tsx).
+ * mobile IconNames (see apps/mobile/src/ui/Icon.tsx). Customer-voiced — used when the viewing user is
+ * the order's customer.
  */
 const FEED_NOTICES: Record<string, { icon: string; title: string; message: string }> = {
   assigned: { icon: "bike", title: "Rider assigned", message: "A rider took your delivery and is confirming the details." },
@@ -45,6 +46,25 @@ const FEED_NOTICES: Record<string, { icon: string; title: string; message: strin
   completed: { icon: "check", title: "Delivery complete", message: "This trip is done. Thanks for using Lynia." },
   expired: { icon: "clock", title: "No riders yet", message: "No rider took your price yet. Try raising it and sending again." },
   undelivered: { icon: "triangle-alert", title: "Delivery couldn't be completed", message: "Your rider couldn't hand the parcel over — tap for details." },
+  cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "This delivery was cancelled." },
+};
+
+/**
+ * Rider-voiced counterpart to {@link FEED_NOTICES}. Dual-role users (a rider's own trip history) were
+ * getting the customer-voiced copy above verbatim — "A rider took your delivery", "rate your rider" —
+ * about jobs they themselves ran, breaking the "mirrors the push you actually saw" contract (their real
+ * push for `assigned`/`completed` is the rider copy in {@link STATUS_NOTICES}). `expired` never applies
+ * to a rider view (an order only expires before any rider is assigned) so it's omitted.
+ */
+const FEED_NOTICES_RIDER: Record<string, { icon: string; title: string; message: string }> = {
+  assigned: { icon: "bike", title: "You got the job", message: "You were selected for a delivery — confirm the parcel details." },
+  confirmed: { icon: "check", title: "You confirmed the parcel", message: "You reviewed the parcel details and are heading to pickup." },
+  en_route_pickup: { icon: "bike", title: "Heading to pickup", message: "You're on the way to the pickup point." },
+  picked_up: { icon: "check", title: "Parcel collected", message: "You picked up the parcel and are on the move." },
+  en_route_dropoff: { icon: "navigation", title: "On the way to drop-off", message: "You're on the way to the drop-off point." },
+  delivered: { icon: "check", title: "Delivered", message: "You delivered the parcel — waiting on the customer's rating." },
+  completed: { icon: "check", title: "Delivery complete", message: "Nice work — you're free for the next job." },
+  undelivered: { icon: "triangle-alert", title: "Delivery not completed", message: "This delivery was marked undelivered — tap for details." },
   cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "This delivery was cancelled." },
 };
 
@@ -99,6 +119,7 @@ export class NotificationsService {
       take: FEED_ORDER_LOOKBACK,
       select: {
         id: true,
+        riderId: true,
         events: {
           select: { status: true, createdAt: true },
           orderBy: { createdAt: "asc" },
@@ -108,8 +129,11 @@ export class NotificationsService {
 
     const rows: NotificationRow[] = [];
     for (const order of orders) {
+      // Pick the voice matching what this viewer actually experienced on THIS order — a dual-role user
+      // can be the rider on one trip and the customer on another, so the role is per-order, not per-user.
+      const notices = order.riderId === userId ? FEED_NOTICES_RIDER : FEED_NOTICES;
       for (const event of order.events) {
-        const notice = FEED_NOTICES[event.status];
+        const notice = notices[event.status];
         if (!notice) continue; // silent statuses (requested/open_for_offers) never surface, as with push
         const at = event.createdAt.toISOString();
         rows.push({

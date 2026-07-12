@@ -832,13 +832,23 @@ export default function OrderScreen(): React.ReactElement {
           </>
         ) : null}
         {order.status === "expired" ? (
-          <EmptyState
-            icon="bike"
-            title="No riders took this price yet"
-            message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
-          >
-            <Button label="Send another request" onPress={rebroadcast} />
-          </EmptyState>
+          // The offers list stays cached from right before expiry (its query disables once the order
+          // leaves open_for_offers, so React Query keeps the last-known data rather than clearing it).
+          // A customer who watched bids come in shouldn't be told "no offers" — and "raise your price"
+          // is actively wrong advice when riders WERE bidding; the real problem was picking in time.
+          bidCount > 0 ? (
+            <EmptyState icon="bike" title="Your choosing window closed" message="Riders did offer, but the window ended before you picked. Send again and they'll likely bid again at the same price.">
+              <Button label="Send another request" onPress={rebroadcast} />
+            </EmptyState>
+          ) : (
+            <EmptyState
+              icon="bike"
+              title="No riders took this price yet"
+              message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
+            >
+              <Button label="Send another request" onPress={rebroadcast} />
+            </EmptyState>
+          )
         ) : null}
         {order.status === "cancelled" ? (
           <Card>
