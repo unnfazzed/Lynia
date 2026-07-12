@@ -597,6 +597,28 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBeNull();
   });
 
+  it("hides the counterparty phone once the order is `completed` (F-09 — the party-to-party window closes at completion)", async () => {
+    // The trip is closed and rated; neither party has a standing reason to keep the other's number,
+    // so it must not linger in order history. Masked for BOTH sides, and the rider's waypoint contacts
+    // go too.
+    const cust = await svc(row({ status: "completed" })).getSnapshot("ord-1", "cust-1");
+    expect(cust.counterpartyPhone).toBeNull();
+    const rider = await svc(row({ status: "completed" })).getSnapshot("ord-1", "rider-1");
+    expect(rider.counterpartyPhone).toBeNull();
+    expect(rider.pickup).not.toHaveProperty("contactPhone");
+    expect(rider.dropoff).not.toHaveProperty("contactPhone");
+  });
+
+  it("still reveals the counterparty phone on `delivered` (order not yet closed — rating window open)", async () => {
+    const snap = await svc(row({ status: "delivered" })).getSnapshot("ord-1", "cust-1");
+    expect(snap.counterpartyPhone).toBe("+263782000000");
+  });
+
+  it("still reveals the counterparty phone on `undelivered` (failed hand-off — customer may need to reach the rider, C6)", async () => {
+    const snap = await svc(row({ status: "undelivered" })).getSnapshot("ord-1", "cust-1");
+    expect(snap.counterpartyPhone).toBe("+263782000000");
+  });
+
   it("rejects a third-party caller entirely (P2-2 — no snapshot to a non-party)", async () => {
     // A caller who is neither the customer nor the assigned rider gets no snapshot at all — the
     // response carries live rider GPS + waypoint coordinates, so it's party-gated, not just phone-redacted.

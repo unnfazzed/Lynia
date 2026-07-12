@@ -143,3 +143,55 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
     await expect(txSvc(tx).resolve("admin-1", "iss-1", { resolution: "close_no_action" })).rejects.toBeInstanceOf(ConflictException);
   });
 });
+
+describe("IssuesService.detailForAdmin — dispute phone reveal (wider than party-to-party)", () => {
+  function detailSvc(orderStatus: string) {
+    const prisma = {
+      issue: {
+        findUnique: async () => ({
+          id: "iss-1",
+          type: "not_delivered",
+          orderId: "ord-1",
+          openedByProfileId: "cust-1",
+          openedByRole: "customer",
+          status: "open",
+          description: "Parcel never arrived.",
+          resolution: null,
+          resolutionNote: null,
+          createdAt: new Date("2026-07-01T00:00:00Z"),
+        }),
+        findMany: async () => [],
+      },
+      order: {
+        findUnique: async () => ({
+          id: "ord-1",
+          status: orderStatus,
+          pickup: { point: { lat: -17.8, lng: 31 }, landmark: "Eastgate" },
+          dropoff: { point: { lat: -17.9, lng: 31.1 }, landmark: "Avenues" },
+          proposedFare: { toString: () => "5.00" },
+          agreedFare: { toString: () => "5.00" },
+          itemPhotoUrl: null,
+          customer: { firstName: "Chipo", lastName: "M", phone: "+263771111111" },
+          rider: { profile: { firstName: "Tafara", lastName: "N", phone: "+263782000000" } },
+        }),
+      },
+      profile: { findMany: async () => [] },
+    };
+    return new IssuesService(prisma as unknown as PrismaService, noNotifications);
+  }
+
+  it("reveals both parties' phones on a COMPLETED-order dispute — ops must call to resolve (F-09 carve-out)", async () => {
+    // The party-to-party window (PHONE_REVEAL_STATUSES) closes at `completed`, but the ops dispute
+    // console keeps the numbers via DISPUTE_PHONE_REVEAL_STATUSES so a completed-order dispute is
+    // actionable. AdminGuard-gated route.
+    const detail = await detailSvc("completed").detailForAdmin("iss-1");
+    expect(detail?.riderPhone).toBe("+263782000000");
+    expect(detail?.customerPhone).toBe("+263771111111");
+  });
+
+  it("masks both parties' phones on an EXPIRED order (no live/closed trip to reveal for)", async () => {
+    const detail = await detailSvc("expired").detailForAdmin("iss-1");
+    expect(detail?.riderPhone).not.toBe("+263782000000");
+    expect(detail?.customerPhone).not.toBe("+263771111111");
+  });
+});
