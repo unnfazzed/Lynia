@@ -23,6 +23,7 @@ const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-012345678
 const noopNotifications = {
   notifyOrderStatus: async () => {},
   notifyNewOffer: async () => {},
+  notifyProfiles: async () => {},
 } as unknown as NotificationsService;
 // Real MetricsService is NoopMeter-safe with no OTLP endpoint (every record is a cheap no-op).
 // The gateway captures job:cancelled so the two-sided WS contract (C3) is asserted at integration
@@ -44,7 +45,7 @@ const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersSer
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
 const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders);
 const trackingStub = { evictFromGeo: async () => {}, claimNotifyWaitersNear: async () => [], clearNotifyWaiters: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
-const notificationsStub = { notifyRidersAvailable: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
+const notificationsStub = { notifyRidersAvailable: async () => {}, notifyProfiles: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
 const riders = new RiderService(prisma, {} as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env), trackingStub, notificationsStub);
 
 async function clean(): Promise<void> {
