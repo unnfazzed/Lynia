@@ -62,6 +62,9 @@
     ],
     "transformIgnorePatterns": [
       "node_modules/(?!.*(?:react-native|@react-native|expo|@expo|@unimodules|unimodules|native-base|react-navigation|@react-navigation|lucide-react-native|react-native-svg))"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^lucide-react-native$": "<rootDir>/node_modules/lucide-react-native/dist/cjs/lucide-react-native.js"
+    }
   }
 }
