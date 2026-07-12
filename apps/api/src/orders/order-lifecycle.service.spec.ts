@@ -555,18 +555,22 @@ describe("OrderLifecycleService.markUndelivered", () => {
     await expect(svc.markUndelivered("o1", "r1", "unreachable")).rejects.toThrow(/after the parcel is picked up/i);
   });
 
-  it("marks undelivered post-pickup, stamps the reason + time, and pushes the status", async () => {
+  it("marks undelivered post-pickup, stamps the reason + time, and pushes the status; a `refused` applies no score penalty", async () => {
     let data: Record<string, unknown> | undefined;
+    let riderUpdated = false;
     const { svc, emits } = build({
       order: {
         findUnique: async () => row({ status: "en_route_dropoff" }),
         updateMany: async (a: { data: Record<string, unknown> }) => { data = a.data; return { count: 1 }; },
+        // FRAUD P0-3 velocity read — a single recent undelivered is below the floor, so no auto-hold.
+        count: async () => 1,
       },
       orderEvent: { create: async () => ({}) },
-      // `refused` is a recipient fault → NO reliability hit, so no rider read/update is expected here.
+      // `refused` is a recipient fault → NO score penalty; the rider row is READ (for the velocity check)
+      // but, with a clean history, never written.
       rider: {
-        findUnique: async () => { throw new Error("refused must not touch reliability"); },
-        update: async () => { throw new Error("refused must not touch reliability"); },
+        findUnique: async () => ({ reliabilityScore: 90, onHold: false }),
+        update: async () => { riderUpdated = true; return {}; },
       },
     });
     expect(await svc.markUndelivered("o1", "r1", "refused")).toEqual({ orderId: "o1", status: "undelivered" });
@@ -575,6 +579,8 @@ describe("OrderLifecycleService.markUndelivered", () => {
     // C6: the failed hand-off is recorded so the customer's terminal shows a real attempt count, not 0.
     expect(data!.deliveryAttempts).toEqual({ increment: 1 });
     expect(emits).toEqual([["o1", "undelivered"]]);
+    // No score penalty AND velocity not tripped → the rider row is not mutated.
+    expect(riderUpdated).toBe(false);
   });
 
   it("Q2: a breakdown (post-pickup bail) applies -postPickupCancel to reliability", async () => {
@@ -583,6 +589,7 @@ describe("OrderLifecycleService.markUndelivered", () => {
       order: {
         findUnique: async () => row({ status: "en_route_dropoff" }),
         updateMany: async () => ({ count: 1 }),
+        count: async () => 0, // no prior undelivered → velocity guard idle
       },
       orderEvent: { create: async () => ({}) },
       rider: {
@@ -601,6 +608,7 @@ describe("OrderLifecycleService.markUndelivered", () => {
       order: {
         findUnique: async () => row({ status: "en_route_dropoff" }),
         updateMany: async () => ({ count: 1 }),
+        count: async () => 0,
       },
       orderEvent: { create: async () => ({}) },
       rider: {
@@ -611,5 +619,28 @@ describe("OrderLifecycleService.markUndelivered", () => {
     await svc.markUndelivered("o1", "r1", "unreachable");
     // -noShow(15): 70 → 55 < ON_HOLD_BELOW(60) → trips on_hold.
     expect(riderData).toMatchObject({ reliabilityScore: 55, onHold: true });
+  });
+
+  it("FRAUD P0-3: auto-holds a rider whose recent undelivered rate is abnormally high — even for a penalty-free `refused`", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    // count() is called for undelivered then completed: 3 undelivered vs 1 completed = 75% ≥ rate(0.5)
+    // and ≥ minCount(3) → the velocity guard trips.
+    const counts = [3, 1];
+    let call = 0;
+    const { svc } = build({
+      order: {
+        findUnique: async () => row({ status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => counts[call++]!,
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ reliabilityScore: 95, onHold: false }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.markUndelivered("o1", "r1", "refused");
+    // The reason carries no score penalty (score stays 95), but the velocity guard forces on_hold.
+    expect(riderData).toMatchObject({ reliabilityScore: 95, onHold: true });
   });
 });

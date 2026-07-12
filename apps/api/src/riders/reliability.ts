@@ -1,4 +1,4 @@
-import { RELIABILITY, UndeliveredReason } from "@lynia/shared";
+import { RELIABILITY, UNDELIVERED_ABUSE, UndeliveredReason } from "@lynia/shared";
 
 /** The two Rider columns the reliability engine reads + writes (Q2). Pure so it unit-tests cleanly
  *  and both order-lifecycle and rider cancel can reuse the exact same maths in-transaction. */
@@ -37,4 +37,20 @@ export function undeliveredPenalty(reason: string): number {
   if (reason === UndeliveredReason.BREAKDOWN) return RELIABILITY.PENALTY.postPickupCancel;
   if (reason === UndeliveredReason.UNREACHABLE) return RELIABILITY.PENALTY.noShow;
   return 0;
+}
+
+/**
+ * FRAUD P0-3 velocity guard: should this rider be auto-held for review given their recent hand-off
+ * history? Trips only when there are ENOUGH undelivered incidents in the window (`minCount` — so a
+ * brand-new rider's single failure can't trip it) AND they are a HIGH FRACTION of finished hand-offs
+ * (`rate` — so a high-volume rider with a few genuine failures is spared). The penalty-free
+ * `refused`/`wrong_address` reasons don't dent the score, so this rate check is the only thing that ever
+ * catches a rider serially abandoning parcels for free. Pure so it unit-tests cleanly; the caller passes
+ * the two counts (the current undelivered already included). `completedCount` is the window denominator.
+ */
+export function shouldFlagUndeliveredVelocity(undeliveredCount: number, completedCount: number): boolean {
+  if (undeliveredCount < UNDELIVERED_ABUSE.minCount) return false;
+  const total = undeliveredCount + completedCount;
+  if (total === 0) return false;
+  return undeliveredCount / total >= UNDELIVERED_ABUSE.rate;
 }
