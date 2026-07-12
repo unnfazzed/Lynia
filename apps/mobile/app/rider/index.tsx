@@ -16,6 +16,7 @@ import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch"
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../src/logic/gates";
 import { formatMoney } from "../../src/logic/money";
+import { clearRiderBidDraft, loadRiderBidDraft, saveRiderBidDraft } from "../../src/logic/rider-bid-draft";
 import { Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../src/ui";
 import { SentOfferCard } from "../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../src/ui/safety";
@@ -56,6 +57,34 @@ export default function RiderHome(): React.ReactElement {
   // re-render this whole board — every open-order card, gate and the compose form — once a second
   // for the length of any auction the rider had bid into.
   const [sentOffers, setSentOffers] = useState<SentOffer[]>([]);
+
+  // JOURNEY-BUGS: restore a bid-compose card that survived a kill/rotation mid-auction (see the
+  // save effect below). Gate saving on this — otherwise the initial blank state would overwrite a
+  // real stored draft before the async load resolves.
+  const bidDraftHydrated = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    void loadRiderBidDraft().then((draft) => {
+      if (!cancelled && draft) {
+        setSelected(draft.selected);
+        setFare(draft.fare);
+        setEta(draft.eta);
+        setOfferMode(draft.offerMode);
+      }
+      if (!cancelled) bidDraftHydrated.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // Persist the compose card (PII-free) whenever it changes, once hydrated. The board's own
+  // expired/taken-dismiss effect (below) already clears `selected` for a dead order — this effect then
+  // clears the stored draft right along with it, so a restored card is never stale.
+  useEffect(() => {
+    if (!bidDraftHydrated.current) return;
+    if (selected) void saveRiderBidDraft({ selected, fare, eta, offerMode });
+    else void clearRiderBidDraft();
+  }, [selected, fare, eta, offerMode]);
 
   const requestLocation = useCallback(async (): Promise<void> => {
     const { status } = await Location.requestForegroundPermissionsAsync();

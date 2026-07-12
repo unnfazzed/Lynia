@@ -18,7 +18,7 @@ import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "
 import { offersKey, orderKey } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
+import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
 import { LiveTrackingCard } from "../../src/ui/order/LiveTrackingCard";
@@ -457,7 +457,7 @@ export default function OrderScreen(): React.ReactElement {
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
               <Heading>Order {lastKnown.id.slice(0, 8)}</Heading>
               <View style={{ flex: 1 }} />
-              <StatusPill status={lastKnown.status} />
+              <StatusPill status={lastKnown.status} tone={orderStatusTone(lastKnown.status)} />
             </View>
             <Card>
               <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.xs, fontVariant: ["tabular-nums"] }}>
@@ -550,7 +550,7 @@ export default function OrderScreen(): React.ReactElement {
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Order {order.id.slice(0, 8)}</Heading>
           <View style={{ flex: 1 }} />
-          <StatusPill status={order.status} />
+          <StatusPill status={order.status} tone={orderStatusTone(order.status)} />
         </View>
 
         {/* Hand-off code — only while the trip is live/deliverable (C6). On a terminal order

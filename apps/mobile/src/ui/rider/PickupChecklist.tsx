@@ -23,6 +23,7 @@ export function PickupChecklist({
   onToggle,
   onConfirm,
   orderId,
+  onCantCollect,
 }: {
   items: { description: string; quantity: number }[];
   checkedItems: ReadonlySet<number>;
@@ -33,6 +34,12 @@ export function PickupChecklist({
   /** When present, the optional §5c pickup-photo affordance is shown (absent = old call sites/tests
    *  render the checklist exactly as before). */
   orderId?: string | null;
+  // JOURNEY-BUGS: at zero items ticked, the confirm button was the only control here — a soft dead
+  // end with no explanation and no path forward for the rider who genuinely can't find the parcel
+  // (sender's a no-show, wrong address, package already gone). Reuses the existing pre-pickup bail
+  // flow (job.tsx's "Cancel job") — nothing new to build, just a discoverable way there from HERE,
+  // where the rider is actually stuck, instead of requiring them to notice an unrelated button below.
+  onCantCollect?: () => void;
 }): React.ReactElement {
   // Local uri of the successfully-attached photo (the preview); null until one lands.
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -171,6 +178,17 @@ export function PickupChecklist({
         loading={pending}
         disabled={checkedItems.size === 0}
       />
+      {checkedItems.size === 0 && onCantCollect ? (
+        <Pressable
+          onPress={onCantCollect}
+          accessibilityRole="button"
+          style={{ minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center", marginTop: tokens.space.xs }}
+        >
+          <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted, textDecorationLine: "underline" }}>
+            Can&apos;t find the parcel? Cancel this job
+          </Text>
+        </Pressable>
+      ) : null}
     </Card>
   );
 }
