@@ -85,7 +85,7 @@ export class WhatsAppOtpSender implements OtpSender {
       const detail = await res.text().catch(() => "");
       // Log Meta's error (bad template name, expired token, unverified number…) but never the code.
       this.logger.error(`WhatsApp OTP send failed: ${res.status} ${detail.slice(0, 300)}`);
-      throw new ServiceUnavailableException("Couldn't send the verification code");
+      throw new ServiceUnavailableException("Couldn't send the code — try again in a moment.");
     }
   }
 }

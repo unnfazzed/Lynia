@@ -6,6 +6,7 @@ import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { blockedPairWhere } from "../reports/blocks";
 import { onlineRefusalReason } from "../riders/rider.service";
+import { REFUSAL_MESSAGE } from "../riders/online-gate";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 
 @Injectable()
@@ -65,11 +66,14 @@ export class OffersService {
     if (!rider || refusal || !rider.isOnline) {
       this.metrics.incOffersMade("forbidden");
       if (!rider) throw new ForbiddenException("Not a rider");
-      if (refusal === "kyc") throw new ForbiddenException("Rider is not verified yet");
-      if (refusal === "banned") throw new ForbiddenException("Your rider account has been banned");
-      if (refusal === "suspended") throw new ForbiddenException("Your rider account is suspended");
-      if (refusal === "on_hold") throw new ForbiddenException("You're on hold — complete deliveries to raise your reliability score");
-      if (refusal === "cooldown") throw new ForbiddenException("On cooldown after repeated cancellations — try again later");
+      // Throw the SHARED online-gate copy (REFUSAL_MESSAGE) rather than hand-rolled strings, so the offer
+      // gate and the go-online gate can't drift. The prior on_hold copy here ("complete deliveries to
+      // raise your reliability score") was impossible advice — an on-hold rider can't go online to deliver
+      // anything; the shared map says "contact support to get back on the road". The kyc/banned/suspended/
+      // cooldown copy is byte-identical to what these branches threw before, so nothing else changes
+      // behaviourally; kyc_expired (previously unhandled → "Go online to make offers") now gets its
+      // correct "re-verify your ID" copy too. The structured reason stays the contract.
+      if (refusal) throw new ForbiddenException(REFUSAL_MESSAGE[refusal]);
       // Enforce the online invariant the gating comment claims (was selected but never checked) — an
       // offline rider's offer is un-selectable anyway and just pollutes the customer's list.
       throw new ForbiddenException("Go online to make offers");

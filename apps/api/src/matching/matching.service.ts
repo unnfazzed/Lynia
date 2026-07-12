@@ -7,9 +7,14 @@ import { PrismaService } from "../prisma/prisma.service";
 import { blockedPairWhere } from "../reports/blocks";
 import { onlineRefusalReason } from "../riders/rider.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
+import { TrackingService } from "../tracking/tracking.service";
 
 /** Rider must have a heartbeat newer than this to be selectable (ET3 liveness). */
 const HEARTBEAT_TTL_MS = 30_000;
+
+/** Radius (m) for the "was anyone even online nearby?" check on a no-bid expiry — the SAME 5 km the
+ *  customer broadcast + rider board + orders.service.countNearbyForPickup use. */
+const NEARBY_RADIUS_M = 5000;
 
 export interface SelectResult {
   orderId: string;
@@ -30,6 +35,7 @@ export class MatchingService {
     private readonly notifications: NotificationsService,
     private readonly metrics: MetricsService,
     private readonly gateway: TrackingGateway,
+    private readonly tracking: TrackingService,
   ) {}
 
   /**
@@ -182,11 +188,15 @@ export class MatchingService {
         where: { id: orderId, status: "open_for_offers" },
         data: { status: "expired" },
       });
-      if (res.count === 0) return { expired: false };
+      if (res.count === 0) return { expired: false as const, hadOffers: false };
 
+      // Did the auction attract ANY bid (any status — a withdrawn/declined offer still means a rider
+      // engaged)? Distinguishes "riders were here but nobody committed / you weren't picked in time"
+      // (→ raise your price) from "nobody was even around" (→ no-supply copy, computed post-commit).
+      const offerCount = await tx.offer.count({ where: { orderId } });
       await tx.offer.updateMany({ where: { orderId, status: "pending" }, data: { status: "expired" } });
       await tx.orderEvent.create({ data: { orderId, status: "expired" } });
-      return { expired: true };
+      return { expired: true as const, hadOffers: offerCount > 0 };
     });
 
     // Post-commit, best-effort. The auction closed with no pick, so (C2) signal `bid:expired` to the
@@ -194,6 +204,10 @@ export class MatchingService {
     // single server timer authority firing, distinct from the `not_chosen`/`offers:changed` a select
     // produces — and prompt the customer to nudge the price (§5c).
     if (result.expired) {
+      // Whether this was a genuine no-supply expiry (zero bids AND zero riders online nearby), which
+      // picks the honest "nobody was online" copy over the default "raise your price" nudge. Starts
+      // false so any failure below leaves the safe default copy — never a false "nobody's here".
+      let noSupply = false;
       try {
         const ord = await this.prisma.order.findUnique({ where: { id: orderId }, select: { pickup: true } });
         const pt = (ord?.pickup as { point?: { lat: number; lng: number } } | null)?.point;
@@ -202,11 +216,18 @@ export class MatchingService {
         // just freezes at 0:00 until the 15s poll catches up, at the single most anxious moment of the
         // journey ("did anyone take my price?").
         this.gateway.emitOrderStatus(orderId, "expired");
+        // Only bother checking supply when there were NO bids — a no-bid window that also had no riders
+        // online nearby was never a price problem, so "raise it" would be a lie. Best-effort: a geo blip
+        // throws into the catch → noSupply stays false → the customer gets the safe default copy.
+        if (!result.hadOffers && pt) {
+          const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, NEARBY_RADIUS_M);
+          noSupply = nearby.length === 0;
+        }
       } catch (err) {
         this.logger.warn(`bid:expired emit failed for order ${orderId}: ${(err as Error).message}`);
       }
-      void this.notifications.notifyOrderStatus(orderId, "expired");
+      void this.notifications.notifyOrderExpired(orderId, noSupply);
     }
-    return result;
+    return { expired: result.expired };
   }
 }

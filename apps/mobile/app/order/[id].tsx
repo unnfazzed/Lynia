@@ -130,10 +130,15 @@ export default function OrderScreen(): React.ReactElement {
     // the optimistic select flip are unaffected.
     select: selectOrderShell,
     refetchInterval: (q) => {
-      if (socketConnectedRef.current) return false;
       const s = q.state.data?.status;
-      // WS pushes now drive the live states; polling is only a slow self-heal if the socket drops.
+      // During the auction, poll every 15s REGARDLESS of socket health: `ridersNearby` is recomputed
+      // server-side per fetch and no WS event fires when the nearby-rider count changes, so a
+      // socket-connected gate would freeze the "no riders online nearby" empty state (and its inverse)
+      // for the whole ~90s window. Mirrors the offers-list query, which polls unconditionally here.
       if (s === "open_for_offers") return 15_000;
+      // For the active-delivery states WS pushes genuinely drive everything, so polling is only a slow
+      // self-heal if the socket drops.
+      if (socketConnectedRef.current) return false;
       if (s !== undefined && ACTIVE.includes(s)) return 15_000;
       return false;
     },
@@ -485,6 +490,10 @@ export default function OrderScreen(): React.ReactElement {
   }
 
   const order = orderQ.data;
+  // Fix 1: is a RIDER viewing their own trip (vs. the customer)? Absent viewerRole (older API) defaults
+  // to the historical customer view. Gates customer-voiced/customer-gated UI below (rating card, the
+  // cancel-blame line, the counterparty-phone label) so a rider sees role-correct copy.
+  const isRiderViewer = order.viewerRole === "rider";
   const fare = order.agreedFare ?? order.proposedFare;
   // A select 409 (rider raced away) is handled with its own muted notice, so it's excluded here;
   // any other select failure is a real error and joins the red slot.
@@ -494,7 +503,9 @@ export default function OrderScreen(): React.ReactElement {
   const bidCount = orderedOffers.length;
   // 2·b1: the server said there are no online riders nearby and no bid has landed — an honest "nobody
   // to ping right now" state, distinct from the calm "riders pinged, hang tight" wait. Non-terminal:
-  // the 15s poll refreshes ridersNearby and any landing bid clears it.
+  // while open_for_offers the snapshot polls every 15s UNCONDITIONALLY (no WS event carries a
+  // ridersNearby change, so the poll — not the socket — is what refreshes this count), and any landing
+  // bid clears it.
   const noRiders = noRidersOnline(order.ridersNearby, bidCount, order.status === "open_for_offers");
 
   // Counter-offer (F-07): a `counter` bid ABOVE the customer's ask surfaces as Accept/Decline. A
@@ -732,6 +743,13 @@ export default function OrderScreen(): React.ReactElement {
                       <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600", textAlign: "center" }}>
                         We&apos;ll ping you when a rider&apos;s online near your pickup.
                       </Text>
+                    ) : notifyM.isSuccess && !notifyM.data?.queued ? (
+                      // The server accepted the request but couldn't queue a reminder (e.g. no waiting-list
+                      // store). Be honest rather than silently re-render the plain button and invite an
+                      // endless retry loop that can never register.
+                      <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center" }}>
+                        We can&apos;t take reminders right now — check back in a bit, or raise the price to widen interest.
+                      </Text>
                     ) : (
                       <Button
                         label="Notify me when a rider's online"
@@ -771,6 +789,7 @@ export default function OrderScreen(): React.ReactElement {
             dropoff={order.dropoff.point}
             events={order.events}
             counterpartyPhone={order.counterpartyPhone}
+            viewerRole={order.viewerRole}
             riderIdentity={riderIdentity}
             connectionState={connectionState}
             onReissueCode={reissueCode}
@@ -786,7 +805,9 @@ export default function OrderScreen(): React.ReactElement {
             hand-off. Only while the trip is genuinely active. */}
         {isActive ? <SosControl orderId={orderId} /> : null}
 
-        {order.status === "delivered" ? (
+        {/* Fix 1: rating is customer→rider and customer-gated server-side (rate() 403s a rider), so the
+            card is hidden for a rider viewing their own delivered trip. */}
+        {order.status === "delivered" && !isRiderViewer ? (
           <RatingCard saving={rateM.isPending} onRate={(n) => rateM.mutate(n)} />
         ) : null}
 
@@ -811,21 +832,60 @@ export default function OrderScreen(): React.ReactElement {
           </>
         ) : null}
         {order.status === "expired" ? (
-          <EmptyState
-            icon="bike"
-            title="No riders took this price yet"
-            message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
-          >
-            <Button label="Send another request" onPress={rebroadcast} />
-          </EmptyState>
+          // The offers list stays cached from right before expiry (its query disables once the order
+          // leaves open_for_offers, so React Query keeps the last-known data rather than clearing it).
+          // A customer who watched bids come in shouldn't be told "no offers" — and "raise your price"
+          // is actively wrong advice when riders WERE bidding; the real problem was picking in time.
+          bidCount > 0 ? (
+            <EmptyState icon="bike" title="Your choosing window closed" message="Riders did offer, but the window ended before you picked. Send again and they'll likely bid again at the same price.">
+              <Button label="Send another request" onPress={rebroadcast} />
+            </EmptyState>
+          ) : (
+            <EmptyState
+              icon="bike"
+              title="No riders took this price yet"
+              message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
+            >
+              <Button label="Send another request" onPress={rebroadcast} />
+            </EmptyState>
+          )
         ) : null}
         {order.status === "cancelled" ? (
           <Card>
             <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
-              {order.cancelledBy === "rider" ? "Your rider cancelled this delivery." : order.cancelledBy === "customer" ? "You cancelled this order." : "This order is cancelled."}
+              {/* Fix 1: the blame line is written from the viewer's perspective. For the customer view a
+                  rider cancel is "your rider"; for a rider viewing their own trip a customer cancel is
+                  "your customer", and either side's own cancel reads as "you". */}
+              {isRiderViewer
+                ? order.cancelledBy === "customer"
+                  ? "Your customer cancelled this delivery."
+                  : order.cancelledBy === "rider"
+                    ? "You cancelled this delivery."
+                    : "This order is cancelled."
+                : order.cancelledBy === "rider"
+                  ? "Your rider cancelled this delivery."
+                  : order.cancelledBy === "customer"
+                    ? "You cancelled this order."
+                    : "This order is cancelled."}
             </Text>
             {order.cancelReason ? (
               <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginTop: tokens.space.sm }}>{order.cancelReason}</Text>
+            ) : null}
+            {/* F-01: the rider bailed but the job was auto re-sent to other riders at the same price.
+                Point the customer forward to the fresh auction instead of dead-ending on the cancel. */}
+            {order.rebroadcastedToId ? (
+              <View style={{ marginTop: tokens.space.sm }}>
+                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
+                  We&apos;ve re-sent this request to other riders at the same price — no need to start over.
+                </Text>
+                <Button
+                  label="Follow the new request"
+                  onPress={() => {
+                    const carried = fare ? `?rebroadcast=1&fare=${encodeURIComponent(fare)}` : "?rebroadcast=1";
+                    router.replace(`/order/${order.rebroadcastedToId}${carried}`);
+                  }}
+                />
+              </View>
             ) : null}
           </Card>
         ) : null}
@@ -863,12 +923,12 @@ export default function OrderScreen(): React.ReactElement {
                 <Pressable
                   onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
                   accessibilityRole="button"
-                  accessibilityLabel="Call rider"
+                  accessibilityLabel={isRiderViewer ? "Call sender" : "Call rider"}
                   style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
                 >
                   <Icon name="phone" size={16} color={tokens.color.accentText} />
                   <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
-                    Call rider{order.counterpartyPhone ? ` · ${order.counterpartyPhone}` : ""}
+                    {isRiderViewer ? "Call sender" : "Call rider"}{order.counterpartyPhone ? ` · ${order.counterpartyPhone}` : ""}
                   </Text>
                 </Pressable>
               ) : null}

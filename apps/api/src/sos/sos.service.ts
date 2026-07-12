@@ -81,7 +81,7 @@ export class SosService {
     if (counterpartyId) {
       void this.notifications.notifyProfiles([counterpartyId], {
         title: "SOS on your delivery",
-        body: "The other party raised an SOS on this trip. Stay safe — help has been notified.",
+        body: "The other party raised an SOS on this trip. Stay safe — Lynia's safety team has been alerted.",
         data: { orderId, kind: "sos", ...(sosId ? { sosId } : {}) },
       });
     }

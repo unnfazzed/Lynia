@@ -33,6 +33,11 @@ export interface OrderEvent {
 export interface OrderSnapshot {
   id: string;
   status: OrderStatus;
+  // Which party is viewing this order — the server derives it from the same party check that gates the
+  // snapshot. Lets the tracking screen flip customer-voiced/customer-gated UI (rating card, cancel-blame
+  // copy, counterparty-phone label) for a rider viewing their own trip. Optional for older APIs that
+  // don't send it — treat an absent value as the customer view (the historical default).
+  viewerRole?: "customer" | "rider";
   agreedFare: string | null;
   proposedFare: string;
   // contactPhone arrives only for the ASSIGNED rider inside the reveal window (§5d) — absent for
@@ -66,6 +71,10 @@ export interface OrderSnapshot {
   // Set only on the terminal `cancelled` status (3·b3): the recorded reason + which side cancelled.
   cancelReason?: string | null;
   cancelledBy?: "customer" | "rider" | null;
+  // F-01: on a rider-bail cancel, the id of the fresh clone the job was auto re-broadcast to (same
+  // price) — lets the cancelled terminal link the customer forward to the re-sent request. Null/absent
+  // when the cancel produced no rebroadcast (customer/admin cancel) or on an older API.
+  rebroadcastedToId?: string | null;
 }
 
 /**

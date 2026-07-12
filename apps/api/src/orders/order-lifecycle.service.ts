@@ -528,6 +528,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // non-null ⇒ tell the assigned rider the customer cancelled, carrying the collected flag.
     let rebroadcastId: string | null = null;
     let jobCancelledCollected: boolean | null = null;
+    // Captured in-tx for the post-commit rebroadcast push (F-01) — the customer to point at the fresh clone.
+    let customerId: string | null = null;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
@@ -535,6 +537,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         select: { status: true, customerId: true, riderId: true, collectedAt: true },
       });
       if (!order) throw new NotFoundException("Order not found");
+      customerId = order.customerId;
 
       const isCustomer = order.customerId === callerId;
       const isRider = order.riderId === callerId;
@@ -603,7 +606,14 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       };
     });
 
-    this.safeEmit(orderId, "cancelled");
+    // Live WS status for any open tracking screen (both cancel shapes). Raw emit rather than safeEmit,
+    // because the customer PUSH below is branched — a rider-bail rebroadcast must NOT fire the generic
+    // "Order cancelled" push (see below).
+    try {
+      this.gateway.emitOrderStatus(orderId, "cancelled");
+    } catch (err) {
+      this.logger.warn(`status emit failed for order ${orderId}: ${(err as Error).message}`);
+    }
     // Best-effort post-commit pushes. emitJobCancelled is guarded (the gateway swallows a null server),
     // and the re-broadcast announce is fire-and-forget like the create() path.
     if (jobCancelledCollected !== null) this.gateway.emitJobCancelled(orderId, jobCancelledCollected);
@@ -611,6 +621,17 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // F-01: tell the customer watching the (now cancelled) order to re-attach to the fresh auction,
       // then announce the new open order to the board. Both are best-effort post-commit pushes.
       this.gateway.emitOrderRebroadcast(orderId, rebroadcastId);
+      // A rider bailed but the job is already back on the board at the SAME price. A bare "Order cancelled"
+      // push would alarm the customer (and would also ping the bailing rider about their own action), so
+      // instead send the CUSTOMER a distinct notice carrying the NEW clone's id — a tap follows the
+      // re-sent request. notifyProfiles is best-effort and never throws.
+      if (customerId) {
+        void this.notifications.notifyProfiles([customerId], {
+          title: "Your rider had to cancel",
+          body: "We've already sent your request back out to nearby riders at the same price — tap to follow it.",
+          data: { orderId: rebroadcastId, kind: "rebroadcast" },
+        });
+      }
       // F-12: announceOpenOrder is async and fire-and-forget, so a synchronous try/catch can't catch its
       // rejection — attach a .catch so a post-commit rebroadcast blip (findUnique / queue enqueue) can't
       // surface as an unhandledRejection and crash the instance. The DB reconciler still backstops the
@@ -618,6 +639,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       void this.orders.announceOpenOrder(rebroadcastId).catch((err) => {
         this.logger.error(`announceOpenOrder failed for order ${rebroadcastId}: ${(err as Error).message}`);
       });
+    } else {
+      // Plain cancel (customer-initiated / admin, no rebroadcast). Push "Order cancelled" to the affected
+      // party but EXCLUDE the canceller — a push about your own action is noise. The assigned rider still
+      // gets it when the customer pulls out; a customer cancelling their own open order now pings no one.
+      void this.notifications.notifyOrderStatus(orderId, "cancelled", {}, callerId);
     }
     return result;
   }

@@ -33,7 +33,8 @@ export interface NotificationRow {
  * How an order-status event renders as a feed row. Deliberately mirrors {@link STATUS_NOTICES} copy so
  * the in-app centre reads the same as the push the user already saw. Statuses absent here (e.g.
  * `requested`, `open_for_offers`) are silent in the feed exactly as they are for push. Icons are valid
- * mobile IconNames (see apps/mobile/src/ui/Icon.tsx).
+ * mobile IconNames (see apps/mobile/src/ui/Icon.tsx). Customer-voiced — used when the viewing user is
+ * the order's customer.
  */
 const FEED_NOTICES: Record<string, { icon: string; title: string; message: string }> = {
   assigned: { icon: "bike", title: "Rider assigned", message: "A rider took your delivery and is confirming the details." },
@@ -45,6 +46,25 @@ const FEED_NOTICES: Record<string, { icon: string; title: string; message: strin
   completed: { icon: "check", title: "Delivery complete", message: "This trip is done. Thanks for using Lynia." },
   expired: { icon: "clock", title: "No riders yet", message: "No rider took your price yet. Try raising it and sending again." },
   undelivered: { icon: "triangle-alert", title: "Delivery couldn't be completed", message: "Your rider couldn't hand the parcel over — tap for details." },
+  cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "This delivery was cancelled." },
+};
+
+/**
+ * Rider-voiced counterpart to {@link FEED_NOTICES}. Dual-role users (a rider's own trip history) were
+ * getting the customer-voiced copy above verbatim — "A rider took your delivery", "rate your rider" —
+ * about jobs they themselves ran, breaking the "mirrors the push you actually saw" contract (their real
+ * push for `assigned`/`completed` is the rider copy in {@link STATUS_NOTICES}). `expired` never applies
+ * to a rider view (an order only expires before any rider is assigned) so it's omitted.
+ */
+const FEED_NOTICES_RIDER: Record<string, { icon: string; title: string; message: string }> = {
+  assigned: { icon: "bike", title: "You got the job", message: "You were selected for a delivery — confirm the parcel details." },
+  confirmed: { icon: "check", title: "You confirmed the parcel", message: "You reviewed the parcel details and are heading to pickup." },
+  en_route_pickup: { icon: "bike", title: "Heading to pickup", message: "You're on the way to the pickup point." },
+  picked_up: { icon: "check", title: "Parcel collected", message: "You picked up the parcel and are on the move." },
+  en_route_dropoff: { icon: "navigation", title: "On the way to drop-off", message: "You're on the way to the drop-off point." },
+  delivered: { icon: "check", title: "Delivered", message: "You delivered the parcel — waiting on the customer's rating." },
+  completed: { icon: "check", title: "Delivery complete", message: "Nice work — you're free for the next job." },
+  undelivered: { icon: "triangle-alert", title: "Delivery not completed", message: "This delivery was marked undelivered — tap for details." },
   cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "This delivery was cancelled." },
 };
 
@@ -99,6 +119,7 @@ export class NotificationsService {
       take: FEED_ORDER_LOOKBACK,
       select: {
         id: true,
+        riderId: true,
         events: {
           select: { status: true, createdAt: true },
           orderBy: { createdAt: "asc" },
@@ -108,8 +129,11 @@ export class NotificationsService {
 
     const rows: NotificationRow[] = [];
     for (const order of orders) {
+      // Pick the voice matching what this viewer actually experienced on THIS order — a dual-role user
+      // can be the rider on one trip and the customer on another, so the role is per-order, not per-user.
+      const notices = order.riderId === userId ? FEED_NOTICES_RIDER : FEED_NOTICES;
       for (const event of order.events) {
-        const notice = FEED_NOTICES[event.status];
+        const notice = notices[event.status];
         if (!notice) continue; // silent statuses (requested/open_for_offers) never surface, as with push
         const at = event.createdAt.toISOString();
         rows.push({
@@ -156,8 +180,15 @@ export class NotificationsService {
     return { ok: true };
   }
 
-  /** Notify the relevant party(ies) of an order-status transition. Best-effort, never throws. */
-  async notifyOrderStatus(orderId: string, status: string, data: Record<string, string> = {}): Promise<void> {
+  /** Notify the relevant party(ies) of an order-status transition. Best-effort, never throws.
+   *  `excludeProfileId` drops one recipient — used to suppress a "cancelled" push to whoever just
+   *  performed the cancel (a push about your own action is noise). */
+  async notifyOrderStatus(
+    orderId: string,
+    status: string,
+    data: Record<string, string> = {},
+    excludeProfileId?: string,
+  ): Promise<void> {
     try {
       const notice = STATUS_NOTICES[status];
       if (!notice) return;
@@ -168,10 +199,36 @@ export class NotificationsService {
       if (!order) return;
       const ids = notice.to
         .map((aud) => (aud === "customer" ? order.customerId : order.riderId))
-        .filter((id): id is string => !!id);
+        .filter((id): id is string => !!id)
+        .filter((id) => id !== excludeProfileId);
       await this.send(ids, { title: notice.title, body: notice.body, data: { orderId, status, ...data } });
     } catch (err) {
       this.logger.warn(`notifyOrderStatus(${orderId}, ${status}) failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Auction-expiry notice to the customer (§5c), in two honest variants. The default nudges the price
+   * ("no rider took your price — try raising it"). But when the window closed with ZERO bids AND zero
+   * riders online nearby (`noSupply`), "raise it" is misleading — the price was never the problem — so
+   * the customer instead hears that nobody was online to take it. Best-effort, never throws.
+   */
+  async notifyOrderExpired(orderId: string, noSupply: boolean): Promise<void> {
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: { customerId: true },
+      });
+      if (!order) return;
+      const msg = noSupply
+        ? {
+            title: "No riders online nearby",
+            body: "Nobody was online near your pickup just now — tap to get pinged when a rider comes online.",
+          }
+        : { title: STATUS_NOTICES.expired.title, body: STATUS_NOTICES.expired.body };
+      await this.send([order.customerId], { ...msg, data: { orderId, status: "expired" } });
+    } catch (err) {
+      this.logger.warn(`notifyOrderExpired(${orderId}) failed: ${(err as Error).message}`);
     }
   }
 

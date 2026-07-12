@@ -270,15 +270,16 @@ export class OrdersService {
     try {
       const pt = pickupPoint(pickup);
       if (!pt) return;
-      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, BROADCAST_RADIUS_M);
-      if (nearby.length === 0) return;
-      // Emit the in-process WS board push FIRST — it reaches a rider already staring at the board
-      // sub-millisecond, and every second counts in the 90s window, so the FCM round-trip (for riders
-      // NOT currently on the board) must not gate it. The board-event build is guarded on its own so a
-      // schema/emit failure can't suppress the FCM push (and vice versa) — the two channels are
-      // independent. Same redaction as listOpen — point + landmark only, NEVER contactPhone; parsing
-      // through the `.strict()` schema enforces the no-PII guarantee ON THE WIRE. `expiresAt` exposes
-      // the shared auction clock (C2) so a bidder's offer-sent screen can render the same countdown.
+      // Emit the in-process WS board push FIRST and UNCONDITIONALLY — board rooms are geo-scoped per
+      // subscriber already (boardSubscribe joins the pickup's cell neighbourhood), so a rider already
+      // staring at the board must see this order regardless of what the position index reports. Gating
+      // this on the `nearby` list would silently drop the board emit whenever no rider happens to be
+      // mid-delivery indexed nearby — the exact false-empty this fix addresses. Only the FCM fan-out
+      // below stays gated on nearby.length. The board-event build is guarded on its own so a schema/emit
+      // failure can't suppress the FCM push (and vice versa) — the two channels are independent. Same
+      // redaction as listOpen — point + landmark only, NEVER contactPhone; parsing through the `.strict()`
+      // schema enforces the no-PII guarantee ON THE WIRE. `expiresAt` exposes the shared auction clock
+      // (C2) so a bidder's offer-sent screen can render the same countdown.
       try {
         const boardEvent: BoardNewOrderEvent = BoardNewOrderEvent.parse({
           id: orderId,
@@ -295,7 +296,11 @@ export class OrdersService {
       } catch (err) {
         this.logger.warn(`board event build/emit failed for order ${orderId}: ${(err as Error).message}`);
       }
-      // FCM push for riders not currently on the board — best-effort, never throws, un-awaited.
+      // FCM push for riders NOT currently on the board — gated on the position index having someone to
+      // fan out to (no candidates ⇒ no tokens to push). Only this channel depends on `nearby`.
+      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, BROADCAST_RADIUS_M);
+      if (nearby.length === 0) return;
+      // best-effort, never throws, un-awaited.
       void this.notifications.notifyNewBroadcast(
         orderId,
         nearby.map((r) => r.profileId),
@@ -629,6 +634,17 @@ export class OrdersService {
     // and best-effort — a geo blip yields null → the client keeps the calm "finding riders" state.
     const ridersNearby = order.status === "open_for_offers" ? await this.countNearbyForPickup(order.pickup) : null;
 
+    // F-01: if this (cancelled) order was auto re-broadcast after the assigned rider bailed, expose the
+    // NEW clone's id so the customer's cancelled terminal can offer a "follow your re-sent request" link.
+    // Forward link only — the clone back-links via `rebroadcastOfId`; nothing on the original points at
+    // the clone, so resolve it on demand. Scoped to `cancelled` so it's a single extra read on a terminal
+    // status, never on the hot live-tracking path.
+    const rebroadcastedToId =
+      order.status === "cancelled"
+        ? ((await this.prisma.order.findFirst({ where: { rebroadcastOfId: order.id }, select: { id: true } }))?.id ??
+          null)
+        : null;
+
     // §5c proof-of-pickup: resolve the stored object key to a short-lived signed read URL for BOTH
     // parties — the customer seeing "parcel is with your rider — photo attached" is the whole trust
     // point, and the rider gets their own attach confirmed. Same on-demand minting as the admin KYC
@@ -642,6 +658,10 @@ export class OrdersService {
     return {
       id: order.id,
       status: order.status,
+      // Which party is looking — derived from the same customer/rider check that gates this snapshot
+      // above (never a new auth path). Lets the tracking screen voice customer-only copy correctly for
+      // a rider viewing their own trip (rating card, cancel-blame line, counterparty-phone label).
+      viewerRole: isRider ? ("rider" as const) : ("customer" as const),
       agreedFare: order.agreedFare,
       proposedFare: order.proposedFare,
       // Map context for the tracker — point + landmark. The assigned rider additionally gets the
@@ -679,6 +699,9 @@ export class OrdersService {
             ? ("customer" as const)
             : ("rider" as const)
           : null,
+      // F-01: on a rider-bail cancel, the id of the fresh clone the job was re-broadcast to (else null),
+      // so the cancelled terminal can link the customer forward to the re-sent request.
+      rebroadcastedToId,
       rider,
       events: order.events,
       counterpartyPhone,

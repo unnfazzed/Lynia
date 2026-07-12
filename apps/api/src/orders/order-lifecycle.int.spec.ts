@@ -23,6 +23,7 @@ const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-012345678
 const noopNotifications = {
   notifyOrderStatus: async () => {},
   notifyNewOffer: async () => {},
+  notifyProfiles: async () => {},
 } as unknown as NotificationsService;
 // Real MetricsService is NoopMeter-safe with no OTLP endpoint (every record is a cheap no-op).
 // The gateway captures job:cancelled so the two-sided WS contract (C3) is asserted at integration
@@ -35,14 +36,16 @@ const gateway = {
   emitJobCancelled: (orderId: string, collected: boolean) => jobCancelledEmits.push({ orderId, collected }),
   emitOrderRebroadcast: () => undefined,
 } as unknown as TrackingGateway;
-const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), gateway);
+// The no-bid-expiry supply check is best-effort push; an empty nearby list keeps it off the geo path.
+const matchingTrackingStub = { nearbyRiders: async () => [] } as unknown as import("../tracking/tracking.service").TrackingService;
+const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), gateway, matchingTrackingStub);
 // The board announce for F-01 re-broadcast is best-effort push; stub it so the proof asserts DB state
 // (the new open_for_offers row) without a live socket/Redis, mirroring how notifications are stubbed.
 const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersService;
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
 const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders);
 const trackingStub = { evictFromGeo: async () => {}, claimNotifyWaitersNear: async () => [], clearNotifyWaiters: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
-const notificationsStub = { notifyRidersAvailable: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
+const notificationsStub = { notifyRidersAvailable: async () => {}, notifyProfiles: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
 const riders = new RiderService(prisma, {} as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env), trackingStub, notificationsStub);
 
 async function clean(): Promise<void> {

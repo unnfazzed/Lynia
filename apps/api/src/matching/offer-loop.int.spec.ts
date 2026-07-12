@@ -10,16 +10,19 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
+import type { TrackingService } from "../tracking/tracking.service";
 import { MatchingService } from "./matching.service";
 
 const prisma = new PrismaService();
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
 // Push is fire-and-forget; a no-op stub keeps the concurrency proof off the notification path.
-const noopNotifications = { notifyOrderStatus: async () => {} } as unknown as NotificationsService;
+const noopNotifications = { notifyOrderStatus: async () => {}, notifyOrderExpired: async () => {} } as unknown as NotificationsService;
 // bid:expired is best-effort; a no-op gateway keeps the concurrency proof off the socket path.
 const noopGateway = { emitBidExpired: () => {}, emitOrderTaken: () => {}, emitOrderStatus: () => {} } as unknown as TrackingGateway;
+// The no-bid-expiry supply check is best-effort; an empty nearby list keeps it off the geo path.
+const noopTracking = { nearbyRiders: async () => [] } as unknown as TrackingService;
 // Real MetricsService is NoopMeter-safe with no OTLP endpoint (every record is a cheap no-op).
-const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), noopGateway);
+const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), noopGateway, noopTracking);
 
 async function clean(): Promise<void> {
   await prisma.orderEvent.deleteMany({});
