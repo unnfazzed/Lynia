@@ -240,7 +240,7 @@ describe("OrdersService.create", () => {
   });
 
   it("pushes a REDACTED board:new-order event — no contactPhone anywhere in pickup/dropoff", async () => {
-    const orderId = "22222222-2222-2222-2222-222222222222";
+    const orderId = "22222222-2222-4222-8222-222222222222";
     const prisma = {
       profile: { findUnique: async () => ({ onHold: false }) },
       order: {

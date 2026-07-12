@@ -9,7 +9,7 @@ import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../s
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
-import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
+import { auctionHeaderText, formatClock, isRiderTrackingStale, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
@@ -292,6 +292,14 @@ export default function OrderScreen(): React.ReactElement {
     fire(60_000, "Offer window: 1 minute left");
     fire(30_000, "Offer window: 30 seconds left");
     fire(0, "Offer window closing");
+    // JOURNEY-BUGS: at 0:00 the screen used to just sit on "Finding riders…" for up to the 15s poll
+    // interval before the status transition (expired / a late bid landing) showed up. Nudge a refetch
+    // right at the threshold instead of waiting out the poll.
+    if (remainingMs <= 0 && !firedThresholds.current.has(-1)) {
+      firedThresholds.current.add(-1);
+      void orderQ.refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on remainingMs/status only; orderQ.refetch is stable.
   }, [remainingMs, status]);
 
   // Amber-urgency colour crossfade over the last 20s (instant under reduce-motion).
@@ -475,17 +483,17 @@ export default function OrderScreen(): React.ReactElement {
   // rider's GPS has gone dark — mute the pin (below, via LiveMap's reconnecting treatment) and stop
   // claiming it "updates live," escalating instead to a "call your rider" warning.
   const riderUpdatedAt = order.rider?.updatedAt ?? null;
-  const riderStale =
-    isActive && riderUpdatedAt != null && Date.now() - new Date(riderUpdatedAt).getTime() > PRESENCE_ESCALATION_MS;
+  const assignedAt = order.events.find((e) => e.status === "assigned")?.createdAt ?? null;
+  const riderStale = isRiderTrackingStale({ isActive, riderUpdatedAt, assignedAt, nowMs: Date.now(), escalationMs: PRESENCE_ESCALATION_MS });
   const bidCount = orderedOffers.length;
   // 2·b1: the server said there are no online riders nearby and no bid has landed — an honest "nobody
   // to ping right now" state, distinct from the calm "riders pinged, hang tight" wait. Non-terminal:
   // the 15s poll refreshes ridersNearby and any landing bid clears it.
   const noRiders = noRidersOnline(order.ridersNearby, bidCount, order.status === "open_for_offers");
-  const trackingHint = !riderPoint
-    ? "Waiting for the rider's GPS…"
-    : riderStale
-      ? "Your rider's location looks paused — call them to check in."
+  const trackingHint = riderStale
+    ? "Your rider's location looks paused — call them to check in."
+    : !riderPoint
+      ? "Waiting for the rider's GPS…"
       : "Rider is on the move — the gold pin updates live.";
   // Live "arriving in ~N min" headline — the glanceable number modern trackers lead with. Suppressed
   // when the rider's GPS has gone stale (we won't claim a fresh ETA off a dark position) or before the
@@ -593,11 +601,7 @@ export default function OrderScreen(): React.ReactElement {
                 amber-urgency (danger, bold), with a paused dot when the socket is reconnecting. */}
             <View style={{ flexDirection: "row", alignItems: "baseline", marginBottom: tokens.space.lg }}>
               <Text style={{ flex: 1, fontSize: 14, color: tokens.color.muted }}>
-                {bidCount > 0
-                  ? `${bidCount} ${bidCount === 1 ? "rider" : "riders"} bidding${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
-                  : noRiders
-                    ? `No riders online nearby right now${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
-                    : `Finding riders near you…${connectionState === "reconnecting" ? " reconnecting…" : ""}`}
+                {auctionHeaderText({ remainingMs, bidCount, noRiders, reconnecting: connectionState === "reconnecting" })}
               </Text>
               {remainingMs != null ? (
                 <Animated.Text

@@ -248,6 +248,7 @@ describe("OffersService.listForOrder", () => {
   it("serializes each offer's Decimal fare to a string", async () => {
     const { service } = svc({
       order: { findUnique: async () => ({ customerId: "cust-1" }) },
+      block: { findMany: async () => [] },
       offer: {
         findMany: async () => [
           { id: "o1", type: "accept", offeredFare: { toString: () => "3.00" }, etaMinutes: 8, rider: { profileId: "r1" } },
@@ -256,5 +257,43 @@ describe("OffersService.listForOrder", () => {
     });
     const res = await service.listForOrder("order-1", "cust-1");
     expect(res[0]!.offeredFare).toBe("3.00");
+  });
+
+  it("excludes a pending offer from a rider the customer blocked AFTER the offer was placed", async () => {
+    let capturedWhere: unknown;
+    const { service } = svc({
+      order: { findUnique: async () => ({ customerId: "cust-1" }) },
+      // cust-1 blocked r-blocked (customer-initiated direction).
+      block: { findMany: async () => [{ blockerProfileId: "cust-1", blockedProfileId: "r-blocked" }] },
+      offer: {
+        findMany: async (args: { where: unknown }) => {
+          capturedWhere = args.where;
+          return [
+            { id: "o1", type: "accept", offeredFare: { toString: () => "3.00" }, etaMinutes: 8, rider: { profileId: "r-ok" } },
+          ];
+        },
+      },
+    });
+    const res = await service.listForOrder("order-1", "cust-1");
+    // The blocked rider must never even reach the client — assert the query itself excludes them
+    // (an IDOR-adjacent PII leak, not just a client-side filter that could be bypassed).
+    expect(capturedWhere).toMatchObject({ riderId: { notIn: ["r-blocked"] } });
+    expect(res.map((o) => o.rider.profileId)).toEqual(["r-ok"]);
+  });
+
+  it("also excludes a rider who blocked the customer (the other block direction)", async () => {
+    let capturedWhere: unknown;
+    const { service } = svc({
+      order: { findUnique: async () => ({ customerId: "cust-1" }) },
+      block: { findMany: async () => [{ blockerProfileId: "r-blocked", blockedProfileId: "cust-1" }] },
+      offer: {
+        findMany: async (args: { where: unknown }) => {
+          capturedWhere = args.where;
+          return [];
+        },
+      },
+    });
+    await service.listForOrder("order-1", "cust-1");
+    expect(capturedWhere).toMatchObject({ riderId: { notIn: ["r-blocked"] } });
   });
 });
