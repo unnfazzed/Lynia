@@ -35,7 +35,9 @@ const gateway = {
   emitJobCancelled: (orderId: string, collected: boolean) => jobCancelledEmits.push({ orderId, collected }),
   emitOrderRebroadcast: () => undefined,
 } as unknown as TrackingGateway;
-const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), gateway);
+// The no-bid-expiry supply check is best-effort push; an empty nearby list keeps it off the geo path.
+const matchingTrackingStub = { nearbyRiders: async () => [] } as unknown as import("../tracking/tracking.service").TrackingService;
+const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), gateway, matchingTrackingStub);
 // The board announce for F-01 re-broadcast is best-effort push; stub it so the proof asserts DB state
 // (the new open_for_offers row) without a live socket/Redis, mirroring how notifications are stubbed.
 const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersService;

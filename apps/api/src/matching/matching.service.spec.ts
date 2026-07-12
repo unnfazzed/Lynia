@@ -5,6 +5,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import type { MetricsService, MatchSelectOutcome } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
+import type { TrackingService } from "../tracking/tracking.service";
 import { MatchingService } from "./matching.service";
 
 /** bid:expired / order:taken are best-effort; a no-op gateway keeps selectOffer's unit tests off the
@@ -18,8 +19,10 @@ const noopGateway = { emitBidExpired: () => {}, emitOrderTaken: () => {}, emitOr
  * outcome, and the exception still propagates.
  */
 
-const noopNotifications = { notifyOrderStatus: async () => {} } as unknown as NotificationsService;
+const noopNotifications = { notifyOrderStatus: async () => {}, notifyOrderExpired: async () => {} } as unknown as NotificationsService;
 const noopTokens = { randomOtp: () => "000000", hash: (s: string) => s } as unknown as TokenService;
+// No-supply check on a no-bid expiry; unit tests never reach it, so an empty nearby list is fine.
+const noopTracking = { nearbyRiders: async () => [] } as unknown as TrackingService;
 
 function fakeMetrics() {
   return { startTimer: () => () => 7, recordMatchSelect: vi.fn() } as unknown as MetricsService & {
@@ -33,7 +36,7 @@ function svc(tx: Record<string, unknown>, gateway: TrackingGateway = noopGateway
   const prisma = {
     $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
   } as unknown as PrismaService;
-  return { service: new MatchingService(prisma, noopTokens, noopNotifications, metrics, gateway), metrics };
+  return { service: new MatchingService(prisma, noopTokens, noopNotifications, metrics, gateway, noopTracking), metrics };
 }
 
 const orderId = "11111111-1111-1111-1111-111111111111";

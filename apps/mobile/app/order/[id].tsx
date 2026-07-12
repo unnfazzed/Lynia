@@ -485,6 +485,10 @@ export default function OrderScreen(): React.ReactElement {
   }
 
   const order = orderQ.data;
+  // Fix 1: is a RIDER viewing their own trip (vs. the customer)? Absent viewerRole (older API) defaults
+  // to the historical customer view. Gates customer-voiced/customer-gated UI below (rating card, the
+  // cancel-blame line, the counterparty-phone label) so a rider sees role-correct copy.
+  const isRiderViewer = order.viewerRole === "rider";
   const fare = order.agreedFare ?? order.proposedFare;
   // A select 409 (rider raced away) is handled with its own muted notice, so it's excluded here;
   // any other select failure is a real error and joins the red slot.
@@ -771,6 +775,7 @@ export default function OrderScreen(): React.ReactElement {
             dropoff={order.dropoff.point}
             events={order.events}
             counterpartyPhone={order.counterpartyPhone}
+            viewerRole={order.viewerRole}
             riderIdentity={riderIdentity}
             connectionState={connectionState}
             onReissueCode={reissueCode}
@@ -786,7 +791,9 @@ export default function OrderScreen(): React.ReactElement {
             hand-off. Only while the trip is genuinely active. */}
         {isActive ? <SosControl orderId={orderId} /> : null}
 
-        {order.status === "delivered" ? (
+        {/* Fix 1: rating is customer→rider and customer-gated server-side (rate() 403s a rider), so the
+            card is hidden for a rider viewing their own delivered trip. */}
+        {order.status === "delivered" && !isRiderViewer ? (
           <RatingCard saving={rateM.isPending} onRate={(n) => rateM.mutate(n)} />
         ) : null}
 
@@ -822,10 +829,39 @@ export default function OrderScreen(): React.ReactElement {
         {order.status === "cancelled" ? (
           <Card>
             <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
-              {order.cancelledBy === "rider" ? "Your rider cancelled this delivery." : order.cancelledBy === "customer" ? "You cancelled this order." : "This order is cancelled."}
+              {/* Fix 1: the blame line is written from the viewer's perspective. For the customer view a
+                  rider cancel is "your rider"; for a rider viewing their own trip a customer cancel is
+                  "your customer", and either side's own cancel reads as "you". */}
+              {isRiderViewer
+                ? order.cancelledBy === "customer"
+                  ? "Your customer cancelled this delivery."
+                  : order.cancelledBy === "rider"
+                    ? "You cancelled this delivery."
+                    : "This order is cancelled."
+                : order.cancelledBy === "rider"
+                  ? "Your rider cancelled this delivery."
+                  : order.cancelledBy === "customer"
+                    ? "You cancelled this order."
+                    : "This order is cancelled."}
             </Text>
             {order.cancelReason ? (
               <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginTop: tokens.space.sm }}>{order.cancelReason}</Text>
+            ) : null}
+            {/* F-01: the rider bailed but the job was auto re-sent to other riders at the same price.
+                Point the customer forward to the fresh auction instead of dead-ending on the cancel. */}
+            {order.rebroadcastedToId ? (
+              <View style={{ marginTop: tokens.space.sm }}>
+                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
+                  We&apos;ve re-sent this request to other riders at the same price — no need to start over.
+                </Text>
+                <Button
+                  label="Follow the new request"
+                  onPress={() => {
+                    const carried = fare ? `?rebroadcast=1&fare=${encodeURIComponent(fare)}` : "?rebroadcast=1";
+                    router.replace(`/order/${order.rebroadcastedToId}${carried}`);
+                  }}
+                />
+              </View>
             ) : null}
           </Card>
         ) : null}

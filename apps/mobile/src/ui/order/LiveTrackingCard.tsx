@@ -37,6 +37,8 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
   dropoff: MapPoint;
   events: OrderEvent[];
   counterpartyPhone: string | null;
+  /** Who's viewing — for a rider viewer the counterparty phone is the SENDER's, so the label flips. */
+  viewerRole?: "customer" | "rider";
   /** The chosen rider's cached identity (face/name/rating) — the snapshot doesn't carry it. */
   riderIdentity: RiderIdentity | null;
   /** The order socket's health — mutes the map pin while reconnecting on a live trip. */

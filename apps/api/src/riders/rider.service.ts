@@ -304,7 +304,30 @@ export class RiderService {
         ...(status === "expired" ? { kycAttempts: 0 } : {}),
       },
     });
+    // Best-effort: tell the rider their ID check resolved (nothing surfaced this before). Only when the
+    // update actually applied (res.count > 0 — not a stale/replayed webhook) and only for the two
+    // outcomes that change what the rider can do; an `expired` is handled by its own re-verify prompt.
+    if (res.count > 0 && (status === "verified" || status === "failed")) {
+      // kycRef is unique → at most one rider. Resolve the profile to notify; a lookup/notify failure is
+      // swallowed and can NEVER fail or roll back the webhook write above.
+      try {
+        const rider = await this.prisma.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
+        if (rider) this.notifyKycDecision(rider.profileId, status);
+      } catch (err) {
+        this.logger.warn(`KYC result notify failed for ref ${kycRef}: ${(err as Error).message}`);
+      }
+    }
     return { updated: res.count };
+  }
+
+  /** Best-effort push telling a rider their KYC decision landed → route to their rider home (`/rider`).
+   *  Fire-and-forget (notifyProfiles never throws); a notification miss can't affect the KYC write. */
+  private notifyKycDecision(profileId: string, status: "verified" | "failed"): void {
+    const msg =
+      status === "verified"
+        ? { title: "You're verified", body: "You're verified — go online to start taking deliveries." }
+        : { title: "ID check needs another look", body: "We couldn't verify your ID — open the app to see why and try again." };
+    void this.notifications.notifyProfiles([profileId], { ...msg, data: { kind: "account" } });
   }
 
   /**
@@ -341,7 +364,7 @@ export class RiderService {
             ? "rider.kyc_expire"
             : "rider.kyc_reset";
 
-    return this.prisma.$transaction(async (tx) => {
+    const decision = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({
         where: { profileId },
         select: { profileId: true, kycAttempts: true, kycStatus: true, kycResolvedAt: true },
@@ -405,5 +428,12 @@ export class RiderService {
       }
       return result;
     });
+    // Best-effort, post-commit: mirror the vendor-webhook path — tell the rider a manual approve/decline
+    // changed their standing. Only the two outcomes that flip what they can do; a `pending` reset /
+    // `expired` is deliberately silent (it invites a fresh check rather than announcing a verdict).
+    if (decision.kycStatus === "verified" || decision.kycStatus === "failed") {
+      this.notifyKycDecision(profileId, decision.kycStatus);
+    }
+    return decision;
   }
 }

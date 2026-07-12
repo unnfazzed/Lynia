@@ -634,6 +634,17 @@ export class OrdersService {
     // and best-effort — a geo blip yields null → the client keeps the calm "finding riders" state.
     const ridersNearby = order.status === "open_for_offers" ? await this.countNearbyForPickup(order.pickup) : null;
 
+    // F-01: if this (cancelled) order was auto re-broadcast after the assigned rider bailed, expose the
+    // NEW clone's id so the customer's cancelled terminal can offer a "follow your re-sent request" link.
+    // Forward link only — the clone back-links via `rebroadcastOfId`; nothing on the original points at
+    // the clone, so resolve it on demand. Scoped to `cancelled` so it's a single extra read on a terminal
+    // status, never on the hot live-tracking path.
+    const rebroadcastedToId =
+      order.status === "cancelled"
+        ? ((await this.prisma.order.findFirst({ where: { rebroadcastOfId: order.id }, select: { id: true } }))?.id ??
+          null)
+        : null;
+
     // §5c proof-of-pickup: resolve the stored object key to a short-lived signed read URL for BOTH
     // parties — the customer seeing "parcel is with your rider — photo attached" is the whole trust
     // point, and the rider gets their own attach confirmed. Same on-demand minting as the admin KYC
@@ -647,6 +658,10 @@ export class OrdersService {
     return {
       id: order.id,
       status: order.status,
+      // Which party is looking — derived from the same customer/rider check that gates this snapshot
+      // above (never a new auth path). Lets the tracking screen voice customer-only copy correctly for
+      // a rider viewing their own trip (rating card, cancel-blame line, counterparty-phone label).
+      viewerRole: isRider ? ("rider" as const) : ("customer" as const),
       agreedFare: order.agreedFare,
       proposedFare: order.proposedFare,
       // Map context for the tracker — point + landmark. The assigned rider additionally gets the
@@ -684,6 +699,9 @@ export class OrdersService {
             ? ("customer" as const)
             : ("rider" as const)
           : null,
+      // F-01: on a rider-bail cancel, the id of the fresh clone the job was re-broadcast to (else null),
+      // so the cancelled terminal can link the customer forward to the re-sent request.
+      rebroadcastedToId,
       rider,
       events: order.events,
       counterpartyPhone,

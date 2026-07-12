@@ -75,9 +75,12 @@ const RIDER_ONLY_STATUSES = new Set(["assigned", "completed"]);
  * "tap to rate your rider" / "tap for details". `cancelled` is pushed to BOTH parties, so it falls
  * back to `isRider` to pick the right screen.
  *
- * Two non-status `kind`s need special routing, or they dead-end: a `broadcast` alert goes to a rider
+ * Several non-status `kind`s need special routing, or they dead-end: a `broadcast` alert goes to a rider
  * who hasn't bid yet, so `/order/:id` would 403 (a Retry that can never succeed) — send them to the
- * board; `riders_available` carries no order at all — bring the customer home to re-broadcast.
+ * board; `riders_available` carries no order at all — bring the customer home to re-broadcast; an
+ * `account` push (KYC/standing change) has no order — send the rider to their rider home. `sos` is
+ * pushed to the counterparty, so a rider belongs on their own job screen, not the customer-voiced
+ * tracker. `rebroadcast` carries the FRESH clone's id — follow it to the new auction.
  * Returns null when there's genuinely nowhere to go.
  */
 export function pushDestination(data: unknown, isRider: boolean): string | null {
@@ -85,7 +88,12 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
   const { orderId, status, kind } = data as { orderId?: unknown; status?: unknown; kind?: unknown };
   if (kind === "broadcast") return "/rider";
   if (kind === "riders_available") return "/home";
+  if (kind === "account") return "/rider";
   if (typeof orderId !== "string" || orderId === "") return null;
+  // SOS to the counterparty: route the rider to their own job screen; the customer keeps the tracker.
+  if (kind === "sos") return isRider ? "/rider/job" : `/order/${orderId}`;
+  // Rider-bail rebroadcast: the orderId is the fresh clone — follow it to the new auction.
+  if (kind === "rebroadcast") return `/order/${orderId}`;
   if (typeof status === "string" && RIDER_ONLY_STATUSES.has(status)) return "/rider/job";
   if (status === "cancelled" && isRider) return "/rider/job";
   return `/order/${orderId}`;

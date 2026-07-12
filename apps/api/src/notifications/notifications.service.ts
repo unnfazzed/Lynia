@@ -156,8 +156,15 @@ export class NotificationsService {
     return { ok: true };
   }
 
-  /** Notify the relevant party(ies) of an order-status transition. Best-effort, never throws. */
-  async notifyOrderStatus(orderId: string, status: string, data: Record<string, string> = {}): Promise<void> {
+  /** Notify the relevant party(ies) of an order-status transition. Best-effort, never throws.
+   *  `excludeProfileId` drops one recipient — used to suppress a "cancelled" push to whoever just
+   *  performed the cancel (a push about your own action is noise). */
+  async notifyOrderStatus(
+    orderId: string,
+    status: string,
+    data: Record<string, string> = {},
+    excludeProfileId?: string,
+  ): Promise<void> {
     try {
       const notice = STATUS_NOTICES[status];
       if (!notice) return;
@@ -168,10 +175,36 @@ export class NotificationsService {
       if (!order) return;
       const ids = notice.to
         .map((aud) => (aud === "customer" ? order.customerId : order.riderId))
-        .filter((id): id is string => !!id);
+        .filter((id): id is string => !!id)
+        .filter((id) => id !== excludeProfileId);
       await this.send(ids, { title: notice.title, body: notice.body, data: { orderId, status, ...data } });
     } catch (err) {
       this.logger.warn(`notifyOrderStatus(${orderId}, ${status}) failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Auction-expiry notice to the customer (§5c), in two honest variants. The default nudges the price
+   * ("no rider took your price — try raising it"). But when the window closed with ZERO bids AND zero
+   * riders online nearby (`noSupply`), "raise it" is misleading — the price was never the problem — so
+   * the customer instead hears that nobody was online to take it. Best-effort, never throws.
+   */
+  async notifyOrderExpired(orderId: string, noSupply: boolean): Promise<void> {
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: { customerId: true },
+      });
+      if (!order) return;
+      const msg = noSupply
+        ? {
+            title: "No riders online nearby",
+            body: "Nobody was online near your pickup just now — tap to get pinged when a rider comes online.",
+          }
+        : { title: STATUS_NOTICES.expired.title, body: STATUS_NOTICES.expired.body };
+      await this.send([order.customerId], { ...msg, data: { orderId, status: "expired" } });
+    } catch (err) {
+      this.logger.warn(`notifyOrderExpired(${orderId}) failed: ${(err as Error).message}`);
     }
   }
 

@@ -8,6 +8,7 @@ import {
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData, fmtDate, fmtUntil, reportsFor, round, toTripRow } from "./admin.shared";
 
@@ -21,6 +22,8 @@ export class AdminRidersService {
     private readonly prisma: PrismaService,
     private readonly pii: PiiCryptoService,
     @Inject(STORAGE) private readonly storage: StorageAdapter,
+    // NotificationsModule is @Global, so no import wiring is needed to inject this.
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Rider roster for ops — the KYC review queue when filtered to `pending`. */
@@ -180,7 +183,7 @@ export class AdminRidersService {
    * required (enforced by the controller's zod body). 404s when the id isn't a rider.
    */
   async suspendRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({ where: { profileId }, select: { profileId: true } });
       if (!rider) throw new NotFoundException("Rider not found");
       await tx.rider.update({
@@ -196,6 +199,14 @@ export class AdminRidersService {
       });
       return { id: profileId, accountStatus: RiderAccountStatus.SUSPENDED, auditId: audit.id };
     });
+    // Best-effort, post-commit: tell the rider their standing changed (nothing surfaced this before).
+    // notifyProfiles never throws — a push miss can't affect the committed suspension.
+    void this.notifications.notifyProfiles([profileId], {
+      title: "Account paused",
+      body: "Your account was paused — open the app for details.",
+      data: { kind: "account" },
+    });
+    return result;
   }
 
   /**
@@ -203,7 +214,7 @@ export class AdminRidersService {
    * Mutation + audit in one transaction.
    */
   async liftRider(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({
         where: { profileId },
         select: { accountStatus: true, reliabilityScore: true },
@@ -237,6 +248,13 @@ export class AdminRidersService {
       });
       return { id: profileId, accountStatus: RiderAccountStatus.ACTIVE, auditId: audit.id };
     });
+    // Best-effort, post-commit: tell the rider they're back in good standing (recovery was silent before).
+    void this.notifications.notifyProfiles([profileId], {
+      title: "Account restored",
+      body: "Your account is back in good standing — you can go online again.",
+      data: { kind: "account" },
+    });
+    return result;
   }
 
   /**
@@ -271,7 +289,7 @@ export class AdminRidersService {
    * audit in one transaction.
    */
   async clearHold(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({
         where: { profileId },
         select: { accountStatus: true, onHold: true, reliabilityScore: true },
@@ -291,6 +309,13 @@ export class AdminRidersService {
       });
       return { id: profileId, onHold: false, auditId: audit.id };
     });
+    // Best-effort, post-commit: tell the rider their hold cleared and they can go online again.
+    void this.notifications.notifyProfiles([profileId], {
+      title: "Account restored",
+      body: "Your account is back in good standing — you can go online again.",
+      data: { kind: "account" },
+    });
+    return result;
   }
 
   /**
