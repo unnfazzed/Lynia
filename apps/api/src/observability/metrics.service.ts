@@ -37,7 +37,10 @@ type CounterName = "match_select_total" | "offers_made_total" | "client_samples_
 /** Fixed label vocabularies — NEVER accept ids/phones/lat-lng/raw-urls as labels (cardinality). */
 export type MatchSelectOutcome = "assigned" | "taken" | "unavailable" | "not_open" | "forbidden" | "error";
 export type BroadcastSource = "redis" | "pg";
-export type OtpVerifyResult = "ok" | "invalid" | "expired" | "locked" | "error";
+// "grace_ok" = session minted from the post-verify retry-grace path (client timed out after the
+// server committed, then retried the same correct code) — kept distinct from "ok" so a spike in
+// grace mints is visible as a link-quality signal.
+export type OtpVerifyResult = "ok" | "grace_ok" | "invalid" | "expired" | "locked" | "error";
 export type OffersMadeOutcome = "created" | "conflict" | "forbidden" | "error";
 export type StatusClass = "2xx" | "3xx" | "4xx" | "5xx";
 /** Client-supplied role. Bounded → safe as a label; the appVersion is bucketed separately (see below). */

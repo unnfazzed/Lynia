@@ -19,6 +19,13 @@ import { OTP_STORE, type OtpStore } from "./otp-store";
 import { TokenService } from "./token.service";
 
 const MAX_OTP_ATTEMPTS = 5;
+// Post-verify retry grace window (UX review 2026-07-11 §6). A successful verify deletes the OTP
+// record BEFORE the response reaches the client, so on the flaky links this app targets a client
+// timeout (15s) + retry with the SAME correct code used to hit "expired" — the user was signed in
+// server-side but never received tokens. For this window after a successful compare we keep only
+// the code's hash so that retry can be recognized and re-issued a fresh session. 60s covers the
+// client timeout plus a retry or two while keeping the replay window tight.
+const OTP_GRACE_TTL_SECONDS = 60;
 // Per-phone / per-IP / global send caps (ET5: each send costs BSP money — enumeration is a budget-DoS).
 const RL = {
   phone: { max: 5, windowSec: 3600 },
@@ -178,6 +185,15 @@ export class AuthService {
     try {
       const rec = await this.store.get(phone);
       if (!rec) {
+        // No live OTP — this may be a timed-out client retrying a code the server already
+        // accepted (§6). A grace hit mints a fresh session; a miss falls through to the exact
+        // same error as having no grace record at all, so a probe can't distinguish "recently
+        // verified, wrong guess" from "nothing here" (no oracle).
+        const graced = await this.verifyViaGrace(phone, code, userAgent);
+        if (graced) {
+          record("grace_ok");
+          return graced;
+        }
         record("expired");
         throw new UnauthorizedException("Code expired or never requested");
       }
@@ -198,6 +214,11 @@ export class AuthService {
         record("invalid");
         throw new UnauthorizedException("Invalid code");
       }
+      // Write the grace record (code hash only — never the raw code, never tokens) BEFORE deleting
+      // the live OTP: a crash between the two just leaves the live record to be re-verified
+      // normally, whereas the reverse order would reopen the exact "committed but client never got
+      // tokens" gap the grace record exists to heal.
+      await this.store.graceSet(phone, rec.hash, OTP_GRACE_TTL_SECONDS);
       await this.store.del(phone);
 
       const profile = await this.prisma.profile.upsert({
@@ -265,6 +286,41 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
     return { revoked: res.count > 0 };
+  }
+
+  /**
+   * Timeout-retry grace (§6): returns a fresh session when a short-TTL grace record proves this
+   * exact code was already verified successfully, or null (→ caller emits the normal "expired"
+   * error) on any miss.
+   *
+   * Security reasoning:
+   *  - A grace hit requires the exact correct code (constant-time hash compare), so it grants
+   *    nothing a still-live OTP record wouldn't have granted. The 5-attempt counter protected the
+   *    code while it was live; here the 60s TTL bounds exposure instead — deliberately no attempt
+   *    counter on this path (an attacker gets nothing from hammering it that they couldn't get
+   *    from the "expired" error, and the TTL is the rate limit).
+   *  - The record is deliberately NOT consumed on a hit: two client retries racing each other is
+   *    exactly the failure mode being healed, and each hit mints an independent session (sessions
+   *    are already multi-device), so a replay within the window adds no privilege.
+   *  - Only the code hash is ever at rest — never the raw code, never session tokens.
+   */
+  private async verifyViaGrace(
+    phone: string,
+    code: string,
+    userAgent?: string,
+  ): Promise<(SessionTokens & { profileId: string; role: string; needsProfile: boolean }) | null> {
+    const graceHash = await this.store.graceGet(phone);
+    if (!graceHash || !this.tokens.safeEqualHex(this.tokens.hash(code), graceHash)) return null;
+    // The original verify upserted the profile, so it must exist — plain read, and re-derive
+    // needsProfile the same way as the happy path. If it somehow vanished, fall through to the
+    // normal "expired" error rather than minting an account from a grace hit.
+    const profile = await this.prisma.profile.findUnique({
+      where: { phone },
+      select: { id: true, role: true, firstName: true },
+    });
+    if (!profile) return null;
+    const session = await this.issueSession(profile.id, profile.role, userAgent);
+    return { ...session, profileId: profile.id, role: profile.role, needsProfile: profile.firstName === "" };
   }
 
   private async issueSession(profileId: string, role: string, userAgent?: string): Promise<SessionTokens> {
