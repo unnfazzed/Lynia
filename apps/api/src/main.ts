@@ -9,7 +9,40 @@ import { parseTrustProxy } from "./common/trust-proxy";
 import { loadEnv } from "./config/env";
 import { initObservability } from "./observability/otel";
 
+/**
+ * Defense-in-depth process-level backstops (F-12). The reliability-critical paths already attach a
+ * `.catch` to every fire-and-forget async (the reconcilers, the post-commit rebroadcast/announce, the
+ * queue enqueues), but a future missed call site would otherwise reject unhandled and — on Node 22,
+ * whose default `--unhandled-rejections=throw` turns that into a fatal error — crash the whole
+ * instance, taking every in-flight request with it. Log loudly and KEEP SERVING: we deliberately do
+ * NOT `process.exit()` on an unhandledRejection (that exit is the very fleet-wide crash we're
+ * preventing). enableShutdownHooks / SIGTERM handling is untouched — this only intercepts the two
+ * crash signals. Registered before anything async runs so nothing can reject ahead of the handler.
+ *
+ * An `unhandledRejection` (the F-12 vector: a fire-and-forget async rejecting) is backstopped and we
+ * KEEP SERVING — that swallowed rejection is exactly the fleet-wide crash we're preventing. An
+ * `uncaughtException` is different: a synchronous throw that escaped every try/catch leaves the
+ * process in an undefined state, and Node explicitly warns that resuming is unsafe — so we log for
+ * attribution and then exit non-zero, letting the orchestrator restart a clean instance (Node's own
+ * default also exits; the handler just gives us a structured log first).
+ */
+function installProcessBackstops(): void {
+  const logger = new Logger("Process");
+  process.on("unhandledRejection", (reason) => {
+    logger.error(
+      `Unhandled promise rejection (backstopped, not crashing): ${
+        reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)
+      }`,
+    );
+  });
+  process.on("uncaughtException", (err) => {
+    logger.error(`Uncaught exception — exiting for a clean restart: ${err.stack ?? err.message}`);
+    process.exit(1);
+  });
+}
+
 async function bootstrap(): Promise<void> {
+  installProcessBackstops();
   const env = loadEnv();
   // Start tracing before the app so the SDK can patch http before the server begins handling requests.
   await initObservability(env.OTEL_SERVICE_NAME, env.OTEL_EXPORTER_OTLP_ENDPOINT);

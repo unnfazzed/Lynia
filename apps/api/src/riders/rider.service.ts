@@ -240,6 +240,14 @@ export class RiderService {
    */
   private async drainNotifyWaiters(lat: number, lng: number): Promise<void> {
     try {
+      // F-18: drainNotifyNear now claims each waiter ATOMICALLY (GEOSEARCH+ZREM in one Lua eval), so two
+      // API instances can't both ping the same customer. AT-MOST-ONCE is the deliberate trade-off: a
+      // waiter is removed the instant it's claimed, BEFORE the push below. If notifyRidersAvailable can't
+      // deliver — the customer has no device token (permanent, correctly dropped) or a transient FCM batch
+      // failure — the waiter is NOT re-queued and a later rider won't re-ping them. That transient loss is
+      // logged inside notifyRidersAvailable (it warns and never throws), so it's observable rather than
+      // silent. A durable re-queue (claim → holding set → confirm-on-push) would need a new Redis
+      // structure + a reaper and is out of this change's file set — tracked as a follow-up.
       const waiters = await this.tracking.drainNotifyNear(lat, lng, NOTIFY_RADIUS_M);
       if (waiters.length > 0) await this.notifications.notifyRidersAvailable(waiters);
     } catch {
@@ -267,9 +275,16 @@ export class RiderService {
         idVerified: status === "verified",
         kycResolvedAt: eventAt,
         // Record the auto-decline reason (Didit score below the threshold) so the rider app can show
-        // why, and clear any stale reason on a verify. NOT a kycAttempts change — the attempt counter
-        // is the admin A-02 decline path's, not the vendor webhook's.
+        // why, and clear any stale reason on a verify.
         ...(status === "failed" ? { kycDeclineReason: reason ?? null } : { kycDeclineReason: null }),
+        // F-13: a vendor DECLINE bumps the A-02 attempt counter too, so the auto path throttles retries
+        // exactly like the manual admin decline does — without this, auto-mode retries were uncapped,
+        // each minting a fresh paid vendor session. The increment rides the SAME monotonic guard as the
+        // rest of this updateMany (kycRef + kycResolvedAt null/older than eventAt): a webhook REPLAY or
+        // out-of-order delivery matches 0 rows (an exact replay has the same eventAt → not `lt` → no
+        // match), so it can't double-count. Only a genuinely new decline on a fresh ref (retryKyc mints
+        // a new kycRef and clears kycResolvedAt) increments again → the second decline locks at >= 2.
+        ...(status === "failed" ? { kycAttempts: { increment: 1 } } : {}),
         // An expiry (1·b2) is not a decline: reset the A-02 attempt counter so re-verification isn't
         // trapped by an ancient decline the rider already recovered from before they were verified.
         ...(status === "expired" ? { kycAttempts: 0 } : {}),
@@ -315,7 +330,7 @@ export class RiderService {
     return this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({
         where: { profileId },
-        select: { profileId: true, kycAttempts: true },
+        select: { profileId: true, kycAttempts: true, kycStatus: true, kycResolvedAt: true },
       });
       if (!rider) throw new NotFoundException("Rider not found");
 
@@ -323,13 +338,22 @@ export class RiderService {
       if (status === "failed") {
         // Decline: record the reason and bump the attempt counter. The increment is the lock's source of
         // truth — a second decline lands at >= 2 and retryKyc refuses to mint a third session.
+        //
+        // F-14: the counter must not double-count the SAME logical decline. A decline whose HTTP response
+        // was lost and retried (the console re-submitting the identical action) finds the rider already
+        // sitting in a resolved `failed` state — that's a repeat, not a new attempt, so it must not
+        // re-increment (it would over-lock an honest rider). A genuine SECOND decline only happens after
+        // the rider RESUBMITTED, which retryKyc signals by leaving `failed` and clearing kycResolvedAt —
+        // so guard the increment on "not already a resolved failure". The reason/audit is still re-recorded
+        // on every call; only the counter is guarded.
+        const isRepeatOfSameDecline = rider.kycStatus === "failed" && rider.kycResolvedAt != null;
         const updated = await tx.rider.update({
           where: { profileId },
           data: {
             kycStatus: "failed",
             idVerified: false,
             kycDeclineReason: reasonCode ?? null,
-            kycAttempts: { increment: 1 },
+            ...(isRepeatOfSameDecline ? {} : { kycAttempts: { increment: 1 } }),
             // Stamp the resolution time so applyKycResult's monotonic guard treats this human decision
             // as the latest word: a later (or replayed) vendor webhook with an older eventAt can no
             // longer flip a manually-declined rider back to verified. retryKyc clears it on a genuine

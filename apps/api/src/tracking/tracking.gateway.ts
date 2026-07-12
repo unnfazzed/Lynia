@@ -194,11 +194,17 @@ export class TrackingGateway
     if (!user) return { error: "unauthenticated" };
     if (!(await this.tracking.canAccessOrder(user.sub, body.orderId))) return { error: "forbidden" };
     await client.join(orderRoom(body.orderId));
-    // C5 customer-presence: a customer-role subscriber is, by construction, the order's customer (an
-    // assigned rider is always rider-role, so canAccessOrder + role:"customer" ⇒ the sender). Mark
-    // them live and re-arm any prior escalation. A rider-role subscriber is left untracked here (its
-    // liveness is the DB heartbeat via findStaleRiderPresence).
-    if (user.role === "customer") this.markCustomerPresent(client.id, body.orderId);
+    // C5 customer-presence: mark the subscriber live only when THEY are this order's CUSTOMER (the
+    // sender), keyed on the per-order relationship — NOT the global JWT role. `Role` is one enum per
+    // account, so a rider-role account that placed THIS delivery as the sender would never get the
+    // customer watchdog if we gated on role (F-16). canAccessOrder already proved the subscriber is one
+    // of {order's customer, order's assigned rider}, and a rider is never the customer on their own
+    // order — so "not the assigned rider" ⇒ the customer. The order's assigned rider is left untracked
+    // here (its liveness is the DB heartbeat via findStaleRiderPresence), so the two branches stay
+    // mutually exclusive and driven by the order relationship rather than the role.
+    if (!(await this.tracking.isAssignedRider(user.sub, body.orderId))) {
+      this.markCustomerPresent(client.id, body.orderId);
+    }
     return { joined: body.orderId };
   }
 

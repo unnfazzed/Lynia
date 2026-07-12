@@ -68,7 +68,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
         <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.lg }}>
           <section className="card">
             <div className="block-title">What happened</div>
-            <div style={{ fontSize: 13, lineHeight: 1.55 }} dangerouslySetInnerHTML={{ __html: i.facts }} />
+            <div style={{ fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{i.facts}</div>
             {i.codeNotEntered ? (
               <div className="warnbar" style={{ margin: "14px 0 0" }}>
                 <IconAlert />

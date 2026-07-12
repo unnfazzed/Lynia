@@ -348,8 +348,8 @@ describe("TrackingService.claimPresenceEscalation / releasePresenceEscalation (m
 describe("TrackingService notify-me waiting list (2·b1)", () => {
   const noRedis = () => new TrackingService(noRedisEnv, {} as PrismaService, fakeMetrics());
   const withRedis = () => new TrackingService({ REDIS_URL: "redis://x" } as Env, {} as PrismaService, fakeMetrics());
-  // A fake exposing the geo + zset surface the notify-me store uses. `members` is what geosearch
-  // returns (bare member strings — the drain omits WITHDIST); `expired` is what a prune finds.
+  // A fake exposing the geo + zset surface the notify-me store uses. `members` is what the atomic drain
+  // (the Lua `eval`) claims and returns; `expired` is what a prune (zrangebyscore) finds.
   function notifyRedis(members: string[] = [], expired: string[] = []) {
     return {
       geoadd: vi.fn(async (..._a: unknown[]) => 1),
@@ -357,6 +357,8 @@ describe("TrackingService notify-me waiting list (2·b1)", () => {
       zadd: vi.fn(async (..._a: unknown[]) => 1),
       zrem: vi.fn(async (..._a: unknown[]) => 1),
       zrangebyscore: vi.fn(async (..._a: unknown[]) => expired),
+      // The drain now claims-and-removes atomically in one Lua eval; it returns the claimed members.
+      eval: vi.fn(async (..._a: unknown[]) => members),
     };
   }
 
@@ -375,15 +377,22 @@ describe("TrackingService notify-me waiting list (2·b1)", () => {
     expect(await noRedis().addNotifyRequest("cust-1", -17.8, 31.0)).toBe(false);
   });
 
-  it("drainNotifyNear returns nearby waiters and removes them from BOTH structures", async () => {
+  it("drainNotifyNear atomically claims nearby waiters in ONE eval (GEOSEARCH+ZREM) and returns them", async () => {
     const redis = notifyRedis(["cust-1", "cust-2"]);
     const s = withRedis();
     s.setRedisClient(redis as never);
     const drained = await s.drainNotifyNear(-17.8, 31.0, 5000);
     expect(drained).toEqual(["cust-1", "cust-2"]);
-    // Removed from the geo index AND the expiry zset, so each is pinged exactly once.
-    expect(redis.zrem).toHaveBeenCalledWith("notify:geo", "cust-1", "cust-2");
-    expect(redis.zrem).toHaveBeenCalledWith("notify:exp", "cust-1", "cust-2");
+    // F-18: a single Lua round trip over BOTH structures (numkeys=2) — reads and removes together so a
+    // concurrent instance can't re-claim the same waiter (no double-ping). The bare GEOSEARCH+ZREM pair
+    // this replaced was three separate calls and raced across instances.
+    expect(redis.eval).toHaveBeenCalledTimes(1);
+    const [script, numkeys, geoKey, expKey] = redis.eval.mock.calls[0] as [string, number, string, string];
+    expect(numkeys).toBe(2);
+    expect(geoKey).toBe("notify:geo");
+    expect(expKey).toBe("notify:exp");
+    expect(script).toMatch(/geosearch/i);
+    expect(script).toMatch(/zrem/i);
   });
 
   it("drainNotifyNear prunes expired entries first, and returns [] with no Redis / on no matches", async () => {

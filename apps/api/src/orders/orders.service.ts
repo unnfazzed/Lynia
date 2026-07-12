@@ -192,8 +192,16 @@ export class OrdersService {
       throw err;
     }
 
-    // Server-side window expiry (ET1). No-op if Redis isn't configured.
-    await this.expiry.schedule(order.id);
+    // Server-side window expiry (ET1). No-op if Redis isn't configured. Fire-and-forget, NOT awaited
+    // (F-17): the order row has already committed, and with ioredis `maxRetriesPerRequest: null` a
+    // Redis outage makes queue.add() buffer forever — awaiting it here would hang the create request
+    // past the client timeout, and its idempotent retry would replay the existing order and skip the
+    // rider fan-out below. Correctness is preserved because reconcileStaleOffers already backstops the
+    // window transition off the DB even when this enqueue never lands. A .catch keeps a rejected
+    // enqueue from surfacing as an unhandledRejection.
+    void this.expiry.schedule(order.id).catch((err) => {
+      this.logger.error(`expiry schedule failed for order ${order.id}: ${(err as Error).message}`);
+    });
 
     // 2·b1 supply signal: resolve how many online riders are nearby BEFORE returning, so the auction
     // opens knowing whether anyone was actually pinged. Best-effort (null = unknown → calm fallback).
@@ -339,7 +347,12 @@ export class OrdersService {
       },
     });
     if (!order || order.status !== "open_for_offers") return;
-    await this.expiry.schedule(order.id);
+    // Fire-and-forget, NOT awaited (F-17), exactly like create(): a Redis outage makes queue.add()
+    // buffer forever under `maxRetriesPerRequest: null`, so awaiting it would both hang this call and
+    // gate the board announce below behind it. reconcileStaleOffers backstops the window transition.
+    void this.expiry.schedule(order.id).catch((err) => {
+      this.logger.error(`expiry schedule failed for order ${order.id}: ${(err as Error).message}`);
+    });
     await this.broadcastToNearbyRiders(order.id, order.pickup, order.dropoff, {
       itemDesc: order.itemDesc,
       suggestedFare: order.suggestedFare.toString(),

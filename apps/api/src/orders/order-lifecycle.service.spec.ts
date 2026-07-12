@@ -399,6 +399,13 @@ describe("OrderLifecycleService.reconcileStaleDeliveries", () => {
     });
     expect(await svc.reconcileStaleDeliveries()).toEqual({ closed: 2 });
   });
+
+  it("resolves (never rejects) and returns zero when the findMany itself rejects — F-12 fire-and-forget guard", async () => {
+    const { svc } = build({ order: { findMany: async () => { throw new Error("db down"); } } });
+    // Runs fire-and-forget from onModuleInit (`void this.reconcileStaleDeliveries()`), so a rejecting
+    // findMany would escape as an unhandledRejection and crash the process — it must resolve to zero.
+    await expect(svc.reconcileStaleDeliveries()).resolves.toEqual({ closed: 0 });
+  });
 });
 
 describe("OrderLifecycleService.rotateDeliveryCode", () => {
@@ -494,6 +501,23 @@ describe("OrderLifecycleService.cancel", () => {
     // F-01 re-attach: the OLD (cancelled) order's room is told to move to the NEW order id, so the
     // customer lands on the fresh auction instead of the dead cancelled terminal.
     expect(rebroadcasts).toEqual([["o1", "rebroadcast-1"]]);
+  });
+
+  it("F-12: a rejected post-commit announceOpenOrder is caught — the rider cancel still resolves", async () => {
+    const { svc, orders } = build(
+      cancellable({
+        rider: {
+          findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false }),
+          update: async () => ({}),
+        },
+      }),
+    );
+    // The F-01 rebroadcast announce is fire-and-forget after commit; a rejection (e.g. a Redis blip in
+    // its schedule) must be swallowed by the call-site .catch so it can't escape as an
+    // unhandledRejection and crash the instance. The cancel itself (already committed) still resolves.
+    orders.announceOpenOrder.mockRejectedValue(new Error("redis down"));
+    await expect(svc.cancel("o1", "r1")).resolves.toMatchObject({ status: "cancelled", cancelledBy: "rider" });
+    expect(orders.announceOpenOrder).toHaveBeenCalledWith("rebroadcast-1");
   });
 
   it("puts the rider on cooldown and forces them offline at the strike limit", async () => {

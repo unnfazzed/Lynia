@@ -537,6 +537,52 @@ describe("RiderService.applyKycResult", () => {
     // Not a decline: idVerified false, no decline reason, and kycAttempts reset so re-verify isn't locked.
     expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, kycDeclineReason: null, kycAttempts: 0 });
   });
+
+  it("F-13: a vendor DECLINE increments the A-02 counter under the monotonic guard (new decline only)", async () => {
+    let where: Record<string, unknown> | undefined;
+    let data: Record<string, unknown> | undefined;
+    const eventAt = new Date("2026-07-01T10:00:00Z");
+    const prisma = {
+      rider: {
+        updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          where = args.where;
+          data = args.data;
+          return { count: 1 };
+        },
+      },
+    };
+    expect(await svc(prisma, {}).applyKycResult("sess_1", "failed", eventAt, "score_below_threshold")).toEqual({ updated: 1 });
+    // The increment rides the SAME where guard that dedupes replays/reorders: a webhook that isn't newer
+    // than the last resolution matches 0 rows, so the increment never applies twice for one decline.
+    expect(where).toMatchObject({ kycRef: "sess_1", OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] });
+    expect(data).toMatchObject({
+      kycStatus: "failed",
+      idVerified: false,
+      kycDeclineReason: "score_below_threshold",
+      kycAttempts: { increment: 1 },
+    });
+  });
+
+  it("F-13: a REPLAYED/stale decline matches 0 rows so the counter is not bumped (updated:0)", async () => {
+    // The monotonic where guard (kycResolvedAt null/older than eventAt) filters an exact replay out —
+    // count 0 means the row wasn't touched, so the `increment` in data never runs a second time.
+    const s = svc({ rider: { updateMany: async () => ({ count: 0 }) } }, {});
+    expect(await s.applyKycResult("sess_1", "failed", new Date(), "score_below_threshold")).toEqual({ updated: 0 });
+  });
+
+  it("F-13: approve/verify does NOT touch the attempt counter", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+      },
+    };
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date());
+    expect(data).not.toHaveProperty("kycAttempts");
+  });
 });
 
 describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
@@ -626,6 +672,47 @@ describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
     await s.adminSetKyc("p1", "pending");
     expect(data).toMatchObject({ kycStatus: "pending", idVerified: false });
     expect(data!.kycResolvedAt).toBeUndefined();
+  });
+
+  it("F-14: a REPEAT of the same decline (already-failed, resolvedAt set) re-records the reason but does NOT re-increment", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        // The rider is already sitting in a resolved `failed` state — a retried/duplicate decline action
+        // (e.g. a lost HTTP response) must not double-count. No resubmit happened (kycResolvedAt still set).
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 1, kycStatus: "failed", kycResolvedAt: new Date("2026-07-01T09:00:00Z") }),
+        update: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { kycAttempts: 1 };
+        },
+      },
+    };
+    const s = svc(prisma, {});
+    const res = await s.adminSetKyc("p1", "failed", "Selfie doesn't match the ID");
+    // Counter held at 1 (not over-locked); the reason + resolution are still re-recorded.
+    expect(res).toMatchObject({ kycStatus: "failed", kycAttempts: 1, locked: false });
+    expect(data).not.toHaveProperty("kycAttempts");
+    expect(data).toMatchObject({ kycStatus: "failed", idVerified: false, kycDeclineReason: "Selfie doesn't match the ID" });
+    expect(data!.kycResolvedAt).toBeInstanceOf(Date);
+  });
+
+  it("F-14: a decline AFTER a resubmit (kycResolvedAt cleared by retryKyc) is a genuine new attempt and DOES increment", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        // retryKyc left `pending` and cleared kycResolvedAt on the resubmit → this is a fresh decline.
+        findUnique: async () => ({ profileId: "p1", kycAttempts: 1, kycStatus: "pending", kycResolvedAt: null }),
+        update: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { kycAttempts: 2 };
+        },
+      },
+    };
+    const s = svc(prisma, {});
+    const res = await s.adminSetKyc("p1", "failed", "Suspected fraud or stolen identity");
+    // Second genuine decline reaches the lock.
+    expect(res).toMatchObject({ kycStatus: "failed", kycAttempts: 2, locked: true });
+    expect(data).toMatchObject({ kycAttempts: { increment: 1 } });
   });
 
   it("a SECOND decline lands at kycAttempts >= 2 and reports locked", async () => {

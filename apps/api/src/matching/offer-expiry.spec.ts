@@ -105,4 +105,21 @@ describe("OfferExpiryService.reconcileStaleOffers", () => {
     expect(expireOrder).toHaveBeenCalledTimes(3);
     expect(result).toEqual({ expired: 1 });
   });
+
+  it("resolves (never rejects) and returns zero when the findMany itself rejects — F-12 fire-and-forget guard", async () => {
+    const env = { REDIS_URL: undefined } as Env;
+    const findMany = vi.fn().mockRejectedValue(new Error("db down"));
+    const expireOrder = vi.fn();
+    const service = new OfferExpiryService(
+      env,
+      { expireOrder } as unknown as MatchingService,
+      { order: { findMany } } as unknown as PrismaService,
+    );
+
+    // The sweep runs fire-and-forget from onModuleInit (`void this.reconcileStaleOffers()`), so a
+    // rejecting findMany would escape as an unhandledRejection and, with no handler, crash the process
+    // fleet-wide. The whole body is guarded, so it must RESOLVE to the zero result, never reject.
+    await expect(service.reconcileStaleOffers()).resolves.toEqual({ expired: 0 });
+    expect(expireOrder).not.toHaveBeenCalled();
+  });
 });

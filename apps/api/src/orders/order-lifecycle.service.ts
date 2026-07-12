@@ -133,21 +133,30 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   /** Close every delivered-but-unrated order older than the rating window. Idempotent via completeOrder. */
   async reconcileStaleDeliveries(): Promise<{ closed: number }> {
-    const cutoff = new Date(Date.now() - RATING_WINDOW_MS);
-    const stale = await this.prisma.order.findMany({
-      where: { status: "delivered", deliveredAt: { lt: cutoff } },
-      select: { id: true },
-      take: 500,
-    });
     let closed = 0;
-    for (const o of stale) {
-      try {
-        if ((await this.completeOrder(o.id)).completed) closed++;
-      } catch (err) {
-        this.logger.error(`reconcile failed for order ${o.id}: ${(err as Error).message}`);
+    // Fire-and-forget from onModuleInit (boot + interval), so the WHOLE body — the findMany included,
+    // not just the per-order loop — must be guarded (F-12): an un-caught rejection here escapes the
+    // `void` call site and, with no unhandledRejection handler, crashes the process fleet-wide. Mirrors
+    // the tracking.gateway disconnect-flush guard. On a top-level failure we log and fall through to the
+    // zero result, keeping the { closed } return-shape contract intact.
+    try {
+      const cutoff = new Date(Date.now() - RATING_WINDOW_MS);
+      const stale = await this.prisma.order.findMany({
+        where: { status: "delivered", deliveredAt: { lt: cutoff } },
+        select: { id: true },
+        take: 500,
+      });
+      for (const o of stale) {
+        try {
+          if ((await this.completeOrder(o.id)).completed) closed++;
+        } catch (err) {
+          this.logger.error(`reconcile failed for order ${o.id}: ${(err as Error).message}`);
+        }
       }
+      if (closed > 0) this.logger.log(`Reconciler auto-closed ${closed} stale delivered order(s)`);
+    } catch (err) {
+      this.logger.error(`reconcileStaleDeliveries sweep failed: ${(err as Error).message}`);
     }
-    if (closed > 0) this.logger.log(`Reconciler auto-closed ${closed} stale delivered order(s)`);
     return { closed };
   }
 
@@ -312,7 +321,14 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       );
     }
     this.safeEmit(orderId, "delivered");
-    await this.scheduleAutoClose(orderId);
+    // Fire-and-forget, NOT awaited (F-17): the `delivered` row has already committed, and with ioredis
+    // `maxRetriesPerRequest: null` a Redis outage makes queue.add() buffer forever — awaiting it would
+    // hang the confirm-delivery response the rider is waiting on. reconcileStaleDeliveries already
+    // backstops the auto-close off the DB even when this enqueue never lands. A .catch keeps a rejected
+    // enqueue from surfacing as an unhandledRejection.
+    void this.scheduleAutoClose(orderId).catch((err) => {
+      this.logger.error(`scheduleAutoClose failed for order ${orderId}: ${(err as Error).message}`);
+    });
     return { orderId, status: "delivered" };
   }
 
@@ -567,7 +583,13 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // F-01: tell the customer watching the (now cancelled) order to re-attach to the fresh auction,
       // then announce the new open order to the board. Both are best-effort post-commit pushes.
       this.gateway.emitOrderRebroadcast(orderId, rebroadcastId);
-      void this.orders.announceOpenOrder(rebroadcastId);
+      // F-12: announceOpenOrder is async and fire-and-forget, so a synchronous try/catch can't catch its
+      // rejection — attach a .catch so a post-commit rebroadcast blip (findUnique / queue enqueue) can't
+      // surface as an unhandledRejection and crash the instance. The DB reconciler still backstops the
+      // new open order's expiry, so losing this best-effort announce is acceptable.
+      void this.orders.announceOpenOrder(rebroadcastId).catch((err) => {
+        this.logger.error(`announceOpenOrder failed for order ${rebroadcastId}: ${(err as Error).message}`);
+      });
     }
     return result;
   }

@@ -466,23 +466,23 @@ export class TrackingService implements OnModuleDestroy {
     if (!redis) return [];
     try {
       await this.pruneNotify(redis, now);
-      const members = (await redis.geosearch(
+      // F-18: claim-and-remove in ONE atomic round trip via Lua (mirrors RedisOtpStore's incr+expire
+      // script). GEOSEARCH then ZREM-from-both used to be three separate calls, so two API instances
+      // draining the same newly-online rider could both read a waiter before either removed it → the
+      // customer got pinged twice. Reading and removing inside a single eval means the first instance
+      // claims each member and the second's GEOSEARCH no longer sees it — at most one ping per waiter.
+      // Removes from BOTH the geo index (KEYS[1]) and the expiry ZSET (KEYS[2]) so no half-entry lingers.
+      const members = (await redis.eval(
+        "local m = redis.call('geosearch', KEYS[1], 'FROMLONLAT', ARGV[1], ARGV[2], 'BYRADIUS', ARGV[3], 'm', 'ASC', 'COUNT', ARGV[4]); if #m > 0 then redis.call('zrem', KEYS[1], unpack(m)); redis.call('zrem', KEYS[2], unpack(m)) end; return m",
+        2,
         NOTIFY_GEO_KEY,
-        "FROMLONLAT",
+        NOTIFY_EXP_KEY,
         lng,
         lat,
-        "BYRADIUS",
         radiusM,
-        "m",
-        "ASC",
-        "COUNT",
         NOTIFY_DRAIN_COUNT,
       )) as string[];
-      if (members.length === 0) return [];
-      // Remove drained entries from BOTH structures so each customer is pinged exactly once.
-      await redis.zrem(NOTIFY_GEO_KEY, ...members);
-      await redis.zrem(NOTIFY_EXP_KEY, ...members);
-      return members;
+      return members ?? [];
     } catch {
       return [];
     }
