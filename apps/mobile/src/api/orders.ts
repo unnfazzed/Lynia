@@ -43,6 +43,10 @@ export interface OrderSnapshot {
   items?: { description: string; quantity: number }[] | null;
   // The sender's note for the rider ("ask for Rita at reception") — parties on the order only.
   note?: string | null;
+  // §5c proof-of-pickup: a short-lived signed URL for the rider's optional parcel photo, served to
+  // BOTH parties once attached ("parcel is with your rider — photo attached"). Absent/null when no
+  // photo was added, on old orders, and on an older API — optional everywhere, purely additive.
+  pickupPhotoUrl?: string | null;
   rider: { profileId: string; currentLat: number | null; currentLng: number | null; updatedAt: string | null } | null;
   events: OrderEvent[];
   counterpartyPhone: string | null;
@@ -200,4 +204,14 @@ export function notifyWhenRiderOnline(pickup: LatLng): Promise<{ queued: boolean
  */
 export function confirmItems(orderId: string, body: ConfirmItemsRequest): Promise<{ orderId: string; confirmedIndexes: number[] }> {
   return apiFetch(`/orders/${orderId}/items/confirm`, { method: "POST", body });
+}
+
+/**
+ * Rider attaches the optional proof-of-pickup photo (§5c "Mark collected (+ pickup photo)"). `key`
+ * is the object key from requestPickupPhotoUpload (uploads.ts) after the signed PUT. Rider-only,
+ * allowed at `en_route_pickup`/`picked_up`, and idempotent — re-attaching replaces (a retake wins).
+ * Strictly optional on the client: collecting without a photo stays one tap.
+ */
+export function attachPickupPhoto(orderId: string, key: string): Promise<{ orderId: string; pickupPhotoKey: string }> {
+  return apiFetch(`/orders/${orderId}/pickup-photo`, { method: "POST", body: { key } });
 }

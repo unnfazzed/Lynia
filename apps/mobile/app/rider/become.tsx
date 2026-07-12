@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Image, ScrollView, Text } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
+import { downscaleForUpload, type UploadImageSource } from "../../src/logic/image-downscale";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft } from "../../src/logic/kyc-draft";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
 import { Button, Card, ErrorText, Field, Heading, isTestBuild, Label, Screen, Sub } from "../../src/ui";
@@ -24,8 +25,10 @@ export default function BecomeRiderScreen(): React.ReactElement {
   const [uploadSlow, setUploadSlow] = useState(false);
   // The asset that just failed to upload, kept so "Try again" can re-PUT the SAME captured/picked file
   // instead of forcing a brand-new camera capture when the capture itself was fine and only the upload
-  // (the actual point of failure on a flaky link) needs retrying.
-  const [failedAsset, setFailedAsset] = useState<{ uri: string; contentType: ImageContentType } | null>(null);
+  // (the actual point of failure on a flaky link) needs retrying. Holds the ORIGINAL capture (uri +
+  // dimensions), so a retry re-runs the downscale in doUpload — cheap and local — rather than caching
+  // a derived file that may have been evicted from the manipulator's cache dir.
+  const [failedAsset, setFailedAsset] = useState<UploadImageSource | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -74,7 +77,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
     !uploading;
 
   // Shared by a fresh capture/pick and a "Try again" retry of the same asset.
-  const doUpload = async (uri: string, contentType: ImageContentType): Promise<void> => {
+  const doUpload = async (asset: UploadImageSource): Promise<void> => {
     // Keep the previously-uploaded photo intact until the retake succeeds — a failed retry must NOT wipe
     // a good photo (which would drop canSubmit to false). Only commit the new uri/key on success; on
     // failure roll back to whatever we already had.
@@ -82,17 +85,22 @@ export default function BecomeRiderScreen(): React.ReactElement {
     const prevKey = photoKey;
     setUploading(true);
     try {
-      const { uploadUrl, key, headers } = await requestKycPhotoUpload(contentType);
+      // Downscale before the presign (07-08 deferred item: full camera resolution over expensive,
+      // flaky data). Never throws — any manipulation failure hands back the original file. The
+      // returned contentType is what the signature must be minted over: the downscaled output is
+      // JPEG even for a PNG source, so presigning the ORIGINAL type would fail the PUT.
+      const prepared = await downscaleForUpload(asset);
+      const { uploadUrl, key, headers } = await requestKycPhotoUpload(prepared.contentType);
       // Send the exact headers the signature was minted over (Content-Type + size range); fall back to
       // just the content type for an older API that didn't return them.
-      await uploadImage(uploadUrl, uri, headers ?? { "Content-Type": contentType });
-      setPhotoUri(uri);
+      await uploadImage(uploadUrl, prepared.uri, headers ?? { "Content-Type": prepared.contentType });
+      setPhotoUri(asset.uri);
       setPhotoKey(key);
       setFailedAsset(null);
     } catch (e) {
       setPhotoUri(prevUri);
       setPhotoKey(prevKey);
-      setFailedAsset({ uri, contentType });
+      setFailedAsset(asset);
       setError(e instanceof ApiError ? e.message : "Couldn't upload the photo. Check your connection and try again.");
     } finally {
       setUploading(false);
@@ -118,7 +126,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
     const asset = result.assets[0];
     if (!asset) return;
     const contentType: ImageContentType = asset.mimeType === "image/png" ? "image/png" : "image/jpeg";
-    await doUpload(asset.uri, contentType);
+    await doUpload({ uri: asset.uri, width: asset.width, height: asset.height, contentType });
   };
 
   // R6/07-11: retry the SAME failed upload instead of forcing the rider to re-pose for a fresh capture
@@ -127,7 +135,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
   const retryUpload = async (): Promise<void> => {
     if (!failedAsset) return;
     setError(null);
-    await doUpload(failedAsset.uri, failedAsset.contentType);
+    await doUpload(failedAsset);
   };
 
   useEffect(() => {

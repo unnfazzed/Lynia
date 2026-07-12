@@ -22,6 +22,7 @@ import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, 
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
 import { LiveTrackingCard } from "../../src/ui/order/LiveTrackingCard";
+import { PickupPhoto } from "../../src/ui/order/PickupPhoto";
 import { ReceiptCard } from "../../src/ui/order/ReceiptCard";
 import { RatingCard } from "../../src/ui/order/RatingCard";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
@@ -776,6 +777,10 @@ export default function OrderScreen(): React.ReactElement {
             reissuing={rotateM.isPending}
           />
         ) : null}
+
+        {/* §5c collection reassurance: the rider's photo of the parcel, taken at pickup. Self-hides
+            when no photo was attached, so no status gating needed. */}
+        <PickupPhoto url={order.pickupPhotoUrl} />
 
         {/* SOS on a live trip (R-16/F-13) — a deliberate danger control, highest value at the cash
             hand-off. Only while the trip is genuinely active. */}

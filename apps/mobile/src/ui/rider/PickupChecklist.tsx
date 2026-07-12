@@ -1,11 +1,20 @@
 import { tokens } from "@lynia/shared";
-import React from "react";
-import { Pressable, Text, View } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import React, { useState } from "react";
+import { Image, Pressable, Text, View } from "react-native";
+import { attachPickupPhoto } from "../../api/orders";
+import { requestPickupPhotoUpload, uploadImage } from "../../api/uploads";
+import { downscaleForUpload, type UploadImageSource } from "../../logic/image-downscale";
 import { Button, Card, Icon, Sub } from "../index";
 
 /* Pickup item verification — between "arrived at pickup" and "collected", the rider ticks the
    sender's items against what's physically in hand. The collect CTA counts them and confirms
-   (extracted verbatim from app/rider/job.tsx). */
+   (extracted verbatim from app/rider/job.tsx).
+
+   Also hosts the OPTIONAL proof-of-pickup photo (§5c "Mark collected (+ pickup photo)"): capture →
+   downscale (image-downscale.ts) → signed PUT → attach to the order. Self-contained (own capture/
+   upload state) so job.tsx only passes `orderId`; strictly optional — no photo state ever disables
+   or delays "Confirm collected". */
 export function PickupChecklist({
   items,
   checkedItems,
@@ -13,6 +22,7 @@ export function PickupChecklist({
   pending,
   onToggle,
   onConfirm,
+  orderId,
 }: {
   items: { description: string; quantity: number }[];
   checkedItems: ReadonlySet<number>;
@@ -20,7 +30,59 @@ export function PickupChecklist({
   pending: boolean;
   onToggle: (index: number) => void;
   onConfirm: () => void;
+  /** When present, the optional §5c pickup-photo affordance is shown (absent = old call sites/tests
+   *  render the checklist exactly as before). */
+  orderId?: string | null;
 }): React.ReactElement {
+  // Local uri of the successfully-attached photo (the preview); null until one lands.
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  // The ORIGINAL capture that failed to upload/attach, so "Try again" re-PUTs the same asset instead
+  // of forcing a re-shoot — same pattern as become.tsx's KYC retry (the everyday failure on this
+  // market's links is the upload, not the capture).
+  const [failedPhoto, setFailedPhoto] = useState<UploadImageSource | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  // Capture → downscale → signed PUT → attach. Every failure lands in the calm inline state below —
+  // never a blocking alert, and never any effect on the collect CTA.
+  const uploadPhoto = async (asset: UploadImageSource): Promise<void> => {
+    if (!orderId) return;
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      const prepared = await downscaleForUpload(asset);
+      const { uploadUrl, key, headers } = await requestPickupPhotoUpload(prepared.contentType);
+      await uploadImage(uploadUrl, prepared.uri, headers ?? { "Content-Type": prepared.contentType });
+      await attachPickupPhoto(orderId, key);
+      setPhotoUri(asset.uri);
+      setFailedPhoto(null);
+    } catch {
+      setFailedPhoto(asset);
+      setPhotoError("Couldn't add the photo — you can still collect and continue.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const capturePhoto = async (): Promise<void> => {
+    setPhotoError(null);
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      setPhotoError("Camera permission is needed to add a photo — you can still collect without one.");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6 });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset) return;
+    await uploadPhoto({
+      uri: asset.uri,
+      width: asset.width,
+      height: asset.height,
+      contentType: asset.mimeType === "image/png" ? "image/png" : "image/jpeg",
+    });
+  };
+
   return (
     <Card style={{ borderColor: tokens.color.accent }}>
       <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: 2 }}>Confirm pickup</Text>
@@ -69,6 +131,34 @@ export function PickupChecklist({
           );
         })}
       </View>
+      {orderId ? (
+        <View style={{ marginTop: tokens.space.sm }}>
+          {photoUri ? (
+            <>
+              <Image
+                source={{ uri: photoUri }}
+                accessibilityLabel="Your photo of the parcel"
+                style={{ width: "100%", height: 140, borderRadius: tokens.radius.input, marginBottom: tokens.space.sm, backgroundColor: tokens.color.surface }}
+              />
+              <Text style={{ fontSize: 12, color: tokens.color.accentText, fontWeight: "600", marginBottom: 4 }}>
+                Photo added ✓ — the sender can see it
+              </Text>
+            </>
+          ) : null}
+          <Button
+            label={photoBusy ? "Adding photo…" : photoUri ? "Retake parcel photo" : "Add a photo of the parcel (optional)"}
+            variant="ghost"
+            onPress={() => void capturePhoto()}
+            loading={photoBusy}
+          />
+          {photoError ? (
+            <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18, marginBottom: 4 }}>{photoError}</Text>
+          ) : null}
+          {failedPhoto && !photoBusy ? (
+            <Button label="Try the photo again" variant="ghost" onPress={() => void uploadPhoto(failedPhoto)} />
+          ) : null}
+        </View>
+      ) : null}
       <View style={{ flexDirection: "row", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginTop: tokens.space.sm }}>
         <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
         <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>

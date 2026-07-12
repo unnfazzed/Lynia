@@ -284,6 +284,11 @@ model Order {
   // Per-item pickup confirmation (rider "pickup item verification"): which indexes of `items` the
   // rider physically collected. Nullable — legacy orders + orders never through the checklist.
   itemsCollected      Json?       @map("items_collected")
+  // Proof-of-pickup photo (§5c "parcel is with your rider — photo attached"): the object KEY of the
+  // rider's optional parcel photo, taken at collection. Key, not URL — read URLs are minted on
+  // demand in getSnapshot, mirroring riders.photo_url. Nullable: the photo is optional and must
+  // never gate the collect, so most rows (and every pre-migration-0022 row) stay null.
+  pickupPhotoKey      String?     @map("pickup_photo_key")
   deliveredAt         DateTime?   @map("delivered_at")
   completedAt         DateTime?   @map("completed_at")
   cancelledAt         DateTime?   @map("cancelled_at")

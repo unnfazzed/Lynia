@@ -119,6 +119,92 @@ describe("OrderLifecycleService.confirmItems", () => {
   });
 });
 
+describe("OrderLifecycleService.attachPickupPhoto", () => {
+  const key = "pickup/r1/11111111-1111-4111-8111-111111111111.jpg";
+
+  it("404s for a missing order", async () => {
+    const { svc } = build({ order: { findUnique: async () => null } });
+    await expect(svc.attachPickupPhoto("o1", "r1", key)).rejects.toThrow(/not found/i);
+  });
+
+  it("403s when the caller is not the assigned rider", async () => {
+    const { svc } = build({
+      order: { findUnique: async () => ({ status: "en_route_pickup", riderId: "r1" }) },
+    });
+    await expect(svc.attachPickupPhoto("o1", "other", key)).rejects.toThrow(/assigned rider/i);
+  });
+
+  it("409s outside the attach window (before the pickup leg, and after heading to drop-off)", async () => {
+    for (const status of ["assigned", "confirmed", "en_route_dropoff", "delivered", "cancelled"]) {
+      const { svc } = build({ order: { findUnique: async () => ({ status, riderId: "r1" }) } });
+      await expect(svc.attachPickupPhoto("o1", "r1", key)).rejects.toThrow(/while collecting/i);
+    }
+  });
+
+  it("400s a key outside the rider's own pickup namespace (can't persist someone else's object)", async () => {
+    const { svc } = build({
+      order: { findUnique: async () => ({ status: "en_route_pickup", riderId: "r1" }) },
+    });
+    await expect(svc.attachPickupPhoto("o1", "r1", "pickup/victim/photo.jpg")).rejects.toThrow(/invalid photo key/i);
+    await expect(svc.attachPickupPhoto("o1", "r1", "kyc/r1/photo.jpg")).rejects.toThrow(/invalid photo key/i);
+  });
+
+  it("persists the key at en_route_pickup via a CAS bounded to the attach window", async () => {
+    let args: { where: Record<string, unknown>; data: Record<string, unknown> } | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "en_route_pickup", riderId: "r1" }),
+        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          args = a;
+          return { count: 1 };
+        },
+      },
+    });
+    await expect(svc.attachPickupPhoto("o1", "r1", key)).resolves.toEqual({ orderId: "o1", pickupPhotoKey: key });
+    expect(args!.data).toEqual({ pickupPhotoKey: key });
+    // The CAS covers BOTH window statuses, so an upload that lands just after the collect still attaches.
+    expect(args!.where).toEqual({ id: "o1", status: { in: ["en_route_pickup", "picked_up"] } });
+  });
+
+  it("still attaches at picked_up — a slow upload must not lose to the one-tap collect", async () => {
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "picked_up", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    });
+    await expect(svc.attachPickupPhoto("o1", "r1", key)).resolves.toEqual({ orderId: "o1", pickupPhotoKey: key });
+  });
+
+  it("re-attaching replaces the key (idempotent retake) — same write, no duplicate state", async () => {
+    const retake = "pickup/r1/22222222-2222-4222-8222-222222222222.jpg";
+    const writes: Record<string, unknown>[] = [];
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "en_route_pickup", riderId: "r1" }),
+        updateMany: async (a: { data: Record<string, unknown> }) => {
+          writes.push(a.data);
+          return { count: 1 };
+        },
+      },
+    });
+    await svc.attachPickupPhoto("o1", "r1", key);
+    await expect(svc.attachPickupPhoto("o1", "r1", retake)).resolves.toEqual({ orderId: "o1", pickupPhotoKey: retake });
+    expect(writes).toEqual([{ pickupPhotoKey: key }, { pickupPhotoKey: retake }]);
+  });
+
+  it("409s if the order left the window between the read and the CAS write", async () => {
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "picked_up", riderId: "r1" }),
+        // A concurrent advance flipped the row to en_route_dropoff — the CAS `where` no longer matches.
+        updateMany: async () => ({ count: 0 }),
+      },
+    });
+    await expect(svc.attachPickupPhoto("o1", "r1", key)).rejects.toThrow(/changed, retry/i);
+  });
+});
+
 describe("OrderLifecycleService.confirmDelivery", () => {
   // confirmDelivery reads the row via a FOR UPDATE $queryRaw (snake_case columns).
   const row = (over: Record<string, unknown> = {}) => [
