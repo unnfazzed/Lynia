@@ -9,7 +9,7 @@ import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../s
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
-import { formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
+import { auctionHeaderText, formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
@@ -276,6 +276,14 @@ export default function OrderScreen(): React.ReactElement {
     fire(60_000, "Offer window: 1 minute left");
     fire(30_000, "Offer window: 30 seconds left");
     fire(0, "Offer window closing");
+    // JOURNEY-BUGS: at 0:00 the screen used to just sit on "Finding riders…" for up to the 15s poll
+    // interval before the status transition (expired / a late bid landing) showed up. Nudge a refetch
+    // right at the threshold instead of waiting out the poll.
+    if (remainingMs <= 0 && !firedThresholds.current.has(-1)) {
+      firedThresholds.current.add(-1);
+      void orderQ.refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on remainingMs/status only; orderQ.refetch is stable.
   }, [remainingMs, status]);
 
   // Amber-urgency colour crossfade over the last 20s (instant under reduce-motion).
@@ -555,11 +563,7 @@ export default function OrderScreen(): React.ReactElement {
                 amber-urgency (danger, bold), with a paused dot when the socket is reconnecting. */}
             <View style={{ flexDirection: "row", alignItems: "baseline", marginBottom: tokens.space.lg }}>
               <Text style={{ flex: 1, fontSize: 14, color: tokens.color.muted }}>
-                {bidCount > 0
-                  ? `${bidCount} ${bidCount === 1 ? "rider" : "riders"} bidding${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
-                  : noRiders
-                    ? `No riders online nearby right now${connectionState === "reconnecting" ? " · reconnecting…" : ""}`
-                    : `Finding riders near you…${connectionState === "reconnecting" ? " reconnecting…" : ""}`}
+                {auctionHeaderText({ remainingMs, bidCount, noRiders, reconnecting: connectionState === "reconnecting" })}
               </Text>
               {remainingMs != null ? (
                 <Animated.Text

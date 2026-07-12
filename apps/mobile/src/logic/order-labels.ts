@@ -36,3 +36,17 @@ export function spokenRemaining(ms: number): string {
   parts.push(`${s} second${s === 1 ? "" : "s"}`);
   return `Offer window: ${parts.join(" ")} left`;
 }
+
+/**
+ * JOURNEY-BUGS: the auction header used to just read "Finding riders near you…" straight through to
+ * 0:00, then keep reading it for up to the 15s poll interval before the status transition caught up —
+ * a dead-looking stall right when the customer is watching the clock closest. A transitional line at
+ * the threshold covers that gap instead of a silent stare.
+ */
+export function auctionHeaderText(args: { remainingMs: number | null; bidCount: number; noRiders: boolean; reconnecting: boolean }): string {
+  const suffix = args.reconnecting ? " · reconnecting…" : "";
+  if (args.remainingMs === 0) return "Window closing — wrapping up…";
+  if (args.bidCount > 0) return `${args.bidCount} ${args.bidCount === 1 ? "rider" : "riders"} bidding${suffix}`;
+  if (args.noRiders) return `No riders online nearby right now${suffix}`;
+  return `Finding riders near you…${args.reconnecting ? " reconnecting…" : ""}`;
+}
