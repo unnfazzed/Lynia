@@ -161,8 +161,18 @@ export class OffersService {
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.customerId !== callerId) throw new ForbiddenException("Not your order");
+
+    // Same block-pair enforcement as makeOffer/selectOffer: a rider blocked (either direction) after
+    // bidding must not keep surfacing their name/photo/ratings here — makeOffer only stops NEW offers
+    // from a blocked pair, so an existing pending offer placed before the block needs filtering here.
+    const blocks = await this.prisma.block.findMany({
+      where: { OR: [{ blockerProfileId: order.customerId }, { blockedProfileId: order.customerId }] },
+      select: { blockerProfileId: true, blockedProfileId: true },
+    });
+    const blockedRiderIds = blocks.map((b) => (b.blockerProfileId === order.customerId ? b.blockedProfileId : b.blockerProfileId));
+
     const offers = await this.prisma.offer.findMany({
-      where: { orderId, status: "pending" },
+      where: { orderId, status: "pending", ...(blockedRiderIds.length > 0 ? { riderId: { notIn: blockedRiderIds } } : {}) },
       select: {
         id: true,
         type: true,
