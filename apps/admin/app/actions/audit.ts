@@ -39,3 +39,33 @@ export async function submitAdminAction(formData: FormData): Promise<void> {
   // degraded/offline path (nothing changed server-side because the write was skipped).
   revalidatePath(path);
 }
+
+/**
+ * F-07: dedicated write path for the order-detail "log a follow-up note" control.
+ *
+ * The generic submitAdminAction reads `action`/`target`/`path` from the form, so exposing it there
+ * with client-visible hidden inputs let a user rewrite them and forge an arbitrary audit row (e.g.
+ * action=rider.ban against any target). This action instead hardcodes the action and derives the
+ * target/path from `orderId`, which is a server-bound argument (encrypted by Next, not client-supplied
+ * form data), so the client can choose neither the action nor the target. Operator attribution is
+ * unchanged — adminPostResult still forwards the middleware-asserted operator.
+ */
+export async function logOrderFollowUpNote(orderId: string, _formData: FormData): Promise<void> {
+  if (!orderId) return;
+  const action = "order.nudge_rider";
+  const path = `/orders/${orderId}`;
+
+  const result = await adminPostResult("/admin/audit-actions", {
+    action,
+    target: orderId,
+    reasonCode: null,
+    note: null,
+  });
+
+  if (!result.ok && result.reason !== "unconfigured") {
+    const detail = result.reason === "http" ? `HTTP ${result.status}` : "API unreachable";
+    throw new Error(`Failed to record audit action "${action}" for ${orderId} (${detail}).`);
+  }
+
+  revalidatePath(path);
+}

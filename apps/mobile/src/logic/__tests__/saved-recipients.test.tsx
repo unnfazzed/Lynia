@@ -1,9 +1,11 @@
 import { clampRecipients, MAX_RECIPIENTS, normalizePhone, type Recipient } from "../saved-recipients";
 
 describe("normalizePhone", () => {
-  it("strips all non-digits so equivalent numbers match", () => {
-    expect(normalizePhone("+263 77 123 4567")).toBe("263771234567");
-    expect(normalizePhone("0771234567")).toBe("0771234567");
+  it("canonicalizes to E.164 so equivalent local/international numbers match (F-05)", () => {
+    // Local trunk-0 and international spellings of the SAME ZW number now collapse to one key,
+    // so the recipient dedupes instead of persisting as two chips.
+    expect(normalizePhone("+263 77 123 4567")).toBe("+263771234567");
+    expect(normalizePhone("0771234567")).toBe("+263771234567");
   });
   it("tolerates empty/garbage", () => {
     expect(normalizePhone("")).toBe("");
@@ -18,11 +20,12 @@ describe("clampRecipients", () => {
     expect(clampRecipients([r("123"), r("+263771234567")])).toEqual([r("+263771234567")]);
   });
 
-  it("dedupes by normalised phone, first wins", () => {
+  it("dedupes by canonical phone, first wins (F-05)", () => {
+    // Local (`0771234567`) and international (`+263 77 123 4567`) spellings of the same ZW number
+    // canonicalize to one E.164 key, so they collapse to a single recipient (first spelling wins).
     const out = clampRecipients([r("+263 77 123 4567", "Rita"), r("0771234567", "Someone else spelling")]);
-    // Different textual phones — but only one is kept if they normalise the same? These normalise
-    // differently (country code vs local), so BOTH are distinct recipients.
-    expect(out.length).toBe(2);
+    expect(out.length).toBe(1);
+    expect(out[0]?.name).toBe("Rita"); // first wins
 
     const dupes = clampRecipients([r("263771234567", "A"), r("263 77 123 4567", "B")]);
     expect(dupes.length).toBe(1);

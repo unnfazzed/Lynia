@@ -6,6 +6,8 @@ import { RECENTS_KEY as SAVED_PLACES_RECENTS_KEY, SAVED_KEY as SAVED_PLACES_SAVE
 import { MY_PICKUP_PHONE_KEY, RECIPIENTS_KEY } from "../logic/saved-recipients";
 import { KYC_DRAFT_KEY } from "../logic/kyc-draft";
 import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
+import { JOB_KEY } from "../net/last-active-store";
+import { RIDER_BID_DRAFT_KEY } from "../logic/rider-bid-draft";
 
 /** The authenticated session, persisted in the device keychain (not AsyncStorage — these are secrets). */
 export interface Session {
@@ -216,6 +218,14 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(HISTORY_SNAPSHOT_KEY),
       // The cached chosen-rider identity (a third party's name + photo) must not survive to the next user.
       SecureStore.deleteItemAsync(RIDER_IDENTITY_KEY),
+      // The rider's last-active job snapshot (route landmarks, fare, last GPS) — the next rider's cold
+      // start reads this single-slot key via loadLastActiveJob() and would paint the previous rider's job.
+      SecureStore.deleteItemAsync(JOB_KEY),
+      // The rider's in-progress bid draft (selected order + typed price/ETA) must not rehydrate for the next user.
+      SecureStore.deleteItemAsync(RIDER_BID_DRAFT_KEY),
+      // Note: the per-order `lynia.lastActive.<orderId>` keys are keyed by order id and not enumerable
+      // (no index like CODE_INDEX_KEY), so they linger but are lower-risk — the next user isn't routed to
+      // them (the tracker only reads a key it already holds the id for), so nothing paints from them.
       ...codes.map((id) => SecureStore.deleteItemAsync(codeKey(id))),
     ]);
   } catch {

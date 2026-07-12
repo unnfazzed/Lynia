@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+import { normalizePhone as canonicalizePhone } from "@lynia/shared";
 
 /**
  * On-device "recent recipients" — the last few {name, phone} pairs a customer sent to, so a repeat send
@@ -36,14 +37,20 @@ export interface Recipient {
   phone: string;
 }
 
-/** Digits-only form used for dedupe/match so "+263 77 123 4567" and "0771234567" don't both persist. */
+/**
+ * Dedupe/match key so "+263 77 123 4567" and "0771234567" collapse to ONE recipient. Uses the shared
+ * E.164 canonicaliser (packages/shared/src/phone.ts), which correctly reconciles ZW local/international
+ * forms — a bare digit-strip couldn't, since "+263…" and "0…" produce different digit runs. Falls back
+ * to raw digits when the number is unparseable, so a weird number still dedupes against itself.
+ */
 export function normalizePhone(phone: string): string {
-  return (phone ?? "").replace(/\D/g, "");
+  const raw = phone ?? "";
+  return canonicalizePhone(raw) ?? raw.replace(/\D/g, "");
 }
 
 /** A minimum-length gate so we never stash a half-typed number as a "recipient". */
 function isUsablePhone(phone: string): boolean {
-  return normalizePhone(phone).length >= 6;
+  return (phone ?? "").replace(/\D/g, "").length >= 6;
 }
 
 function coerce(v: unknown): Recipient | null {

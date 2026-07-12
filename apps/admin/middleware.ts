@@ -40,6 +40,11 @@ export function middleware(req: NextRequest): NextResponse {
 
   // Attribute downstream work to the authenticated operator (if any).
   const requestHeaders = new Headers(req.headers);
+  // Strip any inbound x-lynia-operator BEFORE (re)asserting it: this header is the trusted audit actor
+  // forwarded to the API as X-Operator, so a client-supplied value must never survive. The strip is
+  // unconditional — even when decision.operator is falsy (auth-disabled-but-connected mode, or an
+  // identity that normalizes to "") no client value may leak through as the operator.
+  requestHeaders.delete("x-lynia-operator");
   if (decision.operator) requestHeaders.set("x-lynia-operator", decision.operator);
   return NextResponse.next({ request: { headers: requestHeaders } });
 }

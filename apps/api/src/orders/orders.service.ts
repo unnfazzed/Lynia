@@ -103,9 +103,28 @@ export class OrdersService {
     // S·2: a held customer can't broadcast. Checked first — before the corridor gate and any write —
     // and thrown in the same { reason, message } shape the rider online-gate uses, so the app's
     // ApiError.code pipeline routes it straight to the "account on hold" screen (gates.ts).
-    const account = await this.prisma.profile.findUnique({ where: { id: customerId }, select: { onHold: true } });
+    // Read the caller's hold flag AND (if they're a rider) their account standing in one query, so the
+    // gate below is a single round-trip on the hot create path.
+    const account = await this.prisma.profile.findUnique({
+      where: { id: customerId },
+      select: { onHold: true, rider: { select: { accountStatus: true } } },
+    });
     if (account?.onHold) {
       throw new ForbiddenException({ reason: "on_hold", message: "Your account is on hold." });
+    }
+
+    // F-01: a banned/suspended rider must not participate in the marketplace AT ALL — not even as a
+    // sender. `Role` is a single enum (becoming a rider flips role→rider), and the customer-hold lever
+    // 404s on a rider-role profile, so `onHold` alone can't stop them broadcasting. Reject on the rider's
+    // own account standing. Thrown in the same { reason, message } shape as the onHold gate so the app's
+    // ApiError.code pipeline routes it. A non-rider profile (no rider row) or an `active` rider is
+    // unaffected.
+    const accountStatus = account?.rider?.accountStatus;
+    if (accountStatus === "banned" || accountStatus === "suspended") {
+      throw new ForbiddenException({
+        reason: accountStatus === "banned" ? "account_banned" : "account_suspended",
+        message: "Your account is not in good standing.",
+      });
     }
 
     // Idempotent replay (BUG-HUNT): a client-generated key lets a timeout+retry or a double-tap on
@@ -547,7 +566,7 @@ export class OrdersService {
             profileId: true,
             currentLat: true,
             currentLng: true,
-            updatedAt: true,
+            positionUpdatedAt: true,
             profile: { select: { phone: true } },
           },
         },
@@ -586,7 +605,9 @@ export class OrdersService {
         profileId: order.rider.profileId,
         currentLat: live ? live.lat : order.rider.currentLat,
         currentLng: live ? live.lng : order.rider.currentLng,
-        updatedAt: live ? new Date(live.at) : order.rider.updatedAt,
+        // F-02: on a Redis miss use the dedicated position timestamp — NOT `updatedAt` (@updatedAt,
+        // bumped by any rider-row write) — so a stale position can't render as live off a fresh stamp.
+        updatedAt: live ? new Date(live.at) : order.rider.positionUpdatedAt,
       };
     }
 
