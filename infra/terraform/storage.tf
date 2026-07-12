@@ -10,6 +10,14 @@ resource "google_storage_bucket" "media" {
   force_destroy               = false
   labels                      = var.labels
 
+  # CMEK ordering: the encryption block below references the KMS key, but GCS also needs the bucket's
+  # service agent to already HOLD encrypt/decrypt on that key (kms.tf) or the write of
+  # default_kms_key_name is rejected with a KMS permission error. Terraform infers the key dependency
+  # from the .id reference but NOT the IAM grant, so without this the first `kyc_cmek_enabled=true` apply
+  # can fail and only succeed on a re-run. Depending on the IAM member makes it deterministic; when CMEK
+  # is off the member has count 0 and this is an empty (no-op) dependency.
+  depends_on = [google_kms_crypto_key_iam_member.gcs_media]
+
   versioning {
     enabled = true
   }

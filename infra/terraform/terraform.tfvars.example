@@ -15,3 +15,27 @@
 
 # --- Once Workload Identity Federation is wired, stop minting an SA key ---
 # emit_deployer_sa_key = false
+
+# =============================================================================
+# Hardened production posture (docs/INFRA-HARDENING-ROLLOUT.md)
+# -----------------------------------------------------------------------------
+# Every flag below defaults to the CURRENT deployed behaviour so a plain apply is
+# a no-op. Turning them on is the security hardening for launch — but several are
+# COORDINATED rollouts (a bad-order apply can drop a live connection or fail the
+# apply), so do NOT just paste this block and apply. Follow the ordered runbook in
+# docs/INFRA-HARDENING-ROLLOUT.md, which sequences each change with its verify +
+# rollback step. Uncomment items as you complete each runbook stage.
+
+# -- Data-plane privacy / encryption --
+# redis_tls_enabled  = true    # COORDINATED: in-transit TLS + rediss:// URL. Runbook §2.
+# db_public_ip_enabled = false  # COORDINATED: private-only SQL; needs DB_PRIVATE_ONLY migration path. Runbook §1.
+# kyc_cmek_enabled   = true    # customer-managed key on the media bucket. Runbook §3.
+# kyc_retention_days = 365     # DECISION: auto-delete KYC/media past N days (dispute/compliance-aware). Runbook §4.
+
+# -- Edge protection --
+# armor_waf_preview  = false   # enforce the OWASP WAF (deny 403) instead of log-only. Runbook §5 (observe preview first).
+# bucket_cors_origins = ["https://admin.lyniafinance.com"]  # only if the admin console does browser uploads; never ["*"].
+
+# -- Availability (pre-launch, not pilot) --
+# redis_tier = "STANDARD_HA"   # Redis replica for HA. Recreates the instance — Runbook §6.
+# (Cloud SQL REGIONAL HA: set availability_type = "REGIONAL" in sql.tf — Runbook §6.)
