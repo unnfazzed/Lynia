@@ -372,6 +372,31 @@ describe("AuthService.verifyOtp — post-verify retry grace (§6)", () => {
     await expect(svc.verifyOtp("+263770000045", "654321")).rejects.toThrow(/too many/i);
     await expect(svc.verifyOtp("+263770000045", "654321")).rejects.toThrow(/expired or never/i);
   });
+
+  it("caps grace-path guesses per phone — over the ceiling even the correct code stays 'expired' (no oracle)", async () => {
+    // The grace record carries no attempt counter by design, so a per-phone fixed-window ceiling
+    // bounds guessing while the code lingers. Burn the ceiling on wrong guesses (each the normal
+    // "expired" miss)...
+    const { svc, store } = make(baseEnv, gracePrisma());
+    await store.put("+263770000046", tokens.hash("654321"), 300);
+    await svc.verifyOtp("+263770000046", "654321"); // live verify → writes the grace record
+    for (let i = 0; i < 5; i++) {
+      await expect(svc.verifyOtp("+263770000046", "000000")).rejects.toThrow(/expired or never/i);
+    }
+    // ...and the next attempt — even bearing the CORRECT code — no longer mints a session; it falls
+    // through to the exact same "expired" error, so the ceiling is a hard cap with no oracle.
+    await expect(svc.verifyOtp("+263770000046", "654321")).rejects.toThrow(/expired or never/i);
+  });
+
+  it("a legit timeout-retry with the correct code stays under the ceiling (heals, not capped)", async () => {
+    // A couple of re-sends of the same correct code (the flaky-link scenario the grace path exists
+    // for) are well within the ceiling — each still mints a fresh session.
+    const { svc, store } = make(baseEnv, gracePrisma());
+    await store.put("+263770000047", tokens.hash("654321"), 300);
+    await svc.verifyOtp("+263770000047", "654321");
+    await expect(svc.verifyOtp("+263770000047", "654321")).resolves.toMatchObject({ profileId: "p1" });
+    await expect(svc.verifyOtp("+263770000047", "654321")).resolves.toMatchObject({ profileId: "p1" });
+  });
 });
 
 describe("AuthService.refresh", () => {

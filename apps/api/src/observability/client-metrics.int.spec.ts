@@ -7,6 +7,7 @@
  * Covers the P0s: auth REQUIRED (401 without a bearer), 2xx happy path, `.strict` rejection of stray
  * fields, out-of-range `ms`/oversized `samples` rejection, and `dropped` acceptance. No DB, no server.
  */
+import "reflect-metadata";
 import { BadRequestException, type ExecutionContext, UnauthorizedException } from "@nestjs/common";
 import type { ClientMetricsBatch as ClientMetricsBatchType } from "@lynia/shared";
 import { ClientMetricsBatch } from "@lynia/shared";
@@ -14,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
+import { THROTTLE_KEY, type ThrottleOptions } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { ClientMetricsController } from "./client-metrics.controller";
 import { MetricsService } from "./metrics.service";
@@ -96,5 +98,24 @@ describe("POST /client-metrics — guard + ZodBody + controller", () => {
         samples: Array.from({ length: 21 }, () => ({ event: "apifetch", ms: 100 })),
       }),
     ).toThrow(BadRequestException);
+  });
+});
+
+describe("POST /client-metrics route throttle (F-19)", () => {
+  // The only authenticated WRITE that previously carried no @Throttle — the global ThrottleGuard no-ops
+  // without this metadata, so an authenticated account could spam batches and poison the RUM/SLO
+  // histograms. Asserted at the decorator-metadata level (no Nest app needed) so it can't silently
+  // regress if the handler is edited — mirrors AuthController's route-throttle spec.
+  const throttleOf = (fn: unknown): ThrottleOptions | undefined =>
+    Reflect.getMetadata(THROTTLE_KEY, fn as object) as ThrottleOptions | undefined;
+
+  it("rate-limits the ingest handler under its own key", () => {
+    const opts = throttleOf(ClientMetricsController.prototype.ingest);
+    expect(opts).toBeDefined();
+    expect(opts?.keyPrefix).toBe("client-metrics");
+    // A low per-minute ceiling: a real client batches ≤20 samples/request and posts periodically.
+    expect(opts?.limit).toBeGreaterThan(0);
+    expect(opts?.limit).toBeLessThanOrEqual(20);
+    expect(opts?.windowSec).toBeGreaterThan(0);
   });
 });

@@ -295,6 +295,39 @@ describe("OrdersService.create", () => {
     expect(() => BoardNewOrderEvent.parse(leaky)).toThrow();
   });
 
+  it("F-17: still broadcasts to nearby riders when expiry.schedule rejects (a Redis outage must not skip the fan-out)", async () => {
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: {
+        create: async () => ({
+          id: "ord-1",
+          status: "open_for_offers",
+          itemDesc: "Documents",
+          proposedFare: { toString: () => "2.50" },
+          suggestedFare: { toString: () => "2.40" },
+          distanceKm: 1.5,
+          createdAt: new Date("2026-06-26T00:00:00Z"),
+        }),
+      },
+    };
+    // schedule rejects the way queue.add() would erroring/buffering under a Redis outage. Because it's
+    // fire-and-forget (not awaited) the request neither hangs nor skips the fan-out below — the F-17 fix.
+    const schedule = vi.fn(async () => { throw new Error("redis down"); });
+    const expiry = { schedule } as unknown as OfferExpiryService;
+    const nearbyRiders = vi.fn(async () => [{ profileId: "rider-1", distanceM: 800 }] as NearbyRider[]);
+    const notifyNewBroadcast = vi.fn(async () => {});
+    const tracking = { nearbyRiders } as unknown as TrackingService;
+    const notifications = { notifyNewBroadcast } as unknown as NotificationsService;
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry, tracking, notifications, noGateway);
+
+    await expect(svc.create(orderInput, "cust-1")).resolves.toMatchObject({ id: "ord-1" });
+    await flush();
+
+    expect(schedule).toHaveBeenCalledWith("ord-1");
+    // The rider fan-out ran regardless of the failed enqueue — never gated behind a hanging schedule.
+    expect(notifyNewBroadcast).toHaveBeenCalledWith("ord-1", ["rider-1"], { pickup: "Eastgate", fare: "2.50" });
+  });
+
   it("never fails the create when the board push throws", async () => {
     const prisma = {
       profile: { findUnique: async () => ({ onHold: false }) },

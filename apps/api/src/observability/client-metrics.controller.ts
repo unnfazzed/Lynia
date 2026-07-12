@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
 import { ClientMetricsBatch } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { bucketAppVersion, MetricsService } from "./metrics.service";
 
@@ -21,6 +22,11 @@ export class ClientMetricsController {
 
   @Post()
   @HttpCode(204)
+  // The only authenticated WRITE without a per-route cap — the global ThrottleGuard no-ops without this
+  // metadata, so without it any account could spam batches and poison the RUM/SLO histograms. Sized for
+  // legitimate RUM cadence: the client batches ≤20 samples/request and posts periodically, not
+  // continuously, so a low per-minute ceiling is plenty (mirrors order-create/offer-make/notify-me).
+  @Throttle({ limit: 12, windowSec: 60, keyPrefix: "client-metrics" })
   ingest(
     @Body(new ZodBody(ClientMetricsBatch)) body: ClientMetricsBatch,
     @CurrentUser() _profileId: string,

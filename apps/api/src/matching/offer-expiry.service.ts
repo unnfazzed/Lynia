@@ -113,21 +113,30 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
   /** Expire every order still `open_for_offers` well past its window. Idempotent via expireOrder's
    *  own CAS (`status: "open_for_offers"` in the WHERE clause), so racing the primary job is safe. */
   async reconcileStaleOffers(): Promise<{ expired: number }> {
-    const cutoff = new Date(Date.now() - RECONCILE_GRACE_MS);
-    const stale = await this.prisma.order.findMany({
-      where: { status: "open_for_offers", createdAt: { lt: cutoff } },
-      select: { id: true },
-      take: 500,
-    });
     let expired = 0;
-    for (const o of stale) {
-      try {
-        if ((await this.matching.expireOrder(o.id)).expired) expired++;
-      } catch (err) {
-        this.logger.error(`reconcile failed for order ${o.id}: ${(err as Error).message}`);
+    // Fire-and-forget from onModuleInit (boot + 2-min interval), so the WHOLE body — the findMany
+    // included, not just the per-order loop — must be guarded (F-12): an un-caught rejection here
+    // escapes the `void` call site and, with no unhandledRejection handler, crashes the process
+    // fleet-wide. Mirrors the tracking.gateway disconnect-flush guard. On a top-level failure we log
+    // and fall through to the zero result, keeping the { expired } return-shape contract intact.
+    try {
+      const cutoff = new Date(Date.now() - RECONCILE_GRACE_MS);
+      const stale = await this.prisma.order.findMany({
+        where: { status: "open_for_offers", createdAt: { lt: cutoff } },
+        select: { id: true },
+        take: 500,
+      });
+      for (const o of stale) {
+        try {
+          if ((await this.matching.expireOrder(o.id)).expired) expired++;
+        } catch (err) {
+          this.logger.error(`reconcile failed for order ${o.id}: ${(err as Error).message}`);
+        }
       }
+      if (expired > 0) this.logger.log(`Reconciler expired ${expired} stale open_for_offers order(s)`);
+    } catch (err) {
+      this.logger.error(`reconcileStaleOffers sweep failed: ${(err as Error).message}`);
     }
-    if (expired > 0) this.logger.log(`Reconciler expired ${expired} stale open_for_offers order(s)`);
     return { expired };
   }
 

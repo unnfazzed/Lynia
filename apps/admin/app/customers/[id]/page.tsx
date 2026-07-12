@@ -73,7 +73,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
       {c.warn ? (
         <div className="warnbar">
           <IconAlert />
-          <span className="t" dangerouslySetInnerHTML={{ __html: c.warn }} />
+          <span className="t">{c.warn}</span>
         </div>
       ) : null}
 

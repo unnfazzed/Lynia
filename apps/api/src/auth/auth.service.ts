@@ -26,6 +26,12 @@ const MAX_OTP_ATTEMPTS = 5;
 // the code's hash so that retry can be recognized and re-issued a fresh session. 60s covers the
 // client timeout plus a retry or two while keeping the replay window tight.
 const OTP_GRACE_TTL_SECONDS = 60;
+// Belt-and-suspenders cap on grace-path guesses per phone within the grace window. The grace record
+// itself carries no attempt counter by design (see verifyViaGrace), and the route throttle is keyed
+// per IP — this per-phone fixed-window ceiling ensures even a distributed (many-IP) probe can't get
+// more than a handful of guesses at the correct code while it lingers. Mirrors MAX_OTP_ATTEMPTS so a
+// legit timeout-retry (typically 1–2 re-sends of the same correct code) is never affected.
+const MAX_GRACE_ATTEMPTS = 5;
 // Per-phone / per-IP / global send caps (ET5: each send costs BSP money — enumeration is a budget-DoS).
 const RL = {
   phone: { max: 5, windowSec: 3600 },
@@ -309,6 +315,12 @@ export class AuthService {
     code: string,
     userAgent?: string,
   ): Promise<(SessionTokens & { profileId: string; role: string; needsProfile: boolean }) | null> {
+    // Cap grace-path guesses per phone (reuses the store's generic fixed-window counter with a key
+    // prefix distinct from the send-rate limits). Over the ceiling falls through to the same null →
+    // "expired" as any miss, so it adds a per-phone attempt bound without opening an oracle.
+    const graceAttempts = await this.store.hit(`rl:grace:${phone}`, OTP_GRACE_TTL_SECONDS);
+    if (graceAttempts > MAX_GRACE_ATTEMPTS) return null;
+
     const graceHash = await this.store.graceGet(phone);
     if (!graceHash || !this.tokens.safeEqualHex(this.tokens.hash(code), graceHash)) return null;
     // The original verify upserted the profile, so it must exist — plain read, and re-derive

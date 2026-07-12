@@ -23,7 +23,15 @@ export class AuthController {
     return this.auth.requestOtp(body.phone, ip);
   }
 
+  // Unauthenticated + a code-guess surface: the live OTP record is capped at 5 attempts, but a
+  // successful verify leaves a 60s grace record that re-recognizes the correct code, and that path
+  // deliberately carries no attempt counter — so without a route cap the code is guessable through
+  // an endpoint with no rate limit at all. Cap per IP, tighter than refresh's 30/5min since this
+  // guards a shorter (6-digit) secret. A real user needs only a few tries per code (and the live
+  // 5-attempt cap already bounds one code), so 10/5min leaves ample headroom for a mistype or a
+  // resend-and-retry while blunting brute-force / grace-window probing.
   @Post("otp/verify")
+  @Throttle({ limit: 10, windowSec: 300, keyPrefix: "otp-verify" })
   verify(@Body(new ZodBody(VerifyOtp)) body: z.infer<typeof VerifyOtp>, @Headers("user-agent") ua?: string) {
     return this.auth.verifyOtp(body.phone, body.code, ua);
   }

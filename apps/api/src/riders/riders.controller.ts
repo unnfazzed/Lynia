@@ -1,6 +1,7 @@
 import { Body, Controller, Patch, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { CurrentUser } from "../common/current-user.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RiderService } from "./rider.service";
@@ -40,6 +41,10 @@ export class RidersController {
   }
 
   /** Re-run KYC for an existing rider whose check is pending/failed (Didit allows retries). */
+  // F-13: cap resubmits — each auto-mode retry mints a fresh PAID vendor session, so an uncapped route
+  // is both a cost-abuse and a throttle bypass on top of the A-02 two-attempt lock. 5/hour is generous
+  // for a genuine rider re-taking their selfie while blunting a scripted flood.
+  @Throttle({ limit: 5, windowSec: 3600, keyPrefix: "kyc-retry" })
   @Post("kyc/retry")
   retryKyc(@CurrentUser() id: string) {
     return this.riders.retryKyc(id);

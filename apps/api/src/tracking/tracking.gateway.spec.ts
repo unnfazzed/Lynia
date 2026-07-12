@@ -492,6 +492,9 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
   // is the receiver). filterActiveOrders confirms the ride is still live before escalating.
   const customerTracking = () => ({
     canAccessOrder: vi.fn(async () => true),
+    // The default subscriber is the order's CUSTOMER (sender), not its assigned rider — so presence is
+    // marked. Customer-presence is now keyed on this per-order relationship, not the JWT role (F-16).
+    isAssignedRider: vi.fn(async () => false),
     flushToPg: vi.fn(async () => {}),
     findStaleRiderPresence: vi.fn(async () => []), // keep the rider pass quiet
     filterActiveOrders: vi.fn(async (ids: string[]) => new Set(ids)),
@@ -658,11 +661,13 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     }
   });
 
-  it("does not track a rider-role subscriber as customer presence", async () => {
+  it("does not track the order's ASSIGNED RIDER as customer presence (order relationship, not role)", async () => {
     vi.useFakeTimers();
     try {
       const { server, emit } = fakeServer();
-      const g = gateway(customerTracking());
+      // The subscriber IS this order's assigned rider — so they must be treated as the rider (their
+      // liveness is the DB heartbeat), never as customer presence, regardless of their JWT role.
+      const g = gateway({ ...customerTracking(), isAssignedRider: vi.fn(async () => true) });
       g.server = server as never;
       const rider = fakeSocket({ sub: "r1", role: "rider" });
 
@@ -670,8 +675,35 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       g.handleDisconnect(rider as never);
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
-      // No customer presence was recorded for a rider socket → nothing to escalate.
+      // No customer presence was recorded for the assigned rider → nothing to escalate.
       expect(emit).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("tracks a rider-ROLE account that is the order's SENDER as customer presence (F-16)", async () => {
+    vi.useFakeTimers();
+    try {
+      // A rider-role account placed THIS delivery as the sender: `Role` is one global enum per account,
+      // so the JWT still says "rider" even though they're the order's customer here. Presence must key
+      // on the per-order relationship (they are NOT the order's assigned rider) — otherwise this sender
+      // never gets the customer watchdog and `presence:stale` role:"customer" never fires when they go
+      // dark. isAssignedRider:false ⇒ the subscriber is the customer ⇒ tracked + escalated.
+      const { server, to, emit } = fakeServer();
+      const g = gateway(customerTracking()); // isAssignedRider defaults to false → the sender
+      g.server = server as never;
+      const senderWithRiderRole = fakeSocket({ sub: "acct-1", role: "rider" });
+
+      await g.subscribeOrder(senderWithRiderRole as never, { orderId: "ord-1" });
+      g.handleDisconnect(senderWithRiderRole as never);
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence();
+      expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+      expect(emit).toHaveBeenCalledWith(
+        WS_EVENTS.presenceStale,
+        expect.objectContaining({ orderId: "ord-1", role: "customer" }),
+      );
     } finally {
       vi.useRealTimers();
     }
