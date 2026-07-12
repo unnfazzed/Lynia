@@ -19,6 +19,13 @@ export default function BecomeRiderScreen(): React.ReactElement {
   const [photoUri, setPhotoUri] = useState<string | null>(null); // local preview
   const [photoKey, setPhotoKey] = useState<string | null>(null); // uploaded object key
   const [uploading, setUploading] = useState(false);
+  // A bare "Uploading…" reads as frozen on a slow link — mirrors the "Still sending — hang on" pattern
+  // already shipped for rider offers and customer rider-select.
+  const [uploadSlow, setUploadSlow] = useState(false);
+  // The asset that just failed to upload, kept so "Try again" can re-PUT the SAME captured/picked file
+  // instead of forcing a brand-new camera capture when the capture itself was fine and only the upload
+  // (the actual point of failure on a flaky link) needs retrying.
+  const [failedAsset, setFailedAsset] = useState<{ uri: string; contentType: ImageContentType } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -66,6 +73,32 @@ export default function BecomeRiderScreen(): React.ReactElement {
     photoKey != null &&
     !uploading;
 
+  // Shared by a fresh capture/pick and a "Try again" retry of the same asset.
+  const doUpload = async (uri: string, contentType: ImageContentType): Promise<void> => {
+    // Keep the previously-uploaded photo intact until the retake succeeds — a failed retry must NOT wipe
+    // a good photo (which would drop canSubmit to false). Only commit the new uri/key on success; on
+    // failure roll back to whatever we already had.
+    const prevUri = photoUri;
+    const prevKey = photoKey;
+    setUploading(true);
+    try {
+      const { uploadUrl, key, headers } = await requestKycPhotoUpload(contentType);
+      // Send the exact headers the signature was minted over (Content-Type + size range); fall back to
+      // just the content type for an older API that didn't return them.
+      await uploadImage(uploadUrl, uri, headers ?? { "Content-Type": contentType });
+      setPhotoUri(uri);
+      setPhotoKey(key);
+      setFailedAsset(null);
+    } catch (e) {
+      setPhotoUri(prevUri);
+      setPhotoKey(prevKey);
+      setFailedAsset({ uri, contentType });
+      setError(e instanceof ApiError ? e.message : "Couldn't upload the photo. Check your connection and try again.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   // Capture or choose a photo, then upload it straight to storage and keep the returned object key.
   const pickFrom = async (source: "camera" | "library"): Promise<void> => {
     setError(null);
@@ -85,27 +118,26 @@ export default function BecomeRiderScreen(): React.ReactElement {
     const asset = result.assets[0];
     if (!asset) return;
     const contentType: ImageContentType = asset.mimeType === "image/png" ? "image/png" : "image/jpeg";
-    // Keep the previously-uploaded photo intact until the retake succeeds — a failed retry must NOT wipe
-    // a good photo (which would drop canSubmit to false). Only commit the new uri/key on success; on
-    // failure roll back to whatever we already had.
-    const prevUri = photoUri;
-    const prevKey = photoKey;
-    setUploading(true);
-    try {
-      const { uploadUrl, key, headers } = await requestKycPhotoUpload(contentType);
-      // Send the exact headers the signature was minted over (Content-Type + size range); fall back to
-      // just the content type for an older API that didn't return them.
-      await uploadImage(uploadUrl, asset.uri, headers ?? { "Content-Type": contentType });
-      setPhotoUri(asset.uri);
-      setPhotoKey(key);
-    } catch (e) {
-      setPhotoUri(prevUri);
-      setPhotoKey(prevKey);
-      setError(e instanceof ApiError ? e.message : "Couldn't upload the photo. Check your connection and try again.");
-    } finally {
-      setUploading(false);
-    }
+    await doUpload(asset.uri, contentType);
   };
+
+  // R6/07-11: retry the SAME failed upload instead of forcing the rider to re-pose for a fresh capture
+  // when the capture itself succeeded and only the upload (the real point of failure on a flaky link)
+  // needs another attempt.
+  const retryUpload = async (): Promise<void> => {
+    if (!failedAsset) return;
+    setError(null);
+    await doUpload(failedAsset.uri, failedAsset.contentType);
+  };
+
+  useEffect(() => {
+    if (!uploading) {
+      setUploadSlow(false);
+      return;
+    }
+    const t = setTimeout(() => setUploadSlow(true), 4500);
+    return () => clearTimeout(t);
+  }, [uploading]);
 
   const submit = async (): Promise<void> => {
     if (!photoKey) return;
@@ -170,12 +202,17 @@ export default function BecomeRiderScreen(): React.ReactElement {
                 />
               ) : null}
               <Button
-                label={uploading ? "Uploading…" : photoKey ? "Retake photo" : "Take photo"}
+                label={uploading ? (uploadSlow ? "Still uploading — hang on" : "Uploading…") : photoKey ? "Retake photo" : "Take photo"}
                 variant="ghost"
                 onPress={() => void pickFrom("camera")}
                 loading={uploading}
               />
               <Button label="Choose from gallery" variant="ghost" onPress={() => void pickFrom("library")} disabled={uploading} />
+              {/* R6: retry the SAME captured file — the everyday failure on this market's links is the
+                  upload, not the capture, so re-posing for a fresh photo every retry is unnecessary friction. */}
+              {failedAsset && !uploading ? (
+                <Button label="Try again" variant="ghost" onPress={() => void retryUpload()} />
+              ) : null}
               {photoKey ? (
                 <Text style={{ fontSize: 12, color: tokens.color.accentText, fontWeight: "600", marginTop: 4 }}>Photo added ✓</Text>
               ) : null}

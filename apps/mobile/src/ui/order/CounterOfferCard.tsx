@@ -40,6 +40,7 @@ export function CounterOfferCard({
   onDecline,
   loading,
   disabled,
+  slow,
 }: {
   offer: OfferRow;
   ask: number;
@@ -47,6 +48,8 @@ export function CounterOfferCard({
   onDecline: () => void;
   loading: boolean;
   disabled: boolean;
+  /** After a few seconds of `loading`, swap the Accept label so a slow link reads as "still trying". */
+  slow?: boolean;
 }): React.ReactElement {
   const counter = Number(offer.offeredFare);
   const delta = counter - ask;
@@ -80,7 +83,7 @@ export function CounterOfferCard({
           </View>
         </View>
       </View>
-      <Button label={`Accept $${counter.toFixed(2)}`} onPress={onAccept} loading={loading} disabled={disabled} />
+      <Button label={slow ? "Still choosing — hang on" : `Accept $${counter.toFixed(2)}`} onPress={onAccept} loading={loading} disabled={disabled} />
       <Button label="Decline" variant="ghost" onPress={onDecline} disabled={disabled} />
       <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center", marginTop: 2 }}>
         Declining keeps {offer.rider.profile.firstName} in your list at ${counter.toFixed(2)} — you can still pick them later at this price.

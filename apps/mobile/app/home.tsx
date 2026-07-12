@@ -1,4 +1,4 @@
-import { CreateOrderRequest, quoteFare, tokens } from "@lynia/shared";
+import { CreateOrderRequest, normalizePhone, quoteFare, tokens } from "@lynia/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -318,20 +318,25 @@ export default function HomeScreen(): React.ReactElement {
   // Fat-finger guard: a price far above the band ($2.50 typed as $250) earns a calm confirm hint. Never
   // blocks (a genuinely high offer is the customer's right) — just makes an accidental extra digit visible.
   const farAboveBand = priceBand != null && isFarAboveBand(fare, priceBand);
-  // Mirror the contract's contactPhone floor (min 6, both waypoints) so Broadcast can't enable and
-  // then bounce off a raw Zod message on submit.
-  const pickupPhoneOk = pickupPhone.trim().length >= 6;
-  const dropPhoneOk = dropPhone.trim().length >= 6;
+  // Mirror the contract's contactPhone floor (both waypoints) so Broadcast can't enable and then
+  // bounce off a raw Zod message on submit. A bare length check let a 6-character typo ("abcdef")
+  // through silently — the failure only surfaced mid-delivery when a rider's dialer opened on garbage.
+  // normalizePhone (the same tolerant ZW-aware check used at sign-in) actually validates the shape.
+  const pickupPhoneOk = normalizePhone(pickupPhone) !== null;
+  const dropPhoneOk = normalizePhone(dropPhone) !== null;
+  const pickupPhoneError = pickupPhone.trim().length > 0 && !pickupPhoneOk ? "That doesn't look like a phone number" : undefined;
+  const dropPhoneError = dropPhone.trim().length > 0 && !dropPhoneOk ? "That doesn't look like a phone number" : undefined;
   // Every row needs a description — an empty row must block submit, not silently drop.
   const itemsOk = items.every((it) => it.description.trim().length > 0);
   // Landmarks are contract-required too (Waypoint.landmark min 1). They're normally auto-filled
   // from the reverse geocode, but that can fail offline / keyless — same never-fail-Zod rule.
   const landmarksOk = pickupLandmark.trim().length > 0 && dropLandmark.trim().length > 0;
-  // C10: declaredValue is optional (defaults to 0) but the contract caps it at 150 — validate inline so
-  // a `500` doesn't leave Broadcast enabled only to bounce off a raw server Zod error on a field that's
-  // collapsed out of view. Empty/blank is fine; a set value must be ≤ 150.
+  // C10: declaredValue is optional (defaults to 0) but the contract requires it nonnegative and caps
+  // it at 150 — validate inline so a `500` (or a pasted negative) doesn't leave Broadcast enabled only
+  // to bounce off a raw server Zod error on a field that's collapsed out of view. Empty/blank is fine;
+  // a set value must be within [0, 150].
   const declaredValueNum = parseNum(declaredValue);
-  const declaredValueOk = declaredValueNum === null || declaredValueNum <= 150;
+  const declaredValueOk = declaredValueNum === null || (declaredValueNum >= 0 && declaredValueNum <= 150);
   const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk && declaredValueOk;
 
   // Idempotency key (BUG-HUNT): derived deterministically from the persisted nonce + the trip's
@@ -625,7 +630,7 @@ export default function HomeScreen(): React.ReactElement {
                     !pickupPhoneOk ? "a pickup contact phone" : null,
                     !dropPhoneOk ? "a recipient phone" : null,
                     !landmarksOk ? "pickup & drop-off landmarks (under \u201cLandmarks & details\u201d)" : null,
-                    !declaredValueOk ? "a declared value of 150 or less (under \u201cLandmarks & details\u201d)" : null,
+                    !declaredValueOk ? "a declared value between 0 and 150 (under \u201cLandmarks & details\u201d)" : null,
                     !(fare !== null && fare > 0) ? "a price" : null,
                   ]
                     .filter(Boolean)
@@ -733,7 +738,7 @@ export default function HomeScreen(): React.ReactElement {
           />
           {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
               "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
-          <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
+          <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} error={pickupPhoneError} />
           {/* Recent-recipient quick-fill: one tap drops a past drop-off number into the field instead of
               re-typing. Only shown before the customer starts typing one, so it never fights their input. */}
           {recipients.length > 0 && dropPhone.trim().length === 0 ? (
@@ -761,7 +766,7 @@ export default function HomeScreen(): React.ReactElement {
               ))}
             </View>
           ) : null}
-          <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} />
+          <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} error={dropPhoneError} />
           {quote ? (
             <View style={{ marginBottom: tokens.space.sm }}>
               <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
@@ -802,7 +807,7 @@ export default function HomeScreen(): React.ReactElement {
             accessibilityLabel={[
               "Landmarks and details",
               !landmarksOk ? "landmarks required" : null,
-              !declaredValueOk ? "declared value must be 150 or less" : null,
+              !declaredValueOk ? "declared value must be between 0 and 150" : null,
             ]
               .filter(Boolean)
               .join(", ")}
@@ -812,7 +817,7 @@ export default function HomeScreen(): React.ReactElement {
               Landmarks &amp; details
               {!landmarksOk || !declaredValueOk ? (
                 <Text style={{ color: tokens.color.danger, fontWeight: "700" }}>
-                  {` — ${[!landmarksOk ? "landmarks required" : null, !declaredValueOk ? "declared value too high" : null].filter(Boolean).join(", ")}`}
+                  {` — ${[!landmarksOk ? "landmarks required" : null, !declaredValueOk ? "declared value must be $0–150" : null].filter(Boolean).join(", ")}`}
                 </Text>
               ) : null}
             </Text>
@@ -837,7 +842,7 @@ export default function HomeScreen(): React.ReactElement {
               <Field label="Declared value (USD, max 150)" value={declaredValue} onChangeText={setDeclaredValue} placeholder="10" keyboardType="decimal-pad" />
               {!declaredValueOk ? (
                 <Text accessibilityRole="alert" style={{ fontSize: tokens.font.size.caption, color: tokens.color.danger, marginTop: -tokens.space.xs, marginBottom: tokens.space.sm }}>
-                  Declared value can&apos;t be more than $150.
+                  Declared value must be between $0 and $150.
                 </Text>
               ) : null}
             </View>
