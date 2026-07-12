@@ -226,6 +226,19 @@ export class RiderService {
     // connected, so we can't rely on the disconnect flush). Best-effort — PG's is_online is the
     // authority for nearbyRiders; this just stops a now-offline rider lingering in GEOSEARCH results.
     if (!online) await this.tracking.evictFromGeo(profileId);
+    // Persist the go-online position so an IDLE online rider (not currently delivering) is actually in
+    // the nearby-rider index. The tracking gateway's fix path only writes geo/geog for the ASSIGNED rider
+    // on an active order, so without this an online-but-not-delivering rider has no recorded position and
+    // nearbyRiders/countNearbyForPickup return false-empty — silently suppressing the customer broadcast.
+    // Best-effort: recordFix already swallows Redis errors internally, but guard the PG write too so a DB
+    // hiccup can never fail the online-toggle itself.
+    if (online && location) {
+      try {
+        await this.tracking.recordFix(profileId, location.lat, location.lng);
+      } catch (err) {
+        this.logger.warn(`recordFix on go-online failed for ${profileId}: ${(err as Error).message}`);
+      }
+    }
     // 2·b1: a rider just came online with a position — ping any customers who were waiting for supply
     // near here ("notify me" on the no-riders state) and clear them from the list. Fire-and-forget and
     // fully best-effort (no Redis → empty drain), so it can never affect the go-online response.

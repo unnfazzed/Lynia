@@ -103,6 +103,13 @@ export default function RiderHome(): React.ReactElement {
   useEffect(() => {
     void requestLocation();
   }, [requestLocation]);
+  // Read inside the heartbeat interval via ref, not as an effect dependency — restarting the 20s
+  // interval on every location tick would keep deferring the heartbeat once GPS refreshes more often
+  // than the beat cadence (see the focus/interval-based refresh in the GPS-staleness fix below).
+  const locRef = useRef(loc);
+  useEffect(() => {
+    locRef.current = loc;
+  }, [loc]);
 
   // Board push (declared here, ahead of its other uses below) already invalidates ["activeJob"] live
   // on every `orderTaken` event — so the REST poll only needs to run as a self-heal fallback while the
@@ -219,7 +226,10 @@ export default function RiderHome(): React.ReactElement {
     }
     let failures = 0;
     const t = setInterval(() => {
-      setOnline(true)
+      // Send the rider's last-known position on every heartbeat (not just the initial go-online) so an
+      // idle online rider stays in the server's nearby-rider index (rider.service.setOnline persists it)
+      // and keeps receiving nearby-order broadcasts. Read via ref so a location tick can't reset this timer.
+      setOnline(true, locRef.current ?? undefined)
         .then(() => {
           failures = 0;
           setBeatStale(false);
