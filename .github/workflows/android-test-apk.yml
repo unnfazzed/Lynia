@@ -41,7 +41,7 @@ jobs:
       # as an env value here and gate the step on `env.` instead. Empty when the secret isn't set.
       GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
 
