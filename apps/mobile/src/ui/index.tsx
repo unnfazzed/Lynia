@@ -180,17 +180,22 @@ export function Card({ children, style }: { children: React.ReactNode; style?: V
  * A pill label. Default (neutral) tone renders an order status in the accent colour. The
  * online/offline/reconnecting tones + optional leading dot back the rider's persistent connection
  * chip (DESIGN.md — reuse StatusPill, don't invent a chip), so an offline/paused state reads at a
- * glance without a new component.
+ * glance without a new component. `success` backs a POSITIVE order OUTCOME (delivered/completed) —
+ * a NEGATIVE outcome (cancelled/undelivered) reuses `offline` rather than a new red tone, matching
+ * the rider terminal screens (terminals.tsx), which already render those as a calm muted pill and
+ * put any red accent on the surrounding icon/headline instead.
  */
-export type PillTone = "neutral" | "online" | "offline" | "reconnecting";
+export type PillTone = "neutral" | "online" | "offline" | "reconnecting" | "success";
 // Mirrors packages/design/components/core/StatusPill.jsx: text is the legible text-green (never the
-// bright fill green), the dot is the fill green, and only the online tone sits on the mint wash.
+// bright fill green), the dot is the fill green, and only the online/success tones sit on the mint wash.
 const PILL_TONE: Record<PillTone, { text: string; bg: string; dot: string }> = {
   neutral: { text: tokens.color.accentText, bg: tokens.color.surface, dot: tokens.color.accent },
   online: { text: tokens.color.accentText, bg: tokens.color.accentWash, dot: tokens.color.accent },
   offline: { text: tokens.color.muted, bg: tokens.color.surface, dot: tokens.color.muted },
   // A dropped/paused connection is a transient state, not an error — muted, never danger-red.
   reconnecting: { text: tokens.color.muted, bg: tokens.color.surface, dot: tokens.color.muted },
+  // A delivered/completed order is a clear win — the same calm "good" mint-wash treatment as online.
+  success: { text: tokens.color.accentText, bg: tokens.color.accentWash, dot: tokens.color.success },
 };
 
 // Human, view-neutral labels for the order-status pill. The bare enum ("en route pickup",
@@ -216,6 +221,24 @@ const STATUS_PILL_LABELS: Record<string, string> = {
 /** Plain-language label for an order status pill; passes non-status strings through unchanged. */
 export function statusPillLabel(status: string): string {
   return STATUS_PILL_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
+// Order-status → pill tone (JOURNEY-BUGS: every status used to render the same neutral grey, so a
+// cancelled order looked exactly as "fine" as a delivered one at a glance). A positive outcome gets
+// the mint-wash `success` treatment; a negative-or-inactive terminal (cancelled/undelivered/expired)
+// reuses `offline` — same muted, non-blaming pill the rider terminal screens already ship. Every
+// in-progress status stays neutral — a live order isn't "good" or "bad" yet, so there's nothing to signal.
+const ORDER_STATUS_TONE: Record<string, PillTone> = {
+  delivered: "success",
+  completed: "success",
+  cancelled: "offline",
+  undelivered: "offline",
+  expired: "offline",
+};
+
+/** Tone for an order-status pill; any other status (in-progress, or an unrecognised value) is neutral. */
+export function orderStatusTone(status: string): PillTone {
+  return ORDER_STATUS_TONE[status] ?? "neutral";
 }
 
 export function StatusPill({
