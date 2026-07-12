@@ -94,6 +94,12 @@ const config: ExpoConfig = {
     // default (1.9.24) fails :expo-modules-core:compileReleaseKotlin. prebuild regenerates android/,
     // so this must live in config, not a hand-edit of build.gradle.
     ["expo-build-properties", { android: { kotlinVersion: "1.9.25" } }],
+    // TLS certificate pinning for the API/WS host (SECURITY §P3-1). GATED on LYNIA_TLS_PINS: attached
+    // ONLY when pins are supplied, so an unpinned build never even loads the plugin (mirrors the Maps/
+    // FCM/EAS "attach only when provisioned" pattern). Arming needs real Google-Trust-Services SPKI pins
+    // + a backup + a native build — see docs/MOBILE-CERT-PINNING.md (a wrong pin bricks the app on the
+    // managed cert's rotation). Single gate = the env var.
+    ...(process.env.LYNIA_TLS_PINS?.trim() ? ["./plugins/with-certificate-pinning"] : []),
   ],
   android: {
     package: "zw.co.lynia",
