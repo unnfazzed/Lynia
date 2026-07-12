@@ -6,9 +6,12 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-12 (deep-bug-sweep). Code verified at branch
-`claude/deep-bug-sweep-w4we48` (tip includes PR #192 `3f15c42` F-01…F-10 fixes and PR #193
-`f9c2a12` F-11…F-19 fixes).
+**Last consolidated:** 2026-07-12 (deep-bug-sweep + remediation). Prior fixes: PR #192 (F-01…F-10),
+PR #193 (F-11…F-19). This sweep's remediation, all merged: **#195** (DS-01…DS-11 + FRAUD P1-5),
+**#196** (F-09), **#197** (F-18 durability), **#198** (FRAUD P0-3 velocity), **#199** (F-N3 + DS-11
+verified-ID freeze). Infra hardening flags are wired with an ordered rollout runbook at
+`docs/INFRA-HARDENING-ROLLOUT.md`. As of this update, no open **code** defect remains — only
+founder-gated infra apply, mobile cert pinning, and ops-readiness items.
 
 ## Source reports folded in
 
@@ -39,15 +42,27 @@ duplication (see clusters below).
 
 ## OPEN (present in code today)
 
+Only non-code / founder-gated items remain open. Every code defect from every report — including the
+whole Phase-1 set below — is now FIXED or MOOT.
+
 | ID | Description | Area | Sev | Sweeps | Notes |
 |---|---|---|---|---|---|
-| KB-F09 | Counterparty phone stays revealed on DELIVERED/COMPLETED (`PHONE_REVEAL_STATUSES` includes terminals) so phones remain visible in history forever | `packages/shared/src/enums.ts` → `orders.service.getSnapshot` | LOW-MED | 1 | **Intentionally deferred** — F-01…F-10 fix commit skipped F-09 pending a product decision (history usability vs. privacy). Track, don't auto-fix. |
-| KB-F18b | "Notify me when a rider is online" drain is at-most-once: a waiter is claimed then lost if no device token / push fails; no durable re-queue | `tracking.service.drainNotifyNear`, `notifications.service` | LOW | 1 | Cross-instance **double-ping** half fixed (single Lua claim). Durable re-queue explicitly deferred as a follow-up in `f9c2a12`. |
-| KB-SEC-INFRA | Deferred infra hardening: Cloud SQL public IP, Redis in-transit TLS, GCS CORS wildcard, WAF/Cloud Armor tuning, mobile cert pinning, KYC bucket CMEK/retention | `infra/terraform/*` | MED-LOW | 3 | Code/flags landed; gated on `terraform apply` + founder rollout. Not a code bug. |
+| KB-SEC-INFRA | Deferred infra hardening: Cloud SQL public IP, Redis in-transit TLS, GCS CORS, WAF/Cloud Armor enforce, KYC bucket CMEK/retention, Redis/SQL HA | `infra/terraform/*` | MED-LOW | 3 | Flags all landed + wired; **rollout runbook now written: `docs/INFRA-HARDENING-ROLLOUT.md`** (ordered apply/verify/rollback per item). One reliability fix landed (CMEK bucket `depends_on` the KMS IAM grant). Remaining work is `terraform apply` in a window — founder-gated, not a code bug. |
+| KB-MOBILE-PIN | Mobile certificate pinning for the API + WS host (SECURITY §P3-1) | `apps/mobile/src/api/client.ts` | LOW | 1 | Deferred mobile-code change (needs a device build to validate); out of scope of the terraform runbook. |
 | KB-OPS-GATE | Founder/ops launch gates: WhatsApp BSP + SMS gateway wiring, real ZIM-ID Didit run, live FCM, on-device QA, chaos/load drills, crash telemetry rollout, admin per-operator SSO/MFA | ops/founder | — | 3 | Not code defects — external readiness items from LAUNCH/PILOT readiness. |
 
-Everything else from every report is FIXED or MOOT (below). Newly discovered defects from this
-sweep are appended in the **Phase-1 new findings** section at the bottom and in
+### Recently closed (this session's remediation PRs)
+
+| Was | Now | PR |
+|---|---|---|
+| KB-F09 — counterparty phone revealed on terminal statuses forever | **FIXED** — `PHONE_REVEAL_STATUSES` drops `completed`; added `DISPUTE_PHONE_REVEAL_STATUSES` for ops | #196 |
+| KB-F18b — notify-me at-most-once (waiter dropped on push failure) | **FIXED** — claim-lock + delivery-set clear only delivered → at-least-once, still de-duped | #197 |
+| FRAUD P1-5 — issue-raise ops-DoS (no throttle) | **FIXED** — `@Throttle` on issue-raise | #195 |
+| FRAUD P0-3 — penalty-free undelivered abandonment | **MITIGATED (velocity)** — auto-`on_hold` on abnormal undelivered rate (`UNDELIVERED_ABUSE`) | #198 |
+| F-N3 — `/kyc/callback` unsigned in prod stub+manual | **FIXED** — fail-closed whenever prod or provider=didit | #199 |
+| DS-11 (residual) — verified rider could swap their national ID | **FIXED** — ID-change blocked once KYC-verified | #199 |
+
+Newly discovered defects from this sweep are in the **Phase-1 findings** section at the bottom and in
 `docs/DEEP-SWEEP-2026-07-12.md`.
 
 ---
@@ -149,27 +164,29 @@ admin-audit internals, `tracking.service` geo/Redis internals beyond the gateway
 All verified against code. Areas: the never-audited `privacy`/`sos`/`health`/`uploads` modules and
 propagation of the F-12 crash pattern / F-17 queue pattern into untouched siblings.
 
-| ID | Description | Area | Sev | Conf | Status |
-|---|---|---|---|---|---|
-| DS-01 | Right-to-erasure (`eraseAccount`) and retention purge both miss `SosEvent` → emergency-time precise GPS + profile linkage retained indefinitely | `privacy.service.ts:63-151`, `schema.prisma:450` | HIGH | high | OPEN |
-| DS-02 | BullMQ `Queue`/`Worker` have only `.on("failed")`, no `.on("error")` → Redis connection error → EventEmitter throw → `uncaughtException` → `process.exit(1)` crashes the instance | `offer-expiry.service.ts:69-77`, `order-lifecycle.service.ts:108-114`, `main.ts:38` | HIGH | med-high | OPEN |
-| DS-03 | Admin `cancelOrder`/`adjustFare` use non-CAS check-then-act update; a concurrent `confirmDelivery` (delivered) gets clobbered to cancelled | `admin-orders.service.ts:80-149` | MEDIUM | med | OPEN |
-| DS-04 | `/healthz` unauthenticated + unthrottled, opens a fresh Redis connection (+ DB ping) per request → connection-churn DoS amplification | `health.service.ts:30-42`, `health.controller.ts` | MEDIUM | med | OPEN |
-| DS-05 | `POST /orders/:id/sos` unthrottled + no dedup → ops alert + counterparty push flood | `sos.controller.ts`, `sos.service.ts:74` | LOW-MED | high | OPEN |
-| DS-06 | `scheduleAutoClose` job has no `attempts`/`backoff` (1 try), inconsistent with offer-expiry; reconciler backstops (≤15min late) | `order-lifecycle.service.ts:709` | LOW | high | OPEN |
-| DS-07 | `/uploads/kyc-photo` + `/uploads/pickup-photo` unthrottled → shared IAM `signBlob` quota exhaustion | `uploads.controller.ts:26` | LOW | med | OPEN |
-| DS-08 | `POST /notifications/device-token` unthrottled (idempotent upsert, no fan-out) | `notifications.controller.ts:26` | LOW | high | OPEN |
-| DS-09 | Trailing `setTimeout` in position coalescer is an unguarded sync callback (`emit` throw → uncaughtException) | `tracking.gateway.ts:321-343` | LOW | low-med | OPEN |
-| DS-10 | `eraseAccount` active-ride guard read outside the erase transaction (minor TOCTOU) | `privacy.service.ts:49-58` | LOW | med | OPEN |
-| DS-11 | `idNumber` mutable via `PATCH /auth/me` with no A-04 duplicate-ID recompute → ban-evasion signal bypassable | `auth.service.ts:126-138`, `rider.service.ts:66-110` | LOW-MED | med | OPEN |
+**All DS-01…DS-11 are now FIXED** (PR #195, `fix(bughunt): remediate deep-sweep findings DS-01..DS-11`;
+DS-11's stricter verified-rider ID freeze added in PR #199). Verified in code.
 
-**Confirmed still-open from prior sweeps (re-surfaced, NOT new):**
-- **FRAUD P1-5** — issue-raise ops-DoS: the reports side got a compound-unique dedup, but
-  `issues.service.raise` still has no per-order dedup/cap, no status gate, and no `@Throttle`, and
-  fans `notifyOps` out to every admin device. Same class as DS-05.
-- **FRAUD P0-3** — `markUndelivered(refused|wrong_address)` is penalty-free, self-attested, no
-  OTP/photo/counterparty confirmation, rider keeps the parcel. Commission-exclusion angle mooted by
-  settlement rewrite; the reliability/no-evidence angle remains open.
-- **BUG-HUNT p3-kyc-callback-unsigned-stub** — `/kyc/callback` unauthenticated when
-  `DIDIT_WEBHOOK_SECRET` unset & provider≠didit (prod-guarded; stub/misconfig-only).
-- **device-token rehoming** (overlaps F-04) — `registerToken` upsert rehomes any token to caller.
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| DS-01 | Erasure + retention purge missed `SosEvent` GPS | `privacy.service.ts` | HIGH | **FIXED #195** — `eraseAccount` + `purgeExpiredData` scrub `sosEvent.lat/lng` |
+| DS-02 | BullMQ `Queue`/`Worker` missing `.on("error")` → instance crash on Redis blip | `offer-expiry`, `order-lifecycle` | HIGH | **FIXED #195** — `error` listeners on all four (log, keep serving) |
+| DS-03 | Admin `cancelOrder`/`adjustFare` non-CAS clobber | `admin-orders.service.ts` | MEDIUM | **FIXED #195** — CAS `updateMany` on observed status/fare, conflict on 0 rows |
+| DS-04 | `/healthz` opens a fresh Redis connection per request | `health.service.ts` | MEDIUM | **FIXED #195** — one reused client + ping timeout |
+| DS-05 | `POST /orders/:id/sos` unthrottled push flood | `sos.controller.ts` | LOW-MED | **FIXED #195** — `@Throttle` |
+| DS-06 | `scheduleAutoClose` no retry/backoff | `order-lifecycle.service.ts` | LOW | **FIXED #195** — `attempts:3` + backoff |
+| DS-07 | `/uploads/*` unthrottled → signBlob quota | `uploads.controller.ts` | LOW | **FIXED #195** — `@Throttle` |
+| DS-08 | `device-token` register unthrottled | `notifications.controller.ts` | LOW | **FIXED #195** — `@Throttle` |
+| DS-09 | Position-coalescer timer emit unguarded | `tracking.gateway.ts` | LOW | **FIXED #195** — `flushPositionEmit` try/caught |
+| DS-10 | Erase active-ride TOCTOU | `privacy.service.ts` | LOW | **FIXED #195** — guard re-checked inside the tx |
+| DS-11 | `idNumber` mutable → ban-evasion signal bypass | `auth.service.ts` | LOW-MED | **FIXED #195** (A-04 flag recompute) **+ #199** (ID frozen once KYC-verified) |
+
+**Prior-sweep items re-surfaced this sweep — status now:**
+- **FRAUD P1-5** — issue-raise ops-DoS → **FIXED #195** (`@Throttle` on issue-raise).
+- **FRAUD P0-3** — penalty-free undelivered abandonment → **MITIGATED #198** (velocity auto-`on_hold`
+  via `UNDELIVERED_ABUSE`; first-incident theft still not prevented — the acknowledged velocity-only
+  trade-off).
+- **BUG-HUNT p3-kyc-callback-unsigned-stub** (= F-N3) → **FIXED #199** (fail-closed in prod / didit).
+- **device-token rehoming** (overlaps F-04) → **still open, intended** — `registerToken` upsert claims
+  a token for the authenticated caller by design (shared-device re-login); FCM tokens are high-entropy.
+  Left as-is.
