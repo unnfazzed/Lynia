@@ -1,6 +1,6 @@
 import { WS_EVENTS } from "@lynia/shared";
 import * as Location from "expo-location";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { useAuth } from "../auth/auth-context";
 import { PendingFix } from "./location-buffer";
@@ -15,12 +15,20 @@ import { createSocket } from "./socket";
  * hold only the FRESHEST fix (PendingFix) and flush that one on reconnect — the customer's map wants
  * where the rider is now, not the breadcrumb trail. This also refreshes the server heartbeat the instant
  * the link returns, so the rider doesn't read as "gone dark" a beat longer than the outage itself.
+ *
+ * Returns `permissionDenied` — this is a DIFFERENT check from the "go online" gate's location
+ * permission check (rider/index.tsx): permission can be granted when a rider goes online and then
+ * revoked (Android "only this time", or toggled off in Settings) before/during a job, which this
+ * effect used to swallow with a bare `return` — no GPS streamed for the rest of the delivery, no
+ * error, no signal to the job screen. The caller decides how to surface it (JOURNEY-BUGS).
  */
-export function useRiderLocationStream(orderId: string | null): void {
+export function useRiderLocationStream(orderId: string | null): { permissionDenied: boolean } {
   const { session } = useAuth();
   const token = session?.accessToken;
+  const [permissionDenied, setPermissionDenied] = useState(false);
 
   useEffect(() => {
+    setPermissionDenied(false);
     if (!orderId || !token) return;
     let socket: Socket | null = null;
     let sub: Location.LocationSubscription | null = null;
@@ -30,7 +38,11 @@ export function useRiderLocationStream(orderId: string | null): void {
 
     void (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted" || cancelled) return;
+      if (cancelled) return;
+      if (status !== "granted") {
+        setPermissionDenied(true);
+        return;
+      }
       socket = createSocket(token);
       socket.on("connect", () => {
         connected = true;
@@ -66,4 +78,6 @@ export function useRiderLocationStream(orderId: string | null): void {
       socket?.disconnect();
     };
   }, [orderId, token]);
+
+  return { permissionDenied };
 }

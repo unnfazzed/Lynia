@@ -9,7 +9,7 @@ import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../s
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
-import { auctionHeaderText, formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
+import { auctionHeaderText, formatClock, isRiderTrackingStale, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
@@ -445,17 +445,17 @@ export default function OrderScreen(): React.ReactElement {
   // rider's GPS has gone dark — mute the pin (below, via LiveMap's reconnecting treatment) and stop
   // claiming it "updates live," escalating instead to a "call your rider" warning.
   const riderUpdatedAt = order.rider?.updatedAt ?? null;
-  const riderStale =
-    isActive && riderUpdatedAt != null && Date.now() - new Date(riderUpdatedAt).getTime() > PRESENCE_ESCALATION_MS;
+  const assignedAt = order.events.find((e) => e.status === "assigned")?.createdAt ?? null;
+  const riderStale = isRiderTrackingStale({ isActive, riderUpdatedAt, assignedAt, nowMs: Date.now(), escalationMs: PRESENCE_ESCALATION_MS });
   const bidCount = orderedOffers.length;
   // 2·b1: the server said there are no online riders nearby and no bid has landed — an honest "nobody
   // to ping right now" state, distinct from the calm "riders pinged, hang tight" wait. Non-terminal:
   // the 15s poll refreshes ridersNearby and any landing bid clears it.
   const noRiders = noRidersOnline(order.ridersNearby, bidCount, order.status === "open_for_offers");
-  const trackingHint = !riderPoint
-    ? "Waiting for the rider's GPS…"
-    : riderStale
-      ? "Your rider's location looks paused — call them to check in."
+  const trackingHint = riderStale
+    ? "Your rider's location looks paused — call them to check in."
+    : !riderPoint
+      ? "Waiting for the rider's GPS…"
       : "Rider is on the move — the gold pin updates live.";
   // Live "arriving in ~N min" headline — the glanceable number modern trackers lead with. Suppressed
   // when the rider's GPS has gone stale (we won't claim a fresh ETA off a dark position) or before the

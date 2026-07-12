@@ -38,6 +38,25 @@ export function spokenRemaining(ms: number): string {
 }
 
 /**
+ * C4 + JOURNEY-BUGS: a rider fix only counts as "live" while it's fresh (past `escalationMs` since the
+ * last one, escalate to "call your rider"). But if NO fix ever arrives at all — the rider denied
+ * location permission, or their GPS stream never connected — `riderUpdatedAt` stays null forever and a
+ * check keyed only on it never escalates; the customer is stuck reading "Waiting for the rider's
+ * GPS…" for the rest of the trip. Anchor a second "never fixed" timeout off the assignment event.
+ */
+export function isRiderTrackingStale(args: {
+  isActive: boolean;
+  riderUpdatedAt: string | null;
+  assignedAt: string | null;
+  nowMs: number;
+  escalationMs: number;
+}): boolean {
+  if (!args.isActive) return false;
+  if (args.riderUpdatedAt != null) return args.nowMs - new Date(args.riderUpdatedAt).getTime() > args.escalationMs;
+  return args.assignedAt != null && args.nowMs - new Date(args.assignedAt).getTime() > args.escalationMs;
+}
+
+/**
  * JOURNEY-BUGS: the auction header used to just read "Finding riders near you…" straight through to
  * 0:00, then keep reading it for up to the 15s poll interval before the status transition caught up —
  * a dead-looking stall right when the customer is watching the clock closest. A transitional line at

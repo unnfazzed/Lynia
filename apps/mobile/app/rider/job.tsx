@@ -2,7 +2,7 @@ import { type AdvanceStatusRequest, UndeliveredReason, tokens } from "@lynia/sha
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { collectedItemCount, shouldShowJobError } from "../../src/logic/journey";
@@ -110,7 +110,7 @@ export default function RiderJob(): React.ReactElement {
 
   // Stream GPS only while the ride is genuinely active — stops on delivered AND cancelled/completed
   // (don't blocklist a single terminal state, or a cancelled job keeps broadcasting the rider's GPS).
-  useRiderLocationStream(order && ACTIVE.includes(order.status) ? orderId : null);
+  const { permissionDenied: locationDenied } = useRiderLocationStream(order && ACTIVE.includes(order.status) ? orderId : null);
 
   // The customer can cancel anytime (C3). When `job:cancelled` arrives we FREEZE the last-known
   // snapshot into a terminal, because a cancelled order immediately drops out of /orders/mine/active
@@ -400,6 +400,25 @@ export default function RiderJob(): React.ReactElement {
             <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
               The customer&apos;s app looks offline — they may not be seeing live updates. Call them if you need to reach the sender.
             </Text>
+          </View>
+        ) : null}
+
+        {/* JOURNEY-BUGS: location permission can be revoked (Android "only this time", or toggled off
+            in Settings) AFTER a job starts — the GPS stream then silently stops with no signal anywhere
+            in the app. Actionable, unlike the customer-stale notice above, since the rider can fix it. */}
+        {isActive && locationDenied ? (
+          <View
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, borderWidth: 1, borderColor: tokens.color.line, marginBottom: tokens.space.sm }}
+          >
+            <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
+            <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+              Location is off — the customer can&apos;t see where you are.
+            </Text>
+            <Pressable onPress={() => void Linking.openSettings()} hitSlop={8}>
+              <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.bold, color: tokens.color.accent }}>Turn on</Text>
+            </Pressable>
           </View>
         ) : null}
 
