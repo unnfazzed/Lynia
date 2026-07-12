@@ -276,6 +276,9 @@ importers:
         specifier: ^4.8.1
         version: 4.8.3
     devDependencies:
+      '@expo/config-plugins':
+        specifier: ~9.0.17
+        version: 9.0.17
       '@types/jest':
         specifier: ^29.5.14
         version: 29.5.14
