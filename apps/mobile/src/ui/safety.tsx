@@ -464,9 +464,13 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
             <Icon name="shield-alert" size={18} color={tokens.color.danger} />
           </View>
           <Text style={{ flex: 1, fontSize: tokens.font.size.body, color: tokens.color.ink, lineHeight: 20 }}>
+            {/* Three genuine states: don't claim the alert landed while it's still in flight, and don't
+                promise real-world help is coming — the push is a fire-and-forget internal ops alert. */}
             {m.isError
               ? "We couldn't reach our team automatically — please call for help below."
-              : "We've alerted the LyniaGo team — help is on the way. If you're in danger, call now."}
+              : m.isPending
+                ? "Alerting the LyniaGo team…"
+                : "We've alerted the LyniaGo team. If you're in danger, call now."}
           </Text>
         </View>
 

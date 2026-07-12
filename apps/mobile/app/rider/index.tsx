@@ -100,9 +100,21 @@ export default function RiderHome(): React.ReactElement {
       /* leave unsorted */
     }
   }, []);
-  useEffect(() => {
-    void requestLocation();
-  }, [requestLocation]);
+  // Re-read the rider's position every time this screen regains focus (covers the initial mount too,
+  // since the screen is focused on first render), not just once at mount. The board's REST radius, the
+  // WS geo-room, distance labels and ETA seed are all anchored to `loc`; a single mount-time fix left
+  // them pinned to wherever the rider opened the app. Refreshing on focus re-scopes the board after the
+  // rider has ridden somewhere else (e.g. back from a completed job, or from another tab). Deliberately
+  // NOT a continuous watchPositionAsync stream — that's a battery drain; these are the discrete
+  // checkpoints where position is likely to have moved materially.
+  useFocusEffect(
+    useCallback(() => {
+      void requestLocation();
+    }, [requestLocation]),
+  );
+  // Belt-and-braces for the in-place case: if an active job finishes (non-null → null) while this
+  // board is already focused, re-anchor immediately rather than waiting for the next focus event.
+  const prevHadJobRef = useRef(false);
   // Read inside the heartbeat interval via ref, not as an effect dependency — restarting the 20s
   // interval on every location tick would keep deferring the heartbeat once GPS refreshes more often
   // than the beat cadence (see the focus/interval-based refresh in the GPS-staleness fix below).
@@ -143,6 +155,15 @@ export default function RiderHome(): React.ReactElement {
     if (s === "assigned" && prevJobStatus.current !== "assigned") haptic("success");
     prevJobStatus.current = s;
   }, [activeJob?.status]);
+
+  // Re-anchor the board GPS the moment an active job clears (delivery finished / cancelled) — see the
+  // focus-based refresh above; this covers the case where the board is already focused when the job
+  // transitions non-null → null and no fresh focus event fires.
+  const hasActiveJob = activeJob != null;
+  useEffect(() => {
+    if (prevHadJobRef.current && !hasActiveJob) void requestLocation();
+    prevHadJobRef.current = hasActiveJob;
+  }, [hasActiveJob, requestLocation]);
 
   // Gate the dashboard behind KYC: a rider goes online only once verified (the backend enforces it on
   // makeOffer too — the UI shouldn't pretend otherwise). `rider: null` = hasn't started rider setup.
@@ -777,7 +798,18 @@ export default function RiderHome(): React.ReactElement {
                 ? "Switching to the customer view won't cancel your job, but you'll stop seeing job updates here until you come back."
                 : "Switching to the customer view takes you offline, so you'll stop receiving nearby deliveries."}
             </Sub>
-            <Button label="Go to customer view" onPress={() => router.replace("/home")} />
+            <Button
+              label="Go to customer view"
+              onPress={() => {
+                // No-active-job path: the copy promises this takes you offline, so make it true —
+                // fire the offline toggle best-effort (don't block leaving on it; the component
+                // unmounts on navigate and the request still lands server-side). The active-job path
+                // deliberately stays online (its copy says the job isn't cancelled), so only toggle
+                // when there's no active job.
+                if (!activeJob) onlineM.mutate(false);
+                router.replace("/home");
+              }}
+            />
             <Button label="Stay online as a rider" variant="ghost" onPress={() => setConfirmSwitch(false)} />
           </Card>
         ) : (

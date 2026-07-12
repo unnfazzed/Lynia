@@ -127,7 +127,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
       {props.counterpartyPhone ? (
         <>
           <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>
-            Rider phone: {props.counterpartyPhone}
+            {props.viewerRole === "rider" ? "Sender phone" : "Rider phone"}: {props.counterpartyPhone}
           </Text>
           {/* The number is only ever revealed while the delivery is live — assigned through the
               hand-off (PHONE_REVEAL_STATUSES), NOT once the order is completed. A trust feature only
@@ -139,11 +139,11 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           <Pressable
             onPress={() => void Linking.openURL(`tel:${props.counterpartyPhone}`)}
             accessibilityRole="button"
-            accessibilityLabel="Call rider"
+            accessibilityLabel={props.viewerRole === "rider" ? "Call sender" : "Call rider"}
             style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
           >
             <Icon name="phone" size={16} color={tokens.color.accentText} />
-            <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call rider</Text>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>{props.viewerRole === "rider" ? "Call sender" : "Call rider"}</Text>
           </Pressable>
         </>
       ) : null}

@@ -38,15 +38,22 @@ export const SentOfferCard = React.memo(function SentOfferCard(props: {
   expired: boolean;
 }): React.ReactElement {
   const live = !props.taken && !props.expired;
-  // Tick a 1s clock only while this offer is still live — a resolved card renders static copy, so
-  // keeping a timer running for it would be pure waste on the low-end devices this app targets.
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const remaining = new Date(props.expiresAt).getTime() - nowMs;
+  // Self-heal a card whose resolving push was missed (e.g. the app was in a dead zone at the exact
+  // moment `bid:expired`/`order:taken` fired — reconnect only re-fetches the open-orders list, not
+  // this in-memory resolution state). Once we're a grace window (~10s, for server-side expiry lag)
+  // past the shared auction close and still nominally "live" per props, treat it as resolved LOCALLY
+  // and swap the dead "0:00" countdown for a neutral close message instead of counting forever.
+  const staleClosed = live && remaining < -10_000;
+  // Tick a 1s clock only while this offer is still counting down — a resolved card (taken/expired, or
+  // the local stale-close fallback) renders static copy, so keeping a timer running for it would be
+  // pure waste on the low-end devices this app targets.
   useEffect(() => {
-    if (!live) return;
+    if (!live || staleClosed) return;
     const iv = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(iv);
-  }, [live]);
-  const remaining = new Date(props.expiresAt).getTime() - nowMs;
+  }, [live, staleClosed]);
 
   return (
     <Card>
@@ -71,6 +78,16 @@ export const SentOfferCard = React.memo(function SentOfferCard(props: {
           <Icon name="inbox" size={16} color={tokens.color.muted} />
           <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
             That window closed — the customer&apos;s auction ended with nobody picked. If they re-broadcast at a new price, it&apos;ll show up here as a fresh order.
+          </Text>
+        </View>
+      ) : staleClosed ? (
+        // Local fallback: the countdown ran out but no resolving push arrived (missed while offline).
+        // Don't sit frozen at "0:00" as if still live — say the window has closed and point at where a
+        // win would show up, so the card is never a dead end.
+        <View style={{ flexDirection: "row", gap: tokens.space.sm, marginTop: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}>
+          <Icon name="clock" size={16} color={tokens.color.muted} />
+          <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+            That window has closed. If you were picked, the job will appear under Active job.
           </Text>
         </View>
       ) : (

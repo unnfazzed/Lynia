@@ -43,6 +43,11 @@ export default function RiderJob(): React.ReactElement {
   // R1: the post-pickup "can't complete delivery" reason picker + the frozen terminal once it commits.
   const [undelivering, setUndelivering] = useState(false);
   const [undeliveredDone, setUndeliveredDone] = useState<UndeliveredReason | null>(null);
+  // A successful delivery-confirm freezes the just-delivered snapshot into a terminal. A `delivered`
+  // order drops out of activeForRider (ACTIVE_RIDE_STATUSES excludes it), so the post-confirm refetch
+  // returns null and would otherwise blank straight to "No active job" with zero acknowledgement the
+  // parcel arrived. Mirrors the undelivered/cancelled frozen terminals below.
+  const [deliveredDone, setDeliveredDone] = useState<OrderSnapshot | null>(null);
   // 4·b3: the pre-pickup bail flow — open the reason + reliability-warning sheet before cancelling,
   // and carry the (optional) reason to the server so the customer's re-broadcast has a "why".
   const [bailing, setBailing] = useState(false);
@@ -175,6 +180,9 @@ export default function RiderJob(): React.ReactElement {
       haptic("success");
       setCode("");
       setOtpTries(0);
+      // Freeze the just-delivered snapshot so the acknowledgement + rate-the-sender terminal survives
+      // the refresh() below (which returns null once the order leaves the active feed).
+      if (orderRef.current) setDeliveredDone(orderRef.current);
       refresh();
     },
     onError: (e) => {
@@ -193,6 +201,9 @@ export default function RiderJob(): React.ReactElement {
               setCode("");
               setOtpTries(0);
               setError(null);
+              // Same frozen terminal as the happy path — the reconciled snapshot IS a delivered order,
+              // so land the rider on the acknowledgement screen, not just a toast that a refresh wipes.
+              setDeliveredDone(fresh);
               toast.show("Looks like that delivery already went through.", "success");
             } else {
               fail(e);
@@ -242,7 +253,9 @@ export default function RiderJob(): React.ReactElement {
   });
   // 4·7: optional, recorded-only rate-the-sender. Doesn't change status or gate anything.
   const senderRateM = useMutation({
-    mutationFn: (score: number) => rateSender(orderId!, { score }),
+    // Rate against the frozen delivered snapshot's id when we're on that terminal (orderId is null
+    // there — the delivered order has left the active feed); fall back to the live order otherwise.
+    mutationFn: (score: number) => rateSender(deliveredDone?.id ?? orderId!, { score }),
     onError: fail,
   });
   // R1: record a failed hand-off. On success we freeze a terminal (the order leaves the active feed).
@@ -330,6 +343,62 @@ export default function RiderJob(): React.ReactElement {
   // the active-job feed, so a refetch would drop to "No active job" with no acknowledgement.
   if (undeliveredDone) {
     return <UndeliveredDone reason={undeliveredDone} onBack={() => router.replace("/rider")} />;
+  }
+
+  // Terminal: delivery confirmed. Frozen locally — a `delivered` order leaves the active-job feed, so
+  // the post-confirm refetch drops to "No active job" with no acknowledgement the parcel arrived. This
+  // is the previously-unreachable delivered UI (Celebrate + rate-the-sender + report/help), now driven
+  // from the frozen snapshot ahead of the `!order` check, mirroring the undelivered/cancelled terminals.
+  if (deliveredDone) {
+    return (
+      <Screen>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
+            <Heading>Your job</Heading>
+            <View style={{ flex: 1 }} />
+            <StatusPill status="delivered" tone={orderStatusTone("delivered")} dot />
+          </View>
+          <Card>
+            <Celebrate />
+            <Text style={{ fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
+          </Card>
+          {/* Rate the sender (4·7) — OPTIONAL, recorded-only ("a no-show or cash problem here
+              protects other riders"). Tap a star to submit; swaps to a thank-you on success. */}
+          <Card>
+            <Text style={{ fontWeight: "700", marginBottom: 2 }}>Rate the sender</Text>
+            <Sub>Optional — a no-show or cash problem here protects other riders.</Sub>
+            {senderRateM.isSuccess ? (
+              <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600" }}>Thanks for the feedback.</Text>
+            ) : (
+              <View style={{ flexDirection: "row", gap: 4 }}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Pressable
+                    key={n}
+                    onPress={() => {
+                      setSenderScore(n);
+                      senderRateM.mutate(n);
+                    }}
+                    disabled={senderRateM.isPending}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Rate the sender ${n} star${n === 1 ? "" : "s"}`}
+                    accessibilityState={{ selected: n <= senderScore }}
+                    hitSlop={8}
+                    style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
+                  >
+                    <Text style={{ fontSize: 30, color: n <= senderScore ? tokens.color.highlight : tokens.color.line }}>★</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </Card>
+          {/* Order-level support + report/block after the trip (rider → sender), same as a live delivered order. */}
+          <GetHelpControl orderId={deliveredDone.id} />
+          <ReportControl orderId={deliveredDone.id} counterpartyNoun="sender" />
+          <Button label="Back to board" onPress={() => router.replace("/rider")} />
+          <View style={{ height: tokens.space.xxl }} />
+        </ScrollView>
+      </Screen>
+    );
   }
 
   if (jobQ.isLoading) {
@@ -497,43 +566,9 @@ export default function RiderJob(): React.ReactElement {
           )
         ) : null}
 
-        {order.status === "delivered" ? (
-          <>
-            <Card>
-              <Celebrate />
-              <Text style={{ fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
-            </Card>
-            {/* Rate the sender (4·7) — OPTIONAL, recorded-only ("a no-show or cash problem here
-                protects other riders"). Tap a star to submit; swaps to a thank-you on success. */}
-            <Card>
-              <Text style={{ fontWeight: "700", marginBottom: 2 }}>Rate the sender</Text>
-              <Sub>Optional — a no-show or cash problem here protects other riders.</Sub>
-              {senderRateM.isSuccess ? (
-                <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600" }}>Thanks for the feedback.</Text>
-              ) : (
-                <View style={{ flexDirection: "row", gap: 4 }}>
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <Pressable
-                      key={n}
-                      onPress={() => {
-                        setSenderScore(n);
-                        senderRateM.mutate(n);
-                      }}
-                      disabled={senderRateM.isPending}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Rate the sender ${n} star${n === 1 ? "" : "s"}`}
-                      accessibilityState={{ selected: n <= senderScore }}
-                      hitSlop={8}
-                      style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
-                    >
-                      <Text style={{ fontSize: 30, color: n <= senderScore ? tokens.color.highlight : tokens.color.line }}>★</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </Card>
-          </>
-        ) : null}
+        {/* NOTE: the delivered acknowledgement + rate-the-sender UI is no longer rendered here — a
+            `delivered` order leaves the active feed, so this branch was never reached. It now lives in
+            the frozen `deliveredDone` terminal above (set from deliverM's success/reconciliation). */}
 
         {/* SOS on a live run (R-16/F-13) — a deliberate danger control, highest value at the cash
             hand-off. Passes the rider's own live GPS when available. */}
@@ -558,9 +593,9 @@ export default function RiderJob(): React.ReactElement {
           )
         ) : null}
 
-        {/* Order-level support (active) + report/block after the trip (rider → sender). */}
-        {isActive || order.status === "delivered" ? <GetHelpControl orderId={order.id} /> : null}
-        {order.status === "delivered" ? <ReportControl orderId={order.id} counterpartyNoun="sender" /> : null}
+        {/* Order-level support while the run is live (the post-trip report/help now lives on the
+            frozen delivered terminal above, since a delivered order no longer reaches this flow). */}
+        {isActive ? <GetHelpControl orderId={order.id} /> : null}
         <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
         <ErrorText message={error} />
         <View style={{ height: tokens.space.xxl }} />

@@ -130,10 +130,15 @@ export default function OrderScreen(): React.ReactElement {
     // the optimistic select flip are unaffected.
     select: selectOrderShell,
     refetchInterval: (q) => {
-      if (socketConnectedRef.current) return false;
       const s = q.state.data?.status;
-      // WS pushes now drive the live states; polling is only a slow self-heal if the socket drops.
+      // During the auction, poll every 15s REGARDLESS of socket health: `ridersNearby` is recomputed
+      // server-side per fetch and no WS event fires when the nearby-rider count changes, so a
+      // socket-connected gate would freeze the "no riders online nearby" empty state (and its inverse)
+      // for the whole ~90s window. Mirrors the offers-list query, which polls unconditionally here.
       if (s === "open_for_offers") return 15_000;
+      // For the active-delivery states WS pushes genuinely drive everything, so polling is only a slow
+      // self-heal if the socket drops.
+      if (socketConnectedRef.current) return false;
       if (s !== undefined && ACTIVE.includes(s)) return 15_000;
       return false;
     },
@@ -498,7 +503,9 @@ export default function OrderScreen(): React.ReactElement {
   const bidCount = orderedOffers.length;
   // 2·b1: the server said there are no online riders nearby and no bid has landed — an honest "nobody
   // to ping right now" state, distinct from the calm "riders pinged, hang tight" wait. Non-terminal:
-  // the 15s poll refreshes ridersNearby and any landing bid clears it.
+  // while open_for_offers the snapshot polls every 15s UNCONDITIONALLY (no WS event carries a
+  // ridersNearby change, so the poll — not the socket — is what refreshes this count), and any landing
+  // bid clears it.
   const noRiders = noRidersOnline(order.ridersNearby, bidCount, order.status === "open_for_offers");
 
   // Counter-offer (F-07): a `counter` bid ABOVE the customer's ask surfaces as Accept/Decline. A
@@ -736,6 +743,13 @@ export default function OrderScreen(): React.ReactElement {
                       <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600", textAlign: "center" }}>
                         We&apos;ll ping you when a rider&apos;s online near your pickup.
                       </Text>
+                    ) : notifyM.isSuccess && !notifyM.data?.queued ? (
+                      // The server accepted the request but couldn't queue a reminder (e.g. no waiting-list
+                      // store). Be honest rather than silently re-render the plain button and invite an
+                      // endless retry loop that can never register.
+                      <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center" }}>
+                        We can&apos;t take reminders right now — check back in a bit, or raise the price to widen interest.
+                      </Text>
                     ) : (
                       <Button
                         label="Notify me when a rider's online"
@@ -899,12 +913,12 @@ export default function OrderScreen(): React.ReactElement {
                 <Pressable
                   onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
                   accessibilityRole="button"
-                  accessibilityLabel="Call rider"
+                  accessibilityLabel={isRiderViewer ? "Call sender" : "Call rider"}
                   style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
                 >
                   <Icon name="phone" size={16} color={tokens.color.accentText} />
                   <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
-                    Call rider{order.counterpartyPhone ? ` · ${order.counterpartyPhone}` : ""}
+                    {isRiderViewer ? "Call sender" : "Call rider"}{order.counterpartyPhone ? ` · ${order.counterpartyPhone}` : ""}
                   </Text>
                 </Pressable>
               ) : null}
