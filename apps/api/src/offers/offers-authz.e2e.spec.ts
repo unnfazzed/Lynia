@@ -21,6 +21,7 @@ const STRANGER_ID = "33333333-3333-4333-8333-333333333333";
 const prisma = {
   order: { findUnique: vi.fn(async () => ({ customerId: CUSTOMER_ID })) },
   offer: { findMany: vi.fn(async () => []) },
+  block: { findMany: vi.fn(async () => []) },
 };
 const noop = {} as never;
 

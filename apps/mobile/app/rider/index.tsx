@@ -14,7 +14,7 @@ import { loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { retryKyc, setOnline } from "../../src/api/riders";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
-import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason } from "../../src/logic/gates";
+import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../src/logic/gates";
 import { formatMoney } from "../../src/logic/money";
 import { Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 import { SupportCallRow } from "../../src/ui/safety";
@@ -166,11 +166,12 @@ export default function RiderHome(): React.ReactElement {
   const retryM = useMutation({
     mutationFn: retryKyc,
     onSuccess: async (res) => {
-      setError(null);
       // In-app browser tab (not the system browser): it returns to the app when the rider closes it,
       // so we can immediately re-check status rather than leaving them stranded outside the app.
-      if (res.verificationUrl && res.verificationUrl.startsWith("https://")) {
-        await WebBrowser.openAuthSessionAsync(res.verificationUrl).catch(() => undefined);
+      const feedback = resolveKycRetryFeedback(res.verificationUrl);
+      setError(feedback.error);
+      if (feedback.openUrl) {
+        await WebBrowser.openAuthSessionAsync(feedback.openUrl).catch(() => undefined);
       }
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
@@ -242,6 +243,16 @@ export default function RiderHome(): React.ReactElement {
   useEffect(() => {
     if (!online) setSentOffers([]);
   }, [online]);
+
+  // JOURNEY-BUGS: the compose card stayed open for an order that expired or was taken by another rider
+  // while the rider was still typing a price — `selected` was only ever cleared on offer success/error
+  // or a manual Cancel. Dismiss it the moment the board says this order is gone, same signal the
+  // sent-offer cards already key off (board.expiredOrderIds / board.takenOrderIds).
+  useEffect(() => {
+    if (selected && (board.expiredOrderIds.has(selected.id) || board.takenOrderIds.has(selected.id))) {
+      setSelected(null);
+    }
+  }, [selected, board.expiredOrderIds, board.takenOrderIds]);
   // Tick a 1s clock only while there are sent offers on screen, for the auction countdowns.
   useEffect(() => {
     if (sentOffers.length === 0) return;

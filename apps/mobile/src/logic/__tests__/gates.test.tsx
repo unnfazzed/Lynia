@@ -1,5 +1,5 @@
 import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
-import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, kycDeclineLabel, onlineGateReason } from "../gates";
+import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, kycDeclineLabel, onlineGateReason, resolveKycRetryFeedback } from "../gates";
 
 describe("onlineGateReason (rider online-gate refusal)", () => {
   it("reads a machine reason code (case-insensitive)", () => {
@@ -112,5 +112,26 @@ describe("service-corridor gate (Q1)", () => {
     expect(isWithinServiceCorridor({ lat: -17.8292, lng: 31.0522 })).toBe(true);
     // Bulawayo (~370km away) → outside the 25km disc.
     expect(isWithinServiceCorridor({ lat: -20.15, lng: 28.58 })).toBe(false);
+  });
+});
+
+describe("resolveKycRetryFeedback (JOURNEY-BUGS: 'Continue verification' silent no-op)", () => {
+  it("opens an https verification URL and clears any prior error", () => {
+    expect(resolveKycRetryFeedback("https://verify.didit.me/session/abc")).toEqual({
+      openUrl: "https://verify.didit.me/session/abc",
+      error: null,
+    });
+  });
+
+  it("surfaces an error instead of silently doing nothing when the URL is missing", () => {
+    const feedback = resolveKycRetryFeedback(undefined);
+    expect(feedback.openUrl).toBeNull();
+    expect(feedback.error).toBeTruthy();
+  });
+
+  it("surfaces an error for a non-https URL rather than opening it", () => {
+    const feedback = resolveKycRetryFeedback("http://not-secure.example/session/abc");
+    expect(feedback.openUrl).toBeNull();
+    expect(feedback.error).toBeTruthy();
   });
 });

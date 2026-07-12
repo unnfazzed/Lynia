@@ -155,3 +155,23 @@ export function isWithinServiceCorridor(point: LatLng): boolean {
   const center: LatLng = { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng };
   return haversineKm(center, point) <= SERVICE_CORRIDOR.radiusKm;
 }
+
+/** What `retryKyc`'s success handler should do next. */
+export interface KycRetryFeedback {
+  /** An https verification URL to open in the in-app browser, or null if there's nothing to open. */
+  openUrl: string | null;
+  /** An error to surface when there's no usable URL — never both this and `openUrl` set. */
+  error: string | null;
+}
+
+/**
+ * JOURNEY-BUGS: `retryKyc` succeeding with a missing/non-https `verificationUrl` used to silently do
+ * nothing but refetch `["me"]` — the rider saw no feedback and no verification browser opened. Decide
+ * once, in a testable place, whether to open the browser or tell the rider it didn't work.
+ */
+export function resolveKycRetryFeedback(verificationUrl: string | null | undefined): KycRetryFeedback {
+  if (verificationUrl && verificationUrl.startsWith("https://")) {
+    return { openUrl: verificationUrl, error: null };
+  }
+  return { openUrl: null, error: "Couldn't start verification — try again in a moment." };
+}
