@@ -36,6 +36,23 @@ export const RELIABILITY = {
 } as const;
 
 /**
+ * FRAUD P0-3 — undelivered-abandonment velocity guard. `markUndelivered(refused|wrong_address)` carries
+ * no reliability penalty (those aren't the rider's fault), which a bad actor can exploit to abandon or
+ * keep parcels for free. We deliberately DON'T punish the one-off legitimate failure; instead we
+ * auto-`on_hold` a rider (for a human to review) only when their RECENT undelivered rate is abnormally
+ * high — enough incidents in the window AND a high fraction of their finished hand-offs. NOTE (product):
+ * tune the window / floor / rate here.
+ */
+export const UNDELIVERED_ABUSE = {
+  /** Rolling window (days) the counts are measured over. */
+  windowDays: 14,
+  /** Minimum undelivered count in the window before the guard can trip (spares a brand-new rider's 1/1). */
+  minCount: 3,
+  /** AND at least this fraction of recent finished hand-offs (undelivered + completed) were undelivered. */
+  rate: 0.5,
+} as const;
+
+/**
  * KYC (Didit) face-match auto-decision thresholds, score in [0,1]. ≥ autoApprove → auto-verify;
  * [needsReview, autoApprove) → hold for a human reviewer; < needsReview → auto-decline. NOTE
  * (product): confirm the real thresholds and what a human reviewer may override.

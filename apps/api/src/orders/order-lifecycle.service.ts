@@ -10,9 +10,9 @@ import {
   type OnModuleInit,
   UnauthorizedException,
 } from "@nestjs/common";
-import { CUSTOMER_CANCELLABLE_STATUSES, DELIVERY_OTP_MAX_ATTEMPTS, RELIABILITY, RIDER_CANCELLABLE_STATUSES } from "@lynia/shared";
+import { CUSTOMER_CANCELLABLE_STATUSES, DELIVERY_OTP_MAX_ATTEMPTS, RELIABILITY, RIDER_CANCELLABLE_STATUSES, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
-import { applyReliabilityDelta, undeliveredPenalty } from "../riders/reliability";
+import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
@@ -383,17 +383,39 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // / `wrong_address` are recipient/customer faults → no hit. NOTE(Q2): weights in policy.ts.
       // Same transaction as the undelivered CAS.
       const penalty = undeliveredPenalty(reason);
-      if (penalty > 0 && order.riderId) {
+      if (order.riderId) {
         await this.lockRiderRow(tx, order.riderId);
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
           select: { reliabilityScore: true, onHold: true },
         });
         if (rider) {
-          await tx.rider.update({
-            where: { profileId: order.riderId },
-            data: applyReliabilityDelta(rider, -penalty),
+          // FRAUD P0-3 velocity guard: `refused`/`wrong_address` carry no score penalty, so a rider
+          // could serially abandon/keep parcels for free. We don't punish the one-off (the counts
+          // include THIS undelivered, already written above), but auto-`on_hold` a rider whose recent
+          // undelivered RATE is abnormally high for a human to review — independent of the score, so it
+          // holds even when the penalty is 0. Both counts read inside the same locked tx.
+          const windowStart = new Date(Date.now() - UNDELIVERED_ABUSE.windowDays * 86_400_000);
+          const undeliveredCount = await tx.order.count({
+            where: { riderId: order.riderId, status: "undelivered", undeliveredAt: { gte: windowStart } },
           });
+          const completedCount = await tx.order.count({
+            where: { riderId: order.riderId, status: "completed", completedAt: { gte: windowStart } },
+          });
+          const velocityHold = shouldFlagUndeliveredVelocity(undeliveredCount, completedCount);
+          const next = applyReliabilityDelta(rider, -penalty); // penalty may be 0 → score unchanged
+          const onHold = next.onHold || velocityHold;
+          if (next.reliabilityScore !== rider.reliabilityScore || onHold !== rider.onHold) {
+            await tx.rider.update({
+              where: { profileId: order.riderId },
+              data: { reliabilityScore: next.reliabilityScore, onHold },
+            });
+          }
+          if (velocityHold && !rider.onHold) {
+            this.logger.warn(
+              `Rider ${order.riderId} auto-held for review: ${undeliveredCount} undelivered / ${completedCount} completed in ${UNDELIVERED_ABUSE.windowDays}d (FRAUD P0-3 velocity)`,
+            );
+          }
         }
       }
     });
