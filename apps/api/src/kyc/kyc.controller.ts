@@ -61,10 +61,14 @@ export class KycController {
     const raw = req.rawBody?.toString("utf8") ?? "";
 
     const secret = this.env.DIDIT_WEBHOOK_SECRET;
-    // Fail-closed: in real-vendor mode the webhook MUST be signed. Without a secret we refuse rather
-    // than silently process unsigned bodies — otherwise anyone could flip a rider's KYC by session_id.
-    // (Don't rely on the DIDIT_ENABLED deploy flag to enforce this application-level invariant.)
-    if (this.env.KYC_PROVIDER === "didit" && !secret) {
+    // Fail-closed: the webhook MUST be signed whenever it could carry real vendor traffic — ALWAYS in
+    // production (any provider), and always in `didit` mode even in dev. Without a secret we refuse
+    // rather than silently process an unsigned body anyone could forge to flip a rider's KYC by
+    // session_id. This is deliberately wider than just `didit` mode: production also permits
+    // KYC_PROVIDER=stub with KYC_MODE=manual (the launch guard only blocks stub+auto), and that config
+    // would otherwise leave this route processing unsigned bodies. Only a NON-production stub deployment
+    // (vendor-free CI/QA, which drives KYC inline and never uses this callback) may process unsigned.
+    if (!secret && (this.env.NODE_ENV === "production" || this.env.KYC_PROVIDER === "didit")) {
       throw new ServiceUnavailableException("KYC webhook not configured");
     }
     if (secret) {

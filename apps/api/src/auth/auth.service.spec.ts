@@ -167,8 +167,14 @@ describe("AuthService.updateProfile", () => {
 
   // The write now runs in a $transaction (DS-11): profile.update + a duplicate-ID recompute that
   // persists the A-04 flag on the rider row. `dupCount` = how many OTHER accounts share the new ID.
-  function makeUpdate(dupCount = 0) {
+  // `opts.kycStatus`/`opts.storedIdHash` drive the post-verification ID-lock pre-check (DS-11 hardening).
+  function makeUpdate(dupCount = 0, opts: { kycStatus?: string; storedIdHash?: string } = {}) {
     const rec: { written?: Record<string, unknown>; flag?: { where: unknown; data: Record<string, unknown> } } = {};
+    const profileRow = {
+      ...row,
+      idNumberHash: opts.storedIdHash ?? null,
+      rider: opts.kycStatus ? { kycStatus: opts.kycStatus } : row.rider,
+    };
     const tx = {
       profile: {
         update: async (a: { data: Record<string, unknown> }) => ((rec.written = a.data), { id: "p1" }),
@@ -180,7 +186,8 @@ describe("AuthService.updateProfile", () => {
     };
     const { svc } = make(baseEnv, {
       $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
-      profile: { findUnique: async () => row },
+      // Serves both the DS-11 ID-lock pre-check and the trailing getProfile read.
+      profile: { findUnique: async () => profileRow },
     });
     return { svc, rec };
   }
@@ -212,6 +219,33 @@ describe("AuthService.updateProfile", () => {
     const { svc, rec } = makeUpdate(0);
     await svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-999999-Z-01" });
     expect(rec.flag).toEqual({ where: { profileId: "p1" }, data: { duplicateIdFlag: false } });
+  });
+
+  it("DS-11 lock: blocks a KYC-verified rider from CHANGING their national ID (locked post-verification)", async () => {
+    const { svc, rec } = makeUpdate(0, { kycStatus: "verified", storedIdHash: pii.hashId("63-111111-A-11") });
+    await expect(
+      svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-222222-B-22" }),
+    ).rejects.toThrow(/locked after verification/i);
+    // Rejected before any write — no profile update, no flag recompute.
+    expect(rec.written).toBeUndefined();
+    expect(rec.flag).toBeUndefined();
+  });
+
+  it("DS-11 lock: a verified rider RE-SENDING the same ID is a no-op change, not a block", async () => {
+    const { svc, rec } = makeUpdate(0, { kycStatus: "verified", storedIdHash: pii.hashId("63-111111-A-11") });
+    await expect(
+      svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-111111-A-11" }),
+    ).resolves.toBeDefined();
+    // Same hash → allowed; the write still runs.
+    expect(rec.written).toMatchObject({ idNumberHash: pii.hashId("63-111111-A-11") });
+  });
+
+  it("DS-11 lock: a NOT-yet-verified rider may still change their ID (only verified is frozen)", async () => {
+    const { svc, rec } = makeUpdate(0, { kycStatus: "pending", storedIdHash: pii.hashId("63-111111-A-11") });
+    await expect(
+      svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-222222-B-22" }),
+    ).resolves.toBeDefined();
+    expect(rec.written).toMatchObject({ idNumberHash: pii.hashId("63-222222-B-22") });
   });
 });
 

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Inject,
@@ -125,6 +126,22 @@ export class AuthService {
    *  UpdateProfileRequest contract. Returns the same shape as getProfile so the client can refresh. */
   async updateProfile(profileId: string, body: UpdateProfileRequest) {
     const idNumberHash = body.idNumber ? this.pii.hashId(body.idNumber) : undefined;
+
+    // DS-11 hardening: a KYC-VERIFIED rider must not silently swap the national ID that was verified —
+    // it undermines KYC and is the ban-evasion laundering path (become clean → later switch to the real,
+    // colliding ID). Block a genuine CHANGE (new hash ≠ stored hash) once verified; a real correction
+    // goes through support/admin. Pre-verification edits and first-time customer entry are unaffected
+    // (recompute of the A-04 flag below still keeps the reviewer signal honest in that window).
+    if (idNumberHash) {
+      const existing = await this.prisma.profile.findUnique({
+        where: { id: profileId },
+        select: { idNumberHash: true, rider: { select: { kycStatus: true } } },
+      });
+      if (existing?.rider?.kycStatus === "verified" && existing.idNumberHash && existing.idNumberHash !== idNumberHash) {
+        throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
+      }
+    }
+
     await this.prisma.$transaction(async (tx) => {
       await tx.profile.update({
         where: { id: profileId },

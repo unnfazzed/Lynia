@@ -127,6 +127,17 @@ describe("KycController.callback", () => {
     expect(calls).toEqual([]);
   });
 
+  it("refuses an unsigned webhook in PRODUCTION even for a non-didit provider (F-N3 fail-closed widening)", async () => {
+    const { riders, calls } = fakeRiders();
+    const raw = JSON.stringify({ session_id: "s_4b", status: "Approved" });
+    // Prod permits KYC_PROVIDER=stub + KYC_MODE=manual; the callback must still refuse an unsigned body
+    // rather than let anyone flip a rider by session_id.
+    await expect(
+      ctl(riders, { NODE_ENV: "production", KYC_PROVIDER: "stub", DIDIT_WEBHOOK_SECRET: undefined }).callback(req(raw)),
+    ).rejects.toThrow(/not configured/i);
+    expect(calls).toEqual([]);
+  });
+
   it("passes the signed event timestamp through as the monotonic-guard event time", async () => {
     const { riders, eventAt } = fakeRiders();
     const ts = 1_750_000_000; // Unix seconds
