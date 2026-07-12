@@ -182,6 +182,10 @@ model Rider {
   lastHeartbeatAt DateTime? @map("last_heartbeat_at")
   currentLat      Float?    @map("current_lat")
   currentLng      Float?    @map("current_lng")
+  // Dedicated timestamp of the last POSITION write (lat/lng/geog only), distinct from `updatedAt`
+  // (@updatedAt bumps on ANY rider-row write). getSnapshot's no-Redis fallback uses this so a stale
+  // position can't render as "live" off a timestamp freshened by an unrelated write. Managed via raw SQL.
+  positionUpdatedAt DateTime? @map("position_updated_at")
   // Indexed source of truth for nearby-rider queries (ST_DWithin + GiST). Managed via raw SQL.
   geog            Unsupported("geography(Point, 4326)")?
   tripsCount      Int       @default(0) @map("trips_count")

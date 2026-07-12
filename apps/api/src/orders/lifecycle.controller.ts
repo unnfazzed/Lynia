@@ -3,6 +3,7 @@ import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, ConfirmIte
 import { z } from "zod";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { OrderLifecycleService } from "./order-lifecycle.service";
 
@@ -90,8 +91,10 @@ export class LifecycleController {
     return this.lifecycle.rateSender(orderId, riderId, body.score, body.comment);
   }
 
-  /** Customer re-issues the delivery code (after a lockout or a lost code). */
+  /** Customer re-issues the delivery code (after a lockout or a lost code). Throttled so rotation
+   *  can't be used to trivially reset the OTP attempt cap (F-03). */
   @Post("delivery-code/rotate")
+  @Throttle({ limit: 10, windowSec: 60, keyPrefix: "delivery-code-rotate" })
   rotate(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() customerId: string) {
     return this.lifecycle.rotateDeliveryCode(orderId, customerId);
   }

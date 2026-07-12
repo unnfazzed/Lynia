@@ -47,7 +47,7 @@ export const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
   kyc_expired: "Your ID has expired — re-verify to keep riding",
   banned: "Your rider account has been banned",
   suspended: "Your rider account is suspended",
-  on_hold: "You're on hold — complete deliveries to raise your reliability score",
+  on_hold: "Your account is on hold — contact support to get back on the road",
   cooldown: "On cooldown after repeated cancellations — try again later",
   out_of_area: "You're outside the service area — go online from inside the Harare corridor",
 };

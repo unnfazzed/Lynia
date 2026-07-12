@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared";
 import { adminFetchResult } from "../../lib/api";
-import { submitAdminAction } from "../../actions/audit";
+import { logOrderFollowUpNote } from "../../actions/audit";
 import type { OrderDetail } from "../../lib/adminTypes";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
@@ -130,7 +130,6 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const steps = deriveSteps(o);
   const idx = STEP_OF[o.status] ?? -1;
   const live = LIVE_SET.includes(o.status);
-  const path = `/orders/${o.id}`;
   const telHref = o.riderPhone ? `tel:${o.riderPhone.replace(/[^\d+]/g, "")}` : undefined;
   const prov = o.fareProvenance;
 
@@ -297,10 +296,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                       Call rider
                     </a>
                   ) : null}
-                  <form action={submitAdminAction}>
-                    <input type="hidden" name="action" value="order.nudge_rider" />
-                    <input type="hidden" name="target" value={o.id} />
-                    <input type="hidden" name="path" value={path} />
+                  <form action={logOrderFollowUpNote.bind(null, o.id)}>
+                    {/* The action/target are NOT client-supplied hidden inputs (F-07): they are hardcoded
+                        server-side and the order id is a Next-bound (encrypted) argument, so this form
+                        cannot be tampered into forging an arbitrary audit row. */}
                     {/* This only writes an audit-log note — no push/SMS/call reaches the rider. The old
                         label ("Nudge rider — 'Are you OK to continue?'") implied a message was sent,
                         which it never was; an ops agent believing they'd contacted the rider would wait

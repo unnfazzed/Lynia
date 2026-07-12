@@ -49,5 +49,15 @@ export function normalizePhone(raw: string, countryCode: string = DEFAULT_COUNTR
   }
 
   const e164 = `+${digits}`;
-  return /^\+\d{8,15}$/.test(e164) ? e164 : null;
+  if (!/^\+\d{8,15}$/.test(e164)) return null;
+
+  // Tighten the ZW default-country path: a Zimbabwe MSISDN has a 9-digit national significant number
+  // (total 12 digits after '+'). Reject an implausible national length here so a too-short local number,
+  // or a foreign number typed without '+' that got 263 prepended, can't mint a junk ZW identity. Scoped
+  // to the default ZW code and a +263 result only — override country codes and genuine foreign numbers
+  // typed with '+' (e.g. +447911123456) don't start with 263 and are untouched.
+  if (countryCode === DEFAULT_COUNTRY_CODE && digits.startsWith(countryCode) && digits.length !== countryCode.length + 9) {
+    return null;
+  }
+  return e164;
 }

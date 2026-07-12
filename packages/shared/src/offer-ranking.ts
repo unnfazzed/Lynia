@@ -63,10 +63,23 @@ function norm(value: number, min: number, max: number, lowerIsBetter: boolean): 
 export function rankOffers(offers: OfferRankInput[], weights: OfferRankWeights = DEFAULT_OFFER_WEIGHTS): RankedOffer[] {
   if (offers.length === 0) return [];
 
-  const fares = offers.map((o) => o.offeredFare);
-  const etas = offers.map((o) => o.etaMinutes);
+  // Defense-in-depth (the API path is DB-constrained): coerce non-finite numeric inputs before
+  // normalization so a stray NaN/Infinity can't poison min/max and produce NaN scores / an unstable
+  // sort. A non-finite fare/eta is treated as worst-ranked (the largest finite value in the set, so it
+  // normalizes to 0 without distorting the spread) and a non-finite rating as 0. Finite inputs are
+  // untouched, so valid rankings stay byte-identical.
+  const worstFinite = (nums: number[]): number => {
+    const finite = nums.filter((n) => Number.isFinite(n));
+    return finite.length ? Math.max(...finite) : 0;
+  };
+  const fareWorst = worstFinite(offers.map((o) => o.offeredFare));
+  const etaWorst = worstFinite(offers.map((o) => o.etaMinutes));
+  const fares = offers.map((o) => (Number.isFinite(o.offeredFare) ? o.offeredFare : fareWorst));
+  const etas = offers.map((o) => (Number.isFinite(o.etaMinutes) ? o.etaMinutes : etaWorst));
+  const ratingAvgs = offers.map((o) => (Number.isFinite(o.ratingAvg) ? o.ratingAvg : 0));
+
   // Only rated riders define the rating range; new riders use the neutral baseline instead.
-  const ratings = offers.filter((o) => o.ratingCount > 0).map((o) => o.ratingAvg);
+  const ratings = offers.map((o, i) => ({ o, i })).filter(({ o }) => o.ratingCount > 0).map(({ i }) => ratingAvgs[i]!);
   const fareMin = Math.min(...fares);
   const fareMax = Math.max(...fares);
   const etaMin = Math.min(...etas);
@@ -75,20 +88,18 @@ export function rankOffers(offers: OfferRankInput[], weights: OfferRankWeights =
   const ratingMax = ratings.length ? Math.max(...ratings) : 0;
 
   const scored = offers.map((o, index) => {
-    const priceScore = norm(o.offeredFare, fareMin, fareMax, true);
-    const etaScore = norm(o.etaMinutes, etaMin, etaMax, true);
-    const ratingScore = o.ratingCount > 0 ? norm(o.ratingAvg, ratingMin, ratingMax, false) : NEW_RIDER_RATING_SCORE;
+    const priceScore = norm(fares[index]!, fareMin, fareMax, true);
+    const etaScore = norm(etas[index]!, etaMin, etaMax, true);
+    const ratingScore = o.ratingCount > 0 ? norm(ratingAvgs[index]!, ratingMin, ratingMax, false) : NEW_RIDER_RATING_SCORE;
     const score = weights.price * priceScore + weights.rating * ratingScore + weights.eta * etaScore;
     return { index, score, recommended: false };
   });
 
   scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
-    const oa = offers[a.index]!;
-    const ob = offers[b.index]!;
-    if (oa.offeredFare !== ob.offeredFare) return oa.offeredFare - ob.offeredFare; // cheaper first
-    if (oa.ratingAvg !== ob.ratingAvg) return ob.ratingAvg - oa.ratingAvg; // better-rated first
-    if (oa.etaMinutes !== ob.etaMinutes) return oa.etaMinutes - ob.etaMinutes; // sooner first
+    if (fares[a.index] !== fares[b.index]) return fares[a.index]! - fares[b.index]!; // cheaper first
+    if (ratingAvgs[a.index] !== ratingAvgs[b.index]) return ratingAvgs[b.index]! - ratingAvgs[a.index]!; // better-rated first
+    if (etas[a.index] !== etas[b.index]) return etas[a.index]! - etas[b.index]!; // sooner first
     return a.index - b.index; // stable
   });
 

@@ -43,7 +43,9 @@ export const loadLastActiveOrder = (orderId: string): Promise<LastActive | null>
 export const clearLastActiveOrder = (orderId: string): Promise<void> => del(orderKey(orderId));
 
 // --- Rider's active job (single slot — there's only ever one active job) ---
-const JOB_KEY = "lynia.lastActiveJob";
+// Exported so sign-out (auth/session `clearDeviceState`) can wipe it — on a shared device the next
+// rider's cold start must not paint the previous rider's job (route landmarks, fare, last GPS).
+export const JOB_KEY = "lynia.lastActiveJob";
 
 export const saveLastActiveJob = (o: OrderSnapshot): Promise<void> => put(JOB_KEY, o);
 export const loadLastActiveJob = (): Promise<LastActive | null> => get(JOB_KEY);

@@ -274,6 +274,7 @@ export class TrackingService implements OnModuleDestroy {
       SET current_lat = ${lat},
           current_lng = ${lng},
           geog = ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
+          position_updated_at = now(),
           updated_at = now()
       WHERE profile_id = ${riderId}::uuid`;
   }
@@ -288,6 +289,7 @@ export class TrackingService implements OnModuleDestroy {
       SET current_lat = ${lat},
           current_lng = ${lng},
           geog = ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
+          position_updated_at = now(),
           last_heartbeat_at = now(),
           updated_at = now()
       WHERE profile_id = ${riderId}::uuid`;
