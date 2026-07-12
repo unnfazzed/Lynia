@@ -15,7 +15,7 @@ import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
+import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
 import { PickupChecklist } from "../../src/ui/rider/PickupChecklist";
@@ -354,7 +354,7 @@ export default function RiderJob(): React.ReactElement {
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
               <Heading>Your job</Heading>
               <View style={{ flex: 1 }} />
-              <StatusPill status={lastKnownJob.status} />
+              <StatusPill status={lastKnownJob.status} tone={orderStatusTone(lastKnownJob.status)} />
             </View>
             <Card>
               <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.xs, fontVariant: ["tabular-nums"] }}>
@@ -416,7 +416,7 @@ export default function RiderJob(): React.ReactElement {
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Your job</Heading>
           <View style={{ flex: 1 }} />
-          <StatusPill status={order.status} tone={jobReconnecting ? "reconnecting" : undefined} />
+          <StatusPill status={order.status} tone={jobReconnecting ? "reconnecting" : orderStatusTone(order.status)} />
         </View>
 
         {jobReconnecting ? (
@@ -474,6 +474,7 @@ export default function RiderJob(): React.ReactElement {
             pending={advanceM.isPending}
             onToggle={toggleItem}
             onConfirm={confirmAndCollect}
+            onCantCollect={() => setBailing(true)}
           />
         ) : next ? (
           <Button label={next.label} onPress={() => advanceM.mutate(next.to)} loading={advanceM.isPending} />

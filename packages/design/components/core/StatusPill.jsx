@@ -5,6 +5,11 @@ const TONE = {
   online: { color: "var(--accent-text)", bg: "var(--accent-wash)", dot: "var(--accent)" },
   offline: { color: "var(--muted)", bg: "var(--surface)", dot: "var(--muted)" },
   reconnecting: { color: "var(--muted)", bg: "var(--surface)", dot: "var(--muted)" }, // transient, never red
+  // A positive order OUTCOME (delivered/completed) reads as a clear, quiet win on the mint wash — the
+  // same calm "good" language as `online`. Negative outcomes (cancelled/undelivered) reuse `offline`
+  // (muted), not a red tone — this pill stays a calm status label; a strong red accent belongs on the
+  // surrounding icon/headline instead (see CancelledHandback/UndeliveredDone in rider terminals.tsx).
+  success: { color: "var(--accent-text)", bg: "var(--accent-wash)", dot: "var(--success)" },
 };
 
 /**

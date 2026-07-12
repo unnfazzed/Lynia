@@ -6,7 +6,7 @@ import type { OrderHistoryRow } from "../../src/api/orders";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatMoney } from "../../src/logic/money";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
-import { Button, Card, EmptyState, Heading, Icon, Screen, SkeletonRows, StatusPill, statusPillLabel, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, Heading, Icon, orderStatusTone, Screen, SkeletonRows, StatusPill, statusPillLabel, Sub } from "../../src/ui";
 
 // The rider-side subtitle used to hardcode "Delivered" for every trip regardless of outcome, so a
 // bailed-on or undelivered job read "Delivered" right next to a StatusPill saying otherwise on the
@@ -40,7 +40,7 @@ function Row({ o, onPress, onReorder }: { o: OrderHistoryRow; onPress: () => voi
           <View style={{ alignItems: "flex-end" }}>
             <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(fare)}</Text>
             <View style={{ height: 4 }} />
-            <StatusPill status={o.status} />
+            <StatusPill status={o.status} tone={orderStatusTone(o.status)} />
           </View>
         </View>
       </Pressable>
