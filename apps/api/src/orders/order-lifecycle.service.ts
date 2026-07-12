@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -10,7 +11,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { CUSTOMER_CANCELLABLE_STATUSES, DELIVERY_OTP_MAX_ATTEMPTS, RELIABILITY, RIDER_CANCELLABLE_STATUSES } from "@lynia/shared";
-import { Prisma } from "@prisma/client";
+import { type OrderStatus, Prisma } from "@prisma/client";
 import { applyReliabilityDelta, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
@@ -38,6 +39,12 @@ const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
 const RIDER_CANCELLABLE = new Set<string>(RIDER_CANCELLABLE_STATUSES);
 /** A hand-off can only FAIL after the parcel is collected (C6/F-02): picked_up or en_route_dropoff. */
 const POST_PICKUP_FOR_UNDELIVERED = new Set<string>(["picked_up", "en_route_dropoff"]);
+/** The pickup-photo attach window (§5c "Mark collected (+ pickup photo)"): at the pickup, or just
+ *  collected. Wider than the checklist's en_route_pickup-only gate on purpose — the photo is optional
+ *  and must never delay the collect, so an upload still in flight when the rider taps "Confirm
+ *  collected" can land after the advance to picked_up instead of 409ing into the void. Typed as the
+ *  Prisma enum (not a Set<string>) because the CAS `where` reuses it verbatim. */
+const PICKUP_PHOTO_STATUSES: readonly OrderStatus[] = ["en_route_pickup", "picked_up"];
 /** Repeated rider cancels earn a cooldown that blocks going online (T4 no-show penalty). */
 const CANCEL_STRIKE_LIMIT = 3;
 const COOLDOWN_MS = 2 * 60 * 60 * 1000;
@@ -227,6 +234,41 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
     return { orderId, confirmedIndexes: indexes };
+  }
+
+  /** Rider attaches the optional proof-of-pickup photo (§5c "parcel is with your rider — photo
+   *  attached"). `key` is the object key from POST /uploads/pickup-photo after the signed PUT; the
+   *  snapshot mints a read URL from it for BOTH parties. Guarded to the assigned rider and to the
+   *  attach window ({@link PICKUP_PHOTO_STATUSES}); does NOT advance the status. Idempotent by
+   *  design — re-attaching simply replaces the key (a retake wins, no duplicate-photo state). */
+  async attachPickupPhoto(
+    orderId: string,
+    riderId: string,
+    key: string,
+  ): Promise<{ orderId: string; pickupPhotoKey: string }> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true, riderId: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
+    if (!PICKUP_PHOTO_STATUSES.includes(order.status)) {
+      throw new ConflictException("A pickup photo can only be added while collecting the parcel");
+    }
+    // The key must live under this caller's own pickup namespace — POST /uploads/pickup-photo mints
+    // keys as `pickup/<callerId>/<uuid>` — so a rider can't persist a key that points at another
+    // user's object (mirrors the becomeRider KYC-key guard in rider.service.ts).
+    if (!key.startsWith(`pickup/${riderId}/`)) {
+      throw new BadRequestException("Invalid photo key");
+    }
+    // CAS on the attach window — a concurrent advance past picked_up (or a cancel) between the read
+    // above and this write must not let a stale attach land on the now-later status.
+    const claimed = await this.prisma.order.updateMany({
+      where: { id: orderId, status: { in: [...PICKUP_PHOTO_STATUSES] } },
+      data: { pickupPhotoKey: key },
+    });
+    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    return { orderId, pickupPhotoKey: key };
   }
 
   /** Rider confirms the handover with the recipient's delivery code → `delivered`. */

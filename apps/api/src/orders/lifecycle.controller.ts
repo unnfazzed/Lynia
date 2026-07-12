@@ -1,9 +1,15 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, ConfirmItemsRequest, MarkUndeliveredRequest, RateRequest, RateSenderRequest } from "@lynia/shared";
+import { z } from "zod";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { OrderLifecycleService } from "./order-lifecycle.service";
+
+// Local zod body like riders.controller.ts's `Become` — a rider-only additive endpoint old clients
+// never call, so no shared-contract change is needed (the wire stays a pure superset). The key length
+// bound matches the KYC photoUrl cap.
+const AttachPickupPhotoRequest = z.object({ key: z.string().min(1).max(256) });
 
 /** Post-assignment delivery lifecycle. Authority is derived in the service: the rider drives the
  *  forward steps, the customer rates and re-issues the code. */
@@ -31,6 +37,17 @@ export class LifecycleController {
     @CurrentUser() riderId: string,
   ) {
     return this.lifecycle.confirmItems(orderId, riderId, body.confirmedIndexes);
+  }
+
+  /** Rider attaches the optional proof-of-pickup photo (§5c) — the already-uploaded object key from
+   *  POST /uploads/pickup-photo. Never gates the collect; idempotent (re-attaching replaces). */
+  @Post("pickup-photo")
+  attachPickupPhoto(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(AttachPickupPhotoRequest)) body: z.infer<typeof AttachPickupPhotoRequest>,
+    @CurrentUser() riderId: string,
+  ) {
+    return this.lifecycle.attachPickupPhoto(orderId, riderId, body.key);
   }
 
   /** Rider confirms the handover with the recipient's delivery code → delivered. */

@@ -288,6 +288,92 @@ describe("AuthService.verifyOtp", () => {
   });
 });
 
+describe("AuthService.verifyOtp — post-verify retry grace (§6)", () => {
+  const profileRow = { id: "p1", role: "customer", firstName: "" };
+  /** Grace-path prisma: upsert for the first verify, findUnique (plain read) for grace retries,
+   *  and session ids that increment so each mint is provably a FRESH session. */
+  const gracePrisma = () => {
+    let sessions = 0;
+    return {
+      profile: { upsert: async () => profileRow, findUnique: async () => profileRow },
+      session: { create: async () => ({ id: `s${++sessions}` }) },
+    };
+  };
+
+  it("a retry with the same correct code after a successful verify mints a fresh session, not 'expired'", async () => {
+    const { svc, store } = make(baseEnv, gracePrisma());
+    await store.put("+263770000040", tokens.hash("654321"), 300);
+    const first = await svc.verifyOtp("+263770000040", "654321");
+    // The live record is consumed — before the grace record, this retry was "expired".
+    expect(await store.get("+263770000040")).toBeNull();
+    const retry = await svc.verifyOtp("+263770000040", "654321");
+    expect(retry).toMatchObject({ profileId: "p1", role: "customer", needsProfile: true });
+    // A fresh session, not a replay of the first one's tokens.
+    expect(retry.refreshToken).toMatch(/^s2\./);
+    expect(retry.refreshToken).not.toBe(first.refreshToken);
+    // The grace record is deliberately not consumed: a second racing retry also heals (each mint
+    // is an independent session — sessions are already multi-device).
+    const retry2 = await svc.verifyOtp("+263770000040", "654321");
+    expect(retry2.refreshToken).toMatch(/^s3\./);
+  });
+
+  it("a wrong code during the grace window gets the EXACT no-grace error (no oracle)", async () => {
+    const { svc, store } = make(baseEnv, gracePrisma());
+    await store.put("+263770000041", tokens.hash("654321"), 300);
+    await svc.verifyOtp("+263770000041", "654321");
+    const graceMiss = await svc.verifyOtp("+263770000041", "111111").catch((e: Error) => e);
+    // Baseline: same wrong code against a phone with no grace record at all.
+    const noGrace = await svc.verifyOtp("+263770000049", "111111").catch((e: Error) => e);
+    expect(graceMiss).toBeInstanceOf(Error);
+    expect((graceMiss as Error).message).toBe("Code expired or never requested");
+    expect((graceMiss as Error).message).toBe((noGrace as Error).message);
+    expect((graceMiss as { status?: number }).status).toBe((noGrace as { status?: number }).status);
+  });
+
+  it("the grace record expires after its 60s TTL → back to 'expired'", async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, store } = make(baseEnv, gracePrisma());
+      await store.put("+263770000042", tokens.hash("654321"), 300);
+      await svc.verifyOtp("+263770000042", "654321");
+      vi.advanceTimersByTime(61_000);
+      await expect(svc.verifyOtp("+263770000042", "654321")).rejects.toThrow(/expired or never/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("falls through to 'expired' if the profile is somehow missing — a grace hit never creates an account", async () => {
+    const prisma = {
+      profile: { upsert: async () => profileRow, findUnique: async () => null },
+      session: { create: async () => ({ id: "s1" }) },
+    };
+    const { svc, store } = make(baseEnv, prisma);
+    await store.put("+263770000043", tokens.hash("654321"), 300);
+    await svc.verifyOtp("+263770000043", "654321");
+    await expect(svc.verifyOtp("+263770000043", "654321")).rejects.toThrow(/expired or never/i);
+  });
+
+  it("records 'grace_ok' (not 'ok') on a grace-path mint", async () => {
+    const { svc, store, metrics } = make(baseEnv, gracePrisma());
+    await store.put("+263770000044", tokens.hash("654321"), 300);
+    await svc.verifyOtp("+263770000044", "654321");
+    expect(metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "ok");
+    await svc.verifyOtp("+263770000044", "654321");
+    expect(metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "grace_ok");
+  });
+
+  it("lockout leaves NO grace record — the correct code after a lockout is still 'expired', never a session", async () => {
+    // The 5-attempt cap on a LIVE record is untouched (see the TOCTOU test above); the grace
+    // record is only written after a successful compare, so a locked-out code grants nothing.
+    const { svc, store } = make(baseEnv, gracePrisma());
+    await store.put("+263770000045", tokens.hash("654321"), 300);
+    for (let i = 0; i < 5; i++) await store.incrAttempts("+263770000045");
+    await expect(svc.verifyOtp("+263770000045", "654321")).rejects.toThrow(/too many/i);
+    await expect(svc.verifyOtp("+263770000045", "654321")).rejects.toThrow(/expired or never/i);
+  });
+});
+
 describe("AuthService.refresh", () => {
   const future = new Date(Date.now() + 60_000);
   const past = new Date(Date.now() - 60_000);

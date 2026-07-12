@@ -60,6 +60,43 @@ Crashlytics is the alternative):
 - [ ] Add Sentry (or Crashlytics) per the above; forced test crash visible from a release build.
 - [ ] Consider the same for the admin app (`@sentry/nextjs`) — lower priority.
 
+## Background GPS during Maps navigation (foreground service) — NEW BINARY required
+
+> The "Follow route in Google Maps" hand-off backgrounds the rider app; the Android foreground
+> service (`src/realtime/background-location-task.ts` + `isAndroidForegroundServiceEnabled` in
+> `app.config.ts`) keeps the customer's live map moving through it. This is a **native manifest
+> change** (FOREGROUND_SERVICE / FOREGROUND_SERVICE_LOCATION) — the fingerprint runtimeVersion
+> shifts, so it ships **only in a freshly built binary, never via OTA**. Verify on a real Android
+> phone (Android 12+ if possible — strictest foreground-service-start rules); an emulator won't
+> reproduce OEM battery-killer behaviour.
+
+Setup: two devices (or device + browser) — rider app on the phone under test, customer tracking
+view (`order/[id]`) on the second. Location permission granted as **"While using the app"** only.
+
+- [ ] **Stream survives the nav hand-off** — accept a job → tap **Follow route in Google Maps** →
+      drive/walk ~200 m with the app backgrounded behind Maps → the customer's rider marker keeps
+      moving the whole time (updates roughly every 10 s / 25 m; it must NOT freeze at the hand-off
+      point like the pre-fix behaviour).
+- [ ] **Foreground-service notification** — the moment the job goes active, a persistent
+      notification appears: "LyniaGo — delivery in progress / Sharing your location with the
+      customer for this delivery." It stays pinned while backgrounded and cannot be swiped away.
+- [ ] **Streaming stops at delivered** — complete the OTP hand-off → the notification disappears
+      within seconds and the customer map receives no further rider positions. Repeat for a
+      **cancelled** job (either side): same result.
+- [ ] **No streaming without an active job** — with the rider online but unassigned, background the
+      app for 5+ minutes: no location notification, and Settings → Apps → LyniaGo → Battery/data
+      shows no ongoing location use.
+- [ ] **While-in-use permission only** — Settings → Apps → LyniaGo → Permissions → Location reads
+      "Allow only while using the app"; the app must never prompt for "Allow all the time"
+      (Play-policy gate: we deliberately do not request `ACCESS_BACKGROUND_LOCATION`).
+- [ ] **Silent degrade** — revoke location permission mid-job (T11 above): the job screen shows the
+      location-paused state, no crash, and the foreground-service notification clears. On **iOS**
+      (when relevant) the background start is EXPECTED to no-op — foreground-only streaming, no
+      error surfaced.
+- [ ] **Dead-zone coalescing still holds** — airplane-mode ~1 min while backgrounded behind Maps,
+      then restore: the customer map jumps once to the rider's CURRENT position (one fix, no stale
+      breadcrumb flood), matching the foreground reconnect behaviour.
+
 ### Store readiness
 - [ ] Play listing + versioning/build-number discipline in `app.config.ts`.
 - [ ] **Privacy notice** URL (from `docs/DATA-RETENTION.md`) — must state what's collected + retention +

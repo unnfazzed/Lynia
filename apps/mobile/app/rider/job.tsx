@@ -474,6 +474,8 @@ export default function RiderJob(): React.ReactElement {
             pending={advanceM.isPending}
             onToggle={toggleItem}
             onConfirm={confirmAndCollect}
+            // §5c optional proof-of-pickup photo — the checklist owns capture/upload; never blocks collect.
+            orderId={orderId}
             onCantCollect={() => setBailing(true)}
           />
         ) : next ? (

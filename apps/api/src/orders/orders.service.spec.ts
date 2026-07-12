@@ -1,6 +1,7 @@
 import { BoardNewOrderEvent, type CreateOrderRequest, OFFER_WINDOW_MS, quoteFare } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
+import type { StorageAdapter } from "../adapters/storage/storage.interface";
 import type { OfferExpiryService } from "../matching/offer-expiry.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -504,13 +505,14 @@ describe("OrdersService.getSnapshot", () => {
     events: [],
     ...overrides,
   });
-  const svc = (snap: unknown) =>
+  const svc = (snap: unknown, storage?: StorageAdapter) =>
     new OrdersService(
       { order: { findUnique: async () => snap } } as unknown as PrismaService,
       {} as OfferExpiryService,
       noTracking,
       noNotifications,
       noGateway,
+      storage,
     );
 
   it("404s when the order is missing", async () => {
@@ -586,6 +588,32 @@ describe("OrdersService.getSnapshot", () => {
     // …and the supply signal is null on any non-open status (like expiresAt), so it never lingers.
     const assigned = await svc(row({ status: "assigned" })).getSnapshot("ord-1", "cust-1");
     expect(assigned.ridersNearby).toBeNull();
+  });
+
+  it("resolves the pickup-photo key to a signed read URL for BOTH parties (§5c trust point)", async () => {
+    const createReadUrl = vi.fn(async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`);
+    const storage = { createReadUrl } as unknown as StorageAdapter;
+    const withPhoto = row({ status: "picked_up", pickupPhotoKey: "pickup/rider-1/photo.jpg" });
+    // The customer — the side the photo exists to reassure — gets the viewable URL…
+    const customerView = await svc(withPhoto, storage).getSnapshot("ord-1", "cust-1");
+    expect(customerView.pickupPhotoUrl).toBe("https://signed.example/pickup/rider-1/photo.jpg?ttl=900");
+    expect(createReadUrl).toHaveBeenCalledWith("pickup/rider-1/photo.jpg", expect.any(Number));
+    // …and so does the assigned rider (their attach confirmed on refetch).
+    const riderView = await svc(withPhoto, storage).getSnapshot("ord-1", "rider-1");
+    expect(riderView.pickupPhotoUrl).toBe("https://signed.example/pickup/rider-1/photo.jpg?ttl=900");
+  });
+
+  it("serves pickupPhotoUrl null with no photo, and never mints a URL for nothing", async () => {
+    const createReadUrl = vi.fn();
+    const snap = await svc(row(), { createReadUrl } as unknown as StorageAdapter).getSnapshot("ord-1", "cust-1");
+    expect(snap.pickupPhotoUrl).toBeNull();
+    expect(createReadUrl).not.toHaveBeenCalled();
+  });
+
+  it("serves pickupPhotoUrl null on a storage blip instead of failing the snapshot", async () => {
+    const storage = { createReadUrl: async () => { throw new Error("GCS down"); } } as unknown as StorageAdapter;
+    const snap = await svc(row({ pickupPhotoKey: "pickup/rider-1/photo.jpg" }), storage).getSnapshot("ord-1", "cust-1");
+    expect(snap.pickupPhotoUrl).toBeNull();
   });
 
   it("prefers the Redis live rider position over the stale PG columns", async () => {

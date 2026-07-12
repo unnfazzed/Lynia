@@ -35,3 +35,34 @@ describe("UploadsController.kycPhoto", () => {
     expect(res.key).toMatch(/^kyc\/u2\/[0-9a-f-]+\.png$/);
   });
 });
+
+describe("UploadsController.pickupPhoto", () => {
+  it("mints a signed PUT URL under the caller's pickup namespace with the same size bound", async () => {
+    let receivedKey: string | undefined;
+    let receivedType: string | undefined;
+    let receivedMax: number | undefined;
+    const c = ctl(async (key, contentType, _expires, maxBytes) => {
+      receivedKey = key;
+      receivedType = contentType;
+      receivedMax = maxBytes;
+      return { url: "https://signed.example/put", key };
+    });
+    const res = await c.pickupPhoto({ contentType: "image/jpeg" }, "rider-1");
+    expect(res.uploadUrl).toBe("https://signed.example/put");
+    // Namespaced by the authenticated user — the attach endpoint verifies this prefix, so one rider
+    // can't persist a key that points into another user's objects.
+    expect(res.key).toMatch(/^pickup\/rider-1\/[0-9a-f-]+\.jpg$/);
+    expect(receivedKey).toBe(res.key);
+    expect(receivedType).toBe("image/jpeg");
+    // Same 8 MiB cap + signed-header contract as the KYC photo (one minting path for both).
+    expect(receivedMax).toBe(8 * 1024 * 1024);
+    expect(res.headers["Content-Type"]).toBe("image/jpeg");
+    expect(res.headers["X-Goog-Content-Length-Range"]).toBe(`0,${8 * 1024 * 1024}`);
+  });
+
+  it("uses a .png extension for image/png", async () => {
+    const c = ctl(async (key) => ({ url: "u", key }));
+    const res = await c.pickupPhoto({ contentType: "image/png" }, "u2");
+    expect(res.key).toMatch(/^pickup\/u2\/[0-9a-f-]+\.png$/);
+  });
+});

@@ -44,6 +44,16 @@ const LIVE_SET = [
   "en_route_dropoff",
 ];
 
+/** Where the agreed fare came from — additive field on `GET /admin/orders/:id` (mirrors the API's
+ *  `FareProvenance` in admin-orders.service.ts), derived server-side from the fare-adjust audit
+ *  trail and the selected offer, no schema change. Kept local to this page (the fare card is its
+ *  only consumer) rather than widening the shared `OrderDetail`. Absent/null ⇒ legacy order where
+ *  neither signal survives. */
+type FareProvenance =
+  | { kind: "admin_adjusted"; operator: string; at: string; previousFare: string | null; count?: number }
+  | { kind: "rider_counter"; offeredFare: string; ask: string }
+  | { kind: "customer_ask" };
+
 interface Step {
   label: string;
   state: "done" | "now" | "stall" | "";
@@ -87,7 +97,7 @@ function deriveSteps(o: OrderDetail): Step[] {
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const res = await adminFetchResult<OrderDetail>(`/admin/orders/${id}`);
+  const res = await adminFetchResult<OrderDetail & { fareProvenance?: FareProvenance | null }>(`/admin/orders/${id}`);
 
   if (!("data" in res)) {
     const reason = res.reason;
@@ -122,6 +132,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const live = LIVE_SET.includes(o.status);
   const path = `/orders/${o.id}`;
   const telHref = o.riderPhone ? `tel:${o.riderPhone.replace(/[^\d+]/g, "")}` : undefined;
+  const prov = o.fareProvenance;
 
   return (
     <main className="content">
@@ -233,15 +244,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               rows={[
                 { label: "Proposed", value: <span className="num">${o.proposed}</span> },
                 {
+                  /* The old inline "rider countered" hint fired on any agreed ≠ proposed — which is
+                     also what an admin fare correction looks like. The provenance line below the
+                     table (from the server-derived fareProvenance) replaces it. */
                   label: "Agreed",
-                  value: o.agreed ? (
-                    <span className="num">
-                      ${o.agreed}
-                      {o.agreed !== o.proposed ? <span className="mut" style={{ fontSize: 12 }}> rider countered</span> : null}
-                    </span>
-                  ) : (
-                    "—"
-                  ),
+                  value: o.agreed ? <span className="num">${o.agreed}</span> : "—",
                 },
                 {
                   label: "Collected",
@@ -253,6 +260,25 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                 },
               ]}
             />
+            {/* Provenance of the agreed fare — during a cash dispute this is how ops tells a
+                legitimate market outcome from an operator's correction. */}
+            {o.agreed ? (
+              <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 8 }}>
+                {prov?.kind === "admin_adjusted" ? (
+                  <>
+                    Adjusted by {prov.operator} on {prov.at.slice(0, 10)}
+                    {prov.previousFare ? <> (was ${prov.previousFare})</> : null}
+                    {prov.count ? <> — adjusted {prov.count} times, latest shown</> : null}.
+                  </>
+                ) : prov?.kind === "rider_counter" ? (
+                  <>Agreed via rider counter-offer (${prov.offeredFare} vs ${prov.ask} ask).</>
+                ) : prov?.kind === "customer_ask" ? (
+                  <>Customer&rsquo;s asking price, accepted as-is.</>
+                ) : (
+                  <>Fare source unknown — this order predates provenance tracking.</>
+                )}
+              </div>
+            ) : null}
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
               <FareAdjust id={o.id} agreedOrProposed={o.agreed ?? o.proposed} connected={connected} />
             </div>

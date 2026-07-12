@@ -20,6 +20,12 @@ export function requestKycPhotoUpload(contentType: ImageContentType): Promise<Up
   return apiFetch("/uploads/kyc-photo", { method: "POST", body: { contentType } });
 }
 
+/** Same mint for the rider's proof-of-pickup photo (§5c): PUT the bytes to `uploadUrl`, then attach
+ *  the returned `key` via attachPickupPhoto (orders.ts). */
+export function requestPickupPhotoUpload(contentType: ImageContentType): Promise<UploadTarget> {
+  return apiFetch("/uploads/pickup-photo", { method: "POST", body: { contentType } });
+}
+
 /**
  * PUT the local image file straight to the signed URL — NOT via apiFetch: this is a raw binary upload
  * to GCS with no bearer token. The signature is minted over an exact header set (Content-Type, and now

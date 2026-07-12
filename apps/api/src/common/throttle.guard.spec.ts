@@ -29,6 +29,8 @@ function makeStore(): OtpStore & { counts: Map<string, number> } {
     get: async () => null,
     incrAttempts: async () => 0,
     del: async () => undefined,
+    graceSet: async () => undefined,
+    graceGet: async () => null,
   } as OtpStore & { counts: Map<string, number> };
 }
 

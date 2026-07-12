@@ -64,6 +64,19 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
     ...over,
   });
 
+  // Prisma stub for the detail read: the order row plus the three narrow side-lookups (open issue,
+  // fare-adjust audit rows, selected offer). Audits/offer default to "no signal" so the pre-existing
+  // tests keep exercising just the timeline/PII behaviour.
+  const detailPrisma = (
+    order: unknown,
+    over: { audits?: Array<{ actor: string; createdAt: Date }>; offer?: { type: string; offeredFare: unknown } | null } = {},
+  ) => ({
+    order: { findUnique: async () => order },
+    issue: { findFirst: async () => null },
+    auditLog: { findMany: async () => over.audits ?? [] },
+    offer: { findFirst: async () => over.offer ?? null },
+  });
+
   it("returns null when the order is not found", async () => {
     const prisma = { order: { findUnique: async () => null } };
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);
@@ -77,7 +90,7 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
       { status: "assigned", createdAt: new Date(Date.now() - 15 * 60000) },
       { status: "en_route_dropoff", createdAt: new Date(Date.now() - 2 * 60000) },
     ];
-    const prisma = { order: { findUnique: async () => baseOrder({ events }) }, issue: { findFirst: async () => null } };
+    const prisma = detailPrisma(baseOrder({ events }));
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);
     const d = (await svc.getOrderDetail("o1"))!;
     expect(d.route).toBe("Avondale shops → Borrowdale");
@@ -95,7 +108,7 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
   });
 
   it("MASKS both phones once the order is terminal (outside the reveal window, A-03)", async () => {
-    const prisma = { order: { findUnique: async () => baseOrder({ status: "cancelled" }) }, issue: { findFirst: async () => null } };
+    const prisma = detailPrisma(baseOrder({ status: "cancelled" }));
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);
     const d = (await svc.getOrderDetail("o1"))!;
     expect(d.customerPhone).toBe("+263•••••2222");
@@ -109,12 +122,82 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
     // Regression: the reveal set here is ACTIVE_RIDE_STATUSES, NOT PHONE_REVEAL_STATUSES — the latter
     // includes delivered/completed/undelivered and would leave every finished order unmasked forever.
     for (const status of ["delivered", "completed", "undelivered"]) {
-      const prisma = { order: { findUnique: async () => baseOrder({ status }) }, issue: { findFirst: async () => null } };
+      const prisma = detailPrisma(baseOrder({ status }));
       const svc = new AdminOrdersService(prisma as unknown as PrismaService);
       const d = (await svc.getOrderDetail("o1"))!;
       expect(d.customerPhone).toBe("+263•••••2222");
       expect(d.riderPhone).toBe("+263•••••0001");
     }
+  });
+
+  describe("fareProvenance (derived — no agreedFareSource column)", () => {
+    const svcWith = (order: unknown, over: Parameters<typeof detailPrisma>[1] = {}) =>
+      new AdminOrdersService(detailPrisma(order, over) as unknown as PrismaService);
+
+    it("admin_adjusted when a fare_adjust audit row exists — audit wins over the market signal", async () => {
+      const svc = svcWith(baseOrder({ agreedFare: dec("9.00") }), {
+        audits: [{ actor: "ops-tari", createdAt: new Date("2026-07-01T12:00:00Z") }],
+        offer: { type: "counter", offeredFare: dec("6.00") },
+      });
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.fareProvenance).toEqual({
+        kind: "admin_adjusted",
+        operator: "ops-tari",
+        at: "2026-07-01T12:00:00.000Z",
+        // Pre-adjustment market fare recovered from the selected offer.
+        previousFare: "6.00",
+      });
+    });
+
+    it("admin_adjusted: latest adjustment wins and count is included when >1", async () => {
+      const svc = svcWith(baseOrder({ agreedFare: dec("9.00") }), {
+        // findMany is ordered createdAt desc — the stub returns rows in that order.
+        audits: [
+          { actor: "ops-blessing", createdAt: new Date("2026-07-02T08:00:00Z") },
+          { actor: "ops-tari", createdAt: new Date("2026-07-01T12:00:00Z") },
+        ],
+        // No offer row survives → previousFare unrecoverable, not fabricated.
+        offer: null,
+      });
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.fareProvenance).toEqual({
+        kind: "admin_adjusted",
+        operator: "ops-blessing",
+        at: "2026-07-02T08:00:00.000Z",
+        previousFare: null,
+        count: 2,
+      });
+    });
+
+    it("rider_counter when the selected offer was a counter (no adjustment)", async () => {
+      const svc = svcWith(baseOrder(), { offer: { type: "counter", offeredFare: dec("6.00") } });
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.fareProvenance).toEqual({ kind: "rider_counter", offeredFare: "6.00", ask: "5.00" });
+    });
+
+    it("customer_ask when the selected offer was an accept", async () => {
+      const svc = svcWith(baseOrder({ agreedFare: dec("5.00") }), { offer: { type: "accept", offeredFare: dec("5.00") } });
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.fareProvenance).toEqual({ kind: "customer_ask" });
+    });
+
+    it("customer_ask fallback when no offer row survives but agreed equals the ask", async () => {
+      const svc = svcWith(baseOrder({ agreedFare: dec("5.00") }));
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.fareProvenance).toEqual({ kind: "customer_ask" });
+    });
+
+    it("null (unknown) for a legacy order — no audit, no offer, fare differs from the ask", async () => {
+      const svc = svcWith(baseOrder({ agreedFare: dec("6.00") }));
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.fareProvenance).toBeNull();
+    });
+
+    it("null when no fare was ever agreed — there is nothing to explain", async () => {
+      const svc = svcWith(baseOrder({ status: "open_for_offers", agreedFare: null, riderId: null, rider: null }));
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.fareProvenance).toBeNull();
+    });
   });
 });
 

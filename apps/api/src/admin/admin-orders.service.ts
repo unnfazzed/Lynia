@@ -5,6 +5,31 @@ import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { auditData, deriveItems, ORDER_TIMELINE, routeOf, STATUS_STEP, STUCK_AFTER_MS } from "./admin.shared";
 
+/**
+ * Where an order's `agreedFare` came from — derived, no `agreedFareSource` column (the logged
+ * alternative to a migration). During a cash dispute ops must be able to tell whether an odd
+ * agreedFare is a legitimate market outcome or an operator's correction; the two signals that
+ * already exist are authoritative: the `order.fare_adjust` audit rows (admin correction) and the
+ * selected Offer row (market outcome — selectOffer sets agreedFare = offer.offeredFare).
+ * `null` = legacy/unknown: no audit row, no selected offer, and the fare doesn't match the ask.
+ */
+export type FareProvenance =
+  | {
+      kind: "admin_adjusted";
+      /** The operator who made the (latest) adjustment — the audit row's actor (X-Operator). */
+      operator: string;
+      /** When the latest adjustment was made (ISO). */
+      at: string;
+      /** The pre-adjustment market fare (the selected offer's offeredFare) — null when no offer
+       *  row exists to recover it from. With >1 adjustments the intermediate values were never
+       *  recorded, so this stays the ORIGINAL market fare, not the immediately-previous one. */
+      previousFare: string | null;
+      /** Present only when the fare was adjusted more than once (latest wins above). */
+      count?: number;
+    }
+  | { kind: "rider_counter"; offeredFare: string; ask: string }
+  | { kind: "customer_ask" };
+
 @Injectable()
 export class AdminOrdersService {
   // The gateway is optional so unit tests can construct the service with just Prisma; in the app it's
@@ -164,11 +189,54 @@ export class AdminOrdersService {
 
     // The stuck-order banner used to unconditionally claim "the customer has not reported a problem
     // yet" — a flatly false statement whenever a GetHelpControl report already exists for this order.
-    const openIssue = await this.prisma.issue.findFirst({
-      where: { orderId: id, status: { in: ["open", "investigating"] } },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, type: true },
-    });
+    // The two fare-provenance lookups (see FareProvenance) ride the same round-trip: the audit rows
+    // for any admin fare adjustment on this order, and the offer the customer selected (the market
+    // outcome the agreedFare was set from). Both are narrow, indexed reads.
+    const [openIssue, fareAdjusts, selectedOffer] = await Promise.all([
+      this.prisma.issue.findFirst({
+        where: { orderId: id, status: { in: ["open", "investigating"] } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, type: true },
+      }),
+      this.prisma.auditLog.findMany({
+        where: { action: "order.fare_adjust", target: id },
+        orderBy: { createdAt: "desc" },
+        select: { actor: true, createdAt: true },
+      }),
+      this.prisma.offer.findFirst({
+        where: { orderId: id, status: "selected" },
+        select: { type: true, offeredFare: true },
+      }),
+    ]);
+
+    // Derive the fare's provenance (only meaningful once a fare was actually agreed). An admin
+    // correction ALWAYS wins over the market signal — the audit row proves the stored agreedFare is
+    // no longer the number the customer and rider shook on. Otherwise the selected offer's type is
+    // the truth (`counter` = rider named a different price the customer accepted; `accept` = the
+    // customer's ask taken as-is — makeOffer pins an accept's offeredFare to proposedFare). The
+    // equality fallback covers legacy orders whose offer rows are gone but whose fare matches the ask.
+    let fareProvenance: FareProvenance | null = null;
+    if (order.agreedFare != null) {
+      if (fareAdjusts.length > 0) {
+        const latest = fareAdjusts[0]!;
+        fareProvenance = {
+          kind: "admin_adjusted",
+          operator: latest.actor,
+          at: latest.createdAt.toISOString(),
+          previousFare: selectedOffer?.offeredFare.toString() ?? null,
+          ...(fareAdjusts.length > 1 ? { count: fareAdjusts.length } : {}),
+        };
+      } else if (selectedOffer?.type === "counter") {
+        fareProvenance = {
+          kind: "rider_counter",
+          offeredFare: selectedOffer.offeredFare.toString(),
+          ask: order.proposedFare.toString(),
+        };
+      } else if (selectedOffer?.type === "accept" || Number(order.agreedFare) === Number(order.proposedFare)) {
+        fareProvenance = { kind: "customer_ask" };
+      }
+      // else: no audit row, no offer row, fare ≠ ask — a legacy order; provenance stays null (unknown).
+    }
 
     const revealed = ACTIVE_RIDE_STATUSES.includes(order.status);
     const now = Date.now();
@@ -231,6 +299,7 @@ export class AdminOrdersService {
       customerPhone: revealed ? order.customer.phone : maskPhone(order.customer.phone),
       proposed: order.proposedFare.toString(),
       agreed: order.agreedFare?.toString() ?? null,
+      fareProvenance,
       km: order.distanceKm ?? 0,
       items,
       timeline,

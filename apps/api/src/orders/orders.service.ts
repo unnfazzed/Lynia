@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
+import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -33,6 +34,11 @@ function assertWithinServiceCorridor(pickup: LatLng, dropoff: LatLng): void {
 /** Radius (metres) for the new-order push to nearby online riders (CONCEPT §3.10). Harare-corridor
  *  scale; the REST nearby endpoint defaults to the same neighbourhood. */
 const BROADCAST_RADIUS_M = 5000;
+
+/** TTL for the pickup-photo signed read URL on the snapshot — comfortably longer than the 15s poll
+ *  that refreshes it, short enough that a leaked URL goes stale fast (matches the admin KYC-photo
+ *  review TTL). */
+const PICKUP_PHOTO_READ_URL_TTL_SECONDS = 900;
 
 /** The fields `create`'s response is built from, shared by the fresh-create path and both
  *  idempotent-replay paths (pre-existing match, and the loser of a concurrent create race). */
@@ -86,6 +92,10 @@ export class OrdersService {
     private readonly tracking: TrackingService,
     private readonly notifications: NotificationsService,
     private readonly gateway: TrackingGateway,
+    // Optional in the TS signature only, so the many existing unit specs that never exercise the
+    // pickup-photo path keep their 5-arg construction; Nest always injects it in production (the
+    // storage adapter module is @Global) and getSnapshot degrades to a null URL without it.
+    @Inject(STORAGE) private readonly storage?: StorageAdapter,
   ) {}
 
   /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */
@@ -530,6 +540,7 @@ export class OrdersService {
         cancelReason: true,
         cancelledBy: true,
         collectedAt: true,
+        pickupPhotoKey: true,
         customer: { select: { phone: true } },
         rider: {
           select: {
@@ -584,6 +595,16 @@ export class OrdersService {
     // and best-effort — a geo blip yields null → the client keeps the calm "finding riders" state.
     const ridersNearby = order.status === "open_for_offers" ? await this.countNearbyForPickup(order.pickup) : null;
 
+    // §5c proof-of-pickup: resolve the stored object key to a short-lived signed read URL for BOTH
+    // parties — the customer seeing "parcel is with your rider — photo attached" is the whole trust
+    // point, and the rider gets their own attach confirmed. Same on-demand minting as the admin KYC
+    // review (createReadUrl over the stored key, never a stored URL), and best-effort: a storage blip
+    // serves null rather than failing the snapshot the tracker depends on.
+    const pickupPhotoUrl =
+      order.pickupPhotoKey && this.storage
+        ? await this.storage.createReadUrl(order.pickupPhotoKey, PICKUP_PHOTO_READ_URL_TTL_SECONDS).catch(() => null)
+        : null;
+
     return {
       id: order.id,
       status: order.status,
@@ -603,6 +624,9 @@ export class OrdersService {
       note: order.note,
       // Per-item pickup confirmation, so the rider's checklist state survives a reconnect/refetch.
       itemsCollected: (order.itemsCollected as number[] | null) ?? null,
+      // §5c proof-of-pickup photo as a viewable (signed, short-lived) URL — null when no photo was
+      // attached, on a storage blip, or on every pre-0022 row. Additive: old clients ignore it.
+      pickupPhotoUrl,
       // C6: the failed-hand-off reason + attempt count, shown verbatim on the customer's terminal
       // screen. Null until the order is `undelivered`.
       undeliveredReason: order.undeliveredReason,

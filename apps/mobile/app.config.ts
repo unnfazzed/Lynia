@@ -60,7 +60,22 @@ const config: ExpoConfig = {
       "expo-splash-screen",
       { image: "./assets/splash-icon.png", imageWidth: 120, resizeMode: "contain", backgroundColor: "#FFFFFF" },
     ],
-    ["expo-location", { locationWhenInUsePermission: "LyniaGo uses your location to set the pickup point." }],
+    [
+      "expo-location",
+      {
+        locationWhenInUsePermission: "LyniaGo uses your location to set the pickup point.",
+        // Rider GPS must keep streaming while the app is backgrounded behind "Follow route in Google
+        // Maps" (src/realtime/background-location-task.ts). This flag makes the plugin add the
+        // FOREGROUND_SERVICE + FOREGROUND_SERVICE_LOCATION manifest permissions (verified against the
+        // installed expo-location@18 plugin source) so startLocationUpdatesAsync can run its Android
+        // foreground service. Deliberately NOT setting isAndroidBackgroundLocationEnabled — that adds
+        // ACCESS_BACKGROUND_LOCATION and drags the listing through Play's background-location policy
+        // review, and the foreground service works with plain while-in-use permission, which is all we
+        // ever request. Native manifest change → new binary required (fingerprint runtimeVersion
+        // shifts); this is NOT OTA-able.
+        isAndroidForegroundServiceEnabled: true,
+      },
+    ],
     [
       "expo-image-picker",
       {
