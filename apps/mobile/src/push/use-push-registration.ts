@@ -1,6 +1,6 @@
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { Session } from "../auth/session";
 import { pushDestination, registerForPushNotificationsAsync, unregisterForPushNotificationsAsync } from "./push";
 
@@ -43,14 +43,27 @@ export function usePushRegistration(session: Session | null): void {
   // lifetime and is a no-op for any notification that carries no navigable orderId (pushDestination
   // returns null).
   const isRider = session?.role === "rider";
+  // JOURNEY-BUGS: getLastNotificationResponseAsync() returns the SAME cached response every time it's
+  // called until explicitly cleared — it isn't consumed on read. This effect re-runs on every isRider
+  // change (session hydrating, or a sign-out → different-account sign-in on this device, since this
+  // hook is mounted once for the app's lifetime at the root layout), so without a clear it replayed the
+  // same stale cold-start deep link on every one of those transitions — including navigating a freshly
+  // signed-in DIFFERENT account straight to an order from the previous session's push. Consume it (and
+  // clear it) at most once per app lifetime; the ref is set synchronously so a rapid second isRider
+  // change before the read resolves can't fire a second read.
+  const coldStartConsumed = useRef(false);
   useEffect(() => {
-    // Cold start: the response that LAUNCHED the app (fully killed, not just backgrounded) never
-    // fires addNotificationResponseReceivedListener — it has to be read back explicitly on mount.
-    void Notifications.getLastNotificationResponseAsync().then((response) => {
-      if (!response) return;
-      const to = pushDestination(response.notification.request.content.data, isRider);
-      if (to) router.push(to);
-    });
+    if (!coldStartConsumed.current) {
+      coldStartConsumed.current = true;
+      // Cold start: the response that LAUNCHED the app (fully killed, not just backgrounded) never
+      // fires addNotificationResponseReceivedListener — it has to be read back explicitly on mount.
+      void Notifications.getLastNotificationResponseAsync().then((response) => {
+        void Notifications.clearLastNotificationResponseAsync();
+        if (!response) return;
+        const to = pushDestination(response.notification.request.content.data, isRider);
+        if (to) router.push(to);
+      });
+    }
 
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const to = pushDestination(response.notification.request.content.data, isRider);
