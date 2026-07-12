@@ -209,12 +209,15 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
   }
   // A tx whose writes are recorded; $transaction runs the service callback against THIS object, so a
   // recorded orderUpdate AND a recorded audit prove both landed inside the same transaction.
-  function makeTx(over: { order?: unknown } = {}) {
+  function makeTx(over: { order?: unknown; updateCount?: number } = {}) {
     const calls: Calls = { orderUpdate: null, orderEvent: null, audit: null };
+    // DS-03: cancel/adjust now CAS via updateMany and reject on a 0-row result (the status/fare moved
+    // under the read). Default to 1 row (success); a test can force 0 to exercise the conflict path.
+    const count = over.updateCount ?? 1;
     const tx = {
       order: {
         findUnique: async () => ("order" in over ? over.order : { id: "o1", status: "assigned", agreedFare: dec("6.00") }),
-        update: async (args: Calls["orderUpdate"]) => { calls.orderUpdate = args; return {}; },
+        updateMany: async (args: Calls["orderUpdate"]) => { calls.orderUpdate = args; return { count }; },
       },
       offer: { updateMany: async () => ({ count: 0 }) },
       orderEvent: { create: async (args: Calls["orderEvent"]) => { calls.orderEvent = args; return {}; } },
@@ -275,6 +278,23 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);
     await expect(svc.adjustFare("admin-1", "o1", { agreedFare: 7.5, reason: "x" })).rejects.toThrow(/no agreed fare/i);
     expect(calls.orderUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
+  });
+
+  it("cancelOrder CAS-guards the observed status and aborts (no event, no audit) when 0 rows match — DS-03", async () => {
+    // A concurrent transition (e.g. confirmDelivery → delivered) moved the row between the read and the
+    // write, so the status-guarded updateMany matches 0 rows. The cancel must roll back, not clobber it.
+    const { prisma, calls } = makeTx({ updateCount: 0 });
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService);
+    await expect(svc.cancelOrder("admin-1", "o1", { reason: "x" })).rejects.toThrow(/changed while cancelling/i);
+    expect(calls.orderEvent).toBeNull();
+    expect(calls.audit).toBeNull();
+  });
+
+  it("adjustFare CAS-guards the observed fare and aborts (no audit) when 0 rows match — DS-03", async () => {
+    const { prisma, calls } = makeTx({ updateCount: 0 });
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService);
+    await expect(svc.adjustFare("admin-1", "o1", { agreedFare: 7.5, reason: "x" })).rejects.toThrow(/changed while adjusting/i);
     expect(calls.audit).toBeNull();
   });
 });

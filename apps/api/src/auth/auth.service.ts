@@ -124,17 +124,34 @@ export class AuthService {
    *  profileId; only firstName/lastName are touched. Names are already trimmed + length-capped by the
    *  UpdateProfileRequest contract. Returns the same shape as getProfile so the client can refresh. */
   async updateProfile(profileId: string, body: UpdateProfileRequest) {
-    await this.prisma.profile.update({
-      where: { id: profileId },
-      // idNumber is stored on the account record (0·6), not verified. Only write it when provided so
-      // a name-only edit (or the returning-user path) never clears an existing value.
-      data: {
-        firstName: body.firstName,
-        lastName: body.lastName,
-        // Store the national ID encrypted at rest + its dedup hash (LR8); never the raw number.
-        ...(body.idNumber ? { idNumber: this.pii.encryptId(body.idNumber), idNumberHash: this.pii.hashId(body.idNumber) } : {}),
-      },
-      select: { id: true },
+    const idNumberHash = body.idNumber ? this.pii.hashId(body.idNumber) : undefined;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.profile.update({
+        where: { id: profileId },
+        // idNumber is stored on the account record (0·6), not verified. Only write it when provided so
+        // a name-only edit (or the returning-user path) never clears an existing value.
+        data: {
+          firstName: body.firstName,
+          lastName: body.lastName,
+          // Store the national ID encrypted at rest + its dedup hash (LR8); never the raw number.
+          ...(idNumberHash ? { idNumber: this.pii.encryptId(body.idNumber!), idNumberHash } : {}),
+        },
+      });
+
+      // DS-11: the A-04 duplicate-ID / ban-evasion flag is otherwise computed ONLY at completeProfile
+      // / becomeRider. Rewriting idNumber here without recomputing it lets a rider onboard under a
+      // clean ID (flag clear) and later swap in the real, colliding ID — or launder a flagged ID to a
+      // clean one — silently bypassing the reviewer's signal. Recompute against the new hash and
+      // persist it on the rider row (updateMany: a no-op for a non-rider caller), in the same tx.
+      if (idNumberHash) {
+        const dupCount = await tx.profile.count({ where: { idNumberHash, id: { not: profileId } } });
+        await tx.rider.updateMany({ where: { profileId }, data: { duplicateIdFlag: dupCount > 0 } });
+        if (dupCount > 0) {
+          this.logger.warn(
+            `Profile ${profileId} changed national ID to one already on another account — A-04 flag set (DS-11)`,
+          );
+        }
+      }
     });
     return this.getProfile(profileId);
   }

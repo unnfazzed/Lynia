@@ -75,6 +75,13 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
       this.worker.on("failed", (job, err) =>
         this.logger.error(`expiry job ${job?.id ?? "?"} failed: ${err.message}`),
       );
+      // DS-02: BullMQ re-emits its underlying ioredis connection errors as an EventEmitter `error`
+      // event. With NO listener, Node throws "Unhandled 'error' event" synchronously → uncaughtException
+      // → main.ts exits the whole instance on a mere Redis blip. `.on("failed")` covers job failures,
+      // NOT connection errors — attach an `error` listener that logs and keeps serving (the DB
+      // reconciler below is the functional backstop while Redis is down).
+      this.queue.on("error", (err) => this.logger.error(`offer-expiry queue error: ${err.message}`));
+      this.worker.on("error", (err) => this.logger.error(`offer-expiry worker error: ${err.message}`));
       this.logger.log("Offer-expiry worker started");
     } else {
       this.logger.warn("REDIS_URL not set — relying on the DB reconciler to auto-expire open_for_offers orders");

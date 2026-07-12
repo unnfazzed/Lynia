@@ -112,6 +112,12 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       this.worker.on("failed", (job, err) =>
         this.logger.error(`auto-close job ${job?.id ?? "?"} failed: ${err.message}`),
       );
+      // DS-02: attach an EventEmitter `error` listener on both the queue and worker. Without it, a
+      // Redis connection error (BullMQ re-emits ioredis errors as `error`) is an unhandled EventEmitter
+      // event → synchronous throw → uncaughtException → the instance exits on a Redis blip. Log and keep
+      // serving; the reconcileStaleDeliveries backstop closes orders while Redis is unavailable.
+      this.queue.on("error", (err) => this.logger.error(`auto-close queue error: ${err.message}`));
+      this.worker.on("error", (err) => this.logger.error(`auto-close worker error: ${err.message}`));
       this.logger.log("Rating auto-close worker started");
     } else {
       this.logger.warn("REDIS_URL not set — relying on the DB reconciler to auto-close delivered orders");
@@ -709,7 +715,17 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     await this.queue.add(
       "autoclose",
       { orderId },
-      { delay: RATING_WINDOW_MS, jobId: orderId, removeOnComplete: true, removeOnFail: 100 },
+      {
+        delay: RATING_WINDOW_MS,
+        jobId: orderId,
+        removeOnComplete: true,
+        removeOnFail: 100,
+        // DS-06: give a transient DB/Redis blip a few retries before falling back to the reconciler,
+        // matching OfferExpiryService.schedule. completeOrder is idempotent (CAS on `status:delivered`)
+        // so a retry can never double-close.
+        attempts: 3,
+        backoff: { type: "exponential", delay: 5_000 },
+      },
     );
   }
 }
