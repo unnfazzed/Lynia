@@ -165,37 +165,53 @@ describe("AuthService.getProfile", () => {
 describe("AuthService.updateProfile", () => {
   const row = { id: "p1", role: "customer", firstName: "Chipo", lastName: "Marufu", phone: "+263771111111", email: null, photoUrl: null, ordersCount: 0, rider: null };
 
-  it("writes the national ID onto the account record when provided (0·6)", async () => {
-    let written: Record<string, unknown> | undefined;
-    const { svc } = make(baseEnv, {
+  // The write now runs in a $transaction (DS-11): profile.update + a duplicate-ID recompute that
+  // persists the A-04 flag on the rider row. `dupCount` = how many OTHER accounts share the new ID.
+  function makeUpdate(dupCount = 0) {
+    const rec: { written?: Record<string, unknown>; flag?: { where: unknown; data: Record<string, unknown> } } = {};
+    const tx = {
       profile: {
-        update: async (a: { data: Record<string, unknown> }) => {
-          written = a.data;
-          return { id: "p1" };
-        },
-        findUnique: async () => row,
+        update: async (a: { data: Record<string, unknown> }) => ((rec.written = a.data), { id: "p1" }),
+        count: async () => dupCount,
       },
+      rider: {
+        updateMany: async (a: { where: unknown; data: Record<string, unknown> }) => ((rec.flag = a), { count: 1 }),
+      },
+    };
+    const { svc } = make(baseEnv, {
+      $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+      profile: { findUnique: async () => row },
     });
+    return { svc, rec };
+  }
+
+  it("writes the national ID onto the account record when provided (0·6)", async () => {
+    const { svc, rec } = makeUpdate();
     await svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-123456-A-42" });
     // The raw national ID is never persisted: id_number is ciphertext + a dedup hash (LR8).
-    expect(written).toMatchObject({ firstName: "Chipo", lastName: "Marufu", idNumberHash: pii.hashId("63-123456-A-42") });
-    expect(pii.isEncrypted(written?.idNumber as string)).toBe(true);
-    expect(pii.decryptId(written?.idNumber as string)).toBe("63-123456-A-42");
+    expect(rec.written).toMatchObject({ firstName: "Chipo", lastName: "Marufu", idNumberHash: pii.hashId("63-123456-A-42") });
+    expect(pii.isEncrypted(rec.written?.idNumber as string)).toBe(true);
+    expect(pii.decryptId(rec.written?.idNumber as string)).toBe("63-123456-A-42");
   });
 
-  it("leaves idNumber untouched on a name-only update (never clears a stored value)", async () => {
-    let written: Record<string, unknown> | undefined;
-    const { svc } = make(baseEnv, {
-      profile: {
-        update: async (a: { data: Record<string, unknown> }) => {
-          written = a.data;
-          return { id: "p1" };
-        },
-        findUnique: async () => row,
-      },
-    });
+  it("leaves idNumber untouched on a name-only update (never clears a stored value, no dup recompute)", async () => {
+    const { svc, rec } = makeUpdate();
     await svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu" });
-    expect(written).not.toHaveProperty("idNumber");
+    expect(rec.written).not.toHaveProperty("idNumber");
+    // No idNumber change → the A-04 flag is not recomputed/written.
+    expect(rec.flag).toBeUndefined();
+  });
+
+  it("DS-11: recomputes the A-04 duplicate-ID flag = true when the new ID collides with another account", async () => {
+    const { svc, rec } = makeUpdate(1);
+    await svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-123456-A-42" });
+    expect(rec.flag).toEqual({ where: { profileId: "p1" }, data: { duplicateIdFlag: true } });
+  });
+
+  it("DS-11: clears the A-04 flag when the new ID is unique (launder-back is caught too)", async () => {
+    const { svc, rec } = makeUpdate(0);
+    await svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-999999-Z-01" });
+    expect(rec.flag).toEqual({ where: { profileId: "p1" }, data: { duplicateIdFlag: false } });
   });
 });
 

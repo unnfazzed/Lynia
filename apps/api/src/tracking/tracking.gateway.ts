@@ -337,9 +337,17 @@ export class TrackingGateway
 
   /** Fire one `position` emit and record its glass-to-server latency. Best-effort. */
   private flushPositionEmit(room: string, payload: PositionPayload): void {
-    const done = this.metrics.startTimer();
-    this.server?.to(room).emit(WS_EVENTS.position, payload);
-    this.metrics.recordPositionEmit(done());
+    // DS-09: this runs both inline (inside the awaited riderLocation handler, where Nest catches) AND
+    // from the trailing-edge `setTimeout` callback, where there is no surrounding try/catch — a
+    // synchronous throw from `emit`/metrics there would be an uncaughtException → process exit. Guard
+    // the body so the timer path can never crash the instance on a best-effort position push.
+    try {
+      const done = this.metrics.startTimer();
+      this.server?.to(room).emit(WS_EVENTS.position, payload);
+      this.metrics.recordPositionEmit(done());
+    } catch (err) {
+      this.logger.warn(`position emit failed for room ${room}: ${(err as Error).message}`);
+    }
   }
 
   /**

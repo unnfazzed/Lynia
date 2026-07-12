@@ -4,6 +4,7 @@ import { z } from "zod";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { CurrentUser } from "../common/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 
 // Restrict to the formats expo-image-picker yields, so a signed URL is never minted for an arbitrary
@@ -23,6 +24,10 @@ interface MintedUpload {
   headers: Record<string, string>;
 }
 
+// DS-07: every mint is a GCP IAM `signBlob` call on a project-shared quota (also used by admin
+// KYC-photo and pickup-photo read URLs), so an unthrottled loop can exhaust signing platform-wide.
+// A modest per-caller/IP cap on the minting routes; genuine upload flows need only a couple of mints.
+@Throttle({ limit: 20, windowSec: 60, keyPrefix: "uploads" })
 @Controller("uploads")
 @UseGuards(JwtAuthGuard)
 export class UploadsController {

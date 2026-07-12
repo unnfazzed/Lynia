@@ -61,6 +61,22 @@ export class PrivacyService {
     if (profile.phone.startsWith("erased:")) return { erased: true };
 
     await this.prisma.$transaction(async (tx) => {
+      // Re-check the active-ride guard INSIDE the transaction (DS-10). The pre-flight read above is
+      // a fast rejection, but between it and this scrub a counterparty could select this rider onto a
+      // new order (or the customer could place one), which the outer read wouldn't see — anonymising
+      // mid-ride would then break the counterparty's live delivery. Re-reading here narrows that
+      // window to the transaction itself.
+      const activeMidErase = await tx.order.findFirst({
+        where: {
+          status: { in: ACTIVE_RIDE_STATUSES },
+          OR: [{ customerId: profileId }, { riderId: profileId }],
+        },
+        select: { id: true },
+      });
+      if (activeMidErase) {
+        throw new ConflictException("Finish or cancel your active delivery before deleting your account");
+      }
+
       // Anonymise the profile. phone is UNIQUE + NOT NULL, so it becomes a non-dialable tombstone
       // (frees the real number for a genuine re-signup, which mints a fresh profile).
       await tx.profile.update({
@@ -103,6 +119,16 @@ export class PrivacyService {
         data: { lat: null, lng: null },
       });
 
+      // Scrub the precise location on every SOS this user raised (DS-01). `SosEvent` stores exact
+      // lat/lng + raisedByProfileId and was added after this erasure logic — it was previously left
+      // behind, retaining the most sensitive location data in the system (emergency moments) tied to
+      // the (now anonymised) profile id forever. Keep the row (safety/incident ledger), null the GPS —
+      // exactly as we do for OrderEvent above.
+      await tx.sosEvent.updateMany({
+        where: { raisedByProfileId: profileId },
+        data: { lat: null, lng: null },
+      });
+
       // Scrub the dialable contact PII embedded in the pickup/dropoff JSON of every order this profile
       // PLACED (as the customer — the party who supplied those contacts). Prisma can't patch a nested
       // JSON key in bulk, so read-modify-write each order; a single user's order count is bounded and
@@ -141,12 +167,22 @@ export class PrivacyService {
       data: { lat: null, lng: null },
     });
 
+    // SOS coordinates are on the same GPS-retention clock (DS-01): an incident is actionable in the
+    // moment, not months later, so past the window the precise location has no operational use and
+    // must not linger. Keep the event row; null the coords.
+    const sosGps = await this.prisma.sosEvent.updateMany({
+      where: { createdAt: { lt: gpsCutoff }, NOT: { lat: null } },
+      data: { lat: null, lng: null },
+    });
+
     // Sessions that lapsed more than the window ago are dead auth artifacts.
     const sessions = await this.prisma.session.deleteMany({
       where: { expiresAt: { lt: sessionCutoff } },
     });
 
-    this.logger.log(`Retention sweep: scrubbed ${gps.count} GPS events, purged ${sessions.count} expired sessions`);
-    return { gpsScrubbed: gps.count, sessionsPurged: sessions.count };
+    this.logger.log(
+      `Retention sweep: scrubbed ${gps.count} GPS events + ${sosGps.count} SOS coords, purged ${sessions.count} expired sessions`,
+    );
+    return { gpsScrubbed: gps.count + sosGps.count, sessionsPurged: sessions.count };
   }
 }

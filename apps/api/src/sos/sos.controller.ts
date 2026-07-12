@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Param, ParseUUIDPipe, Post, UseG
 import { RaiseSosRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { SosService } from "./sos.service";
 
@@ -14,6 +15,10 @@ import { SosService } from "./sos.service";
 export class SosController {
   constructor(private readonly sos: SosService) {}
 
+  // DS-05: each SOS writes a row and fans a push out to ops + the counterparty. Unthrottled it is an
+  // alert-flood / push-spam vector. The limit is deliberately generous — a genuine repeat SOS on a
+  // real incident must still get through — while blunting a scripted flood.
+  @Throttle({ limit: 10, windowSec: 60, keyPrefix: "sos-raise" })
   @Post()
   raise(
     @Param("orderId", ParseUUIDPipe) orderId: string,

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Post, UseGuards } from "@nestjs/common";
 import { RegisterDeviceTokenRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { NotificationsService } from "./notifications.service";
 
@@ -23,6 +24,9 @@ export class NotificationsController {
   }
 
   /** Mobile posts its FCM device token after login (and on token refresh). */
+  // DS-08: another authenticated write outside the throttle convention. Idempotent upsert, but the
+  // reassign-on-upsert means an uncapped route can be hammered to rewrite token ownership; a modest cap.
+  @Throttle({ limit: 20, windowSec: 60, keyPrefix: "device-token" })
   @Post("device-token")
   register(
     @Body(new ZodBody(RegisterDeviceTokenRequest)) body: RegisterDeviceTokenRequest,

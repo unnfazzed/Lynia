@@ -11,6 +11,10 @@ function eraseHarness(
   profile: { phone: string } | null,
   activeRide: boolean,
   placedOrders: Array<{ id: string; pickup: unknown; dropoff: unknown }> = [],
+  // DS-10: the active-ride guard is now ALSO re-checked inside the transaction. Defaults to no ride in
+  // the tx (the common case); set true to exercise a ride that appeared between the pre-flight read and
+  // the scrub.
+  txActiveRide = false,
 ) {
   const calls: Record<string, unknown> = {};
   const orderUpdates: Array<{ where: { id: string }; data: Record<string, unknown> }> = [];
@@ -21,7 +25,10 @@ function eraseHarness(
     deviceToken: { deleteMany: vi.fn(async () => ((calls.deviceDel = true), { count: 1 })) },
     session: { deleteMany: vi.fn(async () => ((calls.sessionDel = true), { count: 2 })) },
     orderEvent: { updateMany: vi.fn(async (a: unknown) => ((calls.eventUpdate = a), { count: 3 })) },
+    // DS-01: SOS location is now scrubbed in the same transaction.
+    sosEvent: { updateMany: vi.fn(async (a: unknown) => ((calls.sosUpdate = a), { count: 1 })) },
     order: {
+      findFirst: vi.fn(async () => (txActiveRide ? { id: "otx" } : null)),
       findMany: vi.fn(async () => placedOrders),
       update: vi.fn(async (a: { where: { id: string }; data: Record<string, unknown> }) => (orderUpdates.push(a), {})),
     },
@@ -57,7 +64,20 @@ describe("PrivacyService.eraseAccount", () => {
     expect(calls.deviceDel).toBe(true);
     expect(calls.sessionDel).toBe(true);
     expect((calls.eventUpdate as { data: Record<string, unknown> }).data).toEqual({ lat: null, lng: null });
+    // DS-01: the SOS location trail is scrubbed for every SOS this profile raised, in the same tx.
+    expect(calls.sosUpdate as { where: unknown; data: unknown }).toEqual({
+      where: { raisedByProfileId: "p1" },
+      data: { lat: null, lng: null },
+    });
     expect(tx.profile.update).toHaveBeenCalledOnce();
+  });
+
+  it("re-checks the active-ride guard inside the tx and aborts if a ride appeared mid-erase (DS-10)", async () => {
+    // Pre-flight read sees no ride (activeRide=false) but one exists by the time the tx runs.
+    const { svc, tx } = eraseHarness({ phone: "+263771234567" }, false, [], true);
+    await expect(svc.eraseAccount("p1")).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.profile.update).not.toHaveBeenCalled();
+    expect(tx.sosEvent.updateMany).not.toHaveBeenCalled();
   });
 
   it("is idempotent — an already-erased (tombstoned) profile is a no-op", async () => {
@@ -87,8 +107,9 @@ describe("PrivacyService.eraseAccount", () => {
 });
 
 describe("PrivacyService.purgeExpiredData", () => {
-  it("scrubs GPS past the window and purges long-lapsed sessions, returning counts", async () => {
+  it("scrubs GPS + SOS coords past the window and purges long-lapsed sessions, returning counts", async () => {
     let gpsWhere: { createdAt: { lt: Date } } | undefined;
+    let sosWhere: { createdAt: { lt: Date } } | undefined;
     let sessWhere: { expiresAt: { lt: Date } } | undefined;
     const prisma = {
       orderEvent: {
@@ -96,6 +117,14 @@ describe("PrivacyService.purgeExpiredData", () => {
           gpsWhere = a.where;
           expect(a.data).toEqual({ lat: null, lng: null });
           return { count: 5 };
+        },
+      },
+      // DS-01: SOS coords ride the same GPS-retention cutoff.
+      sosEvent: {
+        updateMany: async (a: { where: { createdAt: { lt: Date } }; data: unknown }) => {
+          sosWhere = a.where;
+          expect(a.data).toEqual({ lat: null, lng: null });
+          return { count: 2 };
         },
       },
       session: {
@@ -106,9 +135,11 @@ describe("PrivacyService.purgeExpiredData", () => {
 
     const now = new Date("2026-07-06T00:00:00Z");
     const res = await svc.purgeExpiredData(now);
-    expect(res).toEqual({ gpsScrubbed: 5, sessionsPurged: 7 });
-    // 90-day GPS cutoff, 30-day session cutoff, measured back from `now`.
+    // gpsScrubbed now folds in the SOS coords (5 + 2).
+    expect(res).toEqual({ gpsScrubbed: 7, sessionsPurged: 7 });
+    // 90-day GPS cutoff (shared by order + SOS coords), 30-day session cutoff, measured back from `now`.
     expect(gpsWhere!.createdAt.lt.toISOString()).toBe(new Date("2026-04-07T00:00:00Z").toISOString());
+    expect(sosWhere!.createdAt.lt.toISOString()).toBe(new Date("2026-04-07T00:00:00Z").toISOString());
     expect(sessWhere!.expiresAt.lt.toISOString()).toBe(new Date("2026-06-06T00:00:00Z").toISOString());
   });
 });

@@ -87,8 +87,14 @@ export class AdminOrdersService {
       if (TERMINAL_STATUSES.includes(order.status)) {
         throw new ConflictException("Order is already in a terminal state");
       }
-      await tx.order.update({
-        where: { id: orderId },
+      // DS-03: CAS on the status we just read instead of a blind update-by-id. The findUnique above
+      // takes no row lock, so a concurrent lifecycle transition (e.g. the rider's confirmDelivery
+      // flipping the order to `delivered` — deliberately non-terminal, so a live target) could commit
+      // between the read and this write, and an unguarded update would clobber it back to `cancelled`.
+      // Guarding on `status: order.status` makes the two serialize: if the row moved under us, count is
+      // 0 and we reject as a conflict (ops refreshes and re-decides) rather than silently overwriting.
+      const cancelled = await tx.order.updateMany({
+        where: { id: orderId, status: order.status },
         data: {
           status: "cancelled",
           cancelledBy: actor,
@@ -96,6 +102,9 @@ export class AdminOrdersService {
           cancelledAt: new Date(),
         },
       });
+      if (cancelled.count === 0) {
+        throw new ConflictException("Order changed while cancelling — refresh and try again");
+      }
       // P2-3: decline any still-pending offers so they don't linger against a terminal order (riders
       // otherwise keep seeing a live "offer sent" on an order that's dead). Same transaction as the cancel.
       await tx.offer.updateMany({ where: { orderId, status: "pending" }, data: { status: "declined" } });
@@ -139,7 +148,16 @@ export class AdminOrdersService {
       if (order.agreedFare == null) {
         throw new ConflictException("Order has no agreed fare to adjust");
       }
-      await tx.order.update({ where: { id: orderId }, data: { agreedFare: input.agreedFare } });
+      // DS-03: CAS on the exact fare we read so two operators adjusting concurrently can't both commit
+      // (last-writer-wins + a duplicate audit row for one logical correction). The loser sees a 0-count
+      // and is told to refresh — the same optimistic-concurrency guard the lifecycle transitions use.
+      const adjusted = await tx.order.updateMany({
+        where: { id: orderId, agreedFare: order.agreedFare },
+        data: { agreedFare: input.agreedFare },
+      });
+      if (adjusted.count === 0) {
+        throw new ConflictException("Order fare changed while adjusting — refresh and try again");
+      }
       const audit = await tx.auditLog.create({
         data: auditData(actor, "order.fare_adjust", orderId, input.reason, input.note),
         select: { id: true },
