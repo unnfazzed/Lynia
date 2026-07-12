@@ -1,8 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import {
+  DISPUTE_PHONE_REVEAL_STATUSES,
   ISSUE_TYPE_LABELS,
   type IssueStatus,
-  PHONE_REVEAL_STATUSES,
   type RaiseIssueRequest,
   type ResolveIssueRequest,
 } from "@lynia/shared";
@@ -142,7 +142,7 @@ export class IssuesService {
       },
     });
 
-    const revealed = order ? PHONE_REVEAL_STATUSES.includes(order.status) : false;
+    const revealed = order ? DISPUTE_PHONE_REVEAL_STATUSES.includes(order.status) : false;
     const riderName = fullName(order?.rider?.profile);
     const customerName = fullName(order?.customer);
     const openerName = issue.openedByRole === "rider" ? riderName : customerName;
@@ -161,10 +161,10 @@ export class IssuesService {
       fare: (order?.agreedFare ?? order?.proposedFare)?.toString() ?? "0",
       rider: riderName,
       customer: customerName,
-      // Revealed inside PHONE_REVEAL_STATUSES (which includes the post-trip delivered/completed/
-      // undelivered states a dispute is usually raised in), masked otherwise — same rule as
-      // orders.service/admin. So for the common completed-order dispute ops CAN see the numbers to
-      // call the parties (AdminGuard-gated); this is intended, not a leak.
+      // Revealed inside DISPUTE_PHONE_REVEAL_STATUSES (the wider ops set, which — unlike the
+      // party-to-party PHONE_REVEAL_STATUSES — still includes `completed`, the state most disputes are
+      // raised in), masked otherwise. So for the common completed-order dispute ops CAN see the numbers
+      // to call the parties (AdminGuard-gated); this is intended, not a leak.
       riderPhone: order?.rider ? (revealed ? order.rider.profile.phone : maskPhone(order.rider.profile.phone)) : undefined,
       customerPhone: order ? (revealed ? order.customer.phone : maskPhone(order.customer.phone)) : undefined,
       facts: issue.description,

@@ -127,8 +127,9 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>
             Rider phone: {props.counterpartyPhone}
           </Text>
-          {/* The number is only ever revealed assigned→completed (PHONE_REVEAL_STATUSES) — a
-              trust feature only matters if the customer can perceive it, so say so. */}
+          {/* The number is only ever revealed while the delivery is live — assigned through the
+              hand-off (PHONE_REVEAL_STATUSES), NOT once the order is completed. A trust feature only
+              matters if the customer can perceive it, so say so. */}
           <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
             Shared only while your delivery is live — for your privacy.
           </Text>

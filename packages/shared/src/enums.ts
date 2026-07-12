@@ -109,14 +109,27 @@ export const RIDER_CANCELLABLE_STATUSES: OrderStatus[] = [
   OrderStatus.EN_ROUTE_PICKUP,
 ];
 
-/** The single window during which the counterparty's real phone is revealed (CONCEPT §5d).
- *  Includes `undelivered` so the "call the rider" action survives on the customer's terminal
- *  screen for a failed hand-off (INTERFACE-AUDIT C6). */
+/** The window during which the COUNTERPARTY's real phone is revealed party-to-party (CONCEPT §5d).
+ *  Ends when the order is `completed`: once the trip is closed and rated the two parties have no
+ *  standing reason to hold each other's number, so it must not linger in their order history (F-09,
+ *  product decision 2026-07-12). `delivered` is still included — the order isn't closed yet (the
+ *  rating window is open, ≤6h) and a just-handed-over parcel is the moment a "you gave me the wrong
+ *  package" call is most needed. `undelivered` stays so the "call the rider" action survives on the
+ *  customer's terminal screen for a failed hand-off (INTERFACE-AUDIT C6). NOT `completed`. */
 export const PHONE_REVEAL_STATUSES: OrderStatus[] = [
   ...ACTIVE_RIDE_STATUSES,
   OrderStatus.DELIVERED,
-  OrderStatus.COMPLETED,
   OrderStatus.UNDELIVERED,
+];
+
+/** The broader reveal window for the ops DISPUTE console (AdminGuard-gated). A dispute is usually
+ *  raised on an already-`completed` order, and ops must be able to call the two parties to resolve
+ *  it — so this is intentionally wider than the party-to-party PHONE_REVEAL_STATUSES and DOES include
+ *  `completed`. Distinct actor (audited operator, not the counterparty), distinct need; keeping it
+ *  separate is what lets PHONE_REVEAL_STATUSES drop `completed` without breaking dispute handling. */
+export const DISPUTE_PHONE_REVEAL_STATUSES: OrderStatus[] = [
+  ...PHONE_REVEAL_STATUSES,
+  OrderStatus.COMPLETED,
 ];
 
 export const OfferType = {
