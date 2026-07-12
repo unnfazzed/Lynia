@@ -33,13 +33,32 @@ export function useOrderSocket(
   rebroadcastRef.current = onRebroadcast;
   const riderStaleRef = useRef(onRiderStale);
   riderStaleRef.current = onRiderStale;
+  // The freshest live "position" push we've applied, so a REST refetch that resolves AFTER it (a
+  // slow response racing a fast WS push — the exact profile of a flaky connection) can't clobber the
+  // cache with an older fix. invalidateQueries replaces the cached rider position outright; nothing
+  // about a normal refetch is otherwise aware a newer live fix already landed.
+  const lastPositionRef = useRef<{ lat: number; lng: number; at: string } | null>(null);
 
   useEffect(() => {
     if (!orderId || !token) return;
     setActiveRole("customer"); // this is the customer tracking surface — label apifetch RUM accordingly
+    lastPositionRef.current = null; // a new order/token means a new socket lifetime — don't carry a stale ref across it
     const socket: Socket = createSocket(token);
+    // After a refetch settles, re-apply the last known live position if it's still fresher than what
+    // just came back over REST — a stale response landing after a fresher push must not roll the
+    // rider's pin backward on the map.
+    const reconcileAfterRefetch = (): void => {
+      const lp = lastPositionRef.current;
+      if (!lp) return;
+      qc.setQueryData<OrderSnapshot>(orderKey(orderId), (prev) => {
+        if (!prev?.rider) return prev;
+        const cachedAt = prev.rider.updatedAt ? new Date(prev.rider.updatedAt).getTime() : -Infinity;
+        if (cachedAt >= new Date(lp.at).getTime()) return prev;
+        return { ...prev, rider: { ...prev.rider, currentLat: lp.lat, currentLng: lp.lng, updatedAt: lp.at } };
+      });
+    };
     // Background refetch — keeps previous data on screen (no flash) while the snapshot re-loads.
-    const refetchOrder = (): void => void qc.invalidateQueries({ queryKey: orderKey(orderId) });
+    const refetchOrder = (): void => void qc.invalidateQueries({ queryKey: orderKey(orderId) }).then(reconcileAfterRefetch);
     const refetchOffers = (): void => void qc.invalidateQueries({ queryKey: offersKey(orderId) });
 
     socket.on("connect", () => {
@@ -96,6 +115,7 @@ export function useOrderSocket(
         if (ms == null) noteDropped();
         else enqueue("position_glass", ms, "customer");
       }
+      lastPositionRef.current = { lat: p.lat, lng: p.lng, at: p.at };
       qc.setQueryData<OrderSnapshot>(orderKey(orderId), (prev) => {
         if (!prev) return prev;
         // Don't drop the first fix when the snapshot's rider isn't populated yet.
