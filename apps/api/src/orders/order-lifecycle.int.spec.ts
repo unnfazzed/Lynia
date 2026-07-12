@@ -41,7 +41,7 @@ const matching = new MatchingService(prisma, tokens, noopNotifications, new Metr
 const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersService;
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
 const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders);
-const trackingStub = { evictFromGeo: async () => {}, drainNotifyNear: async () => [] } as unknown as import("../tracking/tracking.service").TrackingService;
+const trackingStub = { evictFromGeo: async () => {}, claimNotifyWaitersNear: async () => [], clearNotifyWaiters: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
 const notificationsStub = { notifyRidersAvailable: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
 const riders = new RiderService(prisma, {} as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env), trackingStub, notificationsStub);
 

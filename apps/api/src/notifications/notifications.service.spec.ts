@@ -66,7 +66,7 @@ describe("NotificationsService — order-status notices", () => {
 
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["rider"] } },
-      select: { token: true },
+      select: { token: true, profileId: true },
     });
     // One batched call carrying both devices (not a per-token fan-out).
     expect(push.sendEach).toHaveBeenCalledOnce();
@@ -85,7 +85,7 @@ describe("NotificationsService — order-status notices", () => {
 
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["cust"] } },
-      select: { token: true },
+      select: { token: true, profileId: true },
     });
     expect(push.sendEach).toHaveBeenCalledOnce();
   });
@@ -96,7 +96,7 @@ describe("NotificationsService — order-status notices", () => {
     await service.notifyOrderStatus("o1", "cancelled");
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["cust", "rider"] } },
-      select: { token: true },
+      select: { token: true, profileId: true },
     });
   });
 
@@ -110,7 +110,7 @@ describe("NotificationsService — order-status notices", () => {
     // Rider marked it themselves → push goes to the customer only, mirroring the in-app feed row.
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["cust"] } },
-      select: { token: true },
+      select: { token: true, profileId: true },
     });
     expect(push.sendEach).toHaveBeenCalledWith([
       expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "undelivered" } }),
@@ -163,6 +163,43 @@ describe("NotificationsService — dead-token pruning", () => {
     (push.sendEach as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network blip"));
     await service.notifyOrderStatus("o1", "delivered");
     expect(prisma.deviceToken.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("NotificationsService — notifyRidersAvailable delivery set (F-18 at-least-once)", () => {
+  it("returns only the profiles the provider accepted at least one device for", async () => {
+    const { prisma, push, service } = makeDeps();
+    // cust-1 has a live device; cust-2's only device fails transiently (ok:false, NOT invalidToken).
+    prisma.deviceToken.findMany.mockResolvedValue([
+      { token: "t1", profileId: "cust-1" },
+      { token: "t2", profileId: "cust-2" },
+    ]);
+    (push.sendEach as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ok: true, invalidToken: false },
+      { ok: false, invalidToken: false },
+    ]);
+    const delivered = await service.notifyRidersAvailable(["cust-1", "cust-2"]);
+    // cust-2 is deliberately NOT credited → the drain leaves them queued for the next rider.
+    expect([...delivered]).toEqual(["cust-1"]);
+    // A transient (non-invalid) failure must never prune the token.
+    expect(prisma.deviceToken.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("credits a profile once even with multiple live devices, and returns an empty set when nobody has a token", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.deviceToken.findMany.mockResolvedValue([
+      { token: "a", profileId: "cust-1" },
+      { token: "b", profileId: "cust-1" },
+    ]);
+    (push.sendEach as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ok: true, invalidToken: false },
+      { ok: true, invalidToken: false },
+    ]);
+    expect([...(await service.notifyRidersAvailable(["cust-1"]))]).toEqual(["cust-1"]);
+
+    // No device tokens at all → empty set → caller leaves the waiter queued (bounded by the notify TTL).
+    prisma.deviceToken.findMany.mockResolvedValue([]);
+    expect((await service.notifyRidersAvailable(["cust-9"])).size).toBe(0);
   });
 });
 
@@ -276,7 +313,7 @@ describe("NotificationsService — new-broadcast notice (rider primary channel, 
     await service.notifyNewBroadcast("o1", ["riderA", "riderB"], { pickup: "Avondale shops", fare: "4.50" });
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["riderA", "riderB"] } },
-      select: { token: true },
+      select: { token: true, profileId: true },
     });
     expect(push.sendEach).toHaveBeenCalledWith([
       expect.objectContaining({ token: "ra", data: { orderId: "o1", kind: "broadcast" } }),
