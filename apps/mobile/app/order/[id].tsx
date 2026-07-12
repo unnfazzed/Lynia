@@ -1,15 +1,14 @@
-import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, PRESENCE_ESCALATION_MS, rankOffers, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, rankOffers, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
-import { etaHeadline, liveEta } from "../../src/logic/eta";
 import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../src/logic/journey";
-import { mapsPlaceUrl } from "../../src/logic/maps";
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
-import { auctionHeaderText, formatClock, isRiderTrackingStale, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
+import { auctionHeaderText, formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
+import { selectOrderShell } from "../../src/logic/order-tracking";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
@@ -19,10 +18,10 @@ import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "
 import { offersKey, orderKey } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, Sub, useToast } from "../../src/ui";
-import { LiveMap } from "../../src/ui/LiveMap";
+import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
+import { LiveTrackingCard } from "../../src/ui/order/LiveTrackingCard";
 import { ReceiptCard } from "../../src/ui/order/ReceiptCard";
 import { RatingCard } from "../../src/ui/order/RatingCard";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
@@ -120,6 +119,15 @@ export default function OrderScreen(): React.ReactElement {
     queryKey: orderKey(orderId),
     queryFn: () => getOrder(orderId),
     enabled: orderId !== "",
+    // PERF: subscribe through the telemetry-stripped shell so a WS "position" push (which rewrites
+    // rider.currentLat/lng/updatedAt in the cache every ~10s for a whole delivery) leaves this
+    // component's selected data referentially unchanged — structural sharing hands back the previous
+    // reference and this ~900-line screen doesn't re-render. The extracted LiveTrackingCard holds its
+    // own observer on the SAME key with the complementary telemetry slice, so GPS ticks repaint only
+    // the tracking card. Mutations/socket handlers read+write the RAW cache (getQueryData/
+    // setQueryData), which `select` never touches — the position-race guard in use-order-socket and
+    // the optimistic select flip are unaffected.
+    select: selectOrderShell,
     refetchInterval: (q) => {
       if (socketConnectedRef.current) return false;
       const s = q.state.data?.status;
@@ -140,9 +148,13 @@ export default function OrderScreen(): React.ReactElement {
     const d = orderQ.data;
     if (!d || d.status === persistedStatus.current) return;
     persistedStatus.current = d.status;
-    if (ACTIVE.includes(d.status) || d.status === "open_for_offers") void saveLastActiveOrder(d);
+    // Persist from the RAW cache entry, not `d`: this screen subscribes through the telemetry-stripped
+    // shell (selectOrderShell above), but the saved summary keeps the rider's last fix (toLastActive
+    // projects it), so saving the shell would silently null the persisted position.
+    const raw = qc.getQueryData<OrderSnapshot>(orderKey(orderId)) ?? d;
+    if (ACTIVE.includes(d.status) || d.status === "open_for_offers") void saveLastActiveOrder(raw);
     else void clearLastActiveOrder(d.id);
-  }, [orderQ.data]);
+  }, [orderQ.data, qc, orderId]);
 
   // C2: keep the socket subscribed through `cancelled` for a bounded grace window so a rider-bail
   // `order:rebroadcast` can still arrive and navigate the customer to the fresh auction (below).
@@ -382,6 +394,9 @@ export default function OrderScreen(): React.ReactElement {
       void saveDeliveryCode(orderId, res.deliveryCode);
     },
   });
+  // Identity-stable (v5's `mutate` is stable) so it never busts LiveTrackingCard's memo — and it
+  // swallows the press event a bare `onPress={rotateM.mutate}` would pass as mutation variables.
+  const reissueCode = useCallback(() => rotateM.mutate(), [rotateM.mutate]);
   const rateM = useMutation({
     mutationFn: (value: number) => rateOrder(orderId, { score: value }),
     onSuccess: () => {
@@ -475,30 +490,11 @@ export default function OrderScreen(): React.ReactElement {
   const selectRace = selectM.error instanceof ApiError && selectM.error.status === 409;
   const firstError = (selectRace ? null : selectM.error) ?? rotateM.error ?? rateM.error ?? cancelM.error ?? notifyM.error;
   const mutationError = firstError instanceof Error ? firstError.message : null;
-  const riderPoint =
-    order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
-      ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
-      : null;
-  // C4: a rider fix is only "live" while it's fresh. Past PRESENCE_ESCALATION_MS with no new fix the
-  // rider's GPS has gone dark — mute the pin (below, via LiveMap's reconnecting treatment) and stop
-  // claiming it "updates live," escalating instead to a "call your rider" warning.
-  const riderUpdatedAt = order.rider?.updatedAt ?? null;
-  const assignedAt = order.events.find((e) => e.status === "assigned")?.createdAt ?? null;
-  const riderStale = isRiderTrackingStale({ isActive, riderUpdatedAt, assignedAt, nowMs: Date.now(), escalationMs: PRESENCE_ESCALATION_MS });
   const bidCount = orderedOffers.length;
   // 2·b1: the server said there are no online riders nearby and no bid has landed — an honest "nobody
   // to ping right now" state, distinct from the calm "riders pinged, hang tight" wait. Non-terminal:
   // the 15s poll refreshes ridersNearby and any landing bid clears it.
   const noRiders = noRidersOnline(order.ridersNearby, bidCount, order.status === "open_for_offers");
-  const trackingHint = riderStale
-    ? "Your rider's location looks paused — call them to check in."
-    : !riderPoint
-      ? "Waiting for the rider's GPS…"
-      : "Rider is on the move — the gold pin updates live.";
-  // Live "arriving in ~N min" headline — the glanceable number modern trackers lead with. Suppressed
-  // when the rider's GPS has gone stale (we won't claim a fresh ETA off a dark position) or before the
-  // first fix; the prose `trackingHint` covers those.
-  const eta = isActive && !riderStale ? liveEta({ status: order.status, rider: riderPoint, pickup: order.pickup.point, dropoff: order.dropoff.point }) : null;
 
   // Counter-offer (F-07): a `counter` bid ABOVE the customer's ask surfaces as Accept/Decline. A
   // declined one reverts to a normal choosable bid (its Accept treatment removed), so it drops out of
@@ -759,80 +755,26 @@ export default function OrderScreen(): React.ReactElement {
         ) : null}
 
         {isActive || order.status === "delivered" || order.status === "completed" ? (
-          <Card>
-            {/* Who's coming: the chosen rider's face + name + rating, cached from the offer they were
-                picked from (the assigned-order snapshot doesn't carry it). The trust anchor for tracking. */}
-            {riderIdentity ? (
-              <View style={{ marginBottom: tokens.space.sm }}>
-                <RiderMini
-                  profileId={riderIdentity.profileId || riderIdentity.orderId}
-                  firstName={riderIdentity.firstName}
-                  lastName={riderIdentity.lastName}
-                  photoUrl={riderIdentity.photoUrl}
-                  ratingAvg={riderIdentity.ratingAvg}
-                  ratingCount={riderIdentity.ratingCount}
-                  tripsCount={riderIdentity.tripsCount}
-                />
-              </View>
-            ) : null}
-            {eta ? (
-              // The big glanceable ETA — leads the tracking card, styled as the screen's live headline.
-              <View accessibilityRole="text" style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
-                <Icon name="bike" size={20} color={tokens.color.accentText} />
-                <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{etaHeadline(eta)}</Text>
-              </View>
-            ) : null}
-            <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm, fontVariant: ["tabular-nums"] }}>Agreed fare {formatMoney(fare)}</Text>
-            <LiveMap
-              pickup={{ lat: order.pickup.point.lat, lng: order.pickup.point.lng }}
-              dropoff={{ lat: order.dropoff.point.lat, lng: order.dropoff.point.lng }}
-              rider={riderPoint}
-              // C4: a stale rider fix mutes the pin just like a reconnecting socket does — a dark GPS
-              // must not render as a full-opacity "live" position.
-              connectionState={riderStale ? "reconnecting" : isActive ? connectionState : "live"}
-            />
-            {order.rider ? (
-              <Text style={{ fontSize: 14, color: tokens.color.muted }}>{trackingHint}</Text>
-            ) : null}
-            {/* Maps-sync (§3·2): open the drop-off location in Google Maps so the customer can follow
-                along. No Places key needed — a universal Maps URL built from the stored drop-off point. */}
-            <Pressable
-              onPress={() => void Linking.openURL(mapsPlaceUrl(order.dropoff.point))}
-              accessibilityRole="button"
-              accessibilityLabel="Open the drop-off in Google Maps"
-              style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
-            >
-              <Icon name="navigation" size={16} color={tokens.color.accentText} />
-              <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Open drop-off in Maps</Text>
-            </Pressable>
-            {order.counterpartyPhone ? (
-              <>
-                <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>
-                  Rider phone: {order.counterpartyPhone}
-                </Text>
-                {/* The number is only ever revealed assigned→completed (PHONE_REVEAL_STATUSES) — a
-                    trust feature only matters if the customer can perceive it, so say so. */}
-                <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
-                  Shared only while your delivery is live — for your privacy.
-                </Text>
-                {/* One-tap dialer next to the visible number — a call beats copy/paste mid-delivery. */}
-                <Pressable
-                  onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Call rider"
-                  style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
-                >
-                  <Icon name="phone" size={16} color={tokens.color.accentText} />
-                  <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call rider</Text>
-                </Pressable>
-              </>
-            ) : null}
-            <View style={{ height: tokens.space.md }} />
-            <Stepper events={order.events} currentStatus={order.status} view="customer" />
-            {isActive ? (
-              <Button label="Re-issue delivery code" variant="ghost" onPress={() => rotateM.mutate()} loading={rotateM.isPending} />
-            ) : null}
-          </Card>
+          // The whole live section (ETA headline, map, hint, phone row, stepper) lives in a memoized
+          // child with its own telemetry subscription — a GPS tick re-renders it and ONLY it (this
+          // screen's `select: selectOrderShell` above never sees the position change). Every prop here
+          // is referentially stable across ticks: the snapshot fields come off the shell (structural
+          // sharing preserves them between status changes), riderIdentity is state, and reissueCode is
+          // the stable callback above.
+          <LiveTrackingCard
+            orderId={orderId}
+            status={order.status}
+            isActive={isActive}
+            fare={fare}
+            pickup={order.pickup.point}
+            dropoff={order.dropoff.point}
+            events={order.events}
+            counterpartyPhone={order.counterpartyPhone}
+            riderIdentity={riderIdentity}
+            connectionState={connectionState}
+            onReissueCode={reissueCode}
+            reissuing={rotateM.isPending}
+          />
         ) : null}
 
         {/* SOS on a live trip (R-16/F-13) — a deliberate danger control, highest value at the cash

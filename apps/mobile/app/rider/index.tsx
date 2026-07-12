@@ -17,16 +17,9 @@ import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../src/logic/gates";
 import { formatMoney } from "../../src/logic/money";
 import { Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../src/ui";
+import { SentOfferCard } from "../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../src/ui/safety";
 import { parseNum } from "../../src/util";
-
-/** mm:ss for the offer-sent auction countdown. */
-function formatClock(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 /** A live offer the rider has sent — kept on-screen with a countdown to the auction close (C2). */
 interface SentOffer {
@@ -58,10 +51,11 @@ export default function RiderHome(): React.ReactElement {
   const [offerMode, setOfferMode] = useState<"accept" | "counter">("accept");
   const [bidIds, setBidIds] = useState<Set<string>>(() => new Set());
   // Offers the rider has sent this session — rendered with a live "customer's window closes in"
-  // countdown, and flipped to a distinct "that window closed" state on a `bid:expired` push.
+  // countdown, and flipped to a distinct "that window closed" state on a `bid:expired` push. The 1s
+  // countdown clock itself lives INSIDE each SentOfferCard (PERF): a screen-level ticker used to
+  // re-render this whole board — every open-order card, gate and the compose form — once a second
+  // for the length of any auction the rider had bid into.
   const [sentOffers, setSentOffers] = useState<SentOffer[]>([]);
-  // 1s clock for the countdowns (only advanced while there are live sent offers).
-  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const requestLocation = useCallback(async (): Promise<void> => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -252,12 +246,6 @@ export default function RiderHome(): React.ReactElement {
       setSelected(null);
     }
   }, [selected, board.expiredOrderIds, board.takenOrderIds]);
-  // Tick a 1s clock only while there are sent offers on screen, for the auction countdowns.
-  useEffect(() => {
-    if (sentOffers.length === 0) return;
-    const iv = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(iv);
-  }, [sentOffers.length]);
   const openQ = useQuery({
     queryKey: ["openOrders"],
     // Pass the rider's position so the server geo-scopes to nearby, distance-sorted orders; with no
@@ -600,44 +588,21 @@ export default function RiderHome(): React.ReactElement {
             <Sub>Your offers</Sub>
             {sentOffers
               .filter((s) => s.order.id !== activeJob?.id)
-              .map((s) => {
-                const expired = board.expiredOrderIds.has(s.order.id);
-                const taken = board.takenOrderIds.has(s.order.id);
-                const remaining = new Date(s.expiresAt).getTime() - nowMs;
-                return (
-                  <Card key={s.order.id}>
-                    <Text style={{ fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-                      {s.order.pickup.landmark} → {s.order.dropoff.landmark}
-                    </Text>
-                    <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                      Your offer {formatMoney(s.fare)} · ETA {s.etaMinutes} min
-                    </Text>
-                    {taken ? (
-                      // Not chosen (3·b1): someone else was picked. Never framed as failure — the
-                      // rider is still online and first in line for the next one.
-                      <View style={{ flexDirection: "row", gap: tokens.space.sm, marginTop: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}>
-                        <Icon name="user" size={16} color={tokens.color.muted} />
-                        <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
-                          Not this time — the customer picked another rider. It happens; you&apos;re still online and first in line for the next one.
-                        </Text>
-                      </View>
-                    ) : expired ? (
-                      // Distinct from "not chosen": the whole auction closed with nobody picked (C2).
-                      <View style={{ flexDirection: "row", gap: tokens.space.sm, marginTop: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}>
-                        <Icon name="inbox" size={16} color={tokens.color.muted} />
-                        <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
-                          That window closed — the customer&apos;s auction ended with nobody picked. If they re-broadcast at a new price, it&apos;ll show up here as a fresh order.
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}>
-                        <Text style={{ flex: 1, fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>Customer&apos;s window closes in</Text>
-                        <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatClock(remaining)}</Text>
-                      </View>
-                    )}
-                  </Card>
-                );
-              })}
+              .map((s) => (
+                // Primitive props only, so the memo holds and each card's internal 1s ticker is the
+                // only thing that repaints while its countdown runs. The taken/expired resolutions
+                // stay driven by the same board pushes as before (expiredOrderIds/takenOrderIds).
+                <SentOfferCard
+                  key={s.order.id}
+                  pickupLandmark={s.order.pickup.landmark}
+                  dropoffLandmark={s.order.dropoff.landmark}
+                  fare={s.fare}
+                  etaMinutes={s.etaMinutes}
+                  expiresAt={s.expiresAt}
+                  taken={board.takenOrderIds.has(s.order.id)}
+                  expired={board.expiredOrderIds.has(s.order.id)}
+                />
+              ))}
           </View>
         ) : null}
 
