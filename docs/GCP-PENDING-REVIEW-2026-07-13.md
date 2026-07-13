@@ -139,6 +139,28 @@ Unchanged, all coded behind flags per `docs/INFRA-HARDENING-ROLLOUT.md`; live po
 4. `docs/GCP-PROVISIONING-REVIEW.md` §3 (deploy breakage) and §2 staging-drift notes are
    now historical — superseded by this doc.
 
+## 8a. Execution update (same day, this branch)
+
+The agent-codeable items were implemented alongside this review:
+
+- **release.yml launch-hygiene guards (§3)** — a deploy now hard-fails when
+  `OTP_CHANNEL=whatsapp` with `WHATSAPP_ENABLED != true`, or `WHATSAPP_ENABLED=true` with
+  empty `WHATSAPP_PHONE_NUMBER_ID`/`WHATSAPP_TEMPLATE_NAME`. NOTE: once this merges,
+  production releases are BLOCKED until the founder sets those two repo Variables —
+  that is intentional (the alternative is silently shipping a service whose sign-in 503s).
+- **`roles/logging.viewer` for the deployer SA (§5)** — added to `iam.tf` `deployer_roles`;
+  takes effect on the next `terraform apply`.
+- **Cloud Scheduler jobs (§5)** — `infra/terraform/scheduler.tf` + the
+  `cloudscheduler.googleapis.com` API enable: `lynia-retention-purge` (daily 03:00 Harare,
+  `europe-west1`, OIDC as the runtime SA, audience pinned to the route URL, created by
+  default on next apply) and `lynia-settlement-autopause` (gated off until monetization).
+- **Doc drift (§7)** — terraform README hardening list + CORS framing + live-state note,
+  PILOT-READINESS staleness banner, runbook §2 terraform pointer.
+
+Still founder-only: the two WhatsApp repo Variables + redeploy, approving release #148,
+`terraform apply` (picks up the IAM grant + scheduler job), and the OTel/alerts/hardening
+sequence below.
+
 ## 8. Recommended order
 
 1. **Founder:** set `WHATSAPP_PHONE_NUMBER_ID` + `WHATSAPP_TEMPLATE_NAME` repo Variables,

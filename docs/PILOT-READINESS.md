@@ -4,6 +4,13 @@
 > (`docs/CEO-REVIEW.md` §2, 2026-06-26), which predates the build work below — its top findings
 > ("core loop can't complete a delivery", "mobile not recommended next") are now **closed**.
 > Date: 2026-06-27, **updated 2026-06-29**. Branch: `claude/ceo-review-prep-975vdb`.
+>
+> ⚠️ **Stale where it touches GCP/vendor arming (as of 2026-07-13)** — see
+> `docs/GCP-PENDING-REVIEW-2026-07-13.md` for live state. Since this snapshot: Didit KYC is
+> **armed** (`DIDIT_ENABLED=true`), push is **live FCM** (the `PUSH_PROVIDER=noop` override is
+> gone), a staging tier + canary release pipeline + deploy-autoheal exist, WhatsApp OTP is
+> **half-armed** (token secret yes, phone-id/template repo Variables still missing), and the
+> hardening deferrals list has grown to eight flags (`docs/INFRA-HARDENING-ROLLOUT.md`).
 
 ## 🟢 Update — 2026-06-29: the cloud gate is closed; the API is live
 
