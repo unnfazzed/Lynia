@@ -204,7 +204,8 @@ take effect · ⬜ deferred (needs a vendor/platform not available in-repo).
 | P2-4 Launch fail-closed guards | ✅ | `config/env.ts` rejects console OTP / test-phones / KYC-stub in prod + tests |
 | P3-2 Secret rotation | ✅ (code) 🟨 (runbook) | Dual-secret JWT + hash-key separation in `token.service.ts`/`env.ts` + tests; [SECRET-ROTATION](SECRET-ROTATION.md) |
 | P3-4 KYC bucket CMEK + retention | 🟨 | Gated `kyc_cmek_enabled` / `kyc_retention_days` (`kms.tf`, `storage.tf`); rollout in [SECURITY-OPS §E3](SECURITY-OPS.md) |
-| P0-2 Admin SSO+MFA (IAP) · P3-1 mobile cert pinning · P3-3 Maps-key restriction · P3-5 WAF tuning · P3-6 pentest | 📋 | Precise founder/platform runbooks in [SECURITY-OPS](SECURITY-OPS.md); IR runbook in [IR-RUNBOOK](IR-RUNBOOK.md) |
+| P3-1 Mobile cert pinning | 🟨 | Gated config plugin merged (`apps/mobile/plugins/with-certificate-pinning.js`), inert until `LYNIA_TLS_PINS` is set; arming + on-device validation runbook in [MOBILE-CERT-PINNING](MOBILE-CERT-PINNING.md) |
+| P0-2 Admin SSO+MFA (IAP) · P3-3 Maps-key restriction · P3-5 WAF tuning · P3-6 pentest | 📋 | Precise founder/platform runbooks in [SECURITY-OPS](SECURITY-OPS.md); IR runbook in [IR-RUNBOOK](IR-RUNBOOK.md) |
 
 The subsections below keep the full design detail (the "what & why & acceptance test") for each item.
 
@@ -330,7 +331,9 @@ Pre-remediation state, now fixed — see the implementation-status table above
 
 ### P3 — Ongoing hardening
 
-- **P3-1 · Mobile certificate pinning** for the API + WS host (`apps/mobile/src/api/client.ts`).
+- **P3-1 · Mobile certificate pinning** for the API + WS host — gated config plugin merged
+  (`apps/mobile/plugins/with-certificate-pinning.js`, wired in `app.config.ts`), inert until armed;
+  arming + on-device validation runbook in [MOBILE-CERT-PINNING.md](MOBILE-CERT-PINNING.md).
 - **P3-2 · Secret rotation runbook** — scheduled rotation of `JWT_SIGNING_SECRET`
   (dual-secret window to avoid mass logout), DB password, vendor keys.
 - **P3-3 · Restrict the client-side Google Places/Maps key** by package name + API in GCP.
