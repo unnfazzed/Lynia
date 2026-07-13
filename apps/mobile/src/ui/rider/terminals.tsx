@@ -10,9 +10,20 @@ import { Button, Card, Heading, Icon, Screen, StatusPill } from "../index";
  * collect/deliver flow (extracted verbatim from app/rider/job.tsx).
  */
 
-// Terminal: the customer cancelled. Rendered from a frozen snapshot (keeps the sender contact after
-// the order leaves the active feed).
-export function CancelledHandback({ collected, snapshot, onBack }: { collected: boolean; snapshot: OrderSnapshot; onBack: () => void }): React.ReactElement {
+// Terminal: the customer or ops cancelled. Rendered from a frozen snapshot (keeps the sender contact
+// after the order leaves the active feed).
+export function CancelledHandback({
+  collected,
+  cancelledBy,
+  snapshot,
+  onBack,
+}: {
+  collected: boolean;
+  /** Who actually cancelled — an admin cancel must not read as the customer's own choice. */
+  cancelledBy: "customer" | "admin";
+  snapshot: OrderSnapshot;
+  onBack: () => void;
+}): React.ReactElement {
   const senderPhone = snapshot.counterpartyPhone ?? snapshot.pickup.contactPhone ?? null;
   return (
     <Screen>
@@ -27,7 +38,9 @@ export function CancelledHandback({ collected, snapshot, onBack }: { collected: 
             <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
               <Icon name="circle-alert" size={18} color={tokens.color.danger} />
             </View>
-            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>The customer cancelled</Text>
+            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
+              {cancelledBy === "admin" ? "Lynia cancelled this delivery" : "The customer cancelled"}
+            </Text>
           </View>
           {collected ? (
             <>

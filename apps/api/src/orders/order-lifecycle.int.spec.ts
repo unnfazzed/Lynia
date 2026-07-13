@@ -28,12 +28,13 @@ const noopNotifications = {
 // Real MetricsService is NoopMeter-safe with no OTLP endpoint (every record is a cheap no-op).
 // The gateway captures job:cancelled so the two-sided WS contract (C3) is asserted at integration
 // level; the other emits are best-effort no-ops.
-const jobCancelledEmits: Array<{ orderId: string; collected: boolean }> = [];
+const jobCancelledEmits: Array<{ orderId: string; collected: boolean; cancelledBy: string }> = [];
 const gateway = {
   emitOrderStatus: () => undefined,
   emitBidExpired: () => undefined,
   emitOrderTaken: () => undefined,
-  emitJobCancelled: (orderId: string, collected: boolean) => jobCancelledEmits.push({ orderId, collected }),
+  emitJobCancelled: (orderId: string, collected: boolean, cancelledBy: string) =>
+    jobCancelledEmits.push({ orderId, collected, cancelledBy }),
   emitOrderRebroadcast: () => undefined,
 } as unknown as TrackingGateway;
 // The no-bid-expiry supply check is best-effort push; an empty nearby list keeps it off the geo path.
@@ -357,8 +358,9 @@ describe("seam-contract transitions", () => {
     const res = await lifecycle.cancel(orderId, customer, "changed plans");
     expect(res.cancelledBy).toBe("customer");
     expect(await statusOf(orderId)).toBe("cancelled");
-    // Two-sided WS contract: the assigned rider is told, with the hand-back (collected) flag.
-    expect(jobCancelledEmits).toEqual([{ orderId, collected: true }]);
+    // Two-sided WS contract: the assigned rider is told, with the hand-back (collected) flag and the
+    // actual actor so their terminal doesn't misattribute an ops cancel to the customer.
+    expect(jobCancelledEmits).toEqual([{ orderId, collected: true, cancelledBy: "customer" }]);
     // No reliability impact from a customer cancel.
     const r = await prisma.rider.findUniqueOrThrow({ where: { profileId: rider }, select: { cancelStrikes: true } });
     expect(r.cancelStrikes).toBe(0);
@@ -373,7 +375,7 @@ describe("seam-contract transitions", () => {
     jobCancelledEmits.length = 0;
 
     await lifecycle.cancel(orderId, customer);
-    expect(jobCancelledEmits).toEqual([{ orderId, collected: false }]);
+    expect(jobCancelledEmits).toEqual([{ orderId, collected: false, cancelledBy: "customer" }]);
   });
 
   it("C4: re-issuing the delivery code resets the attempt counter and unlocks a locked-out rider", async () => {

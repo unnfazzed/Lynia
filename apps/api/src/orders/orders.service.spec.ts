@@ -721,6 +721,38 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.rider).toMatchObject({ profileId: "rider-1", currentLat: -17.9, currentLng: 31.1 });
     expect(snap.rider!.updatedAt).toEqual(new Date(1_700_000_000_000));
   });
+
+  // cancelledBy drives the cancelled terminal's blame line — a wrong value falsely blames whichever
+  // party the ternary defaults to. svcCancelled additionally stubs findFirst (rebroadcastedToId lookup,
+  // only queried on a cancelled order).
+  const svcCancelled = (cancelledBy: string | null) =>
+    new OrdersService(
+      {
+        order: {
+          findUnique: async () => row({ status: "cancelled", cancelledBy }),
+          findFirst: async () => null,
+        },
+      } as unknown as PrismaService,
+      {} as OfferExpiryService,
+      noTracking,
+      noNotifications,
+      noGateway,
+    );
+
+  it("cancelledBy: \"customer\" when the customer's own id cancelled", async () => {
+    const snap = await svcCancelled("cust-1").getSnapshot("ord-1", "cust-1");
+    expect(snap.cancelledBy).toBe("customer");
+  });
+
+  it("cancelledBy: \"rider\" when the assigned rider's own id cancelled", async () => {
+    const snap = await svcCancelled("rider-1").getSnapshot("ord-1", "cust-1");
+    expect(snap.cancelledBy).toBe("rider");
+  });
+
+  it("cancelledBy: null for an ADMIN cancel — the actor id matches neither party, so it must NOT default to \"rider\"", async () => {
+    const snap = await svcCancelled("admin-9").getSnapshot("ord-1", "cust-1");
+    expect(snap.cancelledBy).toBeNull();
+  });
 });
 
 describe("OrdersService.listOpen", () => {

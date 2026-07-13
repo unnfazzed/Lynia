@@ -14,12 +14,12 @@ const noopNotifications = { notifyOrderStatus: async () => {}, notifyProfiles: a
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma). */
 function build(methods: Record<string, unknown>) {
   const emits: Array<[string, string]> = [];
-  const jobCancelled: Array<[string, boolean]> = [];
+  const jobCancelled: Array<[string, boolean, string]> = [];
   const rebroadcasts: Array<[string, string]> = [];
   const bidExpired: Array<[string, number | undefined, number | undefined]> = [];
   const gateway = {
     emitOrderStatus: (id: string, s: string) => emits.push([id, s]),
-    emitJobCancelled: (id: string, collected: boolean) => jobCancelled.push([id, collected]),
+    emitJobCancelled: (id: string, collected: boolean, cancelledBy: string) => jobCancelled.push([id, collected, cancelledBy]),
     emitOrderRebroadcast: (oldId: string, newId: string) => rebroadcasts.push([oldId, newId]),
     // DS13-07: board-close on a cancel of a still-open auction reuses the expiry path's bid:expired.
     emitBidExpired: (id: string, lat?: number, lng?: number) => bidExpired.push([id, lat, lng]),
@@ -457,8 +457,9 @@ describe("OrderLifecycleService.cancel", () => {
     const res = await svc.cancel("o1", "c1", "changed my mind");
     expect(res).toMatchObject({ status: "cancelled", cancelledBy: "customer", cooldownUntil: null });
     expect(emits).toEqual([["o1", "cancelled"]]);
-    // C3: a rider was already assigned pre-pickup → job:cancelled with collected:false (back to board).
-    expect(jobCancelled).toEqual([["o1", false]]);
+    // C3: a rider was already assigned pre-pickup → job:cancelled with collected:false (back to board),
+    // cancelledBy "customer" so the rider's terminal names the actual actor.
+    expect(jobCancelled).toEqual([["o1", false, "customer"]]);
   });
 
   it("customer cancel AFTER pickup pushes job:cancelled with collected:true (hand-back path)", async () => {
@@ -474,7 +475,7 @@ describe("OrderLifecycleService.cancel", () => {
     );
     const res = await svc.cancel("o1", "c1");
     expect(res.cancelledBy).toBe("customer");
-    expect(jobCancelled).toEqual([["o1", true]]);
+    expect(jobCancelled).toEqual([["o1", true, "customer"]]);
   });
 
   it("blocks a RIDER cancel once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
