@@ -6,11 +6,12 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-12 (deep-bug-sweep + remediation). Prior fixes: PR #192 (F-01…F-10),
-PR #193 (F-11…F-19). This sweep's remediation, all merged: **#195** (DS-01…DS-11 + FRAUD P1-5),
-**#196** (F-09), **#197** (F-18 durability), **#198** (FRAUD P0-3 velocity), **#199** (F-N3 + DS-11
-verified-ID freeze). Infra hardening flags are wired with an ordered rollout runbook at
-`docs/INFRA-HARDENING-ROLLOUT.md`. As of this update, no open **code** defect remains — only
+**Last consolidated:** 2026-07-13 (bug-hunt routine, journeys + bidding concurrency + KYC/contract
+re-audit). Prior fixes: PR #192 (F-01…F-10), PR #193 (F-11…F-19). Prior sweep's remediation, all
+merged: **#195** (DS-01…DS-11 + FRAUD P1-5), **#196** (F-09), **#197** (F-18 durability), **#198**
+(FRAUD P0-3 velocity), **#199** (F-N3 + DS-11 verified-ID freeze). This sweep's remediation, merged:
+**#204** (BH-01, BH-02 — see below). Infra hardening flags are wired with an ordered rollout runbook
+at `docs/INFRA-HARDENING-ROLLOUT.md`. As of this update, no open **code** defect remains — only
 founder-gated infra apply, mobile cert pinning, and ops-readiness items.
 
 ## Source reports folded in
@@ -193,3 +194,32 @@ DS-11's stricter verified-rider ID freeze added in PR #199). Verified in code.
 - **device-token rehoming** (overlaps F-04) → **still open, intended** — `registerToken` upsert claims
   a token for the authenticated caller by design (shared-device re-login); FCM tokens are high-entropy.
   Left as-is.
+
+---
+
+## Sweep 2026-07-13 (bug-hunt routine) — `apps/mobile` only
+
+Full-journey re-audit (customer/rider onboarding, order creation, bidding/negotiation, tracking,
+completion) plus a fresh backend concurrency pass and a KYC-gating/API-contract pass, each run as an
+independent research agent against current code and cross-checked against this ledger first.
+
+**Bidding/negotiation concurrency — re-verified, no new findings.** Double-tap accept, counter-offer
+racing acceptance, and offer-expiry racing acceptance are all serialized by the existing
+`selectOffer`/`makeOffer`/`expireOrder` CAS + `$transaction` pattern (`matching.service.ts`,
+`offers.service.ts`); `offer-loop.int.spec.ts` already fires real concurrent `Promise.allSettled`
+requests and asserts single-winner semantics. No rider "withdraw offer" feature exists, so that
+specific race scenario doesn't apply.
+
+**KYC API-level gating / doc-storage authz / API contract / WS reconnect — re-verified, no new
+findings.** Every path a rider uses to see or act on jobs traces back to the same server-side
+`onlineRefusalReason` KYC+standing gate; KYC document read-URLs are minted only in the
+`AdminGuard`-gated review endpoint (no rider-facing route mints one); mobile types already treat
+backend-nullable fields as optional with defaulted status lookups (no unhandled-enum crash risk);
+WS `connect`/`connect_error` and `AppState` foreground both force a full snapshot refetch.
+
+**Two new findings, both FIXED (PR #204):**
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| BH-01 | `order/[id].tsx`'s failed-fetch branch bucketed a 403 ("not your order" — the party-only IDOR gate, e.g. a losing bidder tapping a stale broadcast push, or a stale deep link on a shared/switched-account device) with a plain transient error, showing a "Retry" that can never succeed | `apps/mobile/app/order/[id].tsx` | LOW | **FIXED #204** — `orderLoadErrorKind` (`src/logic/order-tracking.ts`) gives 403 its own terminal message, no Retry |
+| BH-02 | The rider "Open job" button, a duplicate/replayed push tap, and the cold-start deep link each unconditionally `router.push("/rider/job")` with no check for the active route — a double-tap or replayed notification stacks a redundant back-stack entry | `apps/mobile/app/rider/index.tsx`, `src/push/use-push-registration.ts` | LOW | **FIXED #204** — `pushOnce` (`src/push/push.ts`) is a no-op when the target is already the active route |
