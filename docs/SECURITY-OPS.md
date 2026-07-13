@@ -60,8 +60,10 @@ client unable to connect. Adopt it carefully:
    disabled by an OTA/remote-config kill-switch if a rotation goes wrong.
 5. **Roll out to a canary cohort first.** Never ship pinning to 100% in the same release it's introduced.
 
-Because a mistake here breaks connectivity for real users, this is deliberately **not** enabled in code
-yet — treat it as a planned, canaried change with the backup-pin + kill-switch safeguards above.
+Because a mistake here breaks connectivity for real users, the config-plugin implementation
+(`apps/mobile/plugins/with-certificate-pinning.js`, wired in `app.config.ts`) ships **gated and inert**
+by default — a no-op until `LYNIA_TLS_PINS` is set. See [MOBILE-CERT-PINNING.md](MOBILE-CERT-PINNING.md)
+for the founder-executed arming + on-device validation runbook.
 
 ---
 
