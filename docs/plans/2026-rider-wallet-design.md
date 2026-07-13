@@ -230,12 +230,45 @@ reference to the settlement era):
    environment exercises the **actual flip operation** — seed-credit, then env flip,
    then completion → debit → gate → credit → clear — and is part of this build's
    definition of done.
+   **Flip firing conditions (CEO review 2026-07-13, D3/1A + OV#3 — defaults to
+   recalibrate against shadow-accrual data, not vows):** (1) sustained ≥50 completed
+   rides/week for 4 consecutive weeks AND (2) ≥20 weekly-active riders AND (3)
+   **projected monthly commission (measured by shadow accrual) exceeds estimated
+   monthly rail + ops cost by a clear margin** — fee inputs pinned from the Econet
+   agreement when it lands; never flip into negative-margin collection. Decision
+   owner = founder; rider notice = **14 days** of in-app + WhatsApp comms before the
+   first deduction, and the comms state the **all-in cost honestly** (nominal 5% plus
+   top-up/cash-in fees and IMTT — riders will compute the effective rate themselves;
+   disclosure beats discovery); grace credit = **$5 per active rider** (= `minTopUp`,
+   ≈ the first ~33 rides' commission at the ~$3 median fare). The flip is a planned
+   business event, not a mood.
+   **Wallet reveal (CEO review OV#5):** rider-facing wallet surfaces (balance card,
+   ledger, top-up entry) ship **hidden behind a server-driven visibility flag** in the
+   same config payload as the rate (2A) — they appear when the 14-day flip comms
+   begin, together with the grace credit and the announcement: one coherent reveal,
+   not a silent ominous tab during recruitment. Admin surfaces, the ledger, shadow
+   metrics and every backend path are live from day one regardless; internal/test
+   riders can be flagged visible earlier to exercise the UI.
+   **Collection-integrity metrics (CEO review OV#2):** the metrics layer also tracks
+   declared-fare distribution over time, repeat-pair average-fare trend (does a
+   matched customer–rider pair's declared fare fall after the flip?), and matched-pair
+   ride-frequency post-flip — disintermediation and fare under-declaration are the
+   known failure mode of rider-side commission in cash markets; these dashboards are
+   how leakage shows up in data instead of in a revenue shortfall. Measurement only —
+   enforcement responses are future work, decided when there's something to respond to.
 6. **Integrity check** — a scheduled job asserting `sum(ledger) == balance` per account,
    alerting on drift. (Provider-statement reconciliation deferred, per Approach A.)
 
 **Surfaces:** rider earnings screen gains balance + ledger history + top-up entry point
 (EcoCash form; instruction card for manual rails) + blocked-gate state; admin rider
 detail gains balance/ledger view, manual credit form, and the bulk seed-credit action.
+**Show-the-math ledger rows (CEO review 2026-07-13, D4/2A):** every rider-visible
+debit row renders a checkable receipt — amount, the rate and fare it derives from, and
+the ride it belongs to (e.g. "−$0.15 · 5% of $3.00 · delivery to Avondale · Tue 14:02")
+— all from fields the ledger already stores (`amount`, `ratePct`, `orderId`,
+`createdAt`). Credits show rail + reference. A rider must be able to reconcile any
+deduction against a ride they remember without contacting support; disputes become
+lookups, not arguments.
 
 ## Eng Review Decisions (2026-07-13, /plan-eng-review)
 
@@ -308,8 +341,9 @@ ship date never waits on the merchant agreement even though both are one build.
    of the assignment; a ZiG answer reopens Premise 2.)
 2. **Econet onboarding timeline** — actual lead time and API access terms for an
    unlicensed startup; determines when the automated rail can go live.
-3. **Grace credit size** — $5 (= `minTopUp`) per active rider at flip, or scaled to
-   trailing ride volume?
+3. **Grace credit size — RESOLVED at CEO review (D3/1A):** $5 (= `minTopUp`) per
+   active rider, seeded via the campaign-keyed bulk credit before the flip. Revisit
+   against shadow-accrual data only if median fares shift materially.
 4. **Floor calibration** — is `lowBalanceBlockBelow: 2` right at a 5% rate (a $2 floor
    ≈ 13 rides' commission at the ~$3 median fare)? Tune before the flip.
 5. **Manual-credit SLA at scale** — at what rider count does the manual rail for
@@ -345,6 +379,14 @@ Expo/EAS mobile build. No new distribution channel needed.
 
 - **Econet EcoCash merchant agreement + API access** — critical path for the automated
   rail (founder-accepted); wallet core is sequenced not to wait on it.
+  **Counterparty posture (CEO review OV#4):** Econet is not a neutral vendor — its
+  Cassava group has run competing logistics plays (Vaya), the merchant approval is
+  discretionary, and once live the EcoCash rail sees every top-up (at a known rate,
+  a real-time proxy for Lynia's volumes and revenue). This does not change the
+  integration decision — EcoCash is where riders' money lives — but the fallback is
+  now explicit: **the manual admin-credit path is the indefinite fallback rail**,
+  viable at pilot scale for all three providers, so an Econet stall delays
+  automation, never riders' ability to top up or the business itself.
 - Lynia merchant/receiving accounts on EcoCash, InnBucks, O'mari (needed even for the
   manual rail).
 - Pilot launch gates (WhatsApp BSP, KYC on real ZIM IDs) — orthogonal, but the wallet
@@ -355,6 +397,10 @@ Expo/EAS mobile build. No new distribution channel needed.
   product decision on timing/liquidity.
 
 ## The Assignment
+
+**Founder-queue ordering (CEO review OV#1 kernel):** the open pilot gates — WhatsApp
+BSP and the Didit ZIM-ID run — come **ahead of** any wallet paperwork in your personal
+action queue. The wallet build runs on CC time and never justifies displacing them.
 
 Two real-world actions this week, both off the critical path of any code:
 
@@ -386,20 +432,25 @@ Two real-world actions this week, both off the critical path of any code:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | CLEAR (HOLD_SCOPE) | 2 findings + 5 outside-voice items adjudicated, 0 critical gaps |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR (PLAN) | 10 issues, 0 critical gaps |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
-- **Outside voice:** ran (Claude subagent — Codex not installed); 11 findings → 5
-  adopted (OV-1A idempotency/fare-adjust fix, OV-2A env-driven flip mechanism, OV-3A
-  credit-side controls, OV-4A single freeze authority, OV-5A shadow accrual), 1 bundle
-  explicitly rejected by founder decision (OV-6C: DoD split, refund-path corrections,
-  payments-lawyer consult, Econet USD query — recorded as accepted risk).
+- **Outside voices:** two runs (Claude subagent — Codex not installed). Eng pass: 11
+  findings → 5 adopted (OV-1A…OV-5A), 1 bundle rejected by founder decision (OV-6C —
+  recorded as accepted risk). CEO strategy pass: 5 findings → 4 accepted (collection-
+  integrity metrics, cost-covering flip condition + all-in-rate comms, Econet
+  counterparty posture + manual-rail fallback, wallet-reveal visibility flag), 1 kept
+  as-is with kernel adopted (build-now stands; founder queue orders pilot gates ahead
+  of Econet paperwork).
 - **Eng review decisions:** 1A same-tx unfailable debit; 2A server-authoritative rate;
   3A compile-required gate input; 4A→OV-1A fare-adjust delta rows; D2 two stacked PRs.
-  Full list in "Eng Review Decisions" section above.
-- **VERDICT:** ENG CLEARED — ready to implement (PR1 wallet core, PR2 EcoCash rail).
+- **CEO review decisions:** flat 5% shape confirmed against inDrive's playbook (0% →
+  5–10%, Africa ~6%); flip firing conditions + owner + 14-day notice + $5 grace credit
+  (D3/1A); show-the-math ledger receipts (D4/2A); the five outside-voice adjudications
+  above.
+- **VERDICT:** CEO + ENG CLEARED — ready to implement (PR1 wallet core, PR2 EcoCash rail).
 
 NO UNRESOLVED DECISIONS
