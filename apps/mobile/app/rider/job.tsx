@@ -18,6 +18,7 @@ import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
+import { LeaveJobButton } from "../../src/ui/rider/LeaveJobButton";
 import { PickupChecklist } from "../../src/ui/rider/PickupChecklist";
 import { CancelledHandback, UndeliveredDone } from "../../src/ui/rider/terminals";
 import { UndeliveredSheet } from "../../src/ui/rider/UndeliveredSheet";
@@ -602,7 +603,7 @@ export default function RiderJob(): React.ReactElement {
         {/* Order-level support while the run is live (the post-trip report/help now lives on the
             frozen delivered terminal above, since a delivered order no longer reaches this flow). */}
         {isActive ? <GetHelpControl orderId={order.id} /> : null}
-        <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
+        <LeaveJobButton isActive={isActive} onLeave={() => router.replace("/rider")} />
         <ErrorText message={error} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
