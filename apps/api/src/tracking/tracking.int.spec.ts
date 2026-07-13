@@ -108,6 +108,22 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(ids).toContain(located);
     expect(ids).not.toContain(noGeog);
   });
+
+  it("excludes an in-range online rider whose heartbeat is stale (ghost filter, policy BROADCAST)", async () => {
+    const fresh = await makeRider(true);
+    const ghost = await makeRider(true); // app died with is_online stuck true
+    await tracking.updateRiderLocation(fresh, CENTER.lat, CENTER.lng);
+    await tracking.updateRiderLocation(ghost, CENTER.lat + 0.003, CENTER.lng);
+    // Age the ghost's heartbeat past BROADCAST.heartbeatMaxAgeMs (120 s) — position/geog stay live.
+    await prisma.rider.update({
+      where: { profileId: ghost },
+      data: { lastHeartbeatAt: new Date(Date.now() - 10 * 60_000) },
+    });
+
+    const ids = (await tracking.nearbyRiders(CENTER.lat, CENTER.lng, 3000)).map((h) => h.profileId);
+    expect(ids).toContain(fresh);
+    expect(ids).not.toContain(ghost);
+  });
 });
 
 describe("orders.pickup_geog generated column (migration 0006) + listOpenNearby", () => {

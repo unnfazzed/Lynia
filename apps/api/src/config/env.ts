@@ -140,6 +140,19 @@ export const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.string().email().optional(),
   ),
+  // --- Broadcast reach (policy BROADCAST) ---
+  // Optional per-deploy overrides for the initial broadcast radius and the ghost-rider heartbeat
+  // cutoff (common/broadcast-policy.ts reads them at the use site). Validated here so a malformed
+  // override fails loud at boot instead of silently falling back to the default. "" = unset, like
+  // the other deploy-injected optionals.
+  BROADCAST_BASE_RADIUS_M: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
+  BROADCAST_HEARTBEAT_MAX_AGE_MS: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
 }).superRefine((env, ctx) => {
   // The boot-guards below fail LOUD in production rather than let the API come up in an insecure or
   // half-configured state. Each stays permissive in dev/test so local work and CI are unaffected.

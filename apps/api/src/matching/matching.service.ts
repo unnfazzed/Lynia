@@ -1,8 +1,11 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { BROADCAST, broadcastRadiusAtMs } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
+import { baseBroadcastRadiusM, effectiveBroadcastRadiusM } from "../common/broadcast-policy";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
+import { buildBoardNewOrderEvent, pickupPoint } from "../orders/waypoints";
 import { PrismaService } from "../prisma/prisma.service";
 import { blockedPairWhere } from "../reports/blocks";
 import { onlineRefusalReason } from "../riders/rider.service";
@@ -11,10 +14,6 @@ import { TrackingService } from "../tracking/tracking.service";
 
 /** Rider must have a heartbeat newer than this to be selectable (ET3 liveness). */
 const HEARTBEAT_TTL_MS = 30_000;
-
-/** Radius (m) for the "was anyone even online nearby?" check on a no-bid expiry — the SAME 5 km the
- *  customer broadcast + rider board + orders.service.countNearbyForPickup use. */
-const NEARBY_RADIUS_M = 5000;
 
 export interface SelectResult {
   orderId: string;
@@ -209,7 +208,7 @@ export class MatchingService {
       // false so any failure below leaves the safe default copy — never a false "nobody's here".
       let noSupply = false;
       try {
-        const ord = await this.prisma.order.findUnique({ where: { id: orderId }, select: { pickup: true } });
+        const ord = await this.prisma.order.findUnique({ where: { id: orderId }, select: { pickup: true, createdAt: true } });
         const pt = (ord?.pickup as { point?: { lat: number; lng: number } } | null)?.point;
         this.gateway.emitBidExpired(orderId, pt?.lat, pt?.lng);
         // Push the status change to the order's own room too — without this the customer's countdown
@@ -217,10 +216,12 @@ export class MatchingService {
         // journey ("did anyone take my price?").
         this.gateway.emitOrderStatus(orderId, "expired");
         // Only bother checking supply when there were NO bids — a no-bid window that also had no riders
-        // online nearby was never a price problem, so "raise it" would be a lie. Best-effort: a geo blip
-        // throws into the catch → noSupply stays false → the customer gets the safe default copy.
-        if (!result.hadOffers && pt) {
-          const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, NEARBY_RADIUS_M);
+        // online nearby was never a price problem, so "raise it" would be a lie. Judged at the radius
+        // the broadcast had WIDENED to (policy BROADCAST.expansion) so "nobody was online" stays honest
+        // after expansion. Best-effort: a geo blip throws into the catch → noSupply stays false → the
+        // customer gets the safe default copy.
+        if (!result.hadOffers && pt && ord) {
+          const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, effectiveBroadcastRadiusM(ord.createdAt));
           noSupply = nearby.length === 0;
           // Persist the no-supply verdict so the in-app feed / expired snapshot can pick the honest
           // "nobody was online" copy on later reads (the push already got it transiently above). Inside
@@ -236,5 +237,80 @@ export class MatchingService {
       void this.notifications.notifyOrderExpired(orderId, noSupply);
     }
     return { expired: result.expired };
+  }
+
+  /**
+   * One widening tick of the broadcast (policy BROADCAST.expansion, step `stepIndex`), fired as a
+   * delayed job by OfferExpiryService.schedule. Re-runs the broadcast at the step's wider radius and
+   * pushes only the riders no earlier disc reached: the per-order sent set (claimBroadcastRecipients)
+   * is the dedupe authority — which also picks up a rider who came online INSIDE an already-covered
+   * ring — with pure ring geometry (distance > previous radius) as the no-Redis fallback. Lives here
+   * (not OrdersService) to avoid an OrdersService ↔ OfferExpiryService constructor cycle.
+   *
+   * Wholly best-effort, mirroring broadcastToNearbyRiders: it never throws, and a missed tick is soft
+   * — the next tick's set-difference covers the ring this one missed. No-ops once the order has left
+   * open_for_offers (accepted/cancelled/expired mid-window).
+   */
+  async expandBroadcast(orderId: string, stepIndex: number): Promise<void> {
+    try {
+      const step = BROADCAST.expansion[stepIndex];
+      if (!step) return;
+      const base = baseBroadcastRadiusM();
+      const newRadiusM = broadcastRadiusAtMs(step.atMs, base);
+      const prevRadiusM = stepIndex === 0 ? base : broadcastRadiusAtMs(BROADCAST.expansion[stepIndex - 1].atMs, base);
+      // Corridor cap or an env-raised base can make a step add nothing — skip rather than re-ping.
+      if (newRadiusM <= prevRadiusM) return;
+
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: {
+          status: true,
+          pickup: true,
+          dropoff: true,
+          itemDesc: true,
+          suggestedFare: true,
+          proposedFare: true,
+          distanceKm: true,
+          createdAt: true,
+        },
+      });
+      if (!order || order.status !== "open_for_offers") return;
+      const pt = pickupPoint(order.pickup);
+      if (!pt) return;
+
+      // Re-emit the (redacted) card to the board rooms of the widened disc, so a rider 8–12 km out
+      // watching the board sees it appear the moment their ring is reached. Clients dedupe by id, so
+      // rooms already covered by the create-time emit harmlessly receive it again. Guarded on its own
+      // so a schema/emit failure can't suppress the FCM ring push below.
+      try {
+        const boardEvent = buildBoardNewOrderEvent(orderId, order.pickup, order.dropoff, {
+          itemDesc: order.itemDesc,
+          suggestedFare: order.suggestedFare.toString(),
+          proposedFare: order.proposedFare.toString(),
+          distanceKm: order.distanceKm,
+          createdAt: order.createdAt.toISOString(),
+        });
+        this.gateway.emitBoardNewOrderToCells(boardEvent, pt.lat, pt.lng, newRadiusM);
+      } catch (err) {
+        this.logger.warn(`expansion board emit failed for order ${orderId}: ${(err as Error).message}`);
+      }
+
+      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, newRadiusM);
+      if (nearby.length === 0) return;
+      const ids = nearby.map((r) => r.profileId);
+      const claimed =
+        (await this.tracking.claimBroadcastRecipients(orderId, ids)) ??
+        // Redis unavailable → ring geometry: only riders beyond the previous disc. Worst case a rider
+        // who rode outward across the boundary gets one duplicate push — the safe direction.
+        nearby.filter((r) => r.distanceM > prevRadiusM).map((r) => r.profileId);
+      if (claimed.length === 0) return;
+      // best-effort, never throws, un-awaited — same contract as the create-time fan-out.
+      void this.notifications.notifyNewBroadcast(orderId, claimed, {
+        pickup: pt.landmark,
+        fare: order.proposedFare.toString(),
+      });
+    } catch (err) {
+      this.logger.warn(`broadcast expansion step ${stepIndex} failed for order ${orderId}: ${(err as Error).message}`);
+    }
   }
 }

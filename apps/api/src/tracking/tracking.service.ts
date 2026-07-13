@@ -1,6 +1,7 @@
 import { Inject, Injectable, type OnModuleDestroy } from "@nestjs/common";
 import type IORedis from "ioredis";
 import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
+import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
 import { createRedisClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -56,6 +57,12 @@ const NOTIFY_DRAIN_COUNT = 200;
  *  instance that then dies simply expires and the waiter is re-claimable. */
 const NOTIFY_CLAIM_PREFIX = "notify:claim:";
 const NOTIFY_CLAIM_TTL_S = 60;
+
+/** Per-order set of rider ids already pushed for a broadcast (SADD-claimed by each widening tick so a
+ *  rider is FCM-pinged at most once per order). TTL comfortably outlives the 90 s offer window; the
+ *  set self-evicts long after the last possible tick. */
+const BROADCAST_SENT_PREFIX = "broadcast:sent:";
+const BROADCAST_SENT_TTL_S = 600;
 
 @Injectable()
 export class TrackingService implements OnModuleDestroy {
@@ -359,6 +366,10 @@ export class TrackingService implements OnModuleDestroy {
    */
   async nearbyRiders(lat: number, lng: number, radiusM: number): Promise<NearbyRider[]> {
     const done = this.metrics.startTimer();
+    // Ghost cutoff (policy BROADCAST.heartbeatMaxAgeMs): a rider whose app died with is_online stuck
+    // true keeps a stale heartbeat, so filtering on it here keeps FCM pushes AND the customer-facing
+    // ridersNearby count honest. Applied in BOTH PG legs; matching's stricter 30 s offer gate is separate.
+    const hbCutoff = new Date(Date.now() - heartbeatMaxAgeMs());
     const redis = this.getRedis();
     if (redis) {
       const candidates = await this.geoSearchCandidates(redis, lat, lng, radiusM);
@@ -376,7 +387,9 @@ export class TrackingService implements OnModuleDestroy {
           FROM riders
           WHERE profile_id = ANY(${ids}::uuid[])
             AND is_online = true
-            AND geog IS NOT NULL`;
+            AND geog IS NOT NULL
+            AND last_heartbeat_at IS NOT NULL
+            AND last_heartbeat_at >= ${hbCutoff}`;
         const onlineSet = new Set(online.map((r) => r.profile_id));
         // Preserve GEOSEARCH nearest-first order; keep PG-confirmed online riders; cap at 50 for
         // true parity with the PG path's LIMIT 50.
@@ -392,6 +405,8 @@ export class TrackingService implements OnModuleDestroy {
       FROM riders
       WHERE is_online = true
         AND geog IS NOT NULL
+        AND last_heartbeat_at IS NOT NULL
+        AND last_heartbeat_at >= ${hbCutoff}
         AND ST_DWithin(geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})
       ORDER BY distance_m ASC
       LIMIT 50`;
@@ -425,6 +440,37 @@ export class TrackingService implements OnModuleDestroy {
       )) as Array<[string, string]>;
       // WITHDIST rows are [member, distance]; without it ioredis would return bare member strings.
       return res.map((row) => ({ profileId: row[0], distanceM: Number(row[1]) }));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Claim which of `profileIds` have NOT yet been pushed for this order's broadcast, marking them as
+   * pushed in the same round trip (SADD's 0/1 per-member reply IS the dedupe — mirrors the
+   * claimNotifyWaitersNear claim idiom). Used by the widening broadcast so each expansion tick pushes
+   * only the riders the previous discs missed — including one who came online INSIDE an already-covered
+   * ring (absent from the set ⇒ claimed by the next tick). Returns the newly-claimed ids; returns null
+   * without Redis or on error so the caller can fall back to pure ring geometry (distance > prevRadius).
+   */
+  async claimBroadcastRecipients(orderId: string, profileIds: string[]): Promise<string[] | null> {
+    if (profileIds.length === 0) return [];
+    const redis = this.getRedis();
+    if (!redis) return null;
+    try {
+      const key = `${BROADCAST_SENT_PREFIX}${orderId}`;
+      const pipeline = redis.pipeline();
+      for (const id of profileIds) pipeline.sadd(key, id);
+      pipeline.expire(key, BROADCAST_SENT_TTL_S);
+      const replies = await pipeline.exec();
+      if (!replies) return null;
+      const claimed: string[] = [];
+      for (let i = 0; i < profileIds.length; i++) {
+        const [err, added] = replies[i];
+        if (err) return null;
+        if (added === 1) claimed.push(profileIds[i]);
+      }
+      return claimed;
     } catch {
       return null;
     }

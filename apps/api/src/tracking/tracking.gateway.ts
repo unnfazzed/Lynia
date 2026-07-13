@@ -17,6 +17,7 @@ import {
   BoardSubscribeEvent,
   boardCell,
   boardCellNeighborhood,
+  boardCellsCoveringRadius,
   type JobCancelledEvent,
   type OrderRebroadcastEvent,
   type OrderTakenEvent,
@@ -25,6 +26,7 @@ import {
   WS_EVENTS,
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
+import { maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { corsOriginResolver } from "../common/cors";
 import { createRedisClient } from "../common/redis";
 import { ENV } from "../config/config.module";
@@ -388,6 +390,22 @@ export class TrackingGateway
   }
 
   /**
+   * Widened-broadcast variant of {@link emitBoardNewOrder}: pushes the (redacted) card to EVERY
+   * geo-cell room intersecting the disc of `radiusM` around the pickup — an expansion tick's board
+   * channel (policy BROADCAST.expansion), where the audience is more than one cell away. Rooms the
+   * create-time emit already covered receive it again harmlessly (clients dedupe by id, same contract
+   * as emitBoardNewOrder's geo-cell + BOARD_ROOM union). Best-effort; never throws.
+   */
+  emitBoardNewOrderToCells(payload: BoardNewOrderEvent, pickupLat: number, pickupLng: number, radiusM: number): void {
+    let target = this.server?.to(BOARD_ROOM);
+    if (!target) return;
+    for (const cell of boardCellsCoveringRadius(pickupLat, pickupLng, radiusM)) {
+      target = target.to(boardGeoRoom(cell));
+    }
+    target.emit(WS_EVENTS.boardNewOrder, payload);
+  }
+
+  /**
    * The auction window closed with no pick — signal `bid:expired` to ALL bidders (INTERFACE-AUDIT C2).
    * Bidders live on the BOARD (the geo-cell room the order was broadcast to + the city-wide BOARD_ROOM
    * for loc-less riders) — NOT the order room, which only the customer joins — so this mirrors
@@ -399,7 +417,11 @@ export class TrackingGateway
     const payload: BidExpiredEvent = { orderId, at: new Date().toISOString() };
     let target = this.server?.to(BOARD_ROOM);
     if (target && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
-      target = target.to(boardGeoRoom(boardCell(pickupLat as number, pickupLng as number)));
+      // Cover the WIDEST disc the broadcast can have reached (policy BROADCAST.expansion), not just
+      // the pickup's own cell — a rider who saw the card via an expansion tick must see it close too.
+      for (const cell of boardCellsCoveringRadius(pickupLat as number, pickupLng as number, maxBroadcastRadiusM())) {
+        target = target.to(boardGeoRoom(cell));
+      }
     }
     target?.emit(WS_EVENTS.bidExpired, payload);
   }
@@ -415,7 +437,10 @@ export class TrackingGateway
     const payload: OrderTakenEvent = { orderId, at: new Date().toISOString() };
     let target = this.server?.to(BOARD_ROOM);
     if (target && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
-      target = target.to(boardGeoRoom(boardCell(pickupLat as number, pickupLng as number)));
+      // Same widened distribution as emitBidExpired — every ring the broadcast may have reached.
+      for (const cell of boardCellsCoveringRadius(pickupLat as number, pickupLng as number, maxBroadcastRadiusM())) {
+        target = target.to(boardGeoRoom(cell));
+      }
     }
     target?.emit(WS_EVENTS.orderTaken, payload);
   }
