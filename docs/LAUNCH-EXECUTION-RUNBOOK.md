@@ -80,22 +80,34 @@ cd infra/terraform && terraform apply
 
 ## 3. LR9 — observability live (unblocks the whole performance track)
 
-Follow `docs/OBSERVABILITY.md` §Production activation:
+Follow `docs/OBSERVABILITY.md` §Production activation.
+**UPDATE (2026-07-13): the sidecar is folded into `release.yml`** — activation is now
+flag-driven, no `services replace` and no `<PLACEHOLDERS>` to fill:
+
 ```bash
-cd infra/terraform && terraform apply     # enables monitoring/cloudtrace APIs + SA roles
+cd infra/terraform && terraform apply     # enables monitoring/cloudtrace APIs + SA roles AND creates
+                                          # the otel-collector-config secret from config.yaml (otel.tf)
 # NOTE: the SLO alert policies are gated on slo_alerts_enabled (default false) because Cloud
 # Monitoring rejects PromQL policies whose metrics don't exist yet. AFTER the collector sidecar
 # is live and series arrive in GMP, set slo_alerts_enabled = true in terraform.tfvars + re-apply.
-gcloud secrets create otel-collector-config \
-  --project=$PROJECT --data-file=infra/otel-collector/config.yaml
-gcloud secrets add-iam-policy-binding otel-collector-config --project=$PROJECT \
-  --member="serviceAccount:$RUNTIME_SA" --role=roles/secretmanager.secretAccessor
-# Fill the <PLACEHOLDERS> in infra/otel-collector/service.yaml.template, then:
-gcloud run services replace infra/otel-collector/service.yaml --region $REGION --project $PROJECT
+
+# Make sure the Docker Hub mirror the sidecar image pulls through exists (a direct docker.io pull
+# hits anonymous rate limits):
+gcloud artifacts repositories describe dockerhub-remote --location=$REGION --project=$PROJECT || \
+gcloud artifacts repositories create dockerhub-remote --location=$REGION --project=$PROJECT \
+  --repository-format=docker --mode=remote-repository \
+  --remote-docker-repo=https://registry-1.docker.io
+
+# Flip the repo Variable OTEL_SIDECAR_ENABLED=true, then re-run "Release (Cloud Run)".
+# release.yml now deploys api + otel-collector containers explicitly on every release — the
+# revision spec is code-driven, so a hand-edited sidecar is REPLACED, never inherited.
 # Verify series arrive in Metrics Explorer's PromQL tab (e.g. offer_received_latency_ms_bucket).
+# Roll back: clear OTEL_SIDECAR_ENABLED, remove the sidecar
+#   (gcloud run services update lynia-api --region $REGION --remove-containers otel-collector),
+# and re-run the release.
 ```
-> After this, a normal `/ship` deploy drops the sidecar — fold it into `release.yml` once battle-tested
-> (the doc's operational-drift note).
+> `infra/otel-collector/service.yaml.template` is retained only as a manual fallback / reference for
+> the container spec; the flag path above is the supported one.
 
 ## 4. LR11 — staging stack + run the k6 load harness
 
@@ -246,6 +258,72 @@ gh workflow run release.yml --ref main
 # verify: curl https://lyniago.lyniafinance.com/app/version-gate → {"minSupportedVersion":"0.2.0"}
 ```
 Prefer keeping API contracts backward-compatible; this gate is the escape hatch, not the routine.
+
+## 9. Adopt the hand-made GCP resources into Terraform (one `terraform import` session)
+
+Three Secret Manager secrets were created with ad-hoc `gcloud` commands and live outside the
+Terraform blueprint: `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, `WHATSAPP_ACCESS_TOKEN`. Adopting
+them makes Terraform own the secret *containers* + IAM (drift-detected, re-creatable) while the
+*values* stay manual — correct for vendor credentials. Run once, from `infra/terraform/`:
+
+```bash
+# 1) FIRST add the resource blocks (do not apply before importing — apply would try to CREATE
+#    secrets that already exist and error). Append to secrets.tf:
+cat >> secrets.tf <<'EOF'
+
+# Vendor secrets — containers adopted via `terraform import` (runbook §9); VALUES are added
+# manually as new versions and never live in state/git.
+resource "google_secret_manager_secret" "vendor" {
+  for_each  = toset(["DIDIT_API_KEY", "DIDIT_WEBHOOK_SECRET", "WHATSAPP_ACCESS_TOKEN"])
+  secret_id = each.key
+  project   = local.project_id
+  labels    = var.labels
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_iam_member" "vendor_runtime" {
+  for_each  = google_secret_manager_secret.vendor
+  project   = local.project_id
+  secret_id = each.value.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.runtime.email}"
+}
+EOF
+
+# 2) Import each container + its existing runtime-SA accessor binding:
+for s in DIDIT_API_KEY DIDIT_WEBHOOK_SECRET WHATSAPP_ACCESS_TOKEN; do
+  terraform import "google_secret_manager_secret.vendor[\"$s\"]" "projects/$PROJECT/secrets/$s"
+  terraform import "google_secret_manager_secret_iam_member.vendor_runtime[\"$s\"]" \
+    "projects/$PROJECT/secrets/$s roles/secretmanager.secretAccessor serviceAccount:$RUNTIME_SA"
+done
+
+# 3) Confirm a clean adoption — expect "No changes" (or only label additions):
+terraform plan
+# Commit the secrets.tf addition. Standing rule: any emergency gcloud change gets a follow-up
+# PR that makes Terraform own the result (precedent: the deployer repoAdmin grant, iam.tf).
+```
+
+If `dockerhub-remote` (the Artifact Registry Docker Hub mirror from §3) was created by hand and you
+want it owned too, the same pattern applies (`google_artifact_registry_repository`, mode
+`REMOTE_REPOSITORY`) — import before apply.
+
+## 10. Arm the nightly GCP drift audit
+
+`.github/workflows/gcp-drift-detect.yml` (nightly 06:45 Harare + on-demand) audits live GCP against
+the repo and opens/refreshes a single `gcp-drift` issue on findings, closing it when clean. It is
+read-only and already armed by `GCP_DEPLOY_ENABLED=true`; the IAM it needs (`roles/viewer` +
+`roles/secretmanager.viewer` on the deployer SA, objectViewer on `gs://lynia-tfstate`) arrives with
+the next `terraform apply`. One optional secret unlocks its second probe:
+
+```bash
+# Paste the APPLIED terraform.tfvars (gitignored) so CI can plan with the real variable values —
+# planning with defaults would spuriously diff live-armed flags like staging_enabled:
+gh secret set TF_PROD_TFVARS < infra/terraform/terraform.tfvars
+# Keep it in sync whenever you change tfvars. Without it, only the provisioning-verify probe runs.
+```
 
 ---
 **Where each of these came from:** `docs/DATA-RETENTION.md` (§1–2), `docs/OBSERVABILITY.md` (§3),

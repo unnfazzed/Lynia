@@ -431,22 +431,66 @@ jobs:
             SECRETS="${SECRETS},WHATSAPP_ACCESS_TOKEN=WHATSAPP_ACCESS_TOKEN:latest"
           fi
 
-          gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
-            --image "$IMAGE:${GITHUB_SHA}" \
-            --project "${{ vars.GCP_PROJECT_ID }}" \
-            --region "${{ vars.GCP_REGION }}" \
-            --platform managed \
-            --port 3000 \
-            --timeout 3600 \
-            --service-account "${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}" \
-            --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
-            --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
-            --vpc-egress private-ranges-only \
-            --ingress internal-and-cloud-load-balancing \
-            --set-env-vars "$ENV_VARS" \
-            --set-secrets "$SECRETS" \
-            --allow-unauthenticated \
-            $TRAFFIC_FLAGS
+          # OTel collector sidecar (docs/OBSERVABILITY.md → Production activation): when the
+          # OTEL_SIDECAR_ENABLED repo Variable is true, the release deploys BOTH containers
+          # explicitly — the revision spec is fully code-driven, so a hand-edited or broken sidecar
+          # is REPLACED (not inherited) on every deploy, which is what makes the sidecar safe after
+          # the 2026-07-08→07-10 inherited-sidecar incident. The API's OTLP exporters wake up via
+          # OTEL_EXPORTER_OTLP_ENDPOINT, coupled HERE to the sidecar's presence — endpoint set ⇔
+          # collector present. The collector mounts its pipeline from the Terraform-managed
+          # otel-collector-config secret (infra/terraform/otel.tf) and pulls through the project's
+          # Docker Hub mirror (a direct docker.io pull hits anonymous rate limits — override the
+          # image via the OTEL_COLLECTOR_IMAGE repo Variable, e.g. to pin a digest).
+          # When the flag is unset this branch is byte-identical to the pre-sidecar deploy, and the
+          # orphaned-sidecar guard above has already refused to run if a sidecar is present anyway.
+          if [ "${{ vars.OTEL_SIDECAR_ENABLED }}" = "true" ]; then
+            ENV_VARS="${ENV_VARS};OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318;OTEL_SERVICE_NAME=lynia-api"
+            OTEL_IMAGE="${{ vars.OTEL_COLLECTOR_IMAGE }}"
+            if [ -z "$OTEL_IMAGE" ]; then
+              OTEL_IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/dockerhub-remote/otel/opentelemetry-collector-contrib:0.116.0"
+            fi
+            gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
+              --project "${{ vars.GCP_PROJECT_ID }}" \
+              --region "${{ vars.GCP_REGION }}" \
+              --platform managed \
+              --timeout 3600 \
+              --service-account "${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}" \
+              --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
+              --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
+              --vpc-egress private-ranges-only \
+              --ingress internal-and-cloud-load-balancing \
+              --allow-unauthenticated \
+              --container api \
+              --image "$IMAGE:${GITHUB_SHA}" \
+              --port 3000 \
+              --set-env-vars "$ENV_VARS" \
+              --set-secrets "$SECRETS" \
+              --depends-on otel-collector \
+              --container otel-collector \
+              --image "$OTEL_IMAGE" \
+              --args "--config=/etc/otelcol/config.yaml" \
+              --cpu 1 \
+              --memory 256Mi \
+              --set-secrets "/etc/otelcol/config.yaml=otel-collector-config:latest" \
+              $TRAFFIC_FLAGS
+          else
+            gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
+              --image "$IMAGE:${GITHUB_SHA}" \
+              --project "${{ vars.GCP_PROJECT_ID }}" \
+              --region "${{ vars.GCP_REGION }}" \
+              --platform managed \
+              --port 3000 \
+              --timeout 3600 \
+              --service-account "${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}" \
+              --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
+              --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
+              --vpc-egress private-ranges-only \
+              --ingress internal-and-cloud-load-balancing \
+              --set-env-vars "$ENV_VARS" \
+              --set-secrets "$SECRETS" \
+              --allow-unauthenticated \
+              $TRAFFIC_FLAGS
+          fi
 
       # Progressive promotion (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2b). The candidate's tagged
       # run.app URL is unreachable from here (default URLs disabled + LB-only ingress), so each
