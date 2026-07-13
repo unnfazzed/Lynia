@@ -15,8 +15,9 @@ filter, widening radius, radius-config consolidation; see the broadcast-review s
 sweep (`docs/DEEP-SWEEP-2026-07-13.md`)
 found 8 new items** — DS13-01…DS13-07 + RH-01 (details in that report and the section at the bottom of
 this ledger). **DS13-01…DS13-07 fixed and merged in PR #209** (`fix(deep-sweep): remediate DS13-01..07`),
-each with a regression test; **RH-01 remains OPEN**, flagged for a human policy decision. Phase-0
-re-verified 8/8 sampled prior fixes still intact (no regressions). Infra hardening flags are wired with
+each with a regression test; **RH-01 fixed in PR #221** (persisted `heldReason` — Option A), which also
+lands the DS13-05 admin-web SOS panel follow-up. Phase-0 re-verified 8/8 sampled prior fixes still intact
+(no regressions). Infra hardening flags are wired with
 an ordered rollout runbook at `docs/INFRA-HARDENING-ROLLOUT.md`.
 
 ## Source reports folded in
@@ -49,10 +50,9 @@ duplication (see clusters below).
 
 ## OPEN (present in code today)
 
-One code item is open: **RH-01** (deep sweep 2026-07-13) — reported and verified, but intentionally
-**not** auto-fixed because the correct remedy is a fraud-hold representation policy decision (see its row
-below and `docs/DEEP-SWEEP-2026-07-13.md`). Every other code defect from every report — including the
-whole Phase-1 set and DS13-01…DS13-07 (merged in #209) — is FIXED or MOOT. The remaining items are
+No open **code** defect remains. RH-01 — the last open code item (the velocity fraud-hold self-clear) —
+is **FIXED in PR #221** (persisted `heldReason`, Option A). Every code defect from every report — the
+whole Phase-1 set, DS13-01…DS13-07 (#209), and RH-01 (#221) — is FIXED or MOOT. The remaining items are
 non-code / founder-gated.
 
 | ID | Description | Area | Sev | Sweeps | Notes |
@@ -60,7 +60,6 @@ non-code / founder-gated.
 | KB-SEC-INFRA | Deferred infra hardening: Cloud SQL public IP, Redis in-transit TLS, GCS CORS, WAF/Cloud Armor enforce, KYC bucket CMEK/retention, Redis/SQL HA | `infra/terraform/*` | MED-LOW | 3 | Flags all landed + wired; **rollout runbook now written: `docs/INFRA-HARDENING-ROLLOUT.md`** (ordered apply/verify/rollback per item). One reliability fix landed (CMEK bucket `depends_on` the KMS IAM grant). Remaining work is `terraform apply` in a window — founder-gated, not a code bug. |
 | KB-MOBILE-PIN | Mobile certificate pinning for the API + WS host (SECURITY §P3-1) | `apps/mobile/plugins/with-certificate-pinning.js` | LOW | 1 | **Code landed** — gated config plugin merged and wired (`app.config.ts`), inert until `LYNIA_TLS_PINS` is set. Remaining work is founder-executed arming + on-device validation (`docs/MOBILE-CERT-PINNING.md`); out of scope of the terraform runbook. |
 | KB-OPS-GATE | Founder/ops launch gates: WhatsApp BSP + SMS gateway wiring, real ZIM-ID Didit run, live FCM, on-device QA, chaos/load drills, crash telemetry rollout, admin per-operator SSO/MFA | ops/founder | — | 3 | Not code defects — external readiness items from LAUNCH/PILOT readiness. |
-| RH-01 | FRAUD P0-3 velocity `on_hold` (#198) self-clears on the next reliability-recovery event: the velocity hold sets `onHold=true` while leaving the score high (penalty-free reasons), and `applyReliabilityDelta`'s hysteresis unconditionally clears `onHold` at score ≥ `ON_HOLD_CLEAR_AT` on the next `rate()`/`completeOrder()`, so the fraud hold evaporates with no admin review | `apps/api/src/riders/reliability.ts:22`, `order-lifecycle.service.ts:405-413/459-465` | MEDIUM | 1 | **REPORTED, not auto-fixed — flagged for human review** (`docs/DEEP-SWEEP-2026-07-13.md` RH-01). Touches the fraud/standing-gating carve-out; correct remedy is a policy/schema decision (persisted `heldReason` the score-hysteresis never clears, vs depressing the score below `ON_HOLD_BELOW`). |
 
 ### Recently closed (this session's remediation PRs)
 
@@ -267,7 +266,7 @@ all CI checks passing; no schema migration.
 | DS13-02 | Every socket disconnect evicts an online rider from the Redis geo index → backgrounded-but-online riders get no new-order FCM push and are excluded from supply/no-supply counts (Redis GEOSEARCH prefilter overrides the documented `is_online` authority) | `tracking.service.ts:324-347`, `orders.service.ts:301-330` | HIGH | **FIXED #209** — `flushToPg` no longer evicts on disconnect; eviction happens only on explicit go-offline (`setOnline(false)`), so PG `is_online` stays authority |
 | DS13-03 | Admin order-cancel emits WS only — no FCM to the assigned rider/customer, unlike the party-initiated cancel; rider can keep riding on a cancelled order | `admin-orders.service.ts:126-132` | MEDIUM | **FIXED #209** — inject `NotificationsService` (optional, `@Global`), fire `notifyOrderStatus` post-commit for push parity |
 | DS13-04 | Admin rider/customer standing mutations (`suspendRider`/`liftRider`/`banRider`/`clearHold`, customer holds) lack the DS-03 CAS guard → a lift/clear-hold can clobber a concurrent ban or velocity auto-hold | `admin-riders.service.ts`, `admin-customers.service.ts` | MEDIUM | **FIXED #209** — CAS `updateMany` guarded on the observed `accountStatus` (+ `onHold`/`reliabilityScore` for lift/clear-hold), 409 on 0-row conflict; the `reliabilityScore` predicate serialises against a concurrent velocity auto-hold without a separate row lock |
-| DS13-05 | SOS is write-only: `SosEvent` has no ops read surface and its sole escalation is an un-reconciled best-effort push to a `role=admin` device-token audience that may be empty → SOS can vanish while the counterparty is told "safety team alerted" | `sos.service.ts`, `notifications.service.ts`, `apps/admin` | HIGH | **FIXED #209 (backend)** — `AdminGuard`-gated read-only `GET /admin/sos` (`SosService.listRecent`) + loud `logger.error` on zero-recipient `notifyOps`; **full admin-web SOS panel + acknowledgement workflow still a follow-up** |
+| DS13-05 | SOS is write-only: `SosEvent` has no ops read surface and its sole escalation is an un-reconciled best-effort push to a `role=admin` device-token audience that may be empty → SOS can vanish while the counterparty is told "safety team alerted" | `sos.service.ts`, `notifications.service.ts`, `apps/admin` | HIGH | **FIXED #209 (backend) + #221 (admin panel)** — `AdminGuard`-gated read-only `GET /admin/sos` (`SosService.listRecent`) + loud `logger.error` on zero-recipient `notifyOps` (#209); admin-web SOS list page `/sos` consuming it (#221). Acknowledgement workflow still a follow-up. |
 | DS13-06 | `POST /riders/become` unthrottled → a parallel burst mints N paid Didit sessions; concurrent-create P2002 leaks as a 500 | `riders.controller.ts:38`, `rider.service.ts` | LOW | **FIXED #209** — `@Throttle({limit:5,windowSec:3600,keyPrefix:"become"})` parity with `kyc/retry` + P2002→`ConflictException` mapping |
 | DS13-07 | Cancelling an `open_for_offers` auction never signals the board → dead cards / live "offer sent" states linger until local countdown/409 | `order-lifecycle.service.ts:612-647`, `admin-orders.service.ts:130` | LOW | **FIXED #209** — emit the expiry path's `emitBidExpired` board-close to the pickup geo rooms on cancel-while-open |
-| RH-01 | FRAUD P0-3 velocity `on_hold` self-clears on the next reliability-recovery event (see OPEN table) | `reliability.ts:22`, `order-lifecycle.service.ts` | MEDIUM | **OPEN — reported, flagged for human review** (fraud-hold representation is a policy decision) |
+| RH-01 | FRAUD P0-3 velocity `on_hold` self-clears on the next reliability-recovery event because the score hysteresis unconditionally un-holds at score ≥ `ON_HOLD_CLEAR_AT` | `reliability.ts:22`, `order-lifecycle.service.ts` | MEDIUM | **FIXED #221** — persisted `heldReason` (`reliability`\|`velocity`\|null; migration 0024); `applyReliabilityDelta` never clears a `velocity` hold on score recovery, only an admin clear-hold releases it |

@@ -213,6 +213,12 @@ model Rider {
   // can be active-but-on-hold. Both the online-gate reads. See packages/shared/src/policy.ts RELIABILITY.
   reliabilityScore Int      @default(100) @map("reliability_score")
   onHold          Boolean   @default(false) @map("on_hold")
+  // RH-01 (DEEP-SWEEP-2026-07-13): WHY the rider is held, so applyReliabilityDelta's score hysteresis
+  // can tell a self-clearing score hold ("reliability") apart from the FRAUD P0-3 velocity/fraud hold
+  // ("velocity", #198) that must survive a score recovery and only be released by an admin clear-hold.
+  // null = not held (or a legacy on_hold row from before this column → score-clearable, as before). See
+  // packages/shared/src/policy.ts HeldReason. Kept in lockstep with that shared union.
+  heldReason      String?   @map("held_reason")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   orders      Order[]      @relation("riderOrders")

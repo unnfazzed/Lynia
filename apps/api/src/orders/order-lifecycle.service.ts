@@ -10,7 +10,7 @@ import {
   type OnModuleInit,
   UnauthorizedException,
 } from "@nestjs/common";
-import { CUSTOMER_CANCELLABLE_STATUSES, DELIVERY_OTP_MAX_ATTEMPTS, RELIABILITY, RIDER_CANCELLABLE_STATUSES, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { CUSTOMER_CANCELLABLE_STATUSES, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_CANCELLABLE_STATUSES, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
@@ -387,7 +387,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         await this.lockRiderRow(tx, order.riderId);
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
-          select: { reliabilityScore: true, onHold: true },
+          select: { reliabilityScore: true, onHold: true, heldReason: true },
         });
         if (rider) {
           // FRAUD P0-3 velocity guard: `refused`/`wrong_address` carry no score penalty, so a rider
@@ -403,12 +403,20 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             where: { riderId: order.riderId, status: "completed", completedAt: { gte: windowStart } },
           });
           const velocityHold = shouldFlagUndeliveredVelocity(undeliveredCount, completedCount);
-          const next = applyReliabilityDelta(rider, -penalty); // penalty may be 0 → score unchanged
+          const next = applyReliabilityDelta({ ...rider, heldReason: rider.heldReason as HeldReason }, -penalty); // penalty may be 0 → score unchanged
           const onHold = next.onHold || velocityHold;
-          if (next.reliabilityScore !== rider.reliabilityScore || onHold !== rider.onHold) {
+          // RH-01: a velocity trip stamps `velocity` (a fraud hold the score hysteresis must never
+          // clear); otherwise persist whatever applyReliabilityDelta computed (which itself preserves an
+          // already-set velocity hold through a recovery/dead-band).
+          const heldReason: HeldReason = velocityHold ? HeldReason.VELOCITY : next.heldReason;
+          if (
+            next.reliabilityScore !== rider.reliabilityScore ||
+            onHold !== rider.onHold ||
+            heldReason !== rider.heldReason
+          ) {
             await tx.rider.update({
               where: { profileId: order.riderId },
-              data: { reliabilityScore: next.reliabilityScore, onHold },
+              data: { reliabilityScore: next.reliabilityScore, onHold, heldReason },
             });
           }
           if (velocityHold && !rider.onHold) {
@@ -448,7 +456,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         await this.lockRiderRow(tx, order.riderId);
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
-          select: { ratingAvg: true, ratingCount: true, tripsCount: true, reliabilityScore: true, onHold: true },
+          select: { ratingAvg: true, ratingCount: true, tripsCount: true, reliabilityScore: true, onHold: true, heldReason: true },
         });
         if (rider) {
           const ratingCount = rider.ratingCount + 1;
@@ -456,9 +464,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           // Reliability (Q2): a delivered trip rated <= LOW_RATING_AT is a penalty; any better-rated
           // completion is a clean delivery that slowly recovers the score. NOTE(Q2): weights +
           // thresholds in packages/shared/src/policy.ts RELIABILITY. Same transaction as the rating.
+          // RH-01: applyReliabilityDelta returns the new heldReason too (spread below) so this recovery
+          // can't silently clear a velocity/fraud hold.
           const delta =
             score <= RELIABILITY.LOW_RATING_AT ? -RELIABILITY.PENALTY.lowRating : RELIABILITY.RECOVER_PER_COMPLETION;
-          const reliability = applyReliabilityDelta(rider, delta);
+          const reliability = applyReliabilityDelta({ ...rider, heldReason: rider.heldReason as HeldReason }, delta);
           await tx.rider.update({
             where: { profileId: order.riderId },
             data: { ratingAvg, ratingCount, tripsCount: rider.tripsCount + 1, ...reliability },
@@ -575,15 +585,20 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         await this.lockRiderRow(tx, order.riderId);
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
-          select: { cancelStrikes: true, reliabilityScore: true, onHold: true },
+          select: { cancelStrikes: true, reliabilityScore: true, onHold: true, heldReason: true },
         });
         const strikes = (rider?.cancelStrikes ?? 0) + 1;
         // Reliability (Q2): a rider cancel is server-blocked post-pickup, so it's ALWAYS a pre-pickup
         // cancel → prePickupCancel penalty, clamped + on_hold-hysteresis'd in the same transaction as
         // the strike bump. NOTE(Q2): weights/threshold in packages/shared/src/policy.ts RELIABILITY.
         // The cancelStrike/cooldown gate is a separate, coarser axis kept alongside the score.
+        // RH-01: carry heldReason through so a rider-cancel penalty can't clear a velocity/fraud hold.
         const reliability = applyReliabilityDelta(
-          { reliabilityScore: rider?.reliabilityScore ?? RELIABILITY.START, onHold: rider?.onHold ?? false },
+          {
+            reliabilityScore: rider?.reliabilityScore ?? RELIABILITY.START,
+            onHold: rider?.onHold ?? false,
+            heldReason: (rider?.heldReason ?? null) as HeldReason,
+          },
           -RELIABILITY.PENALTY.prePickupCancel,
         );
         if (strikes >= CANCEL_STRIKE_LIMIT) {
@@ -746,9 +761,13 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         await this.lockRiderRow(tx, order.riderId);
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
-          select: { reliabilityScore: true, onHold: true },
+          select: { reliabilityScore: true, onHold: true, heldReason: true },
         });
-        const reliability = rider ? applyReliabilityDelta(rider, RELIABILITY.RECOVER_PER_COMPLETION) : {};
+        // RH-01: recovery runs applyReliabilityDelta, which now preserves a velocity/fraud hold — a
+        // clean auto-close no longer silently un-holds a velocity-flagged rider via the score clear.
+        const reliability = rider
+          ? applyReliabilityDelta({ ...rider, heldReason: rider.heldReason as HeldReason }, RELIABILITY.RECOVER_PER_COMPLETION)
+          : {};
         await tx.rider.update({
           where: { profileId: order.riderId },
           data: { tripsCount: { increment: 1 }, ...reliability },

@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { IconAlert, IconBanknote, IconBike, IconIdCard, IconNavigation, IconPackage, IconUser } from "./icons";
+import { IconAlert, IconBanknote, IconBike, IconIdCard, IconNavigation, IconPackage, IconPhone, IconUser } from "./icons";
 
 /**
  * 216px ops-console sidebar (kit `shell.js` NAV). Client component so it can mark the active route
@@ -24,6 +24,7 @@ const NAV: NavEntry[] = [
   { label: "KYC review", href: "/riders?kyc=pending", icon: <IconIdCard />, match: "/kyc" },
   { label: "Customers", href: "/customers", icon: <IconUser />, match: "/customers" },
   { label: "Issues", href: "/issues", icon: <IconAlert />, match: "/issues" },
+  { label: "SOS", href: "/sos", icon: <IconPhone />, match: "/sos" },
   { label: "Commission", href: "/cash", icon: <IconBanknote />, match: "/cash" },
 ];
 

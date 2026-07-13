@@ -36,6 +36,27 @@ export const RELIABILITY = {
 } as const;
 
 /**
+ * RH-01 (DEEP-SWEEP-2026-07-13) — WHY a rider is currently `on_hold`, persisted so the score
+ * hysteresis in `applyReliabilityDelta` can tell the two hold kinds apart:
+ *  - `reliability` — a SCORE-based hold (score dropped below {@link RELIABILITY.ON_HOLD_BELOW}). It is
+ *    meant to self-recover: once the score climbs back to {@link RELIABILITY.ON_HOLD_CLEAR_AT} the hold
+ *    clears automatically.
+ *  - `velocity` — the FRAUD P0-3 velocity/fraud hold (#198), set independently of the score (fires even
+ *    when the reason carries no penalty). It must NOT self-clear on a score recovery — only an explicit
+ *    admin clear-hold releases it — otherwise the next completion/rating recovery silently un-holds an
+ *    abusive rider (the RH-01 self-clear bug).
+ * `null` (column absent) means the rider is not held, OR a legacy `on_hold` row from before this column
+ * existed — those keep the pre-RH-01 behaviour (score-clearable). Stored as the string value in
+ * `riders.held_reason`; keep in lockstep with the Prisma `String?` column.
+ */
+export const HeldReason = {
+  RELIABILITY: "reliability",
+  VELOCITY: "velocity",
+} as const;
+/** A persisted hold reason, or `null` when the rider is not held (or a legacy pre-column hold). */
+export type HeldReason = (typeof HeldReason)[keyof typeof HeldReason] | null;
+
+/**
  * FRAUD P0-3 — undelivered-abandonment velocity guard. `markUndelivered(refused|wrong_address)` carries
  * no reliability penalty (those aren't the rider's fault), which a bad actor can exploit to abandon or
  * keep parcels for free. We deliberately DON'T punish the one-off legitimate failure; instead we

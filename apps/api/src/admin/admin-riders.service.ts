@@ -253,6 +253,9 @@ export class AdminRidersService {
           // Clear the reliability lockout: on_hold otherwise has no escape (recovery needs online
           // completions, which the hold blocks). Raise the score to the clear threshold if it's below.
           onHold: false,
+          // RH-01: an explicit admin lift releases ANY hold, including a velocity/fraud hold — so clear
+          // heldReason too (the score bump alone wouldn't release a velocity hold, which is sticky).
+          heldReason: null,
           reliabilityScore: Math.max(rider.reliabilityScore, RELIABILITY.ON_HOLD_CLEAR_AT),
         },
       });
@@ -328,7 +331,9 @@ export class AdminRidersService {
           onHold: rider.onHold,
           reliabilityScore: rider.reliabilityScore,
         },
-        data: { onHold: false, reliabilityScore: Math.max(rider.reliabilityScore, RELIABILITY.ON_HOLD_CLEAR_AT) },
+        // RH-01: an explicit admin clear-hold releases ANY hold, including the FRAUD P0-3 velocity/fraud
+        // hold that the score hysteresis deliberately never self-clears — so reset heldReason to null too.
+        data: { onHold: false, heldReason: null, reliabilityScore: Math.max(rider.reliabilityScore, RELIABILITY.ON_HOLD_CLEAR_AT) },
       });
       if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
       const audit = await tx.auditLog.create({

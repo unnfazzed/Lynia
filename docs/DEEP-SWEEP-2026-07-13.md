@@ -307,5 +307,5 @@ remain intact.
 | ID | Outcome |
 |---|---|
 | DS13-01 · DS13-02 · DS13-03 · DS13-04 · DS13-06 · DS13-07 | **FIXED — merged in #209.** |
-| DS13-05 | **Backend FIXED — merged in #209** (`GET /admin/sos` read surface + zero-recipient log). Follow-up: admin-web SOS panel + acknowledgement workflow (not yet built). |
-| RH-01 | **OPEN — deferred for a human policy decision.** Tracked in `docs/KNOWN_BUGS.md` OPEN table. Two candidate remedies documented above (persisted `heldReason` vs score-depression). |
+| DS13-05 | **Backend FIXED — merged in #209** (`GET /admin/sos` read surface + zero-recipient log); **admin-web SOS list panel (`/sos`) built in #221.** Follow-up: an acknowledgement workflow (mark-seen) is still open. |
+| RH-01 | **FIXED — PR #221** (Option A, persisted `heldReason`): the score hysteresis never clears a `velocity`/fraud hold on recovery; only an explicit admin clear-hold releases it. Migration 0024 adds the nullable `riders.held_reason` column; regression tests assert the hold survives a recovery event. |

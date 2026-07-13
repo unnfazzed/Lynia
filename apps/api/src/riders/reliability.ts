@@ -1,10 +1,12 @@
-import { RELIABILITY, UNDELIVERED_ABUSE, UndeliveredReason } from "@lynia/shared";
+import { HeldReason, RELIABILITY, UNDELIVERED_ABUSE, UndeliveredReason } from "@lynia/shared";
 
-/** The two Rider columns the reliability engine reads + writes (Q2). Pure so it unit-tests cleanly
- *  and both order-lifecycle and rider cancel can reuse the exact same maths in-transaction. */
+/** The Rider columns the reliability engine reads + writes (Q2). Pure so it unit-tests cleanly and
+ *  both order-lifecycle and rider cancel can reuse the exact same maths in-transaction. `heldReason`
+ *  (RH-01) records WHY the rider is held so the score hysteresis never releases a velocity/fraud hold. */
 export interface ReliabilityState {
   reliabilityScore: number;
   onHold: boolean;
+  heldReason: HeldReason;
 }
 
 /**
@@ -14,13 +16,31 @@ export interface ReliabilityState {
  * numbers here. The score is clamped to [MIN, MAX]. `onHold` uses hysteresis so it can't flap at the
  * boundary: it TRIPS when the new score < ON_HOLD_BELOW and only CLEARS at >= ON_HOLD_CLEAR_AT;
  * between those two bounds the previous flag is sticky.
+ *
+ * RH-01 (DEEP-SWEEP-2026-07-13): `heldReason` distinguishes a self-recovering score hold from the FRAUD
+ * P0-3 velocity/fraud hold (#198). On a TRIP we stamp `reliability` but never DOWNGRADE an existing
+ * `velocity` hold. On the CLEAR branch we release ONLY when the hold is NOT `velocity` — a velocity hold
+ * must survive score recovery and be lifted solely by an explicit admin clear-hold, otherwise the next
+ * completion/rating recovery silently un-holds an abusive rider whose penalty-free reasons kept the
+ * score high (the RH-01 self-clear bug). A legacy `null` hold stays score-clearable, as before.
  */
 export function applyReliabilityDelta(current: ReliabilityState, delta: number): ReliabilityState {
   const reliabilityScore = Math.min(RELIABILITY.MAX, Math.max(RELIABILITY.MIN, current.reliabilityScore + delta));
   let onHold = current.onHold;
-  if (reliabilityScore < RELIABILITY.ON_HOLD_BELOW) onHold = true;
-  else if (reliabilityScore >= RELIABILITY.ON_HOLD_CLEAR_AT) onHold = false;
-  return { reliabilityScore, onHold };
+  let heldReason = current.heldReason;
+  if (reliabilityScore < RELIABILITY.ON_HOLD_BELOW) {
+    onHold = true;
+    // A score-driven trip. Don't clobber an already-set velocity/fraud hold down to "reliability".
+    heldReason = heldReason ?? HeldReason.RELIABILITY;
+  } else if (reliabilityScore >= RELIABILITY.ON_HOLD_CLEAR_AT) {
+    // RH-01: score-hysteresis clears a "reliability" (or legacy null) hold only. A "velocity" hold is
+    // score-independent (#198) and must NOT evaporate on recovery — only admin clear-hold releases it.
+    if (heldReason !== HeldReason.VELOCITY) {
+      onHold = false;
+      heldReason = null;
+    }
+  }
+  return { reliabilityScore, onHold, heldReason };
 }
 
 /**
