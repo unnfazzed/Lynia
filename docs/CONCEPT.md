@@ -379,7 +379,7 @@ number is simply gated by order state.
 
 ## 9. Open decisions (pending — to resolve in Plan stage)
 
-- **Offer-loop tuning:** broadcast radius, offer-window length, max offers shown, offer/selection expiry timers — start with placeholders, calibrate on real corridor supply. *(The **offer-window now has a real value — 90s**, `OFFER_WINDOW_MS` in `@lynia/shared`; keep "calibrate on real data" but it is no longer a bare placeholder.)*
+- **Offer-loop tuning:** broadcast radius, offer-window length, max offers shown, offer/selection expiry timers — start with placeholders, calibrate on real corridor supply. *(The **offer-window now has a real value — 90s**, `OFFER_WINDOW_MS` in `@lynia/shared`. The **broadcast radius now also has real policy values** — `BROADCAST` in `@lynia/shared`: base 5 km, widening to 8 km at 30 s and 12 km at 60 s inside the window, corridor-capped, and deploy-tunable via `BROADCAST_BASE_RADIUS_M` without a code change. Keep "calibrate on real data" — the step timings/radii are launch assumptions — but neither is a bare placeholder any more.)*
 - **Legal / regulatory:** business registration, ZIMRA tax, motorbike commercial-use rules, rider licensing & insurance, goods/rider liability, data privacy. Verify with a local advisor before *public* launch (not a blocker for a closed pilot).
 - **Brand & language:** is "Lynia" the final consumer name? English first; Shona/Ndebele later?
 - **Launch corridor:** which specific Harare suburbs go first (drives rider recruitment + demand seeding)?

@@ -547,7 +547,8 @@ sequenceDiagram
     C->>API: POST /orders (pickup, dropoff, proposedFare)
     API->>DB: insert order (status=open_for_offers)
     API->>Q: schedule offer-expiry (delay 90–100s: 90s + ≤10s jitter, jobId=orderId)
-    API-->>R: push "New delivery nearby" (PostGIS nearby query)
+    API->>Q: schedule broadcast-widening ticks (30s → 8km, 60s → 12km, jobId=expand:orderId:step)
+    API-->>R: push "New delivery nearby" (PostGIS query — online, heartbeat-fresh riders in base 5km)
 
     Note over R: each rider responds ONCE
     R->>API: POST /orders/:id/offers (accept | counter)
@@ -583,6 +584,30 @@ What makes the select safe:
   selecting customer exactly once and never persisted or re-exposed.
 - The expiry path (`expireOrder`) runs the *same* guarded CAS: if a customer already selected, the
   order is no longer `open_for_offers`, so the expiry no-ops. Idempotent by construction.
+
+How the broadcast reaches riders (the widening disc):
+
+- **The radius is a pure function of order age** — `broadcastRadiusAtMs` on the shared `BROADCAST`
+  policy (`packages/shared/src/policy.ts`): base **5 km** at creation, widening to **8 km at 30 s**
+  and **12 km at 60 s** inside the offer window, capped at the 25 km service corridor. Because every
+  consumer computes the same function, the FCM push, the WS board rooms, the REST board
+  (`GET /orders/open`), and the customer-facing `ridersNearby` count can never disagree about the
+  disc. The base radius and ghost cutoff are deploy-tunable (`BROADCAST_BASE_RADIUS_M`,
+  `BROADCAST_HEARTBEAT_MAX_AGE_MS` — validated at boot; resolution in
+  `apps/api/src/common/broadcast-policy.ts`).
+- **Each widening tick pushes only the newly covered ring**: a per-order Redis set
+  (`broadcast:sent:<orderId>`, TTL 600 s) is claimed via `SADD` before every push, so a rider is
+  FCM-pinged at most once per order — and one who comes online *inside* an already-covered ring is
+  picked up by the next tick. Without Redis the tick falls back to pure ring geometry
+  (`distance > previous radius`); ticks don't run at all without Redis, matching the expiry queue's
+  degrade posture (`MatchingService.expandBroadcast`).
+- **Ghost riders are filtered at the broadcast layer**: both `nearbyRiders` query paths (Redis
+  GEOSEARCH-confirm and the PG `ST_DWithin` fallback) require `last_heartbeat_at` within 120 s
+  (`BROADCAST.heartbeatMaxAgeMs`), so an app that died with `is_online` stuck true neither receives
+  pushes nor inflates `ridersNearby`. This is deliberately looser than the **30 s in-transaction
+  selection gate** above — idle riders heartbeat every 20 s.
+- **The no-supply verdict on expiry is judged at the final widened radius**, so the "nobody was
+  online" vs "raise your price" copy stays honest after expansion.
 
 ---
 
@@ -807,6 +832,11 @@ Flow details:
   joins a **geo-scoped** board (3×3 cell neighbourhood, city-wide fallback when loc-less); a newly
   created open order pushes to that board as a **redacted** row (point + landmark, never `contactPhone`,
   mirroring `GET /orders/open`), so riders see work the instant it's posted instead of polling.
+  When the broadcast **widens** (§6), each expansion tick re-emits the same redacted card to every
+  cell intersecting the new disc (`boardCellsCoveringRadius` → `emitBoardNewOrderToCells`; clients
+  dedupe by id), and `bid:expired` / `order:taken` close cards across that same widened distribution
+  so a rider who saw the card at 10 km also sees it close. The REST board applies the identical
+  per-order age-based reach, so a push is always backed by a board row.
 - On the client, `useOrderSocket` applies `position` pushes to the React Query cache and, on
   connect / `order:status` / connect-error, **invalidates and refetches** the REST snapshot (the
   authoritative source). The screen also polls during active statuses as a second safety net.
@@ -939,9 +969,9 @@ backstop** so a lost job or a Redis outage can't strand an order.
 
 ```mermaid
 graph TB
-    subgraph offer["Offer expiry"]
-        o1["order created →<br/>schedule expire (90–100s, jobId=orderId)"]
-        o2["BullMQ worker → expireOrder (guarded CAS)"]
+    subgraph offer["Offer expiry + broadcast widening"]
+        o1["order created →<br/>schedule expire (90–100s, jobId=orderId)<br/>+ expand ticks (30s/60s, jobId=expand:orderId:step)"]
+        o2["BullMQ worker (dispatch on job name)<br/>expire → expireOrder (guarded CAS)<br/>expand → expandBroadcast (best-effort)"]
         o1 --> o2
     end
 
@@ -959,6 +989,11 @@ graph TB
 
 - **`jobId = orderId`** makes both jobs idempotent — a retry or duplicate schedule can't fire the
   transition twice.
+- **Broadcast-widening ticks ride the same offer queue** as delayed jobs (`expand:<orderId>:<step>`,
+  worker dispatches on job name with **default = expire** so legacy jobs drain across a deploy). They
+  are deliberately **best-effort**: no retries and no reconciler backstop — a lost tick's ring is
+  covered by the next tick's sent-set difference — unlike the correctness-critical expiry CAS, whose
+  reconciler exists because a stranded `open_for_offers` order freezes the customer's countdown.
 - **Offer-expiry delay is `OFFER_WINDOW_MS` (90s) plus additive 0–10s jitter → 90–100s.** The jitter is
   additive-only so the job never fires before the customer-facing countdown (`createdAt + OFFER_WINDOW_MS`)
   hits zero; it just de-synchronizes a burst of orders created together so their expiry CAS transactions
@@ -1109,7 +1144,8 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 
 | Concern | Path |
 |---|---|
-| Offer-loop select / expiry | `apps/api/src/matching/matching.service.ts` |
+| Offer-loop select / expiry / broadcast widening | `apps/api/src/matching/matching.service.ts` (`selectOffer`, `expireOrder`, `expandBroadcast`) |
+| Broadcast reach policy + env resolution | `packages/shared/src/policy.ts` (`BROADCAST`), `apps/api/src/common/broadcast-policy.ts` |
 | Order lifecycle + OTP + cancel + auto-close | `apps/api/src/orders/order-lifecycle.service.ts` |
 | Make/list offers | `apps/api/src/offers/offers.service.ts` |
 | Auth (OTP, JWT, sessions) | `apps/api/src/auth/` |

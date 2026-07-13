@@ -10,7 +10,9 @@ the source report.
 internals, pattern propagation, cross-cutting mechanisms, and an adversarial API pass). Prior fixes:
 PR #192 (F-01…F-10), PR #193 (F-11…F-19). Prior sweep's remediation, all merged: **#195** (DS-01…DS-11
 + FRAUD P1-5), **#196** (F-09), **#197** (F-18 durability), **#198** (FRAUD P0-3 velocity), **#199**
-(F-N3 + DS-11 verified-ID freeze), **#204** (BH-01, BH-02). **This deep sweep (`docs/DEEP-SWEEP-2026-07-13.md`)
+(F-N3 + DS-11 verified-ID freeze), **#204** (BH-01, BH-02), **#210** (BR-01…BR-03 — broadcast ghost-rider
+filter, widening radius, radius-config consolidation; see the broadcast-review section below). **This deep
+sweep (`docs/DEEP-SWEEP-2026-07-13.md`)
 found 8 new items** — DS13-01…DS13-07 + RH-01 (details in that report and the section at the bottom of
 this ledger). Phase-0 re-verified 8/8 sampled prior fixes still intact (no regressions). Infra
 hardening flags are wired with an ordered rollout runbook at `docs/INFRA-HARDENING-ROLLOUT.md`.
@@ -225,6 +227,21 @@ WS `connect`/`connect_error` and `AppState` foreground both force a full snapsho
 |---|---|---|---|---|
 | BH-01 | `order/[id].tsx`'s failed-fetch branch bucketed a 403 ("not your order" — the party-only IDOR gate, e.g. a losing bidder tapping a stale broadcast push, or a stale deep link on a shared/switched-account device) with a plain transient error, showing a "Retry" that can never succeed | `apps/mobile/app/order/[id].tsx` | LOW | **FIXED #204** — `orderLoadErrorKind` (`src/logic/order-tracking.ts`) gives 403 its own terminal message, no Retry |
 | BH-02 | The rider "Open job" button, a duplicate/replayed push tap, and the cold-start deep link each unconditionally `router.push("/rider/job")` with no check for the active route — a double-tap or replayed notification stacks a redundant back-stack entry | `apps/mobile/app/rider/index.tsx`, `src/push/use-push-registration.ts` | LOW | **FIXED #204** — `pushOnce` (`src/push/push.ts`) is a no-op when the target is already the active route |
+
+---
+
+## Review 2026-07-13 (broadcast/dispatch mechanism) — PR #210
+
+User-prompted review of how "nearby riders" are selected when a customer broadcasts (radius semantics,
+availability filtering, config hygiene), traced through `orders.service.ts` → `tracking.service.ts` →
+`matching.service.ts`. One code defect, one product gap, one hygiene hazard — all resolved in **#210**
+(merged 07-13). Logged here so future sweeps don't rediscover them.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| BR-01 | Ghost riders received broadcasts and inflated the supply count: `nearbyRiders` filtered on `is_online = true` but never on heartbeat freshness, so an app killed with `isOnline` stuck true kept getting FCM pushes at its last known position AND padded the customer-facing `ridersNearby` count — a false "riders were pinged, sit tight" signal at the most anxious moment of the journey. (Distinct from the in-TX 30 s selection gate, which only protects the assign.) | `apps/api/src/tracking/tracking.service.ts` (both `nearbyRiders` paths) | LOW-MED | **FIXED #210** — 120 s `last_heartbeat_at` cutoff (`BROADCAST.heartbeatMaxAgeMs`, env-tunable) in the Redis-confirm AND `ST_DWithin` fallback queries; PostGIS int test proves the exclusion. Safe for idle riders (20 s app heartbeat). |
+| BR-02 | No radius expansion (product gap, logged for context): an order with no taker inside the fixed 5 km simply expired at 90 s even with a willing rider at 6 km — a silent fill-rate ceiling in a thin-supply pilot. Not a defect per se, but the fixed disc also made the expiry's "nobody was online" copy misleading about reach. | `orders.service.ts` / `matching.service.ts` / `offer-expiry.service.ts` | — | **SHIPPED #210** — radius widens 5→8 km (30 s)→12 km (60 s) as a pure function of order age, corridor-capped; ticks ride the offer-expiry queue; per-order Redis `SADD` sent-set dedupes so each tick pushes only the new ring; board (WS + REST) and `ridersNearby` reflect the same disc; expiry no-supply verdict judged at the final radius. |
+| BR-03 | The 5 km broadcast radius was duplicated as three independent constants (`BROADCAST_RADIUS_M` in orders, `NEARBY_RADIUS_M` in matching, `NOTIFY_RADIUS_M` in riders) — a drift hazard where tuning one silently desynchronizes the push, the no-supply check, and the "rider online near you" drain | `orders.service.ts:36`, `matching.service.ts:17`, `rider.service.ts:32` (all pre-#210) | LOW | **FIXED #210** — single shared `BROADCAST` policy (`packages/shared/src/policy.ts`), env-overridable (`BROADCAST_BASE_RADIUS_M`, `BROADCAST_HEARTBEAT_MAX_AGE_MS`), validated at boot in `envSchema` |
 
 ---
 
