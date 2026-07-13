@@ -75,6 +75,17 @@ export class AdminController {
     return this.sos.listRecent(Number.isFinite(parsed) ? parsed : undefined);
   }
 
+  /**
+   * DS13-05: acknowledge an SOS — the ops write that makes the SOS feed actionable ("someone has this").
+   * Idempotent + CAS-guarded in the service; writes an audit row on the null→now transition, attributed
+   * to the real operator (`X-Operator`, else the token subject). Returns the updated `{ id, acknowledgedAt }`.
+   * AdminGuard is applied class-wide.
+   */
+  @Post("sos/:id/ack")
+  acknowledgeSos(@Param("id", ParseUUIDPipe) id: string, @AdminActor() actor: string) {
+    return this.sos.acknowledge(id, actor);
+  }
+
   /** Rider roster / KYC review queue. `?kyc=pending|verified|failed` filters; unknown values are ignored. */
   @Get("riders")
   riders(@Query("kyc") kyc?: string) {
