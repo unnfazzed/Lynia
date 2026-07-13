@@ -29,7 +29,7 @@ founder-gated infra apply, mobile cert pinning, and ops-readiness items.
 | `docs/UX-USABILITY-REVIEW-2026-07-09.md` | 9 | UX pass; all ✅ except re-render (later fixed) |
 | `docs/UX-USABILITY-REVIEW-2026-07-10.md` | 17 | UX pass; all ✅ |
 | `docs/UX-USABILITY-REVIEW-2026-07-11.md` | 22+1 | UX pass; all ✅ (otp-verify grace later fixed) |
-| `docs/UX-USABILITY-REVIEW-2026-07-12.md` | 16 | UX pass; all ✅ (idle-rider position, viewer-role snapshot, delivered-terminal dead code, SOS honesty, +12 more) |
+| `docs/UX-USABILITY-REVIEW-2026-07-12.md` | 16 | UX pass; all ✅ (idle-rider position, viewer-role snapshot, delivered-terminal dead code, SOS honesty, +12 more). Feed-channel residue of #6/#11 closed by #206 (07-13) |
 | `docs/plans/BUGFIX-EXECUTION.md` | 24 | Execution plan for BUG-HUNT items — all landed |
 | `docs/plans/LAUNCH-FIX-ROUND1.md` | 13 | Round-1 authz/abuse fixes — all landed |
 | `docs/plans/TAIL-HARDENING-PLAN.md` | 6 | R8 handback + SEC dev-fallback + map leak — all ✅ |
@@ -62,6 +62,8 @@ whole Phase-1 set below — is now FIXED or MOOT.
 | FRAUD P0-3 — penalty-free undelivered abandonment | **MITIGATED (velocity)** — auto-`on_hold` on abnormal undelivered rate (`UNDELIVERED_ABUSE`) | #198 |
 | F-N3 — `/kyc/callback` unsigned in prod stub+manual | **FIXED** — fail-closed whenever prod or provider=didit | #199 |
 | DS-11 (residual) — verified rider could swap their national ID | **FIXED** — ID-change blocked once KYC-verified | #199 |
+| UX-0712 #6/#11 feed residue — in-app feed still showed generic "Order cancelled" for a rider-bail (live rebroadcast running) and "raise your price" for a no-supply expiry; #202 fixed push only | **FIXED** — feed rewrites the rider-bail row to the honest copy and routes its tap to the live clone (in-window derivation, zero extra queries); `expiry_no_supply` flag persisted at expiry (migration 0023) drives honest copy in feed + expired snapshot/terminal; feed also suppresses the canceller's own "cancelled" row, mirroring the push's actor exclusion | #206 |
+| UX-0711 deferred — OTP-verify idempotency after a lost response | **FIXED earlier than the ledger knew** — 60s hash-only grace window (`139c99a`) + verify-route throttle (`f9c2a12`), both on main since 07-12; a dedicated 07-13 security audit (replay, brute-force, multi-device, refresh-rotation) confirmed the shipped design with no residual gaps. #206 corrected the stale "still open" doc claim | #206 (docs) |
 
 Newly discovered defects from this sweep are in the **Phase-1 findings** section at the bottom and in
 `docs/DEEP-SWEEP-2026-07-12.md`.
