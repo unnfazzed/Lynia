@@ -8,6 +8,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { SERVICE_CORRIDOR, haversineKm } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -137,20 +138,30 @@ export class RiderService {
     const stubAutoPass = this.env.KYC_PROVIDER === "stub" && this.env.KYC_MODE === "auto";
     const initialKyc: Kyc = stubAutoPass ? "verified" : "pending";
 
-    await this.prisma.$transaction([
-      this.prisma.profile.update({ where: { id: profileId }, data: { role: "rider" } }),
-      this.prisma.rider.create({
-        data: {
-          profileId,
-          bikeReg: data.bikeReg,
-          photoUrl: data.photoUrl,
-          kycStatus: initialKyc,
-          idVerified: stubAutoPass,
-          kycRef,
-          duplicateIdFlag,
-        },
-      }),
-    ]);
+    // DS13-06: the findUnique pre-check above races a concurrent duplicate become — the (profileId)
+    // primary key on the rider row is the real guard. Map its P2002 to the same 409 the pre-check raises
+    // (mirrors orders.service/rateSender) instead of leaking a raw 500 to the losers of a parallel burst.
+    try {
+      await this.prisma.$transaction([
+        this.prisma.profile.update({ where: { id: profileId }, data: { role: "rider" } }),
+        this.prisma.rider.create({
+          data: {
+            profileId,
+            bikeReg: data.bikeReg,
+            photoUrl: data.photoUrl,
+            kycStatus: initialKyc,
+            idVerified: stubAutoPass,
+            kycRef,
+            duplicateIdFlag,
+          },
+        }),
+      ]);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("You're already a rider");
+      }
+      throw err;
+    }
     return { kycStatus: initialKyc, mode: this.env.KYC_MODE, verificationUrl };
   }
 

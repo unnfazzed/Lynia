@@ -365,7 +365,20 @@ export class NotificationsService {
   async notifyOps(msg: { title: string; body: string; data?: Record<string, string> }): Promise<void> {
     try {
       const admins = await this.prisma.profile.findMany({ where: { role: "admin" }, select: { id: true } });
-      await this.send(admins.map((a) => a.id), msg);
+      const adminIds = admins.map((a) => a.id);
+      // DS13-05: this push is the SOLE escalation channel for a raised SOS, and it swallows failures. If it
+      // fans out to ZERO recipients — no admin profile, or (far more likely) no admin has a registered
+      // DeviceToken because the admin WEB console registers none — the safety event vanishes silently while
+      // the counterparty is told "the safety team has been alerted". Emit a loud error so a token-less ops
+      // audience is observable in the logs/alerting. Delivery behaviour is unchanged (send still runs below).
+      const tokenCount =
+        adminIds.length === 0 ? 0 : await this.prisma.deviceToken.count({ where: { profileId: { in: adminIds } } });
+      if (tokenCount === 0) {
+        this.logger.error(
+          `notifyOps reached ZERO recipients (admins=${adminIds.length}, deviceTokens=0) for "${msg.title}" — ops has no registered device; the escalation was not delivered. data=${JSON.stringify(msg.data ?? {})}`,
+        );
+      }
+      await this.send(adminIds, msg);
     } catch (err) {
       this.logger.warn(`notifyOps failed: ${(err as Error).message}`);
     }

@@ -144,6 +144,18 @@ export class TrackingService implements OnModuleDestroy {
     return !!o && (o.customerId === userId || o.riderId === userId);
   }
 
+  /** The order's assigned rider id (or null if none / no such order). DS13-01: the customer-presence
+   *  refutation (`customerLiveInRoom`) matches the customer by the order RELATIONSHIP — "any socket in
+   *  the room that is not the assigned rider" — rather than the global JWT role, so a rider-role account
+   *  acting as the sender is still recognised as the live customer (mirrors the id-matched rider twin). */
+  async assignedRiderId(orderId: string): Promise<string | null> {
+    const o = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { riderId: true },
+    });
+    return o?.riderId ?? null;
+  }
+
   /** Only the assigned rider on an active ride may stream position for an order. */
   async isAssignedRider(userId: string, orderId: string): Promise<boolean> {
     const o = await this.prisma.order.findUnique({
@@ -320,13 +332,18 @@ export class TrackingService implements OnModuleDestroy {
 
   /** Flush the last known Redis position to PG (on disconnect, so it isn't lost when the key TTLs).
    *  Also evicts the rider's throttle bookkeeping — the session ended, so the in-memory `lastFlush`
-   *  entry must not linger (otherwise the Map grows unbounded over an instance's lifetime). */
+   *  entry must not linger (otherwise the Map grows unbounded over an instance's lifetime).
+   *
+   *  DS13-02: a socket disconnect does NOT evict the rider from the Redis geo index. A backgrounded /
+   *  phone-locked rider drops their socket within seconds while PG still says `is_online = true` — and
+   *  PG's `is_online` is the documented authority for nearbyRiders. Evicting here made an online-but-
+   *  backgrounded rider vanish from the GEOSEARCH candidate set (the primary source of the new-order FCM
+   *  broadcast and supply counts), silently overriding that authority. Eviction now happens ONLY on an
+   *  explicit go-offline (`setOnline(false)` in rider.service, which also sets `is_online=false` and
+   *  already calls evictFromGeo), keeping geo membership aligned with the is_online authority. */
   async flushToPg(riderId: string): Promise<void> {
     this.lastFlush.delete(riderId);
     const pos = await this.getLivePosition(riderId);
-    // The session ended — evict this rider from the geo index so a disconnected rider's stale last
-    // position can't keep occupying a nearest-first GEOSEARCH slot (see evictFromGeo).
-    await this.evictFromGeo(riderId);
     if (!pos) return;
     await this.writePosition(riderId, pos.lat, pos.lng);
   }

@@ -201,6 +201,36 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
     expect(positioned).toHaveLength(1); // the last-known position was persisted on disconnect
   });
 
+  it("DS13-02: flushToPg does NOT evict the rider from the geo index (backgrounded-but-online stays a candidate)", async () => {
+    // A socket disconnect (phone backgrounded/locked) must NOT remove an is_online=true rider from the
+    // GEOSEARCH candidate set — that set is the primary source of the new-order FCM broadcast + supply
+    // counts, and PG is_online is the authority. Eviction happens ONLY on explicit go-offline.
+    const redis = { ...fakeRedis(), zrem: vi.fn(async () => 1) };
+    redis.store.set("rider:pos:rider-1", JSON.stringify({ lat: -17.9, lng: 31.1, at: 1 }));
+    const executeRaw = vi.fn(async () => 1);
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: executeRaw } as unknown as PrismaService, fakeMetrics());
+    s.setRedisClient(redis as never);
+
+    await s.flushToPg("rider-1");
+
+    // No geo eviction on disconnect …
+    expect(redis.zrem).not.toHaveBeenCalled();
+    // … but the last-known position is still flushed to PG so it isn't lost when the Redis key TTLs.
+    expect(executeRaw).toHaveBeenCalled();
+  });
+
+  it("DS13-02: explicit go-offline eviction still removes the rider (evictFromGeo unchanged)", async () => {
+    // The eviction path itself is untouched: setOnline(false) → evictFromGeo → ZREM. Asserted directly
+    // so the disconnect-path change above doesn't weaken the go-offline invariant.
+    const redis = { ...fakeRedis(), zrem: vi.fn(async () => 1) };
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService, fakeMetrics());
+    s.setRedisClient(redis as never);
+
+    await s.evictFromGeo("rider-1");
+
+    expect(redis.zrem).toHaveBeenCalledWith("rider:geo", "rider-1");
+  });
+
   it("recordFix GEOADDs the rider into the geo index (best-effort, alongside the position SET)", async () => {
     const redis = fakeRedis();
     const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService, fakeMetrics());

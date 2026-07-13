@@ -184,15 +184,20 @@ export class AdminRidersService {
    */
   async suspendRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const rider = await tx.rider.findUnique({ where: { profileId }, select: { profileId: true } });
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true } });
       if (!rider) throw new NotFoundException("Rider not found");
-      await tx.rider.update({
-        where: { profileId },
+      // DS13-04: CAS on the observed accountStatus instead of a blind update-by-id (mirrors DS-03 in
+      // admin-orders.service). The findUnique takes no row lock, so a concurrent standing change (e.g. a
+      // ban committing between the read and this write) would otherwise be silently clobbered back to
+      // suspended. Guarding on the observed status makes the two serialize: 0 rows ⇒ the row moved ⇒ 409.
+      const changed = await tx.rider.updateMany({
+        where: { profileId, accountStatus: rider.accountStatus },
         // P2-1: force offline in the same write so a rider online at suspend-time is pulled off the
         // board immediately and can't keep bidding/being selected (accountStatus alone is a no-op
         // against an already-online rider).
         data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: input.reason, isOnline: false },
       });
+      if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
       const audit = await tx.auditLog.create({
         data: auditData(actor, "rider.suspend", profileId, input.reason, input.note),
         select: { id: true },
@@ -217,7 +222,7 @@ export class AdminRidersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({
         where: { profileId },
-        select: { accountStatus: true, reliabilityScore: true },
+        select: { accountStatus: true, onHold: true, reliabilityScore: true },
       });
       if (!rider) throw new NotFoundException("Rider not found");
       // A lift restores access and clears a reliability hold. It does NOT undo a permanent ban —
@@ -231,8 +236,17 @@ export class AdminRidersService {
       if (rider.accountStatus !== RiderAccountStatus.SUSPENDED) {
         throw new ConflictException("Rider is not suspended");
       }
-      await tx.rider.update({
-        where: { profileId },
+      // DS13-04: CAS on the FULL observed state the guard + score recompute depend on (accountStatus +
+      // onHold + reliabilityScore). Without it, op B's ban committing after the BANNED check above would be
+      // un-banned by this blind write, and the Math.max score recompute off a stale read could clobber a
+      // just-committed velocity auto-hold (markUndelivered, which does take lockRiderRow). 0 rows ⇒ 409.
+      const changed = await tx.rider.updateMany({
+        where: {
+          profileId,
+          accountStatus: rider.accountStatus,
+          onHold: rider.onHold,
+          reliabilityScore: rider.reliabilityScore,
+        },
         data: {
           accountStatus: RiderAccountStatus.ACTIVE,
           suspendReason: null,
@@ -242,6 +256,7 @@ export class AdminRidersService {
           reliabilityScore: Math.max(rider.reliabilityScore, RELIABILITY.ON_HOLD_CLEAR_AT),
         },
       });
+      if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
       const audit = await tx.auditLog.create({
         data: auditData(actor, "rider.lift", profileId, input.reason, input.note),
         select: { id: true },
@@ -263,14 +278,17 @@ export class AdminRidersService {
    */
   async banRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const rider = await tx.rider.findUnique({ where: { profileId }, select: { profileId: true } });
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true } });
       if (!rider) throw new NotFoundException("Rider not found");
-      await tx.rider.update({
-        where: { profileId },
+      // DS13-04: CAS on the observed accountStatus (mirrors DS-03) so a concurrent standing change can't
+      // be silently clobbered between the read and this write. 0 rows ⇒ the row moved ⇒ 409.
+      const changed = await tx.rider.updateMany({
+        where: { profileId, accountStatus: rider.accountStatus },
         // P2-1: force offline in the same write so a rider online at ban-time is pulled off the board
         // immediately and can't keep bidding/being selected.
         data: { accountStatus: RiderAccountStatus.BANNED, suspendReason: input.reason, isOnline: false },
       });
+      if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
       const audit = await tx.auditLog.create({
         data: auditData(actor, "rider.ban", profileId, input.reason, input.note),
         select: { id: true },
@@ -299,10 +317,20 @@ export class AdminRidersService {
         throw new ConflictException("Clear-hold only applies to an active rider — use lift/ban for suspended/banned.");
       }
       if (!rider.onHold) throw new ConflictException("Rider is not on hold");
-      await tx.rider.update({
-        where: { profileId },
+      // DS13-04: CAS on the FULL observed state (accountStatus + onHold + reliabilityScore) the guard +
+      // score recompute depend on. The velocity auto-hold (markUndelivered, FRAUD P0-3 #198) takes
+      // lockRiderRow and sets onHold=true; an admin clear racing it must not overwrite that just-committed
+      // hold off a stale read. 0 rows ⇒ the row moved under us ⇒ 409 (ops refreshes and re-decides).
+      const changed = await tx.rider.updateMany({
+        where: {
+          profileId,
+          accountStatus: rider.accountStatus,
+          onHold: rider.onHold,
+          reliabilityScore: rider.reliabilityScore,
+        },
         data: { onHold: false, reliabilityScore: Math.max(rider.reliabilityScore, RELIABILITY.ON_HOLD_CLEAR_AT) },
       });
+      if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
       const audit = await tx.auditLog.create({
         data: auditData(actor, "rider.clear_hold", profileId, input.reason, input.note),
         select: { id: true },

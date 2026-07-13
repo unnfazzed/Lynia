@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData, fmtDate, reportsFor, round, toTripRow } from "./admin.shared";
@@ -131,9 +131,15 @@ export class AdminCustomersService {
    */
   async holdCustomer(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { id: true } });
+      const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { onHold: true } });
       if (!customer) throw new NotFoundException("Customer not found");
-      await tx.profile.update({ where: { id: profileId }, data: { onHold: true, holdReason: input.reason } });
+      // DS13-04: CAS on the observed onHold (mirrors DS-03) so a concurrent hold/lift can't be silently
+      // clobbered between the read and this write. 0 rows ⇒ the row moved under us ⇒ 409.
+      const changed = await tx.profile.updateMany({
+        where: { id: profileId, role: "customer", onHold: customer.onHold },
+        data: { onHold: true, holdReason: input.reason },
+      });
+      if (changed.count === 0) throw new ConflictException("Customer changed — refresh and try again");
       const audit = await tx.auditLog.create({
         data: auditData(actor, "customer.hold", profileId, input.reason, input.note),
         select: { id: true },
@@ -146,9 +152,15 @@ export class AdminCustomersService {
    *  in one transaction. 404s when the id isn't a customer. */
   async liftCustomerHold(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { id: true } });
+      const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { onHold: true } });
       if (!customer) throw new NotFoundException("Customer not found");
-      await tx.profile.update({ where: { id: profileId }, data: { onHold: false, holdReason: null } });
+      // DS13-04: CAS on the observed onHold (mirrors DS-03) so a concurrent hold/lift can't be silently
+      // clobbered between the read and this write. 0 rows ⇒ the row moved under us ⇒ 409.
+      const changed = await tx.profile.updateMany({
+        where: { id: profileId, role: "customer", onHold: customer.onHold },
+        data: { onHold: false, holdReason: null },
+      });
+      if (changed.count === 0) throw new ConflictException("Customer changed — refresh and try again");
       const audit = await tx.auditLog.create({
         data: auditData(actor, "customer.lift", profileId, input.reason, input.note),
         select: { id: true },

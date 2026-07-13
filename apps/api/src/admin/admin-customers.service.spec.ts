@@ -119,12 +119,14 @@ describe("AdminCustomersService hold/lift (S·2 — mutation + audit in ONE $tra
     update: { where: unknown; data: Record<string, unknown> } | null;
     audit: { data: Record<string, unknown> } | null;
   }
-  function makeTx(customer: unknown = { id: "c1" }) {
+  // DS13-04: hold/lift now CAS via `updateMany` (guarded on the observed onHold) and reject on a 0-row
+  // result; default to 1 row (success) and let a test force 0 to exercise the conflict path.
+  function makeTx(customer: unknown = { id: "c1", onHold: false }, updateCount = 1) {
     const calls: Calls = { update: null, audit: null };
     const tx = {
       profile: {
         findFirst: async () => customer,
-        update: async (args: Calls["update"]) => { calls.update = args; return {}; },
+        updateMany: async (args: Calls["update"]) => { calls.update = args; return { count: updateCount }; },
       },
       auditLog: { create: async (args: Calls["audit"]) => { calls.audit = args; return { id: "audit-3" }; } },
     };
@@ -154,5 +156,12 @@ describe("AdminCustomersService hold/lift (S·2 — mutation + audit in ONE $tra
     const { prisma } = makeTx(null);
     const svc = new AdminCustomersService(prisma as unknown as PrismaService);
     await expect(svc.holdCustomer("admin-1", "c1", { reason: "x" })).rejects.toThrow(/customer not found/i);
+  });
+
+  it("DS13-04: holdCustomer CAS — a concurrent hold/lift (0 rows) → 409, no audit committed", async () => {
+    const { prisma, calls } = makeTx({ id: "c1", onHold: false }, 0);
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    await expect(svc.holdCustomer("admin-1", "c1", { reason: "x" })).rejects.toThrow(/refresh and try again/i);
+    expect(calls.audit).toBeNull();
   });
 });

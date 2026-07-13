@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
 import type { KycVendor } from "../kyc/kyc-vendor";
@@ -163,6 +164,25 @@ describe("RiderService.becomeRider", () => {
     const s = svc(prisma, { KYC_MODE: "manual" }, vendor);
     const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
     expect(res).toEqual({ kycStatus: "pending", mode: "manual", verificationUrl: undefined });
+  });
+
+  it("maps a concurrent-create P2002 to a 409, not a raw 500 (DS13-06)", async () => {
+    // The findUnique pre-check races a parallel become; the rider PK is the real guard. Its P2002 must
+    // surface as the same ConflictException the pre-check raises, not leak as an unhandled 500.
+    const p2002 = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+      code: "P2002",
+      clientVersion: "test",
+    });
+    const prisma = {
+      rider: { findUnique: async () => null, create: async () => ({}) },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumber: "63-1-A" }), count: async () => 0 },
+      // The create transaction loses the race and throws a P2002.
+      $transaction: async () => { throw p2002; },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
+    await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" })).rejects.toThrow(
+      /already a rider/i,
+    );
   });
 
   it("surfaces a vendor outage as a 503 and creates no rider row", async () => {
