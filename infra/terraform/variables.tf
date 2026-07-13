@@ -183,7 +183,7 @@ variable "labels" {
   description = "Labels applied to labellable resources."
   type        = map(string)
   default = {
-    app       = "lynia"
+    app        = "lynia"
     managed_by = "terraform"
   }
 }
