@@ -244,14 +244,58 @@ truthful terminal state immediately.
 
 ## Phase 3 — adversarial API pass
 
-_Pending — appended below when the adversarial agent completes._
+A malicious-authenticated-user pass (direct curl, no app) traced all six abuse classes: free/underpriced
+deliveries, bid/fare manipulation, IDOR/object-authz, replay/forgery, KYC-/standing-gate bypass, and
+privilege/standing-escalation. **The classic surface is closed** — `proposedFare` is server-validated
+positive/cents/bounded; `accept`/`selectOffer` pin `agreedFare` to the bid inside the guarded CAS; every
+`:id` route derives party/ownership server-side; order-create idempotency, delivery-OTP CAS, KYC-callback
+HMAC (fail-closed in prod), and issue-resolve/rate/refund CAS all block replay/double-apply; every
+job-visibility/action *entry* route funnels through `onlineRefusalReason`; and no writable path to
+`accountStatus`/`onHold`/`role`/strikes exists for a rider or customer. One new logic gap surfaced:
+
+### RH-01 — the FRAUD P0-3 velocity `on_hold` (#198) silently self-clears on the next reliability-recovery event  ·  MEDIUM  ·  confidence high
+
+**Where:** `apps/api/src/orders/order-lifecycle.service.ts:405-413` (velocity hold set in
+`markUndelivered`), `:459-465` (`rate` recovery) and the `completeOrder` auto-close recovery;
+`apps/api/src/riders/reliability.ts:18-24` (`applyReliabilityDelta` hysteresis, clear branch at `:22`);
+`packages/shared/src/policy.ts` (`ON_HOLD_BELOW:60`, `ON_HOLD_CLEAR_AT:70`, `RECOVER_PER_COMPLETION:2`).
+
+**What:** #198 auto-holds a rider whose recent undelivered *rate* is abnormally high, **independent of
+the score**, so it fires even when the penalty is 0 (`refused`/`wrong_address`). In `markUndelivered` the
+hold is stamped `onHold=true` while the **score is left untouched** (~100, well above `ON_HOLD_CLEAR_AT`).
+But every recovery path runs the same `applyReliabilityDelta`, whose hysteresis **unconditionally clears
+`onHold` at score ≥ 70** (`reliability.ts:22`). `rate()` and `completeOrder()` both apply
+`+RECOVER_PER_COMPLETION` and persist the resulting `onHold=false`. So the fraud hold evaporates on the
+next completion/rating recovery — no human review — defeating the stated purpose of #198 ("auto-`on_hold`
+… for a human to review"). The bypass is strongest against exactly the actor #198 targets: penalty-free
+reasons keep the score high, *guaranteeing* the ≥70 auto-clear.
+
+**Traced exploit:** rider parks one order in the 6h `delivered` rating window (excluded from
+`one_active_ride`), abandons 3 jobs via `POST /orders/<id>/undelivered {"reason":"wrong_address"}` → on
+the 3rd, `velocityHold` trips (`onHold=true`, score ~100); then the parked order's auto-close or a
+customer rating runs `applyReliabilityDelta(+2)` → score 100 ≥ 70 → `onHold=false` persisted. Rider is
+un-held with zero admin action and resumes.
+
+**Why past sweeps missed it:** #198 added the velocity hold; the Q2 score-hysteresis predates it. No
+sweep cross-checked that a score-*independent* hold rides on a score-*driven* clear. The ledger records
+P0-3 as "MITIGATED #198 (velocity)" and never noted the backstop self-releases.
+
+**Status — REPORTED, not auto-fixed (deliberate).** This touches the fraud/standing-gating carve-out and
+the correct remedy is a policy/schema decision: represent the fraud hold with a persisted `heldReason`
+(or a distinct flag) that `applyReliabilityDelta`'s score-hysteresis never clears — only an admin
+`clear-hold` releases it — OR drop the score below `ON_HOLD_BELOW` when velocity-holding so recovery must
+legitimately re-earn it (conflates the fraud signal into the score, which #198 deliberately kept
+separate). Per the bug-hunt carve-out this is left **draft for human review** rather than auto-merged; a
+regression test asserting the hold survives a subsequent recovery event should land with whichever
+representation is chosen.
 
 ---
 
 ## Summary
 
-Seven new findings: **two HIGH** (DS13-02 marketplace-supply loss; DS13-05 SOS write-only dead-end),
-**three MEDIUM** (DS13-01 presence refutation, DS13-03 admin-cancel push parity, DS13-04 admin standing
-CAS), **two LOW** (DS13-06 become throttle, DS13-07 open-auction board signal). No CRITICAL. Two
-agent-proposed candidates were rejected on code re-read (recorded above). All Phase-0 sampled prior
-fixes remain intact.
+Eight new findings: **two HIGH** (DS13-02 marketplace-supply loss; DS13-05 SOS write-only dead-end),
+**four MEDIUM** (DS13-01 presence refutation, DS13-03 admin-cancel push parity, DS13-04 admin standing
+CAS, RH-01 velocity-hold self-clear), **two LOW** (DS13-06 become throttle, DS13-07 open-auction board
+signal). No CRITICAL. Seven are fixed in this PR; **RH-01 is reported-only and flagged for human review**
+(fraud-hold representation is a policy decision). Two agent-proposed candidates were rejected on code
+re-read (recorded above). All Phase-0 sampled prior fixes remain intact.
