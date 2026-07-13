@@ -39,3 +39,19 @@ starts from reasoning, not archaeology.
   at the calibration rate) approximate future top-up volume before the flip.
 - **Depends on:** Post-flip top-up volume data; thresholds above are launch guesses to
   calibrate against reality.
+
+### 3. Generate wallet visual mockups with the gstack designer
+
+- **What:** Run `$D variants` against the wallet screens now fully specified in
+  `docs/plans/2026-rider-wallet-design.md` (UI Specification block): Wallet balance
+  hero, show-the-math receipt rows, USSD wait state, gate state — pick a direction on
+  the comparison board.
+- **Why:** The 2026-07-13 design review ran text-only — the designer binary was
+  present but needs an `OPENAI_API_KEY` the remote container doesn't have. The spec is
+  complete; nobody has *seen* the wallet yet.
+- **Context:** The brief is assemblable directly from the UI Specification block +
+  `docs/DESIGN.md` tokens. Run before (or as part of) the build's
+  `/design-consultation` → `/design-html` pass so layouts are coded from an approved
+  visual, not from prose.
+- **Depends on:** `OPENAI_API_KEY` (or `$D setup`) on the machine running it; best on
+  a local session where the comparison board can open in a browser.

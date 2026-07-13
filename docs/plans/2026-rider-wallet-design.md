@@ -270,6 +270,63 @@ the ride it belongs to (e.g. "−$0.15 · 5% of $3.00 · delivery to Avondale ·
 deduction against a ride they remember without contacting support; disputes become
 lookups, not arguments.
 
+### UI Specification (design review 2026-07-13 — calibrated against docs/DESIGN.md)
+
+**Information architecture (D4/Pass-1):** the wallet is a **dedicated Wallet screen**,
+not an inline Earnings section. Earnings keeps its earned-total hero and gains one
+compact row (`Commission balance · $4.85 ›`, tabular, ink text, chevron) that opens
+Wallet. Wallet's hierarchy: balance hero (surface treatment analogous to the earnings
+hero; `--danger-wash` variant when negative) → **Top up** primary pill (`--cta-fill`,
+52px, the screen's ONE primary CTA) → receipt history (`Card` rows) → honest-copy
+info card (highlight-wash, reusing the existing earnings explainer slot). One money
+number per screen; the gate state deep-links straight into Wallet. The reveal flag
+(OV#5) toggles exactly the Earnings row + the Wallet route.
+
+**Interaction-state coverage** (extends the DESIGN.md table; states describe what the
+rider SEES):
+
+```
+FEATURE          | LOADING             | EMPTY                        | ERROR                        | SUCCESS                    | PARTIAL
+-----------------|---------------------|------------------------------|------------------------------|----------------------------|------------------
+Wallet screen    | SkeletonRows        | reveal first-open: balance   | offline → cached balance +   | balance + receipts render  | stale cache label
+                 |                     | pre-seeded w/ grace credit,  | OfflineBanner + "last saved" |                            | ("as of Tue 14:02")
+                 |                     | warm copy (below)            | label; retry                 |                            |
+Receipt history  | SkeletonRows        | "Your commission history     | load fail → retry card       | show-the-math rows         | pagination as
+                 |                     | starts with your next ride"  |                              | (spec above)               | rides accrue
+Top-up (EcoCash) | "Check your phone — | n/a                          | USSD timeout → calm retry    | "+$5.00 added" row appears | pending row shown
+                 | approve the EcoCash |                              | card: "The request expired — | at top, balance ticks up   | ("waiting for
+                 | prompt" + 90s       |                              | no money moved. Try again."  |                            | EcoCash…")
+                 | countdown skeleton  |                              | amount error → inline (min $5)|                           |
+Top-up (manual)  | n/a                 | n/a                          | n/a                          | instruction card: merchant | "credited within
+                 |                     |                              |                              | number + copy button + ref | ~N min" expectation
+Gate state       | n/a                 | n/a                          | n/a                          | "Top up to keep riding" —  | after credit:
+                 |                     |                              |                              | shows balance, floor, and  | auto-clears, toast
+                 |                     |                              |                              | EXACT amount needed; CTA   | "You're back online"
+                 |                     |                              |                              | deep-links to Wallet       |
+Admin credit     | button spinner-in-  | n/a                          | cap exceeded / role denied → | ledger row appears; audit  | n/a
+                 | place, disabled     |                              | inline error, nothing minted | actor shown                |
+```
+
+**Journey storyboard (emotional arc):** (1) *Reveal* — wallet appears WITH the flip
+announcement; first open shows the $5 grace credit already there: "We've added $5 to
+get you started — commission starts [date]." First feeling must be *given*, not
+*charged*. (2) *First debit* — receipt row shows the math; feeling: *checkable*. (3)
+*Low balance* — warning threshold at floor+$1 (soft chip on Wallet, no interruption);
+feeling: *warned, not ambushed*. (4) *Gated* — calm, specific, actionable (exact
+amount needed, one tap to fix); feeling: *blocked by a rule, not punished*. (5)
+*Cleared* — immediate, celebratory-but-quiet toast; feeling: *the system is fair*.
+
+**Component/token contract:** every money figure uses the shared `tabular` helper +
+`formatMoney`; cards/inputs/pills per DESIGN.md radii; green text is `--accent-text`
+never `--accent`; negative amounts are ink on `--danger-wash` (never red text on
+white); icons from the Lucide subset, always with labels; **no emoji anywhere**;
+skeletons over spinners (the USSD countdown is the one sanctioned wait animation).
+
+**Accessibility:** receipt rows carry full-sentence `accessibilityLabel`s ("Commission
+15 cents, 5 percent of 3 dollars, delivery to Avondale, Tuesday 2pm"); all targets
+≥44px; gate state readable by screen reader in one pass (status → reason → amount →
+action); contrast per DESIGN.md sunlight rules (body ≥4.5:1, CTA label ≈4.7:1).
+
 ## Eng Review Decisions (2026-07-13, /plan-eng-review)
 
 Locked interactively; each traces to a numbered finding in the review session.
@@ -435,7 +492,7 @@ Two real-world actions this week, both off the critical path of any code:
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | CLEAR (HOLD_SCOPE) | 2 findings + 5 outside-voice items adjudicated, 0 critical gaps |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR (PLAN) | 10 issues, 0 critical gaps |
-| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAR (FULL) | score: 6/10 → 9/10, 2 decisions |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
 - **Outside voices:** two runs (Claude subagent — Codex not installed). Eng pass: 11
@@ -451,6 +508,11 @@ Two real-world actions this week, both off the critical path of any code:
   5–10%, Africa ~6%); flip firing conditions + owner + 14-day notice + $5 grace credit
   (D3/1A); show-the-math ledger receipts (D4/2A); the five outside-voice adjudications
   above.
-- **VERDICT:** CEO + ENG CLEARED — ready to implement (PR1 wallet core, PR2 EcoCash rail).
+- **Design review decisions:** dedicated Wallet screen + compact Earnings row (one
+  money number and one primary CTA per screen); full UI Specification block added —
+  state-coverage table for all five surfaces, journey storyboard (reveal → debit →
+  warned → gated → cleared), component/token contract, accessibility spec. Mockups
+  deferred to TODOS.md #3 (designer needs an API key this environment lacks).
+- **VERDICT:** CEO + ENG + DESIGN CLEARED — ready to implement (PR1 wallet core, PR2 EcoCash rail).
 
 NO UNRESOLVED DECISIONS
