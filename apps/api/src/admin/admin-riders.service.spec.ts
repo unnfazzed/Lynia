@@ -391,6 +391,8 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
       accountStatus: "active",
       suspendReason: null,
       onHold: false,
+      // RH-01: a lift releases ANY hold, so heldReason is reset to null in the same CAS write.
+      heldReason: null,
       reliabilityScore: 70,
     });
     expect(calls.audit!.data).toMatchObject({ action: "rider.lift", reasonCode: null });
@@ -415,7 +417,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     const { prisma, calls } = makeTx({ rider: { accountStatus: "active", onHold: true, reliabilityScore: 42 } });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications);
     const res = await svc.clearHold("admin-1", "r1", { reason: "reliability recovered" });
-    expect(calls.riderUpdate!.data).toEqual({ onHold: false, reliabilityScore: 70 });
+    expect(calls.riderUpdate!.data).toEqual({ onHold: false, heldReason: null, reliabilityScore: 70 });
     expect(calls.audit!.data).toMatchObject({ action: "rider.clear_hold", reasonCode: "reliability recovered" });
     expect(res).toEqual({ id: "r1", onHold: false, auditId: "audit-9" });
   });
@@ -424,7 +426,17 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     const { prisma, calls } = makeTx({ rider: { accountStatus: "active", onHold: true, reliabilityScore: 95 } });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications);
     await svc.clearHold("admin-1", "r1", {});
-    expect(calls.riderUpdate!.data).toEqual({ onHold: false, reliabilityScore: 95 });
+    expect(calls.riderUpdate!.data).toEqual({ onHold: false, heldReason: null, reliabilityScore: 95 });
+  });
+
+  it("RH-01: clearHold on a VELOCITY-held rider releases the fraud hold — onHold=false, heldReason=null", async () => {
+    // The FRAUD P0-3 velocity hold (score untouched ~100, heldReason="velocity") never self-clears via the
+    // score hysteresis — an explicit admin clear-hold is the only release, and it must drop heldReason too.
+    const { prisma, calls } = makeTx({ rider: { accountStatus: "active", onHold: true, reliabilityScore: 100, heldReason: "velocity" } });
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications);
+    const res = await svc.clearHold("admin-1", "r1", { reason: "reviewed — not fraud" });
+    expect(calls.riderUpdate!.data).toEqual({ onHold: false, heldReason: null, reliabilityScore: 100 });
+    expect(res).toEqual({ id: "r1", onHold: false, auditId: "audit-9" });
   });
 
   it("clearHold refuses a rider who isn't on hold", async () => {

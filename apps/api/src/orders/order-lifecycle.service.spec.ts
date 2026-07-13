@@ -281,7 +281,7 @@ describe("OrderLifecycleService.rate", () => {
       rating: { create: async () => ({}) },
       orderEvent: { create: async () => ({}) },
       rider: {
-        findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false }),
+        findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null }),
         update: async (args: { data: Record<string, unknown> }) => { riderData = args.data; return {}; },
       },
     });
@@ -305,7 +305,7 @@ describe("OrderLifecycleService.rate", () => {
       orderEvent: { create: async () => ({}) },
       rider: {
         // 68 is already below ON_HOLD_CLEAR_AT(70); a -lowRating(10) → 58 < ON_HOLD_BELOW(60) trips on_hold.
-        findUnique: async () => ({ ratingAvg: 5, ratingCount: 1, tripsCount: 3, reliabilityScore: 68, onHold: false }),
+        findUnique: async () => ({ ratingAvg: 5, ratingCount: 1, tripsCount: 3, reliabilityScore: 68, onHold: false, heldReason: null }),
         update: async (args: { data: Record<string, unknown> }) => { riderData = args.data; return {}; },
       },
     });
@@ -372,7 +372,7 @@ describe("OrderLifecycleService.completeOrder (auto-close)", () => {
       },
       orderEvent: { create: async () => ({}) },
       rider: {
-        findUnique: async () => ({ reliabilityScore: 95, onHold: false }),
+        findUnique: async () => ({ reliabilityScore: 95, onHold: false, heldReason: null }),
         update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
       },
     });
@@ -398,7 +398,7 @@ describe("OrderLifecycleService.reconcileStaleDeliveries", () => {
         findUnique: async () => ({ riderId: "r1" }),
       },
       orderEvent: { create: async () => ({}) },
-      rider: { findUnique: async () => ({ reliabilityScore: 100, onHold: false }), update: async () => ({}) },
+      rider: { findUnique: async () => ({ reliabilityScore: 100, onHold: false, heldReason: null }), update: async () => ({}) },
     });
     expect(await svc.reconcileStaleDeliveries()).toEqual({ closed: 2 });
   });
@@ -508,7 +508,7 @@ describe("OrderLifecycleService.cancel", () => {
     const { svc, orders, jobCancelled, rebroadcasts } = build(
       cancellable({
         rider: {
-          findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false }),
+          findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false, heldReason: null }),
           update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
         },
       }),
@@ -531,7 +531,7 @@ describe("OrderLifecycleService.cancel", () => {
     const { svc, orders } = build(
       cancellable({
         rider: {
-          findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false }),
+          findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false, heldReason: null }),
           update: async () => ({}),
         },
       }),
@@ -593,7 +593,7 @@ describe("OrderLifecycleService.markUndelivered", () => {
       // `refused` is a recipient fault → NO score penalty; the rider row is READ (for the velocity check)
       // but, with a clean history, never written.
       rider: {
-        findUnique: async () => ({ reliabilityScore: 90, onHold: false }),
+        findUnique: async () => ({ reliabilityScore: 90, onHold: false, heldReason: null }),
         update: async () => { riderUpdated = true; return {}; },
       },
     });
@@ -617,7 +617,7 @@ describe("OrderLifecycleService.markUndelivered", () => {
       },
       orderEvent: { create: async () => ({}) },
       rider: {
-        findUnique: async () => ({ reliabilityScore: 90, onHold: false }),
+        findUnique: async () => ({ reliabilityScore: 90, onHold: false, heldReason: null }),
         update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
       },
     });
@@ -636,7 +636,7 @@ describe("OrderLifecycleService.markUndelivered", () => {
       },
       orderEvent: { create: async () => ({}) },
       rider: {
-        findUnique: async () => ({ reliabilityScore: 70, onHold: false }),
+        findUnique: async () => ({ reliabilityScore: 70, onHold: false, heldReason: null }),
         update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
       },
     });
@@ -659,12 +659,75 @@ describe("OrderLifecycleService.markUndelivered", () => {
       },
       orderEvent: { create: async () => ({}) },
       rider: {
-        findUnique: async () => ({ reliabilityScore: 95, onHold: false }),
+        findUnique: async () => ({ reliabilityScore: 95, onHold: false, heldReason: null }),
         update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
       },
     });
     await svc.markUndelivered("o1", "r1", "refused");
     // The reason carries no score penalty (score stays 95), but the velocity guard forces on_hold.
-    expect(riderData).toMatchObject({ reliabilityScore: 95, onHold: true });
+    // RH-01: the hold is stamped heldReason="velocity" so a later score recovery can't self-clear it.
+    expect(riderData).toMatchObject({ reliabilityScore: 95, onHold: true, heldReason: "velocity" });
+  });
+
+  it("RH-01: a velocity trip persists heldReason=velocity even though the score is untouched", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const counts = [3, 0]; // 3 undelivered / 0 completed = 100% ≥ rate, ≥ minCount → velocity hold
+    let call = 0;
+    const { svc } = build({
+      order: {
+        findUnique: async () => row({ status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => counts[call++]!,
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ reliabilityScore: 100, onHold: false, heldReason: null }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.markUndelivered("o1", "r1", "wrong_address");
+    expect(riderData).toMatchObject({ reliabilityScore: 100, onHold: true, heldReason: "velocity" });
+  });
+});
+
+describe("OrderLifecycleService RH-01 — a velocity/fraud hold survives a recovery event", () => {
+  // The RH-01 regression: a rider velocity-held by markUndelivered (#198) with a high score must NOT be
+  // silently un-held by the next completion/rating recovery. Both recovery edges run applyReliabilityDelta,
+  // which now preserves heldReason="velocity" — the persisted data keeps onHold=true.
+  it("completeOrder (auto-close) recovery does NOT clear a velocity hold", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        updateMany: async () => ({ count: 1 }),
+        findUnique: async () => ({ riderId: "r1" }),
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        // Velocity-held with a high score (the RH-01 shape) — a +RECOVER at score 100 would have cleared
+        // it under the old score-only hysteresis.
+        findUnique: async () => ({ reliabilityScore: 100, onHold: true, heldReason: "velocity" }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.completeOrder("o1");
+    expect(riderData).toMatchObject({ onHold: true, heldReason: "velocity" });
+  });
+
+  it("rate() recovery does NOT clear a velocity hold (a good rating no longer un-holds a flagged rider)", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      rating: { create: async () => ({}) },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ ratingAvg: 5, ratingCount: 3, tripsCount: 8, reliabilityScore: 100, onHold: true, heldReason: "velocity" }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.rate("o1", "c1", 5); // a clean 5-star rating → +RECOVER, would clear a score hold
+    expect(riderData).toMatchObject({ onHold: true, heldReason: "velocity" });
   });
 });
