@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { type RaiseSosRequest, SOS_POLICY } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
@@ -92,13 +92,14 @@ describe("SosService.raise", () => {
 });
 
 describe("SosService.listRecent (DS13-05 — read-only ops surface)", () => {
-  const row = (id: string, createdAt: Date) => ({
+  const row = (id: string, createdAt: Date, acknowledgedAt: Date | null = null) => ({
     id,
     orderId: "ord-1",
     raisedByProfileId: "cust-1",
     raisedByRole: "customer",
     lat: -17.8,
     lng: 31.05,
+    acknowledgedAt,
     createdAt,
   });
 
@@ -107,16 +108,22 @@ describe("SosService.listRecent (DS13-05 — read-only ops surface)", () => {
     return new SosService(prisma, makeNotifications());
   }
 
-  it("returns recent events newest-first with ISO timestamps", async () => {
+  it("returns recent events newest-first with ISO timestamps, including acknowledgedAt (null when pending)", async () => {
     let orderBy: unknown;
     const s = svcWith(async (args) => {
       orderBy = args.orderBy;
-      return [row("sos-2", new Date("2026-07-13T10:00:00Z")), row("sos-1", new Date("2026-07-12T10:00:00Z"))];
+      return [
+        row("sos-2", new Date("2026-07-13T10:00:00Z"), new Date("2026-07-13T10:05:00Z")),
+        row("sos-1", new Date("2026-07-12T10:00:00Z")),
+      ];
     });
     const rows = await s.listRecent();
     expect(orderBy).toEqual({ createdAt: "desc" });
     expect(rows.map((r) => r.id)).toEqual(["sos-2", "sos-1"]);
     expect(rows[0]!.createdAt).toBe("2026-07-13T10:00:00.000Z");
+    // acknowledgedAt: ISO string when set, null while still pending.
+    expect(rows[0]!.acknowledgedAt).toBe("2026-07-13T10:05:00.000Z");
+    expect(rows[1]!.acknowledgedAt).toBeNull();
   });
 
   it("clamps the limit to [1, 200] (caps a large request, floors a non-positive one)", async () => {
@@ -128,5 +135,60 @@ describe("SosService.listRecent (DS13-05 — read-only ops surface)", () => {
     expect(take).toBe(1); // floored to at least 1
     await s.listRecent(); // default
     expect(take).toBe(50);
+  });
+});
+
+describe("SosService.acknowledge (DS13-05 — ops acknowledgement)", () => {
+  /**
+   * Prisma stub for the acknowledge $transaction. `updateManyCount` is what the CAS write returns (1 =
+   * pending row transitioned, 0 = missing-or-already-acked); `existing` is the row the follow-up
+   * findUnique sees when the CAS wrote nothing (null = missing). auditCreate records audit writes.
+   */
+  function svcFor(opts: {
+    updateManyCount: number;
+    existing?: { acknowledgedAt: Date | null } | null;
+    auditCreate?: (args: unknown) => void;
+  }) {
+    const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          sosEvent: {
+            updateMany: async () => ({ count: opts.updateManyCount }),
+            findUnique: async () => opts.existing ?? null,
+          },
+          auditLog: { create: async (args: unknown) => { opts.auditCreate?.(args); return { id: "audit-1" }; } },
+        }),
+    } as unknown as PrismaService;
+    return new SosService(prisma, makeNotifications());
+  }
+
+  it("sets acknowledgedAt and writes the audit row on the null→now transition", async () => {
+    let auditArgs: { data: Record<string, unknown> } | undefined;
+    const s = svcFor({ updateManyCount: 1, auditCreate: (a) => (auditArgs = a as { data: Record<string, unknown> }) });
+
+    const res = await s.acknowledge("sos-1", "ops@lynia.co");
+    expect(res.id).toBe("sos-1");
+    expect(typeof res.acknowledgedAt).toBe("string");
+    expect(Number.isNaN(Date.parse(res.acknowledgedAt))).toBe(false);
+    // Audit row attributed to the real operator, action sos.acknowledge, target = the sos id.
+    expect(auditArgs!.data).toMatchObject({ actor: "ops@lynia.co", action: "sos.acknowledge", target: "sos-1" });
+  });
+
+  it("is an idempotent no-op on an already-acknowledged row (no throw, no duplicate audit)", async () => {
+    const acked = new Date("2026-07-13T09:00:00Z");
+    let auditCalls = 0;
+    const s = svcFor({ updateManyCount: 0, existing: { acknowledgedAt: acked }, auditCreate: () => (auditCalls += 1) });
+
+    const res = await s.acknowledge("sos-1", "ops@lynia.co");
+    // Returns the pre-existing ack time and writes NO second audit row.
+    expect(res).toEqual({ id: "sos-1", acknowledgedAt: acked.toISOString() });
+    expect(auditCalls).toBe(0);
+  });
+
+  it("throws NotFound when the SOS row doesn't exist", async () => {
+    let auditCalls = 0;
+    const s = svcFor({ updateManyCount: 0, existing: null, auditCreate: () => (auditCalls += 1) });
+    await expect(s.acknowledge("missing", "ops@lynia.co")).rejects.toBeInstanceOf(NotFoundException);
+    expect(auditCalls).toBe(0);
   });
 });

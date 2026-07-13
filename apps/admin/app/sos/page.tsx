@@ -4,10 +4,11 @@ import { DataTable, type Column } from "../components/DataTable";
 import { Pill } from "../components/StatusPill";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { IconAlert, IconCheck } from "../components/icons";
+import { AcknowledgeButton } from "./AcknowledgeButton";
 
-/** SOS queue (DS13-05). Emergency alerts raised on live trips, newest first, so SOS is visible to ops
- *  independently of push delivery. Read-only this pass — rows deep-link to the order at /orders/[id];
- *  acknowledgement is a later follow-up. */
+/** SOS queue (DS13-05 — feed + acknowledgement). Emergency alerts raised on live trips, newest
+ *  first, so SOS is visible to ops independently of push delivery. Rows deep-link to the order at
+ *  /orders/[id]; a still-pending alert carries an Acknowledge action so ops can mark it handled. */
 
 /** Format an ISO timestamp as the readable "13 Jul, 14:32" the console uses elsewhere. Includes the
  *  time (not just the date like the KYC page) because SOS urgency turns on minutes, not days. */
@@ -57,6 +58,21 @@ export default async function SosPage() {
         ),
     },
     { key: "raised", header: "Raised at", className: "mut", cell: (s) => raisedAt(s.createdAt) },
+    {
+      key: "status",
+      header: "Status",
+      cell: (s) =>
+        s.acknowledgedAt ? (
+          <Pill kind="mut">acknowledged · {raisedAt(s.acknowledgedAt)}</Pill>
+        ) : (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <Pill kind="bad" dot>
+              pending
+            </Pill>
+            {connected ? <AcknowledgeButton id={s.id} /> : null}
+          </span>
+        ),
+    },
   ];
 
   return (

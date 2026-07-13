@@ -26,6 +26,18 @@ arming requires a new EAS build and a store release.
 
 ## 1. Extract the pins
 
+**Quickest path — the helper script** (`apps/mobile/scripts/compute-tls-pins.sh`) does the whole chain
+for you, labels leaf/intermediate/root, and prints each `sha256/…=` pin ready to paste. Run it from a
+machine with **direct** network egress (not through an HTTP proxy):
+
+```sh
+./apps/mobile/scripts/compute-tls-pins.sh lyniago.lyniafinance.com:443
+```
+
+Then pick the **intermediate** (primary) and **root** (backup) lines it emits — never the leaf.
+
+<details><summary>Manual equivalent (if you can't run the script)</summary>
+
 Get the base64 SHA-256 of the **Subject Public Key Info** for the intermediate and root in the live
 chain (not the leaf):
 
@@ -42,6 +54,7 @@ openssl x509 -in <one-ca-cert>.pem -pubkey -noout \
   | openssl dgst -sha256 -binary \
   | openssl enc -base64
 ```
+</details>
 
 Pick the **intermediate** (primary) and the **root** (backup) — or two roots if you prefer maximum
 stability. Cross-check the Google Trust Services roots (GTS Root R1–R4) against

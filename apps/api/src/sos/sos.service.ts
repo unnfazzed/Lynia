@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PHONE_REVEAL_STATUSES, type RaiseSosRequest, SOS_POLICY } from "@lynia/shared";
+import { auditData } from "../admin/admin.shared";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -97,6 +98,9 @@ export class SosService {
    * longer write-only — ops can see raised events independently of push delivery (the escalation push may
    * have fanned out to zero registered admin devices). Admin-guarded at the controller (GET /admin/sos).
    * `limit` is clamped to [1, 200] (default 50) so a caller can't pull the whole table.
+   *
+   * `acknowledgedAt` (DS13-05) is the ISO timestamp an operator acknowledged the alert, or null while
+   * it's still pending — so the console can show pending vs handled at a glance.
    */
   async listRecent(limit = 50): Promise<
     Array<{
@@ -106,6 +110,7 @@ export class SosService {
       raisedByRole: string;
       lat: number | null;
       lng: number | null;
+      acknowledgedAt: string | null;
       createdAt: string;
     }>
   > {
@@ -120,9 +125,44 @@ export class SosService {
         raisedByRole: true,
         lat: true,
         lng: true,
+        acknowledgedAt: true,
         createdAt: true,
       },
     });
-    return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
+    return rows.map((r) => ({
+      ...r,
+      acknowledgedAt: r.acknowledgedAt ? r.acknowledgedAt.toISOString() : null,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * DS13-05: an operator acknowledges an SOS from the ops console — the write that turns the read-only
+   * SOS feed into something actionable ("someone is handling this"). Idempotent and CAS-guarded: the
+   * update only fires against a still-pending row (`acknowledgedAt: null`), so two operators clicking at
+   * once can't both "win" and double-write. When it transitions null→now we record an AuditLog row in
+   * the SAME transaction as the update (mirrors the A-04 admin mutations) — attributed to the real
+   * operator (`actor`). A repeat ack on an already-acknowledged row is a harmless no-op: no throw, no
+   * duplicate audit row. A missing row 404s. AdminGuard is applied at the controller.
+   */
+  async acknowledge(sosId: string, actor: string): Promise<{ id: string; acknowledgedAt: string }> {
+    return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      // CAS on `acknowledgedAt: null` — 0 rows means the row is either missing OR already acknowledged.
+      const changed = await tx.sosEvent.updateMany({
+        where: { id: sosId, acknowledgedAt: null },
+        data: { acknowledgedAt: now },
+      });
+      if (changed.count === 0) {
+        const existing = await tx.sosEvent.findUnique({ where: { id: sosId }, select: { acknowledgedAt: true } });
+        if (!existing) throw new NotFoundException("SOS event not found");
+        // Already acknowledged — re-acking is harmless, so treat it as a no-op success WITHOUT writing a
+        // second audit row (the null→now transition is the only thing worth recording).
+        return { id: sosId, acknowledgedAt: existing.acknowledgedAt!.toISOString() };
+      }
+      // Only on the real null→now transition: persist the audit row atomically with the acknowledgement.
+      await tx.auditLog.create({ data: auditData(actor, "sos.acknowledge", sosId) });
+      return { id: sosId, acknowledgedAt: now.toISOString() };
+    });
   }
 }

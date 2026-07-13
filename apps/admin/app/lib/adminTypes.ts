@@ -95,12 +95,13 @@ export interface IssueDetail extends IssueRow {
   resolutionNote?: string;
 }
 
-/* ── SOS events (DS13-05 — read-only ops surface) ──────────── */
+/* ── SOS events (DS13-05 — feed + acknowledgement) ───────── */
 /**
  * One emergency alert raised on a live trip (`GET /admin/sos`, newest-first). The durable record of a
- * raised SOS so ops can see it independently of push delivery. Read-only this pass — no acknowledge/
- * mutation. `raisedByRole` is the raiser's role ("customer" | "rider"); `lat`/`lng` are null when the
- * device didn't attach a fix. `createdAt` is an ISO string (API-owned).
+ * raised SOS so ops can see it independently of push delivery. `raisedByRole` is the raiser's role
+ * ("customer" | "rider"); `lat`/`lng` are null when the device didn't attach a fix. `createdAt` is an
+ * ISO string (API-owned). `acknowledgedAt` (DS13-05) is the ISO time an operator marked the alert
+ * handled, or null while it's still pending — drives the pending/acknowledged status + the ack action.
  */
 export interface SosRow {
   id: string;
@@ -109,6 +110,7 @@ export interface SosRow {
   raisedByRole: string;
   lat: number | null;
   lng: number | null;
+  acknowledgedAt: string | null;
   createdAt: string;
 }
 
