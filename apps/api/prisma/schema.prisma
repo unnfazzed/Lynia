@@ -312,6 +312,11 @@ model Order {
   // Rider-cancel auto re-broadcast (F-01): a new order cloned at the same price back-links here to
   // the order it replaced. Plain column (no relation) — a lineage pointer, not a hot-path join.
   rebroadcastOfId     String?     @map("rebroadcast_of_id") @db.Uuid
+  // No-supply expiry (UX-2026-07-12 #11): true when the offer window closed with ZERO bids AND zero
+  // riders online near the pickup, stamped best-effort post-commit in expireOrder. Drives the honest
+  // "nobody was online" copy (feed + snapshot) over the default "raise your price" nudge. Nullable:
+  // pre-migration rows and normal expiries stay null (= default copy).
+  expiryNoSupply      Boolean?    @map("expiry_no_supply")
   // Client-generated create-request dedup key (one per compose attempt). A unique index scoped to the
   // customer lets a timeout+retry or a double-tap on "Broadcast" hit the same row (P2002) instead of
   // opening a second live auction for the same trip. Nullable — old clients that don't send one just

@@ -293,6 +293,96 @@ describe("NotificationsService — derived in-app feed (A·3)", () => {
     const feed = await service.feedForUser("me", NOW);
     expect(feed).toHaveLength(30);
   });
+
+  it("rewrites a rider-bail cancel to the honest re-sent copy and points the tap at the live clone", async () => {
+    const { prisma, service } = makeDeps();
+    // The rider (r1) bailed on o1; the clone o2 (rebroadcastOfId=o1) is back on the board. Viewer is the
+    // customer (not the rider on o1). Both rows are in the take-30 window (the clone is newer, sorts first).
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o2",
+        riderId: null,
+        rebroadcastOfId: "o1",
+        events: [{ status: "open_for_offers", createdAt: new Date("2026-07-06T11:05:00.000Z") }], // silent
+      },
+      {
+        id: "o1",
+        riderId: "r1",
+        cancelledBy: "r1", // the rider cancelled — not the viewer, so not suppressed
+        events: [{ status: "cancelled", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+      },
+    ]);
+    const feed = await service.feedForUser("me", NOW);
+    const row = feed.find((r) => r.title === "Your rider had to cancel");
+    expect(row).toBeDefined();
+    expect(row?.message).toContain("sent your request back out");
+    // Tap routes to the LIVE clone, not the dead original…
+    expect(row?.orderId).toBe("o2");
+    // …but the stable row id still keys off the ORIGINAL order.
+    expect(row?.id).toBe(`o1:cancelled:2026-07-06T11:00:00.000Z`);
+    // No plain "Order cancelled" row leaks through.
+    expect(feed.some((r) => r.title === "Order cancelled")).toBe(false);
+  });
+
+  it("suppresses the cancelled row for the rider who bailed (a row about your own action is noise)", async () => {
+    const { prisma, service } = makeDeps();
+    // Viewer is the rider on o1 AND the one who cancelled it (cancelledBy is the canceller's profile id).
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o1",
+        riderId: "me",
+        cancelledBy: "me",
+        events: [{ status: "cancelled", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+      },
+    ]);
+    const feed = await service.feedForUser("me", NOW);
+    expect(feed).toEqual([]);
+  });
+
+  it("suppresses a customer's self-cancel row, but the assigned rider still sees it", async () => {
+    const { prisma, service } = makeDeps();
+    const orderRows = [
+      {
+        id: "o1",
+        customerId: "cust",
+        riderId: "rider",
+        cancelledBy: "cust", // the customer cancelled
+        events: [{ status: "cancelled", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+      },
+    ];
+    // The customer (actor) gets no row…
+    prisma.order.findMany.mockResolvedValue(orderRows);
+    expect(await service.feedForUser("cust", NOW)).toEqual([]);
+    // …but the assigned rider (not the actor) still gets a cancelled row (rider voice).
+    prisma.order.findMany.mockResolvedValue(orderRows);
+    const riderFeed = await service.feedForUser("rider", NOW);
+    expect(riderFeed.map((r) => r.title)).toEqual(["Order cancelled"]);
+    expect(riderFeed[0].orderId).toBe("o1");
+  });
+
+  it("tells the customer nobody was online on a no-supply expiry, else the default raise-the-price nudge", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o1",
+        riderId: null,
+        expiryNoSupply: true,
+        events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+      },
+    ]);
+    expect((await service.feedForUser("me", NOW))[0]).toMatchObject({ title: "No riders online nearby", icon: "bike" });
+
+    // A normal expiry (had riders / not flagged) keeps the default "No riders yet" copy.
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o2",
+        riderId: null,
+        expiryNoSupply: false,
+        events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+      },
+    ]);
+    expect((await service.feedForUser("me", NOW))[0]).toMatchObject({ title: "No riders yet", icon: "clock" });
+  });
 });
 
 describe("NotificationsService — new-offer notice", () => {

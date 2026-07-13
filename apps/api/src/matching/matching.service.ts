@@ -222,6 +222,13 @@ export class MatchingService {
         if (!result.hadOffers && pt) {
           const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, NEARBY_RADIUS_M);
           noSupply = nearby.length === 0;
+          // Persist the no-supply verdict so the in-app feed / expired snapshot can pick the honest
+          // "nobody was online" copy on later reads (the push already got it transiently above). Inside
+          // this try/catch by design: a DB blip here degrades to the default "raise your price" copy —
+          // same fail-safe philosophy as the push, never a false "nobody's here".
+          if (noSupply) {
+            await this.prisma.order.update({ where: { id: orderId }, data: { expiryNoSupply: true } });
+          }
         }
       } catch (err) {
         this.logger.warn(`bid:expired emit failed for order ${orderId}: ${(err as Error).message}`);

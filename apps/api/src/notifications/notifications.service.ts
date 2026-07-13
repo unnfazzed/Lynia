@@ -120,6 +120,12 @@ export class NotificationsService {
       select: {
         id: true,
         riderId: true,
+        // `rebroadcastOfId` links a rider-bail clone back to the order it replaced; `expiryNoSupply`
+        // flags a genuine "nobody was online" expiry; `cancelledBy` is the canceller's profile id (used
+        // for actor-suppression below — a row about your OWN action is noise, mirroring the push).
+        rebroadcastOfId: true,
+        expiryNoSupply: true,
+        cancelledBy: true,
         events: {
           select: { status: true, createdAt: true },
           orderBy: { createdAt: "asc" },
@@ -127,19 +133,66 @@ export class NotificationsService {
       },
     });
 
+    // Map an original (cancelled) order id → the fresh clone auto-broadcast in its place (F-01). The
+    // clone shares the customer and is strictly newer than the original, so whenever the cancelled
+    // original is inside the take-30 (newest-first) window the clone — sorting above it — is too; this
+    // in-memory map is therefore complete without a second query.
+    const cloneByOriginal = new Map<string, string>();
+    for (const order of orders) {
+      if (order.rebroadcastOfId) cloneByOriginal.set(order.rebroadcastOfId, order.id);
+    }
+
     const rows: NotificationRow[] = [];
     for (const order of orders) {
       // Pick the voice matching what this viewer actually experienced on THIS order — a dual-role user
       // can be the rider on one trip and the customer on another, so the role is per-order, not per-user.
-      const notices = order.riderId === userId ? FEED_NOTICES_RIDER : FEED_NOTICES;
+      const isCustomerView = order.riderId !== userId;
+      const notices = isCustomerView ? FEED_NOTICES : FEED_NOTICES_RIDER;
       for (const event of order.events) {
-        const notice = notices[event.status];
+        let notice = notices[event.status];
         if (!notice) continue; // silent statuses (requested/open_for_offers) never surface, as with push
+
+        // Actor suppression (both voices): drop the `cancelled` row when the viewer is the one who
+        // cancelled — a row about your own action is noise. `cancelledBy` is the canceller's profile
+        // id, so a direct id match identifies the actor. Mirrors the push's excludeProfileId exclusion.
+        if (event.status === "cancelled" && order.cancelledBy === userId) continue;
+
+        // The order id this row navigates to on tap (mobile routes every row to /order/<orderId>).
+        // Only the rider-bail rebroadcast below redirects it to the live clone.
+        let orderId = order.id;
+
+        if (isCustomerView) {
+          // Rider bailed but the job was auto re-sent at the same price (F-01): swap the alarming
+          // "Order cancelled" for the honest "your rider had to cancel — we've re-sent it" copy, and
+          // point the tap at the LIVE clone so the customer lands on the running auction, not a dead
+          // terminal. (The row's stable `id` still keys off the ORIGINAL order, as before.)
+          if (event.status === "cancelled") {
+            const cloneId = cloneByOriginal.get(order.id);
+            if (cloneId) {
+              notice = {
+                icon: "bike",
+                title: "Your rider had to cancel",
+                message:
+                  "We've already sent your request back out to nearby riders at the same price — tap to follow it.",
+              };
+              orderId = cloneId;
+            }
+          } else if (event.status === "expired" && order.expiryNoSupply) {
+            // No-supply expiry: nobody was online near the pickup, so "raise your price" would be a lie.
+            notice = {
+              icon: "bike",
+              title: "No riders online nearby",
+              message:
+                "Nobody was online near your pickup when the window closed — raising the price wasn't the problem. Try sending again in a bit.",
+            };
+          }
+        }
+
         const at = event.createdAt.toISOString();
         rows.push({
           // Stable per (order, status, time): an order can revisit a status, so the timestamp keys it.
           id: `${order.id}:${event.status}:${at}`,
-          orderId: order.id,
+          orderId,
           icon: notice.icon,
           title: notice.title,
           message: notice.message,

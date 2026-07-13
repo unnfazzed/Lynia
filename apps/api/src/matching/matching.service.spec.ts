@@ -149,6 +149,46 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
   });
 });
 
+describe("MatchingService.expireOrder — persists the no-supply verdict for later reads", () => {
+  const pickupPt = { point: { lat: -17.8, lng: 31.05 } };
+
+  /** expireOrder runs a tx (order.updateMany CAS → offer.count → offer.updateMany → event) then a
+   *  post-commit block on `this.prisma` (findUnique pickup → nearbyRiders → order.update). This fake
+   *  wires both surfaces so the persistence branch is reachable. */
+  function expireSvc(opts: { offerCount: number; nearby: unknown[] }) {
+    const orderUpdate = vi.fn(async () => ({}));
+    const tx = {
+      order: { updateMany: async () => ({ count: 1 }) },
+      offer: { count: async () => opts.offerCount, updateMany: async () => ({ count: 0 }) },
+      orderEvent: { create: async () => ({}) },
+    };
+    const prisma = {
+      $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
+      order: { findUnique: async () => ({ pickup: pickupPt }), update: orderUpdate },
+    } as unknown as PrismaService;
+    const tracking = { nearbyRiders: async () => opts.nearby } as unknown as TrackingService;
+    const notifyOrderExpired = vi.fn(async () => {});
+    const notifications = { notifyOrderExpired } as unknown as NotificationsService;
+    const service = new MatchingService(prisma, noopTokens, notifications, fakeMetrics(), noopGateway, tracking);
+    return { service, orderUpdate, notifyOrderExpired };
+  }
+
+  it("stamps expiryNoSupply=true when the window closed with zero bids AND nobody online nearby", async () => {
+    const { service, orderUpdate, notifyOrderExpired } = expireSvc({ offerCount: 0, nearby: [] });
+    await service.expireOrder(orderId);
+    expect(orderUpdate).toHaveBeenCalledWith({ where: { id: orderId }, data: { expiryNoSupply: true } });
+    // The push still carries the same verdict transiently.
+    expect(notifyOrderExpired).toHaveBeenCalledWith(orderId, true);
+  });
+
+  it("does NOT persist the flag when the auction had bids (price problem, not a supply problem)", async () => {
+    const { service, orderUpdate, notifyOrderExpired } = expireSvc({ offerCount: 2, nearby: [] });
+    await service.expireOrder(orderId);
+    expect(orderUpdate).not.toHaveBeenCalled();
+    expect(notifyOrderExpired).toHaveBeenCalledWith(orderId, false);
+  });
+});
+
 describe("MatchingService.selectOffer — block enforcement (a blocked pair never re-matches)", () => {
   it("rejects selecting an offer from a blocked rider and never assigns the order", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));

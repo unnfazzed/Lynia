@@ -576,6 +576,7 @@ export class OrdersService {
         deliveryOtpAttempts: true,
         cancelReason: true,
         cancelledBy: true,
+        expiryNoSupply: true,
         collectedAt: true,
         pickupPhotoKey: true,
         customer: { select: { phone: true } },
@@ -702,6 +703,10 @@ export class OrdersService {
       // F-01: on a rider-bail cancel, the id of the fresh clone the job was re-broadcast to (else null),
       // so the cancelled terminal can link the customer forward to the re-sent request.
       rebroadcastedToId,
+      // UX-2026-07-12 #11: on a no-supply expiry (zero bids AND nobody online near pickup), so the
+      // expired terminal can pick the honest "no riders were online" copy over "nudge the price up".
+      // Scoped to `expired`; null on every other status and on a normal (had-supply) expiry.
+      expiryNoSupply: order.status === "expired" ? (order.expiryNoSupply ?? null) : null,
       rider,
       events: order.events,
       counterpartyPhone,
