@@ -80,6 +80,31 @@ launch-hygiene config" step (`release.yml:195-215`) — it currently only reject
 This was recommended in the 07-10 review (§4) and has not been implemented — it would
 have caught both incarnations of this outage.
 
+### 3a. Pre-launch exception (added same day, after §8a)
+
+The hard-fail guards in §8a are correct but total: once merged, they blocked *every*
+production deploy — including unrelated bug fixes and UX polish — until WhatsApp is fully
+armed, which the founder expects to take about two more weeks. Since Lynia has no live
+pilot users yet, an already-known-broken OTP channel is an acceptable, explicit, time-boxed
+tradeoff against not shipping anything else for two weeks — but only if it stays *loud*,
+never silently green again.
+
+`release.yml`'s launch-hygiene step now reads two repo Variables:
+
+- `OTP_WHATSAPP_UNARMED_ACK=true`
+- `OTP_WHATSAPP_UNARMED_ACK_EXPIRES=YYYY-MM-DD`
+
+When set and not yet expired, an unarmed-WhatsApp finding is downgraded from `::error::`
+(blocks the deploy) to `::warning::` (prints on every deploy, but proceeds). Once
+`OTP_WHATSAPP_UNARMED_ACK_EXPIRES` passes, or if the ack is on but the expiry is missing/
+unparseable, it reverts to a hard failure automatically — the exception cannot be forgotten
+and left on indefinitely. `OTP_CHANNEL=console`, non-empty `OTP_TEST_PHONES`, and
+`KYC_PROVIDER=stub` are unaffected and always hard-fail.
+
+To use it: set both repo Variables (GitHub → Settings → Variables → Actions) with an expiry
+matching the real WhatsApp-arming ETA. When WhatsApp is armed, clear
+`OTP_WHATSAPP_UNARMED_ACK` (or let it expire) so the guard goes back to unconditional.
+
 ---
 
 ## 4. 🟡 Pending right now in the pipeline

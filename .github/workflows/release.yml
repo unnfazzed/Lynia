@@ -198,6 +198,8 @@ jobs:
           WHATSAPP_ENABLED: ${{ vars.WHATSAPP_ENABLED }}
           WHATSAPP_PHONE_NUMBER_ID: ${{ vars.WHATSAPP_PHONE_NUMBER_ID }}
           WHATSAPP_TEMPLATE_NAME: ${{ vars.WHATSAPP_TEMPLATE_NAME }}
+          OTP_WHATSAPP_UNARMED_ACK: ${{ vars.OTP_WHATSAPP_UNARMED_ACK }}
+          OTP_WHATSAPP_UNARMED_ACK_EXPIRES: ${{ vars.OTP_WHATSAPP_UNARMED_ACK_EXPIRES }}
         run: |
           set -euo pipefail
           errors=()
@@ -215,11 +217,38 @@ jobs:
           # shipped exactly this way twice (2026-07-08 un-armed, 2026-07-13 half-armed with empty vars;
           # docs/GCP-PENDING-REVIEW-2026-07-13.md §3). WhatsAppOtpSender.send() requires phone-number-id,
           # token, and template (apps/api/src/auth/otp-sender.ts), so guard all of them here.
+          #
+          # Pre-launch exception: OTP_WHATSAPP_UNARMED_ACK=true plus a not-yet-passed
+          # OTP_WHATSAPP_UNARMED_ACK_EXPIRES (YYYY-MM-DD) downgrades an unarmed-WhatsApp finding from a
+          # hard failure to a loud warning, so unrelated bug/UX fixes can keep shipping during the known,
+          # time-boxed pre-launch window where WhatsApp isn't armed yet. It never goes silent: the warning
+          # prints on every single deploy, and once the expiry date passes this reverts to a hard failure
+          # automatically — the ack can't be set once and forgotten.
+          whatsapp_errors=()
           if [ "$OTP_CHANNEL" = "whatsapp" ]; then
             if [ "$WHATSAPP_ENABLED" != "true" ]; then
-              errors+=("OTP_CHANNEL=whatsapp (the default) but WHATSAPP_ENABLED != true — no WhatsApp credentials are injected, so every production sign-in OTP would 503. Arm WhatsApp (WHATSAPP_ENABLED=true + WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_TEMPLATE_NAME repo Variables + WHATSAPP_ACCESS_TOKEN secret) or set OTP_CHANNEL=sms.")
+              whatsapp_errors+=("OTP_CHANNEL=whatsapp (the default) but WHATSAPP_ENABLED != true — no WhatsApp credentials are injected, so every production sign-in OTP would 503. Arm WhatsApp (WHATSAPP_ENABLED=true + WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_TEMPLATE_NAME repo Variables + WHATSAPP_ACCESS_TOKEN secret) or set OTP_CHANNEL=sms.")
             elif [ -z "$(printf '%s' "$WHATSAPP_PHONE_NUMBER_ID" | tr -d '[:space:]')" ] || [ -z "$(printf '%s' "$WHATSAPP_TEMPLATE_NAME" | tr -d '[:space:]')" ]; then
-              errors+=("WHATSAPP_ENABLED=true but WHATSAPP_PHONE_NUMBER_ID and/or WHATSAPP_TEMPLATE_NAME repo Variables are empty — the service boots green yet every requestOtp 503s. Set both (Meta Business → WhatsApp → API setup; template must be an approved authentication-category template).")
+              whatsapp_errors+=("WHATSAPP_ENABLED=true but WHATSAPP_PHONE_NUMBER_ID and/or WHATSAPP_TEMPLATE_NAME repo Variables are empty — the service boots green yet every requestOtp 503s. Set both (Meta Business → WhatsApp → API setup; template must be an approved authentication-category template).")
+            fi
+          fi
+          ack_active=false
+          if [ ${#whatsapp_errors[@]} -gt 0 ]; then
+            if [ "$OTP_WHATSAPP_UNARMED_ACK" = "true" ] && [ -n "$OTP_WHATSAPP_UNARMED_ACK_EXPIRES" ]; then
+              expires_epoch="$(date -d "$OTP_WHATSAPP_UNARMED_ACK_EXPIRES" +%s 2>/dev/null || true)"
+              now_epoch="$(date +%s)"
+              if [ -n "$expires_epoch" ] && [ "$now_epoch" -lt "$expires_epoch" ]; then
+                ack_active=true
+              fi
+            fi
+            if [ "$ack_active" = "true" ]; then
+              for e in "${whatsapp_errors[@]}"; do echo "::warning::$e"; done
+              echo "::warning::OTP_WHATSAPP_UNARMED_ACK is active until $OTP_WHATSAPP_UNARMED_ACK_EXPIRES — deploying anyway with WhatsApp OTP known broken. Production sign-in will 503 until WhatsApp is armed."
+            else
+              errors+=("${whatsapp_errors[@]}")
+              if [ "$OTP_WHATSAPP_UNARMED_ACK" = "true" ]; then
+                errors+=("OTP_WHATSAPP_UNARMED_ACK is true but OTP_WHATSAPP_UNARMED_ACK_EXPIRES is missing, unparseable, or in the past — the pre-launch exception has expired or is misconfigured. Arm WhatsApp, or set a fresh future OTP_WHATSAPP_UNARMED_ACK_EXPIRES (YYYY-MM-DD) to extend the window.")
+              fi
             fi
           fi
           if [ ${#errors[@]} -gt 0 ]; then
@@ -228,7 +257,13 @@ jobs:
             exit 1
           fi
           whatsapp_note=""
-          if [ "$OTP_CHANNEL" = "whatsapp" ]; then whatsapp_note=", WhatsApp armed"; fi
+          if [ "$OTP_CHANNEL" = "whatsapp" ]; then
+            if [ "$ack_active" = "true" ]; then
+              whatsapp_note=", WhatsApp UNARMED (ack active until $OTP_WHATSAPP_UNARMED_ACK_EXPIRES)"
+            else
+              whatsapp_note=", WhatsApp armed"
+            fi
+          fi
           echo "Launch-hygiene config OK (OTP_CHANNEL=$OTP_CHANNEL, KYC_PROVIDER=$KYC_PROVIDER, OTP_TEST_PHONES empty${whatsapp_note})."
 
       - name: Authenticate to Google Cloud
