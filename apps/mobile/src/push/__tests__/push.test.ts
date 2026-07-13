@@ -1,4 +1,4 @@
-import { pushDestination } from "../push";
+import { pushDestination, pushOnce } from "../push";
 
 // Regression guard: before this, tapping any push except the rider's "You got the job" (assigned)
 // was a no-op — despite copy like "tap to rate your rider" / "tap for details" on the
@@ -46,5 +46,22 @@ describe("pushDestination", () => {
     expect(pushDestination("not an object", false)).toBeNull();
     expect(pushDestination({ orderId: "" }, false)).toBeNull();
     expect(pushDestination({ orderId: 42 }, false)).toBeNull();
+  });
+});
+
+// Regression guard: before this, a double-tap on "Open job", a duplicate/replayed push notification,
+// and the cold-start deep link could each independently `router.push("/rider/job")` while already on
+// that screen, stacking redundant entries onto the back stack.
+describe("pushOnce", () => {
+  it("navigates when the target isn't the active route", () => {
+    const push = jest.fn();
+    pushOnce({ push }, "/rider", "/rider/job");
+    expect(push).toHaveBeenCalledWith("/rider/job");
+  });
+
+  it("is a no-op when the target is already the active route", () => {
+    const push = jest.fn();
+    pushOnce({ push }, "/rider/job", "/rider/job");
+    expect(push).not.toHaveBeenCalled();
   });
 });

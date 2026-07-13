@@ -1,8 +1,8 @@
 import * as Notifications from "expo-notifications";
-import { router } from "expo-router";
+import { router, usePathname } from "expo-router";
 import { useEffect, useRef } from "react";
 import type { Session } from "../auth/session";
-import { pushDestination, registerForPushNotificationsAsync, unregisterForPushNotificationsAsync } from "./push";
+import { pushDestination, pushOnce, registerForPushNotificationsAsync, unregisterForPushNotificationsAsync } from "./push";
 
 /**
  * Keep this device's push token in sync with auth: register it once a profile is signed in, and drop
@@ -16,6 +16,12 @@ import { pushDestination, registerForPushNotificationsAsync, unregisterForPushNo
  */
 export function usePushRegistration(session: Session | null): void {
   const profileId = session?.profileId ?? null;
+  // Read via a ref inside the handlers below (rather than closing over `pathname` directly) so the
+  // notification listener isn't torn down and re-subscribed on every navigation — only on an actual
+  // `isRider` change, same as before this fix.
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   useEffect(() => {
     if (!profileId) return;
@@ -61,13 +67,13 @@ export function usePushRegistration(session: Session | null): void {
         void Notifications.clearLastNotificationResponseAsync();
         if (!response) return;
         const to = pushDestination(response.notification.request.content.data, isRider);
-        if (to) router.push(to);
+        if (to) pushOnce(router, pathnameRef.current, to);
       });
     }
 
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const to = pushDestination(response.notification.request.content.data, isRider);
-      if (to) router.push(to);
+      if (to) pushOnce(router, pathnameRef.current, to);
     });
     return () => sub.remove();
   }, [isRider]);
