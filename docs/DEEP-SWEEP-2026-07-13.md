@@ -296,6 +296,16 @@ representation is chosen.
 Eight new findings: **two HIGH** (DS13-02 marketplace-supply loss; DS13-05 SOS write-only dead-end),
 **four MEDIUM** (DS13-01 presence refutation, DS13-03 admin-cancel push parity, DS13-04 admin standing
 CAS, RH-01 velocity-hold self-clear), **two LOW** (DS13-06 become throttle, DS13-07 open-auction board
-signal). No CRITICAL. Seven are fixed in this PR; **RH-01 is reported-only and flagged for human review**
-(fraud-hold representation is a policy decision). Two agent-proposed candidates were rejected on code
-re-read (recorded above). All Phase-0 sampled prior fixes remain intact.
+signal). No CRITICAL. **DS13-01…DS13-07 were fixed and merged in PR #209** (each with a regression test;
+`pnpm typecheck` + 714 API tests + API build green, all CI checks passing, no migration); **RH-01 remains
+OPEN** — reported-only and flagged for human review (fraud-hold representation is a policy decision). Two
+agent-proposed candidates were rejected on code re-read (recorded above). All Phase-0 sampled prior fixes
+remain intact.
+
+### Post-merge status (updated after #209 landed)
+
+| ID | Outcome |
+|---|---|
+| DS13-01 · DS13-02 · DS13-03 · DS13-04 · DS13-06 · DS13-07 | **FIXED — merged in #209.** |
+| DS13-05 | **Backend FIXED — merged in #209** (`GET /admin/sos` read surface + zero-recipient log). Follow-up: admin-web SOS panel + acknowledgement workflow (not yet built). |
+| RH-01 | **OPEN — deferred for a human policy decision.** Tracked in `docs/KNOWN_BUGS.md` OPEN table. Two candidate remedies documented above (persisted `heldReason` vs score-depression). |

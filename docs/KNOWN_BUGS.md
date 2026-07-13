@@ -12,8 +12,10 @@ PR #192 (F-01…F-10), PR #193 (F-11…F-19). Prior sweep's remediation, all mer
 + FRAUD P1-5), **#196** (F-09), **#197** (F-18 durability), **#198** (FRAUD P0-3 velocity), **#199**
 (F-N3 + DS-11 verified-ID freeze), **#204** (BH-01, BH-02). **This deep sweep (`docs/DEEP-SWEEP-2026-07-13.md`)
 found 8 new items** — DS13-01…DS13-07 + RH-01 (details in that report and the section at the bottom of
-this ledger). Phase-0 re-verified 8/8 sampled prior fixes still intact (no regressions). Infra
-hardening flags are wired with an ordered rollout runbook at `docs/INFRA-HARDENING-ROLLOUT.md`.
+this ledger). **DS13-01…DS13-07 fixed and merged in PR #209** (`fix(deep-sweep): remediate DS13-01..07`),
+each with a regression test; **RH-01 remains OPEN**, flagged for a human policy decision. Phase-0
+re-verified 8/8 sampled prior fixes still intact (no regressions). Infra hardening flags are wired with
+an ordered rollout runbook at `docs/INFRA-HARDENING-ROLLOUT.md`.
 
 ## Source reports folded in
 
@@ -45,8 +47,11 @@ duplication (see clusters below).
 
 ## OPEN (present in code today)
 
-Only non-code / founder-gated items remain open. Every code defect from every report — including the
-whole Phase-1 set below — is now FIXED or MOOT.
+One code item is open: **RH-01** (deep sweep 2026-07-13) — reported and verified, but intentionally
+**not** auto-fixed because the correct remedy is a fraud-hold representation policy decision (see its row
+below and `docs/DEEP-SWEEP-2026-07-13.md`). Every other code defect from every report — including the
+whole Phase-1 set and DS13-01…DS13-07 (merged in #209) — is FIXED or MOOT. The remaining items are
+non-code / founder-gated.
 
 | ID | Description | Area | Sev | Sweeps | Notes |
 |---|---|---|---|---|---|
@@ -235,15 +240,17 @@ mechanisms) + adversarial API pass, all cross-checked against this ledger first.
 8/8 sampled prior fixes intact. Two agent-proposed candidates rejected on code re-read (a claimed
 `markUndelivered` double-penalty — blocked by the `claimed.count===0` throw + the post-pickup gate on
 retry; a claimed stale offer-expiry race — the rebroadcast clone has a new order id the stale job
-can't touch). Eight new findings; seven fixed in this sweep's PR, RH-01 reported-only (see OPEN table).
+can't touch). Eight new findings; **DS13-01…DS13-07 fixed and merged in PR #209**, RH-01 reported-only
+and still OPEN (see OPEN table). #209 landed with `pnpm typecheck` + 714 API tests + API build green and
+all CI checks passing; no schema migration.
 
 | ID | Description | Area | Sev | Status |
 |---|---|---|---|---|
-| DS13-01 | Multi-instance customer-presence refutation `customerLiveInRoom` matches on global JWT `role`, re-introducing the F-16 dual-role-sender bug the subscribe path was hardened against → false `presence:stale` to the rider for a rider-role sender | `tracking.gateway.ts:593-601` | MEDIUM | **FIXED (this PR)** — match the customer by order relationship (socket `sub` ≠ assigned rider), mirroring `riderLiveInRoom` |
-| DS13-02 | Every socket disconnect evicts an online rider from the Redis geo index → backgrounded-but-online riders get no new-order FCM push and are excluded from supply/no-supply counts (Redis GEOSEARCH prefilter overrides the documented `is_online` authority) | `tracking.service.ts:324-347`, `orders.service.ts:301-330` | HIGH | **FIXED (this PR)** — evict on explicit go-offline only, not on disconnect; PG `is_online` stays authority |
-| DS13-03 | Admin order-cancel emits WS only — no FCM to the assigned rider/customer, unlike the party-initiated cancel; rider can keep riding on a cancelled order | `admin-orders.service.ts:126-132` | MEDIUM | **FIXED (this PR)** — inject `NotificationsService`, fire `notifyOrderStatus` post-commit for push parity |
-| DS13-04 | Admin rider/customer standing mutations (`suspendRider`/`liftRider`/`banRider`/`clearHold`, customer holds) lack the DS-03 CAS guard + rider-row lock → a lift/clear-hold can clobber a concurrent ban or velocity auto-hold | `admin-riders.service.ts`, `admin-customers.service.ts` | MEDIUM | **FIXED (this PR)** — CAS `updateMany` on observed `accountStatus`/`onHold` + `lockRiderRow` before score recompute |
-| DS13-05 | SOS is write-only: `SosEvent` has no ops read surface and its sole escalation is an un-reconciled best-effort push to a `role=admin` device-token audience that may be empty → SOS can vanish while the counterparty is told "safety team alerted" | `sos.service.ts`, `notifications.service.ts`, `apps/admin` | HIGH | **FIXED (this PR, backend)** — `AdminGuard`-gated read-only SOS list endpoint + loud log on zero-recipient `notifyOps`; full admin-web panel is a follow-up |
-| DS13-06 | `POST /riders/become` unthrottled → a parallel burst mints N paid Didit sessions; concurrent-create P2002 leaks as a 500 | `riders.controller.ts:38`, `rider.service.ts` | LOW | **FIXED (this PR)** — `@Throttle` parity with `kyc/retry` + P2002→409 mapping |
-| DS13-07 | Cancelling an `open_for_offers` auction never signals the board → dead cards / live "offer sent" states linger until local countdown/409 | `order-lifecycle.service.ts:612-647`, `admin-orders.service.ts:130` | LOW | **FIXED (this PR)** — emit a board-close signal to the pickup geo rooms on cancel-while-open |
-| RH-01 | FRAUD P0-3 velocity `on_hold` self-clears on the next reliability-recovery event (see OPEN table) | `reliability.ts:22`, `order-lifecycle.service.ts` | MEDIUM | **REPORTED — flagged for human review** (fraud-hold representation is a policy decision) |
+| DS13-01 | Multi-instance customer-presence refutation `customerLiveInRoom` matches on global JWT `role`, re-introducing the F-16 dual-role-sender bug the subscribe path was hardened against → false `presence:stale` to the rider for a rider-role sender | `tracking.gateway.ts:593-601` | MEDIUM | **FIXED #209** — match the customer by order relationship (socket `sub` ≠ assigned rider via new `TrackingService.assignedRiderId`), mirroring `riderLiveInRoom` |
+| DS13-02 | Every socket disconnect evicts an online rider from the Redis geo index → backgrounded-but-online riders get no new-order FCM push and are excluded from supply/no-supply counts (Redis GEOSEARCH prefilter overrides the documented `is_online` authority) | `tracking.service.ts:324-347`, `orders.service.ts:301-330` | HIGH | **FIXED #209** — `flushToPg` no longer evicts on disconnect; eviction happens only on explicit go-offline (`setOnline(false)`), so PG `is_online` stays authority |
+| DS13-03 | Admin order-cancel emits WS only — no FCM to the assigned rider/customer, unlike the party-initiated cancel; rider can keep riding on a cancelled order | `admin-orders.service.ts:126-132` | MEDIUM | **FIXED #209** — inject `NotificationsService` (optional, `@Global`), fire `notifyOrderStatus` post-commit for push parity |
+| DS13-04 | Admin rider/customer standing mutations (`suspendRider`/`liftRider`/`banRider`/`clearHold`, customer holds) lack the DS-03 CAS guard → a lift/clear-hold can clobber a concurrent ban or velocity auto-hold | `admin-riders.service.ts`, `admin-customers.service.ts` | MEDIUM | **FIXED #209** — CAS `updateMany` guarded on the observed `accountStatus` (+ `onHold`/`reliabilityScore` for lift/clear-hold), 409 on 0-row conflict; the `reliabilityScore` predicate serialises against a concurrent velocity auto-hold without a separate row lock |
+| DS13-05 | SOS is write-only: `SosEvent` has no ops read surface and its sole escalation is an un-reconciled best-effort push to a `role=admin` device-token audience that may be empty → SOS can vanish while the counterparty is told "safety team alerted" | `sos.service.ts`, `notifications.service.ts`, `apps/admin` | HIGH | **FIXED #209 (backend)** — `AdminGuard`-gated read-only `GET /admin/sos` (`SosService.listRecent`) + loud `logger.error` on zero-recipient `notifyOps`; **full admin-web SOS panel + acknowledgement workflow still a follow-up** |
+| DS13-06 | `POST /riders/become` unthrottled → a parallel burst mints N paid Didit sessions; concurrent-create P2002 leaks as a 500 | `riders.controller.ts:38`, `rider.service.ts` | LOW | **FIXED #209** — `@Throttle({limit:5,windowSec:3600,keyPrefix:"become"})` parity with `kyc/retry` + P2002→`ConflictException` mapping |
+| DS13-07 | Cancelling an `open_for_offers` auction never signals the board → dead cards / live "offer sent" states linger until local countdown/409 | `order-lifecycle.service.ts:612-647`, `admin-orders.service.ts:130` | LOW | **FIXED #209** — emit the expiry path's `emitBidExpired` board-close to the pickup geo rooms on cancel-while-open |
+| RH-01 | FRAUD P0-3 velocity `on_hold` self-clears on the next reliability-recovery event (see OPEN table) | `reliability.ts:22`, `order-lifecycle.service.ts` | MEDIUM | **OPEN — reported, flagged for human review** (fraud-hold representation is a policy decision) |
