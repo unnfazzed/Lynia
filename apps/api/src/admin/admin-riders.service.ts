@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
   ACTIVE_RIDE_STATUSES,
   type KycStatus,
@@ -18,6 +18,8 @@ const KYC_PHOTO_READ_URL_TTL_SECONDS = 15 * 60;
 
 @Injectable()
 export class AdminRidersService {
+  private readonly logger = new Logger(AdminRidersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pii: PiiCryptoService,
@@ -178,6 +180,36 @@ export class AdminRidersService {
   }
 
   /**
+   * A rider standing change (suspend/ban) doesn't touch an order they're already assigned to — the
+   * lifecycle mutations only check `order.riderId === riderId`, not standing — so a customer whose
+   * rider is suspended or banned mid-delivery previously heard nothing about it. Best-effort, post-
+   * commit, never throws: finds that rider's currently-active order(s) and tells each customer their
+   * rider's status changed, without cancelling anything (that stays a deliberate, separate ops call —
+   * see the admin console's "still on a live delivery" banner on the rider page).
+   */
+  private async notifyCustomersOfRiderStandingChange(profileId: string): Promise<void> {
+    try {
+      const activeOrders = await this.prisma.order.findMany({
+        where: { riderId: profileId, status: { in: ACTIVE_RIDE_STATUSES } },
+        select: { id: true, customerId: true },
+      });
+      await Promise.all(
+        activeOrders.map((o) =>
+          this.notifications.notifyProfiles([o.customerId], {
+            title: "An update on your delivery",
+            body: "There's a change with your assigned rider — our team is reviewing this trip.",
+            data: { orderId: o.id, kind: "account" },
+          }),
+        ),
+      );
+    } catch (err) {
+      // notifyProfiles itself never throws; this only guards the findMany. Either way a notify miss
+      // can't roll back the already-committed standing change.
+      this.logger.warn(`notifyCustomersOfRiderStandingChange(${profileId}) failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
    * A-04 rider suspend. Sets `accountStatus=suspended` + the admin reason (only `active` riders may go
    * online, so this pulls them offline-eligible) AND writes the audit row in ONE transaction. Reason is
    * required (enforced by the controller's zod body). 404s when the id isn't a rider.
@@ -211,6 +243,7 @@ export class AdminRidersService {
       body: "Your account was paused — open the app for details.",
       data: { kind: "account" },
     });
+    void this.notifyCustomersOfRiderStandingChange(profileId);
     return result;
   }
 
@@ -280,7 +313,7 @@ export class AdminRidersService {
    * required. Mutation + audit in one transaction.
    */
   async banRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true } });
       if (!rider) throw new NotFoundException("Rider not found");
       // DS13-04: CAS on the observed accountStatus (mirrors DS-03) so a concurrent standing change can't
@@ -298,6 +331,8 @@ export class AdminRidersService {
       });
       return { id: profileId, accountStatus: RiderAccountStatus.BANNED, auditId: audit.id };
     });
+    void this.notifyCustomersOfRiderStandingChange(profileId);
+    return result;
   }
 
   /**
@@ -448,6 +483,11 @@ export class AdminRidersService {
       completion,
       strikes: rider.cancelStrikes,
       commission: "0.00", // prepaid per-ride at 0% during launch — nothing owed (wallet deferred)
+      // Orders this rider is actively riding right now — surfaced so ops sees at a glance whether a
+      // suspend/ban leaves a live delivery orphaned mid-trip (the rider keeps the app-level ability to
+      // advance/confirm it; standing changes don't touch an already-assigned order). The trail below
+      // lists recent orders with status, so ops can identify which one from there.
+      activeOrders: liveOrders,
       // How many times this rider has been reported by customers, plus the recent entries (fault signal
       // for ops). Additive to the D-2 RiderDetail shape.
       reports: reports.count,

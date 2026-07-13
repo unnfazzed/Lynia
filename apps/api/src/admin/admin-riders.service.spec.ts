@@ -290,6 +290,13 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     expect(r.phone).toBe("+263782000001");
     expect(r.status).toBe("cooldown");
     expect(r.cooldown).toMatch(/h .*m|m$/);
+    expect(r.activeOrders).toBe(1);
+  });
+
+  it("activeOrders surfaces the live-order count so ops sees a live delivery under a suspended/banned rider", async () => {
+    const svc = new AdminRidersService(prismaFor(riderRow(), 0) as unknown as PrismaService, pii, noStorage, noNotifications);
+    const r = (await svc.getRiderDetail("r1"))!;
+    expect(r.activeOrders).toBe(0);
   });
 
   it("reports the A-04 account state over the activity derivation, with the stored reason", async () => {
@@ -504,5 +511,71 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications);
     await expect(svc.clearHold("admin-1", "r1", {})).rejects.toThrow(/refresh and try again/i);
     expect(calls.audit).toBeNull();
+  });
+});
+
+// A banned/suspended rider's already-assigned order isn't touched by the standing change (the
+// lifecycle mutations only check order.riderId, not standing) — so the customer on that live order
+// previously heard nothing. suspendRider/banRider now fire a best-effort post-commit notify to every
+// customer with an ACTIVE_RIDE_STATUSES order under this rider.
+describe("AdminRidersService standing-change customer notification", () => {
+  function makeTxWithOrders(activeOrders: Array<{ id: string; customerId: string }>) {
+    const tx = {
+      rider: {
+        findUnique: async () => ({ accountStatus: "active" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      auditLog: { create: async () => ({ id: "audit-9" }) },
+    };
+    const notified: Array<{ profileIds: string[]; msg: unknown }> = [];
+    const prisma = {
+      $transaction: async (fn: (t: unknown) => unknown) => fn(tx),
+      order: { findMany: async () => activeOrders },
+    };
+    const notifications = {
+      notifyProfiles: async (profileIds: string[], msg: unknown) => {
+        notified.push({ profileIds, msg });
+      },
+    } as unknown as NotificationsService;
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, notifications);
+    return { svc, notified };
+  }
+
+  /** Fire-and-forget post-commit work isn't awaited by suspendRider/banRider — flush the microtask
+   *  queue (findMany's promise + the Promise.all chain) before asserting. */
+  const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+  /** suspendRider ALSO fires its pre-existing "your own account paused" push to the rider themself
+   *  (profileIds: [riderId], no `orderId` in data) — isolate just the new customer-facing notify. */
+  const customerNotifies = (notified: Array<{ profileIds: string[]; msg: unknown }>) =>
+    notified.filter((n) => (n.msg as { data?: { orderId?: string } }).data?.orderId != null);
+
+  it("suspendRider notifies the customer on the rider's active order", async () => {
+    const { svc, notified } = makeTxWithOrders([{ id: "order-1", customerId: "cust-1" }]);
+    await svc.suspendRider("admin-1", "r1", { reason: "safety report" });
+    await flush();
+    const toCustomers = customerNotifies(notified);
+    expect(toCustomers).toHaveLength(1);
+    expect(toCustomers[0]!.profileIds).toEqual(["cust-1"]);
+    expect(toCustomers[0]!.msg).toMatchObject({ data: { orderId: "order-1", kind: "account" } });
+  });
+
+  it("banRider notifies every customer when the rider has multiple active orders", async () => {
+    const { svc, notified } = makeTxWithOrders([
+      { id: "order-1", customerId: "cust-1" },
+      { id: "order-2", customerId: "cust-2" },
+    ]);
+    await svc.banRider("admin-1", "r1", { reason: "fraud" });
+    await flush();
+    const toCustomers = customerNotifies(notified);
+    expect(toCustomers).toHaveLength(2);
+    expect(toCustomers.map((n) => n.profileIds[0])).toEqual(["cust-1", "cust-2"]);
+  });
+
+  it("suspendRider/banRider notify no customer when the rider has no active order", async () => {
+    const { svc, notified } = makeTxWithOrders([]);
+    await svc.suspendRider("admin-1", "r1", { reason: "x" });
+    await flush();
+    expect(customerNotifies(notified)).toHaveLength(0);
   });
 });
