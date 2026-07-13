@@ -10,9 +10,15 @@ function makeDeps() {
       upsert: vi.fn().mockResolvedValue({}),
       deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
       findMany: vi.fn().mockResolvedValue([]),
+      // DS13-05: notifyOps checks whether the resolved ops audience has any registered device.
+      count: vi.fn().mockResolvedValue(0),
     },
     order: {
       findUnique: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    // DS13-05: notifyOps resolves the admin audience (role=admin) server-side.
+    profile: {
       findMany: vi.fn().mockResolvedValue([]),
     },
   };
@@ -425,5 +431,36 @@ describe("NotificationsService — new-broadcast notice (rider primary channel, 
     await expect(
       service.notifyNewBroadcast("o1", ["riderA"], { pickup: "Avondale shops", fare: "4.50" }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("NotificationsService — notifyOps zero-recipient visibility (DS13-05)", () => {
+  const loggerOf = (service: NotificationsService) =>
+    (service as unknown as { logger: { error: (m: string) => void } }).logger;
+
+  it("logs a loud error when the ops escalation resolves to ZERO recipients (no admin device token)", async () => {
+    const { prisma, service } = makeDeps();
+    // An admin profile exists, but nobody has registered a device (the admin WEB console registers none).
+    prisma.profile.findMany.mockResolvedValue([{ id: "admin-1" }]);
+    prisma.deviceToken.count.mockResolvedValue(0);
+    const errSpy = vi.spyOn(loggerOf(service), "error").mockImplementation(() => {});
+
+    await service.notifyOps({ title: "SOS raised on a live trip", body: "respond now", data: { kind: "sos" } });
+
+    expect(prisma.deviceToken.count).toHaveBeenCalledWith({ where: { profileId: { in: ["admin-1"] } } });
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    expect(String(errSpy.mock.calls[0]![0])).toMatch(/zero recipients/i);
+  });
+
+  it("does NOT log an error when the ops audience has a registered device (delivery proceeds)", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.profile.findMany.mockResolvedValue([{ id: "admin-1" }]);
+    prisma.deviceToken.count.mockResolvedValue(1);
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "t1", profileId: "admin-1" }]);
+    const errSpy = vi.spyOn(loggerOf(service), "error").mockImplementation(() => {});
+
+    await service.notifyOps({ title: "SOS raised on a live trip", body: "respond now" });
+
+    expect(errSpy).not.toHaveBeenCalled();
   });
 });

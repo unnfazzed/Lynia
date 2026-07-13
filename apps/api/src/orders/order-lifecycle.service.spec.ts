@@ -16,10 +16,13 @@ function build(methods: Record<string, unknown>) {
   const emits: Array<[string, string]> = [];
   const jobCancelled: Array<[string, boolean]> = [];
   const rebroadcasts: Array<[string, string]> = [];
+  const bidExpired: Array<[string, number | undefined, number | undefined]> = [];
   const gateway = {
     emitOrderStatus: (id: string, s: string) => emits.push([id, s]),
     emitJobCancelled: (id: string, collected: boolean) => jobCancelled.push([id, collected]),
     emitOrderRebroadcast: (oldId: string, newId: string) => rebroadcasts.push([oldId, newId]),
+    // DS13-07: board-close on a cancel of a still-open auction reuses the expiry path's bid:expired.
+    emitBidExpired: (id: string, lat?: number, lng?: number) => bidExpired.push([id, lat, lng]),
   };
   // F-01 re-broadcast announce is best-effort push — spy so tests can assert it fired without a socket.
   const orders = { announceOpenOrder: vi.fn(async () => {}) };
@@ -36,7 +39,7 @@ function build(methods: Record<string, unknown>) {
     noopNotifications,
     orders as unknown as OrdersService,
   );
-  return { svc, emits, jobCancelled, rebroadcasts, orders, prisma };
+  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, orders, prisma };
 }
 
 describe("OrderLifecycleService.advance", () => {
@@ -477,6 +480,27 @@ describe("OrderLifecycleService.cancel", () => {
   it("blocks a RIDER cancel once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
     const { svc } = build({ order: { findUnique: async () => order({ status: "picked_up" }) } });
     await expect(svc.cancel("o1", "r1")).rejects.toThrow(/can't be cancelled anymore/i);
+  });
+
+  it("DS13-07: a customer cancel of an OPEN auction closes the board card (bid:expired to the pickup cell)", async () => {
+    const { svc, bidExpired } = build(
+      cancellable({
+        order: {
+          // Still open_for_offers (no rider yet) → the board card must be closed for browsing riders.
+          findUnique: async () => order({ status: "open_for_offers", riderId: null, pickup: { point: { lat: -17.83, lng: 31.05 } } }),
+          updateMany: async () => ({ count: 1 }),
+          create: async () => ({ id: "x" }),
+        },
+      }),
+    );
+    await svc.cancel("o1", "c1", "changed my mind");
+    expect(bidExpired).toEqual([["o1", -17.83, 31.05]]);
+  });
+
+  it("DS13-07: a cancel of an ASSIGNED order does NOT emit a board-close signal (never on the board)", async () => {
+    const { svc, bidExpired } = build(cancellable()); // default status: "assigned"
+    await svc.cancel("o1", "c1");
+    expect(bidExpired).toEqual([]);
   });
 
   it("counts a rider cancel as a strike (below the limit) and re-broadcasts a new open order (F-01)", async () => {

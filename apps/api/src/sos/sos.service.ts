@@ -91,4 +91,38 @@ export class SosService {
       safetyLine: process.env[SOS_POLICY.safetyLineEnv] ?? SOS_POLICY.safetyLine,
     };
   }
+
+  /**
+   * DS13-05: recent SOS events, newest first, for the ops console. Read-only durable surface so SOS is no
+   * longer write-only — ops can see raised events independently of push delivery (the escalation push may
+   * have fanned out to zero registered admin devices). Admin-guarded at the controller (GET /admin/sos).
+   * `limit` is clamped to [1, 200] (default 50) so a caller can't pull the whole table.
+   */
+  async listRecent(limit = 50): Promise<
+    Array<{
+      id: string;
+      orderId: string;
+      raisedByProfileId: string;
+      raisedByRole: string;
+      lat: number | null;
+      lng: number | null;
+      createdAt: string;
+    }>
+  > {
+    const take = Math.min(Math.max(1, Math.floor(limit)), 200);
+    const rows = await this.prisma.sosEvent.findMany({
+      orderBy: { createdAt: "desc" },
+      take,
+      select: {
+        id: true,
+        orderId: true,
+        raisedByProfileId: true,
+        raisedByRole: true,
+        lat: true,
+        lng: true,
+        createdAt: true,
+      },
+    });
+    return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
+  }
 }

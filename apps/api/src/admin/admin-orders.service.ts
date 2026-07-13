@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { ACTIVE_RIDE_STATUSES, DELIVERY_OTP_MAX_ATTEMPTS, type OrderStatus, TERMINAL_STATUSES } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { auditData, deriveItems, ORDER_TIMELINE, routeOf, STATUS_STEP, STUCK_AFTER_MS } from "./admin.shared";
@@ -34,9 +35,12 @@ export type FareProvenance =
 export class AdminOrdersService {
   // The gateway is optional so unit tests can construct the service with just Prisma; in the app it's
   // provided via TrackingModule (AdminModule imports it) and used for best-effort post-commit WS pushes.
+  // NotificationsService (DS13-03) is likewise optional for the same test-construction reason — its
+  // module is @Global, so the app always injects it — and is used for the best-effort post-commit FCM push.
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway?: TrackingGateway,
+    private readonly notifications?: NotificationsService,
   ) {}
 
   /** Order monitor for ops — filter by status to watch live orders, cancellations, etc. */
@@ -81,7 +85,7 @@ export class AdminOrdersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, riderId: true, collectedAt: true },
+        select: { status: true, riderId: true, collectedAt: true, pickup: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       if (TERMINAL_STATUSES.includes(order.status)) {
@@ -120,6 +124,9 @@ export class AdminOrdersService {
         // Carried out of the tx for the post-commit WS pushes below.
         riderId: order.riderId,
         collected: order.collectedAt != null,
+        // DS13-07: was the order still an open auction? If so, close its board card post-commit.
+        wasOpenForOffers: order.status === "open_for_offers",
+        pickupPoint: (order.pickup as { point?: { lat: number; lng: number } } | null)?.point,
       };
     });
 
@@ -129,6 +136,16 @@ export class AdminOrdersService {
     // A WS failure must never fail the already-committed cancel, so both are guarded no-ops without a gateway.
     this.gateway?.emitOrderStatus(orderId, "cancelled");
     if (result.riderId) this.gateway?.emitJobCancelled(orderId, result.collected);
+    // DS13-07: an ops cancel of a still-open auction closes the board card for browsing riders/bidders —
+    // reuse the expiry path's bid:expired board event so they see the terminal state immediately instead
+    // of running the countdown to a 409. Best-effort; guarded no-op without a gateway (tests).
+    if (result.wasOpenForOffers) this.gateway?.emitBidExpired(orderId, result.pickupPoint?.lat, result.pickupPoint?.lng);
+    // DS13-03: push FCM parity with the party-initiated cancel (order-lifecycle.service `notifyOrderStatus`)
+    // so a rider/customer whose app is backgrounded or momentarily socket-dropped still learns the order was
+    // cancelled — the WS emits above reach nobody in that state. The canceller here is the ops actor (not a
+    // party), so notify ALL parties: no excludeProfileId. Best-effort — notifyOrderStatus never throws, so a
+    // push miss can't affect the already-committed cancel; guarded no-op when no NotificationsService (tests).
+    void this.notifications?.notifyOrderStatus(orderId, "cancelled", {});
     return { id: result.id, status: result.status, auditId: result.auditId };
   }
 

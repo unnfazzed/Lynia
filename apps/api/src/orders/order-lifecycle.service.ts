@@ -530,14 +530,24 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     let jobCancelledCollected: boolean | null = null;
     // Captured in-tx for the post-commit rebroadcast push (F-01) — the customer to point at the fresh clone.
     let customerId: string | null = null;
+    // DS13-07: captured in-tx for the post-commit board-close signal. A cancel of an `open_for_offers`
+    // order otherwise only touches the order room, leaving browsing riders/bidders a dead board card until
+    // a 409/countdown. When the observed status was open_for_offers we emit bid:expired to the pickup geo
+    // rooms so the board sees the truthful terminal state immediately (mirrors the expiry path).
+    let cancelledWhileOpen = false;
+    let boardClosePickup: { lat: number; lng: number } | undefined;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, customerId: true, riderId: true, collectedAt: true },
+        select: { status: true, customerId: true, riderId: true, collectedAt: true, pickup: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       customerId = order.customerId;
+      if (order.status === "open_for_offers") {
+        cancelledWhileOpen = true;
+        boardClosePickup = (order.pickup as { point?: { lat: number; lng: number } } | null)?.point;
+      }
 
       const isCustomer = order.customerId === callerId;
       const isRider = order.riderId === callerId;
@@ -644,6 +654,16 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // party but EXCLUDE the canceller — a push about your own action is noise. The assigned rider still
       // gets it when the customer pulls out; a customer cancelling their own open order now pings no one.
       void this.notifications.notifyOrderStatus(orderId, "cancelled", {}, callerId);
+    }
+    // DS13-07: a cancel of an order that was still `open_for_offers` closes the board card for browsing
+    // riders and the "offer sent" state for bidders — reuse the expiry path's board-close event so they
+    // see the terminal state immediately instead of running the countdown to a 409. Best-effort, guarded.
+    if (cancelledWhileOpen) {
+      try {
+        this.gateway.emitBidExpired(orderId, boardClosePickup?.lat, boardClosePickup?.lng);
+      } catch (err) {
+        this.logger.warn(`board-close emit failed for cancelled order ${orderId}: ${(err as Error).message}`);
+      }
     }
     return result;
   }

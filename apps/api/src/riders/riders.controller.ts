@@ -35,6 +35,10 @@ export class RidersController {
     return this.riders.completeProfile(id, body);
   }
 
+  // DS13-06: throttle parity with kyc/retry below — in auto mode each become mints a fresh PAID Didit
+  // session (vendor.submit), so an unthrottled route lets a parallel burst bill N sessions before the
+  // one-rider-row unique index catches up. 5/hour is generous for a genuine signup while blunting a flood.
+  @Throttle({ limit: 5, windowSec: 3600, keyPrefix: "become" })
   @Post("become")
   become(@Body(new ZodBody(BecomeRider)) body: z.infer<typeof BecomeRider>, @CurrentUser() id: string) {
     return this.riders.becomeRider(id, body);

@@ -585,16 +585,26 @@ export class TrackingGateway
   /**
    * Is a customer socket currently joined to the order room anywhere in the cluster? With the Socket.IO
    * Redis adapter, `fetchSockets()` returns matching sockets across ALL instances, so this sees a
-   * customer connected to a peer instance that this instance's in-memory `customerPresence` can't. Only
-   * the order's customer can subscribe as customer-role to its room (subscribeOrder gates on
-   * canAccessOrder + role), so any customer-role socket in the room IS that order's customer. Best-effort:
-   * a missing server or a fetch error returns false, falling back to the per-instance dark decision.
+   * customer connected to a peer instance that this instance's in-memory `customerPresence` can't.
+   *
+   * DS13-01: match the customer by the per-order RELATIONSHIP, not the global JWT `role` — mirroring the
+   * id-matched rider twin {@link riderLiveInRoom}. `Role` is one enum per account and becomeRider flips
+   * it to "rider" permanently, so a rider-role account acting as THIS order's sender carries role:"rider"
+   * globally; a role-match would miss them and re-break the F-16 dual-role-sender invariant the subscribe
+   * path was hardened for. subscribeOrder gates on canAccessOrder (relationship), NOT role, so only the
+   * order's customer and its assigned rider can be in the room — hence "any socket whose sub is not the
+   * assigned rider" ⇒ the customer. Best-effort: a missing server or a fetch error returns false, falling
+   * back to the per-instance dark decision.
    */
   private async customerLiveInRoom(orderId: string): Promise<boolean> {
     if (!this.server) return false;
     try {
+      const riderId = await this.tracking.assignedRiderId(orderId);
       const sockets = await this.server.in(orderRoom(orderId)).fetchSockets();
-      return sockets.some((s) => (s.data as { user?: SocketUser } | undefined)?.user?.role === "customer");
+      return sockets.some((s) => {
+        const sub = (s.data as { user?: SocketUser } | undefined)?.user?.sub;
+        return !!sub && sub !== riderId;
+      });
     } catch {
       return false;
     }

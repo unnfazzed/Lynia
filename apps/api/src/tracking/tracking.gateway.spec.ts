@@ -498,6 +498,9 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     flushToPg: vi.fn(async () => {}),
     findStaleRiderPresence: vi.fn(async () => []), // keep the rider pass quiet
     filterActiveOrders: vi.fn(async (ids: string[]) => new Set(ids)),
+    // DS13-01: customerLiveInRoom refutes a dark customer by the order RELATIONSHIP — "any socket that
+    // is not the assigned rider" ⇒ the customer — so it needs the order's assigned rider id.
+    assignedRiderId: vi.fn(async () => "assigned-rider"),
   });
 
   it("escalates role:customer once after the customer socket has been dark past the threshold", async () => {
@@ -677,6 +680,62 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       await g.scanPresence();
       // No customer presence was recorded for the assigned rider → nothing to escalate.
       expect(emit).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("DS13-01: refutes a dark customer whose live socket is a rider-ROLE sender (matched by relationship, not role)", async () => {
+    vi.useFakeTimers();
+    try {
+      // A rider-role account is the order's SENDER (customer). Their live socket sits in the order room
+      // cluster-wide carrying role:"rider" globally (Role is one enum per account). A role-match would
+      // MISS them and escalate a false presence:stale to the assigned rider — the exact F-16 re-break.
+      // The relationship match (sub !== assignedRiderId) recognises them, so no escalation fires.
+      const senderSub = "acct-sender";
+      const { server, emit, in: inFn } = fakeServer([{ data: { user: { sub: senderSub, role: "rider" } } }]);
+      const tracking = customerTracking();
+      // The order's ACTUAL assigned rider is a DIFFERENT id than the sender's socket.
+      tracking.assignedRiderId = vi.fn(async () => "the-real-rider");
+      const g = gateway(tracking);
+      g.server = server as never;
+      const client = fakeSocket({ sub: senderSub, role: "rider" });
+
+      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      g.handleDisconnect(client as never); // drops on THIS instance → local dark clock starts
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence();
+
+      expect(inFn).toHaveBeenCalledWith(orderRoom("ord-1"));
+      expect(tracking.assignedRiderId).toHaveBeenCalledWith("ord-1");
+      // The dual-role sender is recognised as the live customer → the false escalation is suppressed.
+      expect(emit).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("DS13-01: still escalates when the only socket in the room IS the assigned rider (customer genuinely dark)", async () => {
+    vi.useFakeTimers();
+    try {
+      // The customer is genuinely gone; the sole socket in the room is the assigned rider. sub ===
+      // assignedRiderId ⇒ NOT the customer ⇒ customerLiveInRoom false ⇒ the escalation fires.
+      const { server, emit } = fakeServer([{ data: { user: { sub: "r1", role: "rider" } } }]);
+      const tracking = customerTracking();
+      tracking.assignedRiderId = vi.fn(async () => "r1");
+      const g = gateway(tracking);
+      g.server = server as never;
+      const client = fakeSocket({ sub: "c1", role: "customer" });
+
+      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      g.handleDisconnect(client as never);
+      await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
+      await g.scanPresence();
+
+      expect(emit).toHaveBeenCalledWith(
+        WS_EVENTS.presenceStale,
+        expect.objectContaining({ orderId: "ord-1", role: "customer" }),
+      );
     } finally {
       vi.useRealTimers();
     }

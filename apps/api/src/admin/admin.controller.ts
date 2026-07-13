@@ -6,6 +6,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { AdminActor } from "../common/admin-actor.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { SettlementsService } from "../settlements/settlements.service";
+import { SosService } from "../sos/sos.service";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminOrdersService } from "./admin-orders.service";
@@ -55,11 +56,23 @@ export class AdminController {
     private readonly customersService: AdminCustomersService,
     private readonly audit: AdminAuditService,
     private readonly settlements: SettlementsService,
+    private readonly sos: SosService,
   ) {}
 
   @Get("overview")
   overview() {
     return this.admin.overview();
+  }
+
+  /**
+   * DS13-05: recent SOS events, newest first — the read-only ops surface that makes SOS no longer
+   * write-only (its escalation push may reach zero registered admin devices). Strictly read-only.
+   * `?limit=` is clamped to [1, 200] (default 50) in the service. AdminGuard is applied class-wide.
+   */
+  @Get("sos")
+  recentSos(@Query("limit") limit?: string) {
+    const parsed = limit != null ? Number.parseInt(limit, 10) : Number.NaN;
+    return this.sos.listRecent(Number.isFinite(parsed) ? parsed : undefined);
   }
 
   /** Rider roster / KYC review queue. `?kyc=pending|verified|failed` filters; unknown values are ignored. */

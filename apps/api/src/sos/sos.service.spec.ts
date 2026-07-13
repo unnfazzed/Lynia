@@ -90,3 +90,43 @@ describe("SosService.raise", () => {
     }
   });
 });
+
+describe("SosService.listRecent (DS13-05 — read-only ops surface)", () => {
+  const row = (id: string, createdAt: Date) => ({
+    id,
+    orderId: "ord-1",
+    raisedByProfileId: "cust-1",
+    raisedByRole: "customer",
+    lat: -17.8,
+    lng: 31.05,
+    createdAt,
+  });
+
+  function svcWith(findMany: (args: { orderBy: unknown; take: number }) => Promise<unknown>) {
+    const prisma = { sosEvent: { findMany } } as unknown as PrismaService;
+    return new SosService(prisma, makeNotifications());
+  }
+
+  it("returns recent events newest-first with ISO timestamps", async () => {
+    let orderBy: unknown;
+    const s = svcWith(async (args) => {
+      orderBy = args.orderBy;
+      return [row("sos-2", new Date("2026-07-13T10:00:00Z")), row("sos-1", new Date("2026-07-12T10:00:00Z"))];
+    });
+    const rows = await s.listRecent();
+    expect(orderBy).toEqual({ createdAt: "desc" });
+    expect(rows.map((r) => r.id)).toEqual(["sos-2", "sos-1"]);
+    expect(rows[0]!.createdAt).toBe("2026-07-13T10:00:00.000Z");
+  });
+
+  it("clamps the limit to [1, 200] (caps a large request, floors a non-positive one)", async () => {
+    let take = -1;
+    const s = svcWith(async (args) => { take = args.take; return []; });
+    await s.listRecent(9999);
+    expect(take).toBe(200); // capped
+    await s.listRecent(0);
+    expect(take).toBe(1); // floored to at least 1
+    await s.listRecent(); // default
+    expect(take).toBe(50);
+  });
+});

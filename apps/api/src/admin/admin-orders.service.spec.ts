@@ -239,21 +239,50 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
 
   it("cancelOrder pushes job:cancelled to an assigned rider post-commit (P2-3), with the collected flag", async () => {
     const { prisma } = makeTx({ order: { id: "o1", status: "picked_up", riderId: "r1", collectedAt: new Date() } });
-    const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn() };
+    const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn(), emitBidExpired: vi.fn() };
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway);
     await svc.cancelOrder("admin-1", "o1", { reason: "duplicate order" });
     expect(gateway.emitOrderStatus).toHaveBeenCalledWith("o1", "cancelled");
     // Post-pickup (collectedAt set) → collected=true drives the rider's hand-back path.
     expect(gateway.emitJobCancelled).toHaveBeenCalledWith("o1", true);
+    // DS13-07: an assigned/collected order was never an open auction → no board-close signal.
+    expect(gateway.emitBidExpired).not.toHaveBeenCalled();
   });
 
   it("cancelOrder does NOT push job:cancelled when no rider is assigned", async () => {
     const { prisma } = makeTx({ order: { id: "o1", status: "open_for_offers", riderId: null, collectedAt: null } });
-    const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn() };
+    const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn(), emitBidExpired: vi.fn() };
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway);
     await svc.cancelOrder("admin-1", "o1", { reason: "spam" });
     expect(gateway.emitOrderStatus).toHaveBeenCalledWith("o1", "cancelled");
     expect(gateway.emitJobCancelled).not.toHaveBeenCalled();
+  });
+
+  it("cancelOrder closes the board card when the cancelled order was still open_for_offers (DS13-07)", async () => {
+    // A still-open auction has a live card on browsing riders' boards; reuse the expiry path's bid:expired
+    // to close it immediately (with the pickup geo coords) rather than leave a dead card until a 409.
+    const { prisma } = makeTx({
+      order: { id: "o1", status: "open_for_offers", riderId: null, collectedAt: null, pickup: { point: { lat: -17.83, lng: 31.05 } } },
+    });
+    const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn(), emitBidExpired: vi.fn() };
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway);
+    await svc.cancelOrder("admin-1", "o1", { reason: "spam" });
+    expect(gateway.emitBidExpired).toHaveBeenCalledWith("o1", -17.83, 31.05);
+  });
+
+  it("cancelOrder pushes an FCM 'cancelled' notification to the parties post-commit (DS13-03)", async () => {
+    // Parity with the party-initiated cancel: a backgrounded/socket-dropped rider or customer hears about
+    // an ops cancel via FCM (the WS emits reach nobody in that state). Ops is the canceller → no exclude.
+    const { prisma } = makeTx({ order: { id: "o1", status: "assigned", riderId: "r1", collectedAt: null } });
+    const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn(), emitBidExpired: vi.fn() };
+    const notifications = { notifyOrderStatus: vi.fn(async () => {}) };
+    const svc = new AdminOrdersService(
+      prisma as unknown as PrismaService,
+      gateway as unknown as TrackingGateway,
+      notifications as unknown as import("../notifications/notifications.service").NotificationsService,
+    );
+    await svc.cancelOrder("admin-1", "o1", { reason: "fraud" });
+    expect(notifications.notifyOrderStatus).toHaveBeenCalledWith("o1", "cancelled", {});
   });
 
   it("cancelOrder rejects an order already in a terminal state (nothing written)", async () => {
