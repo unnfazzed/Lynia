@@ -48,7 +48,7 @@
     "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
-    "@expo/config-plugins": "~9.0.17",
+    "@expo/config-plugins": "~57.0.3",
     "@types/jest": "^29.5.14",
     "@types/react": "~18.3.12",
     "@types/react-test-renderer": "~18.3.1",
