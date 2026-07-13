@@ -1,5 +1,10 @@
 # GCP Provisioning Review — code & functionality vs live state (2026-07-10)
 
+> **Status update:** superseded by `docs/GCP-PENDING-REVIEW-2026-07-13.md` — the §3
+> deploy breakage is resolved (canary releases green again since 07-13), but §4's OTP
+> outage persists in a new form (WhatsApp half-armed: enabled + token set, phone-id and
+> template repo Variables empty).
+
 Scope: everything the app + CI/CD requires on GCP, compared against what Terraform
 provisions and what the GitHub Actions history proves is actually live. Evidence is
 cited from `infra/terraform/*`, `.github/workflows/*`, `apps/api/src/**`, docs, and
