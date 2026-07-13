@@ -256,8 +256,8 @@ mechanisms) + adversarial API pass, all cross-checked against this ledger first.
 8/8 sampled prior fixes intact. Two agent-proposed candidates rejected on code re-read (a claimed
 `markUndelivered` double-penalty — blocked by the `claimed.count===0` throw + the post-pickup gate on
 retry; a claimed stale offer-expiry race — the rebroadcast clone has a new order id the stale job
-can't touch). Eight new findings; **DS13-01…DS13-07 fixed and merged in PR #209**, RH-01 reported-only
-and still OPEN (see OPEN table). #209 landed with `pnpm typecheck` + 714 API tests + API build green and
+can't touch). Eight new findings; **DS13-01…DS13-07 fixed and merged in PR #209**, RH-01 **FIXED in
+PR #221** (see table below). #209 landed with `pnpm typecheck` + 714 API tests + API build green and
 all CI checks passing; no schema migration.
 
 | ID | Description | Area | Sev | Status |
