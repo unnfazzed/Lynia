@@ -10,7 +10,7 @@
  * The end-to-end render behaviour is covered in src/ui/order/__tests__/live-tracking-isolation.test.tsx.
  */
 import type { OrderSnapshot } from "../../api/orders";
-import { selectOrderShell, selectRiderTelemetry } from "../order-tracking";
+import { orderLoadErrorKind, selectOrderShell, selectRiderTelemetry } from "../order-tracking";
 
 const base: OrderSnapshot = {
   id: "order-1",
@@ -84,5 +84,23 @@ describe("selectRiderTelemetry", () => {
       lng: null,
       updatedAt: null,
     });
+  });
+});
+
+// Regression guard: before this, a 403 (party-only IDOR gate) was bucketed with a plain transient
+// fetch error and given a "Retry" button that can never succeed for a permanently-forbidden order.
+describe("orderLoadErrorKind", () => {
+  it("treats 404 as not_found", () => {
+    expect(orderLoadErrorKind(404)).toBe("not_found");
+  });
+
+  it("treats 403 as forbidden, distinct from not_found and transient", () => {
+    expect(orderLoadErrorKind(403)).toBe("forbidden");
+  });
+
+  it("treats any other status, or no status at all, as transient (retryable)", () => {
+    expect(orderLoadErrorKind(500)).toBe("transient");
+    expect(orderLoadErrorKind(0)).toBe("transient");
+    expect(orderLoadErrorKind(undefined)).toBe("transient");
   });
 });

@@ -3,7 +3,7 @@ import { ETA_SPEED_KMH } from "../../src/logic/eta";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, usePathname, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
@@ -11,6 +11,7 @@ import { getMe } from "../../src/api/auth";
 import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { loadAcknowledgedHandbacks } from "../../src/auth/session";
+import { pushOnce } from "../../src/push/push";
 import { retryKyc, setOnline } from "../../src/api/riders";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
@@ -34,6 +35,7 @@ interface SentOffer {
 
 export default function RiderHome(): React.ReactElement {
   const router = useRouter();
+  const pathname = usePathname();
   const qc = useQueryClient();
   const [online, setOnlineState] = useState(false);
   // "Back to customer" used to be a single unconfirmed tap even while online/mid-job, unmounting the
@@ -463,7 +465,7 @@ export default function RiderHome(): React.ReactElement {
               <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({statusPillLabel(activeJob.status)})</Text>
             )}
             {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
-            <Button label="Open job" variant="ghost" onPress={() => router.push("/rider/job")} />
+            <Button label="Open job" variant="ghost" onPress={() => pushOnce(router, pathname, "/rider/job")} />
           </Card>
         ) : null}
 

@@ -47,3 +47,17 @@ export function selectRiderTelemetry(o: OrderSnapshot): RiderTelemetry {
     updatedAt: o.rider?.updatedAt ?? null,
   };
 }
+
+/**
+ * How the order screen should treat a failed `getOrder` fetch. A 404 is a genuinely gone order
+ * ("not found"). A 403 (P2-2's party-only IDOR gate — `orders.service.ts`'s `ForbiddenException`,
+ * e.g. a losing bidder tapping a stale "new broadcast" push, or a stale deep link on a
+ * shared/switched-account device) is permanent too, but was previously bucketed with a plain
+ * network error and given a "Retry" button that can never succeed — a dead-end retry loop rather
+ * than an honest terminal state. Anything else is a transient error worth retrying.
+ */
+export function orderLoadErrorKind(status: number | undefined): "not_found" | "forbidden" | "transient" {
+  if (status === 404) return "not_found";
+  if (status === 403) return "forbidden";
+  return "transient";
+}

@@ -11,7 +11,11 @@ import { act, create } from "react-test-renderer";
 import { usePushRegistration } from "../use-push-registration";
 
 const mockPush = jest.fn();
-jest.mock("expo-router", () => ({ router: { push: (to: string) => mockPush(to) } }));
+let mockPathname = "/home";
+jest.mock("expo-router", () => ({
+  router: { push: (to: string) => mockPush(to) },
+  usePathname: () => mockPathname,
+}));
 
 const mockGetLastResponse = jest.fn();
 const mockClearLastResponse = jest.fn(async () => {});
@@ -26,6 +30,9 @@ jest.mock("../push", () => ({
   registerForPushNotificationsAsync: async () => null,
   unregisterForPushNotificationsAsync: async () => {},
   pushDestination: (data: { orderId?: string }) => (data?.orderId ? `/order/${data.orderId}` : null),
+  pushOnce: (router: { push: (to: string) => void }, currentPathname: string, target: string) => {
+    if (currentPathname !== target) router.push(target);
+  },
 }));
 
 function Harness({ role }: { role: "customer" | "rider" }): null {
@@ -45,6 +52,7 @@ describe("usePushRegistration cold-start consume-once", () => {
     mockPush.mockClear();
     mockClearLastResponse.mockClear();
     mockGetLastResponse.mockClear();
+    mockPathname = "/home";
     mockGetLastResponse.mockResolvedValue({ notification: { request: { content: { data: { orderId: "o1" } } } } });
   });
 
@@ -94,6 +102,20 @@ describe("usePushRegistration cold-start consume-once", () => {
     // The new account must never be silently deep-linked into the OLD session's order.
     act(() => {
       tree.update(<Harness role="rider" />);
+    });
+    await flush();
+
+    expect(mockPush).not.toHaveBeenCalled();
+    tree.unmount();
+  });
+
+  it("does NOT push when the cold-start destination is already the active route", async () => {
+    // Regression guard: a duplicate/replayed push tap (or the cold-start deep link) while already
+    // sitting on its own destination screen previously stacked a redundant back-stack entry.
+    mockPathname = "/order/o1";
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="customer" />);
     });
     await flush();
 

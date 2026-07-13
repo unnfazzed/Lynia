@@ -8,7 +8,7 @@ import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../s
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { auctionHeaderText, formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
-import { selectOrderShell } from "../../src/logic/order-tracking";
+import { orderLoadErrorKind, selectOrderShell } from "../../src/logic/order-tracking";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
@@ -449,12 +449,15 @@ export default function OrderScreen(): React.ReactElement {
     );
   }
   if (!orderQ.data) {
-    // Only a real 404 is "not found"; a transient fetch error gets a retry, not a dead-end.
-    const notFound = orderQ.error instanceof ApiError && orderQ.error.status === 404;
+    // Only a real 404 is "not found"; a 403 is also permanent (party-only gate) but distinct; a
+    // transient fetch error gets a retry, not a dead-end.
+    const errorKind = orderLoadErrorKind(orderQ.error instanceof ApiError ? orderQ.error.status : undefined);
+    const notFound = errorKind === "not_found";
+    const forbidden = errorKind === "forbidden";
     // Offline cold-start: the fetch failed but we have this order's last-known summary. Show it (the
     // root offline banner already explains why it's stale) instead of a bare error — the live query
-    // takes over the moment we reconnect. Never shown for a 404: a genuinely gone order isn't "offline".
-    const showLastKnown = !notFound && lastKnown != null && lastKnown.id === orderId;
+    // takes over the moment we reconnect. Never shown for a 404/403: neither is "offline".
+    const showLastKnown = !notFound && !forbidden && lastKnown != null && lastKnown.id === orderId;
     if (showLastKnown) {
       return (
         <Screen>
@@ -482,8 +485,8 @@ export default function OrderScreen(): React.ReactElement {
     }
     return (
       <Screen>
-        <Heading>{notFound ? "Order not found" : "Couldn't load this order"}</Heading>
-        {notFound ? null : <Button label="Retry" onPress={() => void orderQ.refetch()} />}
+        <Heading>{notFound ? "Order not found" : forbidden ? "This order isn't available to you" : "Couldn't load this order"}</Heading>
+        {notFound || forbidden ? null : <Button label="Retry" onPress={() => void orderQ.refetch()} />}
         <Button label="Back home" variant="ghost" onPress={() => router.replace("/home")} />
       </Screen>
     );

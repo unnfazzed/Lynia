@@ -99,6 +99,17 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
   return `/order/${orderId}`;
 }
 
+/**
+ * `router.push(target)`, but a no-op when `target` is already the active route. The "Open job"
+ * button, a duplicate/replayed push notification tap, and the cold-start deep link can each
+ * independently fire the same navigation while already sitting on that screen (e.g. a double-tap,
+ * or a notification that arrives while its own destination is already open) — without this guard
+ * each stacks a redundant entry onto the back stack, so leaving the screen takes an extra "back".
+ */
+export function pushOnce(router: { push: (href: string) => void }, currentPathname: string, target: string): void {
+  if (currentPathname !== target) router.push(target);
+}
+
 /** Best-effort: drop this device's token server-side on sign-out. */
 export async function unregisterForPushNotificationsAsync(token: string): Promise<void> {
   try {
