@@ -195,6 +195,9 @@ jobs:
           OTP_CHANNEL: ${{ vars.OTP_CHANNEL || 'whatsapp' }}
           OTP_TEST_PHONES: ${{ vars.OTP_TEST_PHONES }}
           KYC_PROVIDER: ${{ vars.KYC_PROVIDER || 'didit' }}
+          WHATSAPP_ENABLED: ${{ vars.WHATSAPP_ENABLED }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ vars.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_TEMPLATE_NAME: ${{ vars.WHATSAPP_TEMPLATE_NAME }}
         run: |
           set -euo pipefail
           errors=()
@@ -205,14 +208,28 @@ jobs:
             errors+=("OTP_TEST_PHONES must be empty in production — it exposes live OTP codes in the response. Clear the OTP_TEST_PHONES repo Variable.")
           fi
           if [ "$KYC_PROVIDER" = "stub" ]; then
-            errors+=("KYC_PROVIDER=stub auto-passes verification and must not ship to production — clear the KYC_PROVIDER repo Variable (defaults to didit) or switch to manual review.")
+            errors+=("KYC_PROVIDER=stub auto-passes verification and must not ship to production — stub KYC must never gate real riders. Clear the KYC_PROVIDER repo Variable (defaults to didit) or switch to manual review.")
+          fi
+          # OTP must actually be able to SEND, not just boot. These two misconfigs pass the env-schema
+          # boot-guards and the canary /healthz gate, then 503 every requestOtp at runtime — production
+          # shipped exactly this way twice (2026-07-08 un-armed, 2026-07-13 half-armed with empty vars;
+          # docs/GCP-PENDING-REVIEW-2026-07-13.md §3). WhatsAppOtpSender.send() requires phone-number-id,
+          # token, and template (apps/api/src/auth/otp-sender.ts), so guard all of them here.
+          if [ "$OTP_CHANNEL" = "whatsapp" ]; then
+            if [ "$WHATSAPP_ENABLED" != "true" ]; then
+              errors+=("OTP_CHANNEL=whatsapp (the default) but WHATSAPP_ENABLED != true — no WhatsApp credentials are injected, so every production sign-in OTP would 503. Arm WhatsApp (WHATSAPP_ENABLED=true + WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_TEMPLATE_NAME repo Variables + WHATSAPP_ACCESS_TOKEN secret) or set OTP_CHANNEL=sms.")
+            elif [ -z "$(printf '%s' "$WHATSAPP_PHONE_NUMBER_ID" | tr -d '[:space:]')" ] || [ -z "$(printf '%s' "$WHATSAPP_TEMPLATE_NAME" | tr -d '[:space:]')" ]; then
+              errors+=("WHATSAPP_ENABLED=true but WHATSAPP_PHONE_NUMBER_ID and/or WHATSAPP_TEMPLATE_NAME repo Variables are empty — the service boots green yet every requestOtp 503s. Set both (Meta Business → WhatsApp → API setup; template must be an approved authentication-category template).")
+            fi
           fi
           if [ ${#errors[@]} -gt 0 ]; then
             for e in "${errors[@]}"; do echo "::error::$e"; done
             echo "::error::Production launch-hygiene guards (apps/api/src/config/env.ts) would reject this deploy at container boot. Fix the repo Variables above, then re-run. See docs/PILOT-READINESS.md." >&2
             exit 1
           fi
-          echo "Launch-hygiene config OK (OTP_CHANNEL=$OTP_CHANNEL, KYC_PROVIDER=$KYC_PROVIDER, OTP_TEST_PHONES empty)."
+          whatsapp_note=""
+          if [ "$OTP_CHANNEL" = "whatsapp" ]; then whatsapp_note=", WhatsApp armed"; fi
+          echo "Launch-hygiene config OK (OTP_CHANNEL=$OTP_CHANNEL, KYC_PROVIDER=$KYC_PROVIDER, OTP_TEST_PHONES empty${whatsapp_note})."
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3

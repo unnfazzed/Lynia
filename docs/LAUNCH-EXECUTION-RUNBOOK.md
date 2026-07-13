@@ -35,6 +35,12 @@ pnpm --filter @lynia/api encrypt-ids -- --apply # APPLY
 
 ## 2. LR8 — data-retention: schedule the daily purge + enable KYC-media lifecycle
 
+> **UPDATE (2026-07-13):** steps (a) and (b) are now Terraform — `infra/terraform/scheduler.tf`
+> creates `lynia-retention-purge` on the next `terraform apply` (`scheduler_jobs_enabled`,
+> default on; the API-enable is in `project.tf`), and `lynia-settlement-autopause` behind
+> `settlement_autopause_enabled` (default off until monetization). The gcloud commands below
+> remain as the manual fallback / reference for the OIDC + region constraints.
+
 ```bash
 # NOTE (2026-07-08, learned executing this): the purge route originally accepted ONLY an admin
 # JWT — JwtAuthGuard verifies our own HS256 tokens, so the scheduler's Google OIDC token 401'd.

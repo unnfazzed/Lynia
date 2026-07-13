@@ -18,13 +18,21 @@ and re-runnable. It went through an engineering/cloud review pass —
 | Serverless VPC Access connector | `lynia-connector` | **so Cloud Run can reach Redis** (serverless has no VPC route otherwise) |
 | Cloud SQL Postgres 16 | `lynia-pg` | private IP + public IP (for the CI Auth Proxy); PostGIS enabled by migration `0001_init` |
 | Memorystore Redis | `lynia-redis` | private, AUTH on |
-| Cloud Storage bucket | `lynia-media` | uniform access, public access **enforced-off**, CORS for signed-URL PUT/GET |
+| Cloud Storage bucket | `lynia-media` | uniform access, public access **enforced-off**, CORS deny-all by default (`bucket_cors_origins = []` — set the real admin origin to allow browser PUT/GET; never `["*"]`) |
 | Artifact Registry (Docker) | `lynia` | the API image repo |
 | Runtime SA | `lynia-run@…` | Cloud SQL Client, bucket Object Admin, **self `signBlob`** for keyless V4 signed URLs, per-secret accessor |
 | Deployer SA | `lynia-deployer@…` | Run Admin, AR Writer, Cloud SQL Client, actAs runtime SA |
 | Workload Identity pool/provider | `github-pool` / `github-provider` | **keyless CI auth**; OIDC scoped to `unnfazzed/Lynia` (no SA key) |
 | External HTTPS load balancer | `lynia-api-*` | global ALB + managed cert fronting Cloud Run (`api_domain`); stable HTTPS for device builds |
 | Secrets | `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET` | generated + populated |
+| Cloud Scheduler jobs | `lynia-retention-purge` (+ `lynia-settlement-autopause`, gated) | daily crons in `europe-west1` (Scheduler doesn't exist in africa-south1); OIDC as the runtime SA, audience pinned to the route URL (`scheduler.tf`) |
+
+> **Live state ≠ committed defaults.** The applied `terraform.tfvars` is gitignored, so
+> flag defaults in `variables.tf` (e.g. `staging_enabled = false`) do NOT describe the
+> live project — staging is applied and armed in `lynia-500911` despite the `false`
+> default. To audit what actually exists, run the read-only
+> `scripts/gcp-provisioning-verify.sh`, and see the latest
+> `docs/GCP-PENDING-REVIEW-*.md` for the current gap list.
 
 ## The one thing Terraform can't do: billing
 
@@ -74,8 +82,22 @@ Push to `main` → first Cloud Run deploy.
 
 ## Hardening follow-ups (deliberately deferred)
 
-- **Drop Cloud SQL public IP.** It exists only so the GitHub-hosted runner's Auth Proxy
-  can migrate. Move migrations to a VPC-internal runner (or a Cloud Run Job) and set
-  `ipv4_enabled = false`.
-- **Redis STANDARD_HA + Cloud SQL REGIONAL** before launch (pilot uses BASIC/ZONAL).
-- **Tighten `bucket_cors_origins`** from `*` to the real admin origin.
+Every deferral is coded behind a flag; the sequenced flip plan (order, blast radius,
+rollback) is `docs/INFRA-HARDENING-ROLLOUT.md`. Current flags and defaults:
+
+- **Drop Cloud SQL public IP** — `db_public_ip_enabled` (default `true`). It exists only
+  so the GitHub-hosted runner's Auth Proxy can migrate. First set the `DB_PRIVATE_ONLY=true`
+  repo Variable (switches release.yml to the in-VPC `lynia-migrate` Cloud Run Job), then
+  flip the flag.
+- **Redis STANDARD_HA + TLS** — `redis_tier` (default `BASIC`), `redis_tls_enabled`
+  (default `false`). Both recreate/disrupt the instance — do in a window.
+- **Cloud SQL REGIONAL** — `availability_type` is hardcoded `ZONAL` in `sql.tf`; edit
+  before launch.
+- **Cloud Armor OWASP enforcement** — `armor_waf_preview` (default `true` = log-only;
+  the rate-limit rule is always enforced). Flip after reviewing preview logs.
+- **CMEK on the media bucket** — `kyc_cmek_enabled` (default `false`); before real KYC
+  data lands.
+- **KYC-media retention lifecycle** — `kyc_retention_days` (default `0` = off); legal
+  decision.
+- **`bucket_cors_origins`** — default `[]` (deny-all). Set the real admin origin when
+  browser uploads need it; never re-widen to `["*"]`.

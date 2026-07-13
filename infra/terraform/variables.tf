@@ -225,3 +225,22 @@ variable "slo_alerts_enabled" {
   type        = bool
   default     = false
 }
+
+# --- Cloud Scheduler cron jobs (scheduler.tf) ---
+variable "scheduler_jobs_enabled" {
+  description = "Create the daily retention-purge Cloud Scheduler job (LR8, docs/LAUNCH-EXECUTION-RUNBOOK.md §2). ON by default: the API side (AdminOrSchedulerGuard + SCHEDULER_SERVICE_ACCOUNT injection) has been live since 2026-07-08 while the job itself was never created, so the purge has never run — the next apply closes that gap. Requires DNS for api_domain to be live (the OIDC audience is pinned to the public URL)."
+  type        = bool
+  default     = true
+}
+
+variable "scheduler_region" {
+  description = "Region for Cloud Scheduler jobs. NOT the API region: Cloud Scheduler is not offered in africa-south1 (learned 2026-07-08, runbook §2); the job is a plain daily HTTPS cron so its own region is irrelevant to the API."
+  type        = string
+  default     = "europe-west1"
+}
+
+variable "settlement_autopause_enabled" {
+  description = "Also create the daily settlement auto-pause job (LR5). Off until monetization is on — commission is 0% for the pilot, so there are no settlements to pause (docs/PILOT-READINESS.md)."
+  type        = bool
+  default     = false
+}

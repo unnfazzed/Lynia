@@ -72,6 +72,7 @@ resource "google_project_iam_member" "deployer_roles" {
     "roles/artifactregistry.writer", # push the image
     "roles/cloudsql.client",         # Auth Proxy for `prisma migrate deploy`
     "roles/monitoring.viewer",       # read Cloud Run request metrics for the canary error-rate gate (release.yml)
+    "roles/logging.viewer",          # read revision crash logs in the failed-deploy diagnostics step (release.yml) — without it CI was blind during the 2026-07-08→07-10 incident
   ])
   project = local.project_id
   role    = each.value
