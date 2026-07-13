@@ -116,8 +116,8 @@ importers:
         specifier: ^8.3.0
         version: 8.3.0(socket.io-adapter@2.5.8)
       bullmq:
-        specifier: ^5.80.1
-        version: 5.80.1
+        specifier: ^5.80.2
+        version: 5.80.2
       firebase-admin:
         specifier: ^14.1.0
         version: 14.1.0
@@ -3443,8 +3443,8 @@ packages:
   buffer@5.7.1:
     resolution: {integrity: sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ==}
 
-  bullmq@5.80.1:
-    resolution: {integrity: sha512-nV8Bmr28HKqbNOU6GqPVca0vCfW/y6WB7IpnFVmRScx8s6IfXWGiqmDIVMEiNoXKKrfoBBvL/FTzR1SQet0iAg==}
+  bullmq@5.80.2:
+    resolution: {integrity: sha512-IobIZd0xFtpnw9W9RdqDX45nfdI2QSmq8rudMj99p3V5mIm9v4I3uPObqKj7i+6Xfd8Lzs3n1p+YNB7s6ykF4Q==}
     engines: {node: '>=12.22.0'}
     peerDependencies:
       redis: '>=5.0.0'
@@ -11155,7 +11155,7 @@ snapshots:
       base64-js: 1.5.1
       ieee754: 1.2.1
 
-  bullmq@5.80.1:
+  bullmq@5.80.2:
     dependencies:
       cron-parser: 4.9.0
       ioredis: 5.10.1
