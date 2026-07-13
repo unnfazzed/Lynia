@@ -164,17 +164,19 @@ Artifacts in this repo:
    collector has shipped series to GMP** — that is step 6 below, after verification. To actually get
    paged then, also create a notification channel (email/SMS) and pass its id via
    `alert_notification_channels` (default `[]` = fires in-console, pages no one).
-2. **Collector config secret**: store the pipeline so the sidecar can mount it —
-   `gcloud secrets create otel-collector-config --data-file=infra/otel-collector/config.yaml`
-   (and grant the runtime SA `secretAccessor` on it, as the other secrets already are in `secrets.tf`).
-3. **Deploy the sidecar**: fill the `<PLACEHOLDERS>` in `service.yaml.template` (copy the current flag
-   values from `release.yml` + the deployed image tag), then
-   `gcloud run services replace infra/otel-collector/service.yaml --region <REGION> --project <PROJECT_ID>`.
-   This sets `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` on the API container and starts the
-   collector, then set the `OTEL_SIDECAR_ENABLED=true` repo Variable so the release workflow's
-   single-container guard permits the sidecar. To roll back to single-container, **remove the sidecar
-   explicitly and clear the variable** — re-running the release workflow is NOT enough, because
-   `gcloud run deploy` preserves existing sidecars:
+2. **Collector config secret** — created by the same `terraform apply` (`infra/terraform/otel.tf`
+   populates `otel-collector-config` from `infra/otel-collector/config.yaml` and grants the runtime SA
+   `secretAccessor`). Pipeline changes ship via plan/apply, never hand-run `gcloud secrets versions add`.
+3. **Deploy the sidecar — flag-driven via the release workflow (folded in 2026-07-13)**: ensure the
+   `dockerhub-remote` Artifact Registry mirror exists (runbook §3 has the one-liner), set the
+   `OTEL_SIDECAR_ENABLED=true` repo Variable, and re-run **Release (Cloud Run)**. When the flag is true,
+   release.yml deploys **both** containers explicitly (`--container api … --container otel-collector …`)
+   and sets `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` on the API — the revision spec is fully
+   code-driven, so a hand-edited or broken sidecar is REPLACED on the next release, never silently
+   inherited. (`service.yaml.template` is retained only as a manual fallback.) To roll back to
+   single-container, **remove the sidecar explicitly and clear the variable** — clearing the variable
+   alone is NOT enough, because the single-container `gcloud run deploy` path preserves existing sidecars
+   (and the orphaned-sidecar guard will then block deploys until it is removed):
    `gcloud run services update lynia-api --region <REGION> --remove-containers otel-collector`.
 4. **Import the dashboard**:
    `gcloud monitoring dashboards create --config-from-file=infra/otel-collector/dashboard.json --project <PROJECT_ID>`,
@@ -188,16 +190,16 @@ Artifacts in this repo:
    cleanly. This is the step the `slo_alerts_enabled` gate (`variables.tf`, default `false`) exists for —
    flipping it before the series exist re-triggers the `400 PromQL metric(s) are invalid` from step 1.
 
-> **Operational drift (corrected 2026-07-10):** the sidecar lives in the `services replace` manifest,
-> **not** in the release workflow. Contrary to an earlier note here, a subsequent normal `/ship` deploy
-> does **not** drop it — `gcloud run deploy --image` PRESERVES existing sidecars, so once applied it is
-> inherited by every release. A broken collector therefore wedges *all* deploys at container-start (this
+> **Operational drift (corrected 2026-07-10; resolved 2026-07-13):** the original design deployed the
+> sidecar with a hand-applied `services replace` manifest that every subsequent `gcloud run deploy
+> --image` silently *inherited* — so a broken collector wedged **all** deploys at container-start (this
 > is exactly what happened 2026-07-08→07-10: ~15 straight failed prod deploys, opaque "container failed
-> to start on :3000", while prod safely kept serving the last single-container revision). Guardrails now
-> in place: release.yml refuses to deploy while an unexpected sidecar is present unless
-> `OTEL_SIDECAR_ENABLED=true`, and dumps the failed revision's containers + logs on any failure.
-> `OTEL_EXPORTER_OTLP_ENDPOINT` deliberately lives with the sidecar so "endpoint set" and "collector
-> present" can never diverge.
+> to start on :3000", while prod safely kept serving the last single-container revision). Now the
+> sidecar is **part of release.yml** behind `OTEL_SIDECAR_ENABLED`: flag on → both containers are
+> deployed explicitly from code every release; flag off → release.yml refuses to deploy while an
+> unexpected sidecar is present (and dumps the failed revision's containers + logs on any failure).
+> `OTEL_EXPORTER_OTLP_ENDPOINT` deliberately lives with the sidecar branch so "endpoint set" and
+> "collector present" can never diverge.
 
 ## Product analytics (PostHog, mobile)
 

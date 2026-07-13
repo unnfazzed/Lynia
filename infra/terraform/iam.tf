@@ -73,6 +73,8 @@ resource "google_project_iam_member" "deployer_roles" {
     "roles/cloudsql.client",         # Auth Proxy for `prisma migrate deploy`
     "roles/monitoring.viewer",       # read Cloud Run request metrics for the canary error-rate gate (release.yml)
     "roles/logging.viewer",          # read revision crash logs in the failed-deploy diagnostics step (release.yml) — without it CI was blind during the 2026-07-08→07-10 incident
+    "roles/viewer",                  # nightly read-only drift audit (gcp-drift-detect.yml runs scripts/gcp-provisioning-verify.sh via WIF) — read everything, change nothing
+    "roles/secretmanager.viewer",    # the audit lists secret VERSIONS (metadata/freshness only — never payloads; that would need secretAccessor, deliberately not granted)
   ])
   project = local.project_id
   role    = each.value
@@ -91,6 +93,16 @@ resource "google_artifact_registry_repository_iam_member" "deployer_repo_admin" 
   repository = google_artifact_registry_repository.api.name
   role       = "roles/artifactregistry.repoAdmin"
   member     = "serviceAccount:${google_service_account.deployer.email}"
+}
+
+# The nightly drift audit (gcp-drift-detect.yml) runs `terraform plan -refresh=false`, which must
+# READ recorded state from the backend bucket (versions.tf). The bucket itself is deliberately not a
+# managed resource (it HOLDS the state — managing it from within would be circular); only this
+# binding is. -lock=false keeps the probe read-only, so objectViewer suffices.
+resource "google_storage_bucket_iam_member" "deployer_tfstate_read" {
+  bucket = "lynia-tfstate"
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.deployer.email}"
 }
 
 # `gcloud run deploy` must actAs the runtime SA it sets on the service.

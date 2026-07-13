@@ -1,10 +1,13 @@
 # Cloud Run multi-container service TEMPLATE — adds the OTel Collector sidecar to lynia-api.
 #
-# WHY a template + `gcloud run services replace` (not a change to .github/workflows/release.yml):
-# the normal deploy is a single-container `gcloud run deploy`. Folding the sidecar into that workflow
-# blind (no gcloud/CI here to validate) risks breaking ALL deploys for a telemetry feature. So the
-# founder applies this once, deliberately, and can roll back instantly by re-running the release
-# workflow (which redeploys the single-container form). See docs/OBSERVABILITY.md → Production activation.
+# ⚠️ SUPERSEDED (2026-07-13): the sidecar is now folded into .github/workflows/release.yml behind the
+# OTEL_SIDECAR_ENABLED repo Variable — activation is a flag flip + release re-run, and the revision
+# spec is code-driven on every deploy (docs/OBSERVABILITY.md → Production activation). This template
+# is retained ONLY as a manual fallback / reference for the container spec (probe, resources, mounts).
+#
+# Original rationale for the template + `gcloud run services replace` path, kept for history:
+# the normal deploy was a single-container `gcloud run deploy`; folding the sidecar in blind risked
+# breaking ALL deploys for a telemetry feature, so the founder applied this once, deliberately.
 #
 # FILL THE <PLACEHOLDERS> (they mirror the flags in release.yml's `gcloud run deploy`), then:
 #   gcloud run services replace infra/otel-collector/service.yaml --region <REGION> --project <PROJECT_ID>

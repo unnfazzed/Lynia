@@ -1,0 +1,152 @@
+name: GCP Drift Detect
+
+# Nightly READ-ONLY audit of live GCP state vs the codebase, so "someone changed something in the
+# console" or "an apply is pending" surfaces as a next-morning issue instead of a silent time bomb
+# (the 2026-07-08 out-of-band service edits went unnoticed for two days —
+# docs/GCP-PENDING-REVIEW-2026-07-13.md). Two independent probes:
+#
+#   1. scripts/gcp-provisioning-verify.sh — does everything the code/CI/Terraform expect actually
+#      exist and match live? (services, APIs, IAM, secrets freshness, scheduler jobs, sidecars…)
+#   2. terraform plan -refresh=false — does committed Terraform differ from the RECORDED state,
+#      i.e. is a `terraform apply` pending? -refresh=false keeps the probe metadata-only: CI never
+#      reads secret payloads (the deployer SA holds viewer roles, deliberately NOT secretAccessor —
+#      iam.tf), and -lock=false means it never writes to the state bucket.
+#      REQUIRES the TF_PROD_TFVARS repo *secret*: a verbatim paste of the applied terraform.tfvars.
+#      The file is gitignored, and planning with variables.tf DEFAULTS would spuriously diff every
+#      live-armed flag (e.g. staging_enabled) — so with the secret unset this probe is skipped.
+#
+# Findings open (or refresh — one at a time, never a stack) a `gcp-drift` issue; a clean night
+# closes it. DORMANT until the GCP_DEPLOY_ENABLED repo Variable is true, same arming as release.yml.
+# Auth is keyless WIF as the deployer SA; nothing in this workflow can mutate GCP.
+
+on:
+  schedule:
+    - cron: "45 4 * * *" # nightly 06:45 Harare — after the 03:00 retention purge, before the workday
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # WIF
+  issues: write # the gcp-drift issue
+
+concurrency:
+  group: gcp-drift-detect
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: audit live GCP vs repo
+    if: ${{ vars.GCP_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Authenticate to Google Cloud (read-only)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: "Probe 1 — live provisioning audit (verify script)"
+        id: verify
+        run: |
+          set +e
+          bash scripts/gcp-provisioning-verify.sh "${{ vars.GCP_PROJECT_ID }}" "${{ vars.GCP_REGION }}" > verify.txt 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          # Strip ANSI colors for the issue body; keep the full output in the job log.
+          sed -e 's/\x1b\[[0-9;]*m//g' verify.txt | tail -n 120 > verify-tail.txt
+          cat verify.txt
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: "Probe 2 — pending terraform apply (metadata-only plan)"
+        id: plan
+        env:
+          TF_PROD_TFVARS: ${{ secrets.TF_PROD_TFVARS }}
+        run: |
+          set +e
+          if [ -z "$TF_PROD_TFVARS" ]; then
+            echo "::warning::TF_PROD_TFVARS repo secret not set — skipping the terraform-plan probe. Paste the applied terraform.tfvars into that secret to arm it (docs/LAUNCH-EXECUTION-RUNBOOK.md §10)."
+            echo "exit=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cd infra/terraform
+          printf '%s\n' "$TF_PROD_TFVARS" > terraform.tfvars
+          if ! terraform init -input=false -no-color > init.log 2>&1; then
+            echo "::warning::terraform init failed — treating as drift (state unreadable is itself a finding)."
+            tail -n 60 init.log | tee ../../plan-tail.txt
+            echo "exit=init-failed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          terraform plan -input=false -lock=false -refresh=false -no-color -detailed-exitcode > plan.log 2>&1
+          code=$?
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          tail -n 150 plan.log > ../../plan-tail.txt
+          tail -n 60 plan.log
+
+      - name: Open / refresh / close the gcp-drift issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFY_EXIT: ${{ steps.verify.outputs.exit }}
+          PLAN_EXIT: ${{ steps.plan.outputs.exit }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          findings=()
+          [ "${VERIFY_EXIT}" != "0" ] && findings+=("**Provisioning audit failed** (\`scripts/gcp-provisioning-verify.sh\` exit ${VERIFY_EXIT}) — something the code/CI expects is missing or diverged live.")
+          case "${PLAN_EXIT}" in
+            2) findings+=("**A \`terraform apply\` is pending** — committed Terraform differs from recorded state (plan exit 2).");;
+            1) findings+=("**terraform plan errored** — the drift probe itself is broken; fix the probe or the config (plan exit 1).");;
+            init-failed) findings+=("**terraform init failed** — state backend unreadable from CI (check the deployer SA's objectViewer on gs://lynia-tfstate).");;
+          esac
+
+          # The label must exist before gh issue create can apply it; --force makes this idempotent.
+          gh label create gcp-drift --force -R "$GITHUB_REPOSITORY" \
+            --description "Live GCP state has drifted from the repo (opened by gcp-drift-detect.yml)" \
+            --color D93F0B || true
+
+          EXISTING="$(gh issue list -R "$GITHUB_REPOSITORY" --label gcp-drift --state open --json number \
+            | jq -r 'first | .number // empty')"
+
+          if [ ${#findings[@]} -eq 0 ]; then
+            echo "No drift. Verify=${VERIFY_EXIT}, plan=${PLAN_EXIT}."
+            if [ -n "$EXISTING" ]; then
+              gh issue close -R "$GITHUB_REPOSITORY" "$EXISTING" \
+                --comment "✅ Tonight's audit came back clean ([run](${RUN_URL})) — closing. _(gcp-drift-detect.yml)_"
+            fi
+            exit 0
+          fi
+
+          {
+            echo "Nightly GCP drift audit found problems ([run](${RUN_URL}), $(date -u +%FT%TZ)):"
+            echo
+            for f in "${findings[@]}"; do echo "- $f"; done
+            echo
+            if [ -s verify-tail.txt ]; then
+              echo "<details><summary>Provisioning audit tail</summary>"
+              echo; echo '```'; cat verify-tail.txt; echo '```'; echo "</details>"
+            fi
+            if [ -s plan-tail.txt ]; then
+              echo "<details><summary>terraform plan tail</summary>"
+              echo; echo '```'; cat plan-tail.txt; echo '```'; echo "</details>"
+            fi
+            echo
+            echo "_Read-only audit — nothing was changed. Fix path: console drift → adopt or revert per docs/LAUNCH-EXECUTION-RUNBOOK.md; pending apply → founder runs \`terraform plan && terraform apply\`. (gcp-drift-detect.yml)_"
+          } > /tmp/issue-body.md
+
+          if [ -n "$EXISTING" ]; then
+            echo "Refreshing existing gcp-drift issue #${EXISTING}."
+            gh issue comment -R "$GITHUB_REPOSITORY" "$EXISTING" --body-file /tmp/issue-body.md
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" \
+              --title "GCP drift: live project has diverged from the repo" \
+              --label gcp-drift \
+              --body-file /tmp/issue-body.md
+          fi
