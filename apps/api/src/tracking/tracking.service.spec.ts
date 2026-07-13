@@ -334,6 +334,93 @@ describe("TrackingService.nearbyRiders (Redis prefilter path)", () => {
   });
 });
 
+describe("TrackingService.nearbyRiders — heartbeat freshness (ghost filter)", () => {
+  it("applies the last_heartbeat_at cutoff in the Redis-confirm PG query", async () => {
+    const redis = fakeRedis();
+    redis.geoResult.push(["rider-1", "100"]);
+    let sql = "";
+    const queryRaw = vi.fn(async (strings: TemplateStringsArray) => {
+      sql = strings.join("?");
+      return [{ profile_id: "rider-1" }];
+    });
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $queryRaw: queryRaw } as unknown as PrismaService, fakeMetrics());
+    s.setRedisClient(redis as never);
+
+    await s.nearbyRiders(-17.8, 31.0, 5000);
+
+    // A rider whose app died with is_online stuck true must not be pushed / counted (policy
+    // BROADCAST.heartbeatMaxAgeMs) — the online-confirm leg carries the same cutoff as the fallback.
+    expect(sql).toContain("last_heartbeat_at");
+  });
+
+  it("applies the last_heartbeat_at cutoff in the PG ST_DWithin fallback", async () => {
+    let sql = "";
+    const queryRaw = vi.fn(async (strings: TemplateStringsArray) => {
+      sql = strings.join("?");
+      return [];
+    });
+    const s = new TrackingService({ REDIS_URL: undefined } as Env, { $queryRaw: queryRaw } as unknown as PrismaService, fakeMetrics());
+    s.setRedisClient(null);
+
+    await s.nearbyRiders(-17.8, 31.0, 5000);
+
+    expect(sql).toContain("ST_DWithin");
+    expect(sql).toContain("last_heartbeat_at");
+  });
+});
+
+describe("TrackingService.claimBroadcastRecipients (widening-broadcast dedupe)", () => {
+  /** Fake pipeline capturing SADD/EXPIRE; exec returns the queued per-SADD replies. */
+  function pipelineRedis(saddReplies: Array<0 | 1>, opts: { rejectExec?: boolean } = {}) {
+    const sadds: Array<[string, string]> = [];
+    const expires: Array<[string, number]> = [];
+    const pipeline = {
+      sadd: vi.fn((key: string, id: string) => sadds.push([key, id])),
+      expire: vi.fn((key: string, ttl: number) => expires.push([key, ttl])),
+      exec: vi.fn(async () => {
+        if (opts.rejectExec) throw new Error("redis down");
+        return [...saddReplies.map((r) => [null, r] as [null, number]), [null, 1] as [null, number]];
+      }),
+    };
+    return { ...fakeRedis(), pipeline: vi.fn(() => pipeline), _pipeline: pipeline };
+  }
+
+  const mk = (redis: unknown) => {
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, {} as PrismaService, fakeMetrics());
+    s.setRedisClient(redis as never);
+    return s;
+  };
+
+  it("returns only the NEWLY-claimed ids (SADD reply 1) and stamps the set's TTL", async () => {
+    const redis = pipelineRedis([1, 0, 1]); // r-2 already in the set from an earlier disc
+    const s = mk(redis);
+
+    const claimed = await s.claimBroadcastRecipients("ord-1", ["r-1", "r-2", "r-3"]);
+
+    expect(claimed).toEqual(["r-1", "r-3"]);
+    expect(redis._pipeline.sadd).toHaveBeenCalledWith("broadcast:sent:ord-1", "r-1");
+    expect(redis._pipeline.expire).toHaveBeenCalledWith("broadcast:sent:ord-1", expect.any(Number));
+  });
+
+  it("returns [] for an empty id list without touching Redis", async () => {
+    const redis = pipelineRedis([]);
+    const s = mk(redis);
+    await expect(s.claimBroadcastRecipients("ord-1", [])).resolves.toEqual([]);
+    expect(redis.pipeline).not.toHaveBeenCalled();
+  });
+
+  it("returns null without Redis so the caller falls back to ring geometry", async () => {
+    const s = new TrackingService(noRedisEnv, {} as PrismaService, fakeMetrics());
+    s.setRedisClient(null);
+    await expect(s.claimBroadcastRecipients("ord-1", ["r-1"])).resolves.toBeNull();
+  });
+
+  it("returns null (never throws) when the pipeline exec rejects", async () => {
+    const s = mk(pipelineRedis([1], { rejectExec: true }));
+    await expect(s.claimBroadcastRecipients("ord-1", ["r-1"])).resolves.toBeNull();
+  });
+});
+
 describe("TrackingService.claimPresenceEscalation / releasePresenceEscalation (multi-instance dedup)", () => {
   const svcOnly = () => new TrackingService({ REDIS_URL: "redis://x" } as Env, {} as PrismaService, fakeMetrics());
 

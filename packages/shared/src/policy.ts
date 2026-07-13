@@ -139,3 +139,46 @@ export const SOS_POLICY = {
 /** Rider strikes that trip an auto-cooldown (mirrors the lifecycle CANCEL_STRIKE_LIMIT). A
  *  `rider_strike` issue resolution increments the strike count toward this. */
 export const RIDER_STRIKE_LIMIT = 3;
+
+/**
+ * Broadcast reach policy — which online riders a new order is announced to, and how that reach
+ * widens while the offer window runs. The radius is a pure function of order age
+ * ({@link broadcastRadiusAtMs}), NOT persisted state, so the FCM push, the rider board, and the
+ * customer-facing supply count all derive the same disc and can never disagree.
+ *
+ * Expansion steps must sit inside the 90 s offer window (contracts OFFER_WINDOW_MS) — a step at or
+ * past the window is never scheduled. `maxRadiusM` is the Q1 service corridor: broadcasting past the
+ * area we deliver in would only advertise orders no rider may accept.
+ */
+export const BROADCAST = {
+  /** Initial broadcast radius (metres) around the pickup at order creation. */
+  baseRadiusM: 5_000,
+  /** Widening schedule: at `atMs` after creation the reach becomes `radiusM` (monotonic). */
+  expansion: [
+    { atMs: 30_000, radiusM: 8_000 },
+    { atMs: 60_000, radiusM: 12_000 },
+  ],
+  /** Hard cap — never broadcast beyond the service corridor. */
+  maxRadiusM: SERVICE_CORRIDOR.radiusKm * 1000,
+  /**
+   * A rider whose last heartbeat is older than this is a ghost (app killed with `isOnline` stuck
+   * true) — excluded from broadcast pushes and the supply count. Deliberately looser than matching's
+   * 30 s offer-selection gate: the idle rider home screen beats every 20 s, so 120 s = 6 missed
+   * beats before we stop counting them.
+   */
+  heartbeatMaxAgeMs: 120_000,
+  /** Env var a deploy can set to override {@link BROADCAST.baseRadiusM}; the constant is the default. */
+  baseRadiusEnv: "BROADCAST_BASE_RADIUS_M",
+  /** Env var a deploy can set to override {@link BROADCAST.heartbeatMaxAgeMs}. */
+  heartbeatMaxAgeEnv: "BROADCAST_HEARTBEAT_MAX_AGE_MS",
+} as const;
+
+/** Broadcast radius (metres) for an order `ageMs` old — base, stepped up per the expansion
+ *  schedule, capped at the service corridor. */
+export function broadcastRadiusAtMs(ageMs: number, baseRadiusM: number = BROADCAST.baseRadiusM): number {
+  let r = baseRadiusM;
+  for (const step of BROADCAST.expansion) {
+    if (ageMs >= step.atMs && step.radiusM > r) r = step.radiusM;
+  }
+  return Math.min(r, BROADCAST.maxRadiusM);
+}

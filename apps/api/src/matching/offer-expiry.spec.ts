@@ -1,4 +1,4 @@
-import { OFFER_WINDOW_MS } from "@lynia/shared";
+import { BROADCAST, OFFER_WINDOW_MS } from "@lynia/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import type { PrismaService } from "../prisma/prisma.service";
@@ -6,6 +6,18 @@ import type { MatchingService } from "./matching.service";
 import { OfferExpiryService, jitteredDelayMs } from "./offer-expiry.service";
 
 const JITTER_MAX_MS = 10_000;
+
+// Replace BullMQ so onModuleInit can run without a live Redis: the Queue/Worker constructors are
+// captured, letting the worker-dispatch test grab the processor closure Worker was built with.
+vi.mock("bullmq", () => ({
+  // Function expressions (not arrows) so the mocks are `new`-able like the real classes.
+  Queue: vi.fn(function () {
+    return { on: vi.fn(), add: vi.fn(), close: vi.fn() };
+  }),
+  Worker: vi.fn(function () {
+    return { on: vi.fn(), close: vi.fn() };
+  }),
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -52,7 +64,6 @@ describe("OfferExpiryService.schedule", () => {
 
     await service.schedule("order-123");
 
-    expect(add).toHaveBeenCalledTimes(1);
     const [name, data, opts] = add.mock.calls[0];
     expect(name).toBe("expire");
     expect(data).toEqual({ orderId: "order-123" });
@@ -64,6 +75,36 @@ describe("OfferExpiryService.schedule", () => {
     // are the fix; this asserts the job itself now gets a few chances first.
     expect(opts.attempts).toBe(3);
     expect(opts.backoff).toEqual({ type: "exponential", delay: 5_000 });
+  });
+
+  it("enqueues one widening-broadcast tick per in-window expansion step, idempotent jobIds, no retries", async () => {
+    const { service, add } = makeService();
+
+    await service.schedule("order-123");
+
+    const expandCalls = add.mock.calls.filter(([name]) => name === "expand");
+    const inWindow = BROADCAST.expansion.filter((s) => s.atMs < OFFER_WINDOW_MS);
+    expect(expandCalls).toHaveLength(inWindow.length);
+    for (const [i, step] of inWindow.entries()) {
+      const [, data, opts] = expandCalls[i];
+      expect(data).toEqual({ orderId: "order-123", step: i });
+      // jobId idempotency: a duplicate schedule (create replay / announceOpenOrder) can't double-tick.
+      expect(opts.jobId).toBe(`expand:order-123:${i}`);
+      expect(opts.delay).toBe(step.atMs);
+      // Ticks are best-effort — no attempts/backoff; a lost one is covered by the next tick's
+      // sent-set difference. Only the correctness-critical expire job retries.
+      expect(opts.attempts).toBeUndefined();
+    }
+  });
+
+  it("never enqueues an expansion step at/past the offer window (it could not fire while open)", async () => {
+    const { service, add } = makeService();
+
+    await service.schedule("order-123");
+
+    for (const [name, , opts] of add.mock.calls) {
+      if (name === "expand") expect(opts.delay).toBeLessThan(OFFER_WINDOW_MS);
+    }
   });
 
   it("never schedules a delay below OFFER_WINDOW_MS even when random() is 0", async () => {
@@ -79,6 +120,37 @@ describe("OfferExpiryService.schedule", () => {
     const env = { REDIS_URL: undefined } as Env;
     const service = new OfferExpiryService(env, {} as MatchingService, {} as PrismaService);
     await expect(service.schedule("order-x")).resolves.toBeUndefined();
+  });
+});
+
+describe("OfferExpiryService worker dispatch", () => {
+  it("routes 'expand' jobs to expandBroadcast and everything else (incl. legacy jobs) to expireOrder", async () => {
+    const { Worker } = await import("bullmq");
+    const expireOrder = vi.fn().mockResolvedValue({ expired: true });
+    const expandBroadcast = vi.fn().mockResolvedValue(undefined);
+    const env = { REDIS_URL: "redis://localhost:6379" } as Env;
+    const service = new OfferExpiryService(
+      env,
+      { expireOrder, expandBroadcast } as unknown as MatchingService,
+      { order: { findMany: vi.fn().mockResolvedValue([]) } } as unknown as PrismaService,
+    );
+    service.onModuleInit();
+    try {
+      const processor = (Worker as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1];
+
+      await processor({ name: "expand", data: { orderId: "o-1", step: 1 } });
+      expect(expandBroadcast).toHaveBeenCalledWith("o-1", 1);
+      expect(expireOrder).not.toHaveBeenCalled();
+
+      await processor({ name: "expire", data: { orderId: "o-1" } });
+      // Legacy in-flight jobs (enqueued before "expand" existed, name "expire"/anything else) must
+      // still expire — the default branch is expire, not a throw, so a deploy can't strand them.
+      await processor({ name: "unknown-legacy", data: { orderId: "o-2" } });
+      expect(expireOrder).toHaveBeenNthCalledWith(1, "o-1");
+      expect(expireOrder).toHaveBeenNthCalledWith(2, "o-2");
+    } finally {
+      await service.onModuleDestroy();
+    }
   });
 });
 

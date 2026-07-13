@@ -38,6 +38,25 @@ describe("loadEnv — optional URL fields", () => {
   });
 });
 
+describe("loadEnv — broadcast reach overrides", () => {
+  it("coerces valid numeric overrides", () => {
+    const env = loadEnv({ ...base, BROADCAST_BASE_RADIUS_M: "3000", BROADCAST_HEARTBEAT_MAX_AGE_MS: "60000" });
+    expect(env.BROADCAST_BASE_RADIUS_M).toBe(3000);
+    expect(env.BROADCAST_HEARTBEAT_MAX_AGE_MS).toBe(60000);
+  });
+
+  it("treats an empty value as absent (deploy injects '' when the var is unset)", () => {
+    const env = loadEnv({ ...base, BROADCAST_BASE_RADIUS_M: "", BROADCAST_HEARTBEAT_MAX_AGE_MS: "" });
+    expect(env.BROADCAST_BASE_RADIUS_M).toBeUndefined();
+    expect(env.BROADCAST_HEARTBEAT_MAX_AGE_MS).toBeUndefined();
+  });
+
+  it("rejects a malformed override at boot (fails loud, no silent fallback)", () => {
+    expect(() => loadEnv({ ...base, BROADCAST_BASE_RADIUS_M: "five-km" })).toThrow(/Invalid environment configuration/);
+    expect(() => loadEnv({ ...base, BROADCAST_HEARTBEAT_MAX_AGE_MS: "-10" })).toThrow(/Invalid environment configuration/);
+  });
+});
+
 describe("loadEnv — production REDIS_URL boot-guard", () => {
   it("rejects production without REDIS_URL (in-memory OTP/rate-limit store is per-instance)", () => {
     expect(() => loadEnv({ ...base, NODE_ENV: "production" })).toThrow(/Invalid environment configuration/);

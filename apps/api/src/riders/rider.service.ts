@@ -14,6 +14,7 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
 import { auditData } from "../admin/admin.shared";
+import { baseBroadcastRadiusM } from "../common/broadcast-policy";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -26,11 +27,6 @@ import { canGoOnline, onlineRefusalReason, type OnlineRefusal, REFUSAL_MESSAGE }
 export { canGoOnline, onlineRefusalReason, type OnlineRefusal };
 
 type Kyc = "pending" | "verified" | "failed" | "expired";
-
-/** 2·b1: radius (m) around a newly-online rider within which waiting "notify me" customers are pinged.
- *  The SAME 5 km the customer broadcast + rider board use, so "a rider's online near you" means the
- *  rider could actually have received that customer's broadcast. */
-const NOTIFY_RADIUS_M = 5000;
 
 @Injectable()
 export class RiderService {
@@ -270,7 +266,9 @@ export class RiderService {
       // transient-FCM failure — or a crash mid-push — leaves them queued for the next nearby rider
       // instead of being silently dropped. Undelivered claims self-release when the lock TTL lapses; the
       // notify-list TTL bounds the total wait. All best-effort — never affects the rider going online.
-      const claimed = await this.tracking.claimNotifyWaitersNear(lat, lng, NOTIFY_RADIUS_M);
+      // Drain radius = the BASE broadcast radius (not the widened one): "a rider's online near you"
+      // means this rider would have received the customer's initial broadcast (policy BROADCAST).
+      const claimed = await this.tracking.claimNotifyWaitersNear(lat, lng, baseBroadcastRadiusM());
       if (claimed.length === 0) return;
       const delivered = await this.notifications.notifyRidersAvailable(claimed);
       const toClear = claimed.filter((id) => delivered.has(id));

@@ -154,7 +154,8 @@ describe("OrdersService.create", () => {
     const expiry = { schedule: async () => {} } as unknown as OfferExpiryService;
     const nearbyRiders = vi.fn(async () => [{ profileId: "rider-1", distanceM: 800 }] as NearbyRider[]);
     const notifyNewBroadcast = vi.fn(async () => {});
-    const tracking = { nearbyRiders } as unknown as TrackingService;
+    // claim → null (no Redis) exercises the fallback: every nearby rider is pushed.
+    const tracking = { nearbyRiders, claimBroadcastRecipients: async () => null } as unknown as TrackingService;
     const notifications = { notifyNewBroadcast } as unknown as NotificationsService;
     const svc = new OrdersService(prisma as unknown as PrismaService, expiry, tracking, notifications, noGateway);
 
@@ -163,6 +164,39 @@ describe("OrdersService.create", () => {
 
     // The pickup point drives the PostGIS radius lookup; matched riders get the broadcast push.
     expect(nearbyRiders).toHaveBeenCalledWith(orderInput.pickup.point.lat, orderInput.pickup.point.lng, expect.any(Number));
+    expect(notifyNewBroadcast).toHaveBeenCalledWith("ord-1", ["rider-1"], { pickup: "Eastgate", fare: "2.50" });
+  });
+
+  it("seeds the per-order sent set and pushes only the CLAIMED riders (widening-broadcast dedupe)", async () => {
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: {
+        create: async () => ({
+          id: "ord-1",
+          status: "open_for_offers",
+          itemDesc: "Documents",
+          proposedFare: { toString: () => "2.50" },
+          suggestedFare: { toString: () => "2.40" },
+          distanceKm: 1.5,
+          createdAt: new Date("2026-06-26T00:00:00Z"),
+        }),
+      },
+    };
+    const expiry = { schedule: async () => {} } as unknown as OfferExpiryService;
+    const nearby = [
+      { profileId: "rider-1", distanceM: 800 },
+      { profileId: "rider-2", distanceM: 1200 },
+    ] as NearbyRider[];
+    // Redis says rider-2 was already claimed (e.g. a create replay) — only rider-1 gets the push.
+    const claimBroadcastRecipients = vi.fn(async () => ["rider-1"]);
+    const notifyNewBroadcast = vi.fn(async () => {});
+    const tracking = { nearbyRiders: async () => nearby, claimBroadcastRecipients } as unknown as TrackingService;
+    const svc = new OrdersService(prisma as unknown as PrismaService, expiry, tracking, { notifyNewBroadcast } as unknown as NotificationsService, noGateway);
+
+    await svc.create(orderInput, "cust-1");
+    await flush();
+
+    expect(claimBroadcastRecipients).toHaveBeenCalledWith("ord-1", ["rider-1", "rider-2"]);
     expect(notifyNewBroadcast).toHaveBeenCalledWith("ord-1", ["rider-1"], { pickup: "Eastgate", fare: "2.50" });
   });
 
@@ -316,7 +350,7 @@ describe("OrdersService.create", () => {
     const expiry = { schedule } as unknown as OfferExpiryService;
     const nearbyRiders = vi.fn(async () => [{ profileId: "rider-1", distanceM: 800 }] as NearbyRider[]);
     const notifyNewBroadcast = vi.fn(async () => {});
-    const tracking = { nearbyRiders } as unknown as TrackingService;
+    const tracking = { nearbyRiders, claimBroadcastRecipients: async () => null } as unknown as TrackingService;
     const notifications = { notifyNewBroadcast } as unknown as NotificationsService;
     const svc = new OrdersService(prisma as unknown as PrismaService, expiry, tracking, notifications, noGateway);
 
@@ -757,6 +791,8 @@ describe("OrdersService.listOpen", () => {
         proposed_fare: { toString: () => "2.50" },
         distance_km: 1.5,
         created_at: new Date("2026-06-26T00:00:00Z"),
+        // Inside the caller's own 3 km radius — survives the per-order reach filter regardless of age.
+        pickup_distance_m: 900,
       },
     ]);
     const prisma = { order: { findMany }, $queryRaw: queryRaw };
@@ -772,6 +808,31 @@ describe("OrdersService.listOpen", () => {
     expect(rows[0]!.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" });
     expect(rows[0]!.pickup).not.toHaveProperty("contactPhone");
     expect(JSON.stringify(rows[0])).not.toContain("+263");
+  });
+
+  it("geo path shows an order beyond the caller's radius once its broadcast has widened to reach them", async () => {
+    const mkRow = (id: string, createdAt: Date) => ({
+      id,
+      pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },
+      dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" },
+      item_desc: "Documents",
+      suggested_fare: { toString: () => "2.40" },
+      proposed_fare: { toString: () => "2.50" },
+      distance_km: 1.5,
+      created_at: createdAt,
+      // 7 km out: past the 5 km caller radius, inside the 12 km final expansion ring.
+      pickup_distance_m: 7000,
+    });
+    const queryRaw = vi.fn(async () => [
+      mkRow("o-fresh", new Date()), // t≈0 → reach still 5 km → hidden
+      mkRow("o-widened", new Date(Date.now() - 61_000)), // past the 60 s step → reach 12 km → shown
+    ]);
+    const prisma = { order: { findMany: vi.fn(async () => []) }, $queryRaw: queryRaw };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+
+    const rows = await svc.listOpen(-17.83, 31.05, 5000);
+
+    expect(rows.map((r) => r.id)).toEqual(["o-widened"]);
   });
 
   it("without lat/lng falls back to the city-wide findMany path", async () => {

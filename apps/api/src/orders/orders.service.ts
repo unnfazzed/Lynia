@@ -1,12 +1,14 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
+import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
+import { buildBoardNewOrderEvent, pickupPoint, publicWaypoint } from "./waypoints";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
 
@@ -31,10 +33,6 @@ function assertWithinServiceCorridor(pickup: LatLng, dropoff: LatLng): void {
   }
 }
 
-/** Radius (metres) for the new-order push to nearby online riders (CONCEPT §3.10). Harare-corridor
- *  scale; the REST nearby endpoint defaults to the same neighbourhood. */
-const BROADCAST_RADIUS_M = 5000;
-
 /** TTL for the pickup-photo signed read URL on the snapshot — comfortably longer than the 15s poll
  *  that refreshes it, short enough that a leaked URL goes stale fast (matches the admin KYC-photo
  *  review TTL). */
@@ -52,23 +50,6 @@ const CREATE_RESPONSE_SELECT = {
   createdAt: true,
 } satisfies Prisma.OrderSelect;
 type CreateResponseOrder = Prisma.OrderGetPayload<{ select: typeof CREATE_RESPONSE_SELECT }>;
-
-/** Strip a stored Waypoint down to what a browsing rider may see — point + landmark, no contactPhone. */
-function publicWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown } {
-  const o = (w ?? {}) as { point?: unknown; landmark?: unknown };
-  return { point: o.point ?? null, landmark: o.landmark ?? null };
-}
-
-/** Pull the pickup's lat/lng + landmark out of a stored/input Waypoint JSON (the nearby-radius anchor
- *  and the push copy). Returns null when the point is malformed, so the broadcast is skipped rather
- *  than throwing (it's best-effort). Works for both the create input and a re-broadcast DB row. */
-function pickupPoint(w: Prisma.JsonValue): { lat: number; lng: number; landmark: string } | null {
-  const o = (w ?? {}) as { point?: { lat?: unknown; lng?: unknown }; landmark?: unknown };
-  const lat = o.point?.lat;
-  const lng = o.point?.lng;
-  if (typeof lat !== "number" || typeof lng !== "number") return null;
-  return { lat, lng, landmark: typeof o.landmark === "string" ? o.landmark : "" };
-}
 
 /** Waypoint as the ASSIGNED rider sees it inside the reveal window — contactPhone included, since
  *  they need to call the sender/recipient at the doors (§5d / design E1). Every other viewer and
@@ -257,7 +238,7 @@ export class OrdersService {
   }
 
   /**
-   * Resolve the online riders within {@link BROADCAST_RADIUS_M} of the pickup (PostGIS ST_DWithin, ET6)
+   * Resolve the online riders within the base broadcast radius of the pickup (PostGIS ST_DWithin, ET6)
    * and push them the new order. Fully best-effort: any failure here — no nearby riders, a geo-query
    * error, a push outage — is swallowed so it can never affect the order the customer just created.
    */
@@ -276,36 +257,25 @@ export class OrdersService {
       // this on the `nearby` list would silently drop the board emit whenever no rider happens to be
       // mid-delivery indexed nearby — the exact false-empty this fix addresses. Only the FCM fan-out
       // below stays gated on nearby.length. The board-event build is guarded on its own so a schema/emit
-      // failure can't suppress the FCM push (and vice versa) — the two channels are independent. Same
-      // redaction as listOpen — point + landmark only, NEVER contactPhone; parsing through the `.strict()`
-      // schema enforces the no-PII guarantee ON THE WIRE. `expiresAt` exposes the shared auction clock
-      // (C2) so a bidder's offer-sent screen can render the same countdown.
+      // failure can't suppress the FCM push (and vice versa) — the two channels are independent.
       try {
-        const boardEvent: BoardNewOrderEvent = BoardNewOrderEvent.parse({
-          id: orderId,
-          pickup: publicWaypoint(pickup),
-          dropoff: publicWaypoint(dropoff),
-          itemDesc: meta.itemDesc,
-          suggestedFare: meta.suggestedFare,
-          proposedFare: meta.proposedFare,
-          distanceKm: meta.distanceKm,
-          createdAt: meta.createdAt,
-          expiresAt: new Date(new Date(meta.createdAt).getTime() + OFFER_WINDOW_MS).toISOString(),
-        });
+        const boardEvent: BoardNewOrderEvent = buildBoardNewOrderEvent(orderId, pickup, dropoff, meta);
         this.safeEmitBoardNewOrder(boardEvent, pt.lat, pt.lng);
       } catch (err) {
         this.logger.warn(`board event build/emit failed for order ${orderId}: ${(err as Error).message}`);
       }
       // FCM push for riders NOT currently on the board — gated on the position index having someone to
       // fan out to (no candidates ⇒ no tokens to push). Only this channel depends on `nearby`.
-      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, BROADCAST_RADIUS_M);
+      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, baseBroadcastRadiusM());
       if (nearby.length === 0) return;
+      // Claim the recipients in the per-order sent set BEFORE pushing, seeding it for the widening
+      // ticks (MatchingService.expandBroadcast) so a later ring never re-pings these riders. null =
+      // no Redis / Redis error → push everyone found (the ticks then also can't run — same degrade).
+      const ids = nearby.map((r) => r.profileId);
+      const claimed = (await this.tracking.claimBroadcastRecipients(orderId, ids)) ?? ids;
+      if (claimed.length === 0) return;
       // best-effort, never throws, un-awaited.
-      void this.notifications.notifyNewBroadcast(
-        orderId,
-        nearby.map((r) => r.profileId),
-        { pickup: pt.landmark, fare: meta.proposedFare },
-      );
+      void this.notifications.notifyNewBroadcast(orderId, claimed, { pickup: pt.landmark, fare: meta.proposedFare });
     } catch {
       /* best-effort: a broadcast-push failure never affects the created order */
     }
@@ -313,16 +283,19 @@ export class OrdersService {
 
   /**
    * Supply signal for the "no riders online" state (2·b1): how many online riders are within the same
-   * {@link BROADCAST_RADIUS_M} the push + board use, so the client can tell "no offers yet, riders were
-   * pinged" (calm wait) apart from "there's nobody nearby to ping" (honest empty). Best-effort — a
+   * radius the push + board use, so the client can tell "no offers yet, riders were pinged" (calm
+   * wait) apart from "there's nobody nearby to ping" (honest empty). With `createdAt` the count is
+   * taken at the order's CURRENT widened radius (policy BROADCAST.expansion) — the 15 s snapshot poll
+   * passes it so the count grows with the reach; a fresh create counts the base disc. Best-effort — a
    * malformed point or a geo-query failure returns `null` ("supply unknown"), and the client then falls
    * back to today's calm "finding riders" state rather than a false "nobody's here".
    */
-  private async countNearbyForPickup(pickup: Prisma.JsonValue): Promise<number | null> {
+  private async countNearbyForPickup(pickup: Prisma.JsonValue, createdAt?: Date): Promise<number | null> {
     try {
       const pt = pickupPoint(pickup);
       if (!pt) return null;
-      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, BROADCAST_RADIUS_M);
+      const radiusM = createdAt ? effectiveBroadcastRadiusM(createdAt) : baseBroadcastRadiusM();
+      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, radiusM);
       return nearby.length;
     } catch {
       return null; // supply unknown — never let a geo blip surface a false "no riders online"
@@ -378,14 +351,14 @@ export class OrdersService {
   }
 
   /**
-   * Open orders a rider can bid on. With a caller position (lat & lng) the board is scoped to
-   * {@link BROADCAST_RADIUS_M}-scale radius and distance-sorted server-side (PostGIS ST_DWithin over
-   * the pickup JSON point). Without a position it falls back to the city-wide, newest-first list so
+   * Open orders a rider can bid on. With a caller position (lat & lng) the board is scoped to the
+   * broadcast-radius neighbourhood and distance-sorted server-side (PostGIS ST_DWithin over the
+   * pickup JSON point). Without a position it falls back to the city-wide, newest-first list so
    * the endpoint stays backward-compatible. Either way contactPhone is redacted (§5d reveal window).
    */
-  async listOpen(lat?: number, lng?: number, radiusM = 5000) {
+  async listOpen(lat?: number, lng?: number, radiusM?: number) {
     if (lat !== undefined && lng !== undefined) {
-      return this.listOpenNearby(lat, lng, radiusM);
+      return this.listOpenNearby(lat, lng, radiusM ?? baseBroadcastRadiusM());
     }
     const orders = await this.prisma.order.findMany({
       where: { status: "open_for_offers" },
@@ -417,13 +390,18 @@ export class OrdersService {
   }
 
   /**
-   * Geo-scoped open board: open orders whose pickup is within `radiusM` of the caller, nearest-first.
-   * Filters and sorts directly on the indexed `pickup_geog` generated column (GiST, migration 0006)
-   * instead of re-extracting lat/lng from the pickup JSON per row. Rows whose pickup JSON is malformed
-   * have a NULL `pickup_geog` and are skipped by the WHERE guard rather than 500-ing the board. Fares
-   * are serialized and contactPhone is redacted just like the city-wide path.
+   * Geo-scoped open board: open orders whose pickup is within reach of the caller, nearest-first.
+   * "Within reach" is per-order: at least `radiusM` (the rider's own neighbourhood), and wider for an
+   * order whose broadcast has expanded (policy BROADCAST.expansion — a rider FCM-pinged at 10 km must
+   * find the order on their board to bid). The SQL scans one disc at the schedule's max radius and the
+   * per-order age cut is applied in TS on the returned distance; the LIMIT 50 pre-filter is accepted
+   * at pilot scale. Filters and sorts directly on the indexed `pickup_geog` generated column (GiST,
+   * migration 0006) instead of re-extracting lat/lng from the pickup JSON per row. Rows whose pickup
+   * JSON is malformed have a NULL `pickup_geog` and are skipped by the WHERE guard rather than 500-ing
+   * the board. Fares are serialized and contactPhone is redacted just like the city-wide path.
    */
   private async listOpenNearby(lat: number, lng: number, radiusM: number) {
+    const scanRadiusM = Math.max(radiusM, maxBroadcastRadiusM());
     const rows = await this.prisma.$queryRaw<
       Array<{
         id: string;
@@ -434,6 +412,7 @@ export class OrdersService {
         proposed_fare: Prisma.Decimal;
         distance_km: number | null;
         created_at: Date;
+        pickup_distance_m: number;
       }>
     >`
       SELECT id,
@@ -443,23 +422,27 @@ export class OrdersService {
              suggested_fare,
              proposed_fare,
              distance_km,
-             created_at
+             created_at,
+             ST_Distance(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS pickup_distance_m
       FROM orders
       WHERE status = 'open_for_offers'
         AND pickup_geog IS NOT NULL
-        AND ST_DWithin(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})
-      ORDER BY ST_Distance(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) ASC
+        AND ST_DWithin(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${scanRadiusM})
+      ORDER BY pickup_distance_m ASC
       LIMIT 50`;
-    return rows.map((o) => ({
-      id: o.id,
-      pickup: publicWaypoint(o.pickup),
-      dropoff: publicWaypoint(o.dropoff),
-      itemDesc: o.item_desc,
-      suggestedFare: o.suggested_fare.toString(),
-      proposedFare: o.proposed_fare.toString(),
-      distanceKm: o.distance_km,
-      createdAt: o.created_at.toISOString(),
-    }));
+    const now = Date.now();
+    return rows
+      .filter((o) => Number(o.pickup_distance_m) <= Math.max(radiusM, effectiveBroadcastRadiusM(o.created_at, now)))
+      .map((o) => ({
+        id: o.id,
+        pickup: publicWaypoint(o.pickup),
+        dropoff: publicWaypoint(o.dropoff),
+        itemDesc: o.item_desc,
+        suggestedFare: o.suggested_fare.toString(),
+        proposedFare: o.proposed_fare.toString(),
+        distanceKm: o.distance_km,
+        createdAt: o.created_at.toISOString(),
+      }));
   }
 
   /** The rider's current active job (assigned through en_route_dropoff), or null — so they can find
@@ -633,7 +616,7 @@ export class OrdersService {
     // 2·b1: live supply count while the auction is open, so a 15s poll self-heals a transient "no
     // riders online" the moment a rider comes online. Null on every non-open status (like expiresAt),
     // and best-effort — a geo blip yields null → the client keeps the calm "finding riders" state.
-    const ridersNearby = order.status === "open_for_offers" ? await this.countNearbyForPickup(order.pickup) : null;
+    const ridersNearby = order.status === "open_for_offers" ? await this.countNearbyForPickup(order.pickup, order.createdAt) : null;
 
     // F-01: if this (cancelled) order was auto re-broadcast after the assigned rider bailed, expose the
     // NEW clone's id so the customer's cancelled terminal can offer a "follow your re-sent request" link.

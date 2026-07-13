@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import { OFFER_WINDOW_MS } from "@lynia/shared";
+import { BROADCAST, OFFER_WINDOW_MS } from "@lynia/shared";
 import { Queue, Worker } from "bullmq";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -69,7 +69,12 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
       this.queue = new Queue(QUEUE_NAME, { connection });
       this.worker = new Worker(
         QUEUE_NAME,
-        async (job) => this.matching.expireOrder(job.data.orderId as string),
+        // Dispatch on job name; the DEFAULT branch is expire (not a throw) so in-flight legacy jobs
+        // (jobId = orderId, enqueued before the "expand" ticks existed) still drain across a deploy.
+        async (job) =>
+          job.name === "expand"
+            ? this.matching.expandBroadcast(job.data.orderId as string, job.data.step as number)
+            : this.matching.expireOrder(job.data.orderId as string),
         { connection },
       );
       this.worker.on("failed", (job, err) =>
@@ -115,6 +120,26 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
         backoff: { type: "exponential", delay: 5_000 },
       },
     );
+    // Widening-broadcast ticks (policy BROADCAST.expansion) ride the same queue as delayed jobs.
+    // jobId idempotency means a duplicate schedule (create replay, announceOpenOrder) can't
+    // double-enqueue a tick. Deliberately NO attempts/backoff and NO reconciler backstop: a tick is
+    // best-effort — a lost one is covered by the next tick's sent-set difference, unlike the expiry
+    // CAS above which is correctness-critical. Steps at/past the offer window can never fire while
+    // the order is still open, so they aren't enqueued at all.
+    for (let i = 0; i < BROADCAST.expansion.length; i++) {
+      const step = BROADCAST.expansion[i];
+      if (step.atMs >= OFFER_WINDOW_MS) continue;
+      await this.queue.add(
+        "expand",
+        { orderId, step: i },
+        {
+          delay: step.atMs,
+          jobId: `expand:${orderId}:${i}`,
+          removeOnComplete: true,
+          removeOnFail: 100,
+        },
+      );
+    }
   }
 
   /** Expire every order still `open_for_offers` well past its window. Idempotent via expireOrder's

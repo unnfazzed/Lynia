@@ -164,7 +164,7 @@ describe("MatchingService.expireOrder — persists the no-supply verdict for lat
     };
     const prisma = {
       $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
-      order: { findUnique: async () => ({ pickup: pickupPt }), update: orderUpdate },
+      order: { findUnique: async () => ({ pickup: pickupPt, createdAt: new Date() }), update: orderUpdate },
     } as unknown as PrismaService;
     const tracking = { nearbyRiders: async () => opts.nearby } as unknown as TrackingService;
     const notifyOrderExpired = vi.fn(async () => {});
@@ -186,6 +186,103 @@ describe("MatchingService.expireOrder — persists the no-supply verdict for lat
     await service.expireOrder(orderId);
     expect(orderUpdate).not.toHaveBeenCalled();
     expect(notifyOrderExpired).toHaveBeenCalledWith(orderId, false);
+  });
+});
+
+describe("MatchingService.expandBroadcast — widening ticks push only the new ring", () => {
+  // A version/variant-valid UUID — the board event's `.strict()` contract parses the id as a uuid.
+  const expandOrderId = "33333333-3333-4333-8333-333333333333";
+  const openOrder = {
+    status: "open_for_offers",
+    pickup: { point: { lat: -17.8, lng: 31.05 }, landmark: "Eastgate" },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" },
+    itemDesc: "Documents",
+    suggestedFare: { toString: () => "2.40" },
+    proposedFare: { toString: () => "2.50" },
+    distanceKm: 1.5,
+    createdAt: new Date("2026-06-26T00:00:00Z"),
+  };
+
+  function expandSvc(opts: {
+    order?: unknown;
+    nearby?: unknown[];
+    claim?: string[] | null;
+  }) {
+    const prisma = { order: { findUnique: async () => opts.order ?? openOrder } } as unknown as PrismaService;
+    const nearbyRiders = vi.fn(async () => opts.nearby ?? []);
+    const claimBroadcastRecipients = vi.fn(async () => opts.claim ?? null);
+    const tracking = { nearbyRiders, claimBroadcastRecipients } as unknown as TrackingService;
+    const notifyNewBroadcast = vi.fn(async () => {});
+    const notifications = { notifyNewBroadcast } as unknown as NotificationsService;
+    const emitBoardNewOrderToCells = vi.fn();
+    const gateway = { emitBoardNewOrderToCells } as unknown as TrackingGateway;
+    const service = new MatchingService(prisma, noopTokens, notifications, fakeMetrics(), gateway, tracking);
+    return { service, nearbyRiders, claimBroadcastRecipients, notifyNewBroadcast, emitBoardNewOrderToCells };
+  }
+
+  it("queries the step's wider radius, re-emits the board card to the widened cells, pushes the claimed ids", async () => {
+    const nearby = [
+      { profileId: "r-near", distanceM: 3_000 },
+      { profileId: "r-ring", distanceM: 7_000 },
+    ];
+    const { service, nearbyRiders, claimBroadcastRecipients, notifyNewBroadcast, emitBoardNewOrderToCells } = expandSvc({
+      nearby,
+      claim: ["r-ring"], // the sent set says r-near was pushed at create time
+    });
+
+    await service.expandBroadcast(expandOrderId, 0); // step 0 → 8 km
+
+    expect(nearbyRiders).toHaveBeenCalledWith(-17.8, 31.05, 8_000);
+    expect(emitBoardNewOrderToCells).toHaveBeenCalledWith(expect.objectContaining({ id: expandOrderId }), -17.8, 31.05, 8_000);
+    expect(claimBroadcastRecipients).toHaveBeenCalledWith(expandOrderId, ["r-near", "r-ring"]);
+    expect(notifyNewBroadcast).toHaveBeenCalledWith(expandOrderId, ["r-ring"], { pickup: "Eastgate", fare: "2.50" });
+  });
+
+  it("falls back to ring geometry (distance > previous radius) when the claim set is unavailable", async () => {
+    const nearby = [
+      { profileId: "r-inner", distanceM: 4_000 }, // inside the 5 km create disc — already pushed
+      { profileId: "r-outer", distanceM: 6_500 },
+    ];
+    const { service, notifyNewBroadcast } = expandSvc({ nearby, claim: null });
+
+    await service.expandBroadcast(expandOrderId, 0);
+
+    expect(notifyNewBroadcast).toHaveBeenCalledWith(expandOrderId, ["r-outer"], expect.anything());
+  });
+
+  it("no-ops once the order has left open_for_offers (accepted/cancelled mid-window)", async () => {
+    const { service, nearbyRiders, notifyNewBroadcast } = expandSvc({
+      order: { ...openOrder, status: "assigned" },
+      nearby: [{ profileId: "r-1", distanceM: 7_000 }],
+    });
+
+    await service.expandBroadcast(expandOrderId, 0);
+
+    expect(nearbyRiders).not.toHaveBeenCalled();
+    expect(notifyNewBroadcast).not.toHaveBeenCalled();
+  });
+
+  it("skips the push when the new ring claimed nobody (everyone already covered)", async () => {
+    const { service, notifyNewBroadcast } = expandSvc({
+      nearby: [{ profileId: "r-1", distanceM: 3_000 }],
+      claim: [],
+    });
+
+    await service.expandBroadcast(expandOrderId, 0);
+
+    expect(notifyNewBroadcast).not.toHaveBeenCalled();
+  });
+
+  it("never throws — a DB failure inside a tick is logged and swallowed (best-effort)", async () => {
+    const prisma = { order: { findUnique: async () => { throw new Error("db down"); } } } as unknown as PrismaService;
+    const service = new MatchingService(prisma, noopTokens, noopNotifications, fakeMetrics(), noopGateway, noopTracking);
+    await expect(service.expandBroadcast(expandOrderId, 0)).resolves.toBeUndefined();
+  });
+
+  it("ignores an out-of-range step index (defensive against a stale queued job)", async () => {
+    const { service, nearbyRiders } = expandSvc({ nearby: [] });
+    await service.expandBroadcast(expandOrderId, 99);
+    expect(nearbyRiders).not.toHaveBeenCalled();
   });
 });
 
