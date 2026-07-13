@@ -95,6 +95,23 @@ export interface IssueDetail extends IssueRow {
   resolutionNote?: string;
 }
 
+/* ── SOS events (DS13-05 — read-only ops surface) ──────────── */
+/**
+ * One emergency alert raised on a live trip (`GET /admin/sos`, newest-first). The durable record of a
+ * raised SOS so ops can see it independently of push delivery. Read-only this pass — no acknowledge/
+ * mutation. `raisedByRole` is the raiser's role ("customer" | "rider"); `lat`/`lng` are null when the
+ * device didn't attach a fix. `createdAt` is an ISO string (API-owned).
+ */
+export interface SosRow {
+  id: string;
+  orderId: string;
+  raisedByProfileId: string;
+  raisedByRole: string;
+  lat: number | null;
+  lng: number | null;
+  createdAt: string;
+}
+
 /* ── Reports against a party (A-05, conduct/safety) ────────── */
 /**
  * One post-trip conduct/safety report filed against a rider or customer (distinct from an order
