@@ -94,10 +94,16 @@ export class SosService {
   }
 
   /**
-   * DS13-05: recent SOS events, newest first, for the ops console. Read-only durable surface so SOS is no
-   * longer write-only — ops can see raised events independently of push delivery (the escalation push may
-   * have fanned out to zero registered admin devices). Admin-guarded at the controller (GET /admin/sos).
-   * `limit` is clamped to [1, 200] (default 50) so a caller can't pull the whole table.
+   * DS13-05: recent SOS events for the ops console — pending (unacknowledged) ones always sort first,
+   * newest-first within each group. Read-only durable surface so SOS is no longer write-only — ops can
+   * see raised events independently of push delivery (the escalation push may have fanned out to zero
+   * registered admin devices). Admin-guarded at the controller (GET /admin/sos). `limit` is clamped to
+   * [1, 200] (default 50) so a caller can't pull the whole table.
+   *
+   * Pending-first matters: a plain newest-first sort lets a still-open SOS scroll out of the visible
+   * window once enough newer (possibly already-acknowledged) events accumulate — undermining the exact
+   * "nothing vanishes" guarantee this surface exists to deliver. Sorting on `acknowledgedAt` (null =
+   * pending, sorted first) keeps every open alert above the fold regardless of what's happened since.
    *
    * `acknowledgedAt` (DS13-05) is the ISO timestamp an operator acknowledged the alert, or null while
    * it's still pending — so the console can show pending vs handled at a glance.
@@ -116,7 +122,7 @@ export class SosService {
   > {
     const take = Math.min(Math.max(1, Math.floor(limit)), 200);
     const rows = await this.prisma.sosEvent.findMany({
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ acknowledgedAt: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }],
       take,
       select: {
         id: true,

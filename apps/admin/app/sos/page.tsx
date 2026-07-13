@@ -6,9 +6,11 @@ import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../com
 import { IconAlert, IconCheck } from "../components/icons";
 import { AcknowledgeButton } from "./AcknowledgeButton";
 
-/** SOS queue (DS13-05 — feed + acknowledgement). Emergency alerts raised on live trips, newest
- *  first, so SOS is visible to ops independently of push delivery. Rows deep-link to the order at
- *  /orders/[id]; a still-pending alert carries an Acknowledge action so ops can mark it handled. */
+/** SOS queue (DS13-05 — feed + acknowledgement). Emergency alerts raised on live trips, pending
+ *  ones first (then newest first within each group) so an open alert can never scroll out of view
+ *  behind already-acknowledged ones — SOS is visible to ops independently of push delivery. Rows
+ *  deep-link to the order at /orders/[id]; a still-pending alert carries an Acknowledge action so
+ *  ops can mark it handled. */
 
 /** Format an ISO timestamp as the readable "13 Jul, 14:32" the console uses elsewhere. Includes the
  *  time (not just the date like the KYC page) because SOS urgency turns on minutes, not days. */
