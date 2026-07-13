@@ -88,8 +88,10 @@ customer's tracking screen** at the most safety-critical tap in the app.
   idempotency, honest cooldown/on-hold/KYC copy (mostly — see #8/#13 for the two sibling strings those
   passes didn't reach), offer-conflict reconciliation, BullMQ retry/backoff + reconcilers, socket
   resubscribe/self-heal, and the DS-01…DS-11 deep-sweep fixes. Nothing there was re-flagged.
-- Deliberately **not** re-litigated: the deferred OTP-verify idempotency item (still open by design, per
-  07-11), image downscale, and the tracking-screen re-render item — all previously logged as known/deferred.
+- Deliberately **not** re-litigated: the deferred OTP-verify idempotency item (correction 2026-07-13:
+  this was in fact already fixed on main the same day this doc was written — commit `139c99a`, a 60s
+  hash-only grace window on verify, hardened by `f9c2a12`'s route throttle; a later security-focused
+  audit confirmed the shipped design), image downscale, and the tracking-screen re-render item.
 - This pass leans heavily on one area none of the prior four ever looked at closely: **how the server
   learns where idle (not-currently-delivering) riders are** — `docs/KNOWN_BUGS.md`'s own coverage map
   flagged `tracking.service` geo internals as "lightly or never audited," and that's exactly where findings

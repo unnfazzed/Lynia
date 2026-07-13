@@ -840,6 +840,16 @@ export default function OrderScreen(): React.ReactElement {
             <EmptyState icon="bike" title="Your choosing window closed" message="Riders did offer, but the window ended before you picked. Send again and they'll likely bid again at the same price.">
               <Button label="Send another request" onPress={rebroadcast} />
             </EmptyState>
+          ) : order.expiryNoSupply ? (
+            // UX-2026-07-12 #11: the window closed with zero bids AND nobody online near the pickup, so
+            // "nudge the price up" is wrong advice — the price was never the problem. Say so honestly.
+            <EmptyState
+              icon="bike"
+              title="No riders were online nearby"
+              message="Nobody was online near your pickup when the window closed — try sending again in a bit."
+            >
+              <Button label="Send another request" onPress={rebroadcast} />
+            </EmptyState>
           ) : (
             <EmptyState
               icon="bike"

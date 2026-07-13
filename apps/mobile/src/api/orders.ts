@@ -75,6 +75,10 @@ export interface OrderSnapshot {
   // price) — lets the cancelled terminal link the customer forward to the re-sent request. Null/absent
   // when the cancel produced no rebroadcast (customer/admin cancel) or on an older API.
   rebroadcastedToId?: string | null;
+  // UX-2026-07-12 #11: set only on a no-supply `expired` order (window closed with zero bids AND nobody
+  // online near the pickup) — lets the expired terminal show the honest "no riders were online" copy
+  // instead of "nudge the price up". Null/absent on a normal expiry, other statuses, or an older API.
+  expiryNoSupply?: boolean | null;
 }
 
 /**
