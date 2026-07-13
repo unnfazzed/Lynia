@@ -1,6 +1,7 @@
 import { SOS_POLICY, tokens } from "@lynia/shared";
 import type { IssueType, ReportReason } from "@lynia/shared";
 import { useMutation } from "@tanstack/react-query";
+import * as Location from "expo-location";
 import React, { useEffect, useState } from "react";
 import { Linking, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -401,7 +402,8 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
   const [open, setOpen] = useState(false);
 
   const m = useMutation({
-    mutationFn: () => raiseSos(orderId, { lat: lat ?? undefined, lng: lng ?? undefined }),
+    mutationFn: (point: { lat?: number; lng?: number } | undefined) =>
+      raiseSos(orderId, { lat: point?.lat, lng: point?.lng }),
   });
 
   // Raise the SOS the moment the sheet opens so ops is alerted immediately — but never gate the call
@@ -411,7 +413,19 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
     if (open && m.isIdle) {
       // The one cue that must feel unmistakably different — a long, urgent triple as ops is alerted.
       haptic("alert");
-      m.mutate();
+      if (lat != null || lng != null) {
+        // The rider job screen already passes its own tracked point — use it as-is.
+        m.mutate({ lat: lat ?? undefined, lng: lng ?? undefined });
+      } else {
+        // The customer (and rider-viewer) order screens don't track a live position, so an SOS raised
+        // from there previously always went out with no location at all. Grab the OS's last-known fix
+        // (never prompts for permission, never waits on a fresh GPS lock) so ops has something to go
+        // on — but never delay the alert on it: fire the raise regardless of how the lookup resolves.
+        Location.getForegroundPermissionsAsync()
+          .then((perm) => (perm.status === Location.PermissionStatus.GRANTED ? Location.getLastKnownPositionAsync() : null))
+          .then((pos) => m.mutate(pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude } : undefined))
+          .catch(() => m.mutate(undefined));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on open; m is stable enough here.
   }, [open]);
