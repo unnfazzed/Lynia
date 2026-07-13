@@ -131,7 +131,9 @@ export default function RiderJob(): React.ReactElement {
   const { connected: jobSocketConnected } = useRiderJobSocket(
     order && ACTIVE.includes(order.status) ? orderId : null,
     (e) => {
-      if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current, cancelledBy: e.cancelledBy });
+      // cancelledBy is optional on the wire (a not-yet-deployed API server during a rolling rollout
+      // won't send it yet) — fall back to the pre-existing "customer" copy in that gap.
+      if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current, cancelledBy: e.cancelledBy ?? "customer" });
     },
     () => setCustomerStale(true),
   );
