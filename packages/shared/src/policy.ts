@@ -188,10 +188,23 @@ export const BROADCAST = {
    * beats before we stop counting them.
    */
   heartbeatMaxAgeMs: 120_000,
+  /**
+   * FCM-broadcast-audience heartbeat cutoff — deliberately MUCH looser than {@link BROADCAST.heartbeatMaxAgeMs}.
+   * The foreground JS heartbeat (every 20 s) does NOT fire while the app is backgrounded/suspended, so a
+   * genuinely-online rider with the app pocketed stops beating ~120 s after backgrounding. The strict
+   * cutoff above is right for the customer-facing "riders nearby" count and the offer-selection gate (they
+   * must reflect live/responsive riders), but wrong for the FCM channel — a push is precisely the thing
+   * that can WAKE a backgrounded app (DS13-02 deliberately keeps the backgrounded rider in the geo index
+   * for exactly this reason). A push to a truly-dead device is harmless waste; a missed push to a live
+   * pocketed rider is lost supply. So the FCM broadcast audience uses this permissive window instead.
+   */
+  heartbeatMaxAgeMsForPush: 15 * 60_000,
   /** Env var a deploy can set to override {@link BROADCAST.baseRadiusM}; the constant is the default. */
   baseRadiusEnv: "BROADCAST_BASE_RADIUS_M",
   /** Env var a deploy can set to override {@link BROADCAST.heartbeatMaxAgeMs}. */
   heartbeatMaxAgeEnv: "BROADCAST_HEARTBEAT_MAX_AGE_MS",
+  /** Env var a deploy can set to override {@link BROADCAST.heartbeatMaxAgeMsForPush}. */
+  heartbeatMaxAgeForPushEnv: "BROADCAST_HEARTBEAT_MAX_AGE_FOR_PUSH_MS",
 } as const;
 
 /** Broadcast radius (metres) for an order `ageMs` old — base, stepped up per the expansion

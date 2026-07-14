@@ -20,15 +20,53 @@ jest.mock("expo-router", () => ({
 const mockGetLastResponse = jest.fn();
 const mockClearLastResponse = jest.fn(async () => {});
 const mockAddListener = jest.fn(() => ({ remove: jest.fn() }));
+
+// Capture the OS/FCM token-rotation listener so tests can fire a rotated token at it.
+type TokenListener = (t: { data: unknown }) => void;
+let tokenRotationListener: TokenListener | null = null;
+const mockPushTokenRemove = jest.fn();
 jest.mock("expo-notifications", () => ({
   getLastNotificationResponseAsync: () => mockGetLastResponse(),
   clearLastNotificationResponseAsync: () => mockClearLastResponse(),
   addNotificationResponseReceivedListener: () => mockAddListener(),
+  addPushTokenListener: (fn: TokenListener) => {
+    tokenRotationListener = fn;
+    return { remove: mockPushTokenRemove };
+  },
 }));
 
+// Capture the AppState listener (register-retry-on-foreground trigger).
+type AppStateListener = (s: string) => void;
+let appStateListener: AppStateListener | null = null;
+jest.mock("react-native", () => ({
+  AppState: {
+    addEventListener: (_: string, cb: AppStateListener) => {
+      appStateListener = cb;
+      return { remove: jest.fn() };
+    },
+  },
+}));
+
+// Capture the reachability listener (register-retry-on-recovery trigger).
+type ReachListener = (reachable: boolean) => void;
+let reachListener: ReachListener | null = null;
+jest.mock("../net/reachability", () => ({
+  subscribeReachability: (fn: ReachListener) => {
+    reachListener = fn;
+    return () => {
+      reachListener = null;
+    };
+  },
+}));
+
+type RegResult = { token: string } | { token: null; retry: boolean };
+const mockRegister = jest.fn<Promise<RegResult>, []>(async () => ({ token: null, retry: false }));
+const mockRegisterRotated = jest.fn(async (t: string) => t as string | null);
+const mockUnregister = jest.fn(async () => {});
 jest.mock("../push", () => ({
-  registerForPushNotificationsAsync: async () => null,
-  unregisterForPushNotificationsAsync: async () => {},
+  registerForPushNotificationsAsync: () => mockRegister(),
+  registerRotatedToken: (t: string) => mockRegisterRotated(t),
+  unregisterForPushNotificationsAsync: (t: string) => mockUnregister(t as never),
   pushDestination: (data: { orderId?: string }) => (data?.orderId ? `/order/${data.orderId}` : null),
   pushOnce: (router: { push: (to: string) => void }, currentPathname: string, target: string) => {
     if (currentPathname !== target) router.push(target);
