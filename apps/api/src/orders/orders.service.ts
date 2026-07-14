@@ -704,13 +704,19 @@ export class OrdersService {
       // screen to learn that and clear its own lockout.
       deliveryOtpAttempts: order.deliveryOtpAttempts,
       // 3·b3: the recorded cancel reason + who cancelled, shown on the cancelled terminal. The DB
-      // stores the canceller's profile id; the wire carries only their role (no id leak).
+      // stores the canceller's profile id; the wire carries only their role (no id leak). An admin
+      // cancel's actor id matches neither party, so it correctly falls through to null (the terminal
+      // renders neutral "This order is cancelled" copy) instead of defaulting to "rider" — a rider who
+      // never touched this order shouldn't be blamed for an ops-initiated cancel (mirrors the same
+      // three-way check already used in admin-orders.service.ts's list projection).
       cancelReason: order.status === "cancelled" ? customerSafeCancelReason(order.cancelReason) : null,
       cancelledBy:
         order.status === "cancelled" && order.cancelledBy
           ? order.cancelledBy === order.customerId
             ? ("customer" as const)
-            : ("rider" as const)
+            : order.cancelledBy === order.riderId
+              ? ("rider" as const)
+              : null
           : null,
       // F-01: on a rider-bail cancel, the id of the fresh clone the job was re-broadcast to (else null),
       // so the cancelled terminal can link the customer forward to the re-sent request.

@@ -255,6 +255,9 @@ export interface RiderDetail {
   strikes: number;
   /** Commission owed under the prepaid per-ride model — "0.00" while the launch rate is 0%. */
   commission: string;
+  /** Orders this rider is actively riding right now (assigned…en_route_dropoff). A suspended/banned
+   *  rider with activeOrders > 0 has a live delivery a standing change doesn't touch by itself. */
+  activeOrders: number;
   joined: string;
   /** Conduct/safety reports filed against this rider (A-05). Absent/empty ⇒ never reported. */
   reports?: ReportEntry[];

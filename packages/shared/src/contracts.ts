@@ -332,12 +332,19 @@ export type BidExpiredEvent = z.infer<typeof BidExpiredEvent>;
 export const OrderTakenEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
 export type OrderTakenEvent = z.infer<typeof OrderTakenEvent>;
 
-/** `job:cancelled` payload — the customer cancelled an assigned job (INTERFACE-AUDIT C3). `collected`
- *  distinguishes the pre-pickup path (rider returns to the board) from post-pickup (sender contact
- *  shown for the hand-back). No reliability impact on the rider. */
+/** `job:cancelled` payload — an assigned job was cancelled out from under the rider, either by the
+ *  customer (INTERFACE-AUDIT C3) or by ops (admin console). `collected` distinguishes the pre-pickup
+ *  path (rider returns to the board) from post-pickup (sender contact shown for the hand-back).
+ *  `cancelledBy` lets the rider's terminal name the actual actor instead of always blaming the
+ *  customer — a rider's own bail-cancel never reaches this event (it re-broadcasts instead, see
+ *  `order:rebroadcast`). No reliability impact on the rider. Optional (not `.default()`, so a new
+ *  client can tell it apart from an explicit value) so a new mobile build talking to a not-yet-deployed
+ *  API server during a rolling rollout still parses the old (fielded-less) payload instead of dropping
+ *  the event outright — the client falls back to the pre-existing "customer" copy in that gap. */
 export const JobCancelledEvent = z.object({
   orderId: z.string().uuid(),
   collected: z.boolean(),
+  cancelledBy: z.enum(["customer", "admin"]).optional(),
   at: z.string(),
 });
 export type JobCancelledEvent = z.infer<typeof JobCancelledEvent>;

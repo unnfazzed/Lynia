@@ -446,13 +446,15 @@ export class TrackingGateway
   }
 
   /**
-   * The customer cancelled an assigned job — push `job:cancelled` to the order room so the assigned
-   * rider leaves the (now dead) job screen (INTERFACE-AUDIT C3). `collected` tells the rider UI which
-   * path to show: pre-pickup → back to the board; post-pickup → sender contact for the hand-back. No
-   * reliability impact on the rider (a customer cancel never strikes). Best-effort; never throws.
+   * The customer or ops cancelled an assigned job — push `job:cancelled` to the order room so the
+   * assigned rider leaves the (now dead) job screen (INTERFACE-AUDIT C3). `collected` tells the rider
+   * UI which path to show: pre-pickup → back to the board; post-pickup → sender contact for the
+   * hand-back. `cancelledBy` names the actual actor so the terminal doesn't always say "the customer"
+   * for an admin cancel. No reliability impact on the rider (neither cancel path strikes). Best-effort;
+   * never throws.
    */
-  emitJobCancelled(orderId: string, collected: boolean): void {
-    const payload: JobCancelledEvent = { orderId, collected, at: new Date().toISOString() };
+  emitJobCancelled(orderId: string, collected: boolean, cancelledBy: JobCancelledEvent["cancelledBy"]): void {
+    const payload: JobCancelledEvent = { orderId, collected, cancelledBy, at: new Date().toISOString() };
     this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.jobCancelled, payload);
   }
 

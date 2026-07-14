@@ -134,12 +134,32 @@ describe("SosService.listRecent (DS13-05 — read-only ops surface)", () => {
       ];
     });
     const rows = await s.listRecent();
-    expect(orderBy).toEqual({ createdAt: "desc" });
+    expect(orderBy).toEqual([{ acknowledgedAt: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }]);
     expect(rows.map((r) => r.id)).toEqual(["sos-2", "sos-1"]);
     expect(rows[0]!.createdAt).toBe("2026-07-13T10:00:00.000Z");
     // acknowledgedAt: ISO string when set, null while still pending.
     expect(rows[0]!.acknowledgedAt).toBe("2026-07-13T10:05:00.000Z");
     expect(rows[1]!.acknowledgedAt).toBeNull();
+  });
+
+  // DS13-05 follow-up: a still-open SOS must never scroll out of view just because newer, already-
+  // acknowledged events piled up after it — the console's whole reason to exist is that nothing raised
+  // vanishes. The service can't prove Postgres's NULLS FIRST ordering from a mocked findMany, so this
+  // asserts the query shape it hands to Prisma requests pending-first ordering (the DB does the sort).
+  it("orders pending (unacknowledged) events ahead of acknowledged ones via NULLS FIRST", async () => {
+    let orderBy: unknown;
+    const s = svcWith(async (args) => {
+      orderBy = args.orderBy;
+      // Simulate what Postgres would already have sorted: pending row first even though it's older.
+      return [
+        row("sos-old-pending", new Date("2026-07-10T10:00:00Z"), null),
+        row("sos-new-acked", new Date("2026-07-13T10:00:00Z"), new Date("2026-07-13T10:05:00Z")),
+      ];
+    });
+    const rows = await s.listRecent();
+    expect(orderBy).toEqual([{ acknowledgedAt: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }]);
+    expect(rows[0]!.id).toBe("sos-old-pending");
+    expect(rows[0]!.acknowledgedAt).toBeNull();
   });
 
   it("clamps the limit to [1, 200] (caps a large request, floors a non-positive one)", async () => {

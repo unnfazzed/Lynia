@@ -243,8 +243,9 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway);
     await svc.cancelOrder("admin-1", "o1", { reason: "duplicate order" });
     expect(gateway.emitOrderStatus).toHaveBeenCalledWith("o1", "cancelled");
-    // Post-pickup (collectedAt set) → collected=true drives the rider's hand-back path.
-    expect(gateway.emitJobCancelled).toHaveBeenCalledWith("o1", true);
+    // Post-pickup (collectedAt set) → collected=true drives the rider's hand-back path; cancelledBy
+    // "admin" so the rider's terminal doesn't blame the customer for an ops-initiated cancel.
+    expect(gateway.emitJobCancelled).toHaveBeenCalledWith("o1", true, "admin");
     // DS13-07: an assigned/collected order was never an open auction → no board-close signal.
     expect(gateway.emitBidExpired).not.toHaveBeenCalled();
   });

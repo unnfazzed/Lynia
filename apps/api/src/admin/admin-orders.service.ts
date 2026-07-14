@@ -135,7 +135,7 @@ export class AdminOrdersService {
     // stranded on it. `collected` drives their UI (post-pickup hand-back vs. straight back to the board).
     // A WS failure must never fail the already-committed cancel, so both are guarded no-ops without a gateway.
     this.gateway?.emitOrderStatus(orderId, "cancelled");
-    if (result.riderId) this.gateway?.emitJobCancelled(orderId, result.collected);
+    if (result.riderId) this.gateway?.emitJobCancelled(orderId, result.collected, "admin");
     // DS13-07: an ops cancel of a still-open auction closes the board card for browsing riders/bidders —
     // reuse the expiry path's bid:expired board event so they see the terminal state immediately instead
     // of running the countdown to a 409. Best-effort; guarded no-op without a gateway (tests).

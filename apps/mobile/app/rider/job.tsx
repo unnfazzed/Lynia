@@ -18,6 +18,7 @@ import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
+import { LeaveJobButton } from "../../src/ui/rider/LeaveJobButton";
 import { PickupChecklist } from "../../src/ui/rider/PickupChecklist";
 import { CancelledHandback, UndeliveredDone } from "../../src/ui/rider/terminals";
 import { UndeliveredSheet } from "../../src/ui/rider/UndeliveredSheet";
@@ -117,10 +118,10 @@ export default function RiderJob(): React.ReactElement {
   // (don't blocklist a single terminal state, or a cancelled job keeps broadcasting the rider's GPS).
   const { permissionDenied: locationDenied } = useRiderLocationStream(order && ACTIVE.includes(order.status) ? orderId : null);
 
-  // The customer can cancel anytime (C3). When `job:cancelled` arrives we FREEZE the last-known
-  // snapshot into a terminal, because a cancelled order immediately drops out of /orders/mine/active
-  // (so a refetch would blank the sender contact needed for a post-pickup hand-back).
-  const [cancelledJob, setCancelledJob] = useState<{ collected: boolean; snapshot: OrderSnapshot } | null>(null);
+  // The customer (or ops) can cancel anytime (C3). When `job:cancelled` arrives we FREEZE the
+  // last-known snapshot into a terminal, because a cancelled order immediately drops out of
+  // /orders/mine/active (so a refetch would blank the sender contact needed for a post-pickup hand-back).
+  const [cancelledJob, setCancelledJob] = useState<{ collected: boolean; snapshot: OrderSnapshot; cancelledBy: "customer" | "admin" } | null>(null);
   // C5: the customer's app has gone dark on this active job — surface a soft "may be offline" warning
   // so the rider knows the customer might not be seeing live position/status. Cleared on the next
   // status change (the flow progressing implies things are moving again).
@@ -130,7 +131,9 @@ export default function RiderJob(): React.ReactElement {
   const { connected: jobSocketConnected } = useRiderJobSocket(
     order && ACTIVE.includes(order.status) ? orderId : null,
     (e) => {
-      if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current });
+      // cancelledBy is optional on the wire (a not-yet-deployed API server during a rolling rollout
+      // won't send it yet) — fall back to the pre-existing "customer" copy in that gap.
+      if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current, cancelledBy: e.cancelledBy ?? "customer" });
     },
     () => setCustomerStale(true),
   );
@@ -322,18 +325,24 @@ export default function RiderJob(): React.ReactElement {
     advanceM.mutate("picked_up");
   };
 
-  // Terminal: the customer cancelled. Rendered from the frozen WS snapshot (keeps the sender contact
-  // after the order leaves the active feed), OR — R8 — from a fetched cancelled order when the rider
-  // reopens after missing the `job:cancelled` push while backgrounded. activeForRider only surfaces a
-  // cancelled order this rider had COLLECTED, so `collected` is true on that reopen path.
+  // Terminal: the customer (or ops) cancelled. Rendered from the frozen WS snapshot (keeps the sender
+  // contact after the order leaves the active feed), OR — R8 — from a fetched cancelled order when the
+  // rider reopens after missing the `job:cancelled` push while backgrounded. activeForRider only
+  // surfaces a cancelled order this rider had COLLECTED, so `collected` is true on that reopen path.
+  // The reopen path has no WS event to read the actor from — fall back to the order snapshot's own
+  // `cancelledBy` (a rider's own bail never reaches this branch: it's blocked post-pickup and takes the
+  // rebroadcast path instead, never landing here as "collected").
   const handback =
     cancelledJob ??
-    (order && order.status === "cancelled" && !ackedHandbacks.has(order.id) ? { collected: true, snapshot: order } : null);
+    (order && order.status === "cancelled" && !ackedHandbacks.has(order.id)
+      ? { collected: true, snapshot: order, cancelledBy: order.cancelledBy === "customer" ? ("customer" as const) : ("admin" as const) }
+      : null);
   if (handback) {
     const snap = handback.snapshot;
     return (
       <CancelledHandback
         collected={handback.collected}
+        cancelledBy={handback.cancelledBy}
         snapshot={snap}
         onBack={() => {
           // Record that this parcel was handed back so the 24h reopen window doesn't re-prompt the
@@ -605,7 +614,7 @@ export default function RiderJob(): React.ReactElement {
         {/* Order-level support while the run is live (the post-trip report/help now lives on the
             frozen delivered terminal above, since a delivered order no longer reaches this flow). */}
         {isActive ? <GetHelpControl orderId={order.id} /> : null}
-        <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
+        <LeaveJobButton isActive={isActive} onLeave={() => router.replace("/rider")} />
         <ErrorText message={error} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>

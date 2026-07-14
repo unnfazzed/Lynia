@@ -641,7 +641,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     }
     // Best-effort post-commit pushes. emitJobCancelled is guarded (the gateway swallows a null server),
     // and the re-broadcast announce is fire-and-forget like the create() path.
-    if (jobCancelledCollected !== null) this.gateway.emitJobCancelled(orderId, jobCancelledCollected);
+    if (jobCancelledCollected !== null) this.gateway.emitJobCancelled(orderId, jobCancelledCollected, "customer");
     if (rebroadcastId) {
       // F-01: tell the customer watching the (now cancelled) order to re-attach to the fresh auction,
       // then announce the new open order to the board. Both are best-effort post-commit pushes.
