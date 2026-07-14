@@ -42,16 +42,19 @@ Conventions:
 > installed per-developer under `~/.claude/skills/gstack` (and gitignored). Each
 > contributor installs gstack locally with the command above.
 
-## Scheduled "User experience improvements" routine — auto-merge
+## Scheduled Claude routines — universal auto-merge + ledger protocol
 
-The daily UX/usability review routine (cron trigger "User experience improvements",
-`docs/UX-USABILITY-REVIEW-*.md` output) should **auto-merge its own PRs** — per explicit user
-instruction (2026-07-11), don't leave them as draft-only waiting on manual review like earlier
-passes (#152, #164, #182) did.
+`docs/ROUTINES.md` is the canonical spec for the five recurring routines (bug hunting, UX
+improvements, deep bug sweep, documentation update, PR health watchdog). Per explicit user
+instruction (2026-07-14), **every scheduled routine ships a PR and auto-merges it**: once
+`pnpm typecheck && pnpm test` are green locally and the PR is pushed, mark it ready for review
+and enable auto-merge (or merge directly once CI is confirmed green with no unresolved review
+comments) — don't wait for a human click. This supersedes the earlier draft-only deep-sweep
+behavior and the bug-hunt "leave sensitive-area PRs open for review" carve-out; sensitive-area
+fixes (bid acceptance / order assignment / agreed-price / KYC gating) still get conservative
+implementations and a regression test each, but merge on green like everything else.
 
-For that routine specifically: once `pnpm typecheck && pnpm test` are green locally and the PR
-is pushed, mark it ready for review (not draft) and enable auto-merge (or merge directly once CI
-is confirmed green and there are no unresolved review comments) — don't wait for a human click.
-This does not apply to other routines/PRs in this repo unless they've separately established
-their own auto-merge policy (e.g. the bug-hunt routine's narrower "safe to squash-merge if it
-doesn't touch bid acceptance/order assignment/agreed-price/KYC gating" rule).
+Routines also must: fix every defect they find in the same run (no deferrals), and update
+`docs/KNOWN_BUGS.md` + their dated report **in the same PR** as the fixes. The three
+bug-finding routines dedupe through `docs/KNOWN_BUGS.md` (Phase-0 read, ledger write-back,
+per-lane scopes) — see `docs/ROUTINES.md`.
