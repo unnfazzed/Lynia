@@ -721,6 +721,58 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.rider).toMatchObject({ profileId: "rider-1", currentLat: -17.9, currentLng: 31.1 });
     expect(snap.rider!.updatedAt).toEqual(new Date(1_700_000_000_000));
   });
+
+  it("Fix 1: exposes hadOffers on an expired snapshot, recomputed from the durable offer rows", async () => {
+    const prisma = {
+      order: { findUnique: async () => row({ status: "expired", riderId: null, rider: null }) },
+      offer: { count: async () => 3 }, // riders bid; offer rows survive expiry
+    } as unknown as PrismaService;
+    const s = new OrdersService(prisma, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    const snap = await s.getSnapshot("ord-1", "cust-1");
+    expect(snap.hadOffers).toBe(true);
+  });
+
+  it("Fix 1: hadOffers is null on a non-expired snapshot (no wasted count)", async () => {
+    let counted = false;
+    const prisma = {
+      order: { findUnique: async () => row({ status: "assigned" }) },
+      offer: {
+        count: async () => {
+          counted = true;
+          return 0;
+        },
+      },
+    } as unknown as PrismaService;
+    const s = new OrdersService(prisma, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    const snap = await s.getSnapshot("ord-1", "cust-1");
+    expect(snap.hadOffers).toBeNull();
+    expect(counted).toBe(false);
+  });
+
+  it("Fix 6: remaps an ops-internal cancel reason to calm customer-safe copy (not 'Suspected fraud')", async () => {
+    const prisma = {
+      order: {
+        findUnique: async () => row({ status: "cancelled", cancelReason: "Suspected fraud", cancelledBy: "admin-9" }),
+        findFirst: async () => null, // no rebroadcast clone
+      },
+    } as unknown as PrismaService;
+    const s = new OrdersService(prisma, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    const snap = await s.getSnapshot("ord-1", "cust-1");
+    expect(snap.cancelReason).not.toContain("fraud");
+    expect(snap.cancelReason).toBe("Cancelled by the LyniaGo team — contact support if you have questions.");
+  });
+
+  it("Fix 6: passes a user-safe cancel reason through unchanged", async () => {
+    const prisma = {
+      order: {
+        findUnique: async () => row({ status: "cancelled", cancelReason: "Rider unreachable", cancelledBy: "admin-9" }),
+        findFirst: async () => null,
+      },
+    } as unknown as PrismaService;
+    const s = new OrdersService(prisma, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    const snap = await s.getSnapshot("ord-1", "cust-1");
+    expect(snap.cancelReason).toBe("Rider unreachable");
+  });
 });
 
 describe("OrdersService.listOpen", () => {

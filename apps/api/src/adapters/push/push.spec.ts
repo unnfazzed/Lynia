@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../../config/env";
 import { buildFcmMessage, FcmPush } from "./fcm.push";
 import { NoopPush } from "./noop.push";
@@ -75,5 +75,25 @@ describe("buildFcmMessage — payload contract", () => {
     });
     expect(buildFcmMessage({ token: "tok", title: "t", body: "b" }).data).toBeUndefined();
     expect(buildFcmMessage({ token: "tok", title: "t", body: "b", data: {} }).data).toBeUndefined();
+  });
+
+  it("sets no TTL by default (provider default lifetime) — Fix 5 is opt-in per kind", () => {
+    const m = buildFcmMessage({ token: "tok", title: "t", body: "b" });
+    expect(m.android).toBeUndefined();
+    expect(m.apns).toBeUndefined();
+  });
+
+  it("maps ttlSeconds to android.ttl (MILLISECONDS) and an absolute apns-expiration (epoch SECONDS)", () => {
+    const now = 1_770_000_000; // fixed epoch seconds
+    const spy = vi.spyOn(Date, "now").mockReturnValue(now * 1000);
+    try {
+      const m = buildFcmMessage({ token: "tok", title: "t", body: "b", ttlSeconds: 90 });
+      // firebase-admin's AndroidConfig.ttl is milliseconds.
+      expect(m.android).toEqual({ ttl: 90_000 });
+      // apns-expiration is an absolute unix epoch (seconds) at which to drop, i.e. now + ttl.
+      expect(m.apns?.headers["apns-expiration"]).toBe(String(now + 90));
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

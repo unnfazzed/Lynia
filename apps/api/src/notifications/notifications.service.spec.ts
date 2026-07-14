@@ -17,6 +17,10 @@ function makeDeps() {
       findUnique: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([]),
     },
+    // Fix 1: feedForUser recomputes "did any rider bid" over the durable offer rows for expired orders.
+    offer: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     // DS13-05: notifyOps resolves the admin audience (role=admin) server-side.
     profile: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -403,6 +407,64 @@ describe("NotificationsService — derived in-app feed (A·3)", () => {
       },
     ]);
     expect((await service.feedForUser("me", NOW))[0]).toMatchObject({ title: "No riders yet", icon: "clock" });
+  });
+
+  it("Fix 1: an expired order that DID attract bids gets the honest 'window closed' copy, not 'raise your price'", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o1",
+        riderId: null,
+        expiryNoSupply: false, // riders WERE around — not a no-supply expiry
+        events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+      },
+    ]);
+    // Durable offer rows recover "a rider bid" on this cold read even though the offers are now `expired`.
+    prisma.offer.findMany.mockResolvedValue([{ orderId: "o1" }]);
+
+    const row = (await service.feedForUser("me", NOW))[0];
+    expect(row).toMatchObject({ title: "The window closed" });
+    expect(row.message).toContain("no need to raise the price");
+    // It queried the durable offer rows for the expired order(s) in view.
+    expect(prisma.offer.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { orderId: { in: ["o1"] } }, distinct: ["orderId"] }),
+    );
+  });
+});
+
+describe("NotificationsService — notifyOrderExpired copy branches (Fix 1)", () => {
+  it("uses the honest 'riders offered' copy when the auction had bids (not 'raise your price')", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust" });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+
+    await service.notifyOrderExpired("o1", false, true);
+
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent.title).toBe("The window closed");
+    expect(sent.body).toContain("no need to raise the price");
+  });
+
+  it("keeps the default raise-the-price nudge when there were no bids and supply was unknown", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust" });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+
+    await service.notifyOrderExpired("o1", false, false);
+
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent.body).toContain("raising it");
+  });
+
+  it("no-supply takes precedence over hadOffers (only ever computed when there were no bids)", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust" });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+
+    await service.notifyOrderExpired("o1", true, false);
+
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent.title).toBe("No riders online nearby");
   });
 });
 
