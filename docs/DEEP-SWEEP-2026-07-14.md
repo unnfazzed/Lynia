@@ -279,3 +279,18 @@ KB-DELIVERY-CODE-ROTATION-SIGNAL).
 
 DS14-08 is called out as the highest-risk fix (it touches session/auth issuance) even though it does not
 touch bid acceptance / order assignment / agreed-price / KYC gating.
+
+## Addendum — deferred items executed same day
+
+The six lower-priority/client-only items originally logged OPEN (KB-BOARD-REVOKE, KB-HEARTBEAT-MARGIN,
+KB-OTP-COUNT-SYNC, KB-CONFIRMITEMS-RETRY, KB-PUSH-TOKEN-RACE, KB-DELIVERY-CODE-ROTATION-SIGNAL) were
+executed later the same day at the user's request, each with a regression test:
+`pnpm typecheck` + 796 API tests (up from 787) + 335 mobile tests (up from 321) all green. See
+`docs/KNOWN_BUGS.md`'s "Deferred items executed same day (DS14-10…DS14-15)" section for full detail —
+board-eligibility now actively revoked mid-session on suspend/ban/auto-hold, the offer-selection
+heartbeat TTL widened 30s→60s with a unified DB-clock heartbeat domain, the rider OTP-attempt count now
+reconciles both directions, `confirmItems` now has a durable retry-on-reconnect, the push-token
+registration race is closed, and the delivery-code rotation signal now has a robust server-stamped
+timestamp (`Order.deliveryCodeRotatedAt` / migration `0026_delivery_code_rotated_at`) consumed by the
+mobile client as the primary signal. **All 15 findings from this sweep (DS14-01…DS14-15) are now fixed;
+zero remain open.**

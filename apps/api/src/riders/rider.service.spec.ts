@@ -41,9 +41,11 @@ function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor
     p.$transaction = async (arg: unknown) =>
       typeof arg === "function" ? (arg as (tx: unknown) => unknown)(p) : arg;
   }
-  // adminSetKyc now takes a `SELECT … FOR UPDATE` row lock via $executeRaw before its read (fix 3);
-  // give the fake a no-op unless a test overrides it to observe the lock.
-  if (!p.$executeRaw) p.$executeRaw = async () => 0;
+  // adminSetKyc takes a `SELECT … FOR UPDATE` row lock via $executeRaw before its read (fix 3) — the
+  // return is ignored there. setOnline's go-online CAS (KB-HEARTBEAT-MARGIN) is ALSO a $executeRaw now
+  // (raw so the heartbeat stamp is DB now()), and it reads the affected-row count: 1 ⇒ the standing
+  // guard matched ⇒ online. Default to 1 (matched) unless a test overrides it to simulate a CAS miss.
+  if (!p.$executeRaw) p.$executeRaw = async () => 1;
   return new RiderService(p as unknown as PrismaService, env as Env, vendor, pii, trackingStub, notificationsStub);
 }
 
@@ -424,25 +426,26 @@ describe("RiderService.setOnline", () => {
     await expect(s.setOnline("p1", true)).rejects.toThrow(/not verified/i);
   });
 
-  it("lets a verified rider go online", async () => {
-    let data: Record<string, unknown> | undefined;
-    let where: Record<string, unknown> | undefined;
+  it("lets a verified rider go online, stamping the heartbeat with DB now() under the standing CAS", async () => {
+    let sql = "";
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
-        // Fix 5: the go-online write is a CAS updateMany guarded on standing (active + not on_hold).
-        updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
-          where = args.where;
-          data = args.data;
-          return { count: 1 };
-        },
+      },
+      // KB-HEARTBEAT-MARGIN: the go-online write is now a raw CAS so the heartbeat is DB now() (one
+      // clock domain with recordFix/touchRiderHeartbeat), still guarded on standing (active + not on_hold).
+      $executeRaw: async (strings: TemplateStringsArray) => {
+        sql = strings.join("?");
+        return 1; // affected-row count: the standing guard matched
       },
     };
     const s = svc(prisma, {});
     expect(await s.setOnline("p1", true)).toEqual({ online: true });
-    expect(data).toMatchObject({ isOnline: true });
-    expect(data!.lastHeartbeatAt).toBeInstanceOf(Date);
-    expect(where).toMatchObject({ profileId: "p1", accountStatus: "active", onHold: false });
+    expect(sql).toContain("is_online = true");
+    expect(sql).toContain("last_heartbeat_at = now()");
+    // The CAS re-asserts the standing the gate read — the exact defence against a suspend landing mid-write.
+    expect(sql).toContain("account_status = 'active'");
+    expect(sql).toContain("on_hold = false");
   });
 
   it("refuses to flip online when an admin suspend lands between the gate and the write (CAS = 0 rows)", async () => {
@@ -456,8 +459,9 @@ describe("RiderService.setOnline", () => {
           if (firstRead) { firstRead = false; return { kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null }; }
           return { kycStatus: "verified", accountStatus: "suspended", onHold: false, cooldownUntil: null };
         },
-        updateMany: async () => ({ count: 0 }),
       },
+      // The guarded raw CAS matches 0 rows because a concurrent suspend already moved accountStatus.
+      $executeRaw: async () => 0,
     };
     const s = svc(prisma, {});
     try {
@@ -473,8 +477,9 @@ describe("RiderService.setOnline", () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
-        updateMany: async () => ({ count: 1 }),
       },
+      // KB-HEARTBEAT-MARGIN: go-online is a raw CAS now (DB-now() heartbeat); 1 affected row ⇒ online.
+      $executeRaw: async () => 1,
     };
     let drainedAt: { lat: number; lng: number; radius: number } | null = null;
     let pushed: string[] | null = null;
@@ -507,8 +512,9 @@ describe("RiderService.setOnline", () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
-        updateMany: async () => ({ count: 1 }),
       },
+      // KB-HEARTBEAT-MARGIN: go-online is a raw CAS now (DB-now() heartbeat); 1 affected row ⇒ online.
+      $executeRaw: async () => 1,
     };
     let cleared: string[] | null = null;
     const tracking = {
@@ -532,8 +538,9 @@ describe("RiderService.setOnline", () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
-        updateMany: async () => ({ count: 1 }),
       },
+      // KB-HEARTBEAT-MARGIN: go-online is a raw CAS now (DB-now() heartbeat); 1 affected row ⇒ online.
+      $executeRaw: async () => 1,
     };
     let drained = false;
     const tracking = {

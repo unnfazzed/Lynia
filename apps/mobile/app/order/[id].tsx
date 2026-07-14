@@ -11,7 +11,7 @@ import { auctionHeaderText, formatClock, SORT_MODES, type SortMode, spokenRemain
 import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, selectOrderShell } from "../../src/logic/order-tracking";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
-import { clearDeliveryCode, loadDeliveryCode, loadDeliveryCodeAttempts, saveDeliveryCode, saveDeliveryCodeAttempts } from "../../src/auth/session";
+import { clearDeliveryCode, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt } from "../../src/auth/session";
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
@@ -63,6 +63,11 @@ export default function OrderScreen(): React.ReactElement {
   // rotation (re-issue) resets the server counter to 0, so a later snapshot whose count has dropped below
   // this reveals the local code is stale — see reconcileDeliveryCode. null until loaded / no code held.
   const [codeAttemptsSeen, setCodeAttemptsSeen] = useState<number | null>(null);
+  // KB-DELIVERY-CODE-ROTATION-SIGNAL: the server `codeRotatedAt` timestamp last CONFIRMED to match THIS
+  // local code. The PRIMARY rotation signal — a snapshot whose timestamp differs proves the code was
+  // re-issued (see reconcileDeliveryCode), reliable even across an app-kill mid re-issue. null until
+  // loaded / no baseline yet (re-baselined off the first snapshot after a fresh issue).
+  const [codeRotatedAtSeen, setCodeRotatedAtSeen] = useState<string | null>(null);
   // The chosen rider's public identity (name/photo/rating), cached at selection so the tracking card can
   // show a face — the assigned-order snapshot only carries profileId + GPS, not the profile.
   const [riderIdentity, setRiderIdentity] = useState<RiderIdentity | null>(null);
@@ -92,10 +97,11 @@ export default function OrderScreen(): React.ReactElement {
   // with its attempt high-water mark so a rotation that happened while the app was killed can be detected.
   useEffect(() => {
     let alive = true;
-    void Promise.all([loadDeliveryCode(orderId), loadDeliveryCodeAttempts(orderId)]).then(([c, hw]) => {
+    void Promise.all([loadDeliveryCode(orderId), loadDeliveryCodeAttempts(orderId), loadDeliveryCodeRotatedAt(orderId)]).then(([c, hw, rotAt]) => {
       if (!alive) return;
       if (c) setDeliveryCode(c);
       setCodeAttemptsSeen(hw);
+      setCodeRotatedAtSeen(rotAt);
     });
     return () => {
       alive = false;
@@ -193,16 +199,24 @@ export default function OrderScreen(): React.ReactElement {
       hasLocalCode: deliveryCode != null,
       storedAttemptsHighWater: codeAttemptsSeen,
       snapshotAttempts: orderQ.data?.deliveryOtpAttempts ?? null,
+      storedCodeRotatedAt: codeRotatedAtSeen,
+      snapshotCodeRotatedAt: orderQ.data?.codeRotatedAt ?? null,
     });
     if (decision.action === "invalidate") {
       setDeliveryCode(null);
       setCodeAttemptsSeen(null);
+      setCodeRotatedAtSeen(null);
       void clearDeliveryCode(orderId);
     } else if (decision.action === "advance-highwater") {
       setCodeAttemptsSeen(decision.attempts);
       void saveDeliveryCodeAttempts(orderId, decision.attempts);
+    } else if (decision.action === "sync-rotation-ts") {
+      // First confirmed sighting of the rotation stamp for the code we hold — adopt it as the baseline so a
+      // LATER change (a rotation, incl. one that lands while the app is killed) becomes detectable.
+      setCodeRotatedAtSeen(decision.codeRotatedAt);
+      void saveDeliveryCodeRotatedAt(orderId, decision.codeRotatedAt);
     }
-  }, [orderQ.data?.deliveryOtpAttempts, deliveryCode, codeAttemptsSeen, orderId]);
+  }, [orderQ.data?.deliveryOtpAttempts, orderQ.data?.codeRotatedAt, deliveryCode, codeAttemptsSeen, codeRotatedAtSeen, orderId]);
 
   // C2: keep the socket subscribed through `cancelled` for a bounded grace window so a rider-bail
   // `order:rebroadcast` can still arrive and navigate the customer to the fresh auction (below).
@@ -417,6 +431,7 @@ export default function OrderScreen(): React.ReactElement {
     onSuccess: (res) => {
       setDeliveryCode(res.deliveryCode);
       setCodeAttemptsSeen(0); // a fresh code ⇒ server attempts reset to 0; rebaseline the high-water
+      setCodeRotatedAtSeen(null); // and clear the rotation-ts baseline — re-adopted off the next snapshot
       void saveDeliveryCode(orderId, res.deliveryCode);
     },
     onError: (e, _v, ctx) => {
@@ -446,6 +461,7 @@ export default function OrderScreen(): React.ReactElement {
     onSuccess: (res) => {
       setDeliveryCode(res.deliveryCode);
       setCodeAttemptsSeen(0); // a fresh code ⇒ server attempts reset to 0; rebaseline the high-water
+      setCodeRotatedAtSeen(null); // and clear the rotation-ts baseline — re-adopted off the next snapshot
       void saveDeliveryCode(orderId, res.deliveryCode);
     },
   });

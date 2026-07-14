@@ -12,8 +12,18 @@ import { onlineRefusalReason } from "../riders/rider.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 
-/** Rider must have a heartbeat newer than this to be selectable (ET3 liveness). */
-const HEARTBEAT_TTL_MS = 30_000;
+/**
+ * Rider must have a heartbeat newer than this to be selectable at the moment a customer taps "select"
+ * (ET3 liveness). Widened 30s → 60s (KB-HEARTBEAT-MARGIN): the mobile client's heartbeat cadence is 20s
+ * with a 15s request timeout, so the old 30s TTL left only a ~10s margin — a single delayed/dropped
+ * heartbeat on a flaky connection could make a live, foregrounded rider look stale right at selection
+ * time, throwing a spurious "rider just became unavailable" that steers the customer to a worse offer.
+ * 60s clears a fully-missed heartbeat cycle (20s + the next 20s + the 15s timeout ≈ 55s) with margin,
+ * while still catching a genuinely-gone rider within a minute. Distinct from BR-01's separate 120s
+ * ghost-supply-count cutoff (tracking.service) — that counts live supply for the broadcast; this gates
+ * one selection moment.
+ */
+const HEARTBEAT_TTL_MS = 60_000;
 
 export interface SelectResult {
   orderId: string;
@@ -119,6 +129,13 @@ export class MatchingService {
             agreedFare: offer.offeredFare,
             otpHash: this.tokens.hash(deliveryCode),
             deliveryOtpAttempts: 0,
+            // KB-DELIVERY-CODE-ROTATION-SIGNAL: stamp the code-issued time at assignment (the code's
+            // FIRST issue) so `codeRotatedAt` is never confusingly null once an order has a code, and the
+            // rider app has a rotation baseline. new Date() (not DB now()) here deliberately: this is the
+            // sensitive bid-acceptance CAS, kept as the typed Prisma updateMany rather than rewritten to
+            // raw SQL — and rotation always happens minutes after assignment, so the app-vs-DB clock skew
+            // between this stamp and rotateDeliveryCode's now() can't reorder them.
+            deliveryCodeRotatedAt: new Date(),
           },
         });
         if (claimed.count === 0) throw new ConflictException("Order was just taken, pick another");

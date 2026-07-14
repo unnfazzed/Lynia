@@ -91,28 +91,53 @@ export function expiredTerminalKind(input: {
  *
  * The server never re-sends the plaintext code, so the client keeps the OLD value in secure storage; with a
  * non-null local code the re-issue UI never re-prompts and the customer confidently relays a DEAD code,
- * burning the rider's attempts. There's no rotation timestamp in the snapshot, so the only available signal
- * is `deliveryOtpAttempts`, which is monotonic while a given code is current (0 at issue, +1 per failed rider
- * attempt) and resets to 0 ONLY on a rotation. So: track the highest attempts value seen while holding this
- * code; if a fresh snapshot's attempts count has DROPPED below that high-water mark, the code was rotated and
- * the local copy is stale → invalidate it and fall back to the "code isn't showing — re-issue" path.
+ * burning the rider's attempts.
  *
- * NOTE: a rotation timestamp on the snapshot (e.g. `codeRotatedAt`) would make this fully robust regardless of
- * whether the client ever observed the elevated attempt count before the kill — logged as a follow-up.
+ * PRIMARY signal (KB-DELIVERY-CODE-ROTATION-SIGNAL): the snapshot's `codeRotatedAt` — an ISO timestamp the
+ * server stamps on every code issue/rotate. It's always reliable: once we've confirmed a baseline value for
+ * the code we hold, any change to a different value proves the code was rotated out from under us, EVEN if
+ * the app was killed before the rotate response landed (the earlier baseline was recorded while holding the
+ * old code, before the customer initiated the — then lost — re-issue). `null`/`undefined` = no signal (older
+ * API, or a cached pre-field snapshot) → fall through to the heuristic below.
  *
- *   - "invalidate":       a rotation was detected — clear the stored code + high-water.
+ * FALLBACK / defense-in-depth: `deliveryOtpAttempts`, which is monotonic while a given code is current (0 at
+ * issue, +1 per failed rider attempt) and resets to 0 ONLY on a rotation. Track the highest attempts value
+ * seen while holding this code; a fresh snapshot whose count has DROPPED below that high-water mark reveals a
+ * rotation too — but only if the client observed the elevated count before any kill, which is why the
+ * timestamp signal above is preferred whenever it's present.
+ *
+ *   - "invalidate":        a rotation was detected — clear the stored code + companions.
+ *   - "sync-rotation-ts":  first confirmed sighting of the rotation stamp for the held code — adopt it as the
+ *                          baseline so a LATER change is detectable (never invalidates on this).
  *   - "advance-highwater": attempts climbed (a rider is failing against OUR code) — persist the new high-water.
- *   - "none":             nothing to do (no local code, no server signal yet, or attempts unchanged).
+ *   - "none":              nothing to do (no local code, no server signal yet, or steady state).
  */
 export function reconcileDeliveryCode(input: {
   hasLocalCode: boolean;
   storedAttemptsHighWater: number | null | undefined;
   snapshotAttempts: number | null | undefined;
-}): { action: "invalidate" } | { action: "advance-highwater"; attempts: number } | { action: "none" } {
-  const { hasLocalCode, storedAttemptsHighWater, snapshotAttempts } = input;
-  // No code to protect, or the server hasn't told us the attempt count / we never recorded a baseline
-  // (e.g. a code stored before this fix shipped) — never invalidate on missing data, stay backward-safe.
-  if (!hasLocalCode || snapshotAttempts == null || storedAttemptsHighWater == null) return { action: "none" };
+  storedCodeRotatedAt?: string | null | undefined;
+  snapshotCodeRotatedAt?: string | null | undefined;
+}):
+  | { action: "invalidate" }
+  | { action: "sync-rotation-ts"; codeRotatedAt: string }
+  | { action: "advance-highwater"; attempts: number }
+  | { action: "none" } {
+  const { hasLocalCode, storedAttemptsHighWater, snapshotAttempts, storedCodeRotatedAt, snapshotCodeRotatedAt } = input;
+  // No code to protect → never invalidate on missing data, stay backward-safe.
+  if (!hasLocalCode) return { action: "none" };
+
+  // PRIMARY: the explicit rotation timestamp. Present-and-different from our confirmed baseline ⇒ rotated.
+  // Present-with-no-baseline ⇒ first sighting for the held code, adopt it (on a fresh issue the stored
+  // baseline is deliberately cleared so we re-baseline here instead of false-positiving on our own new code).
+  if (snapshotCodeRotatedAt != null) {
+    if (storedCodeRotatedAt == null) return { action: "sync-rotation-ts", codeRotatedAt: snapshotCodeRotatedAt };
+    if (snapshotCodeRotatedAt !== storedCodeRotatedAt) return { action: "invalidate" };
+    // Equal → steady state on the timestamp; still let the attempts high-water advance below.
+  }
+
+  // FALLBACK: the attempts high-water heuristic. Skipped (⇒ "none") when either side is missing.
+  if (snapshotAttempts == null || storedAttemptsHighWater == null) return { action: "none" };
   if (snapshotAttempts < storedAttemptsHighWater) return { action: "invalidate" };
   if (snapshotAttempts > storedAttemptsHighWater) return { action: "advance-highwater", attempts: snapshotAttempts };
   return { action: "none" };

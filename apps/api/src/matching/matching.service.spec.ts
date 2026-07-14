@@ -121,6 +121,66 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "assigned" satisfies MatchSelectOutcome);
   });
 
+  it("KB-HEARTBEAT-MARGIN: a rider heartbeat 45s old is still selectable (widened 30s→60s TTL)", async () => {
+    // 45s exceeds the OLD 30s TTL (would have thrown a spurious "rider just became unavailable") but is
+    // comfortably inside the widened 60s window — a single delayed heartbeat on the 20s cadence no longer
+    // steers the customer off a live rider.
+    const { service, metrics } = svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "2.50" },
+          order: { status: "open_for_offers", customerId: "cust" },
+          rider: {
+            isOnline: true,
+            lastHeartbeatAt: new Date(Date.now() - 45_000),
+            kycStatus: "verified",
+            accountStatus: "active",
+            onHold: false,
+            cooldownUntil: null,
+          },
+        }),
+        update: async () => ({}),
+        updateMany: async () => ({ count: 0 }),
+      },
+      order: { updateMany: async () => ({ count: 1 }) },
+      orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => null },
+    });
+    const res = await service.selectOffer(orderId, offerId, "cust");
+    expect(res).toMatchObject({ status: "assigned", riderId: "r1" });
+    expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "assigned" satisfies MatchSelectOutcome);
+  });
+
+  it("KB-HEARTBEAT-MARGIN: a genuinely-gone rider (heartbeat 90s old) is still rejected as unavailable", async () => {
+    // The widened TTL must still catch a real dropout — 90s is past even the 60s window.
+    const { service } = svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "2.50" },
+          order: { status: "open_for_offers", customerId: "cust" },
+          rider: {
+            isOnline: true,
+            lastHeartbeatAt: new Date(Date.now() - 90_000),
+            kycStatus: "verified",
+            accountStatus: "active",
+            onHold: false,
+            cooldownUntil: null,
+          },
+        }),
+        update: async () => ({}),
+        updateMany: async () => ({ count: 0 }),
+      },
+      order: { updateMany: async () => ({ count: 1 }) },
+      orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => null },
+    });
+    await expect(service.selectOffer(orderId, offerId, "cust")).rejects.toThrow(/just became unavailable/i);
+  });
+
   it("fires order:taken to the board on a successful assign, scoped to the pickup cell (2·b1 / 3·b1)", async () => {
     const emitOrderTaken = vi.fn();
     const gateway = { emitBidExpired: () => {}, emitOrderTaken } as unknown as TrackingGateway;

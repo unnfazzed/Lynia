@@ -272,11 +272,22 @@ export class RiderService {
       // plane. Guarding on accountStatus:active + onHold:false makes the two serialize: 0 rows ⇒ the
       // standing changed under us ⇒ refuse, re-deriving the precise reason so the app shows the right
       // blocked state instead of silently going online.
-      const claimed = await this.prisma.rider.updateMany({
-        where: { profileId, accountStatus: "active", onHold: false },
-        data: { isOnline: true, lastHeartbeatAt: new Date() },
-      });
-      if (claimed.count === 0) {
+      // KB-HEARTBEAT-MARGIN: stamp the go-online heartbeat with DB now() (not JS new Date()) so every
+      // heartbeat writer shares ONE clock domain — recordFix / touchRiderHeartbeat already write now(),
+      // and the offer-selection liveness gate (matching.service) judges freshness against these stamps.
+      // Mixing app-server Date.now() here with DB now() elsewhere ate into that gate's margin under
+      // clock skew. Raw CAS keeps the standing guard (active + not on_hold) exactly as the prior
+      // updateMany: $executeRaw returns the affected-row count, so 0 ⇒ an admin suspend/ban or an auto
+      // reliability hold committed between the gate read and this write ⇒ refuse and re-derive the reason.
+      const claimed = await this.prisma.$executeRaw`
+        UPDATE riders
+        SET is_online = true,
+            last_heartbeat_at = now(),
+            updated_at = now()
+        WHERE profile_id = ${profileId}::uuid
+          AND account_status = 'active'
+          AND on_hold = false`;
+      if (claimed === 0) {
         const now = await this.prisma.rider.findUnique({
           where: { profileId },
           select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },

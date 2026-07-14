@@ -31,3 +31,55 @@ export const UNDELIVERED_OPTIONS: { reason: UndeliveredReason; label: string; ic
   { reason: UndeliveredReason.BREAKDOWN, label: "Couldn't complete (breakdown)", icon: "bike" },
 ];
 export const UNDELIVERED_LABEL = Object.fromEntries(UNDELIVERED_OPTIONS.map((o) => [o.reason, o.label])) as Record<UndeliveredReason, string>;
+
+/**
+ * KB-OTP-COUNT-SYNC: reconcile the locally-shown delivery-OTP attempt count against the server's
+ * authoritative `deliveryOtpAttempts`. Returns the count to apply, or null for "leave it as-is".
+ *
+ * Previously the caller only ever pulled the local count DOWN (to catch a customer re-issue that zeroes the
+ * server counter). But if a `confirmDelivery` response is lost AFTER the server committed the attempt
+ * increment (the client never saw the 401), the local count stayed too low and the rider was shown more
+ * attempts remaining than they really had — until an eventual 403 snapped it to the max. So now we converge
+ * to the server's value in BOTH directions.
+ *
+ * Flash-safety is the CALLER's responsibility and rests on WHEN this runs: it must be invoked only on a
+ * freshly-FETCHED server value (i.e. keyed on `deliveryOtpAttempts` changing), never on the local counter
+ * changing. The optimistic post-401 increment therefore can't retrigger it, so a stale-lower cached server
+ * value can never stomp the optimistic bump before its refetch lands — by the time a new server value is
+ * fetched it already reflects that committed attempt, and local == server ⇒ no-op.
+ */
+export function reconcileOtpAttempts(input: {
+  local: number;
+  serverAttempts: number | null | undefined;
+}): number | null {
+  const { local, serverAttempts } = input;
+  if (serverAttempts == null) return null; // no server signal yet
+  if (serverAttempts === local) return null; // already in sync
+  return serverAttempts; // converge — up as well as down
+}
+
+/**
+ * KB-CONFIRMITEMS-RETRY: decide what to do with a durable "confirmItems still pending for order X" marker
+ * against the current active-job snapshot. The rider's pickup-item confirmation is best-effort and fired as
+ * they advance to `picked_up`; a lost response / app-kill right then can leave the order with no
+ * confirmed-items record. The server accepts confirmItems ONLY at `en_route_pickup`, so a retry can land
+ * only while the order is still there and has no record yet.
+ *
+ *   - "retry": the marker matches the live order, it's still at `en_route_pickup`, and no record exists yet.
+ *   - "clear": the record is now present, OR a DIFFERENT order is active (the pending one is gone) — the
+ *              marker is stale and should be dropped so it can't linger.
+ *   - "wait":  no marker, or no snapshot yet, or the SAME order has moved past the pickup window (a retry
+ *              would 409 forever) — keep the marker but do nothing (don't discard on optimistic/lost state).
+ */
+export function reconcileConfirmItemsPending(input: {
+  pendingOrderId: string | null | undefined;
+  order: { id: string; status: string; itemsCollected?: number[] | null } | null;
+}): "retry" | "clear" | "wait" {
+  const { pendingOrderId, order } = input;
+  if (!pendingOrderId) return "wait"; // nothing pending
+  if (!order) return "wait"; // no snapshot yet (loading/offline) — don't discard the marker
+  if (order.id !== pendingOrderId) return "clear"; // a different order is active now — the pending one is gone
+  if (order.itemsCollected != null) return "clear"; // the server already has the record — done
+  if (order.status === "en_route_pickup") return "retry"; // still at pickup — the retry can land
+  return "wait"; // same order, past the pickup window with no record — can't retry, but keep the marker
+}

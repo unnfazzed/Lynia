@@ -18,6 +18,7 @@ function build(methods: Record<string, unknown>) {
   const rebroadcasts: Array<[string, string]> = [];
   const bidExpired: Array<[string, number | undefined, number | undefined]> = [];
   const evicted: string[] = [];
+  const kickedFromBoard: string[] = [];
   const gateway = {
     emitOrderStatus: (id: string, s: string) => emits.push([id, s]),
     emitJobCancelled: (id: string, collected: boolean) => jobCancelled.push([id, collected]),
@@ -26,6 +27,8 @@ function build(methods: Record<string, unknown>) {
     emitBidExpired: (id: string, lat?: number, lng?: number) => bidExpired.push([id, lat, lng]),
     // BR-01: markUndelivered evicts an auto-held rider from the geo index (best-effort passthrough).
     evictRiderFromGeo: async (id: string) => { evicted.push(id); },
+    // KB-BOARD-REVOKE: markUndelivered also kicks a newly auto-held rider off the board rooms.
+    kickRiderFromBoard: async (id: string) => { kickedFromBoard.push(id); },
   };
   // F-01 re-broadcast announce is best-effort push — spy so tests can assert it fired without a socket.
   const orders = { announceOpenOrder: vi.fn(async () => {}) };
@@ -42,7 +45,7 @@ function build(methods: Record<string, unknown>) {
     noopNotifications,
     orders as unknown as OrdersService,
   );
-  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, orders, prisma };
+  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, kickedFromBoard, orders, prisma };
 }
 
 describe("OrderLifecycleService.advance", () => {
@@ -415,18 +418,26 @@ describe("OrderLifecycleService.reconcileStaleDeliveries", () => {
 });
 
 describe("OrderLifecycleService.rotateDeliveryCode", () => {
-  it("issues a fresh 6-digit code and resets the attempt counter", async () => {
-    let data: Record<string, unknown> | undefined;
+  it("issues a fresh 6-digit code, resets attempts, and stamps the rotation time (DB now())", async () => {
+    let sql = "";
+    let values: unknown[] = [];
     const { svc } = build({
-      order: {
-        findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }),
-        update: async (args: { data: Record<string, unknown> }) => { data = args.data; return {}; },
+      order: { findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }) },
+      // KB-DELIVERY-CODE-ROTATION-SIGNAL: rotate is a raw write now so delivery_code_rotated_at is DB
+      // now() (one clock domain), rotating the hash + zeroing attempts + stamping the signal atomically.
+      $executeRaw: async (strings: TemplateStringsArray, ...vals: unknown[]) => {
+        sql = strings.join("?");
+        values = vals;
+        return 1;
       },
     });
     const res = await svc.rotateDeliveryCode("o1", "c1");
     expect(res.deliveryCode).toMatch(/^\d{6}$/);
-    expect(data).toMatchObject({ deliveryOtpAttempts: 0 });
-    expect(data!.otpHash).toBe(tokens.hash(res.deliveryCode));
+    expect(sql).toContain("delivery_otp_attempts = 0");
+    // The new robust rotation signal is stamped with the DB clock on every re-issue.
+    expect(sql).toContain("delivery_code_rotated_at = now()");
+    // The HASHED (never plaintext) code is parameterised into the write.
+    expect(values).toContain(tokens.hash(res.deliveryCode));
   });
 
   it("403s for a non-owner", async () => {
@@ -699,7 +710,7 @@ describe("OrderLifecycleService.markUndelivered", () => {
     let riderData: Record<string, unknown> | undefined;
     const counts = [3, 0]; // velocity trip
     let call = 0;
-    const { svc, evicted } = build({
+    const { svc, evicted, kickedFromBoard } = build({
       order: {
         findUnique: async () => row({ status: "en_route_dropoff" }),
         updateMany: async () => ({ count: 1 }),
@@ -717,11 +728,13 @@ describe("OrderLifecycleService.markUndelivered", () => {
     // ...and evicted from the live geo index (best-effort, post-commit).
     await new Promise((r) => setTimeout(r, 0));
     expect(evicted).toEqual(["r1"]);
+    // KB-BOARD-REVOKE: the now-ineligible rider is also kicked off the board rooms so board pushes stop.
+    expect(kickedFromBoard).toEqual(["r1"]);
   });
 
   it("BR-01: a penalty-only ding that does NOT newly hold leaves isOnline untouched and evicts nobody", async () => {
     let riderData: Record<string, unknown> | undefined;
-    const { svc, evicted } = build({
+    const { svc, evicted, kickedFromBoard } = build({
       order: {
         findUnique: async () => row({ status: "en_route_dropoff" }),
         updateMany: async () => ({ count: 1 }),
@@ -738,6 +751,8 @@ describe("OrderLifecycleService.markUndelivered", () => {
     expect(riderData).not.toHaveProperty("isOnline");
     await new Promise((r) => setTimeout(r, 0));
     expect(evicted).toEqual([]);
+    // KB-BOARD-REVOKE: no new hold ⇒ still board-eligible ⇒ no board kick.
+    expect(kickedFromBoard).toEqual([]);
   });
 });
 

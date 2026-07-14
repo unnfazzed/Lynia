@@ -450,6 +450,13 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       void this.gateway.evictRiderFromGeo(newlyHeldRiderId).catch((err) => {
         this.logger.warn(`geo eviction after auto-hold failed for ${newlyHeldRiderId}: ${(err as Error).message}`);
       });
+      // KB-BOARD-REVOKE: an auto-held rider is no longer board-eligible (offers.service gates on
+      // standing), so also kick their live socket(s) off the board rooms — otherwise they keep getting
+      // board:new-order / bid:expired pushes for jobs they can no longer bid on until they disconnect.
+      // Best-effort, mirrors the geo eviction; never affects the committed undelivered transition.
+      void this.gateway.kickRiderFromBoard(newlyHeldRiderId).catch((err) => {
+        this.logger.warn(`board kick after auto-hold failed for ${newlyHeldRiderId}: ${(err as Error).message}`);
+      });
     }
     this.safeEmit(orderId, "undelivered");
     return { orderId, status: "undelivered" };
@@ -813,10 +820,18 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     if (!ACTIVE_FOR_CODE.has(order.status)) throw new ConflictException("No active delivery for this order");
 
     const deliveryCode = this.tokens.randomOtp();
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: { otpHash: this.tokens.hash(deliveryCode), deliveryOtpAttempts: 0 },
-    });
+    // KB-DELIVERY-CODE-ROTATION-SIGNAL: rotate the hash, zero the attempt counter, AND stamp
+    // deliveryCodeRotatedAt so the rider app can robustly detect this re-issue (raw SQL so the timestamp
+    // is DB now() — the same clock domain fix 2 unifies the heartbeat writers onto; @updatedAt isn't
+    // bumped by raw SQL, so set updated_at explicitly). No CAS needed: the ACTIVE_FOR_CODE status gate
+    // above already scoped this to the order's own live delivery.
+    await this.prisma.$executeRaw`
+      UPDATE orders
+      SET otp_hash = ${this.tokens.hash(deliveryCode)},
+          delivery_otp_attempts = 0,
+          delivery_code_rotated_at = now(),
+          updated_at = now()
+      WHERE id = ${orderId}::uuid`;
     return { deliveryCode };
   }
 

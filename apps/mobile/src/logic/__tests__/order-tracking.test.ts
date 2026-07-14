@@ -171,3 +171,81 @@ describe("reconcileDeliveryCode", () => {
     expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 3, snapshotAttempts: 1 })).toEqual({ action: "invalidate" });
   });
 });
+
+// Regression guard (KB-DELIVERY-CODE-ROTATION-SIGNAL): the server's explicit `codeRotatedAt` timestamp is the
+// PRIMARY rotation signal — reliable even when the client never observed the elevated attempt count before an
+// app-kill (the attempts high-water heuristic's blind spot). It's additive: absent (older API / cached
+// snapshot) it must fall through to exactly the attempts behaviour above.
+describe("reconcileDeliveryCode — codeRotatedAt signal", () => {
+  it("adopts the timestamp as a baseline on its first confirmed sighting for the held code (no invalidate)", () => {
+    expect(
+      reconcileDeliveryCode({
+        hasLocalCode: true,
+        storedAttemptsHighWater: 0,
+        snapshotAttempts: 0,
+        storedCodeRotatedAt: null,
+        snapshotCodeRotatedAt: "2026-07-14T10:00:00.000Z",
+      }),
+    ).toEqual({ action: "sync-rotation-ts", codeRotatedAt: "2026-07-14T10:00:00.000Z" });
+  });
+
+  it("invalidates when the timestamp moves past the confirmed baseline — the always-reliable rotation tell", () => {
+    // The exact hole the attempts heuristic can't see: customer taps re-issue, server rotates + stamps a new
+    // timestamp, app killed before the response lands. Cold start still holds the OLD code and its baseline
+    // timestamp; the snapshot's newer codeRotatedAt proves it's dead — even if attempts never climbed first.
+    expect(
+      reconcileDeliveryCode({
+        hasLocalCode: true,
+        storedAttemptsHighWater: 0,
+        snapshotAttempts: 0,
+        storedCodeRotatedAt: "2026-07-14T10:00:00.000Z",
+        snapshotCodeRotatedAt: "2026-07-14T10:05:00.000Z",
+      }),
+    ).toEqual({ action: "invalidate" });
+  });
+
+  it("stays quiet when the timestamp is unchanged (steady state), letting attempts advance if they climbed", () => {
+    expect(
+      reconcileDeliveryCode({
+        hasLocalCode: true,
+        storedAttemptsHighWater: 0,
+        snapshotAttempts: 0,
+        storedCodeRotatedAt: "2026-07-14T10:00:00.000Z",
+        snapshotCodeRotatedAt: "2026-07-14T10:00:00.000Z",
+      }),
+    ).toEqual({ action: "none" });
+    // Same timestamp, but a rider is burning attempts against OUR current code — the high-water still moves.
+    expect(
+      reconcileDeliveryCode({
+        hasLocalCode: true,
+        storedAttemptsHighWater: 1,
+        snapshotAttempts: 3,
+        storedCodeRotatedAt: "2026-07-14T10:00:00.000Z",
+        snapshotCodeRotatedAt: "2026-07-14T10:00:00.000Z",
+      }),
+    ).toEqual({ action: "advance-highwater", attempts: 3 });
+  });
+
+  it("falls back to the attempts heuristic when the snapshot carries no timestamp (older API)", () => {
+    // codeRotatedAt absent/null ⇒ behave exactly as before: an attempts drop is still caught…
+    expect(
+      reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 5, snapshotAttempts: 0, snapshotCodeRotatedAt: null }),
+    ).toEqual({ action: "invalidate" });
+    // …and a steady state is still a no-op.
+    expect(
+      reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 2, snapshotAttempts: 2, snapshotCodeRotatedAt: undefined }),
+    ).toEqual({ action: "none" });
+  });
+
+  it("never invalidates with no local code, regardless of the timestamp", () => {
+    expect(
+      reconcileDeliveryCode({
+        hasLocalCode: false,
+        storedAttemptsHighWater: 0,
+        snapshotAttempts: 0,
+        storedCodeRotatedAt: "2026-07-14T10:00:00.000Z",
+        snapshotCodeRotatedAt: "2026-07-14T11:00:00.000Z",
+      }),
+    ).toEqual({ action: "none" });
+  });
+});

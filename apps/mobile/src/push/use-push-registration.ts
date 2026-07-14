@@ -44,6 +44,11 @@ export function usePushRegistration(session: Session | null): void {
   useEffect(() => {
     if (!profileId) return;
     let registered: string | null = null;
+    // KB-PUSH-TOKEN-RACE: the most recently observed desired token from an OS/FCM rotation, set by the
+    // rotation listener the instant it fires. Lets the in-flight INITIAL registration below notice that a
+    // newer token has superseded it before its POST resolves, so it doesn't commit the now-stale token as
+    // `registered` (which sign-out cleanup would then unregister, leaving the live rotated token bound).
+    let rotatedTo: string | null = null;
     let cancelled = false;
     let attempts = 0;
     let reachUnsub: (() => void) | null = null;
@@ -80,7 +85,15 @@ export function usePushRegistration(session: Session | null): void {
           return;
         }
         if (result.registered) {
-          registered = result.token;
+          // KB-PUSH-TOKEN-RACE: if an OS/FCM rotation superseded this token while the register POST was in
+          // flight, the rotation listener has already bound (or is binding) the newer token — don't clobber
+          // `registered` with the now-stale one. Drop the stale binding server-side so cleanup unregisters
+          // the live token, not this dead one.
+          if (rotatedTo != null && rotatedTo !== result.token) {
+            void unregisterForPushNotificationsAsync(result.token);
+          } else {
+            registered = result.token;
+          }
           stopRetryTriggers();
           return;
         }
@@ -104,6 +117,9 @@ export function usePushRegistration(session: Session | null): void {
     const rotationSub = Notifications.addPushTokenListener((token) => {
       const rotated = typeof token.data === "string" ? token.data : null;
       if (!rotated || cancelled || rotated === registered) return;
+      // Record the newest desired token synchronously (before the async register) so an initial
+      // registration still in flight can detect it has been superseded and not clobber `registered`.
+      rotatedTo = rotated;
       void registerRotatedToken(rotated).then((bound) => {
         if (!bound) return;
         if (cancelled) {
