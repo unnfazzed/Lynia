@@ -413,22 +413,37 @@ describe("OrderLifecycleService.reconcileStaleDeliveries", () => {
 
 describe("OrderLifecycleService.rotateDeliveryCode", () => {
   it("issues a fresh 6-digit code and resets the attempt counter", async () => {
-    let data: Record<string, unknown> | undefined;
+    let args: { where: Record<string, unknown>; data: Record<string, unknown> } | undefined;
     const { svc } = build({
       order: {
         findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }),
-        update: async (args: { data: Record<string, unknown> }) => { data = args.data; return {}; },
+        updateMany: async (a: typeof args) => { args = a; return { count: 1 }; },
       },
     });
     const res = await svc.rotateDeliveryCode("o1", "c1");
     expect(res.deliveryCode).toMatch(/^\d{6}$/);
-    expect(data).toMatchObject({ deliveryOtpAttempts: 0 });
-    expect(data!.otpHash).toBe(tokens.hash(res.deliveryCode));
+    expect(args!.data).toMatchObject({ deliveryOtpAttempts: 0 });
+    expect(args!.data.otpHash).toBe(tokens.hash(res.deliveryCode));
+    // CAS guard: the write only lands while status is still one of the active-for-code statuses.
+    expect(args!.where).toMatchObject({ id: "o1" });
+    expect(args!.where.status).toMatchObject({ in: expect.arrayContaining(["en_route_dropoff", "assigned"]) });
   });
 
   it("403s for a non-owner", async () => {
     const { svc } = build({ order: { findUnique: async () => ({ customerId: "c1", status: "assigned" }) } });
     await expect(svc.rotateDeliveryCode("o1", "other")).rejects.toThrow(/not your order/i);
+  });
+
+  it("409s (CAS conflict) when the order moved out of an active-for-code status between the read and the write", async () => {
+    // e.g. the rider's confirmDelivery committed `delivered` concurrently, after this call's own read
+    // observed a still-valid status.
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 0 }),
+      },
+    });
+    await expect(svc.rotateDeliveryCode("o1", "c1")).rejects.toThrow(/order changed, retry/i);
   });
 });
 

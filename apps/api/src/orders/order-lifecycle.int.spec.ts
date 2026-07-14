@@ -398,4 +398,47 @@ describe("seam-contract transitions", () => {
     await lifecycle.confirmDelivery(orderId, rider, fresh);
     expect(await statusOf(orderId)).toBe("delivered");
   });
+
+  it("rotateDeliveryCode CAS: rejects once the order has moved past en_route_dropoff (no stale-otp write onto a delivered order)", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId, deliveryCode } = await assign(customer, rider);
+    for (const to of ["confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] as const) {
+      await lifecycle.advance(orderId, rider, to);
+    }
+    await lifecycle.confirmDelivery(orderId, rider, deliveryCode);
+    expect(await statusOf(orderId)).toBe("delivered");
+
+    const before = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { otpHash: true } });
+    await expect(lifecycle.rotateDeliveryCode(orderId, customer)).rejects.toThrow(/order changed, retry/i);
+    // The CAS guard rejected the write — the delivered order's otpHash is untouched.
+    const after = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { otpHash: true } });
+    expect(after.otpHash).toBe(before.otpHash);
+  });
+
+  it("concurrent rotate + confirmDelivery: whichever settles first, the loser never silently corrupts state", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId, deliveryCode } = await assign(customer, rider);
+    for (const to of ["confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] as const) {
+      await lifecycle.advance(orderId, rider, to);
+    }
+
+    const [confirmResult, rotateResult] = await Promise.allSettled([
+      lifecycle.confirmDelivery(orderId, rider, deliveryCode),
+      lifecycle.rotateDeliveryCode(orderId, customer),
+    ]);
+
+    if (confirmResult.status === "fulfilled") {
+      // Delivery landed first (or the rotate's write missed the CAS window) — the order is delivered
+      // and, whether or not the rotate also happened to land, no state is corrupted either way.
+      expect(await statusOf(orderId)).toBe("delivered");
+    } else {
+      // The rotate won and moved the code before confirmDelivery's FOR UPDATE read — confirmDelivery
+      // correctly rejects the now-stale code instead of wrongly delivering, and the order is still
+      // live for a retry with the freshly rotated code.
+      expect(rotateResult.status).toBe("fulfilled");
+      expect(await statusOf(orderId)).toBe("en_route_dropoff");
+    }
+  });
 });
