@@ -16,10 +16,14 @@ function sign(raw: string): string {
   return `sha256=${createHmac("sha256", SECRET).update(raw, "utf8").digest("hex")}`;
 }
 function fakeRes() {
-  const calls: { status?: number; body?: string } = {};
+  const calls: { status?: number; body?: string; type?: string } = {};
   const res = {
     status: vi.fn((code: number) => {
       calls.status = code;
+      return res;
+    }),
+    type: vi.fn((t: string) => {
+      calls.type = t;
       return res;
     }),
     send: vi.fn((body: string) => {
@@ -36,21 +40,25 @@ function fakeMetrics() {
 const ctl = (env: Partial<Env>, metrics: MetricsService) => new WhatsappWebhookController(env as Env, metrics);
 
 describe("WhatsappWebhookController.verify (GET subscription handshake)", () => {
-  it("echoes the challenge back when mode+token match", () => {
+  it("echoes the challenge back (as text/plain) when mode+token match and the challenge is digits-only", () => {
     const { metrics } = fakeMetrics();
     const { res, calls } = fakeRes();
-    ctl({ WHATSAPP_WEBHOOK_VERIFY_TOKEN: "tok" }, metrics).verify("subscribe", "tok", "chal-1", res);
+    ctl({ WHATSAPP_WEBHOOK_VERIFY_TOKEN: "tok" }, metrics).verify("subscribe", "tok", "123456", res);
     expect(calls.status).toBe(200);
-    expect(calls.body).toBe("chal-1");
+    expect(calls.body).toBe("123456");
+    expect(calls.type).toBe("text/plain");
   });
 
-  it("403s on a wrong token, wrong mode, missing challenge, or no configured token at all", () => {
+  it("403s on a wrong token, wrong mode, missing challenge, a non-digits challenge, or no configured token at all", () => {
     const { metrics } = fakeMetrics();
     const c = ctl({ WHATSAPP_WEBHOOK_VERIFY_TOKEN: "tok" }, metrics);
     const cases: Array<[string | undefined, string | undefined, string | undefined]> = [
-      ["subscribe", "wrong", "chal"],
-      ["unsubscribe", "tok", "chal"],
+      ["subscribe", "wrong", "123"],
+      ["unsubscribe", "tok", "123"],
       ["subscribe", "tok", undefined],
+      // Defense in depth: Meta's challenge is always digits-only — reject anything else even with a
+      // matching token, rather than reflecting an attacker-shaped value (CodeQL reflected-XSS finding).
+      ["subscribe", "tok", "<script>alert(1)</script>"],
     ];
     for (const [mode, token, challenge] of cases) {
       const { res, calls } = fakeRes();
@@ -58,7 +66,7 @@ describe("WhatsappWebhookController.verify (GET subscription handshake)", () => 
       expect(calls.status).toBe(403);
     }
     const { res: res2, calls: calls2 } = fakeRes();
-    ctl({ WHATSAPP_WEBHOOK_VERIFY_TOKEN: undefined }, metrics).verify("subscribe", "anything", "chal", res2);
+    ctl({ WHATSAPP_WEBHOOK_VERIFY_TOKEN: undefined }, metrics).verify("subscribe", "anything", "123", res2);
     expect(calls2.status).toBe(403);
   });
 });

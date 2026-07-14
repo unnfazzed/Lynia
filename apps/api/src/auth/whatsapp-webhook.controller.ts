@@ -23,7 +23,12 @@ export class WhatsappWebhookController {
   /**
    * Meta's one-time subscription verification: echoes `hub.challenge` back as plain text when
    * `hub.verify_token` matches our configured secret, per Meta's documented handshake. Without a
-   * configured token, refuse — there's nothing safe to compare against.
+   * configured token, refuse — there's nothing safe to compare against. `challenge` is Meta-
+   * generated and always digits-only per their spec, so it's validated as such before being
+   * reflected — defense in depth against a reflected-XSS-shaped response (Express's `res.send`
+   * defaults a string body to `text/html`, so an unvalidated echo could otherwise be interpreted
+   * as markup by anything treating this endpoint as browser-reachable, even though the verify-
+   * token gate already limits who can reach a 200 in practice).
    */
   @Get()
   verify(
@@ -33,11 +38,11 @@ export class WhatsappWebhookController {
     @Res() res: Response,
   ): void {
     const expected = this.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
-    if (!expected || mode !== "subscribe" || token !== expected || !challenge) {
-      res.status(403).send("Forbidden");
+    if (!expected || mode !== "subscribe" || token !== expected || !challenge || !/^\d+$/.test(challenge)) {
+      res.status(403).type("text/plain").send("Forbidden");
       return;
     }
-    res.status(200).send(challenge);
+    res.status(200).type("text/plain").send(challenge);
   }
 
   /**
