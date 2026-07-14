@@ -399,7 +399,7 @@ describe("seam-contract transitions", () => {
     expect(await statusOf(orderId)).toBe("delivered");
   });
 
-  it("rotateDeliveryCode CAS: rejects once the order has moved past en_route_dropoff (no stale-otp write onto a delivered order)", async () => {
+  it("rotateDeliveryCode: rejects once the order has moved past en_route_dropoff (no stale-otp write onto a delivered order)", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const { orderId, deliveryCode } = await assign(customer, rider);
@@ -410,8 +410,10 @@ describe("seam-contract transitions", () => {
     expect(await statusOf(orderId)).toBe("delivered");
 
     const before = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { otpHash: true } });
-    await expect(lifecycle.rotateDeliveryCode(orderId, customer)).rejects.toThrow(/order changed, retry/i);
-    // The CAS guard rejected the write — the delivered order's otpHash is untouched.
+    // Sequential (not raced): rotateDeliveryCode's own read already observes `delivered`, so the
+    // pre-existing early status-set check rejects it — the CAS guard (proven separately below, under
+    // genuine concurrency) never even gets reached here. Both guards protect the same invariant.
+    await expect(lifecycle.rotateDeliveryCode(orderId, customer)).rejects.toThrow(/no active delivery/i);
     const after = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { otpHash: true } });
     expect(after.otpHash).toBe(before.otpHash);
   });
