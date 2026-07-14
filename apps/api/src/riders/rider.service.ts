@@ -61,6 +61,22 @@ export class RiderService {
   ): Promise<{ ok: true }> {
     // Store the national ID encrypted at rest + its dedup hash (LR8); never the raw number.
     const idNumberHash = this.pii.hashId(data.idNumber);
+
+    // DS-11 hardening (mirrors auth.service.updateProfile / PATCH /auth/me): a KYC-VERIFIED rider must
+    // not silently swap the national ID that was verified — it undermines KYC and is the ban-evasion
+    // laundering path (become clean → later switch to the real, colliding ID through whichever endpoint
+    // lacks the check). This sibling route previously had NO equivalent guard, so it was an integrity
+    // bypass of the freeze. Block a genuine CHANGE (new hash ≠ stored hash) once verified; a real
+    // correction goes through support/admin. Same condition + exception as the auth route so both
+    // ID-writing endpoints enforce the freeze identically.
+    const existing = await this.prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { idNumberHash: true, rider: { select: { kycStatus: true } } },
+    });
+    if (existing?.rider?.kycStatus === "verified" && existing.idNumberHash && existing.idNumberHash !== idNumberHash) {
+      throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
+    }
+
     await this.prisma.profile.update({
       where: { id: profileId },
       data: {

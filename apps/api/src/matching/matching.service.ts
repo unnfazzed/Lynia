@@ -2,7 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundExce
 import { Prisma } from "@prisma/client";
 import { BROADCAST, broadcastRadiusAtMs } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
-import { baseBroadcastRadiusM, effectiveBroadcastRadiusM } from "../common/broadcast-policy";
+import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
 import { buildBoardNewOrderEvent, pickupPoint } from "../orders/waypoints";
@@ -234,7 +234,7 @@ export class MatchingService {
       } catch (err) {
         this.logger.warn(`bid:expired emit failed for order ${orderId}: ${(err as Error).message}`);
       }
-      void this.notifications.notifyOrderExpired(orderId, noSupply);
+      void this.notifications.notifyOrderExpired(orderId, noSupply, result.hadOffers);
     }
     return { expired: result.expired };
   }
@@ -295,7 +295,10 @@ export class MatchingService {
         this.logger.warn(`expansion board emit failed for order ${orderId}: ${(err as Error).message}`);
       }
 
-      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, newRadiusM);
+      // Widening FCM rebroadcast — same channel as the create-time broadcast, so it uses the PERMISSIVE
+      // heartbeat cutoff too (heartbeatMaxAgeMsForPush): a backgrounded-but-online rider a wider ring now
+      // reaches must still be pushable even though their foreground heartbeat stopped ~120 s ago (Fix 4).
+      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, newRadiusM, heartbeatMaxAgeMsForPush());
       if (nearby.length === 0) return;
       const ids = nearby.map((r) => r.profileId);
       const claimed =

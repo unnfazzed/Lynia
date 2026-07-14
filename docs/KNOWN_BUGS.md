@@ -37,6 +37,7 @@ an ordered rollout runbook at `docs/INFRA-HARDENING-ROLLOUT.md`.
 | `docs/UX-USABILITY-REVIEW-2026-07-10.md` | 17 | UX pass; all ✅ |
 | `docs/UX-USABILITY-REVIEW-2026-07-11.md` | 22+1 | UX pass; all ✅ (otp-verify grace later fixed) |
 | `docs/UX-USABILITY-REVIEW-2026-07-12.md` | 16 | UX pass; all ✅ (idle-rider position, viewer-role snapshot, delivered-terminal dead code, SOS honesty, +12 more). Feed-channel residue of #6/#11 closed by #206 (07-13) |
+| `docs/UX-USABILITY-REVIEW-2026-07-14.md` | 24 | UX pass; 20 ✅ (order-screen rider-viewer gating, presence-stale wiring, token-refresh failure classification, heartbeat-cutoff split for FCM audience, push `data.to` per-order routing, expiry `hadOffers` honesty, KYC ID-freeze bypass in `completeProfile`, cancel-reason remap, +12 more). 2 deferred as KB-NOTIFY-ORDERID and KB-FEED-SYNTH below; 2 explicitly out of scope (`become.tsx` redirect nice-to-have; a routing bug found inside still-unmerged PR #231, not on `main`) |
 | `docs/plans/BUGFIX-EXECUTION.md` | 24 | Execution plan for BUG-HUNT items — all landed |
 | `docs/plans/LAUNCH-FIX-ROUND1.md` | 13 | Round-1 authz/abuse fixes — all landed |
 | `docs/plans/TAIL-HARDENING-PLAN.md` | 6 | R8 handback + SEC dev-fallback + map leak — all ✅ |
@@ -50,13 +51,14 @@ duplication (see clusters below).
 
 ## OPEN (present in code today)
 
-No open **code** defect remains. RH-01 — the last open code item (the velocity fraud-hold self-clear) —
-is **FIXED in PR #221** (persisted `heldReason`, Option A). Every code defect from every report — the
-whole Phase-1 set, DS13-01…DS13-07 (#209), and RH-01 (#221) — is FIXED or MOOT. The remaining items are
-non-code / founder-gated.
+Two small, low-impact code items are open from the 2026-07-14 UX pass (deliberately deferred, not
+overlooked — see that report's §4 for why each was descoped rather than rushed). Everything else remains
+FIXED or MOOT, and the infra/founder-gated items below are unchanged.
 
 | ID | Description | Area | Sev | Sweeps | Notes |
 |---|---|---|---|---|---|
+| KB-NOTIFY-ORDERID | The "notify me" waiting-list entry doesn't carry an `orderId`, so its fulfillment push/feed gives generic "send again" advice and routes to `/home` even when the original auction is still open | `apps/api/src/riders/rider.service.ts` `drainNotifyWaiters`, `apps/mobile/src/push/push.ts` | LOW | 1 (07-14) | Needs a 3-way client/API/push contract change for a low-impact fix; descoped in favor of higher-value items in the same pass. |
+| KB-FEED-SYNTH | The in-app notifications feed is derived only from order-status lifecycle events — "New offer" and account-status (KYC/standing) pushes never produce a feed row, so a user who received those pushes finds no record of them in the feed | `apps/api/src/notifications/notifications.service.ts` `feedForUser`, `apps/mobile/app/notifications/index.tsx` | LOW-MED | 1 (07-14) | Empty-state copy corrected 07-14 to stop promising categories the feed can't show; the fuller fix (a real Notification table or server-side row synthesis) is a data-model change, out of scope for a UX pass. |
 | KB-SEC-INFRA | Deferred infra hardening: Cloud SQL public IP, Redis in-transit TLS, GCS CORS, WAF/Cloud Armor enforce, KYC bucket CMEK/retention, Redis/SQL HA | `infra/terraform/*` | MED-LOW | 3 | Flags all landed + wired; **rollout runbook now written: `docs/INFRA-HARDENING-ROLLOUT.md`** (ordered apply/verify/rollback per item). One reliability fix landed (CMEK bucket `depends_on` the KMS IAM grant). Remaining work is `terraform apply` in a window — founder-gated, not a code bug. |
 | KB-MOBILE-PIN | Mobile certificate pinning for the API + WS host (SECURITY §P3-1) | `apps/mobile/plugins/with-certificate-pinning.js` | LOW | 1 | **Code landed** — gated config plugin merged and wired (`app.config.ts`), inert until `LYNIA_TLS_PINS` is set. **Arming helper added (#224):** `apps/mobile/scripts/compute-tls-pins.sh` computes the SPKI pins one-command. Remaining work is founder-executed **arming** (set real pins + `LYNIA_TLS_PIN_EXPIRATION`, native build) + **on-device validation** (`docs/MOBILE-CERT-PINNING.md`) — needs production cert material + a device, not automatable. |
 | KB-OPS-GATE | Founder/ops launch gates: WhatsApp BSP + SMS gateway wiring, real ZIM-ID Didit run, live FCM, on-device QA, chaos/load drills, crash telemetry rollout, admin per-operator SSO/MFA | ops/founder | — | 3 | Not code defects — external readiness items from LAUNCH/PILOT readiness. |

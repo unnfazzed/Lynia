@@ -126,6 +126,11 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
       // branch on err.code for a 401-tagged business error (e.g. a wrong delivery code).
       throw new ApiError(401, friendlyMessage(401, text), errorCode(text));
     }
+    // refreshSession resolves to null ONLY on a definitive rejection (the refresh endpoint answered
+    // 401/403 — the token is genuinely revoked/invalid); that's the sole case that signs the user out.
+    // A transient failure (network/timeout/5xx/429) instead REJECTS with a status-0 ApiError, which
+    // propagates out of here untouched — the request fails as an ordinary retryable network error and
+    // the session is left intact, so a flaky link can't force a mid-delivery re-auth.
     const refreshed = await refreshSession(session.refreshToken);
     if (refreshed) {
       res = await send(refreshed.accessToken);
@@ -162,28 +167,34 @@ async function refreshSession(staleToken: string): Promise<Session | null> {
 }
 
 async function doRefresh(refreshToken: string): Promise<Session | null> {
-  try {
-    const res = await fetchWithTimeout(`${API_URL}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { accessToken: string; refreshToken: string; expiresIn: number };
-    const current = hooks?.getSession();
-    if (!current) return null;
-    const next: Session = {
-      ...current,
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      expiresIn: data.expiresIn,
-    };
-    // Persist BEFORE returning so a crash can't lose the rotated (single-use) refresh token.
-    await hooks?.onTokens(next);
-    return next;
-  } catch {
-    return null;
-  }
+  // Deliberately NO try/catch around the fetch: fetchWithTimeout already throws ApiError(0) on a
+  // network failure / timeout, and a transient link failure must NOT masquerade as a revoked token.
+  // Letting it propagate leaves the session (and the refresh token, which may still be perfectly
+  // valid) intact — see the caller: only a resolved `null` signs the user out, a rejection doesn't.
+  const res = await fetchWithTimeout(`${API_URL}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+  });
+  // Definitive rejection: ONLY a 401/403 from the refresh endpoint proves the refresh token is
+  // genuinely invalid or revoked. That's the one outcome that returns null → signs the user out.
+  if (res.status === 401 || res.status === 403) return null;
+  // Any OTHER non-OK status (a proxy/LB 502/504, a 500, a 429) is transient, NOT a rejection: the
+  // token is very likely still valid. Surface it as the same status-0 network error a stalled link
+  // produces, so the caller fails the request retryably instead of forcibly signing the user out.
+  if (!res.ok) throw new ApiError(0, "The network is unstable — check your connection and try again.");
+  const data = (await res.json()) as { accessToken: string; refreshToken: string; expiresIn: number };
+  const current = hooks?.getSession();
+  if (!current) return null;
+  const next: Session = {
+    ...current,
+    accessToken: data.accessToken,
+    refreshToken: data.refreshToken,
+    expiresIn: data.expiresIn,
+  };
+  // Persist BEFORE returning so a crash can't lose the rotated (single-use) refresh token.
+  await hooks?.onTokens(next);
+  return next;
 }
 
 // The JwtAuthGuard's only two messages (apps/api/src/auth/jwt-auth.guard.ts) — the discriminator

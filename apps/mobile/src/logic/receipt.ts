@@ -35,7 +35,7 @@ export function formatReceiptDate(iso?: string | null): string {
  * disclaimer so a shared receipt is never mistaken for a payment record.
  */
 export function buildReceiptText(input: ReceiptInput): string {
-  const lines: string[] = ["Lynia delivery receipt", ""];
+  const lines: string[] = ["LyniaGo delivery receipt", ""];
   lines.push(`Order: ${input.orderId.slice(0, 8)}`);
   const route = `${input.pickupLandmark || "Pickup"} → ${input.dropoffLandmark || "Drop-off"}`;
   lines.push(`Route: ${route}`);

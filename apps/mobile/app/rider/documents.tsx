@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
-import { Button, Card, Heading, Icon, type IconName, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, Heading, Icon, type IconName, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 
 /**
  * Bike & documents (rider-journey A·2). The verified ID, bike registration and rider photo, each with
@@ -48,6 +48,14 @@ export default function DocumentsScreen(): React.ReactElement {
 
       {meQ.isLoading ? (
         <SkeletonList count={2} />
+      ) : meQ.isError ? (
+        // `rider` is derived from meQ.data, which is also undefined on a fetch error — so without this
+        // branch a transient network blip falsely tells a verified rider they "haven't set up as a
+        // rider yet" with no way to recover. Distinguish the error with an explicit retry (mirrors the
+        // rider board's own isError handling in rider/index.tsx).
+        <EmptyState icon="wifi-off" title="Couldn't load your documents" message="Check your connection and try again.">
+          <Button label="Retry" onPress={() => void meQ.refetch()} loading={meQ.isFetching} />
+        </EmptyState>
       ) : !rider ? (
         <Card>
           <Text style={{ fontSize: 14, color: tokens.color.muted }}>You haven&apos;t set up as a rider yet.</Text>
