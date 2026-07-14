@@ -80,10 +80,15 @@ export class SosService {
       });
     }
     if (counterpartyId) {
+      // Fix 3: stamp the RECIPIENT's per-order role so the client routes this to /order/:id vs the
+      // rider job screen by the order relationship, not the account's global session role. The recipient
+      // is the counterparty of the raiser: a customer's SOS pushes the RIDER, a rider's SOS pushes the
+      // CUSTOMER. Additive on the wire — older clients ignore `to` and fall back to the session role.
+      const recipientRole = raisedByRole === "customer" ? "rider" : "customer";
       void this.notifications.notifyProfiles([counterpartyId], {
         title: "SOS on your delivery",
-        body: "The other party raised an SOS on this trip. Stay safe — Lynia's safety team has been alerted.",
-        data: { orderId, kind: "sos", ...(sosId ? { sosId } : {}) },
+        body: "The other party raised an SOS on this trip. Stay safe — LyniaGo's safety team has been alerted.",
+        data: { orderId, kind: "sos", to: recipientRole, ...(sosId ? { sosId } : {}) },
       });
     }
 

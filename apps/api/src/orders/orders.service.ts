@@ -38,6 +38,22 @@ function assertWithinServiceCorridor(pickup: LatLng, dropoff: LatLng): void {
  *  review TTL). */
 const PICKUP_PHOTO_READ_URL_TTL_SECONDS = 900;
 
+/**
+ * Fix 6: ops-internal cancel-reason strings that must NOT be shown verbatim to the customer/rider. The
+ * admin cancel taxonomy (apps/admin/app/lib/reasons.ts `orderCancel`) includes trust & safety language
+ * — "Suspected fraud", "Safety concern" — that reads as an accusation with no context or next step when
+ * rendered raw on a party's cancelled terminal. Map those to calm, actionable copy at the snapshot
+ * boundary. Reasons already safe to show ("Rider unreachable", "Customer asked ops to cancel") and any
+ * free-text party-initiated reason are left untouched (unknown ⇒ pass through). The RAW reason stays
+ * intact everywhere ops sees it (admin views + the audit trail) — only the customer/rider view is remapped.
+ */
+const CUSTOMER_SAFE_CANCEL_MESSAGE = "Cancelled by the LyniaGo team — contact support if you have questions.";
+const OPS_INTERNAL_CANCEL_REASONS = new Set<string>(["Suspected fraud", "Safety concern"]);
+function customerSafeCancelReason(raw: string | null): string | null {
+  if (raw == null) return null;
+  return OPS_INTERNAL_CANCEL_REASONS.has(raw) ? CUSTOMER_SAFE_CANCEL_MESSAGE : raw;
+}
+
 /** The fields `create`'s response is built from, shared by the fresh-create path and both
  *  idempotent-replay paths (pre-existing match, and the loser of a concurrent create race). */
 const CREATE_RESPONSE_SELECT = {
@@ -689,7 +705,7 @@ export class OrdersService {
       deliveryOtpAttempts: order.deliveryOtpAttempts,
       // 3·b3: the recorded cancel reason + who cancelled, shown on the cancelled terminal. The DB
       // stores the canceller's profile id; the wire carries only their role (no id leak).
-      cancelReason: order.status === "cancelled" ? order.cancelReason : null,
+      cancelReason: order.status === "cancelled" ? customerSafeCancelReason(order.cancelReason) : null,
       cancelledBy:
         order.status === "cancelled" && order.cancelledBy
           ? order.cancelledBy === order.customerId

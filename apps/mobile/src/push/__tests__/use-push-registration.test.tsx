@@ -200,7 +200,9 @@ describe("usePushRegistration resilience", () => {
     await flush();
 
     expect(mockRegister).toHaveBeenCalledTimes(2);
-    tree.unmount();
+    act(() => {
+      tree.unmount();
+    });
     // The now-registered token is dropped on teardown.
     expect(mockUnregister).toHaveBeenCalledWith("tok-1");
   });
@@ -288,7 +290,9 @@ describe("usePushRegistration resilience", () => {
     // The old, now-dead token is unregistered server-side.
     expect(mockUnregister).toHaveBeenCalledWith("tok-old");
 
-    tree.unmount();
+    act(() => {
+      tree.unmount();
+    });
     // Teardown unregisters the CURRENT (rotated) token, not the stale one again.
     expect(mockUnregister).toHaveBeenLastCalledWith("tok-new");
   });

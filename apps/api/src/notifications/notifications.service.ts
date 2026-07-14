@@ -1,6 +1,15 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
+import { OFFER_WINDOW_MS } from "@lynia/shared";
 import { PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
+
+/**
+ * TTL (seconds) for time-critical broadcast/rebroadcast/riders-available pushes: the offer window. A
+ * "new delivery nearby" (or "a rider's online near you") is worthless once the auction window it refers
+ * to has closed, so the provider drops it rather than delivering it hours later when a dead-zone rider
+ * comes back online. Derived from the shared OFFER_WINDOW_MS — not a new magic number.
+ */
+const BROADCAST_PUSH_TTL_SECONDS = Math.ceil(OFFER_WINDOW_MS / 1000);
 
 type Audience = "customer" | "rider";
 interface Notice {
@@ -352,6 +361,9 @@ export class NotificationsService {
         title: "New delivery nearby",
         body: `Pickup at ${info.pickup} · asking $${info.fare} — tap to bid before it's taken.`,
         data: { orderId, kind: "broadcast" },
+        // Fix 5: drop the push once the auction window has passed — a stale "new delivery nearby" landing
+        // hours later (rider was in a dead zone) is pure noise. Covers the widening rebroadcast too (same kind).
+        ttlSeconds: BROADCAST_PUSH_TTL_SECONDS,
       });
     } catch (err) {
       this.logger.warn(`notifyNewBroadcast(${orderId}) failed: ${(err as Error).message}`);
@@ -373,6 +385,9 @@ export class NotificationsService {
         title: "A rider's online near you",
         body: "Riders are back near your pickup — send your parcel again to get offers.",
         data: { kind: "riders_available" },
+        // Fix 5: time-critical — a rider being online is a fleeting signal, so a push that lands long
+        // after the window is stale (they may be offline again). Drop it rather than deliver it late.
+        ttlSeconds: BROADCAST_PUSH_TTL_SECONDS,
       });
     } catch (err) {
       this.logger.warn(`notifyRidersAvailable failed: ${(err as Error).message}`);
@@ -428,7 +443,7 @@ export class NotificationsService {
    *  callers ignore it). Private; all callers pre-wrap in try/catch. */
   private async send(
     profileIds: string[],
-    msg: { title: string; body: string; data?: Record<string, string> },
+    msg: { title: string; body: string; data?: Record<string, string>; ttlSeconds?: number },
   ): Promise<Set<string>> {
     if (profileIds.length === 0) return new Set();
     const tokens = await this.prisma.deviceToken.findMany({
@@ -439,8 +454,9 @@ export class NotificationsService {
 
     // One batched provider call (FCM sendEach, chunked ≤500) instead of a per-token round-trip fan-out.
     // Results align with `tokens` order, so a dead token is pruned — and a delivery credited — by position.
+    // `ttlSeconds` (when set by a time-critical caller) rides through to the adapter's provider TTL.
     const results = await this.push.sendEach(
-      tokens.map((t) => ({ token: t.token, title: msg.title, body: msg.body, data: msg.data })),
+      tokens.map((t) => ({ token: t.token, title: msg.title, body: msg.body, data: msg.data, ttlSeconds: msg.ttlSeconds })),
     );
 
     // A profile counts as delivered if the provider accepted at least one of its devices (`ok`). A
