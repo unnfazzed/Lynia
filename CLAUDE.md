@@ -54,6 +54,12 @@ behavior and the bug-hunt "leave sensitive-area PRs open for review" carve-out; 
 fixes (bid acceptance / order assignment / agreed-price / KYC gating) still get conservative
 implementations and a regression test each, but merge on green like everything else.
 
+**This merge-on-green policy applies to ALL Claude-authored PRs, not only scheduled routines**
+(user instruction 2026-07-14, second directive: "merge PRs when they are green"): any PR a
+Claude session opens in this repo — interactive or scheduled — is squash-merged once CI is
+green and there are no unresolved review comments, without waiting for a human click. Never
+merge on red; fix forward first.
+
 Routines also must: fix every defect they find in the same run (no deferrals), and update
 `docs/KNOWN_BUGS.md` + their dated report **in the same PR** as the fixes. The three
 bug-finding routines dedupe through `docs/KNOWN_BUGS.md` (Phase-0 read, ledger write-back,
