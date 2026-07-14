@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.1](https://github.com/unnfazzed/Lynia/compare/v0.2.0...v0.2.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **mobile:** capture device location on customer/rider-viewer SOS ([db9ba00](https://github.com/unnfazzed/Lynia/commit/db9ba00c064f7751df8680a09316fd07154c831a))
+* **mobile:** confirm before the rider's "Back" button kills live tracking mid-delivery ([658cca6](https://github.com/unnfazzed/Lynia/commit/658cca609d9749a43b54666241752ce1402598c6))
+* **orders:** stop blaming the rider (or the customer) for an ops cancel ([d839d96](https://github.com/unnfazzed/Lynia/commit/d839d96ad5c52b76ad5359c4395549a7d1e96718))
+* **shared:** make JobCancelledEvent.cancelledBy optional for rollout skew ([f32f02c](https://github.com/unnfazzed/Lynia/commit/f32f02c932155d45d997d1bfa70f2db4e8ad26dc))
+* **ux:** daily UX/usability review — 20 fixes (rider-viewer gating, token-refresh resilience, heartbeat/push routing, expiry honesty, KYC-freeze bypass, +more) ([96a953c](https://github.com/unnfazzed/Lynia/commit/96a953c13818d4949e99c539da43354a9e2e5bc3))
+
 ## [0.2.0](https://github.com/unnfazzed/Lynia/compare/v0.1.0...v0.2.0) (2026-07-13)
 
 
