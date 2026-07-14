@@ -22,15 +22,18 @@ function currentPlatform(): "android" | "ios" | "web" | undefined {
 }
 
 /**
- * Outcome of a registration attempt. `token` is the FCM token when the device is now registered (so the
- * caller can unregister it on sign-out), else `null`. `retry` distinguishes the two null cases:
- *  - `retry: false` — TERMINAL: no permission, a simulator, or Expo Go / missing Firebase config. The
- *    environment can't produce a token this process, so retrying would only spin. Push stays off until
- *    the user changes the OS setting (which re-mounts the flow) or restarts into a capable build.
- *  - `retry: true`  — TRANSIENT: we DID acquire a token, but the register-with-API request failed
- *    (a dead zone / server blip). Worth retrying when reachability or the foreground returns.
+ * Outcome of a registration attempt.
+ *  - `{ registered: true, token }` — the device is now bound; `token` lets the caller unregister on
+ *    sign-out / account switch.
+ *  - `{ registered: false, retry: false }` — TERMINAL: no permission, a simulator, or Expo Go / missing
+ *    Firebase config. The environment can't produce a token this process, so retrying would only spin;
+ *    push stays off until the user changes the OS setting (which re-mounts the flow) or restarts.
+ *  - `{ registered: false, retry: true }` — TRANSIENT: we DID acquire a token, but the register-with-API
+ *    request failed (a dead zone / server blip). Worth retrying when reachability or the foreground returns.
  */
-export type PushRegistrationResult = { token: string } | { token: null; retry: boolean };
+export type PushRegistrationResult =
+  | { registered: true; token: string }
+  | { registered: false; retry: boolean };
 
 /**
  * Acquire this device's **native FCM** token and register it with the API.
@@ -44,7 +47,7 @@ export async function registerForPushNotificationsAsync(): Promise<PushRegistrat
   let token: string;
   try {
     // Push tokens are only ever issued to real hardware (incl. dev builds), never simulators.
-    if (!Device.isDevice) return { token: null, retry: false };
+    if (!Device.isDevice) return { registered: false, retry: false };
 
     // Android 8+ requires a channel before any notification can post.
     if (Platform.OS === "android") {

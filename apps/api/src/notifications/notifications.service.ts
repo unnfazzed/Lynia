@@ -261,12 +261,15 @@ export class NotificationsService {
   }
 
   /**
-   * Auction-expiry notice to the customer (§5c), in two honest variants. The default nudges the price
-   * ("no rider took your price — try raising it"). But when the window closed with ZERO bids AND zero
-   * riders online nearby (`noSupply`), "raise it" is misleading — the price was never the problem — so
-   * the customer instead hears that nobody was online to take it. Best-effort, never throws.
+   * Auction-expiry notice to the customer (§5c), in three honest variants:
+   *  - `noSupply` (zero bids AND nobody online near the pickup) — "raise it" would be a lie, so the
+   *    customer hears that nobody was online to take it.
+   *  - `hadOffers` (riders DID bid, but the window closed before the customer picked) — again "raise the
+   *    price" is dishonest; riders offered, so the honest nudge is just to send it again.
+   *  - otherwise (no bids but riders WERE around) — the default price nudge.
+   * `noSupply` takes precedence (it's only ever computed when there were no offers). Best-effort, never throws.
    */
-  async notifyOrderExpired(orderId: string, noSupply: boolean): Promise<void> {
+  async notifyOrderExpired(orderId: string, noSupply: boolean, hadOffers = false): Promise<void> {
     try {
       const order = await this.prisma.order.findUnique({
         where: { id: orderId },
@@ -278,7 +281,12 @@ export class NotificationsService {
             title: "No riders online nearby",
             body: "Nobody was online near your pickup just now — tap to get pinged when a rider comes online.",
           }
-        : { title: STATUS_NOTICES.expired.title, body: STATUS_NOTICES.expired.body };
+        : hadOffers
+          ? {
+              title: "The window closed",
+              body: "Riders offered but the window closed before you picked — send it again, no need to raise the price.",
+            }
+          : { title: STATUS_NOTICES.expired.title, body: STATUS_NOTICES.expired.body };
       await this.send([order.customerId], { ...msg, data: { orderId, status: "expired" } });
     } catch (err) {
       this.logger.warn(`notifyOrderExpired(${orderId}) failed: ${(err as Error).message}`);

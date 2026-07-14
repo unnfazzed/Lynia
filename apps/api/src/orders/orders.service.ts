@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, No
 import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
-import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, maxBroadcastRadiusM } from "../common/broadcast-policy";
+import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -266,7 +266,11 @@ export class OrdersService {
       }
       // FCM push for riders NOT currently on the board — gated on the position index having someone to
       // fan out to (no candidates ⇒ no tokens to push). Only this channel depends on `nearby`.
-      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, baseBroadcastRadiusM());
+      // Uses the PERMISSIVE heartbeat cutoff (heartbeatMaxAgeMsForPush): FCM is designed to wake a
+      // backgrounded app, whose foreground heartbeat stopped beating ~120 s after backgrounding — the
+      // strict cutoff would wrongly drop that still-online rider from the broadcast audience (Fix 4 /
+      // DS13-02). The customer-facing count and the offer gate keep the strict cutoff.
+      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, baseBroadcastRadiusM(), heartbeatMaxAgeMsForPush());
       if (nearby.length === 0) return;
       // Claim the recipients in the per-order sent set BEFORE pushing, seeding it for the widening
       // ticks (MatchingService.expandBroadcast) so a later ring never re-pings these riders. null =

@@ -161,3 +161,151 @@ describe("usePushRegistration cold-start consume-once", () => {
     tree.unmount();
   });
 });
+
+// Resilience: a one-shot register with a swallow-all catch meant a cold start in a dead zone left push
+// dead for the whole app lifetime, and a mid-process token rotation silently killed it. These cover the
+// retry-on-recovery/foreground path and the rotation re-registration.
+describe("usePushRegistration resilience", () => {
+  beforeEach(() => {
+    mockRegister.mockReset();
+    mockRegisterRotated.mockClear();
+    mockUnregister.mockClear();
+    mockPushTokenRemove.mockClear();
+    tokenRotationListener = null;
+    appStateListener = null;
+    reachListener = null;
+    mockPathname = "/home";
+    mockGetLastResponse.mockReset();
+    mockGetLastResponse.mockResolvedValue(null);
+  });
+
+  it("retries registration when the API becomes reachable again after a transient failure", async () => {
+    // First attempt: token acquired but the register POST failed (dead zone) → retry:true.
+    mockRegister.mockResolvedValueOnce({ token: null, retry: true });
+    // Recovery attempt: succeeds.
+    mockRegister.mockResolvedValueOnce({ token: "tok-1" });
+
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    expect(mockRegister).toHaveBeenCalledTimes(1);
+    expect(reachListener).not.toBeNull(); // retry triggers armed
+
+    // Reachability flips back — the store fires true.
+    act(() => {
+      reachListener?.(true);
+    });
+    await flush();
+
+    expect(mockRegister).toHaveBeenCalledTimes(2);
+    tree.unmount();
+    // The now-registered token is dropped on teardown.
+    expect(mockUnregister).toHaveBeenCalledWith("tok-1");
+  });
+
+  it("also retries on a foreground transition", async () => {
+    mockRegister.mockResolvedValueOnce({ token: null, retry: true });
+    mockRegister.mockResolvedValueOnce({ token: "tok-2" });
+
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    expect(appStateListener).not.toBeNull();
+
+    act(() => {
+      appStateListener?.("active");
+    });
+    await flush();
+    expect(mockRegister).toHaveBeenCalledTimes(2);
+
+    // A non-active transition doesn't trigger a retry.
+    act(() => {
+      appStateListener?.("background");
+    });
+    await flush();
+    expect(mockRegister).toHaveBeenCalledTimes(2);
+    tree.unmount();
+  });
+
+  it("does NOT arm retry triggers for a terminal failure (permission denied / simulator / Expo Go)", async () => {
+    mockRegister.mockResolvedValue({ token: null, retry: false });
+
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+
+    expect(mockRegister).toHaveBeenCalledTimes(1);
+    // No recovery listener retained → a later reachability flip can't re-fire.
+    expect(reachListener).toBeNull();
+    tree.unmount();
+  });
+
+  it("stops retrying after the capped budget so it can't hammer the server", async () => {
+    mockRegister.mockResolvedValue({ token: null, retry: true }); // always transient-fails
+
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    expect(mockRegister).toHaveBeenCalledTimes(1);
+
+    // Drive many recovery events; retries must stop once the budget (MAX_REGISTER_RETRIES=4) is spent.
+    for (let i = 0; i < 12; i++) {
+      act(() => {
+        reachListener?.(true);
+      });
+      await flush();
+    }
+    // 1 initial + at most 4 retries.
+    expect(mockRegister).toHaveBeenCalledTimes(5);
+    tree.unmount();
+  });
+
+  it("re-registers the fresh token on an OS/FCM token rotation and drops the superseded one", async () => {
+    mockRegister.mockResolvedValueOnce({ token: "tok-old" });
+
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    expect(tokenRotationListener).not.toBeNull();
+
+    // OS hands us a rotated token mid-process.
+    act(() => {
+      tokenRotationListener?.({ data: "tok-new" });
+    });
+    await flush();
+
+    expect(mockRegisterRotated).toHaveBeenCalledWith("tok-new");
+    // The old, now-dead token is unregistered server-side.
+    expect(mockUnregister).toHaveBeenCalledWith("tok-old");
+
+    tree.unmount();
+    // Teardown unregisters the CURRENT (rotated) token, not the stale one again.
+    expect(mockUnregister).toHaveBeenLastCalledWith("tok-new");
+  });
+
+  it("ignores a rotation event carrying a non-string token", async () => {
+    mockRegister.mockResolvedValueOnce({ token: "tok-old" });
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+
+    act(() => {
+      tokenRotationListener?.({ data: { endpoint: "web-shape" } });
+    });
+    await flush();
+    expect(mockRegisterRotated).not.toHaveBeenCalled();
+    tree.unmount();
+  });
+});

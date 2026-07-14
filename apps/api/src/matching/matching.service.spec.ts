@@ -232,7 +232,8 @@ describe("MatchingService.expandBroadcast — widening ticks push only the new r
 
     await service.expandBroadcast(expandOrderId, 0); // step 0 → 8 km
 
-    expect(nearbyRiders).toHaveBeenCalledWith(-17.8, 31.05, 8_000);
+    // Fix 4: the widening FCM rebroadcast passes the permissive push heartbeat cutoff as the 4th arg.
+    expect(nearbyRiders).toHaveBeenCalledWith(-17.8, 31.05, 8_000, expect.any(Number));
     expect(emitBoardNewOrderToCells).toHaveBeenCalledWith(expect.objectContaining({ id: expandOrderId }), -17.8, 31.05, 8_000);
     expect(claimBroadcastRecipients).toHaveBeenCalledWith(expandOrderId, ["r-near", "r-ring"]);
     expect(notifyNewBroadcast).toHaveBeenCalledWith(expandOrderId, ["r-ring"], { pickup: "Eastgate", fare: "2.50" });
