@@ -122,6 +122,10 @@ export class AuthService {
             kycDeclineReason: p.rider.kycDeclineReason,
             kycAttempts: p.rider.kycAttempts,
             cancelStrikes: p.rider.cancelStrikes,
+            // BH-03: KYC_MODE is a global deploy config, not a per-rider column — surfaced here so
+            // the app can tell "pending, waiting on a browser vendor flow" (auto) apart from "pending,
+            // waiting on manual ops review, no browser step exists" (manual) instead of always assuming auto.
+            kycMode: this.env.KYC_MODE,
           }
         : null,
     };

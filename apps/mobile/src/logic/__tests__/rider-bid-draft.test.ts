@@ -1,4 +1,4 @@
-import { parseRiderBidDraft } from "../rider-bid-draft";
+import { buildSentOfferEntry, parseRiderBidDraft } from "../rider-bid-draft";
 
 const validSelected = {
   id: "order-1",
@@ -36,5 +36,35 @@ describe("parseRiderBidDraft (JOURNEY-BUGS: rider bid-compose had no persistence
   it("defaults a missing/malformed fare, eta, or offerMode rather than dropping the whole draft", () => {
     const raw = JSON.stringify({ selected: validSelected, offerMode: "something-unexpected" });
     expect(parseRiderBidDraft(raw)).toEqual({ selected: validSelected, fare: "", eta: "", offerMode: "accept" });
+  });
+});
+
+// BH-05: a rider can edit the fare/eta fields between a failed send and the "already responded"
+// 409 lost-response recovery — recordSentOffer used to re-read LIVE form state at that later point,
+// showing a just-edited, never-sent price as the rider's own bid. buildSentOfferEntry takes the sent
+// values as explicit params so this can't regress.
+describe("buildSentOfferEntry (BH-05: sent-offer card must reflect what was actually SENT)", () => {
+  it("uses the given fare/eta, not any other value", () => {
+    const entry = buildSentOfferEntry(validSelected, "10", 8);
+    expect(entry.order).toBe(validSelected);
+    expect(entry.fare).toBe("10");
+    expect(entry.etaMinutes).toBe(8);
+  });
+
+  it("rounds a fractional eta minutes", () => {
+    expect(buildSentOfferEntry(validSelected, "10", 7.6).etaMinutes).toBe(8);
+  });
+
+  it("computes the auction close as createdAt + OFFER_WINDOW_MS (90s), independent of the sent fare/eta", () => {
+    const entry = buildSentOfferEntry(validSelected, "10", 8);
+    expect(entry.expiresAt).toBe(new Date(new Date(validSelected.createdAt).getTime() + 90_000).toISOString());
+  });
+
+  it("reflects the FIRST attempt's price even if the caller later has a different value in scope — the field itself is the regression guard", () => {
+    // Simulates: rider sent $10, form later shows an edited $12 that was never actually sent.
+    const sentAtFirstAttempt = buildSentOfferEntry(validSelected, "10", 8);
+    const editedButNeverSent = "12";
+    expect(sentAtFirstAttempt.fare).toBe("10");
+    expect(sentAtFirstAttempt.fare).not.toBe(editedButNeverSent);
   });
 });

@@ -142,3 +142,29 @@ export function reconcileDeliveryCode(input: {
   if (snapshotAttempts > storedAttemptsHighWater) return { action: "advance-highwater", attempts: snapshotAttempts };
   return { action: "none" };
 }
+
+/**
+ * BH-06: decide what to do with a durable "rating still pending for order X" marker (a star tap
+ * armed the rating-on-tap undo window, then the app was killed before the timer flushed it) against the
+ * current order snapshot. Mirrors reconcileConfirmItemsPending's shape. `rateOrder` moves the order to
+ * `status: "completed"` — the live OrderSnapshot carries no separate rating field, so that transition
+ * is itself the "already rated" signal (also true if a concurrent session rated it first).
+ *
+ *   - "retry": the marker matches the live order and it's still `delivered` (ratable, no rating landed yet).
+ *   - "clear": the order already moved to `completed`, OR a DIFFERENT order is now the live one — the
+ *              marker is stale.
+ *   - "wait":  no marker, no snapshot yet, or the same order sits at neither `delivered` nor `completed`
+ *              (shouldn't normally happen — a rating only arms once delivered) — keep the marker, do nothing.
+ */
+export function reconcilePendingRating(input: {
+  pending: { orderId: string; score: number } | null | undefined;
+  order: { id: string; status: string } | null;
+}): "retry" | "clear" | "wait" {
+  const { pending, order } = input;
+  if (!pending) return "wait";
+  if (!order) return "wait";
+  if (order.id !== pending.orderId) return "clear";
+  if (order.status === "completed") return "clear";
+  if (order.status === "delivered") return "retry";
+  return "wait";
+}

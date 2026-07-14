@@ -156,6 +156,16 @@ describe("AuthService.getProfile", () => {
     expect(me.rider).toMatchObject({ bikeReg: "ABZ 1234", kycStatus: "verified", ratingAvg: 4.8, tripsCount: 30, isOnline: true });
   });
 
+  // BH-03: KYC_MODE is a global deploy config, not a per-rider column — surfaced on the rider
+  // object so the mobile client can tell "pending, waiting on a browser vendor flow" (auto) apart from
+  // "pending, waiting on manual ops review, no browser step exists" (manual) instead of always
+  // assuming auto, which showed manual-mode riders a "finish it in the browser" dead end.
+  it("surfaces the deploy-wide KYC_MODE on the rider object", async () => {
+    const { svc } = make({ ...baseEnv, KYC_MODE: "manual" } as Env, { profile: { findUnique: async () => riderRow } });
+    const me = await svc.getProfile("p2");
+    expect(me.rider).toMatchObject({ kycMode: "manual" });
+  });
+
   it("404s when the profile is missing", async () => {
     const { svc } = make(baseEnv, { profile: { findUnique: async () => null } });
     await expect(svc.getProfile("nope")).rejects.toThrow(/not found/i);

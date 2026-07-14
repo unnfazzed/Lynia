@@ -166,9 +166,22 @@ export default function BecomeRiderScreen(): React.ReactElement {
       setPending(
         res.kycStatus === "verified"
           ? "You're verified — you can go online."
-          : "Verification started. Finish it in the browser, then come back and go online.",
+          : res.mode === "manual"
+            // BH-03: manual mode never opens a browser step (no verificationUrl) — telling the
+            // rider to "finish it in the browser" here describes a step that never happened.
+            ? "Verification submitted. Our team will review it and notify you — no action needed from you."
+            : "Verification started. Finish it in the browser, then come back and go online.",
       );
     } catch (e) {
+      // BH-04: a lost-response retry on `becomeRider` hits this exact 409 — the FIRST submit
+      // already landed server-side, so this isn't a failure to explain, it's a stale form to leave.
+      // `/rider` re-reads the real (already-registered) state instead of stranding the rider on a
+      // dead-end "Already registered as a rider" error with a submit button that can only 409 again.
+      if (e instanceof ApiError && e.code === "already_rider") {
+        void clearKycDraft();
+        router.replace("/rider");
+        return;
+      }
       setError(e instanceof ApiError ? e.message : "Couldn't start rider setup.");
     } finally {
       setBusy(false);

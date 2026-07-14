@@ -10,7 +10,7 @@
  * The end-to-end render behaviour is covered in src/ui/order/__tests__/live-tracking-isolation.test.tsx.
  */
 import type { OrderSnapshot } from "../../api/orders";
-import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, selectOrderShell, selectRiderTelemetry } from "../order-tracking";
+import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, selectRiderTelemetry } from "../order-tracking";
 
 const base: OrderSnapshot = {
   id: "order-1",
@@ -247,5 +247,36 @@ describe("reconcileDeliveryCode — codeRotatedAt signal", () => {
         snapshotCodeRotatedAt: "2026-07-14T11:00:00.000Z",
       }),
     ).toEqual({ action: "none" });
+  });
+});
+
+// BH-06: RatingCard's rating-on-tap arms a rating behind a short undo window, flushed only on a
+// React unmount (leaving the screen) — an OS-level app kill within the window destroys the timer with
+// no unmount effect, silently dropping a rating the customer believes they already submitted. A durable
+// marker + this reconcile function let a cold start re-send it, mirroring reconcileConfirmItemsPending.
+describe("reconcilePendingRating", () => {
+  it("does nothing with no marker", () => {
+    expect(reconcilePendingRating({ pending: null, order: { id: "o1", status: "delivered" } })).toBe("wait");
+    expect(reconcilePendingRating({ pending: undefined, order: { id: "o1", status: "delivered" } })).toBe("wait");
+  });
+
+  it("waits (keeps the marker) when there's no snapshot yet — loading/offline, not stale", () => {
+    expect(reconcilePendingRating({ pending: { orderId: "o1", score: 5 }, order: null })).toBe("wait");
+  });
+
+  it("retries while the marker's order is still delivered (ratable) and unrated", () => {
+    expect(reconcilePendingRating({ pending: { orderId: "o1", score: 5 }, order: { id: "o1", status: "delivered" } })).toBe("retry");
+  });
+
+  it("clears once the order has moved to completed — the rating landed (this retry or a concurrent session)", () => {
+    expect(reconcilePendingRating({ pending: { orderId: "o1", score: 5 }, order: { id: "o1", status: "completed" } })).toBe("clear");
+  });
+
+  it("clears when a DIFFERENT order is now the live one — the pending marker is stale", () => {
+    expect(reconcilePendingRating({ pending: { orderId: "o1", score: 5 }, order: { id: "o2", status: "delivered" } })).toBe("clear");
+  });
+
+  it("waits (never discards) when the same order sits at neither delivered nor completed", () => {
+    expect(reconcilePendingRating({ pending: { orderId: "o1", score: 5 }, order: { id: "o1", status: "picked_up" } })).toBe("wait");
   });
 });

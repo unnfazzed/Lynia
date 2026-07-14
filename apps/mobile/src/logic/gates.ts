@@ -162,16 +162,28 @@ export interface KycRetryFeedback {
   openUrl: string | null;
   /** An error to surface when there's no usable URL — never both this and `openUrl` set. */
   error: string | null;
+  /** A calm (non-error) status line to surface when there's no usable URL by design (manual review). */
+  info: string | null;
 }
 
 /**
  * JOURNEY-BUGS: `retryKyc` succeeding with a missing/non-https `verificationUrl` used to silently do
  * nothing but refetch `["me"]` — the rider saw no feedback and no verification browser opened. Decide
  * once, in a testable place, whether to open the browser or tell the rider it didn't work.
+ *
+ * BH-03: a missing `verificationUrl` is EXPECTED in manual KYC mode (no vendor to resubmit to —
+ * ops reviews it) — that must not surface as the same "couldn't start verification" error auto mode
+ * gets on a genuine failure, or a manual-review rider sees a false failure on every retry tap.
  */
-export function resolveKycRetryFeedback(verificationUrl: string | null | undefined): KycRetryFeedback {
+export function resolveKycRetryFeedback(
+  verificationUrl: string | null | undefined,
+  mode: "auto" | "manual" | undefined,
+): KycRetryFeedback {
   if (verificationUrl && verificationUrl.startsWith("https://")) {
-    return { openUrl: verificationUrl, error: null };
+    return { openUrl: verificationUrl, error: null, info: null };
   }
-  return { openUrl: null, error: "Couldn't start verification — try again in a moment." };
+  if (mode === "manual") {
+    return { openUrl: null, error: null, info: "Your ID is still under manual review — we'll notify you once it's checked." };
+  }
+  return { openUrl: null, error: "Couldn't start verification — try again in a moment.", info: null };
 }

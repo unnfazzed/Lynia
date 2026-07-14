@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+import { OFFER_WINDOW_MS } from "@lynia/shared";
 import type { OpenOrder } from "../api/orders";
 
 /**
@@ -64,4 +65,26 @@ export async function clearRiderBidDraft(): Promise<void> {
   } catch {
     /* best-effort */
   }
+}
+
+/** A live offer the rider has sent — kept on-screen with a countdown to the auction close (C2). */
+export interface SentOffer {
+  order: OpenOrder;
+  fare: string;
+  etaMinutes: number;
+  /** ISO auction close — createdAt + OFFER_WINDOW_MS, the same window the customer sees. */
+  expiresAt: string;
+}
+
+/**
+ * BH-05: build the "your offer is in" card entry from the EXACT fare/eta that were actually SENT
+ * (the mutation's own variables), never from whatever the compose form currently shows. The rider can
+ * edit the fare/eta fields between a failed send and the "already responded" 409 lost-response
+ * recovery (the error state re-enables editing) — reading live form state at that later point showed
+ * the just-edited, never-sent price as if it were the rider's real bid. Pulled out as a pure function
+ * so this invariant (params win, not ambient state) is unit-testable without mounting the screen.
+ */
+export function buildSentOfferEntry(order: OpenOrder, sentFare: string, sentEtaNum: number): SentOffer {
+  const expiresAt = new Date(new Date(order.createdAt).getTime() + OFFER_WINDOW_MS).toISOString();
+  return { order, fare: sentFare, etaMinutes: Math.round(sentEtaNum), expiresAt };
 }
