@@ -781,6 +781,19 @@ describe("OrdersService.getSnapshot", () => {
     expect(counted).toBe(false);
   });
 
+  it("KB-DELIVERY-CODE-ROTATION-SIGNAL: exposes codeRotatedAt as an ISO string when the code was (re)issued", async () => {
+    const rotatedAt = new Date("2026-06-26T12:34:56.000Z");
+    const snap = await svc(row({ status: "en_route_dropoff", deliveryCodeRotatedAt: rotatedAt })).getSnapshot("ord-1", "rider-1");
+    // The robust rotation signal the rider app consumes to detect a re-issue across an app-kill.
+    expect(snap.codeRotatedAt).toBe(rotatedAt.toISOString());
+  });
+
+  it("KB-DELIVERY-CODE-ROTATION-SIGNAL: codeRotatedAt is null on a row that never had a code stamped", async () => {
+    // Pre-0026 rows / orders never assigned a code carry no timestamp — served as an explicit null.
+    const snap = await svc(row()).getSnapshot("ord-1", "cust-1");
+    expect(snap.codeRotatedAt).toBeNull();
+  });
+
   it("Fix 6: remaps an ops-internal cancel reason to calm customer-safe copy (not 'Suspected fraud')", async () => {
     const prisma = {
       order: {

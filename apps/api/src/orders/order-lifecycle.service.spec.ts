@@ -17,12 +17,18 @@ function build(methods: Record<string, unknown>) {
   const jobCancelled: Array<[string, boolean, string]> = [];
   const rebroadcasts: Array<[string, string]> = [];
   const bidExpired: Array<[string, number | undefined, number | undefined]> = [];
+  const evicted: string[] = [];
+  const kickedFromBoard: string[] = [];
   const gateway = {
     emitOrderStatus: (id: string, s: string) => emits.push([id, s]),
     emitJobCancelled: (id: string, collected: boolean, cancelledBy: string) => jobCancelled.push([id, collected, cancelledBy]),
     emitOrderRebroadcast: (oldId: string, newId: string) => rebroadcasts.push([oldId, newId]),
     // DS13-07: board-close on a cancel of a still-open auction reuses the expiry path's bid:expired.
     emitBidExpired: (id: string, lat?: number, lng?: number) => bidExpired.push([id, lat, lng]),
+    // BR-01: markUndelivered evicts an auto-held rider from the geo index (best-effort passthrough).
+    evictRiderFromGeo: async (id: string) => { evicted.push(id); },
+    // KB-BOARD-REVOKE: markUndelivered also kicks a newly auto-held rider off the board rooms.
+    kickRiderFromBoard: async (id: string) => { kickedFromBoard.push(id); },
   };
   // F-01 re-broadcast announce is best-effort push — spy so tests can assert it fired without a socket.
   const orders = { announceOpenOrder: vi.fn(async () => {}) };
@@ -39,7 +45,7 @@ function build(methods: Record<string, unknown>) {
     noopNotifications,
     orders as unknown as OrdersService,
   );
-  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, orders, prisma };
+  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, kickedFromBoard, orders, prisma };
 }
 
 describe("OrderLifecycleService.advance", () => {
@@ -412,12 +418,19 @@ describe("OrderLifecycleService.reconcileStaleDeliveries", () => {
 });
 
 describe("OrderLifecycleService.rotateDeliveryCode", () => {
-  it("issues a fresh 6-digit code and resets the attempt counter", async () => {
+  it("issues a fresh 6-digit code, resets attempts under a CAS guard, and stamps the rotation time (DB now())", async () => {
     let args: { where: Record<string, unknown>; data: Record<string, unknown> } | undefined;
+    let sql = "";
     const { svc } = build({
       order: {
         findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }),
         updateMany: async (a: typeof args) => { args = a; return { count: 1 }; },
+      },
+      // KB-DELIVERY-CODE-ROTATION-SIGNAL: the timestamp stamp is a raw write so delivery_code_rotated_at
+      // is DB now() (one clock domain), run inside the same transaction as the CAS'd hash rotation.
+      $executeRaw: async (strings: TemplateStringsArray, ..._vals: unknown[]) => {
+        sql = strings.join("?");
+        return 1;
       },
     });
     const res = await svc.rotateDeliveryCode("o1", "c1");
@@ -427,6 +440,8 @@ describe("OrderLifecycleService.rotateDeliveryCode", () => {
     // CAS guard: the write only lands while status is still one of the active-for-code statuses.
     expect(args!.where).toMatchObject({ id: "o1" });
     expect(args!.where.status).toMatchObject({ in: expect.arrayContaining(["en_route_dropoff", "assigned"]) });
+    // The new robust rotation signal is stamped with the DB clock on every re-issue.
+    expect(sql).toContain("delivery_code_rotated_at = now()");
   });
 
   it("403s for a non-owner", async () => {
@@ -703,6 +718,58 @@ describe("OrderLifecycleService.markUndelivered", () => {
     });
     await svc.markUndelivered("o1", "r1", "wrong_address");
     expect(riderData).toMatchObject({ reliabilityScore: 100, onHold: true, heldReason: "velocity" });
+  });
+
+  // BR-01: an automated hold must ALSO pull the rider offline (isOnline:false) and evict them from the
+  // geo index — like the admin suspend/ban paths — so a held rider actually leaves the live-supply plane
+  // instead of relying solely on the nearbyRiders query filter.
+  it("BR-01: a newly auto-held rider is forced offline and evicted from the geo index", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const counts = [3, 0]; // velocity trip
+    let call = 0;
+    const { svc, evicted, kickedFromBoard } = build({
+      order: {
+        findUnique: async () => row({ status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => counts[call++]!,
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ reliabilityScore: 100, onHold: false, heldReason: null }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.markUndelivered("o1", "r1", "wrong_address");
+    // Forced offline in the same write as the hold...
+    expect(riderData).toMatchObject({ onHold: true, isOnline: false });
+    // ...and evicted from the live geo index (best-effort, post-commit).
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evicted).toEqual(["r1"]);
+    // KB-BOARD-REVOKE: the now-ineligible rider is also kicked off the board rooms so board pushes stop.
+    expect(kickedFromBoard).toEqual(["r1"]);
+  });
+
+  it("BR-01: a penalty-only ding that does NOT newly hold leaves isOnline untouched and evicts nobody", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc, evicted, kickedFromBoard } = build({
+      order: {
+        findUnique: async () => row({ status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => 0, // no velocity trip
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        // A score penalty applies but the rider does not cross into on_hold.
+        findUnique: async () => ({ reliabilityScore: 90, onHold: false, heldReason: null }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.markUndelivered("o1", "r1", "breakdown");
+    expect(riderData).not.toHaveProperty("isOnline");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evicted).toEqual([]);
+    // KB-BOARD-REVOKE: no new hold ⇒ still board-eligible ⇒ no board kick.
+    expect(kickedFromBoard).toEqual([]);
   });
 });
 

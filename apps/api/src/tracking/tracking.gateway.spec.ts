@@ -38,7 +38,24 @@ function fakeServer(remoteSockets: Array<{ data?: unknown }> = []) {
   // unaffected; pass sockets to simulate a customer live on another instance.
   const fetchSockets = vi.fn(async () => remoteSockets);
   const inFn = vi.fn(() => ({ fetchSockets }));
-  return { server: { to, in: inFn } as unknown, to, emit, fetchSockets, in: inFn };
+  // KB-BOARD-REVOKE: `server.fetchSockets()` (no room) — cluster-wide registry kickRiderFromBoard scans
+  // to find a specific rider's sockets. Defaults to the same list; a test can pass RemoteSocket-like
+  // fakes carrying `.rooms` + `.leave()` to assert the board rooms are left.
+  const fetchAll = vi.fn(async () => remoteSockets);
+  return { server: { to, in: inFn, fetchSockets: fetchAll } as unknown, to, emit, fetchSockets, in: inFn, fetchAll };
+}
+
+/** A RemoteSocket-like fake for kickRiderFromBoard: a live `rooms` Set + a `leave` spy that mutates it,
+ *  plus the authenticated user in `data` (matched by `sub`). */
+function remoteSocket(sub: string, rooms: string[]) {
+  const roomSet = new Set(rooms);
+  return {
+    data: { user: { sub, role: "rider" } },
+    rooms: roomSet,
+    leave: vi.fn(async (room: string) => {
+      roomSet.delete(room);
+    }),
+  };
 }
 
 /** Spy metrics fake — position-emit recording is best-effort; keep tests off the OTel path. */
@@ -129,6 +146,51 @@ describe("TrackingGateway.boardLeave", () => {
     expect(client.leave).toHaveBeenCalledWith("board:geo:1:3");
     // The order room is a different concern (customer tracking) — boardLeave must not touch it.
     expect(client.leave).not.toHaveBeenCalledWith(orderRoom("ord-1"));
+  });
+});
+
+describe("TrackingGateway.kickRiderFromBoard (KB-BOARD-REVOKE)", () => {
+  it("forces the target rider's socket(s) to leave EVERY board room but keeps their order room", async () => {
+    const kept = orderRoom("their-active-order");
+    const sock = remoteSocket("rider-1", [BOARD_ROOM, "board:geo:1:2", "board:geo:1:3", kept]);
+    const { server } = fakeServer([sock]);
+    const g = gateway();
+    g.server = server as never;
+
+    await g.kickRiderFromBoard("rider-1");
+
+    // Both the city-wide room and every geo-cell room are left — the board-push stream stops at once.
+    expect(sock.leave).toHaveBeenCalledWith(BOARD_ROOM);
+    expect(sock.leave).toHaveBeenCalledWith("board:geo:1:2");
+    expect(sock.leave).toHaveBeenCalledWith("board:geo:1:3");
+    // But the order room (their own live delivery tracking) is untouched — this is a board revoke only.
+    expect(sock.leave).not.toHaveBeenCalledWith(kept);
+    expect(sock.rooms.has(kept)).toBe(true);
+  });
+
+  it("only kicks the matching rider — a different rider's board rooms are left alone", async () => {
+    const target = remoteSocket("rider-1", [BOARD_ROOM]);
+    const other = remoteSocket("rider-2", [BOARD_ROOM, "board:geo:9:9"]);
+    const { server } = fakeServer([target, other]);
+    const g = gateway();
+    g.server = server as never;
+
+    await g.kickRiderFromBoard("rider-1");
+
+    expect(target.leave).toHaveBeenCalledWith(BOARD_ROOM);
+    // The un-targeted rider keeps their board rooms.
+    expect(other.leave).not.toHaveBeenCalled();
+  });
+
+  it("never throws when the server is undefined, and best-effort when fetch fails", async () => {
+    const g = gateway();
+    // No server bound (e.g. Redis-less test env) → a silent no-op.
+    await expect(g.kickRiderFromBoard("rider-1")).resolves.toBeUndefined();
+
+    // A fetchSockets error is swallowed (info-drip fix, never affects the committed standing change).
+    const server = { fetchSockets: vi.fn(async () => { throw new Error("adapter down"); }) } as unknown;
+    g.server = server as never;
+    await expect(g.kickRiderFromBoard("rider-1")).resolves.toBeUndefined();
   });
 });
 

@@ -61,3 +61,84 @@ export function orderLoadErrorKind(status: number | undefined): "not_found" | "f
   if (status === 403) return "forbidden";
   return "transient";
 }
+
+/**
+ * Which copy the expired-auction terminal should show. The live `bidCount` (from the offers-list query)
+ * is empty on a COLD read into an already-expired order — that query only fetches `pending` offers, which
+ * no longer exist post-expiry — so a customer who watched riders bid, force-killed the app, and cold-started
+ * back in would wrongly be told "no riders took this price". The server's `hadOffers` (a count of offer rows,
+ * which survive expiry) recovers the truth on that cold path. Either signal ("riders bid" locally OR per the
+ * server) wins, so the honest "you didn't pick in time" copy shows; only when NEITHER says riders bid do we
+ * fall through to the no-supply / no-offers copies (which stay exactly as before for the live case).
+ *   - "had-offers": riders did bid — the window closed before the customer picked.
+ *   - "no-supply":  zero bids AND nobody online near the pickup — the price was never the problem.
+ *   - "no-offers":  zero bids with supply present — nudging the price up usually helps.
+ */
+export function expiredTerminalKind(input: {
+  bidCount: number;
+  hadOffers: boolean | null | undefined;
+  expiryNoSupply: boolean | null | undefined;
+}): "had-offers" | "no-supply" | "no-offers" {
+  if (input.bidCount > 0 || input.hadOffers === true) return "had-offers";
+  if (input.expiryNoSupply === true) return "no-supply";
+  return "no-offers";
+}
+
+/**
+ * Reconcile a locally-stored delivery code against the server's `deliveryOtpAttempts` on each snapshot
+ * refresh, to catch a code that was rotated (customer tapped "Re-issue delivery code" → server rotated the
+ * hash and reset the attempt counter to 0) while the app was killed before the rotate response landed.
+ *
+ * The server never re-sends the plaintext code, so the client keeps the OLD value in secure storage; with a
+ * non-null local code the re-issue UI never re-prompts and the customer confidently relays a DEAD code,
+ * burning the rider's attempts.
+ *
+ * PRIMARY signal (KB-DELIVERY-CODE-ROTATION-SIGNAL): the snapshot's `codeRotatedAt` — an ISO timestamp the
+ * server stamps on every code issue/rotate. It's always reliable: once we've confirmed a baseline value for
+ * the code we hold, any change to a different value proves the code was rotated out from under us, EVEN if
+ * the app was killed before the rotate response landed (the earlier baseline was recorded while holding the
+ * old code, before the customer initiated the — then lost — re-issue). `null`/`undefined` = no signal (older
+ * API, or a cached pre-field snapshot) → fall through to the heuristic below.
+ *
+ * FALLBACK / defense-in-depth: `deliveryOtpAttempts`, which is monotonic while a given code is current (0 at
+ * issue, +1 per failed rider attempt) and resets to 0 ONLY on a rotation. Track the highest attempts value
+ * seen while holding this code; a fresh snapshot whose count has DROPPED below that high-water mark reveals a
+ * rotation too — but only if the client observed the elevated count before any kill, which is why the
+ * timestamp signal above is preferred whenever it's present.
+ *
+ *   - "invalidate":        a rotation was detected — clear the stored code + companions.
+ *   - "sync-rotation-ts":  first confirmed sighting of the rotation stamp for the held code — adopt it as the
+ *                          baseline so a LATER change is detectable (never invalidates on this).
+ *   - "advance-highwater": attempts climbed (a rider is failing against OUR code) — persist the new high-water.
+ *   - "none":              nothing to do (no local code, no server signal yet, or steady state).
+ */
+export function reconcileDeliveryCode(input: {
+  hasLocalCode: boolean;
+  storedAttemptsHighWater: number | null | undefined;
+  snapshotAttempts: number | null | undefined;
+  storedCodeRotatedAt?: string | null | undefined;
+  snapshotCodeRotatedAt?: string | null | undefined;
+}):
+  | { action: "invalidate" }
+  | { action: "sync-rotation-ts"; codeRotatedAt: string }
+  | { action: "advance-highwater"; attempts: number }
+  | { action: "none" } {
+  const { hasLocalCode, storedAttemptsHighWater, snapshotAttempts, storedCodeRotatedAt, snapshotCodeRotatedAt } = input;
+  // No code to protect → never invalidate on missing data, stay backward-safe.
+  if (!hasLocalCode) return { action: "none" };
+
+  // PRIMARY: the explicit rotation timestamp. Present-and-different from our confirmed baseline ⇒ rotated.
+  // Present-with-no-baseline ⇒ first sighting for the held code, adopt it (on a fresh issue the stored
+  // baseline is deliberately cleared so we re-baseline here instead of false-positiving on our own new code).
+  if (snapshotCodeRotatedAt != null) {
+    if (storedCodeRotatedAt == null) return { action: "sync-rotation-ts", codeRotatedAt: snapshotCodeRotatedAt };
+    if (snapshotCodeRotatedAt !== storedCodeRotatedAt) return { action: "invalidate" };
+    // Equal → steady state on the timestamp; still let the attempts high-water advance below.
+  }
+
+  // FALLBACK: the attempts high-water heuristic. Skipped (⇒ "none") when either side is missing.
+  if (snapshotAttempts == null || storedAttemptsHighWater == null) return { action: "none" };
+  if (snapshotAttempts < storedAttemptsHighWater) return { action: "invalidate" };
+  if (snapshotAttempts > storedAttemptsHighWater) return { action: "advance-highwater", attempts: snapshotAttempts };
+  return { action: "none" };
+}

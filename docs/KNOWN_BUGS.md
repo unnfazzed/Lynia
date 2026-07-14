@@ -6,19 +6,28 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-13 (deep-sweep routine — orthogonal Fable hunt over never-audited
+**Last consolidated:** 2026-07-14 (deep-sweep routine — orthogonal Fable hunt over never-audited
 internals, pattern propagation, cross-cutting mechanisms, and an adversarial API pass). Prior fixes:
-PR #192 (F-01…F-10), PR #193 (F-11…F-19). Prior sweep's remediation, all merged: **#195** (DS-01…DS-11
+PR #192 (F-01…F-10), PR #193 (F-11…F-19). Prior sweeps' remediation, all merged: **#195** (DS-01…DS-11
 + FRAUD P1-5), **#196** (F-09), **#197** (F-18 durability), **#198** (FRAUD P0-3 velocity), **#199**
 (F-N3 + DS-11 verified-ID freeze), **#204** (BH-01, BH-02), **#210** (BR-01…BR-03 — broadcast ghost-rider
-filter, widening radius, radius-config consolidation; see the broadcast-review section below). **This deep
-sweep (`docs/DEEP-SWEEP-2026-07-13.md`)
-found 8 new items** — DS13-01…DS13-07 + RH-01 (details in that report and the section at the bottom of
-this ledger). **DS13-01…DS13-07 fixed and merged in PR #209** (`fix(deep-sweep): remediate DS13-01..07`),
-each with a regression test; **RH-01 fixed in PR #221** (persisted `heldReason` — Option A), which also
-lands the DS13-05 admin-web SOS panel follow-up. Phase-0 re-verified 8/8 sampled prior fixes still intact
-(no regressions). Infra hardening flags are wired with
-an ordered rollout runbook at `docs/INFRA-HARDENING-ROLLOUT.md`.
+filter, widening radius, radius-config consolidation; see the broadcast-review section below), **#209**
+(DS13-01…DS13-07) + **#221** (RH-01, persisted `heldReason` — Option A). The prior deep sweep
+(`docs/DEEP-SWEEP-2026-07-13.md`) found 8 items (DS13-01…DS13-07 + RH-01), all remediated. **This deep
+sweep (`docs/DEEP-SWEEP-2026-07-14.md`) found 9 new items** — DS14-01…DS14-09, all MEDIUM or lower (no
+CRITICAL, no HIGH; the stopping rule fired with zero new CRITICAL/HIGH from the Phase-1 + Phase-3 passes)
+— **all 9 fixed this sweep (PR pending merge)**, each with a regression test (`pnpm typecheck` + 787 API
+tests + 321 mobile tests + build all green); details in that report and the section at the bottom of this
+ledger. The sweep also logged 6 lower-priority/client-only items as deferred OPEN items (KB-BOARD-REVOKE,
+KB-HEARTBEAT-MARGIN, KB-OTP-COUNT-SYNC, KB-CONFIRMITEMS-RETRY, KB-PUSH-TOKEN-RACE,
+KB-DELIVERY-CODE-ROTATION-SIGNAL) — **all 6 were subsequently executed the same day** (DS14-10…DS14-15,
+same PR, each with a regression test; `pnpm typecheck` + 796 API tests + 335 mobile tests green), so
+**all 15 findings from this sweep are now fixed, zero left open**. Phase-0 re-verified 8/8 sampled prior
+fixes still intact — F-06, F-11, F-13, DS-01, DS-03, DS13-02, DS13-04, RH-01, plus a BR-01 spot-check (no
+regressions). The just-merged 07-14 UX commit `96a953c` was scrutinized for regressions and came back
+clean except DS14-01 (an incomplete client half of its own expiry-honesty fix, since fixed) and the
+push-token-race note (DS14-13, since fixed). Infra hardening flags are wired with an ordered rollout
+runbook at `docs/INFRA-HARDENING-ROLLOUT.md`.
 
 ## Source reports folded in
 
@@ -52,7 +61,10 @@ duplication (see clusters below).
 ## OPEN (present in code today)
 
 The infra/founder-gated items below remain open; the two 2026-07-14 UX-pass code items (KB-NOTIFY-ORDERID,
-KB-FEED-SYNTH) are now FIXED — see "Recently closed" below. Everything else remains FIXED or MOOT.
+KB-FEED-SYNTH) are now FIXED — see "Recently closed" below. The 2026-07-14 deep sweep's six
+lower-priority/client-only follow-up items (KB-BOARD-REVOKE, KB-HEARTBEAT-MARGIN, KB-OTP-COUNT-SYNC,
+KB-CONFIRMITEMS-RETRY, KB-PUSH-TOKEN-RACE, KB-DELIVERY-CODE-ROTATION-SIGNAL) were all fixed the same day
+(DS14-10…DS14-15 in the sweep section below) and are no longer open. Everything else remains FIXED or MOOT.
 
 | ID | Description | Area | Sev | Sweeps | Notes |
 |---|---|---|---|---|---|
@@ -271,3 +283,48 @@ all CI checks passing; no schema migration.
 | DS13-06 | `POST /riders/become` unthrottled → a parallel burst mints N paid Didit sessions; concurrent-create P2002 leaks as a 500 | `riders.controller.ts:38`, `rider.service.ts` | LOW | **FIXED #209** — `@Throttle({limit:5,windowSec:3600,keyPrefix:"become"})` parity with `kyc/retry` + P2002→`ConflictException` mapping |
 | DS13-07 | Cancelling an `open_for_offers` auction never signals the board → dead cards / live "offer sent" states linger until local countdown/409 | `order-lifecycle.service.ts:612-647`, `admin-orders.service.ts:130` | LOW | **FIXED #209** — emit the expiry path's `emitBidExpired` board-close to the pickup geo rooms on cancel-while-open |
 | RH-01 | FRAUD P0-3 velocity `on_hold` self-clears on the next reliability-recovery event because the score hysteresis unconditionally un-holds at score ≥ `ON_HOLD_CLEAR_AT` | `reliability.ts:22`, `order-lifecycle.service.ts` | MEDIUM | **FIXED #221** — persisted `heldReason` (`reliability`\|`velocity`\|null; migration 0024); `applyReliabilityDelta` never clears a `velocity` hold on score recovery, only an admin clear-hold releases it |
+
+---
+
+## Deep sweep 2026-07-14 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-14.md`
+
+Orthogonal Fable hunt (never-audited internals second pass, pattern propagation, cross-cutting
+mechanisms) + adversarial API pass, all cross-checked against this ledger first, run against `main` after
+the just-merged 07-14 UX commit `96a953c`. Phase-0 re-verified 8/8 sampled prior fixes intact (F-06,
+F-11, F-13, DS-01, DS-03, DS13-02, DS13-04, RH-01) plus a BR-01 spot-check — no regressions. The Phase-1
+never-audited-area read and the Phase-3 adversarial pass both returned **zero** new findings (every attack
+traced to an existing control); the **stopping rule fired — zero new CRITICAL/HIGH from Phase 1 + Phase
+3.** Nine new findings, all MEDIUM or lower (no CRITICAL, no HIGH), all **fixed this sweep (PR pending
+merge)**, each with a regression test; `pnpm typecheck` + 787 API tests + 321 mobile tests + build green.
+DS14-08 (refresh-token lost-response grace) is the highest-risk fix — it touches session/auth issuance,
+though not bid acceptance / order assignment / agreed-price / KYC gating. Six lower-priority/client-only
+follow-up items were initially logged OPEN — KB-BOARD-REVOKE, KB-HEARTBEAT-MARGIN, KB-OTP-COUNT-SYNC,
+KB-CONFIRMITEMS-RETRY, KB-PUSH-TOKEN-RACE, KB-DELIVERY-CODE-ROTATION-SIGNAL — then **executed the same
+day** as DS14-10…DS14-15 below (same PR, same test-green bar: `pnpm typecheck` + 796 API tests + 335
+mobile tests), so no OPEN items remain from this sweep.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| DS14-01 | `hadOffers` added server-side in `96a953c` but never wired into the mobile client — the cold-start expired-auction terminal still says "no riders were available" when riders actually bid; the commit message claimed the client half was done but only the push/feed halves were wired | `apps/mobile/src/api/orders.ts`, `apps/mobile/src/logic/order-tracking.ts`, `apps/mobile/app/order/[id].tsx` | MEDIUM | **FIXED (this sweep, PR pending merge)** — add `hadOffers?: boolean\|null` to `OrderSnapshot`; new pure `expiredTerminalKind`; expired-terminal branch switched to use it. 4 new cases in `order-tracking.test.ts` incl. exact cold-start repro |
+| DS14-02 | `retryKyc` does a non-CAS blind update (`findUnique` then unguarded `update`) → can bypass the two-attempt lock or clobber a concurrent admin KYC decision landing in the same window | `apps/api/src/riders/rider.service.ts` `retryKyc` | MEDIUM-LOW | **FIXED (this sweep, PR pending merge)** — CAS `updateMany` guarded on observed `{kycStatus, kycAttempts}`, `ConflictException` on 0 rows; regression test in `rider.service.spec.ts` |
+| DS14-03 | KYC verified-ID freeze (DS-11/#199) is check-then-write in both ID-writing routes → a webhook-verify landing between the read of `kycStatus` and the ID write still gets the change through | `apps/api/src/riders/rider.service.ts` `completeProfile`, `apps/api/src/auth/auth.service.ts` `updateProfile` | LOW-MED | **FIXED (this sweep, PR pending merge)** — the ID write is now a CAS `updateMany` re-asserting the freeze in the WHERE clause; regression tests in both specs simulate the webhook committing verified mid-write |
+| DS14-04 | `adminSetKyc`'s repeat-decline guard (`isRepeatOfSameDecline`, F-14) reads the row with a plain unlocked `findUnique` inside its transaction → a concurrent vendor-webhook decline can double-count one logical decline | `apps/api/src/riders/rider.service.ts` `adminSetKyc` | LOW | **FIXED (this sweep, PR pending merge)** — `FOR UPDATE` row lock before the read inside the same transaction (matching `order-lifecycle.service.ts`); test asserts lock-before-read-before-write ordering |
+| DS14-05 | Supply/broadcast honesty gap (three parts, one root cause — an on_hold/suspended rider stays in the live-supply plane): (a) `nearbyRiders` had no standing predicate so an on_hold rider padded counts and got broadcast pushes; (b) an automated velocity hold set `onHold` but never flipped `isOnline:false` or evicted from geo (unlike admin suspend/ban); (c) admin dashboard online count lacked BR-01's heartbeat cutoff | `apps/api/src/tracking/tracking.service.ts` `nearbyRiders`, `apps/api/src/orders/order-lifecycle.service.ts` `markUndelivered`, `apps/api/src/admin/admin.service.ts` | MEDIUM-LOW | **FIXED (this sweep, PR pending merge)** — `account_status='active' AND on_hold=false` on both `nearbyRiders` legs; automated holds now set `isOnline:false` + evict via new `TrackingGateway.evictRiderFromGeo`; admin count uses the same heartbeat cutoff. Independently flagged by two passes. Tests in `tracking.service.spec.ts` + `order-lifecycle.service.spec.ts` |
+| DS14-06 | `setOnline(true)` is gate-then-blind-write (standing read via `findUnique`, then unguarded `isOnline:true`) → a concurrent admin suspend can be raced past, putting a just-suspended rider back online | `apps/api/src/riders/rider.service.ts` `setOnline` | LOW | **FIXED (this sweep, PR pending merge)** — CAS `updateMany` guarded on `accountStatus:"active", onHold:false`; on 0 rows re-reads and throws the precise `onlineRefusalReason` refusal; test simulates a suspend landing between gate and write |
+| DS14-07 | `/orders/:orderId/report` has no rate limit, unlike its throttled sibling issue-raise endpoint (FRAUD P1-5) | `apps/api/src/reports/reports.controller.ts` | LOW | **FIXED (this sweep, PR pending merge)** — `@Throttle({limit:10, windowSec:60, keyPrefix:"order-report"})` matching the issue-raise cap; new `reports.controller.spec.ts` |
+| DS14-08 | Refresh-token rotation had no lost-response grace: a dropped rotate response makes the client's next refresh present the rotated-away token and get a hard 401, forcing a full re-OTP mid-session — the failure mode OTP-verify already got a 60s grace for (UX-0711), never mirrored onto refresh | `apps/api/src/auth/auth.service.ts`; migration `0025_session_rotation_link` (nullable `Session.rotatedToId`, no backfill) | MEDIUM | **FIXED (this sweep, PR pending merge)** — a rotation links revoked→successor; a retry of a just-rotated token re-issues a fresh independent session ONLY when revoked-by-rotation + successor un-consumed + within 60s (reuse detection intact; logout-revoke, wrong secret, plain expiry stay hard rejects). **Highest-risk fix — session/auth issuance; flag for careful review** (does not touch bid acceptance/order assignment/agreed-price/KYC gating). 5 new cases in `auth.service.spec.ts` |
+| DS14-09 | A stale delivery code can survive an app-kill mid-rotation: rider hits OTP lockout, customer re-issues, server rotates the hash + zeroes attempts, but if the app is killed before the response lands the client's local storage still holds the OLD code and never re-prompts → customer relays a dead code, burning attempts toward a fresh lockout | `apps/mobile/src/auth/session.ts`, `apps/mobile/src/logic/order-tracking.ts`, `apps/mobile/app/order/[id].tsx` | MEDIUM | **FIXED (this sweep, PR pending merge)** — companion `deliveryCodeAttempts.<orderId>` high-water-mark key; new pure `reconcileDeliveryCode` detects a drop in the server's `deliveryOtpAttempts` below the local mark as a rotation signal; client invalidates the code + routes to the existing re-issue prompt. 6 new cases in `order-tracking.test.ts` incl. lockout→reissue→kill repro + backward-compat guards. **Known limitation → KB-DELIVERY-CODE-ROTATION-SIGNAL** (needs a `codeRotatedAt` snapshot timestamp for full robustness) |
+
+### Deferred items executed same day (DS14-10…DS14-15)
+
+The six lower-priority/client-only items above were initially deferred as OPEN, then executed the same
+day at the user's request, each with a regression test.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| DS14-10 (was KB-BOARD-REVOKE) | Board eligibility (`isBoardEligible`) was checked only at WS subscribe time and never re-checked/revoked mid-session; a rider suspended or auto-held while already subscribed kept receiving `board:new_order`/`bid:expired` events until disconnect (not a bypass — every bid path re-gates — but an info-drip/confusing-UX) | `apps/api/src/tracking/tracking.gateway.ts` `boardSubscribe`/`isBoardEligible` | LOW | **FIXED** — new `kickRiderFromBoard(riderId)` on `TrackingGateway`, mirroring the `evictRiderFromGeo` plumbing; uses the cluster-wide `server.fetchSockets()` registry to find the rider's socket(s) on any instance and makes each leave `BOARD_ROOM` + every `board:geo:*` room (order rooms untouched). Wired post-commit into `admin-riders.service.ts` `suspendRider`/`banRider` and into `order-lifecycle.service.ts`'s automated-hold path in `markUndelivered`. Tests cover the gateway kick behavior and the suspend/ban/auto-hold wiring (incl. the CAS-0 no-kick case) |
+| DS14-11 (was KB-HEARTBEAT-MARGIN) | The 30s offer-selection staleness TTL had only a ~10s margin over the mobile app's 20s heartbeat cadence + 15s request timeout, and heartbeat writers mixed JS `Date.now()` vs DB `now()` clock domains, further eating the margin — a delayed/dropped heartbeat could make a customer's "select this rider" hit a spurious "rider just became unavailable" for a rider who was actually live | `apps/api/src/matching/matching.service.ts` `HEARTBEAT_TTL_MS`, `apps/api/src/riders/rider.service.ts` `setOnline` | LOW | **FIXED** — `HEARTBEAT_TTL_MS` widened 30s→60s (kept explicitly distinct from BR-01's separate, untouched 120s ghost-supply-count cutoff); `setOnline`'s heartbeat stamp converted to `$executeRaw` writing DB `now()` (matching `recordFix`/`touchRiderHeartbeat`), unifying the clock domain. Tests cover 45s-fresh/90s-stale selection-moment liveness |
+| DS14-12 (was KB-OTP-COUNT-SYNC) | A rider's locally-shown delivery-OTP attempt count only reconciled *downward* against the server after a lost response, so a dropped `confirmDelivery` response could show more attempts remaining than actually available until a 403 snapped it to the true max | `apps/mobile/app/rider/job.tsx`, `apps/mobile/src/logic/rider-job.ts` | LOW | **FIXED** — new pure `reconcileOtpAttempts` converges the local count to the server's committed value in BOTH directions; the sync effect stays keyed only on the fetched `deliveryOtpAttempts` value (never the local counter) so an in-flight optimistic post-401 increment can't be stomped by a stale-lower cached value before its refetch lands. 3 new cases in `rider-job.test.ts` |
+| DS14-13 (was KB-PUSH-TOKEN-RACE) | A narrow race in push-token registration: if FCM rotated the token while the initial registration POST was still in flight, the client could end up tracking the superseded token, so sign-out cleanup unregistered the wrong (dead) token, leaving the rotated token bound server-side until rehoming/pruning caught it | `apps/mobile/src/push/use-push-registration.ts` | LOW | **FIXED** — the rotation listener now records the newest desired token synchronously (`rotatedTo`) before its own async register; the initial-registration `.then` only commits `registered` if no rotation superseded it mid-flight, otherwise it drops the stale token server-side so cleanup targets the live rotated one. New race regression test using a deferred initial-registration promise |
+| DS14-14 (was KB-CONFIRMITEMS-RETRY) | `confirmItems` (rider marks pickup items confirmed) was fire-and-forget; an app kill or lost response right as the rider advanced to `picked_up` left the order permanently missing its confirmed-items record with no foreground/reconnect retry | `apps/mobile/app/rider/job.tsx`, `apps/mobile/src/auth/session.ts`, `apps/mobile/src/logic/rider-job.ts` | LOW | **FIXED** — a durable `confirmItemsPending` marker (order id + collected indexes) is persisted in `session.ts` before firing and cleared on confirmed success; new pure `reconcileConfirmItemsPending` re-sends it on any snapshot refresh (incl. warm foreground) while the order is still at `en_route_pickup` with no server record (the sole window the API accepts it), retiring the marker once recorded or the order is gone; wiped on sign-out. `itemsCollected` added to the mobile `OrderSnapshot`. 6 new cases in `rider-job.test.ts` |
+| DS14-15 (was KB-DELIVERY-CODE-ROTATION-SIGNAL) | DS14-09's rotation detection relied solely on an attempts-counter high-water mark, which only works if the client observed the elevated count before an app-kill | API: `apps/api/src/orders/order-lifecycle.service.ts` `rotateDeliveryCode`, `apps/api/prisma/schema.prisma` (`Order.deliveryCodeRotatedAt`), migration `0026_delivery_code_rotated_at`; mobile: `apps/mobile/src/api/orders.ts`, `src/logic/order-tracking.ts`, `src/auth/session.ts`, `app/order/[id].tsx` | LOW | **FIXED (both halves)** — additive nullable `Order.deliveryCodeRotatedAt`, stamped via DB `now()` on every rotate and on first code assignment (never null once a code exists), exposed in the snapshot as `codeRotatedAt` (ISO string or null, same party-gating as `deliveryOtpAttempts`). Mobile `reconcileDeliveryCode` extended (not replaced) to treat a `codeRotatedAt` that moved past the locally-confirmed baseline as the PRIMARY, always-reliable rotation signal, adopting the baseline on first sighting; the attempts high-water heuristic remains as defense-in-depth when the field is null/absent. Baseline persisted beside the code in `session.ts`, cleared on fresh issue/`clearDeliveryCode`/sign-out. Tests: snapshot exposure (API) + 5 new cases in `order-tracking.test.ts` (mobile) |

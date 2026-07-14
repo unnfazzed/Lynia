@@ -351,6 +351,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     riderId: string,
     reason: string,
   ): Promise<{ orderId: string; status: "undelivered" }> {
+    // Set when an automated hold is newly applied below, so we can pull the rider out of the live geo
+    // index after commit (the same eviction setOnline(false) does) — see the isOnline:false note there.
+    let newlyHeldRiderId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
@@ -409,6 +412,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           // clear); otherwise persist whatever applyReliabilityDelta computed (which itself preserves an
           // already-set velocity hold through a recovery/dead-band).
           const heldReason: HeldReason = velocityHold ? HeldReason.VELOCITY : next.heldReason;
+          // BR-01: an automated hold must also pull the rider offline — the admin suspend/ban paths
+          // (admin-riders.service) flip isOnline:false in the same write so a held rider actually leaves
+          // the live-supply plane; a hold that left isOnline:true relied solely on the nearbyRiders query
+          // filter. Force offline the moment the hold is newly applied and evict from geo after commit.
+          const newlyHeld = onHold && !rider.onHold;
           if (
             next.reliabilityScore !== rider.reliabilityScore ||
             onHold !== rider.onHold ||
@@ -416,9 +424,15 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           ) {
             await tx.rider.update({
               where: { profileId: order.riderId },
-              data: { reliabilityScore: next.reliabilityScore, onHold, heldReason },
+              data: {
+                reliabilityScore: next.reliabilityScore,
+                onHold,
+                heldReason,
+                ...(newlyHeld ? { isOnline: false } : {}),
+              },
             });
           }
+          if (newlyHeld) newlyHeldRiderId = order.riderId;
           if (velocityHold && !rider.onHold) {
             this.logger.warn(
               `Rider ${order.riderId} auto-held for review: ${undeliveredCount} undelivered / ${completedCount} completed in ${UNDELIVERED_ABUSE.windowDays}d (FRAUD P0-3 velocity)`,
@@ -428,6 +442,22 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
+    // Best-effort, post-commit: evict a newly auto-held rider from the Redis geo index (mirrors
+    // setOnline(false)). PG's is_online — now false — is the authority for nearbyRiders, so a missed
+    // eviction is harmless; this just stops the held rider lingering in a GEOSEARCH result until the
+    // key TTLs. Never allowed to affect the committed undelivered transition.
+    if (newlyHeldRiderId) {
+      void this.gateway.evictRiderFromGeo(newlyHeldRiderId).catch((err) => {
+        this.logger.warn(`geo eviction after auto-hold failed for ${newlyHeldRiderId}: ${(err as Error).message}`);
+      });
+      // KB-BOARD-REVOKE: an auto-held rider is no longer board-eligible (offers.service gates on
+      // standing), so also kick their live socket(s) off the board rooms — otherwise they keep getting
+      // board:new-order / bid:expired pushes for jobs they can no longer bid on until they disconnect.
+      // Best-effort, mirrors the geo eviction; never affects the committed undelivered transition.
+      void this.gateway.kickRiderFromBoard(newlyHeldRiderId).catch((err) => {
+        this.logger.warn(`board kick after auto-hold failed for ${newlyHeldRiderId}: ${(err as Error).message}`);
+      });
+    }
     this.safeEmit(orderId, "undelivered");
     return { orderId, status: "undelivered" };
   }
@@ -796,11 +826,20 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     if (!ACTIVE_FOR_CODE.includes(order.status)) throw new ConflictException("No active delivery for this order");
 
     const deliveryCode = this.tokens.randomOtp();
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: { in: [...ACTIVE_FOR_CODE] } },
-      data: { otpHash: this.tokens.hash(deliveryCode), deliveryOtpAttempts: 0 },
+    // KB-DELIVERY-CODE-ROTATION-SIGNAL: rotate the hash, zero the attempt counter, and stamp
+    // deliveryCodeRotatedAt (DB now() — the same clock domain fix 2 unifies the heartbeat writers
+    // onto) so the rider app can robustly detect this re-issue. CAS-guarded on the observed status
+    // like every sibling transition in this file (see doc comment above) — a concurrent
+    // confirmDelivery landing between the read and this write must not silently re-arm a code for
+    // an already-delivered order.
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, status: { in: [...ACTIVE_FOR_CODE] } },
+        data: { otpHash: this.tokens.hash(deliveryCode), deliveryOtpAttempts: 0 },
+      });
+      if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+      await tx.$executeRaw`UPDATE orders SET delivery_code_rotated_at = now() WHERE id = ${orderId}::uuid`;
     });
-    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
     return { deliveryCode };
   }
 

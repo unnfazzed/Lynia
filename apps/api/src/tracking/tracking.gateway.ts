@@ -365,6 +365,49 @@ export class TrackingGateway
   }
 
   /**
+   * Evict a rider from the Redis geo index (passthrough to TrackingService.evictFromGeo). Lets
+   * services that hold this gateway but not TrackingService directly — e.g. OrderLifecycleService when
+   * it auto-holds a rider (BR-01) — pull that rider out of the live-supply plane the same way
+   * setOnline(false) does, without re-forming the rider↔tracking import cycle. Best-effort in the
+   * service (PG's is_online stays the nearbyRiders authority), so this just forwards the call.
+   */
+  async evictRiderFromGeo(riderId: string): Promise<void> {
+    await this.tracking.evictFromGeo(riderId);
+  }
+
+  /**
+   * KB-BOARD-REVOKE: force a rider's socket(s) out of every board room the instant their standing flips
+   * to ineligible (admin suspend/ban, or an automated reliability hold). Board eligibility
+   * (isBoardEligible) is otherwise only checked at boardSubscribe time and never re-checked mid-session,
+   * so a rider suspended/held while already subscribed keeps receiving board:new-order / bid:expired
+   * pushes until they happen to disconnect. Every actual bid path re-gates standing (offers.service /
+   * selectOffer), so this is an info-drip / confusing-UX fix, NOT a security gate — hence best-effort: a
+   * missed kick just means a few stale board cards until the next reconnect, never a bypass.
+   *
+   * Mirrors the geo-eviction plumbing (evictRiderFromGeo): a thin gateway method the service layer calls
+   * post-commit, so the standing-mutation services don't re-form the rider↔tracking import cycle. Uses
+   * the cluster-wide socket registry (fetchSockets — the same Redis adapter the presence guard uses) to
+   * find the rider's sockets on ANY instance, then leaves the city-wide BOARD_ROOM and every board:geo:*
+   * cell room — ONLY the board rooms, so an assigned rider still tracking their own delivery keeps that
+   * order room. Never throws.
+   */
+  async kickRiderFromBoard(riderId: string): Promise<void> {
+    if (!this.server) return;
+    try {
+      const sockets = await this.server.fetchSockets();
+      for (const s of sockets) {
+        const sub = (s.data as { user?: SocketUser } | undefined)?.user?.sub;
+        if (sub !== riderId) continue;
+        for (const room of s.rooms) {
+          if (room.startsWith("board:geo:") || room === BOARD_ROOM) await s.leave(room);
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`board kick failed for rider ${riderId}: ${(err as Error).message}`);
+    }
+  }
+
+  /**
    * Signal an order's offer set changed to everyone watching it (SIGNAL ONLY — no offer contents;
    * the client refetches over the authenticated REST path). Best-effort; never throws.
    */

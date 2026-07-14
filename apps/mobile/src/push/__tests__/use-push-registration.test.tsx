@@ -297,6 +297,45 @@ describe("usePushRegistration resilience", () => {
     expect(mockUnregister).toHaveBeenLastCalledWith("tok-new");
   });
 
+  it("does NOT adopt the stale initial token when FCM rotates while the register POST is in flight (race)", async () => {
+    // KB-PUSH-TOKEN-RACE: a slow initial registration that resolves AFTER an FCM rotation must not clobber
+    // the freshly-bound rotated token — otherwise sign-out cleanup unregisters the dead initial token and
+    // leaves the live rotated one bound to the signed-out profile.
+    let resolveInitial!: (r: RegResult) => void;
+    mockRegister.mockReturnValueOnce(new Promise<RegResult>((res) => (resolveInitial = res)));
+
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    expect(tokenRotationListener).not.toBeNull();
+
+    // FCM rotates mid-flight; the rotation listener binds the new token.
+    act(() => {
+      tokenRotationListener?.({ data: "tok-new" });
+    });
+    await flush();
+    expect(mockRegisterRotated).toHaveBeenCalledWith("tok-new");
+
+    // Only NOW the slow initial registration resolves — with the stale, superseded token.
+    await act(async () => {
+      resolveInitial({ registered: true, token: "tok-old" });
+      await Promise.resolve();
+    });
+    await flush();
+    // The stale token is dropped server-side, not adopted as `registered`.
+    expect(mockUnregister).toHaveBeenCalledWith("tok-old");
+
+    mockUnregister.mockClear();
+    act(() => {
+      tree.unmount();
+    });
+    // Teardown unregisters the CURRENT (rotated) token — never the stale initial one.
+    expect(mockUnregister).toHaveBeenCalledWith("tok-new");
+    expect(mockUnregister).not.toHaveBeenCalledWith("tok-old");
+  });
+
   it("ignores a rotation event carrying a non-string token", async () => {
     mockRegister.mockResolvedValueOnce({ registered: true, token: "tok-old" });
     let tree!: ReturnType<typeof create>;

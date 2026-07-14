@@ -46,6 +46,11 @@ export interface OrderSnapshot {
   dropoff: { point: LatLng; landmark: string; contactPhone?: string | null };
   // Line-items — null/absent on orders created before the items column (clients render nothing).
   items?: { description: string; quantity: number }[] | null;
+  // Per-item pickup confirmation (indexes into `items`) the rider ticked at `en_route_pickup`, persisted
+  // server-side so the checklist state survives a reconnect/refetch. null/absent until confirmed, on old
+  // orders, or on an older API. Also lets the rider screen's durable confirmItems retry (KB-CONFIRMITEMS-
+  // RETRY) tell whether the confirmation still needs to be (re-)sent.
+  itemsCollected?: number[] | null;
   // The sender's note for the rider ("ask for Rita at reception") — parties on the order only.
   note?: string | null;
   // §5c proof-of-pickup: a short-lived signed URL for the rider's optional parcel photo, served to
@@ -68,6 +73,12 @@ export interface OrderSnapshot {
   // state (e.g. after the customer re-issues the code, which resets this to 0 server-side) instead of
   // trusting a purely local counter that has no way to learn about a server-side reset.
   deliveryOtpAttempts?: number | null;
+  // ISO timestamp stamped server-side every time the delivery code is issued or rotated (KB-DELIVERY-CODE-
+  // ROTATION-SIGNAL). The PRIMARY, always-reliable rotation signal for the customer's stored plaintext
+  // code: when it moves past the value last confirmed locally, the code was re-issued and the local copy
+  // is dead (see reconcileDeliveryCode). Null/absent on an older API or a cached pre-field snapshot, in
+  // which case the client falls back to the deliveryOtpAttempts high-water heuristic.
+  codeRotatedAt?: string | null;
   // Set only on the terminal `cancelled` status (3·b3): the recorded reason + which side cancelled.
   cancelReason?: string | null;
   cancelledBy?: "customer" | "rider" | null;
@@ -79,6 +90,12 @@ export interface OrderSnapshot {
   // online near the pickup) — lets the expired terminal show the honest "no riders were online" copy
   // instead of "nudge the price up". Null/absent on a normal expiry, other statuses, or an older API.
   expiryNoSupply?: boolean | null;
+  // UX-2026-07-14: set only on an `expired` order — whether ANY rider ever bid on this auction (a plain
+  // server-side count of offer rows, which survive expiry). The client's own live `bidCount` sees nothing
+  // on a COLD read into an already-expired order (it queries only `pending` offers, gone post-expiry), so
+  // this is what lets the expired terminal honestly say "riders did offer, you didn't pick in time" vs.
+  // "no riders took this price". Null/absent on every non-expired status and on an older API.
+  hadOffers?: boolean | null;
 }
 
 /**

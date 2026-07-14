@@ -77,8 +77,18 @@ export class RiderService {
       throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
     }
 
-    await this.prisma.profile.update({
-      where: { id: profileId },
+    // The pre-check above is check-then-write: the KYC webhook (applyKycResult) can commit `verified`
+    // between that read and this write, so an iteration that observed a non-verified status can still
+    // land a new ID after the freeze took effect. Make the ID-writing update a CAS that re-asserts the
+    // freeze atomically — it matches only when the rider is NOT (verified AND actually changing the ID),
+    // i.e. the exact condition the pre-check gates on, evaluated at write time. A re-send of the SAME id
+    // (idNumberHash unchanged) or a not-yet-verified rider still writes; a genuine change against a
+    // now-verified rider matches 0 rows → the same "ID frozen" error.
+    const written = await this.prisma.profile.updateMany({
+      where: {
+        id: profileId,
+        NOT: { AND: [{ rider: { kycStatus: "verified" } }, { idNumberHash: { not: idNumberHash } }] },
+      },
       data: {
         firstName: data.firstName,
         lastName: data.lastName,
@@ -86,6 +96,9 @@ export class RiderService {
         idNumberHash,
       },
     });
+    if (written.count === 0) {
+      throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
+    }
     // A-04 duplicate-ID signal. The rider row may not exist yet (this often runs before becomeRider),
     // so there's nothing to flag on here — log for the audit trail; becomeRider persists the reviewer
     // flag. We don't tell the applicant: surfacing it would only coach a ban-evader to change the ID.
@@ -208,10 +221,20 @@ export class RiderService {
     // The stub provider has no real callback, so it stands in as an instant pass (QA), mirroring become.
     const stubAutoPass = this.env.KYC_PROVIDER === "stub";
     const next: Kyc = stubAutoPass ? "verified" : "pending";
-    await this.prisma.rider.update({
-      where: { profileId },
+    // CAS on the observed KYC state instead of a blind update-by-id (mirrors the admin CAS fixes in
+    // admin-riders.service). The findUnique above takes no row lock, so between the read and this write
+    // the vendor webhook (applyKycResult) or an admin decision (adminSetKyc) may have flipped kycStatus
+    // and/or bumped kycAttempts — a blind update would clobber that newer state (re-open a locked
+    // application, or reset a just-verified/declined rider back to pending on a stale ref). Guarding on
+    // the exact (kycStatus, kycAttempts) we just read makes the two serialize: 0 rows ⇒ the row moved
+    // under us ⇒ 409, and the rider re-reads rather than resubmitting onto a stale decision.
+    const rotated = await this.prisma.rider.updateMany({
+      where: { profileId, kycStatus: rider.kycStatus, kycAttempts: rider.kycAttempts },
       data: { kycStatus: next, idVerified: stubAutoPass, kycRef: submission.ref, kycResolvedAt: null },
     });
+    if (rotated.count === 0) {
+      throw new ConflictException("Your ID verification just changed — refresh and try again.");
+    }
     return { kycStatus: next, verificationUrl: submission.url };
   }
 
@@ -241,10 +264,44 @@ export class RiderService {
         }
       }
     }
-    await this.prisma.rider.update({
-      where: { profileId },
-      data: { isOnline: online, lastHeartbeatAt: online ? new Date() : undefined },
-    });
+    if (online) {
+      // CAS the go-online write on the standing we just gated on (mirrors the admin CAS fixes). The
+      // findUnique above takes no row lock, so an admin suspend/ban or an auto reliability hold can
+      // commit between the gate read and this write — a blind `update` would flip the rider back to
+      // isOnline:true over that fresh decision, re-adding a suspended/held rider to the live-supply
+      // plane. Guarding on accountStatus:active + onHold:false makes the two serialize: 0 rows ⇒ the
+      // standing changed under us ⇒ refuse, re-deriving the precise reason so the app shows the right
+      // blocked state instead of silently going online.
+      // KB-HEARTBEAT-MARGIN: stamp the go-online heartbeat with DB now() (not JS new Date()) so every
+      // heartbeat writer shares ONE clock domain — recordFix / touchRiderHeartbeat already write now(),
+      // and the offer-selection liveness gate (matching.service) judges freshness against these stamps.
+      // Mixing app-server Date.now() here with DB now() elsewhere ate into that gate's margin under
+      // clock skew. Raw CAS keeps the standing guard (active + not on_hold) exactly as the prior
+      // updateMany: $executeRaw returns the affected-row count, so 0 ⇒ an admin suspend/ban or an auto
+      // reliability hold committed between the gate read and this write ⇒ refuse and re-derive the reason.
+      const claimed = await this.prisma.$executeRaw`
+        UPDATE riders
+        SET is_online = true,
+            last_heartbeat_at = now(),
+            updated_at = now()
+        WHERE profile_id = ${profileId}::uuid
+          AND account_status = 'active'
+          AND on_hold = false`;
+      if (claimed === 0) {
+        const now = await this.prisma.rider.findUnique({
+          where: { profileId },
+          select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
+        });
+        const reason = now ? onlineRefusalReason(now) : null;
+        if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
+        throw new ConflictException("Your account status just changed — refresh and try again.");
+      }
+    } else {
+      await this.prisma.rider.update({
+        where: { profileId },
+        data: { isOnline: false },
+      });
+    }
     // Going offline explicitly: drop the rider from the geo index right away (the socket may stay
     // connected, so we can't rely on the disconnect flush). Best-effort — PG's is_online is the
     // authority for nearbyRiders; this just stops a now-offline rider lingering in GEOSEARCH results.
@@ -409,6 +466,12 @@ export class RiderService {
             : "rider.kyc_reset";
 
     const decision = await this.prisma.$transaction(async (tx) => {
+      // Row-lock the rider before the read (mirrors order-lifecycle.service's lockRiderRow). The
+      // findUnique below takes no lock on its own, so a concurrent vendor-webhook decline
+      // (applyKycResult, which bumps kycAttempts) landing between this read and the update would let one
+      // logical decline be double-counted — over-locking an honest rider. Taking `FOR UPDATE` here makes
+      // the webhook's own write serialize against this transaction instead of interleaving with it.
+      await tx.$executeRaw`SELECT 1 FROM riders WHERE profile_id = ${profileId}::uuid FOR UPDATE`;
       const rider = await tx.rider.findUnique({
         where: { profileId },
         select: { profileId: true, kycAttempts: true, kycStatus: true, kycResolvedAt: true },

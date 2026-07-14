@@ -41,6 +41,11 @@ function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor
     p.$transaction = async (arg: unknown) =>
       typeof arg === "function" ? (arg as (tx: unknown) => unknown)(p) : arg;
   }
+  // adminSetKyc takes a `SELECT … FOR UPDATE` row lock via $executeRaw before its read (fix 3) — the
+  // return is ignored there. setOnline's go-online CAS (KB-HEARTBEAT-MARGIN) is ALSO a $executeRaw now
+  // (raw so the heartbeat stamp is DB now()), and it reads the affected-row count: 1 ⇒ the standing
+  // guard matched ⇒ online. Default to 1 (matched) unless a test overrides it to simulate a CAS miss.
+  if (!p.$executeRaw) p.$executeRaw = async () => 1;
   return new RiderService(p as unknown as PrismaService, env as Env, vendor, pii, trackingStub, notificationsStub);
 }
 
@@ -211,9 +216,10 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
         // Fix 2: completeProfile now reads the existing profile to enforce the post-verification ID
         // freeze. A fresh signup (no rider row / not verified) passes the guard untouched.
         findUnique: async () => ({ idNumberHash: null, rider: null }),
-        update: async (args: { data: Record<string, unknown> }) => {
+        // Fix 2: the ID-writing update is now a CAS updateMany that re-asserts the freeze atomically.
+        updateMany: async (args: { data: Record<string, unknown> }) => {
           updated = args.data;
-          return {};
+          return { count: 1 };
         },
         count: async (args: { where: Record<string, unknown> }) => {
           expect(args.where).toMatchObject({ idNumberHash: pii.hashId("63-123456-A-42"), id: { not: "p1" } });
@@ -234,7 +240,7 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
     const prisma = {
       profile: {
         findUnique: async () => ({ idNumberHash: null, rider: null }),
-        update: async () => ({}),
+        updateMany: async () => ({ count: 1 }),
         count: async () => {
           counted = true;
           return 0;
@@ -274,9 +280,9 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
       profile: {
         // Same hash as the incoming ID → not a change → allowed through the freeze guard.
         findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42"), rider: { kycStatus: "verified" } }),
-        update: async () => {
+        updateMany: async () => {
           wrote = true;
-          return {};
+          return { count: 1 };
         },
         count: async () => 0,
       },
@@ -284,6 +290,24 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
     const s = svc(prisma, { KYC_MODE: "auto" });
     expect(await s.completeProfile("p1", data)).toEqual({ ok: true });
     expect(wrote).toBe(true);
+  });
+
+  // Fix 2: the check-then-write race. The pre-check reads a non-verified status, but the KYC webhook
+  // commits `verified` before the write lands — the CAS updateMany then matches 0 rows and re-asserts the
+  // freeze, so a stale iteration can't slip a new ID past the freeze.
+  it("re-asserts the freeze at write time: 0 rows matched (webhook verified mid-write) → still blocked", async () => {
+    const prisma = {
+      profile: {
+        // Pre-check sees a NOT-yet-verified rider → passes the fast-path guard...
+        findUnique: async () => ({ idNumberHash: "old-hash", rider: { kycStatus: "pending" } }),
+        // ...but by write time the webhook has flipped it to verified, so the guarded updateMany matches
+        // nothing (the NOT(verified AND changing) predicate now excludes the row).
+        updateMany: async () => ({ count: 0 }),
+        count: async () => 0,
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto" });
+    await expect(s.completeProfile("p1", data)).rejects.toThrow(/locked after verification/i);
   });
 });
 
@@ -303,12 +327,15 @@ describe("RiderService.retryKyc", () => {
     const vendor: KycVendor = {
       submit: async () => ({ ref: "sess_new", status: "pending", url: "https://verify.didit.me/sess_new" }),
     };
+    let where: Record<string, unknown> | undefined;
     const prisma = {
       rider: {
-        findUnique: async () => ({ kycStatus: "failed" }),
-        update: async (args: { data: Record<string, unknown> }) => {
+        findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1 }),
+        // Fix 1: the reset is now a CAS updateMany guarded on the observed (kycStatus, kycAttempts).
+        updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          where = args.where;
           data = args.data;
-          return {};
+          return { count: 1 };
         },
       },
     };
@@ -316,6 +343,23 @@ describe("RiderService.retryKyc", () => {
     expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", verificationUrl: "https://verify.didit.me/sess_new" });
     // New ref, reset to pending, and kycResolvedAt cleared so the fresh webhook resolves it.
     expect(data).toMatchObject({ kycStatus: "pending", idVerified: false, kycRef: "sess_new", kycResolvedAt: null });
+    // Guarded on exactly what was read so a concurrent webhook/admin decision can't be clobbered.
+    expect(where).toMatchObject({ profileId: "p1", kycStatus: "failed", kycAttempts: 1 });
+  });
+
+  it("409s when the observed KYC state changed under it (CAS claims zero rows)", async () => {
+    const vendor: KycVendor = {
+      submit: async () => ({ ref: "sess_x", status: "pending", url: "https://verify.didit.me/sess_x" }),
+    };
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1 }),
+        // A concurrent webhook/admin decision moved the row between the read and this write → 0 rows.
+        updateMany: async () => ({ count: 0 }),
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    await expect(s.retryKyc("p1")).rejects.toThrow(/just changed|refresh and try again/i);
   });
 
   it("returns 503 when the vendor is down on retry", async () => {
@@ -353,7 +397,7 @@ describe("RiderService.retryKyc", () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1 }),
-        update: async () => ({}),
+        updateMany: async () => ({ count: 1 }),
       },
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
@@ -382,26 +426,60 @@ describe("RiderService.setOnline", () => {
     await expect(s.setOnline("p1", true)).rejects.toThrow(/not verified/i);
   });
 
-  it("lets a verified rider go online", async () => {
-    let data: Record<string, unknown> | undefined;
+  it("lets a verified rider go online, stamping the heartbeat with DB now() under the standing CAS", async () => {
+    let sql = "";
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
-        update: async (args: { data: Record<string, unknown> }) => { data = args.data; return {}; },
+      },
+      // KB-HEARTBEAT-MARGIN: the go-online write is now a raw CAS so the heartbeat is DB now() (one
+      // clock domain with recordFix/touchRiderHeartbeat), still guarded on standing (active + not on_hold).
+      $executeRaw: async (strings: TemplateStringsArray) => {
+        sql = strings.join("?");
+        return 1; // affected-row count: the standing guard matched
       },
     };
     const s = svc(prisma, {});
     expect(await s.setOnline("p1", true)).toEqual({ online: true });
-    expect(data).toMatchObject({ isOnline: true });
-    expect(data!.lastHeartbeatAt).toBeInstanceOf(Date);
+    expect(sql).toContain("is_online = true");
+    expect(sql).toContain("last_heartbeat_at = now()");
+    // The CAS re-asserts the standing the gate read — the exact defence against a suspend landing mid-write.
+    expect(sql).toContain("account_status = 'active'");
+    expect(sql).toContain("on_hold = false");
+  });
+
+  it("refuses to flip online when an admin suspend lands between the gate and the write (CAS = 0 rows)", async () => {
+    let threw: unknown;
+    // The gate read still sees the rider eligible (advisory), but the guarded write matches 0 rows
+    // because a concurrent suspend already moved accountStatus off `active`; a re-read surfaces it.
+    let firstRead = true;
+    const prisma = {
+      rider: {
+        findUnique: async () => {
+          if (firstRead) { firstRead = false; return { kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null }; }
+          return { kycStatus: "verified", accountStatus: "suspended", onHold: false, cooldownUntil: null };
+        },
+      },
+      // The guarded raw CAS matches 0 rows because a concurrent suspend already moved accountStatus.
+      $executeRaw: async () => 0,
+    };
+    const s = svc(prisma, {});
+    try {
+      await s.setOnline("p1", true);
+    } catch (e) {
+      threw = e;
+    }
+    // Not silently online — the refusal re-derives the precise standing reason (suspended).
+    expect((threw as { getResponse: () => { reason: string } }).getResponse().reason).toBe("suspended");
   });
 
   it("drains the notify-me waiting list and pushes those customers when going online with a location (2·b1)", async () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
-        update: async () => ({}),
       },
+      // KB-HEARTBEAT-MARGIN: go-online is a raw CAS now (DB-now() heartbeat); 1 affected row ⇒ online.
+      $executeRaw: async () => 1,
     };
     let drainedAt: { lat: number; lng: number; radius: number } | null = null;
     let pushed: string[] | null = null;
@@ -437,8 +515,9 @@ describe("RiderService.setOnline", () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
-        update: async () => ({}),
       },
+      // KB-HEARTBEAT-MARGIN: go-online is a raw CAS now (DB-now() heartbeat); 1 affected row ⇒ online.
+      $executeRaw: async () => 1,
     };
     let cleared: string[] | null = null;
     const tracking = {
@@ -462,8 +541,9 @@ describe("RiderService.setOnline", () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
-        update: async () => ({}),
       },
+      // KB-HEARTBEAT-MARGIN: go-online is a raw CAS now (DB-now() heartbeat); 1 affected row ⇒ online.
+      $executeRaw: async () => 1,
     };
     let drained = false;
     const tracking = {
@@ -501,7 +581,7 @@ describe("RiderService.setOnline", () => {
       {
         rider: {
           findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: past }),
-          update: async () => ({}),
+          updateMany: async () => ({ count: 1 }),
         },
       },
       {},
@@ -522,7 +602,7 @@ describe("RiderService.setOnline", () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null }),
-        update: async () => ({}),
+        updateMany: async () => ({ count: 1 }),
       },
     };
     const s = svc(prisma, {});
@@ -894,5 +974,23 @@ describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
     const s = svc(prisma, {});
     await s.adminSetKyc("p1", "verified");
     expect(audited).toBe(false);
+  });
+
+  // Fix 3: the repeat-decline guard reads kycStatus/kycResolvedAt with no row lock, so a concurrent
+  // vendor-webhook decline landing between the read and the write could double-count one logical decline
+  // and over-lock an honest rider. Taking a `SELECT … FOR UPDATE` on the rider row BEFORE the read makes
+  // the webhook's own write serialize against this transaction. Assert the lock precedes the read.
+  it("row-locks the rider (FOR UPDATE) before the read that feeds the repeat-decline guard", async () => {
+    const calls: string[] = [];
+    const prisma = {
+      $executeRaw: async () => { calls.push("lock"); return 0; },
+      rider: {
+        findUnique: async () => { calls.push("read"); return { profileId: "p1", kycAttempts: 0, kycStatus: "pending", kycResolvedAt: null }; },
+        update: async () => { calls.push("write"); return { kycAttempts: 1 }; },
+      },
+    };
+    const s = svc(prisma, {});
+    await s.adminSetKyc("p1", "failed", "face_mismatch");
+    expect(calls).toEqual(["lock", "read", "write"]);
   });
 });

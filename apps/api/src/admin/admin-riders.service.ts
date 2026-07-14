@@ -10,6 +10,7 @@ import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 import { auditData, fmtDate, fmtUntil, reportsFor, round, toTripRow } from "./admin.shared";
 
 // Long enough that a reviewer working through the queue doesn't have the image expire mid-review;
@@ -26,6 +27,9 @@ export class AdminRidersService {
     @Inject(STORAGE) private readonly storage: StorageAdapter,
     // NotificationsModule is @Global, so no import wiring is needed to inject this.
     private readonly notifications: NotificationsService,
+    // KB-BOARD-REVOKE: TrackingModule (imported by AdminModule) exports the gateway; suspend/ban call
+    // kickRiderFromBoard post-commit so a now-ineligible rider stops getting board pushes mid-session.
+    private readonly gateway: TrackingGateway,
   ) {}
 
   /** Rider roster for ops — the KYC review queue when filtered to `pending`. */
@@ -243,6 +247,10 @@ export class AdminRidersService {
       body: "Your account was paused — open the app for details.",
       data: { kind: "account" },
     });
+    // KB-BOARD-REVOKE: a suspended rider is no longer board-eligible — kick their live socket(s) off the
+    // board rooms so the board-push stream stops immediately instead of leaking until they disconnect.
+    // Best-effort (kickRiderFromBoard swallows its own errors); never affects the committed suspension.
+    void this.gateway.kickRiderFromBoard(profileId);
     void this.notifyCustomersOfRiderStandingChange(profileId);
     return result;
   }
@@ -331,6 +339,9 @@ export class AdminRidersService {
       });
       return { id: profileId, accountStatus: RiderAccountStatus.BANNED, auditId: audit.id };
     });
+    // KB-BOARD-REVOKE: a banned rider is no longer board-eligible — kick their live socket(s) off the
+    // board rooms post-commit so the board-push stream stops at once (mirrors suspendRider). Best-effort.
+    void this.gateway.kickRiderFromBoard(profileId);
     void this.notifyCustomersOfRiderStandingChange(profileId);
     return result;
   }

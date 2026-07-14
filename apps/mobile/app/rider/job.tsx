@@ -11,9 +11,9 @@ import {
   loadPickupChecklistDraft,
   savePickupChecklistDraft,
 } from "../../src/logic/pickup-checklist-draft";
-import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE } from "../../src/logic/rider-job";
+import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
-import { acknowledgeHandback, loadAcknowledgedHandbacks } from "../../src/auth/session";
+import { acknowledgeHandback, clearConfirmItemsPending, loadAcknowledgedHandbacks, loadConfirmItemsPending, saveConfirmItemsPending } from "../../src/auth/session";
 import { formatMoney } from "../../src/logic/money";
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
@@ -87,6 +87,21 @@ export default function RiderJob(): React.ReactElement {
     let alive = true;
     void loadAcknowledgedHandbacks().then((ids) => {
       if (alive) setAckedHandbacks(new Set(ids));
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // KB-CONFIRMITEMS-RETRY: a durable "confirmItems still pending for order X" marker (persisted in
+  // confirmAndCollect below). Loaded once on mount so a cold start / foreground after an app-kill can
+  // re-send a lost pickup-item confirmation. The guard ref stops overlapping retries.
+  const [pendingConfirm, setPendingConfirm] = useState<{ orderId: string; confirmedIndexes: number[] } | null>(null);
+  const confirmRetryInFlight = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    void loadConfirmItemsPending().then((p) => {
+      if (alive) setPendingConfirm(p);
     });
     return () => {
       alive = false;
@@ -308,16 +323,17 @@ export default function RiderJob(): React.ReactElement {
     setUndelivering(false);
   }, [orderId]);
 
-  // Sync the local retry counter DOWN whenever the server's committed count is lower than what we
-  // have locally — e.g. the customer just re-issued the delivery code (rotateDeliveryCode resets
-  // deliveryOtpAttempts to 0 server-side), which this screen previously had no way to learn: the
-  // lockout stayed permanently stuck on the same screen instance, contradicting its own "enter the
-  // new one" copy. The local optimistic increment on a 401 (above) stays for instant feedback; this
-  // only ever pulls the count DOWN toward the server's truth, never up.
+  // KB-OTP-COUNT-SYNC: reconcile the local retry counter against the server's committed count whenever a
+  // FRESH snapshot value arrives — in BOTH directions. A DOWN move catches a customer re-issue
+  // (rotateDeliveryCode zeroes deliveryOtpAttempts server-side); an UP move catches a lost confirmDelivery
+  // response after the server already committed the attempt (the client never saw the 401), which
+  // previously left the rider shown more attempts remaining than they really had until a 403 snapped it to
+  // the max. Keyed ONLY on the fetched server value (never on otpTries), so the optimistic post-401
+  // increment can't retrigger this and get stomped by a stale-lower cached value before its refetch lands.
   useEffect(() => {
-    const serverAttempts = order?.deliveryOtpAttempts;
-    if (serverAttempts != null && serverAttempts < otpTries) setOtpTries(serverAttempts);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reconcile against the server value only; otpTries itself must not retrigger this.
+    const next = reconcileOtpAttempts({ local: otpTries, serverAttempts: order?.deliveryOtpAttempts });
+    if (next != null) setOtpTries(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reconcile on a FRESH server value only; otpTries must NOT retrigger this (that is what avoids stomping the optimistic post-401 increment before its refetch lands).
   }, [order?.deliveryOtpAttempts]);
 
   // Default every item ticked when the rider enters the pickup-verification step — they untick only
@@ -347,15 +363,58 @@ export default function RiderJob(): React.ReactElement {
       return next;
     });
   };
-  // Confirm the ticked items, then advance to picked_up. The confirmation POST is best-effort
-  // (TODO(api): route pending) so it never blocks the collect; the advance is gated on ≥1 tick.
+  // Confirm the ticked items, then advance to picked_up. The confirmation POST is best-effort so it never
+  // blocks the collect; the advance is gated on ≥1 tick. KB-CONFIRMITEMS-RETRY: persist a durable pending
+  // marker BEFORE firing (and mirror it into state so a same-session foreground can retry too), then clear
+  // it on confirmed success — so a lost response / app-kill right here is re-sent from the retry effect
+  // below rather than silently losing the confirmed-items record.
   const confirmAndCollect = (): void => {
     if (!orderId || checkedItems.size === 0) return;
     const confirmedIndexes = [...checkedItems].sort((a, b) => a - b);
-    void confirmItems(orderId, { confirmedIndexes }).catch(() => undefined);
+    const pendingOrderId = orderId;
+    setPendingConfirm({ orderId: pendingOrderId, confirmedIndexes });
+    void saveConfirmItemsPending(pendingOrderId, confirmedIndexes);
+    // Claim the in-flight guard synchronously so the retry effect below can't fire a duplicate in the brief
+    // window before the optimistic advance repaints the status to picked_up.
+    confirmRetryInFlight.current = true;
+    void confirmItems(pendingOrderId, { confirmedIndexes })
+      .then(() => {
+        setPendingConfirm((cur) => (cur?.orderId === pendingOrderId ? null : cur));
+        void clearConfirmItemsPending();
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        confirmRetryInFlight.current = false;
+      });
     void clearPickupChecklistDraft();
     advanceM.mutate("picked_up");
   };
+
+  // KB-CONFIRMITEMS-RETRY: re-send (or retire) a pending pickup-item confirmation against the live
+  // snapshot. Fires only when the marker's order is still at `en_route_pickup` with no server record yet
+  // (the only window the server accepts confirmItems); clears the marker once the record lands or the
+  // pending order is no longer the active job. Re-runs on every snapshot refresh — incl. the warm
+  // foreground refetch above — so a dropped confirmation self-heals without a manual retry.
+  useEffect(() => {
+    const decision = reconcileConfirmItemsPending({ pendingOrderId: pendingConfirm?.orderId, order });
+    if (decision === "clear") {
+      setPendingConfirm(null);
+      void clearConfirmItemsPending();
+      return;
+    }
+    if (decision !== "retry" || !pendingConfirm || confirmRetryInFlight.current) return;
+    confirmRetryInFlight.current = true;
+    const { orderId: pid, confirmedIndexes } = pendingConfirm;
+    void confirmItems(pid, { confirmedIndexes })
+      .then(() => {
+        setPendingConfirm((cur) => (cur?.orderId === pid ? null : cur));
+        void clearConfirmItemsPending();
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        confirmRetryInFlight.current = false;
+      });
+  }, [order, pendingConfirm]);
 
   // Terminal: the customer (or ops) cancelled. Rendered from the frozen WS snapshot (keeps the sender
   // contact after the order leaves the active feed), OR — R8 — from a fetched cancelled order when the

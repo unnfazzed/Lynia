@@ -583,6 +583,7 @@ export class OrdersService {
         undeliveredReason: true,
         deliveryAttempts: true,
         deliveryOtpAttempts: true,
+        deliveryCodeRotatedAt: true,
         cancelReason: true,
         cancelledBy: true,
         expiryNoSupply: true,
@@ -709,6 +710,12 @@ export class OrdersService {
       // server-side (order-lifecycle.service.ts rotateDeliveryCode) with no other way for the rider's
       // screen to learn that and clear its own lockout.
       deliveryOtpAttempts: order.deliveryOtpAttempts,
+      // KB-DELIVERY-CODE-ROTATION-SIGNAL: when the delivery code was last (re)issued (ISO string, or
+      // null on a pre-0026 row / an order never assigned a code). The rider app compares this across
+      // snapshots to detect a rotation (customer re-issued after a lockout) robustly — even across an
+      // app-kill that the DS14-09 attempts-counter high-water mark can't survive. Same party gating as
+      // deliveryOtpAttempts: the whole snapshot is already scoped to the order's own customer/rider above.
+      codeRotatedAt: order.deliveryCodeRotatedAt ? order.deliveryCodeRotatedAt.toISOString() : null,
       // 3·b3: the recorded cancel reason + who cancelled, shown on the cancelled terminal. The DB
       // stores the canceller's profile id; the wire carries only their role (no id leak). An admin
       // cancel's actor id matches neither party, so it correctly falls through to null (the terminal

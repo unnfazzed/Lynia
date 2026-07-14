@@ -36,6 +36,7 @@ const gateway = {
   emitJobCancelled: (orderId: string, collected: boolean, cancelledBy: string) =>
     jobCancelledEmits.push({ orderId, collected, cancelledBy }),
   emitOrderRebroadcast: () => undefined,
+  evictRiderFromGeo: async () => undefined,
 } as unknown as TrackingGateway;
 // The no-bid-expiry supply check is best-effort push; an empty nearby list keeps it off the geo path.
 const matchingTrackingStub = { nearbyRiders: async () => [] } as unknown as import("../tracking/tracking.service").TrackingService;

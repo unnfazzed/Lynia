@@ -42,6 +42,21 @@ export async function clearSession(): Promise<void> {
 // survives a remount/relaunch (the server keeps only the hash and can't re-send it).
 const codeKey = (orderId: string): string => `lynia.deliveryCode.${orderId}`;
 
+// Companion to codeKey: the highest `deliveryOtpAttempts` value seen while THIS stored code was current.
+// A code rotation (customer re-issue) resets the server's counter to 0, so a later snapshot whose attempts
+// count has dropped below this high-water mark reveals the local code is stale — even if the rotate response
+// never landed (app killed mid-rotation). Kept beside the code and cleared with it. See
+// reconcileDeliveryCode in logic/order-tracking.ts.
+const codeAttemptsKey = (orderId: string): string => `lynia.deliveryCodeAttempts.${orderId}`;
+
+// Companion to codeKey: the delivery-code rotation timestamp (`OrderSnapshot.codeRotatedAt`) last CONFIRMED
+// to correspond to THIS stored code. The server stamps a fresh value on every issue/rotate, so a later
+// snapshot whose timestamp differs from this baseline proves the code was re-issued — the PRIMARY rotation
+// signal, reliable even when the app was killed before the rotate response landed (unlike the attempts
+// high-water heuristic, which needs the client to have observed the elevated count first). Kept beside the
+// code and cleared with it. See reconcileDeliveryCode in logic/order-tracking.ts.
+const codeRotatedAtKey = (orderId: string): string => `lynia.deliveryCodeRotatedAt.${orderId}`;
+
 // SecureStore can't enumerate keys, so we keep a tiny index of order ids that have a stored code.
 // That lets sign-out delete every per-order code on a shared device (S1). Best-effort like the rest.
 const CODE_INDEX_KEY = "lynia.deliveryCode.index";
@@ -59,6 +74,24 @@ async function readCodeIndex(): Promise<string[]> {
 
 export async function saveDeliveryCode(orderId: string, code: string): Promise<void> {
   await SecureStore.setItemAsync(codeKey(orderId), code);
+  // A freshly issued/rotated code always corresponds to a server attempt counter reset to 0 (both `select`
+  // and `rotateDeliveryCode` set deliveryOtpAttempts = 0), so seed the high-water mark to 0 — otherwise a
+  // stale companion from a previous code would make the next snapshot look like a rotation-drop.
+  try {
+    await SecureStore.setItemAsync(codeAttemptsKey(orderId), "0");
+  } catch {
+    /* best-effort */
+  }
+  // Clear any stale rotation-timestamp baseline: a freshly issued/rotated code corresponds to a NEW
+  // server `codeRotatedAt` we can't read synchronously here (select/rotate return only the plaintext). So
+  // reset to "unknown" and let reconcileDeliveryCode re-baseline (sync-rotation-ts) off the first snapshot
+  // that carries the new stamp — otherwise a leftover baseline would make that new stamp look like a
+  // rotation-away from our own just-issued code and wrongly invalidate it.
+  try {
+    await SecureStore.deleteItemAsync(codeRotatedAtKey(orderId));
+  } catch {
+    /* best-effort */
+  }
   // Record the order id so sign-out can clear it later — best-effort, never block the code save.
   try {
     const idx = await readCodeIndex();
@@ -69,6 +102,100 @@ export async function saveDeliveryCode(orderId: string, code: string): Promise<v
 }
 export async function loadDeliveryCode(orderId: string): Promise<string | null> {
   return SecureStore.getItemAsync(codeKey(orderId));
+}
+
+/** Persist the high-water mark of server-side delivery-code attempts seen while the stored code is current
+ *  (see reconcileDeliveryCode). Best-effort — a native write failure just means we can't detect a rotation
+ *  that happens while the app is killed, which degrades to today's behaviour rather than breaking anything. */
+export async function saveDeliveryCodeAttempts(orderId: string, attempts: number): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(codeAttemptsKey(orderId), String(attempts));
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadDeliveryCodeAttempts(orderId: string): Promise<number | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(codeAttemptsKey(orderId));
+    if (raw == null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the delivery-code rotation timestamp last CONFIRMED to match the stored code (see
+ *  reconcileDeliveryCode). Best-effort — a native write failure just degrades to the attempts heuristic. */
+export async function saveDeliveryCodeRotatedAt(orderId: string, codeRotatedAt: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(codeRotatedAtKey(orderId), codeRotatedAt);
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadDeliveryCodeRotatedAt(orderId: string): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(codeRotatedAtKey(orderId));
+  } catch {
+    return null;
+  }
+}
+
+/** Clear a stale local delivery code (and its attempts high-water + rotation-timestamp baseline) — used
+ *  when a rotation is detected so the "code isn't showing — re-issue" path takes over instead of the
+ *  customer relaying a dead code. */
+export async function clearDeliveryCode(orderId: string): Promise<void> {
+  try {
+    await Promise.all([
+      SecureStore.deleteItemAsync(codeKey(orderId)),
+      SecureStore.deleteItemAsync(codeAttemptsKey(orderId)),
+      SecureStore.deleteItemAsync(codeRotatedAtKey(orderId)),
+    ]);
+  } catch {
+    /* best-effort */
+  }
+}
+
+// A durable "confirmItems still needs to reach the server for order X" marker (KB-CONFIRMITEMS-RETRY). The
+// rider's pickup-item confirmation is fired as the rider advances to `picked_up`; if that POST's response
+// is lost (or the app is killed) right then, the order is left permanently missing its confirmed-items
+// record with nothing to retry it. We persist the pending confirmation here BEFORE firing and clear it on
+// confirmed success, so a foreground/reconnect/cold-start can re-send it while the order is still at
+// `en_route_pickup` (the only status the server accepts it at). Single slot — a rider has one active job.
+const CONFIRM_ITEMS_PENDING_KEY = "lynia.confirmItemsPending";
+export interface ConfirmItemsPending {
+  orderId: string;
+  confirmedIndexes: number[];
+}
+
+export async function saveConfirmItemsPending(orderId: string, confirmedIndexes: number[]): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(CONFIRM_ITEMS_PENDING_KEY, JSON.stringify({ orderId, confirmedIndexes }));
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadConfirmItemsPending(): Promise<ConfirmItemsPending | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(CONFIRM_ITEMS_PENDING_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as unknown;
+    if (v && typeof v === "object" && typeof (v as { orderId?: unknown }).orderId === "string" && Array.isArray((v as { confirmedIndexes?: unknown }).confirmedIndexes)) {
+      const indexes = (v as { confirmedIndexes: unknown[] }).confirmedIndexes.filter((n): n is number => typeof n === "number");
+      return { orderId: (v as { orderId: string }).orderId, confirmedIndexes: indexes };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+export async function clearConfirmItemsPending(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(CONFIRM_ITEMS_PENDING_KEY);
+  } catch {
+    /* best-effort */
+  }
 }
 
 // Which starting role the user picked at the post-OTP role fork (one account, two roles). Persisted
@@ -205,6 +332,9 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(ROLE_PREF_KEY),
       SecureStore.deleteItemAsync(CODE_INDEX_KEY),
       SecureStore.deleteItemAsync(HANDBACK_ACK_KEY),
+      // The rider's durable confirmItems-pending marker (a job id + collected item indexes) must not
+      // survive to the next user on a shared device.
+      SecureStore.deleteItemAsync(CONFIRM_ITEMS_PENDING_KEY),
       // Address book: the saved Home/Work + recent places (addresses) and the recent recipients (the one
       // place we hold contact PII) must not survive to the next user on a shared device — exactly the
       // "next user must not rehydrate the previous user's addresses" rule above, now including recipients.
@@ -227,6 +357,10 @@ export async function clearDeviceState(): Promise<void> {
       // (no index like CODE_INDEX_KEY), so they linger but are lower-risk — the next user isn't routed to
       // them (the tracker only reads a key it already holds the id for), so nothing paints from them.
       ...codes.map((id) => SecureStore.deleteItemAsync(codeKey(id))),
+      // ...and each code's companion attempts high-water (keyed by the same order ids in the index).
+      ...codes.map((id) => SecureStore.deleteItemAsync(codeAttemptsKey(id))),
+      // ...and each code's companion rotation-timestamp baseline (same order ids in the index).
+      ...codes.map((id) => SecureStore.deleteItemAsync(codeRotatedAtKey(id))),
     ]);
   } catch {
     /* best-effort */

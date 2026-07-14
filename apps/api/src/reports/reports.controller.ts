@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Param, ParseUUIDPipe, Post, UseG
 import { ReportUserRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { ReportsService } from "./reports.service";
 
@@ -15,6 +16,10 @@ import { ReportsService } from "./reports.service";
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
 
+  // Reporting a counterparty INSERTs a row and (like the sibling issue-raise endpoint) can fan out to
+  // ops — unthrottled it's the same push-flood / unbounded-row-growth vector the repo caps elsewhere.
+  // Mirror the issue-raise cap (10/min per caller-or-IP).
+  @Throttle({ limit: 10, windowSec: 60, keyPrefix: "order-report" })
   @Post()
   report(
     @Param("orderId", ParseUUIDPipe) orderId: string,
