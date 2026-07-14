@@ -33,6 +33,12 @@ const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
 // customer keeps the right to cancel anytime (INTERFACE-AUDIT C3) but must understand they'll arrange
 // getting the parcel back directly with the rider.
 const POST_PICKUP_CANCEL = new Set<string>(["picked_up", "en_route_dropoff"]);
+// Statuses where a rider is already MATCHED (everything the customer can cancel except the auction
+// itself) — a cancel here is costly enough (it strands/frees a matched rider) that an accidental tap
+// gets a confirm first. `open_for_offers` deliberately stays one-tap: there's no rider to strand and a
+// mis-tap just reopens the compose flow. POST_PICKUP_CANCEL is the subset that ALSO warns the parcel is
+// already on the bike.
+const MATCHED_CANCEL = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES.filter((s) => s !== "open_for_offers"));
 
 const URGENT_MS = 20_000;
 // C2: after a rider bail the order flips to `cancelled` and the server pushes `order:rebroadcast` on the
@@ -71,6 +77,12 @@ export default function OrderScreen(): React.ReactElement {
   const [declinedCounterIds, setDeclinedCounterIds] = useState<Set<string>>(() => new Set());
   // Post-pickup cancel confirmation gate (the hand-back warning).
   const [cancelConfirm, setCancelConfirm] = useState(false);
+  // Fix 2: bumped when the server pushes a rider-presence-stale WS event. LiveTrackingCard computes
+  // staleness from a render-time `Date.now()` snapshot and otherwise only re-renders on a new GPS tick —
+  // so once ticks STOP (the exact trigger), nothing re-evaluates it. Threading this counter in forces
+  // the memoized card to re-render and re-run isRiderTrackingStale the moment the "rider went dark"
+  // event lands.
+  const [staleTick, setStaleTick] = useState(0);
 
   // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash).
   useEffect(() => {
@@ -192,6 +204,11 @@ export default function OrderScreen(): React.ReactElement {
     const carriedFare = snap?.agreedFare ?? snap?.proposedFare ?? "";
     const query = carriedFare ? `?rebroadcast=1&fare=${encodeURIComponent(carriedFare)}` : "?rebroadcast=1";
     router.replace(`/order/${newOrderId}${query}`);
+  }, () => {
+    // Fix 2: the rider's app went dark past the escalation threshold. Bump a counter so the memoized
+    // LiveTrackingCard re-renders and re-evaluates staleness NOW (GPS ticks have stopped, so it would
+    // otherwise never re-check on its own until the next tick that will never come).
+    setStaleTick((n) => n + 1);
   });
   // "Reconnecting" only reads truthfully after we've been live once — the initial connect window
   // would otherwise flash the banner on every mount.
@@ -569,8 +586,11 @@ export default function OrderScreen(): React.ReactElement {
 
         {/* Hand-off code — only while the trip is live/deliverable (C6). On a terminal order
             (cancelled / undelivered / delivered / completed) the code is meaningless and, above
-            "This order is cancelled." / "Parcel not delivered", actively misleading. */}
-        {isActive ? (
+            "This order is cancelled." / "Parcel not delivered", actively misleading. Fix 1: the code
+            is the CUSTOMER's (it verifies the rider at hand-off), stored only in customer-local storage.
+            A rider viewer never has one, so the re-issue prompt would only ever invite a 403 — hide the
+            whole block for them. */}
+        {isActive && !isRiderViewer ? (
           deliveryCode ? (
             <Card style={{ borderColor: tokens.color.accent }}>
               <Text style={{ fontSize: 14, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
@@ -797,6 +817,7 @@ export default function OrderScreen(): React.ReactElement {
             connectionState={connectionState}
             onReissueCode={reissueCode}
             reissuing={rotateM.isPending}
+            staleTick={staleTick}
           />
         ) : null}
 
@@ -885,8 +906,10 @@ export default function OrderScreen(): React.ReactElement {
               <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginTop: tokens.space.sm }}>{order.cancelReason}</Text>
             ) : null}
             {/* F-01: the rider bailed but the job was auto re-sent to other riders at the same price.
-                Point the customer forward to the fresh auction instead of dead-ending on the cancel. */}
-            {order.rebroadcastedToId ? (
+                Point the customer forward to the fresh auction instead of dead-ending on the cancel.
+                Fix 1e: a rider viewer is never a party to the customer's rebroadcast clone (tapping it
+                403s), so the forward link is customer-only. */}
+            {!isRiderViewer && order.rebroadcastedToId ? (
               <View style={{ marginTop: tokens.space.sm }}>
                 <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
                   We&apos;ve re-sent this request to other riders at the same price — no need to start over.
@@ -898,6 +921,21 @@ export default function OrderScreen(): React.ReactElement {
                     router.replace(`/order/${order.rebroadcastedToId}${carried}`);
                   }}
                 />
+              </View>
+            ) : null}
+            {/* Fix 4: a plain cancelled terminal with no auto-rebroadcast clone to follow still deserves a
+                recovery path — the same prefilled-recompose CTA the expired/undelivered terminals use.
+                Customer-only (Fix 1e: a rider shouldn't be invited to re-send someone else's parcel). The
+                framing softens when the customer cancelled it themselves ("changed your mind?") vs. when
+                the rider/admin cancelled it ("send another request"). */}
+            {!isRiderViewer && !order.rebroadcastedToId ? (
+              <View style={{ marginTop: tokens.space.sm }}>
+                {order.cancelledBy === "customer" ? (
+                  <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
+                    Changed your mind? You can send it again at the same price.
+                  </Text>
+                ) : null}
+                <Button label={order.cancelledBy === "customer" ? "Send it again" : "Send another request"} onPress={rebroadcast} />
               </View>
             ) : null}
           </Card>
@@ -946,7 +984,9 @@ export default function OrderScreen(): React.ReactElement {
                 </Pressable>
               ) : null}
             </Card>
-            <Button label="Send a new request" onPress={rebroadcast} />
+            {/* Fix 1e: recompose is the customer re-sending THEIR parcel — a rider viewer is never the
+                party to do that (and rebroadcast() prefills the customer's route/price), so hide it. */}
+            {!isRiderViewer ? <Button label="Send a new request" onPress={rebroadcast} /> : null}
           </>
         ) : null}
 
