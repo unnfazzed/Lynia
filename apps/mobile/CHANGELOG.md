@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/unnfazzed/Lynia/compare/v0.2.1...v0.2.2) (2026-07-14)
+
+
+### Bug Fixes
+
+* bug-hunt follow-up — WhatsApp OTP delivery webhook, pickup-tick persistence, rotate-code CAS ([#236](https://github.com/unnfazzed/Lynia/issues/236)) ([f28d1f1](https://github.com/unnfazzed/Lynia/commit/f28d1f179ced5e5076722f8c68060ba191b8f61e))
+* **ux:** follow-up on 07-14 deferred items — notify-me orderId, feed synthesis ([#237](https://github.com/unnfazzed/Lynia/issues/237)) ([5e44010](https://github.com/unnfazzed/Lynia/commit/5e44010c794dfd22a1e343dbb0e921623de7792d))
+
 ## [0.2.1](https://github.com/unnfazzed/Lynia/compare/v0.2.0...v0.2.1) (2026-07-14)
 
 
