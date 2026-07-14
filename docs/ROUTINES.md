@@ -1,17 +1,18 @@
 # Scheduled Claude Routines — canonical spec
 
-This file is the single source of truth for the five recurring Claude routines that run
+This file is the single source of truth for the six recurring Claude routines that run
 against this repo. Each routine's cron prompt is kept **self-contained** (a routine must not
 depend on this file existing to function), but this spec is authoritative when a prompt and
 this file disagree — the next prompt revision must be reconciled against it.
 
 Last reconciled: 2026-07-14 (routines-analysis pass).
 
-## The five routines
+## The six routines
 
 | Routine | Cron (UTC) | Environment | Lane |
 |---|---|---|---|
 | Documentation update | `0 5 * * *` | env_01B3aX… | Doc ⇄ code reconciliation (runs **after** the night's fix routines) |
+| Refactoring | `0 7 */2 * *` (every 2nd day) | env_01B3aX… | Behavior-preserving code-health work: hotspots, duplication, dead code, complexity |
 | Bug hunting | `0 23 * * *` | env_01B3aX… | Mobile-app journeys + app↔API contract seams |
 | User experience improvements | `0 1 * * *` | env_01B3aX… | UX friction, copy, recoverability, blockers |
 | Deep bug sweep | `0 3 * * *` | env_01V3Lw… | Backend correctness, concurrency, security, adversarial API |
@@ -67,6 +68,80 @@ process failure; the ledger is how the routines stay disjoint.
   file:line, severity, status, fixing PR.
 - **Dated report files** (same PR): `docs/BUG-HUNT-<date>.md`, `docs/UX-USABILITY-REVIEW-<date>.md`,
   `docs/DEEP-SWEEP-<date>.md` — mirroring the existing formats.
+
+## Refactoring routine (07:00 UTC, every 2nd day)
+
+Added 2026-07-14. Runs after the documentation routine (05:00) so it starts from a tree the
+night's fix routines and doc reconciliation have already settled. Every 2nd day — not nightly —
+so refactor churn stays digestible and the nightly bug routines diff against a stable base.
+(`0 7 */2 * *` fires on odd days of the month; the 31st→1st boundary occasionally produces
+back-to-back runs, which is acceptable.)
+
+**Mission:** improve code health without changing behavior. The routine is modeled on
+published practice at large delivery/rides platforms — Uber's Piranha (recurring small
+per-flag dead-code diffs) and Shepherd (mechanical rewrites validated per-diff by full CI),
+DoorDash's incremental monolith extraction with parallel-run verification, Shopify's
+strangler-fig refactoring, and Google's small-CL discipline (sources at the end of this
+section):
+
+1. **Target by hotspot, not by taste.** Rank candidates by churn × complexity: files with the
+   highest `git log` change frequency over the last 30–60 days intersected with high
+   complexity/size/duplication. Refactoring cold code is low-yield; hotspots are where debt
+   taxes every future change. The ledger's hotspot map carries the ranking between runs.
+2. **Behavior-preserving only.** A refactor changes structure, never observable behavior. No
+   endpoint/socket contract changes, no Prisma schema changes, no enum/DTO shape changes, no
+   copy changes, no dependency major-bumps. If improving structure requires changing behavior,
+   that's a bug fix or a feature — record it in the appropriate ledger and leave it to the
+   owning lane (or fix it in a **separate commit with its own regression test**, tagged for the
+   owning lane, per universal policy 2).
+3. **Tests are the safety harness.** Tests must be green before the refactor starts and after
+   it lands. Code with no meaningful coverage gets **characterization tests first** (pin down
+   current behavior, including oddities), then the refactor, in the same PR. Never refactor
+   uncovered sensitive-area code (bid acceptance, order assignment, agreed-price, KYC gating)
+   — characterize first or skip and ledger it.
+4. **Small, single-concern, atomic PRs.** Target ≤ ~400 changed lines per PR; one refactoring
+   concern per PR (one extraction, one dedup, one dead-code sweep — not a grab-bag). At most
+   3 refactor PRs per run. Never mix refactoring with feature work or opportunistic drive-by
+   edits. Multi-run migrations use the strangler pattern: new path in, callers moved
+   incrementally across runs, old path deleted last — state tracked in the ledger so each run
+   resumes where the last stopped.
+5. **Standard menu** (in priority order): dead code & unused exports/flags/deps removal;
+   duplication collapse (especially logic duplicated across `apps/api`/`apps/mobile`/`apps/admin`
+   that belongs in `packages/shared`); oversized files/functions split along seams; misplaced
+   logic moved to its layer (e.g. business rules out of controllers/components); naming and
+   type-safety cleanups (`any`-elimination, narrowing); test-suite health (flaky/slow/duplicated
+   tests).
+6. **Anti-patterns (hard NO):** big-bang rewrites; refactors without tests; "while I'm here"
+   scope creep; churn for style preference alone (if `pnpm lint` doesn't flag it and it doesn't
+   reduce complexity/duplication, leave it); touching `infra/terraform` or release plumbing.
+
+**Ledger & report:** `docs/REFACTOR-LEDGER.md` is the routine's memory — hotspot map, debt
+register (`RF-` IDs with file:line, kind, effort, status), in-flight strangler migrations, and
+completed-refactor log. Updated **in the same PR** as the refactors (universal policy 3), plus
+a dated report `docs/REFACTOR-<date>.md` (what was targeted, why, evidence of behavior
+preservation, what was deliberately skipped). Defects discovered while refactoring also get a
+`KNOWN_BUGS.md` row tagged with the owning lane.
+
+**Verification gate (stricter than the other routines):** `pnpm typecheck && pnpm build &&
+pnpm test` green **before** starting (on clean `main` — if red, stop and ledger it for the
+watchdog; never refactor on a broken base) and **after** each PR's changes. Additionally,
+diff the public surface: exported symbols of `packages/shared`, API route/DTO shapes, and
+socket event names must be byte-identical before/after, or the change is not a refactor.
+Mobile changes must stay OTA-able (JS-only, no native/config-plugin changes). Ships
+ready-for-review + auto-merge per universal policy 1.
+
+**Sources** (published practice this routine encodes): Uber — [Piranha: stale feature-flag
+removal](https://www.uber.com/us/en/blog/piranha/), [JUnit 4→5 migration via
+Shepherd](https://www.uber.com/us/en/blog/junit-migration/), [controlling rollout of
+large-scale monorepo changes](https://www.uber.com/us/en/blog/controlling-the-rollout-of-large-scale-monorepo-changes/);
+DoorDash — [monolith → microservices](https://careersatdoordash.com/blog/how-doordash-transitioned-from-a-monolith-to-microservices/),
+[migration pain points](https://careersatdoordash.com/blog/reducing-the-migrations-pain-points/),
+[zero-downtime session migration](https://careersatdoordash.com/blog/session-management-migration/)
+(parallel-run/shadow verification); Shopify — [strangler-fig
+refactoring](https://shopify.engineering/refactoring-legacy-code-strangler-fig-pattern);
+Google — [small CLs](https://google.github.io/eng-practices/review/developer/small-cls.html),
+[Code Health](https://testing.googleblog.com/2017/04/code-health-googles-internal-code.html);
+hotspot prioritization — [CodeScene churn × complexity](https://codescene.com/blog/benchmarking-code-health-refactoring-roi).
 
 ## Known constraints of the routine environments
 

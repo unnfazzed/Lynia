@@ -44,8 +44,8 @@ Conventions:
 
 ## Scheduled Claude routines — universal auto-merge + ledger protocol
 
-`docs/ROUTINES.md` is the canonical spec for the five recurring routines (bug hunting, UX
-improvements, deep bug sweep, documentation update, PR health watchdog). Per explicit user
+`docs/ROUTINES.md` is the canonical spec for the six recurring routines (bug hunting, UX
+improvements, deep bug sweep, documentation update, refactoring, PR health watchdog). Per explicit user
 instruction (2026-07-14), **every scheduled routine ships a PR and auto-merges it**: once
 `pnpm typecheck && pnpm test` are green locally and the PR is pushed, mark it ready for review
 and enable auto-merge (or merge directly once CI is confirmed green with no unresolved review
