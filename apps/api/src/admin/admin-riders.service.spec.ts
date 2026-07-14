@@ -297,7 +297,7 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
   });
 
   it("activeOrders surfaces the live-order count so ops sees a live delivery under a suspended/banned rider", async () => {
-    const svc = new AdminRidersService(prismaFor(riderRow(), 0) as unknown as PrismaService, pii, noStorage, noNotifications);
+    const svc = new AdminRidersService(prismaFor(riderRow(), 0) as unknown as PrismaService, pii, noStorage, noNotifications, noGateway);
     const r = (await svc.getRiderDetail("r1"))!;
     expect(r.activeOrders).toBe(0);
   });
@@ -566,7 +566,7 @@ describe("AdminRidersService standing-change customer notification", () => {
         notified.push({ profileIds, msg });
       },
     } as unknown as NotificationsService;
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, notifications);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, notifications, noGateway);
     return { svc, notified };
   }
 
