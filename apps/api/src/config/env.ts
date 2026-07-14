@@ -96,6 +96,15 @@ export const envSchema = z.object({
   // Meta "authentication"-category templates carry a one-tap/copy-code button that also takes the
   // code as a parameter; set "false" if your approved template is body-only.
   WHATSAPP_OTP_COPY_CODE_BUTTON: z.enum(["true", "false"]).default("true"),
+  // Delivery-status webhook (whatsapp.controller.ts) — Meta's POST /messages 200 only means "accepted
+  // into Meta's send queue", not delivered; without this webhook a failed OTP send (bad number,
+  // quality-rating throttling, etc.) is invisible to both the user and ops. WHATSAPP_APP_SECRET signs
+  // the callback's X-Hub-Signature-256 (Meta App Secret, distinct from WHATSAPP_ACCESS_TOKEN);
+  // WHATSAPP_WEBHOOK_VERIFY_TOKEN answers Meta's one-time GET subscription handshake. Both optional —
+  // same deliberate boot-tradeoff as the other WHATSAPP_* vars above (a hard crash on missing config
+  // would take the whole API down rather than just this one webhook).
+  WHATSAPP_APP_SECRET: z.string().optional(),
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
   // --- KYC (lane E) ---
   // auto = submit to the vendor; manual = leave pending for admin review (T7 backstop).
   KYC_MODE: z.enum(["auto", "manual"]).default("auto"),

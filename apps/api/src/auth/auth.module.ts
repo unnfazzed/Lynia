@@ -10,10 +10,11 @@ import { JwtAuthGuard } from "./jwt-auth.guard";
 import { OTP_SENDER, selectOtpSender } from "./otp-sender";
 import { InMemoryOtpStore, OTP_STORE, type OtpStore, RedisOtpStore } from "./otp-store";
 import { TokenService } from "./token.service";
+import { WhatsappWebhookController } from "./whatsapp-webhook.controller";
 
 @Global()
 @Module({
-  controllers: [AuthController],
+  controllers: [AuthController, WhatsappWebhookController],
   providers: [
     AuthService,
     TokenService,
