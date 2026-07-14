@@ -76,10 +76,10 @@ export function usePushRegistration(session: Session | null): void {
       void registerForPushNotificationsAsync().then((result) => {
         if (cancelled) {
           // Identity changed before registration finished — undo it so we don't leave a stray token.
-          if (result.token) void unregisterForPushNotificationsAsync(result.token);
+          if (result.registered) void unregisterForPushNotificationsAsync(result.token);
           return;
         }
-        if (result.token) {
+        if (result.registered) {
           registered = result.token;
           stopRetryTriggers();
           return;

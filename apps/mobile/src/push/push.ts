@@ -63,25 +63,25 @@ export async function registerForPushNotificationsAsync(): Promise<PushRegistrat
     if (!granted && existing.canAskAgain) {
       granted = (await Notifications.requestPermissionsAsync()).granted;
     }
-    if (!granted) return { token: null, retry: false }; // user/OS denied — a retry-loop can't fix this
+    if (!granted) return { registered: false, retry: false }; // user/OS denied — a retry-loop can't fix this
 
     const devToken = await Notifications.getDevicePushTokenAsync();
     const acquired = typeof devToken.data === "string" ? devToken.data : null;
-    if (!acquired) return { token: null, retry: false }; // Expo Go / no Firebase config — not transient
+    if (!acquired) return { registered: false, retry: false }; // Expo Go / no Firebase config — not transient
     token = acquired;
   } catch {
     // Permission/channel/device-token acquisition failed — environmental (Expo Go, missing config),
     // not a transient network blip. Degrade silently and don't retry-loop.
-    return { token: null, retry: false };
+    return { registered: false, retry: false };
   }
 
   // We hold a real token; the only remaining step that can fail transiently is the register POST.
   try {
     await registerDeviceToken(token, currentPlatform());
-    return { token };
+    return { registered: true, token };
   } catch {
     // Offline / server blip on the register request itself — worth retrying on recovery/foreground.
-    return { token: null, retry: true };
+    return { registered: false, retry: true };
   }
 }
 

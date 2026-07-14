@@ -177,15 +177,16 @@ describe("MatchingService.expireOrder — persists the no-supply verdict for lat
     const { service, orderUpdate, notifyOrderExpired } = expireSvc({ offerCount: 0, nearby: [] });
     await service.expireOrder(orderId);
     expect(orderUpdate).toHaveBeenCalledWith({ where: { id: orderId }, data: { expiryNoSupply: true } });
-    // The push still carries the same verdict transiently.
-    expect(notifyOrderExpired).toHaveBeenCalledWith(orderId, true);
+    // The push still carries the same verdict transiently: noSupply=true, hadOffers=false (zero bids).
+    expect(notifyOrderExpired).toHaveBeenCalledWith(orderId, true, false);
   });
 
   it("does NOT persist the flag when the auction had bids (price problem, not a supply problem)", async () => {
     const { service, orderUpdate, notifyOrderExpired } = expireSvc({ offerCount: 2, nearby: [] });
     await service.expireOrder(orderId);
     expect(orderUpdate).not.toHaveBeenCalled();
-    expect(notifyOrderExpired).toHaveBeenCalledWith(orderId, false);
+    // Bids existed → noSupply=false, hadOffers=true → the honest "riders offered" copy, not "raise price".
+    expect(notifyOrderExpired).toHaveBeenCalledWith(orderId, false, true);
   });
 });
 

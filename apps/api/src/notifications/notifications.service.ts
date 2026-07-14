@@ -43,7 +43,7 @@ const FEED_NOTICES: Record<string, { icon: string; title: string; message: strin
   picked_up: { icon: "check", title: "Parcel collected", message: "Your rider has your parcel and is on the move." },
   en_route_dropoff: { icon: "navigation", title: "On the way to drop-off", message: "Your parcel is on the way to drop-off." },
   delivered: { icon: "check", title: "Delivered", message: "Your parcel was delivered — rate your rider." },
-  completed: { icon: "check", title: "Delivery complete", message: "This trip is done. Thanks for using Lynia." },
+  completed: { icon: "check", title: "Delivery complete", message: "This trip is done. Thanks for using LyniaGo." },
   expired: { icon: "clock", title: "No riders yet", message: "No rider took your price yet. Try raising it and sending again." },
   undelivered: { icon: "triangle-alert", title: "Delivery couldn't be completed", message: "Your rider couldn't hand the parcel over — tap for details." },
   cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "This delivery was cancelled." },
@@ -142,6 +142,23 @@ export class NotificationsService {
       if (order.rebroadcastOfId) cloneByOriginal.set(order.rebroadcastOfId, order.id);
     }
 
+    // Fix 1: for expired orders the customer is viewing, distinguish "riders bid but you didn't pick in
+    // time" from the default "raise your price" nudge. Offer rows are never deleted on expiry (only
+    // flipped to `expired`), so a plain count over the durable rows recovers "did any rider ever bid"
+    // on a cold read, long after the window closed. One batched query for all expired orders in view.
+    const expiredOrderIds = orders
+      .filter((o) => o.riderId !== userId && o.events.some((e) => e.status === "expired"))
+      .map((o) => o.id);
+    const orderIdsWithOffers = new Set<string>();
+    if (expiredOrderIds.length > 0) {
+      const withOffers = await this.prisma.offer.findMany({
+        where: { orderId: { in: expiredOrderIds } },
+        select: { orderId: true },
+        distinct: ["orderId"],
+      });
+      for (const o of withOffers) orderIdsWithOffers.add(o.orderId);
+    }
+
     const rows: NotificationRow[] = [];
     for (const order of orders) {
       // Pick the voice matching what this viewer actually experienced on THIS order — a dual-role user
@@ -184,6 +201,14 @@ export class NotificationsService {
               title: "No riders online nearby",
               message:
                 "Nobody was online near your pickup when the window closed — raising the price wasn't the problem. Try sending again in a bit.",
+            };
+          } else if (event.status === "expired" && orderIdsWithOffers.has(order.id)) {
+            // Riders DID bid but the window closed before the customer picked — "raise your price" is
+            // dishonest here (riders offered at this price), so nudge them to just re-send it (Fix 1).
+            notice = {
+              icon: "clock",
+              title: "The window closed",
+              message: "Riders offered but the window closed before you picked — send it again, no need to raise the price.",
             };
           }
         }
@@ -250,11 +275,16 @@ export class NotificationsService {
         select: { customerId: true, riderId: true },
       });
       if (!order) return;
-      const ids = notice.to
-        .map((aud) => (aud === "customer" ? order.customerId : order.riderId))
-        .filter((id): id is string => !!id)
-        .filter((id) => id !== excludeProfileId);
-      await this.send(ids, { title: notice.title, body: notice.body, data: { orderId, status, ...data } });
+      // Fix 3: stamp each recipient's PER-ORDER role (`to`) onto the push so the client routes by the
+      // order relationship, not the account's global session role — a rider-role account acting as the
+      // customer on THIS order must open /order/:id, not /rider/job. Sent per-audience so each carries
+      // its own `to` (only multi-audience statuses like `cancelled` produce more than one send). The
+      // field is additive on the wire; older clients ignore it and fall back to the session role.
+      for (const aud of notice.to) {
+        const id = aud === "customer" ? order.customerId : order.riderId;
+        if (!id || id === excludeProfileId) continue;
+        await this.send([id], { title: notice.title, body: notice.body, data: { orderId, status, to: aud, ...data } });
+      }
     } catch (err) {
       this.logger.warn(`notifyOrderStatus(${orderId}, ${status}) failed: ${(err as Error).message}`);
     }

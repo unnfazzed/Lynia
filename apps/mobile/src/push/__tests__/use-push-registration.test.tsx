@@ -50,7 +50,7 @@ jest.mock("react-native", () => ({
 // Capture the reachability listener (register-retry-on-recovery trigger).
 type ReachListener = (reachable: boolean) => void;
 let reachListener: ReachListener | null = null;
-jest.mock("../net/reachability", () => ({
+jest.mock("../../net/reachability", () => ({
   subscribeReachability: (fn: ReachListener) => {
     reachListener = fn;
     return () => {
@@ -59,10 +59,10 @@ jest.mock("../net/reachability", () => ({
   },
 }));
 
-type RegResult = { token: string } | { token: null; retry: boolean };
-const mockRegister = jest.fn<Promise<RegResult>, []>(async () => ({ token: null, retry: false }));
+type RegResult = { registered: true; token: string } | { registered: false; retry: boolean };
+const mockRegister = jest.fn<Promise<RegResult>, []>(async () => ({ registered: false, retry: false }));
 const mockRegisterRotated = jest.fn(async (t: string) => t as string | null);
-const mockUnregister = jest.fn(async () => {});
+const mockUnregister = jest.fn(async (_t: string) => {});
 jest.mock("../push", () => ({
   registerForPushNotificationsAsync: () => mockRegister(),
   registerRotatedToken: (t: string) => mockRegisterRotated(t),
@@ -181,9 +181,9 @@ describe("usePushRegistration resilience", () => {
 
   it("retries registration when the API becomes reachable again after a transient failure", async () => {
     // First attempt: token acquired but the register POST failed (dead zone) → retry:true.
-    mockRegister.mockResolvedValueOnce({ token: null, retry: true });
+    mockRegister.mockResolvedValueOnce({ registered: false, retry: true });
     // Recovery attempt: succeeds.
-    mockRegister.mockResolvedValueOnce({ token: "tok-1" });
+    mockRegister.mockResolvedValueOnce({ registered: true, token: "tok-1" });
 
     let tree!: ReturnType<typeof create>;
     act(() => {
@@ -206,8 +206,8 @@ describe("usePushRegistration resilience", () => {
   });
 
   it("also retries on a foreground transition", async () => {
-    mockRegister.mockResolvedValueOnce({ token: null, retry: true });
-    mockRegister.mockResolvedValueOnce({ token: "tok-2" });
+    mockRegister.mockResolvedValueOnce({ registered: false, retry: true });
+    mockRegister.mockResolvedValueOnce({ registered: true, token: "tok-2" });
 
     let tree!: ReturnType<typeof create>;
     act(() => {
@@ -232,7 +232,7 @@ describe("usePushRegistration resilience", () => {
   });
 
   it("does NOT arm retry triggers for a terminal failure (permission denied / simulator / Expo Go)", async () => {
-    mockRegister.mockResolvedValue({ token: null, retry: false });
+    mockRegister.mockResolvedValue({ registered: false, retry: false });
 
     let tree!: ReturnType<typeof create>;
     act(() => {
@@ -247,7 +247,7 @@ describe("usePushRegistration resilience", () => {
   });
 
   it("stops retrying after the capped budget so it can't hammer the server", async () => {
-    mockRegister.mockResolvedValue({ token: null, retry: true }); // always transient-fails
+    mockRegister.mockResolvedValue({ registered: false, retry: true }); // always transient-fails
 
     let tree!: ReturnType<typeof create>;
     act(() => {
@@ -269,7 +269,7 @@ describe("usePushRegistration resilience", () => {
   });
 
   it("re-registers the fresh token on an OS/FCM token rotation and drops the superseded one", async () => {
-    mockRegister.mockResolvedValueOnce({ token: "tok-old" });
+    mockRegister.mockResolvedValueOnce({ registered: true, token: "tok-old" });
 
     let tree!: ReturnType<typeof create>;
     act(() => {
@@ -294,7 +294,7 @@ describe("usePushRegistration resilience", () => {
   });
 
   it("ignores a rotation event carrying a non-string token", async () => {
-    mockRegister.mockResolvedValueOnce({ token: "tok-old" });
+    mockRegister.mockResolvedValueOnce({ registered: true, token: "tok-old" });
     let tree!: ReturnType<typeof create>;
     act(() => {
       tree = create(<Harness role="rider" />);

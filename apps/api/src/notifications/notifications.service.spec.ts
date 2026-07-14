@@ -74,11 +74,12 @@ describe("NotificationsService — order-status notices", () => {
       where: { profileId: { in: ["rider"] } },
       select: { token: true, profileId: true },
     });
-    // One batched call carrying both devices (not a per-token fan-out).
+    // One batched call carrying both devices (not a per-token fan-out). Data carries the recipient's
+    // per-order role (`to`) so the client routes by order relationship, not global session role (Fix 3).
     expect(push.sendEach).toHaveBeenCalledOnce();
     expect(push.sendEach).toHaveBeenCalledWith([
-      expect.objectContaining({ token: "r1", data: { orderId: "o1", status: "assigned" } }),
-      expect.objectContaining({ token: "r2", data: { orderId: "o1", status: "assigned" } }),
+      expect.objectContaining({ token: "r1", data: { orderId: "o1", status: "assigned", to: "rider" } }),
+      expect.objectContaining({ token: "r2", data: { orderId: "o1", status: "assigned", to: "rider" } }),
     ]);
   });
 
@@ -96,14 +97,28 @@ describe("NotificationsService — order-status notices", () => {
     expect(push.sendEach).toHaveBeenCalledOnce();
   });
 
-  it("notifies BOTH parties on `cancelled`", async () => {
-    const { prisma, service } = makeDeps();
+  it("notifies BOTH parties on `cancelled`, each stamped with their own per-order role (Fix 3)", async () => {
+    const { prisma, push, service } = makeDeps();
     prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.deviceToken.findMany.mockImplementation(async ({ where }: { where: { profileId: { in: string[] } } }) =>
+      where.profileId.in.includes("cust") ? [{ token: "c1", profileId: "cust" }] : [{ token: "r1", profileId: "rider" }],
+    );
     await service.notifyOrderStatus("o1", "cancelled");
+    // Sent per-audience so each recipient carries its own `to` — the customer and the rider each get one.
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
-      where: { profileId: { in: ["cust", "rider"] } },
+      where: { profileId: { in: ["cust"] } },
       select: { token: true, profileId: true },
     });
+    expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
+      where: { profileId: { in: ["rider"] } },
+      select: { token: true, profileId: true },
+    });
+    expect(push.sendEach).toHaveBeenCalledWith([
+      expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "cancelled", to: "customer" } }),
+    ]);
+    expect(push.sendEach).toHaveBeenCalledWith([
+      expect.objectContaining({ token: "r1", data: { orderId: "o1", status: "cancelled", to: "rider" } }),
+    ]);
   });
 
   it("notifies the CUSTOMER (only) on `undelivered` — a terminal failure they must learn about", async () => {
@@ -119,7 +134,7 @@ describe("NotificationsService — order-status notices", () => {
       select: { token: true, profileId: true },
     });
     expect(push.sendEach).toHaveBeenCalledWith([
-      expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "undelivered" } }),
+      expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "undelivered", to: "customer" } }),
     ]);
   });
 

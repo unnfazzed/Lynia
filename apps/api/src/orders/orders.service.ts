@@ -633,6 +633,15 @@ export class OrdersService {
           null)
         : null;
 
+    // Fix 1: on an expired order, did any rider ever bid? Offer rows are never deleted on expiry (only
+    // flipped to `expired`), so a plain count recovers "riders engaged" on a COLD read into an
+    // already-expired order — where the client's live `bidCount` query sees nothing, because it queries
+    // only `pending` offers, which no longer exist post-expiry. Lets the expired terminal show honest
+    // "riders offered, the window closed" copy instead of "raise your price". Scoped to `expired`
+    // (a cheap indexed count); null on every other status. Additive — older clients ignore it.
+    const hadOffers =
+      order.status === "expired" ? (await this.prisma.offer.count({ where: { orderId: order.id } })) > 0 : null;
+
     // §5c proof-of-pickup: resolve the stored object key to a short-lived signed read URL for BOTH
     // parties — the customer seeing "parcel is with your rider — photo attached" is the whole trust
     // point, and the rider gets their own attach confirmed. Same on-demand minting as the admin KYC
@@ -694,6 +703,9 @@ export class OrdersService {
       // expired terminal can pick the honest "no riders were online" copy over "nudge the price up".
       // Scoped to `expired`; null on every other status and on a normal (had-supply) expiry.
       expiryNoSupply: order.status === "expired" ? (order.expiryNoSupply ?? null) : null,
+      // Fix 1: whether any rider bid on this (expired) order, for the honest expired-terminal copy on a
+      // cold start. Null on every non-expired status. See the `hadOffers` computation above.
+      hadOffers,
       rider,
       events: order.events,
       counterpartyPhone,
