@@ -467,13 +467,17 @@ describe("TrackingService notify-me waiting list (2·b1)", () => {
   const withRedis = () => new TrackingService({ REDIS_URL: "redis://x" } as Env, {} as PrismaService, fakeMetrics());
   // A fake exposing the geo + zset surface the notify-me store uses. `members` is what the atomic drain
   // (the Lua `eval`) claims and returns; `expired` is what a prune (zrangebyscore) finds.
-  function notifyRedis(members: string[] = [], expired: string[] = []) {
+  function notifyRedis(members: string[] = [], expired: string[] = [], orderByMember: Record<string, string> = {}) {
     return {
       geoadd: vi.fn(async (..._a: unknown[]) => 1),
       geosearch: vi.fn(async (..._a: unknown[]) => members),
       zadd: vi.fn(async (..._a: unknown[]) => 1),
       zrem: vi.fn(async (..._a: unknown[]) => 1),
       zrangebyscore: vi.fn(async (..._a: unknown[]) => expired),
+      // KB-NOTIFY-ORDERID companion HASH surface (member → orderId).
+      hset: vi.fn(async (..._a: unknown[]) => 1),
+      hdel: vi.fn(async (..._a: unknown[]) => 1),
+      hmget: vi.fn(async (_key: string, ...fields: string[]) => fields.map((f) => orderByMember[f] ?? null)),
       // The drain now claims-and-removes atomically in one Lua eval; it returns the claimed members.
       eval: vi.fn(async (..._a: unknown[]) => members),
     };
@@ -483,11 +487,24 @@ describe("TrackingService notify-me waiting list (2·b1)", () => {
     const redis = notifyRedis();
     const s = withRedis();
     s.setRedisClient(redis as never);
-    expect(await s.addNotifyRequest("cust-1", -17.8, 31.0, 1000)).toBe(true);
+    // No orderId passed → geo/zset stamped, and any stale order association HDEL'd (not HSET).
+    expect(await s.addNotifyRequest("cust-1", -17.8, 31.0, undefined, 1000)).toBe(true);
     // ioredis geoadd order is (key, lng, lat, member).
     expect(redis.geoadd).toHaveBeenCalledWith("notify:geo", 31.0, -17.8, "cust-1");
     // zadd stamps expiry = now + TTL (1h) as the score.
     expect(redis.zadd).toHaveBeenCalledWith("notify:exp", 1000 + 60 * 60 * 1000, "cust-1");
+    // KB-NOTIFY-ORDERID: no order supplied → clear any stale association, never leave one behind.
+    expect(redis.hdel).toHaveBeenCalledWith("notify:order", "cust-1");
+    expect(redis.hset).not.toHaveBeenCalled();
+  });
+
+  it("addNotifyRequest stores the order association in the companion hash when an orderId is given (KB-NOTIFY-ORDERID)", async () => {
+    const redis = notifyRedis();
+    const s = withRedis();
+    s.setRedisClient(redis as never);
+    expect(await s.addNotifyRequest("cust-1", -17.8, 31.0, "ord-9", 1000)).toBe(true);
+    expect(redis.hset).toHaveBeenCalledWith("notify:order", "cust-1", "ord-9");
+    expect(redis.hdel).not.toHaveBeenCalled();
   });
 
   it("addNotifyRequest is a no-op (false) without Redis", async () => {
@@ -499,7 +516,8 @@ describe("TrackingService notify-me waiting list (2·b1)", () => {
     const s = withRedis();
     s.setRedisClient(redis as never);
     const claimed = await s.claimNotifyWaitersNear(-17.8, 31.0, 5000);
-    expect(claimed).toEqual(["cust-1", "cust-2"]);
+    // KB-NOTIFY-ORDERID: pairs now, with orderId undefined when the hash has no association.
+    expect(claimed).toEqual([{ profileId: "cust-1" }, { profileId: "cust-2" }]);
     // F-18 durability: a single Lua round trip that GEOSEARCHes the geo index (numkeys=1) and SET-NX
     // locks each hit — the claim, NOT a delete, is what dedups (concurrent instances / a burst of riders
     // ping each waiter at most once). Removal happens later, only for delivered waiters (clearNotifyWaiters).
@@ -512,6 +530,17 @@ describe("TrackingService notify-me waiting list (2·b1)", () => {
     expect(script).toMatch(/nx/i);
     // Deliberately does NOT delete in the claim step — the waiter survives an undelivered push.
     expect(script).not.toMatch(/zrem/i);
+  });
+
+  it("claimNotifyWaitersNear reads back each claimed waiter's order association from the companion hash (KB-NOTIFY-ORDERID)", async () => {
+    // cust-1 registered against a live order; cust-2 registered with no order (older/plain register).
+    const redis = notifyRedis(["cust-1", "cust-2"], [], { "cust-1": "ord-9" });
+    const s = withRedis();
+    s.setRedisClient(redis as never);
+    const claimed = await s.claimNotifyWaitersNear(-17.8, 31.0, 5000);
+    expect(claimed).toEqual([{ profileId: "cust-1", orderId: "ord-9" }, { profileId: "cust-2" }]);
+    // The association read is a follow-up HMGET over the claimed members (the SET-NX claim dedups).
+    expect(redis.hmget).toHaveBeenCalledWith("notify:order", "cust-1", "cust-2");
   });
 
   it("claimNotifyWaitersNear prunes expired entries first, and returns [] with no Redis / on no matches", async () => {
@@ -533,6 +562,8 @@ describe("TrackingService notify-me waiting list (2·b1)", () => {
     await s.clearNotifyWaiters(["cust-1", "cust-2"]);
     expect(redis.zrem).toHaveBeenCalledWith("notify:geo", "cust-1", "cust-2");
     expect(redis.zrem).toHaveBeenCalledWith("notify:exp", "cust-1", "cust-2");
+    // KB-NOTIFY-ORDERID: the companion order association is cleared in the same place.
+    expect(redis.hdel).toHaveBeenCalledWith("notify:order", "cust-1", "cust-2");
     // Empty list is a no-op (no Redis call); no Redis never throws.
     redis.zrem.mockClear();
     await s.clearNotifyWaiters([]);

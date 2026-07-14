@@ -18,7 +18,12 @@ function makeDeps() {
       findMany: vi.fn().mockResolvedValue([]),
     },
     // Fix 1: feedForUser recomputes "did any rider bid" over the durable offer rows for expired orders.
+    // KB-FEED-SYNTH also queries these to synthesize "New offer" feed rows.
     offer: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    // KB-FEED-SYNTH: feedForUser synthesizes account-status rows from AuditLog (KYC + standing changes).
+    auditLog: {
       findMany: vi.fn().mockResolvedValue([]),
     },
     // DS13-05: notifyOps resolves the admin audience (role=admin) server-side.
@@ -203,7 +208,7 @@ describe("NotificationsService — notifyRidersAvailable delivery set (F-18 at-l
       { ok: true, invalidToken: false },
       { ok: false, invalidToken: false },
     ]);
-    const delivered = await service.notifyRidersAvailable(["cust-1", "cust-2"]);
+    const delivered = await service.notifyRidersAvailable([{ profileId: "cust-1" }, { profileId: "cust-2" }]);
     // cust-2 is deliberately NOT credited → the drain leaves them queued for the next rider.
     expect([...delivered]).toEqual(["cust-1"]);
     // A transient (non-invalid) failure must never prune the token.
@@ -220,11 +225,53 @@ describe("NotificationsService — notifyRidersAvailable delivery set (F-18 at-l
       { ok: true, invalidToken: false },
       { ok: true, invalidToken: false },
     ]);
-    expect([...(await service.notifyRidersAvailable(["cust-1"]))]).toEqual(["cust-1"]);
+    expect([...(await service.notifyRidersAvailable([{ profileId: "cust-1" }]))]).toEqual(["cust-1"]);
 
     // No device tokens at all → empty set → caller leaves the waiter queued (bounded by the notify TTL).
     prisma.deviceToken.findMany.mockResolvedValue([]);
-    expect((await service.notifyRidersAvailable(["cust-9"])).size).toBe(0);
+    expect((await service.notifyRidersAvailable([{ profileId: "cust-9" }])).size).toBe(0);
+  });
+
+  it("KB-NOTIFY-ORDERID: a waiter whose order is STILL open gets the live-request copy + orderId in the push data", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([{ id: "ord-9" }]); // ord-9 is still open_for_offers
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "t1", profileId: "cust-1" }]);
+
+    const delivered = await service.notifyRidersAvailable([{ profileId: "cust-1", orderId: "ord-9" }]);
+
+    expect([...delivered]).toEqual(["cust-1"]);
+    // Only still-open orders are looked up, and the push carries the honest live copy + the orderId.
+    expect(prisma.order.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ["ord-9"] }, status: "open_for_offers" } }),
+    );
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent.data).toEqual({ kind: "riders_available", orderId: "ord-9" });
+    expect(sent.body).toContain("live request");
+  });
+
+  it("KB-NOTIFY-ORDERID: a waiter whose order is NO LONGER open falls back to the generic copy with no orderId", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([]); // ord-9 is not open_for_offers anymore
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "t1", profileId: "cust-1" }]);
+
+    await service.notifyRidersAvailable([{ profileId: "cust-1", orderId: "ord-9" }]);
+
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent.data).toEqual({ kind: "riders_available" }); // no orderId
+    expect(sent.body).toContain("send your parcel again");
+  });
+
+  it("KB-NOTIFY-ORDERID: an older waiter with NO orderId is unaffected — generic copy, no order lookup", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "t1", profileId: "cust-1" }]);
+
+    await service.notifyRidersAvailable([{ profileId: "cust-1" }]);
+
+    // No orderId anywhere → no order lookup at all, and today's generic copy/data exactly.
+    expect(prisma.order.findMany).not.toHaveBeenCalled();
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent.data).toEqual({ kind: "riders_available" });
+    expect(sent.body).toContain("send your parcel again");
   });
 });
 
@@ -420,8 +467,10 @@ describe("NotificationsService — derived in-app feed (A·3)", () => {
       },
     ]);
     // Durable offer rows recover "a rider bid" on this cold read even though the offers are now `expired`.
-    prisma.offer.findMany.mockResolvedValue([{ orderId: "o1" }]);
+    // (Full offer shape so the KB-FEED-SYNTH "New offer" synthesis — same findMany mock — can build a row.)
+    prisma.offer.findMany.mockResolvedValue([{ id: "of1", orderId: "o1", createdAt: new Date("2026-07-06T10:59:00.000Z") }]);
 
+    // The expired "window closed" row (11:00) still sorts above the synthesized offer row (10:59).
     const row = (await service.feedForUser("me", NOW))[0];
     expect(row).toMatchObject({ title: "The window closed" });
     expect(row.message).toContain("no need to raise the price");
@@ -429,6 +478,48 @@ describe("NotificationsService — derived in-app feed (A·3)", () => {
     expect(prisma.offer.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { orderId: { in: ["o1"] } }, distinct: ["orderId"] }),
     );
+  });
+
+  it("KB-FEED-SYNTH: synthesizes a 'New offer' row from the customer's own Offer rows, merged + sorted with the event rows", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o1",
+        riderId: null, // customer-view order
+        events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
+      },
+    ]);
+    // A rider bid on o1 at 10:30 — notifyNewOffer pushed the customer, but no feed row existed before.
+    prisma.offer.findMany.mockResolvedValue([{ id: "of1", orderId: "o1", createdAt: new Date("2026-07-06T10:30:00.000Z") }]);
+
+    const feed = await service.feedForUser("me", NOW);
+    const offerRow = feed.find((r) => r.title === "New offer");
+    expect(offerRow).toMatchObject({ orderId: "o1", message: expect.stringContaining("compare offers"), unread: true });
+    // Merged and sorted by time: the 10:30 offer sorts above the 10:00 assigned event.
+    expect(feed.map((r) => r.title)).toEqual(["New offer", "Rider assigned"]);
+    // Batched query over the caller's own (customer-view) order ids — not N+1.
+    expect(prisma.offer.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { orderId: { in: ["o1"] } } }),
+    );
+  });
+
+  it("KB-FEED-SYNTH: synthesizes an account-status row from AuditLog, with orderId null and copy mirroring the push", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([]); // no orders — the account row must still appear
+    prisma.auditLog.findMany.mockResolvedValue([
+      { id: "a1", action: "rider.kyc_approve", createdAt: new Date("2026-07-06T11:30:00.000Z") },
+      { id: "a2", action: "rider.suspend", createdAt: new Date("2026-07-05T09:00:00.000Z") },
+    ]);
+
+    const feed = await service.feedForUser("me", NOW);
+    // Queried the standing/KYC audit actions for this user, newest first.
+    const auditArg = prisma.auditLog.findMany.mock.calls[0][0];
+    expect(auditArg.where.target).toBe("me");
+    expect(auditArg.where.action.in).toEqual(expect.arrayContaining(["rider.kyc_approve", "rider.kyc_decline", "rider.suspend", "rider.ban", "rider.lift", "rider.clear_hold"]));
+    // Both rows appear, account-level (orderId null), newest first, copy mirroring the actual pushes.
+    expect(feed.map((r) => r.title)).toEqual(["You're verified", "Account paused"]);
+    expect(feed.every((r) => r.orderId === null)).toBe(true);
+    expect(feed[0]).toMatchObject({ message: expect.stringContaining("go online"), unread: true });
   });
 });
 

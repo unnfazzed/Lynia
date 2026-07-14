@@ -440,7 +440,9 @@ export default function OrderScreen(): React.ReactElement {
     mutationFn: () => {
       const pickup = qc.getQueryData<OrderSnapshot>(orderKey(orderId))?.pickup.point;
       if (!pickup) throw new Error("No pickup on this order yet.");
-      return notifyWhenRiderOnline(pickup);
+      // KB-NOTIFY-ORDERID: pass this order too so, if it's still open when a rider comes online, the
+      // push says "riders are being pinged on your live request" and its tap lands back on this auction.
+      return notifyWhenRiderOnline(pickup, orderId);
     },
   });
 

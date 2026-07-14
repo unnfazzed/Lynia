@@ -47,7 +47,7 @@ export class OrdersController {
     @Body(new ZodBody(NotifyWhenAvailableRequest)) body: NotifyWhenAvailableRequest,
     @CurrentUser() customerId: string,
   ) {
-    return this.orders.requestNotifyWhenAvailable(customerId, body.pickup);
+    return this.orders.requestNotifyWhenAvailable(customerId, body.pickup, body.orderId);
   }
 
   // Static routes MUST precede the :orderId param route, or "open"/"mine" get parsed as an order id.

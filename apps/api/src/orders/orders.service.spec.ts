@@ -1116,7 +1116,8 @@ describe("OrdersService.requestNotifyWhenAvailable (2·b1 notify-me)", () => {
     const tracking = { addNotifyRequest } as unknown as TrackingService;
     const svc = new OrdersService({} as unknown as PrismaService, {} as OfferExpiryService, tracking, noNotifications, noGateway);
     const res = await svc.requestNotifyWhenAvailable("cust-1", { lat: -17.8, lng: 31.0 });
-    expect(addNotifyRequest).toHaveBeenCalledWith("cust-1", -17.8, 31.0);
+    // KB-NOTIFY-ORDERID: the optional orderId is threaded through (undefined here — no order in scope).
+    expect(addNotifyRequest).toHaveBeenCalledWith("cust-1", -17.8, 31.0, undefined);
     expect(res).toEqual({ queued: true });
   });
 

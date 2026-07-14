@@ -10,7 +10,9 @@ type Platform = "android" | "ios" | "web";
  */
 export interface NotificationRow {
   id: string;
-  orderId: string;
+  // Nullable since KB-FEED-SYNTH: account-status rows (KYC / standing changes) have no order — the
+  // screen routes those to the rider home instead of /order/:id.
+  orderId: string | null;
   icon: IconName;
   title: string;
   message: string;

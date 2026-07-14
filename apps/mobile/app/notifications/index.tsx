@@ -75,11 +75,13 @@ export default function NotificationsScreen(): React.ReactElement {
           <Button label="Retry" onPress={() => void feedQ.refetch()} />
         </EmptyState>
       ) : (feedQ.data ?? []).length === 0 ? (
-        <EmptyState icon="inbox" title="No notifications yet" message="Delivery updates will show up here." />
+        <EmptyState icon="inbox" title="No notifications yet" message="Offers, delivery updates and account news will show up here." />
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
           {(feedQ.data ?? []).map((n) => (
-            <Row key={n.id} n={n} onPress={() => router.push(`/order/${n.orderId}`)} />
+            // KB-FEED-SYNTH: an account-status row (KYC / standing change) has no orderId — route it to
+            // the rider home, mirroring where its push already lands (push.ts `kind: "account"` → /rider).
+            <Row key={n.id} n={n} onPress={() => router.push(n.orderId ? `/order/${n.orderId}` : "/rider")} />
           ))}
           <View style={{ height: tokens.space.xxl }} />
         </ScrollView>

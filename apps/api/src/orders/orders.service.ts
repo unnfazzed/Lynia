@@ -248,8 +248,14 @@ export class OrdersService {
    * Redis-backed, so without Redis this simply doesn't persist (the customer just won't get the ping).
    * `queued` reflects whether it was actually stored, so the client can be honest if it wasn't.
    */
-  async requestNotifyWhenAvailable(customerId: string, pickup: { lat: number; lng: number }): Promise<{ queued: boolean }> {
-    const queued = await this.tracking.addNotifyRequest(customerId, pickup.lat, pickup.lng);
+  async requestNotifyWhenAvailable(
+    customerId: string,
+    pickup: { lat: number; lng: number },
+    orderId?: string,
+  ): Promise<{ queued: boolean }> {
+    // KB-NOTIFY-ORDERID: thread the optional still-open order through so its fulfillment push can route
+    // the tap to that live auction. Absent orderId clears any stale association (see addNotifyRequest).
+    const queued = await this.tracking.addNotifyRequest(customerId, pickup.lat, pickup.lng, orderId);
     return { queued };
   }
 

@@ -136,9 +136,13 @@ export const AcceptDisclaimerRequest = z.object({
 export type AcceptDisclaimerRequest = z.infer<typeof AcceptDisclaimerRequest>;
 
 /** 2·b1 "notify me when a rider's online": the customer registers their pickup point so the server can
- *  ping them the moment a rider comes online nearby (on the no-riders-online auction state). */
+ *  ping them the moment a rider comes online nearby (on the no-riders-online auction state). `orderId`
+ *  (optional) associates the waiter with the still-open auction that triggered the register, so the
+ *  fulfillment push can route the tap to that live request instead of a blank home form (KB-NOTIFY-ORDERID).
+ *  Optional + additive: an older client that omits it keeps the prior "route home" behaviour exactly. */
 export const NotifyWhenAvailableRequest = z.object({
   pickup: LatLng,
+  orderId: z.string().uuid().optional(),
 });
 export type NotifyWhenAvailableRequest = z.infer<typeof NotifyWhenAvailableRequest>;
 
