@@ -42,6 +42,11 @@ reputation system that can be weaponised (report/issue spam, one-sided rating sa
 ### P0-1 · A user can bid on and win their own order (self-dealing / wash trades)
 **`apps/api/src/offers/offers.service.ts:22-84` (`makeOffer`), `apps/api/src/matching/matching.service.ts:41-132` (`selectOffer`)**
 
+**Fixed (verified):** `makeOffer` now rejects `order.customerId === riderId`
+(`offers.service.ts:38`), and `selectOffer` re-asserts the same check inside its CAS
+(`matching.service.ts:79`). See `docs/KNOWN_BUGS.md` — "Object-authz / IDOR cluster → FIXED
+(verified)." The finding below is kept for the exploit narrative and defense-in-depth ideas.
+
 A `Profile` can be both a customer and a rider (`becomeRider` just flips role + adds a `Rider` row),
 and **nothing compares the offer's `riderId` to the order's `customerId`.** `makeOffer` fetches
 `order.customerId` (`offers.service.ts:26`) but uses it only for the notification (`:67`).
@@ -65,6 +70,13 @@ DB layer, and down-weight repeat same-pair trips in reputation aggregation (see 
 ### P0-2 · Commission basis is decoupled from real cash; no fare floor
 **`apps/api/src/matching/matching.service.ts:111` (`agreedFare ← offer.offeredFare`), `contracts.ts:80` (`offeredFare: z.number().positive().max(100_000)`), `settlements.service.ts:106,113`**
 
+**MOOT:** the weekly cash-settlement mechanics this finding describes (`recordPayment`,
+`adjustFare`-driven settlement) no longer exist — `settlements.service.ts` was rewritten to a
+read-only prepaid-per-ride commission console at a 0% launch rate (see
+`docs/KNOWN_BUGS.md` — "Money-fraud cluster → MOOT"). The underlying fare-manipulation risk may
+resurface once the prepaid wallet (`docs/plans/2026-biker-prepaid-commission.md`) starts debiting
+per ride and the rate leaves 0% — worth re-checking against that build rather than fixing here.
+
 Commission = `15% × Σ agreedFare` over completed orders. `agreedFare` is copied verbatim from the
 rider's `offeredFare`, whose only bound is "positive, ≤ 100000, 2dp." There is **no floor tying it to
 `suggestedFare`/distance**, and **nothing reconciles it against the cash the rider physically
@@ -84,6 +96,13 @@ anomaly detection on persistently-far-below-suggested fares between the same two
 
 ### P0-3 · `markUndelivered(refused|wrong_address)` — penalty-free off-books escape hatch
 **`apps/api/src/orders/order-lifecycle.service.ts:276-329` (`markUndelivered`), `apps/api/src/riders/reliability.ts:36-40` (`undeliveredPenalty`), `settlements.service.ts:106`**
+
+**Status:** the commission-exclusion half of this finding (`grossFares`) is **MOOT** — that
+weekly-settlement mechanic no longer exists (see P0-2 above and `docs/KNOWN_BUGS.md`
+"Money-fraud cluster → MOOT"). The penalty-free, self-attested-abandonment half is separately
+**MITIGATED** by the velocity guard added in #198 (`UNDELIVERED_ABUSE` auto-`on_hold` on an
+abnormal undelivered rate) — see `docs/KNOWN_BUGS.md`'s FRAUD P0-3 row. Kept below for the
+exploit narrative.
 
 `grossFares` only sums `status = "completed"` orders, so any other terminal state — notably
 `undelivered` — contributes **nothing** to commission. And `undeliveredPenalty` returns **0** for
@@ -245,7 +264,7 @@ report) before a reliability penalty lands.
 - **`on_hold` self-clear is impossible** — the only way to raise reliability requires being assigned,
   which requires being online, which `on_hold` blocks (`reliability.ts`); a rider can never earn their
   way out on their own. **Fixed (admin side):** `POST /admin/riders/:id/clear-hold`
-  (`admin.controller.ts:188`, `admin-riders.service.ts` `clearHold`) now gives an admin an explicit
+  (`admin.controller.ts:212`, `admin-riders.service.ts` `clearHold`) now gives an admin an explicit
   escape hatch — previously an `on_hold` rider had no admin action at all (only `suspended` riders got
   Lift/Ban). Self-service recovery is still absent, so the P0-1 interaction (self-dealing as the only
   *self*-service recovery) still applies.

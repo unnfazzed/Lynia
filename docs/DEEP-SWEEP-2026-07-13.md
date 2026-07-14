@@ -194,8 +194,8 @@ sweep audited the SOS *consumer* side.
 **Fix (conservative, backend):** Add a read-only, `AdminGuard`-gated endpoint that lists recent
 `SosEvent` rows (making SOS no longer write-only so ops has a durable surface independent of push
 delivery), and emit a loud `logger.error` when `notifyOps` resolves to zero recipients so a token-less
-audience is observable. (A full admin-web SOS panel + acknowledgement workflow is a follow-up product
-item, not a bug fix.)
+audience is observable. (A full admin-web SOS panel + acknowledgement workflow was a follow-up product
+item at the time this was written; both have since shipped — see the post-merge status table below.)
 
 ---
 
@@ -280,14 +280,12 @@ un-held with zero admin action and resumes.
 sweep cross-checked that a score-*independent* hold rides on a score-*driven* clear. The ledger records
 P0-3 as "MITIGATED #198 (velocity)" and never noted the backstop self-releases.
 
-**Status — REPORTED, not auto-fixed (deliberate).** This touches the fraud/standing-gating carve-out and
-the correct remedy is a policy/schema decision: represent the fraud hold with a persisted `heldReason`
-(or a distinct flag) that `applyReliabilityDelta`'s score-hysteresis never clears — only an admin
-`clear-hold` releases it — OR drop the score below `ON_HOLD_BELOW` when velocity-holding so recovery must
-legitimately re-earn it (conflates the fraud signal into the score, which #198 deliberately kept
-separate). Per the bug-hunt carve-out this is left **draft for human review** rather than auto-merged; a
-regression test asserting the hold survives a subsequent recovery event should land with whichever
-representation is chosen.
+**Status — FIXED, PR #221.** This touched the fraud/standing-gating carve-out, so the remedy was left as
+a policy/schema decision for human review rather than auto-merged; the option chosen was Option A —
+represent the fraud hold with a persisted `heldReason` (`reliability`|`velocity`|null; migration 0024)
+that `applyReliabilityDelta`'s score-hysteresis never clears for a `velocity` hold — only an admin
+`clear-hold` releases it. A regression test asserts the hold survives a subsequent recovery event. See
+the post-merge status table below.
 
 ---
 
@@ -297,15 +295,15 @@ Eight new findings: **two HIGH** (DS13-02 marketplace-supply loss; DS13-05 SOS w
 **four MEDIUM** (DS13-01 presence refutation, DS13-03 admin-cancel push parity, DS13-04 admin standing
 CAS, RH-01 velocity-hold self-clear), **two LOW** (DS13-06 become throttle, DS13-07 open-auction board
 signal). No CRITICAL. **DS13-01…DS13-07 were fixed and merged in PR #209** (each with a regression test;
-`pnpm typecheck` + 714 API tests + API build green, all CI checks passing, no migration); **RH-01 remains
-OPEN** — reported-only and flagged for human review (fraud-hold representation is a policy decision). Two
-agent-proposed candidates were rejected on code re-read (recorded above). All Phase-0 sampled prior fixes
-remain intact.
+`pnpm typecheck` + 714 API tests + API build green, all CI checks passing, no migration); **RH-01 was
+fixed in PR #221** after the fraud-hold representation was decided on human review (see the post-merge
+status table below). Two agent-proposed candidates were rejected on code re-read (recorded above). All
+Phase-0 sampled prior fixes remain intact.
 
 ### Post-merge status (updated after #209 landed)
 
 | ID | Outcome |
 |---|---|
 | DS13-01 · DS13-02 · DS13-03 · DS13-04 · DS13-06 · DS13-07 | **FIXED — merged in #209.** |
-| DS13-05 | **Backend FIXED — merged in #209** (`GET /admin/sos` read surface + zero-recipient log); **admin-web SOS list panel (`/sos`) built in #221.** Follow-up: an acknowledgement workflow (mark-seen) is still open. |
+| DS13-05 | **Backend FIXED — merged in #209** (`GET /admin/sos` read surface + zero-recipient log); **admin-web SOS list panel (`/sos`) built in #221.** Acknowledgement workflow (`POST /admin/sos/:id/ack`, `AcknowledgeButton`) shipped in **#224**. |
 | RH-01 | **FIXED — PR #221** (Option A, persisted `heldReason`): the score hysteresis never clears a `velocity`/fraud hold on recovery; only an explicit admin clear-hold releases it. Migration 0024 adds the nullable `riders.held_reason` column; regression tests assert the hold survives a recovery event. |
