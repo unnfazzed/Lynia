@@ -8,10 +8,10 @@ import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../s
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { auctionHeaderText, formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
-import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, selectOrderShell } from "../../src/logic/order-tracking";
+import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell } from "../../src/logic/order-tracking";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
-import { clearDeliveryCode, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt } from "../../src/auth/session";
+import { clearDeliveryCode, clearPendingRating, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, loadPendingRating, savePendingRating, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt, type PendingRating } from "../../src/auth/session";
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
@@ -468,13 +468,57 @@ export default function OrderScreen(): React.ReactElement {
   // Identity-stable (v5's `mutate` is stable) so it never busts LiveTrackingCard's memo — and it
   // swallows the press event a bare `onPress={rotateM.mutate}` would pass as mutation variables.
   const reissueCode = useCallback(() => rotateM.mutate(), [rotateM.mutate]);
+  // BH-06: a durable "rating still pending for order X" marker — loaded once on mount so a cold
+  // start after an app-kill mid-undo-window can re-send a rating that never reached the server. The
+  // guard ref stops the reconcile effect below from firing an overlapping retry.
+  const [pendingRating, setPendingRating] = useState<PendingRating | null>(null);
+  const ratingRetryInFlight = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    void loadPendingRating().then((p) => {
+      if (alive) setPendingRating(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const rateM = useMutation({
     mutationFn: (value: number) => rateOrder(orderId, { score: value }),
     onSuccess: () => {
+      setPendingRating((cur) => (cur?.orderId === orderId ? null : cur));
+      void clearPendingRating();
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
       void qc.invalidateQueries({ queryKey: ["history"] }); // the just-rated trip now shows its ★ in history
     },
   });
+  // Re-send (or retire) a pending rating against the live snapshot. Fires only while the marker's order
+  // is still `delivered` with no rating recorded yet; clears once the rating lands (this retry or a
+  // concurrent session) or a different order becomes active. Re-runs on every snapshot refresh, so a
+  // rating dropped by an app kill self-heals on the next cold start / foreground without a manual retry.
+  useEffect(() => {
+    const snap = orderQ.data;
+    const decision = reconcilePendingRating({ pending: pendingRating, order: snap ? { id: snap.id, status: snap.status } : null });
+    if (decision === "clear") {
+      setPendingRating(null);
+      void clearPendingRating();
+      return;
+    }
+    if (decision !== "retry" || !pendingRating || ratingRetryInFlight.current) return;
+    ratingRetryInFlight.current = true;
+    const { orderId: pid, score } = pendingRating;
+    void rateOrder(pid, { score })
+      .then(() => {
+        setPendingRating((cur) => (cur?.orderId === pid ? null : cur));
+        void clearPendingRating();
+        void qc.invalidateQueries({ queryKey: orderKey(pid) });
+        void qc.invalidateQueries({ queryKey: ["history"] });
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        ratingRetryInFlight.current = false;
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- qc is stable; orderQ.data read fresh each run.
+  }, [orderQ.data, pendingRating]);
   const cancelM = useMutation({
     mutationFn: () => cancelOrder(orderId),
     onSuccess: () => {
@@ -882,7 +926,18 @@ export default function OrderScreen(): React.ReactElement {
         {/* Fix 1: rating is customer→rider and customer-gated server-side (rate() 403s a rider), so the
             card is hidden for a rider viewing their own delivered trip. */}
         {order.status === "delivered" && !isRiderViewer ? (
-          <RatingCard saving={rateM.isPending} onRate={(n) => rateM.mutate(n)} />
+          <RatingCard
+            saving={rateM.isPending}
+            onRate={(n) => rateM.mutate(n)}
+            onArm={(n) => {
+              setPendingRating({ orderId, score: n });
+              void savePendingRating(orderId, n);
+            }}
+            onUndo={() => {
+              setPendingRating((cur) => (cur?.orderId === orderId ? null : cur));
+              void clearPendingRating();
+            }}
+          />
         ) : null}
 
         {order.status === "completed" ? (

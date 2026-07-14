@@ -117,21 +117,40 @@ describe("service-corridor gate (Q1)", () => {
 
 describe("resolveKycRetryFeedback (JOURNEY-BUGS: 'Continue verification' silent no-op)", () => {
   it("opens an https verification URL and clears any prior error", () => {
-    expect(resolveKycRetryFeedback("https://verify.didit.me/session/abc")).toEqual({
+    expect(resolveKycRetryFeedback("https://verify.didit.me/session/abc", "auto")).toEqual({
       openUrl: "https://verify.didit.me/session/abc",
       error: null,
+      info: null,
     });
   });
 
-  it("surfaces an error instead of silently doing nothing when the URL is missing", () => {
-    const feedback = resolveKycRetryFeedback(undefined);
+  it("surfaces an error instead of silently doing nothing when the URL is missing in auto mode", () => {
+    const feedback = resolveKycRetryFeedback(undefined, "auto");
+    expect(feedback.openUrl).toBeNull();
+    expect(feedback.error).toBeTruthy();
+    expect(feedback.info).toBeNull();
+  });
+
+  it("surfaces an error for a non-https URL rather than opening it", () => {
+    const feedback = resolveKycRetryFeedback("http://not-secure.example/session/abc", "auto");
     expect(feedback.openUrl).toBeNull();
     expect(feedback.error).toBeTruthy();
   });
 
-  it("surfaces an error for a non-https URL rather than opening it", () => {
-    const feedback = resolveKycRetryFeedback("http://not-secure.example/session/abc");
+  // BH-03: manual KYC mode never mints a verificationUrl — a missing URL there is the EXPECTED
+  // shape of a successful retry (ops review, no vendor step), not a failure to explain as one.
+  it("surfaces a calm info line, not an error, when the URL is missing in manual mode", () => {
+    const feedback = resolveKycRetryFeedback(undefined, "manual");
     expect(feedback.openUrl).toBeNull();
-    expect(feedback.error).toBeTruthy();
+    expect(feedback.error).toBeNull();
+    expect(feedback.info).toBeTruthy();
+  });
+
+  it("still opens the URL in manual mode on the rare occasion one is present", () => {
+    expect(resolveKycRetryFeedback("https://verify.didit.me/session/xyz", "manual")).toEqual({
+      openUrl: "https://verify.didit.me/session/xyz",
+      error: null,
+      info: null,
+    });
   });
 });

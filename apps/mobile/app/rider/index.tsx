@@ -1,4 +1,4 @@
-import { haversineKm, OFFER_WINDOW_MS, tokens } from "@lynia/shared";
+import { haversineKm, tokens } from "@lynia/shared";
 import { ETA_SPEED_KMH } from "../../src/logic/eta";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
@@ -17,7 +17,7 @@ import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch"
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../src/logic/gates";
 import { formatMoney } from "../../src/logic/money";
-import { clearRiderBidDraft, loadRiderBidDraft, saveRiderBidDraft } from "../../src/logic/rider-bid-draft";
+import { buildSentOfferEntry, clearRiderBidDraft, loadRiderBidDraft, saveRiderBidDraft, type SentOffer } from "../../src/logic/rider-bid-draft";
 import { Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../src/ui";
 import { SentOfferCard } from "../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../src/ui/safety";
@@ -42,14 +42,8 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   ]).finally(() => clearTimeout(timer));
 }
 
-/** A live offer the rider has sent — kept on-screen with a countdown to the auction close (C2). */
-interface SentOffer {
-  order: OpenOrder;
-  fare: string;
-  etaMinutes: number;
-  /** ISO auction close — createdAt + OFFER_WINDOW_MS, the same window the customer sees. */
-  expiresAt: string;
-}
+// SentOffer moved to src/logic/rider-bid-draft.ts (buildSentOfferEntry) so its construction — using
+// the SENT fare/eta, never live form state — is unit-testable without mounting this screen.
 
 
 export default function RiderHome(): React.ReactElement {
@@ -67,6 +61,9 @@ export default function RiderHome(): React.ReactElement {
   // an accepted job, or go effectively deaf to new broadcasts while still marked online server-side.
   const [confirmSwitch, setConfirmSwitch] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // BH-03: a calm (non-error) status line — distinct from `error` — for feedback that isn't a
+  // failure, e.g. "Continue verification" in manual KYC mode where there's no browser step to open.
+  const [info, setInfo] = useState<string | null>(null);
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
   // S·4 no-GPS gate: location permission was denied — riding needs GPS (parcels near you, navigate
   // to pickups), so this blocks going online with an "open settings" recovery, per the journey map.
@@ -287,8 +284,9 @@ export default function RiderHome(): React.ReactElement {
     onSuccess: async (res) => {
       // In-app browser tab (not the system browser): it returns to the app when the rider closes it,
       // so we can immediately re-check status rather than leaving them stranded outside the app.
-      const feedback = resolveKycRetryFeedback(res.verificationUrl);
+      const feedback = resolveKycRetryFeedback(res.verificationUrl, res.mode);
       setError(feedback.error);
+      setInfo(feedback.info);
       if (feedback.openUrl) {
         await WebBrowser.openAuthSessionAsync(feedback.openUrl).catch(() => undefined);
       }
@@ -428,35 +426,37 @@ export default function RiderHome(): React.ReactElement {
 
   // Shared by onSuccess and the "already responded" reconciliation below — both mean the offer is
   // confirmed live server-side, so both must land the rider in the same "your offer is in" state.
-  const recordSentOffer = (s: OpenOrder): void => {
+  // BH-05: takes the SENT fare/eta as params rather than reading live `fare`/`etaNum` state — the
+  // rider can edit the form between a failed send and the "already responded" 409 retry (the error
+  // state re-enables editing), and reading live state here showed the just-edited, never-sent price.
+  const recordSentOffer = (s: OpenOrder, sentFare: string, sentEtaNum: number): void => {
     setBidIds((prev) => new Set(prev).add(s.id));
-    // Same auction window the customer sees: createdAt + OFFER_WINDOW_MS (the shared clock).
-    const expiresAt = new Date(new Date(s.createdAt).getTime() + OFFER_WINDOW_MS).toISOString();
-    setSentOffers((prev) => [{ order: s, fare, etaMinutes: Math.round(etaNum ?? 0), expiresAt }, ...prev.filter((p) => p.order.id !== s.id)]);
+    const entry = buildSentOfferEntry(s, sentFare, sentEtaNum);
+    setSentOffers((prev) => [entry, ...prev.filter((p) => p.order.id !== s.id)]);
   };
 
   const offerM = useMutation({
-    mutationFn: () => {
+    mutationFn: (vars: { fare: string; fareNum: number; etaNum: number }) => {
       // Accept = take the customer's price; any other fare is a counter.
-      const type = fareNum === Number(selected!.proposedFare) ? "accept" : "counter";
-      return makeOffer(selected!.id, { type, offeredFare: fareNum!, etaMinutes: Math.round(etaNum!) });
+      const type = vars.fareNum === Number(selected!.proposedFare) ? "accept" : "counter";
+      return makeOffer(selected!.id, { type, offeredFare: vars.fareNum, etaMinutes: Math.round(vars.etaNum) });
     },
-    onSuccess: () => {
-      if (selected) recordSentOffer(selected);
+    onSuccess: (_data, vars) => {
+      if (selected) recordSentOffer(selected, vars.fare, vars.etaNum);
       setSelected(null);
       setFare("");
       setEta("");
       setError(null);
       void qc.invalidateQueries({ queryKey: ["openOrders"] });
     },
-    onError: (e) => {
+    onError: (e, vars) => {
       const msg = e instanceof ApiError ? e.message : "Couldn't send the offer.";
       // A retry after a client-side timeout can land on an offer the server already committed —
       // the API's own idempotency guard says so verbatim. Without this the rider is told "you
       // already responded" but the board never shows the offer as sent, so they can't tell if it
       // actually went through.
       if (msg === "You already responded to this order (one round only)" && selected) {
-        recordSentOffer(selected);
+        recordSentOffer(selected, vars.fare, vars.etaNum);
         setSelected(null);
         setFare("");
         setEta("");
@@ -603,6 +603,18 @@ export default function RiderHome(): React.ReactElement {
                 <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
               </EmptyState>
             )
+          ) : rider?.kycMode === "manual" ? (
+            // BH-03: manual KYC mode has no vendor browser step — the old copy told every pending
+            // rider to "continue in the browser" and go there via a "Continue verification" tap that
+            // silently no-oped server-side, which read as a stuck/broken flow. Be honest: this is ops
+            // review, not something the rider can push forward themselves.
+            <EmptyState
+              icon="id-card"
+              title="Your ID is under review"
+              message="Your documents are being checked by our team. We'll notify you as soon as it's done — no action needed from you."
+            >
+              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
+            </EmptyState>
           ) : (
             // Pending — let them re-open a working verification session instead of re-keying the form.
             <EmptyState
@@ -858,7 +870,7 @@ export default function RiderHome(): React.ReactElement {
             <Field label="ETA to pickup (min)" value={eta} onChangeText={setEta} keyboardType="number-pad" maxLength={3} />
             <Button
               label={offerSlow ? "Still sending — hang on" : offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send my price"}
-              onPress={() => offerM.mutate()}
+              onPress={() => canOffer && offerM.mutate({ fare, fareNum: fareNum!, etaNum: etaNum! })}
               loading={offerM.isPending}
               disabled={!canOffer}
             />
@@ -904,6 +916,7 @@ export default function RiderHome(): React.ReactElement {
           />
         )}
         <ErrorText message={error} />
+        {info ? <Sub>{info}</Sub> : null}
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
     </Screen>

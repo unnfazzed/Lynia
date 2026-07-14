@@ -117,7 +117,10 @@ export class RiderService {
       where: { profileId },
       select: { profileId: true },
     });
-    if (existing) throw new ConflictException("Already registered as a rider");
+    // BH-04: structured `reason` (not just a plain message) so the client can special-case this
+    // exact conflict — it's the expected shape of a lost-response retry (the FIRST submit landed
+    // server-side, the rider only saw the dropped/timed-out response) rather than a generic error.
+    if (existing) throw new ConflictException({ reason: "already_rider", message: "Already registered as a rider" });
 
     // The photo key must live under this caller's own KYC namespace — POST /uploads/kyc-photo mints
     // keys as `kyc/<callerId>/<uuid>` — so a rider can't persist a key that points at another user's
@@ -195,7 +198,7 @@ export class RiderService {
    * workflow's retry window). Mints a fresh verification session, points the rider at the new ref, and
    * clears kycResolvedAt so the new webhook resolves it. Verified riders are left untouched.
    */
-  async retryKyc(profileId: string): Promise<{ kycStatus: Kyc; verificationUrl?: string }> {
+  async retryKyc(profileId: string): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
       select: { kycStatus: true, kycAttempts: true },
@@ -209,7 +212,9 @@ export class RiderService {
       throw new ForbiddenException("ID verification is locked after two attempts. Please contact support.");
     }
     // Manual mode has no vendor to resubmit to — the admin backstop resolves it; leave the rider pending.
-    if (this.env.KYC_MODE !== "auto") return { kycStatus: "pending" };
+    // BH-03: include `mode` even on this early return so the client can tell "no verificationUrl
+    // because manual review is expected" apart from "no verificationUrl because something went wrong".
+    if (this.env.KYC_MODE !== "auto") return { kycStatus: "pending", mode: this.env.KYC_MODE };
 
     let submission: Awaited<ReturnType<KycVendor["submit"]>>;
     try {
@@ -235,7 +240,7 @@ export class RiderService {
     if (rotated.count === 0) {
       throw new ConflictException("Your ID verification just changed — refresh and try again.");
     }
-    return { kycStatus: next, verificationUrl: submission.url };
+    return { kycStatus: next, mode: this.env.KYC_MODE, verificationUrl: submission.url };
   }
 
   async setOnline(

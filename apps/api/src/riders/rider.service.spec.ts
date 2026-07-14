@@ -55,6 +55,19 @@ describe("RiderService.becomeRider", () => {
     await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" })).rejects.toThrow(/already registered/i);
   });
 
+  // BH-04: the mobile client special-cases this exact conflict as "my earlier submit already
+  // landed, the response just got lost" (a lost-response retry) rather than a generic failure — it
+  // needs a stable machine-readable `reason`, not just the human message, to branch on.
+  it("409 carries a stable machine-readable reason for the mobile client's lost-response retry path", async () => {
+    const s = svc({ rider: { findUnique: async () => ({ profileId: "p1" }) } }, { KYC_MODE: "auto" });
+    try {
+      await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
+      throw new Error("expected becomeRider to throw");
+    } catch (e) {
+      expect((e as { getResponse: () => unknown }).getResponse()).toMatchObject({ reason: "already_rider" });
+    }
+  });
+
   it("400s if the photo key is not under the caller's own kyc namespace (no cross-user key)", async () => {
     const s = svc({ rider: { findUnique: async () => null } }, { KYC_MODE: "auto" });
     await expect(
@@ -340,7 +353,7 @@ describe("RiderService.retryKyc", () => {
       },
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
-    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", verificationUrl: "https://verify.didit.me/sess_new" });
+    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/sess_new" });
     // New ref, reset to pending, and kycResolvedAt cleared so the fresh webhook resolves it.
     expect(data).toMatchObject({ kycStatus: "pending", idVerified: false, kycRef: "sess_new", kycResolvedAt: null });
     // Guarded on exactly what was read so a concurrent webhook/admin decision can't be clobbered.
@@ -401,17 +414,21 @@ describe("RiderService.retryKyc", () => {
       },
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
-    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", verificationUrl: "https://verify.didit.me/sess_2" });
+    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/sess_2" });
   });
 
-  it("leaves a manual-mode rider pending without calling the vendor", async () => {
+  it("leaves a manual-mode rider pending without calling the vendor, and tells the client it's manual mode", async () => {
     const vendor: KycVendor = {
       submit: async () => {
         throw new Error("vendor must not be called in manual mode");
       },
     };
     const s = svc({ rider: { findUnique: async () => ({ kycStatus: "failed" }) } }, { KYC_MODE: "manual" }, vendor);
-    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending" });
+    // BH-03: `mode` must be present even on this early return — the mobile client uses it to tell
+    // "no verificationUrl because manual review is expected" apart from "no verificationUrl because
+    // something went wrong" (resolveKycRetryFeedback). Without it a manual-mode rider saw a false error
+    // on every retry tap.
+    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "manual" });
   });
 });
 

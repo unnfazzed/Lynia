@@ -16,7 +16,7 @@ export function becomeRider(body: { bikeReg: string; photoUrl: string }): Promis
 }
 
 /** Re-run KYC for an existing rider whose check is pending/failed; returns a fresh verification URL. */
-export function retryKyc(): Promise<{ kycStatus: BecomeResult["kycStatus"]; verificationUrl?: string }> {
+export function retryKyc(): Promise<{ kycStatus: BecomeResult["kycStatus"]; mode: BecomeResult["mode"]; verificationUrl?: string }> {
   return apiFetch("/riders/kyc/retry", { method: "POST", body: {} });
 }
 

@@ -12,7 +12,22 @@ const RATE_UNDO_MS = 4_000;
  * server-side → completed, so we hold, not un-rate). `onRate` fires once the undo window lapses;
  * `saving` reflects the caller's in-flight rating mutation.
  */
-export function RatingCard({ saving, onRate }: { saving: boolean; onRate: (score: number) => void }): React.ReactElement {
+export function RatingCard({
+  saving,
+  onRate,
+  onArm,
+  onUndo,
+}: {
+  saving: boolean;
+  onRate: (score: number) => void;
+  /** BH-06: fires the instant a rating is armed (before the undo window), so the caller can persist
+   *  a durable "rating pending" marker — a setTimeout + ref alone don't survive an OS-level app kill,
+   *  only a React unmount (which the existing flush effect below already handles). */
+  onArm?: (score: number) => void;
+  /** Fires when Undo cancels an armed rating, so the caller can drop the durable marker `onArm` wrote —
+   *  otherwise a cold start would resubmit a rating the customer explicitly cancelled. */
+  onUndo?: () => void;
+}): React.ReactElement {
   // Starts unselected — all 5 stars pre-filled read as "already rated 5★" and contradict the "Tap a
   // star to rate" hint below, nudging toward an inflated rating the customer never chose.
   const [score, setScore] = useState(0);
@@ -40,6 +55,7 @@ export function RatingCard({ saving, onRate }: { saving: boolean; onRate: (score
     if (rateTimer.current) clearTimeout(rateTimer.current);
     setRatePending(true);
     pendingScore.current = n;
+    onArm?.(n);
     rateTimer.current = setTimeout(() => {
       rateTimer.current = null;
       pendingScore.current = null;
@@ -53,6 +69,7 @@ export function RatingCard({ saving, onRate }: { saving: boolean; onRate: (score
     rateTimer.current = null;
     pendingScore.current = null;
     setRatePending(false);
+    onUndo?.();
     AccessibilityInfo.announceForAccessibility("Rating cancelled");
   }
 

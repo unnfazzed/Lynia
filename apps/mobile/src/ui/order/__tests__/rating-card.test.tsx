@@ -66,4 +66,41 @@ describe("RatingCard commit semantics", () => {
     act(() => { tree.unmount(); });
     expect(onRate).toHaveBeenCalledTimes(1); // no double-submit
   });
+
+  // BH-06: a setTimeout + ref alone don't survive an OS-level app kill (only a React unmount does,
+  // per the tests above) — the caller needs a synchronous "armed" signal to persist a durable marker
+  // BEFORE the undo window starts, and a matching "cancelled" signal to drop it on Undo.
+  it("calls onArm synchronously the instant a star is tapped, before the undo window lapses", () => {
+    const onRate = jest.fn();
+    const onArm = jest.fn();
+    let tree!: renderer.ReactTestRenderer;
+    act(() => { tree = renderer.create(<RatingCard saving={false} onRate={onRate} onArm={onArm} />); });
+    act(() => { findByLabel(tree, "Rate 4 stars").props.onPress(); });
+    expect(onArm).toHaveBeenCalledWith(4);
+    expect(onRate).not.toHaveBeenCalled();
+  });
+
+  it("calls onUndo when Undo cancels the pending submit, so the caller can drop its durable marker", () => {
+    const onRate = jest.fn();
+    const onUndo = jest.fn();
+    let tree!: renderer.ReactTestRenderer;
+    act(() => { tree = renderer.create(<RatingCard saving={false} onRate={onRate} onUndo={onUndo} />); });
+    act(() => { findByLabel(tree, "Rate 3 stars").props.onPress(); });
+    act(() => { pressUndo(tree); });
+    expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-arms (calls onArm again) on a second star tap without an intervening onUndo", () => {
+    const onRate = jest.fn();
+    const onArm = jest.fn();
+    let tree!: renderer.ReactTestRenderer;
+    act(() => { tree = renderer.create(<RatingCard saving={false} onRate={onRate} onArm={onArm} />); });
+    act(() => { findByLabel(tree, "Rate 2 stars").props.onPress(); });
+    act(() => { findByLabel(tree, "Rate 5 stars").props.onPress(); });
+    expect(onArm).toHaveBeenNthCalledWith(1, 2);
+    expect(onArm).toHaveBeenNthCalledWith(2, 5);
+    act(() => { jest.advanceTimersByTime(4_000); });
+    expect(onRate).toHaveBeenCalledWith(5);
+    expect(onRate).not.toHaveBeenCalledWith(2);
+  });
 });

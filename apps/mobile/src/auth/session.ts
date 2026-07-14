@@ -198,6 +198,47 @@ export async function clearConfirmItemsPending(): Promise<void> {
   }
 }
 
+// BH-06: a durable "rating still needs to reach the server for order X" marker, mirroring
+// CONFIRM_ITEMS_PENDING_KEY above. RatingCard's rating-on-tap arms a rating behind a short undo window
+// and only flushes it on a React unmount (leaving the screen) — an OS-level app kill within that window
+// destroys the timer/closure with no unmount effect, silently dropping a rating the customer believes
+// they already submitted (they saw "Submitting N★…"). Persist the armed score BEFORE the undo window
+// starts and clear it on Undo or on confirmed success, so a cold start can re-send it. Single slot — a
+// customer has one order awaiting rating at a time.
+const PENDING_RATING_KEY = "lynia.pendingRating";
+export interface PendingRating {
+  orderId: string;
+  score: number;
+}
+
+export async function savePendingRating(orderId: string, score: number): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PENDING_RATING_KEY, JSON.stringify({ orderId, score }));
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadPendingRating(): Promise<PendingRating | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(PENDING_RATING_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as unknown;
+    if (v && typeof v === "object" && typeof (v as { orderId?: unknown }).orderId === "string" && typeof (v as { score?: unknown }).score === "number") {
+      return { orderId: (v as { orderId: string }).orderId, score: (v as { score: number }).score };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+export async function clearPendingRating(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(PENDING_RATING_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
 // Which starting role the user picked at the post-OTP role fork (one account, two roles). Persisted
 // so an existing user isn't re-prompted on every sign-in — verify.tsx routes straight home once set.
 // All best-effort: a native read/write failure must never trap the sign-in flow.
@@ -335,6 +376,9 @@ export async function clearDeviceState(): Promise<void> {
       // The rider's durable confirmItems-pending marker (a job id + collected item indexes) must not
       // survive to the next user on a shared device.
       SecureStore.deleteItemAsync(CONFIRM_ITEMS_PENDING_KEY),
+      // The customer's durable pending-rating marker (an order id + armed score) must not survive to
+      // the next user on a shared device, or auto-submit a rating on the next user's account.
+      SecureStore.deleteItemAsync(PENDING_RATING_KEY),
       // Address book: the saved Home/Work + recent places (addresses) and the recent recipients (the one
       // place we hold contact PII) must not survive to the next user on a shared device — exactly the
       // "next user must not rehydrate the previous user's addresses" rule above, now including recipients.

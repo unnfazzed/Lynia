@@ -59,6 +59,9 @@ export interface Me {
     ratingCount: number;
     tripsCount: number;
     isOnline: boolean;
+    /** Deploy-wide KYC review mode (not per-rider): "auto" resubmits open a vendor browser session;
+     *  "manual" has no vendor step — pending means "waiting on ops review", not "waiting on you". */
+    kycMode?: "auto" | "manual";
   } | null;
 }
 
