@@ -62,6 +62,13 @@ describe("pushDestination", () => {
     expect(pushDestination({ kind: "riders_available" }, false)).toBe("/home");
   });
 
+  it("KB-NOTIFY-ORDERID: routes a 'rider's online' push to the live order when it carries an orderId", () => {
+    // When the customer's original auction is still open, the push carries its orderId → follow it there.
+    expect(pushDestination({ kind: "riders_available", orderId: "o1" }, false)).toBe("/order/o1");
+    // An empty/absent orderId keeps the prior home-route behaviour.
+    expect(pushDestination({ kind: "riders_available", orderId: "" }, false)).toBe("/home");
+  });
+
   it("routes a new-offer push (carries orderId, no status) to that order for the customer", () => {
     expect(pushDestination({ orderId: "o1", kind: "offer" }, false)).toBe("/order/o1");
   });

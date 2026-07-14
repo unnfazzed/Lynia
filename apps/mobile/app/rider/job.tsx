@@ -6,6 +6,11 @@ import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { collectedItemCount, shouldShowJobError } from "../../src/logic/journey";
+import {
+  clearPickupChecklistDraft,
+  loadPickupChecklistDraft,
+  savePickupChecklistDraft,
+} from "../../src/logic/pickup-checklist-draft";
 import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { acknowledgeHandback, clearConfirmItemsPending, loadAcknowledgedHandbacks, loadConfirmItemsPending, saveConfirmItemsPending } from "../../src/auth/session";
@@ -18,6 +23,7 @@ import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
+import { LeaveJobButton } from "../../src/ui/rider/LeaveJobButton";
 import { PickupChecklist } from "../../src/ui/rider/PickupChecklist";
 import { CancelledHandback, UndeliveredDone } from "../../src/ui/rider/terminals";
 import { UndeliveredSheet } from "../../src/ui/rider/UndeliveredSheet";
@@ -40,6 +46,23 @@ export default function RiderJob(): React.ReactElement {
   // Pickup item verification: which line-items the rider has ticked as physically collected. Indexes
   // into order.items; defaults to all ticked when the rider reaches the pickup-verification step.
   const [checkedItems, setCheckedItems] = useState<Set<number>>(() => new Set());
+  // Persisted mirror of checkedItems (keyed to the order it was ticked against) — a process death mid-
+  // verification used to silently revert every manual untick back to "all collected" on relaunch,
+  // since the seeding effect below has no memory of anything before the remount. "loading" (not null)
+  // until the async SecureStore read settles, so the seeding effect can wait for it instead of racing
+  // ahead with the all-ticked default and then visibly flipping.
+  const [checklistDraft, setChecklistDraft] = useState<{ orderId: string; checkedIndexes: number[] } | null | "loading">(
+    "loading",
+  );
+  useEffect(() => {
+    let alive = true;
+    void loadPickupChecklistDraft().then((d) => {
+      if (alive) setChecklistDraft(d);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // R1: the post-pickup "can't complete delivery" reason picker + the frozen terminal once it commits.
   const [undelivering, setUndelivering] = useState(false);
   const [undeliveredDone, setUndeliveredDone] = useState<UndeliveredReason | null>(null);
@@ -132,10 +155,10 @@ export default function RiderJob(): React.ReactElement {
   // (don't blocklist a single terminal state, or a cancelled job keeps broadcasting the rider's GPS).
   const { permissionDenied: locationDenied } = useRiderLocationStream(order && ACTIVE.includes(order.status) ? orderId : null);
 
-  // The customer can cancel anytime (C3). When `job:cancelled` arrives we FREEZE the last-known
-  // snapshot into a terminal, because a cancelled order immediately drops out of /orders/mine/active
-  // (so a refetch would blank the sender contact needed for a post-pickup hand-back).
-  const [cancelledJob, setCancelledJob] = useState<{ collected: boolean; snapshot: OrderSnapshot } | null>(null);
+  // The customer (or ops) can cancel anytime (C3). When `job:cancelled` arrives we FREEZE the
+  // last-known snapshot into a terminal, because a cancelled order immediately drops out of
+  // /orders/mine/active (so a refetch would blank the sender contact needed for a post-pickup hand-back).
+  const [cancelledJob, setCancelledJob] = useState<{ collected: boolean; snapshot: OrderSnapshot; cancelledBy: "customer" | "admin" } | null>(null);
   // C5: the customer's app has gone dark on this active job — surface a soft "may be offline" warning
   // so the rider knows the customer might not be seeing live position/status. Cleared on the next
   // status change (the flow progressing implies things are moving again).
@@ -145,7 +168,9 @@ export default function RiderJob(): React.ReactElement {
   const { connected: jobSocketConnected } = useRiderJobSocket(
     order && ACTIVE.includes(order.status) ? orderId : null,
     (e) => {
-      if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current });
+      // cancelledBy is optional on the wire (a not-yet-deployed API server during a rolling rollout
+      // won't send it yet) — fall back to the pre-existing "customer" copy in that gap.
+      if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current, cancelledBy: e.cancelledBy ?? "customer" });
     },
     () => setCustomerStale(true),
   );
@@ -312,20 +337,29 @@ export default function RiderJob(): React.ReactElement {
   }, [order?.deliveryOtpAttempts]);
 
   // Default every item ticked when the rider enters the pickup-verification step — they untick only
-  // what's missing. Keyed on primitives so a 6s poll (new object identity, same data) doesn't reset
-  // the rider's manual ticks mid-verification.
+  // what's missing — UNLESS a persisted draft for this exact order says otherwise (a relaunch after a
+  // process death mid-verification). Keyed on primitives so a 6s poll (new object identity, same data)
+  // doesn't reset the rider's manual ticks mid-verification. Waits on checklistDraft leaving "loading"
+  // so it never seeds all-ticked first and then visibly flips once the async read resolves.
   useEffect(() => {
+    if (checklistDraft === "loading") return;
     if (order?.status === "en_route_pickup" && items.length > 0) {
-      setCheckedItems(new Set(items.map((_, i) => i)));
+      if (checklistDraft && checklistDraft.orderId === order.id) {
+        setCheckedItems(new Set(checklistDraft.checkedIndexes.filter((i) => i < items.length)));
+      } else {
+        setCheckedItems(new Set(items.map((_, i) => i)));
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per order/step, not per poll.
-  }, [order?.id, order?.status, items.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per order/step (or once the
+    // draft finishes loading), not per poll.
+  }, [order?.id, order?.status, items.length, checklistDraft]);
 
   const toggleItem = (i: number): void => {
     setCheckedItems((prev) => {
       const next = new Set(prev);
       if (next.has(i)) next.delete(i);
       else next.add(i);
+      if (orderId) void savePickupChecklistDraft({ orderId, checkedIndexes: [...next] });
       return next;
     });
   };
@@ -352,6 +386,7 @@ export default function RiderJob(): React.ReactElement {
       .finally(() => {
         confirmRetryInFlight.current = false;
       });
+    void clearPickupChecklistDraft();
     advanceM.mutate("picked_up");
   };
 
@@ -381,18 +416,24 @@ export default function RiderJob(): React.ReactElement {
       });
   }, [order, pendingConfirm]);
 
-  // Terminal: the customer cancelled. Rendered from the frozen WS snapshot (keeps the sender contact
-  // after the order leaves the active feed), OR — R8 — from a fetched cancelled order when the rider
-  // reopens after missing the `job:cancelled` push while backgrounded. activeForRider only surfaces a
-  // cancelled order this rider had COLLECTED, so `collected` is true on that reopen path.
+  // Terminal: the customer (or ops) cancelled. Rendered from the frozen WS snapshot (keeps the sender
+  // contact after the order leaves the active feed), OR — R8 — from a fetched cancelled order when the
+  // rider reopens after missing the `job:cancelled` push while backgrounded. activeForRider only
+  // surfaces a cancelled order this rider had COLLECTED, so `collected` is true on that reopen path.
+  // The reopen path has no WS event to read the actor from — fall back to the order snapshot's own
+  // `cancelledBy` (a rider's own bail never reaches this branch: it's blocked post-pickup and takes the
+  // rebroadcast path instead, never landing here as "collected").
   const handback =
     cancelledJob ??
-    (order && order.status === "cancelled" && !ackedHandbacks.has(order.id) ? { collected: true, snapshot: order } : null);
+    (order && order.status === "cancelled" && !ackedHandbacks.has(order.id)
+      ? { collected: true, snapshot: order, cancelledBy: order.cancelledBy === "customer" ? ("customer" as const) : ("admin" as const) }
+      : null);
   if (handback) {
     const snap = handback.snapshot;
     return (
       <CancelledHandback
         collected={handback.collected}
+        cancelledBy={handback.cancelledBy}
         snapshot={snap}
         onBack={() => {
           // Record that this parcel was handed back so the 24h reopen window doesn't re-prompt the
@@ -664,7 +705,7 @@ export default function RiderJob(): React.ReactElement {
         {/* Order-level support while the run is live (the post-trip report/help now lives on the
             frozen delivered terminal above, since a delivered order no longer reaches this flow). */}
         {isActive ? <GetHelpControl orderId={order.id} /> : null}
-        <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
+        <LeaveJobButton isActive={isActive} onLeave={() => router.replace("/rider")} />
         <ErrorText message={error} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>

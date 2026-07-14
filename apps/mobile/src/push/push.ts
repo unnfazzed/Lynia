@@ -139,7 +139,11 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
   // Per-order recipient relationship when the backend stamped it; otherwise the global account role.
   const toRider = to === "rider" ? true : to === "customer" ? false : isRider;
   if (kind === "broadcast") return "/rider";
-  if (kind === "riders_available") return "/home";
+  // KB-NOTIFY-ORDERID: a "rider's online near you" push now carries the still-open orderId when the
+  // customer's original auction is still live — route the tap back to that running request (the
+  // destination is viewer-role-aware from earlier fixes, so this is safe). Absent orderId keeps the
+  // prior behaviour: bring the customer home to re-broadcast.
+  if (kind === "riders_available") return typeof orderId === "string" && orderId !== "" ? `/order/${orderId}` : "/home";
   if (kind === "account") return "/rider";
   if (typeof orderId !== "string" || orderId === "") return null;
   // SOS to the counterparty: route the rider to their own job screen; the customer keeps the tracker.

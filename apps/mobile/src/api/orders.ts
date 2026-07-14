@@ -223,8 +223,11 @@ export function acceptDisclaimer(body: AcceptDisclaimerRequest): Promise<{ polic
  * no-riders-online auction state. `queued` is false when the server has no waiting-list store (no
  * Redis), so the UI can stay honest rather than promise a ping it can't send.
  */
-export function notifyWhenRiderOnline(pickup: LatLng): Promise<{ queued: boolean }> {
-  return apiFetch(`/orders/notify-me`, { method: "POST", body: { pickup } });
+export function notifyWhenRiderOnline(pickup: LatLng, orderId?: string): Promise<{ queued: boolean }> {
+  // KB-NOTIFY-ORDERID: carry the still-open order so the fulfillment push can route the tap to that
+  // live auction (and use honest "we're pinging riders on your live request" copy). Additive — omitted
+  // when the caller has no order in scope, preserving the prior "route home to re-broadcast" behaviour.
+  return apiFetch(`/orders/notify-me`, { method: "POST", body: orderId ? { pickup, orderId } : { pickup } });
 }
 
 /**

@@ -30,7 +30,9 @@ interface Notice {
  */
 export interface NotificationRow {
   id: string;
-  orderId: string;
+  // Nullable since KB-FEED-SYNTH: account-status rows (KYC / standing changes) are account-level, not
+  // order-level, so they carry no orderId; the client routes those to the rider home instead.
+  orderId: string | null;
   icon: string;
   title: string;
   message: string;
@@ -76,6 +78,24 @@ const FEED_NOTICES_RIDER: Record<string, { icon: string; title: string; message:
   undelivered: { icon: "triangle-alert", title: "Delivery not completed", message: "This delivery was marked undelivered — tap for details." },
   cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "This delivery was cancelled." },
 };
+
+/**
+ * KB-FEED-SYNTH: account-status feed rows, synthesized from the generic `AuditLog` (no Notification
+ * table). Keyed by the exact `auditData(...)` action strings the admin standing changes
+ * (admin-riders.service) and KYC decisions (rider.service adminSetKyc / applyKycResult) already write,
+ * with copy MIRRORING the actual push the user received for each (the feed↔push contract). `expire`/
+ * `reset` KYC actions are deliberately silent (no push), so they're absent here. These rows carry no
+ * orderId (account-level). `rider.ban` has no rider-facing push, so its copy is honest account language.
+ */
+const ACCOUNT_FEED_COPY: Record<string, { icon: string; title: string; message: string }> = {
+  "rider.kyc_approve": { icon: "id-card", title: "You're verified", message: "You're verified — go online to start taking deliveries." },
+  "rider.kyc_decline": { icon: "triangle-alert", title: "ID check needs another look", message: "We couldn't verify your ID — open the app to see why and try again." },
+  "rider.suspend": { icon: "triangle-alert", title: "Account paused", message: "Your account was paused — open the app for details." },
+  "rider.ban": { icon: "triangle-alert", title: "Account blocked", message: "Your account was blocked — contact support for details." },
+  "rider.lift": { icon: "check", title: "Account restored", message: "Your account is back in good standing — you can go online again." },
+  "rider.clear_hold": { icon: "check", title: "Account restored", message: "Your account is back in good standing — you can go online again." },
+};
+const ACCOUNT_FEED_ACTIONS = Object.keys(ACCOUNT_FEED_COPY);
 
 /** How recent an event must be to count as "unread" in the derived feed — a deterministic window over
  *  the event time (there is no per-user read state to persist). */
@@ -236,7 +256,58 @@ export class NotificationsService {
       }
     }
 
-    // Newest first. ISO-8601 UTC strings sort lexicographically in time order.
+    // KB-FEED-SYNTH: "New offer" rows. notifyNewOffer pushes the customer when a rider bids on their
+    // order, but that push never produced a feed row (the feed was derived from order-status events
+    // only). Recover it from the durable Offer rows on the caller's own (customer-view) orders — ONE
+    // batched query. An offer and its order's own status events are DIFFERENT events, so no dedup is
+    // needed. Copy mirrors notifyNewOffer's push (the feed↔push contract).
+    const customerViewOrderIds = orders.filter((o) => o.riderId !== userId).map((o) => o.id);
+    if (customerViewOrderIds.length > 0) {
+      const offers = await this.prisma.offer.findMany({
+        where: { orderId: { in: customerViewOrderIds } },
+        select: { id: true, orderId: true, createdAt: true },
+      });
+      for (const offer of offers) {
+        const at = offer.createdAt.toISOString();
+        rows.push({
+          id: `offer:${offer.id}`,
+          orderId: offer.orderId,
+          icon: "banknote",
+          title: "New offer",
+          message: "A rider responded to your delivery — tap to compare offers.",
+          at,
+          unread: now.getTime() - offer.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        });
+      }
+    }
+
+    // KB-FEED-SYNTH: account-status rows (KYC decision + admin standing changes). Those pushes
+    // (notifyKycDecision, suspend/lift/ban/clearHold) never produced a feed row either. Both the manual
+    // admin path and the automated KYC webhook write an AuditLog row keyed by target=profileId, so
+    // synthesize from those — no Notification table. Account-level, so orderId is null.
+    const accountAudits = await this.prisma.auditLog.findMany({
+      where: { target: userId, action: { in: ACCOUNT_FEED_ACTIONS } },
+      orderBy: { createdAt: "desc" },
+      take: FEED_ROW_CAP,
+      select: { id: true, action: true, createdAt: true },
+    });
+    for (const a of accountAudits) {
+      const copy = ACCOUNT_FEED_COPY[a.action];
+      if (!copy) continue; // defensive: only the mapped actions were queried
+      const at = a.createdAt.toISOString();
+      rows.push({
+        id: `account:${a.id}`,
+        orderId: null,
+        icon: copy.icon,
+        title: copy.title,
+        message: copy.message,
+        at,
+        unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+      });
+    }
+
+    // Newest first. ISO-8601 UTC strings sort lexicographically in time order. The synthesized offer/
+    // account rows merge with the order-event rows here and the shared cap applies to the whole set.
     rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
     return rows.slice(0, FEED_ROW_CAP);
   }
@@ -375,20 +446,56 @@ export class NotificationsService {
    * "notify me" on the no-riders-online auction state). Fan-out to the drained waiting list; the deep
    * link brings them back to re-broadcast. Best-effort, never throws.
    */
-  async notifyRidersAvailable(customerProfileIds: string[]): Promise<Set<string>> {
-    if (customerProfileIds.length === 0) return new Set();
+  async notifyRidersAvailable(waiters: Array<{ profileId: string; orderId?: string }>): Promise<Set<string>> {
+    if (waiters.length === 0) return new Set();
     try {
+      // KB-NOTIFY-ORDERID: for waiters whose ORIGINAL auction is still open, "your auction died, send
+      // again" would be a lie — riders are being pinged on their live request right now. Resolve which
+      // referenced orders are still open_for_offers in ONE batched query, then branch the copy: a live
+      // order gets honest "we're pinging riders on your live request" copy + its orderId (the tap lands
+      // back on that auction); everything else keeps today's generic re-broadcast nudge with no orderId.
+      const orderIds = [...new Set(waiters.map((w) => w.orderId).filter((id): id is string => !!id))];
+      const openIds = new Set<string>();
+      if (orderIds.length > 0) {
+        const openOrders = await this.prisma.order.findMany({
+          where: { id: { in: orderIds }, status: "open_for_offers" },
+          select: { id: true },
+        });
+        for (const o of openOrders) openIds.add(o.id);
+      }
+
       // Returns the set actually delivered to (F-18): the caller clears only those from the waiting
       // list and leaves the rest queued for the next nearby rider — so a no-token/transient-FCM miss
       // never silently drops a customer who asked to be told.
-      return await this.send(customerProfileIds, {
-        title: "A rider's online near you",
-        body: "Riders are back near your pickup — send your parcel again to get offers.",
-        data: { kind: "riders_available" },
-        // Fix 5: time-critical — a rider being online is a fleeting signal, so a push that lands long
-        // after the window is stale (they may be offline again). Drop it rather than deliver it late.
-        ttlSeconds: BROADCAST_PUSH_TTL_SECONDS,
-      });
+      const delivered = new Set<string>();
+
+      // Live-order waiters: one push each (each carries its own orderId). A customer has at most one
+      // waiter and an order has one customer, so there's no batching to share here.
+      for (const w of waiters) {
+        if (!w.orderId || !openIds.has(w.orderId)) continue;
+        const got = await this.send([w.profileId], {
+          title: "A rider's online near you",
+          body: "Riders are being pinged on your live request — tap to follow the offers.",
+          data: { kind: "riders_available", orderId: w.orderId },
+          // Fix 5: time-critical — a rider being online is a fleeting signal, so a push that lands long
+          // after the window is stale (they may be offline again). Drop it rather than deliver it late.
+          ttlSeconds: BROADCAST_PUSH_TTL_SECONDS,
+        });
+        for (const id of got) delivered.add(id);
+      }
+
+      // Everyone else — no orderId, or the order is no longer open — keeps today's copy/data exactly.
+      const genericIds = waiters.filter((w) => !w.orderId || !openIds.has(w.orderId)).map((w) => w.profileId);
+      if (genericIds.length > 0) {
+        const got = await this.send(genericIds, {
+          title: "A rider's online near you",
+          body: "Riders are back near your pickup — send your parcel again to get offers.",
+          data: { kind: "riders_available" },
+          ttlSeconds: BROADCAST_PUSH_TTL_SECONDS,
+        });
+        for (const id of got) delivered.add(id);
+      }
+      return delivered;
     } catch (err) {
       this.logger.warn(`notifyRidersAvailable failed: ${(err as Error).message}`);
       return new Set();

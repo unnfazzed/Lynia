@@ -66,7 +66,12 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
 
   const telHref = `tel:${r.phone.replace(/[^\d+]/g, "")}`;
   const suspended = r.status === "suspended";
+  const banned = r.status === "banned";
   const onHold = r.status === "on_hold";
+  // A suspend/ban only blocks going online going forward — it doesn't touch an order this rider is
+  // already mid-delivery on, and the customer isn't told their rider's standing changed. Ops needs
+  // this flagged so they can decide (via the trip row below) whether to step in on that live order.
+  const hasOrphanedActiveOrder = (suspended || banned) && r.activeOrders > 0;
 
   return (
     <main className="content">
@@ -99,6 +104,17 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
             <b>On hold.</b> Reliability score {r.reliabilityScore} is below the threshold to go online — and
             completing deliveries is the only way it recovers, which going online would let them do. Without
             &ldquo;Clear hold&rdquo; below, this rider is stuck permanently.
+          </span>
+        </div>
+      ) : null}
+
+      {hasOrphanedActiveOrder ? (
+        <div className="warnbar">
+          <IconAlert />
+          <span className="t">
+            <b>Still on a live delivery.</b> This rider has {r.activeOrders} order{r.activeOrders > 1 ? "s" : ""} in
+            progress — {suspended ? "suspending" : "banning"} them does not cancel or reassign it. Check the trip
+            below and cancel it from the order page if it shouldn&apos;t continue.
           </span>
         </div>
       ) : null}

@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.2](https://github.com/unnfazzed/Lynia/compare/v0.2.1...v0.2.2) (2026-07-14)
+
+
+### Bug Fixes
+
+* bug-hunt follow-up — WhatsApp OTP delivery webhook, pickup-tick persistence, rotate-code CAS ([#236](https://github.com/unnfazzed/Lynia/issues/236)) ([f28d1f1](https://github.com/unnfazzed/Lynia/commit/f28d1f179ced5e5076722f8c68060ba191b8f61e))
+* **ux:** follow-up on 07-14 deferred items — notify-me orderId, feed synthesis ([#237](https://github.com/unnfazzed/Lynia/issues/237)) ([5e44010](https://github.com/unnfazzed/Lynia/commit/5e44010c794dfd22a1e343dbb0e921623de7792d))
+
+## [0.2.1](https://github.com/unnfazzed/Lynia/compare/v0.2.0...v0.2.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **mobile:** capture device location on customer/rider-viewer SOS ([db9ba00](https://github.com/unnfazzed/Lynia/commit/db9ba00c064f7751df8680a09316fd07154c831a))
+* **mobile:** confirm before the rider's "Back" button kills live tracking mid-delivery ([658cca6](https://github.com/unnfazzed/Lynia/commit/658cca609d9749a43b54666241752ce1402598c6))
+* **orders:** stop blaming the rider (or the customer) for an ops cancel ([d839d96](https://github.com/unnfazzed/Lynia/commit/d839d96ad5c52b76ad5359c4395549a7d1e96718))
+* **shared:** make JobCancelledEvent.cancelledBy optional for rollout skew ([f32f02c](https://github.com/unnfazzed/Lynia/commit/f32f02c932155d45d997d1bfa70f2db4e8ad26dc))
+* **ux:** daily UX/usability review — 20 fixes (rider-viewer gating, token-refresh resilience, heartbeat/push routing, expiry honesty, KYC-freeze bypass, +more) ([96a953c](https://github.com/unnfazzed/Lynia/commit/96a953c13818d4949e99c539da43354a9e2e5bc3))
+
 ## [0.2.0](https://github.com/unnfazzed/Lynia/compare/v0.1.0...v0.2.0) (2026-07-13)
 
 

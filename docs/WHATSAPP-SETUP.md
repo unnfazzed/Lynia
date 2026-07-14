@@ -63,6 +63,19 @@ hurt account standing.
    WHATSAPP_TEMPLATE_NAME=lynia_otp
    OTP_CHANNEL=whatsapp
    ```
+7. ☐ **Register the delivery-status webhook** (bug-hunt WA-01 follow-up: without it, an async send
+   failure — bad number, quality-rating throttling, recipient blocked the business — is invisible to
+   both the user and ops, since `POST /messages` returning 200 only means Meta accepted the send into
+   its queue, not that it was delivered). App dashboard → WhatsApp → Configuration → Webhook:
+   - Callback URL: `https://<api host>/webhooks/whatsapp`
+   - Verify token: any secret string, set as both the dashboard's "Verify token" field AND
+     `WHATSAPP_WEBHOOK_VERIFY_TOKEN` (answers Meta's one-time GET subscription handshake)
+   - Subscribe to the `messages` field (carries `statuses[]` delivery events)
+   - Store the app's **App Secret** (App settings → Basic) as `WHATSAPP_APP_SECRET` in Secret
+     Manager — signs the webhook's `X-Hub-Signature-256`, verified server-side before any payload
+     is trusted
+   - Failed deliveries land in the API logs (`WhatsApp OTP delivery failed: <reason>`) and the
+     `whatsapp_otp_delivery_failed_total` counter metric, labelled by Meta's coarse failure reason
 
 ## Until then
 

@@ -671,7 +671,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     }
     // Best-effort post-commit pushes. emitJobCancelled is guarded (the gateway swallows a null server),
     // and the re-broadcast announce is fire-and-forget like the create() path.
-    if (jobCancelledCollected !== null) this.gateway.emitJobCancelled(orderId, jobCancelledCollected);
+    if (jobCancelledCollected !== null) this.gateway.emitJobCancelled(orderId, jobCancelledCollected, "customer");
     if (rebroadcastId) {
       // F-01: tell the customer watching the (now cancelled) order to re-attach to the fresh auction,
       // then announce the new open order to the board. Both are best-effort post-commit pushes.
@@ -809,7 +809,13 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     return { completed: done };
   }
 
-  /** Customer re-issues the delivery code (e.g. after a lockout or a lost code). */
+  /** Customer re-issues the delivery code (e.g. after a lockout or a lost code). CAS-guarded on the
+   *  observed status like every sibling transition in this file — without it, a rotate that read a
+   *  valid status can still land its write after a concurrent confirmDelivery has already moved the
+   *  order to `delivered` (confirmDelivery's `FOR UPDATE` transaction only blocks this call's own
+   *  UPDATE while it holds the lock; it doesn't make the earlier, already-stale status read atomic
+   *  with this write). Harmless today (nothing reads `otpHash` post-delivery), but a silent TOCTOU
+   *  inconsistent with the pattern everywhere else in this file. */
   async rotateDeliveryCode(orderId: string, customerId: string): Promise<{ deliveryCode: string }> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -817,21 +823,23 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.customerId !== customerId) throw new ForbiddenException("Not your order");
-    if (!ACTIVE_FOR_CODE.has(order.status)) throw new ConflictException("No active delivery for this order");
+    if (!ACTIVE_FOR_CODE.includes(order.status)) throw new ConflictException("No active delivery for this order");
 
     const deliveryCode = this.tokens.randomOtp();
-    // KB-DELIVERY-CODE-ROTATION-SIGNAL: rotate the hash, zero the attempt counter, AND stamp
-    // deliveryCodeRotatedAt so the rider app can robustly detect this re-issue (raw SQL so the timestamp
-    // is DB now() — the same clock domain fix 2 unifies the heartbeat writers onto; @updatedAt isn't
-    // bumped by raw SQL, so set updated_at explicitly). No CAS needed: the ACTIVE_FOR_CODE status gate
-    // above already scoped this to the order's own live delivery.
-    await this.prisma.$executeRaw`
-      UPDATE orders
-      SET otp_hash = ${this.tokens.hash(deliveryCode)},
-          delivery_otp_attempts = 0,
-          delivery_code_rotated_at = now(),
-          updated_at = now()
-      WHERE id = ${orderId}::uuid`;
+    // KB-DELIVERY-CODE-ROTATION-SIGNAL: rotate the hash, zero the attempt counter, and stamp
+    // deliveryCodeRotatedAt (DB now() — the same clock domain fix 2 unifies the heartbeat writers
+    // onto) so the rider app can robustly detect this re-issue. CAS-guarded on the observed status
+    // like every sibling transition in this file (see doc comment above) — a concurrent
+    // confirmDelivery landing between the read and this write must not silently re-arm a code for
+    // an already-delivered order.
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, status: { in: [...ACTIVE_FOR_CODE] } },
+        data: { otpHash: this.tokens.hash(deliveryCode), deliveryOtpAttempts: 0 },
+      });
+      if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+      await tx.$executeRaw`UPDATE orders SET delivery_code_rotated_at = now() WHERE id = ${orderId}::uuid`;
+    });
     return { deliveryCode };
   }
 
@@ -857,10 +865,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
 /** A delivery code is meaningful only while the trip is in flight and the code is still unconsumed
  *  (assigned through en_route_dropoff). Once `delivered`, the handover is done — no rotation. */
-const ACTIVE_FOR_CODE = new Set([
+const ACTIVE_FOR_CODE: readonly OrderStatus[] = [
   "assigned",
   "confirmed",
   "en_route_pickup",
   "picked_up",
   "en_route_dropoff",
-]);
+];

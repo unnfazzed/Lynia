@@ -390,17 +390,25 @@ describe("TrackingGateway.emitJobCancelled (C3)", () => {
     const { server, to, emit } = fakeServer();
     const g = gateway();
     g.server = server as never;
-    g.emitJobCancelled("ord-1", true);
+    g.emitJobCancelled("ord-1", true, "customer");
     expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
-    expect(emit).toHaveBeenCalledWith(WS_EVENTS.jobCancelled, expect.objectContaining({ orderId: "ord-1", collected: true }));
+    expect(emit).toHaveBeenCalledWith(WS_EVENTS.jobCancelled, expect.objectContaining({ orderId: "ord-1", collected: true, cancelledBy: "customer" }));
   });
 
   it("carries collected:false pre-pickup", () => {
     const { server, emit } = fakeServer();
     const g = gateway();
     g.server = server as never;
-    g.emitJobCancelled("ord-1", false);
+    g.emitJobCancelled("ord-1", false, "customer");
     expect(emit).toHaveBeenCalledWith(WS_EVENTS.jobCancelled, expect.objectContaining({ collected: false }));
+  });
+
+  it("carries cancelledBy:admin for an ops-initiated cancel — the rider terminal must not blame the customer", () => {
+    const { server, emit } = fakeServer();
+    const g = gateway();
+    g.server = server as never;
+    g.emitJobCancelled("ord-1", true, "admin");
+    expect(emit).toHaveBeenCalledWith(WS_EVENTS.jobCancelled, expect.objectContaining({ cancelledBy: "admin" }));
   });
 });
 

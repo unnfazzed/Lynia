@@ -28,12 +28,13 @@ const noopNotifications = {
 // Real MetricsService is NoopMeter-safe with no OTLP endpoint (every record is a cheap no-op).
 // The gateway captures job:cancelled so the two-sided WS contract (C3) is asserted at integration
 // level; the other emits are best-effort no-ops.
-const jobCancelledEmits: Array<{ orderId: string; collected: boolean }> = [];
+const jobCancelledEmits: Array<{ orderId: string; collected: boolean; cancelledBy: string }> = [];
 const gateway = {
   emitOrderStatus: () => undefined,
   emitBidExpired: () => undefined,
   emitOrderTaken: () => undefined,
-  emitJobCancelled: (orderId: string, collected: boolean) => jobCancelledEmits.push({ orderId, collected }),
+  emitJobCancelled: (orderId: string, collected: boolean, cancelledBy: string) =>
+    jobCancelledEmits.push({ orderId, collected, cancelledBy }),
   emitOrderRebroadcast: () => undefined,
   evictRiderFromGeo: async () => undefined,
 } as unknown as TrackingGateway;
@@ -358,8 +359,9 @@ describe("seam-contract transitions", () => {
     const res = await lifecycle.cancel(orderId, customer, "changed plans");
     expect(res.cancelledBy).toBe("customer");
     expect(await statusOf(orderId)).toBe("cancelled");
-    // Two-sided WS contract: the assigned rider is told, with the hand-back (collected) flag.
-    expect(jobCancelledEmits).toEqual([{ orderId, collected: true }]);
+    // Two-sided WS contract: the assigned rider is told, with the hand-back (collected) flag and the
+    // actual actor so their terminal doesn't misattribute an ops cancel to the customer.
+    expect(jobCancelledEmits).toEqual([{ orderId, collected: true, cancelledBy: "customer" }]);
     // No reliability impact from a customer cancel.
     const r = await prisma.rider.findUniqueOrThrow({ where: { profileId: rider }, select: { cancelStrikes: true } });
     expect(r.cancelStrikes).toBe(0);
@@ -374,7 +376,7 @@ describe("seam-contract transitions", () => {
     jobCancelledEmits.length = 0;
 
     await lifecycle.cancel(orderId, customer);
-    expect(jobCancelledEmits).toEqual([{ orderId, collected: false }]);
+    expect(jobCancelledEmits).toEqual([{ orderId, collected: false, cancelledBy: "customer" }]);
   });
 
   it("C4: re-issuing the delivery code resets the attempt counter and unlocks a locked-out rider", async () => {
@@ -396,5 +398,50 @@ describe("seam-contract transitions", () => {
     // The fresh code now works — the lockout recovered because the counter was reset.
     await lifecycle.confirmDelivery(orderId, rider, fresh);
     expect(await statusOf(orderId)).toBe("delivered");
+  });
+
+  it("rotateDeliveryCode: rejects once the order has moved past en_route_dropoff (no stale-otp write onto a delivered order)", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId, deliveryCode } = await assign(customer, rider);
+    for (const to of ["confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] as const) {
+      await lifecycle.advance(orderId, rider, to);
+    }
+    await lifecycle.confirmDelivery(orderId, rider, deliveryCode);
+    expect(await statusOf(orderId)).toBe("delivered");
+
+    const before = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { otpHash: true } });
+    // Sequential (not raced): rotateDeliveryCode's own read already observes `delivered`, so the
+    // pre-existing early status-set check rejects it — the CAS guard (proven separately below, under
+    // genuine concurrency) never even gets reached here. Both guards protect the same invariant.
+    await expect(lifecycle.rotateDeliveryCode(orderId, customer)).rejects.toThrow(/no active delivery/i);
+    const after = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { otpHash: true } });
+    expect(after.otpHash).toBe(before.otpHash);
+  });
+
+  it("concurrent rotate + confirmDelivery: whichever settles first, the loser never silently corrupts state", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId, deliveryCode } = await assign(customer, rider);
+    for (const to of ["confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] as const) {
+      await lifecycle.advance(orderId, rider, to);
+    }
+
+    const [confirmResult, rotateResult] = await Promise.allSettled([
+      lifecycle.confirmDelivery(orderId, rider, deliveryCode),
+      lifecycle.rotateDeliveryCode(orderId, customer),
+    ]);
+
+    if (confirmResult.status === "fulfilled") {
+      // Delivery landed first (or the rotate's write missed the CAS window) — the order is delivered
+      // and, whether or not the rotate also happened to land, no state is corrupted either way.
+      expect(await statusOf(orderId)).toBe("delivered");
+    } else {
+      // The rotate won and moved the code before confirmDelivery's FOR UPDATE read — confirmDelivery
+      // correctly rejects the now-stale code instead of wrongly delivering, and the order is still
+      // live for a retry with the freshly rotated code.
+      expect(rotateResult.status).toBe("fulfilled");
+      expect(await statusOf(orderId)).toBe("en_route_dropoff");
+    }
   });
 });

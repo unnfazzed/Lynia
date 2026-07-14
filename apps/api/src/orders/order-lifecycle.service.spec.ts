@@ -14,14 +14,14 @@ const noopNotifications = { notifyOrderStatus: async () => {}, notifyProfiles: a
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma). */
 function build(methods: Record<string, unknown>) {
   const emits: Array<[string, string]> = [];
-  const jobCancelled: Array<[string, boolean]> = [];
+  const jobCancelled: Array<[string, boolean, string]> = [];
   const rebroadcasts: Array<[string, string]> = [];
   const bidExpired: Array<[string, number | undefined, number | undefined]> = [];
   const evicted: string[] = [];
   const kickedFromBoard: string[] = [];
   const gateway = {
     emitOrderStatus: (id: string, s: string) => emits.push([id, s]),
-    emitJobCancelled: (id: string, collected: boolean) => jobCancelled.push([id, collected]),
+    emitJobCancelled: (id: string, collected: boolean, cancelledBy: string) => jobCancelled.push([id, collected, cancelledBy]),
     emitOrderRebroadcast: (oldId: string, newId: string) => rebroadcasts.push([oldId, newId]),
     // DS13-07: board-close on a cancel of a still-open auction reuses the expiry path's bid:expired.
     emitBidExpired: (id: string, lat?: number, lng?: number) => bidExpired.push([id, lat, lng]),
@@ -418,31 +418,47 @@ describe("OrderLifecycleService.reconcileStaleDeliveries", () => {
 });
 
 describe("OrderLifecycleService.rotateDeliveryCode", () => {
-  it("issues a fresh 6-digit code, resets attempts, and stamps the rotation time (DB now())", async () => {
+  it("issues a fresh 6-digit code, resets attempts under a CAS guard, and stamps the rotation time (DB now())", async () => {
+    let args: { where: Record<string, unknown>; data: Record<string, unknown> } | undefined;
     let sql = "";
-    let values: unknown[] = [];
     const { svc } = build({
-      order: { findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }) },
-      // KB-DELIVERY-CODE-ROTATION-SIGNAL: rotate is a raw write now so delivery_code_rotated_at is DB
-      // now() (one clock domain), rotating the hash + zeroing attempts + stamping the signal atomically.
-      $executeRaw: async (strings: TemplateStringsArray, ...vals: unknown[]) => {
+      order: {
+        findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }),
+        updateMany: async (a: typeof args) => { args = a; return { count: 1 }; },
+      },
+      // KB-DELIVERY-CODE-ROTATION-SIGNAL: the timestamp stamp is a raw write so delivery_code_rotated_at
+      // is DB now() (one clock domain), run inside the same transaction as the CAS'd hash rotation.
+      $executeRaw: async (strings: TemplateStringsArray, ..._vals: unknown[]) => {
         sql = strings.join("?");
-        values = vals;
         return 1;
       },
     });
     const res = await svc.rotateDeliveryCode("o1", "c1");
     expect(res.deliveryCode).toMatch(/^\d{6}$/);
-    expect(sql).toContain("delivery_otp_attempts = 0");
+    expect(args!.data).toMatchObject({ deliveryOtpAttempts: 0 });
+    expect(args!.data.otpHash).toBe(tokens.hash(res.deliveryCode));
+    // CAS guard: the write only lands while status is still one of the active-for-code statuses.
+    expect(args!.where).toMatchObject({ id: "o1" });
+    expect(args!.where.status).toMatchObject({ in: expect.arrayContaining(["en_route_dropoff", "assigned"]) });
     // The new robust rotation signal is stamped with the DB clock on every re-issue.
     expect(sql).toContain("delivery_code_rotated_at = now()");
-    // The HASHED (never plaintext) code is parameterised into the write.
-    expect(values).toContain(tokens.hash(res.deliveryCode));
   });
 
   it("403s for a non-owner", async () => {
     const { svc } = build({ order: { findUnique: async () => ({ customerId: "c1", status: "assigned" }) } });
     await expect(svc.rotateDeliveryCode("o1", "other")).rejects.toThrow(/not your order/i);
+  });
+
+  it("409s (CAS conflict) when the order moved out of an active-for-code status between the read and the write", async () => {
+    // e.g. the rider's confirmDelivery committed `delivered` concurrently, after this call's own read
+    // observed a still-valid status.
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 0 }),
+      },
+    });
+    await expect(svc.rotateDeliveryCode("o1", "c1")).rejects.toThrow(/order changed, retry/i);
   });
 });
 
@@ -471,8 +487,9 @@ describe("OrderLifecycleService.cancel", () => {
     const res = await svc.cancel("o1", "c1", "changed my mind");
     expect(res).toMatchObject({ status: "cancelled", cancelledBy: "customer", cooldownUntil: null });
     expect(emits).toEqual([["o1", "cancelled"]]);
-    // C3: a rider was already assigned pre-pickup → job:cancelled with collected:false (back to board).
-    expect(jobCancelled).toEqual([["o1", false]]);
+    // C3: a rider was already assigned pre-pickup → job:cancelled with collected:false (back to board),
+    // cancelledBy "customer" so the rider's terminal names the actual actor.
+    expect(jobCancelled).toEqual([["o1", false, "customer"]]);
   });
 
   it("customer cancel AFTER pickup pushes job:cancelled with collected:true (hand-back path)", async () => {
@@ -488,7 +505,7 @@ describe("OrderLifecycleService.cancel", () => {
     );
     const res = await svc.cancel("o1", "c1");
     expect(res.cancelledBy).toBe("customer");
-    expect(jobCancelled).toEqual([["o1", true]]);
+    expect(jobCancelled).toEqual([["o1", true, "customer"]]);
   });
 
   it("blocks a RIDER cancel once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {

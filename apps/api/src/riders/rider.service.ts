@@ -343,8 +343,11 @@ export class RiderService {
       // means this rider would have received the customer's initial broadcast (policy BROADCAST).
       const claimed = await this.tracking.claimNotifyWaitersNear(lat, lng, baseBroadcastRadiusM());
       if (claimed.length === 0) return;
+      // KB-NOTIFY-ORDERID: claimed carries each waiter's still-open order (if any); notifyRidersAvailable
+      // uses it to pick honest live-request copy + route the tap there, and returns the delivered profile
+      // ids so only those are cleared from the list (undelivered stay queued — F-18 at-least-once).
       const delivered = await this.notifications.notifyRidersAvailable(claimed);
-      const toClear = claimed.filter((id) => delivered.has(id));
+      const toClear = claimed.filter((w) => delivered.has(w.profileId)).map((w) => w.profileId);
       if (toClear.length > 0) await this.tracking.clearNotifyWaiters(toClear);
     } catch {
       /* best-effort: a notify-drain failure never affects the rider going online */
@@ -394,7 +397,23 @@ export class RiderService {
       // swallowed and can NEVER fail or roll back the webhook write above.
       try {
         const rider = await this.prisma.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
-        if (rider) this.notifyKycDecision(rider.profileId, status);
+        if (rider) {
+          // KB-FEED-SYNTH: the AUTOMATED vendor path must ALSO write an AuditLog row (only the manual
+          // adminSetKyc path did), so feedForUser can synthesize an account-status feed row uniformly.
+          // Reuse the SAME action strings as adminSetKyc (rider.kyc_approve / rider.kyc_decline), but
+          // mark the actor as automated ("system:kyc-webhook") so admin audit views can still tell manual
+          // from automated decisions. Best-effort + isolated in its own try/catch — an audit-log hiccup
+          // must never affect the KYC status write above (consistent with the notify below).
+          try {
+            const action = status === "verified" ? "rider.kyc_approve" : "rider.kyc_decline";
+            await this.prisma.auditLog.create({
+              data: auditData("system:kyc-webhook", action, rider.profileId, reason ?? null, null),
+            });
+          } catch (err) {
+            this.logger.warn(`KYC audit-log write failed for ref ${kycRef}: ${(err as Error).message}`);
+          }
+          this.notifyKycDecision(rider.profileId, status);
+        }
       } catch (err) {
         this.logger.warn(`KYC result notify failed for ref ${kycRef}: ${(err as Error).message}`);
       }

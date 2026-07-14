@@ -488,13 +488,16 @@ describe("RiderService.setOnline", () => {
       evictFromGeo: async () => {},
       claimNotifyWaitersNear: async (lat: number, lng: number, radius: number) => {
         drainedAt = { lat, lng, radius };
-        return ["cust-1", "cust-2"];
+        return [{ profileId: "cust-1" }, { profileId: "cust-2" }];
       },
       clearNotifyWaiters: async (ids: string[]) => { cleared = ids; },
     } as unknown as import("../tracking/tracking.service").TrackingService;
     const notifications = {
-      // Both waiters delivered → both should be cleared from the list.
-      notifyRidersAvailable: async (ids: string[]) => { pushed = ids; return new Set(ids); },
+      // Both waiters delivered → both should be cleared from the list. Receives {profileId, orderId?} pairs.
+      notifyRidersAvailable: async (waiters: Array<{ profileId: string }>) => {
+        pushed = waiters.map((w) => w.profileId);
+        return new Set(pushed);
+      },
     } as unknown as import("../notifications/notifications.service").NotificationsService;
     const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, notifications);
 
@@ -519,7 +522,7 @@ describe("RiderService.setOnline", () => {
     let cleared: string[] | null = null;
     const tracking = {
       evictFromGeo: async () => {},
-      claimNotifyWaitersNear: async () => ["cust-1", "cust-2"],
+      claimNotifyWaitersNear: async () => [{ profileId: "cust-1" }, { profileId: "cust-2" }],
       clearNotifyWaiters: async (ids: string[]) => { cleared = ids; },
     } as unknown as import("../tracking/tracking.service").TrackingService;
     const notifications = {
@@ -761,6 +764,38 @@ describe("RiderService.applyKycResult", () => {
     };
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date());
     expect(data).not.toHaveProperty("kycAttempts");
+  });
+
+  it("KB-FEED-SYNTH: the automated verified/failed path writes an AuditLog row with a system actor (feed synthesis)", async () => {
+    let audit: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        updateMany: async () => ({ count: 1 }),
+        findFirst: async () => ({ profileId: "p1" }),
+      },
+      auditLog: { create: async (args: { data: Record<string, unknown> }) => { audit = args.data; return {}; } },
+    };
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null);
+    // Same action string as the manual adminSetKyc path (so feedForUser picks both up uniformly), but a
+    // clearly-automated actor so admin audit views can still distinguish webhook decisions from manual ones.
+    expect(audit).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_approve", target: "p1" });
+
+    // A decline writes the mirror action string.
+    audit = undefined;
+    await svc(prisma, {}).applyKycResult("sess_2", "failed", new Date(), "score_below_threshold");
+    expect(audit).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_decline", target: "p1", reasonCode: "score_below_threshold" });
+  });
+
+  it("KB-FEED-SYNTH: an audit-log write failure never affects the KYC status write (best-effort)", async () => {
+    const prisma = {
+      rider: {
+        updateMany: async () => ({ count: 1 }),
+        findFirst: async () => ({ profileId: "p1" }),
+      },
+      auditLog: { create: async () => { throw new Error("audit db down"); } },
+    };
+    // The status write already committed (count 1) — a downstream audit hiccup must not change the result.
+    await expect(svc(prisma, {}).applyKycResult("sess_1", "verified", new Date())).resolves.toEqual({ updated: 1 });
   });
 });
 
