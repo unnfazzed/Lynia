@@ -44,6 +44,11 @@ const GEO_SEARCH_COUNT = 100;
  *  of expired entries on every add/drain, and a drained/expired entry is removed from BOTH. */
 const NOTIFY_GEO_KEY = "notify:geo";
 const NOTIFY_EXP_KEY = "notify:exp";
+/** KB-NOTIFY-ORDERID companion HASH: member = customer profile id, value = the still-open order id that
+ *  triggered the register. Keeps the geo/zset member scheme (keyed by profile id, one waiter per customer)
+ *  untouched — the association just rides alongside so a fulfillment push can route the tap to the live
+ *  auction. Pruned/cleared wherever the geo/zset siblings are, so no orphan hash entry outlives them. */
+const NOTIFY_ORDER_KEY = "notify:order";
 /** How long a waiting-list entry lives before it's pruned (1h — past the ~90s auction, generous for a
  *  customer who'll come back when pinged, bounded so a stale entry can't ping hours later). */
 const NOTIFY_TTL_MS = 60 * 60 * 1000;
@@ -508,6 +513,9 @@ export class TrackingService implements OnModuleDestroy {
       if (expired.length > 0) {
         await redis.zrem(NOTIFY_EXP_KEY, ...expired);
         await redis.zrem(NOTIFY_GEO_KEY, ...expired);
+        // KB-NOTIFY-ORDERID: drop the companion order association too, so no orphan hash entry lingers
+        // past its geo/zset sibling.
+        await redis.hdel(NOTIFY_ORDER_KEY, ...expired);
       }
     } catch {
       /* best-effort: a prune miss only means a stale entry lingers until the next drain */
@@ -520,13 +528,24 @@ export class TrackingService implements OnModuleDestroy {
    * same customer just refreshes their point/expiry (GEOADD/ZADD overwrite the member). Best-effort and
    * a no-op without Redis (returns false), so it can never fail the request that triggered it.
    */
-  async addNotifyRequest(profileId: string, lat: number, lng: number, now: number = Date.now()): Promise<boolean> {
+  async addNotifyRequest(
+    profileId: string,
+    lat: number,
+    lng: number,
+    orderId?: string,
+    now: number = Date.now(),
+  ): Promise<boolean> {
     const redis = this.getRedis();
     if (!redis) return false;
     try {
       await this.pruneNotify(redis, now);
       await redis.geoadd(NOTIFY_GEO_KEY, lng, lat, profileId);
       await redis.zadd(NOTIFY_EXP_KEY, now + NOTIFY_TTL_MS, profileId);
+      // KB-NOTIFY-ORDERID: associate this waiter with the still-open order that triggered it. When no
+      // order is supplied (a plain re-register), HDEL any stale association so it can't inherit an old
+      // order's id — the geo/zset member scheme (one point/expiry per profile) is unchanged either way.
+      if (orderId) await redis.hset(NOTIFY_ORDER_KEY, profileId, orderId);
+      else await redis.hdel(NOTIFY_ORDER_KEY, profileId);
       return true;
     } catch {
       return false;
@@ -536,10 +555,18 @@ export class TrackingService implements OnModuleDestroy {
   /**
    * 2·b1: drain the waiting customers within `radiusM` of `(lat, lng)` — a rider just came online here,
    * so everyone who was waiting for supply nearby should be pinged and removed from the list (removed so
-   * they're pinged once, not on every subsequent rider that comes online). Returns their profile ids for
-   * the caller to push. Best-effort and a no-op without Redis (returns []); a Redis error yields [].
+   * they're pinged once, not on every subsequent rider that comes online). Returns each claimed waiter
+   * as `{ profileId, orderId? }` — the orderId is the still-open order they registered against (KB-NOTIFY-
+   * ORDERID), read back from the companion `notify:order` hash after the atomic claim so the push can
+   * route the tap to that live auction. Best-effort and a no-op without Redis (returns []); a Redis error
+   * yields [].
    */
-  async claimNotifyWaitersNear(lat: number, lng: number, radiusM: number, now: number = Date.now()): Promise<string[]> {
+  async claimNotifyWaitersNear(
+    lat: number,
+    lng: number,
+    radiusM: number,
+    now: number = Date.now(),
+  ): Promise<Array<{ profileId: string; orderId?: string }>> {
     const redis = this.getRedis();
     if (!redis) return [];
     try {
@@ -563,7 +590,20 @@ export class TrackingService implements OnModuleDestroy {
         NOTIFY_CLAIM_PREFIX,
         NOTIFY_CLAIM_TTL_S,
       )) as string[];
-      return claimed ?? [];
+      if (!claimed || claimed.length === 0) return [];
+      // KB-NOTIFY-ORDERID: read back the order association for the claimed members (a plain follow-up
+      // HMGET — the SET-NX claim above is what dedups; this read never affects that atomicity). A missing
+      // value (older registration, or Redis lost it) leaves orderId undefined → generic push copy.
+      let orderIds: Array<string | null> = [];
+      try {
+        orderIds = (await redis.hmget(NOTIFY_ORDER_KEY, ...claimed)) as Array<string | null>;
+      } catch {
+        orderIds = [];
+      }
+      return claimed.map((profileId, i) => {
+        const orderId = orderIds[i] ?? undefined;
+        return orderId ? { profileId, orderId } : { profileId };
+      });
     } catch {
       return [];
     }
@@ -581,6 +621,9 @@ export class TrackingService implements OnModuleDestroy {
     try {
       await redis.zrem(NOTIFY_GEO_KEY, ...profileIds);
       await redis.zrem(NOTIFY_EXP_KEY, ...profileIds);
+      // KB-NOTIFY-ORDERID: drop the companion order association in the same place, so no orphan hash
+      // entry outlives its geo/zset siblings.
+      await redis.hdel(NOTIFY_ORDER_KEY, ...profileIds);
     } catch {
       /* best-effort: leaving a delivered waiter in place only risks a later duplicate ping */
     }

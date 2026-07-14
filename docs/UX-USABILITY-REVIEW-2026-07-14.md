@@ -135,3 +135,33 @@ Two additional items are **explicitly out of scope for this routine, not silentl
   review and auto-merge is requested once CI confirms the same green result independently — it is not
   left in draft awaiting manual review, matching this routine's established policy (distinct from the
   narrower bug-hunt routine's policy, which does not apply here).
+
+---
+
+## 4. Follow-up (same day) — the two deferred items were implemented
+
+The two findings deferred above (#23 / KB-NOTIFY-ORDERID and #24 / KB-FEED-SYNTH) were implemented in a
+same-day follow-up on top of this branch. Both are additive/backward-compatible and needed **no database
+migration** — each is synthesized from data that already exists.
+
+- **#23 KB-NOTIFY-ORDERID (notify-me waiter carries an orderId).** The `orderId` is threaded through the
+  whole pipeline (shared contract → mobile client → controller/service → tracking). A companion Redis
+  HASH `notify:order` stores the profile-id→order association alongside the existing geo/zset waiter
+  scheme (pruned/cleared in the same places, so no orphan lingers); `claimNotifyWaitersNear` returns
+  `{profileId, orderId?}` pairs; `notifyRidersAvailable` batch-checks which of those orders are still
+  `open_for_offers` and, for the still-live ones, sends honest "riders are being pinged on your live
+  request" copy carrying `data.orderId` — the tap routes back to that running auction instead of `/home`.
+  Older waiters/pushes without an orderId keep today's generic copy + home route exactly.
+
+- **#24 KB-FEED-SYNTH (feed shows "New offer" + account-status rows).** `feedForUser` now appends two
+  synthesized row sets before its existing sort/cap: "New offer" rows from the durable `Offer` rows on
+  the caller's own customer-view orders (one batched query, copy mirroring `notifyNewOffer`), and
+  account-status rows from the existing generic `AuditLog` (KYC decisions + admin standing changes,
+  `target=profileId`), copy mirroring each real push. `NotificationRow.orderId` is now nullable (account
+  rows have none → the mobile screen routes those to `/rider`), the automated KYC-webhook path
+  (`applyKycResult`) now also writes an `AuditLog` row (system actor) so automated decisions surface too,
+  and the empty-state copy is restored to the now-true "Offers, delivery updates and account news will
+  show up here."
+
+Verification for the follow-up: `pnpm typecheck && pnpm lint && pnpm test` green across all 5 packages
+(API 790 tests, mobile 321 tests), with new regression tests for both fixes.
