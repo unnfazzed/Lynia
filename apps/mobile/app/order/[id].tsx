@@ -8,10 +8,10 @@ import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../s
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { auctionHeaderText, formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
-import { orderLoadErrorKind, selectOrderShell } from "../../src/logic/order-tracking";
+import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, selectOrderShell } from "../../src/logic/order-tracking";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
-import { loadDeliveryCode, saveDeliveryCode } from "../../src/auth/session";
+import { clearDeliveryCode, loadDeliveryCode, loadDeliveryCodeAttempts, saveDeliveryCode, saveDeliveryCodeAttempts } from "../../src/auth/session";
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
@@ -59,6 +59,10 @@ export default function OrderScreen(): React.ReactElement {
   const reduceMotion = useReduceMotion();
   const toast = useToast();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
+  // The highest server-side delivery-code attempt count seen while THIS local code has been current. A
+  // rotation (re-issue) resets the server counter to 0, so a later snapshot whose count has dropped below
+  // this reveals the local code is stale — see reconcileDeliveryCode. null until loaded / no code held.
+  const [codeAttemptsSeen, setCodeAttemptsSeen] = useState<number | null>(null);
   // The chosen rider's public identity (name/photo/rating), cached at selection so the tracking card can
   // show a face — the assigned-order snapshot only carries profileId + GPS, not the profile.
   const [riderIdentity, setRiderIdentity] = useState<RiderIdentity | null>(null);
@@ -84,11 +88,14 @@ export default function OrderScreen(): React.ReactElement {
   // event lands.
   const [staleTick, setStaleTick] = useState(0);
 
-  // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash).
+  // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash), along
+  // with its attempt high-water mark so a rotation that happened while the app was killed can be detected.
   useEffect(() => {
     let alive = true;
-    void loadDeliveryCode(orderId).then((c) => {
-      if (alive && c) setDeliveryCode(c);
+    void Promise.all([loadDeliveryCode(orderId), loadDeliveryCodeAttempts(orderId)]).then(([c, hw]) => {
+      if (!alive) return;
+      if (c) setDeliveryCode(c);
+      setCodeAttemptsSeen(hw);
     });
     return () => {
       alive = false;
@@ -173,6 +180,29 @@ export default function OrderScreen(): React.ReactElement {
     if (ACTIVE.includes(d.status) || d.status === "open_for_offers") void saveLastActiveOrder(raw);
     else void clearLastActiveOrder(d.id);
   }, [orderQ.data, qc, orderId]);
+
+  // 07-14: catch a delivery-code rotation that happened while the app was killed mid re-issue. The server
+  // never re-sends the plaintext code, so a stale local code would keep the "code is showing" card up and
+  // the customer would confidently relay a DEAD code — burning the rider's attempts toward a fresh lockout.
+  // deliveryOtpAttempts is monotonic while a code is current (resets to 0 only on a rotation), so a drop
+  // below the high-water mark means our code was re-issued: clear it so the "code isn't showing — re-issue"
+  // path takes over, exactly the no-code-yet UI. When attempts climb (a rider failing against OUR code), we
+  // advance the high-water so the drop is measured against the right baseline across a kill.
+  useEffect(() => {
+    const decision = reconcileDeliveryCode({
+      hasLocalCode: deliveryCode != null,
+      storedAttemptsHighWater: codeAttemptsSeen,
+      snapshotAttempts: orderQ.data?.deliveryOtpAttempts ?? null,
+    });
+    if (decision.action === "invalidate") {
+      setDeliveryCode(null);
+      setCodeAttemptsSeen(null);
+      void clearDeliveryCode(orderId);
+    } else if (decision.action === "advance-highwater") {
+      setCodeAttemptsSeen(decision.attempts);
+      void saveDeliveryCodeAttempts(orderId, decision.attempts);
+    }
+  }, [orderQ.data?.deliveryOtpAttempts, deliveryCode, codeAttemptsSeen, orderId]);
 
   // C2: keep the socket subscribed through `cancelled` for a bounded grace window so a rider-bail
   // `order:rebroadcast` can still arrive and navigate the customer to the fresh auction (below).
@@ -386,6 +416,7 @@ export default function OrderScreen(): React.ReactElement {
     },
     onSuccess: (res) => {
       setDeliveryCode(res.deliveryCode);
+      setCodeAttemptsSeen(0); // a fresh code ⇒ server attempts reset to 0; rebaseline the high-water
       void saveDeliveryCode(orderId, res.deliveryCode);
     },
     onError: (e, _v, ctx) => {
@@ -414,6 +445,7 @@ export default function OrderScreen(): React.ReactElement {
     mutationFn: () => rotateDeliveryCode(orderId),
     onSuccess: (res) => {
       setDeliveryCode(res.deliveryCode);
+      setCodeAttemptsSeen(0); // a fresh code ⇒ server attempts reset to 0; rebaseline the high-water
       void saveDeliveryCode(orderId, res.deliveryCode);
     },
   });
@@ -855,35 +887,46 @@ export default function OrderScreen(): React.ReactElement {
             />
           </>
         ) : null}
-        {order.status === "expired" ? (
-          // The offers list stays cached from right before expiry (its query disables once the order
-          // leaves open_for_offers, so React Query keeps the last-known data rather than clearing it).
-          // A customer who watched bids come in shouldn't be told "no offers" — and "raise your price"
-          // is actively wrong advice when riders WERE bidding; the real problem was picking in time.
-          bidCount > 0 ? (
-            <EmptyState icon="bike" title="Your choosing window closed" message="Riders did offer, but the window ended before you picked. Send again and they'll likely bid again at the same price.">
-              <Button label="Send another request" onPress={rebroadcast} />
-            </EmptyState>
-          ) : order.expiryNoSupply ? (
-            // UX-2026-07-12 #11: the window closed with zero bids AND nobody online near the pickup, so
-            // "nudge the price up" is wrong advice — the price was never the problem. Say so honestly.
-            <EmptyState
-              icon="bike"
-              title="No riders were online nearby"
-              message="Nobody was online near your pickup when the window closed — try sending again in a bit."
-            >
-              <Button label="Send another request" onPress={rebroadcast} />
-            </EmptyState>
-          ) : (
-            <EmptyState
-              icon="bike"
-              title="No riders took this price yet"
-              message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
-            >
-              <Button label="Send another request" onPress={rebroadcast} />
-            </EmptyState>
-          )
-        ) : null}
+        {order.status === "expired"
+          ? // Pick the honest expired-terminal copy. The live `bidCount` (offers-list query) reflects
+            // riders who bid THIS session, but it's empty on a COLD start into an already-expired order —
+            // that query only fetches `pending` offers, gone post-expiry. So a customer who watched bids
+            // arrive, force-killed the app, and reopened would wrongly be told "no riders took this price".
+            // The server's `hadOffers` (a durable count of offer rows) recovers the truth on that cold path;
+            // either signal wins, keeping the live case identical while fixing the cold-start lie.
+            (() => {
+              switch (expiredTerminalKind({ bidCount, hadOffers: order.hadOffers, expiryNoSupply: order.expiryNoSupply })) {
+                case "had-offers":
+                  return (
+                    <EmptyState icon="bike" title="Your choosing window closed" message="Riders did offer, but the window ended before you picked. Send again and they'll likely bid again at the same price.">
+                      <Button label="Send another request" onPress={rebroadcast} />
+                    </EmptyState>
+                  );
+                case "no-supply":
+                  // UX-2026-07-12 #11: the window closed with zero bids AND nobody online near the pickup,
+                  // so "nudge the price up" is wrong advice — the price was never the problem. Say so honestly.
+                  return (
+                    <EmptyState
+                      icon="bike"
+                      title="No riders were online nearby"
+                      message="Nobody was online near your pickup when the window closed — try sending again in a bit."
+                    >
+                      <Button label="Send another request" onPress={rebroadcast} />
+                    </EmptyState>
+                  );
+                default:
+                  return (
+                    <EmptyState
+                      icon="bike"
+                      title="No riders took this price yet"
+                      message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
+                    >
+                      <Button label="Send another request" onPress={rebroadcast} />
+                    </EmptyState>
+                  );
+              }
+            })()
+          : null}
         {order.status === "cancelled" ? (
           <Card>
             <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>

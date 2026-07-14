@@ -498,6 +498,12 @@ model Session {
   userAgent        String?   @map("user_agent")
   expiresAt        DateTime  @map("expires_at")
   revokedAt        DateTime? @map("revoked_at")
+  // Rotation successor link (RT-GRACE): when this session is revoked BY BEING ROTATED in refresh(),
+  // this points at the freshly-minted successor session. Null means "not rotated" — either still live,
+  // or revoked for another reason (logout / future security revoke). It is the discriminator the
+  // lost-response grace path keys off: only a rotation-revoke (rotatedToId set) whose successor is still
+  // un-consumed qualifies for a re-issue; a logout-revoke (null) never does.
+  rotatedToId      String?   @map("rotated_to_id") @db.Uuid
   createdAt        DateTime  @default(now()) @map("created_at")
 
   @@index([profileId])

@@ -10,7 +10,7 @@
  * The end-to-end render behaviour is covered in src/ui/order/__tests__/live-tracking-isolation.test.tsx.
  */
 import type { OrderSnapshot } from "../../api/orders";
-import { orderLoadErrorKind, selectOrderShell, selectRiderTelemetry } from "../order-tracking";
+import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, selectOrderShell, selectRiderTelemetry } from "../order-tracking";
 
 const base: OrderSnapshot = {
   id: "order-1",
@@ -102,5 +102,72 @@ describe("orderLoadErrorKind", () => {
     expect(orderLoadErrorKind(500)).toBe("transient");
     expect(orderLoadErrorKind(0)).toBe("transient");
     expect(orderLoadErrorKind(undefined)).toBe("transient");
+  });
+});
+
+// Regression guard (07-14): the expired-auction terminal must not tell a customer "no riders took this
+// price" when riders DID bid. On a cold start into an already-expired order the client's live `bidCount`
+// is 0 (the offers query only holds `pending` offers, gone post-expiry), so the server's durable
+// `hadOffers` is what keeps the copy honest. Either signal ⇒ "had-offers".
+describe("expiredTerminalKind", () => {
+  it("says had-offers when the LIVE bidCount shows riders bid (the warm, non-killed case)", () => {
+    expect(expiredTerminalKind({ bidCount: 3, hadOffers: null, expiryNoSupply: null })).toBe("had-offers");
+  });
+
+  it("says had-offers on a COLD start (bidCount 0) when the server's hadOffers is true — the fix", () => {
+    // The exact repro: riders bid, customer didn't pick, window expired, app force-killed, cold reopen.
+    // The cache only ever held pending offers so bidCount is 0, but hadOffers recovers the truth.
+    expect(expiredTerminalKind({ bidCount: 0, hadOffers: true, expiryNoSupply: null })).toBe("had-offers");
+    // hadOffers wins even if a no-supply flag somehow also came back (riders bidding ⇒ there was supply).
+    expect(expiredTerminalKind({ bidCount: 0, hadOffers: true, expiryNoSupply: true })).toBe("had-offers");
+  });
+
+  it("says no-supply only when nobody bid AND nobody was online near the pickup", () => {
+    expect(expiredTerminalKind({ bidCount: 0, hadOffers: false, expiryNoSupply: true })).toBe("no-supply");
+  });
+
+  it("falls back to no-offers when nobody bid but supply existed", () => {
+    expect(expiredTerminalKind({ bidCount: 0, hadOffers: false, expiryNoSupply: false })).toBe("no-offers");
+    // Older API / missing fields must not crash or over-claim — default to no-offers, today's behaviour.
+    expect(expiredTerminalKind({ bidCount: 0, hadOffers: null, expiryNoSupply: null })).toBe("no-offers");
+    expect(expiredTerminalKind({ bidCount: 0, hadOffers: undefined, expiryNoSupply: undefined })).toBe("no-offers");
+  });
+});
+
+// Regression guard (07-14): a delivery code rotated while the app was killed mid re-issue must be detected
+// so the customer stops relaying a dead code. deliveryOtpAttempts is the only rotation signal (no timestamp
+// in the snapshot); it's monotonic while a code is current and resets to 0 on rotation, so a drop below the
+// high-water mark is the tell.
+describe("reconcileDeliveryCode", () => {
+  it("does nothing when there is no local code to protect", () => {
+    expect(reconcileDeliveryCode({ hasLocalCode: false, storedAttemptsHighWater: 5, snapshotAttempts: 0 })).toEqual({ action: "none" });
+  });
+
+  it("does nothing when the server hasn't reported an attempt count yet (missing signal ⇒ safe)", () => {
+    expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 3, snapshotAttempts: null })).toEqual({ action: "none" });
+    expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 3, snapshotAttempts: undefined })).toEqual({ action: "none" });
+  });
+
+  it("does nothing for a code stored before this fix (no baseline high-water recorded)", () => {
+    // Backward-compat: an old stored code has no companion attempts value, so we must never invalidate it.
+    expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: null, snapshotAttempts: 0 })).toEqual({ action: "none" });
+  });
+
+  it("advances the high-water as a rider burns attempts against the CURRENT code", () => {
+    expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 0, snapshotAttempts: 1 })).toEqual({ action: "advance-highwater", attempts: 1 });
+    expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 2, snapshotAttempts: 5 })).toEqual({ action: "advance-highwater", attempts: 5 });
+  });
+
+  it("does nothing when the count is unchanged (steady state)", () => {
+    expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 5, snapshotAttempts: 5 })).toEqual({ action: "none" });
+    expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 0, snapshotAttempts: 0 })).toEqual({ action: "none" });
+  });
+
+  it("invalidates the stale code when attempts DROP below the high-water — the rotation tell", () => {
+    // Repro: rider hit the lockout (attempts climbed to 5, high-water 5), customer re-issued → server
+    // reset to 0 and rotated the hash, app killed before the response landed. Cold start sees attempts 0.
+    expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 5, snapshotAttempts: 0 })).toEqual({ action: "invalidate" });
+    // Any drop counts, not just a full reset to 0.
+    expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 3, snapshotAttempts: 1 })).toEqual({ action: "invalidate" });
   });
 });

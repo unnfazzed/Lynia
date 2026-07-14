@@ -168,7 +168,7 @@ describe("AuthService.updateProfile", () => {
   // The write now runs in a $transaction (DS-11): profile.update + a duplicate-ID recompute that
   // persists the A-04 flag on the rider row. `dupCount` = how many OTHER accounts share the new ID.
   // `opts.kycStatus`/`opts.storedIdHash` drive the post-verification ID-lock pre-check (DS-11 hardening).
-  function makeUpdate(dupCount = 0, opts: { kycStatus?: string; storedIdHash?: string } = {}) {
+  function makeUpdate(dupCount = 0, opts: { kycStatus?: string; storedIdHash?: string; writeCount?: number } = {}) {
     const rec: { written?: Record<string, unknown>; flag?: { where: unknown; data: Record<string, unknown> } } = {};
     const profileRow = {
       ...row,
@@ -177,7 +177,11 @@ describe("AuthService.updateProfile", () => {
     };
     const tx = {
       profile: {
+        // Name-only edits (no idNumber) still take the plain update path...
         update: async (a: { data: Record<string, unknown> }) => ((rec.written = a.data), { id: "p1" }),
+        // ...but an ID write goes through the guarded CAS updateMany (Fix 2). `writeCount` lets a test
+        // simulate the race where the KYC webhook committed `verified` mid-write → 0 rows matched.
+        updateMany: async (a: { data: Record<string, unknown> }) => ((rec.written = a.data), { count: opts.writeCount ?? 1 }),
         count: async () => dupCount,
       },
       rider: {
@@ -246,6 +250,16 @@ describe("AuthService.updateProfile", () => {
       svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-222222-B-22" }),
     ).resolves.toBeDefined();
     expect(rec.written).toMatchObject({ idNumberHash: pii.hashId("63-222222-B-22") });
+  });
+
+  // Fix 2: the check-then-write race. The pre-check reads a not-yet-verified status, but the KYC webhook
+  // commits `verified` before this write lands — the guarded updateMany then matches 0 rows and re-asserts
+  // the freeze, so a stale iteration can't slip a new ID past it.
+  it("Fix 2: re-asserts the freeze at write time — 0 rows matched (webhook verified mid-write) → blocked", async () => {
+    const { svc } = makeUpdate(0, { kycStatus: "pending", storedIdHash: pii.hashId("63-111111-A-11"), writeCount: 0 });
+    await expect(
+      svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-222222-B-22" }),
+    ).rejects.toThrow(/locked after verification/i);
   });
 });
 
@@ -460,6 +474,8 @@ describe("AuthService.refresh", () => {
         // Rotation revokes atomically via updateMany (WHERE revokedAt IS NULL) → { count }.
         updateMany: async () => ({ count: 1 }),
         create: async () => ({ id: "rotated" }),
+        // RT-GRACE: rotation links the old session to its successor after minting it.
+        update: async () => ({}),
       },
     };
   }
@@ -495,11 +511,13 @@ describe("AuthService.refresh", () => {
   it("rotates a valid session into fresh tokens", async () => {
     const row = { id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future, profile: { role: "customer" } };
     let revokeWhere: Record<string, unknown> | undefined;
+    let linkData: Record<string, unknown> | undefined;
     const prisma = {
       session: {
         findUnique: async () => row,
         updateMany: async (a: { where: Record<string, unknown> }) => { revokeWhere = a.where; return { count: 1 }; },
         create: async () => ({ id: "rotated" }),
+        update: async (a: { data: Record<string, unknown> }) => { linkData = a.data; return {}; },
       },
     };
     const { svc } = make(baseEnv, prisma);
@@ -507,6 +525,8 @@ describe("AuthService.refresh", () => {
     // Revocation is a guarded compare-and-swap on the still-un-revoked row, not a blind update.
     expect(revokeWhere).toMatchObject({ id: "sid", revokedAt: null });
     expect(res.refreshToken).toMatch(/^rotated\./);
+    // RT-GRACE: the rotated session is linked to its successor so a lost-response retry can heal.
+    expect(linkData).toEqual({ rotatedToId: "rotated" });
   });
 
   it("rejects a concurrent double-rotate (guarded revoke claims zero rows) instead of minting two sessions", async () => {
@@ -522,6 +542,126 @@ describe("AuthService.refresh", () => {
     const { svc } = make(baseEnv, prisma);
     await expect(svc.refresh("sid.secret")).rejects.toThrow(/invalid or expired/i);
     expect(created).toBe(0); // no second session minted from the reused token
+  });
+});
+
+describe("AuthService.refresh — rotation lost-response grace (RT-GRACE)", () => {
+  const future = new Date(Date.now() + 60_000);
+  const hash = tokens.hash("secret");
+  /** A revoked session that WAS rotated into `succ`, revoked `agoMs` ago (5s = inside the window). */
+  const rotatedOld = (over: Partial<Record<string, unknown>> = {}, agoMs = 5_000) => ({
+    id: "old",
+    profileId: "p1",
+    refreshTokenHash: hash,
+    revokedAt: new Date(Date.now() - agoMs),
+    rotatedToId: "succ",
+    expiresAt: future,
+    profile: { role: "customer" },
+    ...over,
+  });
+
+  it("re-issues on a retry of a just-rotated token whose successor is still un-consumed (the dropped-response heal)", async () => {
+    const rows: Record<string, Record<string, unknown> | null> = {
+      old: rotatedOld(),
+      succ: { id: "succ", revokedAt: null, expiresAt: future },
+    };
+    let created = 0;
+    const prisma = {
+      session: {
+        findUnique: async (a: { where: { id: string } }) => rows[a.where.id] ?? null,
+        updateMany: async () => ({ count: 1 }),
+        update: async () => ({}),
+        create: async () => { created++; return { id: "reissued" }; },
+      },
+    };
+    const { svc } = make(baseEnv, prisma);
+    const res = await svc.refresh("old.secret");
+    // Before RT-GRACE this retry was a hard 401 → forced re-OTP; now it mints a fresh session.
+    expect(res.refreshToken).toMatch(/^reissued\./);
+    expect(created).toBe(1);
+  });
+
+  it("does NOT grace a token revoked by logout (rotatedToId null) — still a hard reject", async () => {
+    const rows: Record<string, Record<string, unknown> | null> = { old: rotatedOld({ rotatedToId: null }) };
+    let created = 0;
+    const prisma = {
+      session: {
+        findUnique: async (a: { where: { id: string } }) => rows[a.where.id] ?? null,
+        updateMany: async () => ({ count: 1 }),
+        update: async () => ({}),
+        create: async () => { created++; return { id: "x" }; },
+      },
+    };
+    const { svc } = make(baseEnv, prisma);
+    await expect(svc.refresh("old.secret")).rejects.toThrow(/invalid or expired/i);
+    expect(created).toBe(0);
+  });
+
+  it("rejects a replay after the chain advanced (successor already consumed) — reuse detection preserved", async () => {
+    const rows: Record<string, Record<string, unknown> | null> = {
+      old: rotatedOld(),
+      // The successor was itself rotated → revoked: the client moved on, so this is a replay of a dead token.
+      succ: { id: "succ", revokedAt: new Date(Date.now() - 1_000), expiresAt: future },
+    };
+    let created = 0;
+    const prisma = {
+      session: {
+        findUnique: async (a: { where: { id: string } }) => rows[a.where.id] ?? null,
+        updateMany: async () => ({ count: 1 }),
+        update: async () => ({}),
+        create: async () => { created++; return { id: "x" }; },
+      },
+    };
+    const { svc } = make(baseEnv, prisma);
+    await expect(svc.refresh("old.secret")).rejects.toThrow(/invalid or expired/i);
+    expect(created).toBe(0);
+  });
+
+  it("does NOT grace outside the short window (rotated longer ago than the TTL)", async () => {
+    const rows: Record<string, Record<string, unknown> | null> = {
+      old: rotatedOld({}, 61_000),
+      succ: { id: "succ", revokedAt: null, expiresAt: future },
+    };
+    let created = 0;
+    const prisma = {
+      session: {
+        findUnique: async (a: { where: { id: string } }) => rows[a.where.id] ?? null,
+        updateMany: async () => ({ count: 1 }),
+        update: async () => ({}),
+        create: async () => { created++; return { id: "x" }; },
+      },
+    };
+    const { svc } = make(baseEnv, prisma);
+    await expect(svc.refresh("old.secret")).rejects.toThrow(/invalid or expired/i);
+    expect(created).toBe(0);
+  });
+
+  it("heals the loser of a concurrent double-rotate via grace (CAS claimed zero rows, successor live)", async () => {
+    let firstReadOfOld = true;
+    const succ = { id: "succ", revokedAt: null, expiresAt: future };
+    const prisma = {
+      session: {
+        findUnique: async (a: { where: { id: string } }) => {
+          if (a.where.id === "succ") return succ;
+          if (a.where.id === "old") {
+            if (firstReadOfOld) {
+              // First read (advisory) still sees it un-revoked → we proceed to the CAS...
+              firstReadOfOld = false;
+              return { id: "old", profileId: "p1", refreshTokenHash: hash, revokedAt: null, rotatedToId: null, expiresAt: future, profile: { role: "customer" } };
+            }
+            // ...which loses; by the grace re-read the racer has revoked + linked it.
+            return { id: "old", revokedAt: new Date(Date.now() - 1_000), rotatedToId: "succ", expiresAt: future };
+          }
+          return null;
+        },
+        updateMany: async () => ({ count: 0 }), // lost the CAS to the concurrent refresh
+        update: async () => ({}),
+        create: async () => ({ id: "loser-session" }),
+      },
+    };
+    const { svc } = make(baseEnv, prisma);
+    const res = await svc.refresh("old.secret");
+    expect(res.refreshToken).toMatch(/^loser-session\./);
   });
 });
 

@@ -351,6 +351,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     riderId: string,
     reason: string,
   ): Promise<{ orderId: string; status: "undelivered" }> {
+    // Set when an automated hold is newly applied below, so we can pull the rider out of the live geo
+    // index after commit (the same eviction setOnline(false) does) — see the isOnline:false note there.
+    let newlyHeldRiderId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
@@ -409,6 +412,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           // clear); otherwise persist whatever applyReliabilityDelta computed (which itself preserves an
           // already-set velocity hold through a recovery/dead-band).
           const heldReason: HeldReason = velocityHold ? HeldReason.VELOCITY : next.heldReason;
+          // BR-01: an automated hold must also pull the rider offline — the admin suspend/ban paths
+          // (admin-riders.service) flip isOnline:false in the same write so a held rider actually leaves
+          // the live-supply plane; a hold that left isOnline:true relied solely on the nearbyRiders query
+          // filter. Force offline the moment the hold is newly applied and evict from geo after commit.
+          const newlyHeld = onHold && !rider.onHold;
           if (
             next.reliabilityScore !== rider.reliabilityScore ||
             onHold !== rider.onHold ||
@@ -416,9 +424,15 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           ) {
             await tx.rider.update({
               where: { profileId: order.riderId },
-              data: { reliabilityScore: next.reliabilityScore, onHold, heldReason },
+              data: {
+                reliabilityScore: next.reliabilityScore,
+                onHold,
+                heldReason,
+                ...(newlyHeld ? { isOnline: false } : {}),
+              },
             });
           }
+          if (newlyHeld) newlyHeldRiderId = order.riderId;
           if (velocityHold && !rider.onHold) {
             this.logger.warn(
               `Rider ${order.riderId} auto-held for review: ${undeliveredCount} undelivered / ${completedCount} completed in ${UNDELIVERED_ABUSE.windowDays}d (FRAUD P0-3 velocity)`,
@@ -428,6 +442,15 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
+    // Best-effort, post-commit: evict a newly auto-held rider from the Redis geo index (mirrors
+    // setOnline(false)). PG's is_online — now false — is the authority for nearbyRiders, so a missed
+    // eviction is harmless; this just stops the held rider lingering in a GEOSEARCH result until the
+    // key TTLs. Never allowed to affect the committed undelivered transition.
+    if (newlyHeldRiderId) {
+      void this.gateway.evictRiderFromGeo(newlyHeldRiderId).catch((err) => {
+        this.logger.warn(`geo eviction after auto-hold failed for ${newlyHeldRiderId}: ${(err as Error).message}`);
+      });
+    }
     this.safeEmit(orderId, "undelivered");
     return { orderId, status: "undelivered" };
   }

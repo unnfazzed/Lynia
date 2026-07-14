@@ -61,3 +61,59 @@ export function orderLoadErrorKind(status: number | undefined): "not_found" | "f
   if (status === 403) return "forbidden";
   return "transient";
 }
+
+/**
+ * Which copy the expired-auction terminal should show. The live `bidCount` (from the offers-list query)
+ * is empty on a COLD read into an already-expired order — that query only fetches `pending` offers, which
+ * no longer exist post-expiry — so a customer who watched riders bid, force-killed the app, and cold-started
+ * back in would wrongly be told "no riders took this price". The server's `hadOffers` (a count of offer rows,
+ * which survive expiry) recovers the truth on that cold path. Either signal ("riders bid" locally OR per the
+ * server) wins, so the honest "you didn't pick in time" copy shows; only when NEITHER says riders bid do we
+ * fall through to the no-supply / no-offers copies (which stay exactly as before for the live case).
+ *   - "had-offers": riders did bid — the window closed before the customer picked.
+ *   - "no-supply":  zero bids AND nobody online near the pickup — the price was never the problem.
+ *   - "no-offers":  zero bids with supply present — nudging the price up usually helps.
+ */
+export function expiredTerminalKind(input: {
+  bidCount: number;
+  hadOffers: boolean | null | undefined;
+  expiryNoSupply: boolean | null | undefined;
+}): "had-offers" | "no-supply" | "no-offers" {
+  if (input.bidCount > 0 || input.hadOffers === true) return "had-offers";
+  if (input.expiryNoSupply === true) return "no-supply";
+  return "no-offers";
+}
+
+/**
+ * Reconcile a locally-stored delivery code against the server's `deliveryOtpAttempts` on each snapshot
+ * refresh, to catch a code that was rotated (customer tapped "Re-issue delivery code" → server rotated the
+ * hash and reset the attempt counter to 0) while the app was killed before the rotate response landed.
+ *
+ * The server never re-sends the plaintext code, so the client keeps the OLD value in secure storage; with a
+ * non-null local code the re-issue UI never re-prompts and the customer confidently relays a DEAD code,
+ * burning the rider's attempts. There's no rotation timestamp in the snapshot, so the only available signal
+ * is `deliveryOtpAttempts`, which is monotonic while a given code is current (0 at issue, +1 per failed rider
+ * attempt) and resets to 0 ONLY on a rotation. So: track the highest attempts value seen while holding this
+ * code; if a fresh snapshot's attempts count has DROPPED below that high-water mark, the code was rotated and
+ * the local copy is stale → invalidate it and fall back to the "code isn't showing — re-issue" path.
+ *
+ * NOTE: a rotation timestamp on the snapshot (e.g. `codeRotatedAt`) would make this fully robust regardless of
+ * whether the client ever observed the elevated attempt count before the kill — logged as a follow-up.
+ *
+ *   - "invalidate":       a rotation was detected — clear the stored code + high-water.
+ *   - "advance-highwater": attempts climbed (a rider is failing against OUR code) — persist the new high-water.
+ *   - "none":             nothing to do (no local code, no server signal yet, or attempts unchanged).
+ */
+export function reconcileDeliveryCode(input: {
+  hasLocalCode: boolean;
+  storedAttemptsHighWater: number | null | undefined;
+  snapshotAttempts: number | null | undefined;
+}): { action: "invalidate" } | { action: "advance-highwater"; attempts: number } | { action: "none" } {
+  const { hasLocalCode, storedAttemptsHighWater, snapshotAttempts } = input;
+  // No code to protect, or the server hasn't told us the attempt count / we never recorded a baseline
+  // (e.g. a code stored before this fix shipped) — never invalidate on missing data, stay backward-safe.
+  if (!hasLocalCode || snapshotAttempts == null || storedAttemptsHighWater == null) return { action: "none" };
+  if (snapshotAttempts < storedAttemptsHighWater) return { action: "invalidate" };
+  if (snapshotAttempts > storedAttemptsHighWater) return { action: "advance-highwater", attempts: snapshotAttempts };
+  return { action: "none" };
+}

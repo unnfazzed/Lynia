@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { computeFunnel } from "./admin.shared";
 
@@ -13,6 +14,10 @@ export class AdminService {
 
   /** Single read for the monitor dashboard: status counts, rider stats, pilot funnel, recent orders. */
   async overview() {
+    // BR-01: match nearbyRiders' honesty — an "online" rider whose app died with is_online stuck true
+    // keeps a stale heartbeat, so require a fresh heartbeat here too rather than counting ghosts. The
+    // standing axis (suspended/held) is already handled: those paths now flip is_online:false.
+    const hbCutoff = new Date(Date.now() - heartbeatMaxAgeMs());
     const [byStatus, totalOrders, totalOffers, expired, ridersTotal, ridersOnline, ridersVerified, recent, withOffer] =
       await Promise.all([
         this.prisma.order.groupBy({ by: ["status"], _count: { _all: true } }),
@@ -20,7 +25,7 @@ export class AdminService {
         this.prisma.offer.count(),
         this.prisma.order.count({ where: { status: "expired" } }),
         this.prisma.rider.count(),
-        this.prisma.rider.count({ where: { isOnline: true } }),
+        this.prisma.rider.count({ where: { isOnline: true, lastHeartbeatAt: { gte: hbCutoff } } }),
         this.prisma.rider.count({ where: { kycStatus: "verified" } }),
         this.prisma.order.findMany({
           take: 20,

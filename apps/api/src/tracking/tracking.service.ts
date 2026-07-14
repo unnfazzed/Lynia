@@ -393,6 +393,10 @@ export class TrackingService implements OnModuleDestroy {
     // ridersNearby count honest. Applied in BOTH PG legs; matching's stricter 30 s offer gate is separate.
     // `maxAgeMs` defaults to the STRICT cutoff (count/gate callers) — the FCM broadcast audience passes
     // the permissive heartbeatMaxAgeMsForPush so a backgrounded-but-online rider still gets the push.
+    // Both legs also require good standing (account_status = 'active' AND on_hold = false): a suspended
+    // or auto-held rider can't bid (offers.service gates on standing), so counting them in ridersNearby
+    // or FCM-pushing them would inflate supply and spam riders who can't act — the same standing gate
+    // isBoardEligible/onlineRefusalReason enforce for the board.
     const hbCutoff = new Date(Date.now() - maxAgeMs);
     const redis = this.getRedis();
     if (redis) {
@@ -411,6 +415,8 @@ export class TrackingService implements OnModuleDestroy {
           FROM riders
           WHERE profile_id = ANY(${ids}::uuid[])
             AND is_online = true
+            AND account_status = 'active'
+            AND on_hold = false
             AND geog IS NOT NULL
             AND last_heartbeat_at IS NOT NULL
             AND last_heartbeat_at >= ${hbCutoff}`;
@@ -428,6 +434,8 @@ export class TrackingService implements OnModuleDestroy {
              ST_Distance(geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
       FROM riders
       WHERE is_online = true
+        AND account_status = 'active'
+        AND on_hold = false
         AND geog IS NOT NULL
         AND last_heartbeat_at IS NOT NULL
         AND last_heartbeat_at >= ${hbCutoff}

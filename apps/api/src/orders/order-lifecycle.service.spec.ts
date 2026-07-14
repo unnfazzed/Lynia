@@ -17,12 +17,15 @@ function build(methods: Record<string, unknown>) {
   const jobCancelled: Array<[string, boolean]> = [];
   const rebroadcasts: Array<[string, string]> = [];
   const bidExpired: Array<[string, number | undefined, number | undefined]> = [];
+  const evicted: string[] = [];
   const gateway = {
     emitOrderStatus: (id: string, s: string) => emits.push([id, s]),
     emitJobCancelled: (id: string, collected: boolean) => jobCancelled.push([id, collected]),
     emitOrderRebroadcast: (oldId: string, newId: string) => rebroadcasts.push([oldId, newId]),
     // DS13-07: board-close on a cancel of a still-open auction reuses the expiry path's bid:expired.
     emitBidExpired: (id: string, lat?: number, lng?: number) => bidExpired.push([id, lat, lng]),
+    // BR-01: markUndelivered evicts an auto-held rider from the geo index (best-effort passthrough).
+    evictRiderFromGeo: async (id: string) => { evicted.push(id); },
   };
   // F-01 re-broadcast announce is best-effort push — spy so tests can assert it fired without a socket.
   const orders = { announceOpenOrder: vi.fn(async () => {}) };
@@ -39,7 +42,7 @@ function build(methods: Record<string, unknown>) {
     noopNotifications,
     orders as unknown as OrdersService,
   );
-  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, orders, prisma };
+  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, orders, prisma };
 }
 
 describe("OrderLifecycleService.advance", () => {
@@ -687,6 +690,54 @@ describe("OrderLifecycleService.markUndelivered", () => {
     });
     await svc.markUndelivered("o1", "r1", "wrong_address");
     expect(riderData).toMatchObject({ reliabilityScore: 100, onHold: true, heldReason: "velocity" });
+  });
+
+  // BR-01: an automated hold must ALSO pull the rider offline (isOnline:false) and evict them from the
+  // geo index — like the admin suspend/ban paths — so a held rider actually leaves the live-supply plane
+  // instead of relying solely on the nearbyRiders query filter.
+  it("BR-01: a newly auto-held rider is forced offline and evicted from the geo index", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const counts = [3, 0]; // velocity trip
+    let call = 0;
+    const { svc, evicted } = build({
+      order: {
+        findUnique: async () => row({ status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => counts[call++]!,
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ reliabilityScore: 100, onHold: false, heldReason: null }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.markUndelivered("o1", "r1", "wrong_address");
+    // Forced offline in the same write as the hold...
+    expect(riderData).toMatchObject({ onHold: true, isOnline: false });
+    // ...and evicted from the live geo index (best-effort, post-commit).
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evicted).toEqual(["r1"]);
+  });
+
+  it("BR-01: a penalty-only ding that does NOT newly hold leaves isOnline untouched and evicts nobody", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc, evicted } = build({
+      order: {
+        findUnique: async () => row({ status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => 0, // no velocity trip
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        // A score penalty applies but the rider does not cross into on_hold.
+        findUnique: async () => ({ reliabilityScore: 90, onHold: false, heldReason: null }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.markUndelivered("o1", "r1", "breakdown");
+    expect(riderData).not.toHaveProperty("isOnline");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evicted).toEqual([]);
   });
 });
 

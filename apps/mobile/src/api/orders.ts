@@ -79,6 +79,12 @@ export interface OrderSnapshot {
   // online near the pickup) — lets the expired terminal show the honest "no riders were online" copy
   // instead of "nudge the price up". Null/absent on a normal expiry, other statuses, or an older API.
   expiryNoSupply?: boolean | null;
+  // UX-2026-07-14: set only on an `expired` order — whether ANY rider ever bid on this auction (a plain
+  // server-side count of offer rows, which survive expiry). The client's own live `bidCount` sees nothing
+  // on a COLD read into an already-expired order (it queries only `pending` offers, gone post-expiry), so
+  // this is what lets the expired terminal honestly say "riders did offer, you didn't pick in time" vs.
+  // "no riders took this price". Null/absent on every non-expired status and on an older API.
+  hadOffers?: boolean | null;
 }
 
 /**

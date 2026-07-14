@@ -365,6 +365,17 @@ export class TrackingGateway
   }
 
   /**
+   * Evict a rider from the Redis geo index (passthrough to TrackingService.evictFromGeo). Lets
+   * services that hold this gateway but not TrackingService directly — e.g. OrderLifecycleService when
+   * it auto-holds a rider (BR-01) — pull that rider out of the live-supply plane the same way
+   * setOnline(false) does, without re-forming the rider↔tracking import cycle. Best-effort in the
+   * service (PG's is_online stays the nearbyRiders authority), so this just forwards the call.
+   */
+  async evictRiderFromGeo(riderId: string): Promise<void> {
+    await this.tracking.evictFromGeo(riderId);
+  }
+
+  /**
    * Signal an order's offer set changed to everyone watching it (SIGNAL ONLY — no offer contents;
    * the client refetches over the authenticated REST path). Best-effort; never throws.
    */

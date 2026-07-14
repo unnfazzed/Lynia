@@ -33,6 +33,12 @@ const OTP_GRACE_TTL_SECONDS = 60;
 // more than a handful of guesses at the correct code while it lingers. Mirrors MAX_OTP_ATTEMPTS so a
 // legit timeout-retry (typically 1–2 re-sends of the same correct code) is never affected.
 const MAX_GRACE_ATTEMPTS = 5;
+// Refresh-token rotation lost-response grace window (RT-GRACE). Mirrors the OTP-verify grace (§6): a
+// rotate whose response is dropped in flight leaves the client holding the just-revoked token, so its
+// retry would otherwise get a hard 401 and force a full re-OTP. Within this window of the rotation we
+// re-issue on that retry instead. Kept tight (60s) — long enough to cover the client timeout + a retry,
+// short enough to bound a replay of a stolen just-revoked token, exactly like the OTP grace TTL.
+const REFRESH_GRACE_TTL_MS = 60_000;
 // Per-phone / per-IP / global send caps (ET5: each send costs BSP money — enumeration is a budget-DoS).
 const RL = {
   phone: { max: 5, windowSec: 3600 },
@@ -143,17 +149,33 @@ export class AuthService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.profile.update({
-        where: { id: profileId },
-        // idNumber is stored on the account record (0·6), not verified. Only write it when provided so
-        // a name-only edit (or the returning-user path) never clears an existing value.
-        data: {
-          firstName: body.firstName,
-          lastName: body.lastName,
+      // idNumber is stored on the account record (0·6). Only write it when provided so a name-only edit
+      // (or the returning-user path) never clears an existing value.
+      if (idNumberHash) {
+        // The pre-check above is check-then-write: the KYC webhook (applyKycResult) can commit `verified`
+        // between that read and this write, so an iteration that observed a non-verified status could
+        // still land a new ID after the freeze took effect. Make the ID-writing update a CAS that
+        // re-asserts the freeze atomically — it matches only when the rider is NOT (verified AND actually
+        // changing the ID), i.e. the exact condition the pre-check gates on, evaluated at write time. A
+        // re-send of the SAME id (or a not-yet-verified rider) still writes; a genuine change against a
+        // now-verified rider matches 0 rows → the same "ID frozen" error.
+        const written = await tx.profile.updateMany({
+          where: {
+            id: profileId,
+            NOT: { AND: [{ rider: { kycStatus: "verified" } }, { idNumberHash: { not: idNumberHash } }] },
+          },
           // Store the national ID encrypted at rest + its dedup hash (LR8); never the raw number.
-          ...(idNumberHash ? { idNumber: this.pii.encryptId(body.idNumber!), idNumberHash } : {}),
-        },
-      });
+          data: { firstName: body.firstName, lastName: body.lastName, idNumber: this.pii.encryptId(body.idNumber!), idNumberHash },
+        });
+        if (written.count === 0) {
+          throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
+        }
+      } else {
+        await tx.profile.update({
+          where: { id: profileId },
+          data: { firstName: body.firstName, lastName: body.lastName },
+        });
+      }
 
       // DS-11: the A-04 duplicate-ID / ban-evasion flag is otherwise computed ONLY at completeProfile
       // / becomeRider. Rewriting idNumber here without recomputing it lets a rider onboard under a
@@ -293,28 +315,92 @@ export class AuthService {
           profileId: true,
           refreshTokenHash: true,
           revokedAt: true,
+          rotatedToId: true,
           expiresAt: true,
           profile: { select: { role: true } },
         },
       })
       .catch(() => null);
 
-    const valid =
-      s &&
-      !s.revokedAt &&
-      s.expiresAt > new Date() &&
-      this.tokens.safeEqualHex(this.tokens.hash(secret), s.refreshTokenHash);
-    if (!s || !valid) throw new UnauthorizedException("Invalid or expired refresh token");
+    // A wrong secret, or an unknown/expired session, is ALWAYS a hard reject — never eligible for grace.
+    // (Unlike before, a *revoked* session is no longer rejected up front: a token revoked by rotation
+    // may still qualify for the lost-response grace below. Hash + expiry remain hard gates.)
+    const secretOk =
+      !!s && s.expiresAt > new Date() && this.tokens.safeEqualHex(this.tokens.hash(secret), s.refreshTokenHash);
+    if (!s || !secretOk) throw new UnauthorizedException("Invalid or expired refresh token");
+
+    if (s.revokedAt) {
+      // The presented token was already revoked. If it was revoked by ROTATION and its successor is
+      // still un-consumed within the grace window, this is the "lost the rotate response, retried the
+      // old token" case (RT-GRACE) — re-issue. Any other revoked token (logout, or a successor already
+      // consumed downstream = a replay after the chain moved on) is still rejected.
+      const graced = await this.refreshViaGrace(s, userAgent);
+      if (graced) return graced;
+      throw new UnauthorizedException("Invalid or expired refresh token");
+    }
 
     // Rotate atomically: revoke the old session ONLY if it's still un-revoked, so two concurrent
     // refreshes bearing the same token can't both win and mint two live sessions from one token. The
-    // guarded updateMany is the real gate (the read above is advisory); a zero-count claim means the
-    // token was already rotated — treat it as reuse and reject rather than issuing a second session.
+    // guarded updateMany is the real gate (the read above is advisory).
     const revoked = await this.prisma.session.updateMany({
       where: { id: s.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
-    if (revoked.count === 0) throw new UnauthorizedException("Invalid or expired refresh token");
+    if (revoked.count === 0) {
+      // We lost the CAS to a concurrent refresh that revoked it first — that racer minted the successor.
+      // Fall to the same grace path so the loser of a legitimate concurrent refresh heals to a session
+      // instead of a spurious hard 401; still gated on rotatedToId + an un-consumed successor + the short
+      // window, so a genuine replay is rejected.
+      const graced = await this.refreshViaGrace(s, userAgent);
+      if (graced) return graced;
+      throw new UnauthorizedException("Invalid or expired refresh token");
+    }
+    // Mint the successor, then link the rotated session to it so the lost-response grace can find it.
+    const successor = await this.issueSession(s.profileId, s.profile.role, userAgent);
+    const successorId = successor.refreshToken.slice(0, successor.refreshToken.indexOf("."));
+    await this.prisma.session
+      .update({ where: { id: s.id }, data: { rotatedToId: successorId } })
+      .catch((err) => {
+        // Best-effort link: a failure here only means this specific token can't be graced on a lost
+        // response (it degrades to today's hard reject), never that the successor is lost. Don't fail
+        // the refresh over it.
+        this.logger.warn(`refresh: failed to link rotated session ${s.id}: ${(err as Error).message}`);
+      });
+    return successor;
+  }
+
+  /**
+   * RT-GRACE: heal the single legitimate "lost the rotate response" retry. Returns a fresh session when
+   * the presented (revoked) token was revoked BY ROTATION, within the grace window, AND its successor is
+   * still un-consumed; otherwise null (→ the caller emits the normal hard reject). Safety invariants
+   * mirror the OTP-verify grace (§6):
+   *  - Hash + expiry were already proven by the caller, so this grants nothing a live token wouldn't.
+   *  - `rotatedToId` must be set: a logout-revoke (null) is never graced.
+   *  - The successor must still be un-revoked and unexpired. Once the client actually consumed the
+   *    successor (rotated it → it's now revoked), the chain has moved on, so a later presentation of the
+   *    old token is a replay and is rejected — this is what preserves reuse detection.
+   *  - The short window (REFRESH_GRACE_TTL_MS from revokedAt) bounds exposure the way the OTP TTL does.
+   *  - The successor's secret is never stored (only its hash), so we mint a fresh independent session —
+   *    sessions are already multi-device, so this grants no privilege beyond the successor itself.
+   * The revoked/rotatedTo/expiry fields are RE-READ here (not trusted from the caller's earlier read) so
+   * the CAS-lost concurrent path sees the racer's committed revocation + link.
+   */
+  private async refreshViaGrace(
+    s: { id: string; profileId: string; profile: { role: string } },
+    userAgent?: string,
+  ): Promise<SessionTokens | null> {
+    const fresh = await this.prisma.session
+      .findUnique({ where: { id: s.id }, select: { revokedAt: true, rotatedToId: true, expiresAt: true } })
+      .catch(() => null);
+    if (!fresh || !fresh.revokedAt || !fresh.rotatedToId) return null;
+    if (fresh.expiresAt <= new Date()) return null;
+    if (Date.now() - fresh.revokedAt.getTime() > REFRESH_GRACE_TTL_MS) return null;
+    const successor = await this.prisma.session
+      .findUnique({ where: { id: fresh.rotatedToId }, select: { revokedAt: true, expiresAt: true } })
+      .catch(() => null);
+    // Successor gone, already consumed (revoked = chain advanced → replay), or expired → not the
+    // lost-response case; reject rather than mint.
+    if (!successor || successor.revokedAt || successor.expiresAt <= new Date()) return null;
     return this.issueSession(s.profileId, s.profile.role, userAgent);
   }
 

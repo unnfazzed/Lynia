@@ -369,6 +369,43 @@ describe("TrackingService.nearbyRiders — heartbeat freshness (ghost filter)", 
   });
 });
 
+describe("TrackingService.nearbyRiders — standing predicate (BR-01: no on_hold/suspended supply)", () => {
+  it("requires active standing + not on_hold in the Redis-confirm PG query", async () => {
+    const redis = fakeRedis();
+    redis.geoResult.push(["rider-1", "100"]);
+    let sql = "";
+    const queryRaw = vi.fn(async (strings: TemplateStringsArray) => {
+      sql = strings.join("?");
+      return [{ profile_id: "rider-1" }];
+    });
+    const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $queryRaw: queryRaw } as unknown as PrismaService, fakeMetrics());
+    s.setRedisClient(redis as never);
+
+    await s.nearbyRiders(-17.8, 31.0, 5000);
+
+    // An on_hold/suspended rider whose app keeps heartbeating must not pad ridersNearby or receive a
+    // broadcast push — they can't bid (offers.service gates on standing). Both are enforced in-query.
+    expect(sql).toContain("account_status = 'active'");
+    expect(sql).toContain("on_hold = false");
+  });
+
+  it("requires active standing + not on_hold in the PG ST_DWithin fallback", async () => {
+    let sql = "";
+    const queryRaw = vi.fn(async (strings: TemplateStringsArray) => {
+      sql = strings.join("?");
+      return [];
+    });
+    const s = new TrackingService({ REDIS_URL: undefined } as Env, { $queryRaw: queryRaw } as unknown as PrismaService, fakeMetrics());
+    s.setRedisClient(null);
+
+    await s.nearbyRiders(-17.8, 31.0, 5000);
+
+    expect(sql).toContain("ST_DWithin");
+    expect(sql).toContain("account_status = 'active'");
+    expect(sql).toContain("on_hold = false");
+  });
+});
+
 describe("TrackingService.claimBroadcastRecipients (widening-broadcast dedupe)", () => {
   /** Fake pipeline capturing SADD/EXPIRE; exec returns the queued per-SADD replies. */
   function pipelineRedis(saddReplies: Array<0 | 1>, opts: { rejectExec?: boolean } = {}) {
