@@ -54,14 +54,30 @@ describe("SosService.raise", () => {
       lat: -17.8,
       lng: 31.05,
     });
-    // Ops always; the counterparty (the rider, here) gets the alert too.
+    // Ops always; the counterparty (the rider, here) gets the alert too. Fix 3: the push carries the
+    // RECIPIENT's per-order role — a customer's SOS pushes the rider, so `to: "rider"`.
     expect(notifications.notifyOps).toHaveBeenCalledTimes(1);
-    expect(notifications.notifyProfiles).toHaveBeenCalledWith(["rider-1"], expect.objectContaining({ title: expect.any(String) }));
+    expect(notifications.notifyProfiles).toHaveBeenCalledWith(
+      ["rider-1"],
+      expect.objectContaining({ data: expect.objectContaining({ orderId: "ord-1", kind: "sos", to: "rider" }) }),
+    );
     // Contacts surfaced for the app: emergency number always present, safety line defaults to the
     // final SOS_POLICY constant (no env override here) — not the emergency number.
     expect(res.emergencyNumber).toBe("999");
     expect(res.safetyLine).toBe(SOS_POLICY.safetyLine);
     expect(res.safetyLine).not.toBe(res.emergencyNumber);
+  });
+
+  it("Fix 3: a RIDER's SOS pushes the customer, stamped to: 'customer'", async () => {
+    const notifications = makeNotifications();
+    const s = svc(liveOrder, notifications);
+    await s.raise("ord-1", body, "rider-1");
+    await flush();
+    // Recipient is the customer counterparty → `to: "customer"` so the client routes to /order/:id.
+    expect(notifications.notifyProfiles).toHaveBeenCalledWith(
+      ["cust-1"],
+      expect.objectContaining({ data: expect.objectContaining({ kind: "sos", to: "customer" }) }),
+    );
   });
 
   it("still returns the emergency contacts when the SosEvent DB write fails (safety-critical)", async () => {

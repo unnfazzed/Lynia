@@ -127,10 +127,10 @@ matching the real WhatsApp-arming ETA. When WhatsApp is armed, clear
 
 | Gap | Impact | State check (2026-07-13) |
 |---|---|---|
-| **Cloud Scheduler jobs** (retention purge daily; settlement auto-pause later) | Retention purge **has never run** — GDPR-ish exposure grows daily; `SCHEDULER_SERVICE_ACCOUNT` is injected (run #147) and `AdminOrSchedulerGuard` is live, but nothing calls the endpoint | Still no `google_cloud_scheduler_job` in terraform; `cloudscheduler.googleapis.com` **not** in `project.tf:22-40` API list. Must live in `europe-west1` (no Scheduler in africa-south1, runbook §2). Agent-codeable as terraform; currently a never-executed founder runbook step |
-| **OTel collector** (+ `otel-collector-config` secret, sidecar fold-in) | No traces/metrics; SLO histograms dormant; monitoring blind — the canary 5xx gate is the only automated production signal | Not deployed (run #147's orphaned-sidecar guard passed with `OTEL_SIDECAR_ENABLED` unset). Artifacts still raw YAML under `infra/otel-collector/`, not terraformed, not folded into release.yml (LR9 exit test unmet) |
+| **Cloud Scheduler jobs** (retention purge daily; settlement auto-pause later) | Retention purge **has never run** — GDPR-ish exposure grows daily; `SCHEDULER_SERVICE_ACCOUNT` is injected (run #147) and `AdminOrSchedulerGuard` is live, but nothing calls the endpoint | **Fixed alongside this review, see §8a** — `infra/terraform/scheduler.tf` + `cloudscheduler.googleapis.com` now in `project.tf`; `lynia-retention-purge` created by default on the next `terraform apply` (still a founder step) |
+| **OTel collector** (+ `otel-collector-config` secret, sidecar fold-in) | No traces/metrics; SLO histograms dormant; monitoring blind — the canary 5xx gate is the only automated production signal | Terraformed and code-complete: `infra/terraform/otel.tf` now owns the `otel-collector-config` secret + runtime-SA `secretAccessor` grant, and `release.yml` deploys the sidecar explicitly behind the `OTEL_SIDECAR_ENABLED` repo Variable (`.github/workflows/release.yml:469-509`). What remains is flipping that flag + a `terraform apply` + the dashboard import (§8, item 5) — not building the wiring |
 | **SLO alert policies + dashboard** | Nobody is paged on SLO breach | `slo_alerts_enabled` default `false` (`variables.tf:223-227`), correctly gated until the collector exists; `alert_notification_channels = []`; dashboard.json never imported |
-| **`roles/logging.viewer` for the deployer SA** | The release "Dump failed revision diagnostics" step **silently prints nothing** on every failed deploy (confirmed blind during the 07-08→07-10 incident) | `release.yml:559-560` references a grant in `iam.tf` that **does not exist** — `iam.tf:69-79` has run.admin / artifactregistry.writer / cloudsql.client / monitoring.viewer only. One-line agent-codeable fix in the `deployer_roles` set |
+| **`roles/logging.viewer` for the deployer SA** | The release "Dump failed revision diagnostics" step **silently prints nothing** on every failed deploy (confirmed blind during the 07-08→07-10 incident) | **Fixed alongside this review, see §8a** — added to `iam.tf`'s `deployer_roles`; takes effect on the next `terraform apply` |
 | **Mobile/EAS pipeline** | No Play builds / OTA from CI | `EAS_RELEASE_ENABLED` still unset; founder-only (Expo/Play accounts) |
 
 ## 6. 🟡 Deliberate hardening deferrals (founder `terraform apply` decisions)
@@ -194,8 +194,9 @@ sequence below.
    but doing 1 first makes it one deploy.
 3. **Agent:** release.yml WhatsApp launch-hygiene guards (§3) + `roles/logging.viewer`
    in `iam.tf` (§5) — two small PRs, both prevent silent failure modes already observed.
-4. **Agent:** terraform the Cloud Scheduler retention-purge job (europe-west1 + API
-   enable); **founder** applies → closes the never-run purge (§5).
-5. **Founder:** OTel collector stand-up → dashboard import → `slo_alerts_enabled=true`
-   + notification channel (§5) — removes the monitoring blind spot.
+4. **Founder:** `terraform apply` to pick up the already-written Cloud Scheduler
+   retention-purge job (`scheduler.tf`, §8a) → closes the never-run purge (§5).
+5. **Founder:** flip `OTEL_SIDECAR_ENABLED=true` (collector terraform + release.yml
+   wiring already land, §5) → dashboard import → `slo_alerts_enabled=true` +
+   notification channel — removes the monitoring blind spot.
 6. Hardening flips per `INFRA-HARDENING-ROLLOUT.md` sequencing; docs pass for §7.

@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, No
 import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
-import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, maxBroadcastRadiusM } from "../common/broadcast-policy";
+import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -37,6 +37,22 @@ function assertWithinServiceCorridor(pickup: LatLng, dropoff: LatLng): void {
  *  that refreshes it, short enough that a leaked URL goes stale fast (matches the admin KYC-photo
  *  review TTL). */
 const PICKUP_PHOTO_READ_URL_TTL_SECONDS = 900;
+
+/**
+ * Fix 6: ops-internal cancel-reason strings that must NOT be shown verbatim to the customer/rider. The
+ * admin cancel taxonomy (apps/admin/app/lib/reasons.ts `orderCancel`) includes trust & safety language
+ * — "Suspected fraud", "Safety concern" — that reads as an accusation with no context or next step when
+ * rendered raw on a party's cancelled terminal. Map those to calm, actionable copy at the snapshot
+ * boundary. Reasons already safe to show ("Rider unreachable", "Customer asked ops to cancel") and any
+ * free-text party-initiated reason are left untouched (unknown ⇒ pass through). The RAW reason stays
+ * intact everywhere ops sees it (admin views + the audit trail) — only the customer/rider view is remapped.
+ */
+const CUSTOMER_SAFE_CANCEL_MESSAGE = "Cancelled by the LyniaGo team — contact support if you have questions.";
+const OPS_INTERNAL_CANCEL_REASONS = new Set<string>(["Suspected fraud", "Safety concern"]);
+function customerSafeCancelReason(raw: string | null): string | null {
+  if (raw == null) return null;
+  return OPS_INTERNAL_CANCEL_REASONS.has(raw) ? CUSTOMER_SAFE_CANCEL_MESSAGE : raw;
+}
 
 /** The fields `create`'s response is built from, shared by the fresh-create path and both
  *  idempotent-replay paths (pre-existing match, and the loser of a concurrent create race). */
@@ -266,7 +282,11 @@ export class OrdersService {
       }
       // FCM push for riders NOT currently on the board — gated on the position index having someone to
       // fan out to (no candidates ⇒ no tokens to push). Only this channel depends on `nearby`.
-      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, baseBroadcastRadiusM());
+      // Uses the PERMISSIVE heartbeat cutoff (heartbeatMaxAgeMsForPush): FCM is designed to wake a
+      // backgrounded app, whose foreground heartbeat stopped beating ~120 s after backgrounding — the
+      // strict cutoff would wrongly drop that still-online rider from the broadcast audience (Fix 4 /
+      // DS13-02). The customer-facing count and the offer gate keep the strict cutoff.
+      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, baseBroadcastRadiusM(), heartbeatMaxAgeMsForPush());
       if (nearby.length === 0) return;
       // Claim the recipients in the per-order sent set BEFORE pushing, seeding it for the widening
       // ticks (MatchingService.expandBroadcast) so a later ring never re-pings these riders. null =
@@ -629,6 +649,15 @@ export class OrdersService {
           null)
         : null;
 
+    // Fix 1: on an expired order, did any rider ever bid? Offer rows are never deleted on expiry (only
+    // flipped to `expired`), so a plain count recovers "riders engaged" on a COLD read into an
+    // already-expired order — where the client's live `bidCount` query sees nothing, because it queries
+    // only `pending` offers, which no longer exist post-expiry. Lets the expired terminal show honest
+    // "riders offered, the window closed" copy instead of "raise your price". Scoped to `expired`
+    // (a cheap indexed count); null on every other status. Additive — older clients ignore it.
+    const hadOffers =
+      order.status === "expired" ? (await this.prisma.offer.count({ where: { orderId: order.id } })) > 0 : null;
+
     // §5c proof-of-pickup: resolve the stored object key to a short-lived signed read URL for BOTH
     // parties — the customer seeing "parcel is with your rider — photo attached" is the whole trust
     // point, and the rider gets their own attach confirmed. Same on-demand minting as the admin KYC
@@ -680,7 +709,7 @@ export class OrdersService {
       // renders neutral "This order is cancelled" copy) instead of defaulting to "rider" — a rider who
       // never touched this order shouldn't be blamed for an ops-initiated cancel (mirrors the same
       // three-way check already used in admin-orders.service.ts's list projection).
-      cancelReason: order.status === "cancelled" ? order.cancelReason : null,
+      cancelReason: order.status === "cancelled" ? customerSafeCancelReason(order.cancelReason) : null,
       cancelledBy:
         order.status === "cancelled" && order.cancelledBy
           ? order.cancelledBy === order.customerId
@@ -696,6 +725,9 @@ export class OrdersService {
       // expired terminal can pick the honest "no riders were online" copy over "nudge the price up".
       // Scoped to `expired`; null on every other status and on a normal (had-supply) expiry.
       expiryNoSupply: order.status === "expired" ? (order.expiryNoSupply ?? null) : null,
+      // Fix 1: whether any rider bid on this (expired) order, for the honest expired-terminal copy on a
+      // cold start. Null on every non-expired status. See the `hadOffers` computation above.
+      hadOffers,
       rider,
       events: order.events,
       counterpartyPhone,

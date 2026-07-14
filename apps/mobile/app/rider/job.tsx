@@ -259,7 +259,13 @@ export default function RiderJob(): React.ReactElement {
     // Rate against the frozen delivered snapshot's id when we're on that terminal (orderId is null
     // there — the delivered order has left the active feed); fall back to the live order otherwise.
     mutationFn: (score: number) => rateSender(deliveredDone?.id ?? orderId!, { score }),
-    onError: fail,
+    onError: (e) => {
+      // The tap fills the star optimistically (setSenderScore below); roll it back on failure so a
+      // failed POST doesn't leave a falsely-filled star with no acknowledgement — the ErrorText on the
+      // delivered terminal then surfaces why, and the (now-empty) stars invite a retry.
+      setSenderScore(0);
+      fail(e);
+    },
   });
   // R1: record a failed hand-off. On success we freeze a terminal (the order leaves the active feed).
   const undeliverM = useMutation({
@@ -404,6 +410,9 @@ export default function RiderJob(): React.ReactElement {
           <GetHelpControl orderId={deliveredDone.id} />
           <ReportControl orderId={deliveredDone.id} counterpartyNoun="sender" />
           <Button label="Back to board" onPress={() => router.replace("/rider")} />
+          {/* A failed rate-the-sender POST writes `error` (senderRateM.onError → fail); surface it here
+              the same way live-job errors do — this frozen terminal is the only place that mutation runs. */}
+          <ErrorText message={error} />
           <View style={{ height: tokens.space.xxl }} />
         </ScrollView>
       </Screen>

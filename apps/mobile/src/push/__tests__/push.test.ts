@@ -21,6 +21,36 @@ describe("pushDestination", () => {
     expect(pushDestination({ orderId: "o1", status: "cancelled" }, true)).toBe("/rider/job");
   });
 
+  it("routes SOS to the counterparty by global role when no per-order `to` is stamped", () => {
+    expect(pushDestination({ orderId: "o1", kind: "sos" }, false)).toBe("/order/o1");
+    expect(pushDestination({ orderId: "o1", kind: "sos" }, true)).toBe("/rider/job");
+  });
+
+  // A rider-role user is routinely the CUSTOMER on an order they sent themselves. When the backend
+  // stamps the recipient's actual per-order relationship in `data.to`, it must win over the global
+  // account role for the two dual-audience pushes — otherwise a rider-role customer whose assigned
+  // rider hits SOS (or whose order is cancelled) is misrouted to /rider/job at a safety-critical tap.
+  it("prefers `data.to` over the global role for SOS", () => {
+    // rider-role user (isRider=true) who is the CUSTOMER on this order → tracker, not /rider/job.
+    expect(pushDestination({ orderId: "o1", kind: "sos", to: "customer" }, true)).toBe("/order/o1");
+    // customer-role global flag but this recipient IS the rider on the order → their job screen.
+    expect(pushDestination({ orderId: "o1", kind: "sos", to: "rider" }, false)).toBe("/rider/job");
+  });
+
+  it("prefers `data.to` over the global role for cancelled", () => {
+    expect(pushDestination({ orderId: "o1", status: "cancelled", to: "customer" }, true)).toBe("/order/o1");
+    expect(pushDestination({ orderId: "o1", status: "cancelled", to: "rider" }, false)).toBe("/rider/job");
+  });
+
+  it("falls back to the global role when `data.to` is absent or unrecognised", () => {
+    // Absent → today's behaviour, unchanged.
+    expect(pushDestination({ orderId: "o1", kind: "sos" }, true)).toBe("/rider/job");
+    expect(pushDestination({ orderId: "o1", status: "cancelled" }, false)).toBe("/order/o1");
+    // A malformed/unexpected `to` value is ignored, not treated as customer.
+    expect(pushDestination({ orderId: "o1", kind: "sos", to: "nonsense" }, true)).toBe("/rider/job");
+    expect(pushDestination({ orderId: "o1", status: "cancelled", to: 7 }, true)).toBe("/rider/job");
+  });
+
   it("routes a new-broadcast alert to the rider board, not the order (a rider who hasn't bid 403s on /order/:id)", () => {
     // notifyNewBroadcast sends { orderId, kind: "broadcast" } to nearby riders who haven't bid yet.
     expect(pushDestination({ orderId: "o1", kind: "broadcast" }, true)).toBe("/rider");

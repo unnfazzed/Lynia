@@ -23,6 +23,25 @@ import { SentOfferCard } from "../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../src/ui/safety";
 import { parseNum } from "../../src/util";
 
+// GPS fix bound: `getCurrentPositionAsync` has no timeout of its own and a cold fix can hang forever,
+// which matters here more than cosmetically — the server records a broadcast-eligible position only
+// `if (online && location)`, so a rider whose first cold fix hangs goes online with NO position and is
+// invisibly excluded from every broadcast. Race the fix against this and fall back to the last-known
+// (cached) fix. Mirrors the same helper in src/ui/MapPicker.tsx (duplicated per the "don't over-abstract"
+// convention — it's ~5 lines and this file may not reach across into ui/).
+const LOCATE_TIMEOUT_MS = 9_000;
+/** Reject if `p` doesn't settle within `ms`. Clears the timer once the race settles so a fast fix
+ *  doesn't leave a dangling timeout firing against an already-settled race. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("location-timeout")), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 /** A live offer the rider has sent — kept on-screen with a countdown to the auction close (C2). */
 interface SentOffer {
   order: OpenOrder;
@@ -38,6 +57,11 @@ export default function RiderHome(): React.ReactElement {
   const pathname = usePathname();
   const qc = useQueryClient();
   const [online, setOnlineState] = useState(false);
+  // Set once the rider explicitly toggles this session (a successful onlineM), so the server-reconcile
+  // below never overrides a deliberate go-offline by re-seeding from a stale `is_online`.
+  const userToggledRef = useRef(false);
+  // Runs the server-online reconcile at most once per mount (see the effect after meQ).
+  const didSeedOnlineRef = useRef(false);
   // "Back to customer" used to be a single unconfirmed tap even while online/mid-job, unmounting the
   // board socket + heartbeat with no warning — a rider could go browse as a customer and lose track of
   // an accepted job, or go effectively deaf to new broadcasts while still marked online server-side.
@@ -47,6 +71,10 @@ export default function RiderHome(): React.ReactElement {
   // S·4 no-GPS gate: location permission was denied — riding needs GPS (parcels near you, navigate
   // to pickups), so this blocks going online with an "open settings" recovery, per the journey map.
   const [locDenied, setLocDenied] = useState(false);
+  // A non-blocking hint shown near the toggle when the OS permission is granted but we still couldn't
+  // get a fix (cold-GPS timeout AND no cached last-known) — so a rider going online with no position
+  // isn't lied to with a confident "new orders arrive live" while being excluded from broadcasts.
+  const [locHint, setLocHint] = useState<string | null>(null);
   const [selected, setSelected] = useState<OpenOrder | null>(null);
   const [fare, setFare] = useState("");
   const [eta, setEta] = useState("");
@@ -96,10 +124,27 @@ export default function RiderHome(): React.ReactElement {
     }
     setLocDenied(false);
     try {
-      const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      // Bound the cold fix so it can't hang indefinitely (see LOCATE_TIMEOUT_MS above).
+      const p = await withTimeout(
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        LOCATE_TIMEOUT_MS,
+      );
       setLoc({ lat: p.coords.latitude, lng: p.coords.longitude });
+      setLocHint(null);
     } catch {
-      /* leave unsorted */
+      // Timed out or failed — fall back to the last-known cached fix (instant, may be null) rather than
+      // leaving `loc` unset, so we go online WITH a position and stay broadcast-eligible.
+      try {
+        const last = await Location.getLastKnownPositionAsync();
+        if (last) {
+          setLoc({ lat: last.coords.latitude, lng: last.coords.longitude });
+          setLocHint(null);
+          return;
+        }
+      } catch {
+        /* fall through to the hint */
+      }
+      setLocHint("Couldn't get your location — nearby orders may not reach you.");
     }
   }, []);
   // Re-read the rider's position every time this screen regains focus (covers the initial mount too,
@@ -176,6 +221,21 @@ export default function RiderHome(): React.ReactElement {
     queryFn: getMe,
     refetchInterval: (query) => (query.state.data?.rider?.kycStatus === "pending" ? 5000 : false),
   });
+  // Reconcile the local toggle with the server's is_online on first load. is_online only flips on an
+  // explicit toggle call — there's no server-side staleness sweep — so if the app was killed mid-shift
+  // (Android kill) and relaunched, the server (and /home's "Online as a rider" chip) still believe the
+  // rider is on shift, but this board booted to `false`, running no heartbeat: the rider is silently
+  // deaf to broadcasts while a stale chip elsewhere says otherwise. Seed `online = true` once so the
+  // heartbeat resumes (and re-records position on its next beat). Runs at most once per mount and never
+  // after an explicit toggle, so a deliberate go-offline is never overridden and there's no loop.
+  useEffect(() => {
+    if (didSeedOnlineRef.current || userToggledRef.current) return;
+    const rider = meQ.data?.rider;
+    if (!rider) return; // wait for a real ["me"] resolve before deciding
+    didSeedOnlineRef.current = true;
+    if (rider.isOnline && !online) setOnlineState(true);
+  }, [meQ.data, online]);
+
   const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
   const rider = meQ.data?.rider;
   const kyc = rider?.kycStatus;
@@ -198,6 +258,8 @@ export default function RiderHome(): React.ReactElement {
   const onlineM = useMutation({
     mutationFn: (next: boolean) => setOnline(next, loc ?? undefined),
     onSuccess: (res) => {
+      // An explicit toggle is authoritative for the rest of this session — freeze out the reconcile.
+      userToggledRef.current = true;
       setOnlineState(res.online);
       setGate(null);
       setError(null);
@@ -558,10 +620,22 @@ export default function RiderHome(): React.ReactElement {
           <EmptyState
             icon="wifi-off"
             title="Can't find your location"
-            message="Turn on location so we can show parcels near you and navigate to pickups. You can't go online without it."
+            message={
+              online
+                ? // The heartbeat is keyed on [online] and keeps firing regardless of locDenied, so a rider
+                  // whose OS permission was revoked mid-shift is STILL online server-side — be honest about
+                  // that and give them a real way out, rather than a dead "you can't go online" wall.
+                  "You're still online, so orders may still reach you — but without location we can't show parcels near you or navigate to pickups. Turn location back on to keep receiving nearby orders, or go offline to end your shift."
+                : "Turn on location so we can show parcels near you and navigate to pickups. You can't go online without it."
+            }
           >
             <Button label="Open location settings" onPress={() => void Linking.openSettings()} />
             <Button label="I've turned it on" variant="ghost" onPress={() => void requestLocation()} />
+            {/* A rider done for the day who revoked location had no way to end their shift from this gate —
+                route it through the same offline toggle so state stays consistent with the normal path. */}
+            {online ? (
+              <Button label="Go offline" variant="ghost" onPress={() => onlineM.mutate(false)} loading={onlineM.isPending} />
+            ) : null}
           </EmptyState>
         ) : (
           <>
@@ -643,6 +717,9 @@ export default function RiderHome(): React.ReactElement {
                 : "You're online — reconnecting to the live board…"
               : "Go online to see and bid on nearby orders."}
           </Text>
+          {locHint ? (
+            <Text style={{ fontSize: 12, color: tokens.color.danger, marginTop: 4 }}>{locHint}</Text>
+          ) : null}
         </Card>
 
         {online && sentOffers.some((s) => s.order.id !== activeJob?.id) ? (
@@ -699,6 +776,11 @@ export default function RiderHome(): React.ReactElement {
               <EmptyState icon="wifi-off" title="Couldn't load nearby orders" message="Check your connection and try again.">
                 <Button label="Retry" onPress={() => void openQ.refetch()} />
               </EmptyState>
+            ) : openQ.isLoading ? (
+              // The initial geo-scoped fetch can take up to the client's ~15s timeout on a slow link.
+              // Show the skeleton while it's in flight (matching rider/job.tsx's convention) instead of
+              // asserting the definitive "No open orders near you" conclusion before the first fetch returns.
+              <SkeletonList />
             ) : ranked.length === 0 ? (
               <EmptyState
                 icon="inbox"

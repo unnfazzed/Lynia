@@ -1,6 +1,15 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
+import { OFFER_WINDOW_MS } from "@lynia/shared";
 import { PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
+
+/**
+ * TTL (seconds) for time-critical broadcast/rebroadcast/riders-available pushes: the offer window. A
+ * "new delivery nearby" (or "a rider's online near you") is worthless once the auction window it refers
+ * to has closed, so the provider drops it rather than delivering it hours later when a dead-zone rider
+ * comes back online. Derived from the shared OFFER_WINDOW_MS — not a new magic number.
+ */
+const BROADCAST_PUSH_TTL_SECONDS = Math.ceil(OFFER_WINDOW_MS / 1000);
 
 type Audience = "customer" | "rider";
 interface Notice {
@@ -43,7 +52,7 @@ const FEED_NOTICES: Record<string, { icon: string; title: string; message: strin
   picked_up: { icon: "check", title: "Parcel collected", message: "Your rider has your parcel and is on the move." },
   en_route_dropoff: { icon: "navigation", title: "On the way to drop-off", message: "Your parcel is on the way to drop-off." },
   delivered: { icon: "check", title: "Delivered", message: "Your parcel was delivered — rate your rider." },
-  completed: { icon: "check", title: "Delivery complete", message: "This trip is done. Thanks for using Lynia." },
+  completed: { icon: "check", title: "Delivery complete", message: "This trip is done. Thanks for using LyniaGo." },
   expired: { icon: "clock", title: "No riders yet", message: "No rider took your price yet. Try raising it and sending again." },
   undelivered: { icon: "triangle-alert", title: "Delivery couldn't be completed", message: "Your rider couldn't hand the parcel over — tap for details." },
   cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "This delivery was cancelled." },
@@ -142,6 +151,23 @@ export class NotificationsService {
       if (order.rebroadcastOfId) cloneByOriginal.set(order.rebroadcastOfId, order.id);
     }
 
+    // Fix 1: for expired orders the customer is viewing, distinguish "riders bid but you didn't pick in
+    // time" from the default "raise your price" nudge. Offer rows are never deleted on expiry (only
+    // flipped to `expired`), so a plain count over the durable rows recovers "did any rider ever bid"
+    // on a cold read, long after the window closed. One batched query for all expired orders in view.
+    const expiredOrderIds = orders
+      .filter((o) => o.riderId !== userId && o.events.some((e) => e.status === "expired"))
+      .map((o) => o.id);
+    const orderIdsWithOffers = new Set<string>();
+    if (expiredOrderIds.length > 0) {
+      const withOffers = await this.prisma.offer.findMany({
+        where: { orderId: { in: expiredOrderIds } },
+        select: { orderId: true },
+        distinct: ["orderId"],
+      });
+      for (const o of withOffers) orderIdsWithOffers.add(o.orderId);
+    }
+
     const rows: NotificationRow[] = [];
     for (const order of orders) {
       // Pick the voice matching what this viewer actually experienced on THIS order — a dual-role user
@@ -184,6 +210,14 @@ export class NotificationsService {
               title: "No riders online nearby",
               message:
                 "Nobody was online near your pickup when the window closed — raising the price wasn't the problem. Try sending again in a bit.",
+            };
+          } else if (event.status === "expired" && orderIdsWithOffers.has(order.id)) {
+            // Riders DID bid but the window closed before the customer picked — "raise your price" is
+            // dishonest here (riders offered at this price), so nudge them to just re-send it (Fix 1).
+            notice = {
+              icon: "clock",
+              title: "The window closed",
+              message: "Riders offered but the window closed before you picked — send it again, no need to raise the price.",
             };
           }
         }
@@ -250,23 +284,31 @@ export class NotificationsService {
         select: { customerId: true, riderId: true },
       });
       if (!order) return;
-      const ids = notice.to
-        .map((aud) => (aud === "customer" ? order.customerId : order.riderId))
-        .filter((id): id is string => !!id)
-        .filter((id) => id !== excludeProfileId);
-      await this.send(ids, { title: notice.title, body: notice.body, data: { orderId, status, ...data } });
+      // Fix 3: stamp each recipient's PER-ORDER role (`to`) onto the push so the client routes by the
+      // order relationship, not the account's global session role — a rider-role account acting as the
+      // customer on THIS order must open /order/:id, not /rider/job. Sent per-audience so each carries
+      // its own `to` (only multi-audience statuses like `cancelled` produce more than one send). The
+      // field is additive on the wire; older clients ignore it and fall back to the session role.
+      for (const aud of notice.to) {
+        const id = aud === "customer" ? order.customerId : order.riderId;
+        if (!id || id === excludeProfileId) continue;
+        await this.send([id], { title: notice.title, body: notice.body, data: { orderId, status, to: aud, ...data } });
+      }
     } catch (err) {
       this.logger.warn(`notifyOrderStatus(${orderId}, ${status}) failed: ${(err as Error).message}`);
     }
   }
 
   /**
-   * Auction-expiry notice to the customer (§5c), in two honest variants. The default nudges the price
-   * ("no rider took your price — try raising it"). But when the window closed with ZERO bids AND zero
-   * riders online nearby (`noSupply`), "raise it" is misleading — the price was never the problem — so
-   * the customer instead hears that nobody was online to take it. Best-effort, never throws.
+   * Auction-expiry notice to the customer (§5c), in three honest variants:
+   *  - `noSupply` (zero bids AND nobody online near the pickup) — "raise it" would be a lie, so the
+   *    customer hears that nobody was online to take it.
+   *  - `hadOffers` (riders DID bid, but the window closed before the customer picked) — again "raise the
+   *    price" is dishonest; riders offered, so the honest nudge is just to send it again.
+   *  - otherwise (no bids but riders WERE around) — the default price nudge.
+   * `noSupply` takes precedence (it's only ever computed when there were no offers). Best-effort, never throws.
    */
-  async notifyOrderExpired(orderId: string, noSupply: boolean): Promise<void> {
+  async notifyOrderExpired(orderId: string, noSupply: boolean, hadOffers = false): Promise<void> {
     try {
       const order = await this.prisma.order.findUnique({
         where: { id: orderId },
@@ -278,7 +320,12 @@ export class NotificationsService {
             title: "No riders online nearby",
             body: "Nobody was online near your pickup just now — tap to get pinged when a rider comes online.",
           }
-        : { title: STATUS_NOTICES.expired.title, body: STATUS_NOTICES.expired.body };
+        : hadOffers
+          ? {
+              title: "The window closed",
+              body: "Riders offered but the window closed before you picked — send it again, no need to raise the price.",
+            }
+          : { title: STATUS_NOTICES.expired.title, body: STATUS_NOTICES.expired.body };
       await this.send([order.customerId], { ...msg, data: { orderId, status: "expired" } });
     } catch (err) {
       this.logger.warn(`notifyOrderExpired(${orderId}) failed: ${(err as Error).message}`);
@@ -314,6 +361,9 @@ export class NotificationsService {
         title: "New delivery nearby",
         body: `Pickup at ${info.pickup} · asking $${info.fare} — tap to bid before it's taken.`,
         data: { orderId, kind: "broadcast" },
+        // Fix 5: drop the push once the auction window has passed — a stale "new delivery nearby" landing
+        // hours later (rider was in a dead zone) is pure noise. Covers the widening rebroadcast too (same kind).
+        ttlSeconds: BROADCAST_PUSH_TTL_SECONDS,
       });
     } catch (err) {
       this.logger.warn(`notifyNewBroadcast(${orderId}) failed: ${(err as Error).message}`);
@@ -335,6 +385,9 @@ export class NotificationsService {
         title: "A rider's online near you",
         body: "Riders are back near your pickup — send your parcel again to get offers.",
         data: { kind: "riders_available" },
+        // Fix 5: time-critical — a rider being online is a fleeting signal, so a push that lands long
+        // after the window is stale (they may be offline again). Drop it rather than deliver it late.
+        ttlSeconds: BROADCAST_PUSH_TTL_SECONDS,
       });
     } catch (err) {
       this.logger.warn(`notifyRidersAvailable failed: ${(err as Error).message}`);
@@ -390,7 +443,7 @@ export class NotificationsService {
    *  callers ignore it). Private; all callers pre-wrap in try/catch. */
   private async send(
     profileIds: string[],
-    msg: { title: string; body: string; data?: Record<string, string> },
+    msg: { title: string; body: string; data?: Record<string, string>; ttlSeconds?: number },
   ): Promise<Set<string>> {
     if (profileIds.length === 0) return new Set();
     const tokens = await this.prisma.deviceToken.findMany({
@@ -401,8 +454,9 @@ export class NotificationsService {
 
     // One batched provider call (FCM sendEach, chunked ≤500) instead of a per-token round-trip fan-out.
     // Results align with `tokens` order, so a dead token is pruned — and a delivery credited — by position.
+    // `ttlSeconds` (when set by a time-critical caller) rides through to the adapter's provider TTL.
     const results = await this.push.sendEach(
-      tokens.map((t) => ({ token: t.token, title: msg.title, body: msg.body, data: msg.data })),
+      tokens.map((t) => ({ token: t.token, title: msg.title, body: msg.body, data: msg.data, ttlSeconds: msg.ttlSeconds })),
     );
 
     // A profile counts as delivered if the provider accepted at least one of its devices (`ok`). A

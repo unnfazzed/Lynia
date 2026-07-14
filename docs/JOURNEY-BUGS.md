@@ -81,7 +81,7 @@ states — the in-code comments cite this finding (R4) directly.
 Rider side: `rider/index.tsx` now shows both a "Try again" button that re-drives the online toggle for
 the `on_hold` gate (the server re-checks and lets a recovered rider through) and the R4 `SupportCallRow`.
 Admin side: an `on_hold` rider previously had no admin action at all (only `suspended` riders got
-Lift/Ban) — `POST /admin/riders/:id/clear-hold` (`admin.controller.ts:188`,
+Lift/Ban) — `POST /admin/riders/:id/clear-hold` (`admin.controller.ts:212`,
 `admin-riders.service.ts` `clearHold`) now gives an admin a real "Clear hold" trigger, surfaced in
 `apps/admin/app/riders/[id]/RiderActions.tsx`. The on_hold copy in `gates.ts` no longer points at the
 impossible self-recovery path — it now reads "Your reliability score dropped too low to keep riding
@@ -98,7 +98,7 @@ not the job; up to 8s idle (or missed) while the customer waits.
 **Fix:** on the selection push/socket event, `router.push("/rider/job")`. — landed: `pushDestination()`
 (`src/push/push.ts`) routes rider-only statuses (`assigned`/`completed`) to `/rider/job`, wired through
 both the live `addNotificationResponseReceivedListener` and a cold-start `getLastNotificationResponseAsync()`
-check (`src/push/use-push-registration.ts:49-57`).
+check (`src/push/use-push-registration.ts:52-76`).
 
 **R7 · No navigation/directions handoff to pickup or drop-off.** — ✅ FIXED by PR #98
 `apps/mobile/app/rider/job.tsx:282` · `src/ui/LiveMap.tsx:37`

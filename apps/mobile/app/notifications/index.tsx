@@ -75,7 +75,7 @@ export default function NotificationsScreen(): React.ReactElement {
           <Button label="Retry" onPress={() => void feedQ.refetch()} />
         </EmptyState>
       ) : (feedQ.data ?? []).length === 0 ? (
-        <EmptyState icon="inbox" title="No notifications yet" message="Offers, delivery updates and account news will show up here." />
+        <EmptyState icon="inbox" title="No notifications yet" message="Delivery updates will show up here." />
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
           {(feedQ.data ?? []).map((n) => (

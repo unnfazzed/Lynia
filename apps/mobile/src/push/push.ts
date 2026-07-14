@@ -22,18 +22,32 @@ function currentPlatform(): "android" | "ios" | "web" | undefined {
 }
 
 /**
- * Acquire this device's **native FCM** token and register it with the API. Returns the token (so the
- * caller can unregister it on sign-out) or `null` when push isn't available — no permission, a
- * simulator, or Expo Go (the device token needs the dev/standalone build with the Firebase config).
+ * Outcome of a registration attempt.
+ *  - `{ registered: true, token }` — the device is now bound; `token` lets the caller unregister on
+ *    sign-out / account switch.
+ *  - `{ registered: false, retry: false }` — TERMINAL: no permission, a simulator, or Expo Go / missing
+ *    Firebase config. The environment can't produce a token this process, so retrying would only spin;
+ *    push stays off until the user changes the OS setting (which re-mounts the flow) or restarts.
+ *  - `{ registered: false, retry: true }` — TRANSIENT: we DID acquire a token, but the register-with-API
+ *    request failed (a dead zone / server blip). Worth retrying when reachability or the foreground returns.
+ */
+export type PushRegistrationResult =
+  | { registered: true; token: string }
+  | { registered: false; retry: boolean };
+
+/**
+ * Acquire this device's **native FCM** token and register it with the API.
  *
  * Deliberately `getDevicePushTokenAsync` (the raw FCM registration token), NOT `getExpoPushTokenAsync`:
  * the backend sends through `firebase-admin` directly (D7), so it needs the FCM token, not an Expo one.
- * Fully best-effort — any failure resolves to `null` and is swallowed; the app works without push.
+ * Fully best-effort — never throws; the app works without push. See {@link PushRegistrationResult} for
+ * how a failure signals whether a retry could ever succeed.
  */
-export async function registerForPushNotificationsAsync(): Promise<string | null> {
+export async function registerForPushNotificationsAsync(): Promise<PushRegistrationResult> {
+  let token: string;
   try {
     // Push tokens are only ever issued to real hardware (incl. dev builds), never simulators.
-    if (!Device.isDevice) return null;
+    if (!Device.isDevice) return { registered: false, retry: false };
 
     // Android 8+ requires a channel before any notification can post.
     if (Platform.OS === "android") {
@@ -49,16 +63,39 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     if (!granted && existing.canAskAgain) {
       granted = (await Notifications.requestPermissionsAsync()).granted;
     }
-    if (!granted) return null;
+    if (!granted) return { registered: false, retry: false }; // user/OS denied — a retry-loop can't fix this
 
     const devToken = await Notifications.getDevicePushTokenAsync();
-    const token = typeof devToken.data === "string" ? devToken.data : null;
-    if (!token) return null;
+    const acquired = typeof devToken.data === "string" ? devToken.data : null;
+    if (!acquired) return { registered: false, retry: false }; // Expo Go / no Firebase config — not transient
+    token = acquired;
+  } catch {
+    // Permission/channel/device-token acquisition failed — environmental (Expo Go, missing config),
+    // not a transient network blip. Degrade silently and don't retry-loop.
+    return { registered: false, retry: false };
+  }
 
+  // We hold a real token; the only remaining step that can fail transiently is the register POST.
+  try {
+    await registerDeviceToken(token, currentPlatform());
+    return { registered: true, token };
+  } catch {
+    // Offline / server blip on the register request itself — worth retrying on recovery/foreground.
+    return { registered: false, retry: true };
+  }
+}
+
+/**
+ * Best-effort: bind a freshly OS/FCM-rotated token to the signed-in profile. A mid-process token
+ * rotation otherwise silently kills push until the next cold start. Returns the token on success (so the
+ * caller can track it for cleanup / drop the superseded one), or `null` if the register request failed.
+ * Never throws.
+ */
+export async function registerRotatedToken(token: string): Promise<string | null> {
+  try {
     await registerDeviceToken(token, currentPlatform());
     return token;
   } catch {
-    // Expo Go / missing Firebase config / offline — degrade silently. Push is never load-bearing.
     return null;
   }
 }
@@ -82,20 +119,35 @@ const RIDER_ONLY_STATUSES = new Set(["assigned", "completed"]);
  * pushed to the counterparty, so a rider belongs on their own job screen, not the customer-voiced
  * tracker. `rebroadcast` carries the FRESH clone's id — follow it to the new auction.
  * Returns null when there's genuinely nowhere to go.
+ *
+ * `data.to` ("customer" | "rider", optional) is the RECIPIENT's actual per-order relationship, stamped
+ * server-side on the two dual-audience pushes (`sos`, `cancelled`). It is authoritative over the global
+ * `isRider` account role for those branches: a rider-role user is routinely the CUSTOMER on an order
+ * they sent themselves, so keying off `isRider` would land them on `/rider/job` ("No active job", or an
+ * unrelated live job of their own) at the most safety-critical tap in the app. When `data.to` is absent
+ * — older in-flight pushes sent before the backend stamped it, or any other push kind — we fall back to
+ * the existing `isRider` logic unchanged.
  */
 export function pushDestination(data: unknown, isRider: boolean): string | null {
   if (typeof data !== "object" || data === null) return null;
-  const { orderId, status, kind } = data as { orderId?: unknown; status?: unknown; kind?: unknown };
+  const { orderId, status, kind, to } = data as {
+    orderId?: unknown;
+    status?: unknown;
+    kind?: unknown;
+    to?: unknown;
+  };
+  // Per-order recipient relationship when the backend stamped it; otherwise the global account role.
+  const toRider = to === "rider" ? true : to === "customer" ? false : isRider;
   if (kind === "broadcast") return "/rider";
   if (kind === "riders_available") return "/home";
   if (kind === "account") return "/rider";
   if (typeof orderId !== "string" || orderId === "") return null;
   // SOS to the counterparty: route the rider to their own job screen; the customer keeps the tracker.
-  if (kind === "sos") return isRider ? "/rider/job" : `/order/${orderId}`;
+  if (kind === "sos") return toRider ? "/rider/job" : `/order/${orderId}`;
   // Rider-bail rebroadcast: the orderId is the fresh clone — follow it to the new auction.
   if (kind === "rebroadcast") return `/order/${orderId}`;
   if (typeof status === "string" && RIDER_ONLY_STATUSES.has(status)) return "/rider/job";
-  if (status === "cancelled" && isRider) return "/rider/job";
+  if (status === "cancelled") return toRider ? "/rider/job" : `/order/${orderId}`;
   return `/order/${orderId}`;
 }
 

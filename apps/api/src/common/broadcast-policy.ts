@@ -19,9 +19,18 @@ export function baseBroadcastRadiusM(): number {
   return Math.min(envPositiveInt(BROADCAST.baseRadiusEnv) ?? BROADCAST.baseRadiusM, BROADCAST.maxRadiusM);
 }
 
-/** Ghost cutoff: max heartbeat age (ms) for a rider to count as reachable — env-overridable. */
+/** Ghost cutoff: max heartbeat age (ms) for a rider to count as reachable — env-overridable. Strict
+ *  (~120 s): used for the customer-facing "riders nearby" count and the offer-selection gate. */
 export function heartbeatMaxAgeMs(): number {
   return envPositiveInt(BROADCAST.heartbeatMaxAgeEnv) ?? BROADCAST.heartbeatMaxAgeMs;
+}
+
+/** Permissive heartbeat cutoff (ms) for the FCM BROADCAST audience specifically — env-overridable.
+ *  Much looser than {@link heartbeatMaxAgeMs} so a backgrounded-but-online rider (whose foreground JS
+ *  heartbeat stopped beating ~120 s after backgrounding) still receives the FCM push that can wake the
+ *  app. See BROADCAST.heartbeatMaxAgeMsForPush. */
+export function heartbeatMaxAgeMsForPush(): number {
+  return envPositiveInt(BROADCAST.heartbeatMaxAgeForPushEnv) ?? BROADCAST.heartbeatMaxAgeMsForPush;
 }
 
 /** The broadcast radius an order of this age has widened to (see policy BROADCAST.expansion). */

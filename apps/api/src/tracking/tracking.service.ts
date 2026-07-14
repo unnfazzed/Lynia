@@ -381,12 +381,19 @@ export class TrackingService implements OnModuleDestroy {
    * WITHOUT Redis (getRedis() null — dev/test + no-REDIS_URL prod): fall through to the PG ST_DWithin
    * path over the GiST geog index, byte-identical to before this Redis prefilter existed (degrade).
    */
-  async nearbyRiders(lat: number, lng: number, radiusM: number): Promise<NearbyRider[]> {
+  async nearbyRiders(
+    lat: number,
+    lng: number,
+    radiusM: number,
+    maxAgeMs: number = heartbeatMaxAgeMs(),
+  ): Promise<NearbyRider[]> {
     const done = this.metrics.startTimer();
     // Ghost cutoff (policy BROADCAST.heartbeatMaxAgeMs): a rider whose app died with is_online stuck
     // true keeps a stale heartbeat, so filtering on it here keeps FCM pushes AND the customer-facing
     // ridersNearby count honest. Applied in BOTH PG legs; matching's stricter 30 s offer gate is separate.
-    const hbCutoff = new Date(Date.now() - heartbeatMaxAgeMs());
+    // `maxAgeMs` defaults to the STRICT cutoff (count/gate callers) — the FCM broadcast audience passes
+    // the permissive heartbeatMaxAgeMsForPush so a backgrounded-but-online rider still gets the push.
+    const hbCutoff = new Date(Date.now() - maxAgeMs);
     const redis = this.getRedis();
     if (redis) {
       const candidates = await this.geoSearchCandidates(redis, lat, lng, radiusM);

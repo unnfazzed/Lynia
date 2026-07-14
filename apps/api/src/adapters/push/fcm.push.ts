@@ -18,6 +18,12 @@ export interface FcmMessage {
   token: string;
   notification: { title: string; body: string };
   data?: Record<string, string>;
+  /** Android TTL — firebase-admin's AndroidConfig.ttl is in MILLISECONDS (it converts to the REST
+   *  "<n>s" duration under the hood). Set only for time-critical (ttlSeconds) messages. */
+  android?: { ttl: number };
+  /** APNs expiry — `apns-expiration` is an ABSOLUTE unix epoch (seconds), NOT a duration; 0 would mean
+   *  "expire immediately", so we send now + ttlSeconds. Set only for time-critical messages. */
+  apns?: { headers: Record<string, string> };
 }
 
 /**
@@ -32,6 +38,14 @@ export function buildFcmMessage(message: PushMessage): FcmMessage {
   // FCM rejects an empty/undefined data map; include it only when there's something to send.
   if (message.data && Object.keys(message.data).length > 0) {
     built.data = message.data;
+  }
+  // Time-critical push (Fix 5): tell both transports to drop it after ttlSeconds rather than deliver it
+  // stale. Android TTL is a duration in MILLISECONDS (firebase-admin's unit); APNs expiration is an
+  // ABSOLUTE epoch in SECONDS, so it's now + ttlSeconds. Both are additive; omitted otherwise ⇒ FCM's
+  // 4-week default (today's behaviour for non-time-critical kinds).
+  if (message.ttlSeconds !== undefined) {
+    built.android = { ttl: message.ttlSeconds * 1000 };
+    built.apns = { headers: { "apns-expiration": String(Math.floor(Date.now() / 1000) + message.ttlSeconds) } };
   }
   return built;
 }

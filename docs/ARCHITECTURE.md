@@ -1104,6 +1104,8 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | `POST /kyc/callback` | KYC | Didit HMAC-signed webhook |
 | `POST /admin/riders/:id/kyc` | KYC | Admin KYC override (manual backstop) |
 | `GET /admin/overview` | Admin | Dashboard counts |
+| `GET /admin/sos` | Admin | Recent SOS events, newest first (DS13-05, `?limit=`) |
+| `POST /admin/sos/:id/ack` | Admin | Acknowledge an SOS event (idempotent, CAS-guarded, audited) |
 | `GET /admin/riders` | Admin | Rider roster / KYC review queue (`?kyc=`) |
 | `GET /admin/riders/:profileId/kyc` | Admin | KYC doc-review detail for one rider (A-02) |
 | `GET /admin/riders/:profileId` | Admin | Rider detail: stats, strikes, cooldown, bike, recent trips (D-2) |

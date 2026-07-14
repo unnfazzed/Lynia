@@ -208,6 +208,9 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
     let updated: Record<string, unknown> | undefined;
     const prisma = {
       profile: {
+        // Fix 2: completeProfile now reads the existing profile to enforce the post-verification ID
+        // freeze. A fresh signup (no rider row / not verified) passes the guard untouched.
+        findUnique: async () => ({ idNumberHash: null, rider: null }),
         update: async (args: { data: Record<string, unknown> }) => {
           updated = args.data;
           return {};
@@ -230,6 +233,7 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
     let counted = false;
     const prisma = {
       profile: {
+        findUnique: async () => ({ idNumberHash: null, rider: null }),
         update: async () => ({}),
         count: async () => {
           counted = true;
@@ -240,6 +244,46 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
     const s = svc(prisma, { KYC_MODE: "auto" });
     expect(await s.completeProfile("p1", data)).toEqual({ ok: true });
     expect(counted).toBe(true);
+  });
+
+  // Fix 2: the KYC-freeze bypass. PATCH /auth/me already blocks a verified rider from swapping their
+  // national ID; this sibling route (PATCH /riders/profile → completeProfile) previously had NO guard,
+  // so a banned rider could launder in a different ID through it. Both routes must enforce it identically.
+  it("blocks a verified rider from changing their frozen national ID (anti-ban-evasion)", async () => {
+    let wrote = false;
+    const prisma = {
+      profile: {
+        // Verified rider whose stored ID hash differs from the incoming one → a genuine CHANGE.
+        findUnique: async () => ({ idNumberHash: "some-other-stored-hash", rider: { kycStatus: "verified" } }),
+        update: async () => {
+          wrote = true;
+          return {};
+        },
+        count: async () => 0,
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto" });
+    await expect(s.completeProfile("p1", data)).rejects.toThrow(/locked after verification/i);
+    // The frozen ID must never be overwritten.
+    expect(wrote).toBe(false);
+  });
+
+  it("allows a verified rider to re-submit the SAME ID (idempotent, not a change)", async () => {
+    let wrote = false;
+    const prisma = {
+      profile: {
+        // Same hash as the incoming ID → not a change → allowed through the freeze guard.
+        findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42"), rider: { kycStatus: "verified" } }),
+        update: async () => {
+          wrote = true;
+          return {};
+        },
+        count: async () => 0,
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto" });
+    expect(await s.completeProfile("p1", data)).toEqual({ ok: true });
+    expect(wrote).toBe(true);
   });
 });
 

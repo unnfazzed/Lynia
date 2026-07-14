@@ -5,6 +5,7 @@ import { Pill } from "../components/StatusPill";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { IconAlert, IconCheck } from "../components/icons";
 import { AcknowledgeButton } from "./AcknowledgeButton";
+import { SosAutoRefresh } from "./SosAutoRefresh";
 
 /** SOS queue (DS13-05 — feed + acknowledgement). Emergency alerts raised on live trips, pending
  *  ones first (then newest first within each group) so an open alert can never scroll out of view
@@ -79,6 +80,9 @@ export default async function SosPage() {
 
   return (
     <main className="content">
+      {/* Poll the live feed while an operator keeps the safety desk open (server component fetches
+          once per navigation otherwise). No-op visually — refreshes the rows in place. */}
+      {connected ? <SosAutoRefresh /> : null}
       <header className="page">
         <h1>SOS</h1>
         <span className="sub">Emergency alerts raised on live trips</span>

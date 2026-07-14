@@ -7,6 +7,14 @@ export interface PushMessage {
   title: string;
   body: string;
   data?: Record<string, string>;
+  /**
+   * Optional time-to-live (seconds) for time-critical pushes. When set, the adapter tells the provider
+   * to DROP the message rather than deliver it after this many seconds (FCM `android.ttl` / APNs
+   * `apns-expiration`) — so a "new delivery nearby" push queued while a rider was offline never lands
+   * hours after the auction died. Omitted (undefined) ⇒ the provider's default lifetime (FCM's 4 weeks),
+   * i.e. today's behaviour for every non-time-critical kind. Opt-in per kind at the call site.
+   */
+  ttlSeconds?: number;
 }
 
 /** Outcome of a single send, so the caller can prune tokens the provider says are permanently dead. */
