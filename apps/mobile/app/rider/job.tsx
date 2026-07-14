@@ -6,6 +6,11 @@ import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { collectedItemCount, shouldShowJobError } from "../../src/logic/journey";
+import {
+  clearPickupChecklistDraft,
+  loadPickupChecklistDraft,
+  savePickupChecklistDraft,
+} from "../../src/logic/pickup-checklist-draft";
 import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { acknowledgeHandback, loadAcknowledgedHandbacks } from "../../src/auth/session";
@@ -41,6 +46,23 @@ export default function RiderJob(): React.ReactElement {
   // Pickup item verification: which line-items the rider has ticked as physically collected. Indexes
   // into order.items; defaults to all ticked when the rider reaches the pickup-verification step.
   const [checkedItems, setCheckedItems] = useState<Set<number>>(() => new Set());
+  // Persisted mirror of checkedItems (keyed to the order it was ticked against) — a process death mid-
+  // verification used to silently revert every manual untick back to "all collected" on relaunch,
+  // since the seeding effect below has no memory of anything before the remount. "loading" (not null)
+  // until the async SecureStore read settles, so the seeding effect can wait for it instead of racing
+  // ahead with the all-ticked default and then visibly flipping.
+  const [checklistDraft, setChecklistDraft] = useState<{ orderId: string; checkedIndexes: number[] } | null | "loading">(
+    "loading",
+  );
+  useEffect(() => {
+    let alive = true;
+    void loadPickupChecklistDraft().then((d) => {
+      if (alive) setChecklistDraft(d);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // R1: the post-pickup "can't complete delivery" reason picker + the frozen terminal once it commits.
   const [undelivering, setUndelivering] = useState(false);
   const [undeliveredDone, setUndeliveredDone] = useState<UndeliveredReason | null>(null);
@@ -299,20 +321,29 @@ export default function RiderJob(): React.ReactElement {
   }, [order?.deliveryOtpAttempts]);
 
   // Default every item ticked when the rider enters the pickup-verification step — they untick only
-  // what's missing. Keyed on primitives so a 6s poll (new object identity, same data) doesn't reset
-  // the rider's manual ticks mid-verification.
+  // what's missing — UNLESS a persisted draft for this exact order says otherwise (a relaunch after a
+  // process death mid-verification). Keyed on primitives so a 6s poll (new object identity, same data)
+  // doesn't reset the rider's manual ticks mid-verification. Waits on checklistDraft leaving "loading"
+  // so it never seeds all-ticked first and then visibly flips once the async read resolves.
   useEffect(() => {
+    if (checklistDraft === "loading") return;
     if (order?.status === "en_route_pickup" && items.length > 0) {
-      setCheckedItems(new Set(items.map((_, i) => i)));
+      if (checklistDraft && checklistDraft.orderId === order.id) {
+        setCheckedItems(new Set(checklistDraft.checkedIndexes.filter((i) => i < items.length)));
+      } else {
+        setCheckedItems(new Set(items.map((_, i) => i)));
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per order/step, not per poll.
-  }, [order?.id, order?.status, items.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per order/step (or once the
+    // draft finishes loading), not per poll.
+  }, [order?.id, order?.status, items.length, checklistDraft]);
 
   const toggleItem = (i: number): void => {
     setCheckedItems((prev) => {
       const next = new Set(prev);
       if (next.has(i)) next.delete(i);
       else next.add(i);
+      if (orderId) void savePickupChecklistDraft({ orderId, checkedIndexes: [...next] });
       return next;
     });
   };
@@ -322,6 +353,7 @@ export default function RiderJob(): React.ReactElement {
     if (!orderId || checkedItems.size === 0) return;
     const confirmedIndexes = [...checkedItems].sort((a, b) => a - b);
     void confirmItems(orderId, { confirmedIndexes }).catch(() => undefined);
+    void clearPickupChecklistDraft();
     advanceM.mutate("picked_up");
   };
 
