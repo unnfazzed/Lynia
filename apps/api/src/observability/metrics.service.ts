@@ -32,7 +32,11 @@ type HistogramName =
   | "client_apifetch_latency_ms";
 
 /** Counter instruments. */
-type CounterName = "match_select_total" | "offers_made_total" | "client_samples_dropped_total";
+type CounterName =
+  | "match_select_total"
+  | "offers_made_total"
+  | "client_samples_dropped_total"
+  | "whatsapp_otp_delivery_failed_total";
 
 /** Fixed label vocabularies — NEVER accept ids/phones/lat-lng/raw-urls as labels (cardinality). */
 export type MatchSelectOutcome = "assigned" | "taken" | "unavailable" | "not_open" | "forbidden" | "error";
@@ -177,6 +181,16 @@ export class MetricsService {
   /** Client-reported count of skew-poisoned samples it discarded before sending (labelled by role only). */
   incClientDropped(count: number, role: ClientRole): void {
     this.counter("client_samples_dropped_total").add(count, { role });
+  }
+
+  /**
+   * A WhatsApp OTP send that Meta's Cloud API accepted (200 on POST /messages) but later reported
+   * `failed` via the delivery-status webhook — the async half of a send failure the synchronous path
+   * has no visibility into. `reason` is Meta's coarse-grained failure title (e.g. "Message Undeliverable",
+   * "Recipient is not a valid Whatsapp user"), never the raw phone number.
+   */
+  incWhatsappOtpDeliveryFailed(reason: string): void {
+    this.counter("whatsapp_otp_delivery_failed_total").add(1, { reason });
   }
 }
 
