@@ -1,8 +1,20 @@
 import * as Notifications from "expo-notifications";
 import { router, usePathname } from "expo-router";
 import { useEffect, useRef } from "react";
+import { AppState, type NativeEventSubscription } from "react-native";
 import type { Session } from "../auth/session";
-import { pushDestination, pushOnce, registerForPushNotificationsAsync, unregisterForPushNotificationsAsync } from "./push";
+import { subscribeReachability } from "../net/reachability";
+import {
+  pushDestination,
+  pushOnce,
+  registerForPushNotificationsAsync,
+  registerRotatedToken,
+  unregisterForPushNotificationsAsync,
+} from "./push";
+
+/** Cap on register RETRIES after a transient failure — enough to ride out a dead zone, few enough to
+ *  never hammer the server. Reachability-recovery and foreground transitions each count toward it. */
+const MAX_REGISTER_RETRIES = 4;
 
 /**
  * Keep this device's push token in sync with auth: register it once a profile is signed in, and drop
@@ -13,6 +25,12 @@ import { pushDestination, pushOnce, registerForPushNotificationsAsync, unregiste
  * changes (sign-out → null, or account switch). It deliberately does NOT run on a hard app kill (the
  * process is gone, no cleanup runs) — so a backgrounded/closed app keeps its token and still receives
  * pushes, which is the whole point.
+ *
+ * Registration is best-effort and resilient: a transient failure (a cold start in a dead zone, a server
+ * blip on the register POST) is retried when the API becomes reachable again OR on the next foreground,
+ * with a small capped budget — so push isn't dead for the whole app lifetime after one early miss. A
+ * terminal failure (permission denied, simulator, Expo Go) is NOT retried. A mid-process OS/FCM token
+ * rotation re-registers the fresh token. None of this ever throws to the caller or blocks the user.
  */
 export function usePushRegistration(session: Session | null): void {
   const profileId = session?.profileId ?? null;
@@ -27,18 +45,82 @@ export function usePushRegistration(session: Session | null): void {
     if (!profileId) return;
     let registered: string | null = null;
     let cancelled = false;
+    let attempts = 0;
+    let reachUnsub: (() => void) | null = null;
+    let appStateSub: NativeEventSubscription | null = null;
 
-    void registerForPushNotificationsAsync().then((token) => {
-      if (cancelled) {
-        // Identity changed before registration finished — undo it so we don't leave a stray token.
-        if (token) void unregisterForPushNotificationsAsync(token);
-      } else {
-        registered = token;
-      }
+    // Tear down the retry triggers once we've either succeeded, exhausted the budget, or hit a terminal
+    // failure — nothing left to react to.
+    const stopRetryTriggers = (): void => {
+      reachUnsub?.();
+      reachUnsub = null;
+      appStateSub?.remove();
+      appStateSub = null;
+    };
+
+    const armRetryTriggers = (): void => {
+      if (reachUnsub || appStateSub) return; // already armed
+      // Recovery from a dead zone: the reachability store flips true the moment the API answers again.
+      reachUnsub = subscribeReachability((reachable) => {
+        if (reachable) attempt();
+      });
+      // A warm resume with connectivity already restored won't emit a reachability transition, so also
+      // retry on the next foreground.
+      appStateSub = AppState.addEventListener("change", (s) => {
+        if (s === "active") attempt();
+      });
+    };
+
+    const attempt = (): void => {
+      if (cancelled || registered) return;
+      void registerForPushNotificationsAsync().then((result) => {
+        if (cancelled) {
+          // Identity changed before registration finished — undo it so we don't leave a stray token.
+          if (result.token) void unregisterForPushNotificationsAsync(result.token);
+          return;
+        }
+        if (result.token) {
+          registered = result.token;
+          stopRetryTriggers();
+          return;
+        }
+        // A null token that isn't worth retrying (permission denied / simulator / Expo Go), or one that
+        // is but whose retry budget is spent — either way, stop reacting.
+        if (!result.retry || attempts >= MAX_REGISTER_RETRIES) {
+          stopRetryTriggers();
+          return;
+        }
+        // Transient register failure — arm the triggers and count this toward the budget so a flapping
+        // link can't loop forever.
+        attempts += 1;
+        armRetryTriggers();
+      });
+    };
+
+    attempt();
+
+    // A mid-process OS/FCM token rotation hands us a fresh token; without re-registering it, push
+    // silently dies until the next cold start. Re-bind it and swap what cleanup will unregister.
+    const rotationSub = Notifications.addPushTokenListener((token) => {
+      const rotated = typeof token.data === "string" ? token.data : null;
+      if (!rotated || cancelled || rotated === registered) return;
+      void registerRotatedToken(rotated).then((bound) => {
+        if (!bound) return;
+        if (cancelled) {
+          void unregisterForPushNotificationsAsync(bound);
+          return;
+        }
+        const superseded = registered;
+        registered = bound;
+        // The old token is now dead FCM-side; drop it server-side too rather than wait for a prune.
+        if (superseded && superseded !== bound) void unregisterForPushNotificationsAsync(superseded);
+      });
     });
 
     return () => {
       cancelled = true;
+      stopRetryTriggers();
+      rotationSub.remove();
       if (registered) void unregisterForPushNotificationsAsync(registered);
     };
   }, [profileId]);

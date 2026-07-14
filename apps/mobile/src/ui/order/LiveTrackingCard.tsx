@@ -46,8 +46,26 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
   /** Re-issue the delivery code (the parent's rotate mutation) — only rendered while active. */
   onReissueCode: () => void;
   reissuing: boolean;
+  /** Fix 2: bumped by the parent when a rider-presence-stale WS event fires. Its only job is to change
+   *  a prop so this memoized card re-renders and re-runs the render-time staleness check the instant
+   *  GPS ticks stop — otherwise nothing re-evaluates `isRiderTrackingStale` once the ticks that drive
+   *  this card's re-renders are exactly what have gone silent. */
+  staleTick?: number;
 }): React.ReactElement {
   const { orderId, status, isActive, connectionState } = props;
+  const isRiderViewer = props.viewerRole === "rider";
+
+  // Fix 2 (belt-and-suspenders): the WS presence-stale event can itself be missed on a flaky link, and
+  // staleness is otherwise only recomputed on a new GPS tick — the very thing that has stopped. While
+  // the trip is active, re-render every 30s so `isRiderTrackingStale` (a render-time `Date.now()` check)
+  // re-evaluates even with no WS event and no new tick ever arriving. Cleaned up on unmount / going
+  // inactive.
+  const [, forceStaleCheck] = React.useState(0);
+  React.useEffect(() => {
+    if (!isActive) return;
+    const iv = setInterval(() => forceStaleCheck((n) => n + 1), 30_000);
+    return () => clearInterval(iv);
+  }, [isActive]);
 
   // The per-tick subscription. The parent screen's observer owns the fetching policy (socket-gated
   // poll fallback, foreground refetch), so this observer exists purely to SUBSCRIBE to the telemetry
@@ -67,7 +85,11 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
   const riderUpdatedAt = telemetry?.updatedAt ?? null;
   const assignedAt = props.events.find((e) => e.status === "assigned")?.createdAt ?? null;
   const riderStale = isRiderTrackingStale({ isActive, riderUpdatedAt, assignedAt, nowMs: Date.now(), escalationMs: PRESENCE_ESCALATION_MS });
-  const trackingHint = riderStale
+  // Fix 1c: the "your rider's location looks paused — call them" copy is written for the CUSTOMER
+  // watching their rider. To a rider viewing their own job it's nonsense (they can't "call" themselves,
+  // and their own location isn't "paused" from their seat) — suppress that specific hint for a rider
+  // viewer and fall back to the neutral on-the-move / waiting copy.
+  const trackingHint = riderStale && !isRiderViewer
     ? "Your rider's location looks paused — call them to check in."
     : !riderPoint
       ? "Waiting for the rider's GPS…"

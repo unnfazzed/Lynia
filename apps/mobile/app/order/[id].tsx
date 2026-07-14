@@ -990,15 +990,37 @@ export default function OrderScreen(): React.ReactElement {
           </>
         ) : null}
 
-        {/* Cancel-anytime (C3). Post-pickup the parcel is on the bike, so a cancel gets a hand-back
-            warning before it fires; pre-pickup cancels straight through. */}
-        {CUSTOMER_CANCELLABLE.has(order.status) ? (
-          cancelConfirm && POST_PICKUP_CANCEL.has(order.status) ? (
+        {/* Cancel-anytime (C3). Fix 1: this is a CUSTOMER control — the server resolves the caller's
+            party server-side and a rider tapping "cancel" takes the full bail penalty (strike +
+            reliability hit + possible cooldown) with none of the rider screen's BailSheet warning. So
+            for a rider viewer we HIDE cancel entirely and instead point them to their own job screen
+            (which has the proper bail flow); the customer keeps cancel. */}
+        {isRiderViewer ? (
+          isActive ? (
+            <Button label="Open your job" variant="ghost" onPress={() => router.push("/rider/job")} />
+          ) : null
+        ) : CUSTOMER_CANCELLABLE.has(order.status) ? (
+          // Fix 4: a cancel with a rider already matched (MATCHED_CANCEL) gets a confirm — an accidental
+          // tap at `assigned`/`en_route_pickup` used to cancel instantly, just like the post-pickup case
+          // now does. Post-pickup ALSO warns the parcel is on the bike; the auction (`open_for_offers`)
+          // stays one-tap (no rider to strand).
+          cancelConfirm && MATCHED_CANCEL.has(order.status) ? (
             <Card style={{ borderColor: tokens.color.danger }}>
-              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>Cancel after pickup?</Text>
-              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
-                Your rider already has the parcel. If you cancel now, you&apos;ll arrange getting it back directly with them — LyniaGo can&apos;t recover it, and an agreed fare isn&apos;t refunded.
-              </Text>
+              {POST_PICKUP_CANCEL.has(order.status) ? (
+                <>
+                  <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>Cancel after pickup?</Text>
+                  <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
+                    Your rider already has the parcel. If you cancel now, you&apos;ll arrange getting it back directly with them — LyniaGo can&apos;t recover it, and an agreed fare isn&apos;t refunded.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>Cancel this delivery?</Text>
+                  <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
+                    Your rider is on their way to collect. Cancelling now lets them go — you can send a fresh request any time.
+                  </Text>
+                </>
+              )}
               <Button label="Yes, cancel this order" onPress={() => { setCancelConfirm(false); cancelM.mutate(); }} loading={cancelM.isPending} />
               <Button label="Keep my order" variant="ghost" onPress={() => setCancelConfirm(false)} />
             </Card>
@@ -1007,7 +1029,7 @@ export default function OrderScreen(): React.ReactElement {
               label="Cancel order"
               variant="ghost"
               onPress={() => {
-                if (POST_PICKUP_CANCEL.has(order.status)) setCancelConfirm(true);
+                if (MATCHED_CANCEL.has(order.status)) setCancelConfirm(true);
                 else cancelM.mutate();
               }}
               loading={cancelM.isPending}
@@ -1024,12 +1046,20 @@ export default function OrderScreen(): React.ReactElement {
         order.status === "expired" ||
         order.status === "delivered" ||
         order.status === "completed" ||
-        order.status === "undelivered" ? (
+        order.status === "undelivered" ||
+        order.status === "cancelled" ? (
+          // Fix 4: `cancelled` now keeps a support entry point too — a cancel (rider bail, dispute, a
+          // mis-tap the customer wants reversed) is exactly a moment someone needs help, and this was
+          // the one terminal that dead-ended with no orderId-scoped help.
           <GetHelpControl orderId={orderId} />
         ) : null}
-        {/* Report / block after a trip (customer → rider). Terminal states only. */}
-        {order.status === "delivered" || order.status === "completed" || order.status === "undelivered" || order.status === "cancelled" ? (
-          <ReportControl orderId={orderId} counterpartyNoun="rider" />
+        {/* Report / block after a trip. Terminal states only. Fix 1: the counterparty noun follows the
+            viewer — a rider reports the "sender", a customer reports the "rider" (mirrors rider/job.tsx).
+            And if no rider was ever assigned (e.g. a cancel during the auction, `order.rider == null`)
+            there's no counterparty to report — hide the control rather than show one whose submit always
+            409s server-side. */}
+        {(order.status === "delivered" || order.status === "completed" || order.status === "undelivered" || order.status === "cancelled") && order.rider != null ? (
+          <ReportControl orderId={orderId} counterpartyNoun={isRiderViewer ? "sender" : "rider"} />
         ) : null}
         <Button label="Back home" variant="ghost" onPress={() => router.replace("/home")} />
         <ErrorText message={mutationError} />

@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared";
 import { QueryClientProvider } from "@tanstack/react-query";
 import Constants from "expo-constants";
-import { Stack } from "expo-router";
+import { Stack, type ErrorBoundaryProps } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
@@ -15,7 +15,7 @@ import { queryClient, wireFocusManager } from "../src/query/client";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { AnalyticsProvider } from "../src/telemetry/analytics";
 import { start as startRum } from "../src/telemetry/rum";
-import { OfflineBanner, ToastProvider } from "../src/ui";
+import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
 import { useAppFonts } from "../src/ui/fonts";
 import ForceUpdateScreen from "./force-update";
 
@@ -61,6 +61,33 @@ function AppNavigator(): React.ReactElement {
   const current = Constants.expoConfig?.version ?? "0.0.0";
   if (isUpdateRequired(current) || isVersionBelow(current, serverMin)) return <ForceUpdateScreen />;
   return <Stack screenOptions={{ headerShown: false }} />;
+}
+
+/**
+ * App-wide render-error safety net. expo-router (v4) auto-mounts an `ErrorBoundary` export from a
+ * layout/route file, catching render-time exceptions in its subtree that would otherwise be an
+ * unrecoverable white-screen crash in production. Deliberately minimal — calm, on-brand copy and a
+ * single "Reload" action that calls expo-router's `retry()` to clear the error state and re-render the
+ * route. Wrapped in its own SafeAreaProvider because this can render above RootLayout's provider tree
+ * (when the layout subtree itself threw), so Screen's insets still resolve. This is a recovery path,
+ * not crash reporting (telemetry is gated separately elsewhere).
+ */
+export function ErrorBoundary({ retry }: ErrorBoundaryProps): React.ReactElement {
+  return (
+    <SafeAreaProvider>
+      <Screen>
+        <View style={{ flex: 1, justifyContent: "center" }}>
+          <EmptyState
+            icon="triangle-alert"
+            title="Something went wrong"
+            message="The app hit an unexpected snag. Tap to reload and pick up where you left off."
+          >
+            <Button label="Reload" onPress={() => void retry()} />
+          </EmptyState>
+        </View>
+      </Screen>
+    </SafeAreaProvider>
+  );
 }
 
 export default function RootLayout(): React.ReactElement | null {
