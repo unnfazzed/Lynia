@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/unnfazzed/Lynia/compare/v0.2.2...v0.2.3) (2026-07-14)
+
+
+### Bug Fixes
+
+* **deep-sweep:** execute deferred DS14-10..15 (KB-BOARD-REVOKE etc.) ([be60830](https://github.com/unnfazzed/Lynia/commit/be60830ea55f731a8eb7532eebdd16c313860f0d))
+
 ## [0.2.2](https://github.com/unnfazzed/Lynia/compare/v0.2.1...v0.2.2) (2026-07-14)
 
 
