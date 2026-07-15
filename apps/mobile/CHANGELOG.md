@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/unnfazzed/Lynia/compare/v0.2.4...v0.3.0) (2026-07-15)
+
+
+### Features
+
+* **wallet:** rider prepaid commission wallet (PR1 core) ([38d265c](https://github.com/unnfazzed/Lynia/commit/38d265ca97157d537290e10ea4d5ba83350e9ee2))
+
 ## [0.2.4](https://github.com/unnfazzed/Lynia/compare/v0.2.3...v0.2.4) (2026-07-15)
 
 
