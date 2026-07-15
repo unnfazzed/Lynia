@@ -17,15 +17,23 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # gitleaks scans full history for committed secrets
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
-      # Fail the build on a known high/critical advisory in the dependency tree (SCA gate).
-      - name: pnpm audit (high+)
-        run: pnpm audit --audit-level high
+      # SCA gate: scans pnpm-lock.yaml directly against the OSV.dev vulnerability database.
+      # Replaces `pnpm audit`, whose upstream endpoints npmjs.org retired (KB-CI-AUDIT-410 — both
+      # the quick and bulk audit endpoints return HTTP 410 as of 2026-07-15); osv-scanner queries
+      # osv.dev directly and has no dependency on that retired endpoint. --min-severity=7 mirrors
+      # the old `pnpm audit --audit-level high` gate (CVSS 7.0+ is the High/Critical band). The
+      # binary is checked against its published SHA256SUMS before being executed.
+      - name: Dependency vulnerability scan (osv-scanner, high+)
+        run: |
+          set -euo pipefail
+          VER=2.4.0
+          BASE="https://github.com/google/osv-scanner/releases/download/v${VER}"
+          curl -sSfL -o osv-scanner_linux_amd64 "${BASE}/osv-scanner_linux_amd64"
+          curl -sSfL -o osv-scanner_SHA256SUMS "${BASE}/osv-scanner_SHA256SUMS"
+          grep " osv-scanner_linux_amd64\$" osv-scanner_SHA256SUMS | sha256sum -c -
+          mv osv-scanner_linux_amd64 osv-scanner
+          chmod +x osv-scanner
+          ./osv-scanner scan -L pnpm-lock.yaml --min-severity=7
       # Secret scanning: catch a credential committed to source or history. Uses the free gitleaks
       # binary directly (no Action-license requirement on private repos).
       - name: Secret scan (gitleaks)
