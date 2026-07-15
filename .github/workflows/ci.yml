@@ -20,9 +20,15 @@ jobs:
       # SCA gate: scans pnpm-lock.yaml directly against the OSV.dev vulnerability database.
       # Replaces `pnpm audit`, whose upstream endpoints npmjs.org retired (KB-CI-AUDIT-410 — both
       # the quick and bulk audit endpoints return HTTP 410 as of 2026-07-15); osv-scanner queries
-      # osv.dev directly and has no dependency on that retired endpoint. --min-severity=7 mirrors
-      # the old `pnpm audit --audit-level high` gate (CVSS 7.0+ is the High/Critical band). The
-      # binary is checked against its published SHA256SUMS before being executed.
+      # osv.dev directly and has no dependency on that retired endpoint. The binary is checked
+      # against its published SHA256SUMS before being executed.
+      #
+      # osv-scanner v2 restructured the CLI: the source scan is `scan source --lockfile=…`, and
+      # `--min-severity` moved off `scan` onto the `fix` command (so the old `scan … --min-severity`
+      # invocation aborted with "flag provided but not defined"). To keep the old
+      # `pnpm audit --audit-level high` gate (CVSS 7.0+ = the High/Critical band) we emit the JSON
+      # report and gate on each advisory group's `max_severity` ourselves. Fails CLOSED: a malformed
+      # report (scan didn't run) is treated as a failure, never a silent pass.
       - name: Dependency vulnerability scan (osv-scanner, high+)
         run: |
           set -euo pipefail
@@ -33,7 +39,19 @@ jobs:
           grep " osv-scanner_linux_amd64\$" osv-scanner_SHA256SUMS | sha256sum -c -
           mv osv-scanner_linux_amd64 osv-scanner
           chmod +x osv-scanner
-          ./osv-scanner scan -L pnpm-lock.yaml --min-severity=7
+          # osv-scanner exits non-zero when it finds ANY vulnerability, so `|| true` lets us inspect
+          # severities instead of aborting on a low-severity hit we intend to ignore.
+          ./osv-scanner scan source --lockfile=pnpm-lock.yaml --format=json --output=osv-results.json || true
+          # A well-formed report always carries a `.results` array; its absence means the scan itself
+          # failed — fail closed rather than treat a broken run as "no vulnerabilities".
+          jq -e 'has("results")' osv-results.json >/dev/null || { echo "::error::osv-scanner produced no valid JSON report"; cat osv-results.json || true; exit 1; }
+          HIGH=$(jq '[.results[]?.packages[]?.groups[]?.max_severity | select(. != null and . != "") | tonumber | select(. >= 7)] | length' osv-results.json)
+          if [ "${HIGH:-0}" -gt 0 ]; then
+            echo "::error::osv-scanner found ${HIGH} High/Critical (CVSS>=7) advisory group(s) in pnpm-lock.yaml"
+            ./osv-scanner scan source --lockfile=pnpm-lock.yaml || true
+            exit 1
+          fi
+          echo "osv-scanner: no High/Critical (CVSS>=7) vulnerabilities in pnpm-lock.yaml."
       # Secret scanning: catch a credential committed to source or history. Uses the free gitleaks
       # binary directly (no Action-license requirement on private repos).
       - name: Secret scan (gitleaks)
