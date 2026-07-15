@@ -706,7 +706,9 @@ describe("RiderService.applyKycResult", () => {
           data = args.data;
           return { count: 1 };
         },
+        findFirst: async () => ({ profileId: "p1" }),
       },
+      auditLog: { create: async () => ({}) },
     };
     expect(await svc(prisma, {}).applyKycResult("sess_1", "verified", eventAt)).toEqual({ updated: 1 });
     // Only applies when newer than the last resolution (replay/reorder can't downgrade a newer decision).
@@ -748,7 +750,9 @@ describe("RiderService.applyKycResult", () => {
           data = args.data;
           return { count: 1 };
         },
+        findFirst: async () => ({ profileId: "p1" }),
       },
+      auditLog: { create: async () => ({}) },
     };
     expect(await svc(prisma, {}).applyKycResult("sess_1", "failed", eventAt, "score_below_threshold")).toEqual({ updated: 1 });
     // The increment rides the SAME where guard that dedupes replays/reorders: a webhook that isn't newer
@@ -777,7 +781,9 @@ describe("RiderService.applyKycResult", () => {
           data = args.data;
           return { count: 1 };
         },
+        findFirst: async () => ({ profileId: "p1" }),
       },
+      auditLog: { create: async () => ({}) },
     };
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date());
     expect(data).not.toHaveProperty("kycAttempts");
@@ -803,16 +809,32 @@ describe("RiderService.applyKycResult", () => {
     expect(audit).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_decline", target: "p1", reasonCode: "score_below_threshold" });
   });
 
-  it("KB-FEED-SYNTH: an audit-log write failure never affects the KYC status write (best-effort)", async () => {
-    const prisma = {
+  it("DS15-06: the status mutation and its audit row are atomic — an audit-write failure rolls the mutation back (no committed-without-audit decision)", async () => {
+    const calls: string[] = [];
+    let committed = false;
+    const prisma: Record<string, unknown> = {
+      // Faithful interactive-transaction fake: run the callback and only mark `committed` once it
+      // resolves. A throw inside propagates and rejects the whole unit — mirroring Postgres rolling the
+      // updateMany back when the audit insert fails. `committed` never flipping ⇒ the mutation is undone.
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+        const result = await fn(prisma);
+        committed = true;
+        return result;
+      },
       rider: {
-        updateMany: async () => ({ count: 1 }),
+        updateMany: async () => { calls.push("mutation"); return { count: 1 }; },
         findFirst: async () => ({ profileId: "p1" }),
       },
-      auditLog: { create: async () => { throw new Error("audit db down"); } },
+      auditLog: { create: async () => { calls.push("audit"); throw new Error("audit db down"); } },
     };
-    // The status write already committed (count 1) — a downstream audit hiccup must not change the result.
-    await expect(svc(prisma, {}).applyKycResult("sess_1", "verified", new Date())).resolves.toEqual({ updated: 1 });
+    // The audit insert fails INSIDE the transaction, so the whole thing rejects — the webhook sees the
+    // error and retries, rather than a swallowed "success" with no audit trail (the pre-DS15-06 behavior).
+    await expect(svc(prisma, {}).applyKycResult("sess_1", "verified", new Date())).rejects.toThrow(/audit db down/);
+    // Critically the transaction never committed: the KYC status write is rolled back along with the
+    // failed audit insert (not left in a committed-without-audit state).
+    expect(committed).toBe(false);
+    // Both writes ran inside the ONE transaction, so they share a rollback boundary.
+    expect(calls).toEqual(["mutation", "audit"]);
   });
 });
 

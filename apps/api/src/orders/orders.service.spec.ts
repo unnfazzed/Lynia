@@ -1133,6 +1133,7 @@ describe("OrdersService.requestNotifyWhenAvailable (2·b1 notify-me)", () => {
     const svc = new OrdersService({} as unknown as PrismaService, {} as OfferExpiryService, tracking, noNotifications, noGateway);
     const res = await svc.requestNotifyWhenAvailable("cust-1", { lat: -17.8, lng: 31.0 });
     // KB-NOTIFY-ORDERID: the optional orderId is threaded through (undefined here — no order in scope).
+    // DS15-09: with no orderId supplied the DB ownership check is skipped entirely (no findUnique call).
     expect(addNotifyRequest).toHaveBeenCalledWith("cust-1", -17.8, 31.0, undefined);
     expect(res).toEqual({ queued: true });
   });
@@ -1141,5 +1142,50 @@ describe("OrdersService.requestNotifyWhenAvailable (2·b1 notify-me)", () => {
     const tracking = { addNotifyRequest: async () => false } as unknown as TrackingService;
     const svc = new OrdersService({} as unknown as PrismaService, {} as OfferExpiryService, tracking, noNotifications, noGateway);
     expect(await svc.requestNotifyWhenAvailable("cust-1", { lat: -17.8, lng: 31.0 })).toEqual({ queued: false });
+  });
+
+  // DS15-09: an orderId in the DTO must belong to the caller before we associate the waiter with it —
+  // otherwise any authenticated profile (e.g. a rider reading live ids off the open board) could
+  // register against a victim's order and hijack the "a rider is nearby" push.
+  it("threads through the caller's OWN orderId after verifying customerId matches", async () => {
+    const addNotifyRequest = vi.fn(async () => true);
+    const findUnique = vi.fn(async () => ({ customerId: "cust-1" }));
+    const prisma = { order: { findUnique } } as unknown as PrismaService;
+    const tracking = { addNotifyRequest } as unknown as TrackingService;
+    const svc = new OrdersService(prisma, {} as OfferExpiryService, tracking, noNotifications, noGateway);
+
+    const res = await svc.requestNotifyWhenAvailable("cust-1", { lat: -17.8, lng: 31.0 }, "ord-own");
+
+    expect(findUnique).toHaveBeenCalledWith({ where: { id: "ord-own" }, select: { customerId: true } });
+    // Ownership confirmed → the real order id is forwarded to the waiter registration.
+    expect(addNotifyRequest).toHaveBeenCalledWith("cust-1", -17.8, 31.0, "ord-own");
+    expect(res).toEqual({ queued: true });
+  });
+
+  it("DROPS a FOREIGN orderId (IDOR) — registers a plain, order-less notify-me instead of associating it", async () => {
+    const addNotifyRequest = vi.fn(async () => true);
+    // The order exists but belongs to a DIFFERENT customer — the attacker passing a victim's live id.
+    const findUnique = vi.fn(async () => ({ customerId: "victim-9" }));
+    const prisma = { order: { findUnique } } as unknown as PrismaService;
+    const tracking = { addNotifyRequest } as unknown as TrackingService;
+    const svc = new OrdersService(prisma, {} as OfferExpiryService, tracking, noNotifications, noGateway);
+
+    await svc.requestNotifyWhenAvailable("attacker-1", { lat: -17.8, lng: 31.0 }, "victim-order");
+
+    // The foreign id is stripped → addNotifyRequest is called with undefined (no cross-party association,
+    // which also HDELs any stale pointer), so the attacker's waiter never carries the victim's order.
+    expect(addNotifyRequest).toHaveBeenCalledWith("attacker-1", -17.8, 31.0, undefined);
+  });
+
+  it("DROPS a non-existent orderId rather than associating a dangling reference", async () => {
+    const addNotifyRequest = vi.fn(async () => true);
+    const findUnique = vi.fn(async () => null); // no such order
+    const prisma = { order: { findUnique } } as unknown as PrismaService;
+    const tracking = { addNotifyRequest } as unknown as TrackingService;
+    const svc = new OrdersService(prisma, {} as OfferExpiryService, tracking, noNotifications, noGateway);
+
+    await svc.requestNotifyWhenAvailable("cust-1", { lat: -17.8, lng: 31.0 }, "ghost-order");
+
+    expect(addNotifyRequest).toHaveBeenCalledWith("cust-1", -17.8, 31.0, undefined);
   });
 });

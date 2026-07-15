@@ -13,9 +13,13 @@ const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789a
 const noStorage = { createReadUrl: async () => "unused://" } as unknown as StorageAdapter;
 /** Suspend/lift/clear-hold fire a best-effort standing-change push; a no-op stub keeps tests off it. */
 const noNotifications = { notifyProfiles: async () => {} } as unknown as NotificationsService;
-/** KB-BOARD-REVOKE: suspend/ban kick the now-ineligible rider off the board rooms (best-effort); a
- *  no-op gateway stub keeps these unit tests off the socket path. A dedicated test spies on it. */
-const noGateway = { kickRiderFromBoard: async () => {} } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
+/** KB-BOARD-REVOKE + DS15-05: suspend/ban kick the now-ineligible rider off the board rooms AND evict
+ *  them from the `rider:geo` Redis index (both best-effort); a no-op gateway stub keeps these unit tests
+ *  off the socket/Redis path. Dedicated tests spy on both. */
+const noGateway = {
+  kickRiderFromBoard: async () => {},
+  evictRiderFromGeo: async () => {},
+} as unknown as import("../tracking/tracking.gateway").TrackingGateway;
 
 /** Decimal-like stub — Prisma returns Decimal objects whose `.toString()`/`.toFixed()` we serialize. */
 const dec = (s: string) => ({ toString: () => s, toFixed: (_n: number) => s });
@@ -392,7 +396,10 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
 
   it("KB-BOARD-REVOKE: suspend AND ban kick the now-ineligible rider off the board rooms post-commit", async () => {
     const kicked: string[] = [];
-    const gateway = { kickRiderFromBoard: async (id: string) => { kicked.push(id); } } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
+    const gateway = {
+      kickRiderFromBoard: async (id: string) => { kicked.push(id); },
+      evictRiderFromGeo: async () => {},
+    } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
 
     const s1 = makeTx();
     const svc1 = new AdminRidersService(s1.prisma as unknown as PrismaService, pii, noStorage, noNotifications, gateway);
@@ -404,6 +411,38 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
 
     // Both standing revocations force the rider off the board so board pushes stop mid-session.
     expect(kicked).toEqual(["r1", "r2"]);
+  });
+
+  it("DS15-05: suspend AND ban ALSO evict the rider from the rider:geo Redis index post-commit", async () => {
+    const evicted: string[] = [];
+    const gateway = {
+      kickRiderFromBoard: async () => {},
+      evictRiderFromGeo: async (id: string) => { evicted.push(id); },
+    } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
+
+    const s1 = makeTx();
+    const svc1 = new AdminRidersService(s1.prisma as unknown as PrismaService, pii, noStorage, noNotifications, gateway);
+    await svc1.suspendRider("admin-1", "r1", { reason: "safety" });
+
+    const s2 = makeTx();
+    const svc2 = new AdminRidersService(s2.prisma as unknown as PrismaService, pii, noStorage, noNotifications, gateway);
+    await svc2.banRider("admin-1", "r2", { reason: "fraud" });
+
+    // A stale geo entry would otherwise crowd real riders out of the GEOSEARCH candidate window.
+    expect(evicted).toEqual(["r1", "r2"]);
+  });
+
+  it("DS15-05: a suspend that 409s (CAS 0 rows) does NOT evict — the rider's standing never changed", async () => {
+    const evicted: string[] = [];
+    const gateway = {
+      kickRiderFromBoard: async () => {},
+      evictRiderFromGeo: async (id: string) => { evicted.push(id); },
+    } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
+    const { prisma } = makeTx({ rider: { accountStatus: "active" }, updateCount: 0 });
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications, gateway);
+    await expect(svc.suspendRider("admin-1", "r1", { reason: "x" })).rejects.toThrow(/refresh and try again/i);
+    // The 409 threw before the post-commit eviction, so no spurious geo removal of a still-active rider.
+    expect(evicted).toEqual([]);
   });
 
   it("KB-BOARD-REVOKE: a suspend that 409s (CAS 0 rows) does NOT kick — the rider's standing never changed", async () => {

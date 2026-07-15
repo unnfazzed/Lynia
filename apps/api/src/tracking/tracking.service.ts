@@ -1,4 +1,4 @@
-import { Inject, Injectable, type OnModuleDestroy } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
 import type IORedis from "ioredis";
 import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
 import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
@@ -71,6 +71,8 @@ const BROADCAST_SENT_TTL_S = 600;
 
 @Injectable()
 export class TrackingService implements OnModuleDestroy {
+  private readonly logger = new Logger(TrackingService.name);
+
   /** Lazily-created live-position client (Redis-backed). Null when REDIS_URL is unset (dev/test),
    *  in which case recordFix falls back to writing every fix straight through to PG. */
   private redis: IORedis | null = null;
@@ -90,7 +92,14 @@ export class TrackingService implements OnModuleDestroy {
   private getRedis(): IORedis | null {
     if (this.redisInit) return this.redis;
     this.redisInit = true;
-    if (this.env.REDIS_URL) this.redis = createRedisClient(this.env.REDIS_URL);
+    if (this.env.REDIS_URL) {
+      this.redis = createRedisClient(this.env.REDIS_URL);
+      // DS15-01: this client backs live-position GEO/SET writes, nearbyRiders, and the notify-me
+      // waitlist. createRedisClient already attaches a baseline `error` listener (so a Redis blip can't
+      // crash the instance); this contextual one aids attribution. Log, never rethrow — every command
+      // path here already try/catches for graceful degradation.
+      this.redis.on("error", (err: Error) => this.logger.warn(`tracking redis client error: ${err.message}`));
+    }
     return this.redis;
   }
 

@@ -66,7 +66,7 @@ export class FcmPush implements PushAdapter {
 
   private async messaging(): Promise<Messaging> {
     if (!this.messagingPromise) {
-      this.messagingPromise = (async () => {
+      const promise = (async () => {
         // firebase-admin v14 is modular — import the sub-paths lazily so nothing loads on the noop path.
         const { getApps, getApp, initializeApp, applicationDefault } = await import("firebase-admin/app");
         const { getMessaging } = await import("firebase-admin/messaging");
@@ -76,6 +76,17 @@ export class FcmPush implements PushAdapter {
           : initializeApp({ credential: applicationDefault(), projectId: this.projectId });
         return getMessaging(app);
       })();
+      // A REJECTED init promise is still truthy, so caching it would make one transient ADC/network
+      // hiccup on the very first push permanently kill all push for this instance's lifetime. Clear the
+      // cached promise on failure so the NEXT call to messaging() retries lazily. This is a plain
+      // "try again next call" — no background retry loop. Callers still see this attempt's rejection.
+      this.messagingPromise = promise;
+      promise.catch(() => {
+        // Only clear if a concurrent caller hasn't already installed a fresh promise.
+        if (this.messagingPromise === promise) {
+          this.messagingPromise = undefined;
+        }
+      });
     }
     return this.messagingPromise;
   }
@@ -101,12 +112,22 @@ export class FcmPush implements PushAdapter {
    */
   async sendEach(messages: PushMessage[]): Promise<PushResult[]> {
     if (messages.length === 0) return [];
+    let messaging: Messaging;
     try {
-      const messaging = await this.messaging();
-      const results: PushResult[] = [];
-      // FCM caps a sendEach batch at 500 messages; chunk anything larger.
-      for (let i = 0; i < messages.length; i += FCM_BATCH_LIMIT) {
-        const batch = messages.slice(i, i + FCM_BATCH_LIMIT);
+      messaging = await this.messaging();
+    } catch (err) {
+      // Init (ADC/credential) failure — nothing can be sent, and it's transient, so never prune.
+      const code = (err as { code?: string }).code ?? "";
+      this.logger.warn(`push sendEach failed to init for ${messages.length} device(s) (${code || "unknown"})`);
+      return messages.map(() => ({ ok: false, invalidToken: false }));
+    }
+    const results: PushResult[] = [];
+    // FCM caps a sendEach batch at 500 messages; chunk anything larger. The try/catch is scoped PER
+    // CHUNK so a transient throw mid-loop (chunk 2 fails after chunk 1 succeeded) isolates to that
+    // chunk — previously-succeeded chunks keep their real results instead of being discarded.
+    for (let i = 0; i < messages.length; i += FCM_BATCH_LIMIT) {
+      const batch = messages.slice(i, i + FCM_BATCH_LIMIT);
+      try {
         const resp = await messaging.sendEach(batch.map(buildFcmMessage));
         for (const r of resp.responses) {
           if (r.success) {
@@ -117,13 +138,14 @@ export class FcmPush implements PushAdapter {
           }
         }
         this.logger.debug(`push batch → ${batch.length} device(s): ${resp.successCount} ok, ${resp.failureCount} failed`);
+      } catch (err) {
+        // A whole-chunk throw is a transport/credential failure (transient) — never prune on it, and
+        // scope the failure to THIS chunk's messages only (not the whole call).
+        const code = (err as { code?: string }).code ?? "";
+        this.logger.warn(`push sendEach chunk failed for ${batch.length} device(s) (${code || "unknown"})`);
+        for (let j = 0; j < batch.length; j += 1) results.push({ ok: false, invalidToken: false });
       }
-      return results;
-    } catch (err) {
-      // A whole-batch throw is a transport/credential failure (transient) — never prune on it.
-      const code = (err as { code?: string }).code ?? "";
-      this.logger.warn(`push sendEach failed for ${messages.length} device(s) (${code || "unknown"})`);
-      return messages.map(() => ({ ok: false, invalidToken: false }));
     }
+    return results;
   }
 }

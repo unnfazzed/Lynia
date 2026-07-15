@@ -1,4 +1,4 @@
-import { Global, Module } from "@nestjs/common";
+import { Global, Logger, Module } from "@nestjs/common";
 import { createRedisClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -25,8 +25,16 @@ import { WhatsappWebhookController } from "./whatsapp-webhook.controller";
     {
       provide: OTP_STORE,
       inject: [ENV],
-      useFactory: (env: Env): OtpStore =>
-        env.REDIS_URL ? new RedisOtpStore(createRedisClient(env.REDIS_URL)) : new InMemoryOtpStore(),
+      useFactory: (env: Env): OtpStore => {
+        if (!env.REDIS_URL) return new InMemoryOtpStore();
+        const client = createRedisClient(env.REDIS_URL);
+        // DS15-01: the OTP + rate-limit client backs OTP send/verify and the fixed-window counters.
+        // createRedisClient already attaches a baseline `error` listener so a Redis blip can't crash the
+        // instance; this contextual one aids attribution (which client blipped). Log, never rethrow.
+        const logger = new Logger("RedisOtpStore");
+        client.on("error", (err: Error) => logger.warn(`otp-store redis client error: ${err.message}`));
+        return new RedisOtpStore(client);
+      },
     },
   ],
   // OTP_STORE is exported so the global ThrottleGuard (registered in AppModule) can reuse the same

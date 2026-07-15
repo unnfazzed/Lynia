@@ -55,3 +55,34 @@ describe("GcsStorage — real V4 signing", () => {
     expect(url).toContain("X-Goog-Signature=");
   });
 });
+
+describe("GcsStorage.deleteObject (DS15-03 right-to-erasure purge)", () => {
+  // Swap the lazily-constructed GCS client for an offline fake so we assert the delete call shape
+  // without any network — the real signing tests above already cover the SDK wiring.
+  const withFakeStorage = (gcs: GcsStorage, fake: unknown) => {
+    (gcs as unknown as { storage: unknown }).storage = fake;
+    return gcs;
+  };
+
+  it("deletes the object with ignoreNotFound (a missing object is a success, not a failure)", async () => {
+    const calls: Array<{ bucket: string; key: string; opts: unknown }> = [];
+    const gcs = withFakeStorage(testGcs(), {
+      bucket: (bucket: string) => ({
+        file: (key: string) => ({
+          delete: async (opts: unknown) => {
+            calls.push({ bucket, key, opts });
+          },
+        }),
+      }),
+    });
+    await gcs.deleteObject("kyc/rider-1/selfie.jpg");
+    expect(calls).toEqual([{ bucket: "lynia-media", key: "kyc/rider-1/selfie.jpg", opts: { ignoreNotFound: true } }]);
+  });
+
+  it("swallows a storage error so an erasure never hard-fails on a bucket hiccup", async () => {
+    const gcs = withFakeStorage(testGcs(), {
+      bucket: () => ({ file: () => ({ delete: async () => { throw new Error("GCS unavailable"); } }) }),
+    });
+    await expect(gcs.deleteObject("kyc/rider-1/selfie.jpg")).resolves.toBeUndefined();
+  });
+});
