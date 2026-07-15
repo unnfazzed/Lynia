@@ -41,6 +41,19 @@ function Harness({ orderId }: { orderId: string }): null {
   return null;
 }
 
+function PresenceHarness({
+  orderId,
+  onCustomerStale,
+  onCustomerRecovered,
+}: {
+  orderId: string;
+  onCustomerStale?: () => void;
+  onCustomerRecovered?: () => void;
+}): null {
+  useRiderJobSocket(orderId, () => {}, onCustomerStale, onCustomerRecovered);
+  return null;
+}
+
 describe("useRiderJobSocket reconnect self-heal", () => {
   // Regression guard: a push missed while the rider's socket was down used to only self-heal via
   // the order:status event — the connect/connect_error handlers didn't refetch, so a rider who
@@ -83,5 +96,70 @@ describe("useRiderJobSocket reconnect self-heal", () => {
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["activeJob"] });
+  });
+});
+
+// Wire payloads run through PresenceStaleEvent/PresenceRecoveredEvent's zod parse (orderId: uuid()) —
+// real UUIDs, not the short "order-N" labels used elsewhere in this file for the untyped mock calls.
+const ORDER_3 = "11111111-1111-4111-8111-111111111113";
+const ORDER_4 = "11111111-1111-4111-8111-111111111114";
+const ORDER_5 = "11111111-1111-4111-8111-111111111115";
+const OTHER_ORDER = "22222222-2222-4222-8222-222222222222";
+
+describe("useRiderJobSocket customer presence (BH-08)", () => {
+  it("fires onCustomerStale only for a matching order's role:customer escalation", () => {
+    const qc = new QueryClient();
+    const stale = jest.fn();
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <PresenceHarness orderId={ORDER_3} onCustomerStale={stale} />
+        </QueryClientProvider>,
+      );
+    });
+    act(() => {
+      mockLastSocket.trigger("presence:stale", { orderId: ORDER_3, role: "customer", lastSeenAt: null, at: "t" });
+    });
+    expect(stale).toHaveBeenCalledTimes(1);
+
+    stale.mockClear();
+    // role:"rider" is the RIDER's OWN staleness, meant for the customer's app — must not self-escalate.
+    act(() => {
+      mockLastSocket.trigger("presence:stale", { orderId: ORDER_3, role: "rider", lastSeenAt: null, at: "t" });
+    });
+    expect(stale).not.toHaveBeenCalled();
+  });
+
+  it("fires onCustomerRecovered on a matching presence:recovered role:customer, clearing the warning", () => {
+    const qc = new QueryClient();
+    const recovered = jest.fn();
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <PresenceHarness orderId={ORDER_4} onCustomerRecovered={recovered} />
+        </QueryClientProvider>,
+      );
+    });
+    act(() => {
+      mockLastSocket.trigger("presence:recovered", { orderId: ORDER_4, role: "customer", at: "t" });
+    });
+    expect(recovered).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a presence:recovered for a different order or the rider's own role", () => {
+    const qc = new QueryClient();
+    const recovered = jest.fn();
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <PresenceHarness orderId={ORDER_5} onCustomerRecovered={recovered} />
+        </QueryClientProvider>,
+      );
+    });
+    act(() => {
+      mockLastSocket.trigger("presence:recovered", { orderId: OTHER_ORDER, role: "customer", at: "t" });
+      mockLastSocket.trigger("presence:recovered", { orderId: ORDER_5, role: "rider", at: "t" });
+    });
+    expect(recovered).not.toHaveBeenCalled();
   });
 });

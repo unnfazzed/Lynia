@@ -10,7 +10,7 @@
  * The end-to-end render behaviour is covered in src/ui/order/__tests__/live-tracking-isolation.test.tsx.
  */
 import type { OrderSnapshot } from "../../api/orders";
-import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, selectRiderTelemetry } from "../order-tracking";
+import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, selectRiderTelemetry, shouldCancelBeforeRebroadcast } from "../order-tracking";
 
 const base: OrderSnapshot = {
   id: "order-1",
@@ -278,5 +278,21 @@ describe("reconcilePendingRating", () => {
 
   it("waits (never discards) when the same order sits at neither delivered nor completed", () => {
     expect(reconcilePendingRating({ pending: { orderId: "o1", score: 5 }, order: { id: "o1", status: "picked_up" } })).toBe("wait");
+  });
+});
+
+// BH-10: the "raise price & send again" CTA is offered while the auction is STILL open (the last-20s
+// urgent nudge, and the "no riders online" empty state) — the one case where the original order needs
+// cancelling first, or submitting the prefilled form opens a second, simultaneously live order for the
+// same parcel. Every other rebroadcast entry point (expired/cancelled/undelivered) is already terminal.
+describe("shouldCancelBeforeRebroadcast", () => {
+  it("cancels first when the original order is still open for offers", () => {
+    expect(shouldCancelBeforeRebroadcast("open_for_offers")).toBe(true);
+  });
+
+  it("does not bother cancelling an already-terminal order", () => {
+    expect(shouldCancelBeforeRebroadcast("expired")).toBe(false);
+    expect(shouldCancelBeforeRebroadcast("cancelled")).toBe(false);
+    expect(shouldCancelBeforeRebroadcast("undelivered")).toBe(false);
   });
 });

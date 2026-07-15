@@ -1,5 +1,5 @@
 import { DELIVERY_OTP_MAX_ATTEMPTS as SHARED_DELIVERY_OTP_MAX_ATTEMPTS, UndeliveredReason } from "@lynia/shared";
-import { DELIVERY_OTP_MAX_ATTEMPTS, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcileRiderJobTerminal } from "../rider-job";
+import { DELIVERY_OTP_MAX_ATTEMPTS, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../rider-job";
 
 describe("DELIVERY_OTP_MAX_ATTEMPTS", () => {
   it("is re-exported from @lynia/shared, not a locally-duplicated copy", () => {
@@ -107,5 +107,35 @@ describe("reconcileRiderJobTerminal", () => {
 
   it("does nothing when there is no persisted marker", () => {
     expect(reconcileRiderJobTerminal({ ...base, persistedTerminal: null })).toBeNull();
+  });
+});
+
+describe("reconcilePendingSenderRating", () => {
+  it("retries a marker that matches the frozen delivered terminal", () => {
+    expect(
+      reconcilePendingSenderRating({ pending: { orderId: "o1", score: 5 }, deliveredOrderId: "o1", confirmed: false }),
+    ).toBe("retry");
+  });
+
+  it("waits when there is no persisted marker", () => {
+    expect(reconcilePendingSenderRating({ pending: null, deliveredOrderId: "o1", confirmed: false })).toBe("wait");
+  });
+
+  it("waits once already confirmed this session, even with a marker still present", () => {
+    expect(
+      reconcilePendingSenderRating({ pending: { orderId: "o1", score: 5 }, deliveredOrderId: "o1", confirmed: true }),
+    ).toBe("wait");
+  });
+
+  it("waits (does not retry) when the marker belongs to a different terminal than the one on screen", () => {
+    expect(
+      reconcilePendingSenderRating({ pending: { orderId: "o1", score: 5 }, deliveredOrderId: "o2", confirmed: false }),
+    ).toBe("wait");
+  });
+
+  it("waits when there is no frozen terminal on screen yet (cold-start ordering)", () => {
+    expect(
+      reconcilePendingSenderRating({ pending: { orderId: "o1", score: 5 }, deliveredOrderId: null, confirmed: false }),
+    ).toBe("wait");
   });
 });

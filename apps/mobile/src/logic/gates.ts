@@ -140,6 +140,16 @@ export function isKycLocked(attempts: number | null | undefined): boolean {
 }
 
 /**
+ * BH-11: whether a denied camera/library permission needs an "Open settings" affordance rather than
+ * just an error string. `canAskAgain: false` means the OS won't show its own prompt again (a prior
+ * "Don't Allow") — the KYC photo is MANDATORY (unlike an optional photo elsewhere in the app), so
+ * without a way to the device's Settings screen this permanently blocks onboarding.
+ */
+export function shouldOfferPermissionSettings(perm: { granted: boolean; canAskAgain: boolean }): boolean {
+  return !perm.granted && !perm.canAskAgain;
+}
+
+/**
  * Whether an order-create error is the service-corridor 4xx ("outside our service area", Q1). Reads a
  * machine code first, then sniffs the message. Kept narrow so an unrelated 4xx (e.g. a validation error)
  * doesn't get mistaken for out-of-area.

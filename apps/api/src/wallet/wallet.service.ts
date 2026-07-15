@@ -286,12 +286,29 @@ export class WalletService {
    *  a follow-on — see the PR body); the intent expires after the 90s window, and the rider can retry. */
   async createTopup(riderId: string, body: CreateTopupRequest): Promise<Topup> {
     await this.assertRider(riderId);
+    // BH-09: idempotent replay — a client-generated key lets a timeout+retry return the SAME pending
+    // intent instead of opening a second one for the same attempt (mirrors OrdersService.create).
+    // Checked before any other work so a replay is cheap.
+    if (body.idempotencyKey) {
+      const existing = await this.prisma.topUp.findFirst({ where: { riderId, idempotencyKey: body.idempotencyKey } });
+      if (existing) return this.toTopup(existing);
+    }
     const amount = Math.min(COMMISSION.maxTopUp, Math.max(COMMISSION.minTopUp, round2(body.amount)));
     const expiresAt = new Date(Date.now() + TOPUP_WINDOW_MS);
-    const topUp = await this.prisma.topUp.create({
-      data: { riderId, rail: body.rail, amount, phone: body.phone, status: "pending", expiresAt },
-    });
-    return this.toTopup(topUp);
+    try {
+      const topUp = await this.prisma.topUp.create({
+        data: { riderId, rail: body.rail, amount, phone: body.phone, status: "pending", expiresAt, idempotencyKey: body.idempotencyKey ?? null },
+      });
+      return this.toTopup(topUp);
+    } catch (err) {
+      // A concurrent replay of the same idempotency key raced us and won (P2002 on the partial unique
+      // (rider_id, idempotency_key) index) — return their intent instead of a spurious 5xx.
+      if (body.idempotencyKey && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const winner = await this.prisma.topUp.findFirst({ where: { riderId, idempotencyKey: body.idempotencyKey } });
+        if (winner) return this.toTopup(winner);
+      }
+      throw err;
+    }
   }
 
   /** Poll a top-up intent. Marks it `expired` if the window elapsed while still pending (so the client

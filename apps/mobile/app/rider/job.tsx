@@ -11,17 +11,21 @@ import {
   loadPickupChecklistDraft,
   savePickupChecklistDraft,
 } from "../../src/logic/pickup-checklist-draft";
-import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
+import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import {
   acknowledgeHandback,
   clearConfirmItemsPending,
   clearRiderJobTerminal,
+  clearSenderRatingPending,
   loadAcknowledgedHandbacks,
   loadConfirmItemsPending,
   loadRiderJobTerminal,
+  loadSenderRatingPending,
   saveConfirmItemsPending,
   saveRiderJobTerminal,
+  saveSenderRatingPending,
+  type PendingSenderRating,
   type RiderJobTerminal,
 } from "../../src/auth/session";
 import { formatMoney } from "../../src/logic/money";
@@ -105,6 +109,25 @@ export default function RiderJob(): React.ReactElement {
   const [otpTries, setOtpTries] = useState(0);
   // Rate-the-sender (4·7): an OPTIONAL post-delivery star, recorded-only — tap-then-submit, no undo.
   const [senderScore, setSenderScore] = useState(0);
+  // BH-07: whether the sender rating is confirmed landed — either this session's own POST succeeded, or
+  // a retry of a durably-persisted marker (below) hit the server's "already rated" 409, which for a
+  // rating (never reversible, one-per-rider) IS confirmation. Drives the thank-you state instead of
+  // `senderRateM.isSuccess` alone, which a fresh mount after an app-kill would never see.
+  const [senderRatingConfirmed, setSenderRatingConfirmed] = useState(false);
+  // A durable "rate-the-sender still pending for order X" marker (persisted the instant the star is
+  // tapped, before the POST resolves) so a full app-kill — not just a lost response — retries on the
+  // next launch. Loaded once on mount; the guard ref stops the reconcile effect below from overlapping.
+  const [pendingSenderRating, setPendingSenderRating] = useState<PendingSenderRating | null>(null);
+  const senderRatingRetryInFlight = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    void loadSenderRatingPending().then((p) => {
+      if (alive) setPendingSenderRating(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // R8 follow-up: order ids the rider has already handed back (tapped "Back to board" on). A cancelled
   // order stays reopenable for 24h, so without this its snapshot keeps re-showing the hand-back prompt
   // on every reopen. Loaded once from the device; a fresh WS cancel is never suppressed (only reopens).
@@ -187,7 +210,9 @@ export default function RiderJob(): React.ReactElement {
   const [cancelledJob, setCancelledJob] = useState<{ collected: boolean; snapshot: OrderSnapshot; cancelledBy: "customer" | "admin" } | null>(null);
   // C5: the customer's app has gone dark on this active job — surface a soft "may be offline" warning
   // so the rider knows the customer might not be seeing live position/status. Cleared on the next
-  // status change (the flow progressing implies things are moving again).
+  // status change (the flow progressing implies things are moving again) OR — BH-08 — the moment the
+  // matching `presence:recovered` arrives, so the warning doesn't linger for the rest of a long leg
+  // sitting at one status just because the customer happened to reconnect mid-leg.
   const [customerStale, setCustomerStale] = useState(false);
   const orderRef = useRef<OrderSnapshot | null>(order);
   orderRef.current = order;
@@ -199,6 +224,9 @@ export default function RiderJob(): React.ReactElement {
       if (orderRef.current) setCancelledJob({ collected: e.collected, snapshot: orderRef.current, cancelledBy: e.cancelledBy ?? "customer" });
     },
     () => setCustomerStale(true),
+    // BH-08: clear the warning the instant the customer's app is confirmed back, rather than only on
+    // the next status change (which, mid-delivery, can be a long wait at one status).
+    () => setCustomerStale(false),
   );
   // 4·b4: only read "reconnecting" after we've been live once (avoid a connect-window flash on mount).
   const wasJobConnected = useRef(false);
@@ -333,14 +361,64 @@ export default function RiderJob(): React.ReactElement {
     // Rate against the frozen delivered order id when we're on that terminal (orderId is null there —
     // the delivered order has left the active feed); fall back to the live order otherwise.
     mutationFn: (score: number) => rateSender(deliveredDone ?? orderId!, { score }),
+    onSuccess: () => {
+      setSenderRatingConfirmed(true);
+      setPendingSenderRating(null);
+      void clearSenderRatingPending();
+    },
     onError: (e) => {
-      // The tap fills the star optimistically (setSenderScore below); roll it back on failure so a
-      // failed POST doesn't leave a falsely-filled star with no acknowledgement — the ErrorText on the
-      // delivered terminal then surfaces why, and the (now-empty) stars invite a retry.
+      // BH-07: a 409 here means "Order already rated" — for a one-per-rider, never-reversible rating,
+      // that's confirmation the tap (or an earlier lost-response retry of it) already landed, not a
+      // failure. Mirrors deliverM/undeliverM's 409-reconciliation: show the thank-you state instead of
+      // rolling back the star with a scary, unrecoverable-looking error.
+      if (e instanceof ApiError && e.status === 409) {
+        setSenderRatingConfirmed(true);
+        setPendingSenderRating(null);
+        void clearSenderRatingPending();
+        return;
+      }
+      // The tap fills the star optimistically (setSenderScore below); roll it back on genuine failure so
+      // a failed POST doesn't leave a falsely-filled star with no acknowledgement — the ErrorText on the
+      // delivered terminal then surfaces why, and the (now-empty) stars invite a retry. The durable
+      // marker (saved on tap, below) survives to retry this on the next reconciliation/relaunch.
       setSenderScore(0);
       fail(e);
     },
   });
+  // BH-07: re-send a pending sender rating against the frozen delivered terminal. Fires once the marker
+  // matches the terminal this session resolved and hasn't been confirmed yet, so a rating dropped by a
+  // full app-kill self-heals the next time the rider is on that same terminal (cold start included, since
+  // reconcileRiderJobTerminal above promotes it right back from its own durable marker).
+  useEffect(() => {
+    const decision = reconcilePendingSenderRating({
+      pending: pendingSenderRating,
+      deliveredOrderId: deliveredDone,
+      confirmed: senderRatingConfirmed,
+    });
+    if (decision !== "retry" || !pendingSenderRating || senderRatingRetryInFlight.current) return;
+    senderRatingRetryInFlight.current = true;
+    const { orderId: pid, score } = pendingSenderRating;
+    void rateSender(pid, { score })
+      .then(() => {
+        setSenderScore(score);
+        setSenderRatingConfirmed(true);
+        setPendingSenderRating(null);
+        void clearSenderRatingPending();
+      })
+      .catch((e) => {
+        // Same 409-is-confirmation reasoning as the mutation's own onError above.
+        if (e instanceof ApiError && e.status === 409) {
+          setSenderScore(score);
+          setSenderRatingConfirmed(true);
+          setPendingSenderRating(null);
+          void clearSenderRatingPending();
+        }
+        // Any other failure (offline, 5xx): leave the marker in place for the next reconciliation pass.
+      })
+      .finally(() => {
+        senderRatingRetryInFlight.current = false;
+      });
+  }, [pendingSenderRating, deliveredDone, senderRatingConfirmed]);
   // R1: record a failed hand-off. On success we freeze a terminal (the order leaves the active feed).
   const undeliverM = useMutation({
     mutationFn: (reason: UndeliveredReason) => markUndelivered(orderId!, reason),
@@ -560,7 +638,7 @@ export default function RiderJob(): React.ReactElement {
           <Card>
             <Text style={{ fontWeight: "700", marginBottom: 2 }}>Rate the sender</Text>
             <Sub>Optional — a no-show or cash problem here protects other riders.</Sub>
-            {senderRateM.isSuccess ? (
+            {senderRatingConfirmed || senderRateM.isSuccess ? (
               <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600" }}>Thanks for the feedback.</Text>
             ) : (
               <View style={{ flexDirection: "row", gap: 4 }}>
@@ -569,6 +647,10 @@ export default function RiderJob(): React.ReactElement {
                     key={n}
                     onPress={() => {
                       setSenderScore(n);
+                      // BH-07: persist BEFORE the POST resolves so a full app-kill (not just a lost
+                      // response) is retried on the next launch by the reconciliation effect above.
+                      void saveSenderRatingPending(deliveredDone, n);
+                      setPendingSenderRating({ orderId: deliveredDone, score: n });
                       senderRateM.mutate(n);
                     }}
                     disabled={senderRateM.isPending}

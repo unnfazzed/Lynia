@@ -9,6 +9,7 @@ import { formatMoney } from "../../src/logic/money";
 import { validateTopupAmount } from "../../src/logic/topup";
 import { useWalletConfig, walletKey, walletLedgerKey } from "../../src/query/use-wallet";
 import { Button, Field, Heading, Icon, Screen, Sub } from "../../src/ui";
+import { randomUuidV4 } from "../../src/util";
 
 type SelfServeRail = "ecocash" | "innbucks" | "omari";
 type Step = "amount" | "wait" | "success" | "timeout" | "declined";
@@ -33,6 +34,11 @@ export default function TopUpScreen(): React.ReactElement {
   const [submitting, setSubmitting] = React.useState(false);
   const [topup, setTopup] = React.useState<Topup | null>(null);
   const [remaining, setRemaining] = React.useState(0);
+  // BH-09: one key per top-up ATTEMPT (not per tap) — a lost-response retry of the same attempt
+  // (user retaps "Send request" after a timeout/network error, still on the amount step) replays this
+  // same key so the server returns the original pending intent instead of opening a second one.
+  // Rotated in reset() below, since that's the one path that starts a genuinely NEW attempt.
+  const [idempotencyKey, setIdempotencyKey] = React.useState<string>(() => randomUuidV4());
 
   // WD-009: bounds come from the server-authoritative config (mirrors the commission rate itself never
   // being hardcoded — wallet.service.ts's design 2A). The bundled COMMISSION constant is only a fallback
@@ -96,7 +102,7 @@ export default function TopUpScreen(): React.ReactElement {
     setSubmitting(true);
     setError(null);
     try {
-      const created = await createTopup({ amount: amountNum, rail, phone: phone.trim() });
+      const created = await createTopup({ amount: amountNum, rail, phone: phone.trim(), idempotencyKey });
       setTopup(created);
       setStep("wait");
     } catch (err) {
@@ -110,6 +116,7 @@ export default function TopUpScreen(): React.ReactElement {
     setTopup(null);
     setError(null);
     setStep("amount");
+    setIdempotencyKey(randomUuidV4()); // BH-09: a genuinely new attempt gets a fresh dedup key
   }
 
   return (

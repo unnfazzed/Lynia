@@ -22,6 +22,7 @@ import {
   type OrderRebroadcastEvent,
   type OrderTakenEvent,
   PRESENCE_ESCALATION_MS,
+  type PresenceRecoveredEvent,
   type PresenceStaleEvent,
   WS_EVENTS,
 } from "@lynia/shared";
@@ -237,7 +238,11 @@ export class TrackingGateway
     p.live += 1;
     p.darkSince = null;
     this.customerPresence.set(orderId, p);
-    this.customerStaleNotified.delete(orderId); // back on the room → re-arm the one-shot escalation
+    // BH-08: only a genuine recovery (this order had actually been escalated) is worth telling the
+    // rider's app about — re-arming on every ordinary subscribe would be a no-op ping most of the time.
+    if (this.customerStaleNotified.delete(orderId)) {
+      this.emitPresenceRecovered(orderId, "customer");
+    }
   }
 
   /**
@@ -522,6 +527,17 @@ export class TrackingGateway
       at: new Date().toISOString(),
     };
     this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.presenceStale, payload);
+  }
+
+  /**
+   * BH-08: a counterparty who was escalated `presence:stale` is back — push `presence:recovered` so the
+   * receiving app can clear its "may be offline" warning immediately instead of only on the order's next
+   * status change (which, for a delivery leg that sits at one status for a while, could be never before
+   * the ride itself ends). Best-effort; never throws.
+   */
+  emitPresenceRecovered(orderId: string, role: PresenceStaleEvent["role"]): void {
+    const payload: PresenceRecoveredEvent = { orderId, role, at: new Date().toISOString() };
+    this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.presenceRecovered, payload);
   }
 
   /**

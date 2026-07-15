@@ -98,6 +98,59 @@ describe("WalletService.createTopup (server-side clamp)", () => {
     const svc = build({}, { rider: { findUnique: async () => null } });
     await expect(svc.createTopup("x", { amount: 10, rail: "ecocash", phone: "0770000000" })).rejects.toThrow(/not a rider/i);
   });
+
+  it("BH-09: a retry with the same idempotency key returns the original pending intent, not a second one", async () => {
+    const create = vi.fn();
+    const existing = { id: "t1", status: "pending", amount: 10, rail: "ecocash", phone: "0770000000", expiresAt: new Date(), initiatedAt: new Date() };
+    const svc = build(
+      {},
+      {
+        rider: { findUnique: async () => ({ profileId: "r1" }) },
+        topUp: { findFirst: async () => existing, create },
+      },
+    );
+    const result = await svc.createTopup("r1", { amount: 10, rail: "ecocash", phone: "0770000000", idempotencyKey: "key-1" });
+    expect(result.id).toBe("t1");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("BH-09: a concurrent replay that races the pre-check (P2002) still returns the winner's intent, not a 500", async () => {
+    const winner = { id: "t2", status: "pending", amount: 10, rail: "ecocash", phone: "0770000000", expiresAt: new Date(), initiatedAt: new Date() };
+    let findFirstCalls = 0;
+    const svc = build(
+      {},
+      {
+        rider: { findUnique: async () => ({ profileId: "r1" }) },
+        topUp: {
+          findFirst: async () => {
+            findFirstCalls += 1;
+            return findFirstCalls === 1 ? null : winner; // no existing row on the pre-check, then the racing winner
+          },
+          create: async () => {
+            throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`rider_id`,`idempotency_key`)", {
+              code: "P2002",
+              clientVersion: "5.22.0",
+            });
+          },
+        },
+      },
+    );
+    const result = await svc.createTopup("r1", { amount: 10, rail: "ecocash", phone: "0770000000", idempotencyKey: "key-2" });
+    expect(result.id).toBe("t2");
+  });
+
+  it("BH-09: two different keys (or no key) each create their own intent — no false-positive dedup", async () => {
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "fresh", status: "pending", amount: data.amount, rail: data.rail, phone: data.phone, expiresAt: data.expiresAt, initiatedAt: new Date(),
+    }));
+    const svc = build(
+      {},
+      { rider: { findUnique: async () => ({ profileId: "r1" }) }, topUp: { findFirst: async () => null, create } },
+    );
+    await svc.createTopup("r1", { amount: 10, rail: "ecocash", phone: "0770000000" });
+    await svc.createTopup("r1", { amount: 10, rail: "ecocash", phone: "0770000000", idempotencyKey: "key-3" });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("WalletService.chargeCommission (0% is a no-op; shadow accrual still fires)", () => {

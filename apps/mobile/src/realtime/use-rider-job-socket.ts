@@ -1,4 +1,4 @@
-import { JobCancelledEvent, PresenceStaleEvent, WS_EVENTS } from "@lynia/shared";
+import { JobCancelledEvent, PresenceRecoveredEvent, PresenceStaleEvent, WS_EVENTS } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
@@ -14,12 +14,16 @@ import { createSocket } from "./socket";
  * screen can freeze a hand-back terminal from the last-known snapshot (the order drops out of
  * `/orders/mine/active` the moment it's cancelled, so we can't refetch it back). `onCustomerStale`
  * fires when the customer's socket has been dark past the escalation threshold, so the rider UI can
- * warn that the customer may not be seeing live updates.
+ * warn that the customer may not be seeing live updates. BH-08: `onCustomerRecovered` fires on the
+ * matching `presence:recovered` role:"customer" — the customer resubscribed after being escalated —
+ * so the rider UI can clear that warning immediately instead of waiting for the order's next status
+ * change (which, mid-delivery, can be a long time coming).
  */
 export function useRiderJobSocket(
   orderId: string | null,
   onCancelled: (e: JobCancelledEvent) => void,
   onCustomerStale?: () => void,
+  onCustomerRecovered?: () => void,
 ): { connected: boolean } {
   const { session } = useAuth();
   const token = session?.accessToken;
@@ -32,6 +36,8 @@ export function useRiderJobSocket(
   cbRef.current = onCancelled;
   const staleRef = useRef(onCustomerStale);
   staleRef.current = onCustomerStale;
+  const recoveredRef = useRef(onCustomerRecovered);
+  recoveredRef.current = onCustomerRecovered;
 
   useEffect(() => {
     if (!orderId || !token) {
@@ -65,6 +71,11 @@ export function useRiderJobSocket(
       const parsed = PresenceStaleEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId || parsed.data.role !== "customer") return;
       staleRef.current?.();
+    });
+    socket.on(WS_EVENTS.presenceRecovered, (raw: unknown) => {
+      const parsed = PresenceRecoveredEvent.safeParse(raw);
+      if (!parsed.success || parsed.data.orderId !== orderId || parsed.data.role !== "customer") return;
+      recoveredRef.current?.();
     });
 
     return () => {
