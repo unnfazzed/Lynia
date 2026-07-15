@@ -21,7 +21,9 @@ const ERASE_BLOCKED_MESSAGE =
 type ErasureStanding = {
   onHold: boolean;
   rider: {
-    accountStatus: RiderAccountStatus;
+    // `string` (not the shared enum) so a Prisma-typed row assigns without nominal friction; compared
+    // against the RiderAccountStatus values below.
+    accountStatus: string;
     onHold: boolean;
     cooldownUntil: Date | null;
     kycAttempts: number;

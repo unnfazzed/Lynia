@@ -1,25 +1,75 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
+import type { StorageAdapter } from "../adapters/storage/storage.interface";
 import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
+import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { PrivacyService } from "./privacy.service";
 
 const env = { GPS_RETENTION_DAYS: 90, SESSION_RETENTION_DAYS: 30 } as Env;
 
+/** Rider standing the DS15-02 erasure gate reads. All fields optional → sensible clean defaults. */
+type RiderStanding = {
+  accountStatus?: string;
+  onHold?: boolean;
+  cooldownUntil?: Date | null;
+  kycAttempts?: number;
+  photoUrl?: string | null;
+  kycRef?: string | null;
+};
+type ProfileInput =
+  | { phone: string; onHold?: boolean; photoUrl?: string | null; rider?: RiderStanding | null }
+  | null;
+
+const buildRider = (r: RiderStanding | null | undefined) =>
+  r
+    ? {
+        accountStatus: r.accountStatus ?? "active",
+        onHold: r.onHold ?? false,
+        cooldownUntil: r.cooldownUntil ?? null,
+        kycAttempts: r.kycAttempts ?? 0,
+        photoUrl: r.photoUrl ?? null,
+        kycRef: r.kycRef ?? null,
+      }
+    : null;
+
 /** Captures the tx.<model>.<op> calls an eraseAccount run makes, so we can assert what was scrubbed. */
 function eraseHarness(
-  profile: { phone: string } | null,
+  profile: ProfileInput,
   activeRide: boolean,
-  placedOrders: Array<{ id: string; pickup: unknown; dropoff: unknown }> = [],
+  placedOrders: Array<{ id: string; pickup: unknown; dropoff: unknown; note?: unknown }> = [],
   // DS-10: the active-ride guard is now ALSO re-checked inside the transaction. Defaults to no ride in
   // the tx (the common case); set true to exercise a ride that appeared between the pre-flight read and
   // the scrub.
   txActiveRide = false,
+  // DS15-02: standing is also re-read + re-asserted INSIDE the tx (TOCTOU). `txStanding` overrides that
+  // in-tx read to model a ban/hold landing between the pre-flight gate and the scrub; the injected
+  // storage/gateway spy the post-commit GCS purge (DS15-03) + geo eviction (DS15-05).
+  extras: {
+    txStanding?: { onHold?: boolean; rider?: RiderStanding | null };
+    storage?: StorageAdapter;
+    gateway?: TrackingGateway;
+  } = {},
 ) {
+  const preflightRider = profile ? buildRider(profile.rider) : null;
+  const preflightProfile = profile
+    ? { id: "p1", phone: profile.phone, photoUrl: profile.photoUrl ?? null, onHold: profile.onHold ?? false, rider: preflightRider }
+    : null;
+  // In-tx re-read: defaults to the pre-flight standing unless an override models a concurrent change.
+  const txStanding = extras.txStanding
+    ? { onHold: extras.txStanding.onHold ?? false, rider: buildRider(extras.txStanding.rider) }
+    : preflightProfile
+      ? { onHold: preflightProfile.onHold, rider: preflightRider }
+      : null;
+
   const calls: Record<string, unknown> = {};
   const orderUpdates: Array<{ where: { id: string }; data: Record<string, unknown> }> = [];
   const tx = {
-    profile: { update: vi.fn(async (a: unknown) => ((calls.profileUpdate = a), {})) },
+    profile: {
+      // DS15-02: the in-tx standing re-read.
+      findUnique: vi.fn(async () => txStanding),
+      update: vi.fn(async (a: unknown) => ((calls.profileUpdate = a), {})),
+    },
     rider: { updateMany: vi.fn(async (a: unknown) => ((calls.riderUpdate = a), { count: 1 })) },
     address: { deleteMany: vi.fn(async () => ((calls.addressDel = true), { count: 1 })) },
     deviceToken: { deleteMany: vi.fn(async () => ((calls.deviceDel = true), { count: 1 })) },
@@ -34,11 +84,11 @@ function eraseHarness(
     },
   };
   const prisma = {
-    profile: { findUnique: async () => (profile ? { id: "p1", phone: profile.phone } : null) },
+    profile: { findUnique: async () => preflightProfile },
     order: { findFirst: async () => (activeRide ? { id: "o1" } : null) },
     $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
   } as unknown as PrismaService;
-  return { svc: new PrivacyService(prisma, env), calls, tx, orderUpdates };
+  return { svc: new PrivacyService(prisma, env, extras.storage, extras.gateway), calls, tx, orderUpdates };
 }
 
 describe("PrivacyService.eraseAccount", () => {
@@ -57,7 +107,10 @@ describe("PrivacyService.eraseAccount", () => {
     await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
 
     const data = (calls.profileUpdate as { data: Record<string, unknown> }).data;
-    expect(data).toMatchObject({ firstName: "Deleted", lastName: "User", email: null, idNumber: null, idNumberHash: null, photoUrl: null });
+    expect(data).toMatchObject({ firstName: "Deleted", lastName: "User", email: null, idNumber: null, photoUrl: null });
+    // DS15-02(b): idNumberHash is a one-way HMAC (never raw PII) and the sole duplicate-ID re-registration
+    // signal — it must SURVIVE anonymisation, so it's no longer in the update payload.
+    expect(data).not.toHaveProperty("idNumberHash");
     expect(data.phone).toBe("erased:p1"); // unique, non-dialable tombstone — the real number is freed
     expect((calls.riderUpdate as { data: Record<string, unknown> }).data).toMatchObject({ kycRef: null, photoUrl: "", isOnline: false });
     expect(calls.addressDel).toBe(true);
@@ -103,6 +156,140 @@ describe("PrivacyService.eraseAccount", () => {
     expect(orderUpdates[0].where).toEqual({ id: "o1" });
     expect(orderUpdates[0].data.pickup).toEqual({ point: { lat: -17.8, lng: 31.0 }, landmark: "Gate 3", contactPhone: null });
     expect(orderUpdates[0].data.dropoff).toEqual({ point: { lat: -17.9, lng: 31.1 }, landmark: "Reception", contactPhone: null });
+  });
+
+  /* ── DS15-02: self-erasure is gated on the caller's standing (no ban/hold/lock evasion) ────────── */
+
+  // A rejected erasure must NOT anonymise: assert the tx.profile.update never fired.
+  const expectRejectedNoWrite = async (
+    profile: ProfileInput,
+    reason: string,
+    extras: { txStanding?: { onHold?: boolean; rider?: RiderStanding | null } } = {},
+  ) => {
+    const { svc, tx } = eraseHarness(profile, false, [], false, extras);
+    let caught: unknown;
+    await svc.eraseAccount("p1").catch((e) => (caught = e));
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toMatchObject({ reason });
+    expect(tx.profile.update).not.toHaveBeenCalled();
+  };
+
+  it("refuses erasure for a BANNED rider (ban-evasion via delete-then-reregister)", async () => {
+    await expectRejectedNoWrite({ phone: "+263771234567", rider: { accountStatus: "banned" } }, "account_banned");
+  });
+
+  it("refuses erasure for a SUSPENDED rider", async () => {
+    await expectRejectedNoWrite({ phone: "+263771234567", rider: { accountStatus: "suspended" } }, "account_suspended");
+  });
+
+  it("refuses erasure for a rider under a (sticky VELOCITY) reliability hold — RH-01", async () => {
+    await expectRejectedNoWrite({ phone: "+263771234567", rider: { onHold: true } }, "account_on_hold");
+  });
+
+  it("refuses erasure for an on-hold CUSTOMER (S·2 hold)", async () => {
+    await expectRejectedNoWrite({ phone: "+263771234567", onHold: true }, "account_on_hold");
+  });
+
+  it("refuses erasure while a cancel-strike cooldown is still in the future", async () => {
+    const cooldownUntil = new Date(Date.now() + 60 * 60 * 1000);
+    await expectRejectedNoWrite({ phone: "+263771234567", rider: { cooldownUntil } }, "cooldown_active");
+  });
+
+  it("refuses erasure for a KYC-locked rider (two declines — A-02)", async () => {
+    await expectRejectedNoWrite({ phone: "+263771234567", rider: { kycAttempts: 2 } }, "kyc_locked");
+  });
+
+  it("allows erasure when a past cooldown has elapsed (not blocked by a stale timestamp)", async () => {
+    const cooldownUntil = new Date(Date.now() - 60 * 60 * 1000);
+    const { svc, tx } = eraseHarness({ phone: "+263771234567", rider: { cooldownUntil } }, false);
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+    expect(tx.profile.update).toHaveBeenCalledOnce();
+  });
+
+  it("TOCTOU: an admin ban landing AFTER the pre-flight gate but before the scrub aborts the erasure", async () => {
+    // Pre-flight standing is clean (active) but the in-tx re-read sees a just-committed ban → reject,
+    // nothing anonymised. Mirrors the DS-10 active-ride mid-erase abort.
+    await expectRejectedNoWrite(
+      { phone: "+263771234567", rider: { accountStatus: "active" } },
+      "account_banned",
+      { txStanding: { onHold: false, rider: { accountStatus: "banned" } } },
+    );
+  });
+
+  /* ── DS15-03: right-to-erasure purges the underlying GCS objects ───────────────────────────────── */
+
+  it("deletes the rider's KYC document + the profile photo from storage after nulling the DB pointers", async () => {
+    const deleted: string[] = [];
+    const storage = {
+      deleteObject: vi.fn(async (key: string) => {
+        deleted.push(key);
+      }),
+    } as unknown as StorageAdapter;
+    const { svc } = eraseHarness(
+      { phone: "+263771234567", photoUrl: "avatars/p1.jpg", rider: { photoUrl: "kyc/p1/doc.jpg" } },
+      false,
+      [],
+      false,
+      { storage },
+    );
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+    // Both object keys captured pre-scrub are purged; kycRef (a Didit session id, not a bucket object)
+    // is NOT passed to storage.
+    expect(deleted).toEqual(["avatars/p1.jpg", "kyc/p1/doc.jpg"]);
+  });
+
+  it("skips the storage purge cleanly when the profile has no stored objects", async () => {
+    const storage = { deleteObject: vi.fn(async () => {}) } as unknown as StorageAdapter;
+    const { svc } = eraseHarness({ phone: "+263771234567", rider: {} }, false, [], false, { storage });
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+    expect((storage.deleteObject as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  /* ── DS15-05: an erased rider is evicted from the rider:geo Redis index ─────────────────────────── */
+
+  it("evicts an erased RIDER from the geo index post-commit (best-effort)", async () => {
+    const evicted: string[] = [];
+    const gateway = {
+      evictRiderFromGeo: vi.fn(async (id: string) => {
+        evicted.push(id);
+      }),
+    } as unknown as TrackingGateway;
+    const { svc } = eraseHarness({ phone: "+263771234567", rider: {} }, false, [], false, { gateway });
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+    expect(evicted).toEqual(["p1"]);
+  });
+
+  it("does NOT evict a plain CUSTOMER (no rider row) from the geo index", async () => {
+    const gateway = { evictRiderFromGeo: vi.fn(async () => {}) } as unknown as TrackingGateway;
+    const { svc } = eraseHarness({ phone: "+263771234567" }, false, [], false, { gateway });
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+    expect((gateway.evictRiderFromGeo as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  /* ── DS15-07: Order.note free-text is scrubbed on the erasing customer's own orders ─────────────── */
+
+  it("nulls Order.note (customer-entered instructions) on the erasing profile's placed orders", async () => {
+    const { svc, orderUpdates } = eraseHarness({ phone: "+263771234567" }, false, [
+      // note present, no waypoint phone → still rewritten to null the note.
+      { id: "o1", pickup: { point: { lat: -17.8, lng: 31.0 } }, dropoff: null, note: "Call 0771111111 if the gate's locked" },
+      // Both a waypoint phone AND a note → both scrubbed in one write.
+      {
+        id: "o2",
+        pickup: { point: { lat: -17.7, lng: 31.2 }, landmark: "Shop", contactPhone: "+263772222222" },
+        dropoff: null,
+        note: "Leave at reception",
+      },
+      // Neither a phone nor a note → no write.
+      { id: "o3", pickup: { point: { lat: -17.6, lng: 31.3 } }, dropoff: null, note: null },
+    ]);
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+
+    expect(orderUpdates.map((u) => u.where.id)).toEqual(["o1", "o2"]);
+    expect(orderUpdates[0].data).toEqual({ note: null });
+    expect(orderUpdates[1].data).toMatchObject({
+      note: null,
+      pickup: { point: { lat: -17.7, lng: 31.2 }, landmark: "Shop", contactPhone: null },
+    });
   });
 });
 
