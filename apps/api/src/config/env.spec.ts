@@ -57,6 +57,17 @@ describe("loadEnv — broadcast reach overrides", () => {
   });
 });
 
+describe("loadEnv — commission wallet", () => {
+  it("reveals the wallet by default (visible from launch, even at 0% commission)", () => {
+    const env = loadEnv({ ...base });
+    expect(env.WALLET_REVEAL).toBe("true");
+    expect(env.COMMISSION_RATE_PCT).toBeUndefined();
+  });
+  it("still accepts an explicit kill-switch to hide it", () => {
+    expect(loadEnv({ ...base, WALLET_REVEAL: "false" }).WALLET_REVEAL).toBe("false");
+  });
+});
+
 describe("loadEnv — production REDIS_URL boot-guard", () => {
   it("rejects production without REDIS_URL (in-memory OTP/rate-limit store is per-instance)", () => {
     expect(() => loadEnv({ ...base, NODE_ENV: "production" })).toThrow(/Invalid environment configuration/);
