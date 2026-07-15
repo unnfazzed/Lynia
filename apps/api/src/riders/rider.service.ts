@@ -9,7 +9,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { SERVICE_CORRIDOR, haversineKm } from "@lynia/shared";
+import { isCommissionActive, resolveCommissionRatePct, SERVICE_CORRIDOR, haversineKm } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
@@ -243,6 +243,17 @@ export class RiderService {
     return { kycStatus: next, mode: this.env.KYC_MODE, verificationUrl: submission.url };
   }
 
+  /** The rider's prepaid commission balance for the online-gate, or undefined when commission is off
+   *  (rate 0) so the gate skips the commission branch entirely. A never-touched account reads as $0. */
+  private async loadCommissionBalance(profileId: string, commissionActive: boolean): Promise<number | undefined> {
+    if (!commissionActive) return undefined;
+    const account = await this.prisma.commissionAccount.findUnique({
+      where: { riderId: profileId },
+      select: { balance: true },
+    });
+    return account ? Number(account.balance) : 0;
+  }
+
   async setOnline(
     profileId: string,
     online: boolean,
@@ -253,11 +264,17 @@ export class RiderService {
       select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
     });
     if (!rider) throw new ForbiddenException("Not a rider");
-    // Full online-gate (Q2): kyc + account standing + reliability on_hold + cooldown. Only enforced
-    // when going ONLINE — a rider can always go offline. The refusal carries a structured `reason` so
-    // the app renders the correct blocked state instead of a generic 403.
+    // Prepaid commission floor (design Flow 2): only load the balance — and only gate on it — once
+    // commission is switched on. At the launch rate (0%) `commissionActive` is false, so this is a
+    // no-op read-skip and the $0 pilot balance never blocks going online.
+    const commissionActive = isCommissionActive(resolveCommissionRatePct(this.env.COMMISSION_RATE_PCT));
+    const commissionBalance = await this.loadCommissionBalance(profileId, commissionActive);
+    const commissionGate = { commissionActive, commissionBalance };
+    // Full online-gate (Q2): kyc + account standing + reliability on_hold + cooldown + commission floor.
+    // Only enforced when going ONLINE — a rider can always go offline. The refusal carries a structured
+    // `reason` so the app renders the correct blocked state instead of a generic 403.
     if (online) {
-      const reason = onlineRefusalReason(rider);
+      const reason = onlineRefusalReason({ ...rider, ...commissionGate });
       if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
       // Q1 service corridor: when the client sends its position, refuse going online outside the launch
       // area so a rider can't take jobs we can't route. Location-optional (skipped if not sent) since an
@@ -297,7 +314,7 @@ export class RiderService {
           where: { profileId },
           select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
         });
-        const reason = now ? onlineRefusalReason(now) : null;
+        const reason = now ? onlineRefusalReason({ ...now, ...commissionGate }) : null;
         if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
         throw new ConflictException("Your account status just changed — refresh and try again.");
       }

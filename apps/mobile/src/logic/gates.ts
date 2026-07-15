@@ -24,9 +24,26 @@ export interface GateError {
  * Q2), `cooldown` (recent cancel cool-off), `out_of_area` (rider is outside the launch service corridor,
  * Q1 — recoverable by moving back into the coverage area).
  */
-export type OnlineGateReason = "kyc" | "kyc_expired" | "suspended" | "banned" | "on_hold" | "cooldown" | "out_of_area";
+export type OnlineGateReason =
+  | "kyc"
+  | "kyc_expired"
+  | "suspended"
+  | "banned"
+  | "on_hold"
+  | "cooldown"
+  | "out_of_area"
+  | "commission_low_balance";
 
-const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = ["kyc", "kyc_expired", "suspended", "banned", "on_hold", "cooldown", "out_of_area"];
+const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = [
+  "kyc",
+  "kyc_expired",
+  "suspended",
+  "banned",
+  "on_hold",
+  "cooldown",
+  "out_of_area",
+  "commission_low_balance",
+];
 
 function isOnlineGateReason(v: string): v is OnlineGateReason {
   return (ONLINE_GATE_REASONS as readonly string[]).includes(v);
@@ -48,6 +65,9 @@ export function onlineGateReason(err: GateError | null | undefined): OnlineGateR
   // still lands on the out-of-area gate rather than a bare error.
   if (isOutOfServiceArea(err)) return "out_of_area";
   const m = (err.message ?? "").toLowerCase();
+  // Commission floor block: the server tags `commission_low_balance`; the message sniff ("top up") is a
+  // best-effort bridge for an older binary that only sees the friendly string.
+  if (m.includes("top up") || m.includes("commission balance")) return "commission_low_balance";
   if (m.includes("on hold") || m.includes("on-hold") || m.includes("on_hold")) return "on_hold";
   // Check banned before suspended: they're distinct states and a message could mention both.
   if (m.includes("banned") || m.includes("ban ")) return "banned";
@@ -95,6 +115,13 @@ export const ONLINE_GATE_COPY: Record<OnlineGateReason, GateCopy> = {
   out_of_area: {
     title: "You're outside the service area",
     message: "You can only go online inside the Harare service area for now. Head back toward the city, then refresh.",
+  },
+  // Calm, specific, actionable — and explicitly not punitive. The go-online screen deep-links the CTA
+  // into the wallet's top-up flow.
+  commission_low_balance: {
+    title: "Top up to keep riding",
+    message:
+      "Your commission balance is below the floor to go online. This isn't a fine — top up your prepaid balance and you're straight back on.",
   },
 };
 

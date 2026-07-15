@@ -4,12 +4,41 @@ import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../src/logic/money";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
-import { Button, Card, EmptyState, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
+import { useWallet, useWalletConfig } from "../../src/query/use-wallet";
+import { Button, Card, EmptyState, Heading, Icon, Screen, SkeletonList, Sub } from "../../src/ui";
 
 function fmtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " · " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/** The compact commission-wallet entry row (design D4/Pass-1). Shown only when the wallet is revealed
+ *  (server flag). One money number, tabular, chevron — tapping opens the dedicated Wallet screen. */
+function CommissionRow(): React.ReactElement | null {
+  const router = useRouter();
+  const { config } = useWalletConfig();
+  const { wallet } = useWallet();
+  if (!config?.enabled) return null;
+  return (
+    <Card>
+      <Pressable
+        onPress={() => router.push("/wallet")}
+        accessibilityRole="button"
+        accessibilityLabel={`Commission balance ${wallet ? formatMoney(wallet.balance) : ""}. Open your wallet.`}
+        style={{ flexDirection: "row", alignItems: "center" }}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Commission balance</Text>
+          <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>Prepaid — top up to keep riding</Text>
+        </View>
+        <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, marginRight: 4, fontVariant: ["tabular-nums"] }}>
+          {wallet ? formatMoney(wallet.balance) : "—"}
+        </Text>
+        <Icon name="chevron-right" size={20} color={tokens.color.muted} />
+      </Pressable>
+    </Card>
+  );
 }
 
 export default function EarningsScreen(): React.ReactElement {
@@ -28,6 +57,9 @@ export default function EarningsScreen(): React.ReactElement {
     <Screen>
       <Heading>Earnings</Heading>
       <Sub>What you've agreed and delivered.</Sub>
+
+      {/* Commission wallet entry — hidden until the server reveals it (pre-flip riders see nothing here). */}
+      <CommissionRow />
 
       {showingStale ? (
         <View style={{ marginBottom: tokens.space.sm }}>

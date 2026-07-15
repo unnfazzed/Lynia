@@ -162,6 +162,32 @@ export const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.coerce.number().int().positive().optional(),
   ),
+  // --- Commission wallet (policy COMMISSION, docs/plans/2026-rider-wallet-design.md) ---
+  // The commission "flip" is an ENV change, not a code deploy (design OV-2A): this overrides the
+  // bundled COMMISSION.ratePct default (0). Launch = unset/0 (no debits, wallet hidden); the flip sets
+  // it to the calibrated take-rate (e.g. 10). Clamped [0,100] and resolved in ONE place
+  // (resolveCommissionRatePct); a malformed value falls back to the launch default rather than charging
+  // a wrong rate. "" (deploy injects it when the Variable is unset) coerces to absent. NEVER hardcode a
+  // percentage anywhere else — read the resolved rate the API serves in /wallet/config.
+  COMMISSION_RATE_PCT: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.coerce.number().min(0).max(100).optional(),
+  ),
+  // Shadow-accrual rate (%) used during the 0% period (design OV-5A): every completion logs the
+  // would-be commission at this rate (never a ledger row) so the debit computation soaks on real
+  // traffic and finance has data to calibrate the real rate + the floor before the flip. Default 10.
+  COMMISSION_SHADOW_RATE_PCT: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.coerce.number().min(0).max(100).default(10),
+  ),
+  // Server-driven wallet visibility flag (design OV-5A). The rider-facing wallet surfaces (Earnings
+  // balance row + Wallet route) stay hidden until this is true OR the rate flips (>0). Lets internal/
+  // test riders see the UI early to exercise it, and keeps a silent "commission" tab off recruiting
+  // riders' screens during the 0% period. "true"/"false"; default off.
+  WALLET_REVEAL: z.enum(["true", "false"]).default("false"),
+  // Per-entry cap (USD) on an ops manual credit — an abuse backstop on the admin credit path
+  // (design OV-3A). Default $50 (= COMMISSION.maxTopUp).
+  WALLET_MANUAL_CREDIT_CAP_USD: z.coerce.number().positive().default(50),
 }).superRefine((env, ctx) => {
   // The boot-guards below fail LOUD in production rather than let the API come up in an insecure or
   // half-configured state. Each stays permissive in dev/test so local work and CI are unaffected.

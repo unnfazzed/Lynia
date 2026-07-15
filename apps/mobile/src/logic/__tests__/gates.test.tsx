@@ -39,6 +39,14 @@ describe("onlineGateReason (rider online-gate refusal)", () => {
     expect(ONLINE_GATE_COPY.out_of_area.message).toContain("service area");
   });
 
+  it("maps the commission low-balance block off the code and the friendly message", () => {
+    expect(onlineGateReason({ code: "commission_low_balance" })).toBe("commission_low_balance");
+    expect(onlineGateReason({ message: "Top up your commission balance to keep riding" })).toBe("commission_low_balance");
+    // Calm, explicitly non-punitive copy (design storyboard: "blocked by a rule, not punished").
+    expect(ONLINE_GATE_COPY.commission_low_balance.title).toBeTruthy();
+    expect(ONLINE_GATE_COPY.commission_low_balance.message.toLowerCase()).toContain("isn't a fine");
+  });
+
   it("keeps banned distinct from suspended (they are different states)", () => {
     expect(onlineGateReason({ code: "banned" })).not.toBe("suspended");
     expect(ONLINE_GATE_COPY.banned.title).not.toBe(ONLINE_GATE_COPY.suspended.title);

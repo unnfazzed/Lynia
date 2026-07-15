@@ -118,24 +118,63 @@ export const SERVICE_CORRIDOR = {
 export const COMMISSION = {
   /** How commission is collected. `prepaid_per_ride` = deducted per completed ride from a pre-funded balance. */
   model: "prepaid_per_ride" as const,
-  /** Commission as a percentage of the amount paid per ride. 0 during the launch period (nothing deducted). */
+  /**
+   * DEFAULT commission rate as a percentage of the amount paid per ride — the bundled fallback the
+   * mobile app reads OFFLINE. `0` during the launch period (nothing deducted). **This is never the
+   * authoritative rate at runtime:** the server resolves the live rate from the `COMMISSION_RATE_PCT`
+   * env override ({@link resolveCommissionRatePct}) and hands it to every client in the `/wallet/config`
+   * payload (design decision 2A — server-authoritative rate). The "flip" (0 → e.g. 10) is that env
+   * change, not a code deploy. Nothing else in the codebase may hardcode a percentage — read the
+   * resolved rate instead.
+   */
   ratePct: 0,
   /**
-   * Minimum commission-account balance (USD) to stay online. Below this the rider is prompted to top up
-   * and blocked from accepting new rides so the balance can't go negative. Unconfirmed assumption — tune.
+   * Minimum commission-account balance (USD) to stay online. Below this a rider on a >0% rate is
+   * prompted to top up and blocked from going online (the gate stops the NEXT ride, never a parcel
+   * already delivered). Unconfirmed assumption — tune before the flip.
    */
   lowBalanceBlockBelow: 2,
-  /** Suggested minimum top-up (USD) — a floor for the (deferred) top-up flow. Unconfirmed assumption. */
+  /** Minimum top-up (USD) — the floor for the top-up flow, and the per-active-rider grace credit size. */
   minTopUp: 5,
+  /** Maximum top-up (USD) per request — clamps a single prepaid deposit. */
+  maxTopUp: 50,
+  /**
+   * Grace / starting credit (USD) granted once per active rider at the flip, so flip day doesn't
+   * instantly gate the whole fleet offline at a $0 balance below the floor. Equals {@link COMMISSION.minTopUp}.
+   */
+  graceCredit: 5,
 } as const;
 
+/** Env var a deploy sets to override {@link COMMISSION.ratePct} at runtime — the "flip" operation. */
+export const COMMISSION_RATE_PCT_ENV = "COMMISSION_RATE_PCT";
+
 /**
- * Commission owed on a single completed ride: {@link COMMISSION.ratePct} of the amount paid, 2dp.
- * At the launch rate (0%) this is 0, so no balance is touched. This is the per-ride amount the prepaid
- * account is debited by when the wallet ships.
+ * Resolve the effective commission rate (%) from an optional env override, clamped to a sane [0,100]
+ * and defaulting to {@link COMMISSION.ratePct} when unset/blank/invalid. This is the ONE place the
+ * "flip" is interpreted — the API calls it at startup and serves the result to every client, so a
+ * malformed override can never silently charge a wrong rate. A negative or non-numeric value falls
+ * back to the launch default rather than throwing (fail-safe: never accidentally over-charge).
  */
-export function perRideCommission(amountPaid: number): number {
-  return Math.round(amountPaid * (COMMISSION.ratePct / 100) * 100) / 100;
+export function resolveCommissionRatePct(raw: string | number | undefined | null): number {
+  if (raw === undefined || raw === null || raw === "") return COMMISSION.ratePct;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n) || n < 0) return COMMISSION.ratePct;
+  return Math.min(100, n);
+}
+
+/** Whether commission is switched on — a strictly positive rate. At 0 nothing is debited and the
+ *  low-balance gate must never fire (see the gate guard in the API online-gate). */
+export function isCommissionActive(ratePct: number): boolean {
+  return ratePct > 0;
+}
+
+/**
+ * Commission owed on a single completed ride: `ratePct` of the amount paid, 2dp. At the launch rate
+ * (0%) this is 0, so no balance is touched. Pass the resolved server rate (never assume the bundled
+ * constant); it defaults to {@link COMMISSION.ratePct} only for callers that predate the flip override.
+ */
+export function perRideCommission(amountPaid: number, ratePct: number = COMMISSION.ratePct): number {
+  return Math.round(amountPaid * (ratePct / 100) * 100) / 100;
 }
 
 /**
