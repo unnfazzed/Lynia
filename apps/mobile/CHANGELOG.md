@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.4](https://github.com/unnfazzed/Lynia/compare/v0.2.3...v0.2.4) (2026-07-15)
+
+
+### Bug Fixes
+
+* **bughunt:** remediate 2026-07-14 night bug-hunt findings BH-03..BH-06 ([#248](https://github.com/unnfazzed/Lynia/issues/248)) ([8d6703a](https://github.com/unnfazzed/Lynia/commit/8d6703a6a2aafada0ec1d2dc16aac4ca7f62a0a3))
+* **ux:** 2026-07-15 UX review — rider terminal durability, zod error honesty, push routing gaps ([cef861a](https://github.com/unnfazzed/Lynia/commit/cef861aa8f344ee3e145538527a7bff141e7b3bd))
+
 ## [0.2.3](https://github.com/unnfazzed/Lynia/compare/v0.2.2...v0.2.3) (2026-07-14)
 
 
