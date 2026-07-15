@@ -372,58 +372,66 @@ export class RiderService {
     eventAt: Date,
     reason?: string | null,
   ): Promise<{ updated: number }> {
-    const res = await this.prisma.rider.updateMany({
-      where: { kycRef, OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] },
-      data: {
-        kycStatus: status,
-        idVerified: status === "verified",
-        kycResolvedAt: eventAt,
-        // Record the auto-decline reason (Didit score below the threshold) so the rider app can show
-        // why, and clear any stale reason on a verify.
-        ...(status === "failed" ? { kycDeclineReason: reason ?? null } : { kycDeclineReason: null }),
-        // F-13: a vendor DECLINE bumps the A-02 attempt counter too, so the auto path throttles retries
-        // exactly like the manual admin decline does — without this, auto-mode retries were uncapped,
-        // each minting a fresh paid vendor session. The increment rides the SAME monotonic guard as the
-        // rest of this updateMany (kycRef + kycResolvedAt null/older than eventAt): a webhook REPLAY or
-        // out-of-order delivery matches 0 rows (an exact replay has the same eventAt → not `lt` → no
-        // match), so it can't double-count. Only a genuinely new decline on a fresh ref (retryKyc mints
-        // a new kycRef and clears kycResolvedAt) increments again → the second decline locks at >= 2.
-        ...(status === "failed" ? { kycAttempts: { increment: 1 } } : {}),
-        // An expiry (1·b2) is not a decline: reset the A-02 attempt counter so re-verification isn't
-        // trapped by an ancient decline the rider already recovered from before they were verified.
-        ...(status === "expired" ? { kycAttempts: 0 } : {}),
-      },
-    });
-    // Best-effort: tell the rider their ID check resolved (nothing surfaced this before). Only when the
-    // update actually applied (res.count > 0 — not a stale/replayed webhook) and only for the two
-    // outcomes that change what the rider can do; an `expired` is handled by its own re-verify prompt.
-    if (res.count > 0 && (status === "verified" || status === "failed")) {
-      // kycRef is unique → at most one rider. Resolve the profile to notify; a lookup/notify failure is
-      // swallowed and can NEVER fail or roll back the webhook write above.
-      try {
-        const rider = await this.prisma.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
+    // DS15-06: the CAS status mutation AND its AuditLog row commit in ONE transaction — matching the
+    // manual adminSetKyc path and admin-riders.service's suspend/lift/ban CAS+audit pairs. Previously the
+    // audit row was a separate post-commit `create` in its own warn-only try/catch: if that insert failed
+    // (rare, but real — e.g. a connection blip right after the first commit), an automated KYC
+    // approve/decline committed with ZERO audit trail, and via KB-FEED-SYNTH the rider silently lost their
+    // account-status feed row too (feedForUser derives it from this AuditLog table). Making the pair atomic
+    // means an audit-write failure rolls the status write back, so the webhook simply retries — never a
+    // committed-without-audit decision. The monotonic/replay-safe guards (F-13 counter, the kycRef +
+    // kycResolvedAt CAS `where`) are unchanged: still a guarded `updateMany`, not a blind `update`.
+    const { updated, notifyProfileId } = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.rider.updateMany({
+        where: { kycRef, OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] },
+        data: {
+          kycStatus: status,
+          idVerified: status === "verified",
+          kycResolvedAt: eventAt,
+          // Record the auto-decline reason (Didit score below the threshold) so the rider app can show
+          // why, and clear any stale reason on a verify.
+          ...(status === "failed" ? { kycDeclineReason: reason ?? null } : { kycDeclineReason: null }),
+          // F-13: a vendor DECLINE bumps the A-02 attempt counter too, so the auto path throttles retries
+          // exactly like the manual admin decline does — without this, auto-mode retries were uncapped,
+          // each minting a fresh paid vendor session. The increment rides the SAME monotonic guard as the
+          // rest of this updateMany (kycRef + kycResolvedAt null/older than eventAt): a webhook REPLAY or
+          // out-of-order delivery matches 0 rows (an exact replay has the same eventAt → not `lt` → no
+          // match), so it can't double-count. Only a genuinely new decline on a fresh ref (retryKyc mints
+          // a new kycRef and clears kycResolvedAt) increments again → the second decline locks at >= 2.
+          ...(status === "failed" ? { kycAttempts: { increment: 1 } } : {}),
+          // An expiry (1·b2) is not a decline: reset the A-02 attempt counter so re-verification isn't
+          // trapped by an ancient decline the rider already recovered from before they were verified.
+          ...(status === "expired" ? { kycAttempts: 0 } : {}),
+        },
+      });
+      // Only when the update actually applied (res.count > 0 — not a stale/replayed webhook) and only for
+      // the two outcomes that change what the rider can do; an `expired` is handled by its own re-verify
+      // prompt. kycRef is unique → at most one rider.
+      let resolvedProfileId: string | null = null;
+      if (res.count > 0 && (status === "verified" || status === "failed")) {
+        const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
         if (rider) {
           // KB-FEED-SYNTH: the AUTOMATED vendor path must ALSO write an AuditLog row (only the manual
           // adminSetKyc path did), so feedForUser can synthesize an account-status feed row uniformly.
           // Reuse the SAME action strings as adminSetKyc (rider.kyc_approve / rider.kyc_decline), but
           // mark the actor as automated ("system:kyc-webhook") so admin audit views can still tell manual
-          // from automated decisions. Best-effort + isolated in its own try/catch — an audit-log hiccup
-          // must never affect the KYC status write above (consistent with the notify below).
-          try {
-            const action = status === "verified" ? "rider.kyc_approve" : "rider.kyc_decline";
-            await this.prisma.auditLog.create({
-              data: auditData("system:kyc-webhook", action, rider.profileId, reason ?? null, null),
-            });
-          } catch (err) {
-            this.logger.warn(`KYC audit-log write failed for ref ${kycRef}: ${(err as Error).message}`);
-          }
-          this.notifyKycDecision(rider.profileId, status);
+          // from automated decisions. Same transaction as the status write — never one without the other.
+          const action = status === "verified" ? "rider.kyc_approve" : "rider.kyc_decline";
+          await tx.auditLog.create({
+            data: auditData("system:kyc-webhook", action, rider.profileId, reason ?? null, null),
+          });
+          resolvedProfileId = rider.profileId;
         }
-      } catch (err) {
-        this.logger.warn(`KYC result notify failed for ref ${kycRef}: ${(err as Error).message}`);
       }
+      return { updated: res.count, notifyProfileId: resolvedProfileId };
+    });
+    // Best-effort, post-commit: tell the rider their ID check resolved (nothing surfaced this before). A
+    // notify miss can NEVER affect the committed KYC write above (notifyKycDecision is fire-and-forget).
+    // notifyProfileId is set only for a committed verified/failed decision, so this reaches only those two.
+    if (notifyProfileId && (status === "verified" || status === "failed")) {
+      this.notifyKycDecision(notifyProfileId, status);
     }
-    return { updated: res.count };
+    return { updated };
   }
 
   /** Best-effort push telling a rider their KYC decision landed → route to their rider home (`/rider`).

@@ -128,7 +128,15 @@ export class TrackingGateway
   afterInit(server: Server): void {
     if (this.env.REDIS_URL) {
       const pub = createRedisClient(this.env.REDIS_URL);
+      // `duplicate()` clones the connection but is a FRESH ioredis client — createRedisClient's baseline
+      // `error` listener is NOT inherited by the duplicate — so `sub` needs its own listener attached here
+      // (pub already has the factory baseline). DS15-01: without an `error` listener, a connection blip on
+      // either adapter client throws "Unhandled 'error' event" → uncaughtException → main.ts exits the
+      // whole instance. Attach a defensive listener to BOTH before handing them to the adapter; log and
+      // keep serving (the Redis adapter only fans events across instances — a single node still works).
       const sub = pub.duplicate();
+      pub.on("error", (err: Error) => this.logger.warn(`socket.io redis pub client error: ${err.message}`));
+      sub.on("error", (err: Error) => this.logger.warn(`socket.io redis sub client error: ${err.message}`));
       server.adapter(createAdapter(pub, sub));
       this.logger.log("Socket.IO Redis adapter enabled");
     }

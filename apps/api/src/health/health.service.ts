@@ -17,6 +17,17 @@ export interface HealthReport {
  *  the probe — race it against this so a dead Redis reports `false` fast. */
 const REDIS_PING_TIMEOUT_MS = 2_000;
 
+/** DS15-08: cap on how long the DB liveness probe waits. `/healthz` is deliberately unauthenticated
+ *  and unthrottled (for LB probing), and its `SELECT 1` draws from the SAME bounded pg pool (prisma
+ *  `poolConfig`, `max` = 10 by default) that serves real traffic. Under pool exhaustion — an LB
+ *  hammering the probe, or many concurrent probes during an incident — a raw `prisma.ping()` would
+ *  queue on connection acquisition for the full pool-acquire timeout (`DATABASE_POOL_TIMEOUT`, default
+ *  10 s), holding the probe open and adding to the contention it's meant to detect. Race the ping
+ *  against this much shorter budget so a saturated/unreachable pool reports `false` FAST — which is
+ *  the correct signal (the LB pulls the instance) rather than queuing behind real requests. Kept
+ *  well under the pool-acquire timeout so the probe fails on contention before the acquire does. */
+const DB_PING_TIMEOUT_MS = 2_000;
+
 @Injectable()
 export class HealthService implements OnModuleDestroy {
   private readonly logger = new Logger(HealthService.name);
@@ -33,10 +44,34 @@ export class HealthService implements OnModuleDestroy {
   ) {}
 
   async check(): Promise<HealthReport> {
-    const db = await this.prisma.ping();
+    const db = await this.pingDb();
     const redis = await this.pingRedis();
     const status = db && redis !== false ? "ok" : "degraded";
     return { status, db, redis, provider: this.env.CLOUD_PROVIDER };
+  }
+
+  /**
+   * DS15-08: DB liveness with a tight timeout so the probe can never starve — or queue behind — real
+   * traffic on the shared pg pool. `prisma.ping()` already swallows its own errors to `false`, but a
+   * pool-exhausted acquisition would still leave it pending until the pool-acquire timeout (~10 s);
+   * race it against {@link DB_PING_TIMEOUT_MS} so a saturated/unreachable pool marks this instance
+   * unhealthy fast (correct signal → LB pulls the node) instead of holding the probe open. Mirrors the
+   * Redis-ping timeout pattern above (DS-04). The underlying acquisition, if it was queued, is still
+   * bounded by the pool's own connectionTimeoutMillis — this just stops the PROBE from waiting on it.
+   */
+  private async pingDb(): Promise<boolean> {
+    try {
+      return await Promise.race([
+        this.prisma.ping(),
+        new Promise<never>((_, reject) => {
+          const t = setTimeout(() => reject(new Error("db ping timeout")), DB_PING_TIMEOUT_MS);
+          t.unref?.();
+        }),
+      ]);
+    } catch (err) {
+      this.logger.warn(`DB ping failed: ${(err as Error).message}`);
+      return false;
+    }
   }
 
   private getClient(): IORedis | null {

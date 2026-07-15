@@ -253,9 +253,25 @@ export class OrdersService {
     pickup: { lat: number; lng: number },
     orderId?: string,
   ): Promise<{ queued: boolean }> {
-    // KB-NOTIFY-ORDERID: thread the optional still-open order through so its fulfillment push can route
-    // the tap to that live auction. Absent orderId clears any stale association (see addNotifyRequest).
-    const queued = await this.tracking.addNotifyRequest(customerId, pickup.lat, pickup.lng, orderId);
+    // DS15-09: an `orderId` in this DTO must belong to the CALLER before we associate their waiter
+    // registration with it. Without this check any authenticated profile (e.g. a rider who sees live
+    // order ids on the open board) could pass a victim customer's order id — later routing the "a rider
+    // is online near your request" push to the ATTACKER with `data.orderId` set to someone else's order
+    // (a spoofed, cross-party notification and a coarse "is this order still open" oracle). Verify the
+    // order exists AND its customerId matches the caller; on any mismatch (or a non-existent order)
+    // silently DROP the association and register a plain, order-less notify-me — degrading gracefully to
+    // the feature's pre-orderId behaviour rather than 4xx-ing a request that's still perfectly valid as
+    // a generic "ping me when a rider's nearby". (addNotifyRequest HDELs any stale association when the
+    // orderId is absent, so dropping it here leaves no orphan pointer.)
+    let ownedOrderId: string | undefined;
+    if (orderId) {
+      const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true } });
+      if (order?.customerId === customerId) ownedOrderId = orderId;
+    }
+    // KB-NOTIFY-ORDERID: thread the caller's OWN still-open order through so its fulfillment push can
+    // route the tap to that live auction. Absent/foreign orderId clears any stale association (see
+    // addNotifyRequest).
+    const queued = await this.tracking.addNotifyRequest(customerId, pickup.lat, pickup.lng, ownedOrderId);
     return { queued };
   }
 
