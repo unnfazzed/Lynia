@@ -11,9 +11,19 @@ import {
   loadPickupChecklistDraft,
   savePickupChecklistDraft,
 } from "../../src/logic/pickup-checklist-draft";
-import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts } from "../../src/logic/rider-job";
+import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
-import { acknowledgeHandback, clearConfirmItemsPending, loadAcknowledgedHandbacks, loadConfirmItemsPending, saveConfirmItemsPending } from "../../src/auth/session";
+import {
+  acknowledgeHandback,
+  clearConfirmItemsPending,
+  clearRiderJobTerminal,
+  loadAcknowledgedHandbacks,
+  loadConfirmItemsPending,
+  loadRiderJobTerminal,
+  saveConfirmItemsPending,
+  saveRiderJobTerminal,
+  type RiderJobTerminal,
+} from "../../src/auth/session";
 import { formatMoney } from "../../src/logic/money";
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
@@ -66,11 +76,27 @@ export default function RiderJob(): React.ReactElement {
   // R1: the post-pickup "can't complete delivery" reason picker + the frozen terminal once it commits.
   const [undelivering, setUndelivering] = useState(false);
   const [undeliveredDone, setUndeliveredDone] = useState<UndeliveredReason | null>(null);
-  // A successful delivery-confirm freezes the just-delivered snapshot into a terminal. A `delivered`
-  // order drops out of activeForRider (ACTIVE_RIDE_STATUSES excludes it), so the post-confirm refetch
-  // returns null and would otherwise blank straight to "No active job" with zero acknowledgement the
-  // parcel arrived. Mirrors the undelivered/cancelled frozen terminals below.
-  const [deliveredDone, setDeliveredDone] = useState<OrderSnapshot | null>(null);
+  // A successful delivery-confirm freezes the delivered order's id into a terminal (the only field the
+  // terminal below actually renders — see GetHelpControl/ReportControl). A `delivered` order drops out
+  // of activeForRider (ACTIVE_RIDE_STATUSES excludes it), so the post-confirm refetch returns null and
+  // would otherwise blank straight to "No active job" with zero acknowledgement the parcel arrived.
+  // Mirrors the undelivered/cancelled frozen terminals below.
+  const [deliveredDone, setDeliveredDone] = useState<string | null>(null);
+  // Durable across an app kill (see saveRiderJobTerminal in session.ts): loaded once on mount, then
+  // promoted into deliveredDone/undeliveredDone below the first time this session sees no active job.
+  // Covers the window between the deliver/undeliver mutation's success and the rider actually viewing
+  // (or tapping "Back to board" on) the frozen terminal — previously in-memory-only state that an app
+  // kill in that window silently erased, including the rate-the-sender affordance.
+  const [persistedTerminal, setPersistedTerminal] = useState<RiderJobTerminal | null | "loading">("loading");
+  useEffect(() => {
+    let alive = true;
+    void loadRiderJobTerminal().then((t) => {
+      if (alive) setPersistedTerminal(t);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // 4·b3: the pre-pickup bail flow — open the reason + reliability-warning sheet before cancelling,
   // and carry the (optional) reason to the server so the customer's re-broadcast has a "why".
   const [bailing, setBailing] = useState(false);
@@ -220,9 +246,13 @@ export default function RiderJob(): React.ReactElement {
       haptic("success");
       setCode("");
       setOtpTries(0);
-      // Freeze the just-delivered snapshot so the acknowledgement + rate-the-sender terminal survives
-      // the refresh() below (which returns null once the order leaves the active feed).
-      if (orderRef.current) setDeliveredDone(orderRef.current);
+      // Freeze the just-delivered order id so the acknowledgement + rate-the-sender terminal survives
+      // the refresh() below (which returns null once the order leaves the active feed) — and persist it
+      // so the terminal also survives an app kill before the rider dismisses it.
+      if (orderRef.current) {
+        setDeliveredDone(orderRef.current.id);
+        void saveRiderJobTerminal({ orderId: orderRef.current.id, kind: "delivered" });
+      }
       refresh();
     },
     onError: (e) => {
@@ -243,7 +273,8 @@ export default function RiderJob(): React.ReactElement {
               setError(null);
               // Same frozen terminal as the happy path — the reconciled snapshot IS a delivered order,
               // so land the rider on the acknowledgement screen, not just a toast that a refresh wipes.
-              setDeliveredDone(fresh);
+              setDeliveredDone(fresh.id);
+              void saveRiderJobTerminal({ orderId: fresh.id, kind: "delivered" });
               toast.show("Looks like that delivery already went through.", "success");
             } else {
               fail(e);
@@ -289,13 +320,19 @@ export default function RiderJob(): React.ReactElement {
       }
       refresh();
     },
-    onError: fail,
+    onError: (e) => {
+      // A timed-out/dropped response can land here after the server already committed the cancel — the
+      // three sibling mutations below all re-sync the cache on error; this one silently didn't, leaving
+      // the rider stuck on a BailSheet whose "Confirm cancellation" retry can now only ever 409.
+      fail(e);
+      refresh();
+    },
   });
   // 4·7: optional, recorded-only rate-the-sender. Doesn't change status or gate anything.
   const senderRateM = useMutation({
-    // Rate against the frozen delivered snapshot's id when we're on that terminal (orderId is null
-    // there — the delivered order has left the active feed); fall back to the live order otherwise.
-    mutationFn: (score: number) => rateSender(deliveredDone?.id ?? orderId!, { score }),
+    // Rate against the frozen delivered order id when we're on that terminal (orderId is null there —
+    // the delivered order has left the active feed); fall back to the live order otherwise.
+    mutationFn: (score: number) => rateSender(deliveredDone ?? orderId!, { score }),
     onError: (e) => {
       // The tap fills the star optimistically (setSenderScore below); roll it back on failure so a
       // failed POST doesn't leave a falsely-filled star with no acknowledgement — the ErrorText on the
@@ -310,9 +347,34 @@ export default function RiderJob(): React.ReactElement {
     onSuccess: (_res, reason) => {
       setUndelivering(false);
       setUndeliveredDone(reason);
+      if (orderId) void saveRiderJobTerminal({ orderId, kind: "undelivered", reason });
     },
-    onError: (e) => {
+    onError: (e, reason) => {
       setUndelivering(false);
+      // Mirrors deliverM's reconciliation: a timeout/retry can land here after the server already
+      // committed the undelivered CAS on the first attempt (409 "Order changed, retry"). Without this,
+      // the rider saw a scary generic conflict and then a refresh (activeForRider excludes
+      // `undelivered`) dropped straight to "No active job" with no acknowledgement the hand-off was
+      // actually recorded.
+      if (e instanceof ApiError && e.status === 409 && orderId) {
+        const failedOrderId = orderId;
+        void getOrder(failedOrderId)
+          .then((fresh) => {
+            if (fresh.status === "undelivered") {
+              setError(null);
+              setUndeliveredDone(reason);
+              void saveRiderJobTerminal({ orderId: failedOrderId, kind: "undelivered", reason });
+            } else {
+              fail(e);
+            }
+            refresh();
+          })
+          .catch(() => {
+            fail(e);
+            refresh();
+          });
+        return;
+      }
       fail(e);
       refresh();
     },
@@ -322,6 +384,23 @@ export default function RiderJob(): React.ReactElement {
     setOtpTries(0);
     setUndelivering(false);
   }, [orderId]);
+
+  // Promote a durable terminal marker into the live in-memory state the first time this session sees
+  // no active job — the reconciliation path for an app kill between the deliver/undeliver mutation's
+  // success and the rider viewing the frozen terminal (see the marker's own comment in session.ts).
+  // Gated on `!order` so a genuinely live/new job (which can't itself be `delivered`/`undelivered`, per
+  // ACTIVE_RIDE_STATUSES) always wins over a stale marker.
+  useEffect(() => {
+    const promoted = reconcileRiderJobTerminal({
+      persistedTerminal,
+      jobLoading: jobQ.isLoading,
+      hasActiveOrder: order != null,
+      alreadyResolved: deliveredDone != null || undeliveredDone != null,
+    });
+    if (!promoted) return;
+    if (promoted.kind === "delivered") setDeliveredDone(promoted.orderId);
+    else setUndeliveredDone(promoted.reason);
+  }, [jobQ.isLoading, persistedTerminal, order, deliveredDone, undeliveredDone]);
 
   // KB-OTP-COUNT-SYNC: reconcile the local retry counter against the server's committed count whenever a
   // FRESH snapshot value arrives — in BOTH directions. A DOWN move catches a customer re-issue
@@ -448,7 +527,15 @@ export default function RiderJob(): React.ReactElement {
   // Terminal: the rider recorded a failed hand-off (R1). Frozen locally — an `undelivered` order leaves
   // the active-job feed, so a refetch would drop to "No active job" with no acknowledgement.
   if (undeliveredDone) {
-    return <UndeliveredDone reason={undeliveredDone} onBack={() => router.replace("/rider")} />;
+    return (
+      <UndeliveredDone
+        reason={undeliveredDone}
+        onBack={() => {
+          void clearRiderJobTerminal();
+          router.replace("/rider");
+        }}
+      />
+    );
   }
 
   // Terminal: delivery confirmed. Frozen locally — a `delivered` order leaves the active-job feed, so
@@ -498,9 +585,15 @@ export default function RiderJob(): React.ReactElement {
             )}
           </Card>
           {/* Order-level support + report/block after the trip (rider → sender), same as a live delivered order. */}
-          <GetHelpControl orderId={deliveredDone.id} />
-          <ReportControl orderId={deliveredDone.id} counterpartyNoun="sender" />
-          <Button label="Back to board" onPress={() => router.replace("/rider")} />
+          <GetHelpControl orderId={deliveredDone} />
+          <ReportControl orderId={deliveredDone} counterpartyNoun="sender" />
+          <Button
+            label="Back to board"
+            onPress={() => {
+              void clearRiderJobTerminal();
+              router.replace("/rider");
+            }}
+          />
           {/* A failed rate-the-sender POST writes `error` (senderRateM.onError → fail); surface it here
               the same way live-job errors do — this frozen terminal is the only place that mutation runs. */}
           <ErrorText message={error} />
@@ -562,6 +655,16 @@ export default function RiderJob(): React.ReactElement {
   // No live job — either genuinely nothing, or an already-acknowledged hand-back whose cancelled
   // snapshot still lingers in the 24h reopen window (handback resolved to null above). Either way
   // there's nothing to act on, so show the calm empty terminal rather than the collect/deliver flow.
+  // First wait for the durable terminal marker to load — otherwise a delivered/undelivered order whose
+  // in-memory state was lost to an app kill would flash "No active job" for a frame before the
+  // promotion effect above catches up.
+  if ((!order || order.status === "cancelled") && persistedTerminal === "loading") {
+    return (
+      <Screen>
+        <SkeletonList />
+      </Screen>
+    );
+  }
   if (!order || order.status === "cancelled") {
     return (
       <Screen>

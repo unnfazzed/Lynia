@@ -210,14 +210,19 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
                 title={`Ban ${c.name}?`}
                 consequence={
                   <span>
-                    <b>They can no longer send parcels.</b> Their phone number is blocked from re-registering. This is
-                    reversible only by a database admin.
+                    {/* UX-2026-07-15: no backing model exists yet for a customer ban/flag (see the
+                        comment on CustomerActions above) — this logs a decision for review, it does
+                        NOT block the account or their phone number. Overclaiming enforcement here made
+                        an operator believe the customer was already stopped from ordering. */}
+                    <b>This records a ban decision for the record.</b> It does not automatically stop the customer
+                    from ordering or block their phone number yet — follow up with a manual hold (above) or a
+                    database admin for real enforcement.
                   </span>
                 }
                 reasons={REASONS.customerBan}
                 noteRequired
                 notePlaceholder="Required — what happened, and which orders are involved?"
-                confirmLabel="Ban customer"
+                confirmLabel="Log ban decision"
               />
             </div>
             <div style={{ fontSize: 11, color: tokens.color.muted, marginTop: 10 }}>

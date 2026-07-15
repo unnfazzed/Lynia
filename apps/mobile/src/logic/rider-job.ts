@@ -5,6 +5,7 @@ import {
   RIDER_CANCELLABLE_STATUSES,
   UndeliveredReason,
 } from "@lynia/shared";
+import type { RiderJobTerminal } from "../auth/session";
 import type { IconName } from "../ui/Icon";
 
 export const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
@@ -82,4 +83,26 @@ export function reconcileConfirmItemsPending(input: {
   if (order.itemsCollected != null) return "clear"; // the server already has the record — done
   if (order.status === "en_route_pickup") return "retry"; // still at pickup — the retry can land
   return "wait"; // same order, past the pickup window with no record — can't retry, but keep the marker
+}
+
+/**
+ * Decide whether a durable rider-job terminal marker (delivered/undelivered — see `saveRiderJobTerminal`
+ * in session.ts) should be promoted into the live in-memory terminal state this session. The marker
+ * exists precisely because the delivered/undelivered terminals are frozen component state that an app
+ * kill between the mutation's success and the rider dismissing the terminal previously erased outright.
+ *
+ * Only fires the first time this session sees no active job: a genuinely live/new job (which can never
+ * itself be `delivered`/`undelivered`, per `ACTIVE_RIDE_STATUSES`) always wins over a stale marker, and a
+ * terminal already resolved via the live mutation flow this session is never re-clobbered by the marker.
+ */
+export function reconcileRiderJobTerminal(input: {
+  persistedTerminal: RiderJobTerminal | null | "loading";
+  jobLoading: boolean;
+  hasActiveOrder: boolean;
+  alreadyResolved: boolean;
+}): RiderJobTerminal | null {
+  const { persistedTerminal, jobLoading, hasActiveOrder, alreadyResolved } = input;
+  if (jobLoading || persistedTerminal === "loading") return null;
+  if (hasActiveOrder || alreadyResolved) return null;
+  return persistedTerminal;
 }

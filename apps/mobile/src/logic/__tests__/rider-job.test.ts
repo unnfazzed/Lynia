@@ -1,5 +1,5 @@
-import { DELIVERY_OTP_MAX_ATTEMPTS as SHARED_DELIVERY_OTP_MAX_ATTEMPTS } from "@lynia/shared";
-import { DELIVERY_OTP_MAX_ATTEMPTS, reconcileConfirmItemsPending, reconcileOtpAttempts } from "../rider-job";
+import { DELIVERY_OTP_MAX_ATTEMPTS as SHARED_DELIVERY_OTP_MAX_ATTEMPTS, UndeliveredReason } from "@lynia/shared";
+import { DELIVERY_OTP_MAX_ATTEMPTS, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcileRiderJobTerminal } from "../rider-job";
 
 describe("DELIVERY_OTP_MAX_ATTEMPTS", () => {
   it("is re-exported from @lynia/shared, not a locally-duplicated copy", () => {
@@ -62,5 +62,50 @@ describe("reconcileConfirmItemsPending", () => {
     expect(reconcileConfirmItemsPending({ pendingOrderId: null, order: at("en_route_pickup") })).toBe("wait");
     expect(reconcileConfirmItemsPending({ pendingOrderId: undefined, order: at("en_route_pickup") })).toBe("wait");
     expect(reconcileConfirmItemsPending({ pendingOrderId: "o1", order: null })).toBe("wait");
+  });
+});
+
+// Regression guard (rider delivered/undelivered terminal durability, UX-2026-07-15): the delivered and
+// undelivered terminals in rider/job.tsx were plain component state — an app kill between the
+// deliver/undeliver mutation's success and the rider dismissing the terminal silently lost the
+// acknowledgement (and, for a delivered order, the "rate the sender" affordance) with no way to recover,
+// mirroring the gap BH-06 already closed for the customer's rating card.
+describe("reconcileRiderJobTerminal", () => {
+  const base = { jobLoading: false, hasActiveOrder: false, alreadyResolved: false };
+
+  it("promotes a persisted delivered marker once the app has no active job (the cold-start repro)", () => {
+    expect(
+      reconcileRiderJobTerminal({ ...base, persistedTerminal: { orderId: "o1", kind: "delivered" } }),
+    ).toEqual({ orderId: "o1", kind: "delivered" });
+  });
+
+  it("promotes a persisted undelivered marker with its recorded reason", () => {
+    expect(
+      reconcileRiderJobTerminal({
+        ...base,
+        persistedTerminal: { orderId: "o1", kind: "undelivered", reason: UndeliveredReason.REFUSED },
+      }),
+    ).toEqual({ orderId: "o1", kind: "undelivered", reason: UndeliveredReason.REFUSED });
+  });
+
+  it("does nothing while the job query or the marker itself is still loading (avoids a flash)", () => {
+    expect(reconcileRiderJobTerminal({ ...base, jobLoading: true, persistedTerminal: { orderId: "o1", kind: "delivered" } })).toBeNull();
+    expect(reconcileRiderJobTerminal({ ...base, persistedTerminal: "loading" })).toBeNull();
+  });
+
+  it("never overrides a genuinely live/new job, even with a stale marker present", () => {
+    expect(
+      reconcileRiderJobTerminal({ ...base, hasActiveOrder: true, persistedTerminal: { orderId: "o1", kind: "delivered" } }),
+    ).toBeNull();
+  });
+
+  it("does not re-promote once the terminal is already resolved this session (no clobber)", () => {
+    expect(
+      reconcileRiderJobTerminal({ ...base, alreadyResolved: true, persistedTerminal: { orderId: "o1", kind: "delivered" } }),
+    ).toBeNull();
+  });
+
+  it("does nothing when there is no persisted marker", () => {
+    expect(reconcileRiderJobTerminal({ ...base, persistedTerminal: null })).toBeNull();
   });
 });

@@ -1005,18 +1005,22 @@ export default function OrderScreen(): React.ReactElement {
             <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
               {/* Fix 1: the blame line is written from the viewer's perspective. For the customer view a
                   rider cancel is "your rider"; for a rider viewing their own trip a customer cancel is
-                  "your customer", and either side's own cancel reads as "you". */}
+                  "your customer", and either side's own cancel reads as "you". Neither party is
+                  `cancelledBy` for an ops/admin cancel (it stays null) — say so explicitly rather than
+                  falling back to a vague "This order is cancelled.", matching the rider's own
+                  CancelledHandback terminal (UX-2026-07-15) so the same event reads the same way on
+                  both surfaces a rider can see it from. */}
               {isRiderViewer
                 ? order.cancelledBy === "customer"
                   ? "Your customer cancelled this delivery."
                   : order.cancelledBy === "rider"
                     ? "You cancelled this delivery."
-                    : "This order is cancelled."
+                    : "LyniaGo cancelled this delivery."
                 : order.cancelledBy === "rider"
                   ? "Your rider cancelled this delivery."
                   : order.cancelledBy === "customer"
                     ? "You cancelled this order."
-                    : "This order is cancelled."}
+                    : "LyniaGo cancelled this delivery."}
             </Text>
             {order.cancelReason ? (
               <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginTop: tokens.space.sm }}>{order.cancelReason}</Text>

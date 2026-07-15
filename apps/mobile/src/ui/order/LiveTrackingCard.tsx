@@ -170,8 +170,13 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
         </>
       ) : null}
       <View style={{ height: tokens.space.md }} />
-      <Stepper events={props.events} currentStatus={status} view="customer" />
-      {isActive ? (
+      {/* UX-2026-07-15: the shared order screen's rider-viewer gating (07-14 Fix #1) only covered the
+          TOP-level delivery-code card and the Cancel/rebroadcast/report controls — this card's OWN,
+          separate reissue button and the stepper's copy were a second, missed instance of the same gap.
+          A rider viewing their own job must never see customer-voiced milestone copy or a control that
+          403s ("Not your order") against their own delivery. */}
+      <Stepper events={props.events} currentStatus={status} view={isRiderViewer ? "rider" : "customer"} />
+      {isActive && !isRiderViewer ? (
         <Button label="Re-issue delivery code" variant="ghost" onPress={props.onReissueCode} loading={props.reissuing} />
       ) : null}
     </Card>

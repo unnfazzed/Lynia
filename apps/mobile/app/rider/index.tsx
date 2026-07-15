@@ -376,7 +376,12 @@ export default function RiderHome(): React.ReactElement {
     // the useEffect below invalidates this query to re-run the geo-scoped fetch.
     queryFn: () => getOpenOrders(loc ?? undefined, 5000),
     enabled: online,
-    refetchInterval: online ? 15_000 : false,
+    // UX-2026-07-15: useRiderBoard already pushes board:new_order/bid:expired/order:taken live into this
+    // exact ["openOrders"] cache — full lifecycle coverage, unlike order/[id].tsx's single-order auction
+    // poll (deliberately unconditional there because ridersNearby has no WS signal). Here there's no such
+    // gap, so gate the poll on the socket being down, mirroring activeQ just above — an unconditional 15s
+    // REST round-trip over an N-order list on top of an already-live channel was pure metered-data waste.
+    refetchInterval: online ? (board.connected ? false : 15_000) : false,
   });
 
   // Once the rider's position is known (or moves), re-run the geo-scoped fetch. We invalidate rather

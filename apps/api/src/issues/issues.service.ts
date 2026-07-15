@@ -188,10 +188,10 @@ export class IssuesService {
    *   close_no_action→ no side-effect.
    */
   async resolve(adminId: string, id: string, body: ResolveIssueRequest) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const issue = await tx.issue.findUnique({
         where: { id },
-        select: { id: true, status: true, orderId: true },
+        select: { id: true, status: true, orderId: true, openedByProfileId: true },
       });
       if (!issue) throw new NotFoundException("Issue not found");
 
@@ -248,7 +248,16 @@ export class IssuesService {
         status: "resolved" as const,
         resolution: body.resolution,
         resolvedAt: resolvedAt.toISOString(),
+        openedByProfileId: issue.openedByProfileId,
+        orderId: issue.orderId,
       };
     });
+
+    // Best-effort, post-commit (mirrors DS13-03's push-parity pattern): tell the opener how their
+    // reported issue was resolved. Fired outside the transaction so a push failure can never roll back
+    // the resolution that already committed.
+    void this.notifications.notifyIssueResolved(result.openedByProfileId, result.orderId, result.resolution);
+
+    return { id: result.id, status: result.status, resolution: result.resolution, resolvedAt: result.resolvedAt };
   }
 }

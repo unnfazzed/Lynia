@@ -503,6 +503,32 @@ export class NotificationsService {
   }
 
   /**
+   * UX-2026-07-15: tell the opener of a "get help with this trip" issue how it was resolved. Before
+   * this, `IssuesService.resolve` wrote the resolution + a refund/strike side-effect + an audit row, but
+   * never told the customer/rider who raised it — the opener had no push, no feed row, and no status
+   * endpoint to check, so a real problem could silently vanish from their view forever. Mirrors the
+   * `raise()` escalation's best-effort/never-throws shape. `orderId` rides along so the tap lands back on
+   * the trip (kind: "issue" is a routable non-status push, same pattern as "offer"/"broadcast").
+   */
+  async notifyIssueResolved(
+    profileId: string,
+    orderId: string,
+    resolution: "refund" | "rider_strike" | "close_no_action",
+  ): Promise<void> {
+    try {
+      const copy =
+        resolution === "refund"
+          ? { title: "Your report was resolved", body: "We've recorded a refund for this trip — tap for details." }
+          : resolution === "rider_strike"
+            ? { title: "Your report was resolved", body: "We've taken action on this trip — thanks for flagging it." }
+            : { title: "Your report was resolved", body: "We looked into this trip and closed it out — tap for details." };
+      await this.send([profileId], { ...copy, data: { orderId, kind: "issue" } });
+    } catch (err) {
+      this.logger.warn(`notifyIssueResolved(${orderId}) failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
    * Best-effort push to an explicit set of profiles (trust & safety fan-outs — e.g. the SOS
    * counterparty alert). Empty/duplicate ids are handled by `send`. Never throws.
    */

@@ -39,7 +39,7 @@ export function CancelledHandback({
               <Icon name="circle-alert" size={18} color={tokens.color.danger} />
             </View>
             <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
-              {cancelledBy === "admin" ? "Lynia cancelled this delivery" : "The customer cancelled"}
+              {cancelledBy === "admin" ? "LyniaGo cancelled this delivery" : "The customer cancelled"}
             </Text>
           </View>
           {collected ? (

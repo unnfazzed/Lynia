@@ -2,6 +2,7 @@ import { tokens } from "@lynia/shared";
 import { adminFetchResult } from "../lib/api";
 import { connOffLabel, reasonLine } from "../components/states";
 import { setKyc } from "./actions";
+import { KycSubmitButton } from "./KycSubmitButton";
 
 interface Rider {
   profileId: string;
@@ -167,24 +168,7 @@ function KycButton({ profileId, status, label, variant }: { profileId: string; s
     <form action={setKyc} style={{ display: "inline" }}>
       <input type="hidden" name="profileId" value={profileId} />
       <input type="hidden" name="status" value={status} />
-      <button
-        type="submit"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          minHeight: 36,
-          fontSize: 12,
-          fontWeight: 600,
-          padding: "6px 14px",
-          borderRadius: 999,
-          border: solid ? "none" : `1px solid ${tokens.color.line}`,
-          background: solid ? tokens.color.cta : "transparent",
-          color: solid ? tokens.color.onAccent : tokens.color.muted,
-          cursor: "pointer",
-        }}
-      >
-        {label}
-      </button>
+      <KycSubmitButton label={label} solid={solid} />
     </form>
   );
 }

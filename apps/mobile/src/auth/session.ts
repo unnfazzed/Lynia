@@ -8,6 +8,7 @@ import { KYC_DRAFT_KEY } from "../logic/kyc-draft";
 import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
 import { JOB_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY } from "../logic/rider-bid-draft";
+import type { UndeliveredReason } from "@lynia/shared";
 
 /** The authenticated session, persisted in the device keychain (not AsyncStorage — these are secrets). */
 export interface Session {
@@ -239,6 +240,50 @@ export async function clearPendingRating(): Promise<void> {
   }
 }
 
+// A durable "rider job terminal still needs acknowledging" marker for the DELIVERED and UNDELIVERED
+// frozen terminals in rider/job.tsx. Both terminals are frozen in-memory only — the order has already
+// left activeForRider (delivered/undelivered aren't in ACTIVE_RIDE_STATUSES), so there is nothing left
+// to refetch. An app kill between the mutation's success and the rider tapping "Back to board"
+// previously lost the acknowledgement outright (and, for a delivered order, the "rate the sender"
+// affordance) — mirroring the gap BH-06 already closed for the customer's rating card. Persist the
+// terminal BEFORE freezing it in component state; clear it once the rider taps "Back to board" or on
+// sign-out. Single slot — a rider has one active job at a time.
+const RIDER_JOB_TERMINAL_KEY = "lynia.riderJobTerminal";
+export type RiderJobTerminal = { orderId: string; kind: "delivered" } | { orderId: string; kind: "undelivered"; reason: UndeliveredReason };
+
+export async function saveRiderJobTerminal(terminal: RiderJobTerminal): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(RIDER_JOB_TERMINAL_KEY, JSON.stringify(terminal));
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadRiderJobTerminal(): Promise<RiderJobTerminal | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(RIDER_JOB_TERMINAL_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as unknown;
+    if (v && typeof v === "object" && typeof (v as { orderId?: unknown }).orderId === "string" && typeof (v as { kind?: unknown }).kind === "string") {
+      const orderId = (v as { orderId: string }).orderId;
+      const kind = (v as { kind: string }).kind;
+      if (kind === "delivered") return { orderId, kind: "delivered" };
+      if (kind === "undelivered" && typeof (v as { reason?: unknown }).reason === "string") {
+        return { orderId, kind: "undelivered", reason: (v as { reason: UndeliveredReason }).reason };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+export async function clearRiderJobTerminal(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(RIDER_JOB_TERMINAL_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
 // Which starting role the user picked at the post-OTP role fork (one account, two roles). Persisted
 // so an existing user isn't re-prompted on every sign-in — verify.tsx routes straight home once set.
 // All best-effort: a native read/write failure must never trap the sign-in flow.
@@ -376,6 +421,9 @@ export async function clearDeviceState(): Promise<void> {
       // The rider's durable confirmItems-pending marker (a job id + collected item indexes) must not
       // survive to the next user on a shared device.
       SecureStore.deleteItemAsync(CONFIRM_ITEMS_PENDING_KEY),
+      // The rider's durable delivered/undelivered terminal-acknowledgement marker must not survive to
+      // the next user on a shared device (it would otherwise resurface a stranger's completed job).
+      SecureStore.deleteItemAsync(RIDER_JOB_TERMINAL_KEY),
       // The customer's durable pending-rating marker (an order id + armed score) must not survive to
       // the next user on a shared device, or auto-submit a rating on the next user's account.
       SecureStore.deleteItemAsync(PENDING_RATING_KEY),
