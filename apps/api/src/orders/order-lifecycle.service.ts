@@ -481,6 +481,14 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) throw new ConflictException("Order already completed");
 
+      // WD-005: re-read agreedFare now that the CAS update above holds the row lock for the rest of
+      // this transaction — the pre-CAS read at the top of this method (order.agreedFare) isn't part of
+      // the CAS predicate, so a concurrent admin fare-adjust landing between that read and this CAS
+      // would otherwise let chargeCommission below debit commission on a fare the order no longer has.
+      // Mirrors the safe read-after-CAS ordering completeOrder() already uses for the same debit.
+      const lockedOrder = await tx.order.findUnique({ where: { id: orderId }, select: { agreedFare: true } });
+      const agreedFare = lockedOrder?.agreedFare ?? order.agreedFare;
+
       await tx.rating.create({ data: { orderId, byProfileId: customerId, score, comment: comment ?? null } });
       await tx.orderEvent.create({ data: { orderId, status: "completed" } });
 
@@ -507,8 +515,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           });
         }
         // Prepaid commission debit (design Flow 1): same transaction as completion, after the rider row
-        // lock above. No-op at ratePct 0. Never blocks a delivered parcel from completing.
-        await this.wallet.chargeCommission(tx, { orderId, riderId: order.riderId, agreedFare: order.agreedFare });
+        // lock above. No-op at ratePct 0. Never blocks a delivered parcel from completing. Uses the
+        // re-read `agreedFare` (WD-005), not the pre-CAS snapshot.
+        await this.wallet.chargeCommission(tx, { orderId, riderId: order.riderId, agreedFare });
       }
     });
 

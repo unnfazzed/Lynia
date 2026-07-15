@@ -154,12 +154,16 @@ export const COMMISSION_RATE_PCT_ENV = "COMMISSION_RATE_PCT";
  * "flip" is interpreted — the API calls it at startup and serves the result to every client, so a
  * malformed override can never silently charge a wrong rate. A negative or non-numeric value falls
  * back to the launch default rather than throwing (fail-safe: never accidentally over-charge).
+ *
+ * WD-010: rounded to 2dp — `CommissionLedger.ratePct` is `Decimal(5,2)`, so an override with more
+ * precision (e.g. an ops typo like "12.345") would otherwise be served to clients/used in the per-ride
+ * calculation at full precision while silently truncating on write to each ride's receipt row.
  */
 export function resolveCommissionRatePct(raw: string | number | undefined | null): number {
   if (raw === undefined || raw === null || raw === "") return COMMISSION.ratePct;
   const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isFinite(n) || n < 0) return COMMISSION.ratePct;
-  return Math.min(100, n);
+  return Math.round(Math.min(100, n) * 100) / 100;
 }
 
 /** Whether commission is switched on — a strictly positive rate. At 0 nothing is debited and the

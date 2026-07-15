@@ -581,6 +581,20 @@ export class OrdersService {
     });
   }
 
+  /** WD-004: the rider's true lifetime earnings total + delivered-trip count, computed with a server-side
+   *  aggregate over ALL matching orders — never derived by summing the capped 50-row `historyForUser`
+   *  page, which silently understates a rider with more than 50 lifetime orders (across both roles).
+   *  `_sum` ignores NULL `agreedFare` rows in SQL (a documented completion anomaly — see
+   *  wallet.service.ts's `chargeCommission`), so an anomalous row can't inflate the total either. */
+  async earningsSummary(riderId: string): Promise<{ total: string; count: number }> {
+    const agg = await this.prisma.order.aggregate({
+      where: { riderId, status: { in: ["completed", "delivered"] } },
+      _sum: { agreedFare: true },
+      _count: { _all: true },
+    });
+    return { total: (agg._sum.agreedFare ?? new Prisma.Decimal(0)).toString(), count: agg._count._all };
+  }
+
   /**
    * Order snapshot — the REST source of truth the tracking client reads on (re)connect (ET4),
    * carrying status, last rider position, and the append-only event timeline. The counterparty's

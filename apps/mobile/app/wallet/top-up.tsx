@@ -6,7 +6,8 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { createTopup, getTopup } from "../../src/api/wallet";
 import { formatMoney } from "../../src/logic/money";
-import { walletKey, walletLedgerKey } from "../../src/query/use-wallet";
+import { validateTopupAmount } from "../../src/logic/topup";
+import { useWalletConfig, walletKey, walletLedgerKey } from "../../src/query/use-wallet";
 import { Button, Field, Heading, Icon, Screen, Sub } from "../../src/ui";
 
 type SelfServeRail = "ecocash" | "innbucks" | "omari";
@@ -33,15 +34,15 @@ export default function TopUpScreen(): React.ReactElement {
   const [topup, setTopup] = React.useState<Topup | null>(null);
   const [remaining, setRemaining] = React.useState(0);
 
+  // WD-009: bounds come from the server-authoritative config (mirrors the commission rate itself never
+  // being hardcoded — wallet.service.ts's design 2A). The bundled COMMISSION constant is only a fallback
+  // for the brief window before /wallet/config has loaded, so validation never blocks on it.
+  const { config } = useWalletConfig();
+  const minTopUp = config?.minTopUp ?? COMMISSION.minTopUp;
+  const maxTopUp = config?.maxTopUp ?? COMMISSION.maxTopUp;
+
   const amountNum = Number(amount);
-  const amountError =
-    amount.trim() === ""
-      ? null
-      : !Number.isFinite(amountNum) || amountNum < COMMISSION.minTopUp
-        ? `Enter at least ${formatMoney(COMMISSION.minTopUp)}`
-        : amountNum > COMMISSION.maxTopUp
-          ? `The most you can top up at once is ${formatMoney(COMMISSION.maxTopUp)}`
-          : null;
+  const amountError = validateTopupAmount(amount, minTopUp, maxTopUp);
   const canSubmit = amountError == null && amount.trim() !== "" && phone.trim().length >= 6;
 
   // Countdown + poll while waiting on the rail prompt. Both clear on unmount / step change.
@@ -117,7 +118,7 @@ export default function TopUpScreen(): React.ReactElement {
 
       {step === "amount" ? (
         <ScrollView showsVerticalScrollIndicator={false}>
-          <Sub>Add to your prepaid commission balance. $5–$50 per top-up.</Sub>
+          <Sub>Add to your prepaid commission balance. {formatMoney(minTopUp)}–{formatMoney(maxTopUp)} per top-up.</Sub>
 
           <Field
             label="Amount (USD)"
@@ -223,8 +224,8 @@ export default function TopUpScreen(): React.ReactElement {
             Check your phone
           </Text>
           <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center", marginTop: 6, lineHeight: 20 }}>
-            Approve the {RAIL_LABEL[rail]} prompt on {phone} to add {formatMoney(amountNum)}. This request expires in{" "}
-            {remaining}s.
+            Approve the {RAIL_LABEL[rail]} prompt on {phone} to add {formatMoney(topup?.amount ?? amountNum)}. This
+            request expires in {remaining}s.
           </Text>
           <View style={{ alignSelf: "stretch", marginTop: tokens.space.xl }}>
             <Button label="Cancel request" variant="ghost" onPress={reset} />
@@ -237,7 +238,10 @@ export default function TopUpScreen(): React.ReactElement {
           >
             <Icon name="check" size={40} color={tokens.color.accentText} strokeWidth={2} />
           </View>
-          <Text style={{ fontSize: 18, fontWeight: "700", color: tokens.color.ink }}>Added {formatMoney(amountNum)}</Text>
+          {/* WD-009: the server-confirmed amount (clamped/rounded server-side), not the raw typed value —
+              they only coincide today because the client-side bounds mirror the server's, but the two are
+              allowed to diverge (e.g. a stale app build with an outdated bundled COMMISSION constant). */}
+          <Text style={{ fontSize: 18, fontWeight: "700", color: tokens.color.ink }}>Added {formatMoney(topup?.amount ?? amountNum)}</Text>
           <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center", marginTop: 6 }}>
             Your commission balance is topped up. You&apos;re good to keep riding.
           </Text>

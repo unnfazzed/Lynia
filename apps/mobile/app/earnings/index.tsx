@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../src/logic/money";
-import { useHistoryFeed } from "../../src/query/use-history-feed";
+import { useEarningsSummary, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useWallet, useWalletConfig } from "../../src/query/use-wallet";
 import { Button, Card, EmptyState, Heading, Icon, Screen, SkeletonList, Sub } from "../../src/ui";
 
@@ -55,7 +55,18 @@ export default function EarningsScreen(): React.ReactElement {
   // just-finished job briefly disappear from Earnings entirely — invisible here, yet visible right
   // away on Trip history for the same order — right when a rider is most likely to check.
   const trips = (rows ?? []).filter((o) => o.role === "rider" && (o.status === "completed" || o.status === "delivered"));
-  const total = trips.reduce((sum, o) => sum + (Number(o.agreedFare ?? o.proposedFare) || 0), 0);
+  // WD-004: prefer the server-computed lifetime total/count (a full aggregate, not just this capped
+  // page of rows) — a rider with more than 50 lifetime orders would otherwise see a silently-truncated
+  // figure. Falls back to a local sum only until the summary loads (or if it errors), which can only
+  // ever match or undercount the same way the old behavior always did — never a regression.
+  // WD-011: the local fallback also excludes anomalous null-`agreedFare` rows from the SUM (a documented
+  // completed-order data anomaly) rather than folding in `proposedFare` — a price that was never agreed
+  // shouldn't inflate a cumulative "what I earned" total. The per-row display below still shows it as a
+  // fallback so an anomalous trip isn't rendered as literally zero.
+  const { summary: earningsSummary } = useEarningsSummary();
+  const localTotal = trips.reduce((sum, o) => sum + (Number(o.agreedFare) || 0), 0);
+  const total = earningsSummary ? Number(earningsSummary.total) : localTotal;
+  const tripCount = earningsSummary ? earningsSummary.count : trips.length;
 
   return (
     <Screen>
@@ -85,7 +96,7 @@ export default function EarningsScreen(): React.ReactElement {
             <Button label="Retry" onPress={refetch} loading={isFetching} />
           </EmptyState>
         )
-      ) : trips.length === 0 ? (
+      ) : tripCount === 0 ? (
         // 5·2 zero-state: the $0.00 hero card + a warm "your first fare starts here", not a bare empty
         // ledger — the earnings surface should still feel like a record waiting to fill.
         <View>
@@ -104,7 +115,7 @@ export default function EarningsScreen(): React.ReactElement {
             <Text style={{ color: tokens.color.onAccent, fontSize: 12, fontWeight: "600", opacity: 0.9 }}>Agreed &amp; delivered · total</Text>
             <Text style={{ color: tokens.color.onAccent, fontSize: 28, fontWeight: "700", marginTop: 2, fontVariant: ["tabular-nums"] }}>${total.toFixed(2)}</Text>
             <Text style={{ color: tokens.color.onAccent, fontSize: 12, opacity: 0.9, marginTop: 2, fontVariant: ["tabular-nums"] }}>
-              {trips.length} delivered {trips.length === 1 ? "trip" : "trips"}
+              {tripCount} delivered {tripCount === 1 ? "trip" : "trips"}
             </Text>
           </Card>
 

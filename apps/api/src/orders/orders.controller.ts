@@ -98,6 +98,13 @@ export class OrdersController {
     return this.orders.historyForUser(userId);
   }
 
+  /** WD-004: the rider's true lifetime earnings total + trip count (server-side aggregate — not derived
+   *  from the capped `history` page, which the Earnings tab also renders as its recent-trips list). */
+  @Get("earnings/summary")
+  earningsSummary(@CurrentUser() riderId: string) {
+    return this.orders.earningsSummary(riderId);
+  }
+
   @Get(":orderId")
   get(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() callerId: string) {
     return this.orders.getSnapshot(orderId, callerId);

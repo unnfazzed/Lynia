@@ -14,4 +14,11 @@ describe("formatMoney", () => {
     expect(formatMoney(undefined)).toBe("$0.00");
     expect(formatMoney("not-a-number")).toBe("$0.00");
   });
+
+  it("WD-008: renders a negative value sign-first, not '$-5.00'", () => {
+    expect(formatMoney(-5)).toBe("-$5.00");
+    expect(formatMoney("-5")).toBe("-$5.00");
+    expect(formatMoney(-2.5)).toBe("-$2.50");
+    expect(formatMoney(-0.004)).toBe("$0.00"); // rounds to zero — no stray "-$0.00"
+  });
 });

@@ -1021,6 +1021,45 @@ describe("OrdersService.historyForUser", () => {
   });
 });
 
+describe("OrdersService.earningsSummary (WD-004 — a full aggregate, not a sum over the capped history page)", () => {
+  const svc = (agg: unknown, capture?: (a: unknown) => void) =>
+    new OrdersService(
+      {
+        order: {
+          aggregate: async (args: unknown) => {
+            capture?.(args);
+            return agg;
+          },
+        },
+      } as unknown as PrismaService,
+      {} as OfferExpiryService,
+      noTracking,
+      noNotifications,
+      noGateway,
+    );
+
+  it("aggregates over ALL matching orders (not capped at 50), scoped to this rider's completed/delivered orders", async () => {
+    let args: unknown;
+    // A rider with well over 50 lifetime deliveries — the aggregate must reflect all of them, not a page.
+    await svc({ _sum: { agreedFare: new Prisma.Decimal("6234.50") }, _count: { _all: 187 } }, (a) => (args = a)).earningsSummary("r1");
+    expect(args).toMatchObject({
+      where: { riderId: "r1", status: { in: ["completed", "delivered"] } },
+      _sum: { agreedFare: true },
+      _count: { _all: true },
+    });
+  });
+
+  it("returns the summed total and trip count", async () => {
+    const result = await svc({ _sum: { agreedFare: new Prisma.Decimal("123.45") }, _count: { _all: 12 } }).earningsSummary("r1");
+    expect(result).toEqual({ total: "123.45", count: 12 });
+  });
+
+  it("returns $0/0 for a rider with no completed trips yet (SQL SUM of nothing is NULL)", async () => {
+    const result = await svc({ _sum: { agreedFare: null }, _count: { _all: 0 } }).earningsSummary("r1");
+    expect(result).toEqual({ total: "0", count: 0 });
+  });
+});
+
 describe("OrdersService.activeForRider", () => {
   it("returns null when the rider has no active order", async () => {
     const prisma = { order: { findFirst: async () => null } };

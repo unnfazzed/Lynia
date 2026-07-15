@@ -88,8 +88,29 @@ export class SettlementsService {
     // the ledger. At the 7-day window's pilot volume this per-ride read is cheap.
     const orders = await this.prisma.order.findMany({
       where: { status: "completed", completedAt: { gte: periodStart, lt: periodEnd }, riderId: { not: null } },
-      select: { riderId: true, agreedFare: true },
+      select: { id: true, riderId: true, agreedFare: true },
     });
+
+    // WD-006: prefer what was ACTUALLY charged per order (the ledger — `ride_commission` plus any
+    // fare-adjust `adjustment` delta, see WalletService/AdminOrdersService.adjustFare) over a fresh
+    // fare × CURRENT rate projection. The projection silently drifts from the ledger the moment `ratePct`
+    // changes mid-window — an order completed earlier in the window at the OLD rate would otherwise be
+    // re-priced at the new one here, so the console would never match the dollars actually debited.
+    // Falls back to the projection only for orders with no ledger row at all (the 0% launch period, where
+    // chargeCommission intentionally writes none — this keeps the console's pre-flip $0.00 behavior
+    // unchanged) or an order predating a rate flip that hasn't been charged/adjusted.
+    const orderIds = orders.map((o) => o.id);
+    const ledgerRows = orderIds.length
+      ? await this.prisma.commissionLedger.findMany({
+          where: { orderId: { in: orderIds }, type: { in: ["ride_commission", "adjustment"] } },
+          select: { orderId: true, amount: true },
+        })
+      : [];
+    const chargedByOrder = new Map<string, number>();
+    for (const r of ledgerRows) {
+      if (!r.orderId) continue;
+      chargedByOrder.set(r.orderId, (chargedByOrder.get(r.orderId) ?? 0) + Number(r.amount));
+    }
 
     // Aggregate per rider in JS: ride count, gross fares, and per-ride-summed commission.
     const byRider = new Map<string, { rides: number; fares: number; commission: number }>();
@@ -99,7 +120,10 @@ export class SettlementsService {
       const agg = byRider.get(o.riderId) ?? { rides: 0, fares: 0, commission: 0 };
       agg.rides += 1;
       agg.fares += fare;
-      agg.commission += perRideCommission(fare, ratePct);
+      const charged = chargedByOrder.get(o.id);
+      // Ledger amounts are signed (debit −, a downward fare-adjust credit +); negate to a positive
+      // "commission collected" figure matching the projection's sign.
+      agg.commission += charged != null ? -charged : perRideCommission(fare, ratePct);
       byRider.set(o.riderId, agg);
     }
 

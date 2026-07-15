@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { getHistory, type OrderHistoryRow } from "../api/orders";
+import { type EarningsSummary, getEarningsSummary, getHistory, type OrderHistoryRow } from "../api/orders";
 import { loadHistorySnapshot, saveHistorySnapshot } from "../net/history-store";
 
 /**
@@ -52,4 +52,13 @@ export function useHistoryFeed(): HistoryFeed {
     hasLiveData: q.data != null,
     refetch: () => void q.refetch(),
   };
+}
+
+/** WD-004: the rider's true lifetime earnings total + trip count — a server-side aggregate over ALL
+ *  their delivered/completed orders, not a sum over the (capped) history rows above. No offline
+ *  warm-paint here: the Earnings screen falls back to deriving from `useHistoryFeed`'s rows while this
+ *  hasn't loaded (or errors), which is only ever a same-or-more-accurate number, never a regression. */
+export function useEarningsSummary(): { summary: EarningsSummary | undefined; isError: boolean } {
+  const q = useQuery({ queryKey: ["earnings", "summary"], queryFn: getEarningsSummary });
+  return { summary: q.data, isError: q.isError };
 }
