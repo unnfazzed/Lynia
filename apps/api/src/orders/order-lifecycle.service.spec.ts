@@ -323,6 +323,29 @@ describe("OrderLifecycleService.rate", () => {
     await svc.rate("o1", "c1", 2);
     expect(riderData).toMatchObject({ reliabilityScore: 58, onHold: true });
   });
+
+  it("WD-005: re-reads agreedFare after the CAS lock, so a concurrent fare-adjust can't produce a stale commission charge", async () => {
+    let findCount = 0;
+    const { svc, wallet } = build({
+      order: {
+        findUnique: async () => {
+          findCount += 1;
+          // 1st call: the pre-CAS snapshot ($10, stale). 2nd call: the post-CAS re-read reflects a
+          // concurrent admin fare-adjust that landed in between, now $7 — chargeCommission must see this.
+          return { status: "delivered", customerId: "c1", riderId: "r1", agreedFare: findCount === 1 ? 10 : 7 };
+        },
+        updateMany: async () => ({ count: 1 }),
+      },
+      rating: { create: async () => ({}) },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ ratingAvg: 4, ratingCount: 1, tripsCount: 1, reliabilityScore: 90, onHold: false, heldReason: null }),
+        update: async () => ({}),
+      },
+    });
+    await svc.rate("o1", "c1", 5);
+    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), { orderId: "o1", riderId: "r1", agreedFare: 7 });
+  });
 });
 
 describe("OrderLifecycleService.rateSender", () => {

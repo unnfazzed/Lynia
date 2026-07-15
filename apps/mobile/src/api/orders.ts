@@ -167,6 +167,16 @@ export function getHistory(): Promise<OrderHistoryRow[]> {
   return apiFetch<OrderHistoryRow[]>("/orders/history");
 }
 
+// WD-004: the rider's true lifetime earnings total + trip count, independent of the 50-row history cap.
+export interface EarningsSummary {
+  total: string;
+  count: number;
+}
+
+export function getEarningsSummary(): Promise<EarningsSummary> {
+  return apiFetch<EarningsSummary>("/orders/earnings/summary");
+}
+
 export function advanceStatus(orderId: string, to: AdvanceStatusRequest["to"]): Promise<{ orderId: string; status: OrderStatus }> {
   return apiFetch(`/orders/${orderId}/status`, { method: "POST", body: { to } });
 }

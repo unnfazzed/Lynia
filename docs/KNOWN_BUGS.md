@@ -6,9 +6,13 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-15 (deep-sweep routine — orthogonal hunt over never-audited internals,
-cross-cutting mechanisms, and an adversarial API pass; see the dedicated section near the bottom for
-this sweep's ten findings, DS15-01…DS15-10, two of them CRITICAL, all fixed same-run). Prior
+**Last consolidated:** 2026-07-15 (wallet & data-lifecycle audit routine — first run of the `WD-` lane;
+see the dedicated section near the bottom for this run's eleven findings, WD-001…WD-011, one CRITICAL
+(WD-001, a schema invariant — fare-adjust ledger reconciliation — that was documented but never
+implemented), all fixed same-run). Prior consolidation: 2026-07-15 (deep-sweep routine — orthogonal hunt
+over never-audited internals, cross-cutting mechanisms, and an adversarial API pass; see the dedicated
+section near the bottom for that sweep's ten findings, DS15-01…DS15-10, two of them CRITICAL, all fixed
+same-run). Prior
 consolidation: 2026-07-14 (deep-sweep routine — orthogonal Fable hunt over never-audited internals,
 pattern propagation, cross-cutting mechanisms, and an adversarial API pass). Prior fixes:
 PR #192 (F-01…F-10), PR #193 (F-11…F-19). Prior sweeps' remediation, all merged: **#195** (DS-01…DS-11
@@ -187,6 +191,12 @@ customer + rider journeys, infra/terraform provisioning.
 (metrics interceptor / client-metrics / otel), adapters (`gcs.storage`, `fcm.push`, `secrets`),
 `common` (throttle guard ordering, exception filter, zod pipe, trust-proxy), `phone-backfill`,
 admin-audit internals, `tracking.service` geo/Redis internals beyond the gateway.
+
+**Now covered (2026-07-15, wallet & data-lifecycle audit — first run of the `WD-` lane):** the prepaid
+commission wallet end to end — `wallet.controller`/`wallet.service` (top-up lifecycle, the credit
+primitive, the per-ride debit), the admin financial surfaces (`admin-orders.service.adjustFare`,
+`wallet.service.creditManual`, `settlements.service.commissionOverview`), and the rider-facing earnings
+tab. See the dedicated section below for findings WD-001…WD-011.
 
 ---
 
@@ -417,3 +427,32 @@ session's default model per the routine's own fallback instructions; all five Ph
 | DS15-08 | `/healthz`'s `prisma.ping()` drew from the same bounded (`max:10`) Postgres pool used by real traffic — DS-04 fixed the Redis half of this same health check but not the DB half; a probe flood or incident-time spike could queue on connection acquisition and starve real requests, hanging instead of failing fast | `apps/api/src/health/health.service.ts` | MEDIUM | **FIXED** — new `pingDb()` races the ping against a 2s timeout (mirroring the DS-04 Redis-ping pattern), so a saturated pool now fails the probe fast instead of hanging. New `health.service.spec.ts` (none existed before) |
 | DS15-09 | `POST /orders/notify-me`'s optional `orderId` (added in the 07-14 KB-NOTIFY-ORDERID follow-up) was forwarded to the Redis waiter registration with no check that the order belongs to the calling customer — any authenticated profile (e.g. a rider enumerating live ids via `GET /orders/open`) could register a notify-me tied to a victim's order, later receiving a push implying it was their own live request. Bounded: order content stays 403'd behind the party-gated `getSnapshot` | `apps/api/src/orders/orders.controller.ts`, `apps/api/src/orders/orders.service.ts` | LOW-MEDIUM | **FIXED** — `requestNotifyWhenAvailable` now checks the order's `customerId` against the caller and silently drops a foreign/non-existent `orderId` to a generic notify-me. Tests in `orders.service.spec.ts` |
 | DS15-10 | FCM `sendEach`'s chunking loop (batches of ≤500) wrapped the WHOLE loop in one try/catch — a chunk-2 failure after a chunk-1 success discarded the already-succeeded chunk-1 results and reported every message across every chunk as failed, wrongly excluding chunk-1-delivered profiles from `notifications.service.ts`'s `delivered` set (fail-safe direction only, since the notify-me design already re-pings via the next rider) | `apps/api/src/adapters/push/fcm.push.ts` | LOW | **FIXED** — the try/catch moved inside the loop so each chunk's failure is isolated; previously-succeeded chunks keep their real results. Tests in `fcm.push.spec.ts` |
+
+---
+
+## Wallet & data-lifecycle audit 2026-07-15 (wallet & data-lifecycle audit routine) — `docs/WALLET-DATA-AUDIT-2026-07-15.md`
+
+First run of this routine (lane `WD-`). Four independent passes audited the full money + reporting path:
+the rider wallet top-up journey, the per-ride commission debit, the rider earnings tab, and the admin
+dashboard's financial/reporting surface. Passes B (commission debit) and D (admin dashboard) independently
+converged on the same two root causes (WD-001, WD-002/WD-003) from different angles — cross-confirmation,
+not duplication. **Eleven findings — one CRITICAL, three HIGH, three MEDIUM, four LOW — all fixed this run**,
+each with a regression test; `pnpm typecheck` + `pnpm lint` + 909 API tests (+16) + 383 mobile tests (+13) +
+`apps/api` build all green. Two forward-looking, currently-dormant observations (a net-earnings UI line the
+Earnings screen's copy promises but doesn't build yet, and wallet-screen pull-to-refresh — an app-wide gap,
+not wallet-specific) are recorded as Suggestions in the report, not findings, since there's no live bug to
+fix while commission stays at the 0% launch rate.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| WD-001 | `AdminOrdersService.adjustFare` never wrote a compensating `adjustment` ledger row when correcting the fare on an already-`completed` order — the schema's own design comment ("fare-adjust deltas append here at the ride's original rate") was documented but unimplemented; `creditAccount` (the only method that could write `adjustment`) had zero callers anywhere | `apps/api/src/admin/admin-orders.service.ts` `adjustFare` | CRITICAL | **FIXED** — new `WalletService.adjustCommissionInTx` writes the correction in the SAME transaction as the fare change, computed at the rate the ride was actually charged (not the current live rate); `orderId` left NULL on the row (Postgres treats each NULL as distinct in the `(riderId, orderId, type)` unique index) so N corrections on one order never collide, without a schema migration. Tests in `wallet.service.spec.ts` + `admin-orders.service.spec.ts` (3 cases) |
+| WD-002 | Admin manual wallet-credit (`POST /admin/riders/:id/wallet-credit` → `WalletService.creditManual`) wrote no `AuditLog` row anywhere — the one money-movement admin action in the codebase with zero audit trail, unlike every sibling mutation (cancel/fare-adjust/standing changes), which all audit inside their own transaction | `apps/api/src/wallet/wallet.service.ts` `creditManual` | HIGH | **FIXED** — rewritten as one atomic transaction: TopUp create (pre-confirmed) → ledger row → balance update → `AuditLog.create`, all in the same `$transaction`. Test in `wallet.service.spec.ts` |
+| WD-003 | `creditManual`'s idempotency pre-check read `CommissionLedger.idemKey`, a column this path never wrote (dead code) — a genuine retry with the same `idempotencyKey` hit an uncaught Prisma `P2002` on the real de-dup mechanism (`TopUp.providerRef @unique`), surfacing as a generic 500 instead of the documented "structurally harmless" idempotent no-op | `apps/api/src/wallet/wallet.service.ts` `creditManual` | HIGH | **FIXED** — `P2002` on `providerRef` is now caught and returns the current (already-credited) balance. Test in `wallet.service.spec.ts` |
+| WD-004 | The rider Earnings tab's total/trip-count summed the client-side `/orders/history` page, capped at 50 rows across both roles — a rider with more than 50 lifetime orders saw a silently truncated "what I earned" figure with no indication anything was omitted | `apps/mobile/app/earnings/index.tsx`, `apps/api/src/orders/orders.service.ts` | HIGH | **FIXED** — new server-side aggregate `OrdersService.earningsSummary` (`GET /orders/earnings/summary`, unbounded `_sum`/`_count`) feeds the total/count; the recent-trips list stays the capped page. Tests in `orders.service.spec.ts` (3 cases) |
+| WD-005 | `OrderLifecycleService.rate()` read `agreedFare` BEFORE its CAS lock and reused that pre-lock snapshot in the commission-debit call — a concurrent admin fare-adjust landing in the gap could charge commission on a fare the order no longer had. Its sibling completion path, `completeOrder()`, already re-read after the CAS for exactly this reason | `apps/api/src/orders/order-lifecycle.service.ts` `rate` | MEDIUM | **FIXED** — `rate()` now re-reads `agreedFare` immediately after its CAS succeeds, mirroring `completeOrder()`. Test in `order-lifecycle.service.spec.ts` |
+| WD-006 | Admin `cash/settlements`'s "Commission accrued" KPI recomputed `fare × CURRENT live rate` per order in the 7-day window instead of reading what was actually charged — a mid-window rate change (or a WD-001 fare correction) would silently re-price older orders and never reconcile with the ledger | `apps/api/src/settlements/settlements.service.ts` `commissionOverview` | MEDIUM | **FIXED** — now sums actual `CommissionLedger` rows (`ride_commission` + `adjustment`) per order when present, falling back to the projection only for orders with no ledger row (the 0% launch period — unchanged behavior today). Tests in `settlements.service.spec.ts` (3 cases) |
+| WD-007 | `WalletService.getTopup` fell through to a stale, pre-confirm in-memory snapshot when its own expiry CAS lost a race to a concurrent confirm (0 rows updated) — a rider polling right at the expiry boundary briefly saw `pending` even though the credit had already landed (self-healed on the next poll, no fund loss) | `apps/api/src/wallet/wallet.service.ts` `getTopup` | LOW-MEDIUM | **FIXED** — re-reads the row from the DB on a 0-row CAS instead of returning the stale snapshot. Tests in `wallet.service.spec.ts` |
+| WD-008 | The wallet screen's hero balance rendered a malformed `"$-5.00"` for a negative (owed) balance instead of `"-$5.00"` — `formatMoney` had no sign handling, unlike the ledger rows on the same screen which already wrap in `Math.abs` + a sign prefix | `apps/mobile/app/wallet/index.tsx`, `apps/mobile/src/logic/money.ts` | LOW | **FIXED** — `formatMoney` now renders sign-first with a rounds-to-zero guard. Tests in `money.test.tsx` |
+| WD-009 | The top-up screen validated against the bundled `COMMISSION` constant instead of the server-authoritative `/wallet/config` (every other wallet surface reads the server value), and displayed the rider's locally-typed amount instead of the server-confirmed `topup.amount` on the wait/success screens | `apps/mobile/app/wallet/top-up.tsx` | LOW | **FIXED** — bounds sourced from `useWalletConfig()` (bundled constant only as the pre-load fallback); wait/success screens show `topup?.amount ?? amountNum`. Validation factored into a testable pure `validateTopupAmount`. Tests in `topup.test.tsx` (6 cases) |
+| WD-010 | `resolveCommissionRatePct` had no decimal-place limit on the `COMMISSION_RATE_PCT` env override, while `CommissionLedger.ratePct` is `Decimal(5,2)` — an over-precise ops value would be served to clients at full precision then silently truncate on write to each ride's receipt row | `packages/shared/src/policy.ts` `resolveCommissionRatePct` | LOW | **FIXED** — rounds the resolved rate to 2dp. Tests in `wallet.service.spec.ts` (3 cases) |
+| WD-011 | The Earnings screen's cumulative total folded `proposedFare` (the never-agreed ask) into the sum for any completed/delivered order with a null `agreedFare` (a documented completion anomaly `chargeCommission` already tolerates) — a price that was never agreed shouldn't inflate a "what I earned" total | `apps/mobile/app/earnings/index.tsx` | LOW | **FIXED** — the local fallback sum (used only until the WD-004 server aggregate loads) now excludes null-`agreedFare` rows; the server aggregate's SQL `SUM` already excludes them by construction |

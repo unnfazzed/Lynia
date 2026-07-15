@@ -1,10 +1,22 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { ACTIVE_RIDE_STATUSES, DELIVERY_OTP_MAX_ATTEMPTS, type OrderStatus, TERMINAL_STATUSES } from "@lynia/shared";
+import {
+  ACTIVE_RIDE_STATUSES,
+  DELIVERY_OTP_MAX_ATTEMPTS,
+  type OrderStatus,
+  perRideCommission,
+  TERMINAL_STATUSES,
+} from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
+import { WalletService } from "../wallet/wallet.service";
 import { auditData, deriveItems, ORDER_TIMELINE, routeOf, STATUS_STEP, STUCK_AFTER_MS } from "./admin.shared";
+
+/** 2dp round — matches the rounding convention used across wallet.service / settlements.service. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 /**
  * Where an order's `agreedFare` came from — derived, no `agreedFareSource` column (the logged
@@ -37,10 +49,14 @@ export class AdminOrdersService {
   // provided via TrackingModule (AdminModule imports it) and used for best-effort post-commit WS pushes.
   // NotificationsService (DS13-03) is likewise optional for the same test-construction reason — its
   // module is @Global, so the app always injects it — and is used for the best-effort post-commit FCM push.
+  // WalletService (WD-001) is likewise optional for the same test-construction reason — reconciling the
+  // commission ledger on a fare-adjust is a best-effort-but-still-transactional addition, never a hard
+  // dependency for a test that only cares about the order/audit mutation.
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway?: TrackingGateway,
     private readonly notifications?: NotificationsService,
+    private readonly wallet?: WalletService,
   ) {}
 
   /** Order monitor for ops — filter by status to watch live orders, cancellations, etc. */
@@ -152,10 +168,20 @@ export class AdminOrdersService {
   /**
    * Admin fare adjustment → overwrites `agreedFare` (a manual correction / dispute resolution). The new
    * fare, the reason and the audit row commit in one transaction. Reason required. 404s when not found.
+   *
+   * WD-001: if the order already completed, a `ride_commission` ledger row was already charged at the
+   * OLD fare. This correction must not leave that row stale — it appends a compensating `adjustment`
+   * row (schema design: "fare-adjust deltas at the ride's original rate"), computed at the rate the ride
+   * was ACTUALLY charged at (not the current live rate, which may have moved since), in the SAME
+   * transaction as the fare change. A ride charged at rate=0 (or with no ledger row at all — a null-fare
+   * completion anomaly) had nothing to correct, so nothing is written for it.
    */
   async adjustFare(actor: string, orderId: string, input: { agreedFare: number; reason: string; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, agreedFare: true } });
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { id: true, agreedFare: true, riderId: true, status: true },
+      });
       if (!order) throw new NotFoundException("Order not found");
       // Only correct a fare that was actually agreed. Writing agreedFare onto an order that never had
       // one (open_for_offers / requested / expired, or a pre-assignment cancel) would mint a
@@ -165,6 +191,7 @@ export class AdminOrdersService {
       if (order.agreedFare == null) {
         throw new ConflictException("Order has no agreed fare to adjust");
       }
+      const oldFare = Number(order.agreedFare);
       // DS-03: CAS on the exact fare we read so two operators adjusting concurrently can't both commit
       // (last-writer-wins + a duplicate audit row for one logical correction). The loser sees a 0-count
       // and is told to refresh — the same optimistic-concurrency guard the lifecycle transitions use.
@@ -175,6 +202,28 @@ export class AdminOrdersService {
       if (adjusted.count === 0) {
         throw new ConflictException("Order fare changed while adjusting — refresh and try again");
       }
+
+      if (order.riderId && order.status === "completed" && this.wallet) {
+        const charged = await tx.commissionLedger.findFirst({
+          where: { riderId: order.riderId, orderId, type: "ride_commission" },
+          select: { ratePct: true },
+        });
+        if (charged?.ratePct != null) {
+          const rate = Number(charged.ratePct);
+          const deltaFare = round2(input.agreedFare - oldFare);
+          const deltaCommission = perRideCommission(deltaFare, rate);
+          // Fare went up → bigger debit (negative amount); fare went down → credit the difference back.
+          await this.wallet.adjustCommissionInTx(tx, {
+            riderId: order.riderId,
+            amount: -deltaCommission,
+            ratePct: rate,
+            fare: deltaFare,
+            note: `Fare correction for order ${orderId}: $${oldFare.toFixed(2)} → $${input.agreedFare.toFixed(2)}`,
+            actor,
+          });
+        }
+      }
+
       const audit = await tx.auditLog.create({
         data: auditData(actor, "order.fare_adjust", orderId, input.reason, input.note),
         select: { id: true },

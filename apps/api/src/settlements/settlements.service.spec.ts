@@ -7,16 +7,19 @@ import { SettlementsService } from "./settlements.service";
  * A Prisma double for the commission overview: `order.findMany` returns the individual completed rides
  * (the service now sums commission per ride, not off a groupBy aggregate) and `profile.findMany`
  * resolves rider names. Each input group `{riderId, fares, rides}` is expanded into `rides` orders whose
- * fares are split evenly so they sum to `fares`. `captured` records the findMany `where` so we can
- * assert the trailing-7-day window.
+ * fares are split evenly so they sum to `fares`, each given a stable `o<riderId>-<i>` id. `captured`
+ * records the findMany `where` so we can assert the trailing-7-day window. `ledgerRows` (WD-006) lets a
+ * test simulate actual `CommissionLedger` charges — defaults to none (today's 0%-launch-rate reality,
+ * where the console falls back to the fare × rate projection for every order).
  */
 function overviewPrisma(
   groups: Array<{ riderId: string | null; fares: number; rides: number }>,
   profiles: Array<{ id: string; firstName: string; lastName: string }>,
+  ledgerRows: Array<{ orderId: string; amount: number }> = [],
 ) {
   const captured: { where: Record<string, unknown> | null } = { where: null };
-  const orders = groups.flatMap((g) =>
-    Array.from({ length: g.rides }, () => ({ riderId: g.riderId, agreedFare: g.fares / g.rides })),
+  const orders = groups.flatMap((g, gi) =>
+    Array.from({ length: g.rides }, (_, i) => ({ id: `o${gi}-${i}`, riderId: g.riderId, agreedFare: g.fares / g.rides })),
   );
   const prisma = {
     order: {
@@ -28,8 +31,11 @@ function overviewPrisma(
     profile: {
       findMany: async () => profiles,
     },
+    commissionLedger: {
+      findMany: async () => ledgerRows,
+    },
   };
-  return { prisma, captured };
+  return { prisma, captured, orders };
 }
 
 describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
@@ -97,5 +103,48 @@ describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
     const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"));
     expect(view.rows).toEqual([]);
     expect(view.kpis).toMatchObject({ rides: 0, fares: "0.00", commission: "0.00" });
+  });
+
+  it("WD-006: prefers the actual ledger charge over the current-rate projection, so a rate change mid-window doesn't re-price an already-charged ride", async () => {
+    // Order o0-0 ($50 fare) was charged $5.00 commission (10% — the rate AT THE TIME). The live rate has
+    // since moved to 20%; without the ledger reconciliation this order would be re-priced to $10.00 here,
+    // silently drifting from what was actually debited from the rider's wallet.
+    const { prisma, orders } = overviewPrisma(
+      [{ riderId: "r1", fares: 50, rides: 1 }],
+      [{ id: "r1", firstName: "Tendai", lastName: "M" }],
+      [{ orderId: "o0-0", amount: -5 }],
+    );
+    expect(orders[0]!.id).toBe("o0-0");
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
+    const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"), 20);
+    expect(view.rows[0]).toMatchObject({ riderId: "r1", fares: "50.00", commission: "5.00" });
+    expect(view.kpis.commission).toBe("5.00");
+  });
+
+  it("WD-006: nets a fare-adjust's compensating adjustment row into the reconciled figure", async () => {
+    // Charged $5.00 (ride_commission), then corrected down by $1.00 (adjustment credit) — the console
+    // must show the NET $4.00 actually collected, not the original pre-correction $5.00.
+    const { prisma } = overviewPrisma(
+      [{ riderId: "r1", fares: 50, rides: 1 }],
+      [{ id: "r1", firstName: "Tendai", lastName: "M" }],
+      [
+        { orderId: "o0-0", amount: -5 },
+        { orderId: "o0-0", amount: 1 },
+      ],
+    );
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
+    const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"), 10);
+    expect(view.rows[0]!.commission).toBe("4.00");
+  });
+
+  it("WD-006: falls back to the current-rate projection for an order with no ledger row (the 0% launch period)", async () => {
+    const { prisma } = overviewPrisma(
+      [{ riderId: "r1", fares: 100, rides: 1 }],
+      [{ id: "r1", firstName: "Tendai", lastName: "M" }],
+      [], // no ledger rows — chargeCommission writes none at 0%
+    );
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
+    const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"), 10);
+    expect(view.rows[0]!.commission).toBe(perRideCommission(100, 10).toFixed(2));
   });
 });

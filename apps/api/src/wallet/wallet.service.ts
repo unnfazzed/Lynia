@@ -244,6 +244,41 @@ export class WalletService {
     await tx.commissionAccount.update({ where: { riderId }, data: { balance: balanceAfter } });
   }
 
+  /**
+   * WD-001: correct a previously-charged `ride_commission` debit after an admin fare-adjust, inside the
+   * SAME transaction as the fare change (called from `AdminOrdersService.adjustFare`). Writes a signed
+   * `adjustment` ledger row for the delta (schema design: "fare-adjust deltas append here at the ride's
+   * original rate"). `orderId` is intentionally left null on the row: `CommissionLedger` has a single
+   * UNIQUE (riderId, orderId, type) index that would otherwise reject a SECOND adjustment on the same
+   * order (Postgres treats each NULL as distinct, so this keeps the row append-only across N corrections
+   * without a schema migration); the order is still identifiable via `note`. A zero-amount delta is a
+   * no-op (nothing to record).
+   */
+  async adjustCommissionInTx(
+    tx: Prisma.TransactionClient,
+    args: { riderId: string; amount: number; ratePct: number; fare: number; note: string; actor: string },
+  ): Promise<void> {
+    const amount = round2(args.amount);
+    if (amount === 0) return;
+    await tx.$executeRaw`INSERT INTO commission_accounts (rider_id) VALUES (${args.riderId}::uuid) ON CONFLICT (rider_id) DO NOTHING`;
+    const locked = await tx.$queryRaw<Array<{ balance: string }>>`
+      SELECT balance FROM commission_accounts WHERE rider_id = ${args.riderId}::uuid FOR UPDATE`;
+    const balanceAfter = round2(Number(locked[0]?.balance ?? 0) + amount);
+    await tx.commissionLedger.create({
+      data: {
+        riderId: args.riderId,
+        type: "adjustment",
+        amount,
+        balanceAfter,
+        ratePct: args.ratePct,
+        fare: args.fare,
+        note: args.note,
+        actor: args.actor,
+      },
+    });
+    await tx.commissionAccount.update({ where: { riderId: args.riderId }, data: { balance: balanceAfter } });
+  }
+
   // ── Top-ups ──
 
   /** Create a pending top-up intent for a self-serve rail. The amount is clamped server-side to
@@ -271,6 +306,12 @@ export class WalletService {
         data: { status: "expired", resolvedAt: new Date() },
       });
       if (expired.count > 0) return this.toTopup({ ...topUp, status: "expired" });
+      // WD-007: count === 0 means a concurrent write already moved this row off `pending` (e.g. a
+      // confirm landing at the same instant as the expiry check) — the in-memory `topUp` snapshot above
+      // is now stale. Re-read instead of falling through with it, so a rider polling right at the expiry
+      // boundary sees the real (already-confirmed) status instead of a falsely-reported `pending`.
+      const fresh = await this.prisma.topUp.findUnique({ where: { id } });
+      if (fresh) return this.toTopup(fresh);
     }
     return this.toTopup(topUp);
   }
@@ -372,9 +413,15 @@ export class WalletService {
 
   /**
    * Ops records an off-app payment as a confirmed manual credit (the launch rail for InnBucks/O'mari
-   * and the EcoCash fallback). Creates a `manual` TopUp + a `topup` ledger row via {@link creditFromTopup}.
-   * Abuse controls (design OV-3A): amount capped at `WALLET_MANUAL_CREDIT_CAP_USD`, and `idemKey`
-   * (minted when the admin form opens) makes a double-submit structurally harmless.
+   * and the EcoCash fallback). Creates a `manual` TopUp + a `topup` ledger row + the `AuditLog` row in
+   * ONE transaction (WD-002: a money-movement admin action must be atomically audited, matching every
+   * other admin mutation in the codebase — order cancel/fare-adjust, rider/customer standing changes).
+   *
+   * Idempotent by construction (WD-003): `idemKey` is written as `TopUp.providerRef` (`@unique`), so a
+   * double-submit (double-click, client retry) hits the unique constraint and is caught below, returning
+   * the already-credited balance instead of a 500. (The previous pre-check read `CommissionLedger.idemKey`,
+   * a column this path never wrote — dead code that let a genuine retry 500 instead of no-op.) Amount
+   * capped at `WALLET_MANUAL_CREDIT_CAP_USD` (design OV-3A).
    */
   async creditManual(args: {
     riderId: string;
@@ -390,30 +437,56 @@ export class WalletService {
     if (!(amount > 0) || amount > cap) {
       throw new ForbiddenException(`Manual credit must be between $0.01 and $${cap.toFixed(2)}`);
     }
-    // Idempotent: an existing credit with this key returns the current balance without a second write.
-    const existing = await this.prisma.commissionLedger.findUnique({
-      where: { idemKey: args.idemKey },
-      select: { balanceAfter: true },
-    });
-    if (existing) return { balance: round2(Number(existing.balanceAfter)) };
+    const note = args.note ?? `Manual ${RAIL_LABEL[args.rail]} credit`;
 
-    const topUp = await this.prisma.topUp.create({
-      data: {
-        riderId: args.riderId,
-        rail: args.rail,
-        amount,
-        status: "pending",
-        providerRef: args.idemKey,
-        expiresAt: new Date(Date.now() + TOPUP_WINDOW_MS),
-      },
-    });
-    const result = await this.creditFromTopup(topUp.id, args.idemKey);
-    // Stamp the ledger row's actor + note for the audit trail (creditFromTopup writes a system row).
-    await this.prisma.commissionLedger.updateMany({
-      where: { topUpId: topUp.id },
-      data: { actor: args.actorProfileId, note: args.note ?? `Manual ${RAIL_LABEL[args.rail]} credit` },
-    });
-    return result ?? this.getBalanceOnly(args.riderId);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const topUp = await tx.topUp.create({
+          data: {
+            riderId: args.riderId,
+            rail: args.rail,
+            amount,
+            status: "confirmed",
+            providerRef: args.idemKey,
+            expiresAt: new Date(Date.now() + TOPUP_WINDOW_MS),
+            resolvedAt: new Date(),
+          },
+        });
+        await tx.$executeRaw`INSERT INTO commission_accounts (rider_id) VALUES (${args.riderId}::uuid) ON CONFLICT (rider_id) DO NOTHING`;
+        const locked = await tx.$queryRaw<Array<{ balance: string }>>`
+          SELECT balance FROM commission_accounts WHERE rider_id = ${args.riderId}::uuid FOR UPDATE`;
+        const balanceAfter = round2(Number(locked[0]?.balance ?? 0) + amount);
+        await tx.commissionLedger.create({
+          data: {
+            riderId: args.riderId,
+            type: "topup",
+            amount,
+            balanceAfter,
+            topUpId: topUp.id,
+            actor: args.actorProfileId,
+            note,
+          },
+        });
+        await tx.commissionAccount.update({ where: { riderId: args.riderId }, data: { balance: balanceAfter } });
+        await tx.auditLog.create({
+          data: {
+            actor: args.actorProfileId,
+            action: "wallet.credit",
+            target: args.riderId,
+            reasonCode: args.rail,
+            note,
+          },
+        });
+        return { balance: balanceAfter };
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        // The idempotency key was already used — this credit already landed (or is landing in a
+        // concurrent request). Return the current balance rather than surfacing a spurious 500.
+        return this.getBalanceOnly(args.riderId);
+      }
+      throw err;
+    }
   }
 
   private async getBalanceOnly(riderId: string): Promise<{ balance: number }> {

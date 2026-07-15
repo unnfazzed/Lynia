@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
+import type { WalletService } from "../wallet/wallet.service";
 import { AdminOrdersService } from "./admin-orders.service";
 
 /** Decimal-like stub — Prisma returns Decimal objects whose `.toString()`/`.toFixed()` we serialize. */
@@ -326,5 +327,62 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);
     await expect(svc.adjustFare("admin-1", "o1", { agreedFare: 7.5, reason: "x" })).rejects.toThrow(/changed while adjusting/i);
     expect(calls.audit).toBeNull();
+  });
+
+  it("adjustFare on a completed order that already charged commission reconciles the ledger (WD-001)", async () => {
+    // The order completed at $10 and was charged at 10% (a ride_commission row with ratePct=10 exists).
+    // Correcting the fare down to $7 must credit back the over-charged commission delta, computed at the
+    // ORIGINAL rate — not the (possibly since-changed) current live rate.
+    const calls: { orderUpdate: unknown; audit: unknown } = { orderUpdate: null, audit: null };
+    const tx = {
+      order: {
+        findUnique: async () => ({ id: "o1", status: "completed", agreedFare: dec("10.00"), riderId: "r1" }),
+        updateMany: async (args: unknown) => {
+          calls.orderUpdate = args;
+          return { count: 1 };
+        },
+      },
+      commissionLedger: { findFirst: async () => ({ ratePct: dec("10.00") }) },
+      auditLog: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          calls.audit = args;
+          return { id: "audit-9" };
+        },
+      },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const wallet = { adjustCommissionInTx: vi.fn(async () => {}) };
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    await svc.adjustFare("admin-1", "o1", { agreedFare: 7, reason: "GPS overcharge" });
+    expect(wallet.adjustCommissionInTx).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ riderId: "r1", ratePct: 10, fare: -3, amount: 0.3, actor: "admin-1" }),
+    );
+    expect(calls.audit).not.toBeNull();
+  });
+
+  it("adjustFare does NOT touch the wallet for an order that never completed (no commission ever charged)", async () => {
+    // Default makeTx() order status is "assigned" — no ride_commission row could exist yet.
+    const { prisma } = makeTx();
+    const wallet = { adjustCommissionInTx: vi.fn(async () => {}) };
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    await svc.adjustFare("admin-1", "o1", { agreedFare: 7.5, reason: "x" });
+    expect(wallet.adjustCommissionInTx).not.toHaveBeenCalled();
+  });
+
+  it("adjustFare on a completed order with NO ride_commission row (0% at charge time) skips the wallet — nothing was ever charged to correct", async () => {
+    const tx = {
+      order: {
+        findUnique: async () => ({ id: "o1", status: "completed", agreedFare: dec("10.00"), riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      commissionLedger: { findFirst: async () => null },
+      auditLog: { create: async () => ({ id: "audit-9" }) },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const wallet = { adjustCommissionInTx: vi.fn(async () => {}) };
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    await svc.adjustFare("admin-1", "o1", { agreedFare: 7, reason: "x" });
+    expect(wallet.adjustCommissionInTx).not.toHaveBeenCalled();
   });
 });
