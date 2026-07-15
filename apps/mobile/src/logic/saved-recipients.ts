@@ -106,16 +106,6 @@ export async function rememberRecipient(recipient: Recipient): Promise<Recipient
   return next;
 }
 
-/** Wipe all saved recipients (sign-out / a "clear" affordance). Best-effort. */
-export async function clearRecipients(): Promise<void> {
-  try {
-    await SecureStore.deleteItemAsync(RECIPIENTS_KEY);
-    await SecureStore.deleteItemAsync(MY_PICKUP_PHONE_KEY);
-  } catch {
-    /* best-effort */
-  }
-}
-
 /** The sender's own last-used pickup phone, or null when none is stored / it's too short to be real. */
 export async function loadMyPickupPhone(): Promise<string | null> {
   try {

@@ -36,10 +36,3 @@ export async function loadHistorySnapshot(): Promise<OrderHistoryRow[] | null> {
   }
 }
 
-export async function clearHistorySnapshot(): Promise<void> {
-  try {
-    await SecureStore.deleteItemAsync(HISTORY_SNAPSHOT_KEY);
-  } catch {
-    /* best-effort */
-  }
-}
