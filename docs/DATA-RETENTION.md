@@ -22,6 +22,8 @@
 |---|---|---|---|
 | **National ID** (encrypted) | `profiles.id_number` / `id_number_hash` | life of the account | cleared to `null` on erasure |
 | **GPS trail** | `order_events.lat/lng` | **`GPS_RETENTION_DAYS` = 90** after the event | coords set to `null`; the status event row is kept for the timeline |
+| **SOS location** | `sos_events.lat/lng` | **`GPS_RETENTION_DAYS` = 90** after the event (same clock as the GPS trail) | coords set to `null`; the SOS event row is kept for the safety/incident ledger |
+| **Order contact phone** | `orders.pickup`/`orders.dropoff` embedded JSON `contactPhone` | life of the account | `contactPhone` nulled in place on erasure, for every order the erasing profile placed as customer |
 | **Name / phone / email** | `profiles` | life of the account | anonymised on erasure (name → "Deleted User", email → null, phone → non-reusable tombstone) |
 | **KYC media** (selfie, ID photo) | Cloud Storage `kyc/{userId}/…` | **legal minimum** (AML/KYC) after the rider goes inactive/rejected | deleted by the bucket lifecycle — the gated `kyc_retention_days` in `infra/terraform/storage.tf` (founder enables) |
 | **Saved addresses** | `addresses` | life of the account | deleted on erasure |
@@ -44,6 +46,12 @@
 - **Scrubs rider PII** (bike reg, photo, KYC refs/reasons, last position) — row kept for the ledger.
 - **Deletes** saved addresses, device tokens, and sessions (logs every device out).
 - **Nulls the GPS trail** on all of the user's orders' `order_events`.
+- **Nulls the precise location** on every `SosEvent` this profile raised — the same treatment as the
+  GPS trail, since an SOS event carries the most sensitive location data in the system (an emergency
+  moment) tied to the (now anonymised) profile.
+- **Nulls the embedded `contactPhone`** in the `pickup`/`dropoff` JSON of every order this profile
+  placed as customer (read-modify-write per order — the dialable contact PII isn't reachable via a
+  bulk column update since it lives inside a JSON blob).
 - **Idempotent** — safe to re-run (an already-erased profile is a no-op).
 
 Orders, ratings, and audit rows are **kept** (anonymised by reference) — the delivery/financial record
@@ -56,6 +64,8 @@ same pattern as the settlement auto-pause — no in-process cron dependency) inv
 `PrivacyService.purgeExpiredData()`:
 
 - **GPS scrub** — `order_events` older than `GPS_RETENTION_DAYS` have their coords nulled.
+- **SOS GPS scrub** — `sos_events` older than `GPS_RETENTION_DAYS` (same clock) have their coords
+  nulled; the event row is kept.
 - **Session purge** — sessions that lapsed more than `SESSION_RETENTION_DAYS` ago are deleted.
 
 Returns the counts. A standalone run is also possible via the same service.

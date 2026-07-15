@@ -44,7 +44,7 @@ reputation system that can be weaponised (report/issue spam, one-sided rating sa
 
 **Fixed (verified):** `makeOffer` now rejects `order.customerId === riderId`
 (`offers.service.ts:38`), and `selectOffer` re-asserts the same check inside its CAS
-(`matching.service.ts:79`). See `docs/KNOWN_BUGS.md` — "Object-authz / IDOR cluster → FIXED
+(`matching.service.ts:89`). See `docs/KNOWN_BUGS.md` — "Object-authz / IDOR cluster → FIXED
 (verified)." The finding below is kept for the exploit narrative and defense-in-depth ideas.
 
 A `Profile` can be both a customer and a rider (`becomeRider` just flips role + adds a `Rider` row),
@@ -125,7 +125,15 @@ post-pickup undelivered reasons. Flag per-rider `undelivered(refused)` rates for
 ## P1 — high-impact, plausible trigger
 
 ### P1-1 · Refunds net against the rider's *whole* week and aren't capped to the order fare
-**`apps/api/src/issues/issues.service.ts:212-219`, `contracts.ts:163` (`refundAmount: positive().max(1000)`), `settlements.service.ts:128-134` (`amountDue = max(0, commission − refundsNetted)`)**
+**`apps/api/src/issues/issues.service.ts:215-232`, `contracts.ts:187` (`refundAmount: positive().max(1000)`)**
+
+**MOOT + separately FIXED:** the weekly-netting mechanic this finding describes
+(`settlements.service.ts`'s old `amountDue = max(0, commission − refundsNetted)`) no longer exists —
+`settlements.service.ts` was rewritten to the read-only prepaid-per-ride model (see
+`docs/KNOWN_BUGS.md` — "Money-fraud cluster → MOOT"). Independently, the proposed fix below has since
+been implemented: `issues.service.ts:223-229`'s `resolve()` now rejects any `refundAmount` above
+`order.agreedFare ?? order.proposedFare` (`fareCap`) with a `BadRequestException`. Kept below for the
+exploit narrative.
 
 A refund is bounded only to "positive, ≤ $1000" — **not to the order's fare** — and every un-netted
 refund in the window is subtracted from the rider's **total** weekly commission, floored at 0.
@@ -139,11 +147,16 @@ refund in the window is subtracted from the rider's **total** weekly commission,
 commission, not the rider's whole book; require dual-control + evidence for refunds above a threshold.
 
 ### P1-2 · KYC attempt-lock is bypassable — vendor auto-declines never count → unlimited face/ID retries
-**`apps/api/src/riders/rider.service.ts:205-224` (`applyKycResult`) vs `:248-266` (`adminSetKyc`), retry lock at `:142-144`**
+**`apps/api/src/riders/rider.service.ts:369` (`applyKycResult`) vs `:455` (`adminSetKyc`), retry lock at `:201-211` (`retryKyc`)**
 
-The "locked after two attempts → support" control only increments `kycAttempts` on **admin** declines.
-The Didit webhook path (`applyKycResult`) **deliberately does not** touch `kycAttempts`
-(comment `:218-219`). A vendor auto-decline (`score < needsReview`) leaves the counter at 0.
+**FIXED (verified):** a vendor auto-decline now increments `kycAttempts` too —
+`rider.service.ts:391` (`...(status === "failed" ? { kycAttempts: { increment: 1 } } : {})` inside
+`applyKycResult`, guarded by the same monotonic `kycRef`/`kycResolvedAt` replay-safety as the rest of
+the update). See `docs/KNOWN_BUGS.md` F-13. Kept below for the exploit narrative.
+
+The "locked after two attempts → support" control used to only increment `kycAttempts` on **admin**
+declines. The Didit webhook path (`applyKycResult`) deliberately did not touch `kycAttempts`. A vendor
+auto-decline (`score < needsReview`) left the counter at 0.
 
 **Exploit:** submit a borderline/fraudulent face or document → auto-`failed`, counter stays 0 →
 `POST /riders/kyc/retry` (passes `kycAttempts < 2`) → repeat indefinitely, varying the document/face,
@@ -169,11 +182,18 @@ Didit identity id) across riders; block onboarding when it matches a banned/susp
 minimum make verified national-ID unique and cross-check it against what Didit verified.
 
 ### P1-4 · OTP verify — attempt cap is a TOCTOU race + the endpoint is unthrottled → account takeover
-**`apps/api/src/auth/auth.service.ts:168-185` (`verifyOtp`), `auth.controller.ts:26-29` (no `@Throttle` on `/auth/otp/verify`), `otp-store.ts:39-44,74-76`**
+**`apps/api/src/auth/auth.service.ts:240` (`verifyOtp`), `auth.controller.ts:33-34` (`@Throttle` on `/auth/otp/verify`), `otp-store.ts:51-56,105-107`**
 
-`verifyOtp` does read → check (`attempts >= MAX_OTP_ATTEMPTS`) → **separate** increment, so the
-`MAX_OTP_ATTEMPTS = 5` cap only holds for **sequential** requests. Under concurrency, N requests all
-read `attempts = 0`, all pass the gate, all compare a guess. `/auth/otp/verify` has **no route
+**FIXED (verified), both halves:** `verifyOtp` now increments the attempt counter atomically
+*before* comparing the guess (`auth.service.ts:272`, `incrAttempts` is a single Redis `HINCRBY` or a
+synchronous in-memory mutation), closing the check-then-increment TOCTOU; and
+`auth.controller.ts:34` carries `@Throttle({ limit: 10, windowSec: 300, keyPrefix: "otp-verify" })`.
+See `docs/KNOWN_BUGS.md` — "Auth/identity cluster → FIXED (verified)... OTP verify TOCTOU." Kept
+below for the exploit narrative.
+
+`verifyOtp` used to read → check (`attempts >= MAX_OTP_ATTEMPTS`) → **separate** increment, so the
+`MAX_OTP_ATTEMPTS = 5` cap only held for **sequential** requests. Under concurrency, N requests all
+read `attempts = 0`, all passed the gate, all compared a guess. `/auth/otp/verify` had **no route
 throttle** (unlike `/auth/refresh`).
 
 **Exploit:** trigger one OTP send, then fire a large concurrent burst of `/auth/otp/verify` for that
@@ -218,15 +238,23 @@ report) before a reliability penalty lands.
 ## P2 — real abuse, bounded trigger
 
 - **P2-1 · Admin `adjustFare` can rewrite `agreedFare` downward with no floor before settlement.**
-  `admin.service.ts:455-483` — the only guard blocks editing an order whose week is already `PAID`; an
-  order in the open week can be set to any positive value, and regeneration lowers commission before
-  billing. A rogue/gamed admin zeroes commission (audited, but no lower bound). **Fix:** forbid
-  downward fare edits on completed orders inside a settlement window; treat corrections as explicit,
-  capped, audited credits.
+  **MOOT** — `adjustFare` moved to `apps/api/src/admin/admin-orders.service.ts:156-184`, and the
+  "PAID week" guard this finding describes no longer exists: "Under the prepaid per-ride model there
+  is no settled billing period to lock against — the old 'settlement already paid' guard was removed
+  with the weekly cash-settlement engine" (`admin-orders.service.ts:163-164`). See
+  `docs/KNOWN_BUGS.md` — "Money-fraud cluster → MOOT" (`P2-1 admin-adjustfare-downward`). The
+  underlying "no floor on downward edits" critique may be worth re-checking once the prepaid wallet
+  starts debiting per ride. Original citation: an order in the open week could be set to any positive
+  value, and regeneration lowered commission before billing. **Fix:** forbid downward fare edits on
+  completed orders inside a settlement window; treat corrections as explicit, capped, audited credits.
 - **P2-2 · `recordPayment` clears a settlement with no proof cash moved.**
-  `settlements.service.ts:219-235` — a single admin action, free-choice `method` (incl. `"netted"` =
-  no cash), no receipt/reference, no amount reconciliation. (Overlaps BUG-HUNT **P2-4**.) **Fix:**
-  require a payment reference for cash/EcoCash, dual-control for large amounts, recorded-vs-deposited
+  **MOOT** — `recordPayment` no longer exists anywhere in the codebase; the whole weekly
+  settlement-payment-recording flow was removed with the prepaid-per-ride rewrite of
+  `settlements.service.ts` (now 150 lines, read-only). See `docs/KNOWN_BUGS.md` — "Money-fraud
+  cluster → MOOT" (`P2-2 recordpayment-no-proof`). Original citation: a single admin action,
+  free-choice `method` (incl. `"netted"` = no cash), no receipt/reference, no amount reconciliation.
+  (Overlaps BUG-HUNT **P2-4**.) **Fix:** require a payment reference for cash/EcoCash, dual-control
+  for large amounts, recorded-vs-deposited
   reconciliation report.
 - **P2-3 · Banned/suspended-at-runtime rider keeps acting until token expiry; ban revokes no sessions.**
   `jwt-auth.guard.ts:13-25` never re-reads `accountStatus`; only the go-online gate does. (Overlaps

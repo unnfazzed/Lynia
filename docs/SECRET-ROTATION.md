@@ -89,14 +89,16 @@ Socket.IO adapter reconnect); the app degrades gracefully (`maxRetriesPerRequest
 ## 5. Vendor keys (WhatsApp / Didit / FCM)
 
 1. Mint a new key in the vendor console **without revoking the old one yet**.
-2. Add it as a new Secret Manager version (`WHATSAPP_ACCESS_TOKEN`, `DIDIT_API_KEY`,
-   `DIDIT_WEBHOOK_SECRET`, …). Redeploy.
+2. Add it as a new Secret Manager version (`WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`,
+   `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, …). Redeploy.
 3. Verify the flow works end-to-end (send an OTP / run a KYC session / send a push).
 4. **Now** revoke the old key in the vendor console.
 
 For `DIDIT_WEBHOOK_SECRET`, rotate the destination secret in Didit and update the Secret Manager
 version together — the webhook HMAC check fails closed, so a mismatch rejects callbacks (safe, but
-KYC results stall until aligned).
+KYC results stall until aligned). `WHATSAPP_APP_SECRET` has the same fail-closed posture on the
+`/webhooks/whatsapp` delivery-status callback — rotate it in Meta's console and Secret Manager
+together, or delivery-failure observability stalls until aligned (does not affect OTP send itself).
 
 ---
 
