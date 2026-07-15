@@ -67,4 +67,18 @@ export class GcsStorage implements StorageAdapter {
       });
     return url;
   }
+
+  /**
+   * DS15-03: purge the object from the bucket (right-to-erasure). Best-effort by contract — an object
+   * that's already gone (404 / never uploaded) is a success, and any other storage hiccup is logged and
+   * swallowed so a bucket blip can't hard-fail the erasure that runs this post-commit. `ignoreNotFound`
+   * makes GCS return quietly instead of throwing on a missing object.
+   */
+  async deleteObject(key: string): Promise<void> {
+    try {
+      await this.storage.bucket(this.bucket).file(key).delete({ ignoreNotFound: true });
+    } catch (err) {
+      this.logger.warn(`deleteObject(${key}) failed (swallowed): ${(err as Error).message}`);
+    }
+  }
 }

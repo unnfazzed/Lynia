@@ -706,7 +706,9 @@ describe("RiderService.applyKycResult", () => {
           data = args.data;
           return { count: 1 };
         },
+        findFirst: async () => ({ profileId: "p1" }),
       },
+      auditLog: { create: async () => ({}) },
     };
     expect(await svc(prisma, {}).applyKycResult("sess_1", "verified", eventAt)).toEqual({ updated: 1 });
     // Only applies when newer than the last resolution (replay/reorder can't downgrade a newer decision).
@@ -748,7 +750,9 @@ describe("RiderService.applyKycResult", () => {
           data = args.data;
           return { count: 1 };
         },
+        findFirst: async () => ({ profileId: "p1" }),
       },
+      auditLog: { create: async () => ({}) },
     };
     expect(await svc(prisma, {}).applyKycResult("sess_1", "failed", eventAt, "score_below_threshold")).toEqual({ updated: 1 });
     // The increment rides the SAME where guard that dedupes replays/reorders: a webhook that isn't newer
@@ -777,7 +781,9 @@ describe("RiderService.applyKycResult", () => {
           data = args.data;
           return { count: 1 };
         },
+        findFirst: async () => ({ profileId: "p1" }),
       },
+      auditLog: { create: async () => ({}) },
     };
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date());
     expect(data).not.toHaveProperty("kycAttempts");
