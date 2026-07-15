@@ -251,6 +251,13 @@ export class AdminRidersService {
     // board rooms so the board-push stream stops immediately instead of leaking until they disconnect.
     // Best-effort (kickRiderFromBoard swallows its own errors); never affects the committed suspension.
     void this.gateway.kickRiderFromBoard(profileId);
+    // DS15-05: a suspended rider is now isOnline:false in PG, but the TTL-less `rider:geo` Redis sorted
+    // set still holds their stale entry — GEOSEARCH caps candidates at GEO_SEARCH_COUNT BEFORE the PG
+    // filter, so accumulated ghosts crowd real riders out of the nearest-N window (plus an unbounded
+    // Redis leak). Evict post-commit, best-effort (evictRiderFromGeo doesn't swallow, so .catch here).
+    void this.gateway
+      .evictRiderFromGeo(profileId)
+      .catch((err) => this.logger.warn(`geo eviction after suspend failed for ${profileId}: ${(err as Error).message}`));
     void this.notifyCustomersOfRiderStandingChange(profileId);
     return result;
   }
@@ -342,6 +349,11 @@ export class AdminRidersService {
     // KB-BOARD-REVOKE: a banned rider is no longer board-eligible — kick their live socket(s) off the
     // board rooms post-commit so the board-push stream stops at once (mirrors suspendRider). Best-effort.
     void this.gateway.kickRiderFromBoard(profileId);
+    // DS15-05: also evict from the `rider:geo` Redis index (mirrors suspendRider) — a banned rider must
+    // not linger as a GEOSEARCH ghost. Best-effort, post-commit; evictRiderFromGeo doesn't swallow so .catch.
+    void this.gateway
+      .evictRiderFromGeo(profileId)
+      .catch((err) => this.logger.warn(`geo eviction after ban failed for ${profileId}: ${(err as Error).message}`));
     void this.notifyCustomersOfRiderStandingChange(profileId);
     return result;
   }
