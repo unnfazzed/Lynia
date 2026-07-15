@@ -1,13 +1,13 @@
 # Scheduled Claude Routines — canonical spec
 
-This file is the single source of truth for the six recurring Claude routines that run
+This file is the single source of truth for the seven recurring Claude routines that run
 against this repo. Each routine's cron prompt is kept **self-contained** (a routine must not
 depend on this file existing to function), but this spec is authoritative when a prompt and
 this file disagree — the next prompt revision must be reconciled against it.
 
-Last reconciled: 2026-07-14 (routines-analysis pass).
+Last reconciled: 2026-07-15 (added the wallet & data-lifecycle audit routine).
 
-## The six routines
+## The seven routines
 
 | Routine | Cron (UTC) | Environment | Lane |
 |---|---|---|---|
@@ -16,11 +16,17 @@ Last reconciled: 2026-07-14 (routines-analysis pass).
 | Bug hunting | `0 23 * * *` | env_01B3aX… | Mobile-app journeys + app↔API contract seams |
 | User experience improvements | `0 1 * * *` | env_01B3aX… | UX friction, copy, recoverability, blockers |
 | Deep bug sweep | `0 3 * * *` | env_01V3Lw… | Backend correctness, concurrency, security, adversarial API |
+| Wallet & data-lifecycle audit | `0 9 */2 * *` (every 2nd day) | env_01V3Lw… | Wallet/earnings/admin data-lifecycle correctness — money & reporting integrity |
 | PR health & delivery watchdog | `0 */6 * * *` | env_01V3Lw… | CI/merge/deploy babysitting for **all** PRs |
 
-The three bug-finding routines run 2 hours apart (23:00 → 01:00 → 03:00) **by design**: each
-one's ledger/report PR must be merged before the next routine starts, so the next routine
-inherits the previous one's findings and does not rediscover them.
+The three overnight bug-finding routines run 2 hours apart (23:00 → 01:00 → 03:00) **by
+design**: each one's ledger/report PR must be merged before the next routine starts, so the
+next routine inherits the previous one's findings and does not rediscover them. The wallet &
+data-lifecycle audit (09:00, every 2nd day) is a fourth bug-finder that runs last in the day's
+chain — after doc-sync (05:00) and refactoring (07:00) — so on the days it fires it starts from a
+fully settled tree and inherits everything the overnight routines merged. It runs every 2nd day
+rather than nightly because its surface (wallet + earnings + admin) is narrow and slow-changing,
+and the deep sweep (03:00) already covers money/price integrity nightly as a backstop.
 
 ## Universal policies (apply to every routine — user instruction 2026-07-14)
 
@@ -42,7 +48,7 @@ inherits the previous one's findings and does not rediscover them.
 4. **Never merge on red.** Auto-merge means merge-on-green, not merge-regardless. Failing or
    missing required checks always block; fix forward first.
 
-## Bug-dedup protocol (the three bug-finders)
+## Bug-dedup protocol (the four bug-finders)
 
 `docs/KNOWN_BUGS.md` is the coordination ledger. Duplicate findings across routines are a
 process failure; the ledger is how the routines stay disjoint.
@@ -61,13 +67,23 @@ process failure; the ledger is how the routines stay disjoint.
   - **Deep bug sweep (03:00):** backend correctness — transactions/rollback, concurrency and
     idempotency, timer/expiry boundaries, money/price integrity, object-level authorization,
     KYC-gate bypass, plus the adversarial direct-API pass.
+  - **Wallet & data-lifecycle audit (09:00):** the money + reporting data lifecycle end to end —
+    the rider wallet journey (top-up → `CommissionAccount` balance → append-only
+    `CommissionLedger`), the per-ride commission debit, the earnings tab, and the admin
+    dashboard's reported numbers + mutating actions (wallet-credit, fare-adjust, cancel,
+    hold/suspend/ban, KYC decision). It concentrates on *reconciliation* (balance = sum(ledger);
+    no lost/double/mis-recorded transaction; dashboard KPIs = orders + ledger; every admin action
+    correct, authorized, audited, idempotent). Deep sweep owns generic backend concurrency; this
+    lane owns the financial/reporting integrity specifically. Behavior-correcting UI/UX +
+    data-integrity fixes only — **no new features** (feature ideas go in the report's
+    "Suggestions (not implemented)" section).
 - **Out-of-lane finds are still fixed** (policy 2 — no deferral), but tagged in the ledger with
   the owning lane so the owning routine knows the territory is covered.
 - **Every new finding gets a ledger row in the same PR as its fix**, with the routine's ID
-  prefix: `BH-` (bug hunting), `UX-` (user experience), `DS-` (deep sweep). Row carries:
-  file:line, severity, status, fixing PR.
+  prefix: `BH-` (bug hunting), `UX-` (user experience), `DS-` (deep sweep), `WD-` (wallet &
+  data-lifecycle). Row carries: file:line, severity, status, fixing PR.
 - **Dated report files** (same PR): `docs/BUG-HUNT-<date>.md`, `docs/UX-USABILITY-REVIEW-<date>.md`,
-  `docs/DEEP-SWEEP-<date>.md` — mirroring the existing formats.
+  `docs/DEEP-SWEEP-<date>.md`, `docs/WALLET-DATA-AUDIT-<date>.md` — mirroring the existing formats.
 
 ## Refactoring routine (07:00 UTC, every 2nd day)
 
@@ -142,6 +158,66 @@ refactoring](https://shopify.engineering/refactoring-legacy-code-strangler-fig-p
 Google — [small CLs](https://google.github.io/eng-practices/review/developer/small-cls.html),
 [Code Health](https://testing.googleblog.com/2017/04/code-health-googles-internal-code.html);
 hotspot prioritization — [CodeScene churn × complexity](https://codescene.com/blog/benchmarking-code-health-refactoring-roi).
+
+## Wallet & data-lifecycle audit (09:00 UTC, every 2nd day)
+
+Added 2026-07-15 (user request). Runs every 2nd day (`0 9 */2 * *`), last in the day's chain on
+the days it fires (after the overnight bug-finders, doc-sync at 05:00, and refactoring at 07:00)
+so it audits a fully settled tree and inherits every merged finding. Every-2nd-day rather than
+nightly because the wallet/earnings/admin surface is narrow and slow-changing (mirroring the
+refactoring cadence), and the deep sweep (03:00) covers money/price integrity nightly as a
+backstop. It is the fourth bug-finder in the dedup protocol above, lane prefix `WD-`.
+
+**Mission:** prove — and where broken, fix — that the money and reporting data lifecycle is
+correct end to end. The unit of work is the path a dollar and a reporting datum travel:
+
+    rider wallet (top-up → CommissionAccount.balance → append-only CommissionLedger)
+      → per-ride commission debit on order completion
+      → earnings the rider sees
+      → the numbers the admin dashboard reports and the admin actions that mutate them.
+
+The bar is three things: **(a)** no transaction is lost, double-counted, or mis-recorded;
+**(b)** balances, earnings, and dashboard KPIs reconcile with the append-only ledger and the
+underlying orders; **(c)** every admin action (wallet-credit, fare-adjust, order cancel, customer
+hold/lift, rider suspend/lift/ban/clear-hold, KYC decision) writes correct, authorized, audited
+(`AuditLog`), idempotent data. This encodes the intent that the data lifecycle is sound and that
+payments are well integrated into the data + reporting lifecycle.
+
+**Surfaces (Phase 1):**
+
+- **A. Rider wallet journey** — `apps/mobile/app/wallet/{index,top-up}.tsx`,
+  `apps/mobile/src/api/wallet.ts`, `apps/mobile/src/query/use-wallet.ts`; API
+  `apps/api/src/wallet/wallet.{controller,service}.ts`. Exactly-once top-up credit (CAS status
+  transition + unique `topUpId`, re-openable `expired`), `balance` vs `sum(ledger)`,
+  negative-balance handling, confirmation-vs-expiry races, `Decimal(10,2)` rounding, and the wallet
+  UI states.
+- **B. Per-ride commission debit** — one `ride_commission` row per order (UNIQUE
+  `(riderId, orderId, type)`) at the ride's `ratePct`, fare-adjust deltas as `adjustment` rows,
+  written inside the completion transaction under the balance row-lock; the launch-rate 0% path.
+- **C. Earnings tab** — `apps/mobile/app/earnings/index.tsx`; earnings reconcile with completed
+  orders and ledger receipts, correct period/timezone bucketing, complete empty/loading/error states.
+- **D. Admin dashboard** — `apps/admin/app/*` (overview, cash, orders, riders, customers, issues,
+  sos, actions) + API `apps/api/src/admin/*` and `apps/api/src/reports/*`; KPIs and the
+  `cash/settlements` commission view reconcile with orders + ledger, and every mutating action is
+  authorized, audited, and idempotent.
+
+**Reconciliation checks (Phase 2 — the core of the lane):** balance ≠ sum(ledger); a top-up
+confirmed but not credited, or credited twice; a completed order with no or duplicate
+`ride_commission`; a fare-adjust that breaks the one-debit-per-order invariant; an admin
+wallet-credit applied twice or unaudited; a dashboard aggregate that double-counts
+cancelled/refunded orders or mis-buckets by timezone; an earnings total that disagrees with the
+ledger. For each hit, grep every sibling occurrence (bugs cluster).
+
+**Scope discipline:** behavior-correcting bug/UI/UX/data-integrity fixes only — **no new
+features**; feature ideas are recorded under a "Suggestions (not implemented)" heading in the
+report and left for the human. No deferrals — every code finding is fixed this run with a
+regression test that would have caught it; wallet-credit / fare-adjust / commission / KYC changes
+stay conservative. `Settlement` is dormant — don't build against it.
+
+**Ledger & report (same PR as fixes):** `docs/WALLET-DATA-AUDIT-<date>.md` (IDs `WD-###`,
+file:line, repro, severity, confidence) + `docs/KNOWN_BUGS.md` rows (`WD-` prefix). Ships
+ready-for-review + auto-merge on green per universal policy 1; skip the PR only when nothing new
+and no doc updates are worth shipping.
 
 ## Known constraints of the routine environments
 
