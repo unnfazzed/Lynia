@@ -180,11 +180,13 @@ export const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.coerce.number().min(0).max(100).default(10),
   ),
-  // Server-driven wallet visibility flag (design OV-5A). The rider-facing wallet surfaces (Earnings
-  // balance row + Wallet route) stay hidden until this is true OR the rate flips (>0). Lets internal/
-  // test riders see the UI early to exercise it, and keeps a silent "commission" tab off recruiting
-  // riders' screens during the 0% period. "true"/"false"; default off.
-  WALLET_REVEAL: z.enum(["true", "false"]).default("false"),
+  // Server-driven wallet visibility flag (design OV-5A). Controls the rider-facing wallet surfaces
+  // (Earnings balance row + Wallet route); the rate flip (>0) also reveals them regardless. **Default
+  // on** (product decision 2026-07-15): the wallet is shown from launch even at 0% commission — riders
+  // see their $0 prepaid balance and the honest "no commission yet" copy, and no one is gated
+  // (`commission_low_balance` only fires once the rate is > 0, so visibility never blocks going online).
+  // Set to "false" to hide it again (a kill-switch). "true"/"false".
+  WALLET_REVEAL: z.enum(["true", "false"]).default("true"),
   // Per-entry cap (USD) on an ops manual credit — an abuse backstop on the admin credit path
   // (design OV-3A). Default $50 (= COMMISSION.maxTopUp).
   WALLET_MANUAL_CREDIT_CAP_USD: z.coerce.number().positive().default(50),

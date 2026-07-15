@@ -30,7 +30,11 @@ function CommissionRow(): React.ReactElement | null {
       >
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Commission balance</Text>
-          <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>Prepaid — top up to keep riding</Text>
+          {/* Honest at both stages: no commission is taken at 0%, so don't imply a top-up is required
+              until the rate is actually on. */}
+          <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
+            {config.ratePct > 0 ? "Prepaid — top up to keep riding" : "Prepaid — no commission yet"}
+          </Text>
         </View>
         <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, marginRight: 4, fontVariant: ["tabular-nums"] }}>
           {wallet ? formatMoney(wallet.balance) : "—"}
