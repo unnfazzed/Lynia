@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/unnfazzed/Lynia/compare/v0.4.0...v0.4.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **wallet:** reconcile commission ledger on fare-adjust + audit/idempotency + earnings truncation (WD-001..011) ([#262](https://github.com/unnfazzed/Lynia/issues/262)) ([ac0e8ad](https://github.com/unnfazzed/Lynia/commit/ac0e8ad061c075387511da41ef4f1b6aa86e5330))
+
 ## [0.4.0](https://github.com/unnfazzed/Lynia/compare/v0.3.0...v0.4.0) (2026-07-15)
 
 
