@@ -40,6 +40,7 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `match_select_total`            | counter   | 1    | `outcome`                       | —          |
 | `offers_made_total`             | counter   | 1    | `outcome`                       | —          |
 | `client_samples_dropped_total`  | counter   | 1    | `role`                          | —          |
+| `whatsapp_otp_delivery_failed_total` | counter | 1 | `reason`                     | —          |
 
 > **Client RUM (present, not future).** The four `client_*_latency_ms` histograms and the
 > `client_samples_dropped_total` counter are the **glass-to-glass** signal — the mobile app measures
@@ -66,6 +67,10 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
   **never** the raw URL — that keeps the histogram's cardinality bounded.
 - Client RUM `version` is the app's `major.minor` (else `other`), and is itself bounded: at most 16
   distinct version buckets are ever admitted (`bucketAppVersion`/`boundVersion` in `metrics.service.ts`).
+- `whatsapp_otp_delivery_failed_total` `reason` is the **exception** to "bounded cardinality" above:
+  it's Meta's raw `errors[0].title` string from the webhook payload (`whatsapp-webhook.ts`), with no
+  code-enforced cap analogous to `bucketAppVersion` — bounded in practice only by Meta's own error
+  catalog, not by Lynia.
 
 ### Explicit histogram buckets
 

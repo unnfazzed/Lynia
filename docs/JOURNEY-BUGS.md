@@ -57,9 +57,9 @@ what the original 2026-07-05 pass found — current status is annotated inline r
 ### P1 — blockers
 
 **R1 · There is no "mark undelivered" flow anywhere in the rider app.** — ✅ FIXED
-`apps/mobile/src/api/orders.ts:145` now exports `markUndelivered`; `apps/mobile/app/rider/job.tsx:223`
-wires it into a mutation with a "Can't complete delivery" action, resolving to the terminal +
-back-to-board flow this finding asked for.
+`apps/mobile/src/api/orders.ts:145` now exports `markUndelivered`; `apps/mobile/app/rider/job.tsx:345`
+wires it into a mutation (`undeliverM`) with a "Can't complete delivery" action, resolving to the
+terminal + back-to-board flow this finding asked for.
 
 **R2 · "Cancel job" is shown post-pickup, where the server rejects it — and it's the only visible exit.** — ✅ FIXED
 `apps/mobile/app/rider/job.tsx` now gates "Cancel job" on `RIDER_CANCELLABLE.includes(order.status)`,
@@ -98,7 +98,7 @@ not the job; up to 8s idle (or missed) while the customer waits.
 **Fix:** on the selection push/socket event, `router.push("/rider/job")`. — landed: `pushDestination()`
 (`src/push/push.ts`) routes rider-only statuses (`assigned`/`completed`) to `/rider/job`, wired through
 both the live `addNotificationResponseReceivedListener` and a cold-start `getLastNotificationResponseAsync()`
-check (`src/push/use-push-registration.ts:52-76`).
+check (`src/push/use-push-registration.ts:159-177`).
 
 **R7 · No navigation/directions handoff to pickup or drop-off.** — ✅ FIXED by PR #98
 `apps/mobile/app/rider/job.tsx:282` · `src/ui/LiveMap.tsx:37`
@@ -129,22 +129,24 @@ area… Head back toward the city, then refresh.") and a `Try again` retry butto
 - ✅ FIXED — **Retake photo destroys the good photo before the retry.** `rider/become.tsx:91-107` now
   holds the prior uri/key and only overwrites on upload success; a failed retake rolls back instead of
   wiping the verified photo.
-- **"Continue verification" is a silent no-op when no URL comes back.** `rider/index.tsx:166-178` —
-  still opens the browser only if `verificationUrl` starts with `https://`, else silently just
-  invalidates `["me"]` with no feedback. Still open.
+- ✅ FIXED (BH-03) — **"Continue verification" is a silent no-op when no URL comes back.**
+  `apps/mobile/src/logic/gates.ts:178-189` (`resolveKycRetryFeedback`) now always returns either
+  `openUrl`, a calm `info` message for the expected manual-mode "no URL" shape, or an `error` — never
+  silent — wired at `rider/index.tsx:287-289` into `setError`/`setInfo` on every branch.
 - ✅ FIXED — **`getMe` failure shows the full online dashboard optimistically.** `rider/index.tsx:416-426`
   now has an explicit `meQ.isError` branch rendering a "Couldn't load your rider status" EmptyState +
   Retry instead of the online dashboard.
 - ✅ FIXED — **Location denied is invisible on the board.** `rider/index.tsx:53,495-505` — `locDenied`
   now blocks the whole board behind an explicit "Can't find your location" gate with "Open location
   settings", instead of a swallowed `catch {}`.
-- **All-items-unticked is a soft dead-end.** `apps/mobile/src/ui/rider/PickupChecklist.tsx:78-83` —
+- **All-items-unticked is a soft dead-end.** `apps/mobile/src/ui/rider/PickupChecklist.tsx:176-179` —
   "Confirm N items collected" still disables at zero ticks with no alternate action. Still open (the
   original aside "and per R1 has no undelivered path" is stale — R1 is fixed — but this specific
   pre-pickup dead-end is unchanged).
-- **Compose card isn't dismissed when the selected order expires mid-compose.** `rider/index.tsx` —
-  the `selected` state is still never cleared when `board.expiredOrderIds`/`board.takenOrderIds`
-  contains it; only cleared on offer success or manual Cancel. Still open.
+- ✅ FIXED — **Compose card isn't dismissed when the selected order expires mid-compose.**
+  `apps/mobile/app/rider/index.tsx:362-369` now clears `selected` the moment
+  `board.expiredOrderIds`/`board.takenOrderIds` contains it, the same signal the sent-offer cards
+  already key off.
 
 ---
 

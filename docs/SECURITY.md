@@ -212,7 +212,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
 ### P0 — Critical (close first)
 
 **P0-1 · Fail closed on a weak JWT signing secret**
-`apps/api/src/config/env.ts:57` (default), `:139-144` (prod `superRefine` guard)
+`apps/api/src/config/env.ts:65` (default), `:181-196` (prod `superRefine` guard)
 - Remove the `.default("dev-insecure-secret-change-me-please")` fallback, or add a
   `superRefine` (next to the existing `REDIS_URL` guard) that **rejects boot in production**
   when `JWT_SIGNING_SECRET` is the known default, is < 32 chars, or is unset.
@@ -282,7 +282,7 @@ Pre-remediation state, now fixed — see the implementation-status table above
   unlisted origin is refused; a body with an unknown field is rejected.
 
 **P1-4 · Stop logging OTP codes and phone numbers**
-`apps/api/src/auth/otp-sender.ts:96,109`
+`apps/api/src/auth/otp-sender.ts:101,114`
 - Remove/redact the `DEV OTP for {phone}: {code}` (console sender) and `SMS OTP → {phone}:
   {code}` (SMS stub) log lines, or gate them behind `NODE_ENV !== "production"` **and** run
   them through the existing `phone-mask.ts` helper. Never log a live OTP at info level.
@@ -317,7 +317,7 @@ Pre-remediation state, now fixed — see the implementation-status table above
 - *Accept:* the bucket CORS lists only known origins.
 
 **P2-3 · Pin JWT algorithm**
-`apps/api/src/auth/token.service.ts:28`
+`apps/api/src/auth/token.service.ts:50,53`
 - Pass `{ algorithms: ["HS256"] }` to `jwt.verify` (defense in depth against algorithm
   confusion, even though `alg:none` is already rejected).
 - *Accept:* a token signed with any other alg is rejected.

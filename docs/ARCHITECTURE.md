@@ -160,6 +160,7 @@ flowchart TB
     STO --> GCS
     NOTIF --> PSH --> FCM
     AUTH -->|"send code"| WA
+    WA -.->|"HMAC webhook (message_status) → /webhooks/whatsapp"| REST
 
     %% ---------- KYC integration ----------
     RID -->|"create verification session"| DIDIT
@@ -186,7 +187,8 @@ flowchart TB
 - **Green boxes** are data stores; **Redis** wears three hats (OTP + rate-limit counters, the BullMQ
   job queues, and the Socket.IO pub/sub fan-out across API instances).
 - **Amber boxes** are the external vendors — all reached through the adapter seam
-  ([§12](#12-the-cloud-portable-adapter-seam)), except the Didit KYC webhook which posts back in.
+  ([§12](#12-the-cloud-portable-adapter-seam)), except the Didit KYC webhook and the WhatsApp
+  delivery-status webhook, both of which post back in.
 - **Solid arrows** are primary request/data paths (labeled with what flows); **dotted arrows** are
   best-effort or out-of-band (WS status fan-out, direct-to-storage uploads, push).
 - Note the two **direct-to-storage** dotted paths: photo bytes never transit the API — clients PUT to
@@ -229,7 +231,7 @@ graph TB
     customer -.->|"direct upload"| blob
     rider -.->|"direct upload"| blob
 
-    api -->|"send OTP"| wa
+    api <-->|"send OTP · HMAC delivery-status webhook"| wa
     api -->|"send push"| fcm
     api <-->|"create session · HMAC webhook"| didit
 
@@ -375,6 +377,12 @@ graph TB
         uploads["UploadsModule<br/>signed URLs"]
         admin["AdminModule (F)<br/>read API"]
         health["HealthModule"]
+        issues["IssuesModule (A-05)<br/>disputes"]
+        reports["ReportsModule<br/>report + block"]
+        sos["SosModule (R-16)<br/>SOS on a live trip"]
+        privacy["PrivacyModule (LR8)<br/>erasure + retention"]
+        settlements["SettlementsModule<br/>prepaid commission (read-only)"]
+        clientMetrics["ClientMetricsModule<br/>RUM ingest"]
     end
 
     auth --> prisma
@@ -701,7 +709,7 @@ sequenceDiagram
 
     Note over U,API: access JWT expires (15 min)
     U->>API: POST /auth/refresh { refreshToken }
-    API->>DB: load session, verify not revoked/expired,<br/>compare hash(secret)
+    API->>DB: load session, check hash+expiry (hard gate);<br/>if revoked-by-rotation with an un-consumed<br/>successor within 60s, re-issue (RT-GRACE);<br/>otherwise reject
     API->>DB: revoke old session, create new (rotation)
     API-->>U: fresh { accessToken, refreshToken }
 
@@ -713,7 +721,12 @@ Security properties baked in:
 - **Access token** = HS256 JWT, 15-min TTL, carries `sub` (profileId) + `role`; role is re-checked
   server-side per request, never trusted blindly.
 - **Refresh token** = `sessionId.secret`; only `hash(secret)` is stored. Every refresh **rotates**
-  (old session revoked, new one minted), so a stolen-and-replayed refresh token is detectable.
+  (old session revoked, new one minted), so a stolen-and-replayed refresh token is detectable. A
+  refresh that presents a token revoked by its own rotation (not by logout) is given a 60-second
+  lost-response grace: if its successor session is still un-consumed, a fresh session is re-issued
+  instead of a hard 401 (`REFRESH_GRACE_TTL_MS`, `auth.service.ts`; migration
+  `0025_session_rotation_link`). Reuse of an already-consumed successor, a logout-revoke, or a
+  plain expiry all still hard-reject.
 - **Rate limiting** on OTP send is three-tiered (phone / IP / global) because each WhatsApp send
   costs money — enumeration is a budget-DoS, not just spam (ET5).
 - The **response never reveals whether a phone exists** (always "sent"). A dev/QA escape hatch
@@ -762,9 +775,10 @@ sequenceDiagram
     API->>DB: reject if not verified OR on cooldown
 ```
 
-- **Gating**: `PATCH /riders/online` and `POST /orders/:id/offers` both require `kycStatus=verified`
-  (and not on cooldown / actually online). An unverified or offline rider's offer is un-selectable
-  anyway, so it's rejected up front.
+- **Gating**: `PATCH /riders/online` and `POST /orders/:id/offers` both require `kycStatus=verified`,
+  `accountStatus=active` (not suspended/banned), no automated reliability hold (`onHold=false`), and
+  not on cooldown. An unverified, held, or offline rider's offer is un-selectable anyway, so it's
+  rejected up front.
 - **Webhook idempotency**: `applyKycResult` updates only when `kycResolvedAt` is null or older than
   the incoming `eventAt`. `kycRef` is unique → matches at most one rider. An exact replay has the
   same timestamp → not newer → ignored.
@@ -1056,7 +1070,8 @@ graph LR
 ## 16. REST + WebSocket surface
 
 The full API surface, by module. All routes except `/auth/otp/*`, `/auth/refresh`, `/kyc/callback`,
-and `/healthz` require a bearer access token; admin routes additionally require the `admin` role.
+`/webhooks/whatsapp`, and `/healthz` require a bearer access token; admin routes additionally
+require the `admin` role.
 
 ### REST
 
@@ -1102,6 +1117,8 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | `DELETE /auth/me` | Privacy | Right to erasure — caller deletes their own account (CDPA) |
 | `POST /admin/retention/purge` | Privacy | Retention sweep (admin-only, daily Cloud Scheduler) |
 | `POST /kyc/callback` | KYC | Didit HMAC-signed webhook |
+| `GET /webhooks/whatsapp` | Auth | Meta subscription-verify handshake (`hub.verify_token`/`hub.challenge`) |
+| `POST /webhooks/whatsapp` | Auth | WhatsApp delivery-status events, HMAC-signed (observability-only) |
 | `POST /admin/riders/:id/kyc` | KYC | Admin KYC override (manual backstop) |
 | `GET /admin/overview` | Admin | Dashboard counts |
 | `GET /admin/sos` | Admin | Recent SOS events, newest first (DS13-05, `?limit=`) |
@@ -1112,6 +1129,7 @@ and `/healthz` require a bearer access token; admin routes additionally require 
 | `POST /admin/riders/:id/suspend` | Admin | Suspend a rider (reason required) |
 | `POST /admin/riders/:id/lift` | Admin | Lift a rider suspension (reason optional) |
 | `POST /admin/riders/:id/ban` | Admin | Permanently ban a rider (reason required) |
+| `POST /admin/riders/:id/clear-hold` | Admin | Clear an automated reliability hold on a rider (reason optional) |
 | `GET /admin/orders` | Admin | Order list for the console (`?status=`) |
 | `GET /admin/orders/:id` | Admin | Order detail: 8-step timeline, parcel, fares, masked people (D-2) |
 | `POST /admin/orders/:id/cancel` | Admin | Admin-cancel an order (reason required) |
