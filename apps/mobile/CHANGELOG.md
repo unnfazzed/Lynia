@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/unnfazzed/Lynia/compare/v0.3.0...v0.4.0) (2026-07-15)
+
+
+### Features
+
+* **wallet:** reveal the wallet by default at 0% commission ([61779b0](https://github.com/unnfazzed/Lynia/commit/61779b0b66e6bc098820f75a2339e42a0ee49df6))
+
 ## [0.3.0](https://github.com/unnfazzed/Lynia/compare/v0.2.4...v0.3.0) (2026-07-15)
 
 
