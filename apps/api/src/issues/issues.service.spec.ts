@@ -5,7 +5,10 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import { PrismaService } from "../prisma/prisma.service";
 import { IssuesService } from "./issues.service";
 
-const noNotifications = { notifyOps: vi.fn(async () => {}) } as unknown as NotificationsService;
+const noNotifications = {
+  notifyOps: vi.fn(async () => {}),
+  notifyIssueResolved: vi.fn(async () => {}),
+} as unknown as NotificationsService;
 const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 
 const raiseBody: RaiseIssueRequest = {
@@ -66,7 +69,7 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
     const riderUpdate = vi.fn(async () => ({}));
     const tx = {
       issue: {
-        findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1" }),
+        findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1", openedByProfileId: "cust-1" }),
         updateMany: async () => ({ count: 1 }),
       },
       order: { findUnique: async () => ({ riderId: "rider-1" }) },
@@ -92,7 +95,7 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
     const refundCreate = vi.fn(async () => ({}));
     const tx = {
       issue: {
-        findUnique: async () => ({ id: "iss-1", status: "investigating", orderId: "ord-1" }),
+        findUnique: async () => ({ id: "iss-1", status: "investigating", orderId: "ord-1", openedByProfileId: "cust-1" }),
         updateMany: async () => ({ count: 1 }),
       },
       order: { findUnique: async () => ({ riderId: "rider-1" }) },
@@ -117,7 +120,7 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
     const auditCreate = vi.fn(async () => ({}));
     const tx = {
       issue: {
-        findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1" }),
+        findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1", openedByProfileId: "cust-1" }),
         updateMany: async () => ({ count: 1 }),
       },
       order: { findUnique: async () => ({ riderId: "rider-1" }) },
@@ -141,6 +144,74 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
       },
     };
     await expect(txSvc(tx).resolve("admin-1", "iss-1", { resolution: "close_no_action" })).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+// Regression guard (UX-2026-07-15): before this, resolve() wrote the resolution + side-effect + audit
+// row but never told the opener — a customer/rider who raised "get help with this trip" had no push, no
+// feed row, and no status endpoint, so a real problem could silently vanish from their view forever.
+describe("IssuesService.resolve — notifies the opener post-commit", () => {
+  function txSvcWithNotify(tx: Record<string, unknown>, notifications: NotificationsService) {
+    const prisma = { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaService;
+    return new IssuesService(prisma, notifications);
+  }
+
+  const baseTx = {
+    order: { findUnique: async () => ({ riderId: "rider-1" }) },
+    refund: { create: vi.fn(async () => ({})) },
+    rider: { update: vi.fn(async () => ({})) },
+    auditLog: { create: vi.fn(async () => ({})) },
+  };
+
+  it("notifies the opener (not the admin) with the order id and resolution, for each resolution kind", async () => {
+    for (const body of [
+      { resolution: "refund" as const, refundAmount: 5 },
+      { resolution: "rider_strike" as const },
+      { resolution: "close_no_action" as const },
+    ]) {
+      const notifyIssueResolved = vi.fn(async () => {});
+      const notifications = { notifyOps: vi.fn(async () => {}), notifyIssueResolved } as unknown as NotificationsService;
+      const tx = {
+        ...baseTx,
+        issue: {
+          findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1", openedByProfileId: "cust-1" }),
+          updateMany: async () => ({ count: 1 }),
+        },
+      };
+      await txSvcWithNotify(tx, notifications).resolve("admin-1", "iss-1", body);
+      await flush();
+      expect(notifyIssueResolved).toHaveBeenCalledWith("cust-1", "ord-1", body.resolution);
+    }
+  });
+
+  it("notifies the RIDER opener when a rider raised the issue, not the customer", async () => {
+    const notifyIssueResolved = vi.fn(async () => {});
+    const notifications = { notifyOps: vi.fn(async () => {}), notifyIssueResolved } as unknown as NotificationsService;
+    const tx = {
+      ...baseTx,
+      issue: {
+        findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1", openedByProfileId: "rider-1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    };
+    await txSvcWithNotify(tx, notifications).resolve("admin-1", "iss-1", { resolution: "close_no_action" });
+    await flush();
+    expect(notifyIssueResolved).toHaveBeenCalledWith("rider-1", "ord-1", "close_no_action");
+  });
+
+  it("does not notify when the CAS conflict throws before commit (nothing to tell the opener)", async () => {
+    const notifyIssueResolved = vi.fn(async () => {});
+    const notifications = { notifyOps: vi.fn(async () => {}), notifyIssueResolved } as unknown as NotificationsService;
+    const tx = {
+      issue: {
+        findUnique: async () => ({ id: "iss-1", status: "resolved", orderId: "ord-1", openedByProfileId: "cust-1" }),
+        updateMany: async () => ({ count: 0 }),
+      },
+    };
+    await expect(txSvcWithNotify(tx, notifications).resolve("admin-1", "iss-1", { resolution: "close_no_action" })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(notifyIssueResolved).not.toHaveBeenCalled();
   });
 });
 

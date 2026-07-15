@@ -79,6 +79,14 @@ export default async function IssuesPage({
             )
           }
         />
+        {/* The list is capped server-side (take: 200); without this note a full page reads as "that's
+            all there is" when older rows are simply not fetched — mirrors orders/page.tsx and
+            riders/page.tsx, which already carry the same disclosure (UX-2026-07-15). */}
+        {issues && issues.length >= 200 ? (
+          <div className="mut" style={{ fontSize: 12, marginTop: 16 }}>
+            Showing the latest 200 issues — older issues aren&apos;t listed. Filter by status to narrow the view.
+          </div>
+        ) : null}
       </section>
     </main>
   );

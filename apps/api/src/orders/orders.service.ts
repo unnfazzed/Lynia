@@ -509,13 +509,19 @@ export class OrdersService {
   }
 
   /** A caller's order history across both roles (any order where they're the customer or the rider),
-   *  newest first — feeds the trip-history screen. Redacts contactPhone like listOpen and never carries
-   *  a counterparty phone; only the counterparty's display name + the rating on the order. */
+   *  newest first — feeds the trip-history screen AND the earnings screen (both share this one cached
+   *  fetch client-side). Redacts contactPhone like listOpen and never carries a counterparty phone; only
+   *  the counterparty's display name + the rating on the order.
+   *
+   *  UX-2026-07-15: capped at 50 (was 100) — a metered-data mobile list has no use for "the last 100"
+   *  full trip rows on open; 50 still comfortably covers a rider's typical week while roughly halving
+   *  the payload. A "load more"/cursor UI is a proportionate follow-up if riders ever need deeper
+   *  history, not a reason to keep shipping twice the rows every screen open needs today. */
   async historyForUser(userId: string) {
     const orders = await this.prisma.order.findMany({
       where: { OR: [{ customerId: userId }, { riderId: userId }] },
       orderBy: { createdAt: "desc" },
-      take: 100,
+      take: 50,
       select: {
         id: true,
         customerId: true,

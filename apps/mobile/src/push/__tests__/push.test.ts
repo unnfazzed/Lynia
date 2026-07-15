@@ -4,10 +4,17 @@ import { pushDestination, pushOnce } from "../push";
 // was a no-op — despite copy like "tap to rate your rider" / "tap for details" on the
 // customer-facing statuses (notifications.service.ts STATUS_NOTICES).
 describe("pushDestination", () => {
-  it("routes rider-only statuses to the job screen regardless of the tapping profile's role", () => {
+  it("routes the rider's 'you got the job' push to the job screen regardless of the tapping profile's role", () => {
     expect(pushDestination({ orderId: "o1", status: "assigned" }, false)).toBe("/rider/job");
-    expect(pushDestination({ orderId: "o1", status: "completed" }, false)).toBe("/rider/job");
     expect(pushDestination({ orderId: "o1", status: "assigned" }, true)).toBe("/rider/job");
+  });
+
+  // Regression guard (UX-2026-07-15): `completed` isn't in ACTIVE_RIDE_STATUSES, so by the time this
+  // push can arrive the job has already left /rider/job's active feed — routing there rendered a bare
+  // "No active job" dead end for a push whose whole point ("you're free for the next job") is to send
+  // the rider toward their NEXT job, i.e. the board.
+  it("routes the rider's 'delivery complete' push to the board, not the (by-then-dead) job screen", () => {
+    expect(pushDestination({ orderId: "o1", status: "completed" }, false)).toBe("/rider");
   });
 
   it("routes customer-facing statuses to that order, for a customer tap", () => {
@@ -71,6 +78,20 @@ describe("pushDestination", () => {
 
   it("routes a new-offer push (carries orderId, no status) to that order for the customer", () => {
     expect(pushDestination({ orderId: "o1", kind: "offer" }, false)).toBe("/order/o1");
+  });
+
+  // Regression guard (UX-2026-07-15): "account" covers two different senders. A rider's own KYC/
+  // standing push carries no orderId — /rider is right. But notifyCustomersOfRiderStandingChange sends
+  // the SAME kind to the CUSTOMER on an order whose assigned rider was just suspended/banned, and that
+  // push DOES carry an orderId — before this fix it still routed to /rider unconditionally, landing a
+  // (usually non-rider) customer on the "Become a rider" onboarding screen mid-delivery.
+  it("routes an account-kind push with an orderId to that order (the customer standing-change case)", () => {
+    expect(pushDestination({ kind: "account", orderId: "o1" }, false)).toBe("/order/o1");
+  });
+
+  it("falls back to /rider for an account-kind push with no orderId (the rider's own KYC/standing case)", () => {
+    expect(pushDestination({ kind: "account" }, false)).toBe("/rider");
+    expect(pushDestination({ kind: "account", orderId: "" }, true)).toBe("/rider");
   });
 
   it("returns null for a payload with no orderId and no routable kind", () => {

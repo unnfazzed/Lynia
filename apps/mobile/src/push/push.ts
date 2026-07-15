@@ -102,8 +102,13 @@ export async function registerRotatedToken(token: string): Promise<string | null
 
 /** Order-status values whose push (STATUS_NOTICES in notifications.service.ts) is sent to the RIDER
  *  only: "assigned" ("You got the job") and "completed" ("Nice work — you're free for the next
- *  job"). A tap on either always belongs on the rider's active-job screen. */
-const RIDER_ONLY_STATUSES = new Set(["assigned", "completed"]);
+ *  job"). A tap on "assigned" belongs on the rider's active-job screen — it's the live job. "completed"
+ *  is different: `completed` isn't in ACTIVE_RIDE_STATUSES, so by the time this push can even arrive
+ *  the job has already left the active feed — /rider/job renders a bare "No active job" dead end for a
+ *  push whose whole point is "you're free for the next job". Route it to the board instead, where the
+ *  rider can actually act on that promise (UX-2026-07-15). */
+const RIDER_JOB_SCREEN_STATUSES = new Set(["assigned"]);
+const RIDER_BOARD_STATUSES = new Set(["completed"]);
 
 /**
  * Where tapping a notification should navigate. Every status-driven push (`notifyOrderStatus`)
@@ -144,13 +149,20 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
   // destination is viewer-role-aware from earlier fixes, so this is safe). Absent orderId keeps the
   // prior behaviour: bring the customer home to re-broadcast.
   if (kind === "riders_available") return typeof orderId === "string" && orderId !== "" ? `/order/${orderId}` : "/home";
-  if (kind === "account") return "/rider";
+  // UX-2026-07-15: an "account" push covers two different situations. A rider's OWN KYC/standing change
+  // (notifyKycDecision, suspend/lift/ban/clearHold) carries no orderId — /rider (their own dashboard) is
+  // still right. But notifyCustomersOfRiderStandingChange sends this SAME kind to the CUSTOMER on an
+  // order whose assigned rider was just suspended/banned mid-delivery, and that push DOES carry an
+  // orderId — routing it to /rider unconditionally sent a (usually non-rider) customer to the "Become a
+  // rider" onboarding screen at the exact moment they're anxious about their live delivery.
+  if (kind === "account") return typeof orderId === "string" && orderId !== "" ? `/order/${orderId}` : "/rider";
   if (typeof orderId !== "string" || orderId === "") return null;
   // SOS to the counterparty: route the rider to their own job screen; the customer keeps the tracker.
   if (kind === "sos") return toRider ? "/rider/job" : `/order/${orderId}`;
   // Rider-bail rebroadcast: the orderId is the fresh clone — follow it to the new auction.
   if (kind === "rebroadcast") return `/order/${orderId}`;
-  if (typeof status === "string" && RIDER_ONLY_STATUSES.has(status)) return "/rider/job";
+  if (typeof status === "string" && RIDER_JOB_SCREEN_STATUSES.has(status)) return "/rider/job";
+  if (typeof status === "string" && RIDER_BOARD_STATUSES.has(status)) return "/rider";
   if (status === "cancelled") return toRider ? "/rider/job" : `/order/${orderId}`;
   return `/order/${orderId}`;
 }

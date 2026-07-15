@@ -104,6 +104,14 @@ export default async function CustomersPage({
             )
           }
         />
+        {/* The list is capped server-side (take: 100); without this note a full page reads as "that's
+            all there is" when older rows are simply not fetched — mirrors orders/page.tsx and
+            riders/page.tsx, which already carry the same disclosure (UX-2026-07-15). */}
+        {customers && customers.length >= 100 ? (
+          <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: tokens.space.md }}>
+            Showing the latest 100 customers — older customers aren&apos;t listed. Filter to narrow the view.
+          </div>
+        ) : null}
       </section>
 
       {/* Status pill legend mirrors the directory copy; also anchors the good/bad convention. */}

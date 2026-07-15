@@ -946,11 +946,11 @@ describe("OrdersService.listOpen", () => {
 });
 
 describe("OrdersService.historyForUser", () => {
-  const svc = (rows: unknown[], capture?: (a: { where: unknown; orderBy: unknown }) => void) =>
+  const svc = (rows: unknown[], capture?: (a: { where: unknown; orderBy: unknown; take: unknown }) => void) =>
     new OrdersService(
       {
         order: {
-          findMany: async (args: { where: unknown; orderBy: unknown }) => {
+          findMany: async (args: { where: unknown; orderBy: unknown; take: unknown }) => {
             capture?.(args);
             return rows;
           },
@@ -985,11 +985,14 @@ describe("OrdersService.historyForUser", () => {
     ...over,
   });
 
-  it("queries both roles (OR customer/rider), newest first", async () => {
-    let args: { where: unknown; orderBy: unknown } | undefined;
+  it("queries both roles (OR customer/rider), newest first, capped at 50 (UX-2026-07-15, was 100)", async () => {
+    // Regression guard: a metered-data mobile list (shared by trip history AND earnings) has no use for
+    // a full 100-row fetch on every open — halved to 50 without any contract/shape change.
+    let args: { where: unknown; orderBy: unknown; take: unknown } | undefined;
     await svc([row()], (a) => (args = a)).historyForUser("cust-1");
     expect(args!.where).toEqual({ OR: [{ customerId: "cust-1" }, { riderId: "cust-1" }] });
     expect(args!.orderBy).toEqual({ createdAt: "desc" });
+    expect(args!.take).toBe(50);
   });
 
   it("serializes fares, redacts contactPhone, and names the counterparty by viewpoint", async () => {
