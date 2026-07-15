@@ -47,8 +47,19 @@ export function interFamily(weight?: string | number | null): string {
  * `Inter_400Regular` injected instead of inheriting the parent span's weight. Today only Brand.tsx
  * nests Text, and it sets explicit families on both spans.
  */
+/** A forwardRef-style render function, tagged with the Fast-Refresh re-patch guard markers. */
+type PatchedRenderFn = ((this: unknown, props: unknown, ref: unknown) => unknown) & {
+  __lyniaInterPatched?: boolean;
+  __lyniaOriginal?: PatchedRenderFn;
+};
+
+/** The forwardRef-shaped component surface `patchRenderable` needs. */
+interface Patchable {
+  render?: PatchedRenderFn;
+}
+
 /** Patch one forwardRef-shaped component in place. Exported for tests; returns whether it applied. */
-export function patchRenderable(Comp: { render?: (...args: any[]) => unknown }): boolean {
+export function patchRenderable(Comp: Patchable): boolean {
   const original = Comp.render;
   if (typeof original !== "function") {
     // Loud in dev — a future RN export-shape change would otherwise silently drop Inter.
@@ -57,20 +68,21 @@ export function patchRenderable(Comp: { render?: (...args: any[]) => unknown }):
   }
   // The already-patched marker lives on the render function itself (not module state) so a Fast
   // Refresh re-evaluation of this module doesn't stack a second wrapper on the cached RN component.
-  if ((original as any).__lyniaInterPatched) return true;
-  const patchedRender = function patchedRender(this: unknown, props: any, ref: any) {
+  if (original.__lyniaInterPatched) return true;
+  const patchedRender: PatchedRenderFn = function patchedRender(this: unknown, props: unknown, ref: unknown) {
     // Compute the injected props inside the guard but call `original` exactly once — a throw
     // mid-render would otherwise re-enter it in the same fiber pass and corrupt the hook cursor.
     let propsToUse = props;
     try {
-      if (props?.style == null) {
+      const p = props as { style?: unknown } | null | undefined;
+      if (p?.style == null) {
         // Fast path — most Texts carry no style at all; skip the flatten entirely.
-        propsToUse = { ...props, style: { fontFamily: interFamily(undefined) } };
+        propsToUse = { ...p, style: { fontFamily: interFamily(undefined) } };
       } else {
-        const flat = (StyleSheet.flatten(props.style as never) ?? {}) as { fontFamily?: string; fontWeight?: string | number };
+        const flat = (StyleSheet.flatten(p.style as never) ?? {}) as { fontFamily?: string; fontWeight?: string | number };
         if (!flat.fontFamily) {
           const { fontWeight, ...rest } = flat;
-          propsToUse = { ...props, style: [{ fontFamily: interFamily(fontWeight) }, rest] };
+          propsToUse = { ...p, style: [{ fontFamily: interFamily(fontWeight) }, rest] };
         }
       }
     } catch {
@@ -78,14 +90,14 @@ export function patchRenderable(Comp: { render?: (...args: any[]) => unknown }):
     }
     return original.call(this, propsToUse, ref);
   };
-  (patchedRender as any).__lyniaInterPatched = true;
-  (patchedRender as any).__lyniaOriginal = original;
+  patchedRender.__lyniaInterPatched = true;
+  patchedRender.__lyniaOriginal = original;
   Comp.render = patchedRender;
   return true;
 }
 
 export function applyInterToTextComponents(): void {
-  for (const Comp of [Text, TextInput] as unknown as { render?: (...args: any[]) => unknown }[]) {
+  for (const Comp of [Text, TextInput] as unknown as Patchable[]) {
     patchRenderable(Comp);
   }
 }
