@@ -7,6 +7,7 @@ import { AdminActor } from "../common/admin-actor.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { SettlementsService } from "../settlements/settlements.service";
 import { SosService } from "../sos/sos.service";
+import { WalletService } from "../wallet/wallet.service";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminOrdersService } from "./admin-orders.service";
@@ -46,6 +47,16 @@ const FareAdjust = z.object({
   reason: z.string().min(1).max(160),
   note: z.string().max(2000).nullish(),
 });
+// Ops manual commission-wallet credit (design Flow 4). `idempotencyKey` is minted when the admin form
+// OPENS, so a double-submit is structurally harmless; `amount` is capped server-side; `rail` records
+// which off-app channel the rider actually paid on. Reason optional (a top-up isn't a punitive action).
+const WalletCredit = z.object({
+  amount: z.number().positive().max(1000).multipleOf(0.01),
+  rail: z.enum(["ecocash", "innbucks", "omari", "manual"]),
+  idempotencyKey: z.string().uuid(),
+  note: z.string().max(2000).nullish(),
+});
+
 @Controller("admin")
 @UseGuards(JwtAuthGuard, AdminGuard)
 export class AdminController {
@@ -57,6 +68,7 @@ export class AdminController {
     private readonly audit: AdminAuditService,
     private readonly settlements: SettlementsService,
     private readonly sos: SosService,
+    private readonly wallet: WalletService,
   ) {}
 
   @Get("overview")
@@ -250,6 +262,29 @@ export class AdminController {
    */
   @Get("cash/settlements")
   cashSettlements() {
-    return this.settlements.commissionOverview();
+    // Pass the SERVER-RESOLVED live rate (the env "flip" value), not the bundled constant, so the
+    // console's rate + accrued figures track production once commission is switched on.
+    return this.settlements.commissionOverview(new Date(), this.wallet.ratePct);
+  }
+
+  /**
+   * Ops records an off-app rider payment as a commission-wallet credit (design Flow 4 — the launch rail
+   * for InnBucks/O'mari and the EcoCash fallback). Idempotent by the form-open key; amount capped
+   * server-side; the actor is recorded on the ledger row for the audit trail.
+   */
+  @Post("riders/:id/wallet-credit")
+  creditWallet(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(WalletCredit)) body: z.infer<typeof WalletCredit>,
+    @AdminActor() actor: string,
+  ) {
+    return this.wallet.creditManual({
+      riderId: id,
+      amount: body.amount,
+      rail: body.rail,
+      note: body.note ?? undefined,
+      idemKey: body.idempotencyKey,
+      actorProfileId: actor,
+    });
   }
 }

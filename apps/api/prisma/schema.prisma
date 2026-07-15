@@ -81,6 +81,39 @@ enum SettlementStatus {
   overdue
 }
 
+// Prepaid commission wallet (docs/plans/2026-rider-wallet-design.md). Every balance change is one
+// append-only CommissionLedger row; the CommissionAccount balance is a cached running total.
+enum CommissionEntryType {
+  // Per-ride commission debit written in the completion transaction (negative amount).
+  ride_commission
+  // Rider top-up credit (mobile-money rail or ops-recorded manual credit), positive.
+  topup
+  // Flip-day starting/grace credit, positive.
+  grace
+  // Fare-adjust delta or ops correction; sign varies. Fare-adjusts append a delta here at the ride's
+  // original rate so the one-ride_commission-row-per-order invariant stays absolute (design 4A/OV-1A).
+  adjustment
+  // RESERVED — no writer in the wallet-core build (kept so the ledger type set is complete).
+  reversal
+}
+
+// The rail a top-up came in on. Mobile-money rails push a USSD prompt; `manual` is an ops-recorded credit.
+enum TopUpRail {
+  ecocash
+  innbucks
+  omari
+  manual
+}
+
+// A top-up intent's lifecycle. `pending` waits on the rail prompt (or ops); the rest are terminal.
+// `expired` stays re-openable (a late rail confirmation still credits exactly once) — see wallet.service.
+enum TopUpStatus {
+  pending
+  confirmed
+  declined
+  expired
+}
+
 // Disputes / order-level support (A-05). A customer, recipient or rider raises an Issue against an
 // order; ops investigates and resolves it.
 enum IssueType {
@@ -225,7 +258,86 @@ model Rider {
   offers      Offer[]
   settlements Settlement[]
 
+  commissionAccount CommissionAccount?
+  commissionLedger  CommissionLedger[]
+  topUps            TopUp[]
+
   @@map("riders")
+}
+
+// The prepaid commission float, 1:1 with a Rider. `balance` is a cached running total — always
+// reconstructable by summing the rider's CommissionLedger. Lazily upserted on first touch so
+// "account missing" is never a reachable failure inside the completion transaction (design eng 1A).
+// No status column: a wallet freeze is a Rider.heldReason = "commission_freeze" hold (design OV-4A),
+// so there is a single freeze authority. Balance writes take a row lock inside every ledger-writing
+// transaction; balance may go negative (a debit that crossed zero is owed, netted by the next top-up).
+model CommissionAccount {
+  riderId   String   @id @map("rider_id") @db.Uuid
+  rider     Rider    @relation(fields: [riderId], references: [profileId], onDelete: Cascade)
+  balance   Decimal  @default(0) @db.Decimal(10, 2)
+  currency  String   @default("USD")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("commission_accounts")
+}
+
+// Append-only ledger — one immutable row per balance change, so the balance is auditable and always
+// reconstructable. `amount` is signed (credit +, debit −); `balanceAfter` is the running total after
+// this row. A `ride_commission` row stores the `ratePct` it was charged at (design OV-2A) and links to
+// its `orderId`; the UNIQUE (riderId, orderId, type) makes the per-ride debit idempotent under retries
+// and keeps it exactly-once per order. `idemKey` (unique when present) makes manual/bulk credits
+// idempotent. `topUpId` (unique when present) makes a top-up credit exactly-once.
+model CommissionLedger {
+  id           String              @id @default(uuid()) @db.Uuid
+  riderId      String              @map("rider_id") @db.Uuid
+  rider        Rider               @relation(fields: [riderId], references: [profileId], onDelete: Cascade)
+  type         CommissionEntryType
+  amount       Decimal             @db.Decimal(10, 2)
+  balanceAfter Decimal             @map("balance_after") @db.Decimal(10, 2)
+  // The commission debit's source ride (null for credits/adjustments not tied to a ride).
+  orderId      String?             @map("order_id") @db.Uuid
+  order        Order?              @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  // The rate a ride_commission was charged at, and the fare it derived from — the show-the-math receipt.
+  ratePct      Decimal?            @map("rate_pct") @db.Decimal(5, 2)
+  fare         Decimal?            @db.Decimal(10, 2)
+  // The top-up this credit settled (null for commission/grace/adjustment). Unique → exactly-once credit.
+  topUpId      String?             @unique @map("top_up_id") @db.Uuid
+  topUp        TopUp?              @relation(fields: [topUpId], references: [id], onDelete: SetNull)
+  // Idempotency key for credit-side writes (manual/bulk seed). Unique when present.
+  idemKey      String?             @unique @map("idem_key")
+  note         String?
+  // system | an admin profile id — who wrote the row (audit trail).
+  actor        String?
+  createdAt    DateTime            @default(now()) @map("created_at")
+
+  // Exactly one ride_commission row per order, ever — the per-ride debit is idempotent under retries.
+  @@unique([riderId, orderId, type])
+  @@index([riderId, createdAt])
+  @@map("commission_ledger")
+}
+
+// A top-up intent. Confirmation is exactly-once by construction: the credit transaction CAS-transitions
+// status (pending|expired → confirmed) and CommissionLedger.topUpId is unique, so a replayed
+// confirmation can neither re-transition nor double-credit. `providerRef` is the rail's transaction id
+// or an admin idempotency key (unique).
+model TopUp {
+  id          String       @id @default(uuid()) @db.Uuid
+  riderId     String       @map("rider_id") @db.Uuid
+  rider       Rider        @relation(fields: [riderId], references: [profileId], onDelete: Cascade)
+  rail        TopUpRail
+  amount      Decimal      @db.Decimal(10, 2)
+  phone       String?
+  providerRef String?      @unique @map("provider_ref")
+  status      TopUpStatus  @default(pending)
+  initiatedAt DateTime     @default(now()) @map("initiated_at")
+  expiresAt   DateTime     @map("expires_at")
+  resolvedAt  DateTime?    @map("resolved_at")
+
+  ledgerEntry CommissionLedger?
+
+  @@index([riderId, initiatedAt])
+  @@index([status])
+  @@map("top_ups")
 }
 
 // DORMANT — the weekly cash-settlement model this table backed has been replaced by prepaid per-ride
@@ -343,6 +455,8 @@ model Order {
   // so this is a list — the single-row unique on ratings.order_id was widened to (order_id,
   // by_profile_id) in migration 0015. The rider's "rate the sender" (4·7) is the rider-direction row.
   rating Rating[]
+  // Commission debits reference the ride they came from (at most one ride_commission row per order).
+  commissionLedger CommissionLedger[]
 
   @@index([status])
   @@index([rebroadcastOfId])

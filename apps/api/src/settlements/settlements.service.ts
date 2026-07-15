@@ -74,7 +74,7 @@ export class SettlementsService {
    * current day's activity. No settlement rows are written or read — the figures come straight from
    * completed orders. Rows are ordered by fares delivered, descending.
    */
-  async commissionOverview(ref: Date = new Date()): Promise<CommissionOverview> {
+  async commissionOverview(ref: Date = new Date(), ratePct: number = COMMISSION.ratePct): Promise<CommissionOverview> {
     // Exclusive end = start of TOMORROW (UTC), so the current day counts as it fills in; the label's
     // inclusive last day is ref's own date, matching exactly what the query covers.
     const periodEnd = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate() + 1));
@@ -99,7 +99,7 @@ export class SettlementsService {
       const agg = byRider.get(o.riderId) ?? { rides: 0, fares: 0, commission: 0 };
       agg.rides += 1;
       agg.fares += fare;
-      agg.commission += perRideCommission(fare);
+      agg.commission += perRideCommission(fare, ratePct);
       byRider.set(o.riderId, agg);
     }
 
@@ -135,11 +135,11 @@ export class SettlementsService {
 
     return {
       model: COMMISSION.model,
-      ratePct: COMMISSION.ratePct,
+      ratePct,
       // Inclusive calendar-day span: the last labeled day is ref's own date (periodEnd is exclusive).
       periodLabel: `${fmtDate(periodStart)} – ${fmtDate(ref)}`,
       kpis: {
-        ratePct: COMMISSION.ratePct,
+        ratePct,
         rides: totalRides,
         fares: round(totalFares).toFixed(2),
         commission: round(totalCommission).toFixed(2),

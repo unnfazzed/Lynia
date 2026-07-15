@@ -692,6 +692,24 @@ describe("onlineRefusalReason (pure online-gate, Q2)", () => {
   it("treats an elapsed cooldown as passed", () => {
     expect(onlineRefusalReason({ ...base, cooldownUntil: new Date(Date.now() - 60_000) })).toBeNull();
   });
+
+  it("blocks a below-floor rider ONLY when commission is active (never during the 0% launch)", () => {
+    // Commission off (rate 0 → commissionActive false): a $0 balance never gates — the pilot is untouched.
+    expect(onlineRefusalReason({ ...base, commissionActive: false, commissionBalance: 0 })).toBeNull();
+    // Commission on + balance below the $2 floor → the top-up gate fires.
+    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 1.5 })).toBe("commission_low_balance");
+    // Commission on + balance at/above the floor → passes.
+    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 2 })).toBeNull();
+    // Commission on but this call site didn't load the balance (undefined) → not gated (standing-only).
+    expect(onlineRefusalReason({ ...base, commissionActive: true })).toBeNull();
+  });
+
+  it("ranks the commission floor BELOW the standing reasons", () => {
+    // A suspended rider who is also below the floor is reported as suspended, not commission_low_balance.
+    expect(
+      onlineRefusalReason({ ...base, accountStatus: "suspended", commissionActive: true, commissionBalance: 0 }),
+    ).toBe("suspended");
+  });
 });
 
 describe("RiderService.applyKycResult", () => {

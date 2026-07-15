@@ -21,6 +21,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { OrdersService } from "./orders.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
+import { WalletService } from "../wallet/wallet.service";
 
 /** Forward, rider-driven transitions. `delivered` (OTP-gated) and `completed` (rating/auto-close)
  *  are handled by their own methods, not this map. Each edge stamps one milestone timestamp. */
@@ -97,6 +98,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     private readonly gateway: TrackingGateway,
     private readonly notifications: NotificationsService,
     private readonly orders: OrdersService,
+    private readonly wallet: WalletService,
   ) {}
 
   private sweep?: ReturnType<typeof setInterval>;
@@ -467,7 +469,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, customerId: true, riderId: true },
+        select: { status: true, customerId: true, riderId: true, agreedFare: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       if (order.customerId !== customerId) throw new ForbiddenException("Not your order");
@@ -504,6 +506,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             data: { ratingAvg, ratingCount, tripsCount: rider.tripsCount + 1, ...reliability },
           });
         }
+        // Prepaid commission debit (design Flow 1): same transaction as completion, after the rider row
+        // lock above. No-op at ratePct 0. Never blocks a delivered parcel from completing.
+        await this.wallet.chargeCommission(tx, { orderId, riderId: order.riderId, agreedFare: order.agreedFare });
       }
     });
 
@@ -782,7 +787,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) return false; // already completed/rated, or never delivered — no-op
       await tx.orderEvent.create({ data: { orderId, status: "completed" } });
-      const order = await tx.order.findUnique({ where: { id: orderId }, select: { riderId: true } });
+      const order = await tx.order.findUnique({ where: { id: orderId }, select: { riderId: true, agreedFare: true } });
       if (order?.riderId) {
         // A delivered order that auto-closes with no complaint is a clean completion → slow
         // reliability recovery (Q2). NOTE(Q2): RECOVER_PER_COMPLETION in policy.ts. This is the
@@ -802,6 +807,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           where: { profileId: order.riderId },
           data: { tripsCount: { increment: 1 }, ...reliability },
         });
+        // Prepaid commission debit (design Flow 1) — the auto-close counterpart to rate()'s debit. The
+        // two completion edges are mutually exclusive (both CAS on status=delivered), so it fires once
+        // per order. No-op at ratePct 0; idempotent (unique (riderId, orderId, ride_commission)).
+        await this.wallet.chargeCommission(tx, { orderId, riderId: order.riderId, agreedFare: order.agreedFare });
       }
       return true;
     });

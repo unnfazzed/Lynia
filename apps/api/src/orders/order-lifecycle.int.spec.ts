@@ -15,6 +15,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { RiderService } from "../riders/rider.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { OrdersService } from "./orders.service";
+import { WalletService } from "../wallet/wallet.service";
 import { OrderLifecycleService } from "./order-lifecycle.service";
 
 const prisma = new PrismaService();
@@ -45,7 +46,10 @@ const matching = new MatchingService(prisma, tokens, noopNotifications, new Metr
 // (the new open_for_offers row) without a live socket/Redis, mirroring how notifications are stubbed.
 const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersService;
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
-const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders);
+// A real WalletService (rate 0 via empty env) exercises the commission-debit call in the completion
+// path as a no-op — the R1 regression that both completion paths still complete with wallet tables present.
+const wallet = new WalletService({} as Env, prisma);
+const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders, wallet);
 const trackingStub = { evictFromGeo: async () => {}, claimNotifyWaitersNear: async () => [], clearNotifyWaiters: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
 const notificationsStub = { notifyRidersAvailable: async () => {}, notifyProfiles: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
 const riders = new RiderService(prisma, {} as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env), trackingStub, notificationsStub);

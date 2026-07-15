@@ -5,6 +5,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { OrdersService } from "./orders.service";
+import type { WalletService } from "../wallet/wallet.service";
 import { OrderLifecycleService } from "./order-lifecycle.service";
 
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "lifecycle-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
@@ -32,6 +33,9 @@ function build(methods: Record<string, unknown>) {
   };
   // F-01 re-broadcast announce is best-effort push — spy so tests can assert it fired without a socket.
   const orders = { announceOpenOrder: vi.fn(async () => {}) };
+  // Prepaid commission debit — a no-op stub (the wallet has its own tests); the completion paths call
+  // this inside the transaction. At ratePct 0 the real one is a no-op too.
+  const wallet = { chargeCommission: vi.fn(async () => {}) };
   const prisma = { ...methods } as Record<string, unknown>;
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   // Rider aggregate mutations take a `SELECT … FOR UPDATE` row lock via $executeRaw before their
@@ -44,8 +48,9 @@ function build(methods: Record<string, unknown>) {
     gateway as unknown as TrackingGateway,
     noopNotifications,
     orders as unknown as OrdersService,
+    wallet as unknown as WalletService,
   );
-  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, kickedFromBoard, orders, prisma };
+  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, kickedFromBoard, orders, prisma, wallet };
 }
 
 describe("OrderLifecycleService.advance", () => {

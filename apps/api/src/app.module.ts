@@ -26,6 +26,7 @@ import { SettlementsModule } from "./settlements/settlements.module";
 import { SosModule } from "./sos/sos.module";
 import { TrackingModule } from "./tracking/tracking.module";
 import { UploadsModule } from "./uploads/uploads.module";
+import { WalletModule } from "./wallet/wallet.module";
 
 @Module({
   imports: [
@@ -58,6 +59,8 @@ import { UploadsModule } from "./uploads/uploads.module";
     UploadsModule,
     // Prepaid per-ride commission — read-only overview (0% at launch). Consumed by AdminModule.
     SettlementsModule,
+    // Prepaid commission wallet — balance/ledger/top-ups + the per-ride debit + admin manual credit.
+    WalletModule,
     // Trust & safety — disputes/order-level support (A-05), report/block, SOS (R-16/F-13).
     IssuesModule,
     ReportsModule,
