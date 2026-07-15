@@ -16,15 +16,17 @@ Last reconciled: 2026-07-15 (added the wallet & data-lifecycle audit routine).
 | Bug hunting | `0 23 * * *` | env_01B3aX… | Mobile-app journeys + app↔API contract seams |
 | User experience improvements | `0 1 * * *` | env_01B3aX… | UX friction, copy, recoverability, blockers |
 | Deep bug sweep | `0 3 * * *` | env_01V3Lw… | Backend correctness, concurrency, security, adversarial API |
-| Wallet & data-lifecycle audit | `0 9 * * *` | env_01V3Lw… | Wallet/earnings/admin data-lifecycle correctness — money & reporting integrity |
+| Wallet & data-lifecycle audit | `0 9 */2 * *` (every 2nd day) | env_01V3Lw… | Wallet/earnings/admin data-lifecycle correctness — money & reporting integrity |
 | PR health & delivery watchdog | `0 */6 * * *` | env_01V3Lw… | CI/merge/deploy babysitting for **all** PRs |
 
 The three overnight bug-finding routines run 2 hours apart (23:00 → 01:00 → 03:00) **by
 design**: each one's ledger/report PR must be merged before the next routine starts, so the
 next routine inherits the previous one's findings and does not rediscover them. The wallet &
-data-lifecycle audit (09:00) is a fourth bug-finder that runs last in the daily chain — after
-doc-sync (05:00) and refactoring (07:00) — so it starts from a fully settled tree and inherits
-everything the overnight routines merged.
+data-lifecycle audit (09:00, every 2nd day) is a fourth bug-finder that runs last in the day's
+chain — after doc-sync (05:00) and refactoring (07:00) — so on the days it fires it starts from a
+fully settled tree and inherits everything the overnight routines merged. It runs every 2nd day
+rather than nightly because its surface (wallet + earnings + admin) is narrow and slow-changing,
+and the deep sweep (03:00) already covers money/price integrity nightly as a backstop.
 
 ## Universal policies (apply to every routine — user instruction 2026-07-14)
 
@@ -157,11 +159,14 @@ Google — [small CLs](https://google.github.io/eng-practices/review/developer/s
 [Code Health](https://testing.googleblog.com/2017/04/code-health-googles-internal-code.html);
 hotspot prioritization — [CodeScene churn × complexity](https://codescene.com/blog/benchmarking-code-health-refactoring-roi).
 
-## Wallet & data-lifecycle audit (09:00 UTC, daily)
+## Wallet & data-lifecycle audit (09:00 UTC, every 2nd day)
 
-Added 2026-07-15 (user request). Runs last in the daily chain (after the overnight bug-finders,
-doc-sync at 05:00, and refactoring at 07:00) so it audits a fully settled tree and inherits every
-merged finding. It is the fourth bug-finder in the dedup protocol above, lane prefix `WD-`.
+Added 2026-07-15 (user request). Runs every 2nd day (`0 9 */2 * *`), last in the day's chain on
+the days it fires (after the overnight bug-finders, doc-sync at 05:00, and refactoring at 07:00)
+so it audits a fully settled tree and inherits every merged finding. Every-2nd-day rather than
+nightly because the wallet/earnings/admin surface is narrow and slow-changing (mirroring the
+refactoring cadence), and the deep sweep (03:00) covers money/price integrity nightly as a
+backstop. It is the fourth bug-finder in the dedup protocol above, lane prefix `WD-`.
 
 **Mission:** prove — and where broken, fix — that the money and reporting data lifecycle is
 correct end to end. The unit of work is the path a dollar and a reporting datum travel:
