@@ -1128,6 +1128,49 @@ describe("OrdersService.activeForRider", () => {
     // scoped rider-only reveal — the whole point of the fix).
     expect(res?.counterpartyPhone).toBe("+263771111111");
   });
+
+  it("DS16-02: surfaces the OLDEST outstanding hand-back first when the rider has two stuck parcels", async () => {
+    // Two collected-then-cancelled parcels for the same rider inside the lookback window. The query must
+    // order by cancelledAt ASC so the longest-outstanding parcel ("old", the one physically stuck the
+    // longest) gets first claim on the rider's attention — not the most recently cancelled ("new"), which
+    // would starve the older one off the app's radar forever.
+    const snapFor = (id: string) => ({
+      id,
+      status: "cancelled",
+      agreedFare: null,
+      proposedFare: 2.5,
+      customerId: "cust-1",
+      riderId: "rider-1",
+      createdAt: new Date("2026-06-26T00:00:00Z"),
+      collectedAt: new Date("2026-06-26T00:10:00Z"),
+      customer: { phone: "+263771111111" },
+      rider: { profileId: "rider-1", currentLat: null, currentLng: null, updatedAt: null, profile: { phone: "+263782000000" } },
+      events: [],
+    });
+    let handbackOrderBy: unknown;
+    let requestedId: string | undefined;
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: {
+        findFirst: async (args: { where: { status: unknown }; orderBy?: { cancelledAt?: "asc" | "desc" } }) => {
+          if (args.where.status !== "cancelled") return null; // no active ride
+          handbackOrderBy = args.orderBy;
+          // Mirror the DB: asc → oldest ("old"), desc → newest ("new").
+          const id = args.orderBy?.cancelledAt === "asc" ? "old" : "new";
+          return { id };
+        },
+        findUnique: async (args: { where: { id: string } }) => {
+          requestedId = args.where.id;
+          return snapFor(args.where.id);
+        },
+      },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    const res = await svc.activeForRider("rider-1");
+    expect(handbackOrderBy).toEqual({ cancelledAt: "asc" });
+    expect(requestedId).toBe("old");
+    expect(res).toMatchObject({ id: "old", status: "cancelled" });
+  });
 });
 
 describe("OrdersService.activeForCustomer (cold-start restore, UX review #1)", () => {
