@@ -9,7 +9,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { normalizePhone, type UpdateProfileRequest } from "@lynia/shared";
+import { normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
@@ -321,7 +321,7 @@ export class AuthService {
           revokedAt: true,
           rotatedToId: true,
           expiresAt: true,
-          profile: { select: { role: true } },
+          profile: { select: { role: true, rider: { select: { accountStatus: true } } } },
         },
       })
       .catch(() => null);
@@ -332,6 +332,16 @@ export class AuthService {
     const secretOk =
       !!s && s.expiresAt > new Date() && this.tokens.safeEqualHex(this.tokens.hash(secret), s.refreshTokenHash);
     if (!s || !secretOk) throw new UnauthorizedException("Invalid or expired refresh token");
+
+    // FRAUD P2-3 backstop: a suspended/banned rider must not be able to renew access tokens. suspend/ban
+    // now revoke sessions in-transaction (admin-riders.service), but this re-check fails closed for ANY
+    // demotion path that forgets to revoke — the guard itself never re-reads standing, so refresh is the
+    // one renewal chokepoint where we can enforce it cheaply. A non-rider (customer) has no rider row, so
+    // this is a no-op for them. Hard reject, never graced — a demoted rider can't lost-response-heal either.
+    const standing = s.profile.rider?.accountStatus;
+    if (standing === RiderAccountStatus.SUSPENDED || standing === RiderAccountStatus.BANNED) {
+      throw new UnauthorizedException("Account is not active");
+    }
 
     if (s.revokedAt) {
       // The presented token was already revoked. If it was revoked by ROTATION and its successor is

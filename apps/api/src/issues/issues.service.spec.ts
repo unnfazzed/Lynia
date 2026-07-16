@@ -89,7 +89,7 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
     expect(res).toMatchObject({ id: "iss-1", status: "resolved", resolution: "refund" });
   });
 
-  it("rider_strike: increments the rider's cancelStrikes AND writes the audit row, in the same tx", async () => {
+  it("rider_strike: increments the DEDICATED disputeStrikes counter (not cancelStrikes) AND audits, in the same tx", async () => {
     const riderUpdate = vi.fn(async () => ({}));
     const auditCreate = vi.fn(async () => ({}));
     const refundCreate = vi.fn(async () => ({}));
@@ -100,18 +100,46 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
       },
       order: { findUnique: async () => ({ riderId: "rider-1" }) },
       refund: { create: refundCreate },
-      rider: { update: riderUpdate },
+      // FRAUD P2-4: resolve() row-locks then reads the current disputeStrikes before incrementing.
+      $executeRaw: async () => 1,
+      rider: { findUnique: async () => ({ disputeStrikes: 0 }), update: riderUpdate },
       auditLog: { create: auditCreate },
     };
     const body: ResolveIssueRequest = { resolution: "rider_strike", note: "Rude to sender" };
 
     await txSvc(tx).resolve("admin-1", "iss-1", body);
 
-    expect(riderUpdate).toHaveBeenCalledWith({ where: { profileId: "rider-1" }, data: { cancelStrikes: { increment: 1 } } });
+    // Below the limit: a plain increment on disputeStrikes — cancelStrikes (the cancel axis) is untouched,
+    // so a later 3rd cancel can't wipe this dispute strike.
+    expect(riderUpdate).toHaveBeenCalledWith({ where: { profileId: "rider-1" }, data: { disputeStrikes: 1 } });
     expect(refundCreate).not.toHaveBeenCalled();
     expect(auditCreate).toHaveBeenCalledWith({
       data: { actor: "admin-1", action: "issue.resolve", target: "iss-1", reasonCode: "rider_strike", note: "Rude to sender" },
     });
+  });
+
+  it("rider_strike: at RIDER_STRIKE_LIMIT it forces a cooldown + offline and resets the counter (FRAUD P2-4)", async () => {
+    const riderUpdate = vi.fn(async (_args: { where: unknown; data: Record<string, unknown> }) => ({}));
+    const tx = {
+      issue: {
+        findUnique: async () => ({ id: "iss-1", status: "investigating", orderId: "ord-1", openedByProfileId: "cust-1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      order: { findUnique: async () => ({ riderId: "rider-1" }) },
+      $executeRaw: async () => 1,
+      // Two dispute strikes already on record → this third one hits RIDER_STRIKE_LIMIT (3).
+      rider: { findUnique: async () => ({ disputeStrikes: 2 }), update: riderUpdate },
+      auditLog: { create: async () => ({}) },
+    };
+    await txSvc(tx).resolve("admin-1", "iss-1", { resolution: "rider_strike", note: "3rd confirmed dispute" });
+
+    const call = riderUpdate.mock.calls[0]![0];
+    expect(call.where).toEqual({ profileId: "rider-1" });
+    // Consequence: forced offline, counter reset, and a cooldown in the future (a dispute strike finally
+    // has teeth, and its own limit — no longer silently piggy-backing on / wiped by the cancel counter).
+    expect(call.data.disputeStrikes).toBe(0);
+    expect(call.data.isOnline).toBe(false);
+    expect((call.data.cooldownUntil as Date).getTime()).toBeGreaterThan(Date.now());
   });
 
   it("close_no_action: writes only the audit row — no refund, no strike", async () => {
@@ -159,7 +187,9 @@ describe("IssuesService.resolve — notifies the opener post-commit", () => {
   const baseTx = {
     order: { findUnique: async () => ({ riderId: "rider-1" }) },
     refund: { create: vi.fn(async () => ({})) },
-    rider: { update: vi.fn(async () => ({})) },
+    // FRAUD P2-4: rider_strike now row-locks + reads disputeStrikes before its increment.
+    $executeRaw: async () => 1,
+    rider: { findUnique: async () => ({ disputeStrikes: 0 }), update: vi.fn(async () => ({})) },
     auditLog: { create: vi.fn(async () => ({})) },
   };
 

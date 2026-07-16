@@ -225,6 +225,11 @@ model Rider {
   ratingAvg       Float     @default(0) @map("rating_avg")
   ratingCount     Int       @default(0) @map("rating_count")
   cancelStrikes   Int       @default(0) @map("cancel_strikes")
+  // FRAUD P2-4: dispute-confirmed strikes (issues.resolve `rider_strike`), a SEPARATE axis from
+  // cancelStrikes. Previously both shared cancel_strikes, so a rider's 3rd cancel (which resets that
+  // counter to 0) wiped dispute strikes, and RIDER_STRIKE_LIMIT was never enforced on the dispute path.
+  // Now its own counter with its own limit consequence (cooldown + offline). See issues.service.resolve.
+  disputeStrikes  Int       @default(0) @map("dispute_strikes")
   cooldownUntil   DateTime? @map("cooldown_until")
   // KYC resubmission counter (admin A-02). Decline increments; attempt 2 locks → support. The admin
   // decision write-back sets kycStatus + this counter; the rider app reads it for the lock state.

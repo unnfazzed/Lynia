@@ -407,10 +407,12 @@ export class TrackingService implements OnModuleDestroy {
     // ridersNearby count honest. Applied in BOTH PG legs; matching's stricter 30 s offer gate is separate.
     // `maxAgeMs` defaults to the STRICT cutoff (count/gate callers) — the FCM broadcast audience passes
     // the permissive heartbeatMaxAgeMsForPush so a backgrounded-but-online rider still gets the push.
-    // Both legs also require good standing (account_status = 'active' AND on_hold = false): a suspended
-    // or auto-held rider can't bid (offers.service gates on standing), so counting them in ridersNearby
-    // or FCM-pushing them would inflate supply and spam riders who can't act — the same standing gate
-    // isBoardEligible/onlineRefusalReason enforce for the board.
+    // Both legs also require FULL good standing (account_status = 'active' AND on_hold = false AND
+    // kyc_status = 'verified'): a suspended, auto-held, OR KYC-lapsed rider can't bid (offers.service /
+    // onlineRefusalReason gate on all three), so counting them in ridersNearby or FCM-pushing them would
+    // inflate supply and spam riders who can't act. The kyc_status clause is the Class-B sibling fix —
+    // this filter previously reimplemented onlineRefusalReason's standing predicate MINUS its kyc check,
+    // so a rider verified+online at the moment their KYC lapsed still counted as supply.
     const hbCutoff = new Date(Date.now() - maxAgeMs);
     const redis = this.getRedis();
     if (redis) {
@@ -431,6 +433,7 @@ export class TrackingService implements OnModuleDestroy {
             AND is_online = true
             AND account_status = 'active'
             AND on_hold = false
+            AND kyc_status = 'verified'
             AND geog IS NOT NULL
             AND last_heartbeat_at IS NOT NULL
             AND last_heartbeat_at >= ${hbCutoff}`;
@@ -450,6 +453,7 @@ export class TrackingService implements OnModuleDestroy {
       WHERE is_online = true
         AND account_status = 'active'
         AND on_hold = false
+        AND kyc_status = 'verified'
         AND geog IS NOT NULL
         AND last_heartbeat_at IS NOT NULL
         AND last_heartbeat_at >= ${hbCutoff}

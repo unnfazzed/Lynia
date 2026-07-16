@@ -155,6 +155,10 @@ export class PrivacyService {
     // hold / cooldown / KYC lock). Pre-flight reject here for a fast, clear error…
     this.assertErasableStanding(profile, now);
 
+    // Class-C: GCS object keys for the item photos on the erasing customer's own orders, collected inside
+    // the tx and deleted post-commit alongside the KYC/profile photos (deleteObject swallows its errors).
+    const itemPhotoKeys: string[] = [];
+
     await this.prisma.$transaction(async (tx) => {
       // Re-check the active-ride guard INSIDE the transaction (DS-10). The pre-flight read above is
       // a fast rejection, but between it and this scrub a counterparty could select this rider onto a
@@ -217,6 +221,17 @@ export class PrivacyService {
         },
       });
 
+      // WD-NEW / Class-C erasure completeness: the rider's last precise position lives in TWO columns —
+      // the readable `current_lat`/`current_lng` (nulled above) AND the PostGIS `geog` point that the
+      // nearby-rider index is actually built on. `geog` is a Prisma `Unsupported(...)` column, so a Prisma
+      // `updateMany` CAN'T touch it (it's absent from the generated types) — it needs raw SQL. Without
+      // this, an "erased" rider kept their exact last GPS location in `geog` forever, the same residual
+      // location PII class DS-01 scrubbed for SosEvent/OrderEvent. Also null positionUpdatedAt so no stale
+      // "live position" timestamp survives. No-op for a non-rider profile (no matching riders row).
+      if (isRider) {
+        await tx.$executeRaw`UPDATE riders SET geog = NULL, position_updated_at = NULL WHERE profile_id = ${profileId}::uuid`;
+      }
+
       // DOC-16-01: `top_ups.phone` (the mobile-money number captured on every self-serve wallet top-up) is
       // the same class of dialable contact PII as the waypoint/note phones stripped below — but it lives
       // in its own table, referenced by riderId, so the profile/rider scrub above never reaches it. A
@@ -254,7 +269,7 @@ export class PrivacyService {
       // contacts belong to the counterparty customer, not the erasing user.
       const placed = await tx.order.findMany({
         where: { customerId: profileId },
-        select: { id: true, pickup: true, dropoff: true, note: true },
+        select: { id: true, pickup: true, dropoff: true, note: true, itemPhotoUrl: true },
       });
       for (const o of placed) {
         const pickup = stripWaypointPhone(o.pickup);
@@ -265,13 +280,22 @@ export class PrivacyService {
         // contactPhone scrub above: a note on an order the profile merely rode belongs to the counterparty
         // customer, not the erasing user, so those aren't in this customerId-scoped set).
         const clearNote = o.note != null;
-        if (pickup === undefined && dropoff === undefined && !clearNote) continue;
+        // Class-C (surfaced by the PII manifest guard): itemPhotoUrl is a customer-uploaded photo of the
+        // parcel on their OWN placed order — user-supplied content that can incidentally show address
+        // labels / IDs. The DB reference here is the GCS object key; null it and delete the object post-
+        // commit (like the KYC/profile photos), so the media doesn't outlive the erasure request. Same
+        // customerId scope as the note/waypoint scrub — a photo on an order the profile merely rode is the
+        // counterparty's content, not the erasing user's.
+        const clearItemPhoto = typeof o.itemPhotoUrl === "string" && o.itemPhotoUrl.length > 0;
+        if (clearItemPhoto) itemPhotoKeys.push(o.itemPhotoUrl!);
+        if (pickup === undefined && dropoff === undefined && !clearNote && !clearItemPhoto) continue;
         await tx.order.update({
           where: { id: o.id },
           data: {
             ...(pickup !== undefined ? { pickup } : {}),
             ...(dropoff !== undefined ? { dropoff } : {}),
             ...(clearNote ? { note: null } : {}),
+            ...(clearItemPhoto ? { itemPhotoUrl: null } : {}),
           },
         });
       }
@@ -292,7 +316,7 @@ export class PrivacyService {
     // success), so awaiting can't hard-fail the already-committed erasure. Without this the media
     // outlived the right-to-erasure request forever.
     if (this.storage) {
-      const keys = [profile.photoUrl, profile.rider?.photoUrl].filter(
+      const keys = [profile.photoUrl, profile.rider?.photoUrl, ...itemPhotoKeys].filter(
         (k): k is string => typeof k === "string" && k.length > 0,
       );
       for (const key of keys) {

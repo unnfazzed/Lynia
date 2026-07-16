@@ -127,7 +127,18 @@ export class SettlementsService {
       // "commission collected" figure matching the projection's sign. WD-012: the projection floors its
       // basis the same way chargeCommission now does, so this console's "would accrue" figure doesn't
       // silently diverge from what a flip would actually charge on a lowballed agreedFare.
-      agg.commission += charged != null ? -charged : perRideCommission(commissionBasis(fare, o.suggestedFare != null ? Number(o.suggestedFare) : null), ratePct);
+      //
+      // WD-NEW-A: a completed order with a NULL agreedFare is one chargeCommission deliberately SKIPS
+      // (commission_skip_null_fare) — it will NEVER carry a ledger row, at any rate. Without this guard
+      // the `charged == null` projection branch fires and floors commissionBasis(0, suggestedFare) to a
+      // non-zero figure, so post-flip the KPI would show accrued commission for an order the ledger never
+      // records — reopening the exact console-vs-ledger divergence WD-006 closed, for the null-fare subset.
+      // Match the debit path: a null-fare order contributes 0 projected commission.
+      if (charged != null) {
+        agg.commission += -charged;
+      } else if (o.agreedFare != null) {
+        agg.commission += perRideCommission(commissionBasis(fare, o.suggestedFare != null ? Number(o.suggestedFare) : null), ratePct);
+      }
       byRider.set(o.riderId, agg);
     }
 

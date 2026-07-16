@@ -6,7 +6,13 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-16 (wallet & data-lifecycle audit routine, second WD run; see the dedicated
+**Last consolidated:** 2026-07-16 (interactive known-bugs review — fresh independent hunt + structural
+guards; see the "Interactive review 2026-07-16" section at the very bottom for six code fixes IR16-01…06
+— several verifying that the "→ FIXED" cluster summaries below were overstated, i.e. session-revocation on
+ban and the dispute-strike counter were still live — plus three write-time guards: a standing-demotion
+funnel, a PII-erasure manifest with an enforcing test, and an evidenced sibling-sweep policy in
+`docs/ROUTINES.md`).
+Prior consolidation: 2026-07-16 (wallet & data-lifecycle audit routine, second WD run; see the dedicated
 section near the bottom for this run's twelve findings — inherited six OPEN `DOC-16-*` items from the
 same-day doc-sync routine (all triaged: five fixed/resolved as `WD-012`…`WD-017` plus `DOC-16-01`/`02`/`05`,
 one — `DOC-16-03`, an admin wallet UI — confirmed OPEN as an out-of-scope new-feature build) plus six new
@@ -592,3 +598,50 @@ and were re-run on the session's default model per the routine's own fallback in
 |---|---|---|---|---|
 | DS16-01 | `POST /admin/audit-actions` (the generic free-text audit-annotation fallback) accepted ANY `action` string 1–80 chars with no denylist and wrote it verbatim, colliding with 13 reserved action strings that real domain-mutation endpoints write mutation+audit atomically in their own `$transaction` (`rider.suspend/lift/ban/clear_hold`, `rider.kyc_approve/decline`, `customer.hold/lift`, `order.cancel/fare_adjust`, `issue.resolve`, `sos.acknowledge`, `wallet.credit`). Six (the `ACCOUNT_FEED_COPY` set) are read back by `feedForUser`'s account-status feed on `AuditLog.action` membership alone with no correlation to a real mutation — so an admin-token holder could `POST {"action":"rider.ban","target":"<profileId>"}` and forge a "Account blocked" feed row (or fake "Account restored"/"You're verified" for someone still banned/unverified) with zero state change, plus permanently pollute the compliance trail with entries indistinguishable from real ones | `apps/api/src/admin/admin-audit.service.ts`, `apps/api/src/admin/admin.controller.ts` (`AuditAction` schema) | HIGH | **FIXED** — new exported `RESERVED_AUDIT_ACTIONS` set (`admin-audit.service.ts`); `recordAuditAction` rejects any reserved action with a `BadRequestException` (clean 400) before the `create`, closing the forgery path entirely on the write side. Real domain endpoints keep their exact strings; `feedForUser`/`ACCOUNT_FEED_COPY` untouched. Tests in `admin-audit.service.spec.ts` |
 | DS16-02 | `activeForRider`'s R8 hand-back query (`findFirst … status:"cancelled", collectedAt≠null, cancelledAt>cutoff, orderBy: cancelledAt desc`) picked the MOST recently cancelled candidate. If a rider collects order A, A is cancelled while the app is backgrounded (missed push) → A becomes a stuck hand-back, and then before the rider sees A the same rider collects order B which is also cancelled while backgrounded inside the same 24h window, `desc` pins the app on B's hand-back forever and A's screen never surfaces again — a real physical parcel silently drops off the rider's radar (only reachable via admin/trip history). No data loss (A intact in the DB), rare (needs two independent missed-push cancels for one rider within 24h) | `apps/api/src/orders/orders.service.ts` `activeForRider` | LOW | **FIXED** — `orderBy: { cancelledAt: "asc" }` so the OLDEST still-outstanding hand-back gets first claim on attention instead of being starved behind a newer one; contract unchanged (still one snapshot or null), and each resolved hand-back surfaces the next-oldest. Test in `orders.service.spec.ts` |
+
+## Interactive review 2026-07-16 (known-bugs review — fresh independent hunt + structural guards)
+
+A human-requested review of this ledger. Beyond re-reading the reports, it ran a **fresh independent
+hunt against current code** to (a) verify which items the stale `docs/FRAUD-REVIEW.md` still lists as
+OPEN are genuinely live today, and (b) hunt un-propagated siblings of the recurring classes. It confirmed
+the ledger's cluster summaries ("Auth/identity cluster → FIXED", "Object-authz/IDOR cluster → FIXED") are
+**overstated** — several members are still live in `main`. Six code defects fixed this run, each with a
+regression test; three write-time guards installed to retire the classes; `pnpm typecheck` + full API
+suite green. IDs `IR16-*` (owning lanes noted). One finding (`IR16-06`) was surfaced by a guard installed
+in the same PR — the intended effect.
+
+| ID | Description | Area | Sev | Owning lane | Status |
+|---|---|---|---|---|---|
+| IR16-01 | Ban/suspend revoked **no sessions** (FRAUD P2-3, marked/implied fixed but never was). `JwtAuthGuard.canActivate` only verifies the access-token signature — never re-reads `accountStatus` — so a banned/suspended rider kept minting fresh access tokens via `POST /auth/refresh` **indefinitely** (the short access-token TTL was the only bound, renewed forever), and could keep driving an already-assigned order (`advance`/`confirmDelivery`/`cancel` gate only on `order.riderId===riderId`). | `apps/api/src/auth/jwt-auth.guard.ts`, `admin-riders.service.ts` (`suspendRider`/`banRider`), `auth.service.ts` (`refresh`) | MEDIUM | DS (security) | **FIXED** — `suspendRider`/`banRider` now `session.updateMany({profileId, revokedAt:null}, {revokedAt})` **in the same transaction** as the standing write; `refresh()` re-reads `profile.rider.accountStatus` and hard-rejects (`401 "Account is not active"`, never graced) for suspended/banned, a backstop for any demotion path that forgets to revoke. Residual = one access-token TTL (standard JWT trade-off). Tests: `admin-riders.service.spec.ts` (session-revoke-in-tx), `auth.service.spec.ts` (refresh rejects banned/suspended, allows active). |
+| IR16-02 | **Strike-counter conflation** (FRAUD P2-4, still live). `issues.resolve`'s `rider_strike` incremented the SAME `cancelStrikes` column the pre-pickup-cancel path uses. Two bugs: (1) a rider's 3rd cancel **resets `cancelStrikes` to 0**, silently wiping any dispute strikes riding alongside; (2) `RIDER_STRIKE_LIMIT` was never enforced on the dispute path (the cancel lifecycle only reacts to cancels), so a dispute strike had **no consequence at all**. | `apps/api/src/issues/issues.service.ts` (`resolve`), `apps/api/src/orders/order-lifecycle.service.ts` (`cancel`), schema/migration | MEDIUM | DS | **FIXED** — new dedicated `Rider.disputeStrikes` column (migration `0032_rider_dispute_strikes`, additive `NOT NULL DEFAULT 0`); `rider_strike` row-locks, increments **that** counter, and at `RIDER_STRIKE_LIMIT` applies the same coarse consequence a cancel-limit does (2h cooldown + `isOnline:false`) then resets it. The two offence axes no longer collide or wipe each other. Tests in `issues.service.spec.ts` (below-limit increment on the dedicated column; at-limit cooldown+offline+reset). |
+| IR16-03 | **KYC-lapse supply-plane divergence** (Class-B sibling of BR-01/DS15-05, un-propagated). A verified+online rider whose KYC flipped to `expired`/`failed` (vendor webhook `applyKycResult`, or admin `adminSetKyc`) had **only `kycStatus` written** — no `isOnline:false`, no geo eviction, no board kick — and `nearbyRiders` reimplemented the standing predicate **minus** its `kyc_status` clause. So the lapsed rider stayed counted in customer-facing `ridersNearby` supply and kept receiving broadcasts/board pushes though `onlineRefusalReason` blocks them from bidding. | `apps/api/src/riders/rider.service.ts` (`applyKycResult`, `adminSetKyc`), `apps/api/src/tracking/tracking.service.ts` (`nearbyRiders`) | MEDIUM | DS (Class-B) | **FIXED** — both KYC-lapse paths now force `isOnline:false` in the same write and call the new `TrackingGateway.evictRiderFromSupply` funnel post-commit; `nearbyRiders`' both legs (Redis + PG) gained `AND kyc_status = 'verified'`, matching `onlineRefusalReason` in full. Tests in `rider.service.spec.ts` (expired lapse forces offline + evicts). |
+| IR16-04 | **Erasure left `riders.geog` unscrubbed** (Class-C sibling of DS-01/DS15-03/07). `eraseAccount` nulled the readable `current_lat`/`current_lng` but the identical last-GPS point in the PostGIS `geog` column (the nearby-index source) survived forever — a Prisma `updateMany` **can't** touch an `Unsupported(...)` column, it needs raw SQL. Residual precise location PII after "erasure". | `apps/api/src/privacy/privacy.service.ts` (`eraseAccount`) | MEDIUM-LOW | WD/privacy | **FIXED** — `eraseAccount` now runs `UPDATE riders SET geog = NULL, position_updated_at = NULL WHERE profile_id = …` (raw SQL) inside the erase transaction for a rider. Test in `privacy.service.spec.ts`. |
+| IR16-05 | **Phantom commission projection** (WD-NEW-A, not previously in the WD ledger). `commissionOverview` projected non-zero commission for a completed order with a **null `agreedFare`** — one `chargeCommission` *permanently* skips (`commission_skip_null_fare`), so the ledger never carries a row at any rate. Once the rate flips >0 the admin KPI would show accrued commission for an order the wallet never charges — reopening the WD-006 console-vs-ledger divergence for the null-fare subset. Dormant at 0%. | `apps/api/src/settlements/settlements.service.ts` (`commissionOverview`) | LOW (dormant pre-flip) | WD | **FIXED** — the projection branch now contributes $0 for a null-`agreedFare` order (matching the debit path's skip); ledger-backed orders and non-null projections unchanged. Test in `settlements.service.spec.ts`. |
+| IR16-06 | **Erasure left `orders.itemPhotoUrl` unscrubbed** — surfaced by the new PII-manifest guard (below) while classifying every PII-named schema column. A customer-uploaded parcel photo (can incidentally show address labels / IDs) on the erasing customer's own placed orders kept both its DB reference and its GCS object after erasure — the same class as the KYC/profile-photo scrub (DS15-03) and the `note` scrub (DS15-07), on a sibling column no prior erasure pass traced. | `apps/api/src/privacy/privacy.service.ts` (`eraseAccount`) | MEDIUM-LOW | WD/privacy | **FIXED** — the `customerId`-scoped placed-order loop now nulls `itemPhotoUrl` and the GCS object is deleted post-commit alongside the KYC/profile photos. Test in `privacy.service.spec.ts`. |
+
+### Structural guards installed this run (retire the classes, per the sibling-sweep policy)
+
+- **Standing-demotion funnel** — `TrackingGateway.evictRiderFromSupply(riderId)` unifies board-kick +
+  geo-eviction into one call every standing-demotion path routes through (admin suspend/ban, automated
+  hold callers, and the newly-fixed KYC-lapse paths), so a new standing path can no longer half-apply the
+  eviction set (the exact shape of the BR-01/DS15-05/IR16-03 class). `admin-riders.service` suspend/ban
+  now also revoke sessions in-transaction, and `refresh()` re-checks standing — closing IR16-01 at the one
+  renewal chokepoint.
+- **PII erasure manifest** — `apps/api/src/privacy/pii-manifest.ts` is now the declarative single source
+  of "what counts as account PII and how erasure handles it". Its spec (`pii-manifest.spec.ts`) enforces
+  it **both ways**: (1) every PII-named column in `schema.prisma` must appear in the manifest (or in an
+  explicit `NON_PII_COLUMNS` opt-out with a reason) — so a **new** personal-data column fails CI until
+  erasure handles it (this is what surfaced IR16-06); (2) every scrub entry must be referenced by
+  `privacy.service.ts`. This retires the DS-01/DS15-03/07/IR16-04/06 "missed a sibling PII field" class.
+- **Sibling-sweep policy (evidenced)** — `docs/ROUTINES.md` bug-dedup protocol now *requires* every
+  finding to distil a grep-able pattern signature, sweep the repo, fix-or-ledger every hit, and paste the
+  grep + counts under a `## Sibling-sweep` heading in the dated report. Turns the repo's dominant
+  "harden one instance, miss the sibling" failure mode from an implicit hope into an enforced, auditable
+  step, and pushes toward write-time guards over instance fixes.
+
+**Ledger-integrity note (recommendation, not code):** `docs/FRAUD-REVIEW.md` is stale — several items it
+lists OPEN are fixed/mooted while a few (this run's IR16-01/02, plus P1-6 reputation farming, P2-6
+proof-of-delivery) are genuinely still live, and nothing owns reconciling it. The cluster summaries at the
+top of THIS ledger ("→ FIXED") also hid the un-fixed members IR16-01/02. Recommend: (a) fold FRAUD-REVIEW's
+still-open set into the OPEN table here with current status, and (b) have the deep sweep's Phase-0
+spot-check spend some of its budget specifically re-verifying the "→ FIXED" cluster headers against code.

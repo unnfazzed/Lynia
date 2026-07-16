@@ -38,6 +38,7 @@ const gateway = {
     jobCancelledEmits.push({ orderId, collected, cancelledBy }),
   emitOrderRebroadcast: () => undefined,
   evictRiderFromGeo: async () => undefined,
+  evictRiderFromSupply: async () => undefined,
 } as unknown as TrackingGateway;
 // The no-bid-expiry supply check is best-effort push; an empty nearby list keeps it off the geo path.
 const matchingTrackingStub = { nearbyRiders: async () => [] } as unknown as import("../tracking/tracking.service").TrackingService;
@@ -52,7 +53,7 @@ const wallet = new WalletService({} as Env, prisma);
 const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders, wallet);
 const trackingStub = { evictFromGeo: async () => {}, claimNotifyWaitersNear: async () => [], clearNotifyWaiters: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
 const notificationsStub = { notifyRidersAvailable: async () => {}, notifyProfiles: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
-const riders = new RiderService(prisma, {} as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env), trackingStub, notificationsStub);
+const riders = new RiderService(prisma, {} as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env), trackingStub, gateway, notificationsStub);
 
 async function clean(): Promise<void> {
   await prisma.orderEvent.deleteMany({});
