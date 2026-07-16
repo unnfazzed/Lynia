@@ -332,6 +332,11 @@ model TopUp {
   initiatedAt DateTime     @default(now()) @map("initiated_at")
   expiresAt   DateTime     @map("expires_at")
   resolvedAt  DateTime?    @map("resolved_at")
+  // BH-09: client-generated create-request dedup key (one per top-up attempt), mirroring
+  // Order.idempotencyKey. A timeout+retry on `POST /wallet/topups` hits the same row (P2002 on the
+  // partial unique index below) instead of opening a second pending intent for the same attempt.
+  // Nullable — an old client that doesn't send one just never dedupes.
+  idempotencyKey String? @map("idempotency_key")
 
   ledgerEntry CommissionLedger?
 
@@ -339,6 +344,10 @@ model TopUp {
   @@index([status])
   @@map("top_ups")
 }
+
+// (Partial unique index on (rider_id, idempotency_key) WHERE idempotency_key IS NOT NULL — added by
+// raw SQL migration since Prisma's schema DSL can't express a partial index; built CONCURRENTLY, see
+// migrations 0028_topup_idempotency_column / 0029_topup_idempotency_index.)
 
 // DORMANT — the weekly cash-settlement model this table backed has been replaced by prepaid per-ride
 // commission (see @lynia/shared COMMISSION + docs/plans/2026-biker-prepaid-commission.md). No code

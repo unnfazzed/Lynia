@@ -879,7 +879,12 @@ export default function RiderHome(): React.ReactElement {
               loading={offerM.isPending}
               disabled={!canOffer}
             />
-            <Button label="Cancel" variant="ghost" onPress={() => setSelected(null)} />
+            {/* BH-12: disabled while the offer send is in flight — mirrors BailSheet/UndeliveredSheet's
+                dismiss guard. Without this, a tap here didn't abort the in-flight makeOffer call: on
+                success the offer still landed and later reappeared unannounced as a "Your offers" card
+                for a bid the rider believed they'd cancelled; on failure the resulting ErrorText rendered
+                on an already-dismissed screen with no visible context. */}
+            <Button label="Cancel" variant="ghost" onPress={() => setSelected(null)} disabled={offerM.isPending} />
           </Card>
         ) : null}
 

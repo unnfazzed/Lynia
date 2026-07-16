@@ -1,5 +1,5 @@
 import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
-import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, kycDeclineLabel, onlineGateReason, resolveKycRetryFeedback } from "../gates";
+import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, kycDeclineLabel, onlineGateReason, resolveKycRetryFeedback, shouldOfferPermissionSettings } from "../gates";
 
 describe("onlineGateReason (rider online-gate refusal)", () => {
   it("reads a machine reason code (case-insensitive)", () => {
@@ -100,6 +100,23 @@ describe("kycDeclineLabel + isKycLocked (item 4)", () => {
     expect(isKycLocked(2)).toBe(true);
     expect(isKycLocked(3)).toBe(true);
     expect(isKycLocked(undefined)).toBe(false);
+  });
+});
+
+// BH-11: the KYC photo is MANDATORY — denying camera/library permission with no way back to Settings
+// is a permanent onboarding dead end, unlike an optional photo elsewhere in the app.
+describe("shouldOfferPermissionSettings (BH-11 KYC photo permission recovery)", () => {
+  it("offers Settings once the OS won't prompt again (a prior 'Don't Allow')", () => {
+    expect(shouldOfferPermissionSettings({ granted: false, canAskAgain: false })).toBe(true);
+  });
+
+  it("does not offer Settings while the OS can still re-prompt normally", () => {
+    expect(shouldOfferPermissionSettings({ granted: false, canAskAgain: true })).toBe(false);
+  });
+
+  it("does not offer Settings once permission is granted", () => {
+    expect(shouldOfferPermissionSettings({ granted: true, canAskAgain: false })).toBe(false);
+    expect(shouldOfferPermissionSettings({ granted: true, canAskAgain: true })).toBe(false);
   });
 });
 

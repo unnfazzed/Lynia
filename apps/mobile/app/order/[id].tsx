@@ -8,7 +8,7 @@ import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../s
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { auctionHeaderText, formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
-import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell } from "../../src/logic/order-tracking";
+import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, shouldCancelBeforeRebroadcast } from "../../src/logic/order-tracking";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { clearDeliveryCode, clearPendingRating, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, loadPendingRating, savePendingRating, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt, type PendingRating } from "../../src/auth/session";
@@ -656,7 +656,26 @@ export default function OrderScreen(): React.ReactElement {
   // customer on a BLANK compose form and losing the whole order. Instead carry THIS order's route,
   // landmarks, line-items and price into the compose flow so home.tsx prefills them (params are strings,
   // so items ride as JSON). The customer lands on a filled form and just nudges the price and re-sends.
-  const rebroadcast = (): void =>
+  const [rebroadcasting, setRebroadcasting] = useState(false);
+  const rebroadcast = async (): Promise<void> => {
+    // BH-10: two of this callback's call sites ("Raise price & send again", offered while the auction
+    // is still `open_for_offers` — the last-20s urgent nudge and the "no riders online" empty state)
+    // fire while the ORIGINAL order is still live. Every other call site (expired/cancelled/undelivered)
+    // is already terminal — nothing to cancel. Without this, submitting the prefilled form opened a
+    // SECOND live auction for the same parcel while the first stayed open, biddable, and selectable —
+    // risking two riders dispatched for one physical parcel. Best-effort: even a 409 (e.g. a rider was
+    // just chosen underneath us) or a network failure still lets the customer proceed to compose,
+    // rather than stranding them on a button that does nothing.
+    if (shouldCancelBeforeRebroadcast(order.status)) {
+      setRebroadcasting(true);
+      try {
+        await cancelOrder(orderId);
+      } catch {
+        /* best-effort — proceed to compose regardless */
+      } finally {
+        setRebroadcasting(false);
+      }
+    }
     router.replace({
       pathname: "/home",
       params: buildRebroadcastParams({
@@ -666,6 +685,7 @@ export default function OrderScreen(): React.ReactElement {
         proposedFare: order.proposedFare,
       }),
     });
+  };
 
   return (
     <Screen>
@@ -749,7 +769,7 @@ export default function OrderScreen(): React.ReactElement {
             {urgent ? (
               // Pre-surface the recovery affordance BEFORE the dead-end — same destination as the
               // expired state's "Send another request". Ghost so it doesn't compete with "Choose".
-              <Button label="Raise price & send again" variant="ghost" onPress={rebroadcast} />
+              <Button label="Raise price & send again" variant="ghost" onPress={() => void rebroadcast()} loading={rebroadcasting} />
             ) : null}
             {orderedOffers.length > 1 ? (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
@@ -875,7 +895,7 @@ export default function OrderScreen(): React.ReactElement {
                         loading={notifyM.isPending}
                       />
                     )}
-                    <Button label="Raise price & send again" variant="ghost" onPress={rebroadcast} />
+                    <Button label="Raise price & send again" variant="ghost" onPress={() => void rebroadcast()} loading={rebroadcasting} />
                   </EmptyState>
                 </View>
               ) : (
@@ -972,7 +992,7 @@ export default function OrderScreen(): React.ReactElement {
                 case "had-offers":
                   return (
                     <EmptyState icon="bike" title="Your choosing window closed" message="Riders did offer, but the window ended before you picked. Send again and they'll likely bid again at the same price.">
-                      <Button label="Send another request" onPress={rebroadcast} />
+                      <Button label="Send another request" onPress={() => void rebroadcast()} />
                     </EmptyState>
                   );
                 case "no-supply":
@@ -984,7 +1004,7 @@ export default function OrderScreen(): React.ReactElement {
                       title="No riders were online nearby"
                       message="Nobody was online near your pickup when the window closed — try sending again in a bit."
                     >
-                      <Button label="Send another request" onPress={rebroadcast} />
+                      <Button label="Send another request" onPress={() => void rebroadcast()} />
                     </EmptyState>
                   );
                 default:
@@ -994,7 +1014,7 @@ export default function OrderScreen(): React.ReactElement {
                       title="No riders took this price yet"
                       message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
                     >
-                      <Button label="Send another request" onPress={rebroadcast} />
+                      <Button label="Send another request" onPress={() => void rebroadcast()} />
                     </EmptyState>
                   );
               }
@@ -1055,7 +1075,7 @@ export default function OrderScreen(): React.ReactElement {
                     Changed your mind? You can send it again at the same price.
                   </Text>
                 ) : null}
-                <Button label={order.cancelledBy === "customer" ? "Send it again" : "Send another request"} onPress={rebroadcast} />
+                <Button label={order.cancelledBy === "customer" ? "Send it again" : "Send another request"} onPress={() => void rebroadcast()} />
               </View>
             ) : null}
           </Card>
@@ -1106,7 +1126,7 @@ export default function OrderScreen(): React.ReactElement {
             </Card>
             {/* Fix 1e: recompose is the customer re-sending THEIR parcel — a rider viewer is never the
                 party to do that (and rebroadcast() prefills the customer's route/price), so hide it. */}
-            {!isRiderViewer ? <Button label="Send a new request" onPress={rebroadcast} /> : null}
+            {!isRiderViewer ? <Button label="Send a new request" onPress={() => void rebroadcast()} /> : null}
           </>
         ) : null}
 

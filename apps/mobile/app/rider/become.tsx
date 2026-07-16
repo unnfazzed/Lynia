@@ -3,9 +3,10 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as WebBrowser from "expo-web-browser";
 import React, { useEffect, useRef, useState } from "react";
-import { Image, ScrollView, Text } from "react-native";
+import { Image, Linking, ScrollView, Text } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
+import { shouldOfferPermissionSettings } from "../../src/logic/gates";
 import { downscaleForUpload, type UploadImageSource } from "../../src/logic/image-downscale";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft } from "../../src/logic/kyc-draft";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
@@ -31,6 +32,11 @@ export default function BecomeRiderScreen(): React.ReactElement {
   const [failedAsset, setFailedAsset] = useState<UploadImageSource | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // BH-11: which capture source is blocked by an OS-level "don't ask again" permission denial — the
+  // photo is MANDATORY for KYC, unlike PickupChecklist's optional one, so an error string with no way
+  // to recover is a real onboarding dead end. Mirrors the location-permission gate's "Open settings"
+  // affordance elsewhere in the app.
+  const [permissionBlocked, setPermissionBlocked] = useState<"camera" | "library" | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
   // Gate persistence until the initial load runs, so we don't clobber a stored draft with empty state.
@@ -110,12 +116,18 @@ export default function BecomeRiderScreen(): React.ReactElement {
   // Capture or choose a photo, then upload it straight to storage and keep the returned object key.
   const pickFrom = async (source: "camera" | "library"): Promise<void> => {
     setError(null);
+    setPermissionBlocked(null);
     const perm =
       source === "camera"
         ? await ImagePicker.requestCameraPermissionsAsync()
         : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       setError(source === "camera" ? "Camera permission is needed to take your photo." : "Photo permission is needed.");
+      // BH-11: `canAskAgain: false` means the OS won't show its own prompt again (a prior "Don't
+      // Allow") — the only way forward is the device's Settings screen. Without this, denying both
+      // the camera AND the gallery permanently blocks `photoKey` from ever being set, and KYC
+      // submission (which requires a photo) is a permanent dead end for that rider.
+      if (shouldOfferPermissionSettings(perm)) setPermissionBlocked(source);
       return;
     }
     const result =
@@ -229,6 +241,10 @@ export default function BecomeRiderScreen(): React.ReactElement {
                 loading={uploading}
               />
               <Button label="Choose from gallery" variant="ghost" onPress={() => void pickFrom("library")} disabled={uploading} />
+              {/* BH-11: the OS won't re-prompt after a "Don't Allow" — only Settings can fix it. */}
+              {permissionBlocked ? (
+                <Button label="Open settings" variant="ghost" onPress={() => void Linking.openSettings()} />
+              ) : null}
               {/* R6: retry the SAME captured file — the everyday failure on this market's links is the
                   upload, not the capture, so re-posing for a fresh photo every retry is unnecessary friction. */}
               {failedAsset && !uploading ? (

@@ -106,3 +106,27 @@ export function reconcileRiderJobTerminal(input: {
   if (hasActiveOrder || alreadyResolved) return null;
   return persistedTerminal;
 }
+
+/**
+ * BH-07: decide what to do with a durable "rate-the-sender still pending for order X" marker (see
+ * `saveSenderRatingPending` in session.ts) against the delivered terminal this session has resolved.
+ * Unlike `reconcilePendingRating` (the customer's sibling), `rateSender` never changes order status, so
+ * there is no snapshot field to check it against — the caller's retry instead treats the server's own
+ * "Order already rated" 409 as confirmation. Gated on matching the CURRENT terminal (rather than firing
+ * for a stale marker against whatever job happens to be on screen) so a resolved retry never writes its
+ * score/confirmation onto a different, not-yet-rated job's UI.
+ *
+ *   - "retry": the marker matches the terminal on screen and hasn't been confirmed yet.
+ *   - "wait":  no marker, already confirmed, or the marker belongs to a different (or no) terminal —
+ *              left in place; it retries the moment the rider is back on its matching terminal.
+ */
+export function reconcilePendingSenderRating(input: {
+  pending: { orderId: string; score: number } | null | undefined;
+  deliveredOrderId: string | null;
+  confirmed: boolean;
+}): "retry" | "wait" {
+  const { pending, deliveredOrderId, confirmed } = input;
+  if (!pending || confirmed) return "wait";
+  if (deliveredOrderId !== pending.orderId) return "wait";
+  return "retry";
+}

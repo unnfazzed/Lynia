@@ -284,6 +284,48 @@ export async function clearRiderJobTerminal(): Promise<void> {
   }
 }
 
+// BH-07: a durable "rate-the-sender still needs to reach the server for order X" marker, mirroring
+// PENDING_RATING_KEY above for the rider's own optional post-delivery star tap. Unlike the customer's
+// rateOrder (which flips the order to `status: "completed"` — an unambiguous "already rated" signal),
+// rateSender is recorded-only and never changes order status, so there's no snapshot field to reconcile
+// against; the retry below instead treats the server's own "Order already rated" 409 as confirmation.
+// Persisted the instant the star is tapped (before the POST resolves) so a full app-kill — not just a
+// lost response — is retried on the next launch. Single slot — a rider has one delivered job awaiting
+// this at a time.
+const PENDING_SENDER_RATING_KEY = "lynia.pendingSenderRating";
+export interface PendingSenderRating {
+  orderId: string;
+  score: number;
+}
+
+export async function saveSenderRatingPending(orderId: string, score: number): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PENDING_SENDER_RATING_KEY, JSON.stringify({ orderId, score }));
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadSenderRatingPending(): Promise<PendingSenderRating | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(PENDING_SENDER_RATING_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as unknown;
+    if (v && typeof v === "object" && typeof (v as { orderId?: unknown }).orderId === "string" && typeof (v as { score?: unknown }).score === "number") {
+      return { orderId: (v as { orderId: string }).orderId, score: (v as { score: number }).score };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+export async function clearSenderRatingPending(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(PENDING_SENDER_RATING_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
 // Which starting role the user picked at the post-OTP role fork (one account, two roles). Persisted
 // so an existing user isn't re-prompted on every sign-in — verify.tsx routes straight home once set.
 // All best-effort: a native read/write failure must never trap the sign-in flow.
@@ -427,6 +469,8 @@ export async function clearDeviceState(): Promise<void> {
       // The customer's durable pending-rating marker (an order id + armed score) must not survive to
       // the next user on a shared device, or auto-submit a rating on the next user's account.
       SecureStore.deleteItemAsync(PENDING_RATING_KEY),
+      // The rider's durable pending-sender-rating marker — same shared-device hazard as above.
+      SecureStore.deleteItemAsync(PENDING_SENDER_RATING_KEY),
       // Address book: the saved Home/Work + recent places (addresses) and the recent recipients (the one
       // place we hold contact PII) must not survive to the next user on a shared device — exactly the
       // "next user must not rehydrate the previous user's addresses" rule above, now including recipients.

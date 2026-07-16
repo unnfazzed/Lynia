@@ -273,6 +273,10 @@ export const WS_EVENTS = {
   /** server→client: the counterparty's socket has been dark past PRESENCE_ESCALATION_MS
    *  (INTERFACE-AUDIT C5) — the receiving app escalates its "live paused" treatment to a warning. */
   presenceStale: "presence:stale",
+  /** server→client (BH-08): the counterparty a `presence:stale` was escalated for is back — the
+   *  receiving app can clear its "may be offline" warning instead of waiting for the order's next
+   *  status change. */
+  presenceRecovered: "presence:recovered",
   /** server→client (to the CANCELLED order's room, i.e. the customer): the assigned rider bailed and
    *  the order was auto re-broadcast at the same price as a NEW order (INTERFACE-AUDIT F-01). Carries
    *  the new order id so the customer app moves to the fresh auction instead of a dead "cancelled"
@@ -362,6 +366,15 @@ export const PresenceStaleEvent = z.object({
   at: z.string(),
 });
 export type PresenceStaleEvent = z.infer<typeof PresenceStaleEvent>;
+
+/** `presence:recovered` payload (BH-08) — the counterparty a `presence:stale` was escalated for
+ *  reconnected. `role` matches the recovered `presence:stale` this cancels. */
+export const PresenceRecoveredEvent = z.object({
+  orderId: z.string().uuid(),
+  role: z.enum(["rider", "customer"]),
+  at: z.string(),
+});
+export type PresenceRecoveredEvent = z.infer<typeof PresenceRecoveredEvent>;
 
 // ── Client RUM (glass-to-glass latency) ─────────────────────────────────────
 // The app already emits SERVER-side latency SLOs (docs/OBSERVABILITY.md); those miss network RTT +
@@ -536,6 +549,11 @@ export const CreateTopupRequest = z
     amount: z.number().positive().multipleOf(0.01),
     rail: z.enum(["ecocash", "innbucks", "omari"]),
     phone: z.string().min(6).max(20),
+    // BH-09: client-generated, one per top-up attempt (mirrors CreateOrderRequest.idempotencyKey). A
+    // client-side timeout+retry replays the same key; the server dedupes on (riderId, idempotencyKey)
+    // and returns the original pending intent instead of opening a second one for the same attempt.
+    // Optional for back-compat with old clients, who keep the prior no-dedupe behavior.
+    idempotencyKey: z.string().uuid().optional(),
   })
   .strict();
 export type CreateTopupRequest = z.infer<typeof CreateTopupRequest>;

@@ -6,7 +6,10 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-15 (wallet & data-lifecycle audit routine — first run of the `WD-` lane;
+**Last consolidated:** 2026-07-15 night (bug-hunt routine — mobile-journey/contract-seam lane; see the
+dedicated section near the bottom for this run's seven findings, BH-07…BH-12, all LOW–MEDIUM, six fixed
+same-run with regression tests, one recorded as a design observation rather than a defect). Prior
+consolidation: 2026-07-15 (wallet & data-lifecycle audit routine — first run of the `WD-` lane;
 see the dedicated section near the bottom for this run's eleven findings, WD-001…WD-011, one CRITICAL
 (WD-001, a schema invariant — fare-adjust ledger reconciliation — that was documented but never
 implemented), all fixed same-run). Prior consolidation: 2026-07-15 (deep-sweep routine — orthogonal hunt
@@ -456,3 +459,34 @@ fix while commission stays at the 0% launch rate.
 | WD-009 | The top-up screen validated against the bundled `COMMISSION` constant instead of the server-authoritative `/wallet/config` (every other wallet surface reads the server value), and displayed the rider's locally-typed amount instead of the server-confirmed `topup.amount` on the wait/success screens | `apps/mobile/app/wallet/top-up.tsx` | LOW | **FIXED** — bounds sourced from `useWalletConfig()` (bundled constant only as the pre-load fallback); wait/success screens show `topup?.amount ?? amountNum`. Validation factored into a testable pure `validateTopupAmount`. Tests in `topup.test.tsx` (6 cases) |
 | WD-010 | `resolveCommissionRatePct` had no decimal-place limit on the `COMMISSION_RATE_PCT` env override, while `CommissionLedger.ratePct` is `Decimal(5,2)` — an over-precise ops value would be served to clients at full precision then silently truncate on write to each ride's receipt row | `packages/shared/src/policy.ts` `resolveCommissionRatePct` | LOW | **FIXED** — rounds the resolved rate to 2dp. Tests in `wallet.service.spec.ts` (3 cases) |
 | WD-011 | The Earnings screen's cumulative total folded `proposedFare` (the never-agreed ask) into the sum for any completed/delivered order with a null `agreedFare` (a documented completion anomaly `chargeCommission` already tolerates) — a price that was never agreed shouldn't inflate a "what I earned" total | `apps/mobile/app/earnings/index.tsx` | LOW | **FIXED** — the local fallback sum (used only until the WD-004 server aggregate loads) now excludes null-`agreedFare` rows; the server aggregate's SQL `SUM` already excludes them by construction |
+
+---
+
+## Bug hunt 2026-07-15 night (bug-hunt routine) — `docs/BUG-HUNT-2026-07-15.md`
+
+Full-journey re-audit (customer/rider onboarding + KYC capture, order creation, bidding/negotiation,
+tracking, completion) plus an app↔API contract-seam pass, each run as an independent research agent
+against current code and cross-checked against this ledger first (Phase 0) — including the same-day
+deep sweep (DS15-01…DS15-10), UX pass (UX15-01…UX15-16), and wallet & data-lifecycle audit
+(WD-001…WD-011), all already merged. Baseline: `pnpm typecheck` clean, 909 API + 383 mobile tests green
+(matching the ledger's last-recorded count). **Seven new findings, all LOW–MEDIUM — six fixed this sweep
+with regression tests; one recorded as a design observation, not a defect** (see report §"Not
+independently fixed"); `pnpm typecheck` + `pnpm lint` + 913 API tests (+4) + 396 mobile tests (+13), all
+green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| BH-07 | Rider's optional "rate the sender" star tap (`senderRateM.mutate`) had no durable marker — an app kill before the POST resolved silently dropped the rating, and a lost-*response* retry hitting the server's 409 "Order already rated" was shown as a scary generic error (rolling back the star) instead of the confirmation it actually was | `apps/mobile/app/rider/job.tsx`, `apps/mobile/src/auth/session.ts`, `apps/mobile/src/logic/rider-job.ts` | MEDIUM | **FIXED** — durable `pendingSenderRating` marker (mirrors BH-06's `pendingRating`/UX15-01's `RiderJobTerminal`), persisted on tap; new pure `reconcilePendingSenderRating` retries it gated on matching the terminal on screen; a 409 on either the live mutation or the retry is now treated as confirmation. 5 new cases in `rider-job.test.ts` |
+| BH-08 | Rider's "customer may be offline" warning (`customerStale`) was a one-way sticky flag cleared only on the order's next status change — for a delivery leg sitting at one status for a while, a customer who reconnected left the rider staring at a stale warning for the rest of that leg with no self-correction | `apps/mobile/app/rider/job.tsx`, `apps/mobile/src/realtime/use-rider-job-socket.ts`, `apps/api/src/tracking/tracking.gateway.ts` | LOW-MEDIUM | **FIXED** — new additive `presence:recovered` WS event (`packages/shared/src/contracts.ts`), emitted from `markCustomerPresent` only on a genuine prior escalation; `useRiderJobSocket` gains `onCustomerRecovered`, wired to clear `customerStale` immediately. Tests in `tracking.gateway.spec.ts` + `use-rider-job-socket.test.tsx` (3 new cases) |
+| BH-09 | `POST /wallet/topups` had no idempotency key, unlike `CreateOrderRequest` and every admin wallet mutation — a client-side timeout+retry (the same documented scenario those paths guard against) created a second, distinct pending `TopUp` row for one attempt; bounded today (no live rail-confirmation poller yet) but a real double-credit vector the moment that follow-on ships | `apps/api/src/wallet/wallet.service.ts` `createTopup`, `packages/shared/src/contracts.ts` `CreateTopupRequest`, `apps/mobile/app/wallet/top-up.tsx` | MEDIUM (LOW today) | **FIXED** — optional `idempotencyKey` added to the contract; `TopUp.idempotencyKey` + partial unique `(rider_id, idempotency_key)` index (migrations 0028/0029, mirroring the order-create idempotency migrations 0020/0021); `createTopup` dedupes pre-check + P2002 fallback; mobile generates one key per top-up attempt, rotated only in `reset()`. 3 new cases in `wallet.service.spec.ts` |
+| BH-10 | "Raise price & send again" — offered while the auction is STILL `open_for_offers` (the last-20s urgent nudge and the "no riders online" empty state) — only ever navigated to compose a fresh order, never cancelled the original; submitting the prefilled form left the customer with TWO simultaneously live orders for the same parcel (risking two riders dispatched for one physical trip) | `apps/mobile/app/order/[id].tsx` `rebroadcast`, `apps/mobile/src/logic/order-tracking.ts` | MEDIUM-HIGH | **FIXED** — new pure `shouldCancelBeforeRebroadcast(status)` (true only for `open_for_offers`); `rebroadcast()` cancels the current order first (best-effort) before navigating, gated on the helper so the five already-terminal call sites are unaffected; a loading state guards the two live-state buttons against a double-tap. 2 new cases in `order-tracking.test.ts` |
+| BH-11 | KYC photo capture (`become.tsx` `pickFrom`) showed only a plain error string on a denied camera/gallery permission, with no "Open settings" affordance — unlike the location-permission gate elsewhere in the app. Once the OS stops re-prompting (`canAskAgain: false`), a rider who denies both is permanently blocked from onboarding, since the mandatory KYC photo can never be captured | `apps/mobile/app/rider/become.tsx`, `apps/mobile/src/logic/gates.ts` | MEDIUM | **FIXED** — new pure `shouldOfferPermissionSettings(perm)`; an "Open settings" button (`Linking.openSettings()`) appears alongside the capture buttons on a `canAskAgain:false` denial, mirroring the location gate. 3 new cases in `gates.test.tsx` |
+| BH-12 | Rider bidding compose card's "Cancel" button had no pending guard, unlike its sibling dismiss controls (`BailSheet`, `UndeliveredSheet`), which both `disabled={pending}` — tapping Cancel mid-send didn't abort the in-flight `makeOffer`: on success the offer still landed and reappeared unannounced as a "Your offers" card for a bid the rider believed cancelled; on failure the error rendered on an already-dismissed screen | `apps/mobile/app/rider/index.tsx` | LOW-MEDIUM | **FIXED** — `disabled={offerM.isPending}` added to the Cancel button, matching the sibling sheets. Trivial prop wiring; no dedicated regression test, consistent with precedent for similarly-shaped fixes (UX15-08, UX15-11) |
+
+**Not a new defect (design observation only):** `OrdersService.activeForCustomer`'s `findFirst` returns
+only the single most-recently-updated live order (an existing code comment already acknowledges "(rarely)
+more than one is live"). With BH-10 closed, the one path that could silently create an unintended second
+live order is fixed; a customer deliberately sending two separate parcels back-to-back is intentional
+multi-order use, and the older order stays reachable via Trip History even though it drops off the home
+screen's one proactive recovery banner. Left undocumented as an OPEN item (it's not a defect, just a
+UI-scope observation) — see the report for detail.

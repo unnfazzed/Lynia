@@ -168,3 +168,15 @@ export function reconcilePendingRating(input: {
   if (order.status === "delivered") return "retry";
   return "wait";
 }
+
+/**
+ * BH-10: should the "raise price & send again" / "send another request" CTA cancel the CURRENT order
+ * before navigating to compose a fresh one? Every terminal status (expired/cancelled/undelivered) has
+ * nothing left to cancel — the order already left the live auction. `open_for_offers` is the one status
+ * where the CTA fires while the original is still live, biddable, and selectable: submitting the
+ * prefilled form without cancelling first used to leave the customer with TWO simultaneously live orders
+ * for the same parcel (risking two riders dispatched for one physical trip).
+ */
+export function shouldCancelBeforeRebroadcast(orderStatus: string): boolean {
+  return orderStatus === "open_for_offers";
+}

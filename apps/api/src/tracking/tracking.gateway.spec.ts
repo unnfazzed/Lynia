@@ -692,16 +692,32 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       await g.scanPresence();
       expect(emit).toHaveBeenCalledTimes(1);
 
-      // Customer reconnects (re-subscribe re-arms), then goes dark again → a second escalation.
+      // Customer reconnects (re-subscribe re-arms) — BH-08: since this order HAD been escalated, the
+      // re-subscribe itself now also pushes presence:recovered role:"customer" immediately, rather than
+      // making the rider's app wait for the order's next status change.
       const client2 = fakeSocket({ sub: "c1", role: "customer" }, [], "sock-2");
       await g.subscribeOrder(client2 as never, { orderId: "ord-1" });
+      expect(emit).toHaveBeenCalledTimes(2);
+      expect(emit).toHaveBeenNthCalledWith(2, WS_EVENTS.presenceRecovered, expect.objectContaining({ orderId: "ord-1", role: "customer" }));
+
+      // Then goes dark again → a second stale escalation.
       g.handleDisconnect(client2 as never);
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
-      expect(emit).toHaveBeenCalledTimes(2);
+      expect(emit).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("BH-08: does NOT emit presence:recovered on an ordinary subscribe that was never escalated", async () => {
+    const { server, emit } = fakeServer();
+    const g = gateway(customerTracking());
+    g.server = server as never;
+    const client = fakeSocket({ sub: "c1", role: "customer" });
+
+    await g.subscribeOrder(client as never, { orderId: "ord-1" });
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it("counts a same-socket double-subscribe to the SAME order once, so one disconnect returns to dark", async () => {
