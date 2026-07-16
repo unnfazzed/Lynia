@@ -5,7 +5,11 @@ against this repo. Each routine's cron prompt is kept **self-contained** (a rout
 depend on this file existing to function), but this spec is authoritative when a prompt and
 this file disagree — the next prompt revision must be reconciled against it.
 
-Last reconciled: 2026-07-15 (added the wallet & data-lifecycle audit routine).
+Last reconciled: 2026-07-16 (interactive-review learnings: added Phase-0.5 cluster-claim
+re-verification and the deep-sweep-owned cross-lane seams pass to the bug-dedup protocol — the two
+blind spots that let IR16-01…06 sit live under "→ FIXED" cluster headers and in the seams between
+lanes; the mandatory sibling-sweep rule was added the same day).
+Prior: 2026-07-15 (added the wallet & data-lifecycle audit routine).
 
 ## The seven routines
 
@@ -56,6 +60,22 @@ process failure; the ledger is how the routines stay disjoint.
 - **Phase 0, before reading any product code:** read `docs/KNOWN_BUGS.md`. Anything already in
   the ledger — or trivially adjacent to a ledger entry — does **not** count as a new finding.
   Re-derived known bugs are confirmed in the ledger and skipped, never re-reported.
+- **Phase 0.5 — cluster-claim re-verification (distrust the summaries, not just the rows).** The
+  ledger's Phase-0 skip is what makes the routines efficient, but it also means the routines *inherit
+  the ledger's errors* — and the most dangerous errors are the **rolled-up cluster summaries**
+  ("Auth/identity → FIXED", "Object-authz/IDOR → FIXED", etc.), which can mark a whole class FIXED
+  while an individual member is still live in code. This is not hypothetical: the 2026-07-16
+  interactive review found `IR16-01` (session-revoke-on-ban, FRAUD P2-3) and `IR16-02` (the shared
+  strike counter, FRAUD P2-4) **still live** under an "Auth/identity → FIXED" header that every prior
+  Phase-0 had trusted and skipped. So each run, **re-verify a rotating sample against current code**:
+  1. Pick **2–3 of the "→ FIXED / MOOT" cluster headers** (rotate through them run-over-run so every
+     cluster is re-checked periodically — track which you picked in the report).
+  2. For each, open the code for **≥2 of its named members** and confirm the fix is actually present
+     (grep for the guard/CAS/scrub/gate the summary claims). A cluster summary is a *claim*, not
+     evidence — treat a member whose guard you can't find in code as a **fresh finding**, not a skip.
+  3. This is distinct from the existing per-fix spot-check (which samples individual fixed rows): here
+     you are auditing the **summary's coverage of its own members**, the exact blind spot that hid
+     IR16-01/02. Log the headers checked + the outcome in the dated report.
 - **Hunt your own lane first.** Lanes (see table above) define where each routine concentrates:
   - **Bug hunting (23:00):** mobile client journeys (onboarding, KYC capture, order creation,
     bidding UI, tracking, completion), client state/lifecycle (process death, backgrounding,
@@ -66,7 +86,8 @@ process failure; the ledger is how the routines stay disjoint.
     the code fixes for those.
   - **Deep bug sweep (03:00):** backend correctness — transactions/rollback, concurrency and
     idempotency, timer/expiry boundaries, money/price integrity, object-level authorization,
-    KYC-gate bypass, plus the adversarial direct-API pass.
+    KYC-gate bypass, plus the adversarial direct-API pass. **Also owns the cross-lane seams pass**
+    (below) — it is the backend-correctness lane, so the interactions between lanes are its territory.
   - **Wallet & data-lifecycle audit (09:00):** the money + reporting data lifecycle end to end —
     the rider wallet journey (top-up → `CommissionAccount` balance → append-only
     `CommissionLedger`), the per-ride commission debit, the earnings tab, and the admin
@@ -79,6 +100,28 @@ process failure; the ledger is how the routines stay disjoint.
     "Suggestions (not implemented)" section).
 - **Out-of-lane finds are still fixed** (policy 2 — no deferral), but tagged in the ledger with
   the owning lane so the owning routine knows the territory is covered.
+- **Cross-lane seams pass (deep sweep owns it).** Lane disjointness is the dedup mechanism — and it
+  is *structurally blind to the seams between lanes*, where a change in one lane's territory breaks an
+  invariant another lane owns. The most valuable findings in the 2026-07-16 review lived in exactly
+  these seams: `IR16-01` (auth-guard × admin-ban), `IR16-02` (issues × orders sharing one column),
+  `IR16-03` (tracking × riders × orders standing planes), `IR16-04`/`06` (schema × privacy × storage).
+  None sit *inside* a single lane, so no single-lane hunt was ever going to find them. So the deep
+  sweep runs one explicit **seam pass** per run: pick a **shared piece of state or a cross-cutting
+  invariant** and trace it across **every** writer/reader regardless of lane. Standing menu of seams
+  (rotate):
+  - **Rider standing** (`accountStatus`/`onHold`/`isOnline`/`kycStatus`) — every path that changes it
+    (admin, self-service, webhook, automated hold, KYC lapse, erasure) must leave the rider out of all
+    four supply planes (geo, board, `isOnline`, dashboard count) **and** revoke sessions where a
+    demotion. (Now funnelled through `TrackingGateway.evictRiderFromSupply` — verify new paths use it.)
+  - **A single DB column with two writers** — grep each `Rider`/`Order` counter/flag column for *all*
+    its writers and confirm they don't collide or wipe each other (the IR16-02 class).
+  - **PII across representations** — every personal-data field vs. `apps/api/src/privacy/pii-manifest.ts`
+    (the manifest test enforces schema coverage; the seam pass checks the *storage-object* and
+    *JSON-embedded* siblings a column scan misses).
+  - **A value threaded through a notification/feed/push or an admin action** — every id/status it
+    carries must re-assert its trust boundary at each hop (the audit-forgery / notify-me-orderId class).
+  Record the seam traced + the writers/readers enumerated in the report; a seam whose invariant an
+  out-of-lane path violates is a fresh finding (fixed this run, tagged with the owning lane).
 - **Mandatory sibling-sweep (evidenced) — the single most important anti-recurrence rule.** The
   dominant defect pattern in this repo's history is *"a fix hardened one instance and a sibling
   elsewhere stayed vulnerable"* — the check but not the write, the admin path but not self-service,
