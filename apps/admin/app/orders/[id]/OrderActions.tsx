@@ -2,7 +2,7 @@
 
 import { REASONS } from "../../lib/reasons";
 import { ConfirmModal } from "../../components/ConfirmModal";
-import { cancelOrder, adjustFare } from "../actions";
+import { cancelOrder, adjustFare, adjudicateDelivered } from "../actions";
 
 /**
  * Admin order mutations (item 1) as reason-coded <ConfirmModal>s over the audit seam. On confirm each
@@ -40,6 +40,36 @@ export function FareAdjust({
       amount={{ label: "New fare", prefix: "$", placeholder: agreedOrProposed, required: true }}
       confirmLabel="Record adjustment"
       onConfirm={(r) => adjustFare(id, r.amount, r.reasonCode, r.note)}
+    />
+  );
+}
+
+/**
+ * KB-POD-DISPUTE Phase B: overturn a rider-raised `undelivered` outcome to `delivered` when the
+ * proof-of-drop evidence (shown above this control) supports it. Force-completes the order, credits the
+ * rider a clean trip, and charges commission. Rendered only on an `undelivered` order with a rider.
+ */
+export function AdjudicateDelivered({ id, connected }: { id: string; connected: boolean }) {
+  return (
+    <ConfirmModal
+      action="order.adjudicate_delivered"
+      auditInEndpoint // endpoint writes the audit row in-tx — don't double-record
+      target={id}
+      path={`/orders/${id}`}
+      triggerLabel="Mark delivered (code bypass)…"
+      triggerVariant="ghost"
+      disabled={!connected}
+      title="Adjudicate this delivery as complete?"
+      consequence={
+        <span>
+          Overturns the <b>undelivered</b> outcome on order <b>{id}</b> to <b>delivered</b> — only when the proof above
+          confirms the drop and the recipient withheld the code. The rider is credited a completed trip and commission;
+          the customer is notified and can contest within 48 hours. Recorded in the audit log.
+        </span>
+      }
+      reasons={REASONS.orderAdjudicateDelivered}
+      confirmLabel="Mark delivered"
+      onConfirm={(r) => adjudicateDelivered(id, r.reasonCode, r.note)}
     />
   );
 }

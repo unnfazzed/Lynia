@@ -22,6 +22,18 @@ export async function cancelOrder(id: string, reasonCode: string | null, note: s
   revalidatePath("/orders");
 }
 
+/** KB-POD-DISPUTE Phase B: adjudicate a rider-raised `undelivered` order as DELIVERED despite a withheld
+ *  code. Binds ReasonRequired = { reason, note? }, same shape as cancel. */
+export async function adjudicateDelivered(id: string, reasonCode: string | null, note: string): Promise<void> {
+  const ok = await adminPost(`/admin/orders/${id}/adjudicate-delivered`, {
+    reason: reasonCode ?? "",
+    note: note || null,
+  });
+  if (!ok) throw new Error(`Failed to adjudicate order ${id} as delivered (check API_BASE_URL / admin token).`);
+  revalidatePath(`/orders/${id}`);
+  revalidatePath("/orders");
+}
+
 export async function adjustFare(
   id: string,
   newFare: string,

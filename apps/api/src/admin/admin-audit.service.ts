@@ -23,6 +23,7 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   "customer.lift",
   "order.cancel",
   "order.fare_adjust",
+  "order.adjudicate_delivered",
   "issue.resolve",
   "sos.acknowledge",
   "wallet.credit",

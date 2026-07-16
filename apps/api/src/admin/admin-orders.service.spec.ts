@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
+import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import type { WalletService } from "../wallet/wallet.service";
@@ -507,5 +508,90 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
     await svc.adjustFare("admin-1", "o1", { agreedFare: 7, reason: "x" });
     expect(wallet.adjustCommissionInTx).not.toHaveBeenCalled();
+  });
+});
+
+describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () => {
+  const dec = (s: string) => ({ toString: () => s, toFixed: (_n: number) => s });
+  interface Calls {
+    orderUpdate: { where: Record<string, unknown>; data: Record<string, unknown> } | null;
+    orderEvent: { data: Record<string, unknown> } | null;
+    riderUpdate: { where: unknown; data: Record<string, unknown> } | null;
+    audit: { data: Record<string, unknown> } | null;
+  }
+  function makeTx(over: { order?: unknown; updateCount?: number } = {}) {
+    const calls: Calls = { orderUpdate: null, orderEvent: null, riderUpdate: null, audit: null };
+    const count = over.updateCount ?? 1;
+    const tx = {
+      order: {
+        findUnique: async () =>
+          "order" in over
+            ? over.order
+            : { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("6.00"), suggestedFare: dec("6.00") },
+        updateMany: async (a: Calls["orderUpdate"]) => { calls.orderUpdate = a; return { count }; },
+      },
+      orderEvent: { create: async (a: Calls["orderEvent"]) => { calls.orderEvent = a; return {}; } },
+      $executeRaw: async () => 1,
+      rider: {
+        findUnique: async () => ({ reliabilityScore: 80, onHold: false, heldReason: null }),
+        update: async (a: Calls["riderUpdate"]) => { calls.riderUpdate = a; return {}; },
+      },
+      auditLog: { create: async (a: Calls["audit"]) => { calls.audit = a; return { id: "audit-9" }; } },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    return { prisma, calls };
+  }
+  const wallet = { chargeCommission: vi.fn(async () => {}) };
+
+  it("force-completes an undelivered order, credits the rider (trip + reliability recovery), charges commission, audits in one tx", async () => {
+    wallet.chargeCommission.mockClear();
+    const { prisma, calls } = makeTx();
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    const res = await svc.adjudicateDelivered("admin-1", "o1", { reason: "recipient took the parcel, withheld the code; proof photo + GPS on file" });
+    // Force-complete via a CAS bounded to the undelivered status.
+    expect(calls.orderUpdate!.where).toMatchObject({ id: "o1", status: "undelivered" });
+    expect(calls.orderUpdate!.data).toMatchObject({ status: "completed" });
+    expect(calls.orderEvent!.data).toEqual({ orderId: "o1", status: "completed" });
+    // Rider credited a clean completion: +1 trip and a recovered reliability score (80 → 82).
+    expect(calls.riderUpdate!.data).toMatchObject({ tripsCount: { increment: 1 } });
+    expect(calls.riderUpdate!.data.reliabilityScore).toBe(82);
+    // Commissionable (per the Phase-B decision) — no-op at rate 0, but the debit fires.
+    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ orderId: "o1", riderId: "r1" }));
+    // Audit row in the same tx, with the reserved action.
+    expect(calls.audit!.data).toMatchObject({ action: "order.adjudicate_delivered", target: "o1" });
+    expect(res).toMatchObject({ id: "o1", status: "completed", auditId: "audit-9" });
+  });
+
+  it("409s on any non-undelivered order — this can only overturn a failed hand-off, not complete an arbitrary order", async () => {
+    for (const status of ["assigned", "en_route_dropoff", "delivered", "completed", "cancelled"]) {
+      const { prisma } = makeTx({ order: { status, riderId: "r1", customerId: "c1", agreedFare: dec("6"), suggestedFare: dec("6") } });
+      const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+      await expect(svc.adjudicateDelivered("admin-1", "o1", { reason: "x" })).rejects.toThrow(/undelivered order can be adjudicated/i);
+    }
+  });
+
+  it("409s when the undelivered order has no assigned rider to credit", async () => {
+    const { prisma } = makeTx({ order: { status: "undelivered", riderId: null, customerId: "c1", agreedFare: dec("6"), suggestedFare: dec("6") } });
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    await expect(svc.adjudicateDelivered("admin-1", "o1", { reason: "x" })).rejects.toThrow(/no assigned rider/i);
+  });
+
+  it("409s on a CAS conflict (order moved between the read and the write)", async () => {
+    const { prisma } = makeTx({ updateCount: 0 });
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    await expect(svc.adjudicateDelivered("admin-1", "o1", { reason: "x" })).rejects.toThrow(/refresh and try again/i);
+  });
+
+  it("notifies the customer with a 48h contest window, and the rider, post-commit", async () => {
+    const notified: Array<{ ids: string[]; msg: Record<string, unknown> }> = [];
+    const notifications = {
+      notifyProfiles: async (ids: string[], msg: Record<string, unknown>) => { notified.push({ ids, msg }); },
+    } as unknown as NotificationsService;
+    const { prisma } = makeTx();
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, notifications, wallet as unknown as WalletService);
+    await svc.adjudicateDelivered("admin-1", "o1", { reason: "x" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(notified.find((n) => n.ids.includes("c1"))?.msg.body).toMatch(/report a problem within 48 hours/i);
+    expect(notified.some((n) => n.ids.includes("r1"))).toBe(true);
   });
 });

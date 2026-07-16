@@ -4,10 +4,13 @@ import {
   ACTIVE_RIDE_STATUSES,
   commissionBasis,
   DELIVERY_OTP_MAX_ATTEMPTS,
+  HeldReason,
   type OrderStatus,
   perRideCommission,
+  RELIABILITY,
   TERMINAL_STATUSES,
 } from "@lynia/shared";
+import { applyReliabilityDelta } from "../riders/reliability";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -179,6 +182,89 @@ export class AdminOrdersService {
     // party), so notify ALL parties: no excludeProfileId. Best-effort — notifyOrderStatus never throws, so a
     // push miss can't affect the already-committed cancel; guarded no-op when no NotificationsService (tests).
     void this.notifications?.notifyOrderStatus(orderId, "cancelled", {});
+    return { id: result.id, status: result.status, auditId: result.auditId };
+  }
+
+  /**
+   * KB-POD-DISPUTE Phase B — ops adjudicates a disputed hand-off as DELIVERED despite a withheld delivery
+   * code. This is the ONLY path that records a trip delivered without the recipient's OTP, so it is
+   * deliberately **ops-only** (AdminGuard on the route), bounded to a rider-raised **`undelivered`** order
+   * with an assigned rider, requires a mandatory reason, and writes a full audit row. Ops adjudicates on
+   * the Phase-A proof-of-drop evidence (photo + GPS + time) rendered on the order detail.
+   *
+   * On adjudication the order is force-completed and the rider is credited exactly like a normal
+   * completion — a successful trip (tripsCount + reliability recovery, mirroring completeOrder) and the
+   * prepaid commission debit (no-op at rate 0; the delivery IS commissionable — the rider did the work).
+   * The customer is notified with a 48h contest window; a contest is the existing "report a problem"
+   * (raise an issue) path, which lands in the disputes queue where ops can refund/re-adjudicate. Reason
+   * required. All mutations + the audit row commit in ONE transaction (never one without the other).
+   */
+  async adjudicateDelivered(actor: string, orderId: string, input: { reason: string; note?: string | null }) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { status: true, riderId: true, customerId: true, agreedFare: true, suggestedFare: true },
+      });
+      if (!order) throw new NotFoundException("Order not found");
+      // Only a rider-raised failed hand-off is adjudicable — this is not a way to complete an arbitrary
+      // order, only to overturn an `undelivered` outcome the rider disputes.
+      if (order.status !== "undelivered") {
+        throw new ConflictException("Only an undelivered order can be adjudicated as delivered");
+      }
+      if (!order.riderId) throw new ConflictException("Order has no assigned rider to credit");
+      // CAS on the observed `undelivered` status (mirrors cancelOrder/adjustFare) so a concurrent
+      // transition can't be clobbered: 0 rows ⇒ the order moved ⇒ conflict.
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, status: "undelivered" },
+        data: { status: "completed", completedAt: new Date() },
+      });
+      if (claimed.count === 0) throw new ConflictException("Order changed — refresh and try again");
+      await tx.orderEvent.create({ data: { orderId, status: "completed" } });
+
+      // Credit the rider a clean completion (trip + reliability recovery), mirroring completeOrder — the
+      // rider was judged genuine, so an adjudicated delivery counts like any other completion. Row-locked
+      // first (matches order-lifecycle.lockRiderRow) so the score recompute is point-in-time consistent.
+      await tx.$executeRaw`SELECT 1 FROM riders WHERE profile_id = ${order.riderId}::uuid FOR UPDATE`;
+      const rider = await tx.rider.findUnique({
+        where: { profileId: order.riderId },
+        select: { reliabilityScore: true, onHold: true, heldReason: true },
+      });
+      const reliability = rider
+        ? applyReliabilityDelta({ ...rider, heldReason: rider.heldReason as HeldReason }, RELIABILITY.RECOVER_PER_COMPLETION)
+        : {};
+      await tx.rider.update({ where: { profileId: order.riderId }, data: { tripsCount: { increment: 1 }, ...reliability } });
+
+      // Prepaid commission debit — commissionable per the Phase-B decision; no-op at rate 0, idempotent
+      // (unique (riderId, orderId, ride_commission)). Guarded on wallet presence for test construction.
+      if (this.wallet) {
+        await this.wallet.chargeCommission(tx, {
+          orderId,
+          riderId: order.riderId,
+          agreedFare: order.agreedFare,
+          suggestedFare: order.suggestedFare,
+        });
+      }
+
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, "order.adjudicate_delivered", orderId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: orderId, status: "completed" as const, auditId: audit.id, riderId: order.riderId, customerId: order.customerId };
+    });
+
+    // Post-commit, best-effort (never affects the committed adjudication). Live WS status for any open
+    // screen, then the branched pushes with the honest copy + the customer's contest window.
+    this.gateway?.emitOrderStatus(orderId, "completed");
+    void this.notifications?.notifyProfiles([result.customerId], {
+      title: "Delivery marked complete after review",
+      body: "Our team reviewed the rider's proof and marked this delivery complete. If that's not right, open the app to report a problem within 48 hours.",
+      data: { orderId, kind: "order" },
+    });
+    void this.notifications?.notifyProfiles([result.riderId], {
+      title: "Delivery confirmed",
+      body: "Our team reviewed your proof and confirmed this delivery. Thanks for adding the evidence.",
+      data: { orderId, kind: "order" },
+    });
     return { id: result.id, status: result.status, auditId: result.auditId };
   }
 

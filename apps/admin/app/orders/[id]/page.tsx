@@ -4,7 +4,7 @@ import { logOrderFollowUpNote } from "../../actions/audit";
 import type { OrderDetail } from "../../lib/adminTypes";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
-import { FareAdjust, CancelOrder } from "./OrderActions";
+import { FareAdjust, CancelOrder, AdjudicateDelivered } from "./OrderActions";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconPackage, IconPhone } from "../../components/icons";
 
@@ -365,6 +365,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               ) : null}
               {live ? (
                 <CancelOrder id={o.id} connected={connected} />
+              ) : o.status === "undelivered" && o.rider ? (
+                // KB-POD-DISPUTE Phase B: the one live action on an undelivered order — overturn the
+                // outcome to delivered when the proof-of-drop card above supports it.
+                <AdjudicateDelivered id={o.id} connected={connected} />
               ) : (
                 <span style={{ fontSize: 12, color: tokens.color.muted }}>
                   This order is {o.status.replace(/_/g, " ")} — no live actions.
