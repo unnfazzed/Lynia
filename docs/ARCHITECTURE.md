@@ -383,17 +383,19 @@ graph TB
         privacy["PrivacyModule (LR8)<br/>erasure + retention"]
         settlements["SettlementsModule<br/>prepaid commission (read-only)"]
         clientMetrics["ClientMetricsModule<br/>RUM ingest"]
+        wallet["WalletModule<br/>rider prepaid commission balance"]
     end
 
     auth --> prisma
     notif --> push & prisma
     matching --> prisma & auth & notif
-    orders --> prisma & auth & tracking & notif
+    orders --> prisma & auth & tracking & notif & wallet
     offers --> prisma & notif
     tracking --> prisma & auth
     riders --> prisma & config & tracking & notif
     uploads --> storage & auth
-    admin --> prisma & auth & tracking
+    admin --> prisma & auth & tracking & wallet
+    wallet --> prisma
     matching -.->|schedules| orders
 
     config -.-> features
@@ -407,7 +409,9 @@ Notable cross-module wiring:
 
 - **`MatchingModule`** injects `TokenService` (to mint the delivery OTP) and `NotificationsService`.
 - **`OrderLifecycleService`** (in `OrdersModule`) injects the `TrackingGateway` so a committed status
-  change fans out over WebSockets, plus `NotificationsService` for push — both best-effort.
+  change fans out over WebSockets, plus `NotificationsService` for push — both best-effort. It also
+  injects `WalletService` and calls `chargeCommission` **inside the same completion transaction**
+  (not best-effort) so the per-ride commission debit commits atomically with the order completing.
 - **`OffersModule`** and **`MatchingModule`** are the two halves of the offer loop; both write the
   `orders`/`offers` tables under the same concurrency guards ([§13](#13-concurrency-safety-model)).
 
@@ -429,7 +433,8 @@ unaffected.
 The ERD below is deliberately scoped to the core offer-loop/lifecycle tables. Since built, the
 schema has grown a full trust-&-safety and audit layer not pictured here: `Issue`, `Report`,
 `Block`, `SosEvent`, `Refund`, and `AuditLog` (plus the dormant, unused-at-launch `Settlement`
-table) — see `apps/api/prisma/schema.prisma` for the complete model.
+table), plus the prepaid commission wallet's `CommissionAccount`, `CommissionLedger`, and `TopUp`
+— see `apps/api/prisma/schema.prisma` for the complete model.
 
 ```mermaid
 erDiagram
@@ -778,7 +783,12 @@ sequenceDiagram
 - **Gating**: `PATCH /riders/online` and `POST /orders/:id/offers` both require `kycStatus=verified`,
   `accountStatus=active` (not suspended/banned), no automated reliability hold (`onHold=false`), and
   not on cooldown. An unverified, held, or offline rider's offer is un-selectable anyway, so it's
-  rejected up front.
+  rejected up front. `PATCH /riders/online` additionally enforces a **commission floor**: once the
+  prepaid-commission rate is switched on (`COMMISSION_RATE_PCT` > 0), a rider whose wallet balance is
+  below `COMMISSION.lowBalanceBlockBelow` is refused with `commission_low_balance`
+  (`online-gate.ts`'s `onlineRefusalReason`, gate loaded in `rider.service.ts`'s `setOnline`); at the
+  launch rate (0%) this branch never fires. `POST /orders/:id/offers` doesn't re-check the balance —
+  it relies on the rider already having passed the floor at go-online time.
 - **Webhook idempotency**: `applyKycResult` updates only when `kycResolvedAt` is null or older than
   the incoming `eventAt`. `kycRef` is unique → matches at most one rider. An exact replay has the
   same timestamp → not newer → ignored.
@@ -1089,6 +1099,7 @@ require the `admin` role.
 | `GET /orders/open` | Orders | Open orders a rider can bid on |
 | `GET /orders/mine/active` | Orders | Caller's active order |
 | `GET /orders/history` | Orders | Caller's past orders |
+| `GET /orders/earnings/summary` | Orders | Rider's true lifetime earnings total + trip count, server-aggregated (WD-004) |
 | `GET /orders/:id` | Orders | Order snapshot (tracking source of truth) |
 | `POST /orders/:id/offers` | Offers | Rider makes one offer (accept/counter) |
 | `GET /orders/:id/offers` | Offers | Pending offers for the customer's list |
@@ -1107,8 +1118,13 @@ require the `admin` role.
 | `PATCH /riders/profile` | Riders | Complete signup (name + national ID) |
 | `POST /riders/become` | Riders | Upgrade to rider; start KYC |
 | `POST /riders/kyc/retry` | Riders | Re-run KYC (pending/failed) |
-| `PATCH /riders/online` | Riders | Go online/offline (gated on KYC + cooldown) |
+| `PATCH /riders/online` | Riders | Go online/offline (gated on KYC + standing + commission floor — [§9](#9-rider-onboarding--kyc)) |
 | `GET /riders/nearby` | Tracking | Nearby online riders (PostGIS radius) |
+| `GET /wallet/config` | Wallet | Commission feature flag + policy (rate, floor, grace, top-up bounds) |
+| `GET /wallet` | Wallet | Rider's prepaid commission balance |
+| `GET /wallet/ledger` | Wallet | Reverse-chronological wallet ledger page (`?cursor=`) |
+| `POST /wallet/topups` | Wallet | Start a self-serve top-up intent (rate-limited, server-clamped amount) |
+| `GET /wallet/topups/:id` | Wallet | Poll a top-up intent until it reaches a terminal state |
 | `POST /uploads/kyc-photo` | Uploads | Mint a signed PUT URL for a photo |
 | `GET /notifications/feed` | Notifications | Caller's in-app notifications feed (customer-journey A·3) |
 | `POST /notifications/device-token` | Notifications | Register an FCM device token |
@@ -1140,6 +1156,7 @@ require the `admin` role.
 | `POST /admin/customers/:id/lift` | Admin | Lift a customer hold (reason optional) |
 | `POST /admin/audit-actions` | Admin | Persist a console ConfirmModal audit action (A-01) |
 | `GET /admin/cash/settlements` | Admin | Read-only commission overview (prepaid model) |
+| `POST /admin/riders/:id/wallet-credit` | Admin | Record an off-app rider payment as a wallet credit (audited, idempotent) |
 | `GET /admin/issues` | Admin | Disputes queue, newest first (A-05, `?status=`) |
 | `GET /admin/issues/:id` | Admin | Per-issue detail incl. order evidence + masked phones |
 | `POST /admin/issues/:id/resolve` | Admin | Resolve an issue (refund / rider_strike / close_no_action) |

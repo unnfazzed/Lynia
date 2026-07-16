@@ -31,6 +31,7 @@
 | **Sessions** (refresh tokens) | `sessions` | until expiry | expired sessions hard-deleted **`SESSION_RETENTION_DAYS` = 30** after they lapse |
 | **Rider KYC fields** | `riders` (`bikeReg`, `photoUrl`, `kycRef`, `kycDeclineReason`, `suspendReason`) | life of the account | scrubbed on erasure; the row is kept (ledger) |
 | **Orders, ratings, audit log** | `orders`, `ratings`, `audit_logs` | retained (financial/dispute/compliance record) | never deleted; PII references anonymise via the profile scrub |
+| **Commission wallet ledger** | `commission_accounts`, `commission_ledger`, `top_ups` | retained (financial/compliance record, same class as the above row) | never deleted; the only embedded PII is `top_ups.phone` (mobile-money number), which is not covered by the profile scrub — see `docs/KNOWN_BUGS.md` DOC-16-01 |
 
 ## Erasure (right to be forgotten)
 

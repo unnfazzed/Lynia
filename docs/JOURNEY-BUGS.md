@@ -57,7 +57,7 @@ what the original 2026-07-05 pass found — current status is annotated inline r
 ### P1 — blockers
 
 **R1 · There is no "mark undelivered" flow anywhere in the rider app.** — ✅ FIXED
-`apps/mobile/src/api/orders.ts:145` now exports `markUndelivered`; `apps/mobile/app/rider/job.tsx:345`
+`apps/mobile/src/api/orders.ts:145` now exports `markUndelivered`; `apps/mobile/app/rider/job.tsx:423`
 wires it into a mutation (`undeliverM`) with a "Can't complete delivery" action, resolving to the
 terminal + back-to-board flow this finding asked for.
 

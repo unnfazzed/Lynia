@@ -198,9 +198,16 @@ components; none needs a device to design.
 
 ## Earnings / wallet — payment-agnostic (open §6 dependency)
 
-> **Stance:** Lynia is a *matchmaker, not a payment processor* for the pilot (§6 — revenue & settlement
-> deferred, **no commission, money moves outside the app**). The wallet is therefore designed **cash-first
-> and mechanism-free**: it shows what was *agreed and delivered*, not what was *charged or settled*.
+> **Superseded (2026-07-13):** §6's revenue mechanism was decided and the prepaid commission wallet was
+> subsequently designed and built as its own dedicated screen — `docs/plans/2026-rider-wallet-design.md`
+> (explicitly calibrated against this section) + `docs/plans/2026-rider-wallet-design-brief.md`. The
+> stance below (cash-first, mechanism-free earnings ledger) is preserved as the pre-wallet baseline this
+> screen was calibrated against; it no longer describes the shipped Earnings/Wallet split.
+
+> **Stance (historical, pre-wallet):** Lynia is a *matchmaker, not a payment processor* for the pilot
+> (§6 — revenue & settlement deferred, **no commission, money moves outside the app**). The wallet is
+> therefore designed **cash-first and mechanism-free**: it shows what was *agreed and delivered*, not
+> what was *charged or settled*.
 
 - **Rider earnings ledger:** a per-trip list of **agreed fares on completed deliveries** (date · route ·
   `agreed_fare`), with a period total. Framed as a **record of work done**, explicitly *not* a payout
@@ -253,7 +260,7 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 | DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` | ✅ done |
 | DT9 | P1 | Rider interaction-states + two rider empty-states (no-orders / not-verified) | ✅ done |
 | DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support | ◐ **partial** — history/profile/earnings/notifications/support shipped; only the *public* rider rating profile (tap-to-expand card with bike reg) not yet |
-| DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done — §6 decided (rider commission, 0% for ~6–8 months); the ledger gains a commission/settlement line when that infra is built (deferred — CONCEPT §6) |
+| DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done, then superseded — §6 decided (rider commission, 0% for ~6–8 months); the prepaid wallet + ledger shipped as its own screen (`docs/plans/2026-rider-wallet-design.md`), not a line grafted onto Earnings as originally sketched here — see the section above |
 | DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ◐ **partial** — customer-side `Stepper` built (`order/[id].tsx`); rider-side `job.tsx` still shows a single `StatusPill`, not the timeline (contract-only fields + rider pickup-photo also still deferred) |
 | DT13 | P2 | Post-Phase-3: regen `/design-html`, then DT7 visual review + `/qa` on a device build | ⬜ deferred (device-gated) |
 

@@ -1,7 +1,11 @@
 # Biker prepaid per-ride commission — implementation plan
 
 **Branch:** `claude/biker-commission-system-31ptfk`
-**Status:** planning + policy/UI scaffolding landed; **wallet is NOT built in this change.**
+**Status:** SUPERSEDED — the wallet has since been built per
+[`2026-rider-wallet-design.md`](2026-rider-wallet-design.md) (APPROVED 2026-07-13), which explicitly
+supersedes this plan's phasing while keeping its data-model sketch as a starting point (see that
+doc's Context section). This doc is kept for its original policy/data-model reasoning; treat
+`2026-rider-wallet-design.md` as current for what actually shipped (`apps/api/src/wallet/*`).
 **Source of truth for the model:** [CONCEPT §6](../CONCEPT.md) (revenue model — rider commission),
 [`packages/shared/src/policy.ts`](../../packages/shared/src/policy.ts) `COMMISSION`.
 

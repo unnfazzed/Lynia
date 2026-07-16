@@ -103,9 +103,12 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 > 0% for ~6–8 months, infra built later (§6). Still **open**: **(1) cold-start / real supply**, **(11)
 > WhatsApp BSP**, and **(12) KYC coverage on real ZIM IDs** — the external gates tracked in
 > `docs/PILOT-READINESS.md`, not engineering work.
+>
+> **Update (2026-07-13/16):** the prepaid-wallet infrastructure landed far ahead of the ~6–8-month
+> estimate — see the §6 note below. Rate stays 0% at launch either way.
 
 1. **Cold-start (highest risk).** Straight-to-app + general wedge means no demand validation before build. **Mitigation:** recruit 5–15 riders in the launch corridor from day 1 (parallel to the build); keep a WhatsApp + spreadsheet channel as a manual backstop for ops, not as the product's matching path.
-2. **Payments & revenue (model decided; infra deferred ~6–8 months).** The economy is cash and low-trust, and Lynia is a **matchmaker, not a payment processor** — it does **not** process or settle the delivery transaction during the pilot. The revenue model is **decided: rider commission** (a % of the agreed fare, inDrive-style), but **0% for the first ~6–8 months** and **no settlement infrastructure built yet** (§6). **Risk:** monetization stays unvalidated during the launch period — the pilot proves demand/liquidity, not willingness-to-pay-commission. **Mitigation:** the data model is payment-agnostic so commission slots in without a rebuild; calibrate the take-rate on real corridor data before charging.
+2. **Payments & revenue (model decided; rate deferred ~6–8 months).** The economy is cash and low-trust, and Lynia is a **matchmaker, not a payment processor** — it does **not** process or settle the delivery transaction during the pilot. The revenue model is **decided: rider commission** (a % of the agreed fare, inDrive-style), and **0% for the first ~6–8 months** (§6). **The prepaid-commission wallet infrastructure itself has since been built** (`apps/api/src/wallet/*`, ahead of the original ~6–8-month estimate) — it ships inert at the 0% launch rate, so no money moves yet regardless. **Risk:** monetization stays unvalidated during the launch period — the pilot proves demand/liquidity, not willingness-to-pay-commission. **Mitigation:** the data model is payment-agnostic so commission slots in without a rebuild; calibrate the take-rate on real corridor data before charging.
 3. **Addressing.** No reliable street addresses → rely on **GPS pin + landmark text + phone number**, never typed addresses.
 4. **Data cost.** Mobile data is expensive → keep the app light, cache maps, throttle background location.
 5. **Trust & safety.** Rider verification via **automated KYC** (ID check + selfie) plus **ZIM bike reg** (stored) and a **required rider photo**, item **photo at pickup**, **delivery OTP** at handover, two-way ratings, a **declared-value cap** (pilot: max ~US$100–150/item), and a **prohibited-items list** (cash, illegal/hazardous goods, live animals, anything above cap). Liability for safe handling sits with the rider; platform liability capped in T&Cs.
@@ -125,7 +128,7 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 - **Onboarding (low friction):** phone-number auth verified by **WhatsApp code (WhatsApp-only)**, **email optional**, capture **name + national ID**; **one account** with customer ↔ rider role toggle, **upgradeable to rider** (adds **automated KYC ID check + ZIM bike reg + required photo**, rides only after verification). See §5d.
 - **Viewable profiles:** rider (photo, first name + last initial, trips, date joined, rating ★+count) and customer (first name + last initial, orders, date joined); **phone hidden except during an active ride** (`assigned`→`completed`, real number). See §5d.
 - Customer: create delivery (pickup pin, dropoff pin, item description + photo, size category), see **suggested price**, **adjust it up/down**, **broadcast**, view **interested riders (accept/counter) with price/rating/ETA**, **select a rider** at the **agreed fare** (shown in-app; **no in-app payment** — settlement is out of scope, §6), **live tracking window** (accept → confirm → start → collect → en route → delivered → rate, with live map; §5c), rating.
-- Rider: go online/offline, **see open broadcasts nearby & accept or counter (one round)**, status transitions, share live location, **daily trip log** (count + agreed fares, informational only — no in-app payments, balance, or commission).
+- Rider: go online/offline, **see open broadcasts nearby & accept or counter (one round)**, status transitions, share live location, **daily trip log** (count + agreed fares) + a **prepaid commission wallet** (balance, ledger, top-up entry — see §6; inert at the 0% launch rate, no real money movement yet).
 - **Offer loop engine:** order → `open_for_offers` → collect rider accepts/counters within a window → show to customer → **customer selects** → assign; on no offers, **expire + prompt re-broadcast**.
 - Admin web dashboard: **monitor orders & riders, support stuck orders** (no manual dispatch in the normal flow).
 - Pricing engine: base + per-km (Google distance) as the **suggested** price; customer-adjustable, soft (no hard floor).
@@ -138,7 +141,7 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 - ❌ **Manual / admin dispatch as a product path** — no-offers is handled by expire + re-broadcast.
 - ❌ **Buy-for-me relay / rider float** — removed (cash, low-trust market).
 - ❌ **Goods payment between sender & receiver** — settled offline, never in the app.
-- ❌ **In-app payments / fare settlement / commission / rider balance / top-ups / payment-gateway (Paynow etc.) integration** — **deferred ~6–8 months**. The revenue model is decided (rider commission, §6) but its infrastructure is a later build; the pilot app agrees the fare but moves no money.
+- ❌ **In-app payments / fare settlement / payment-gateway (Paynow etc.) integration** — no real money-movement rail is wired (self-serve top-up UI exists but has no working payment backend — see `docs/KNOWN_BUGS.md` DOC-16-02); the pilot app agrees the fare but moves no money. **Commission / rider balance / top-ups infrastructure itself shipped ahead of schedule** (the prepaid wallet, §6) but is inert at the 0% launch rate — the revenue model is decided, the rate flip is not yet done.
 - Merchant verticals + Cash-on-Delivery (the commerce fast-follow), multi-city, scheduled deliveries, in-app chat, promotions/referrals, advanced fraud tooling, full iOS launch.
 
 ---
@@ -165,7 +168,7 @@ the data*, not *what we ship now*. Design the seams, don't build the rooms (see 
 
 ### Data model (sketch)
 - `profiles` (id, role: customer/rider/merchant/admin, **first_name, last_name** (public = first name + last initial), phone, **email** (nullable), **id_number** (stored; verified only for riders), **photo_url** (required for riders), **phone_verified_at** (WhatsApp OTP), **created_at** (date joined), **orders_count** (denormalized for the customer profile))
-- `riders` (profile_id, vehicle_info, **bike_reg** (ZIM plate, stored — not live-checked), **photo_url** (required), id_verified, **kyc_status[`pending`|`verified`|`failed`]**, **kyc_ref** (KYC provider reference), is_online, current_lat, current_lng, **trips_count**, **rating_avg, rating_count** (denormalized from `ratings` for cheap profile rendering), updated_at) — a rider can only go online / accept jobs once `kyc_status = verified`. *(No commission/balance fields — payments are out of scope, §6.)*
+- `riders` (profile_id, vehicle_info, **bike_reg** (ZIM plate, stored — not live-checked), **photo_url** (required), id_verified, **kyc_status[`pending`|`verified`|`failed`]**, **kyc_ref** (KYC provider reference), is_online, current_lat, current_lng, **trips_count**, **rating_avg, rating_count** (denormalized from `ratings` for cheap profile rendering), updated_at) — a rider can only go online / accept jobs once `kyc_status = verified`. *(No commission/balance fields on `riders` itself — the prepaid wallet lives in its own `commission_accounts`/`commission_ledger`/`top_ups` tables, §6.)*
 - `orders` (id, order_type[`parcel`], customer_id, rider_id, pickup{lat,lng,landmark,contact}, dropoff{...}, item_desc (now backed by an **`items` line-items JSON column** — the §5b "line-items, not a single field" seam **realized**, `Order.items`, migration 0008; `item_desc` kept as the derived compact summary), **note** (customer's pickup/handling instructions the rider confirms), item_photo_url, declared_value, size, distance_km, **suggested_fare** (system), **proposed_fare** (customer's broadcast price), **agreed_fare** (selected offer), currency, delivery_otp, status, **confirmed_at**, **pickup_started_at**, **collected_at**, timestamps)
 - `offers` (id, order_id, rider_id, **type[`accept`|`counter`]**, offered_fare, eta_minutes, status[`pending`|`selected`|`declined`|`expired`], at) — the bidding loop; `accept` means offered_fare = customer's proposed_fare, `counter` means a different amount
 - `order_events` (order_id, status, **lat, lng** (rider position at the event, when relevant), at) — status history; the **append-only feed the initiator's tracking timeline renders from** (§5c)
@@ -189,11 +192,12 @@ Low-cost data decisions so grocery/pharmacy/food plug in later as **additive ord
 3. **Saved `addresses`** (address book) per user — needed for repeat grocery/food anyway.
 4. **One identity, expandable roles** — customer / rider / merchant / admin from day one.
 
-> **Payments are deliberately NOT a seam yet.** Earlier drafts pre-built a `rider_ledger` "commission/cash
-> backbone"; that's removed. The revenue model is now decided (**rider commission**, §6) but its
-> infrastructure is a **~6–8-month-out build**; we add the commission/settlement tables only then, so the
-> schema isn't pre-committed before the take-rate is calibrated on real data. The model stays payment-agnostic
-> until then.
+> **Payments were deliberately not a seam at launch — since revised.** Earlier drafts pre-built a
+> `rider_ledger` "commission/cash backbone"; that was removed, and the plan at the time was to add
+> commission/wallet tables only once the take-rate was calibrated on real data, ~6–8 months out. That
+> timeline was superseded (2026-07-13): the wallet was designed and built early instead
+> (`CommissionAccount`/`CommissionLedger`/`TopUp`, §6), still ships **inert at 0%** so nothing was
+> pre-committed on the take-rate itself — only the collection mechanism shipped early, not the number.
 
 > Cost: a few enum columns + one stub table. Benefit: verticals are additive, not a rewrite.
 
@@ -327,7 +331,7 @@ number is simply gated by order state.
 - Lynia takes a **percentage of the agreed fare** the rider is paid (a **rider-side commission**, deducted from the rider's earnings — not a customer surcharge). This is the inDrive model adapted to the Zimbabwe cash market.
 - **Commission is 0% for the first ~6–8 months.** The launch period charges nothing — its job is to build **supply, demand, and liquidity**, not to monetize. Riders keep the **full agreed fare** during this window.
 - **Collection model — prepaid per-ride.** When the rate turns on, commission is **deducted per ride from a commission account the rider pre-funds** (a prepaid float, not post-paid billing): each completed delivery debits the % of the amount paid, and a low balance blocks going online until the rider tops up. This replaces the earlier post-paid weekly cash-settlement idea — a prepaid float fits a cash, low-trust market (no per-rider credit risk, no collection, no negative balances). Rate/gating live in one place (`@lynia/shared` `COMMISSION`); the full plan is [`docs/plans/2026-biker-prepaid-commission.md`](plans/2026-biker-prepaid-commission.md).
-- **No revenue infrastructure is built yet.** The prepaid wallet (balance ledger, top-ups, payment rails) + the per-ride deduction are a **next-phase build, ~6–8 months out**, when monetization begins. The data model is already **payment-agnostic** (§5b), so commission slots in without a rewrite.
+- **The revenue infrastructure has since been built (2026-07-13/16), well ahead of the original ~6–8-month estimate.** The prepaid wallet (balance ledger, top-ups intent flow, per-ride deduction — `apps/api/src/wallet/*`, design: [`docs/plans/2026-rider-wallet-design.md`](plans/2026-rider-wallet-design.md)) shipped as PR1 core. It runs inert at the 0% launch rate (no ledger rows written, no rider gated), and the **top-up payment rails are not yet functionally wired** (see `docs/KNOWN_BUGS.md` DOC-16-02) — monetization itself still waits on a deliberate, later rate-flip decision. The data model is **payment-agnostic** (§5b), which is exactly what let commission slot in without a rewrite.
 - **Pilot stance (unchanged):** the pilot earns **no revenue** and Lynia remains a **matchmaker, not a payment processor** — the fare is settled rider-direct in cash, outside the app, for now.
 
 > **Resolved (2026-06-27):** model = rider commission (% of agreed fare), 0% for ~6–8 months, infra built

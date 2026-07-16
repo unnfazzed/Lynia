@@ -68,14 +68,20 @@ DB layer, and down-weight repeat same-pair trips in reputation aggregation (see 
 ---
 
 ### P0-2 · Commission basis is decoupled from real cash; no fare floor
-**`apps/api/src/matching/matching.service.ts:111` (`agreedFare ← offer.offeredFare`), `contracts.ts:80` (`offeredFare: z.number().positive().max(100_000)`), `settlements.service.ts:106,113`**
+**`apps/api/src/matching/matching.service.ts:129` (`agreedFare ← offer.offeredFare`), `contracts.ts:91` (`offeredFare: z.number().positive().max(100_000)`), `settlements.service.ts:106,113`**
 
-**MOOT:** the weekly cash-settlement mechanics this finding describes (`recordPayment`,
+**Weekly-settlement half MOOT; the underlying gap is now CONFIRMED LIVE (dormant only pre-flip):**
+the weekly cash-settlement mechanics this finding originally described (`recordPayment`,
 `adjustFare`-driven settlement) no longer exist — `settlements.service.ts` was rewritten to a
-read-only prepaid-per-ride commission console at a 0% launch rate (see
-`docs/KNOWN_BUGS.md` — "Money-fraud cluster → MOOT"). The underlying fare-manipulation risk may
-resurface once the prepaid wallet (`docs/plans/2026-biker-prepaid-commission.md`) starts debiting
-per ride and the rate leaves 0% — worth re-checking against that build rather than fixing here.
+read-only prepaid-per-ride commission console (see `docs/KNOWN_BUGS.md` — "Money-fraud cluster →
+MOOT"). But the prepaid wallet has since shipped (`apps/api/src/wallet/wallet.service.ts`,
+`docs/plans/2026-rider-wallet-design.md`), and its per-ride debit,
+`WalletService.chargeCommission` (`wallet.service.ts:186-245`), computes
+`perRideCommission(agreedFare, rate)` from the exact same unfloored `agreedFare` this finding
+describes — no check against `suggestedFare`/distance, same as before. The exploit below is real
+against current code; it is dormant only because `COMMISSION_RATE_PCT` defaults to 0% at launch
+(`chargeCommission` returns early via `isCommissionActive(rate)`). See `docs/KNOWN_BUGS.md`
+DOC-16-04 — this must close before the rate flip, not after.
 
 Commission = `15% × Σ agreedFare` over completed orders. `agreedFare` is copied verbatim from the
 rider's `offeredFare`, whose only bound is "positive, ≤ 100000, 2dp." There is **no floor tying it to
@@ -165,21 +171,28 @@ until one submission scores ≥ 0.85 and auto-approves. The face-match/ID check 
 **Fix:** Increment `kycAttempts` on vendor `failed` in `applyKycResult` too (or cap total failed
 attempts regardless of source); count needs-review resubmits toward a session-mint budget.
 
-### P1-3 · Banned/suspended rider re-registers with a new SIM — identity is never deduped
-**`schema.prisma:121` (`idNumber String?`, no `@unique`), `rider.service.ts:78-125` (`becomeRider`), `didit-kyc-vendor.ts:22-30`**
+### P1-3 · Banned/suspended rider re-registers with a new SIM — dedup exists but only flags, never blocks
+**`rider.service.ts:51-56` (`duplicateIdAccountCount`, A-04), `:105,141-143` (`completeProfile`/`becomeRider` set `duplicateIdFlag`), `admin-riders.service.ts:101` (`getKycReview` surfaces it), `rider.service.ts:386-` (`applyKycResult`)**
 
-Account identity is purely the phone (`Profile.phone @unique`); a ban is a per-`Rider`-row flag with
-nothing tying it to the human. There is no uniqueness/dedup on national ID, face, or device, and the
-typed `idNumber` is never sent to or reconciled with Didit (`vendor_data` carries only `riderId`), so
-it is cosmetic.
+**PARTIALLY MITIGATED, not fixed:** account identity is still purely the phone (`Profile.phone
+@unique`); a ban is still a per-`Rider`-row flag with nothing hard-blocking re-registration. But a
+real dedup signal now exists — `duplicateIdAccountCount` hash-matches `idNumberHash` against every
+OTHER profile (LR8-compliant: HMAC hash, never the raw ID) and stamps `duplicateIdFlag` on
+`completeProfile`/`becomeRider`, surfaced to a human reviewer via `getKycReview`. The gap: it's
+**advisory only**. `applyKycResult` — the vendor auto-mode webhook path that resolves KYC without any
+admin in the loop — never reads `duplicateIdFlag` at all, so under `KYC_MODE=auto` (the default) a
+duplicate ID sails straight to `verified` with no human ever seeing the flag.
 
-**Exploit:** banned rider gets a second SIM → verifies OTP → fresh profile → `becomeRider` → submits
-the **same real face + ID** to Didit → legitimately approved → active again. Bans, suspensions, and
-reliability holds all reset. Combined with P0-1 this also re-launders reputation on a clean account.
+**Exploit:** banned rider gets a second SIM → verifies OTP → fresh profile → `becomeRider` (flags
+`duplicateIdFlag=true`, but doesn't block) → submits the **same real face + ID** to Didit → vendor
+auto-approves → `applyKycResult` commits `verified`, ignoring the flag it never queried → active
+again. Bans, suspensions, and reliability holds all reset. (Note: once verified, `idNumber` itself is
+now frozen and can't be swapped out from under an existing account — DS-11 — but that's a different
+protection; it doesn't stop a *fresh* account from re-using a banned identity.)
 
-**Fix:** Persist and dedup a **verified** identity signal from Didit (document number / face vector /
-Didit identity id) across riders; block onboarding when it matches a banned/suspended identity. At
-minimum make verified national-ID unique and cross-check it against what Didit verified.
+**Fix:** Have `applyKycResult`'s auto-verify branch consult `duplicateIdFlag` (or re-check
+`duplicateIdAccountCount` against banned/suspended accounts specifically) and route a match to
+`KYC_MODE=manual`-style human review instead of auto-approving, rather than only ever flag-and-log.
 
 ### P1-4 · OTP verify — attempt cap is a TOCTOU race + the endpoint is unthrottled → account takeover
 **`apps/api/src/auth/auth.service.ts:240` (`verifyOtp`), `auth.controller.ts:33-34` (`@Throttle` on `/auth/otp/verify`), `otp-store.ts:51-56,105-107`**
@@ -205,7 +218,7 @@ takeover of the victim's account (and its role/reputation).
 to `/auth/otp/verify`; add a per-phone verify-window independent of the per-code counter.
 
 ### P1-5 · Report / issue spam — no status gate, per-order dedup only → sabotage, ops DoS, manufactured strikes
-**`apps/api/src/reports/reports.service.ts:22-86`, `apps/api/src/issues/issues.service.ts:44-76`, ops surfacing at `admin.service.ts:771-786`**
+**`apps/api/src/reports/reports.service.ts:22-86`, `apps/api/src/issues/issues.service.ts:44-76`, ops surfacing at `admin.shared.ts:134` (`reportsFor`) / `issues.service.ts:79` (`listForAdmin`, wired at `admin-issues.controller.ts:21`)**
 
 Neither `report()` nor `issue.raise()` checks order status — both fire the instant a rider is
 `assigned`, before any delivery, and dedup only per `(orderId, reporter, subject)`. Across N orders you
@@ -221,7 +234,7 @@ per window; weight the ops-facing count by **distinct completed trips**, not raw
 whose reports cluster on one subject.
 
 ### P1-6 · Reputation is farmable and one-sidedly weaponisable
-**`order-lifecycle.service.ts:356-368` (`rate`), `:382-406` (`rateSender`), `reliability.ts`**
+**`order-lifecycle.service.ts:468` (`rate`), `:533` (`rateSender`), `reliability.ts`**
 
 There is no distinct-counterparty / velocity control on ratings or reliability recovery. Customer
 `rate()` drives **both** `ratingAvg` and a **−10** reliability hit; rider `rateSender()` is recorded
@@ -238,15 +251,20 @@ report) before a reliability penalty lands.
 ## P2 — real abuse, bounded trigger
 
 - **P2-1 · Admin `adjustFare` can rewrite `agreedFare` downward with no floor before settlement.**
-  **MOOT** — `adjustFare` moved to `apps/api/src/admin/admin-orders.service.ts:156-184`, and the
+  **MOOT** — `adjustFare` moved to `apps/api/src/admin/admin-orders.service.ts:179-225`, and the
   "PAID week" guard this finding describes no longer exists: "Under the prepaid per-ride model there
   is no settled billing period to lock against — the old 'settlement already paid' guard was removed
-  with the weekly cash-settlement engine" (`admin-orders.service.ts:163-164`). See
+  with the weekly cash-settlement engine" (`admin-orders.service.ts:190`). See
   `docs/KNOWN_BUGS.md` — "Money-fraud cluster → MOOT" (`P2-1 admin-adjustfare-downward`). The
-  underlying "no floor on downward edits" critique may be worth re-checking once the prepaid wallet
-  starts debiting per ride. Original citation: an order in the open week could be set to any positive
-  value, and regeneration lowered commission before billing. **Fix:** forbid downward fare edits on
-  completed orders inside a settlement window; treat corrections as explicit, capped, audited credits.
+  underlying "no floor on downward edits" critique is now confirmed present in the wallet build:
+  `AdminOrdersService.adjustFare` still writes any positive `agreedFare` with no downward bound, and
+  `WalletService.adjustCommissionInTx` (`wallet.service.ts:257-280`, called from `adjustFare`) writes
+  a signed `adjustment` ledger row for whatever delta results — no floor, no cap on a downward
+  correction. Dormant pre-flip (0% rate ⇒ `chargeCommission` never wrote a debit to correct in the
+  first place); see `docs/KNOWN_BUGS.md` DOC-16-04. Original citation: an order in the open week could
+  be set to any positive value, and regeneration lowered commission before billing. **Fix:** forbid
+  downward fare edits on completed orders inside a settlement window; treat corrections as explicit,
+  capped, audited credits.
 - **P2-2 · `recordPayment` clears a settlement with no proof cash moved.**
   **MOOT** — `recordPayment` no longer exists anywhere in the codebase; the whole weekly
   settlement-payment-recording flow was removed with the prepaid-per-ride rewrite of

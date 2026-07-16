@@ -212,7 +212,7 @@ The subsections below keep the full design detail (the "what & why & acceptance 
 ### P0 — Critical (close first)
 
 **P0-1 · Fail closed on a weak JWT signing secret**
-`apps/api/src/config/env.ts:65` (default), `:181-196` (prod `superRefine` guard)
+`apps/api/src/config/env.ts:65` (default), `:208-224` (prod `superRefine` guard)
 - Remove the `.default("dev-insecure-secret-change-me-please")` fallback, or add a
   `superRefine` (next to the existing `REDIS_URL` guard) that **rejects boot in production**
   when `JWT_SIGNING_SECRET` is the known default, is < 32 chars, or is unset.
@@ -323,7 +323,7 @@ Pre-remediation state, now fixed — see the implementation-status table above
 - *Accept:* a token signed with any other alg is rejected.
 
 **P2-4 · Launch-hygiene fail-closed guards**
-`apps/api/src/config/env.ts:159-176`
+`apps/api/src/config/env.ts:249-261`
 - Add a production `superRefine`: reject boot if `OTP_CHANNEL !== "whatsapp"` **or**
   `OTP_TEST_PHONES` is non-empty in production (today these are enforced only by a comment).
   Same treatment for `KYC_PROVIDER === "stub"` in production.
