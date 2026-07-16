@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/unnfazzed/Lynia/compare/v0.5.0...v0.6.0) (2026-07-16)
+
+
+### Features
+
+* **pod:** proof-of-drop capture for delivery disputes (IR16-11, KB-POD-DISPUTE Phase A) ([30c1739](https://github.com/unnfazzed/Lynia/commit/30c17391e1fbc87140ff8ff785ac6fade4ad7bee))
+
 ## [0.5.0](https://github.com/unnfazzed/Lynia/compare/v0.4.4...v0.5.0) (2026-07-16)
 
 
