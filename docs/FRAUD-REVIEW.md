@@ -1,5 +1,13 @@
 # Lynia — Fraud Loophole Review (Customer & Rider Flows)
 
+> **⚠️ STATUS IS STALE — `docs/KNOWN_BUGS.md` is the live source of truth.** This document is the
+> original adversarial survey; individual findings' status here is NOT maintained. As of 2026-07-16 an
+> interactive review verified each item against current code and reconciled the results into the ledger:
+> most P0/P1 items are FIXED or MOOT (settlement rewrite); the genuinely-still-live set is now tracked as
+> `KB-IDENTITY-BINDING` (P2-5/P2-8 phone-only identity), `KB-POD-DISPUTE` (P2-6 proof-of-delivery) in the
+> KNOWN_BUGS OPEN table, while **P1-6 reputation farming (IR16-07)** and **P3-5 IP-keyed throttle
+> (IR16-08)** were fixed that day. Trust the ledger's status, not the per-finding notes below.
+
 _Adversarial review of the customer and rider user journeys for **fraud** loopholes — money
 leakage, reputation gaming, identity abuse, and collusion — with a phased plan to close them._
 _Method: risk-domain fan-out across the five value-at-risk surfaces, then line-level verification
