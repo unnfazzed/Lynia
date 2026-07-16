@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/unnfazzed/Lynia/compare/v0.4.1...v0.4.2) (2026-07-16)
+
+
+### Bug Fixes
+
+* **bughunt:** mobile journey + contract-seam fixes BH-07..BH-12 ([#264](https://github.com/unnfazzed/Lynia/issues/264)) ([9062ba0](https://github.com/unnfazzed/Lynia/commit/9062ba0493e7979ec802b0c9630cffbf40cd7bd9))
+
 ## [0.4.1](https://github.com/unnfazzed/Lynia/compare/v0.4.0...v0.4.1) (2026-07-15)
 
 
