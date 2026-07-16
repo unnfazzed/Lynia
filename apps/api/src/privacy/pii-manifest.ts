@@ -105,6 +105,30 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
     disposition: "null",
     note: "Customer-uploaded parcel photo on their own placed orders (can show address labels/IDs). Reference nulled and the GCS object deleted post-commit, scoped to customerId — surfaced by this manifest guard.",
   },
+  delivery_proof_key: {
+    column: "delivery_proof_key",
+    where: "orders",
+    disposition: "null",
+    note: "KB-POD-DISPUTE Phase A: rider-captured proof-of-drop photo (their content). Reference nulled + GCS object deleted post-commit on rider erasure, scoped to riderId.",
+  },
+  delivery_proof_lat: {
+    column: "delivery_proof_lat",
+    where: "orders",
+    disposition: "null",
+    note: "The rider's precise GPS latitude at a disputed drop-off — location PII of the erasing rider; nulled on rider erasure, scoped to riderId (like the OrderEvent GPS scrub).",
+  },
+  delivery_proof_lng: {
+    column: "delivery_proof_lng",
+    where: "orders",
+    disposition: "null",
+    note: "The rider's precise GPS longitude at a disputed drop-off; nulled on rider erasure, scoped to riderId.",
+  },
+  delivery_proof_at: {
+    column: "delivery_proof_at",
+    where: "orders",
+    disposition: "null",
+    note: "Timestamp of the proof-of-drop capture; nulled alongside the GPS/photo on rider erasure so no residual capture record survives.",
+  },
   pickup: { column: "pickup", where: "orders", disposition: "scrub-json", note: "Dialable contactPhone inside the waypoint JSON stripped per row on orders the user placed." },
   dropoff: { column: "dropoff", where: "orders", disposition: "scrub-json", note: "Dialable contactPhone inside the waypoint JSON stripped per row on orders the user placed." },
 

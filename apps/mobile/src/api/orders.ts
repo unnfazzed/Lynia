@@ -261,3 +261,21 @@ export function confirmItems(orderId: string, body: ConfirmItemsRequest): Promis
 export function attachPickupPhoto(orderId: string, key: string): Promise<{ orderId: string; pickupPhotoKey: string }> {
   return apiFetch(`/orders/${orderId}/pickup-photo`, { method: "POST", body: { key } });
 }
+
+/**
+ * Rider attaches proof-of-drop evidence when a hand-off is disputed (recipient took the goods but
+ * withheld the delivery code) — KB-POD-DISPUTE Phase A. `key` is the object key from
+ * requestDeliveryProofUpload after the signed PUT; `coords` is the rider's GPS at the door (optional —
+ * a denied/failed fix must never block attaching the photo). Rider-only, allowed at
+ * `en_route_dropoff`/`undelivered`, idempotent (a retake replaces). Strictly optional on the client.
+ */
+export function attachDeliveryProof(
+  orderId: string,
+  key: string,
+  coords?: { lat: number; lng: number },
+): Promise<{ orderId: string; deliveryProofKey: string }> {
+  return apiFetch(`/orders/${orderId}/delivery-proof`, {
+    method: "POST",
+    body: { key, ...(coords ? { lat: coords.lat, lng: coords.lng } : {}) },
+  });
+}

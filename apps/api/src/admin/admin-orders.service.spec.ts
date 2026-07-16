@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { StorageAdapter } from "../adapters/storage/storage.interface";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import type { WalletService } from "../wallet/wallet.service";
@@ -198,6 +199,47 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
       const svc = svcWith(baseOrder({ status: "open_for_offers", agreedFare: null, riderId: null, rider: null }));
       const d = (await svc.getOrderDetail("o1"))!;
       expect(d.fareProvenance).toBeNull();
+    });
+  });
+
+  describe("KB-POD-DISPUTE Phase A — proof-of-drop evidence", () => {
+    it("surfaces the read URL + GPS + timestamp for adjudication when proof was attached", async () => {
+      const order = baseOrder({
+        status: "undelivered",
+        deliveryProofKey: "delivery-proof/r1/abc.jpg",
+        deliveryProofLat: -17.83,
+        deliveryProofLng: 31.05,
+        deliveryProofAt: new Date("2026-06-26T10:25:00Z"),
+      });
+      const storage = { createReadUrl: async (k: string) => `https://signed/${k}` } as unknown as StorageAdapter;
+      const svc = new AdminOrdersService(detailPrisma(order) as unknown as PrismaService, undefined, undefined, undefined, storage);
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.deliveryProof).toEqual({
+        photoUrl: "https://signed/delivery-proof/r1/abc.jpg",
+        lat: -17.83,
+        lng: 31.05,
+        at: "2026-06-26T10:25:00.000Z",
+      });
+    });
+
+    it("renders GPS/time with a null photoUrl when the read URL can't be signed (best-effort)", async () => {
+      const order = baseOrder({
+        status: "undelivered",
+        deliveryProofKey: "delivery-proof/r1/abc.jpg",
+        deliveryProofLat: -17.83,
+        deliveryProofLng: 31.05,
+        deliveryProofAt: new Date("2026-06-26T10:25:00Z"),
+      });
+      const storage = { createReadUrl: async () => { throw new Error("signing down"); } } as unknown as StorageAdapter;
+      const svc = new AdminOrdersService(detailPrisma(order) as unknown as PrismaService, undefined, undefined, undefined, storage);
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.deliveryProof).toEqual({ photoUrl: null, lat: -17.83, lng: 31.05, at: "2026-06-26T10:25:00.000Z" });
+    });
+
+    it("deliveryProof is null when no proof was attached", async () => {
+      const svc = new AdminOrdersService(detailPrisma(baseOrder()) as unknown as PrismaService);
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.deliveryProof).toBeNull();
     });
   });
 });

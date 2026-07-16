@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import {
   ACTIVE_RIDE_STATUSES,
   commissionBasis,
@@ -18,6 +19,10 @@ import { auditData, deriveItems, ORDER_TIMELINE, routeOf, STATUS_STEP, STUCK_AFT
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+// KB-POD-DISPUTE Phase A: TTL for the proof-of-drop photo read URL — long enough for an ops review pass,
+// short enough that a cached admin response can't fetch the object indefinitely (mirrors admin-riders).
+const PROOF_READ_URL_TTL_SECONDS = 15 * 60;
 
 /**
  * Where an order's `agreedFare` came from — derived, no `agreedFareSource` column (the logged
@@ -58,6 +63,10 @@ export class AdminOrdersService {
     private readonly gateway?: TrackingGateway,
     private readonly notifications?: NotificationsService,
     private readonly wallet?: WalletService,
+    // KB-POD-DISPUTE Phase A: mints a short-lived read URL for the proof-of-drop photo in getOrderDetail.
+    // @Optional so unit tests can construct the service with just Prisma (the app injects STORAGE via
+    // AdminModule, same as admin-riders.service).
+    @Optional() @Inject(STORAGE) private readonly storage?: StorageAdapter,
   ) {}
 
   /** Order monitor for ops — filter by status to watch live orders, cancellations, etc. */
@@ -292,6 +301,11 @@ export class AdminOrdersService {
         createdAt: true,
         updatedAt: true,
         deliveryOtpAttempts: true,
+        // KB-POD-DISPUTE Phase A: proof-of-drop evidence for adjudication (photo key → read URL below).
+        deliveryProofKey: true,
+        deliveryProofLat: true,
+        deliveryProofLng: true,
+        deliveryProofAt: true,
         customer: { select: { firstName: true, lastName: true, phone: true } },
         rider: { select: { bikeReg: true, profile: { select: { firstName: true, lastName: true, phone: true } } } },
         events: { select: { status: true, createdAt: true }, orderBy: { createdAt: "asc" } },
@@ -392,6 +406,21 @@ export class AdminOrdersService {
         ? `Rider has entered the wrong delivery code ${order.deliveryOtpAttempts} of ${DELIVERY_OTP_MAX_ATTEMPTS} times.`
         : undefined;
 
+    // KB-POD-DISPUTE Phase A: the proof-of-drop evidence ops adjudicates on. Mint a short-lived read URL
+    // from the object key (best-effort — a signing failure just yields a null photo, the GPS/time still
+    // render). The rider captured this when the recipient took the goods but withheld the delivery code.
+    const deliveryProof =
+      order.deliveryProofKey != null
+        ? {
+            photoUrl: this.storage
+              ? await this.storage.createReadUrl(order.deliveryProofKey, PROOF_READ_URL_TTL_SECONDS).catch(() => null)
+              : null,
+            lat: order.deliveryProofLat,
+            lng: order.deliveryProofLng,
+            at: order.deliveryProofAt?.toISOString() ?? null,
+          }
+        : null;
+
     return {
       id: order.id,
       route: routeOf(order.pickup, order.dropoff),
@@ -415,6 +444,8 @@ export class AdminOrdersService {
       km: order.distanceKm ?? 0,
       items,
       timeline,
+      // KB-POD-DISPUTE Phase A: null unless the rider attached proof; drives the ops adjudication panel.
+      deliveryProof,
     };
   }
 }

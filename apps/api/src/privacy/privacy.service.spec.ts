@@ -64,6 +64,7 @@ function eraseHarness(
 
   const calls: Record<string, unknown> = {};
   const orderUpdates: Array<{ where: { id: string }; data: Record<string, unknown> }> = [];
+  const orderUpdateManys: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
   const tx = {
     profile: {
       // DS15-02: the in-tx standing re-read.
@@ -86,6 +87,8 @@ function eraseHarness(
       findFirst: vi.fn(async () => (txActiveRide ? { id: "otx" } : null)),
       findMany: vi.fn(async () => placedOrders),
       update: vi.fn(async (a: { where: { id: string }; data: Record<string, unknown> }) => (orderUpdates.push(a), {})),
+      // KB-POD-DISPUTE Phase A: eraseAccount nulls the rider's delivery-proof columns via updateMany.
+      updateMany: vi.fn(async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => (orderUpdateManys.push(a), { count: 0 })),
     },
   };
   const prisma = {
@@ -93,7 +96,7 @@ function eraseHarness(
     order: { findFirst: async () => (activeRide ? { id: "o1" } : null) },
     $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
   } as unknown as PrismaService;
-  return { svc: new PrivacyService(prisma, env, extras.storage, extras.gateway), calls, tx, orderUpdates };
+  return { svc: new PrivacyService(prisma, env, extras.storage, extras.gateway), calls, tx, orderUpdates, orderUpdateManys };
 }
 
 describe("PrivacyService.eraseAccount", () => {
@@ -137,6 +140,21 @@ describe("PrivacyService.eraseAccount", () => {
     // dialable PII as the waypoint/note phones, but lives in its own table — the profile/rider scrub above
     // never reaches it without this explicit call.
     expect(calls.topUpUpdate).toEqual({ where: { riderId: "p1", NOT: { phone: null } }, data: { phone: null } });
+  });
+
+  it("KB-POD-DISPUTE Phase A: nulls the rider's delivery-proof columns (photo/GPS/time) on erasure, scoped to riderId", async () => {
+    const { svc, orderUpdateManys } = eraseHarness({ phone: "+263771234567", rider: {} }, false);
+    await svc.eraseAccount("p1");
+    const proofScrub = orderUpdateManys.find((u) => u.data.deliveryProofKey === null);
+    expect(proofScrub).toBeDefined();
+    // Scoped to orders this user was the RIDER of (their captured photo + their GPS) — not orders they placed.
+    expect(proofScrub!.where).toMatchObject({ riderId: "p1" });
+    expect(proofScrub!.data).toMatchObject({
+      deliveryProofKey: null,
+      deliveryProofLat: null,
+      deliveryProofLng: null,
+      deliveryProofAt: null,
+    });
   });
 
   it("DOC-16-01: does NOT touch top_ups for a plain customer (no rider row — no TopUp rows can exist)", async () => {
