@@ -1,6 +1,7 @@
 # Identity-binding & proof-of-delivery hardening — execution plan
 
-**Status:** L2 (customer trust tier) shipped as `IR16-09`; everything else is scoped-but-not-built.
+**Status:** L2 (customer trust tier) shipped as `IR16-09`; L1 soft device-id + L0 recycle *detection*
+shipped as `IR16-10`. Remaining: L0 destructive rebind (deferred), L3 attestation (gated), all POD work.
 **Origin:** the two product-scope items triaged out of the 2026-07-16 interactive review —
 `KB-IDENTITY-BINDING` (FRAUD P2-5/P2-8) and `KB-POD-DISPUTE` (FRAUD P2-6). See `docs/KNOWN_BUGS.md`.
 
@@ -29,15 +30,16 @@ independently useful.
   `OrderLifecycleService.rate()`. Combined with the P1-6 per-pair cap, farming a rider's reputation now
   needs many DISTINCT **and** established customers — each sock-puppet must first complete real
   deliveries, which is the friction that makes it uneconomic.
-- **L1 — soft device-id + per-device signup throttle.** *Next, code-only + an OTA-able mobile field.*
-  Capture a stable per-install id (`expo-application`), store it per account, throttle account creation
-  per device, and give ops a "many accounts on one device / one account hopping devices" signal. Not
-  spoof-proof, but raises Sybil cost and surfaces rings. Touches the login path (`verifyOtp`) — keep
-  conservative + well-tested.
-- **L0 — recycle-aware rebind (closes P2-8).** On OTP re-verify of a long-dormant account from a **new**
-  device, mint a fresh profile rather than handing the new SIM the old owner's history/PII (old profile
-  retained but detached). Depends on L1's device-id. Worst case a returning legit user re-enters their
-  name (recoverable via support).
+- **L1 — soft device-id + per-device signup throttle. ✅ DONE (IR16-10).** The mobile client sends a
+  stable per-install `x-device-id` (keychain-persisted UUID); `verifyOtp` throttles NEW-account creation
+  per device (`RL.deviceSignup` = 3/day) and stamps `Session.deviceId` (migration `0033`). Not
+  spoof-proof (reinstall resets the id) but raises Sybil cost and records the device↔account history.
+- **L0 — recycle handling.** *Detection ✅ DONE (IR16-10); destructive rebind DEFERRED.* An existing
+  account verifying from a never-seen device after >90d dormancy logs a `POSSIBLE SIM RECYCLE (P2-8)`
+  signal. The **destructive** rebind (mint a fresh profile so a recycled SIM can't inherit the old
+  owner's PII/history) is deliberately deferred: auto-detaching on a device change would lock out a legit
+  user who reinstalled or changed phones. Needs a product decision on the false-positive/lockout
+  trade-off (e.g. a step-up re-confirmation rather than a silent detach).
 - **L3 — hardware attestation. Founder/vendor-gated.** Play Integrity (Android) / App Attest (iOS) —
   the real anti-Sybil control. Needs a native config plugin (**not OTA**), Google/Apple vendor setup,
   and server-side attestation verification. Defer until L0–L2 data shows it's warranted.
@@ -81,7 +83,7 @@ independently useful.
 ## Recommended sequencing
 
 1. **L2 customer trust tier** — ✅ done (IR16-09).
-2. **L1 soft device-id + throttle** and **POD Phase-A proof-of-drop capture** — the next conservative,
-   code-first slice (each is independently shippable; POD-A needs a small mobile capture UI).
-3. **L0 recycle rebind** — after L1 lands (depends on device-id).
-4. **POD Phase-B adjudication** and **L3 hardware attestation** — gated on the product/vendor decisions above.
+2. **L1 soft device-id + throttle** and **L0 recycle detection** — ✅ done (IR16-10).
+3. **POD Phase-A proof-of-drop capture** — next conservative slice (API + a small mobile capture UI + a column).
+4. **POD Phase-B adjudication**, **L0 destructive rebind**, and **L3 hardware attestation** — gated on the
+   product/vendor decisions above.

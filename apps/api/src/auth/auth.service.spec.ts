@@ -328,6 +328,55 @@ describe("AuthService.verifyOtp", () => {
     expect(res.refreshToken).toContain(".");
   });
 
+  it("KB-IDENTITY-BINDING L1: records the device id on the minted session", async () => {
+    let created: Record<string, unknown> | undefined;
+    const prisma = {
+      profile: { findUnique: async () => null, upsert: async () => profileRow },
+      session: { create: async (args: { data: Record<string, unknown> }) => { created = args.data; return { id: "s1" }; } },
+    };
+    const { svc, store } = make(baseEnv, prisma);
+    await store.put("+263770000040", tokens.hash("654321"), 300);
+    await svc.verifyOtp("+263770000040", "654321", "ua", "device-abc");
+    expect(created!.deviceId).toBe("device-abc");
+  });
+
+  it("KB-IDENTITY-BINDING L1: throttles NEW-account creation per device (over the daily cap → 429)", async () => {
+    // findUnique → null makes every verify a fresh SIGNUP; the per-device cap (RL.deviceSignup.max=3)
+    // lets 3 through, then the 4th signup from the SAME device is rejected.
+    const prisma = {
+      profile: { findUnique: async () => null, upsert: async () => profileRow },
+      session: { create: async () => ({ id: "s1" }) },
+    };
+    const { svc, store } = make(baseEnv, prisma);
+    const device = "one-handset";
+    for (let i = 0; i < 3; i++) {
+      await store.put(`+26377000005${i}`, tokens.hash("654321"), 300);
+      await expect(svc.verifyOtp(`+26377000005${i}`, "654321", "ua", device)).resolves.toBeTruthy();
+    }
+    await store.put("+263770000059", tokens.hash("654321"), 300);
+    await expect(svc.verifyOtp("+263770000059", "654321", "ua", device)).rejects.toThrow(/too many/i);
+  });
+
+  it("KB-IDENTITY-BINDING L1: does NOT throttle an EXISTING account (the cap is signup-only, not sign-in)", async () => {
+    // An existing account signing in from a shared device many times is NOT a signup → never throttled.
+    const prisma = {
+      profile: { findUnique: async () => ({ id: "p1", sessions: [] }), upsert: async () => profileRow },
+      session: { create: async () => ({ id: "s1" }) },
+    };
+    const { svc, store } = make(baseEnv, prisma);
+    for (let i = 0; i < 6; i++) {
+      await store.put(`+26377000006${i}`, tokens.hash("654321"), 300);
+      await expect(svc.verifyOtp(`+26377000006${i}`, "654321", "ua", "shared-device")).resolves.toBeTruthy();
+    }
+  });
+
+  it("KB-IDENTITY-BINDING: no device id (older client) → device logic is inert, verify behaves exactly as before", async () => {
+    // fakePrisma has NO profile.findUnique; if the device branch ran it would throw. It must not.
+    const { svc, store } = make(baseEnv, fakePrisma());
+    await store.put("+263770000070", tokens.hash("654321"), 300);
+    await expect(svc.verifyOtp("+263770000070", "654321")).resolves.toMatchObject({ profileId: "p1" });
+  });
+
   it("records otp_verify_duration with the mapped result label on every exit path", async () => {
     const expired = make(baseEnv, fakePrisma());
     await expect(expired.svc.verifyOtp("+263770000020", "123456")).rejects.toThrow();

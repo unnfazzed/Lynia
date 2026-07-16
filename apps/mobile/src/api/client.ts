@@ -1,4 +1,4 @@
-import type { Session } from "../auth/session";
+import { getDeviceId, type Session } from "../auth/session";
 import { API_URL } from "../config";
 import { reportReachable, reportUnreachable } from "../net/reachability";
 import { CLIENT_METRICS_PATH, enqueueApiFetch } from "../telemetry/rum";
@@ -103,12 +103,18 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
   const { method = "GET", body, auth = true } = opts;
   const session = hooks?.getSession() ?? null;
 
+  // KB-IDENTITY-BINDING L1: attach the stable per-install device id so the server can throttle per-device
+  // signup + surface the recycle signal. Best-effort — a keychain read failure just omits the header
+  // (the server treats a missing id as an older client and leaves the device logic inert).
+  const deviceId = await getDeviceId().catch(() => null);
+
   const send = (accessToken?: string): Promise<Response> =>
     fetchWithTimeout(`${API_URL}${path}`, {
       method,
       headers: {
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
         ...(auth && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(deviceId ? { "x-device-id": deviceId } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });

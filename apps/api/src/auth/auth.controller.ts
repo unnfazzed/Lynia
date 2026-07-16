@@ -32,8 +32,14 @@ export class AuthController {
   // resend-and-retry while blunting brute-force / grace-window probing.
   @Post("otp/verify")
   @Throttle({ limit: 10, windowSec: 300, keyPrefix: "otp-verify" })
-  verify(@Body(new ZodBody(VerifyOtp)) body: z.infer<typeof VerifyOtp>, @Headers("user-agent") ua?: string) {
-    return this.auth.verifyOtp(body.phone, body.code, ua);
+  verify(
+    @Body(new ZodBody(VerifyOtp)) body: z.infer<typeof VerifyOtp>,
+    @Headers("user-agent") ua?: string,
+    // KB-IDENTITY-BINDING L1: the client's stable per-install device id (soft signal). Optional — older
+    // clients send none, in which case the device throttle / recycle-signal are simply not engaged.
+    @Headers("x-device-id") deviceId?: string,
+  ) {
+    return this.auth.verifyOtp(body.phone, body.code, ua, deviceId);
   }
 
   // Unauthenticated + a bearer of secrets — rate-limit per IP so the refresh-token space can't be
