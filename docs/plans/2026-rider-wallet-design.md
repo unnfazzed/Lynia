@@ -246,7 +246,11 @@ reference to the settlement era):
    ledger, top-up entry) ship **hidden behind a server-driven visibility flag** in the
    same config payload as the rate (2A) — they appear when the 14-day flip comms
    begin, together with the grace credit and the announcement: one coherent reveal,
-   not a silent ominous tab during recruitment. Admin surfaces, the ledger, shadow
+   not a silent ominous tab during recruitment. **Superseded (dated product decision
+   2026-07-15):** `WALLET_REVEAL` now defaults `"true"` — the wallet is shown from
+   launch even at 0% commission (`env.ts:183-189`); the flag remains as a kill-switch,
+   not the default-hidden gate this paragraph originally specified. Admin surfaces, the
+   ledger, shadow
    metrics and every backend path are live from day one regardless; internal/test
    riders can be flagged visible earlier to exercise the UI.
    **Collection-integrity metrics (CEO review OV#2):** the metrics layer also tracks

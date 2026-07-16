@@ -84,7 +84,10 @@ punished* — calm, specific, actionable, zero shame.
    (regression guard). Add ONE compact row between the trip list and the explainer
    card: "Commission balance · $4.85 ›" (ink, tabular, chevron → Wallet). This row
    and the Wallet route are **hidden behind a server flag** until the flip comms
-   window — design both states (hidden = screen looks exactly as today). **Rewrite
+   window — design both states (hidden = screen looks exactly as today). *(Superseded
+   by a dated 2026-07-15 product decision: `WALLET_REVEAL` now defaults to visible
+   from launch — see `2026-rider-wallet-design.md`'s reveal section. The flag/
+   both-states design still stands as the kill-switch path.)* **Rewrite
    the gold explainer card copy**: it currently promises "a per-ride commission line
    and your account balance will appear here" — post-reveal it points to the Wallet;
    pre-reveal keeps current copy. All rate copy is server-driven — never a hardcoded
