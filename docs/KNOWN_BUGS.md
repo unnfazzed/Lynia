@@ -6,7 +6,13 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-16 (UX-improvements routine; see the dedicated section near the bottom for
+**Last consolidated:** 2026-07-16 (deep-sweep routine; see the dedicated section at the very bottom for
+this run's two findings, DS16-01…DS16-02 — one HIGH, one LOW, both fixed same-run with a regression test
+each: an `/admin/audit-actions` free-text endpoint that let an admin-token holder forge account-status
+feed notifications and pollute the compliance trail by colliding with 13 reserved domain-mutation action
+strings, and an `activeForRider` hand-back query whose newest-first ordering could silently starve an
+older stuck parcel off a rider's radar. Phase-0 spot-check: 0/6 sampled prior fixes regressed).
+Prior consolidation: 2026-07-16 (UX-improvements routine; see the dedicated section near the bottom for
 this run's eight findings, UX16-01…UX16-08, all LOW–MEDIUM, all fixed same-run with regression tests where
 testable — a rider top-up durability gap, a customer note dropped on every reorder path, a dead-end
 commission-low-balance gate CTA, a misclassified SOS-console error, an admin false-consequence-copy miss,
@@ -521,3 +527,23 @@ testable; `pnpm typecheck` + `pnpm lint` + 916 API tests (+11) + 401 mobile test
 | UX16-06 | `notifyIssueResolved` (UX15-05) is push-only with no feed fallback, unlike every other push type (KB-FEED-SYNTH already closed this for offers/account-status) — by resolution time the order is typically long off-screen, so a missed push left zero durable trace the report was ever resolved | `apps/api/src/notifications/notifications.service.ts` `feedForUser` | MEDIUM | **FIXED** — new resolved-`Issue`-row synthesis in `feedForUser`, copy mirroring `notifyIssueResolved` per resolution type, not scoped to the order-lookback window. 2 new cases in `notifications.service.spec.ts` |
 | UX16-07 | Rider wallet screen's "Honest-copy card" still said "Lynia" instead of "LyniaGo" in both branches — the 07-14 brand sweep and UX15-06 both missed this file; the 0%-commission branch is what every rider sees today | `apps/mobile/app/wallet/index.tsx:141-142` | LOW | **FIXED** — both strings corrected to "LyniaGo" |
 | UX16-08 | Top-up "Cancel request" (`reset()`) unconditionally rotated the dedup `idempotencyKey`, even when cancelling a STILL-LIVE (`pending`) top-up whose server-side row and already-pushed rail prompt aren't recalled by the local reset — an immediate resend opened a second, independent pending top-up instead of deduping against the abandoned one. Dormant (`creditFromTopup` has no callers yet) but a real double-credit vector once a live rail confirmation ships | `apps/mobile/app/wallet/top-up.tsx` `reset`, `apps/api/src/wallet/wallet.service.ts` `createTopup` | LOW-MEDIUM (dormant) | **FIXED** — `reset()` only rotates the key when NOT cancelling a live (`step === "wait"`) top-up; "Try again" from a genuinely terminal state (timeout/declined) still gets a fresh key per BH-09's original intent |
+
+---
+
+## Deep sweep 2026-07-16 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-16.md`
+
+Orthogonal hunt (never-audited areas, pattern-propagation, cross-cutting mechanism-audit) plus an
+adversarial API pass, all cross-checked against this ledger first. Phase-0 spot-checked 6 prior fixes
+(F-06 spoofable-actor strip, DS15-01 baseline Redis `error` listener, DS15-02 self-erase standing gate,
+DS15-06 KYC audit-in-transaction, DS-03/DS13-04 admin CAS guards, DS16's own R8 handback) — 0/6
+regressed. The Phase-3 adversarial pass alone found zero new gaps (its stopping rule would have applied
+to Phase 3 in isolation), but the Phase-1 never-audited/pattern-propagation passes surfaced one HIGH.
+Two new findings total, both fixed same-run with a regression test each; `pnpm typecheck` + full API
+suite + `@lynia/api` build green. All Fable-5 discovery dispatches hit the session's Fable-5 rate limit
+and were re-run on the session's default model per the routine's own fallback instruction (same as the
+07-15 sweep).
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| DS16-01 | `POST /admin/audit-actions` (the generic free-text audit-annotation fallback) accepted ANY `action` string 1–80 chars with no denylist and wrote it verbatim, colliding with 13 reserved action strings that real domain-mutation endpoints write mutation+audit atomically in their own `$transaction` (`rider.suspend/lift/ban/clear_hold`, `rider.kyc_approve/decline`, `customer.hold/lift`, `order.cancel/fare_adjust`, `issue.resolve`, `sos.acknowledge`, `wallet.credit`). Six (the `ACCOUNT_FEED_COPY` set) are read back by `feedForUser`'s account-status feed on `AuditLog.action` membership alone with no correlation to a real mutation — so an admin-token holder could `POST {"action":"rider.ban","target":"<profileId>"}` and forge a "Account blocked" feed row (or fake "Account restored"/"You're verified" for someone still banned/unverified) with zero state change, plus permanently pollute the compliance trail with entries indistinguishable from real ones | `apps/api/src/admin/admin-audit.service.ts`, `apps/api/src/admin/admin.controller.ts` (`AuditAction` schema) | HIGH | **FIXED** — new exported `RESERVED_AUDIT_ACTIONS` set (`admin-audit.service.ts`); `recordAuditAction` rejects any reserved action with a `BadRequestException` (clean 400) before the `create`, closing the forgery path entirely on the write side. Real domain endpoints keep their exact strings; `feedForUser`/`ACCOUNT_FEED_COPY` untouched. Tests in `admin-audit.service.spec.ts` |
+| DS16-02 | `activeForRider`'s R8 hand-back query (`findFirst … status:"cancelled", collectedAt≠null, cancelledAt>cutoff, orderBy: cancelledAt desc`) picked the MOST recently cancelled candidate. If a rider collects order A, A is cancelled while the app is backgrounded (missed push) → A becomes a stuck hand-back, and then before the rider sees A the same rider collects order B which is also cancelled while backgrounded inside the same 24h window, `desc` pins the app on B's hand-back forever and A's screen never surfaces again — a real physical parcel silently drops off the rider's radar (only reachable via admin/trip history). No data loss (A intact in the DB), rare (needs two independent missed-push cancels for one rider within 24h) | `apps/api/src/orders/orders.service.ts` `activeForRider` | LOW | **FIXED** — `orderBy: { cancelledAt: "asc" }` so the OLDEST still-outstanding hand-back gets first claim on attention instead of being starved behind a newer one; contract unchanged (still one snapshot or null), and each resolved hand-back surfaces the next-oldest. Test in `orders.service.spec.ts` |

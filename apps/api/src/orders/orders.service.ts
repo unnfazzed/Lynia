@@ -502,9 +502,17 @@ export class OrdersService {
     // this rider had collected so the app can render the hand-back state instead of a dead end. Bounded
     // to the last day so an old cancellation never resurfaces.
     const cutoff = new Date(Date.now() - HANDBACK_LOOKBACK_MS);
+    // DS16-02: surface the OLDEST still-outstanding hand-back first (`cancelledAt: "asc"`). If the same
+    // rider had two collected-then-backgrounded-cancelled parcels inside the lookback window (two missed
+    // pushes), ordering newest-first would pin the app on the newer one forever and let the older stuck
+    // parcel — a real item the rider is physically holding — silently drop off their radar. Oldest-first
+    // gives the longest-outstanding parcel first claim on attention; the app surfaces the next-oldest
+    // once the current one is handled (resolution removes it from `status: "cancelled"` candidacy). This
+    // still returns a single snapshot (contract unchanged) — it doesn't show two at once, it just stops
+    // starving the oldest.
     const handback = await this.prisma.order.findFirst({
       where: { riderId, status: "cancelled", collectedAt: { not: null }, cancelledAt: { gt: cutoff } },
-      orderBy: { cancelledAt: "desc" },
+      orderBy: { cancelledAt: "asc" },
       select: { id: true },
     });
     if (handback) return this.getSnapshot(handback.id, riderId);
