@@ -231,6 +231,32 @@ export const SOS_POLICY = {
 export const RIDER_STRIKE_LIMIT = 3;
 
 /**
+ * Customer trust tier for reputation weighting (FRAUD P1-6 residual / KB-IDENTITY-BINDING, demand side).
+ *
+ * The per-pair cap ({@link OrderLifecycleService.rate}) already stops ONE colluding customer+rider pair
+ * from farming a rider's reputation. The remaining vector is MANY DISTINCT customer accounts each rating
+ * a rider once — cheap because identity is phone-only (a SIM per sock-puppet; see the open
+ * `KB-IDENTITY-BINDING` item for the identity-cost side). This tier de-weaponises that: a customer's
+ * rating only moves a rider's public aggregate (ratingAvg/ratingCount) AND the rider's reliability score
+ * once the customer is *established* — i.e. has completed at least this many orders as a customer. Below
+ * the threshold the rating is still recorded (history + the one-per-order unique + ops visibility) but
+ * carries ZERO weight in BOTH directions, which also closes the mirror Sybil-DOWNVOTE attack (spinning up
+ * fresh accounts to 1-star a competitor's rider). Combined effect: to move a rider's reputation you now
+ * need many DISTINCT and ESTABLISHED customers — each sock-puppet must first complete real deliveries,
+ * which is the friction that makes the farm uneconomic.
+ */
+export const CUSTOMER_TRUST = {
+  /** Completed orders (as a customer) required before this customer's ratings carry reputation weight. */
+  minCompletedOrders: 3,
+} as const;
+
+/** Whether a customer with this many prior completed orders is "established" enough for their rating to
+ *  carry weight toward a rider's public aggregate + reliability (FRAUD P1-6 residual). */
+export function customerRatingCarriesWeight(priorCompletedOrders: number): boolean {
+  return priorCompletedOrders >= CUSTOMER_TRUST.minCompletedOrders;
+}
+
+/**
  * Broadcast reach policy — which online riders a new order is announced to, and how that reach
  * widens while the offer window runs. The radius is a pure function of order age
  * ({@link broadcastRadiusAtMs}), NOT persisted state, so the FCM push, the rider board, and the

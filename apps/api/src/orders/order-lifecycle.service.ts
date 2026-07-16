@@ -10,7 +10,7 @@ import {
   type OnModuleInit,
   UnauthorizedException,
 } from "@nestjs/common";
-import { CUSTOMER_CANCELLABLE_STATUSES, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_CANCELLABLE_STATUSES, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { CUSTOMER_CANCELLABLE_STATUSES, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_CANCELLABLE_STATUSES, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
@@ -513,7 +513,20 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           const priorPairRatings = await tx.rating.count({
             where: { byProfileId: customerId, order: { riderId: order.riderId, id: { not: orderId } } },
           });
-          const countsTowardAggregate = priorPairRatings === 0;
+          // FRAUD P1-6 residual / KB-IDENTITY-BINDING (demand side): the per-pair cap above stops ONE pair
+          // farming; this stops MANY DISTINCT sock-puppet customers each rating once (cheap while identity
+          // is phone-only). Only an ESTABLISHED customer — one who has completed >= CUSTOMER_TRUST orders —
+          // moves a rider's public aggregate + reliability. `status:"completed"` was just set by the CAS
+          // above for THIS order, so exclude it to count PRIOR completions. Untrusted → the rating is still
+          // recorded (one-per-order unique + ops visibility) but carries ZERO weight in BOTH directions,
+          // which also closes the mirror Sybil-DOWNVOTE attack (fresh accounts 1-starring a rival's rider).
+          const priorCompletedByCustomer = await tx.order.count({
+            where: { customerId, status: "completed", id: { not: orderId } },
+          });
+          const customerTrusted = customerRatingCarriesWeight(priorCompletedByCustomer);
+
+          // Distinct-pair (P1-6) AND established-customer (trust tier) both required to move the aggregate.
+          const countsTowardAggregate = customerTrusted && priorPairRatings === 0;
           const isPenalty = score <= RELIABILITY.LOW_RATING_AT;
 
           const ratingCount = countsTowardAggregate ? rider.ratingCount + 1 : rider.ratingCount;
@@ -525,10 +538,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           // completion is a clean delivery that slowly recovers the score. NOTE(Q2): weights +
           // thresholds in packages/shared/src/policy.ts RELIABILITY. Same transaction as the rating.
           // RH-01: applyReliabilityDelta returns the new heldReason too (spread below) so this recovery
-          // can't silently clear a velocity/fraud hold. P1-6: apply a penalty always; grant the positive
-          // recovery only when this pair counts toward the aggregate (else a repeat pair farms recovery).
+          // can't silently clear a velocity/fraud hold. Weighting: an UNTRUSTED customer moves reliability
+          // in NEITHER direction (no Sybil up- or down-vote of a rider's hold gate). For a trusted customer,
+          // P1-6 applies — a penalty always counts, positive recovery only on a distinct pair.
           const reliability =
-            isPenalty || countsTowardAggregate
+            customerTrusted && (isPenalty || countsTowardAggregate)
               ? applyReliabilityDelta(
                   { ...rider, heldReason: rider.heldReason as HeldReason },
                   isPenalty ? -RELIABILITY.PENALTY.lowRating : RELIABILITY.RECOVER_PER_COMPLETION,
