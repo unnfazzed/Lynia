@@ -3,6 +3,7 @@
  * Drives a full trip assigned → … → completed through the guarded transitions, and proves the
  * CAS guards reject out-of-order/wrong-actor moves and that `delivered` frees the rider.
  */
+import { CUSTOMER_TRUST } from "@lynia/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
@@ -100,6 +101,26 @@ async function makeOpenOrder(customerId: string): Promise<string> {
   return o.id;
 }
 
+/** P1-6 trust tier: seed `n` prior COMPLETED orders for a customer so their rating carries reputation
+ *  weight (an established customer). Minimal rows — only the fields the trust-count query reads. */
+async function seedCompletedOrders(customerId: string, n: number): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    await prisma.order.create({
+      data: {
+        customerId,
+        pickup: { lat: -17.82, lng: 31.05, landmark: "CBD", contactPhone: "+263" },
+        dropoff: { lat: -17.8, lng: 31.07, landmark: "Avenues", contactPhone: "+263" },
+        itemDesc: "documents",
+        declaredValue: 10,
+        suggestedFare: 2.5,
+        proposedFare: 2.5,
+        status: "completed",
+        completedAt: new Date(),
+      },
+    });
+  }
+}
+
 async function makeOffer(orderId: string, riderId: string): Promise<string> {
   const offer = await prisma.offer.create({
     data: { orderId, riderId, type: "accept", offeredFare: 2.5, etaMinutes: 6 },
@@ -133,6 +154,10 @@ beforeEach(clean);
 describe("delivery lifecycle", () => {
   it("drives a full trip assigned → completed and updates the rider's rating", async () => {
     const customer = await makeCustomer();
+    // P1-6 trust tier: an established customer's rating carries weight. Seed enough prior completed orders
+    // to cross CUSTOMER_TRUST.minCompletedOrders so this rating moves the rider's aggregate (an untrusted
+    // first-time customer's rating is recorded but zero-weight — covered in the unit spec).
+    await seedCompletedOrders(customer, CUSTOMER_TRUST.minCompletedOrders);
     const rider = await makeRider();
     const { orderId, deliveryCode } = await assign(customer, rider);
 

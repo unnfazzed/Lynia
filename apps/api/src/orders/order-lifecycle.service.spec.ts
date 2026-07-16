@@ -37,6 +37,11 @@ function build(methods: Record<string, unknown>) {
   // this inside the transaction. At ratePct 0 the real one is a no-op too.
   const wallet = { chargeCommission: vi.fn(async () => {}) };
   const prisma = { ...methods } as Record<string, unknown>;
+  // P1-6 trust tier: rate() counts the customer's PRIOR completed orders to decide if their rating
+  // carries reputation weight. Default the count to an established customer (>= CUSTOMER_TRUST) so tests
+  // that don't care about trust get the pre-trust-tier behaviour; the untrusted-customer test overrides it.
+  const orderStub = prisma.order as Record<string, unknown> | undefined;
+  if (orderStub && typeof orderStub.count !== "function") orderStub.count = async () => 5;
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   // Rider aggregate mutations take a `SELECT … FOR UPDATE` row lock via $executeRaw before their
   // read-modify-write; give the fake a no-op unless a test overrides it.
@@ -367,6 +372,49 @@ describe("OrderLifecycleService.rate", () => {
     await svc.rate("o1", "c1", 2);
     // The penalty applies (68 → 58, trips on_hold) even though the aggregate stays put for the repeat pair.
     expect(riderData).toMatchObject({ ratingAvg: 5, ratingCount: 3, reliabilityScore: 58, onHold: true });
+  });
+
+  it("P1-6 trust tier: an UNTRUSTED customer (< CUSTOMER_TRUST completed orders) carries ZERO reputation weight — both directions", async () => {
+    // A brand-new sock-puppet customer with only this order completed → not established → its rating must
+    // move neither the public aggregate nor the reliability score (kills distinct-sock-puppet up/down farming).
+    let hiData: Record<string, unknown> | undefined;
+    const { svc: hiSvc } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", customerId: "new-cust", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => 0, // no PRIOR completed orders for this customer → untrusted
+      },
+      rating: { create: async () => ({}), count: async () => 0 }, // distinct pair (irrelevant while untrusted)
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null }),
+        update: async (args: { data: Record<string, unknown> }) => { hiData = args.data; return {}; },
+      },
+    });
+    await hiSvc.rate("o1", "new-cust", 5);
+    // A 5-star from an untrusted account: aggregate untouched, no reliability recovery. tripsCount unchanged.
+    expect(hiData).toMatchObject({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 6 });
+    expect(hiData).not.toHaveProperty("reliabilityScore");
+
+    // …and the mirror: a 1-star from an untrusted account can't tank a rider's hold gate either.
+    let loData: Record<string, unknown> | undefined;
+    const { svc: loSvc } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", customerId: "new-cust", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => 0,
+      },
+      rating: { create: async () => ({}), count: async () => 0 },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ ratingAvg: 5, ratingCount: 1, tripsCount: 3, reliabilityScore: 62, onHold: false, heldReason: null }),
+        update: async (args: { data: Record<string, unknown> }) => { loData = args.data; return {}; },
+      },
+    });
+    await loSvc.rate("o1", "new-cust", 1);
+    // Score would have dropped 62 → 52 (on_hold) if the untrusted 1-star counted; it must NOT.
+    expect(loData).not.toHaveProperty("reliabilityScore");
+    expect(loData).not.toHaveProperty("onHold");
   });
 
   it("WD-005: re-reads agreedFare after the CAS lock, so a concurrent fare-adjust can't produce a stale commission charge", async () => {
