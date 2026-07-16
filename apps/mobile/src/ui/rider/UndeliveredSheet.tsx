@@ -16,6 +16,7 @@ import { Button, Card, Icon, Sub } from "../index";
 // here had LESS friction than the recoverable flow, not more.
 export function UndeliveredSheet({
   orderId,
+  canAttachProof = false,
   pending,
   onSelect,
   onDismiss,
@@ -23,6 +24,11 @@ export function UndeliveredSheet({
   // KB-POD-DISPUTE Phase A: needed to attach optional proof-of-drop evidence. Optional so any caller that
   // hasn't wired it yet simply doesn't show the capture control (the reason picker is unchanged).
   orderId?: string;
+  // Only offer the proof-of-drop control when the order is actually AT the drop-off (en_route_dropoff) —
+  // the undelivered sheet also opens at `picked_up`, but the API proof window is en_route_dropoff/
+  // undelivered, so showing the button earlier would present a control that 409s. Proof-of-*drop* is
+  // meaningless before the rider reaches the recipient anyway.
+  canAttachProof?: boolean;
   pending: boolean;
   onSelect: (reason: UndeliveredReason) => void;
   onDismiss: () => void;
@@ -84,7 +90,7 @@ export function UndeliveredSheet({
           You picked &ldquo;{pickedOption.label}&rdquo; — this ends the job and frees you for the next one. The
           parcel stays with you; the customer is told the hand-off couldn&apos;t be completed.
         </Sub>
-        {orderId ? (
+        {orderId && canAttachProof ? (
           proofDone ? (
             <Sub>✓ Proof photo added — it&apos;ll help our team if this delivery is disputed.</Sub>
           ) : (

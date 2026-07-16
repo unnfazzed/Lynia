@@ -854,7 +854,7 @@ export default function RiderJob(): React.ReactElement {
             that commits the terminal `undelivered` state and frees the rider for the next job. */}
         {canUndeliver ? (
           undelivering ? (
-            <UndeliveredSheet orderId={orderId ?? undefined} pending={undeliverM.isPending} onSelect={(reason) => undeliverM.mutate(reason)} onDismiss={() => setUndelivering(false)} />
+            <UndeliveredSheet orderId={orderId ?? undefined} canAttachProof={order.status === "en_route_dropoff"} pending={undeliverM.isPending} onSelect={(reason) => undeliverM.mutate(reason)} onDismiss={() => setUndelivering(false)} />
           ) : (
             <Button label="Can't complete delivery" variant="ghost" onPress={() => setUndelivering(true)} />
           )
