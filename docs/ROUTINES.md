@@ -5,10 +5,24 @@ against this repo. Each routine's cron prompt is kept **self-contained** (a rout
 depend on this file existing to function), but this spec is authoritative when a prompt and
 this file disagree — the next prompt revision must be reconciled against it.
 
-Last reconciled: 2026-07-16 (interactive-review learnings: added Phase-0.5 cluster-claim
-re-verification and the deep-sweep-owned cross-lane seams pass to the bug-dedup protocol — the two
-blind spots that let IR16-01…06 sit live under "→ FIXED" cluster headers and in the seams between
-lanes; the mandatory sibling-sweep rule was added the same day).
+The live cron prompts are version-controlled mirrors under **`docs/routines/*.md`** (one file per
+routine). Those files are the reviewable source of truth for the prompt *text*; this file is the
+authoritative spec for the *policy*. When any of the three (spec, mirror file, live trigger)
+disagree, the **live trigger is what actually runs** — reconcile toward it or push the change into
+it. See `docs/routines/README.md` for how to update a live trigger's prompt safely (its
+`session_context` cannot be reproduced by delete+recreate from a routine session).
+
+Last reconciled: 2026-07-16 (routines audit): (a) propagated the previously doc-only learnings —
+Phase-0.5 cluster-claim re-verification, the deep-sweep-owned cross-lane seams pass, the evidenced
+mandatory sibling-sweep, and the agentic-loop hunt — into the actual bug-finder prompts (they had
+drifted behind this spec); (b) gave the bug-hunt prompt the Fable/Opus model split the other
+bug-finders already had; (c) added a Phase-0 "read tonight's not-yet-merged sibling PRs" step to
+every bug-finder so dedup no longer depends purely on the 2h gap being enough for the prior PR to
+merge; (d) moved the PR-health watchdog off the routine-boundary hours (`0 */6` → `0 2,8,14,20`) so
+it stops colliding with in-flight routine sessions; (e) added `DOC-`/`RF-` to the ledger prefix list.
+Prior: 2026-07-16 (interactive-review learnings: first documented Phase-0.5, the seams pass, and the
+mandatory sibling-sweep — the two blind spots that let IR16-01…06 sit live under "→ FIXED" cluster
+headers and in the seams between lanes).
 Prior: 2026-07-15 (added the wallet & data-lifecycle audit routine).
 
 ## The seven routines
@@ -21,7 +35,7 @@ Prior: 2026-07-15 (added the wallet & data-lifecycle audit routine).
 | User experience improvements | `0 1 * * *` | env_01B3aX… | UX friction, copy, recoverability, blockers |
 | Deep bug sweep | `0 3 * * *` | env_01V3Lw… | Backend correctness, concurrency, security, adversarial API |
 | Wallet & data-lifecycle audit | `0 9 */2 * *` (every 2nd day) | env_01V3Lw… | Wallet/earnings/admin data-lifecycle correctness — money & reporting integrity |
-| PR health & delivery watchdog | `0 */6 * * *` | env_01V3Lw… | CI/merge/deploy babysitting for **all** PRs |
+| PR health & delivery watchdog | `0 2,8,14,20 * * *` | env_01V3Lw… | CI/merge/deploy babysitting for **all** PRs |
 
 The three overnight bug-finding routines run 2 hours apart (23:00 → 01:00 → 03:00) **by
 design**: each one's ledger/report PR must be merged before the next routine starts, so the
@@ -31,6 +45,15 @@ chain — after doc-sync (05:00) and refactoring (07:00) — so on the days it f
 fully settled tree and inherits everything the overnight routines merged. It runs every 2nd day
 rather than nightly because its surface (wallet + earnings + admin) is narrow and slow-changing,
 and the deep sweep (03:00) already covers money/price integrity nightly as a backstop.
+
+**The "merged before the next starts" guarantee is timing-only, so it is not trusted alone.** A
+full hunt+fix+CI+merge can overrun the 2h gap; if it does, the next fresh session would read a
+`main` that lacks the prior PR and re-derive its findings. Belt-and-suspenders: every bug-finder's
+Phase 0 now also reads tonight's **open** `claude/*` PRs (their `KNOWN_BUGS.md` + report diffs) and
+treats a finding claimed on an unmerged sibling branch as already-covered — so dedup holds even when
+a prior PR is still in flight. The **PR-health watchdog runs at `0 2,8,14,20`** (not `0 */6`), i.e.
+offset from the routine-boundary hours (23/01/03/05/07/09) so it does not rebase or merge a routine's
+PR while that routine's session is still pushing to the same branch.
 
 ## Universal policies (apply to every routine — user instruction 2026-07-14)
 
@@ -59,7 +82,11 @@ process failure; the ledger is how the routines stay disjoint.
 
 - **Phase 0, before reading any product code:** read `docs/KNOWN_BUGS.md`. Anything already in
   the ledger — or trivially adjacent to a ledger entry — does **not** count as a new finding.
-  Re-derived known bugs are confirmed in the ledger and skipped, never re-reported.
+  Re-derived known bugs are confirmed in the ledger and skipped, never re-reported. **Also read
+  tonight's not-yet-merged sibling PRs, not just `main`:** list OPEN `claude/*` PRs and read their
+  `KNOWN_BUGS.md` + dated-report diffs. A finding claimed on an unmerged sibling branch is already
+  covered — the ledger dedup must not depend on the prior routine's PR having merged inside the 2h
+  gap (see the schedule note above).
 - **Phase 0.5 — cluster-claim re-verification (distrust the summaries, not just the rows).** The
   ledger's Phase-0 skip is what makes the routines efficient, but it also means the routines *inherit
   the ledger's errors* — and the most dangerous errors are the **rolled-up cluster summaries**
@@ -147,7 +174,10 @@ process failure; the ledger is how the routines stay disjoint.
   class; an instance fix just postpones the next sibling.
 - **Every new finding gets a ledger row in the same PR as its fix**, with the routine's ID
   prefix: `BH-` (bug hunting), `UX-` (user experience), `DS-` (deep sweep), `WD-` (wallet &
-  data-lifecycle). Row carries: file:line, severity, status, fixing PR.
+  data-lifecycle), `DOC-` (documentation-reconciliation CODE_BUG rows, filed OPEN with an owning
+  lane), `RF-` (refactoring debt register — lives in `docs/REFACTOR-LEDGER.md`, but defects found
+  while refactoring are filed here under the owning lane's prefix). Row carries: file:line,
+  severity, status, fixing PR.
 - **Dated report files** (same PR): `docs/BUG-HUNT-<date>.md`, `docs/UX-USABILITY-REVIEW-<date>.md`,
   `docs/DEEP-SWEEP-<date>.md`, `docs/WALLET-DATA-AUDIT-<date>.md` — mirroring the existing formats.
 
@@ -182,6 +212,12 @@ rounds surface nothing new) or a token budget for a deeper hunt. First live run:
 (`docs/AGENTIC-LOOP-BUGHUNT-2026-07-16.md`) — the loop surfaced a **prod-breaking HIGH the prior linear WD
 runs missed** (an operator identity written into an `@db.Uuid` FK column, aborting every admin cancel) **plus
 its unfixed sibling** in admin issue-resolution, which is the recall gain the engine exists to capture.
+
+As of the 2026-07-16 routines audit, all four bug-finder prompt mirrors (`docs/routines/{bug-hunting,
+ux-improvements,deep-bug-sweep,wallet-data-audit}.md`) invoke this engine in their Phase 1 —
+`Workflow({ name: 'lane-bug-hunt' })` with `args` set to the lane key (`"bug-hunt"`, `"ux"`,
+`"deep-sweep"`, `"wallet"`) — with the linear hunt kept as the explicit fallback. Previously the
+engine was documented and built but wired into zero routines; that drift is what the audit closed.
 
 > Note: `Workflow` (multi-agent fan-out) is opt-in because it spends tokens fanning out — routine prompts that
 > use it have pre-authorized that spend. If `Workflow` is unavailable in a given run, the routine falls back to

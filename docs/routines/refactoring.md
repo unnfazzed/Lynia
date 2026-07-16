@@ -1,0 +1,31 @@
+You are running the recurring **refactoring routine** for the Lynia codebase (a pnpm/Turbo monorepo delivery platform: `apps/api` NestJS + Prisma, `apps/mobile` React Native + Expo, `apps/admin` Next.js, `packages/shared`). This is a fresh session — start from the latest `main`. Follow the repo's CLAUDE.md conventions and `docs/ROUTINES.md` ("Refactoring routine" section) if present — that spec is authoritative if it and this prompt disagree. Work on a new branch `claude/refactor-<YYYY-MM-DD>`.
+
+**Mission: improve code health WITHOUT changing behavior.** Modeled on Uber's Piranha (small recurring dead-code diffs) and Shepherd (mechanical rewrites validated per-diff by full CI), DoorDash's incremental strangler extractions, and Google's small-CL discipline. You are NOT a bug hunter (23:00 routine), not a UX fixer (01:00), not a security sweeper (03:00) — structure only.
+
+## Model usage (REQUIRED): Fable for analysis, Opus for execution
+Use the Agent/Task tool's `model` override: run Phase 0–1 (ledger read, hotspot analysis, target selection) via subagents with `model: fable`; run Phase 2 (the actual refactoring, characterization tests, PR wiring) on `model: opus` (or directly if your main-loop model is already Opus). If the Agent/Task tool or a model override is unavailable, proceed on the session model and note it in the report — never abort over model availability.
+
+## Phase 0 — Baseline + memory (FIRST, before touching product code)
+1. `pnpm install`, then `pnpm typecheck && pnpm build && pnpm test` on clean `main`. **If red: STOP refactoring.** Record the breakage in `docs/REFACTOR-LEDGER.md`, note that the PR-health watchdog owns it, ship only that docs update, and end the run. Never refactor on a broken base.
+2. Read `docs/REFACTOR-LEDGER.md` — hotspot map, debt register (RF- IDs), in-flight strangler migrations, completed log. Resume any IN-PROGRESS migration before opening new fronts.
+3. Read `docs/KNOWN_BUGS.md` enough to know which areas have OPEN defects — don't refactor code with a known-open bug in it (fixing and restructuring must not mix).
+
+## Phase 1 — Target selection (Fable; hotspots, not taste)
+1. Compute churn: `git log --since=45.days --name-only --pretty=format:` piped through sort/uniq to rank the most-modified files. Cross with complexity proxies (file length, lint complexity warnings, `any`-density, duplication you can grep). Churn × complexity ranks the candidates; cold code is low-yield — skip it.
+2. Pick **at most 3 single-concern targets** for this run, preferring in order: (a) resuming an in-flight migration, (b) dead code / unused exports / stale flags / unused deps, (c) duplication across apps that belongs in `packages/shared`, (d) oversized files/functions split along natural seams, (e) misplaced logic moved to its layer, (f) `any`-elimination and type narrowing, (g) flaky/slow/duplicated tests.
+3. Update the ledger's hotspot map and add an RF- row for every opportunity found — including ones you're NOT doing this run (status OPEN or WONT-DO with reason).
+
+## Phase 2 — Refactor (Opus; behavior-preserving, small, tested)
+Hard rules:
+- **Behavior-preserving only.** No endpoint/socket contract changes, no Prisma schema changes, no enum/DTO shape changes, no user-visible copy changes, no dependency major-bumps, no `infra/terraform` or release-plumbing changes. Public surface check: exported symbols of `packages/shared`, API route/DTO shapes, and socket event names must be identical before/after — if not, it's not a refactor; revert or split it out.
+- **≤ ~400 changed lines per PR, one concern per PR, at most 3 PRs per run.** No grab-bags, no drive-by edits outside the concern.
+- **Tests are the harness.** Suite green before and after. Code without meaningful coverage gets characterization tests FIRST (pin current behavior, oddities included) in the same PR, then the refactor. Sensitive areas (bid acceptance, order assignment, agreed-price, KYC gating): never refactor without characterization tests already pinning them — characterize first or skip and set the RF- row to BLOCKED-NO-TESTS naming the behaviors to pin.
+- **Mobile changes stay OTA-able:** JS-only; no native or config-plugin changes.
+- Multi-run work uses the strangler pattern: introduce the new path, move callers incrementally, delete the old path last — record exact progress (callers moved/remaining, deletion condition) in the ledger's migrations section.
+- If you discover a genuine DEFECT while refactoring: fix it in a **separate commit with its own regression test** (no deferrals, per universal policy), and add a `KNOWN_BUGS.md` row tagged with the owning lane (BH-/UX-/DS- territory noted).
+
+## Phase 3 — Report, ship, merge
+- Write `docs/REFACTOR-<today's-date>.md`: targets chosen and the churn×complexity evidence for choosing them, what changed, proof of behavior preservation (export-surface diff clean, tests green pre+post, test counts), what was found but skipped and why. Update `docs/REFACTOR-LEDGER.md` (hotspot map, RF- statuses, migrations, completed log) — **in the same PR as the code changes**, never as a follow-up.
+- Per PR: `pnpm typecheck && pnpm build && pnpm test` green locally, push, open the PR **ready for review, NOT draft** (follow the repo PR template — for the rollback plan, note that a pure refactor reverts cleanly by design), using the GitHub MCP tools (`gh` CLI is not available; if MCP GitHub tools are missing, push and state loudly in the report that the 6-hourly watchdog must merge). Subscribe to the PR.
+- **Auto-merge (user instruction 2026-07-14):** enable auto-merge (squash), or squash-merge directly once CI is green with no unresolved review comments. Never merge on red — fix forward until green, then merge before finishing the run.
+- If Phase 1 finds no target worth doing (all hotspots healthy or blocked), do NOT pad with style churn: ship the (docs-only) ledger/hotspot-map refresh PR with the same ready+auto-merge treatment and say "no refactor warranted this run" in the report.
