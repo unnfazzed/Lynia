@@ -94,8 +94,9 @@ export class AdminOrdersService {
   }
 
   /**
-   * Admin order cancel → terminal `cancelled`. Records `cancelledBy` = the acting admin's id and the
-   * reason, appends an OrderEvent for the timeline, and writes the audit row — all in one transaction.
+   * Admin order cancel → terminal `cancelled`. Records the reason, appends an OrderEvent for the timeline,
+   * and writes the audit row (which carries the operator identity) — all in one transaction. Leaves
+   * `cancelledBy` null: it's a Profile FK, and an ops actor is not a party (see the data block below).
    * Rejects an order already in a terminal state (nothing to cancel). Reason required.
    */
   async cancelOrder(actor: string, orderId: string, input: { reason: string; note?: string | null }) {
@@ -118,7 +119,13 @@ export class AdminOrdersService {
         where: { id: orderId, status: order.status },
         data: {
           status: "cancelled",
-          cancelledBy: actor,
+          // `cancelledBy` is the canceller's Profile id (schema `@db.Uuid`, FK → Profile.id) and is read
+          // ONLY to derive a customer/rider/(neither ⇒ "admin") role. For an ops cancel the `actor` is the
+          // operator's identity — an `X-Operator` email behind IAP, or the shared admin token's synthetic
+          // subject — and NEITHER is a Profile uuid, so writing it here throws (`22P02` invalid-uuid cast, or
+          // an FK violation) and aborts the whole cancel. Store null: the readers already treat a non-party
+          // value as "admin", and the operator is durably recorded on `AuditLog.actor` below.
+          cancelledBy: null,
           cancelReason: input.reason,
           cancelledAt: new Date(),
         },

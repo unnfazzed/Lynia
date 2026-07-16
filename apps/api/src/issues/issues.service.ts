@@ -213,7 +213,11 @@ export class IssuesService {
           status: "resolved",
           resolution: body.resolution,
           resolutionNote: body.note ?? null,
-          resolvedByAdminId: adminId,
+          // `resolvedByAdminId` is `@db.Uuid`, but `adminId` is the operator identity — an `X-Operator`
+          // email behind IAP — which fails the uuid cast (`22P02`) and aborts the whole resolve. The column
+          // is never read anywhere; the resolving operator is durably recorded on `AuditLog.actor` below.
+          // Store null rather than corrupt the resolve path. (Sibling of the admin-cancel `cancelledBy` bug.)
+          resolvedByAdminId: null,
           resolvedAt,
         },
       });

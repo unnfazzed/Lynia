@@ -6,7 +6,12 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-16 (interactive known-bugs review — fresh independent hunt + structural
+**Last consolidated:** 2026-07-16 (agentic-loop bug hunt over the WD lane — a new multi-agent
+loop-until-dry + adversarial-verify + sibling-sweep engine; see the "Agentic-loop bug hunt 2026-07-16"
+section for WD-018…WD-020: a HIGH prod-breaking admin-cancel bug — the operator identity written into a
+`@db.Uuid` FK column — plus the real unfixed sibling the sweep caught in admin issue-resolution, and a LOW
+ban-permanence laundering gap in `suspendRider`; all three fixed same-run with a regression test each).
+Prior consolidation: 2026-07-16 (interactive known-bugs review — fresh independent hunt + structural
 guards; see the "Interactive review 2026-07-16" section at the very bottom for six code fixes IR16-01…06
 — several verifying that the "→ FIXED" cluster summaries below were overstated, i.e. session-revocation on
 ban and the dispute-strike counter were still live — plus three write-time guards: a standing-demotion
@@ -524,6 +529,32 @@ Two smaller research-pass findings (a top-up idempotency-replay check that ignor
 stale "No money moved" copy contradicting the re-openable-`expired` credit design) were **mooted by the
 DOC-16-02 fix** — both repros required UI/state the removed self-serve form no longer has. See the dated
 report for detail and the residual server-side hardening item recorded under Suggestions there.
+
+---
+
+## Agentic-loop bug hunt 2026-07-16 (wallet & data-lifecycle lane) — `docs/AGENTIC-LOOP-BUGHUNT-2026-07-16.md`
+
+Interactive run of a new multi-agent "loop-until-dry + adversarial-verify + sibling-sweep" engine (8
+diverse finder lenses → 3-skeptic refutation panel per candidate → repo-wide signature grep) over the WD
+lane, starting from a tree already settled by the same-day WD routine (WD-012…WD-017). Continues the `WD-`
+sequence. **Three findings — one HIGH (plus a real unfixed sibling the sweep caught in a different module),
+one LOW — all fixed same-run with a regression test each** that exercises the exact blind spot the pre-fix
+tests missed (a non-uuid operator identity, the banned→suspended state transition). `pnpm typecheck` +
+973 API tests + 401 mobile tests all green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| WD-018 | Admin order-cancel wrote the operator identity (`actor`) into `Order.cancelledBy`, which is `@db.Uuid` with an FK → `Profile.id`. Behind IAP `actor` is the `X-Operator` email (not a uuid), so the write throws Postgres `22P02` (invalid uuid) and aborts the whole cancel `$transaction` — **admin order-cancel was functionally broken in production**. The fallback (no `X-Operator`) path with the shared admin token's synthetic subject uuid hits an FK violation instead (no `profiles` row). Unit tests missed it because they mock Prisma and pass a bare `"admin-1"` string, never exercising the `@db.Uuid` cast/FK. | `apps/api/src/admin/admin-orders.service.ts:121` | **HIGH** | **FIXED** — writes `cancelledBy: null` (readers already derive a customer/rider/(neither ⇒ "admin") role from it; the operator stays on `AuditLog.actor`). Regression test in `admin-orders.service.spec.ts` passes an IAP-style email operator and asserts `cancelledBy` is null + the operator is preserved on the audit row. |
+| WD-019 | **Unfixed sibling of WD-018, surfaced by the sibling-sweep.** Admin issue-resolution wrote `resolvedByAdminId: adminId` into `Issue.resolvedByAdminId` (`@db.Uuid`); behind IAP `adminId` is the operator email → same `22P02` cast failure → the whole resolve (`refund` / `rider_strike` / `close_no_action`) `$transaction` aborts, so **admin issue-resolution was broken in production too**. Column has no FK and is read nowhere. | `apps/api/src/issues/issues.service.ts:216` | **HIGH** | **FIXED** — writes `resolvedByAdminId: null`; operator preserved on `AuditLog.actor`. Regression test in `issues.service.spec.ts` (email operator → null column + audit actor kept). |
+| WD-020 | `suspendRider` had no banned-state precondition, so `ban → suspend` silently downgraded a permanently-banned rider to `suspended`; a subsequent `liftRider` (whose ban-permanence guard only fires on `accountStatus===BANNED`) then reinstated them to `active` — **laundering a permanent ban back to active via two ordinary admin actions**, defeating the invariant `liftRider` exists to protect. | `apps/api/src/admin/admin-riders.service.ts:221` | LOW | **FIXED** — mirrors `liftRider`'s guard: `suspendRider` now rejects a BANNED rider (409). Regression test in `admin-riders.service.spec.ts`. |
+
+**Sibling-sweep evidence (WD-018 class — actor/adminId written into a `@db.Uuid` column):**
+`grep -rn "cancelledBy" apps/api/src` + `grep -nE "@db.Uuid" apps/api/prisma/schema.prisma` + a repo-wide
+scan for `*By(AdminId|ProfileId)?: (actor|adminId)` into uuid columns. Enumerated hits: `Order.cancelledBy`
+(WD-018, fixed), `Issue.resolvedByAdminId` (WD-019, fixed). Every other admin action
+(suspend/ban/lift/hold/fare_adjust/kyc/wallet-credit) writes `actor` only into `AuditLog.actor` /
+`CommissionLedger.actor` — plain `String` columns (`schema.prisma:315,663`) — so those are already safe. No
+further vulnerable siblings of this class remain.
 
 ---
 

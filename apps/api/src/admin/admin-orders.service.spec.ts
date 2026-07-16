@@ -228,14 +228,30 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     return { prisma, calls };
   }
 
-  it("cancelOrder sets cancelled + cancelledBy=admin, appends an OrderEvent, and audits in one tx", async () => {
+  it("cancelOrder sets cancelled + cancelledBy=null, appends an OrderEvent, and audits in one tx", async () => {
     const { prisma, calls } = makeTx();
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);
     const res = await svc.cancelOrder("admin-1", "o1", { reason: "duplicate order" });
-    expect(calls.orderUpdate!.data).toMatchObject({ status: "cancelled", cancelledBy: "admin-1", cancelReason: "duplicate order" });
+    expect(calls.orderUpdate!.data).toMatchObject({ status: "cancelled", cancelledBy: null, cancelReason: "duplicate order" });
     expect(calls.orderEvent!.data).toEqual({ orderId: "o1", status: "cancelled" });
     expect(calls.audit!.data).toMatchObject({ action: "order.cancel", target: "o1", reasonCode: "duplicate order" });
     expect(res).toMatchObject({ id: "o1", status: "cancelled", auditId: "audit-9" });
+  });
+
+  // Regression: `Order.cancelledBy` is `@db.Uuid` (FK → Profile.id), but behind IAP the admin `actor` is
+  // the operator's email (e.g. `accounts.google.com:ops@lynia.com`). Writing it into the uuid column throws
+  // `22P02`/an FK violation in Postgres and aborts the entire cancel — a prod-breaking bug the pre-fix tests
+  // missed because they only ever passed a bare `"admin-1"` string. The cancel must NEVER write the operator
+  // identity into `cancelledBy` (null instead), and must still record that operator on the audit row.
+  it("cancelOrder never writes a non-uuid operator identity into cancelledBy — even an IAP X-Operator email", async () => {
+    const { prisma, calls } = makeTx();
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService);
+    const operator = "accounts.google.com:ops@lynia.com";
+    await svc.cancelOrder(operator, "o1", { reason: "fraud" });
+    expect(calls.orderUpdate!.data).toMatchObject({ cancelledBy: null });
+    expect(calls.orderUpdate!.data.cancelledBy).not.toBe(operator);
+    // The operator identity is preserved where it belongs — the audit row, a plain String column.
+    expect(calls.audit!.data).toMatchObject({ actor: operator, action: "order.cancel" });
   });
 
   it("cancelOrder pushes job:cancelled to an assigned rider post-commit (P2-3), with the collected flag", async () => {
