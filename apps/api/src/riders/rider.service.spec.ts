@@ -827,6 +827,65 @@ describe("RiderService.applyKycResult", () => {
     expect(audit).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_decline", target: "p1", reasonCode: "score_below_threshold" });
   });
 
+  it("DOC-16-05: a `verified` webhook for a duplicateIdFlag rider does NOT auto-verify — held pending for manual review", async () => {
+    let data: Record<string, unknown> | undefined;
+    let audit: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+        // Same findFirst mock answers both the pre-flag read and the post-update audit-target read —
+        // duplicateIdFlag:true drives holdForReview.
+        findFirst: async () => ({ profileId: "p1", duplicateIdFlag: true }),
+      },
+      auditLog: { create: async (args: { data: Record<string, unknown> }) => { audit = args.data; return {}; } },
+    };
+    const result = await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date());
+    expect(result).toEqual({ updated: 1 });
+    // kycStatus/idVerified are NOT flipped — the rider stays pending, still in the review queue.
+    expect(data).not.toHaveProperty("kycStatus");
+    expect(data).not.toHaveProperty("idVerified");
+    expect(data).toHaveProperty("kycResolvedAt");
+    // A distinct audit action (not rider.kyc_approve) so this never masquerades as a real decision.
+    expect(audit).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_review_required", target: "p1", reasonCode: "duplicate_id_flag" });
+  });
+
+  it("DOC-16-05: a `verified` webhook for a NON-flagged rider still auto-verifies as before", async () => {
+    let data: Record<string, unknown> | undefined;
+    let audit: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+        findFirst: async () => ({ profileId: "p1", duplicateIdFlag: false }),
+      },
+      auditLog: { create: async (args: { data: Record<string, unknown> }) => { audit = args.data; return {}; } },
+    };
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date());
+    expect(data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(audit).toMatchObject({ action: "rider.kyc_approve" });
+  });
+
+  it("DOC-16-05: a duplicateIdFlag rider's `failed`/`expired` webhooks are unaffected (flag only gates auto-APPROVE)", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+        findFirst: async () => ({ profileId: "p1", duplicateIdFlag: true }),
+      },
+      auditLog: { create: async () => ({}) },
+    };
+    await svc(prisma, {}).applyKycResult("sess_1", "failed", new Date(), "score_below_threshold");
+    expect(data).toMatchObject({ kycStatus: "failed", idVerified: false });
+  });
+
   it("DS15-06: the status mutation and its audit row are atomic — an audit-write failure rolls the mutation back (no committed-without-audit decision)", async () => {
     const calls: string[] = [];
     let committed = false;

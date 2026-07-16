@@ -2,6 +2,7 @@ import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } fro
 import {
   COMMISSION,
   type CommissionConfig,
+  commissionBasis,
   type CreateTopupRequest,
   isCommissionActive,
   perRideCommission,
@@ -185,15 +186,23 @@ export class WalletService {
    */
   async chargeCommission(
     tx: Prisma.TransactionClient,
-    args: { orderId: string; riderId: string; agreedFare: Prisma.Decimal | number | null },
+    args: {
+      orderId: string;
+      riderId: string;
+      agreedFare: Prisma.Decimal | number | null;
+      suggestedFare?: Prisma.Decimal | number | null;
+    },
   ): Promise<void> {
     const { orderId, riderId, agreedFare } = args;
+    const suggestedFare = args.suggestedFare != null ? Number(args.suggestedFare) : null;
 
     // Shadow accrual (OV-5A): compute the would-be commission on every completion for calibration,
     // regardless of the live rate — never a ledger row, just a measured signal during the 0% period.
+    // WD-012: floored via commissionBasis so the calibration signal isn't itself distorted by lowballed
+    // agreedFare — an unfloored shadow number would understate the real take-rate the exploit hides.
     if (agreedFare != null) {
       const shadowRate = this.env.COMMISSION_SHADOW_RATE_PCT;
-      const wouldCharge = perRideCommission(Number(agreedFare), shadowRate);
+      const wouldCharge = perRideCommission(commissionBasis(Number(agreedFare), suggestedFare), shadowRate);
       this.logger.log(
         `commission_shadow orderId=${orderId} riderId=${riderId} fare=${Number(agreedFare)} shadowRatePct=${shadowRate} wouldCharge=${wouldCharge}`,
       );
@@ -209,7 +218,10 @@ export class WalletService {
       return;
     }
     const fare = Number(agreedFare);
-    const amount = perRideCommission(fare, rate);
+    // WD-012 (DOC-16-04 / FRAUD-REVIEW P0-2): bill on max(agreedFare, basisFloorPct × suggestedFare), not
+    // the raw fare — closes the lowball-to-evade-commission gap. The rider still keeps the real agreedFare;
+    // only the commission CALCULATION is floored. suggestedFare unset/invalid falls back to the raw fare.
+    const amount = perRideCommission(commissionBasis(fare, suggestedFare), rate);
     if (amount <= 0) return;
 
     // Lazy-upsert the account, then lock its row so a concurrent debit/credit serialises (balance and
@@ -248,15 +260,23 @@ export class WalletService {
    * WD-001: correct a previously-charged `ride_commission` debit after an admin fare-adjust, inside the
    * SAME transaction as the fare change (called from `AdminOrdersService.adjustFare`). Writes a signed
    * `adjustment` ledger row for the delta (schema design: "fare-adjust deltas append here at the ride's
-   * original rate"). `orderId` is intentionally left null on the row: `CommissionLedger` has a single
-   * UNIQUE (riderId, orderId, type) index that would otherwise reject a SECOND adjustment on the same
-   * order (Postgres treats each NULL as distinct, so this keeps the row append-only across N corrections
-   * without a schema migration); the order is still identifiable via `note`. A zero-amount delta is a
-   * no-op (nothing to record).
+   * original rate").
+   *
+   * WD-015 (docs/KNOWN_BUGS.md — settlements.service reconciliation): `orderId` now carries the REAL
+   * order id, not null. It used to be left null specifically to dodge the old blanket UNIQUE
+   * (riderId, orderId, type) index (a second correction on the same order would otherwise collide) — but
+   * that made every adjustment row invisible to any `orderId`-keyed lookup, including
+   * `SettlementsService.commissionOverview`'s own per-order reconciliation query (which filters
+   * `orderId: { in: orderIds } }` — a NULL never matches an `IN` list), so a fare-adjusted order's
+   * "commission accrued" KPI silently reverted to the pre-correction ride_commission amount, ignoring the
+   * adjustment entirely. Migration 0030/0031 replaced the blanket unique index with a PARTIAL one scoped
+   * to `type = 'ride_commission'` only, so multiple `adjustment` rows can now safely share one order id —
+   * only the one-`ride_commission`-per-order invariant is still enforced. A zero-amount delta is a no-op
+   * (nothing to record).
    */
   async adjustCommissionInTx(
     tx: Prisma.TransactionClient,
-    args: { riderId: string; amount: number; ratePct: number; fare: number; note: string; actor: string },
+    args: { riderId: string; orderId: string; amount: number; ratePct: number; fare: number; note: string; actor: string },
   ): Promise<void> {
     const amount = round2(args.amount);
     if (amount === 0) return;
@@ -267,6 +287,7 @@ export class WalletService {
     await tx.commissionLedger.create({
       data: {
         riderId: args.riderId,
+        orderId: args.orderId,
         type: "adjustment",
         amount,
         balanceAfter,

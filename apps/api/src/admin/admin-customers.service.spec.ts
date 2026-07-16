@@ -13,10 +13,12 @@ describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => 
       profile: { findMany: async () => [profile] },
       order: {
         groupBy: async (args: { where: { status?: string }; _sum?: unknown }) => {
-          if (args.where.status === "cancelled") return [{ customerId: "c1", _count: { _all: 1 } }];
           if (args.where.status === "completed") return [{ customerId: "c1", _sum: { agreedFare: dec("42.00") } }];
           return [{ customerId: "c1", _count: { _all: 4 } }];
         },
+        // NEW-3: cancelled orders are fetched raw (customerId + cancelledBy) and aggregated in JS so only
+        // the customer's OWN cancels count. This customer has 1 cancel, self-cancelled.
+        findMany: async () => [{ customerId: "c1", cancelledBy: "c1" }],
       },
       // Two riders have reported this customer — the directory surfaces the real count (A-05).
       report: { groupBy: async () => [{ subjectProfileId: "c1", _count: { _all: 2 } }] },
@@ -37,10 +39,32 @@ describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => 
     expect(rows[0]!.phoneMasked).not.toContain("111");
   });
 
+  it("NEW-3: a cancel the RIDER (or admin) made doesn't count toward the customer's own cancel rate", async () => {
+    const prisma = {
+      profile: { findMany: async () => [profile] },
+      order: {
+        groupBy: async (args: { where: { status?: string } }) => {
+          if (args.where.status === "completed") return [];
+          return [{ customerId: "c1", _count: { _all: 4 } }];
+        },
+        // 2 orders on this customer went terminal `cancelled`, but BOTH were cancelled by someone else
+        // (a rider bailing, an ops cancel) — cancelledBy !== customerId for either row.
+        findMany: async () => [
+          { customerId: "c1", cancelledBy: "rider-9" },
+          { customerId: "c1", cancelledBy: "admin-1" },
+        ],
+      },
+      report: { groupBy: async () => [] },
+    };
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    const rows = await svc.listCustomers();
+    expect(rows[0]!.cancelRatePct).toBe(0);
+  });
+
   it("returns [] for a flagged filter (no ban/flag state on Profile yet)", async () => {
     const prisma = {
       profile: { findMany: async () => [profile] },
-      order: { groupBy: async () => [] },
+      order: { groupBy: async () => [], findMany: async () => [] },
       report: { groupBy: async () => [] },
     };
     const svc = new AdminCustomersService(prisma as unknown as PrismaService);
@@ -67,6 +91,24 @@ describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => 
       },
     ],
   };
+
+  it("NEW-3: detail's cancelled count filters on cancelledBy=id — only the customer's own cancels", async () => {
+    let cancelledWhere: Record<string, unknown> | undefined;
+    const prisma = {
+      profile: { findFirst: async () => profile },
+      report: { count: async () => 0, findMany: async () => [] },
+      order: {
+        ...customerOrders,
+        count: async (args: { where: Record<string, unknown> }) => {
+          if (args.where.status === "cancelled") cancelledWhere = args.where;
+          return args.where.status === "cancelled" ? 0 : 2;
+        },
+      },
+    };
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    await svc.getCustomerDetail("c1");
+    expect(cancelledWhere).toMatchObject({ customerId: "c1", status: "cancelled", cancelledBy: "c1" });
+  });
 
   it("detail adds publicName, empty flagLog and the recent-orders trail", async () => {
     const prisma = {

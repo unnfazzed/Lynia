@@ -143,6 +143,18 @@ export const COMMISSION = {
    * instantly gate the whole fleet offline at a $0 balance below the floor. Equals {@link COMMISSION.minTopUp}.
    */
   graceCredit: 5,
+  /**
+   * WD-012 (docs/KNOWN_BUGS.md DOC-16-04 / docs/FRAUD-REVIEW.md P0-2): the COMMISSION-BASIS floor, as a
+   * fraction of `suggestedFare` (the system's own fair-price anchor — see pricing.ts). `agreedFare` is
+   * copied verbatim from the rider's `offeredFare`, whose only bound is "positive, ≤ 100000, 2dp" — a
+   * colluding customer+rider pair could agree the real fare off-app and record a near-zero `offeredFare`
+   * to owe near-zero commission once the rate is live (dormant only while `ratePct` is 0). Commission is
+   * billed on `max(agreedFare, basisFloorPct × suggestedFare)` — see {@link commissionBasis} — so the
+   * rider still keeps/pays the real `agreedFare`; only the commission CALCULATION is floored. Chosen
+   * conservatively (well below typical accepted-bid range) so genuine negotiated discounts are never
+   * penalized — tune before the flip.
+   */
+  basisFloorPct: 0.5,
 } as const;
 
 /** Env var a deploy sets to override {@link COMMISSION.ratePct} at runtime — the "flip" operation. */
@@ -179,6 +191,20 @@ export function isCommissionActive(ratePct: number): boolean {
  */
 export function perRideCommission(amountPaid: number, ratePct: number = COMMISSION.ratePct): number {
   return Math.round(amountPaid * (ratePct / 100) * 100) / 100;
+}
+
+/**
+ * WD-012: the commission BASIS for a ride — `max(agreedFare, {@link COMMISSION.basisFloorPct} ×
+ * suggestedFare)`. `suggestedFare` is `null`/`undefined`/non-finite/non-positive for a data anomaly (or
+ * a legacy order predating the field) — falls back to the raw `agreedFare` unfloored rather than
+ * throwing, matching {@link perRideCommission}'s fail-safe posture (never block a completion). Pass the
+ * result into {@link perRideCommission} in place of the raw fare; never the raw fare directly once a
+ * `suggestedFare` is available.
+ */
+export function commissionBasis(agreedFare: number, suggestedFare: number | null | undefined): number {
+  if (suggestedFare == null || !Number.isFinite(suggestedFare) || suggestedFare <= 0) return agreedFare;
+  const floor = Math.round(suggestedFare * COMMISSION.basisFloorPct * 100) / 100;
+  return Math.max(agreedFare, floor);
 }
 
 /**

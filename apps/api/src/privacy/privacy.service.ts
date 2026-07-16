@@ -217,6 +217,15 @@ export class PrivacyService {
         },
       });
 
+      // DOC-16-01: `top_ups.phone` (the mobile-money number captured on every self-serve wallet top-up) is
+      // the same class of dialable contact PII as the waypoint/note phones stripped below — but it lives
+      // in its own table, referenced by riderId, so the profile/rider scrub above never reaches it. A
+      // no-op for a non-rider profile (no TopUp rows can exist without a rider row). Keep the TopUp rows
+      // themselves (financial ledger — CommissionLedger.topUpId references them); only null the phone.
+      if (isRider) {
+        await tx.topUp.updateMany({ where: { riderId: profileId, NOT: { phone: null } }, data: { phone: null } });
+      }
+
       // Remove the standalone PII stores + log every device out.
       await tx.address.deleteMany({ where: { profileId } });
       await tx.deviceToken.deleteMany({ where: { profileId } });

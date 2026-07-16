@@ -399,15 +399,32 @@ export class RiderService {
     // committed-without-audit decision. The monotonic/replay-safe guards (F-13 counter, the kycRef +
     // kycResolvedAt CAS `where`) are unchanged: still a guarded `updateMany`, not a blind `update`.
     const { updated, notifyProfileId } = await this.prisma.$transaction(async (tx) => {
+      // DOC-16-05: a `verified` outcome for a rider already flagged `duplicateIdFlag` (A-04 — their
+      // national ID collides with another account, e.g. a banned/suspended one under a new SIM) must NOT
+      // auto-verify — that's exactly the auto-mode gap that let a ban-evader re-registering with the same
+      // real ID/face sail straight past the reviewer who'd otherwise catch it on `admin.getKycReview`.
+      // Read the flag first (kycRef is unique, so at most one row) so the updateMany below can route a
+      // flagged match to manual review instead of applying the vendor's `verified`. `failed`/`expired`
+      // outcomes are unaffected — the flag only matters for the auto-APPROVE path.
+      const flagged =
+        status === "verified"
+          ? await tx.rider.findFirst({ where: { kycRef }, select: { duplicateIdFlag: true } })
+          : null;
+      const holdForReview = status === "verified" && flagged?.duplicateIdFlag === true;
       const res = await tx.rider.updateMany({
         where: { kycRef, OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] },
         data: {
-          kycStatus: status,
-          idVerified: status === "verified",
+          // A flagged "verified" outcome does NOT flip kycStatus/idVerified — it stays `pending` so the
+          // rider remains in the manual-review queue (admin.getKycReview) instead of going online on an
+          // identity that already collides with another account. kycResolvedAt still advances (below) so
+          // the same webhook delivery can't be reprocessed.
+          ...(holdForReview ? {} : { kycStatus: status, idVerified: status === "verified" }),
           kycResolvedAt: eventAt,
           // Record the auto-decline reason (Didit score below the threshold) so the rider app can show
-          // why, and clear any stale reason on a verify.
-          ...(status === "failed" ? { kycDeclineReason: reason ?? null } : { kycDeclineReason: null }),
+          // why, and clear any stale reason on a verify/expiry (unchanged for `expired`; a flagged
+          // `verified` held for review isn't a resolved decision yet, so its stale decline reason, if
+          // any, is deliberately left in place rather than cleared).
+          ...(status === "failed" ? { kycDeclineReason: reason ?? null } : holdForReview ? {} : { kycDeclineReason: null }),
           // F-13: a vendor DECLINE bumps the A-02 attempt counter too, so the auto path throttles retries
           // exactly like the manual admin decline does — without this, auto-mode retries were uncapped,
           // each minting a fresh paid vendor session. The increment rides the SAME monotonic guard as the
@@ -421,11 +438,22 @@ export class RiderService {
           ...(status === "expired" ? { kycAttempts: 0 } : {}),
         },
       });
-      // Only when the update actually applied (res.count > 0 — not a stale/replayed webhook) and only for
-      // the two outcomes that change what the rider can do; an `expired` is handled by its own re-verify
-      // prompt. kycRef is unique → at most one rider.
+      // Only when the update actually applied (res.count > 0 — not a stale/replayed webhook). `expired`
+      // is handled by its own re-verify prompt; a `holdForReview` verify isn't a decision the rider app
+      // should be told about yet (it's still pending), so it gets its own audit action + no push, while a
+      // genuine verified/failed outcome keeps the existing feed-sync + notify behavior. kycRef is unique
+      // → at most one rider.
       let resolvedProfileId: string | null = null;
-      if (res.count > 0 && (status === "verified" || status === "failed")) {
+      if (res.count > 0 && holdForReview) {
+        const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
+        if (rider) {
+          await tx.auditLog.create({
+            data: auditData("system:kyc-webhook", "rider.kyc_review_required", rider.profileId, "duplicate_id_flag", null),
+          });
+        }
+        // No notifyProfileId: the rider isn't told anything changed — they're still `pending`, same as
+        // before this webhook arrived, until a human resolves the flag via adminSetKyc.
+      } else if (res.count > 0 && (status === "verified" || status === "failed")) {
         const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
         if (rider) {
           // KB-FEED-SYNTH: the AUTOMATED vendor path must ALSO write an AuditLog row (only the manual
