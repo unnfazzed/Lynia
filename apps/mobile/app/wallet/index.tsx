@@ -1,9 +1,13 @@
 import { tokens, type WalletEntry } from "@lynia/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
+import { getTopup } from "../../src/api/wallet";
+import { clearPendingTopup, loadPendingTopup } from "../../src/auth/session";
 import { formatMoney } from "../../src/logic/money";
-import { useWallet, useWalletConfig, useWalletLedger } from "../../src/query/use-wallet";
+import { reconcilePendingTopup } from "../../src/logic/topup";
+import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../src/query/use-wallet";
 import { Button, Card, EmptyState, Heading, Screen, SkeletonRows, Sub } from "../../src/ui";
 
 function fmtWhen(iso: string): string {
@@ -44,11 +48,56 @@ function LedgerRow({ entry }: { entry: WalletEntry }): React.ReactElement {
   );
 }
 
+/**
+ * UX-2026-07-16: recovery surface for `session.ts`'s durable `PendingTopup` marker — an app kill during
+ * top-up.tsx's "wait" step (sent out to another app to approve the rail prompt) previously lost all UI
+ * state with no way to tell whether the top-up landed. On mount, resolve any marker against the server's
+ * own `getTopup` and clear it once the outcome is known; a still-pending intent keeps the marker so this
+ * runs again next time the rider opens the wallet.
+ */
+type PendingTopupBanner = { kind: "succeeded"; amount: number } | { kind: "pending" } | { kind: "terminal" };
+function usePendingTopupReconciliation(): PendingTopupBanner | null {
+  const qc = useQueryClient();
+  const [banner, setBanner] = React.useState<PendingTopupBanner | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const marker = await loadPendingTopup();
+      if (!marker || cancelled) return;
+      try {
+        const topup = await getTopup(marker.topupId);
+        if (cancelled) return;
+        const outcome = reconcilePendingTopup(topup.status);
+        if (outcome === "succeeded") {
+          void qc.invalidateQueries({ queryKey: walletKey });
+          void qc.invalidateQueries({ queryKey: walletLedgerKey });
+          void clearPendingTopup();
+          setBanner({ kind: "succeeded", amount: topup.amount });
+        } else if (outcome === "terminal") {
+          void clearPendingTopup();
+          setBanner({ kind: "terminal" });
+        } else {
+          setBanner({ kind: "pending" });
+        }
+      } catch {
+        /* transient — the marker stays, so this retries next time the wallet screen mounts */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [qc]);
+
+  return banner;
+}
+
 export default function WalletScreen(): React.ReactElement {
   const router = useRouter();
   const { config } = useWalletConfig();
   const { wallet, isLoading, isFetching, isError, refetch } = useWallet();
   const { page, isLoading: ledgerLoading } = useWalletLedger();
+  const pendingTopupBanner = usePendingTopupReconciliation();
 
   const floor = config?.floor ?? 2;
   const balance = wallet?.balance ?? 0;
@@ -79,6 +128,29 @@ export default function WalletScreen(): React.ReactElement {
         </EmptyState>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
+          {pendingTopupBanner ? (
+            <Card
+              style={{
+                backgroundColor: pendingTopupBanner.kind === "terminal" ? tokens.color.dangerWash : tokens.color.highlightWash,
+                borderColor: pendingTopupBanner.kind === "terminal" ? tokens.color.dangerWash : tokens.color.highlightBorder,
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.ink }}>
+                {pendingTopupBanner.kind === "succeeded"
+                  ? `Added ${formatMoney(pendingTopupBanner.amount)}`
+                  : pendingTopupBanner.kind === "pending"
+                    ? "A top-up is still waiting for approval"
+                    : "Your last top-up didn't go through"}
+              </Text>
+              <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
+                {pendingTopupBanner.kind === "succeeded"
+                  ? "It landed while the app was closed — your balance below is up to date."
+                  : pendingTopupBanner.kind === "pending"
+                    ? "Check your phone for the payment prompt, or start a new one from Top up."
+                    : "No money moved — you can start a fresh top-up whenever you're ready."}
+              </Text>
+            </Card>
+          ) : null}
           {/* Balance hero */}
           <Card style={{ backgroundColor: heroBg, borderColor: heroBg }}>
             <Text style={{ color: heroSubColor, fontSize: 12, fontWeight: "600", opacity: heroBad ? 1 : 0.9 }}>
@@ -138,8 +210,8 @@ export default function WalletScreen(): React.ReactElement {
           <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
             <Text style={{ fontSize: 12, color: tokens.color.highlightInk, lineHeight: 18 }}>
               {config && config.ratePct > 0
-                ? `Lynia takes ${config.ratePct}% of each delivery, out of the balance you top up in advance — never the cash the customer hands you. Every deduction sits next to the ride it came from, so you can always check the math.`
-                : "Lynia doesn't take a commission yet — you keep the full agreed fare. When that changes, a small per-ride commission will come out of this prepaid balance, and every deduction will be shown here next to its ride."}
+                ? `LyniaGo takes ${config.ratePct}% of each delivery, out of the balance you top up in advance — never the cash the customer hands you. Every deduction sits next to the ride it came from, so you can always check the math.`
+                : "LyniaGo doesn't take a commission yet — you keep the full agreed fare. When that changes, a small per-ride commission will come out of this prepaid balance, and every deduction will be shown here next to its ride."}
             </Text>
           </Card>
 

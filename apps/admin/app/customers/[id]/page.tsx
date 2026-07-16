@@ -194,7 +194,17 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
                   triggerVariant="ghost"
                   disabled={!connected}
                   title={`Flag ${c.name}?`}
-                  consequence="A flag marks the account for review. The customer can keep ordering, but new reports escalate to a ban decision."
+                  consequence={
+                    <span>
+                      {/* UX-2026-07-16: mirrors the Ban modal's UX-2026-07-15 fix — no backing model exists
+                          yet for a customer flag (see the comment on CustomerActions above), so this only
+                          logs a decision for review. It does NOT put the account under review or create any
+                          automated ban-escalation trigger. */}
+                      <b>This records a flag decision for the record.</b> It does not automatically put the
+                      account under review or trigger a ban escalation yet — follow up with a manual hold
+                      (above) or a database admin for real enforcement.
+                    </span>
+                  }
                   reasons={REASONS.customerFlag}
                   confirmLabel="Flag account"
                 />

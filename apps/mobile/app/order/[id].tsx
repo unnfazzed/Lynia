@@ -683,6 +683,7 @@ export default function OrderScreen(): React.ReactElement {
         dropoff: order.dropoff,
         items: order.items,
         proposedFare: order.proposedFare,
+        note: order.note,
       }),
     });
   };

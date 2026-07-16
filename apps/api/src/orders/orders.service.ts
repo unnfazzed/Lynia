@@ -545,6 +545,7 @@ export class OrdersService {
         pickup: true,
         dropoff: true,
         itemDesc: true,
+        note: true,
         proposedFare: true,
         agreedFare: true,
         status: true,
@@ -564,6 +565,9 @@ export class OrdersService {
         pickup: publicWaypoint(o.pickup),
         dropoff: publicWaypoint(o.dropoff),
         itemDesc: o.itemDesc,
+        // UX-2026-07-16: needed so "Send again" from Trip History can carry the sender's note forward
+        // (buildRebroadcastParams), matching what the order-tracking screen's own reorder CTA now does.
+        note: o.note,
         proposedFare: o.proposedFare.toString(),
         agreedFare: o.agreedFare ? o.agreedFare.toString() : null,
         status: o.status,

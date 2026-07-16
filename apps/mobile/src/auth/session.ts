@@ -326,6 +326,47 @@ export async function clearSenderRatingPending(): Promise<void> {
   }
 }
 
+// UX-2026-07-16: a durable "top-up still needs resolving" marker, mirroring PENDING_SENDER_RATING_KEY
+// above. The top-up "wait" step sends the rider OUT to another app (SMS/USSD/mobile-money) to approve
+// the rail prompt — the exact moment the OS is most likely to reclaim/kill a backgrounded process on a
+// low-end device — and `topup`/`step` in top-up.tsx are plain component state, never persisted. An app
+// kill mid-wait previously lost all UI state with no way to tell whether the top-up landed short of
+// manually watching the balance. Persisted the instant `createTopup` resolves; cleared once the wallet
+// screen reconciles it to a terminal outcome (or the rider explicitly cancels a still-pending request).
+// Single slot — a rider has one top-up attempt in flight at a time.
+const PENDING_TOPUP_KEY = "lynia.pendingTopup";
+export interface PendingTopup {
+  topupId: string;
+}
+
+export async function savePendingTopup(topupId: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PENDING_TOPUP_KEY, JSON.stringify({ topupId }));
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadPendingTopup(): Promise<PendingTopup | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(PENDING_TOPUP_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as unknown;
+    if (v && typeof v === "object" && typeof (v as { topupId?: unknown }).topupId === "string") {
+      return { topupId: (v as { topupId: string }).topupId };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+export async function clearPendingTopup(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(PENDING_TOPUP_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
 // Which starting role the user picked at the post-OTP role fork (one account, two roles). Persisted
 // so an existing user isn't re-prompted on every sign-in — verify.tsx routes straight home once set.
 // All best-effort: a native read/write failure must never trap the sign-in flow.
@@ -471,6 +512,8 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(PENDING_RATING_KEY),
       // The rider's durable pending-sender-rating marker — same shared-device hazard as above.
       SecureStore.deleteItemAsync(PENDING_SENDER_RATING_KEY),
+      // The rider's durable pending-topup marker — same shared-device hazard as above.
+      SecureStore.deleteItemAsync(PENDING_TOPUP_KEY),
       // Address book: the saved Home/Work + recent places (addresses) and the recent recipients (the one
       // place we hold contact PII) must not survive to the next user on a shared device — exactly the
       // "next user must not rehydrate the previous user's addresses" rule above, now including recipients.

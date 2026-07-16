@@ -6,7 +6,12 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-15 night (bug-hunt routine — mobile-journey/contract-seam lane; see the
+**Last consolidated:** 2026-07-16 (UX-improvements routine; see the dedicated section near the bottom for
+this run's eight findings, UX16-01…UX16-08, all LOW–MEDIUM, all fixed same-run with regression tests where
+testable — a rider top-up durability gap, a customer note dropped on every reorder path, a dead-end
+commission-low-balance gate CTA, a misclassified SOS-console error, an admin false-consequence-copy miss,
+an issue-resolution feed gap, a stale brand string, and a dormant top-up-cancel idempotency-key hazard).
+Prior consolidation: 2026-07-15 night (bug-hunt routine — mobile-journey/contract-seam lane; see the
 dedicated section near the bottom for this run's seven findings, BH-07…BH-12, all LOW–MEDIUM, six fixed
 same-run with regression tests, one recorded as a design observation rather than a defect). Prior
 consolidation: 2026-07-15 (wallet & data-lifecycle audit routine — first run of the `WD-` lane;
@@ -58,6 +63,7 @@ runbook at `docs/INFRA-HARDENING-ROLLOUT.md`.
 | `docs/UX-USABILITY-REVIEW-2026-07-12.md` | 16 | UX pass; all ✅ (idle-rider position, viewer-role snapshot, delivered-terminal dead code, SOS honesty, +12 more). Feed-channel residue of #6/#11 closed by #206 (07-13) |
 | `docs/UX-USABILITY-REVIEW-2026-07-14.md` | 24 | UX pass; 20 ✅ (order-screen rider-viewer gating, presence-stale wiring, token-refresh failure classification, heartbeat-cutoff split for FCM audience, push `data.to` per-order routing, expiry `hadOffers` honesty, KYC ID-freeze bypass in `completeProfile`, cancel-reason remap, +12 more). 2 deferred as KB-NOTIFY-ORDERID and KB-FEED-SYNTH below; 2 explicitly out of scope (`become.tsx` redirect nice-to-have; a routing bug found inside still-unmerged PR #231, not on `main`) |
 | `docs/UX-USABILITY-REVIEW-2026-07-15.md` | 16 | UX pass; 15 ✅ (rider delivered/undelivered terminal durability, zod-validation error honesty app-wide, `account`-push orderId routing, `LiveTrackingCard` rider-viewer gating gap, issue-resolution notification, brand/actor-naming copy, admin ban-copy honesty, `cancelM`/`undeliverM` reconciliation, history pagination, board-poll gating, delivery-complete push routing, admin truncation disclosure, admin KYC pending guard). 1 left as a documented low-confidence observation (UX15-16, confirmed-idempotent server registration) |
+| `docs/UX-USABILITY-REVIEW-2026-07-16.md` | 8 | UX pass; all ✅ (rider top-up durability marker + wallet-screen reconciliation, customer note carried through every reorder path incl. Trip History, commission-low-balance gate top-up deep-link, SOS-console error classification, admin "Flag account" false-consequence copy — the UX15-07 fix's missed sibling, issue-resolution feed fallback, stale "Lynia" brand on the wallet screen, top-up "Cancel request" idempotency-key hazard) |
 | `docs/plans/BUGFIX-EXECUTION.md` | 24 | Execution plan for BUG-HUNT items — all landed |
 | `docs/plans/LAUNCH-FIX-ROUND1.md` | 13 | Round-1 authz/abuse fixes — all landed |
 | `docs/plans/TAIL-HARDENING-PLAN.md` | 6 | R8 handback + SEC dev-fallback + map leak — all ✅ |
@@ -490,3 +496,28 @@ live order is fixed; a customer deliberately sending two separate parcels back-t
 multi-order use, and the older order stays reachable via Trip History even though it drops off the home
 screen's one proactive recovery banner. Left undocumented as an OPEN item (it's not a defect, just a
 UI-scope observation) — see the report for detail.
+
+---
+
+## UX review 2026-07-16 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-16.md`
+
+Four parallel journey/lens audits (customer, rider, cross-cutting resilience/data-frugality,
+copy/notification-coherence) against current code, each cross-checked against this ledger + the 07-15 UX
+and bug-hunt reports first (Phase 0) so nothing already fixed was re-flagged. The initial Fable-5 launch of
+all four research agents hit the session Fable-5 rate limit before doing any work; per the routine's own
+model-fallback instruction all four were relaunched on the session model, and the whole run (research +
+fixes) proceeded on that model throughout. Two findings (rider-journey and copy/notification-coherence)
+independently converged on the same root cause (stale "Lynia" brand on the rider wallet screen) —
+deduplicated to one finding below. **All 8 findings fixed this sweep**, each with a regression test where
+testable; `pnpm typecheck` + `pnpm lint` + 916 API tests (+11) + 401 mobile tests (+18), all green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| UX16-01 | Rider wallet top-up (`createTopup`/wait step) had no durable app-kill marker — the wait step sends the rider OUT to another app to approve the rail prompt, the exact moment an OS kill is most likely on a low-end device; `topup`/`step` were plain unpersisted component state | `apps/mobile/app/wallet/top-up.tsx`, `apps/mobile/src/auth/session.ts`, `apps/mobile/app/wallet/index.tsx` | MEDIUM | **FIXED** — durable `PendingTopup` marker (mirrors `pendingRating`/`RiderJobTerminal`), saved on `createTopup` success; new pure `reconcilePendingTopup` (`src/logic/topup.ts`) + a wallet-screen mount effect resolves it against `getTopup` (success invalidates balance/ledger + banner, terminal clears with honest copy, pending keeps the marker). Cleared on sign-out. 3 new cases in `topup.test.tsx` |
+| UX16-02 | Every re-send/reorder path (order-screen "raise price & send again"/"send it again", Trip History "Send again") silently dropped the customer's note for the rider — `buildRebroadcastParams`/`draftFromParams` had no `note` field at all, unlike the server's own automatic rider-bail rebroadcast which preserves it verbatim | `apps/mobile/src/logic/order-draft.ts`, `apps/mobile/app/order/[id].tsx`, `apps/mobile/app/history/index.tsx`, `apps/api/src/orders/orders.service.ts` `historyForUser`, `apps/mobile/src/api/orders.ts` | MEDIUM | **FIXED** — `note`/`rbNote` threaded through `RebroadcastParams`/`buildRebroadcastParams`/`draftFromParams` and both call sites; Trip History's fix additionally required surfacing `note` on `/orders/history` (additive, no shape change) since `OrderHistoryRow` never carried it. 4 new cases in `rebroadcast-params.test.tsx` + 1 in `orders.service.spec.ts` |
+| UX16-03 | Rider online-gate `commission_low_balance` copy/doc comment promised a one-tap top-up deep-link that the render block never had — only "Refresh status" (re-shows the identical wall) | `apps/mobile/app/rider/index.tsx`, `apps/mobile/src/logic/gates.ts` | MEDIUM (dormant — commission 0% at launch) | **FIXED** — added the `gate === "commission_low_balance"` branch routing to `/wallet/top-up`, matching the copy's own promise |
+| UX16-04 | Admin SOS console's `acknowledgeSos` misclassified EVERY ack failure (expired session, stale row, genuine server error) as "check API_BASE_URL / admin token" — dev/infra diagnosis text on the highest-stakes operator screen | `apps/admin/app/sos/actions.ts` | MEDIUM | **FIXED** — classified by `res.reason`/`res.status`: unreachable → "couldn't reach the server"; 401/403 → "session may have expired"; other HTTP → "server rejected this (HTTP {status})" |
+| UX16-05 | Admin "Flag account…" modal claimed "new reports escalate to a ban decision" — no backing model/handling exists (confirmed via grep); same false-consequence-copy bug UX15-07 fixed on the adjacent "Ban customer" modal on the SAME page, missed because that fix only covered its sibling | `apps/admin/app/customers/[id]/page.tsx` | MEDIUM | **FIXED** — applied the identical UX15-07 pattern: states this only logs a decision for the record, doesn't trigger review/ban-escalation, points to the real Hold action |
+| UX16-06 | `notifyIssueResolved` (UX15-05) is push-only with no feed fallback, unlike every other push type (KB-FEED-SYNTH already closed this for offers/account-status) — by resolution time the order is typically long off-screen, so a missed push left zero durable trace the report was ever resolved | `apps/api/src/notifications/notifications.service.ts` `feedForUser` | MEDIUM | **FIXED** — new resolved-`Issue`-row synthesis in `feedForUser`, copy mirroring `notifyIssueResolved` per resolution type, not scoped to the order-lookback window. 2 new cases in `notifications.service.spec.ts` |
+| UX16-07 | Rider wallet screen's "Honest-copy card" still said "Lynia" instead of "LyniaGo" in both branches — the 07-14 brand sweep and UX15-06 both missed this file; the 0%-commission branch is what every rider sees today | `apps/mobile/app/wallet/index.tsx:141-142` | LOW | **FIXED** — both strings corrected to "LyniaGo" |
+| UX16-08 | Top-up "Cancel request" (`reset()`) unconditionally rotated the dedup `idempotencyKey`, even when cancelling a STILL-LIVE (`pending`) top-up whose server-side row and already-pushed rail prompt aren't recalled by the local reset — an immediate resend opened a second, independent pending top-up instead of deduping against the abandoned one. Dormant (`creditFromTopup` has no callers yet) but a real double-credit vector once a live rail confirmation ships | `apps/mobile/app/wallet/top-up.tsx` `reset`, `apps/api/src/wallet/wallet.service.ts` `createTopup` | LOW-MEDIUM (dormant) | **FIXED** — `reset()` only rotates the key when NOT cancelling a live (`step === "wait"`) top-up; "Try again" from a genuinely terminal state (timeout/declined) still gets a fresh key per BH-09's original intent |

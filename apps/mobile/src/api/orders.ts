@@ -155,6 +155,9 @@ export interface OrderHistoryRow {
   pickup: { point: LatLng; landmark: string };
   dropoff: { point: LatLng; landmark: string };
   itemDesc: string;
+  // UX-2026-07-16: the sender's note for the rider, so "Send again" can carry it forward (never PII —
+  // see FormDraft's own note on order-draft.ts).
+  note: string | null;
   proposedFare: string;
   agreedFare: string | null;
   status: OrderStatus;

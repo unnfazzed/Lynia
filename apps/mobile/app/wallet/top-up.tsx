@@ -5,6 +5,7 @@ import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { createTopup, getTopup } from "../../src/api/wallet";
+import { clearPendingTopup, savePendingTopup } from "../../src/auth/session";
 import { formatMoney } from "../../src/logic/money";
 import { validateTopupAmount } from "../../src/logic/topup";
 import { useWalletConfig, walletKey, walletLedgerKey } from "../../src/query/use-wallet";
@@ -66,8 +67,10 @@ export default function TopUpScreen(): React.ReactElement {
         if (next.status === "succeeded") {
           onCredited();
         } else if (next.status === "declined") {
+          void clearPendingTopup();
           setStep("declined");
         } else if (next.status === "expired") {
+          void clearPendingTopup();
           setStep("timeout");
         }
       } catch {
@@ -94,6 +97,7 @@ export default function TopUpScreen(): React.ReactElement {
     // Balance + ledger changed — invalidate so the wallet screen shows the new total and row.
     void qc.invalidateQueries({ queryKey: walletKey });
     void qc.invalidateQueries({ queryKey: walletLedgerKey });
+    void clearPendingTopup(); // UX-2026-07-16: resolved — the durability marker's job is done
     setStep("success");
   }
 
@@ -105,6 +109,10 @@ export default function TopUpScreen(): React.ReactElement {
       const created = await createTopup({ amount: amountNum, rail, phone: phone.trim(), idempotencyKey });
       setTopup(created);
       setStep("wait");
+      // UX-2026-07-16: persist the instant the server confirms the intent — BEFORE the rider is sent out
+      // to approve the rail prompt in another app, the exact moment an app kill is most likely on a
+      // low-end device. Recovered by the wallet screen's mount-time reconciliation (reconcilePendingTopup).
+      void savePendingTopup(created.id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't start the top-up — try again.");
     } finally {
@@ -113,10 +121,20 @@ export default function TopUpScreen(): React.ReactElement {
   }
 
   function reset(): void {
+    // UX-2026-07-16: "Cancel request" (step === "wait") cancels a STILL-LIVE server-side top-up — the
+    // rail prompt already pushed to the rider's phone isn't recalled by this local reset, so keep the
+    // same idempotencyKey. An immediate resend of the same amount then dedupes against the abandoned
+    // intent (BH-09's existing server-side replay) instead of minting a second, independent one that
+    // could both later get approved. "Try again" from timeout/declined (topup already terminal) IS a
+    // genuinely new attempt and still gets a fresh key, exactly as BH-09 intended.
+    const cancellingLive = step === "wait";
     setTopup(null);
     setError(null);
     setStep("amount");
-    setIdempotencyKey(randomUuidV4()); // BH-09: a genuinely new attempt gets a fresh dedup key
+    void clearPendingTopup();
+    if (!cancellingLive) {
+      setIdempotencyKey(randomUuidV4());
+    }
   }
 
   return (

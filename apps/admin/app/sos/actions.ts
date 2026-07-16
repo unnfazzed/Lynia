@@ -16,8 +16,16 @@ import { adminPostResult } from "../lib/api";
 export async function acknowledgeSos(id: string): Promise<void> {
   const res = await adminPostResult(`/admin/sos/${id}/ack`, {});
   if (!res.ok && res.reason !== "unconfigured") {
-    const detail = res.reason === "http" ? `HTTP ${res.status}` : res.reason;
-    throw new Error(`Failed to acknowledge SOS ${id} (${detail}) — check API_BASE_URL / admin token.`);
+    // UX-2026-07-16: this used to say "check API_BASE_URL / admin token" for EVERY failure — dev/infra
+    // diagnosis text shown to an operator mid-SOS-triage regardless of the real cause (an expired
+    // session, a stale row, a genuine server error). Classify by the actual reason instead.
+    const message =
+      res.reason === "unreachable"
+        ? "Couldn't reach the server — try again."
+        : res.status === 401 || res.status === 403
+          ? "Your session may have expired — reload the page."
+          : `The server rejected this (HTTP ${res.status}) — try again or check with engineering.`;
+    throw new Error(message);
   }
   revalidatePath("/sos");
 }
