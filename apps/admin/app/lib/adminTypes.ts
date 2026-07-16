@@ -234,6 +234,14 @@ export interface OrderDetail {
   km: number;
   items: Array<{ desc: string; qty: number }>;
   timeline?: Array<{ label: string; ts?: string; note?: string; state?: "done" | "now" | "stall" }>;
+  /** KB-POD-DISPUTE Phase A: rider-attached proof-of-drop evidence (photo read URL + GPS + capture time)
+   *  for a disputed hand-off. Null unless the rider attached it. */
+  deliveryProof?: {
+    photoUrl: string | null;
+    lat: number | null;
+    lng: number | null;
+    at: string | null;
+  } | null;
 }
 
 /* ── Rider detail (kit riders.html) ────────────────────────── */
