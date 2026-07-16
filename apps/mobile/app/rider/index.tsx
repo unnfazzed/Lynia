@@ -17,7 +17,7 @@ import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch"
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../src/logic/gates";
 import { formatMoney } from "../../src/logic/money";
-import { buildSentOfferEntry, clearRiderBidDraft, loadRiderBidDraft, saveRiderBidDraft, type SentOffer } from "../../src/logic/rider-bid-draft";
+import { buildSentOfferEntry, clearRiderBidDraft, isRiderBidDraftExpired, loadRiderBidDraft, saveRiderBidDraft, type SentOffer } from "../../src/logic/rider-bid-draft";
 import { Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../src/ui";
 import { SentOfferCard } from "../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../src/ui/safety";
@@ -93,10 +93,18 @@ export default function RiderHome(): React.ReactElement {
     let cancelled = false;
     void loadRiderBidDraft().then((draft) => {
       if (!cancelled && draft) {
-        setSelected(draft.selected);
-        setFare(draft.fare);
-        setEta(draft.eta);
-        setOfferMode(draft.offerMode);
+        // The restored order's own 90s auction window may already have closed while the app was
+        // killed/backgrounded — a cold start never receives the live bid:expired/order:taken event
+        // that's the ONLY other thing that clears a dead `selected`. Drop a stale draft instead of
+        // showing a phantom "Accept $X" card for an auction that's already gone.
+        if (isRiderBidDraftExpired(draft, Date.now())) {
+          void clearRiderBidDraft();
+        } else {
+          setSelected(draft.selected);
+          setFare(draft.fare);
+          setEta(draft.eta);
+          setOfferMode(draft.offerMode);
+        }
       }
       if (!cancelled) bidDraftHydrated.current = true;
     });
@@ -394,8 +402,13 @@ export default function RiderHome(): React.ReactElement {
   // Warm-resume: refetch the board the moment the app returns to foreground. Without this, an order
   // taken/expired while backgrounded serves a stale board for up to the 15s poll — the live-board
   // socket usually beats that, but a reconnect can lag behind the OS reporting the app foregrounded
-  // (mirrors rider/job.tsx's and order/[id].tsx's warm-resume).
-  useForegroundRefetch(() => void qc.invalidateQueries({ queryKey: ["openOrders"] }), online);
+  // (mirrors rider/job.tsx's and order/[id].tsx's warm-resume). Also invalidate ["activeJob"]: a
+  // `orderTaken` (bid win) missed while backgrounded is the same gap useRiderBoard's own reconnect
+  // self-heal closes — foreground can race ahead of the socket reconnecting, so this must self-heal too.
+  useForegroundRefetch(() => {
+    void qc.invalidateQueries({ queryKey: ["openOrders"] });
+    void qc.invalidateQueries({ queryKey: ["activeJob"] });
+  }, online);
 
   // Client-side haversine sort. Now largely a no-op when the server already distance-sorted, but it's
   // kept as the sort for the loc-absent (city-wide) fallback and to visually reconcile live WS pushes

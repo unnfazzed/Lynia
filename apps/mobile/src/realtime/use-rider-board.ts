@@ -58,8 +58,13 @@ export function useRiderBoard(
     // Self-heal on (re)connect the way use-order-socket / use-rider-job-socket do: re-scope the board
     // rooms AND refetch the REST snapshot, so a broadcast/expiry/taken push that landed while the socket
     // was down (a blip with no AppState transition, so foreground-refetch never fired) is picked up
-    // immediately instead of leaving a stale board until the next 15s poll.
-    const healBoard = () => void qc.invalidateQueries({ queryKey: ["openOrders"] });
+    // immediately instead of leaving a stale board until the next 15s poll. Also invalidate ["activeJob"]
+    // — this same socket's live `orderTaken` handler below invalidates it too (a bid win), so a miss
+    // while backgrounded/disconnected must be reconciled on reconnect the same way, not just openOrders.
+    const healBoard = () => {
+      void qc.invalidateQueries({ queryKey: ["openOrders"] });
+      void qc.invalidateQueries({ queryKey: ["activeJob"] });
+    };
     socket.on("connect", () => {
       setConnected(true);
       const l = locRef.current;

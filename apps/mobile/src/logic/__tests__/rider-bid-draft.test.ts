@@ -1,4 +1,4 @@
-import { buildSentOfferEntry, parseRiderBidDraft } from "../rider-bid-draft";
+import { buildSentOfferEntry, isRiderBidDraftExpired, parseRiderBidDraft } from "../rider-bid-draft";
 
 const validSelected = {
   id: "order-1",
@@ -66,5 +66,31 @@ describe("buildSentOfferEntry (BH-05: sent-offer card must reflect what was actu
     const editedButNeverSent = "12";
     expect(sentAtFirstAttempt.fare).toBe("10");
     expect(sentAtFirstAttempt.fare).not.toBe(editedButNeverSent);
+  });
+});
+
+// Bug hunt 2026-07-16: a restored draft's `selected` order used to be rehydrated on cold start with
+// no check against its own 90s auction window (createdAt + OFFER_WINDOW_MS) — only a LIVE bid:expired/
+// order:taken WS event ever cleared a dead `selected`, which a cold-started or still-offline app never
+// receives. isRiderBidDraftExpired is the pure gate that lets the load effect drop a stale draft instead.
+describe("isRiderBidDraftExpired (bug hunt 2026-07-16: cold-start restore must respect the auction window)", () => {
+  const draft = { selected: validSelected, fare: "2.50", eta: "10", offerMode: "accept" as const };
+  const closesAt = new Date(validSelected.createdAt).getTime() + 90_000; // OFFER_WINDOW_MS
+
+  it("is not expired while the auction window is still open", () => {
+    expect(isRiderBidDraftExpired(draft, closesAt - 1)).toBe(false);
+  });
+
+  it("is expired the instant the window closes", () => {
+    expect(isRiderBidDraftExpired(draft, closesAt)).toBe(true);
+  });
+
+  it("is expired well after the window closed (the app-killed-mid-auction repro)", () => {
+    expect(isRiderBidDraftExpired(draft, closesAt + 60_000)).toBe(true);
+  });
+
+  it("treats an unparseable createdAt as expired rather than trusting it", () => {
+    const bad = { ...draft, selected: { ...validSelected, createdAt: "not-a-date" } };
+    expect(isRiderBidDraftExpired(bad, Date.now())).toBe(true);
   });
 });
