@@ -451,6 +451,15 @@ model Order {
   undeliveredReason   String?     @map("undelivered_reason")
   undeliveredAt       DateTime?   @map("undelivered_at")
   deliveryAttempts    Int         @default(0) @map("delivery_attempts")
+  // KB-POD-DISPUTE Phase A — proof-of-drop evidence a rider can attach when a hand-off goes sideways
+  // (recipient took the goods but withheld the delivery code). Optional, never gates any status; the
+  // admin order-detail surfaces it (photo read-URL + GPS + time) so ops can adjudicate a Phase-B
+  // "delivered — code bypass" decision. Photo is a GCS object key under `delivery-proof/<riderId>/`
+  // (a read URL is minted on demand, like pickupPhotoKey); GPS proves the rider was at the drop.
+  deliveryProofKey    String?     @map("delivery_proof_key")
+  deliveryProofLat    Float?      @map("delivery_proof_lat")
+  deliveryProofLng    Float?      @map("delivery_proof_lng")
+  deliveryProofAt     DateTime?   @map("delivery_proof_at")
   // Pre-broadcast liability disclaimer consent (A1-8): {policy version, timestamp} on the order.
   disclaimerVersion    String?    @map("disclaimer_version")
   disclaimerAcceptedAt DateTime?  @map("disclaimer_accepted_at")

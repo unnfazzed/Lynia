@@ -224,6 +224,69 @@ describe("OrderLifecycleService.attachPickupPhoto", () => {
   });
 });
 
+describe("OrderLifecycleService.attachDeliveryProof (KB-POD-DISPUTE Phase A)", () => {
+  const key = "delivery-proof/r1/11111111-1111-4111-8111-111111111111.jpg";
+
+  it("404s for a missing order", async () => {
+    const { svc } = build({ order: { findUnique: async () => null } });
+    await expect(svc.attachDeliveryProof("o1", "r1", key)).rejects.toThrow(/not found/i);
+  });
+
+  it("403s when the caller is not the assigned rider", async () => {
+    const { svc } = build({ order: { findUnique: async () => ({ status: "en_route_dropoff", riderId: "r1" }) } });
+    await expect(svc.attachDeliveryProof("o1", "other", key)).rejects.toThrow(/assigned rider/i);
+  });
+
+  it("409s outside the attach window (only at the door or right after undelivered)", async () => {
+    for (const status of ["assigned", "confirmed", "en_route_pickup", "picked_up", "delivered", "completed", "cancelled"]) {
+      const { svc } = build({ order: { findUnique: async () => ({ status, riderId: "r1" }) } });
+      await expect(svc.attachDeliveryProof("o1", "r1", key)).rejects.toThrow(/proof of drop-off/i);
+    }
+  });
+
+  it("400s a key outside the rider's own delivery-proof namespace", async () => {
+    const { svc } = build({ order: { findUnique: async () => ({ status: "en_route_dropoff", riderId: "r1" }) } });
+    await expect(svc.attachDeliveryProof("o1", "r1", "delivery-proof/victim/p.jpg")).rejects.toThrow(/invalid photo key/i);
+    await expect(svc.attachDeliveryProof("o1", "r1", "pickup/r1/p.jpg")).rejects.toThrow(/invalid photo key/i);
+  });
+
+  it("persists key + GPS + a server timestamp via a CAS bounded to the window (at the door AND after undelivered)", async () => {
+    let args: { where: Record<string, unknown>; data: Record<string, unknown> } | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "undelivered", riderId: "r1" }),
+        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => { args = a; return { count: 1 }; },
+      },
+    });
+    await expect(svc.attachDeliveryProof("o1", "r1", key, -17.83, 31.05)).resolves.toEqual({ orderId: "o1", deliveryProofKey: key });
+    expect(args!.where).toEqual({ id: "o1", status: { in: ["en_route_dropoff", "undelivered"] } });
+    expect(args!.data).toMatchObject({ deliveryProofKey: key, deliveryProofLat: -17.83, deliveryProofLng: 31.05 });
+    expect(args!.data.deliveryProofAt).toBeInstanceOf(Date);
+  });
+
+  it("allows attaching without GPS (a denied/failed fix must never block the photo) — coords null", async () => {
+    let data: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "en_route_dropoff", riderId: "r1" }),
+        updateMany: async (a: { data: Record<string, unknown> }) => { data = a.data; return { count: 1 }; },
+      },
+    });
+    await svc.attachDeliveryProof("o1", "r1", key);
+    expect(data).toMatchObject({ deliveryProofKey: key, deliveryProofLat: null, deliveryProofLng: null });
+  });
+
+  it("409s if the order left the window between the read and the CAS write", async () => {
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "en_route_dropoff", riderId: "r1" }),
+        updateMany: async () => ({ count: 0 }),
+      },
+    });
+    await expect(svc.attachDeliveryProof("o1", "r1", key)).rejects.toThrow(/changed, retry/i);
+  });
+});
+
 describe("OrderLifecycleService.confirmDelivery", () => {
   // confirmDelivery reads the row via a FOR UPDATE $queryRaw (snake_case columns).
   const row = (over: Record<string, unknown> = {}) => [

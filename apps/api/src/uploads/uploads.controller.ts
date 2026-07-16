@@ -61,6 +61,20 @@ export class UploadsController {
     return this.mint(`pickup/${userId}/${randomUUID()}.${EXT[body.contentType]}`, body.contentType);
   }
 
+  /**
+   * Mint a signed PUT URL for the rider's proof-of-drop photo (KB-POD-DISPUTE Phase A). Same flow as the
+   * pickup photo: PUT the bytes, then attach the returned `key` (with GPS) via POST
+   * /orders/:id/delivery-proof, which verifies the key sits under the caller's own
+   * `delivery-proof/<userId>/` namespace before persisting it.
+   */
+  @Post("delivery-proof")
+  deliveryProof(
+    @Body(new ZodBody(PhotoUpload)) body: z.infer<typeof PhotoUpload>,
+    @CurrentUser() userId: string,
+  ): Promise<MintedUpload> {
+    return this.mint(`delivery-proof/${userId}/${randomUUID()}.${EXT[body.contentType]}`, body.contentType);
+  }
+
   /** One minting path for every photo upload — same TTL, size cap and signed-header contract. */
   private async mint(key: string, contentType: z.infer<typeof PhotoUpload>["contentType"]): Promise<MintedUpload> {
     const target = await this.storage.createUploadUrl(key, contentType, 600, MAX_PHOTO_BYTES);

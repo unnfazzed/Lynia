@@ -46,6 +46,11 @@ const POST_PICKUP_FOR_UNDELIVERED = new Set<string>(["picked_up", "en_route_drop
  *  collected" can land after the advance to picked_up instead of 409ing into the void. Typed as the
  *  Prisma enum (not a Set<string>) because the CAS `where` reuses it verbatim. */
 const PICKUP_PHOTO_STATUSES: readonly OrderStatus[] = ["en_route_pickup", "picked_up"];
+/** KB-POD-DISPUTE Phase A — the proof-of-drop attach window: at the door before giving up
+ *  (en_route_dropoff) OR just after marking the hand-off failed (undelivered), so a rider can attach
+ *  evidence either while disputing or right after. Optional, never gates a status. Typed as the Prisma
+ *  enum because the CAS `where` reuses it verbatim. */
+const DELIVERY_PROOF_STATUSES: readonly OrderStatus[] = ["en_route_dropoff", "undelivered"];
 /** Repeated rider cancels earn a cooldown that blocks going online (T4 no-show penalty). */
 const CANCEL_STRIKE_LIMIT = 3;
 const COOLDOWN_MS = 2 * 60 * 60 * 1000;
@@ -286,6 +291,49 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
     return { orderId, pickupPhotoKey: key };
+  }
+
+  /**
+   * KB-POD-DISPUTE Phase A — rider attaches proof-of-drop evidence when a hand-off is disputed (recipient
+   * took the goods but withheld the delivery code). Records the photo key + the rider's GPS + a
+   * server-stamped time, so the admin order-detail can surface real evidence for a Phase-B adjudicated
+   * "delivered — code bypass" decision. Optional and additive: it NEVER advances or gates a status — a
+   * rider can still `markUndelivered` with or without it. Party-gated to the assigned rider, scoped to the
+   * attach window ({@link DELIVERY_PROOF_STATUSES}), and the key must sit under the caller's own
+   * `delivery-proof/<riderId>/` namespace (mirrors attachPickupPhoto). Idempotent — a retake replaces.
+   */
+  async attachDeliveryProof(
+    orderId: string,
+    riderId: string,
+    key: string,
+    lat?: number,
+    lng?: number,
+  ): Promise<{ orderId: string; deliveryProofKey: string }> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true, riderId: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
+    if (!DELIVERY_PROOF_STATUSES.includes(order.status)) {
+      throw new ConflictException("Proof of drop-off can only be added at the door or right after marking it undelivered");
+    }
+    if (!key.startsWith(`delivery-proof/${riderId}/`)) {
+      throw new BadRequestException("Invalid photo key");
+    }
+    // CAS on the attach window so a concurrent transition (e.g. the customer cancels, or the rider
+    // confirms delivery) between the read and this write can't land a stale proof on a now-terminal order.
+    const claimed = await this.prisma.order.updateMany({
+      where: { id: orderId, status: { in: [...DELIVERY_PROOF_STATUSES] } },
+      data: {
+        deliveryProofKey: key,
+        deliveryProofLat: lat ?? null,
+        deliveryProofLng: lng ?? null,
+        deliveryProofAt: new Date(),
+      },
+    });
+    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    return { orderId, deliveryProofKey: key };
   }
 
   /** Rider confirms the handover with the recipient's delivery code → `delivered`. */

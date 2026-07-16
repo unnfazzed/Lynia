@@ -1,7 +1,7 @@
 # Identity-binding & proof-of-delivery hardening — execution plan
 
-**Status:** L2 (customer trust tier) shipped as `IR16-09`; L1 soft device-id + L0 recycle *detection*
-shipped as `IR16-10`. Remaining: L0 destructive rebind (deferred), L3 attestation (gated), all POD work.
+**Status:** identity L2 (`IR16-09`), L1 + L0-detection (`IR16-10`), and POD Phase A (`IR16-11`) shipped.
+Remaining: identity L0 destructive rebind (deferred) + L3 attestation (gated); POD Phase B (product decision).
 **Origin:** the two product-scope items triaged out of the 2026-07-16 interactive review —
 `KB-IDENTITY-BINDING` (FRAUD P2-5/P2-8) and `KB-POD-DISPUTE` (FRAUD P2-6). See `docs/KNOWN_BUGS.md`.
 
@@ -60,11 +60,11 @@ independently useful.
 
 ### Phases
 
-- **Phase A — proof-of-drop capture. Conservative, additive — build first.** On the rider's
-  undelivered/dispute flow, capture optional evidence: a **drop photo + the rider's live GPS at that
-  moment + timestamp**, stored on the order/issue (reuses the existing GCS + `itemPhotoUrl` plumbing;
-  ~one column + an upload). Changes no completion logic — it just gives ops what they need to adjudicate,
-  and it's useful on its own. Carries **no new abuse surface**.
+- **Phase A — proof-of-drop capture. ✅ DONE (IR16-11).** The rider attaches an optional **drop photo +
+  live GPS + server timestamp** on the undelivered flow (`Order.deliveryProof{Key,Lat,Lng,At}`, migration
+  `0034`; party-gated, window `en_route_dropoff`/`undelivered`, namespaced key, idempotent; mirrors the
+  pickup-photo flow). The admin order-detail surfaces it (read URL + GPS + time) as adjudication evidence.
+  Changes no completion logic; no new abuse surface.
 - **Phase B — adjudicated resolution. The product decision.** A new **admin** issue-resolution action
   ("delivered — code bypass (adjudicated)") that force-completes a rider-raised disputed order, gated on
   the Phase-A evidence, with mandatory reason + full `AuditLog` + a customer notification and a
@@ -84,6 +84,6 @@ independently useful.
 
 1. **L2 customer trust tier** — ✅ done (IR16-09).
 2. **L1 soft device-id + throttle** and **L0 recycle detection** — ✅ done (IR16-10).
-3. **POD Phase-A proof-of-drop capture** — next conservative slice (API + a small mobile capture UI + a column).
+3. **POD Phase-A proof-of-drop capture** — ✅ done (IR16-11).
 4. **POD Phase-B adjudication**, **L0 destructive rebind**, and **L3 hardware attestation** — gated on the
    product/vendor decisions above.

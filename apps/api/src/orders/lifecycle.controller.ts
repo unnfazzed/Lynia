@@ -11,6 +11,13 @@ import { OrderLifecycleService } from "./order-lifecycle.service";
 // never call, so no shared-contract change is needed (the wire stays a pure superset). The key length
 // bound matches the KYC photoUrl cap.
 const AttachPickupPhotoRequest = z.object({ key: z.string().min(1).max(256) });
+// KB-POD-DISPUTE Phase A: proof-of-drop attach — the object key plus the rider's GPS at the door. lat/lng
+// are optional (a denied/failed fix must never block attaching the photo evidence) and range-bounded.
+const AttachDeliveryProofRequest = z.object({
+  key: z.string().min(1).max(256),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+});
 
 /** Post-assignment delivery lifecycle. Authority is derived in the service: the rider drives the
  *  forward steps, the customer rates and re-issues the code. */
@@ -49,6 +56,17 @@ export class LifecycleController {
     @CurrentUser() riderId: string,
   ) {
     return this.lifecycle.attachPickupPhoto(orderId, riderId, body.key);
+  }
+
+  /** KB-POD-DISPUTE Phase A: rider attaches proof-of-drop evidence (already-uploaded key + GPS) when a
+   *  hand-off is disputed. Optional; never gates the undelivered decision; idempotent (a retake replaces). */
+  @Post("delivery-proof")
+  attachDeliveryProof(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(AttachDeliveryProofRequest)) body: z.infer<typeof AttachDeliveryProofRequest>,
+    @CurrentUser() riderId: string,
+  ) {
+    return this.lifecycle.attachDeliveryProof(orderId, riderId, body.key, body.lat, body.lng);
   }
 
   /** Rider confirms the handover with the recipient's delivery code → delivered. */

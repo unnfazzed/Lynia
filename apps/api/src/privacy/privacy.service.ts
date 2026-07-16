@@ -241,6 +241,24 @@ export class PrivacyService {
         await tx.topUp.updateMany({ where: { riderId: profileId, NOT: { phone: null } }, data: { phone: null } });
       }
 
+      // KB-POD-DISPUTE Phase A cleanup: proof-of-drop evidence the erasing user captured AS THE RIDER is
+      // their PII — the photo they took + their precise GPS at the door — the same location-PII class as
+      // the OrderEvent GPS scrubbed below and the itemPhotoUrl photos scrubbed above. Collect the photo
+      // keys for post-commit GCS deletion, then null all four proof columns (keep the order row as the
+      // ledger). Scoped to riderId == profileId — a proof on an order this user merely placed belongs to
+      // the counterparty rider, not the erasing user. No-op for a non-rider profile.
+      if (isRider) {
+        const proofs = await tx.order.findMany({
+          where: { riderId: profileId, NOT: { deliveryProofKey: null } },
+          select: { deliveryProofKey: true },
+        });
+        for (const p of proofs) if (p.deliveryProofKey) itemPhotoKeys.push(p.deliveryProofKey);
+        await tx.order.updateMany({
+          where: { riderId: profileId },
+          data: { deliveryProofKey: null, deliveryProofLat: null, deliveryProofLng: null, deliveryProofAt: null },
+        });
+      }
+
       // Remove the standalone PII stores + log every device out.
       await tx.address.deleteMany({ where: { profileId } });
       await tx.deviceToken.deleteMany({ where: { profileId } });
