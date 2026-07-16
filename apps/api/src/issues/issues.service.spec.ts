@@ -89,6 +89,31 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
     expect(res).toMatchObject({ id: "iss-1", status: "resolved", resolution: "refund" });
   });
 
+  // Regression (sibling of the admin-cancel `cancelledBy` bug): `Issue.resolvedByAdminId` is `@db.Uuid`, but
+  // behind IAP `adminId` is the operator's email, which fails the uuid cast (`22P02`) and aborts the whole
+  // resolve. The column is never read, so resolve() must store null there and keep the operator on the audit
+  // row. Pre-fix tests missed it because they only passed a bare `"admin-1"` string.
+  it("never writes a non-uuid operator identity into resolvedByAdminId — even an IAP X-Operator email", async () => {
+    let issueUpdate: { data: Record<string, unknown> } | undefined;
+    const auditCreate = vi.fn(async () => ({}));
+    const operator = "accounts.google.com:ops@lynia.com";
+    const tx = {
+      issue: {
+        findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1", openedByProfileId: "cust-1" }),
+        updateMany: async (args: { data: Record<string, unknown> }) => { issueUpdate = args; return { count: 1 }; },
+      },
+      order: { findUnique: async () => ({ riderId: "rider-1" }) },
+      auditLog: { create: auditCreate },
+    };
+    await txSvc(tx).resolve(operator, "iss-1", { resolution: "close_no_action" });
+    expect(issueUpdate!.data).toMatchObject({ status: "resolved", resolvedByAdminId: null });
+    expect(issueUpdate!.data.resolvedByAdminId).not.toBe(operator);
+    // The operator identity is preserved on the audit row (a plain String column), not lost.
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: { actor: operator, action: "issue.resolve", target: "iss-1", reasonCode: "close_no_action", note: null },
+    });
+  });
+
   it("rider_strike: increments the DEDICATED disputeStrikes counter (not cancelStrikes) AND audits, in the same tx", async () => {
     const riderUpdate = vi.fn(async () => ({}));
     const auditCreate = vi.fn(async () => ({}));

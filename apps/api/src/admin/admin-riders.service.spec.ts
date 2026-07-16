@@ -430,6 +430,18 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(res).toEqual({ id: "r1", accountStatus: "suspended", auditId: "audit-9" });
   });
 
+  it("suspendRider refuses a BANNED rider — ban permanence can't be laundered via ban→suspend→lift", async () => {
+    // Without the guard, an ops `suspend` silently downgrades banned→suspended, and a later `lift` (whose
+    // ban-permanence check only fires on accountStatus===BANNED) reinstates the rider to active — defeating
+    // the invariant liftRider exists to protect. suspendRider must reject a banned rider outright.
+    const { prisma, calls } = makeTx({ rider: { accountStatus: "banned" } });
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications, noGateway);
+    await expect(svc.suspendRider("admin-1", "r1", { reason: "x" })).rejects.toThrow(/banned/i);
+    // The ban stands: no standing write and no downgrade audit committed.
+    expect(calls.riderUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
+  });
+
   it("banRider sets accountStatus=banned + reason and audits", async () => {
     const { prisma, calls } = makeTx();
     const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications, noGateway);

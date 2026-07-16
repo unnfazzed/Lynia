@@ -151,6 +151,42 @@ process failure; the ledger is how the routines stay disjoint.
 - **Dated report files** (same PR): `docs/BUG-HUNT-<date>.md`, `docs/UX-USABILITY-REVIEW-<date>.md`,
   `docs/DEEP-SWEEP-<date>.md`, `docs/WALLET-DATA-AUDIT-<date>.md` — mirroring the existing formats.
 
+## Agentic-loop engine (the bug-finders' hunt step)
+
+Added 2026-07-16. The four bug-finders (BH/UX/DS/WD) should run their **hunt** as a multi-agent *agentic
+loop*, not a single linear read-through. A linear pass finds bugs along one reading path; a loop casts a wide
+net and then filters it hard, which is what actually raises recall. The engine is codified as a reusable
+workflow at `.claude/workflows/lane-bug-hunt.js` and is invoked with `Workflow({ name: 'lane-bug-hunt' })`,
+passing the lane via `args` — a built-in key (`"wallet"`, `"bug-hunt"`, `"ux"`, `"deep-sweep"`) or a custom
+`{ key, context, lenses:[{key,prompt}] }`. It is **read-only** (finds + verifies; it does not edit code), so
+the routine consumes its ranked output and then applies the fixes under the universal policies above.
+
+Three stages (see the script for the exact shape):
+
+1. **Diverse finders (search diversity = recall).** N finder agents fan out over the lane, each with ONE
+   distinct lens (e.g. for WD: exactly-once credit, ledger reconciliation, per-ride debit, earnings, admin
+   KPIs, admin-action authz/audit, concurrency, contract/nullability). Each does the Phase-0 `KNOWN_BUGS.md`
+   read itself and reports only what prior runs missed. Ten blind finders cover far more surface than one
+   reader taking a single path.
+2. **Adversarial verify (precision, so recall can run high).** Every candidate faces a 3-skeptic panel —
+   one agent trying to confirm, one to prove it a false positive, one to prove it already in the ledger — and
+   survives only on ≥2 "real" votes. This is what lets the finders be aggressive without shipping
+   plausible-but-wrong findings on sensitive paths.
+3. **Sibling-sweep (structural anti-recurrence).** Each survivor's pattern signature is grepped across the
+   whole repo, producing the evidence the mandatory sibling-sweep rule above already requires — and directly
+   attacking the "fixed one instance, sibling stayed vulnerable" class that is ~70–80% of this repo's findings.
+
+The pipeline is un-barriered: each lens's candidates verify the moment that lens returns, and stop conditions
+are the fixed lens set (single round) — extend to loop-until-dry (repeat finder rounds until K consecutive
+rounds surface nothing new) or a token budget for a deeper hunt. First live run: `WD-018…WD-020`
+(`docs/AGENTIC-LOOP-BUGHUNT-2026-07-16.md`) — the loop surfaced a **prod-breaking HIGH the prior linear WD
+runs missed** (an operator identity written into an `@db.Uuid` FK column, aborting every admin cancel) **plus
+its unfixed sibling** in admin issue-resolution, which is the recall gain the engine exists to capture.
+
+> Note: `Workflow` (multi-agent fan-out) is opt-in because it spends tokens fanning out — routine prompts that
+> use it have pre-authorized that spend. If `Workflow` is unavailable in a given run, the routine falls back to
+> the linear hunt it did before; the dedup/sibling-sweep/report policies above are unchanged either way.
+
 ## Refactoring routine (07:00 UTC, every 2nd day)
 
 Added 2026-07-14. Runs after the documentation routine (05:00) so it starts from a tree the

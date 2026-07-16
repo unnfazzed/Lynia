@@ -222,6 +222,14 @@ export class AdminRidersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true } });
       if (!rider) throw new NotFoundException("Rider not found");
+      // A permanent ban outranks a suspension and is only undone by a deliberate dedicated action — never
+      // downgraded as a side effect. Without this guard, `ban → suspend` silently demotes banned→suspended,
+      // and a subsequent `liftRider` (whose ban-permanence check only fires on accountStatus===BANNED) then
+      // reinstates the rider to active — defeating the very invariant liftRider exists to protect. Mirror
+      // that guard here so a banned rider can't be laundered back to active through two ordinary actions.
+      if (rider.accountStatus === RiderAccountStatus.BANNED) {
+        throw new ConflictException("A banned rider can't be suspended — reinstating a ban is a separate action.");
+      }
       // DS13-04: CAS on the observed accountStatus instead of a blind update-by-id (mirrors DS-03 in
       // admin-orders.service). The findUnique takes no row lock, so a concurrent standing change (e.g. a
       // ban committing between the read and this write) would otherwise be silently clobbered back to
