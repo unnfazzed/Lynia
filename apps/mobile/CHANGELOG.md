@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/unnfazzed/Lynia/compare/v0.4.4...v0.5.0) (2026-07-16)
+
+
+### Features
+
+* **identity:** soft device binding — per-device signup throttle + recycle signal (IR16-10) ([3d08065](https://github.com/unnfazzed/Lynia/commit/3d08065418bef1878af6ff5c616f9865582db3b7))
+
 ## [0.4.4](https://github.com/unnfazzed/Lynia/compare/v0.4.3...v0.4.4) (2026-07-16)
 
 
