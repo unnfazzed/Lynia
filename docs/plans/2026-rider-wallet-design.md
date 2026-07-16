@@ -89,7 +89,17 @@ exchange for having the complete end-state with no follow-on phase to schedule.
    The transition **playbook and tooling** (grace credits, bulk seed-credit action,
    rehearsal test — see Flow 5) *are* in this build, so the flip is executable when
    product decides.
-6. **The dormant `Settlement` table is dropped** in this build's migration.
+6. **The dormant `Settlement` table is dropped** in this build's migration. **AMENDED
+   2026-07-16 (DOC-16-06, wallet & data-lifecycle audit):** not executed in PR1 —
+   migration `0027_commission_wallet/migration.sql` explicitly deferred it ("left in
+   place... its drop is a separate destructive migration once the wallet has soaked").
+   The wallet has since soaked through PR1 + WD-001..011 + BH-07..12 + WD-012..015 with
+   zero reads/writes against `Settlement`/`Refund.settlementId` the whole time, but a
+   drop is a destructive migration with no functional upside (the table is dead weight,
+   not a live risk) — deferred again, deliberately, rather than bundled into an
+   unrelated bug-fix PR. Tracked as `KB-SETTLEMENT-DROP` in `docs/KNOWN_BUGS.md`; the
+   next refactor-routine run (dead-code removal is explicitly in its remit) is the
+   right owner for the actual `DROP TABLE` migration.
 
 ## Cross-Model Perspective
 

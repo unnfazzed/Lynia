@@ -71,6 +71,8 @@ function eraseHarness(
       update: vi.fn(async (a: unknown) => ((calls.profileUpdate = a), {})),
     },
     rider: { updateMany: vi.fn(async (a: unknown) => ((calls.riderUpdate = a), { count: 1 })) },
+    // DOC-16-01: TopUp.phone scrub — only exercised for a rider profile.
+    topUp: { updateMany: vi.fn(async (a: unknown) => ((calls.topUpUpdate = a), { count: 1 })) },
     address: { deleteMany: vi.fn(async () => ((calls.addressDel = true), { count: 1 })) },
     deviceToken: { deleteMany: vi.fn(async () => ((calls.deviceDel = true), { count: 1 })) },
     session: { deleteMany: vi.fn(async () => ((calls.sessionDel = true), { count: 2 })) },
@@ -103,7 +105,9 @@ describe("PrivacyService.eraseAccount", () => {
   });
 
   it("anonymises the profile, scrubs rider PII + GPS, and deletes addresses/tokens/sessions", async () => {
-    const { svc, calls, tx } = eraseHarness({ phone: "+263771234567" }, false);
+    // DOC-16-01's TopUp.phone scrub is gated on isRider — give this fixture a rider row (it already
+    // asserts rider-scrub behavior below) so that gate is exercised for real, not just recorded blind.
+    const { svc, calls, tx } = eraseHarness({ phone: "+263771234567", rider: {} }, false);
     await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
 
     const data = (calls.profileUpdate as { data: Record<string, unknown> }).data;
@@ -123,6 +127,16 @@ describe("PrivacyService.eraseAccount", () => {
       data: { lat: null, lng: null },
     });
     expect(tx.profile.update).toHaveBeenCalledOnce();
+    // DOC-16-01: TopUp.phone (the mobile-money number on every self-serve top-up) is the same class of
+    // dialable PII as the waypoint/note phones, but lives in its own table — the profile/rider scrub above
+    // never reaches it without this explicit call.
+    expect(calls.topUpUpdate).toEqual({ where: { riderId: "p1", NOT: { phone: null } }, data: { phone: null } });
+  });
+
+  it("DOC-16-01: does NOT touch top_ups for a plain customer (no rider row — no TopUp rows can exist)", async () => {
+    const { svc, tx } = eraseHarness({ phone: "+263771234567", rider: null }, false);
+    await svc.eraseAccount("p1");
+    expect(tx.topUp.updateMany).not.toHaveBeenCalled();
   });
 
   it("re-checks the active-ride guard inside the tx and aborts if a ride appeared mid-erase (DS-10)", async () => {

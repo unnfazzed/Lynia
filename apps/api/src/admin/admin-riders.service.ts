@@ -444,7 +444,7 @@ export class AdminRidersService {
     if (!rider) return null;
 
     const now = Date.now();
-    const [liveOrders, statusCounts, recent, reports] = await Promise.all([
+    const [liveOrders, statusCounts, recent, reports, account] = await Promise.all([
       this.prisma.order.count({ where: { riderId: id, status: { in: ACTIVE_RIDE_STATUSES } } }),
       this.prisma.order.groupBy({ by: ["status"], where: { riderId: id }, _count: { _all: true } }),
       this.prisma.order.findMany({
@@ -462,6 +462,10 @@ export class AdminRidersService {
         },
       }),
       reportsFor(this.prisma, id),
+      // NEW-2 (docs/KNOWN_BUGS.md): the account row is lazily upserted on first wallet touch — no row yet
+      // means no top-up/debit has ever happened, i.e. nothing owed. `balance` is only ever negative when
+      // ride debits (ratePct > 0) push it below zero; a positive/zero balance is a credit, never "owed".
+      this.prisma.commissionAccount.findUnique({ where: { riderId: id }, select: { balance: true } }),
     ]);
 
     const onCooldown = !!rider.cooldownUntil && rider.cooldownUntil.getTime() > now;
@@ -505,7 +509,11 @@ export class AdminRidersService {
       ratingCount: rider.ratingCount,
       completion,
       strikes: rider.cancelStrikes,
-      commission: "0.00", // prepaid per-ride at 0% during launch — nothing owed (wallet deferred)
+      // NEW-2: was hardcoded "0.00" ("wallet deferred") — the wallet has since shipped, so this went from
+      // "always true at 0%" to "affirmatively wrong the moment ratePct > 0 or the rider carries a debit
+      // balance". Reads the real CommissionAccount row now; "owed" is the negative-balance magnitude, a
+      // zero/positive balance (incl. no row yet) is never owed.
+      commission: round(Math.max(0, -Number(account?.balance ?? 0))).toFixed(2),
       // Orders this rider is actively riding right now — surfaced so ops sees at a glance whether a
       // suspend/ban leaves a live delivery orphaned mid-trip (the rider keeps the app-level ability to
       // advance/confirm it; standing changes don't touch an already-assigned order). The trail below

@@ -11,8 +11,12 @@ import { IconBanknote } from "../components/icons";
  * completed ride debits a percentage of the amount paid (see @lynia/shared `COMMISSION`). The rate is
  * **0% for the launch period**, so nothing is collected yet — this page is a read-only view of ride
  * volume and the commission that would accrue at the current rate. No weekly billing, record-payment,
- * refund-netting or overdue state (those were the old cash-settlement engine, now removed); the
- * prepaid wallet + top-ups are a later build (docs/plans/2026-biker-prepaid-commission.md).
+ * refund-netting or overdue state (those were the old cash-settlement engine, now removed).
+ *
+ * NEW-2 (docs/KNOWN_BUGS.md): the prepaid wallet itself (balance, top-ups, the per-ride debit ledger)
+ * SHIPPED 2026-07-15 (`apps/api/src/wallet/*`, docs/plans/2026-rider-wallet-design.md) — this docstring
+ * and the page copy below used to say it "is not built" / "is a later build", which went stale the day
+ * it shipped. Only the RATE is still 0%; the wallet plumbing is live today.
  */
 export default async function CashPage() {
   const res = await adminFetchResult<CommissionOverview>("/admin/cash/settlements");
@@ -72,8 +76,8 @@ export default async function CashPage() {
         <span aria-hidden="true">⚠</span>
         <span>
           <b>Commission is {rate} during the launch period.</b> Riders keep the full agreed fare; nothing is
-          collected yet. The prepaid wallet (top-ups and the per-ride deduction) is not built — the figures below
-          are informational ride volume, not money owed.
+          collected yet. The prepaid wallet (top-ups and the per-ride deduction) is live — the figures below
+          are informational ride volume at 0%, not money owed.
         </span>
       </div>
 
@@ -112,7 +116,7 @@ export default async function CashPage() {
         <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
           Once the rate turns on, each completed ride will deduct its commission from the rider&apos;s pre-funded
           account; a low balance blocks going online until they top up. Balance, top-ups and the per-ride
-          deduction ledger are a later build.
+          deduction ledger are already live — only the rate itself is still 0%.
         </div>
       </section>
     </main>

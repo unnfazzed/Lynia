@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import {
   ACTIVE_RIDE_STATUSES,
+  commissionBasis,
   DELIVERY_OTP_MAX_ATTEMPTS,
   type OrderStatus,
   perRideCommission,
@@ -180,7 +181,7 @@ export class AdminOrdersService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { id: true, agreedFare: true, riderId: true, status: true },
+        select: { id: true, agreedFare: true, riderId: true, status: true, suggestedFare: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       // Only correct a fare that was actually agreed. Writing agreedFare onto an order that never had
@@ -203,18 +204,45 @@ export class AdminOrdersService {
         throw new ConflictException("Order fare changed while adjusting — refresh and try again");
       }
 
-      if (order.riderId && order.status === "completed" && this.wallet) {
+      // WD-013: `order.status`/`riderId` above are a PRE-CAS snapshot — a completion (rate()/completeOrder())
+      // racing this fare CAS can flip delivered→completed and charge `ride_commission` at the OLD fare in
+      // the gap between that snapshot and the CAS above (both UPDATEs serialize on the order row lock, so
+      // whichever wins re-evaluates against the other's committed write, but OUR snapshot never refreshes).
+      // Using the stale snapshot here would then skip this whole reconciliation block for an order that IS
+      // actually completed-with-a-stale-ledger-row by the time our fare change lands — silently re-opening
+      // the exact WD-001 gap this block exists to close. Re-read fresh, post-CAS, mirroring WD-005's
+      // re-read-after-CAS pattern on the completion side of this same race.
+      const fresh = await tx.order.findUnique({ where: { id: orderId }, select: { status: true, riderId: true } });
+      const riderId = fresh?.riderId ?? order.riderId;
+      if (riderId && fresh?.status === "completed" && this.wallet) {
         const charged = await tx.commissionLedger.findFirst({
-          where: { riderId: order.riderId, orderId, type: "ride_commission" },
+          where: { riderId, orderId, type: "ride_commission" },
           select: { ratePct: true },
         });
         if (charged?.ratePct != null) {
           const rate = Number(charged.ratePct);
           const deltaFare = round2(input.agreedFare - oldFare);
-          const deltaCommission = perRideCommission(deltaFare, rate);
+          // WD-012 (DOC-16-04 / FRAUD-REVIEW P0-2): the correction path had the same no-floor gap as the
+          // initial charge — an admin (or an admin colluding with a rider) could downward-adjust a fare
+          // with no bound, crediting back commission never legitimately owed. Floor each side (independently
+          // max'd against basisFloorPct × suggestedFare) so a correction can't walk the commission basis
+          // below the floor either.
+          //
+          // WD-014: delta the ROUNDED PER-SIDE COMMISSION (perRideCommission(newBasis) − perRideCommission
+          // (oldBasis)), not perRideCommission(newBasis − oldBasis) — rounding a pre-summed delta can drift
+          // a cent off "rate% of the final fare" per correction (e.g. 5% of $10.30 rounds to $0.52, 5% of
+          // $10.40 rounds to $0.52, but round(5% of the $0.10 delta) rounds to $0.01 — a spurious extra
+          // cent). Differencing two independently-rounded totals keeps every correction reconciling exactly
+          // against "what a fresh charge at the final fare would have been", which is what the ledger and
+          // commissionOverview both assume.
+          const suggestedFare = order.suggestedFare != null ? Number(order.suggestedFare) : null;
+          const oldBasis = commissionBasis(oldFare, suggestedFare);
+          const newBasis = commissionBasis(input.agreedFare, suggestedFare);
+          const deltaCommission = round2(perRideCommission(newBasis, rate) - perRideCommission(oldBasis, rate));
           // Fare went up → bigger debit (negative amount); fare went down → credit the difference back.
           await this.wallet.adjustCommissionInTx(tx, {
-            riderId: order.riderId,
+            riderId,
+            orderId,
             amount: -deltaCommission,
             ratePct: rate,
             fare: deltaFare,

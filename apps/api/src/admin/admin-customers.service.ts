@@ -25,12 +25,16 @@ export class AdminCustomersService {
     });
     const ids = profiles.map((p) => p.id);
 
-    const [totals, cancelled, spend, flagged] = await Promise.all([
+    const [totals, cancelledByCustomer, spend, flagged] = await Promise.all([
       this.prisma.order.groupBy({ by: ["customerId"], where: { customerId: { in: ids } }, _count: { _all: true } }),
-      this.prisma.order.groupBy({
-        by: ["customerId"],
+      // NEW-3 (docs/KNOWN_BUGS.md): `cancelledBy` is compared against EACH row's OWN `customerId` — a
+      // per-row column-to-column check Prisma's `groupBy`/`where` can't express directly (`cancelledBy:
+      // { in: ids } }` would count a cancel attributable to any of these 100 customers, not just the row's
+      // own). Fetch the two columns and aggregate the "customer actually cancelled it themselves" count in
+      // JS instead — bounded by this page's cancelled-order volume, not the directory size.
+      this.prisma.order.findMany({
         where: { customerId: { in: ids }, status: "cancelled" },
-        _count: { _all: true },
+        select: { customerId: true, cancelledBy: true },
       }),
       this.prisma.order.groupBy({
         by: ["customerId"],
@@ -46,7 +50,11 @@ export class AdminCustomersService {
       }),
     ]);
     const totalBy = new Map(totals.map((r) => [r.customerId, r._count._all]));
-    const cancelledBy = new Map(cancelled.map((r) => [r.customerId, r._count._all]));
+    const cancelledBy = new Map<string, number>();
+    for (const o of cancelledByCustomer) {
+      if (!o.customerId || o.cancelledBy !== o.customerId) continue; // rider/admin-cancelled — not this customer's own strike
+      cancelledBy.set(o.customerId, (cancelledBy.get(o.customerId) ?? 0) + 1);
+    }
     const spendBy = new Map(spend.map((r) => [r.customerId, r._sum.agreedFare]));
     const flagsBy = new Map(flagged.map((r) => [r.subjectProfileId, r._count._all]));
 
@@ -72,7 +80,9 @@ export class AdminCustomersService {
 
     const [total, cancelled, spend, recent, reports] = await Promise.all([
       this.prisma.order.count({ where: { customerId: id } }),
-      this.prisma.order.count({ where: { customerId: id, status: "cancelled" } }),
+      // NEW-3: only the customer's OWN cancels count toward their cancel rate — a rider bailing or ops
+      // cancelling shouldn't inflate a punitive-looking signal that feeds hold decisions.
+      this.prisma.order.count({ where: { customerId: id, status: "cancelled", cancelledBy: id } }),
       this.prisma.order.aggregate({ where: { customerId: id, status: "completed" }, _sum: { agreedFare: true } }),
       this.prisma.order.findMany({
         where: { customerId: id },

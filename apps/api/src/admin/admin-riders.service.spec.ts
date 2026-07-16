@@ -247,12 +247,20 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     profile: { firstName: "Tendai", lastName: "M", phone: "+263782000001", createdAt: new Date("2026-01-15T00:00:00Z") },
     ...over,
   });
-  const prismaFor = (rider: unknown, liveCount: number, reports: Array<Record<string, unknown>> = []) => ({
+  const prismaFor = (
+    rider: unknown,
+    liveCount: number,
+    reports: Array<Record<string, unknown>> = [],
+    // NEW-2: the CommissionAccount row backing the rider-detail "Commission owed" figure. `undefined` (the
+    // default) models the common case — no wallet row yet, i.e. nothing owed.
+    account: { balance: unknown } | null = null,
+  ) => ({
     rider: { findUnique: async () => rider },
     report: {
       count: async () => reports.length,
       findMany: async () => reports,
     },
+    commissionAccount: { findUnique: async () => account },
     order: {
       count: async () => liveCount,
       groupBy: async () => [
@@ -319,6 +327,33 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     const r2 = (await svc2.getRiderDetail("r1"))!;
     expect(r2.status).toBe("banned");
     expect(r2.suspendReason).toBe("fraud");
+  });
+
+  it("NEW-2: commission owed reads the REAL CommissionAccount balance, not a hardcoded 0.00", async () => {
+    // A negative balance (ride debits pushed it below zero) is what "owed" means — shown as its magnitude.
+    const svc = new AdminRidersService(
+      prismaFor(riderRow(), 0, [], { balance: dec("-3.25") }) as unknown as PrismaService,
+      pii,
+      noStorage,
+      noNotifications,
+      noGateway,
+    );
+    const r = (await svc.getRiderDetail("r1"))!;
+    expect(r.commission).toBe("3.25");
+  });
+
+  it("NEW-2: a credit (positive/zero balance) or no account row yet is never shown as owed", async () => {
+    const svcNoRow = new AdminRidersService(prismaFor(riderRow(), 0) as unknown as PrismaService, pii, noStorage, noNotifications, noGateway);
+    expect((await svcNoRow.getRiderDetail("r1"))!.commission).toBe("0.00");
+
+    const svcCredit = new AdminRidersService(
+      prismaFor(riderRow(), 0, [], { balance: dec("5.00") }) as unknown as PrismaService,
+      pii,
+      noStorage,
+      noNotifications,
+      noGateway,
+    );
+    expect((await svcCredit.getRiderDetail("r1"))!.commission).toBe("0.00");
   });
 
   it("reports on_hold for an active rider the reliability engine has locked out, with the score", async () => {

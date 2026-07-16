@@ -310,8 +310,15 @@ model CommissionLedger {
   actor        String?
   createdAt    DateTime            @default(now()) @map("created_at")
 
-  // Exactly one ride_commission row per order, ever — the per-ride debit is idempotent under retries.
-  @@unique([riderId, orderId, type])
+  // WD-015: the real UNIQUENESS constraint — exactly one ride_commission row per order, ever — is now a
+  // PARTIAL unique index (`type = 'ride_commission'` only), added by raw SQL migration since Prisma's
+  // schema DSL can't express a partial index; see migrations 0030_commission_ledger_drop_blanket_unique /
+  // 0031_commission_ledger_ride_commission_unique. Was a blanket @@unique([riderId, orderId, type]) until
+  // then — that also (unintentionally) forced every `adjustment` row's orderId to stay NULL to avoid
+  // colliding on a second correction, which broke settlements.service's per-order ledger reconciliation
+  // (a NULL never matches an `orderId: { in: [...] } }` filter). `adjustment` rows now carry their real
+  // orderId and can safely repeat it across multiple corrections on the same order.
+  @@index([riderId, orderId, type])
   @@index([riderId, createdAt])
   @@map("commission_ledger")
 }

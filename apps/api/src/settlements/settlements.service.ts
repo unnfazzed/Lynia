@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { COMMISSION, perRideCommission } from "@lynia/shared";
+import { COMMISSION, commissionBasis, perRideCommission } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
@@ -58,8 +58,10 @@ function fmtDate(d: Date): string {
  *
  * This deliberately does NOT bill, settle, net refunds, mark payments or auto-pause riders: those were
  * the old post-paid weekly cash-settlement mechanics, which the prepaid model replaces. The prepaid
- * wallet itself (balance ledger, top-ups, per-ride deduction) is a later build — see
- * docs/plans/2026-biker-prepaid-commission.md — so no money moves here.
+ * wallet itself (balance ledger, top-ups, per-ride deduction — `apps/api/src/wallet/*`) shipped
+ * 2026-07-15 (docs/plans/2026-rider-wallet-design.md); this console stays read-only by design (it never
+ * bills/mints — that's `WalletService`'s job), and no money moves through it, but it's not "not built" —
+ * it's a deliberately separate reporting surface over the live wallet.
  */
 @Injectable()
 export class SettlementsService {
@@ -88,7 +90,7 @@ export class SettlementsService {
     // the ledger. At the 7-day window's pilot volume this per-ride read is cheap.
     const orders = await this.prisma.order.findMany({
       where: { status: "completed", completedAt: { gte: periodStart, lt: periodEnd }, riderId: { not: null } },
-      select: { id: true, riderId: true, agreedFare: true },
+      select: { id: true, riderId: true, agreedFare: true, suggestedFare: true },
     });
 
     // WD-006: prefer what was ACTUALLY charged per order (the ledger — `ride_commission` plus any
@@ -122,8 +124,10 @@ export class SettlementsService {
       agg.fares += fare;
       const charged = chargedByOrder.get(o.id);
       // Ledger amounts are signed (debit −, a downward fare-adjust credit +); negate to a positive
-      // "commission collected" figure matching the projection's sign.
-      agg.commission += charged != null ? -charged : perRideCommission(fare, ratePct);
+      // "commission collected" figure matching the projection's sign. WD-012: the projection floors its
+      // basis the same way chargeCommission now does, so this console's "would accrue" figure doesn't
+      // silently diverge from what a flip would actually charge on a lowballed agreedFare.
+      agg.commission += charged != null ? -charged : perRideCommission(commissionBasis(fare, o.suggestedFare != null ? Number(o.suggestedFare) : null), ratePct);
       byRider.set(o.riderId, agg);
     }
 

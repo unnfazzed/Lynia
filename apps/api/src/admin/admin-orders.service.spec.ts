@@ -361,6 +361,71 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.audit).not.toBeNull();
   });
 
+  it("WD-013: adjustFare re-reads status POST-CAS, so a completion racing the fare CAS still reconciles the ledger", async () => {
+    // The pre-CAS snapshot is stale ("delivered") — a completion committed the ride_commission row and
+    // flipped status to "completed" concurrently, in the gap between that snapshot and this fare CAS
+    // landing. Using the stale snapshot would skip reconciliation entirely (the original WD-001 gap,
+    // reopened by this race); the fresh post-CAS re-read must catch it.
+    let findUniqueCalls = 0;
+    const tx = {
+      order: {
+        findUnique: async () => {
+          findUniqueCalls += 1;
+          return findUniqueCalls === 1
+            ? { id: "o1", status: "delivered", agreedFare: dec("10.00"), riderId: "r1" }
+            : { status: "completed", riderId: "r1" };
+        },
+        updateMany: async () => ({ count: 1 }),
+      },
+      commissionLedger: { findFirst: async () => ({ ratePct: dec("10.00") }) },
+      auditLog: { create: async () => ({ id: "audit-9" }) },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const wallet = { adjustCommissionInTx: vi.fn(async () => {}) };
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    await svc.adjustFare("admin-1", "o1", { agreedFare: 7, reason: "race" });
+    expect(findUniqueCalls).toBe(2);
+    expect(wallet.adjustCommissionInTx).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ riderId: "r1", ratePct: 10, amount: 0.3 }),
+    );
+  });
+
+  it("WD-013: a fare-adjust that's still pre-completion after the fresh re-read stays skipped (no false-positive reconciliation)", async () => {
+    const tx = {
+      order: {
+        findUnique: async () => ({ id: "o1", status: "assigned", agreedFare: dec("6.00"), riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      auditLog: { create: async () => ({ id: "audit-9" }) },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const wallet = { adjustCommissionInTx: vi.fn(async () => {}) };
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    await svc.adjustFare("admin-1", "o1", { agreedFare: 7, reason: "x" });
+    expect(wallet.adjustCommissionInTx).not.toHaveBeenCalled();
+  });
+
+  it("WD-014: adjustFare deltas the ROUNDED per-side commission, not a rounded delta of raw fares", async () => {
+    // 4% of $1.07 rounds to $0.04 (0.0428); 4% of $1.38 rounds to $0.06 (0.0552) — the correct correction
+    // is +$0.02. Rounding the fare delta FIRST (round($0.31) commission = round(0.0124*100)/100 = $0.01)
+    // would wrongly under/over-shoot by a cent, drifting the ledger off "rate% of the final fare".
+    const tx = {
+      order: {
+        findUnique: async () => ({ id: "o1", status: "completed", agreedFare: dec("1.07"), riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      commissionLedger: { findFirst: async () => ({ ratePct: dec("4.00") }) },
+      auditLog: { create: async () => ({ id: "audit-9" }) },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const wallet = { adjustCommissionInTx: vi.fn(async () => {}) };
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    await svc.adjustFare("admin-1", "o1", { agreedFare: 1.38, reason: "rounding" });
+    // Fare went up → bigger debit → amount is negative (0.06 - 0.04 = 0.02 more owed).
+    expect(wallet.adjustCommissionInTx).toHaveBeenCalledWith(tx, expect.objectContaining({ amount: -0.02 }));
+  });
+
   it("adjustFare does NOT touch the wallet for an order that never completed (no commission ever charged)", async () => {
     // Default makeTx() order status is "assigned" — no ride_commission row could exist yet.
     const { prisma } = makeTx();

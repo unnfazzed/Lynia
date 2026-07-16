@@ -199,6 +199,51 @@ describe("WalletService.chargeCommission (0% is a no-op; shadow accrual still fi
   });
 });
 
+describe("WalletService.chargeCommission — WD-012 commission-basis floor (DOC-16-04 / FRAUD-REVIEW P0-2)", () => {
+  it("bills on max(agreedFare, basisFloorPct × suggestedFare) when the agreed fare undercuts the floor", async () => {
+    const create = vi.fn();
+    const tx = {
+      commissionLedger: { create, findFirst: async () => null },
+      commissionAccount: { update: vi.fn() },
+      $executeRaw: vi.fn(),
+      $queryRaw: vi.fn(async () => [{ balance: "0" }]),
+    };
+    const svc = build({ COMMISSION_RATE_PCT: 10 });
+    // agreedFare $1 vs suggestedFare $10 → floor = 0.5 × 10 = $5; commission is 10% of $5 = $0.50, not of $1
+    // — a colluding pair lowballing offeredFare to $1 can't evade commission down to $0.10.
+    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 1, suggestedFare: 10 });
+    expect(create).toHaveBeenCalledWith({
+      data: { riderId: "r1", orderId: "o1", type: "ride_commission", amount: -0.5, balanceAfter: -0.5, ratePct: 10, fare: 1, actor: "system" },
+    });
+  });
+
+  it("never floors ABOVE the real agreedFare — a fare that already clears the floor is charged unchanged, and the receipt `fare` field always shows the real agreedFare", async () => {
+    const create = vi.fn();
+    const tx = {
+      commissionLedger: { create, findFirst: async () => null },
+      commissionAccount: { update: vi.fn() },
+      $executeRaw: vi.fn(),
+      $queryRaw: vi.fn(async () => [{ balance: "0" }]),
+    };
+    const svc = build({ COMMISSION_RATE_PCT: 10 });
+    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 8, suggestedFare: 10 });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: -0.8, fare: 8 }) }));
+  });
+
+  it("falls back to the raw, unfloored agreedFare when suggestedFare is missing/null (legacy orders predating the field)", async () => {
+    const create = vi.fn();
+    const tx = {
+      commissionLedger: { create, findFirst: async () => null },
+      commissionAccount: { update: vi.fn() },
+      $executeRaw: vi.fn(),
+      $queryRaw: vi.fn(async () => [{ balance: "0" }]),
+    };
+    const svc = build({ COMMISSION_RATE_PCT: 10 });
+    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 1, suggestedFare: null });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: -0.1 }) }));
+  });
+});
+
 describe("WalletService.adjustCommissionInTx (WD-001 — fare-adjust ledger reconciliation)", () => {
   it("writes a signed adjustment row and updates the balance under the row lock", async () => {
     const create = vi.fn();
@@ -210,10 +255,11 @@ describe("WalletService.adjustCommissionInTx (WD-001 — fare-adjust ledger reco
       $queryRaw: vi.fn(async () => [{ balance: "5" }]),
     };
     const svc = build();
-    await svc.adjustCommissionInTx(tx as never, { riderId: "r1", amount: 0.3, ratePct: 10, fare: -3, note: "Fare correction for order o1: $10.00 → $7.00", actor: "admin-1" });
+    await svc.adjustCommissionInTx(tx as never, { riderId: "r1", orderId: "o1", amount: 0.3, ratePct: 10, fare: -3, note: "Fare correction for order o1: $10.00 → $7.00", actor: "admin-1" });
     expect(create).toHaveBeenCalledWith({
       data: {
         riderId: "r1",
+        orderId: "o1",
         type: "adjustment",
         amount: 0.3,
         balanceAfter: 5.3,
@@ -230,12 +276,12 @@ describe("WalletService.adjustCommissionInTx (WD-001 — fare-adjust ledger reco
     const create = vi.fn();
     const tx = { commissionLedger: { create }, commissionAccount: { update: vi.fn() }, $executeRaw: vi.fn(), $queryRaw: vi.fn() };
     const svc = build();
-    await svc.adjustCommissionInTx(tx as never, { riderId: "r1", amount: 0, ratePct: 10, fare: 0, note: "", actor: "admin-1" });
+    await svc.adjustCommissionInTx(tx as never, { riderId: "r1", orderId: "o1", amount: 0, ratePct: 10, fare: 0, note: "", actor: "admin-1" });
     expect(create).not.toHaveBeenCalled();
     expect(tx.$queryRaw).not.toHaveBeenCalled();
   });
 
-  it("omits orderId (NULL) so a second correction on the same order never collides with the (riderId, orderId, type) unique index", async () => {
+  it("WD-015: writes the REAL orderId (not null) so settlements.service's per-order reconciliation query can see the correction — a second correction on the same order no longer collides, because the unique index is now PARTIAL (scoped to type='ride_commission' only, migration 0031)", async () => {
     const create = vi.fn();
     const tx = {
       commissionLedger: { create },
@@ -244,8 +290,8 @@ describe("WalletService.adjustCommissionInTx (WD-001 — fare-adjust ledger reco
       $queryRaw: vi.fn(async () => [{ balance: "0" }]),
     };
     const svc = build();
-    await svc.adjustCommissionInTx(tx as never, { riderId: "r1", amount: -0.1, ratePct: 10, fare: 1, note: "n", actor: "a" });
-    expect(create.mock.calls[0]![0].data).not.toHaveProperty("orderId");
+    await svc.adjustCommissionInTx(tx as never, { riderId: "r1", orderId: "o1", amount: -0.1, ratePct: 10, fare: 1, note: "n", actor: "a" });
+    expect(create.mock.calls[0]![0].data).toMatchObject({ orderId: "o1" });
   });
 });
 

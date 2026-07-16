@@ -10,7 +10,14 @@ import { SettlementsService } from "./settlements.service";
  * fares are split evenly so they sum to `fares`, each given a stable `o<riderId>-<i>` id. `captured`
  * records the findMany `where` so we can assert the trailing-7-day window. `ledgerRows` (WD-006) lets a
  * test simulate actual `CommissionLedger` charges — defaults to none (today's 0%-launch-rate reality,
- * where the console falls back to the fare × rate projection for every order).
+ * where the console falls back to the fare × rate projection for every order). WD-015: this fake ignores
+ * the real `where: { orderId: { in: [...] } } }` filter `commissionOverview` applies — it returns exactly
+ * the rows a test passes in — so these fixtures only exercise the JS aggregation, not whether Postgres
+ * would actually hand back an `adjustment` row. Before WD-015, `adjustCommissionInTx` wrote every
+ * adjustment row with `orderId: null`, which an `IN (...)` filter never matches — so the "nets a
+ * fare-adjust" test below was asserting behavior against a fixture the real DB could never have produced.
+ * `adjustCommissionInTx` now writes the real orderId (see wallet.service.spec.ts's WD-015 case), closing
+ * that gap between the fake and reality.
  */
 function overviewPrisma(
   groups: Array<{ riderId: string | null; fares: number; rides: number }>,
