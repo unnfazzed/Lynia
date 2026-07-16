@@ -37,4 +37,16 @@ describe("buildRebroadcastParams", () => {
     expect(p.rbFare).toBe("");
     expect(draftFromParams(p)).not.toBeNull();
   });
+
+  it("UX-2026-07-16: carries the sender's note through and round-trips it into the reorder draft (previously silently dropped)", () => {
+    const p = buildRebroadcastParams({ pickup: PICKUP, dropoff: DROPOFF, proposedFare: 3.5, note: "Ask for Rita at reception" });
+    expect(p.rbNote).toBe("Ask for Rita at reception");
+    expect(draftFromParams(p)?.note).toBe("Ask for Rita at reception");
+  });
+
+  it("tolerates a missing/null note (empty string, matches the pre-existing default)", () => {
+    const p = buildRebroadcastParams({ pickup: PICKUP, dropoff: DROPOFF, note: null });
+    expect(p.rbNote).toBe("");
+    expect(draftFromParams(p)?.note).toBe("");
+  });
 });

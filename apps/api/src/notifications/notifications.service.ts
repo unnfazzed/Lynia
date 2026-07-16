@@ -97,6 +97,19 @@ const ACCOUNT_FEED_COPY: Record<string, { icon: string; title: string; message: 
 };
 const ACCOUNT_FEED_ACTIONS = Object.keys(ACCOUNT_FEED_COPY);
 
+/**
+ * UX-2026-07-16: feed copy for a resolved "get help with this trip" issue, mirroring
+ * `notifyIssueResolved`'s push copy word-for-word (the feed↔push contract every other push type already
+ * has). Before this, a resolved issue had a best-effort push and nothing else — if the push was missed
+ * (the order is usually long-completed and off-screen by resolution time, so the opener has likely
+ * backgrounded/force-quit), there was zero durable trace anywhere that the report was ever resolved.
+ */
+const ISSUE_RESOLUTION_FEED_COPY: Record<"refund" | "rider_strike" | "close_no_action", { title: string; message: string }> = {
+  refund: { title: "Your report was resolved", message: "We've recorded a refund for this trip — tap for details." },
+  rider_strike: { title: "Your report was resolved", message: "We've taken action on this trip — thanks for flagging it." },
+  close_no_action: { title: "Your report was resolved", message: "We looked into this trip and closed it out — tap for details." },
+};
+
 /** How recent an event must be to count as "unread" in the derived feed — a deterministic window over
  *  the event time (there is no per-user read state to persist). */
 const FEED_UNREAD_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -303,6 +316,32 @@ export class NotificationsService {
         message: copy.message,
         at,
         unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+      });
+    }
+
+    // UX-2026-07-16: resolved-issue rows, mirroring the KB-FEED-SYNTH pattern above. `notifyIssueResolved`
+    // is best-effort and can be missed; this is the durable fallback so "did anyone act on my problem" is
+    // always answerable from the feed, not just a push that may never have landed. Not scoped to the
+    // order-lookback window (like the account rows above) since a resolution can land long after the
+    // order itself ages out of FEED_ORDER_LOOKBACK.
+    const resolvedIssues = await this.prisma.issue.findMany({
+      where: { openedByProfileId: userId, status: "resolved" },
+      orderBy: { resolvedAt: "desc" },
+      take: FEED_ROW_CAP,
+      select: { id: true, orderId: true, resolution: true, resolvedAt: true },
+    });
+    for (const issue of resolvedIssues) {
+      if (!issue.resolution || !issue.resolvedAt) continue; // defensive: resolved rows always carry both
+      const copy = ISSUE_RESOLUTION_FEED_COPY[issue.resolution];
+      const at = issue.resolvedAt.toISOString();
+      rows.push({
+        id: `issue:${issue.id}`,
+        orderId: issue.orderId,
+        icon: "check",
+        title: copy.title,
+        message: copy.message,
+        at,
+        unread: now.getTime() - issue.resolvedAt.getTime() < FEED_UNREAD_WINDOW_MS,
       });
     }
 

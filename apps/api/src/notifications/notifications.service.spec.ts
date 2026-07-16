@@ -26,6 +26,11 @@ function makeDeps() {
     auditLog: {
       findMany: vi.fn().mockResolvedValue([]),
     },
+    // UX-2026-07-16: feedForUser synthesizes resolved-issue rows from Issue (durable fallback for a
+    // missed notifyIssueResolved push).
+    issue: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     // DS13-05: notifyOps resolves the admin audience (role=admin) server-side.
     profile: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -520,6 +525,38 @@ describe("NotificationsService — derived in-app feed (A·3)", () => {
     expect(feed.map((r) => r.title)).toEqual(["You're verified", "Account paused"]);
     expect(feed.every((r) => r.orderId === null)).toBe(true);
     expect(feed[0]).toMatchObject({ message: expect.stringContaining("go online"), unread: true });
+  });
+
+  it("UX-2026-07-16: synthesizes a resolved-issue row from Issue, mirroring notifyIssueResolved's push copy, as a durable fallback for a missed push", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([]); // the order may have long since aged out of the lookback
+    prisma.issue.findMany.mockResolvedValue([
+      { id: "i1", orderId: "o1", resolution: "refund", resolvedAt: new Date("2026-07-06T11:30:00.000Z") },
+    ]);
+
+    const feed = await service.feedForUser("me", NOW);
+    const issueArg = prisma.issue.findMany.mock.calls[0][0];
+    expect(issueArg.where).toEqual({ openedByProfileId: "me", status: "resolved" });
+    expect(feed[0]).toMatchObject({
+      id: "issue:i1",
+      orderId: "o1",
+      title: "Your report was resolved",
+      message: expect.stringContaining("refund"),
+      unread: true,
+    });
+  });
+
+  it("UX-2026-07-16: resolved-issue row copy branches on resolution, matching notifyIssueResolved", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([]);
+    prisma.issue.findMany.mockResolvedValue([
+      { id: "i1", orderId: "o1", resolution: "rider_strike", resolvedAt: new Date("2026-07-06T11:00:00.000Z") },
+      { id: "i2", orderId: "o2", resolution: "close_no_action", resolvedAt: new Date("2026-07-05T09:00:00.000Z") },
+    ]);
+
+    const feed = await service.feedForUser("me", NOW);
+    expect(feed.find((r) => r.id === "issue:i1")?.message).toContain("taken action");
+    expect(feed.find((r) => r.id === "issue:i2")?.message).toContain("closed it out");
   });
 });
 

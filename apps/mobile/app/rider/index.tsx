@@ -686,6 +686,14 @@ export default function RiderHome(): React.ReactElement {
             {gate === "cooldown" || gate === "out_of_area" ? (
               <Button label="Try again" onPress={() => onlineM.mutate(true)} loading={onlineM.isPending} />
             ) : null}
+            {/* UX-2026-07-16: ONLINE_GATE_COPY.commission_low_balance's own copy promises "top up your
+                prepaid balance and you're straight back on" and its doc comment claims this screen
+                "deep-links the CTA into the wallet's top-up flow" — but no such branch existed, so the
+                rider's only button was "Refresh status" re-showing the identical wall. Route straight to
+                the top-up screen instead of leaving the rider to discover Profile → Earnings → Wallet. */}
+            {gate === "commission_low_balance" ? (
+              <Button label="Top up" onPress={() => router.push("/wallet/top-up")} />
+            ) : null}
             {/* R4: suspended / on hold / banned all say "contact support" — a real `tel:` call row, not
                 a dead mailto button. */}
             {gate === "suspended" || gate === "on_hold" || gate === "banned" ? <SupportCallRow /> : null}

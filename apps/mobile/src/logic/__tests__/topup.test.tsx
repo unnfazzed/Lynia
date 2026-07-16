@@ -1,4 +1,4 @@
-import { validateTopupAmount } from "../topup";
+import { reconcilePendingTopup, validateTopupAmount } from "../topup";
 
 describe("validateTopupAmount (WD-009 — follows the bounds it's given, not a bundled constant)", () => {
   it("is valid within [minTopUp, maxTopUp]", () => {
@@ -29,5 +29,20 @@ describe("validateTopupAmount (WD-009 — follows the bounds it's given, not a b
 
   it("rejects non-numeric input via the minimum-bound message", () => {
     expect(validateTopupAmount("abc", 5, 50)).toBe("Enter at least $5.00");
+  });
+});
+
+describe("reconcilePendingTopup (UX-2026-07-16 — wallet-screen recovery for an app-killed top-up)", () => {
+  it("resolves a succeeded top-up so the caller can invalidate the balance + show a confirmation", () => {
+    expect(reconcilePendingTopup("succeeded")).toBe("succeeded");
+  });
+
+  it("keeps the marker while the top-up is still pending", () => {
+    expect(reconcilePendingTopup("pending")).toBe("pending");
+  });
+
+  it("treats both terminal-no-money-moved statuses (declined, expired) as safe to clear", () => {
+    expect(reconcilePendingTopup("declined")).toBe("terminal");
+    expect(reconcilePendingTopup("expired")).toBe("terminal");
   });
 });

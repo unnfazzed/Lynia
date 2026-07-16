@@ -1019,6 +1019,13 @@ describe("OrdersService.historyForUser", () => {
     expect(rows[0]!.rating).toBeNull();
     expect(rows[0]!.counterpartyName).toBeNull();
   });
+
+  it("UX-2026-07-16: carries the order's note through, so Trip History's 'Send again' can rebroadcast it", async () => {
+    const rows = await svc([row({ note: "Ask for Rita at reception" })]).historyForUser("cust-1");
+    expect(rows[0]!.note).toBe("Ask for Rita at reception");
+    const noNote = await svc([row({ note: null })]).historyForUser("cust-1");
+    expect(noNote[0]!.note).toBeNull();
+  });
 });
 
 describe("OrdersService.earningsSummary (WD-004 — a full aggregate, not a sum over the capped history page)", () => {

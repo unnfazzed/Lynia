@@ -77,7 +77,7 @@ export async function clearDraft(): Promise<void> {
 // Reuses the FormDraft shape the draft-restore path already consumes. Returns null when the params
 // aren't a valid re-broadcast (normal home entry) so we fall back to the stored draft.
 export type RebroadcastParams = Partial<Record<
-  "rbPickupLat" | "rbPickupLng" | "rbPickupLandmark" | "rbDropLat" | "rbDropLng" | "rbDropLandmark" | "rbItems" | "rbFare",
+  "rbPickupLat" | "rbPickupLng" | "rbPickupLandmark" | "rbDropLat" | "rbDropLng" | "rbDropLandmark" | "rbItems" | "rbFare" | "rbNote",
   string | string[]
 >>;
 export function first(v: string | string[] | undefined): string | undefined {
@@ -96,6 +96,10 @@ export function buildRebroadcastParams(o: {
   items?: { description: string; quantity: number }[] | null;
   itemDesc?: string | null;
   proposedFare?: string | number | null;
+  // UX-2026-07-16: the customer's note for the rider (e.g. access instructions, "handle with care") —
+  // previously dropped silently on every re-send/reorder path, even though the server's OWN automatic
+  // rider-bail rebroadcast (order-lifecycle.service.ts cloneForRebroadcast) already carries it verbatim.
+  note?: string | null;
 }): RebroadcastParams {
   const items =
     o.items && o.items.length > 0
@@ -112,6 +116,7 @@ export function buildRebroadcastParams(o: {
     rbDropLandmark: o.dropoff.landmark ?? "",
     rbItems: JSON.stringify(items),
     rbFare: o.proposedFare != null ? String(o.proposedFare) : "",
+    rbNote: o.note ?? "",
   };
 }
 
@@ -139,7 +144,7 @@ export function draftFromParams(p: RebroadcastParams): FormDraft | null {
     dropPoint: { lat: dLat, lng: dLng },
     dropLandmark: first(p.rbDropLandmark) ?? "",
     items,
-    note: "",
+    note: first(p.rbNote) ?? "",
     declaredValue: "",
     proposedFare: first(p.rbFare) ?? "",
   };
