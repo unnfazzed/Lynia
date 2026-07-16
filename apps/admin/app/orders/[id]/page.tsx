@@ -199,6 +199,59 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               Route: {o.route} · {o.km} km
             </div>
           </section>
+
+          {/* KB-POD-DISPUTE Phase A: rider-attached proof-of-drop evidence for a disputed hand-off
+              (recipient took the goods but withheld the delivery code). Only shown when the rider
+              attached it — the evidence a Phase-B "delivered — code bypass" decision is adjudicated on. */}
+          {o.deliveryProof ? (
+            <section className="card">
+              <div className="block-title">Proof of drop-off</div>
+              <div style={{ fontSize: 12, color: tokens.color.muted, marginBottom: 8 }}>
+                Rider-attached evidence — the recipient took the goods but withheld the delivery code.
+              </div>
+              {o.deliveryProof.photoUrl ? (
+                // A short-lived signed GCS URL (mirrors the KYC photo), so a plain <img>, not next/image.
+                <img
+                  src={o.deliveryProof.photoUrl}
+                  alt="Rider's proof-of-drop photo"
+                  style={{ width: "100%", borderRadius: tokens.radius.input, border: `1px solid ${tokens.color.line}` }}
+                />
+              ) : (
+                <div className="doc-ph" style={{ height: 120 }}>
+                  proof photo
+                  <br />
+                  (photo unavailable)
+                </div>
+              )}
+              <div style={{ marginTop: 8 }}>
+                <KeyValue
+                  rows={[
+                    ...(o.deliveryProof.at
+                      ? [{ label: "Captured", value: <span className="mono">{new Date(o.deliveryProof.at).toLocaleString()}</span> }]
+                      : []),
+                    {
+                      label: "Location",
+                      value:
+                        o.deliveryProof.lat != null && o.deliveryProof.lng != null ? (
+                          <a
+                            href={`https://maps.google.com/?q=${o.deliveryProof.lat},${o.deliveryProof.lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mono"
+                          >
+                            {o.deliveryProof.lat.toFixed(5)}, {o.deliveryProof.lng.toFixed(5)}
+                          </a>
+                        ) : (
+                          <span className="mut" style={{ fontSize: 12 }}>
+                            Not captured (GPS unavailable at the door)
+                          </span>
+                        ),
+                    },
+                  ]}
+                />
+              </div>
+            </section>
+          ) : null}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.lg }}>
