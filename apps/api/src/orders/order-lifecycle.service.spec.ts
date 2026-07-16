@@ -289,7 +289,9 @@ describe("OrderLifecycleService.rate", () => {
         findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
       },
-      rating: { create: async () => ({}) },
+      // P1-6: rate() counts prior ratings from this customer→rider pair before touching the aggregate.
+      // 0 = a distinct (new) pair → the aggregate updates as before.
+      rating: { create: async () => ({}), count: async () => 0 },
       orderEvent: { create: async () => ({}) },
       rider: {
         findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null }),
@@ -312,7 +314,9 @@ describe("OrderLifecycleService.rate", () => {
         findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
       },
-      rating: { create: async () => ({}) },
+      // P1-6: rate() counts prior ratings from this customer→rider pair before touching the aggregate.
+      // 0 = a distinct (new) pair → the aggregate updates as before.
+      rating: { create: async () => ({}), count: async () => 0 },
       orderEvent: { create: async () => ({}) },
       rider: {
         // 68 is already below ON_HOLD_CLEAR_AT(70); a -lowRating(10) → 58 < ON_HOLD_BELOW(60) trips on_hold.
@@ -322,6 +326,47 @@ describe("OrderLifecycleService.rate", () => {
     });
     await svc.rate("o1", "c1", 2);
     expect(riderData).toMatchObject({ reliabilityScore: 58, onHold: true });
+  });
+
+  it("P1-6: a REPEAT (same customer→rider) 5-star does NOT inflate the aggregate or recover reliability (anti-collusion)", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      // This pair already rated once before → the aggregate must not move again.
+      rating: { create: async () => ({}), count: async () => 1 },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null }),
+        update: async (args: { data: Record<string, unknown> }) => { riderData = args.data; return {}; },
+      },
+    });
+    await svc.rate("o1", "c1", 5);
+    // ratingAvg/ratingCount unchanged (no farming of the public star average); reliabilityScore NOT
+    // recovered (no free +RECOVER for a repeat pair). tripsCount still reflects the real delivery.
+    expect(riderData).toMatchObject({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 6 });
+    expect(riderData).not.toHaveProperty("reliabilityScore");
+  });
+
+  it("P1-6: a REPEAT pair's LOW rating STILL penalises (accountability can't be dodged by being a repeat counterparty)", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      rating: { create: async () => ({}), count: async () => 1 }, // repeat pair
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ ratingAvg: 5, ratingCount: 3, tripsCount: 3, reliabilityScore: 68, onHold: false, heldReason: null }),
+        update: async (args: { data: Record<string, unknown> }) => { riderData = args.data; return {}; },
+      },
+    });
+    await svc.rate("o1", "c1", 2);
+    // The penalty applies (68 → 58, trips on_hold) even though the aggregate stays put for the repeat pair.
+    expect(riderData).toMatchObject({ ratingAvg: 5, ratingCount: 3, reliabilityScore: 58, onHold: true });
   });
 
   it("WD-005: re-reads agreedFare after the CAS lock, so a concurrent fare-adjust can't produce a stale commission charge", async () => {
@@ -336,7 +381,9 @@ describe("OrderLifecycleService.rate", () => {
         },
         updateMany: async () => ({ count: 1 }),
       },
-      rating: { create: async () => ({}) },
+      // P1-6: rate() counts prior ratings from this customer→rider pair before touching the aggregate.
+      // 0 = a distinct (new) pair → the aggregate updates as before.
+      rating: { create: async () => ({}), count: async () => 0 },
       orderEvent: { create: async () => ({}) },
       rider: {
         findUnique: async () => ({ ratingAvg: 4, ratingCount: 1, tripsCount: 1, reliabilityScore: 90, onHold: false, heldReason: null }),
@@ -831,7 +878,9 @@ describe("OrderLifecycleService RH-01 — a velocity/fraud hold survives a recov
         findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
       },
-      rating: { create: async () => ({}) },
+      // P1-6: rate() counts prior ratings from this customer→rider pair before touching the aggregate.
+      // 0 = a distinct (new) pair → the aggregate updates as before.
+      rating: { create: async () => ({}), count: async () => 0 },
       orderEvent: { create: async () => ({}) },
       rider: {
         findUnique: async () => ({ ratingAvg: 5, ratingCount: 3, tripsCount: 8, reliabilityScore: 100, onHold: true, heldReason: "velocity" }),

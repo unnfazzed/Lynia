@@ -499,16 +499,41 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           select: { ratingAvg: true, ratingCount: true, tripsCount: true, reliabilityScore: true, onHold: true, heldReason: true },
         });
         if (rider) {
-          const ratingCount = rider.ratingCount + 1;
-          const ratingAvg = (rider.ratingAvg * rider.ratingCount + score) / ratingCount;
+          // FRAUD P1-6: distinct-counterparty cap on the reputation aggregate. A colluding customer+rider
+          // pair can run repeated real (but fake-purpose) orders between two accounts and 5-star each other,
+          // inflating the rider's public star average and recovering their reliability for free — the
+          // self-bid guard only blocks rider===customer on ONE account, not two colluding accounts. So the
+          // FIRST rating a given customer gives a given rider counts toward the aggregate; a REPEAT rating
+          // from the same customer to the same rider is still recorded (audit/history + the one-per-order
+          // unique) but does NOT move ratingAvg/ratingCount. Fail-safe & asymmetric: a LOW rating (penalty)
+          // ALWAYS applies — accountability can't be dodged by being a repeat counterparty — but positive
+          // reliability RECOVERY is only granted on a distinct pair, so farmed 5-stars can't lift a held
+          // rider. (Residual: many sock-puppet customers each rating once is gated by identity-binding cost,
+          // the separate open P2-5/P2-8 items; tripsCount still reflects the real completed delivery.)
+          const priorPairRatings = await tx.rating.count({
+            where: { byProfileId: customerId, order: { riderId: order.riderId, id: { not: orderId } } },
+          });
+          const countsTowardAggregate = priorPairRatings === 0;
+          const isPenalty = score <= RELIABILITY.LOW_RATING_AT;
+
+          const ratingCount = countsTowardAggregate ? rider.ratingCount + 1 : rider.ratingCount;
+          const ratingAvg = countsTowardAggregate
+            ? (rider.ratingAvg * rider.ratingCount + score) / ratingCount
+            : rider.ratingAvg;
+
           // Reliability (Q2): a delivered trip rated <= LOW_RATING_AT is a penalty; any better-rated
           // completion is a clean delivery that slowly recovers the score. NOTE(Q2): weights +
           // thresholds in packages/shared/src/policy.ts RELIABILITY. Same transaction as the rating.
           // RH-01: applyReliabilityDelta returns the new heldReason too (spread below) so this recovery
-          // can't silently clear a velocity/fraud hold.
-          const delta =
-            score <= RELIABILITY.LOW_RATING_AT ? -RELIABILITY.PENALTY.lowRating : RELIABILITY.RECOVER_PER_COMPLETION;
-          const reliability = applyReliabilityDelta({ ...rider, heldReason: rider.heldReason as HeldReason }, delta);
+          // can't silently clear a velocity/fraud hold. P1-6: apply a penalty always; grant the positive
+          // recovery only when this pair counts toward the aggregate (else a repeat pair farms recovery).
+          const reliability =
+            isPenalty || countsTowardAggregate
+              ? applyReliabilityDelta(
+                  { ...rider, heldReason: rider.heldReason as HeldReason },
+                  isPenalty ? -RELIABILITY.PENALTY.lowRating : RELIABILITY.RECOVER_PER_COMPLETION,
+                )
+              : {};
           await tx.rider.update({
             where: { profileId: order.riderId },
             data: { ratingAvg, ratingCount, tripsCount: rider.tripsCount + 1, ...reliability },
