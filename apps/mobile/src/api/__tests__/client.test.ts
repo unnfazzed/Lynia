@@ -166,4 +166,19 @@ describe("apiFetch refresh path — transient vs definitive failure", () => {
 
     await expect(apiFetch("/orders/mine/active")).rejects.toBeInstanceOf(ApiError);
   });
+
+  it("KB-IDENTITY-BINDING L1: sends a stable, v4-shaped x-device-id header on every request", async () => {
+    const seen: string[] = [];
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      const h = (init?.headers as Record<string, string> | undefined) ?? {};
+      if (h["x-device-id"]) seen.push(h["x-device-id"]);
+      return Promise.resolve(makeResponse(200, { ok: true }));
+    });
+    await apiFetch("/a", { auth: false });
+    await apiFetch("/b", { auth: false });
+    expect(seen).toHaveLength(2);
+    // v4-shaped so the server's zod .uuid() would accept it, and identical across calls (per-install stable).
+    expect(seen[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(seen[1]).toBe(seen[0]);
+  });
 });

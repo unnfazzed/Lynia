@@ -637,6 +637,10 @@ model Session {
   profile          Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   refreshTokenHash String    @map("refresh_token_hash")
   userAgent        String?   @map("user_agent")
+  // KB-IDENTITY-BINDING L1: the client's stable per-install device id (from the `x-device-id` header),
+  // recorded so signup can be throttled per device and the L0 recycle-detection signal can see the
+  // device↔account history. Null for older clients that send no id. A soft signal, not a guarantee.
+  deviceId         String?   @map("device_id")
   expiresAt        DateTime  @map("expires_at")
   revokedAt        DateTime? @map("revoked_at")
   // Rotation successor link (RT-GRACE): when this session is revoked BY BEING ROTATED in refresh(),

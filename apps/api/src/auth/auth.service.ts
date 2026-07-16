@@ -44,7 +44,16 @@ const RL = {
   phone: { max: 5, windowSec: 3600 },
   ip: { max: 20, windowSec: 3600 },
   global: { max: 5000, windowSec: 86400 },
+  // KB-IDENTITY-BINDING L1: cap NEW-account creation per device per day. Phone-only identity makes a fresh
+  // SIM = a fresh account for free; binding signups to a (soft) device id raises that cost and blunts
+  // casual multi-accounting. Generous enough for a genuinely shared family device; tight enough that one
+  // handset can't mint a sock-puppet army. Reinstall resets the id (a determined attacker's out) — the
+  // hardware-backed answer is L3 attestation. Only enforced when the client sends `x-device-id`.
+  deviceSignup: { max: 3, windowSec: 86400 },
 };
+// L0 recycle-detection: a re-verify of an EXISTING account from a device never seen for it, after this
+// long without a fresh session, is flagged as a possible SIM recycle (non-destructive signal only).
+const RECYCLE_DORMANCY_MS = 90 * 24 * 60 * 60 * 1000;
 
 export interface SessionTokens {
   accessToken: string;
@@ -237,7 +246,7 @@ export class AuthService {
     return allow.includes(phone);
   }
 
-  async verifyOtp(rawPhone: string, code: string, userAgent?: string): Promise<SessionTokens & {
+  async verifyOtp(rawPhone: string, code: string, userAgent?: string, deviceId?: string): Promise<SessionTokens & {
     profileId: string;
     role: string;
     needsProfile: boolean;
@@ -287,6 +296,33 @@ export class AuthService {
       await this.store.graceSet(phone, rec.hash, OTP_GRACE_TTL_SECONDS);
       await this.store.del(phone);
 
+      // KB-IDENTITY-BINDING L1/L0 — soft device binding, engaged ONLY when the client sends a device id
+      // (older clients send none → behaviour unchanged). The upsert below stays the atomic writer; this
+      // is an advisory read that gates signup throttling + the recycle signal.
+      if (deviceId) {
+        const existing = await this.prisma.profile.findUnique({
+          where: { phone },
+          select: {
+            id: true,
+            sessions: { select: { deviceId: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 20 },
+          },
+        });
+        if (!existing) {
+          // L1: throttle NEW-account creation per device — a fresh SIM is free, a fresh device is not.
+          await this.enforceRate(`rl:signup:device:${deviceId}`, RL.deviceSignup);
+        } else if (!existing.sessions.some((s) => s.deviceId === deviceId)) {
+          // L0: an existing account verifying from a device never seen for it. If it's been dormant this
+          // long, flag a possible SIM recycle (P2-8) — a NON-destructive ops signal only. Auto-detaching
+          // the account on a device change would lock out a legit user who reinstalled or changed phones;
+          // the destructive rebind is deliberately deferred (see docs/plans/2026-identity-and-pod-hardening.md).
+          const newest = existing.sessions[0]?.createdAt?.getTime() ?? 0;
+          const dormant = Date.now() - newest > RECYCLE_DORMANCY_MS;
+          this.logger.warn(
+            `identity: account ${existing.id} verified from a NEW device${dormant ? " after >90d dormancy — POSSIBLE SIM RECYCLE (P2-8)" : " (device change)"}`,
+          );
+        }
+      }
+
       const profile = await this.prisma.profile.upsert({
         where: { phone },
         update: { phoneVerifiedAt: new Date() },
@@ -294,7 +330,7 @@ export class AuthService {
         select: { id: true, role: true, firstName: true },
       });
 
-      const session = await this.issueSession(profile.id, profile.role, userAgent);
+      const session = await this.issueSession(profile.id, profile.role, userAgent, deviceId);
       record("ok");
       return { ...session, profileId: profile.id, role: profile.role, needsProfile: profile.firstName === "" };
     } catch (err) {
@@ -469,7 +505,7 @@ export class AuthService {
     return { ...session, profileId: profile.id, role: profile.role, needsProfile: profile.firstName === "" };
   }
 
-  private async issueSession(profileId: string, role: string, userAgent?: string): Promise<SessionTokens> {
+  private async issueSession(profileId: string, role: string, userAgent?: string, deviceId?: string): Promise<SessionTokens> {
     const accessToken = this.tokens.signAccess(profileId, role);
     const secret = this.tokens.randomToken();
     const session = await this.prisma.session.create({
@@ -477,6 +513,8 @@ export class AuthService {
         profileId,
         refreshTokenHash: this.tokens.hash(secret),
         userAgent: userAgent ?? null,
+        // KB-IDENTITY-BINDING L1: stamp the device this session was minted from (null for older clients).
+        deviceId: deviceId ?? null,
         expiresAt: new Date(Date.now() + this.env.REFRESH_TTL_SECONDS * 1000),
       },
       select: { id: true },

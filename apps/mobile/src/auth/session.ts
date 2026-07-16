@@ -9,6 +9,7 @@ import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
 import { JOB_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY } from "../logic/rider-bid-draft";
 import type { UndeliveredReason } from "@lynia/shared";
+import { randomUuidV4 } from "../util";
 
 /** The authenticated session, persisted in the device keychain (not AsyncStorage — these are secrets). */
 export interface Session {
@@ -20,6 +21,26 @@ export interface Session {
 }
 
 const KEY = "lynia.session";
+
+// KB-IDENTITY-BINDING L1: a stable per-install device id, sent as `x-device-id` on every API call so the
+// server can throttle new-account creation per device and surface the L0 recycle signal. Generated once
+// and persisted in the keychain; a reinstall mints a new one (a soft signal, not a hardware guarantee —
+// that's L3 attestation). Deliberately NOT wiped on sign-out (clearDeviceState) — it's the device's id,
+// not the user's, and clearing it would defeat the per-device signup cap on the very next signup.
+const DEVICE_ID_KEY = "lynia.deviceId";
+let deviceIdCache: string | null = null;
+
+/** The device's stable install id (created + persisted on first use). Cached in-memory after first read. */
+export async function getDeviceId(): Promise<string> {
+  if (deviceIdCache) return deviceIdCache;
+  let id = await SecureStore.getItemAsync(DEVICE_ID_KEY);
+  if (!id) {
+    id = randomUuidV4();
+    await SecureStore.setItemAsync(DEVICE_ID_KEY, id);
+  }
+  deviceIdCache = id;
+  return id;
+}
 
 export async function loadSession(): Promise<Session | null> {
   const raw = await SecureStore.getItemAsync(KEY);
