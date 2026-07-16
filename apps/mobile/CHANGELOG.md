@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/unnfazzed/Lynia/compare/v0.4.3...v0.4.4) (2026-07-16)
+
+
+### Bug Fixes
+
+* **wallet-audit:** commission-basis floor, ledger orderId, KYC dup-ID gate, top-up dead-end (WD-012..017, DOC-16-01/02/05) ([#271](https://github.com/unnfazzed/Lynia/issues/271)) ([8ac6ac9](https://github.com/unnfazzed/Lynia/commit/8ac6ac97e0b80b43be10b6eab1bf1723799992d6))
+
 ## [0.4.3](https://github.com/unnfazzed/Lynia/compare/v0.4.2...v0.4.3) (2026-07-16)
 
 
