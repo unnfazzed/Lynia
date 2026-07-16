@@ -37,7 +37,7 @@ const buildRider = (r: RiderStanding | null | undefined) =>
 function eraseHarness(
   profile: ProfileInput,
   activeRide: boolean,
-  placedOrders: Array<{ id: string; pickup: unknown; dropoff: unknown; note?: unknown }> = [],
+  placedOrders: Array<{ id: string; pickup: unknown; dropoff: unknown; note?: unknown; itemPhotoUrl?: unknown }> = [],
   // DS-10: the active-ride guard is now ALSO re-checked inside the transaction. Defaults to no ride in
   // the tx (the common case); set true to exercise a ride that appeared between the pre-flight read and
   // the scrub.
@@ -71,6 +71,9 @@ function eraseHarness(
       update: vi.fn(async (a: unknown) => ((calls.profileUpdate = a), {})),
     },
     rider: { updateMany: vi.fn(async (a: unknown) => ((calls.riderUpdate = a), { count: 1 })) },
+    // Class-C: geog + position_updated_at are nulled via raw SQL (Unsupported column). Flag the call so a
+    // test can assert the rider's PostGIS position was scrubbed — not just the readable current_lat/lng.
+    $executeRaw: vi.fn(async () => ((calls.rawScrub = true), 1)),
     // DOC-16-01: TopUp.phone scrub — only exercised for a rider profile.
     topUp: { updateMany: vi.fn(async (a: unknown) => ((calls.topUpUpdate = a), { count: 1 })) },
     address: { deleteMany: vi.fn(async () => ((calls.addressDel = true), { count: 1 })) },
@@ -116,7 +119,10 @@ describe("PrivacyService.eraseAccount", () => {
     // signal — it must SURVIVE anonymisation, so it's no longer in the update payload.
     expect(data).not.toHaveProperty("idNumberHash");
     expect(data.phone).toBe("erased:p1"); // unique, non-dialable tombstone — the real number is freed
-    expect((calls.riderUpdate as { data: Record<string, unknown> }).data).toMatchObject({ kycRef: null, photoUrl: "", isOnline: false });
+    expect((calls.riderUpdate as { data: Record<string, unknown> }).data).toMatchObject({ kycRef: null, photoUrl: "", isOnline: false, currentLat: null, currentLng: null });
+    // Class-C: the rider's PostGIS `geog` position (the Unsupported column current_lat/lng alone didn't
+    // reach) is scrubbed via raw SQL in the same tx — else the exact last GPS point outlived erasure.
+    expect(calls.rawScrub).toBe(true);
     expect(calls.addressDel).toBe(true);
     expect(calls.deviceDel).toBe(true);
     expect(calls.sessionDel).toBe(true);
@@ -250,6 +256,24 @@ describe("PrivacyService.eraseAccount", () => {
     // Both object keys captured pre-scrub are purged; kycRef (a Didit session id, not a bucket object)
     // is NOT passed to storage.
     expect(deleted).toEqual(["avatars/p1.jpg", "kyc/p1/doc.jpg"]);
+  });
+
+  it("Class-C: nulls itemPhotoUrl on a placed order AND deletes its GCS object (surfaced by the PII manifest guard)", async () => {
+    const deleted: string[] = [];
+    const storage = { deleteObject: vi.fn(async (key: string) => { deleted.push(key); }) } as unknown as StorageAdapter;
+    const { svc, orderUpdates } = eraseHarness(
+      { phone: "+263771234567", rider: {} },
+      false,
+      [{ id: "o9", pickup: {}, dropoff: {}, note: null, itemPhotoUrl: "items/o9/parcel.jpg" }],
+      false,
+      { storage },
+    );
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+    // The DB reference is nulled on the placed order…
+    const upd = orderUpdates.find((u) => u.where.id === "o9");
+    expect(upd?.data).toMatchObject({ itemPhotoUrl: null });
+    // …and the underlying object is purged post-commit alongside the KYC/profile photos.
+    expect(deleted).toContain("items/o9/parcel.jpg");
   });
 
   it("skips the storage purge cleanly when the profile has no stored objects", async () => {

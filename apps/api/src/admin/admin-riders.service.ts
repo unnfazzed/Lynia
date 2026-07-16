@@ -234,6 +234,13 @@ export class AdminRidersService {
         data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: input.reason, isOnline: false },
       });
       if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
+      // FRAUD P2-3: revoke every live refresh session in the SAME transaction. JwtAuthGuard only verifies
+      // the access-token signature — it never re-reads accountStatus — so without this a suspended rider
+      // keeps minting fresh access tokens via /auth/refresh indefinitely (the short access-token TTL is the
+      // only bound, but refresh renews it forever). Revoking the sessions closes the refresh renewal; the
+      // residual is one access-token TTL, the standard JWT trade-off. `refresh()` also re-checks standing
+      // as a backstop for any demotion path that forgets this.
+      await tx.session.updateMany({ where: { profileId, revokedAt: null }, data: { revokedAt: new Date() } });
       const audit = await tx.auditLog.create({
         data: auditData(actor, "rider.suspend", profileId, input.reason, input.note),
         select: { id: true },
@@ -247,17 +254,11 @@ export class AdminRidersService {
       body: "Your account was paused — open the app for details.",
       data: { kind: "account" },
     });
-    // KB-BOARD-REVOKE: a suspended rider is no longer board-eligible — kick their live socket(s) off the
-    // board rooms so the board-push stream stops immediately instead of leaking until they disconnect.
-    // Best-effort (kickRiderFromBoard swallows its own errors); never affects the committed suspension.
-    void this.gateway.kickRiderFromBoard(profileId);
-    // DS15-05: a suspended rider is now isOnline:false in PG, but the TTL-less `rider:geo` Redis sorted
-    // set still holds their stale entry — GEOSEARCH caps candidates at GEO_SEARCH_COUNT BEFORE the PG
-    // filter, so accumulated ghosts crowd real riders out of the nearest-N window (plus an unbounded
-    // Redis leak). Evict post-commit, best-effort (evictRiderFromGeo doesn't swallow, so .catch here).
-    void this.gateway
-      .evictRiderFromGeo(profileId)
-      .catch((err) => this.logger.warn(`geo eviction after suspend failed for ${profileId}: ${(err as Error).message}`));
+    // KB-BOARD-REVOKE + DS15-05: a suspended rider is no longer board-eligible and must not linger as a
+    // GEOSEARCH ghost — evict from BOTH live-supply planes (board rooms + `rider:geo` Redis index) through
+    // the single standing-demotion funnel so this can't be half-applied. Best-effort, post-commit; never
+    // throws, never affects the committed suspension.
+    void this.gateway.evictRiderFromSupply(profileId);
     void this.notifyCustomersOfRiderStandingChange(profileId);
     return result;
   }
@@ -340,20 +341,18 @@ export class AdminRidersService {
         data: { accountStatus: RiderAccountStatus.BANNED, suspendReason: input.reason, isOnline: false },
       });
       if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
+      // FRAUD P2-3: revoke every live refresh session in the same transaction (see suspendRider) — a ban
+      // must not leave the rider able to renew access tokens indefinitely via /auth/refresh.
+      await tx.session.updateMany({ where: { profileId, revokedAt: null }, data: { revokedAt: new Date() } });
       const audit = await tx.auditLog.create({
         data: auditData(actor, "rider.ban", profileId, input.reason, input.note),
         select: { id: true },
       });
       return { id: profileId, accountStatus: RiderAccountStatus.BANNED, auditId: audit.id };
     });
-    // KB-BOARD-REVOKE: a banned rider is no longer board-eligible — kick their live socket(s) off the
-    // board rooms post-commit so the board-push stream stops at once (mirrors suspendRider). Best-effort.
-    void this.gateway.kickRiderFromBoard(profileId);
-    // DS15-05: also evict from the `rider:geo` Redis index (mirrors suspendRider) — a banned rider must
-    // not linger as a GEOSEARCH ghost. Best-effort, post-commit; evictRiderFromGeo doesn't swallow so .catch.
-    void this.gateway
-      .evictRiderFromGeo(profileId)
-      .catch((err) => this.logger.warn(`geo eviction after ban failed for ${profileId}: ${(err as Error).message}`));
+    // KB-BOARD-REVOKE + DS15-05: evict from BOTH live-supply planes (board + geo) through the standing-
+    // demotion funnel, mirroring suspendRider. Best-effort, post-commit; never throws.
+    void this.gateway.evictRiderFromSupply(profileId);
     void this.notifyCustomersOfRiderStandingChange(profileId);
     return result;
   }

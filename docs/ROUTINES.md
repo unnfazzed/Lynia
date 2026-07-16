@@ -79,6 +79,29 @@ process failure; the ledger is how the routines stay disjoint.
     "Suggestions (not implemented)" section).
 - **Out-of-lane finds are still fixed** (policy 2 — no deferral), but tagged in the ledger with
   the owning lane so the owning routine knows the territory is covered.
+- **Mandatory sibling-sweep (evidenced) — the single most important anti-recurrence rule.** The
+  dominant defect pattern in this repo's history is *"a fix hardened one instance and a sibling
+  elsewhere stayed vulnerable"* — the check but not the write, the admin path but not self-service,
+  one Redis client but not the pattern, one PII column but not its storage twin, one screen but not
+  the others. **~70–80% of findings in the nightly sweeps are sibling re-occurrences of an
+  already-fixed class.** So for **every** finding, before opening the PR you MUST:
+  1. Distil the finding to a **pattern signature** — the grep-able shape of the bug (e.g.
+     `findUnique(...) → decide → update(` without a CAS guard; a standing write missing an
+     `evictRiderFromSupply`/`isOnline:false`; a raw `new Redis(` without an `error` listener; a PII
+     column absent from `pii-manifest.ts`; a `rebroadcast()`/durable-marker/viewer-role gate applied
+     to one call site but not its siblings).
+  2. **Grep the whole repo** for that signature and enumerate every hit.
+  3. **Fix or ledger every hit in the same PR** (policy 2 — no deferral). A sibling you consciously
+     leave gets a `KNOWN_BUGS.md` OPEN row with the reason.
+  4. **Paste the evidence in the dated report** under a `## Sibling-sweep` heading: the exact grep
+     command(s), the raw hit count, and the disposition of each hit (fixed / already-guarded /
+     ledgered). A finding with no sibling-sweep evidence is an unfinished finding.
+  Prefer, where cheap, converting the class into a **write-time guard** so the sweep never has to
+  re-find it: a single funnel method every path must call (e.g. `TrackingGateway.evictRiderFromSupply`
+  for standing demotions), a declarative registry + test (e.g. `apps/api/src/privacy/pii-manifest.ts`
+  and its spec, which fails when a new PII column isn't handled), or a shared helper replacing a
+  repeated fragile idiom. A guard that makes the pattern the *only* way to do the thing retires the
+  class; an instance fix just postpones the next sibling.
 - **Every new finding gets a ledger row in the same PR as its fix**, with the routine's ID
   prefix: `BH-` (bug hunting), `UX-` (user experience), `DS-` (deep sweep), `WD-` (wallet &
   data-lifecycle). Row carries: file:line, severity, status, fixing PR.

@@ -421,6 +421,25 @@ export class TrackingGateway
   }
 
   /**
+   * Standing-demotion funnel (the live-supply half). A rider who loses standing — admin suspend/ban,
+   * an automated reliability/velocity hold, OR a KYC lapse (expired/failed) — must be pulled out of
+   * EVERY live-supply plane at once: the `rider:geo` Redis index (evictRiderFromGeo, DS15-05) AND the
+   * board rooms (kickRiderFromBoard, KB-BOARD-REVOKE). The recurring bug class in this repo is a new
+   * standing path hardening one plane and forgetting the other (BR-01/DS15-05 covered suspend/ban/auto-
+   * hold; the KYC-lapse path was the un-propagated sibling). Routing every demotion through this one
+   * method makes "evict from all planes" a single call callers can't half-apply. The DB `is_online=false`
+   * write stays the nearbyRiders authority and belongs in the caller's standing transaction; this is the
+   * best-effort post-commit socket/Redis cleanup. Board kick swallows its own errors; geo eviction does
+   * not, so it's `.catch`ed here — never throws, so a caller can `void` it without an unhandled rejection.
+   */
+  async evictRiderFromSupply(riderId: string): Promise<void> {
+    await this.kickRiderFromBoard(riderId);
+    await this.evictRiderFromGeo(riderId).catch((err) =>
+      this.logger.warn(`geo eviction (supply demotion) failed for rider ${riderId}: ${(err as Error).message}`),
+    );
+  }
+
+  /**
    * Signal an order's offer set changed to everyone watching it (SIGNAL ONLY — no offer contents;
    * the client refetches over the authenticated REST path). Best-effort; never throws.
    */

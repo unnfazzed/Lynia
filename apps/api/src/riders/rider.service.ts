@@ -18,6 +18,7 @@ import { baseBroadcastRadiusM } from "../common/broadcast-policy";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { canGoOnline, onlineRefusalReason, type OnlineRefusal, REFUSAL_MESSAGE } from "./online-gate";
 
@@ -38,6 +39,10 @@ export class RiderService {
     @Inject(KYC_VENDOR) private readonly vendor: KycVendor,
     private readonly pii: PiiCryptoService,
     private readonly tracking: TrackingService,
+    // Standing-demotion funnel (Class-B): the board-kick half of evictRiderFromSupply is socket-layer, so
+    // it lives on the gateway, not TrackingService. TrackingModule exports the gateway and doesn't depend
+    // on RidersModule, so this stays acyclic (same wiring admin-riders.service uses).
+    private readonly gateway: TrackingGateway,
     private readonly notifications: NotificationsService,
   ) {}
 
@@ -398,7 +403,7 @@ export class RiderService {
     // means an audit-write failure rolls the status write back, so the webhook simply retries — never a
     // committed-without-audit decision. The monotonic/replay-safe guards (F-13 counter, the kycRef +
     // kycResolvedAt CAS `where`) are unchanged: still a guarded `updateMany`, not a blind `update`.
-    const { updated, notifyProfileId } = await this.prisma.$transaction(async (tx) => {
+    const { updated, notifyProfileId, demotedProfileId } = await this.prisma.$transaction(async (tx) => {
       // DOC-16-05: a `verified` outcome for a rider already flagged `duplicateIdFlag` (A-04 — their
       // national ID collides with another account, e.g. a banned/suspended one under a new SIM) must NOT
       // auto-verify — that's exactly the auto-mode gap that let a ban-evader re-registering with the same
@@ -436,6 +441,13 @@ export class RiderService {
           // An expiry (1·b2) is not a decline: reset the A-02 attempt counter so re-verification isn't
           // trapped by an ancient decline the rider already recovered from before they were verified.
           ...(status === "expired" ? { kycAttempts: 0 } : {}),
+          // Standing-demotion (Class-B sibling of BR-01/DS15-05): a rider verified+online at the moment
+          // their KYC lapses to failed/expired can no longer bid (onlineRefusalReason gates on
+          // kyc=verified), so leaving them isOnline:true keeps them counted in the customer-facing
+          // ridersNearby supply and still receiving broadcasts/board pushes. Force offline in the same
+          // write; the post-commit evictRiderFromSupply below clears the Redis geo index + board rooms.
+          // (verified/holdForReview never demote — they don't set this.)
+          ...(status === "failed" || status === "expired" ? { isOnline: false } : {}),
         },
       });
       // Only when the update actually applied (res.count > 0 — not a stale/replayed webhook). `expired`
@@ -468,8 +480,20 @@ export class RiderService {
           resolvedProfileId = rider.profileId;
         }
       }
-      return { updated: res.count, notifyProfileId: resolvedProfileId };
+      // Class-B eviction: a lapse (failed/expired) that actually applied needs the profileId post-commit
+      // so we can pull the (now non-verified) rider out of the live-supply planes. `failed` already has it
+      // (resolvedProfileId); `expired` never fetched it (it takes no verified/failed branch), so fetch here.
+      let demotedId: string | null = status === "failed" ? resolvedProfileId : null;
+      if (res.count > 0 && status === "expired") {
+        const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
+        demotedId = rider?.profileId ?? null;
+      }
+      return { updated: res.count, notifyProfileId: resolvedProfileId, demotedProfileId: demotedId };
     });
+    // Class-B sibling of BR-01/DS15-05: a KYC lapse pulled the rider offline in PG above; now evict them
+    // from the board rooms + `rider:geo` Redis index through the standing-demotion funnel, exactly as
+    // suspend/ban/auto-hold do. Best-effort, post-commit; never throws, never affects the committed write.
+    if (demotedProfileId) void this.gateway.evictRiderFromSupply(demotedProfileId);
     // Best-effort, post-commit: tell the rider their ID check resolved (nothing surfaced this before). A
     // notify miss can NEVER affect the committed KYC write above (notifyKycDecision is fire-and-forget).
     // notifyProfileId is set only for a committed verified/failed decision, so this reaches only those two.
@@ -561,6 +585,9 @@ export class RiderService {
             // longer flip a manually-declined rider back to verified. retryKyc clears it on a genuine
             // resubmit, so a fresh vendor result still resolves.
             kycResolvedAt: new Date(),
+            // Class-B demotion: a decline pulls the rider out of good standing, so force offline in the
+            // same write (mirrors the webhook path); post-commit evictRiderFromSupply clears geo/board.
+            isOnline: false,
           },
           select: { kycAttempts: true },
         });
@@ -580,6 +607,10 @@ export class RiderService {
             // A manual EXPIRE (1·b2 ops backstop) is also terminal: stamp the time, clear any stale
             // decline reason, and reset the A-02 counter so re-verification isn't blocked by an old lock.
             ...(status === "expired" ? { kycDeclineReason: null, kycResolvedAt: new Date(), kycAttempts: 0 } : {}),
+            // Class-B demotion: any transition OUT of verified (expired, or a `pending` reset) means the
+            // rider can no longer bid (onlineRefusalReason gates on verified), so pull them offline in the
+            // same write. A verified APPROVE is the one status that keeps them online-eligible.
+            ...(status === "verified" ? {} : { isOnline: false }),
           },
         });
         const nextAttempts = status === "expired" ? 0 : rider.kycAttempts;
@@ -593,6 +624,10 @@ export class RiderService {
       }
       return result;
     });
+    // Class-B eviction: any non-verified decision pulled the rider offline above (isOnline:false); evict
+    // them from the board rooms + geo index through the standing-demotion funnel too. Best-effort,
+    // post-commit; a verified approve is the one outcome that keeps them online-eligible, so no eviction.
+    if (decision.kycStatus !== "verified") void this.gateway.evictRiderFromSupply(profileId);
     // Best-effort, post-commit: mirror the vendor-webhook path — tell the rider a manual approve/decline
     // changed their standing. Only the two outcomes that flip what they can do; a `pending` reset /
     // `expired` is deliberately silent (it invites a fresh check rather than announcing a verdict).

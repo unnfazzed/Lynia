@@ -32,6 +32,11 @@ const notificationsStub = {
   notifyRidersAvailable: async () => new Set<string>(),
   notifyProfiles: async () => {},
 } as unknown as import("../notifications/notifications.service").NotificationsService;
+// Standing-demotion funnel: adminSetKyc / applyKycResult call gateway.evictRiderFromSupply post-commit on
+// any non-verified decision (Class-B). No-op stub — the eviction-path assertions use their own spy.
+const gatewayStub = {
+  evictRiderFromSupply: async () => {},
+} as unknown as import("../tracking/tracking.gateway").TrackingGateway;
 
 function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor: KycVendor = new StubKycVendor()) {
   const p = prisma as Record<string, unknown>;
@@ -46,7 +51,7 @@ function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor
   // (raw so the heartbeat stamp is DB now()), and it reads the affected-row count: 1 ⇒ the standing
   // guard matched ⇒ online. Default to 1 (matched) unless a test overrides it to simulate a CAS miss.
   if (!p.$executeRaw) p.$executeRaw = async () => 1;
-  return new RiderService(p as unknown as PrismaService, env as Env, vendor, pii, trackingStub, notificationsStub);
+  return new RiderService(p as unknown as PrismaService, env as Env, vendor, pii, trackingStub, gatewayStub, notificationsStub);
 }
 
 describe("RiderService.becomeRider", () => {
@@ -516,7 +521,7 @@ describe("RiderService.setOnline", () => {
         return new Set(pushed);
       },
     } as unknown as import("../notifications/notifications.service").NotificationsService;
-    const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, notifications);
+    const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, gatewayStub, notifications);
 
     // Inside the Harare corridor so the online gate passes.
     expect(await s.setOnline("p1", true, { lat: -17.83, lng: 31.05 })).toEqual({ online: true });
@@ -546,7 +551,7 @@ describe("RiderService.setOnline", () => {
       // cust-1 delivered, cust-2 not (no token / transient FCM failure).
       notifyRidersAvailable: async () => new Set(["cust-1"]),
     } as unknown as import("../notifications/notifications.service").NotificationsService;
-    const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, notifications);
+    const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, gatewayStub, notifications);
 
     await s.setOnline("p1", true, { lat: -17.83, lng: 31.05 });
     await new Promise((r) => setTimeout(r, 0));
@@ -569,7 +574,7 @@ describe("RiderService.setOnline", () => {
       clearNotifyWaiters: async () => {},
     } as unknown as import("../tracking/tracking.service").TrackingService;
     const notifications = { notifyRidersAvailable: async () => new Set<string>() } as unknown as import("../notifications/notifications.service").NotificationsService;
-    const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, notifications);
+    const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, gatewayStub, notifications);
     await s.setOnline("p1", true);
     await new Promise((r) => setTimeout(r, 0));
     expect(drained).toBe(false);
@@ -744,17 +749,28 @@ describe("RiderService.applyKycResult", () => {
 
   it("an `expired` result clears idVerified + decline reason and resets the A-02 attempt counter (1·b2)", async () => {
     let data: Record<string, unknown> | undefined;
+    let evicted: string | null = null;
     const prisma = {
       rider: {
         updateMany: async (args: { data: Record<string, unknown> }) => {
           data = args.data;
           return { count: 1 };
         },
+        // Class-B: applyKycResult now fetches the profileId on a lapse (expired) to evict from supply.
+        findFirst: async () => ({ profileId: "p1" }),
       },
     };
-    expect(await svc(prisma, {}).applyKycResult("sess_1", "expired", new Date())).toEqual({ updated: 1 });
+    const s = svc(prisma, {});
+    (s as unknown as { gateway: { evictRiderFromSupply: (id: string) => Promise<void> } }).gateway = {
+      evictRiderFromSupply: async (id: string) => { evicted = id; },
+    };
+    expect(await s.applyKycResult("sess_1", "expired", new Date())).toEqual({ updated: 1 });
     // Not a decline: idVerified false, no decline reason, and kycAttempts reset so re-verify isn't locked.
-    expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, kycDeclineReason: null, kycAttempts: 0 });
+    // Class-B demotion: also forced offline in the same write so the lapsed rider leaves the supply plane.
+    expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, kycDeclineReason: null, kycAttempts: 0, isOnline: false });
+    // And evicted from the board + geo index post-commit via the standing-demotion funnel.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evicted).toBe("p1");
   });
 
   it("F-13: a vendor DECLINE increments the A-02 counter under the monotonic guard (new decline only)", async () => {

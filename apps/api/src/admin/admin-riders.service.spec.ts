@@ -19,6 +19,7 @@ const noNotifications = { notifyProfiles: async () => {} } as unknown as Notific
 const noGateway = {
   kickRiderFromBoard: async () => {},
   evictRiderFromGeo: async () => {},
+  evictRiderFromSupply: async () => {},
 } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
 
 /** Decimal-like stub — Prisma returns Decimal objects whose `.toString()`/`.toFixed()` we serialize. */
@@ -392,13 +393,14 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
   interface Calls {
     riderUpdate: { where: unknown; data: Record<string, unknown> } | null;
     audit: { data: Record<string, unknown> } | null;
+    sessionRevoke: { where: Record<string, unknown>; data: Record<string, unknown> } | null;
   }
   // A tx whose writes are recorded; $transaction runs the service callback against THIS object, so a
   // recorded riderUpdate AND a recorded audit prove both landed inside the same transaction. DS13-04: the
   // standing mutations now CAS via `updateMany` (guarded on the observed status/onHold/score) and reject
   // on a 0-row result; default to 1 row (success) and let a test force 0 to exercise the conflict path.
   function makeTx(over: { rider?: unknown; updateCount?: number } = {}) {
-    const calls: Calls = { riderUpdate: null, audit: null };
+    const calls: Calls = { riderUpdate: null, audit: null, sessionRevoke: null };
     const count = over.updateCount ?? 1;
     const tx = {
       rider: {
@@ -406,6 +408,9 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
         updateMany: async (args: Calls["riderUpdate"]) => { calls.riderUpdate = args; return { count }; },
       },
       auditLog: { create: async (args: Calls["audit"]) => { calls.audit = args; return { id: "audit-9" }; } },
+      // FRAUD P2-3: suspend/ban revoke every live session in the same tx. Record the call so tests can
+      // prove the revocation landed inside the transaction alongside the standing write + audit.
+      session: { updateMany: async (args: Calls["sessionRevoke"]) => { calls.sessionRevoke = args; return { count: 3 }; } },
     };
     const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
     return { prisma, calls };
@@ -418,6 +423,10 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.riderUpdate!.data).toEqual({ accountStatus: "suspended", suspendReason: "safety report", isOnline: false });
     // The audit row committed in the SAME transaction as the state change (both non-null here).
     expect(calls.audit!.data).toMatchObject({ actor: "admin-1", action: "rider.suspend", target: "r1", reasonCode: "safety report", note: "incident #7" });
+    // FRAUD P2-3: every live refresh session was revoked in the same transaction (else a suspended rider
+    // keeps renewing access tokens via /auth/refresh indefinitely).
+    expect(calls.sessionRevoke).not.toBeNull();
+    expect(calls.sessionRevoke!.where).toMatchObject({ profileId: "r1", revokedAt: null });
     expect(res).toEqual({ id: "r1", accountStatus: "suspended", auditId: "audit-9" });
   });
 
@@ -427,32 +436,16 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     await svc.banRider("admin-1", "r1", { reason: "fraud" });
     expect(calls.riderUpdate!.data).toEqual({ accountStatus: "banned", suspendReason: "fraud", isOnline: false });
     expect(calls.audit!.data).toMatchObject({ action: "rider.ban", reasonCode: "fraud", note: null });
+    // FRAUD P2-3: a ban revokes live sessions in the same tx.
+    expect(calls.sessionRevoke!.where).toMatchObject({ profileId: "r1", revokedAt: null });
   });
 
-  it("KB-BOARD-REVOKE: suspend AND ban kick the now-ineligible rider off the board rooms post-commit", async () => {
-    const kicked: string[] = [];
-    const gateway = {
-      kickRiderFromBoard: async (id: string) => { kicked.push(id); },
-      evictRiderFromGeo: async () => {},
-    } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
-
-    const s1 = makeTx();
-    const svc1 = new AdminRidersService(s1.prisma as unknown as PrismaService, pii, noStorage, noNotifications, gateway);
-    await svc1.suspendRider("admin-1", "r1", { reason: "safety" });
-
-    const s2 = makeTx();
-    const svc2 = new AdminRidersService(s2.prisma as unknown as PrismaService, pii, noStorage, noNotifications, gateway);
-    await svc2.banRider("admin-1", "r2", { reason: "fraud" });
-
-    // Both standing revocations force the rider off the board so board pushes stop mid-session.
-    expect(kicked).toEqual(["r1", "r2"]);
-  });
-
-  it("DS15-05: suspend AND ban ALSO evict the rider from the rider:geo Redis index post-commit", async () => {
+  it("KB-BOARD-REVOKE + DS15-05: suspend AND ban evict the rider from BOTH supply planes via the funnel", async () => {
+    // suspend/ban route both board-kick and geo-eviction through the single evictRiderFromSupply funnel
+    // (so a new standing path can't half-apply the eviction set). Spy on the funnel method itself.
     const evicted: string[] = [];
     const gateway = {
-      kickRiderFromBoard: async () => {},
-      evictRiderFromGeo: async (id: string) => { evicted.push(id); },
+      evictRiderFromSupply: async (id: string) => { evicted.push(id); },
     } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
 
     const s1 = makeTx();
@@ -463,31 +456,20 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     const svc2 = new AdminRidersService(s2.prisma as unknown as PrismaService, pii, noStorage, noNotifications, gateway);
     await svc2.banRider("admin-1", "r2", { reason: "fraud" });
 
-    // A stale geo entry would otherwise crowd real riders out of the GEOSEARCH candidate window.
+    // Both standing revocations pull the rider out of the board rooms + rider:geo Redis index at once.
     expect(evicted).toEqual(["r1", "r2"]);
   });
 
-  it("DS15-05: a suspend that 409s (CAS 0 rows) does NOT evict — the rider's standing never changed", async () => {
+  it("a suspend that 409s (CAS 0 rows) does NOT evict from supply — the rider's standing never changed", async () => {
     const evicted: string[] = [];
     const gateway = {
-      kickRiderFromBoard: async () => {},
-      evictRiderFromGeo: async (id: string) => { evicted.push(id); },
+      evictRiderFromSupply: async (id: string) => { evicted.push(id); },
     } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
     const { prisma } = makeTx({ rider: { accountStatus: "active" }, updateCount: 0 });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications, gateway);
     await expect(svc.suspendRider("admin-1", "r1", { reason: "x" })).rejects.toThrow(/refresh and try again/i);
-    // The 409 threw before the post-commit eviction, so no spurious geo removal of a still-active rider.
+    // The 409 threw before the post-commit eviction, so no spurious supply removal of a still-active rider.
     expect(evicted).toEqual([]);
-  });
-
-  it("KB-BOARD-REVOKE: a suspend that 409s (CAS 0 rows) does NOT kick — the rider's standing never changed", async () => {
-    const kicked: string[] = [];
-    const gateway = { kickRiderFromBoard: async (id: string) => { kicked.push(id); } } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
-    const { prisma } = makeTx({ rider: { accountStatus: "active" }, updateCount: 0 });
-    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications, gateway);
-    await expect(svc.suspendRider("admin-1", "r1", { reason: "x" })).rejects.toThrow(/refresh and try again/i);
-    // The 409 threw before the post-commit kick, so no spurious board eviction of a still-active rider.
-    expect(kicked).toEqual([]);
   });
 
   it("liftRider returns to active, CLEARS the suspend reason + reliability hold, audits", async () => {
@@ -629,6 +611,8 @@ describe("AdminRidersService standing-change customer notification", () => {
         updateMany: async () => ({ count: 1 }),
       },
       auditLog: { create: async () => ({ id: "audit-9" }) },
+      // FRAUD P2-3: suspend/ban revoke live sessions in the same tx.
+      session: { updateMany: async () => ({ count: 0 }) },
     };
     const notified: Array<{ profileIds: string[]; msg: unknown }> = [];
     const prisma = {

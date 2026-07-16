@@ -5,6 +5,7 @@ import {
   type IssueStatus,
   type RaiseIssueRequest,
   type ResolveIssueRequest,
+  RIDER_STRIKE_LIMIT,
 } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -12,6 +13,12 @@ import { PrismaService } from "../prisma/prisma.service";
 
 const ISSUE_STATUSES = ["open", "investigating", "resolved"] as const;
 type IssueStatusFilter = (typeof ISSUE_STATUSES)[number];
+
+// FRAUD P2-4: a dispute strike reaching RIDER_STRIKE_LIMIT triggers the same coarse consequence a
+// cancel-strike limit does — a 2h cooldown + forced offline. Kept in lockstep with COOLDOWN_MS in
+// order-lifecycle.service (the cancel path); duplicated here rather than imported to avoid pulling the
+// whole lifecycle service into the issues module for one constant.
+const DISPUTE_STRIKE_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 
 /** Landmark out of a stored Waypoint JSON — the human label, never the point or contactPhone. */
 function landmark(w: unknown): string {
@@ -233,9 +240,24 @@ export class IssuesService {
       } else if (body.resolution === "rider_strike") {
         const order = await tx.order.findUnique({ where: { id: issue.orderId }, select: { riderId: true } });
         if (!order?.riderId) throw new BadRequestException("Can't strike an order with no assigned rider");
-        // Inline strike increment (do NOT import RiderService) toward RIDER_STRIKE_LIMIT (auto-cooldown
-        // at the limit is owned by the rider lifecycle, not this write).
-        await tx.rider.update({ where: { profileId: order.riderId }, data: { cancelStrikes: { increment: 1 } } });
+        // FRAUD P2-4: increment the DEDICATED dispute-strike counter (not cancelStrikes — that column is
+        // the pre-pickup-cancel axis, which RESETS to 0 at its own limit and would silently wipe a dispute
+        // strike sitting alongside it). Read the current value under a row lock, increment, and enforce
+        // RIDER_STRIKE_LIMIT HERE — the cancel lifecycle only ever reacts to cancels, so a dispute strike
+        // previously had no consequence at all. At the limit: the same coarse penalty a cancel-limit
+        // triggers (2h cooldown + forced offline, isOnline:false removes them from nearbyRiders), then
+        // reset the counter so the next dispute starts a fresh cycle.
+        await tx.$executeRaw`SELECT 1 FROM riders WHERE profile_id = ${order.riderId}::uuid FOR UPDATE`;
+        const rider = await tx.rider.findUnique({ where: { profileId: order.riderId }, select: { disputeStrikes: true } });
+        const strikes = (rider?.disputeStrikes ?? 0) + 1;
+        if (strikes >= RIDER_STRIKE_LIMIT) {
+          await tx.rider.update({
+            where: { profileId: order.riderId },
+            data: { disputeStrikes: 0, cooldownUntil: new Date(Date.now() + DISPUTE_STRIKE_COOLDOWN_MS), isOnline: false },
+          });
+        } else {
+          await tx.rider.update({ where: { profileId: order.riderId }, data: { disputeStrikes: strikes } });
+        }
       }
 
       // Audit row in the SAME transaction — the action and its record are never one without the other.

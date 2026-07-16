@@ -1,4 +1,4 @@
-import { COMMISSION, perRideCommission } from "@lynia/shared";
+import { COMMISSION, commissionBasis, perRideCommission } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
 import { SettlementsService } from "./settlements.service";
@@ -153,5 +153,28 @@ describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
     const svc = new SettlementsService(prisma as unknown as PrismaService);
     const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"), 10);
     expect(view.rows[0]!.commission).toBe(perRideCommission(100, 10).toFixed(2));
+  });
+
+  it("WD-NEW-A: does NOT project phantom commission for a completed order with a null agreedFare (chargeCommission permanently skips it)", async () => {
+    // A completed order whose agreedFare is null is one chargeCommission SKIPS (commission_skip_null_fare)
+    // — no ledger row is ever written, at any rate. The projection branch must therefore contribute $0 for
+    // it, else the KPI shows accrued commission the wallet will never charge. One normal $80 order + one
+    // null-fare order for the same rider, at a 20% rate: only the $80 order should count.
+    const prisma = {
+      order: {
+        findMany: async () => [
+          { id: "paid-1", riderId: "r1", agreedFare: 80, suggestedFare: 80 },
+          { id: "nullfare-1", riderId: "r1", agreedFare: null, suggestedFare: 60 },
+        ],
+      },
+      profile: { findMany: async () => [{ id: "r1", firstName: "Tendai", lastName: "M" }] },
+      commissionLedger: { findMany: async () => [] }, // no ledger rows for either
+    };
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
+    const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"), 20);
+    // Both count toward ride count; only the $80 order contributes projected commission (the null-fare
+    // order would have floored commissionBasis(0, 60) to a non-zero phantom figure before this fix).
+    expect(view.rows[0]).toMatchObject({ riderId: "r1", rides: 2 });
+    expect(view.rows[0]!.commission).toBe(perRideCommission(commissionBasis(80, 80), 20).toFixed(2));
   });
 });

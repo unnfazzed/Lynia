@@ -518,6 +518,45 @@ describe("AuthService.refresh", () => {
     await expect(svc.refresh("sid.secret")).rejects.toThrow(/invalid or expired/i);
   });
 
+  it("FRAUD P2-3: rejects refresh for a banned rider (standing backstop) — no token renewal", async () => {
+    const row = {
+      id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future,
+      profile: { role: "rider", rider: { accountStatus: "banned" } },
+    };
+    let created = 0;
+    const prisma = {
+      session: {
+        findUnique: async () => row,
+        updateMany: async () => ({ count: 1 }),
+        create: async () => { created++; return { id: "rotated" }; },
+        update: async () => ({}),
+      },
+    };
+    const { svc } = make(baseEnv, prisma);
+    await expect(svc.refresh("sid.secret")).rejects.toThrow(/not active/i);
+    // The standing gate fires before rotation — no successor session is minted for a banned rider.
+    expect(created).toBe(0);
+  });
+
+  it("FRAUD P2-3: rejects refresh for a suspended rider too", async () => {
+    const row = {
+      id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future,
+      profile: { role: "rider", rider: { accountStatus: "suspended" } },
+    };
+    const { svc } = make(baseEnv, sessionPrisma(row));
+    await expect(svc.refresh("sid.secret")).rejects.toThrow(/not active/i);
+  });
+
+  it("allows refresh for an active rider (standing backstop is not over-broad)", async () => {
+    const row = {
+      id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future,
+      profile: { role: "rider", rider: { accountStatus: "active" } },
+    };
+    const { svc } = make(baseEnv, sessionPrisma(row));
+    const res = await svc.refresh("sid.secret");
+    expect(res.refreshToken).toMatch(/^rotated\./);
+  });
+
   it("rotates a valid session into fresh tokens", async () => {
     const row = { id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future, profile: { role: "customer" } };
     let revokeWhere: Record<string, unknown> | undefined;
