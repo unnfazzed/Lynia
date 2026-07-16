@@ -252,6 +252,18 @@ export class AdminController {
     return this.ordersService.adjustFare(actor, id, body);
   }
 
+  /** KB-POD-DISPUTE Phase B: adjudicate a rider-raised `undelivered` order as DELIVERED despite a
+   *  withheld delivery code (ops decision on the proof-of-drop evidence). Force-completes + credits the
+   *  rider + charges commission + audits. Ops-only (AdminGuard on the controller). Reason required. */
+  @Post("orders/:id/adjudicate-delivered")
+  adjudicateDelivered(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.ordersService.adjudicateDelivered(actor, id, body);
+  }
+
   /* ── Commission (prepaid per-ride, delegated to SettlementsService) ──────────────────────── */
 
   /**

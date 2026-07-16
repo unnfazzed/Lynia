@@ -19,6 +19,12 @@ export const REASONS = {
     "Service failure — late or incomplete",
   ],
   orderCancel: ["Rider unreachable", "Customer asked ops to cancel", "Safety concern", "Suspected fraud"],
+  // KB-POD-DISPUTE Phase B — why ops is overturning an `undelivered` outcome to `delivered`.
+  orderAdjudicateDelivered: [
+    "Proof photo + GPS confirm the drop; recipient withheld the code",
+    "Recipient confirmed receipt on a follow-up call",
+    "Evidence shows delivery; code entry failed for a technical reason",
+  ],
 
   // kyc.html — KYC decline (admin A-02). Canonical source: `KYC_DECLINE_REASON_LABELS` in
   // `@lynia/shared` — a single list shared by the api validation, this admin picker, and the rider-app

@@ -1,7 +1,7 @@
 # Identity-binding & proof-of-delivery hardening — execution plan
 
-**Status:** identity L2 (`IR16-09`), L1 + L0-detection (`IR16-10`), and POD Phase A (`IR16-11`) shipped.
-Remaining: identity L0 destructive rebind (deferred) + L3 attestation (gated); POD Phase B (product decision).
+**Status:** identity L2 (`IR16-09`), L1 + L0-detection (`IR16-10`), and POD Phase A + B (`IR16-11`/`IR16-12`,
+`KB-POD-DISPUTE` CLOSED) shipped. Remaining: identity L0 destructive rebind (deferred) + L3 attestation (gated).
 **Origin:** the two product-scope items triaged out of the 2026-07-16 interactive review —
 `KB-IDENTITY-BINDING` (FRAUD P2-5/P2-8) and `KB-POD-DISPUTE` (FRAUD P2-6). See `docs/KNOWN_BUGS.md`.
 
@@ -65,18 +65,22 @@ independently useful.
   `0034`; party-gated, window `en_route_dropoff`/`undelivered`, namespaced key, idempotent; mirrors the
   pickup-photo flow). The admin order-detail surfaces it (read URL + GPS + time) as adjudication evidence.
   Changes no completion logic; no new abuse surface.
-- **Phase B — adjudicated resolution. The product decision.** A new **admin** issue-resolution action
-  ("delivered — code bypass (adjudicated)") that force-completes a rider-raised disputed order, gated on
-  the Phase-A evidence, with mandatory reason + full `AuditLog` + a customer notification and a
-  dispute/reversal window. Guardrails: ops-only (never the rider); order must be in a rider-raised
-  disputed state; and — at commission go-live — an explicit decision on whether an adjudicated delivery
-  is commissionable.
+- **Phase B — adjudicated resolution. ✅ DONE (IR16-12).** `POST /admin/orders/:id/adjudicate-delivered`
+  (ops-only, reason-coded) force-completes a rider-raised `undelivered` order under a `$transaction` with a
+  **CAS** guard against a double-adjudicate race. It credits the rider a clean trip (`tripsCount++`),
+  recovers reliability (`FOR UPDATE` on the rider row), charges commission (no-op at the 0% launch rate),
+  writes an `OrderEvent` + a reserved-action `AuditLog` row (`order.adjudicate_delivered`), and post-commit
+  notifies the customer (48-hour contest window via the existing issue-raise flow) and the rider. The admin
+  order-detail renders the "Mark delivered (code bypass)…" control on an `undelivered` order with a rider,
+  directly below the Phase-A evidence panel.
 
-### Open product decisions
-- Adjudication bar: is photo + geofence enough for ops to force-complete, or require a customer callback?
-- Default posture: ops-in-the-loop force-complete (Phase B) vs. a rider-favourable provisional-delivered
-  state a customer can reverse? (For a low-volume pilot, ops-in-the-loop is safer and simpler.)
-- Commission treatment of an adjudicated delivery at go-live; the customer reversal window length.
+### Product decisions taken (Phase B)
+- **Adjudication bar:** ops discretion over the Phase-A evidence (reason radio includes photo+GPS,
+  follow-up-call confirmation, and technical code-entry failure); no forced customer callback for the pilot.
+- **Default posture:** ops-in-the-loop force-complete (safer and simpler for a low-volume pilot) — not a
+  rider-favourable auto-provisional state.
+- **Commission:** an adjudicated delivery IS commissionable (charged in-tx; no-op at the 0% launch rate).
+- **Customer reversal window:** 48 hours, via the existing issue-raise flow (the customer notification says so).
 
 ---
 
@@ -85,5 +89,5 @@ independently useful.
 1. **L2 customer trust tier** — ✅ done (IR16-09).
 2. **L1 soft device-id + throttle** and **L0 recycle detection** — ✅ done (IR16-10).
 3. **POD Phase-A proof-of-drop capture** — ✅ done (IR16-11).
-4. **POD Phase-B adjudication**, **L0 destructive rebind**, and **L3 hardware attestation** — gated on the
-   product/vendor decisions above.
+4. **POD Phase-B adjudication** — ✅ done (IR16-12); closes `KB-POD-DISPUTE`.
+5. **L0 destructive rebind** and **L3 hardware attestation** — gated on the product/vendor decisions above.
