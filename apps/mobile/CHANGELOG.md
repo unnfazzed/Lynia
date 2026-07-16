@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/unnfazzed/Lynia/compare/v0.4.2...v0.4.3) (2026-07-16)
+
+
+### Bug Fixes
+
+* **ux:** UX review UX16-01..08 — wallet top-up durability, reorder note carry-through, SOS/admin copy honesty ([#267](https://github.com/unnfazzed/Lynia/issues/267)) ([d789039](https://github.com/unnfazzed/Lynia/commit/d789039cfb2ef2ec13dd9f2977f31094c5d47167))
+
 ## [0.4.2](https://github.com/unnfazzed/Lynia/compare/v0.4.1...v0.4.2) (2026-07-16)
 
 
