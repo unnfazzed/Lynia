@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { BROADCAST, broadcastRadiusAtMs } from "@lynia/shared";
+import { BROADCAST, broadcastRadiusAtMs, OFFER_WINDOW_MS } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -324,11 +324,23 @@ export class MatchingService {
         // who rode outward across the boundary gets one duplicate push — the safe direction.
         nearby.filter((r) => r.distanceM > prevRadiusM).map((r) => r.profileId);
       if (claimed.length === 0) return;
+      // DS17-01: this widening tick fires MID-window (t≈30s/60s), so the create-time flat OFFER_WINDOW TTL
+      // would outlive the order's own 90s auction — a push sent at t=60s with a 90s TTL stays valid until
+      // t=150s, long after the window closed at t=90s, so a reconnecting dead-zone rider could tap a dead
+      // auction. Size the TTL to the order's ACTUAL remaining life instead. If it's already elapsed, don't
+      // push at all — the expiry/reconciler owns closing the order out; a stale broadcast is pure noise.
+      const remainingMs = order.createdAt.getTime() + OFFER_WINDOW_MS - Date.now();
+      if (remainingMs <= 0) return;
       // best-effort, never throws, un-awaited — same contract as the create-time fan-out.
-      void this.notifications.notifyNewBroadcast(orderId, claimed, {
-        pickup: pt.landmark,
-        fare: order.proposedFare.toString(),
-      });
+      void this.notifications.notifyNewBroadcast(
+        orderId,
+        claimed,
+        {
+          pickup: pt.landmark,
+          fare: order.proposedFare.toString(),
+        },
+        Math.max(1, Math.ceil(remainingMs / 1000)),
+      );
     } catch (err) {
       this.logger.warn(`broadcast expansion step ${stepIndex} failed for order ${orderId}: ${(err as Error).message}`);
     }

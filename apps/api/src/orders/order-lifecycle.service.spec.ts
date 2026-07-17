@@ -20,6 +20,7 @@ function build(methods: Record<string, unknown>) {
   const bidExpired: Array<[string, number | undefined, number | undefined]> = [];
   const evicted: string[] = [];
   const kickedFromBoard: string[] = [];
+  const evictedFromSupply: string[] = [];
   const gateway = {
     emitOrderStatus: (id: string, s: string) => emits.push([id, s]),
     emitJobCancelled: (id: string, collected: boolean, cancelledBy: string) => jobCancelled.push([id, collected, cancelledBy]),
@@ -30,6 +31,8 @@ function build(methods: Record<string, unknown>) {
     evictRiderFromGeo: async (id: string) => { evicted.push(id); },
     // KB-BOARD-REVOKE: markUndelivered also kicks a newly auto-held rider off the board rooms.
     kickRiderFromBoard: async (id: string) => { kickedFromBoard.push(id); },
+    // DS17-02: cancel() funnels a 3rd-strike (forced-offline) rider through the standing-demotion funnel.
+    evictRiderFromSupply: async (id: string) => { evictedFromSupply.push(id); },
   };
   // F-01 re-broadcast announce is best-effort push — spy so tests can assert it fired without a socket.
   const orders = { announceOpenOrder: vi.fn(async () => {}) };
@@ -55,7 +58,7 @@ function build(methods: Record<string, unknown>) {
     orders as unknown as OrdersService,
     wallet as unknown as WalletService,
   );
-  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, kickedFromBoard, orders, prisma, wallet };
+  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, kickedFromBoard, evictedFromSupply, orders, prisma, wallet };
 }
 
 describe("OrderLifecycleService.advance", () => {
@@ -763,7 +766,7 @@ describe("OrderLifecycleService.cancel", () => {
 
   it("puts the rider on cooldown and forces them offline at the strike limit", async () => {
     let riderData: Record<string, unknown> | undefined;
-    const { svc } = build(
+    const { svc, evictedFromSupply } = build(
       cancellable({
         rider: {
           findUnique: async () => ({ cancelStrikes: 2 }), // → 3, the limit
@@ -775,6 +778,25 @@ describe("OrderLifecycleService.cancel", () => {
     expect(res.cooldownUntil).toBeInstanceOf(Date);
     expect(riderData).toMatchObject({ cancelStrikes: 0, isOnline: false });
     expect(riderData!.cooldownUntil).toBeInstanceOf(Date);
+    // DS17-02: forcing the rider offline is a standing demotion, so they must also be pulled out of the geo
+    // + board supply planes through the funnel — otherwise they keep board pushes + stay a GEOSEARCH ghost
+    // for the whole 2h cooldown. Post-commit + best-effort, so let the microtask/`void` settle first.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evictedFromSupply).toEqual(["r1"]);
+  });
+
+  it("DS17-02: a rider cancel BELOW the strike limit does NOT evict from supply (they stay online)", async () => {
+    const { svc, evictedFromSupply } = build(
+      cancellable({
+        rider: {
+          findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false, heldReason: null }),
+          update: async () => ({}),
+        },
+      }),
+    );
+    await svc.cancel("o1", "r1");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evictedFromSupply).toEqual([]);
   });
 });
 

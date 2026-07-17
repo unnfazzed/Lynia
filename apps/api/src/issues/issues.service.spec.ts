@@ -3,12 +3,20 @@ import type { RaiseIssueRequest, ResolveIssueRequest } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { IssuesService } from "./issues.service";
 
 const noNotifications = {
   notifyOps: vi.fn(async () => {}),
   notifyIssueResolved: vi.fn(async () => {}),
 } as unknown as NotificationsService;
+// DS17-02: resolve() funnels a dispute-strike-limited (forced-offline) rider through the standing-demotion
+// funnel post-commit. Each helper mints a fresh spy so per-test assertions don't bleed across tests.
+function fakeGateway() {
+  return { evictRiderFromSupply: vi.fn(async () => {}) } as unknown as TrackingGateway & {
+    evictRiderFromSupply: ReturnType<typeof vi.fn>;
+  };
+}
 const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 
 const raiseBody: RaiseIssueRequest = {
@@ -22,7 +30,7 @@ describe("IssuesService.raise", () => {
 
   it("rejects a caller who isn't the order's customer or rider", async () => {
     const prisma = { order: { findUnique: async () => order }, issue: { create: vi.fn() } };
-    const svc = new IssuesService(prisma as unknown as PrismaService, noNotifications);
+    const svc = new IssuesService(prisma as unknown as PrismaService, noNotifications, fakeGateway());
     await expect(svc.raise("ord-1", raiseBody, "stranger")).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.issue.create).not.toHaveBeenCalled();
   });
@@ -39,7 +47,7 @@ describe("IssuesService.raise", () => {
       },
     };
     const notifications = { notifyOps: vi.fn(async () => {}) } as unknown as NotificationsService;
-    const svc = new IssuesService(prisma as unknown as PrismaService, notifications);
+    const svc = new IssuesService(prisma as unknown as PrismaService, notifications, fakeGateway());
 
     const res = await svc.raise("ord-1", raiseBody, "rider-1");
     await flush();
@@ -56,10 +64,11 @@ describe("IssuesService.raise", () => {
   });
 });
 
-/** A Prisma fake whose $transaction runs the callback against a per-test `tx` object. */
-function txSvc(tx: Record<string, unknown>) {
+/** A Prisma fake whose $transaction runs the callback against a per-test `tx` object. An optional gateway
+ *  lets the strike-limit test assert the post-commit standing-demotion eviction (DS17-02). */
+function txSvc(tx: Record<string, unknown>, gateway: TrackingGateway = fakeGateway()) {
   const prisma = { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaService;
-  return new IssuesService(prisma, noNotifications);
+  return new IssuesService(prisma, noNotifications, gateway);
 }
 
 describe("IssuesService.resolve — side-effect + audit in one transaction", () => {
@@ -156,7 +165,8 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
       rider: { findUnique: async () => ({ disputeStrikes: 2 }), update: riderUpdate },
       auditLog: { create: async () => ({}) },
     };
-    await txSvc(tx).resolve("admin-1", "iss-1", { resolution: "rider_strike", note: "3rd confirmed dispute" });
+    const gateway = fakeGateway();
+    await txSvc(tx, gateway).resolve("admin-1", "iss-1", { resolution: "rider_strike", note: "3rd confirmed dispute" });
 
     const call = riderUpdate.mock.calls[0]![0];
     expect(call.where).toEqual({ profileId: "rider-1" });
@@ -165,6 +175,28 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
     expect(call.data.disputeStrikes).toBe(0);
     expect(call.data.isOnline).toBe(false);
     expect((call.data.cooldownUntil as Date).getTime()).toBeGreaterThan(Date.now());
+    // DS17-02: forcing the rider offline is a standing demotion, so they must also be evicted from the geo +
+    // board supply planes through the funnel — otherwise the strike-limited rider kept board pushes + stayed
+    // a GEOSEARCH ghost for the whole cooldown. Post-commit + best-effort, so let the `void` settle first.
+    await flush();
+    expect((gateway as unknown as { evictRiderFromSupply: ReturnType<typeof vi.fn> }).evictRiderFromSupply).toHaveBeenCalledWith("rider-1");
+  });
+
+  it("DS17-02: a dispute strike BELOW the limit does NOT evict from supply (the rider stays online)", async () => {
+    const tx = {
+      issue: {
+        findUnique: async () => ({ id: "iss-1", status: "investigating", orderId: "ord-1", openedByProfileId: "cust-1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      order: { findUnique: async () => ({ riderId: "rider-1" }) },
+      $executeRaw: async () => 1,
+      rider: { findUnique: async () => ({ disputeStrikes: 0 }), update: vi.fn(async () => ({})) }, // → 1, below the limit
+      auditLog: { create: async () => ({}) },
+    };
+    const gateway = fakeGateway();
+    await txSvc(tx, gateway).resolve("admin-1", "iss-1", { resolution: "rider_strike", note: "first strike" });
+    await flush();
+    expect((gateway as unknown as { evictRiderFromSupply: ReturnType<typeof vi.fn> }).evictRiderFromSupply).not.toHaveBeenCalled();
   });
 
   it("close_no_action: writes only the audit row — no refund, no strike", async () => {
@@ -206,7 +238,7 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
 describe("IssuesService.resolve — notifies the opener post-commit", () => {
   function txSvcWithNotify(tx: Record<string, unknown>, notifications: NotificationsService) {
     const prisma = { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaService;
-    return new IssuesService(prisma, notifications);
+    return new IssuesService(prisma, notifications, fakeGateway());
   }
 
   const baseTx = {
@@ -303,7 +335,7 @@ describe("IssuesService.detailForAdmin — dispute phone reveal (wider than part
       },
       profile: { findMany: async () => [] },
     };
-    return new IssuesService(prisma as unknown as PrismaService, noNotifications);
+    return new IssuesService(prisma as unknown as PrismaService, noNotifications, fakeGateway());
   }
 
   it("reveals both parties' phones on a COMPLETED-order dispute — ops must call to resolve (F-09 carve-out)", async () => {

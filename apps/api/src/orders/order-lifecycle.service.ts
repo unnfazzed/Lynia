@@ -678,6 +678,12 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // rooms so the board sees the truthful terminal state immediately (mirrors the expiry path).
     let cancelledWhileOpen = false;
     let boardClosePickup: { lat: number; lng: number } | undefined;
+    // DS17-02: set to the rider id when this cancel is their CANCEL_STRIKE_LIMIT-th strike (forced offline
+    // + cooldown below). The transaction flips isOnline:false, but — unlike the admin suspend/ban and
+    // auto-hold paths — nothing here evicted the demoted rider from the live-supply planes, so they kept
+    // their board subscription + `rider:geo` entry (still receiving board pushes, still a GEOSEARCH ghost)
+    // for up to the whole 2h cooldown. Captured in-tx and funnelled through evictRiderFromSupply post-commit.
+    let strikeLimitRiderId: string | null = null;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
@@ -740,6 +746,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             where: { profileId: order.riderId },
             data: { cancelStrikes: 0, cooldownUntil, isOnline: false, ...reliability },
           });
+          // DS17-02: this is a standing demotion (forced offline), so the rider must also leave the geo +
+          // board supply planes — evictRiderFromSupply post-commit, like every other demotion path.
+          strikeLimitRiderId = order.riderId;
         } else {
           await tx.rider.update({
             where: { profileId: order.riderId },
@@ -763,6 +772,15 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       };
     });
 
+    // DS17-02: a 3rd-strike rider was forced offline in the transaction above — evict them from the board
+    // rooms + `rider:geo` Redis index through the standing-demotion funnel (mirrors the markUndelivered
+    // auto-hold eviction and the admin suspend/ban/KYC-lapse paths). Best-effort, post-commit; never throws,
+    // so a `void` can't surface an unhandled rejection and it can never affect the committed cancel.
+    if (strikeLimitRiderId) {
+      void this.gateway.evictRiderFromSupply(strikeLimitRiderId).catch((err) => {
+        this.logger.warn(`supply eviction after cancel-strike limit failed for ${strikeLimitRiderId}: ${(err as Error).message}`);
+      });
+    }
     // Live WS status for any open tracking screen (both cancel shapes). Raw emit rather than safeEmit,
     // because the customer PUSH below is branched — a rider-bail rebroadcast must NOT fire the generic
     // "Order cancelled" push (see below).

@@ -6,7 +6,19 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-17 (UX-improvements routine — agentic-loop hunt over the UX lane; see
+**Last consolidated:** 2026-07-17 (deep-sweep routine — orthogonal backend-correctness/concurrency/
+adversarial sweep over the DS lane; see the "Deep sweep 2026-07-17" section near the bottom for
+DS17-01…03, three MEDIUM findings, all fixed same-run with a regression test each: a widening-broadcast
+push TTL computed from send time (not order age) that could outlive the order's own 90s auction window
+and hand a reconnecting rider a dead-auction push; two standing-demotion paths (rider 3rd-cancel-strike,
+dispute-strike limit) that wrote `isOnline:false` but never evicted the rider from the live-supply
+Redis/board planes — a funnel bypass; and an automated KYC-expiry webhook that could silently wipe an
+admin-established two-decline lock. Zero new CRITICAL/HIGH this run — Phase-0 spot-check (6/6 intact),
+Phase-0.5 cluster re-verification (Auth/identity, Data-integrity, Money-fraud — all 3 INTACT), the
+Phase-1.5 cross-lane seam pass ("a single DB column with two writers"), and the Phase-3 adversarial pass
+all came back clean, so per the stopping rule the run was not padded with LOW-severity noise beyond
+these three MEDIUMs).
+Prior consolidation: 2026-07-17 (UX-improvements routine — agentic-loop hunt over the UX lane; see
 the "UX review 2026-07-17" section near the bottom for UX17-01…07: a HIGH SOS-counterparty push with
 no durable feed fallback on the app's single most safety-critical event, two more push-with-no-feed-
 fallback siblings (rider-standing-change mid-delivery, the KB-POD-DISPUTE Phase B adjudication's
@@ -629,6 +641,31 @@ testable; `pnpm typecheck` + `pnpm lint` + 916 API tests (+11) + 401 mobile test
 | UX16-08 | Top-up "Cancel request" (`reset()`) unconditionally rotated the dedup `idempotencyKey`, even when cancelling a STILL-LIVE (`pending`) top-up whose server-side row and already-pushed rail prompt aren't recalled by the local reset — an immediate resend opened a second, independent pending top-up instead of deduping against the abandoned one. Dormant (`creditFromTopup` has no callers yet) but a real double-credit vector once a live rail confirmation ships | `apps/mobile/app/wallet/top-up.tsx` `reset`, `apps/api/src/wallet/wallet.service.ts` `createTopup` | LOW-MEDIUM (dormant) | **FIXED** — `reset()` only rotates the key when NOT cancelling a live (`step === "wait"`) top-up; "Try again" from a genuinely terminal state (timeout/declined) still gets a fresh key per BH-09's original intent |
 
 ---
+
+## Deep sweep 2026-07-17 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-17.md`
+
+Orthogonal backend-correctness/concurrency/timer-boundary hunt plus the deep-sweep-owned cross-lane
+seam pass and an adversarial API pass, all cross-checked against this ledger first. **Zero new
+CRITICAL/HIGH this run.** Phase-0 spot-check re-verified 6 prior fixes still intact (F-06 admin-actor
+strip, DS15-01 Redis `error` listener, DS15-02 self-erase standing gate, DS15-06 KYC audit-in-tx,
+DS-03/DS13-04 admin CAS guards, DS16-01 reserved-audit-action guard) — 0/6 regressed. Phase-0.5
+cluster-claim re-verification re-checked three "→ FIXED" headers against current code — Auth/identity
+(JWT HS256 pin, default-secret + launch-mode boot guards), Data-integrity (reports unique index, rating
+discriminator, national-ID AES-GCM, rankOffers NaN guard) and Money-fraud (`recordPayment`/auto-pause
+genuinely absent, settlements read-only) — **all 3 INTACT, no stale claims.** Phase-1.5 seam pass traced
+"a single DB column with two writers" across the Rider/Order columns; `Rider.isOnline` (~10 writer
+call-sites) was the seam that surfaced DS17-02, `Rider.kycAttempts` the seam that surfaced DS17-03.
+Phase-3 adversarial pass came back clean (IDOR sweep across all controllers, fare/bid manipulation,
+webhook forge/replay, KYC/standing-gate bypass, admin-only mutation authz, PII surfaces). Three MEDIUM
+findings total, all fixed same-run with a regression test each; `pnpm typecheck` + full API suite
+(1010 tests) + `@lynia/api` build green. Per the stopping rule, not padded with LOW-severity noise
+beyond these three.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| DS17-01 | The widening-broadcast push TTL was a flat `BROADCAST_PUSH_TTL_SECONDS` (≈90s = `OFFER_WINDOW_MS`) computed from SEND time. Correct for the create-time broadcast (t≈0), but `MatchingService.expandBroadcast` (widening ticks fired at t=30s/60s by `OfferExpiryService`) passed the SAME flat 90s TTL — so a push sent at t=60s stayed valid in FCM/APNs until t=150s, 60s after the order's own 90s auction window closed at t=90s. A rider briefly offline could reconnect at e.g. t=120s, receive "New delivery nearby — tap to bid before it's taken" for an already-expired/assigned order, and hit a dead auction. Same root cause in `notifyRidersAvailable`'s live-order branch (already resolved which orders were still `open_for_offers` but didn't know each order's own remaining life) | `apps/api/src/notifications/notifications.service.ts` (`notifyNewBroadcast`, `notifyRidersAvailable`), `apps/api/src/matching/matching.service.ts` (`expandBroadcast`) | MEDIUM | **FIXED** — `notifyNewBroadcast` gained an optional 4th `ttlSeconds` arg (default = `BROADCAST_PUSH_TTL_SECONDS`, so every other caller is unchanged); `expandBroadcast` computes the order's actual `remainingMs = createdAt + OFFER_WINDOW_MS − now`, returns early (no push) when `remainingMs ≤ 0`, else passes `ceil(remainingMs/1000)`. `notifyRidersAvailable` now selects `createdAt`, builds an id→createdAt map, and applies the same remaining-life TTL per live-order waiter (skips a waiter whose window elapsed rather than pushing a dead reference). The create-time broadcast and the generic no-orderId branch keep the flat default deliberately. Tests in `matching.service.spec.ts` + `notifications.service.spec.ts` |
+| DS17-02 | Two standing-demotion paths wrote `isOnline:false` but never evicted the rider from the live-supply Redis/board planes — a bypass of the `TrackingGateway.evictRiderFromSupply` funnel every demotion is supposed to route through. (1) `OrderLifecycleService.cancel`'s `CANCEL_STRIKE_LIMIT` (3rd pre-pickup cancel) branch set `isOnline:false` + 2h cooldown but left the rider's board subscription + `rider:geo` entry alive — still receiving `board:new_order` pushes for jobs they're blocked from bidding on and a GEOSEARCH ghost in `nearbyRiders` for up to the whole cooldown. (2) `IssuesService.resolve`'s `rider_strike`→`RIDER_STRIKE_LIMIT` branch had the same gap and `IssuesService` had NO `TrackingGateway` dependency at all | `apps/api/src/orders/order-lifecycle.service.ts` (`cancel`), `apps/api/src/issues/issues.service.ts` (`resolve`), `apps/api/src/issues/issues.module.ts` | MEDIUM | **FIXED** — `cancel` captures the strike-limit rider id in-tx (mirrors the existing `newlyHeldRiderId` pattern) and calls `evictRiderFromSupply` post-commit best-effort. `IssuesModule` now imports `TrackingModule`; `IssuesService` injects `TrackingGateway` (+ a `Logger`), captures the strike-limit rider id in-tx and evicts post-commit. Both mirror the KYC-lapse/suspend/ban/auto-hold funnel calls exactly. Tests in `order-lifecycle.service.spec.ts` (at-limit evicts, below-limit does not) + `issues.service.spec.ts` (same) |
+| DS17-03 | `applyKycResult` (the automated vendor-webhook KYC handler) reset `kycAttempts:0` unconditionally on `status === "expired"` with no check on the rider's lock state, so an automated expiry could silently wipe the A-02 two-decline lock (`retryKyc` refuses a 3rd attempt at `kycAttempts >= 2`). Race: admin declines twice (→ locked, `kycResolvedAt` stamped) → a stale vendor session for an earlier `kycRef` later times out and fires `expired` with an `eventAt` AFTER the admin's 2nd decline → the monotonic `kycResolvedAt < eventAt` guard matches → the update applies, resetting `kycAttempts:0` and unlocking a rider the admin permanently locked, handing them a 3rd attempt | `apps/api/src/riders/rider.service.ts` (`applyKycResult`) | MEDIUM | **FIXED** — the `current`-state read (previously fetched only for `verified`, to check `duplicateIdFlag`) now runs unconditionally and also selects `kycAttempts`; the expired reset is gated `status === "expired" && (current?.kycAttempts ?? 0) < 2`, so it still recovers an ancient never-locked decline but preserves an admin-established lock. The MANUAL `adminSetKyc` expired-reset (a deliberate human ops decision) is untouched. Test in `rider.service.spec.ts` (a locked rider's `expired` webhook does NOT reset `kycAttempts`) |
 
 ## Deep sweep 2026-07-16 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-16.md`
 

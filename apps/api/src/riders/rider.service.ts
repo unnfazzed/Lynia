@@ -411,11 +411,13 @@ export class RiderService {
       // Read the flag first (kycRef is unique, so at most one row) so the updateMany below can route a
       // flagged match to manual review instead of applying the vendor's `verified`. `failed`/`expired`
       // outcomes are unaffected — the flag only matters for the auto-APPROVE path.
-      const flagged =
-        status === "verified"
-          ? await tx.rider.findFirst({ where: { kycRef }, select: { duplicateIdFlag: true } })
-          : null;
-      const holdForReview = status === "verified" && flagged?.duplicateIdFlag === true;
+      // DS17-03: this read runs UNCONDITIONALLY now (previously only for `verified`) and also pulls
+      // kycAttempts, because the `expired` branch below must know the rider's current lock state before it
+      // resets the counter — an automated expiry webhook must not silently wipe the A-02 two-decline lock an
+      // admin already applied. kycRef is unique, so at most one row. For verified/failed the extra
+      // kycAttempts field is simply read and unused (a harmless no-op beyond the existing flag read).
+      const current = await tx.rider.findFirst({ where: { kycRef }, select: { duplicateIdFlag: true, kycAttempts: true } });
+      const holdForReview = status === "verified" && current?.duplicateIdFlag === true;
       const res = await tx.rider.updateMany({
         where: { kycRef, OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] },
         data: {
@@ -440,7 +442,12 @@ export class RiderService {
           ...(status === "failed" ? { kycAttempts: { increment: 1 } } : {}),
           // An expiry (1·b2) is not a decline: reset the A-02 attempt counter so re-verification isn't
           // trapped by an ancient decline the rider already recovered from before they were verified.
-          ...(status === "expired" ? { kycAttempts: 0 } : {}),
+          // DS17-03: but ONLY when the rider isn't already locked (kycAttempts < 2). A stale vendor session
+          // timing out and firing `expired` AFTER an admin's second decline must not silently wipe the
+          // permanent two-decline lock (retryKyc's A-02 gate) — that would hand a locked applicant a third
+          // attempt. An admin choosing to reset the lock goes through adminSetKyc's manual expire path,
+          // which is a deliberate human decision and keeps its own unconditional reset.
+          ...(status === "expired" && (current?.kycAttempts ?? 0) < 2 ? { kycAttempts: 0 } : {}),
           // Standing-demotion (Class-B sibling of BR-01/DS15-05): a rider verified+online at the moment
           // their KYC lapses to failed/expired can no longer bid (onlineRefusalReason gates on
           // kyc=verified), so leaving them isOnline:true keeps them counted in the customer-facing

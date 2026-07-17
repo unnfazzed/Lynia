@@ -555,6 +555,12 @@ export class NotificationsService {
     orderId: string,
     riderProfileIds: string[],
     info: { pickup: string; fare: string },
+    // DS17-01: the create-time broadcast fires at t≈0 so the flat OFFER_WINDOW-long default TTL is
+    // correct for it. The WIDENING rebroadcast (MatchingService.expandBroadcast) fires MID-window, so it
+    // passes the order's ACTUAL remaining life here instead — otherwise a 90s TTL computed from SEND time
+    // outlives the order's own 90s auction window and a reconnecting dead-zone rider could tap a push for
+    // an already-expired/assigned order. Default preserved so every OTHER caller is unaffected.
+    ttlSeconds: number = BROADCAST_PUSH_TTL_SECONDS,
   ): Promise<void> {
     try {
       await this.send(riderProfileIds, {
@@ -562,8 +568,9 @@ export class NotificationsService {
         body: `Pickup at ${info.pickup} · asking $${info.fare} — tap to bid before it's taken.`,
         data: { orderId, kind: "broadcast" },
         // Fix 5: drop the push once the auction window has passed — a stale "new delivery nearby" landing
-        // hours later (rider was in a dead zone) is pure noise. Covers the widening rebroadcast too (same kind).
-        ttlSeconds: BROADCAST_PUSH_TTL_SECONDS,
+        // hours later (rider was in a dead zone) is pure noise. DS17-01: for the widening rebroadcast the
+        // caller passes the order's remaining window here so the TTL tracks order age, not send time.
+        ttlSeconds,
       });
     } catch (err) {
       this.logger.warn(`notifyNewBroadcast(${orderId}) failed: ${(err as Error).message}`);
@@ -585,12 +592,20 @@ export class NotificationsService {
       // back on that auction); everything else keeps today's generic re-broadcast nudge with no orderId.
       const orderIds = [...new Set(waiters.map((w) => w.orderId).filter((id): id is string => !!id))];
       const openIds = new Set<string>();
+      // DS17-01: alongside "is this order still open" also capture its createdAt, so the live-order push
+      // below can compute how much of THAT order's own 90s window is left and set a TTL that tracks order
+      // age rather than send time — a flat OFFER_WINDOW TTL on a push sent late in the window outlives the
+      // auction it points at.
+      const createdAtByOrder = new Map<string, Date>();
       if (orderIds.length > 0) {
         const openOrders = await this.prisma.order.findMany({
           where: { id: { in: orderIds }, status: "open_for_offers" },
-          select: { id: true },
+          select: { id: true, createdAt: true },
         });
-        for (const o of openOrders) openIds.add(o.id);
+        for (const o of openOrders) {
+          openIds.add(o.id);
+          createdAtByOrder.set(o.id, o.createdAt);
+        }
       }
 
       // Returns the set actually delivered to (F-18): the caller clears only those from the waiting
@@ -602,13 +617,20 @@ export class NotificationsService {
       // waiter and an order has one customer, so there's no batching to share here.
       for (const w of waiters) {
         if (!w.orderId || !openIds.has(w.orderId)) continue;
+        // DS17-01: size the TTL to the order's ACTUAL remaining life, not a flat OFFER_WINDOW from send
+        // time. A push sent late in the window with a full-window TTL stays valid in the provider past the
+        // moment the order's auction closes; if the window has already elapsed, don't push a dead reference
+        // at all (the waiter stays queued for the next nearby rider — F-18 at-least-once).
+        const createdAt = createdAtByOrder.get(w.orderId);
+        const remainingMs = createdAt ? createdAt.getTime() + OFFER_WINDOW_MS - Date.now() : BROADCAST_PUSH_TTL_SECONDS * 1000;
+        if (remainingMs <= 0) continue;
         const got = await this.send([w.profileId], {
           title: "A rider's online near you",
           body: "Riders are being pinged on your live request — tap to follow the offers.",
           data: { kind: "riders_available", orderId: w.orderId },
           // Fix 5: time-critical — a rider being online is a fleeting signal, so a push that lands long
           // after the window is stale (they may be offline again). Drop it rather than deliver it late.
-          ttlSeconds: BROADCAST_PUSH_TTL_SECONDS,
+          ttlSeconds: Math.max(1, Math.ceil(remainingMs / 1000)),
         });
         for (const id of got) delivered.add(id);
       }
