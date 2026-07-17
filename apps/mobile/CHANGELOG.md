@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/unnfazzed/Lynia/compare/v0.6.0...v0.6.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* **mobile:** reconcile activeJob on rider-board reconnect/foreground, expire stale bid drafts ([#285](https://github.com/unnfazzed/Lynia/issues/285)) ([2765c17](https://github.com/unnfazzed/Lynia/commit/2765c17e89eb4d0286789a06c67ca391aa9f9bbb))
+
 ## [0.6.0](https://github.com/unnfazzed/Lynia/compare/v0.5.0...v0.6.0) (2026-07-16)
 
 
