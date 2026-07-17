@@ -78,7 +78,7 @@ export function ResolveActions({
         triggerVariant="quiet"
         disabled={!connected}
         title={`Close ${id} with no action?`}
-        consequence="Both sides are notified that the issue is closed. It stays on record and reopens if new evidence arrives."
+        consequence="The reporting party is notified that the issue is closed with no action. It stays on record in the audit log."
         reasons={REASONS.issueClose}
         noteRequired
         notePlaceholder="Required — why no action is warranted."

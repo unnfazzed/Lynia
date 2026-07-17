@@ -42,7 +42,9 @@ describe("AdminAuditService.recordAuditAction (A-01)", () => {
       auditLog: { create: async () => { createCalls++; return { id: "should-not-happen" }; } },
     };
     const svc = new AdminAuditService(prisma as unknown as PrismaService);
-    for (const action of ["rider.ban", "rider.kyc_approve", "wallet.credit", "order.cancel"]) {
+    // UX17-02: order.rider_standing_notice is read back by feedForUser (target=orderId) as the customer
+    // rider-standing feed fallback, so the free-text path must reject it too (no forged feed rows).
+    for (const action of ["rider.ban", "rider.kyc_approve", "wallet.credit", "order.cancel", "order.rider_standing_notice"]) {
       await expect(svc.recordAuditAction("admin-42", { action, target: "victim-profile-id" })).rejects.toBeInstanceOf(
         BadRequestException,
       );

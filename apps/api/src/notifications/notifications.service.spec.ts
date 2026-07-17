@@ -31,6 +31,11 @@ function makeDeps() {
     issue: {
       findMany: vi.fn().mockResolvedValue([]),
     },
+    // UX17-01: feedForUser synthesizes SOS counterparty rows from SosEvent (durable fallback for a missed
+    // "SOS on your delivery" push), scoped to the viewer's own orders they did NOT raise.
+    sosEvent: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     // DS13-05: notifyOps resolves the admin audience (role=admin) server-side.
     profile: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -557,6 +562,114 @@ describe("NotificationsService — derived in-app feed (A·3)", () => {
     const feed = await service.feedForUser("me", NOW);
     expect(feed.find((r) => r.id === "issue:i1")?.message).toContain("taken action");
     expect(feed.find((r) => r.id === "issue:i2")?.message).toContain("closed it out");
+  });
+
+  it("UX17-01: synthesizes an SOS row for the COUNTERPARTY (not the raiser), mirroring the push copy", async () => {
+    const { prisma, service } = makeDeps();
+    // One shared order both parties are on; the RIDER raised the SOS on it.
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+    ]);
+    // Simulate the DB-level `raisedByProfileId: { not: viewer }` filter — only events NOT raised by the
+    // viewer come back, so the raiser (rider) never sees their own SOS while the counterparty (cust) does.
+    const allSos = [{ id: "s1", orderId: "o1", raisedByProfileId: "rider", createdAt: new Date("2026-07-06T11:00:00.000Z") }];
+    prisma.sosEvent.findMany.mockImplementation(async ({ where }: { where: { raisedByProfileId: { not: string } } }) =>
+      allSos
+        .filter((e) => e.raisedByProfileId !== where.raisedByProfileId.not)
+        .map((e) => ({ id: e.id, orderId: e.orderId, createdAt: e.createdAt })),
+    );
+
+    // The COUNTERPARTY (customer) sees the durable SOS row with copy verbatim-mirroring the push.
+    const custFeed = await service.feedForUser("cust", NOW);
+    const sosRow = custFeed.find((r) => r.title === "SOS on your delivery");
+    expect(sosRow).toMatchObject({
+      id: "sos:s1",
+      orderId: "o1",
+      icon: "triangle-alert",
+      message: "The other party raised an SOS on this trip. Stay safe — LyniaGo's safety team has been alerted.",
+      unread: true,
+    });
+    // The query excludes events the viewer raised (counterparty-only, mirroring the push's target).
+    expect(prisma.sosEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { orderId: { in: ["o1"] }, raisedByProfileId: { not: "cust" } } }),
+    );
+
+    // The RAISER (rider) never sees an SOS row for the trip they raised it on.
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+    ]);
+    const riderFeed = await service.feedForUser("rider", NOW);
+    expect(riderFeed.some((r) => r.title === "SOS on your delivery")).toBe(false);
+  });
+
+  it("UX17-02: synthesizes a rider-standing-notice row for the affected CUSTOMER (not the rider)", async () => {
+    const { prisma, service } = makeDeps();
+    // The customer's own order (riderId != viewer → customer view).
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", riderId: "rider", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+    ]);
+    // The standing-notice audit is targeted at the ORDER id; the account-status query (target=userId) is
+    // separate and returns nothing here. Branch the shared auditLog.findMany mock on the queried action.
+    prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
+      where.action === "order.rider_standing_notice"
+        ? [{ id: "au1", target: "o1", createdAt: new Date("2026-07-06T11:00:00.000Z") }]
+        : [],
+    );
+
+    // The CUSTOMER sees the durable fallback row, copy verbatim-mirroring the push.
+    const custFeed = await service.feedForUser("cust", NOW);
+    const row = custFeed.find((r) => r.title === "An update on your delivery");
+    expect(row).toMatchObject({
+      id: "rider-standing:au1",
+      orderId: "o1",
+      icon: "triangle-alert",
+      message: "There's a change with your assigned rider — our team is reviewing this trip.",
+      unread: true,
+    });
+
+    // The RIDER viewing their OWN order (riderId === viewer) is NOT a customer-view order, so the notice is
+    // not shown to them — they get their own rider.suspend/ban account row via ACCOUNT_FEED_ACTIONS instead.
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", riderId: "rider", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+    ]);
+    const riderFeed = await service.feedForUser("rider", NOW);
+    expect(riderFeed.some((r) => r.title === "An update on your delivery")).toBe(false);
+  });
+
+  it("UX17-03: an adjudicated `completed` shows the ops-override copy (customer + rider), a plain completion stays generic", async () => {
+    const { prisma, service } = makeDeps();
+    // o1 was ops-adjudicated to complete; o2 is an ordinary completion.
+    prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
+      where.action === "order.adjudicate_delivered" ? [{ target: "o1" }] : [],
+    );
+
+    // Customer view (riderId != viewer) — adjudicated order shows the review + 48h contest copy; the
+    // ordinary completion keeps the generic FEED_NOTICES.completed copy.
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", riderId: "rider", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
+      { id: "o2", riderId: "rider", events: [{ status: "completed", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+    ]);
+    const custFeed = await service.feedForUser("cust", NOW);
+    expect(custFeed.find((r) => r.orderId === "o1")).toMatchObject({
+      title: "Delivery marked complete after review",
+      message: expect.stringContaining("within 48 hours"),
+    });
+    expect(custFeed.find((r) => r.orderId === "o2")).toMatchObject({ title: "Delivery complete" });
+    // It queried the durable adjudication audit rows for the in-view orders.
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { target: { in: ["o1", "o2"] }, action: "order.adjudicate_delivered" } }),
+    );
+
+    // Rider view (riderId === viewer) — the adjudicated completion shows the rider-voiced "we reviewed your
+    // proof" copy, not the generic "Nice work".
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", riderId: "me", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
+    ]);
+    const riderFeed = await service.feedForUser("me", NOW);
+    expect(riderFeed[0]).toMatchObject({
+      title: "Delivery confirmed",
+      message: expect.stringContaining("reviewed your proof"),
+    });
   });
 });
 

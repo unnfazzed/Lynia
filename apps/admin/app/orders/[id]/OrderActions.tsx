@@ -1,5 +1,6 @@
 "use client";
 
+import { tokens } from "@lynia/shared";
 import { REASONS } from "../../lib/reasons";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { cancelOrder, adjustFare, adjudicateDelivered } from "../actions";
@@ -32,8 +33,9 @@ export function FareAdjust({
       title="Adjust fare / record refund"
       consequence={
         <span>
-          Order <b>{id}</b> · current fare <b>${agreedOrProposed}</b>. Cash refunds are paid out via the rider&apos;s next
-          settlement.
+          Order <b>{id}</b> · current fare <b>${agreedOrProposed}</b>. A cash refund is only <b>recorded</b> here —
+          automatic netting off the rider&apos;s settlement arrives with the commission/billing infra (not yet live),
+          which will then consume this record.
         </span>
       }
       reasons={REASONS.orderAdjustFare}
@@ -49,7 +51,17 @@ export function FareAdjust({
  * proof-of-drop evidence (shown above this control) supports it. Force-completes the order, credits the
  * rider a clean trip, and charges commission. Rendered only on an `undelivered` order with a rider.
  */
-export function AdjudicateDelivered({ id, connected }: { id: string; connected: boolean }) {
+export function AdjudicateDelivered({
+  id,
+  connected,
+  hasEvidence,
+}: {
+  id: string;
+  connected: boolean;
+  /** Whether the order carries rider-attached proof-of-drop (the evidence "the proof above" refers to).
+   *  False on the majority of undelivered orders — capture is optional — so warn the operator plainly. */
+  hasEvidence: boolean;
+}) {
   return (
     <ConfirmModal
       action="order.adjudicate_delivered"
@@ -62,9 +74,16 @@ export function AdjudicateDelivered({ id, connected }: { id: string; connected: 
       title="Adjudicate this delivery as complete?"
       consequence={
         <span>
-          Overturns the <b>undelivered</b> outcome on order <b>{id}</b> to <b>delivered</b> — only when the proof above
-          confirms the drop and the recipient withheld the code. The rider is credited a completed trip and commission;
-          the customer is notified and can contest within 48 hours. Recorded in the audit log.
+          {!hasEvidence ? (
+            <b style={{ color: tokens.color.danger }}>
+              ⚠️ No proof-of-drop evidence was submitted for this order — you&apos;re overriding based on the reason and
+              note alone.{" "}
+            </b>
+          ) : null}
+          Overturns the <b>undelivered</b> outcome on order <b>{id}</b> to <b>delivered</b>
+          {hasEvidence ? " — only when the proof above confirms the drop and the recipient withheld the code" : ""}. The
+          rider is credited a completed trip and commission; the customer is notified and can contest within 48 hours.
+          Recorded in the audit log.
         </span>
       }
       reasons={REASONS.orderAdjudicateDelivered}

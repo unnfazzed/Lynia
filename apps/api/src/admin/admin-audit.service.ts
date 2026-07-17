@@ -24,6 +24,9 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   "order.cancel",
   "order.fare_adjust",
   "order.adjudicate_delivered",
+  // UX17-02: written by notifyCustomersOfRiderStandingChange and read back by feedForUser (target=orderId)
+  // as the customer-facing rider-standing feed fallback — so the free-text path must not be able to forge it.
+  "order.rider_standing_notice",
   "issue.resolve",
   "sos.acknowledge",
   "wallet.credit",
