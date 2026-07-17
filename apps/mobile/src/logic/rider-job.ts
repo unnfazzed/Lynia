@@ -60,6 +60,18 @@ export function reconcileOtpAttempts(input: {
 }
 
 /**
+ * BH-16: decide whether a 409 ("Order changed, retry") from `advance()` actually means the requested
+ * step already landed — a lost-response timeout retry can hit this after the server committed THIS SAME
+ * advance on the first attempt. `advance()`'s CAS edges only ever move forward through the fixed
+ * assigned→confirmed→en_route_pickup→picked_up→en_route_dropoff staircase (`ACTIVE`), so if the fresh
+ * server status is at or past the requested `to` step, the conflict is a stale-retry echo, not a real
+ * failure — mirrors deliverM/undeliverM's reconciliation for their own terminal 409s.
+ */
+export function advanceReconciled(freshStatus: string, to: string): boolean {
+  return ACTIVE.indexOf(freshStatus) >= ACTIVE.indexOf(to);
+}
+
+/**
  * KB-CONFIRMITEMS-RETRY: decide what to do with a durable "confirmItems still pending for order X" marker
  * against the current active-job snapshot. The rider's pickup-item confirmation is best-effort and fired as
  * they advance to `picked_up`; a lost response / app-kill right then can leave the order with no

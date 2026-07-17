@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useAuth } from "../src/auth/auth-context";
 import { loadOnboardingSeen, loadRolePreference, type StartRole } from "../src/auth/session";
+import { bootDestination } from "../src/logic/boot-route";
 import { DoveMark } from "../src/ui/Brand";
 
 export default function Index(): React.ReactElement {
@@ -32,9 +33,7 @@ export default function Index(): React.ReactElement {
   }
   // A brand-new user (no session, onboarding not yet seen) meets the carousel first; it saves the flag
   // and hands off to /phone once done or skipped.
-  if (!session && !onboardingSeen) return <Redirect href="/onboarding" />;
-  if (!session) return <Redirect href="/phone" />;
   // A signed-in user with the rider role saved goes straight to their rider home — mirrors verify.tsx's
   // post-OTP routing so a warm relaunch doesn't dump a rider onto the customer compose screen (R3).
-  return <Redirect href={rolePref === "rider" ? "/rider" : "/home"} />;
+  return <Redirect href={bootDestination({ session, onboardingSeen, rolePref: rolePref ?? null })} />;
 }

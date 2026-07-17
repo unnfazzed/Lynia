@@ -18,6 +18,21 @@ cluster — customer hold/lift had ZERO push and ZERO feed row (no `Notification
 siblings in the same class (`wallet.creditManual`, `adjustFare`, and `banRider`'s missing self-push) fixed
 alongside it, plus `liftRider` never resolving the "we're reviewing this trip" notice `suspendRider`/
 `banRider` leave on the affected customer's feed. Zero open sibling PRs at Phase 0.
+Prior: 2026-07-17 night (bug-hunt routine — agentic-loop hunt over the BH lane, mobile
+journeys + app↔API contract seams; see "Bug hunt 2026-07-17 night" near the bottom for BH-15…17, one HIGH
+and two lower-severity findings, all fixed same-run with a regression test each: an interrupted post-OTP
+`/profile/setup` step (app kill or dropped PATCH before the name saves) permanently stranded the account
+unnamed — `needsProfile` is now captured durably on the session at sign-in and only cleared once the PATCH
+actually lands, so the cold-start bootstrap redirect re-prompts until the name is really saved instead of
+silently routing straight to `/home`/`/rider` forever; the rider's `advanceM` trip-step mutation was the
+one status-changing mutation in `job.tsx` with no 409-reconciliation, so a lost-response retry after the
+server had already committed the step left a permanent false "Couldn't update this delivery" banner even
+after the underlying status self-healed; and the rider's pickup-checklist SecureStore draft was the one
+per-order draft `clearDeviceState()`'s sign-out wipe missed, alongside every sibling key. Phase-0.5 cluster
+re-verification (Notifications/FCM, Edge/abuse, Mobile journey dead-ends — rotated away from the KYC/
+Object-authz/Auth/Data-integrity/Money-fraud clusters the prior two routines already re-checked) came back
+intact (17/17 members confirmed present and wired; one ledger-wording drift noted, no fresh finding). Zero
+open sibling PRs at Phase 0.
 Prior: 2026-07-17 (wallet & data-lifecycle audit routine — agentic-loop hunt over the WD
 lane; see the "Wallet & data-lifecycle audit 2026-07-17" section near the bottom for WD-021…WD-023, three
 MEDIUM findings, all fixed same-run with a regression test each: `AdminOrdersService.adjudicateDelivered`
@@ -987,3 +1002,39 @@ MEDIUM — all fixed this run**, each with a regression test; `pnpm typecheck` +
 **Stopping rule:** three MEDIUM findings this run (no CRITICAL/HIGH) — reported in full per the mandatory
 sibling-sweep evidence rule, not padding; the hunt's own 5-of-8-lenses-empty result plus the Phase-0.5 clean
 re-verification indicates the wallet/ledger/admin-KPI core is converging.
+
+---
+
+## Bug hunt 2026-07-17 night (bug-hunt routine) — `docs/BUG-HUNT-2026-07-17.md`
+
+Phase 0: zero open `claude/*` sibling PRs at session start. Phase 0.5 re-verified the **Notifications/FCM**,
+**Edge/abuse**, and **Mobile journey dead-ends** cluster headers (rotated away from KYC/Object-authz/Auth/
+Data-integrity/Money-fraud, all re-checked by the prior two routines) — 17 members across the three
+clusters, all confirmed present and actually wired in current code; one ledger-wording drift noted (the
+FCM cluster's "device-token rehoming guard" now describes a deliberately-replaced authenticated-rehoming +
+throttle design, not the original conflict-throw — not a live bug, just a stale description). Hunt ran via
+the agentic-loop engine (`Workflow({name: 'lane-bug-hunt'}, args: 'bug-hunt')`) — 5 diverse finder lenses
+(journey-deadends, lifecycle, contract-seam, retry-safety, realtime-recovery), 3 candidates found (2 of 5
+lenses returned zero), all 3 survived a 3-skeptic adversarial panel unanimously (9/9 "real" votes), then a
+repo-wide sibling-sweep per survivor. **Three findings, one HIGH and two lower-severity — all fixed this
+run**, each with a regression test; `pnpm typecheck` + full monorepo `pnpm test` (1012 API tests, 426
+mobile tests) green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| BH-15 | The post-OTP name-entry step (`/profile/setup`, the only screen that ever calls `PATCH /auth/me`) is a one-shot dead end: `verify.tsx` durably persists the session tokens (`signIn`) BEFORE the profile-setup PATCH ever runs, and `index.tsx`'s cold-start bootstrap redirect decided the destination purely from session-presence + saved role preference, never re-checking profile completeness. If the app was killed or the PATCH's response was lost before it landed, the account was left permanently with `firstName === ""` — the next launch silently routed straight to `/home`/`/rider`, never back to `/profile/setup` or `/role`, and `apps/mobile/app/profile/index.tsx` explicitly has no name-edit UI ("Editing your details is coming soon"), so a customer who never becomes a rider (the one incidental path that also happens to overwrite the name) had zero recovery. Every future order for that account then showed a blank counterparty name at parcel hand-off (`orders.service.ts` `counterpartyName`) | `apps/mobile/app/index.tsx`, `apps/mobile/app/verify.tsx`, `apps/mobile/app/profile/setup.tsx`, `apps/mobile/src/auth/session.ts` | HIGH | **FIXED** — `Session` now carries a durable `needsProfile` flag, captured from the server's `verifyOtp` response at sign-in and cleared only once `profile/setup`'s PATCH actually lands (via `signIn({...session, needsProfile:false})`). The cold-start bootstrap decision was extracted into a pure, testable `bootDestination()` (`apps/mobile/src/logic/boot-route.ts`) that checks `needsProfile` before the role fork, so an interrupted setup re-prompts on every relaunch instead of silently skipping it forever. 6 new cases in `boot-route.test.ts` |
+| BH-16 | `advanceM` (the rider's "advance to next step" mutation, `apps/mobile/app/rider/job.tsx`) was the one status-changing mutation in the file with no 409-reconciliation and no `onSuccess` handler — its four siblings (`deliverM`, `cancelM`, `undeliverM`, `senderRateM`) were each already fixed (DS14-14/UX15-08/UX15-09/BH-07) to detect a 409 that actually means "this already landed" and to clear stale errors. On a lost-response timeout where the server's CAS transition had already committed, `advanceM`'s `onError` set a generic "Couldn't update this delivery" error that then NEVER cleared — not even after `onSettled`'s `refresh()` silently self-healed the real status — because there was no `onSuccess` to clear it either. The stale banner persisted under the Continue button and onto the delivered/undelivered terminal screens | `apps/mobile/app/rider/job.tsx` `advanceM` | MEDIUM | **FIXED** — added `onSuccess: () => setError(null)`, and mirrored the sibling mutations' 409-reconciliation: on a 409, re-fetches the order and clears the error (instead of showing a scary failure) whenever the fresh status has reached or passed the requested step. The reconciliation decision was extracted as a pure `advanceReconciled()` (`apps/mobile/src/logic/rider-job.ts`) using the existing `ACTIVE` staircase ordering. 4 new cases in `rider-job.test.ts` |
+| BH-17 | `clearDeviceState()` (`apps/mobile/src/auth/session.ts`, run on every sign-out) explicitly wipes every other per-order/per-session SecureStore draft/marker this codebase persists — order-draft, disclaimer, role-pref, delivery codes, hand-back ack, confirm-items-pending, job-terminal, pending-rating, pending-sender-rating, pending-topup, saved-places/recipients, KYC draft, history snapshot, rider-identity, job snapshot, and the rider's bid draft — each with an explicit shared-device-leak comment (the F-04 class). `PICKUP_CHECKLIST_DRAFT_KEY` (the rider's autosaved pickup-item-verification ticks, `apps/mobile/src/logic/pickup-checklist-draft.ts`) was the one persisted draft key never imported into `session.ts` and never added to the wipe list — it survived sign-out on a shared device. The order-id-match guard on read prevents it from ever painting onto a *different* order's checklist, so this was a data-hygiene gap (a stranger's stale draft lingering in the keychain) rather than an active cross-account mis-restore | `apps/mobile/src/auth/session.ts` `clearDeviceState` | LOW | **FIXED** — imported `PICKUP_CHECKLIST_DRAFT_KEY` and added it to the sign-out wipe list, closing the codebase's own "every per-order draft key is wiped on sign-out" invariant. New `session.test.ts` asserts the key is deleted on `clearDeviceState()` |
+
+**Sibling-sweep evidence** (full grep commands + hit counts in the dated report):
+
+- **BH-15** (`grep -rn '"/profile/setup"' apps/mobile`, a `router.replace`/`router.push` destination census across `apps/mobile/app`, `grep -rn 'signIn(' apps/mobile`, `grep -rln 'Redirect href' apps/mobile/app`, `grep -rn 'needsProfile'` across api+mobile, plus a check for any admin-console `firstName`/`lastName` write path — 41 hits): `index.tsx` is the ONLY cold-start bootstrap gate in the app (no other screen makes a session-presence routing decision), so there was exactly one call site to fix, not a sibling class. Confirmed no admin-console write path for `firstName`/`lastName` exists (the only other route that touches those fields is `PATCH /riders/profile`, itself gated behind the same fixed bootstrap now).
+- **BH-16** (`grep -rn "useMutation(" apps/mobile apps/admin` — 16 hits total; `grep -rn "status === 409" apps/mobile`; a full `onMutate:`/`onSuccess:`/`onError:`/`onSettled:` census of every mutation in `job.tsx`/`order/[id].tsx`/`rider/index.tsx`): `advanceM` was the only status-changing mutation among all 16 `useMutation` call sites across `apps/mobile` and `apps/admin` missing both an `onSuccess` error-clear and 409-reconciliation. All others (including `order/[id].tsx`'s `selectM`) already handle their own terminal 409s. No further siblings.
+- **BH-17** (`grep -rln "SecureStore.setItemAsync\|SecureStore.getItemAsync" apps/mobile/src`, `grep -n "clearDeviceState" -A60 session.ts`, `grep -rn "AsyncStorage"`/`"localStorage."` across mobile+admin, `grep -rn "deleteItemAsync" apps/mobile/src | grep -v session.ts` — 9 hits): every other SecureStore-backed module in the app is either already imported into `clearDeviceState`'s wipe list, or (the device-id key) deliberately excluded with its own documented rationale. `PICKUP_CHECKLIST_DRAFT_KEY` was the sole gap. No AsyncStorage/localStorage persistence exists on the mobile side that would need the same treatment.
+
+**Suggestions (not implemented):** none this run — all three findings were straightforward client-side correctness/data-hygiene fixes within scope.
+
+**Stopping rule:** three findings this run (one HIGH, no CRITICAL) — reported in full per the mandatory
+sibling-sweep evidence rule; 2 of 5 hunt lenses (contract-seam, realtime-recovery) returned zero findings,
+and the Phase-0.5 re-verification came back fully clean, consistent with this lane's surface having been
+hunted repeatedly across BH-01…BH-14.

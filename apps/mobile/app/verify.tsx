@@ -85,6 +85,7 @@ export default function VerifyScreen(): React.ReactElement {
         expiresIn: res.expiresIn,
         profileId: res.profileId,
         role: res.role,
+        needsProfile: res.needsProfile,
       });
       // A brand-new account has no name yet (verifyOtp seeds firstName ""); collect it on the
       // profile-setup step FIRST (finding C12) before the role fork / home. That screen routes onward
