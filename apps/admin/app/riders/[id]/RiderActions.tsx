@@ -62,8 +62,9 @@ export function RiderActions({
           title={`Permanently ban ${name}?`}
           consequence={
             <span>
-              <b>This can&apos;t be undone from the console.</b> Their account, bike registration and national ID are
-              blocked from re-registering.
+              <b>This can&apos;t be undone from the console.</b> Their account is blocked. A fresh signup with the same
+              bike registration or national ID is <b>not</b> automatically prevented — a duplicate ID only flags the new
+              account for manual KYC review, so ops vigilance is still needed to catch a re-registration.
             </span>
           }
           reasons={REASONS.riderBan}

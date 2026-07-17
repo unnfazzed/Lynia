@@ -251,6 +251,21 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                 />
               </div>
             </section>
+          ) : o.status === "undelivered" ? (
+            // No proof was attached — the majority case (capture is optional, only offered at the door).
+            // Render an honest empty-state rather than vanishing, so the operator adjudicating below knows
+            // evidence was expected but is absent, not merely un-scrolled-to.
+            <section className="card">
+              <div className="block-title">Proof of drop-off</div>
+              <div style={{ fontSize: 12, color: tokens.color.muted, marginBottom: 8 }}>
+                No proof-of-drop evidence was submitted for this order.
+              </div>
+              <div className="doc-ph" style={{ height: 120 }}>
+                no proof-of-drop
+                <br />
+                (capture is optional at the door)
+              </div>
+            </section>
           ) : null}
         </div>
 
@@ -368,7 +383,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               ) : o.status === "undelivered" && o.rider ? (
                 // KB-POD-DISPUTE Phase B: the one live action on an undelivered order — overturn the
                 // outcome to delivered when the proof-of-drop card above supports it.
-                <AdjudicateDelivered id={o.id} connected={connected} />
+                <AdjudicateDelivered id={o.id} connected={connected} hasEvidence={Boolean(o.deliveryProof)} />
               ) : (
                 <span style={{ fontSize: 12, color: tokens.color.muted }}>
                   This order is {o.status.replace(/_/g, " ")} — no live actions.

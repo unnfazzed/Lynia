@@ -198,13 +198,28 @@ export class AdminRidersService {
         select: { id: true, customerId: true },
       });
       await Promise.all(
-        activeOrders.map((o) =>
-          this.notifications.notifyProfiles([o.customerId], {
+        activeOrders.map(async (o) => {
+          // UX17-02: the push above is best-effort and easily missed (backgrounded app / dead FCM token),
+          // and the rider.suspend/ban audit is targeted at the RIDER's id — so feedForUser's account-status
+          // query never surfaces this to the CUSTOMER. Write a durable AuditLog row targeted at the ORDER id
+          // (so feedForUser can match it against the customer's own orders) as the feed fallback. `note`
+          // carries the rider's profileId for traceability (AuditLog.note is a nullable free-text column).
+          // In the SAME best-effort try/catch as the push — a DB failure here mustn't throw (this whole
+          // method is already fire-and-forget post-commit), so a per-order write failure can't roll back the
+          // committed standing change nor block the other orders' notices.
+          await this.prisma.auditLog
+            .create({
+              data: { actor: "system:rider-standing-notice", action: "order.rider_standing_notice", target: o.id, note: profileId },
+            })
+            .catch((err: unknown) =>
+              this.logger.warn(`rider_standing_notice audit for order ${o.id} failed: ${(err as Error).message}`),
+            );
+          await this.notifications.notifyProfiles([o.customerId], {
             title: "An update on your delivery",
             body: "There's a change with your assigned rider — our team is reviewing this trip.",
             data: { orderId: o.id, kind: "account" },
-          }),
-        ),
+          });
+        }),
       );
     } catch (err) {
       // notifyProfiles itself never throws; this only guards the findMany. Either way a notify miss

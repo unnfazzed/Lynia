@@ -627,9 +627,19 @@ describe("AdminRidersService standing-change customer notification", () => {
       session: { updateMany: async () => ({ count: 0 }) },
     };
     const notified: Array<{ profileIds: string[]; msg: unknown }> = [];
+    // UX17-02: notifyCustomersOfRiderStandingChange now also writes an `order.rider_standing_notice`
+    // AuditLog row (targeted at the ORDER id) per active order, as the customer-facing feed fallback for a
+    // missed push. Record these prisma-level creates so a test can prove they land per active order.
+    const standingAudits: Array<Record<string, unknown>> = [];
     const prisma = {
       $transaction: async (fn: (t: unknown) => unknown) => fn(tx),
       order: { findMany: async () => activeOrders },
+      auditLog: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          standingAudits.push(args.data);
+          return { id: `standing-audit-${standingAudits.length}` };
+        },
+      },
     };
     const notifications = {
       notifyProfiles: async (profileIds: string[], msg: unknown) => {
@@ -637,7 +647,7 @@ describe("AdminRidersService standing-change customer notification", () => {
       },
     } as unknown as NotificationsService;
     const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, notifications, noGateway);
-    return { svc, notified };
+    return { svc, notified, standingAudits };
   }
 
   /** Fire-and-forget post-commit work isn't awaited by suspendRider/banRider — flush the microtask
@@ -676,5 +686,35 @@ describe("AdminRidersService standing-change customer notification", () => {
     await svc.suspendRider("admin-1", "r1", { reason: "x" });
     await flush();
     expect(customerNotifies(notified)).toHaveLength(0);
+  });
+
+  it("UX17-02: suspendRider ALSO writes an order.rider_standing_notice audit row (target=orderId) per active order — the customer feed fallback", async () => {
+    const { svc, standingAudits } = makeTxWithOrders([
+      { id: "order-1", customerId: "cust-1" },
+      { id: "order-2", customerId: "cust-2" },
+    ]);
+    await svc.suspendRider("admin-1", "r1", { reason: "safety report" });
+    await flush();
+    // One durable audit row per active order, targeted at the ORDER id (so feedForUser can match it against
+    // the customer's own orders), with the rider's profileId carried in `note` for traceability.
+    expect(standingAudits).toHaveLength(2);
+    expect(standingAudits).toEqual([
+      { actor: "system:rider-standing-notice", action: "order.rider_standing_notice", target: "order-1", note: "r1" },
+      { actor: "system:rider-standing-notice", action: "order.rider_standing_notice", target: "order-2", note: "r1" },
+    ]);
+  });
+
+  it("UX17-02: banRider writes the standing-notice audit row too, and none when the rider has no active order", async () => {
+    const withOrders = makeTxWithOrders([{ id: "order-9", customerId: "cust-9" }]);
+    await withOrders.svc.banRider("admin-1", "r1", { reason: "fraud" });
+    await flush();
+    expect(withOrders.standingAudits).toEqual([
+      { actor: "system:rider-standing-notice", action: "order.rider_standing_notice", target: "order-9", note: "r1" },
+    ]);
+
+    const noOrders = makeTxWithOrders([]);
+    await noOrders.svc.banRider("admin-1", "r1", { reason: "fraud" });
+    await flush();
+    expect(noOrders.standingAudits).toHaveLength(0);
   });
 });

@@ -201,6 +201,23 @@ export class NotificationsService {
       for (const o of withOffers) orderIdsWithOffers.add(o.orderId);
     }
 
+    // UX17-03: an ops "adjudicate delivered" override writes a plain `completed` OrderEvent
+    // (indistinguishable from an ordinary completion) but pushes bespoke copy — "marked complete after
+    // review" / a 48h contest window (customer) and "we reviewed your proof" (rider). Without this, a
+    // missed push leaves the generic FEED_NOTICES.completed row, omitting the one fact that matters (this
+    // was an ops override, not a normal completion). The action is durably recorded as an AuditLog row
+    // targeted at the order id, so one batched query over the in-view orders recovers the set on a cold
+    // read; the per-order loop below swaps in role-appropriate copy for a `completed` event on these.
+    const orderIds = orders.map((o) => o.id);
+    const adjudicatedOrderIds = new Set<string>();
+    if (orderIds.length > 0) {
+      const adjudicated = await this.prisma.auditLog.findMany({
+        where: { target: { in: orderIds }, action: "order.adjudicate_delivered" },
+        select: { target: true },
+      });
+      for (const a of adjudicated) adjudicatedOrderIds.add(a.target);
+    }
+
     const rows: NotificationRow[] = [];
     for (const order of orders) {
       // Pick the voice matching what this viewer actually experienced on THIS order — a dual-role user
@@ -253,6 +270,26 @@ export class NotificationsService {
               message: "Riders offered but the window closed before you picked — send it again, no need to raise the price.",
             };
           }
+        }
+
+        // UX17-03: this `completed` event was an ops adjudication override, not an ordinary completion —
+        // swap the generic "Delivery complete"/"Nice work" copy for the bespoke copy each party was
+        // actually pushed (customer: reviewed + 48h contest window; rider: "we reviewed your proof").
+        // Mirrors the cancelled→rebroadcast / expired→no-supply overrides above; touches only `completed`
+        // events on adjudicated orders, nothing else. Copy is a verbatim mirror of adjudicateDelivered's pushes.
+        if (event.status === "completed" && adjudicatedOrderIds.has(order.id)) {
+          notice = isCustomerView
+            ? {
+                icon: "check",
+                title: "Delivery marked complete after review",
+                message:
+                  "Our team reviewed the rider's proof and marked this delivery complete. If that's not right, open the app to report a problem within 48 hours.",
+              }
+            : {
+                icon: "check",
+                title: "Delivery confirmed",
+                message: "Our team reviewed your proof and confirmed this delivery. Thanks for adding the evidence.",
+              };
         }
 
         const at = event.createdAt.toISOString();
@@ -317,6 +354,59 @@ export class NotificationsService {
         at,
         unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
       });
+    }
+
+    // UX17-01: SOS counterparty feed fallback. When a party raises an SOS on a live trip, `raise()` writes
+    // a durable SosEvent and best-effort pushes only the COUNTERPARTY ("SOS on your delivery"). feedForUser
+    // never read SosEvent, so a missed push left the counterparty with zero trace their delivery partner
+    // raised an SOS — a safety-critical gap. Recover it from the durable SosEvent rows on the viewer's own
+    // orders that the viewer did NOT raise (mirroring the push's counterparty-only target — the raiser
+    // already knows they raised it). ONE batched query over the orders already in view. Copy is a verbatim
+    // mirror of the push (the feed↔push contract).
+    if (orderIds.length > 0) {
+      const sosEvents = await this.prisma.sosEvent.findMany({
+        where: { orderId: { in: orderIds }, raisedByProfileId: { not: userId } },
+        select: { id: true, orderId: true, createdAt: true },
+      });
+      for (const event of sosEvents) {
+        const at = event.createdAt.toISOString();
+        rows.push({
+          id: `sos:${event.id}`,
+          orderId: event.orderId,
+          icon: "triangle-alert",
+          title: "SOS on your delivery",
+          message: "The other party raised an SOS on this trip. Stay safe — LyniaGo's safety team has been alerted.",
+          at,
+          unread: now.getTime() - event.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        });
+      }
+    }
+
+    // UX17-02: rider-standing-change feed fallback for the affected customer. suspend/ban fire a best-effort
+    // push to every customer on the rider's active orders ("An update on your delivery"), but the durable
+    // audit for the underlying action (rider.suspend/ban) is targeted at the RIDER's id, so the existing
+    // ACCOUNT_FEED_ACTIONS query never matches for the customer. notifyCustomersOfRiderStandingChange now
+    // ALSO writes an `order.rider_standing_notice` AuditLog row targeted at the ORDER id, so recover it from
+    // those on the viewer's own CUSTOMER-view orders (customerViewOrderIds is exactly order.riderId !== userId
+    // — the rider gets their own rider.suspend/ban account row via ACCOUNT_FEED_ACTIONS, so this must not
+    // also show to the rider). ONE batched query; copy is a verbatim mirror of the push.
+    if (customerViewOrderIds.length > 0) {
+      const standingNotices = await this.prisma.auditLog.findMany({
+        where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_notice" },
+        select: { id: true, target: true, createdAt: true },
+      });
+      for (const a of standingNotices) {
+        const at = a.createdAt.toISOString();
+        rows.push({
+          id: `rider-standing:${a.id}`,
+          orderId: a.target,
+          icon: "triangle-alert",
+          title: "An update on your delivery",
+          message: "There's a change with your assigned rider — our team is reviewing this trip.",
+          at,
+          unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        });
+      }
     }
 
     // UX-2026-07-16: resolved-issue rows, mirroring the KB-FEED-SYNTH pattern above. `notifyIssueResolved`

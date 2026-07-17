@@ -1,9 +1,7 @@
 export const meta = {
   name: 'lane-bug-hunt',
   description: 'Agentic-loop bug hunt over one lane: diverse finders → adversarial-verify → sibling-sweep',
-  whenToUse: 'Any bug-finding routine (BH/UX/DS/WD) or an interactive "find more bugs in <lane>" request. ' +
-    'Pass args = a lane key ("wallet" | "bug-hunt" | "ux" | "deep-sweep") or a custom lane object ' +
-    '{ key, context, lenses:[{key,prompt}] }. Read-only: it finds + verifies, it does NOT edit code.',
+  whenToUse: 'Any bug-finding routine (BH/UX/DS/WD) or an interactive "find more bugs in <lane>" request. Pass args = a lane key ("wallet" | "bug-hunt" | "ux" | "deep-sweep") or a custom lane object { key, context, lenses:[{key,prompt}] }. Read-only: it finds + verifies, it does NOT edit code.',
   phases: [
     { title: 'Find', detail: 'diverse finder lenses fan out across the lane surfaces' },
     { title: 'Verify', detail: 'a 3-skeptic panel adversarially refutes each candidate' },
