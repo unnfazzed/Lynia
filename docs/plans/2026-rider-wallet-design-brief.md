@@ -56,6 +56,14 @@ commission history starts with your next ride"; offline = cached balance +
 
 ## NEW SCREEN 2 — Top-up flow
 
+> **AMENDED 2026-07-16/17 (DOC-16-02, `docs/KNOWN_BUGS.md`):** this self-serve spec was never
+> backed by a working rail integration — `WalletService.creditFromTopup`, the only code path that
+> could ever confirm a top-up, had zero callers, so every attempt guaranteed the Timeout state below.
+> The screen has been replaced with a single "contact support" instruction card
+> (`apps/mobile/app/wallet/top-up.tsx`) that routes the rider to the already-working admin
+> manual-credit path (`POST /admin/riders/:id/wallet-credit`). This spec is kept for reference; it
+> describes the intended self-serve flow for whenever a real rail integration lands.
+
 1. **Amount entry:** visible label, min $5 enforced inline ("Minimum top-up is
    $5.00"), quick-amount chips ($5/$10/$20), rail selector: EcoCash (primary) /
    InnBucks / O'mari.

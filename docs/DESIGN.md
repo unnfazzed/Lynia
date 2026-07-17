@@ -145,7 +145,7 @@ job** renders the §5c stepper from the rider's perspective.
 | Become / KYC | `app/rider/become.tsx` | Two cards (identity, bike) → one CTA. Pending/verified result card. Only an `https://` verification URL opens (already enforced). Add: inline field validation states + a "what Didit needs" helper line. |
 | Rider home | `app/rider/index.tsx` | Online toggle is the one primary CTA; status line states the consequence ("offers stay live" / "go online to bid"). Board hides already-bid orders (built). Add the **two rider empty-states** below. |
 | Offer compose | (inline card in `index.tsx`) | Pre-fill fare = customer's ask (accept) ; any edit = counter (built). Label the toggle clearly: *Accept $X* vs *Counter*. ETA in minutes, tabular. |
-| Active job | `app/rider/job.tsx` | §5c stepper, **rider view** (table below). Customer card (name + ★ + call) visible only in the reveal window (§5d). Delivery-OTP card at `en_route_dropoff`; 5-attempt lockout messaged (built). |
+| Active job | `app/rider/job.tsx` | §5c stepper, **rider view** (table below). Customer card (name + ★ + call) visible only in the reveal window (§5d). Delivery-OTP card at `en_route_dropoff`; 5-attempt lockout messaged (built). Undelivered flow (`UndeliveredSheet`) offers an optional proof-of-drop photo + GPS capture before submitting a failed hand-off (`KB-POD-DISPUTE` Phase A, IR16-11) — never blocks the undelivered decision. |
 
 ### §5c stepper — the rider's view (mirror of the customer table)
 

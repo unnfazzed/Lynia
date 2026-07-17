@@ -676,9 +676,14 @@ Rules encoded around the transitions:
 - **Undelivered**: from `picked_up` or `en_route_dropoff`, a rider who cannot complete the hand-off
   moves the order to the terminal `undelivered` state via a guarded CAS (`markUndelivered`), with a
   reason and attempt count recorded and shown to the customer.
-- **Rating closes the order** and updates the rider's running `ratingAvg`/`ratingCount`/`tripsCount`
-  in the same transaction. If the customer never rates, the auto-close backstop still completes the
-  order so metrics don't stall ([§14](#14-background-jobs--self-healing)).
+- **Rating closes the order** and always updates `tripsCount` in the same transaction, but
+  `ratingAvg`/`ratingCount` and reliability recovery only move when the rating **counts toward the
+  aggregate** — a distinct rider/customer pair (`priorPairRatings === 0`, anti-farming, FRAUD P1-6)
+  **and** an established customer (`customerRatingCarriesWeight`, `>= CUSTOMER_TRUST.minCompletedOrders`
+  prior completed orders — anti-sock-puppet). A low rating from an established customer still applies
+  its reliability penalty even on a repeat pair; an untrusted customer's rating moves neither direction.
+  If the customer never rates, the auto-close backstop still completes the order so metrics don't stall
+  ([§14](#14-background-jobs--self-healing)).
 - Every transition writes an `order_event` row (the audit/tracker trail) and best-effort emits a WS
   `order:status` event plus an FCM push.
 
@@ -714,7 +719,7 @@ sequenceDiagram
 
     Note over U,API: access JWT expires (15 min)
     U->>API: POST /auth/refresh { refreshToken }
-    API->>DB: load session, check hash+expiry (hard gate);<br/>if revoked-by-rotation with an un-consumed<br/>successor within 60s, re-issue (RT-GRACE);<br/>otherwise reject
+    API->>DB: load session, check hash+expiry (hard gate);<br/>reject if rider is suspended/banned (IR16-01);<br/>if revoked-by-rotation with an un-consumed<br/>successor within 60s, re-issue (RT-GRACE);<br/>otherwise reject
     API->>DB: revoke old session, create new (rotation)
     API-->>U: fresh { accessToken, refreshToken }
 
@@ -1108,6 +1113,7 @@ require the `admin` role.
 | `POST /orders/:id/items/confirm` | Lifecycle | Rider ticks off sender's items at pickup |
 | `POST /orders/:id/deliver` | Lifecycle | Rider submits delivery OTP → `delivered` |
 | `POST /orders/:id/undelivered` | Lifecycle | Rider marks a failed hand-off → terminal `undelivered` (C6/F-02) |
+| `POST /orders/:orderId/delivery-proof` | Lifecycle | Rider attaches an optional proof-of-drop photo + GPS on the undelivered flow (`KB-POD-DISPUTE` Phase A, IR16-11) |
 | `POST /orders/:id/rating` | Lifecycle | Customer rates → `completed` |
 | `POST /orders/:id/sender-rating` | Lifecycle | Rider rates the sender (recorded-only, rider-journey 4·7) |
 | `POST /orders/:id/delivery-code/rotate` | Lifecycle | Customer re-issues delivery code |
@@ -1126,6 +1132,7 @@ require the `admin` role.
 | `POST /wallet/topups` | Wallet | Start a self-serve top-up intent (rate-limited, server-clamped amount) |
 | `GET /wallet/topups/:id` | Wallet | Poll a top-up intent until it reaches a terminal state |
 | `POST /uploads/kyc-photo` | Uploads | Mint a signed PUT URL for a photo |
+| `POST /uploads/delivery-proof` | Uploads | Mint a signed PUT URL for the rider's proof-of-drop photo (`KB-POD-DISPUTE` Phase A, IR16-11) |
 | `GET /notifications/feed` | Notifications | Caller's in-app notifications feed (customer-journey A·3) |
 | `POST /notifications/device-token` | Notifications | Register an FCM device token |
 | `DELETE /notifications/device-token` | Notifications | Drop a device token |
@@ -1150,6 +1157,7 @@ require the `admin` role.
 | `GET /admin/orders/:id` | Admin | Order detail: 8-step timeline, parcel, fares, masked people (D-2) |
 | `POST /admin/orders/:id/cancel` | Admin | Admin-cancel an order (reason required) |
 | `POST /admin/orders/:id/fare` | Admin | Adjust an order's agreed fare (manual correction / dispute) |
+| `POST /admin/orders/:id/adjudicate-delivered` | Admin | Force-complete a rider-raised `undelivered` order over a withheld delivery code (`KB-POD-DISPUTE` Phase B, IR16-12, CAS-guarded, reason required) |
 | `GET /admin/customers` | Admin | Customers directory (D-2, `?filter=`) |
 | `GET /admin/customers/:profileId` | Admin | Customer detail: aggregates + recent orders (D-2) |
 | `POST /admin/customers/:id/hold` | Admin | Place a customer on hold — blocks new broadcasts (S·2) |

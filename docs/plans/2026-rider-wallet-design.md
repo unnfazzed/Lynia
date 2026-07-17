@@ -210,7 +210,13 @@ reference to the settlement era):
    $0 starting balance the gate MUST NOT fire — the guard is literal:
    `COMMISSION.ratePct > 0 && balance < COMMISSION.lowBalanceBlockBelow`, so the pilot
    is untouched.
-3. **EcoCash top-up (automated)** — rider enters amount (≥ `minTopUp`) → API creates
+3. **EcoCash top-up (automated).** **AMENDED 2026-07-16/17 (DOC-16-02):** not shipped as a
+   self-serve client flow — the mobile top-up screen has no amount/rail form; it is a single
+   "contact support" instruction card (`apps/mobile/app/wallet/top-up.tsx`) that routes to Flow 4
+   (manual credit) regardless of rail, because no rail integration ever called
+   `WalletService.creditFromTopup`, so every self-serve attempt guaranteed the 90s-timeout state
+   described below. Kept for reference as the intended flow once a rail integration lands: rider
+   enters amount (≥ `minTopUp`) → API creates
    `TopUp(pending)` → EcoCash C2B charge request pushes a USSD approval prompt to the
    rider's handset → confirmation via Econet callback and/or status polling. **A callback
    never credits directly**: it is treated as a hint that triggers a server-side status
@@ -297,7 +303,10 @@ number per screen; the gate state deep-links straight into Wallet. The reveal fl
 (OV#5) toggles exactly the Earnings row + the Wallet route.
 
 **Interaction-state coverage** (extends the DESIGN.md table; states describe what the
-rider SEES):
+rider SEES). **AMENDED 2026-07-16/17 (DOC-16-02):** the `Top-up (EcoCash)` and
+`Top-up (manual)` rows below describe the originally-specced per-rail flow, never shipped as a
+self-serve client experience — the actual `top-up.tsx` screen has a single state: a "contact
+support" instruction card. Kept for reference:
 
 ```
 FEATURE          | LOADING             | EMPTY                        | ERROR                        | SUCCESS                    | PARTIAL
