@@ -52,6 +52,25 @@ describe("AdminAuditService.recordAuditAction (A-01)", () => {
     expect(createCalls).toBe(0);
   });
 
+  // WD-023: RiderService.adminSetKyc writes "rider.kyc_expire"/"rider.kyc_reset" (alongside the already-
+  // reserved kyc_approve/kyc_decline) from the SAME transactional endpoint, and applyKycResult's automated
+  // webhook path writes "rider.kyc_review_required" — all three were missing from RESERVED_AUDIT_ACTIONS,
+  // so an admin-token holder could forge a clean AuditLog row claiming a real KYC decision/flag that never
+  // happened, indistinguishable from a genuine one.
+  it("rejects the KYC-decision siblings kyc_expire / kyc_reset / kyc_review_required (WD-023)", async () => {
+    let createCalls = 0;
+    const prisma = {
+      auditLog: { create: async () => { createCalls++; return { id: "should-not-happen" }; } },
+    };
+    const svc = new AdminAuditService(prisma as unknown as PrismaService);
+    for (const action of ["rider.kyc_expire", "rider.kyc_reset", "rider.kyc_review_required"]) {
+      await expect(svc.recordAuditAction("admin-42", { action, target: "victim-profile-id" })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    }
+    expect(createCalls).toBe(0);
+  });
+
   it("coerces missing reasonCode/note to null (nullable columns)", async () => {
     let created: { reasonCode?: unknown; note?: unknown } = {};
     const prisma = {

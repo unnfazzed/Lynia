@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { type EarningsSummary, getEarningsSummary, getHistory, type OrderHistoryRow } from "../api/orders";
 import { loadHistorySnapshot, saveHistorySnapshot } from "../net/history-store";
@@ -29,8 +29,33 @@ export interface HistoryFeed {
   refetch: () => void;
 }
 
+/** The shared query keys, exported so every writer that lands a new/changed trip (a completion,
+ *  cancel, undeliver — from a mutation's onSuccess, a WS self-heal, or a foreground resume) invalidates
+ *  the SAME keys `useHistoryFeed`/`useEarningsSummary` read, instead of each call site re-typing the
+ *  literal and risking one going stale relative to the others (WD-022). */
+export const HISTORY_KEY = ["history"] as const;
+export const EARNINGS_SUMMARY_KEY = ["earnings", "summary"] as const;
+
+/**
+ * WD-022: the single funnel for "a rider-side order transition just landed" (delivered/cancelled/
+ * undelivered) — invalidates the active-job query PLUS Trip History and the earnings aggregate, so a
+ * completion self-healed via a WS reconnect or a foreground resume can't drift from the mutation's own
+ * onSuccess by only remembering `["activeJob"]`. Every rider-side call site (job.tsx's `refresh`, the
+ * rider job socket's reconnect self-heal) should go through this rather than re-typing the query-key list.
+ */
+export function invalidateRiderJobQueries(qc: QueryClient): void {
+  void qc.invalidateQueries({ queryKey: ["activeJob"] });
+  void qc.invalidateQueries({ queryKey: HISTORY_KEY });
+  void qc.invalidateQueries({ queryKey: EARNINGS_SUMMARY_KEY });
+}
+
+/** Customer-side counterpart — no earnings aggregate on that side, so Trip History only. */
+export function invalidateCustomerOrderHistory(qc: QueryClient): void {
+  void qc.invalidateQueries({ queryKey: HISTORY_KEY });
+}
+
 export function useHistoryFeed(): HistoryFeed {
-  const q = useQuery({ queryKey: ["history"], queryFn: getHistory });
+  const q = useQuery({ queryKey: HISTORY_KEY, queryFn: getHistory });
 
   // Warm paint: load the last-known snapshot on mount; persist every successful fetch for next time.
   const [cached, setCached] = useState<OrderHistoryRow[] | null>(null);
@@ -59,6 +84,6 @@ export function useHistoryFeed(): HistoryFeed {
  *  warm-paint here: the Earnings screen falls back to deriving from `useHistoryFeed`'s rows while this
  *  hasn't loaded (or errors), which is only ever a same-or-more-accurate number, never a regression. */
 export function useEarningsSummary(): { summary: EarningsSummary | undefined; isError: boolean } {
-  const q = useQuery({ queryKey: ["earnings", "summary"], queryFn: getEarningsSummary });
+  const q = useQuery({ queryKey: EARNINGS_SUMMARY_KEY, queryFn: getEarningsSummary });
   return { summary: q.data, isError: q.isError };
 }

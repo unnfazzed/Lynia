@@ -3,6 +3,7 @@ import React from "react";
 import { act, create } from "react-test-renderer";
 import type { OrderSnapshot } from "../../api/orders";
 import { orderKey } from "../../query/client";
+import { HISTORY_KEY } from "../../query/use-history-feed";
 import { useOrderSocket } from "../use-order-socket";
 
 jest.mock("../../auth/auth-context", () => ({
@@ -97,5 +98,50 @@ describe("useOrderSocket tracking (out-of-order position vs. REST refetch)", () 
     expect(final?.rider?.updatedAt).toBe("2026-07-12T00:05:00.000Z");
     expect(final?.rider?.currentLat).toBe(10);
     expect(final?.rider?.currentLng).toBe(10);
+  });
+});
+
+describe("useOrderSocket Trip History self-heal (WD-022)", () => {
+  // Regression guard: a delivered/cancelled/undelivered transition self-healed via this socket's
+  // connect/order:status handlers (rather than through the party's own mutation onSuccess) used to
+  // invalidate only the order snapshot — Trip History never refreshed, so a customer who'd checked it
+  // moments earlier saw a stale list.
+  it("also invalidates Trip History on connect", () => {
+    const qc = new QueryClient();
+    const spy = jest.spyOn(qc, "invalidateQueries");
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-2" />
+        </QueryClientProvider>,
+      );
+    });
+
+    spy.mockClear();
+    act(() => {
+      mockLastSocket.trigger("connect");
+    });
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: HISTORY_KEY });
+  });
+
+  it("also invalidates Trip History on order:status", () => {
+    const qc = new QueryClient();
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-3" />
+        </QueryClientProvider>,
+      );
+    });
+
+    const spy = jest.spyOn(qc, "invalidateQueries");
+    act(() => {
+      mockLastSocket.trigger("order:status");
+    });
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: HISTORY_KEY });
   });
 });
