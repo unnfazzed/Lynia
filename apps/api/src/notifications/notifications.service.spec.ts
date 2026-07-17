@@ -283,6 +283,37 @@ describe("NotificationsService — notifyRidersAvailable delivery set (F-18 at-l
     expect(sent.data).toEqual({ kind: "riders_available" });
     expect(sent.body).toContain("send your parcel again");
   });
+
+  it("DS17-01: sizes the live-order push TTL to the order's REMAINING window, not a flat 90s from send time", async () => {
+    const { prisma, push, service } = makeDeps();
+    // ord-9 is still open but was created 60s ago → ~30s of its own 90s window is left. The live push's TTL
+    // must track that (≈30s), not the flat OFFER_WINDOW default — otherwise a push sent late in the window
+    // outlives the auction it points the customer back at.
+    prisma.order.findMany.mockResolvedValue([{ id: "ord-9", createdAt: new Date(Date.now() - 60_000) }]);
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "t1", profileId: "cust-1" }]);
+
+    await service.notifyRidersAvailable([{ profileId: "cust-1", orderId: "ord-9" }]);
+
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent.ttlSeconds).toBeGreaterThan(25);
+    expect(sent.ttlSeconds).toBeLessThanOrEqual(31); // ≈30
+    expect(sent.ttlSeconds).toBeLessThan(90); // strictly smaller than the flat send-time default
+  });
+
+  it("DS17-01: skips a live-order waiter whose 90s window has already elapsed (no stale dead-reference push)", async () => {
+    const { prisma, push, service } = makeDeps();
+    // ord-9 is still 'open_for_offers' in the query but its own 90s window elapsed 30s ago (created 120s
+    // ago). Pushing "tap to follow the offers" for it would land the customer on a dead auction, so it is
+    // skipped entirely — not pushed with a stale flat TTL, and (since the order IS open) not down-graded to
+    // the generic branch either. The only waiter is skipped → nothing is sent, the waiter stays queued.
+    prisma.order.findMany.mockResolvedValue([{ id: "ord-9", createdAt: new Date(Date.now() - 120_000) }]);
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "t1", profileId: "cust-1" }]);
+
+    const delivered = await service.notifyRidersAvailable([{ profileId: "cust-1", orderId: "ord-9" }]);
+
+    expect(push.sendEach).not.toHaveBeenCalled();
+    expect(delivered.size).toBe(0);
+  });
 });
 
 describe("NotificationsService — derived in-app feed (A·3)", () => {

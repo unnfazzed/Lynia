@@ -743,7 +743,9 @@ describe("RiderService.applyKycResult", () => {
   });
 
   it("reports updated:0 for a stale/duplicate event or unknown ref", async () => {
-    const s = svc({ rider: { updateMany: async () => ({ count: 0 }) } }, {});
+    // DS17-03: applyKycResult now reads current (duplicateIdFlag + kycAttempts) unconditionally before the
+    // guarded updateMany; an unknown ref has no row, so findFirst returns null (count 0 → nothing applies).
+    const s = svc({ rider: { updateMany: async () => ({ count: 0 }), findFirst: async () => null } }, {});
     expect(await s.applyKycResult("sess_x", "failed", new Date())).toEqual({ updated: 0 });
   });
 
@@ -771,6 +773,30 @@ describe("RiderService.applyKycResult", () => {
     // And evicted from the board + geo index post-commit via the standing-demotion funnel.
     await new Promise((r) => setTimeout(r, 0));
     expect(evicted).toBe("p1");
+  });
+
+  it("DS17-03: an `expired` webhook does NOT reset kycAttempts when the rider is already locked (kycAttempts >= 2)", async () => {
+    // Race: rider declined twice by an admin (kycAttempts=2 → locked, retryKyc refuses a 3rd attempt). A
+    // stale vendor session then times out and fires `expired` AFTER the admin's second decline, whose
+    // monotonic guard matches. The automated reset must NOT wipe the admin-established two-decline lock —
+    // otherwise the locked applicant gets a free third attempt. Only the manual adminSetKyc expire (a human
+    // ops decision) resets the lock; this automated path preserves it.
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+        // The `current`-state read now returns the locked count; the same mock also answers the post-update
+        // profileId fetch for the supply eviction.
+        findFirst: async () => ({ profileId: "p1", kycAttempts: 2 }),
+      },
+    };
+    expect(await svc(prisma, {}).applyKycResult("sess_1", "expired", new Date())).toEqual({ updated: 1 });
+    // The lock is preserved: no kycAttempts reset in the write. The rest of the expiry write is unchanged.
+    expect(data).not.toHaveProperty("kycAttempts");
+    expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, isOnline: false });
   });
 
   it("F-13: a vendor DECLINE increments the A-02 counter under the monotonic guard (new decline only)", async () => {
@@ -803,7 +829,7 @@ describe("RiderService.applyKycResult", () => {
   it("F-13: a REPLAYED/stale decline matches 0 rows so the counter is not bumped (updated:0)", async () => {
     // The monotonic where guard (kycResolvedAt null/older than eventAt) filters an exact replay out —
     // count 0 means the row wasn't touched, so the `increment` in data never runs a second time.
-    const s = svc({ rider: { updateMany: async () => ({ count: 0 }) } }, {});
+    const s = svc({ rider: { updateMany: async () => ({ count: 0 }), findFirst: async () => null } }, {});
     expect(await s.applyKycResult("sess_1", "failed", new Date(), "score_below_threshold")).toEqual({ updated: 0 });
   });
 

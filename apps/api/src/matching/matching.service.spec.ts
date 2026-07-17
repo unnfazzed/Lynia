@@ -253,6 +253,9 @@ describe("MatchingService.expireOrder — persists the no-supply verdict for lat
 describe("MatchingService.expandBroadcast — widening ticks push only the new ring", () => {
   // A version/variant-valid UUID — the board event's `.strict()` contract parses the id as a uuid.
   const expandOrderId = "33333333-3333-4333-8333-333333333333";
+  // DS17-01: createdAt is now load-bearing — expandBroadcast sizes the rebroadcast push TTL to the order's
+  // remaining 90s window and skips the push once it's elapsed. Default to a freshly-created order (~t0) so
+  // the existing "still pushes" cases stay green; the TTL-specific cases below pass their own order age.
   const openOrder = {
     status: "open_for_offers",
     pickup: { point: { lat: -17.8, lng: 31.05 }, landmark: "Eastgate" },
@@ -261,7 +264,7 @@ describe("MatchingService.expandBroadcast — widening ticks push only the new r
     suggestedFare: { toString: () => "2.40" },
     proposedFare: { toString: () => "2.50" },
     distanceKm: 1.5,
-    createdAt: new Date("2026-06-26T00:00:00Z"),
+    createdAt: new Date(),
   };
 
   function expandSvc(opts: {
@@ -297,7 +300,9 @@ describe("MatchingService.expandBroadcast — widening ticks push only the new r
     expect(nearbyRiders).toHaveBeenCalledWith(-17.8, 31.05, 8_000, expect.any(Number));
     expect(emitBoardNewOrderToCells).toHaveBeenCalledWith(expect.objectContaining({ id: expandOrderId }), -17.8, 31.05, 8_000);
     expect(claimBroadcastRecipients).toHaveBeenCalledWith(expandOrderId, ["r-near", "r-ring"]);
-    expect(notifyNewBroadcast).toHaveBeenCalledWith(expandOrderId, ["r-ring"], { pickup: "Eastgate", fare: "2.50" });
+    // DS17-01: the widening rebroadcast now carries a 4th arg — the order's REMAINING window as the push
+    // TTL (a fresh order here, so ~90s), not the flat send-time constant.
+    expect(notifyNewBroadcast).toHaveBeenCalledWith(expandOrderId, ["r-ring"], { pickup: "Eastgate", fare: "2.50" }, expect.any(Number));
   });
 
   it("falls back to ring geometry (distance > previous radius) when the claim set is unavailable", async () => {
@@ -309,7 +314,7 @@ describe("MatchingService.expandBroadcast — widening ticks push only the new r
 
     await service.expandBroadcast(expandOrderId, 0);
 
-    expect(notifyNewBroadcast).toHaveBeenCalledWith(expandOrderId, ["r-outer"], expect.anything());
+    expect(notifyNewBroadcast).toHaveBeenCalledWith(expandOrderId, ["r-outer"], expect.anything(), expect.any(Number));
   });
 
   it("no-ops once the order has left open_for_offers (accepted/cancelled mid-window)", async () => {
@@ -345,6 +350,39 @@ describe("MatchingService.expandBroadcast — widening ticks push only the new r
     const { service, nearbyRiders } = expandSvc({ nearby: [] });
     await service.expandBroadcast(expandOrderId, 99);
     expect(nearbyRiders).not.toHaveBeenCalled();
+  });
+
+  it("DS17-01: sizes the rebroadcast push TTL to the order's REMAINING window, not a flat 90s from send time", async () => {
+    // Order created 60s ago → ~30s of its own 90s auction window is left. The push TTL must track that
+    // (≈30s), not the flat OFFER_WINDOW default (90s) computed from send time — a 90s TTL on a push sent at
+    // t=60s would keep the "tap to bid" push valid in the provider until t=150s, 60s after the auction closed.
+    const { service, notifyNewBroadcast } = expandSvc({
+      order: { ...openOrder, createdAt: new Date(Date.now() - 60_000) },
+      nearby: [{ profileId: "r-ring", distanceM: 7_000 }],
+      claim: ["r-ring"],
+    });
+
+    await service.expandBroadcast(expandOrderId, 0);
+
+    expect(notifyNewBroadcast).toHaveBeenCalledTimes(1);
+    const ttlSeconds = (notifyNewBroadcast.mock.calls[0] as unknown[])[3] as number;
+    expect(ttlSeconds).toBeGreaterThan(25);
+    expect(ttlSeconds).toBeLessThanOrEqual(31); // ≈30
+    expect(ttlSeconds).toBeLessThan(90); // strictly smaller than the flat BROADCAST_PUSH_TTL_SECONDS default
+  });
+
+  it("DS17-01: does NOT push at all once the order's own 90s window has already elapsed", async () => {
+    // Created 120s ago → remainingMs <= 0. The order's window is over and the expiry/reconciler owns closing
+    // it out, so a widening tick must push nothing rather than deliver a broadcast for a dead auction.
+    const { service, notifyNewBroadcast } = expandSvc({
+      order: { ...openOrder, createdAt: new Date(Date.now() - 120_000) },
+      nearby: [{ profileId: "r-ring", distanceM: 7_000 }],
+      claim: ["r-ring"],
+    });
+
+    await service.expandBroadcast(expandOrderId, 0);
+
+    expect(notifyNewBroadcast).not.toHaveBeenCalled();
   });
 });
 

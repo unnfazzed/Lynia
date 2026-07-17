@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
   DISPUTE_PHONE_REVEAL_STATUSES,
   ISSUE_TYPE_LABELS,
@@ -10,6 +10,7 @@ import {
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 
 const ISSUE_STATUSES = ["open", "investigating", "resolved"] as const;
 type IssueStatusFilter = (typeof ISSUE_STATUSES)[number];
@@ -41,9 +42,12 @@ function fullName(p: { firstName: string; lastName: string } | null | undefined)
  */
 @Injectable()
 export class IssuesService {
+  private readonly logger = new Logger(IssuesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly gateway: TrackingGateway,
   ) {}
 
   /** Either party raises an issue on an order they're on. Opener + role + counterparty are derived from
@@ -195,6 +199,12 @@ export class IssuesService {
    *   close_no_action→ no side-effect.
    */
   async resolve(adminId: string, id: string, body: ResolveIssueRequest) {
+    // DS17-02: set to the rider id when a rider_strike resolution hits RIDER_STRIKE_LIMIT (forced offline +
+    // cooldown below). The transaction flips isOnline:false, but IssuesService had no way to evict the
+    // demoted rider from the live-supply planes, so — like the cancel-strike path — they kept their board
+    // subscription + `rider:geo` entry for the whole cooldown. Captured in-tx, funnelled through
+    // evictRiderFromSupply post-commit (mirrors admin suspend/ban, KYC-lapse, auto-hold, cancel-strike).
+    let strikeLimitRiderId: string | null = null;
     const result = await this.prisma.$transaction(async (tx) => {
       const issue = await tx.issue.findUnique({
         where: { id },
@@ -259,6 +269,9 @@ export class IssuesService {
             where: { profileId: order.riderId },
             data: { disputeStrikes: 0, cooldownUntil: new Date(Date.now() + DISPUTE_STRIKE_COOLDOWN_MS), isOnline: false },
           });
+          // DS17-02: the strike-limit forced this rider offline — evict them from the geo + board supply
+          // planes post-commit, like every other standing demotion.
+          strikeLimitRiderId = order.riderId;
         } else {
           await tx.rider.update({ where: { profileId: order.riderId }, data: { disputeStrikes: strikes } });
         }
@@ -278,6 +291,17 @@ export class IssuesService {
         orderId: issue.orderId,
       };
     });
+
+    // DS17-02: a dispute strike that hit RIDER_STRIKE_LIMIT forced the rider offline in the transaction —
+    // evict them from the board rooms + `rider:geo` Redis index through the standing-demotion funnel, so a
+    // demoted rider stops receiving board pushes and stops appearing in nearbyRiders. Best-effort,
+    // post-commit; never throws, so a `void` can't surface an unhandled rejection and it can never affect
+    // the committed resolution.
+    if (strikeLimitRiderId) {
+      void this.gateway.evictRiderFromSupply(strikeLimitRiderId).catch((err) => {
+        this.logger.warn(`supply eviction after dispute-strike limit failed for ${strikeLimitRiderId}: ${(err as Error).message}`);
+      });
+    }
 
     // Best-effort, post-commit (mirrors DS13-03's push-parity pattern): tell the opener how their
     // reported issue was resolved. Fired outside the transaction so a push failure can never roll back
