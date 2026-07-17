@@ -6,7 +6,16 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-16 (agentic-loop bug hunt over the WD lane — a new multi-agent
+**Last consolidated:** 2026-07-17 (UX-improvements routine — agentic-loop hunt over the UX lane; see
+the "UX review 2026-07-17" section near the bottom for UX17-01…07: a HIGH SOS-counterparty push with
+no durable feed fallback on the app's single most safety-critical event, two more push-with-no-feed-
+fallback siblings (rider-standing-change mid-delivery, the KB-POD-DISPUTE Phase B adjudication's
+bespoke copy), and four admin-console honesty/empty-state fixes — three false-consequence-copy bugs
+in the same family as UX15-07/UX16-05, plus a missing evidence-empty-state on the delivery-code-
+bypass override. All 7 fixed same-run with regression tests where testable — apps/admin has no test
+harness, so its 4 copy/UI fixes are typecheck+lint-verified only, matching this repo's established
+precedent).
+Prior consolidation: 2026-07-16 (agentic-loop bug hunt over the WD lane — a new multi-agent
 loop-until-dry + adversarial-verify + sibling-sweep engine; see the "Agentic-loop bug hunt 2026-07-16"
 section for WD-018…WD-020: a HIGH prod-breaking admin-cancel bug — the operator identity written into a
 `@db.Uuid` FK column — plus the real unfixed sibling the sweep caught in admin issue-resolution, and a LOW
@@ -89,6 +98,7 @@ runbook at `docs/INFRA-HARDENING-ROLLOUT.md`.
 | `docs/UX-USABILITY-REVIEW-2026-07-14.md` | 24 | UX pass; 20 ✅ (order-screen rider-viewer gating, presence-stale wiring, token-refresh failure classification, heartbeat-cutoff split for FCM audience, push `data.to` per-order routing, expiry `hadOffers` honesty, KYC ID-freeze bypass in `completeProfile`, cancel-reason remap, +12 more). 2 deferred as KB-NOTIFY-ORDERID and KB-FEED-SYNTH below; 2 explicitly out of scope (`become.tsx` redirect nice-to-have; a routing bug found inside still-unmerged PR #231, not on `main`) |
 | `docs/UX-USABILITY-REVIEW-2026-07-15.md` | 16 | UX pass; 15 ✅ (rider delivered/undelivered terminal durability, zod-validation error honesty app-wide, `account`-push orderId routing, `LiveTrackingCard` rider-viewer gating gap, issue-resolution notification, brand/actor-naming copy, admin ban-copy honesty, `cancelM`/`undeliverM` reconciliation, history pagination, board-poll gating, delivery-complete push routing, admin truncation disclosure, admin KYC pending guard). 1 left as a documented low-confidence observation (UX15-16, confirmed-idempotent server registration) |
 | `docs/UX-USABILITY-REVIEW-2026-07-16.md` | 8 | UX pass; all ✅ (rider top-up durability marker + wallet-screen reconciliation, customer note carried through every reorder path incl. Trip History, commission-low-balance gate top-up deep-link, SOS-console error classification, admin "Flag account" false-consequence copy — the UX15-07 fix's missed sibling, issue-resolution feed fallback, stale "Lynia" brand on the wallet screen, top-up "Cancel request" idempotency-key hazard) |
+| `docs/UX-USABILITY-REVIEW-2026-07-17.md` | 7 | UX pass; all ✅ (SOS-counterparty push feed fallback — HIGH, rider-standing-change push feed fallback, KB-POD-DISPUTE Phase B adjudication push/feed copy mismatch, admin "Mark delivered (code bypass)" evidence-empty-state, rider-ban / fare-adjust / issue-close false-consequence copy) |
 | `docs/plans/BUGFIX-EXECUTION.md` | 24 | Execution plan for BUG-HUNT items — all landed |
 | `docs/plans/LAUNCH-FIX-ROUND1.md` | 13 | Round-1 authz/abuse fixes — all landed |
 | `docs/plans/TAIL-HARDENING-PLAN.md` | 6 | R8 handback + SEC dev-fallback + map leak — all ✅ |
@@ -761,3 +771,39 @@ reason-coded over the audit seam, single-concern. `pnpm typecheck` + full monore
 
 **`KB-POD-DISPUTE` is now CLOSED** — Phase A (proof capture, IR16-11) + Phase B (adjudication, IR16-12) both shipped.
 **Still open in `KB-IDENTITY-BINDING`:** L3 hardware attestation + L0 destructive rebind (both gated — founder/vendor work).
+
+## UX review 2026-07-17 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-17.md`
+
+Phase 0 read this ledger + the 2026-07-16 UX report + the one open sibling PR at the time (`#285`,
+bug-hunt routine — mobile board/active-job invalidation, no UX-lane overlap). Phase 0.5 re-verified
+2/2 members each of the Object-authz/IDOR, KYC, and Edge/abuse "→ FIXED" cluster headers against
+current code — 0/6 regressed. Phase 1 ran the mandated agentic-loop hunt engine
+(`Workflow` over `.claude/workflows/lane-bug-hunt.js`, lane `"ux"`, 32 sub-agents: 4 finder lenses →
+3-skeptic adversarial verify → sibling-sweep) — one pre-requisite fix was needed first (the script's
+`meta.whenToUse` used string concatenation, which the `Workflow` tool's pure-literal validator
+rejects; fixed to a single literal, mirroring the same fix already on the still-open `#285`). All 7
+confirmed findings fixed same-run via two parallel `opus` implementation agents (backend
+notification-coherence cluster; admin copy-honesty/empty-state cluster), each independently
+re-verified by the orchestrator against the cited evidence before commit. `pnpm typecheck` clean
+across all 5 packages; 1003 API tests (+5) + 404 mobile tests green; `apps/admin` has no test harness
+(repo precedent) so its 4 copy/UI fixes are typecheck+lint-verified only.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| UX17-01 | SOS-to-counterparty push (`SosService.raise`, writes a durable `SosEvent` row) had NO feed fallback — `feedForUser` never read `SosEvent` at all, so a missed push on the app's single most safety-critical event left the counterparty with zero durable trace their delivery partner ever raised an SOS on a live trip | `apps/api/src/sos/sos.service.ts:82-93`, `apps/api/src/notifications/notifications.service.ts` `feedForUser` | HIGH | **FIXED** — new batched `sosEvent.findMany({orderId: in orderIds, raisedByProfileId: not userId})` in `feedForUser`, synthesizing a counterparty-only row (mirrors the push's own targeting) with copy verbatim-matching the push. 3 new cases in `notifications.service.spec.ts` |
+| UX17-02 | `notifyCustomersOfRiderStandingChange` (suspend/ban mid-delivery) best-effort pushes the affected customer, but the durable `rider.suspend`/`rider.ban` audit row is targeted at the RIDER's id — `feedForUser`'s existing account-status synthesis (`target: userId`) never matches for the customer, so a missed push left zero durable record | `apps/api/src/admin/admin-riders.service.ts:194-214` (`notifyCustomersOfRiderStandingChange`) | MEDIUM | **FIXED** — now also writes an order-targeted `order.rider_standing_notice` `AuditLog` row per active order (added to `RESERVED_AUDIT_ACTIONS`); `feedForUser` synthesizes from it, customer-view only. 2 new cases in `admin-riders.service.spec.ts` + 1 in `admin-audit.service.spec.ts` |
+| UX17-03 | `adjudicateDelivered` (KB-POD-DISPUTE Phase B) writes a plain `completed` `OrderEvent` then pushes bespoke copy (customer: 48h contest window; rider: "we reviewed your proof") — `feedForUser`'s generic `completed` copy rendered instead if the push was missed, omitting that this was an ops override | `apps/api/src/admin/admin-orders.service.ts:222,248-267` | MEDIUM | **FIXED** — new batched `auditLog.findMany({action:"order.adjudicate_delivered"})` builds a Set; the existing per-order/event loop swaps in the real, role-appropriate copy for `completed` events on adjudicated orders only (same override pattern as the existing `cancelled`/`expired` special-cases). 1 new case in `notifications.service.spec.ts` |
+| UX17-04 | Admin "Mark delivered (code bypass)" button rendered fully enabled with NO warning when the order had zero proof-of-drop evidence — its own consequence copy claims the override happens "only when the proof above confirms the drop", but the evidence card silently vanished (no empty-state) when no proof was attached, and the button's gate never checked `deliveryProof` at all | `apps/admin/app/orders/[id]/page.tsx:206,368-371`, `apps/admin/app/orders/[id]/OrderActions.tsx` (`AdjudicateDelivered`) | MEDIUM | **FIXED** — honest empty-state card ("No proof-of-drop evidence was submitted for this order") on an evidence-less `undelivered` order; `AdjudicateDelivered` now takes `hasEvidence` and prepends a danger-colored warning to its confirmation modal when false |
+| UX17-05 | Rider "Ban permanently" modal falsely claimed bike registration and national ID are "blocked from re-registering" — `bikeReg` has no uniqueness constraint anywhere, and a duplicate national ID is explicitly documented as "a FLAG for the KYC reviewer, never a block" (only withholds auto-verification, never registration) | `apps/admin/app/riders/[id]/RiderActions.tsx:63-68` | MEDIUM | **FIXED** — copy corrected: account is blocked, but bike-reg/ID reuse at a fresh signup isn't automatically prevented, only flagged for manual review |
+| UX17-06 | Admin fare-adjust modal falsely claimed "Cash refunds are paid out via the rider's next settlement" — `adjustFare` only overwrites `agreedFare` + the prepaid commission ledger, no cash moves, no live settlement payout exists (`KB-SETTLEMENT-DROP`); the sibling issue-refund modal on the SAME admin app already describes this honestly | `apps/admin/app/orders/[id]/OrderActions.tsx:33-38` (`FareAdjust`) | MEDIUM | **FIXED** — copy corrected to match the sibling's already-honest "only recorded, not paid out automatically" wording |
+| UX17-07 | "Close — no action" issue-resolution modal falsely claimed "Both sides are notified… reopens if new evidence arrives" — `IssuesService.resolve`'s `notifyIssueResolved` targets only the issue's opener for all three resolutions, and no reopen/un-resolve endpoint exists anywhere (`resolve()`'s CAS is one-directional) | `apps/admin/app/issues/[id]/ResolveActions.tsx:81` | MEDIUM | **FIXED** — copy corrected to "The reporting party is notified that the issue is closed with no action. It stays on record in the audit log.", dropping both unverifiable claims |
+
+**Sibling-sweep evidence.** Push-to-a-party-with-no-feed-fallback class: enumerated all 19
+`notifyProfiles`/`notifyOps`/`notifyOrderStatus`/`notifyIssueResolved`/`notifyNewOffer`/
+`notifyKycDecision` call sites outside `notifications.service.ts` across 8 files — exactly 2
+vulnerable (UX17-01, UX17-02, both fixed), the rest already covered by existing `FEED_NOTICES`/
+`ACCOUNT_FEED_COPY`/`cloneByOriginal`/offer-row/issue-resolution synthesis. False-consequence-copy
+class: all 17 `consequence=` blocks across 6 admin files individually re-opened and checked against
+backing code — 3 false (UX17-05/06/07, fixed), 14 verified accurate (including a re-check that
+`UX16-05`'s "Flag account" fix on `customers/[id]/page.tsx` is still intact). Full grep commands +
+per-hit disposition in the dated report's `## Sibling-sweep` section.
