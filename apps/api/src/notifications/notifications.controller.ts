@@ -4,6 +4,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
+import { NotificationsFeedService } from "./notifications-feed.service";
 import { NotificationsService } from "./notifications.service";
 
 const UnregisterBody = RegisterDeviceTokenRequest.pick({ token: true });
@@ -12,7 +13,10 @@ const UnregisterBody = RegisterDeviceTokenRequest.pick({ token: true });
 @Controller("notifications")
 @UseGuards(JwtAuthGuard)
 export class NotificationsController {
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly feedService: NotificationsFeedService,
+  ) {}
 
   /**
    * The caller's in-app notifications feed (customer-journey A·3). Read-only rows derived from their
@@ -20,7 +24,7 @@ export class NotificationsController {
    */
   @Get("feed")
   feed(@CurrentUser() profileId: string) {
-    return this.notifications.feedForUser(profileId);
+    return this.feedService.feedForUser(profileId);
   }
 
   /** Mobile posts its FCM device token after login (and on token refresh). */
