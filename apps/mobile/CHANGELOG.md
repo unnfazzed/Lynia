@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/unnfazzed/Lynia/compare/v0.6.1...v0.6.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* **wallet-audit:** stale-fare adjudication race, Trip History/Earnings cache gap, KYC audit-forgery gap (WD-021..023) ([bd0867c](https://github.com/unnfazzed/Lynia/commit/bd0867cf9b0c7c18051d9fe7ced0ce46f0b30890))
+
 ## [0.6.1](https://github.com/unnfazzed/Lynia/compare/v0.6.0...v0.6.1) (2026-07-17)
 
 
