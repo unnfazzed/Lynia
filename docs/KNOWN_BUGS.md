@@ -6,7 +6,19 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-17 (deep-sweep routine — orthogonal backend-correctness/concurrency/
+**Last consolidated:** 2026-07-17 (wallet & data-lifecycle audit routine — agentic-loop hunt over the WD
+lane; see the "Wallet & data-lifecycle audit 2026-07-17" section near the bottom for WD-021…WD-023, three
+MEDIUM findings, all fixed same-run with a regression test each: `AdminOrdersService.adjudicateDelivered`
+charging commission off a pre-CAS stale `agreedFare` snapshot instead of re-reading post-lock; six
+call sites (deliverM/cancelM/undeliverM plus their WS-reconnect and foreground-resume self-heal
+counterparts, both rider- and customer-side) that landed a delivered/cancelled/undelivered transition
+without invalidating Trip History/Earnings, now funneled through two shared helpers so the class can't
+recur; and three KYC-decision action strings (`rider.kyc_expire`/`rider.kyc_reset`/
+`rider.kyc_review_required`) missing from `RESERVED_AUDIT_ACTIONS`, letting the free-text admin-audit
+endpoint forge a compliance-trail entry indistinguishable from a real KYC decision. Phase-0.5 cluster
+re-verification (KYC cluster, Object-authz/IDOR cluster — rotated away from the three deep-sweep already
+re-checked the day before) came back intact. Zero open sibling PRs at Phase 0.
+Prior: 2026-07-17 (deep-sweep routine — orthogonal backend-correctness/concurrency/
 adversarial sweep over the DS lane; see the "Deep sweep 2026-07-17" section near the bottom for
 DS17-01…03, three MEDIUM findings, all fixed same-run with a regression test each: a widening-broadcast
 push TTL computed from send time (not order age) that could outlive the order's own 90s auction window
@@ -888,3 +900,38 @@ collision (`claude/bug-hunt-2026-07-16`, pushed by an apparently independent inv
 routine, carrying only an identical workflow-tooling fix and no findings yet) — left untouched per this
 session's designated-branch instructions; flagged for the PR-health watchdog to reconcile if that other
 session also completed. See the dated report for detail.
+
+---
+
+## Wallet & data-lifecycle audit 2026-07-17 (wallet & data-lifecycle audit routine) — `docs/WALLET-DATA-AUDIT-2026-07-17.md`
+
+Fourth run of this routine. Phase 0: zero open `claude/*` sibling PRs at session start. Phase 0.5 re-verified
+the **KYC cluster** (`kycResolvedAt` monotonic CAS in `applyKycResult`, `duplicateIdFlag` hold-for-review)
+and the **Object-authz/IDOR cluster** (self-bid guard + online-gate standing check in `offers.service.ts`) —
+both rotated away from the three headers the 2026-07-17 deep sweep had just re-checked the day before; both
+confirmed **INTACT**, no stale claims. Hunt ran via the agentic-loop engine (`Workflow({name:
+'lane-bug-hunt'}, args: 'wallet')`) — 8 diverse finder lenses (exactly-once-credit, ledger-reconciliation,
+per-ride-debit, earnings-tab, admin-dashboard-kpi, admin-action-authz-audit, concurrency-races,
+contract-nullability), 3 candidates found (5 of 8 lenses returned zero — the wallet/ledger/admin-KPI core
+has been hunted repeatedly across WD-001…WD-020 and holds up), all 3 survived a 3-skeptic adversarial panel
+unanimously (9/9 "real" votes), then a repo-wide sibling-sweep per survivor. **Three findings, all
+MEDIUM — all fixed this run**, each with a regression test; `pnpm typecheck` + `pnpm test` (1012 API tests,
+415 mobile tests) + `apps/api` build all green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| WD-021 | `AdminOrdersService.adjudicateDelivered` (KB-POD-DISPUTE Phase B) read `order.agreedFare`/`suggestedFare` via a plain `findUnique` BEFORE its own status CAS (`undelivered`→`completed`), then passed that PRE-CAS snapshot straight into `wallet.chargeCommission` with no re-read after the CAS took the row lock — the CAS itself guards only on `status`, not on the fare, so a concurrent `adjustFare` landing in the gap commits a fare change this function never sees, and the `ride_commission` ledger row gets permanently priced off the stale fare. `adjustFare`'s own reconciliation can never detect or repair it afterward, since it computes `oldFare` from the order's CURRENT (already-corrected) `agreedFare`. This is the exact race class WD-005 (`rate()`) and WD-013 (`adjustFare` itself) already closed on their own paths — `adjudicateDelivered` shipped later (the KB-POD-DISPUTE Phase B PR) and never got the same treatment; unit tests mock Prisma and never exercise the real gap between two committed transactions | `apps/api/src/admin/admin-orders.service.ts` `adjudicateDelivered` | MEDIUM | **FIXED** — re-reads `agreedFare`/`suggestedFare` fresh immediately after the status CAS succeeds (mirroring WD-005/WD-013's re-read-after-CAS pattern), falling back to the pre-CAS snapshot only if the re-read somehow returns nothing. Test in `admin-orders.service.spec.ts` simulates a concurrent fare-adjust landing in the gap and asserts the debit prices off the NEW fare |
+| WD-022 | `deliverM` (`confirmDelivery`, `apps/mobile/app/rider/job.tsx`) — the mutation that lands a `delivered` order, one of the two statuses `historyForUser`/`earningsSummary` count — invalidated only `["activeJob"]` on success, never `["history"]`/`["earnings","summary"]`; a rider who'd opened Trip History or Earnings within the shared 30s `staleTime` window shortly before completing a delivery saw the pre-delivery total/trip-count and the just-finished trip missing, with no stale-data indicator. Sibling-sweep found **five more call sites with the identical gap**: `cancelM`/`undeliverM` (same file, same pattern), the rider job socket's WS-reconnect self-heal (`use-rider-job-socket.ts`), the customer order socket's self-heal (`use-order-socket.ts`, history-only — no earnings on that side), and the customer home screen's foreground-resume refetch (`home.tsx`) | `apps/mobile/app/rider/job.tsx`, `apps/mobile/app/home.tsx`, `apps/mobile/src/realtime/use-rider-job-socket.ts`, `apps/mobile/src/realtime/use-order-socket.ts` | MEDIUM | **FIXED** — rather than patch six call sites individually (and leave the class free to recur), added two shared funnels in `apps/mobile/src/query/use-history-feed.ts`: `invalidateRiderJobQueries` (activeJob + history + earnings, rider-side) and `invalidateCustomerOrderHistory` (history only, customer-side); all six call sites now go through one or the other. Regression tests in the new `use-history-feed.test.ts` (both helpers) plus assertions added to the existing `use-rider-job-socket.test.tsx`/`use-order-socket.test.tsx` reconnect-self-heal tests |
+| WD-023 | `RESERVED_AUDIT_ACTIONS` (the DS16-01 guard stopping the free-text `POST /admin/audit-actions` endpoint from forging an action string a real domain-mutation endpoint owns) listed only `rider.kyc_approve`/`rider.kyc_decline` from `RiderService.adminSetKyc` — but that SAME transactional endpoint writes two more action strings depending on `status`: `rider.kyc_expire` and `rider.kyc_reset`. Sibling-sweep found a third gap in the same table: `applyKycResult`'s automated vendor-webhook path writes `rider.kyc_review_required` (the DOC-16-05 duplicate-ID hold-for-review decision), also absent from the reserved set. Any admin-token holder could `POST /admin/audit-actions` with one of these three action strings and get a clean `AuditLog` row indistinguishable from a genuine KYC decision, with no underlying `kycStatus`/`kycAttempts` mutation ever occurring — the exact DS16-01 forgery class reapplied to three siblings its own enumeration missed | `apps/api/src/admin/admin-audit.service.ts` `RESERVED_AUDIT_ACTIONS` | MEDIUM | **FIXED** — added `rider.kyc_expire`, `rider.kyc_reset`, `rider.kyc_review_required` to the reserved set. Regression test in `admin-audit.service.spec.ts` asserts all three are rejected with no `AuditLog` row written |
+
+**Sibling-sweep evidence:**
+
+- **WD-021** (`grep -rn "chargeCommission" apps/api/src`, `grep -rn "agreedFare" apps/api/src | grep -v spec`, `grep -rn "updateMany" apps/api/src | grep -v spec` — 3 hits): the only call site reading a pre-CAS fare snapshot into `chargeCommission` without a post-CAS re-read was `adjudicateDelivered` itself — `completeOrder()`/`rate()` (WD-005) and `adjustFare` (WD-013) already re-read post-CAS. No further siblings.
+- **WD-022** (`grep -rn 'invalidateQueries' apps/mobile/app apps/mobile/src | grep -v __tests__`, plus a targeted grep for `refetchJob|refetchOrder|refresh()|healBoard` across the realtime hooks and the three screens that call them — 30 hits): six call sites shared the gap (the reported `deliverM` plus `cancelM`, `undeliverM`, `use-rider-job-socket.ts`'s reconnect self-heal, `use-order-socket.ts`'s self-heal, and `home.tsx`'s foreground resume) — all six fixed via the two new shared funnels. `rider/index.tsx`'s board self-heal and `order/[id].tsx`'s own `rateM`/`cancelM` were confirmed NOT siblings — the board screen has no earnings/history dependency, and `order/[id].tsx`'s mutations already explicitly invalidate `["history"]` (the BH-13 sweep the night before had already checked and cleared these two).
+- **WD-023** (`grep -n "RESERVED_AUDIT_ACTIONS" -A20 apps/api/src/admin/admin-audit.service.ts`, `grep -rn "auditLog.create" apps/api/src | grep -v spec`, `grep -rn 'action:\s*"[a-z_.]*"' apps/api/src | grep -v spec`, `grep -rn 'auditData([^,]*,\s*"[a-z_.]*"' apps/api/src | grep -v spec` — 16 hits): every other `auditLog.create`/`auditData` call site in a domain-mutation endpoint (rider suspend/lift/ban/clear_hold, customer hold/lift, order cancel/fare_adjust/adjudicate_delivered, issue resolve, sos acknowledge, wallet credit, the account-status feed notice) was already present in `RESERVED_AUDIT_ACTIONS` — only the three KYC-decision strings above were missing. No further gaps found.
+
+**Suggestions (not implemented):** none this run — all three findings were straightforward correctness/data-integrity fixes within scope.
+
+**Stopping rule:** three MEDIUM findings this run (no CRITICAL/HIGH) — reported in full per the mandatory
+sibling-sweep evidence rule, not padding; the hunt's own 5-of-8-lenses-empty result plus the Phase-0.5 clean
+re-verification indicates the wallet/ledger/admin-KPI core is converging.

@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { act, create } from "react-test-renderer";
+import { EARNINGS_SUMMARY_KEY, HISTORY_KEY } from "../../query/use-history-feed";
 import { useRiderJobSocket } from "../use-rider-job-socket";
 
 jest.mock("../../auth/auth-context", () => ({
@@ -96,6 +97,31 @@ describe("useRiderJobSocket reconnect self-heal", () => {
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["activeJob"] });
+  });
+
+  // WD-022: a delivered/cancelled/undelivered transition self-healed via this reconnect path (rather
+  // than through deliverM/cancelM/undeliverM's own onSuccess) used to invalidate only `["activeJob"]` —
+  // Trip History and the earnings aggregate never refreshed, so a rider who'd checked either screen
+  // moments earlier saw a stale total/list with no indication anything was stale.
+  it("also invalidates Trip History and the earnings summary on connect", () => {
+    const qc = new QueryClient();
+    const invalidateSpy = jest.spyOn(qc, "invalidateQueries");
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-6" />
+        </QueryClientProvider>,
+      );
+    });
+
+    invalidateSpy.mockClear();
+    act(() => {
+      mockLastSocket.trigger("connect");
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: HISTORY_KEY });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: EARNINGS_SUMMARY_KEY });
   });
 });
 

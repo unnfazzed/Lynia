@@ -13,6 +13,7 @@ import {
 } from "../../src/logic/pickup-checklist-draft";
 import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
+import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
 import {
   acknowledgeHandback,
   clearConfirmItemsPending,
@@ -239,13 +240,19 @@ export default function RiderJob(): React.ReactElement {
     setCustomerStale(false);
   }, [order?.status]);
 
+  // WD-022: also invalidate the Trip History / Earnings queries wherever the active job is refreshed —
+  // deliverM/cancelM/undeliverM all land a terminal status (delivered/cancelled/undelivered) that
+  // `historyForUser`/`earningsSummary` immediately reflect, but `["history"]`/`["earnings","summary"]`
+  // sat on the same 30s staleTime as every other query with no invalidation trigger of their own, so a
+  // rider who'd peeked at either screen shortly before could see it miss the trip they just finished.
+  const refresh = (): void => invalidateRiderJobQueries(qc);
+
   // Warm-resume: refetch the active job the moment the app returns to foreground. Without this, a job
   // the customer cancelled while we were backgrounded serves its stale (still-live) cache for up to the
   // 6s poll — briefly re-exposing advance/OTP controls on a dead order — before flipping to the R8
-  // hand-back. Invalidating on resume makes the terminal appear immediately.
-  useForegroundRefetch(() => void qc.invalidateQueries({ queryKey: ["activeJob"] }));
-
-  const refresh = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
+  // hand-back. Invalidating on resume makes the terminal appear immediately; reuses `refresh()` so a
+  // delivery/cancel/undeliver that landed while backgrounded also self-heals Trip History/Earnings.
+  useForegroundRefetch(refresh);
   const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Couldn't update this delivery. Check your connection and try again.");
 
   // Optimistic advance: the trip step is a frequent, near-always-succeeds tap, so paint the next

@@ -5,6 +5,7 @@ import type { Socket } from "socket.io-client";
 import type { OrderSnapshot } from "../api/orders";
 import { useAuth } from "../auth/auth-context";
 import { offersKey, orderKey } from "../query/client";
+import { invalidateCustomerOrderHistory } from "../query/use-history-feed";
 import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
 import { createSocket } from "./socket";
 
@@ -57,8 +58,13 @@ export function useOrderSocket(
         return { ...prev, rider: { ...prev.rider, currentLat: lp.lat, currentLng: lp.lng, updatedAt: lp.at } };
       });
     };
-    // Background refetch — keeps previous data on screen (no flash) while the snapshot re-loads.
-    const refetchOrder = (): void => void qc.invalidateQueries({ queryKey: orderKey(orderId) }).then(reconcileAfterRefetch);
+    // Background refetch — keeps previous data on screen (no flash) while the snapshot re-loads. WD-022:
+    // also invalidate Trip History — a terminal transition (delivered/cancelled/undelivered) self-healed
+    // here rather than through a mutation's own onSuccess must still land in the customer's Trip History.
+    const refetchOrder = (): void => {
+      void qc.invalidateQueries({ queryKey: orderKey(orderId) }).then(reconcileAfterRefetch);
+      invalidateCustomerOrderHistory(qc);
+    };
     const refetchOffers = (): void => void qc.invalidateQueries({ queryKey: offersKey(orderId) });
 
     socket.on("connect", () => {

@@ -20,6 +20,7 @@ import {
   saveDraft,
 } from "../src/logic/order-draft";
 import { orderKey } from "../src/query/client";
+import { invalidateCustomerOrderHistory } from "../src/query/use-history-feed";
 import { formatMoney } from "../src/logic/money";
 import { useForegroundRefetch } from "../src/realtime/use-foreground-refetch";
 import { fareBand, fareBandHint, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
@@ -131,7 +132,12 @@ export default function HomeScreen(): React.ReactElement {
     queryFn: getActiveCustomerOrder,
     refetchInterval: 30_000,
   });
-  useForegroundRefetch(() => void qc.invalidateQueries({ queryKey: ["activeCustomerOrder"] }));
+  // WD-022: also refresh Trip History on resume — an order that completed/cancelled while backgrounded
+  // must not leave a stale Trip History list behind the (now-correct) home banner.
+  useForegroundRefetch(() => {
+    void qc.invalidateQueries({ queryKey: ["activeCustomerOrder"] });
+    invalidateCustomerOrderHistory(qc);
+  });
   const activeOrder = activeOrderQ.data ?? null;
   useEffect(() => {
     if (activeOrder) qc.setQueryData<OrderSnapshot>(orderKey(activeOrder.id), activeOrder);

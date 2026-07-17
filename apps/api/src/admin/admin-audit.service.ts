@@ -19,6 +19,16 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   "rider.clear_hold",
   "rider.kyc_approve",
   "rider.kyc_decline",
+  // WD-023: `RiderService.adminSetKyc` writes these same two additional action strings from the SAME
+  // transactional endpoint depending on `status` ("expired" / "pending") — omitting them left the KYC
+  // decision's compliance trail only half-reserved, so a free-text write here could forge an "expired"/
+  // "reset" KYC decision on any rider with no underlying kycStatus/kycAttempts mutation.
+  "rider.kyc_expire",
+  "rider.kyc_reset",
+  // WD-023: `RiderService.applyKycResult`'s automated vendor-webhook path writes this action (actor
+  // "system:kyc-webhook") in the same transaction as the DOC-16-05 duplicate-ID hold-for-review decision —
+  // a real, domain-owned compliance entry the free-text path must not be able to forge either.
+  "rider.kyc_review_required",
   "customer.hold",
   "customer.lift",
   "order.cancel",

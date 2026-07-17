@@ -234,14 +234,23 @@ export class AdminOrdersService {
         : {};
       await tx.rider.update({ where: { profileId: order.riderId }, data: { tripsCount: { increment: 1 }, ...reliability } });
 
+      // WD-021: `order.agreedFare`/`suggestedFare` above is a PRE-CAS snapshot — the status CAS above
+      // guards only on `status`, not on the fare, so a concurrent `adjustFare` landing in the gap between
+      // the initial read and the CAS could correct the fare and commit before this point, and this debit
+      // would then price `ride_commission` off the STALE pre-adjust fare — a divergence `adjustFare`'s own
+      // reconciliation can never detect or repair, since it computes `oldFare` from the order's CURRENT
+      // (already-corrected) `agreedFare`. Mirrors WD-005 (`rate()` re-reads `agreedFare` post-CAS) and
+      // WD-013 (`adjustFare` re-reads `status`/`riderId` post-CAS) — re-read fresh here too before charging.
+      const freshFare = await tx.order.findUnique({ where: { id: orderId }, select: { agreedFare: true, suggestedFare: true } });
+
       // Prepaid commission debit — commissionable per the Phase-B decision; no-op at rate 0, idempotent
       // (unique (riderId, orderId, ride_commission)). Guarded on wallet presence for test construction.
       if (this.wallet) {
         await this.wallet.chargeCommission(tx, {
           orderId,
           riderId: order.riderId,
-          agreedFare: order.agreedFare,
-          suggestedFare: order.suggestedFare,
+          agreedFare: freshFare?.agreedFare ?? order.agreedFare,
+          suggestedFare: freshFare?.suggestedFare ?? order.suggestedFare,
         });
       }
 

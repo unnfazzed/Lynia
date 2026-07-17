@@ -519,15 +519,21 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     riderUpdate: { where: unknown; data: Record<string, unknown> } | null;
     audit: { data: Record<string, unknown> } | null;
   }
-  function makeTx(over: { order?: unknown; updateCount?: number } = {}) {
+  function makeTx(over: { order?: unknown; updateCount?: number; freshOrder?: unknown } = {}) {
     const calls: Calls = { orderUpdate: null, orderEvent: null, riderUpdate: null, audit: null };
     const count = over.updateCount ?? 1;
+    const baseOrder =
+      "order" in over ? over.order : { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("6.00"), suggestedFare: dec("6.00") };
+    let orderFindUniqueCalls = 0;
     const tx = {
       order: {
-        findUnique: async () =>
-          "order" in over
-            ? over.order
-            : { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("6.00"), suggestedFare: dec("6.00") },
+        // WD-021: the SECOND findUnique call is the post-CAS re-read — return `freshOrder` for it (when
+        // supplied) so a test can simulate a concurrent fare-adjust landing between the first read and the
+        // status CAS, distinct from the first (pre-CAS) snapshot.
+        findUnique: async () => {
+          orderFindUniqueCalls++;
+          return orderFindUniqueCalls === 1 || !("freshOrder" in over) ? baseOrder : over.freshOrder;
+        },
         updateMany: async (a: Calls["orderUpdate"]) => { calls.orderUpdate = a; return { count }; },
       },
       orderEvent: { create: async (a: Calls["orderEvent"]) => { calls.orderEvent = a; return {}; } },
@@ -560,6 +566,24 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     // Audit row in the same tx, with the reserved action.
     expect(calls.audit!.data).toMatchObject({ action: "order.adjudicate_delivered", target: "o1" });
     expect(res).toMatchObject({ id: "o1", status: "completed", auditId: "audit-9" });
+  });
+
+  it("WD-021: charges commission off the fare re-read AFTER the status CAS, not the pre-CAS snapshot — a concurrent fare-adjust landing in the gap must not be priced off the stale fare", async () => {
+    wallet.chargeCommission.mockClear();
+    const { prisma } = makeTx({
+      order: { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("6.00"), suggestedFare: dec("6.00") },
+      // Simulates a concurrent adjustFare(order, $20) committing between the initial read and this
+      // function's own status CAS — the order's real, current fare by the time we charge is $20, not $6.
+      freshOrder: { agreedFare: dec("20.00"), suggestedFare: dec("20.00") },
+    });
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    await svc.adjudicateDelivered("admin-1", "o1", { reason: "x" });
+    const args = (wallet.chargeCommission.mock.calls[0] as unknown as unknown[])[1] as {
+      agreedFare: { toString(): string };
+      suggestedFare: { toString(): string };
+    };
+    expect(args.agreedFare.toString()).toBe("20.00");
+    expect(args.suggestedFare.toString()).toBe("20.00");
   });
 
   it("409s on any non-undelivered order — this can only overturn a failed hand-off, not complete an arbitrary order", async () => {

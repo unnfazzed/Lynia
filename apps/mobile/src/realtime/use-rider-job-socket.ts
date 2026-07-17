@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { useAuth } from "../auth/auth-context";
+import { invalidateRiderJobQueries } from "../query/use-history-feed";
 import { createSocket } from "./socket";
 
 /**
@@ -46,8 +47,10 @@ export function useRiderJobSocket(
     }
     const socket: Socket = createSocket(token);
     // Background refetch — self-heals a push missed while the socket was down (same discipline as
-    // use-order-socket's refetchOrder on connect/connect_error).
-    const refetchJob = (): void => void qc.invalidateQueries({ queryKey: ["activeJob"] });
+    // use-order-socket's refetchOrder on connect/connect_error). WD-022: a delivered/cancelled/
+    // undelivered transition self-healed here (rather than through the mutation's own onSuccess) must
+    // also refresh Trip History/Earnings, which read the same terminal statuses.
+    const refetchJob = (): void => invalidateRiderJobQueries(qc);
 
     socket.on("connect", () => {
       setConnected(true);
