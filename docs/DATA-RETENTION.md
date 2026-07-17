@@ -15,6 +15,11 @@
    the anonymised row + its `id` so the order/audit history stays referentially intact.
 3. **Location data is sensitive.** Precise GPS (the `order_events` lat/lng trail) has no operational
    value after a delivery closes, so it is scrubbed on a short window even though the order row stays.
+4. **The retention schedule above is declaratively enforced.** `apps/api/src/privacy/pii-manifest.ts`
+   lists every PII-looking column's erasure disposition; its companion test fails if a new personal-data
+   column is added to the schema without a manifest entry, or if `PrivacyService.eraseAccount` stops
+   handling one that's listed — the write-time guard against the "scrubbed one representation, missed a
+   sibling" class of bug (DS-01, DS15-03, DS15-07, DOC-16-01).
 
 ## Retention schedule
 
@@ -31,7 +36,9 @@
 | **Sessions** (refresh tokens) | `sessions` | until expiry | expired sessions hard-deleted **`SESSION_RETENTION_DAYS` = 30** after they lapse |
 | **Rider KYC fields** | `riders` (`bikeReg`, `photoUrl`, `kycRef`, `kycDeclineReason`, `suspendReason`) | life of the account | scrubbed on erasure; the row is kept (ledger) |
 | **Orders, ratings, audit log** | `orders`, `ratings`, `audit_logs` | retained (financial/dispute/compliance record) | never deleted; PII references anonymise via the profile scrub |
-| **Commission wallet ledger** | `commission_accounts`, `commission_ledger`, `top_ups` | retained (financial/compliance record, same class as the above row) | never deleted; the only embedded PII is `top_ups.phone` (mobile-money number), which is not covered by the profile scrub — see `docs/KNOWN_BUGS.md` DOC-16-01 |
+| **Commission wallet ledger** | `commission_accounts`, `commission_ledger`, `top_ups` | retained (financial/compliance record, same class as the above row) | never deleted; the embedded `top_ups.phone` (mobile-money number) is nulled on erasure — see `docs/KNOWN_BUGS.md` DOC-16-01 (fixed) |
+| **Rider live position** | `riders.geog` / `riders.position_updated_at` | until inactive/erasure | nulled via raw SQL on erasure (PostGIS `Unsupported` column) |
+| **Order item photo / delivery proof** | `orders.item_photo_url`, `orders.delivery_proof_{key,lat,lng,at}` | life of the order | GCS object deleted + columns nulled on erasure |
 
 ## Erasure (right to be forgotten)
 

@@ -4,9 +4,11 @@
 > original adversarial survey; individual findings' status here is NOT maintained. As of 2026-07-16 an
 > interactive review verified each item against current code and reconciled the results into the ledger:
 > most P0/P1 items are FIXED or MOOT (settlement rewrite); the genuinely-still-live set is now tracked as
-> `KB-IDENTITY-BINDING` (P2-5/P2-8 phone-only identity), `KB-POD-DISPUTE` (P2-6 proof-of-delivery) in the
-> KNOWN_BUGS OPEN table, while **P1-6 reputation farming (IR16-07)** and **P3-5 IP-keyed throttle
-> (IR16-08)** were fixed that day. Trust the ledger's status, not the per-finding notes below.
+> `KB-IDENTITY-BINDING` (P2-5/P2-8 phone-only identity) in the KNOWN_BUGS OPEN table, while **P1-6
+> reputation farming (IR16-07)**, **P3-5 IP-keyed throttle (IR16-08)**, **P0-2's fare floor (WD-012)**,
+> **P1-3's duplicate-identity auto-verify gap (DOC-16-05)**, and **`KB-POD-DISPUTE` (P2-6
+> proof-of-delivery, Phase A `IR16-11` + Phase B `IR16-12`)** have since been fixed/closed. Trust the
+> ledger's status, not the per-finding notes below.
 
 _Adversarial review of the customer and rider user journeys for **fraud** loopholes — money
 leakage, reputation gaming, identity abuse, and collusion — with a phased plan to close them._
@@ -78,18 +80,19 @@ DB layer, and down-weight repeat same-pair trips in reputation aggregation (see 
 ### P0-2 · Commission basis is decoupled from real cash; no fare floor
 **`apps/api/src/matching/matching.service.ts:129` (`agreedFare ← offer.offeredFare`), `contracts.ts:91` (`offeredFare: z.number().positive().max(100_000)`), `settlements.service.ts:106,113`**
 
-**Weekly-settlement half MOOT; the underlying gap is now CONFIRMED LIVE (dormant only pre-flip):**
-the weekly cash-settlement mechanics this finding originally described (`recordPayment`,
-`adjustFare`-driven settlement) no longer exist — `settlements.service.ts` was rewritten to a
-read-only prepaid-per-ride commission console (see `docs/KNOWN_BUGS.md` — "Money-fraud cluster →
-MOOT"). But the prepaid wallet has since shipped (`apps/api/src/wallet/wallet.service.ts`,
-`docs/plans/2026-rider-wallet-design.md`), and its per-ride debit,
-`WalletService.chargeCommission` (`wallet.service.ts:186-245`), computes
-`perRideCommission(agreedFare, rate)` from the exact same unfloored `agreedFare` this finding
-describes — no check against `suggestedFare`/distance, same as before. The exploit below is real
-against current code; it is dormant only because `COMMISSION_RATE_PCT` defaults to 0% at launch
-(`chargeCommission` returns early via `isCommissionActive(rate)`). See `docs/KNOWN_BUGS.md`
-DOC-16-04 — this must close before the rate flip, not after.
+**Weekly-settlement half MOOT; the fare-floor half now FIXED (WD-012):** the weekly cash-settlement
+mechanics this finding originally described (`recordPayment`, `adjustFare`-driven settlement) no
+longer exist — `settlements.service.ts` was rewritten to a read-only prepaid-per-ride commission
+console (see `docs/KNOWN_BUGS.md` — "Money-fraud cluster → MOOT"). The prepaid wallet's per-ride
+debit, `WalletService.chargeCommission` (`wallet.service.ts:187-245`), no longer bills on the raw
+`agreedFare`: it now computes `perRideCommission(commissionBasis(agreedFare, suggestedFare), rate)`,
+where `commissionBasis` (`packages/shared/src/policy.ts`) bills on
+`max(agreedFare, basisFloorPct × suggestedFare)` (`basisFloorPct = 0.5`) — a lowballed `offeredFare`
+no longer zeroes out commission once the rate is live. See `docs/KNOWN_BUGS.md` DOC-16-04 (closed).
+The exploit below is kept for the narrative; it no longer holds against current code. Note the floor
+only bounds the *commission calculation* — the rider still pockets whatever cash `agreedFare` was
+actually agreed, so the cash-reconciliation half of this finding (no signal ties the in-app number to
+what physically changed hands) remains open, tracked as Phase 2 item 13 below.
 
 Commission = `15% × Σ agreedFare` over completed orders. `agreedFare` is copied verbatim from the
 rider's `offeredFare`, whose only bound is "positive, ≤ 100000, 2dp." There is **no floor tying it to
@@ -182,21 +185,24 @@ attempts regardless of source); count needs-review resubmits toward a session-mi
 ### P1-3 · Banned/suspended rider re-registers with a new SIM — dedup exists but only flags, never blocks
 **`rider.service.ts:51-56` (`duplicateIdAccountCount`, A-04), `:105,141-143` (`completeProfile`/`becomeRider` set `duplicateIdFlag`), `admin-riders.service.ts:101` (`getKycReview` surfaces it), `rider.service.ts:386-` (`applyKycResult`)**
 
-**PARTIALLY MITIGATED, not fixed:** account identity is still purely the phone (`Profile.phone
-@unique`); a ban is still a per-`Rider`-row flag with nothing hard-blocking re-registration. But a
-real dedup signal now exists — `duplicateIdAccountCount` hash-matches `idNumberHash` against every
+**The auto-verify gap is FIXED (DOC-16-05); still PARTIALLY MITIGATED overall:** account identity is
+still purely the phone (`Profile.phone @unique`); a ban is still a per-`Rider`-row flag with nothing
+hard-blocking re-registration. `duplicateIdAccountCount` hash-matches `idNumberHash` against every
 OTHER profile (LR8-compliant: HMAC hash, never the raw ID) and stamps `duplicateIdFlag` on
-`completeProfile`/`becomeRider`, surfaced to a human reviewer via `getKycReview`. The gap: it's
-**advisory only**. `applyKycResult` — the vendor auto-mode webhook path that resolves KYC without any
-admin in the loop — never reads `duplicateIdFlag` at all, so under `KYC_MODE=auto` (the default) a
-duplicate ID sails straight to `verified` with no human ever seeing the flag.
+`completeProfile`/`becomeRider`. The gap this finding originally described — `applyKycResult`'s
+vendor auto-mode path never reading `duplicateIdFlag`, so a duplicate ID sailed straight to
+`verified` under `KYC_MODE=auto` — is closed: `applyKycResult` now holds a `verified` outcome for
+human review (`holdForReview`, `rider.service.ts:419-420`) whenever the rider is already flagged
+`duplicateIdFlag`, instead of auto-committing it. The exploit below no longer works as written; kept
+for the narrative.
 
-**Exploit:** banned rider gets a second SIM → verifies OTP → fresh profile → `becomeRider` (flags
-`duplicateIdFlag=true`, but doesn't block) → submits the **same real face + ID** to Didit → vendor
-auto-approves → `applyKycResult` commits `verified`, ignoring the flag it never queried → active
-again. Bans, suspensions, and reliability holds all reset. (Note: once verified, `idNumber` itself is
-now frozen and can't be swapped out from under an existing account — DS-11 — but that's a different
-protection; it doesn't stop a *fresh* account from re-using a banned identity.)
+**Exploit (historical):** banned rider gets a second SIM → verifies OTP → fresh profile →
+`becomeRider` (flags `duplicateIdFlag=true`, but doesn't block) → submits the **same real face + ID**
+to Didit → vendor auto-approves → `applyKycResult` commits `verified`, ignoring the flag it never
+queried → active again. Bans, suspensions, and reliability holds all reset. (Note: once verified,
+`idNumber` itself is now frozen and can't be swapped out from under an existing account — DS-11 —
+but that's a different protection; it doesn't stop a *fresh* account from re-using a banned
+identity.)
 
 **Fix:** Have `applyKycResult`'s auto-verify branch consult `duplicateIdFlag` (or re-check
 `duplicateIdAccountCount` against banned/suspended accounts specifically) and route a match to
@@ -294,10 +300,15 @@ report) before a reliability penalty lands.
 - **P2-5 · Multi-accounting.** Only the phone binds an account; cheap SIMs → unlimited customer/rider
   identities for promo abuse, review-bombing, and sock-puppet reports (feeds P1-5). **Fix:** device
   attestation / risk scoring at signup, per-device/IP velocity limits, identity-level aggregation.
-- **P2-6 · Recipient can take the goods then withhold the OTP.** `order-lifecycle.service.ts:233-275` —
-  delivery is provable *only* by the recipient-held OTP; a dishonest recipient strands the rider (no
-  credit, no rating) with only a *false* `undelivered` as an exit. **Fix:** rider-side
-  proof-of-delivery dispute (photo + geofence) opening an admin-reviewable state.
+- **P2-6 · Recipient can take the goods then withhold the OTP — `KB-POD-DISPUTE`, now CLOSED.**
+  `order-lifecycle.service.ts:233-275` — delivery used to be provable *only* by the recipient-held
+  OTP, so a dishonest recipient stranded the rider (no credit, no rating) with only a *false*
+  `undelivered` as an exit. **Fixed:** Phase A (`IR16-11`) lets the rider attach proof-of-drop
+  evidence (photo + GPS + time) on the undelivered flow; Phase B (`IR16-12`) added
+  `POST /admin/orders/:id/adjudicate-delivered`, a CAS-guarded admin action that force-completes an
+  `undelivered` order — crediting the trip, recovering reliability, charging commission, and
+  notifying both parties (customer gets a 48h contest window) — over a withheld code. See
+  `docs/KNOWN_BUGS.md` `KB-POD-DISPUTE`.
 - **P2-7 · Didit webhook signature enforcement is conditional on `KYC_PROVIDER === "didit"`.**
   `kyc.controller.ts:60-82` — verification runs only inside `if (secret)`; under provider/secret config
   drift an unsigned forged webhook could be processed. **Fix:** verify the signature unconditionally
@@ -322,9 +333,10 @@ report) before a reliability penalty lands.
   escape hatch — previously an `on_hold` rider had no admin action at all (only `suspended` riders got
   Lift/Ban). Self-service recovery is still absent, so the P0-1 interaction (self-dealing as the only
   *self*-service recovery) still applies.
-- **Throttle keyed by IP, not subject** — the guard runs before `JwtAuthGuard` so authenticated limits
-  fall back to IP (`throttle.guard.ts:41-63`); per-account offer/verify limits aren't really per
-  account.
+- **Throttle keyed by IP, not subject — FIXED (P3-5, IR16-08).** The guard still runs before
+  `JwtAuthGuard`, but it now self-decodes the bearer token to derive the subject and keys
+  authenticated requests on it, falling back to IP only when no valid token is present
+  (`throttle.guard.ts:41-63`); per-account limits are per-account again.
 - **Lifecycle write routes unthrottled** — `/deliver`, `/cancel`, `/undelivered`, `/status` carry no
   `@Throttle` (`lifecycle.controller.ts`).
 - **Global OTP-send hard cap is a shared lockout lever** — `RL.global {max:5000/day}` can be exhausted
