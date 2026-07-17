@@ -59,6 +59,22 @@ export async function saveRiderBidDraft(draft: RiderBidDraft): Promise<void> {
   }
 }
 
+/**
+ * A restored draft's `selected` order carries the SAME 90s auction window every sent-offer countdown
+ * uses (createdAt + OFFER_WINDOW_MS) — but unlike a live session, `loadRiderBidDraft` used to restore
+ * it unconditionally on cold start with no expiry check, and the only thing that ever cleared a dead
+ * `selected` was a live WS `bid:expired`/`order:taken` event. A rider who killed the app mid-auction and
+ * relaunched after the window closed (or while still offline, so the board socket never even connects)
+ * got a phantom "Accept $X" compose card for an order that was already gone. Pulled out as a pure
+ * function, keyed on an explicit `now`, so the cold-start gate is unit-testable without mounting the
+ * screen or mocking Date.
+ */
+export function isRiderBidDraftExpired(draft: RiderBidDraft, now: number): boolean {
+  const closesAt = new Date(draft.selected.createdAt).getTime() + OFFER_WINDOW_MS;
+  if (Number.isNaN(closesAt)) return true; // an unparseable createdAt can't be trusted as still-open
+  return closesAt <= now;
+}
+
 export async function clearRiderBidDraft(): Promise<void> {
   try {
     await SecureStore.deleteItemAsync(RIDER_BID_DRAFT_KEY);

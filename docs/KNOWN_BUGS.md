@@ -15,6 +15,12 @@ in the same family as UX15-07/UX16-05, plus a missing evidence-empty-state on th
 bypass override. All 7 fixed same-run with regression tests where testable — apps/admin has no test
 harness, so its 4 copy/UI fixes are typecheck+lint-verified only, matching this repo's established
 precedent).
+Prior consolidation: 2026-07-16 night (bug-hunt routine, agentic-loop engine over the BH lane — mobile
+journeys + app↔API contract seams; see "Bug hunt 2026-07-16 night" for BH-13 (HIGH — the rider board's
+reconnect/foreground self-heal never reconciled `activeJob`, so a bid win missed while backgrounded went
+unnoticed until an app kill) and BH-14 (LOW — a cold-started rider bid-compose draft was restored with no
+check against its own 90s auction window); both fixed same-run with regression tests. Phase-0.5 re-verified
+the Notifications/FCM and Mobile-journey-dead-ends cluster headers — both intact).
 Prior consolidation: 2026-07-16 (agentic-loop bug hunt over the WD lane — a new multi-agent
 loop-until-dry + adversarial-verify + sibling-sweep engine; see the "Agentic-loop bug hunt 2026-07-16"
 section for WD-018…WD-020: a HIGH prod-breaking admin-cancel bug — the operator identity written into a
@@ -807,3 +813,40 @@ class: all 17 `consequence=` blocks across 6 admin files individually re-opened 
 backing code — 3 false (UX17-05/06/07, fixed), 14 verified accurate (including a re-check that
 `UX16-05`'s "Flag account" fix on `customers/[id]/page.tsx` is still intact). Full grep commands +
 per-hit disposition in the dated report's `## Sibling-sweep` section.
+
+## Bug hunt 2026-07-16 night (bug-hunt routine) — `docs/BUG-HUNT-2026-07-16.md`
+
+Full lane hunt (mobile-app user journeys, client state/lifecycle, app↔API contract seams) run via the
+agentic-loop engine (`Workflow({scriptPath: '.claude/workflows/lane-bug-hunt.js'}, args: 'bug-hunt')`) —
+5 diverse finder lenses, each doing its own Phase-0 ledger read, candidates put through a 3-skeptic
+adversarial panel, survivors sibling-swept. Phase 0.5 re-verified the Notifications/FCM and Mobile-journey
+dead-ends cluster headers (2 members each) — both intact, no regressions. 3 of 5 lenses returned zero
+findings (most of this lane's surface has been hunted repeatedly across BH-01…BH-12 and holds up); 2
+candidates found, both survived adversarial verification, one HIGH, one LOW — both fixed this run with
+regression tests. `pnpm typecheck` + full monorepo `test` green (see PR for exact counts).
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| BH-13 | Rider board's reconnect (`connect`/`connect_error`) AND foreground-resume self-heal invalidated only `["openOrders"]`, never `["activeJob"]` — even though this same board socket's live `order:taken` handler invalidates `activeJob` on a bid win. A rider who won a bid while backgrounded (socket down, `focusManager`-paused poll, `board.connected` flipping true synchronously on reconnect and defeating the poll's own gate before it got a window to fire) kept seeing their sent-offer card as a live countdown with no "active job" banner, until an FCM push tap or a full app kill/relaunch | `apps/mobile/src/realtime/use-rider-board.ts` (`healBoard`), `apps/mobile/app/rider/index.tsx` (foreground self-heal, sibling caught by the sweep) | HIGH | **FIXED** — both self-heal paths now invalidate `["openOrders"]` AND `["activeJob"]`, mirroring `use-rider-job-socket.ts`'s existing `refetchJob` pattern. 2 new cases in `use-rider-board.test.tsx` |
+| BH-14 | Cold-start restore of the rider's bid-compose draft (`loadRiderBidDraft`) rehydrated `selected`/`fare`/`eta`/`offerMode` unconditionally, with no check against the restored order's own 90s auction window (`createdAt + OFFER_WINDOW_MS`) — only a *live* WS `bid:expired`/`order:taken` event ever cleared a dead `selected`, which a cold-started or still-offline app never receives, leaving a phantom "Accept $X" compose card for a since-expired-or-taken auction | `apps/mobile/src/logic/rider-bid-draft.ts`, `apps/mobile/app/rider/index.tsx` (load effect) | LOW | **FIXED** — new pure `isRiderBidDraftExpired(draft, now)`; the load effect drops an expired draft instead of restoring it. 4 new cases in `rider-bid-draft.test.ts` |
+
+**Sibling-sweep evidence** (both findings; full grep commands + disposition in the dated report): BH-13's
+signature (a socket self-heal handler invalidating fewer query keys than its own live events touch) was
+swept across all 4 `apps/mobile/src/realtime` connect/connect_error sites and all 4 `useForegroundRefetch`
+call sites — `use-order-socket.ts` and `use-rider-job-socket.ts` already-guarded (single query in scope
+each), `use-rider-location.ts` not a sibling (no query cache, a socket write not a self-heal),
+`rider/index.tsx`'s own `useForegroundRefetch` was the one vulnerable sibling (fixed same commit),
+`rider/job.tsx`/`order/[id].tsx`/`home.tsx`'s foreground calls already-guarded. BH-14's signature (a
+SecureStore-restored draft with no expiry check) was swept against every other durable marker in the app
+(`pendingRating`, `pendingSenderRating`, `confirmItemsPending`, `PendingTopup`, delivery-code
+attempts/rotation) — all of those reconcile against a live server snapshot (inherently self-correcting);
+`rider-bid-draft.ts` is the only one with no server record to reconcile against, which is exactly the gap
+the fix closes. No further siblings found for either.
+
+**GitHub MCP note:** the GitHub MCP tools 503'd for the first ~25 minutes of this run, blocking the Phase 0
+open-sibling-PR read during that window (the ledger read itself, the primary dedup mechanism, was
+unaffected). A genuine duplicate/concurrent routine run was discovered mid-session via a remote branch-name
+collision (`claude/bug-hunt-2026-07-16`, pushed by an apparently independent invocation of this same
+routine, carrying only an identical workflow-tooling fix and no findings yet) — left untouched per this
+session's designated-branch instructions; flagged for the PR-health watchdog to reconcile if that other
+session also completed. See the dated report for detail.
