@@ -77,10 +77,11 @@ export const envSchema = z.object({
   REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
   // E4: WhatsApp default, SMS behind a flag (schedule insurance vs BSP delay). "bird" delivers the OTP
-  // as an SMS via bird.com (product decision 2026-07-18) while WhatsApp Business verification is pending
-  // — reverting is a one-line flip back to "whatsapp". "console" logs the code for local/dev testing
-  // without any messaging provider.
-  OTP_CHANNEL: z.enum(["whatsapp", "sms", "bird", "console"]).default("whatsapp"),
+  // as an SMS via bird.com (product decision 2026-07-18) while WhatsApp Business verification is pending;
+  // "local-sms" delivers via a local A2P gateway (the Zimbabwe fallback for when Bird's international
+  // route is throttled on Econet — same product decision). Both are one-line flips to/from "whatsapp".
+  // "console" logs the code for local/dev testing without any messaging provider.
+  OTP_CHANNEL: z.enum(["whatsapp", "sms", "bird", "local-sms", "console"]).default("whatsapp"),
   // QA/test only: comma-separated phone numbers for which requestOtp returns the code in its
   // response, so end-to-end signup is testable on a real device with no WhatsApp BSP. ONLY
   // effective on the "console" channel and ONLY for numbers in this list — an arbitrary phone
@@ -127,6 +128,21 @@ export const envSchema = z.object({
   // clean — iOS autofill (textContentType=oneTimeCode) and Android's autofill hint (autoComplete=
   // sms-otp) still work without it. Derive it from the release signing cert (SMS Retriever docs).
   BIRD_ANDROID_SMS_HASH: z.string().optional(),
+  // Local A2P SMS gateway — only needed when OTP_CHANNEL=local-sms. The Zimbabwe fallback for when
+  // Bird's international route is throttled on Econet's grey-route filtering: point this at Econet A2P
+  // (direct) or a local bulk-SMS aggregator. Delivery pipe only — we still generate/hash/verify the
+  // code ourselves. LOCAL_SMS_API_KEY is the secret (sent as `Authorization: Bearer <key>`); confirm the
+  // exact request shape (otp-sender.ts buildLocalSmsRequest) + auth against the provider's API doc.
+  // Optional so a misconfigured channel boots green and fails loud at send, like the WHATSAPP_*/BIRD_*
+  // vars — the release workflow validates them before a production deploy.
+  LOCAL_SMS_API_URL: z.string().optional(),
+  LOCAL_SMS_API_KEY: z.string().optional(),
+  // Alphanumeric sender ID shown as the SMS "from" AND the brand in the body ("<code> is your <sender>
+  // verification code."). Zimbabwe allows alphanumeric senders up to 11 chars — "LyniaGo" fits. Register
+  // it with the operators/POTRAZ; you can send on a default route while the branded ID is pending.
+  LOCAL_SMS_SENDER_ID: z.string().default("LyniaGo"),
+  // Optional Android SMS Retriever app-hash for this channel (same purpose as BIRD_ANDROID_SMS_HASH).
+  LOCAL_SMS_ANDROID_HASH: z.string().optional(),
   // --- KYC (lane E) ---
   // auto = submit to the vendor; manual = leave pending for admin review (T7 backstop).
   KYC_MODE: z.enum(["auto", "manual"]).default("auto"),
