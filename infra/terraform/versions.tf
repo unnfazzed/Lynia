@@ -17,6 +17,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.0"
+    }
   }
 
   # Remote state (the module generates DB/JWT secrets that land in state).
@@ -37,4 +41,13 @@ provider "google" {
 provider "google-beta" {
   project = var.project_id
   region  = var.region
+}
+
+# Cloudflare — DNS-only management of the lyniafinance.com zone (dns.tf).
+# Gated by cloudflare_dns_enabled (default false): with the flag off, every
+# cloudflare_dns_record has count = 0, so no API call is made and an empty token
+# is fine — a plain apply stays a no-op. The token is supplied via a VCS-ignored
+# *.tfvars when you opt in (mirrors admin_iap_oauth_client_secret).
+provider "cloudflare" {
+  api_token = var.cloudflare_api_token
 }

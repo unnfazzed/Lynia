@@ -195,6 +195,26 @@ variable "api_domain" {
   default     = "lyniago.lyniafinance.com"
 }
 
+# --- Cloudflare DNS (dns.tf) — off by default ---
+variable "cloudflare_dns_enabled" {
+  description = "Manage the product's DNS A records in Cloudflare via Terraform (dns.tf): api_domain (always), plus staging_api_domain / admin_domain when their tiers are armed, all pointing at load_balancer_ip. Off by default — zero diff, and existing hand-managed DNS is left untouched until you opt in. When enabling, also set cloudflare_api_token and cloudflare_zone_id."
+  type        = bool
+  default     = false
+}
+
+variable "cloudflare_api_token" {
+  description = "Cloudflare API token scoped to Zone:DNS:Edit on the lyniafinance.com zone. Only used when cloudflare_dns_enabled. Read/set via a *.tfvars kept out of VCS (mirrors admin_iap_oauth_client_secret)."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "cloudflare_zone_id" {
+  description = "Cloudflare Zone ID for lyniafinance.com (Cloudflare dashboard → the zone → Overview → API section). Required when cloudflare_dns_enabled."
+  type        = string
+  default     = ""
+}
+
 # --- Admin console tier (admin.tf) — all gated off by default ---
 variable "admin_enabled" {
   description = "Provision the admin console tier (admin.tf): the lynia-admin serverless NEG + IAP-protected backend + managed cert + runtime SA + ADMIN_API_TOKEN secret, exposed via the existing ALB at admin_domain. Off by default — zero diff until armed. Arming: docs/plans/2026-admin-console-deployment.md Phases 3/5/6."
