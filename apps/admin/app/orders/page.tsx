@@ -9,6 +9,8 @@ import { IconPackage } from "../components/icons";
 interface Order {
   id: string;
   status: string;
+  route: string;
+  rider: string | null;
   proposedFare: string;
   agreedFare: string | null;
   distanceKm: number | null;
@@ -19,6 +21,16 @@ interface Order {
 }
 
 const STATUSES = Object.values(OrderStatus);
+
+/** Compact "N min/hr ago" for the Created column (server-rendered once; no hydration risk). */
+function timeAgo(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  return `${Math.round(hrs / 24)} d ago`;
+}
 const FILTERS = [{ value: "", label: "all" }, ...STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))];
 
 export default async function OrdersPage({
@@ -35,16 +47,11 @@ export default async function OrdersPage({
 
   const columns: Column<Order>[] = [
     { key: "id", header: "Order", className: "mono", cell: (o) => o.id.slice(0, 8) },
+    { key: "route", header: "Route", cell: (o) => o.route },
     { key: "status", header: "Status", cell: (o) => <StatusPill status={o.status} /> },
+    { key: "rider", header: "Rider", className: "mut", cell: (o) => o.rider ?? "—" },
     { key: "fare", header: "Fare", className: "num", cell: (o) => `$${o.agreedFare ?? o.proposedFare}` },
-    { key: "distance", header: "Distance", className: "num", cell: (o) => (o.distanceKm != null ? `${o.distanceKm} km` : "—") },
-    {
-      key: "note",
-      header: "Note",
-      className: "mut",
-      cell: (o) =>
-        o.cancelReason ? `cancelled${o.cancelledByRole ? ` (${o.cancelledByRole})` : ""}: ${o.cancelReason}` : "—",
-    },
+    { key: "created", header: "Created", className: "mut num", cell: (o) => timeAgo(o.createdAt) },
   ];
 
   return (

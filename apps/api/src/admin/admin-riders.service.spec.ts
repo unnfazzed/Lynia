@@ -803,7 +803,7 @@ describe("AdminRidersService.walletView", () => {
     };
     const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications, noGateway);
     const out = await svc.walletView("r1");
-    expect(out.balance).toBe("0");
+    expect(out.balance).toBe("0.00");
     expect(out.ledger).toEqual([]);
   });
 });

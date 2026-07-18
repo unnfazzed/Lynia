@@ -12,12 +12,16 @@ import { adminPost } from "../lib/api";
  * (the modal enforces it); lift's is optional. Throws on a failed write so a silent fail-open is
  * impossible; only fires against a live API since the triggers are disabled off the connected path.
  */
+const CUSTOMER_ACTIONS = ["hold", "lift"] as const;
+
 export async function mutateCustomer(
   profileId: string,
   action: "hold" | "lift",
   reasonCode: string | null,
   note: string,
 ): Promise<void> {
+  // Defense-in-depth: `action` is interpolated into the endpoint path — refuse anything off the known set.
+  if (!(CUSTOMER_ACTIONS as readonly string[]).includes(action)) throw new Error(`Unknown customer action: ${action}`);
   const ok = await adminPost(`/admin/customers/${profileId}/${action}`, {
     reason: reasonCode ?? "",
     note: note || null,

@@ -89,11 +89,17 @@ export class AdminOrdersService {
         cancelledBy: true,
         cancelReason: true,
         createdAt: true,
+        pickup: true,
+        dropoff: true,
+        rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
       },
     });
     return orders.map((o) => ({
       id: o.id,
       status: o.status,
+      // Pickup → dropoff route + rider name so the monitor table matches the kit (no PII in the label).
+      route: routeOf(o.pickup, o.dropoff),
+      rider: o.rider ? `${o.rider.profile.firstName} ${o.rider.profile.lastName}`.trim() : null,
       proposedFare: o.proposedFare.toString(),
       agreedFare: o.agreedFare?.toString() ?? null,
       distanceKm: o.distanceKm,

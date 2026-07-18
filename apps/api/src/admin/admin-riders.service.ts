@@ -46,6 +46,7 @@ export class AdminRidersService {
         idVerified: true,
         isOnline: true,
         accountStatus: true,
+        onHold: true,
         ratingAvg: true,
         ratingCount: true,
         tripsCount: true,
@@ -81,8 +82,11 @@ export class AdminRidersService {
       idVerified: r.idVerified,
       isOnline: r.isOnline,
       // Account standing (A-04) so the directory can distinguish an active rider from a
-      // suspended/banned/held one — previously only visible on the detail page.
+      // suspended/banned one — previously only visible on the detail page. `onHold` is the SEPARATE
+      // reliability-hold flag (accountStatus has no on_hold member), surfaced so the directory can flag
+      // an auto-held rider too.
       accountStatus: r.accountStatus,
+      onHold: r.onHold,
       ratingAvg: r.ratingAvg,
       ratingCount: r.ratingCount,
       tripsCount: r.tripsCount,
@@ -118,7 +122,8 @@ export class AdminRidersService {
       }),
     ]);
     return {
-      balance: (account?.balance ?? 0).toString(),
+      // Always 2dp (Decimal(10,2).toString() keeps scale; the no-account fallback is an explicit "0.00").
+      balance: account ? account.balance.toString() : "0.00",
       ledger: ledger.map((l) => ({
         id: l.id,
         type: l.type,

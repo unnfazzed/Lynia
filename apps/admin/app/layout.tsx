@@ -27,10 +27,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body>
+        {/* Skip link — first focusable element; lets a keyboard/SR user jump past the nav to the content. */}
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
         {/* Ops-console shell: 216px sidebar (kit shell.js) + the page's own <main>. */}
         <div className="shell">
           <Sidebar operator={operator} counts={counts} />
-          {children}
+          <div id="main-content" tabIndex={-1} style={{ display: "flex", flex: 1, minWidth: 0 }}>
+            {children}
+          </div>
         </div>
       </body>
     </html>

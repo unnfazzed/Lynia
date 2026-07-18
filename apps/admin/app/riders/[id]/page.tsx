@@ -11,6 +11,13 @@ import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconBike } from "../../components/icons";
 
+/** Format a wallet balance, rendering a negative (owed) balance as "−$X.XX" to match the ledger's
+ *  signed amounts (rather than a raw "$-X.XX"). */
+function fmtBalance(b: string): string {
+  const v = Number(b);
+  return v < 0 ? `−$${Math.abs(v).toFixed(2)}` : `$${b}`;
+}
+
 /** Humanize a commission-ledger entry type for the wallet ledger table. */
 const LEDGER_TYPE_LABEL: Record<WalletLedgerEntry["type"], string> = {
   ride_commission: "Ride commission",
@@ -126,6 +133,16 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
         </div>
       ) : null}
 
+      {banned ? (
+        <div className="warnbar">
+          <IconAlert />
+          <span className="t">
+            <b>Permanently banned.</b> {r.suspendReason ? `Reason: ${r.suspendReason}. ` : ""}This account is blocked
+            and can&apos;t be reinstated from the console.
+          </span>
+        </div>
+      ) : null}
+
       {onHold ? (
         <div className="warnbar">
           <IconAlert />
@@ -225,6 +242,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
                 id={r.id}
                 name={r.name}
                 suspended={suspended}
+                banned={banned}
                 onHold={onHold}
                 suspendSummary={`${r.trips} trips · ${ratingTxt(r)}`}
                 telHref={telHref}
@@ -245,14 +263,18 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
           <span className="right">
             balance{" "}
             <b style={{ color: wallet && Number(wallet.balance) < 0 ? tokens.color.danger : tokens.color.ink }}>
-              ${wallet ? wallet.balance : "—"}
+              {wallet ? fmtBalance(wallet.balance) : "—"}
             </b>
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: tokens.space.md, flexWrap: "wrap" }}>
-          <WalletCreditButton id={r.id} name={r.name} connected={connected} />
+          {/* Only offer a credit once the balance loaded — crediting blind (wallet view failed) would let
+              ops act without seeing the current balance. */}
+          <WalletCreditButton id={r.id} name={r.name} connected={connected && wallet !== null} />
           <span style={{ fontSize: 12, color: tokens.color.muted }}>
-            Manual credits are the launch top-up rail — each is reason-coded and lands on the ledger below.
+            {wallet
+              ? "Manual credits are the launch top-up rail — each is reason-coded and lands on the ledger below."
+              : "Wallet view unavailable — the credit action is disabled until it loads."}
           </span>
         </div>
         <DataTable

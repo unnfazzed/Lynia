@@ -18,6 +18,7 @@ export function RiderActions({
   id,
   name,
   suspended,
+  banned,
   onHold,
   suspendSummary,
   telHref,
@@ -26,6 +27,8 @@ export function RiderActions({
   id: string;
   name: string;
   suspended: boolean;
+  /** Permanently banned — a terminal state; offer neither Suspend nor Lift, only Call. */
+  banned: boolean;
   /** Active rider locked out by the reliability engine (distinct from an admin suspension). */
   onHold: boolean;
   /** "{trips} trips · {rating}" for the suspend consequence copy. */
@@ -33,6 +36,24 @@ export function RiderActions({
   telHref: string;
   connected: boolean;
 }) {
+  // A ban is terminal and can't be undone from the console — offering "Suspend" (or "Lift") here is
+  // nonsensical. Only Call remains.
+  if (banned) {
+    return (
+      <>
+        <a className="btn ghost" href={telHref}>
+          <span style={{ display: "inline-flex", fontSize: 14 }}>
+            <IconPhone />
+          </span>
+          Call rider
+        </a>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
+          This account is permanently banned. A ban can&apos;t be reversed from the console.
+        </div>
+      </>
+    );
+  }
+
   if (suspended) {
     return (
       <>
