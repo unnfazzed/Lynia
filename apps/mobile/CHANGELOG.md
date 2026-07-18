@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/unnfazzed/Lynia/compare/v0.6.2...v0.6.3) (2026-07-18)
+
+
+### Bug Fixes
+
+* **bughunt:** profile-setup dead end, advanceM 409 reconciliation, pickup-checklist wipe (BH-15..17) ([#295](https://github.com/unnfazzed/Lynia/issues/295)) ([c2b9ed7](https://github.com/unnfazzed/Lynia/commit/c2b9ed7e75ce9c5371945d60e994e3c10cccf634))
+
 ## [0.6.2](https://github.com/unnfazzed/Lynia/compare/v0.6.1...v0.6.2) (2026-07-17)
 
 
