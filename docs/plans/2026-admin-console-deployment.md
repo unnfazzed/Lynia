@@ -1,8 +1,8 @@
 # Admin Console Deployment Plan — "take the admin site to its URL"
 
 **Goal:** stand up the `apps/admin` Next.js console at a stable, authenticated public URL
-(`https://admin.<domain>`), reusing the GCP topology the API already runs on and satisfying the
-console's existing fail-closed operator-auth gate.
+(`https://lyniagoadmin.lyniafinance.com`), reusing the GCP topology the API already runs on and
+satisfying the console's existing fail-closed operator-auth gate.
 
 **Status of the code today**
 - `apps/admin` is a Next.js 16 App-Router app that renders server-side and calls the API with a
@@ -18,7 +18,8 @@ console's existing fail-closed operator-auth gate.
 
 **Recommended topology:** a second Cloud Run service `lynia-admin` (region `africa-south1`, to match
 the API), exposed through the **same** global external HTTPS ALB via its own serverless NEG +
-backend service + host rule (`admin.<domain>`), reusing the existing static IP. **IAP is enabled on
+backend service + host rule (`lyniagoadmin.lyniafinance.com`), reusing the existing static IP.
+**IAP is enabled on
 the admin backend service** — this is the piece the API doesn't have and the piece the console's
 middleware requires. Cloud Armor + Google-managed TLS as with the API.
 
@@ -51,8 +52,8 @@ Add to `infra/terraform/` (new file `admin.tf` + variable additions), all gated 
 `admin_enabled` flag defaulting to `false` so the change is zero-diff until the founder arms it
 (mirroring the `staging_enabled` pattern in `staging.tf`).
 
-5. **Variables** (`variables.tf`): `admin_domain` (e.g. `admin.lyniafinance.com` — the value already
-   hinted in `terraform.tfvars.example`), `admin_enabled` (bool, default false), plus IAP OAuth
+5. **Variables** (`variables.tf`): `admin_domain` (= `lyniagoadmin.lyniafinance.com`),
+   `admin_enabled` (bool, default false), plus IAP OAuth
    client id/secret vars (or reference a manually-created OAuth brand — see Phase 5).
 6. **Cloud Run service** — Terraform *references* it the same way `lb.tf` references the API service
    (service created by the deploy workflow, not Terraform, so the two don't fight over ownership).
@@ -63,7 +64,7 @@ Add to `infra/terraform/` (new file `admin.tf` + variable additions), all gated 
 8. **Backend service** (`google_compute_backend_service`, `EXTERNAL_MANAGED`, `HTTP`) with:
    - `security_policy` = the existing Cloud Armor policy (or an admin-specific one).
    - **`iap { oauth2_client_id, oauth2_client_secret }`** — the differentiator vs. the API backend.
-9. **URL map** — add an `admin.<domain>` host rule → admin backend (extend the existing
+9. **URL map** — add a `lyniagoadmin.lyniafinance.com` host rule → admin backend (extend the existing
    `google_compute_url_map.api`, same pattern as the staging host rule already there).
 10. **Managed cert** — append a `google_compute_managed_ssl_certificate` for `admin_domain` to the
     HTTPS target proxy's `ssl_certificates` list (append, don't replace — same caution the staging
@@ -102,20 +103,20 @@ Add to `infra/terraform/` (new file `admin.tf` + variable additions), all gated 
 
 ## Phase 6 — DNS + cutover (founder)
 
-19. Create a DNS **A record** `admin.<domain>` → the ALB static IP (`terraform output
+19. Create a DNS **A record** `lyniagoadmin.lyniafinance.com` → the ALB static IP (`terraform output
     load_balancer_ip` — the SAME IP the API uses; this is a second A record, like staging).
 20. Wait for the Google-managed cert for `admin_domain` to go **ACTIVE** (can take ~30 min; the first
     smoke may fail while the cert/DNS propagate — re-run, same caveat as `deploy-staging.yml`).
 21. If the admin console ever does browser-side signed-URL uploads, set `bucket_cors_origins =
-    ["https://admin.<domain>"]` (default is deny-all `[]`; never `["*"]`).
+    ["https://lyniagoadmin.lyniafinance.com"]` (default is deny-all `[]`; never `["*"]`).
 
 ## Phase 7 — Verify (SECURITY-OPS.md acceptance)
 
-22. **Unauthenticated** request to `https://admin.<domain>` is rejected by IAP *before any page
+22. **Unauthenticated** request to `https://lyniagoadmin.lyniafinance.com` is rejected by IAP *before any page
     renders* (and, behind it, the middleware would 401 anyway — belt and suspenders).
 23. **Authenticated** operator loads the console, sees live data, and a mutating action
     (e.g. a KYC decision) is attributed to that human in the API **audit log** via `X-Operator`.
-24. Plain-HTTP `http://admin.<domain>` 301-redirects to HTTPS (existing `:80` redirect rule covers
+24. Plain-HTTP `http://lyniagoadmin.lyniafinance.com` 301-redirects to HTTPS (existing `:80` redirect rule covers
     the shared IP).
 
 ---
@@ -132,7 +133,7 @@ OAuth client + consent screen, grant operator IAM + MFA, set the repo variables/
 
 ## Open decisions
 
-- **Domain:** `admin.lyniafinance.com` (matches the `terraform.tfvars.example` hint) — confirm.
+- **Domain:** `lyniagoadmin.lyniafinance.com` (confirmed by the founder, 2026-07-18).
 - **Shared ALB vs. dedicated LB:** recommend the shared ALB + host rule (cheaper, consistent, reuses
   the IP/cert plumbing). IAP is per-backend-service, so the admin backend is separate regardless.
 - **API reachability from admin:** public `api_domain` (simplest; token-authed) vs. internal VPC URL
