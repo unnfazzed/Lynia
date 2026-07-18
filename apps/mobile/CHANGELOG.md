@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/unnfazzed/Lynia/compare/v0.6.4...v0.7.0) (2026-07-18)
+
+
+### Features
+
+* **auth:** add Bird SMS OTP channel for sign-up/sign-in ([b7002fe](https://github.com/unnfazzed/Lynia/commit/b7002fe7a8df57fe6852b1d1e5aaa804ed0ee614))
+
 ## [0.6.4](https://github.com/unnfazzed/Lynia/compare/v0.6.3...v0.6.4) (2026-07-18)
 
 
