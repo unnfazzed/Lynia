@@ -25,7 +25,7 @@ export function WalletCreditButton({ id, name, connected }: { id: string; name: 
       noteRequired
       notePlaceholder="Why this credit — shows on the ledger (e.g. launch grace, support adjustment)."
       confirmLabel="Credit account"
-      onConfirm={(v) => creditRiderWallet(id, v.amount, v.note)}
+      onConfirm={(v) => creditRiderWallet(id, v.amount, v.note, v.idempotencyKey)}
     />
   );
 }
