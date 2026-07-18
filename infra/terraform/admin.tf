@@ -80,8 +80,12 @@ resource "google_compute_backend_service" "admin" {
   # Same Cloud Armor perimeter as the API edge.
   security_policy = google_compute_security_policy.api.id
 
-  # IAP is the human-auth boundary for the console. The OAuth client is founder-created (Phase 5);
-  # its id/secret are supplied as sensitive vars. This is the piece the API backend does NOT have.
+  # IAP is the human-auth boundary for the console. A CUSTOM OAuth client is REQUIRED here (not the
+  # default Google-managed client): this project's org has no Cloud Identity directory, and a
+  # Google-managed client only admits in-directory users — it would lock everyone out, including the
+  # consumer-gmail owner. The custom client is created by hand in the console (the IAP OAuth Admin API
+  # was shut down 2026-03-19) against an EXTERNAL, published consent screen, and its id/secret are
+  # supplied as sensitive vars. See docs/plans/2026-admin-console-arming.md §1.
   iap {
     enabled              = true
     oauth2_client_id     = var.admin_iap_oauth_client_id
@@ -98,14 +102,29 @@ resource "google_compute_backend_service" "admin" {
   }
 }
 
-# Operators allowed through IAP. Founder populates var.admin_iap_members with Workspace identities
-# (e.g. "user:alice@corp.com", "group:ops@corp.com"). MFA is enforced at the Workspace level.
+# Operators allowed through IAP — the ONLY authorization boundary (an External consent screen lets any
+# Google account *authenticate*, so this allowlist is what actually gates access). Founder populates
+# var.admin_iap_members with explicit operator accounts (e.g. "user:you@gmail.com"); here there is no
+# Workspace, so MFA is each account's own 2-Step Verification. NEVER allUsers/allAuthenticatedUsers.
 resource "google_iap_web_backend_service_iam_member" "admin_operators" {
   for_each            = var.admin_enabled ? toset(var.admin_iap_members) : toset([])
   project             = local.project_id
   web_backend_service = google_compute_backend_service.admin[0].name
   role                = "roles/iap.httpsResourceAccessor"
   member              = each.value
+}
+
+# IAP invokes the admin Cloud Run service through the serverless NEG, so the IAP service agent needs
+# roles/run.invoker on that service. The Cloud Run service is created by deploy-admin.yml (CI) AFTER
+# this apply, so the run.invoker binding itself lives in that workflow (it owns the service) to avoid a
+# chicken-and-egg on first arm. Here we only ensure the agent identity EXISTS so that binding resolves
+# — creating a service identity needs the founder creds this apply runs under, not the CI deployer's.
+resource "google_project_service_identity" "iap" {
+  count      = var.admin_enabled ? 1 : 0
+  provider   = google-beta
+  project    = local.project_id
+  service    = "iap.googleapis.com"
+  depends_on = [google_project_service.apis]
 }
 
 # Separate managed cert (attached alongside prod's on the HTTPS proxy in lb.tf) — adding the admin
@@ -138,4 +157,9 @@ output "ADMIN_CONSOLE_IAP_AUDIENCE" {
 output "admin_endpoint" {
   description = "Point a DNS A record for admin_domain at the SAME load_balancer_ip as prod."
   value       = var.admin_enabled ? "https://${var.admin_domain}" : null
+}
+
+output "ADMIN_IAP_SERVICE_AGENT" {
+  description = "IAP service agent — deploy-admin.yml grants it roles/run.invoker on the admin Cloud Run service."
+  value       = var.admin_enabled ? google_project_service_identity.iap[0].email : null
 }
