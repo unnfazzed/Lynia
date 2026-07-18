@@ -54,6 +54,19 @@ middleware requires. Cloud Armor + Google-managed TLS as with the API.
    `ADMIN_CONSOLE_REQUIRE_AUTH` on/off override; empty/whitespace identity → 401 fail-closed; IAP
    issuer-prefix stripping (`accounts.google.com:alice@corp` → `alice@corp`); operator normalization.
 
+## Phase 1c — Verify the IAP JWT in middleware (code, mergeable now — resolved fork, eng-review #3)
+
+7a. Extend `console-auth.ts` / `middleware.ts` to verify `X-Goog-IAP-JWT-Assertion`: fetch and cache
+    Google's IAP public keys (`https://www.gstatic.com/iap/verify/public_key-jwk`), verify the JWT
+    signature, `iss` (`https://cloud.google.com/iap`), and `aud` (the IAP-protected backend's audience
+    string `/projects/<num>/global/backendServices/<id>`), and derive the operator from the verified
+    `email` claim — not the plaintext header. Keep the plaintext-header path only for the
+    auth-disabled dev/local mode. Fail closed on any verification failure. The `aud` value comes from
+    the Terraform-created backend service (Phase 3.8), so thread it in as an env var
+    (`ADMIN_CONSOLE_IAP_AUDIENCE`). Add this to the Phase-1b test suite (valid/expired/wrong-aud/
+    wrong-iss/bad-signature/missing-assertion). Pure functions where possible so the crypto path is
+    unit-testable without a live IAP.
+
 ## Phase 2 — CI test lane for admin (code, mergeable now)
 
 6. **Correction:** admin `typecheck`/`lint`/`build` ALREADY run in CI — root `turbo run
@@ -88,6 +101,12 @@ Add to `infra/terraform/` (new file `admin.tf` + variable additions), all gated 
 11. **Ingress** — set the admin Cloud Run service ingress to internal-and-cloud-load-balancing so the
     `*.run.app` origin isn't directly reachable (the org already disables `*.run.app` at the edge;
     this mirrors the API and the SECURITY-OPS "restrict the console's ingress" step).
+11a. **Internal admin→API path (resolved fork).** Attach the existing VPC connector (`VPC_CONNECTOR`,
+    already used by the API deploy) to the admin Cloud Run service with `--vpc-egress` covering the
+    API route, and set `API_BASE_URL` to the API's internal address. This keeps admin↔API off the
+    public internet. Confirm the API accepts the internal ingress path from admin (its ingress is
+    `internal-and-cloud-load-balancing`; internal VPC traffic qualifies). No new API-side contract —
+    admin still bears `ADMIN_API_TOKEN` + forwards `X-Operator`.
 
 ## Phase 4 — Deploy workflow (code, mergeable; runs on founder-set vars)
 
@@ -97,8 +116,9 @@ Add to `infra/terraform/` (new file `admin.tf` + variable additions), all gated 
     - `gcloud run deploy lynia-admin --region africa-south1 --service-account <runtime SA>
       --ingress internal-and-cloud-load-balancing --image …:$GITHUB_SHA` with env:
       - `NODE_ENV=production`
-      - `API_BASE_URL=https://<api_domain>` (public API; admin already bears `ADMIN_API_TOKEN`) — or
-        the internal API URL if kept in-VPC.
+      - `API_BASE_URL=<internal API URL>` + `--vpc-connector $VPC_CONNECTOR` (resolved fork — admin
+        reaches the API over the VPC, not the public `api_domain`).
+      - `ADMIN_CONSOLE_IAP_AUDIENCE=<backend-service audience>` (Phase 1c JWT verification).
       - `ADMIN_API_TOKEN` from **Secret Manager** (`--set-secrets`), not a plaintext env var.
       - Leave `ADMIN_CONSOLE_REQUIRE_AUTH` unset (defaults on in prod); IAP supplies the header.
     - Trigger: `push` to `main` on `apps/admin/**` + `packages/shared/**` changes, plus
@@ -169,12 +189,13 @@ OAuth client + consent screen, grant operator IAM + MFA, set the repo variables/
   (tighter). Recommend public to start, matching how the token flow is already designed.
 - **Service ownership:** deploy workflow owns the Cloud Run service; Terraform owns the edge
   (NEG/backend/cert/URL-map/IAP) — mirrors the API split and avoids ownership fights.
-- **[OPEN — eng-review #3] IAP JWT verification vs. plaintext-header trust.** Trust
-  `X-Goog-Authenticated-User-Email` verbatim (rely solely on ingress lockdown), or additionally verify
-  the signed `X-Goog-IAP-JWT-Assertion` in the middleware so identity is unforgeable even on a direct
-  hit. Recommend verifying, given the console bans users and records cash. Awaiting founder call.
-- **[OPEN] admin→API path** now framed as a security fork, not just latency: public `api_domain`
-  keeps admin↔API on the token only; internal VPC URL removes the public hop entirely.
+- **[RESOLVED 2026-07-18 — eng-review #3] Verify the signed IAP JWT.** The middleware will verify
+  `X-Goog-IAP-JWT-Assertion` (signature + audience against Google's cached public keys) in addition to
+  reading the email — identity stays unforgeable even if ingress is ever misconfigured or the service
+  is hit directly. No UX cost (operators never see this path); pure operator-trust gain. See Phase 1c.
+- **[RESOLVED 2026-07-18] admin→API path: internal VPC URL.** Admin reaches the API over the VPC
+  connector / internal ingress, removing the public hop entirely (tighter surface + lower latency).
+  See the Phase 3/4 additions below.
 
 ---
 
@@ -190,9 +211,8 @@ build/typecheck/lint already in CI via turbo — real gap is the test lane); sta
 layout pinned; service-rollback section added; show-signed-in-operator step added.
 
 **VERDICT: APPROVE WITH CHANGES.** Scope is right-sized and reuses proven topology (boring by default,
-no innovation token spent). Two blockers before implementation lands: (a) the console-auth tests exist
-and gate CI, (b) the IAP-trust fork is decided. Everything else is absorbed above.
+no innovation token spent). Both forks resolved by the founder (2026-07-18): verify the IAP JWT
+(Phase 1c) and reach the API over the internal VPC (Phase 3.11a / 4). Remaining pre-implementation
+gate: the Phase-1b/1c tests exist and gate CI before the deploy is armed. Everything else absorbed.
 
-**UNRESOLVED DECISIONS:**
-- IAP JWT signature verification vs. plaintext-header-only trust (eng-review #3) — recommend verify.
-- admin→API reachability: public `api_domain` vs. internal VPC URL (security + latency).
+NO UNRESOLVED DECISIONS
