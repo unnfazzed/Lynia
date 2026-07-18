@@ -173,6 +173,15 @@ describe("loadEnv — production launch-hygiene boot-guards", () => {
     expect(() => loadEnv({ ...prodBase, OTP_CHANNEL: "sms" })).toThrow(/OTP_CHANNEL/);
   });
 
+  it("allows OTP_CHANNEL=bird in production (BirdOtpSender is real — it fails loud at send if unconfigured)", () => {
+    // Unlike the sms stub, bird actually delivers; a misconfig 503s at send + is caught by the release
+    // workflow, so it boots green like the whatsapp channel rather than being rejected here.
+    const env = loadEnv({ ...prodBase, OTP_CHANNEL: "bird" });
+    expect(env.OTP_CHANNEL).toBe("bird");
+    expect(env.BIRD_BASE_URL).toBe("https://api.bird.com");
+    expect(env.BIRD_BRAND_NAME).toBe("LyniaGo");
+  });
+
   it("rejects a non-empty OTP_TEST_PHONES in production", () => {
     expect(() => loadEnv({ ...prodBase, OTP_TEST_PHONES: "+263770000011" })).toThrow(/OTP_TEST_PHONES/);
   });

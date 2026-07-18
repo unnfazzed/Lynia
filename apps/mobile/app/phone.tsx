@@ -31,7 +31,7 @@ export default function PhoneScreen(): React.ReactElement {
         <BrandLockup size={40} />
       </View>
       <Heading>Sign in to get started</Heading>
-      <Sub>We&apos;ll WhatsApp a one-time code to this number.</Sub>
+      <Sub>We&apos;ll text you a one-time code to verify this number.</Sub>
       <Field
         label="Phone number"
         value={phone}

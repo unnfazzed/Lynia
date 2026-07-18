@@ -76,9 +76,11 @@ export const envSchema = z.object({
   ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
-  // E4: WhatsApp default, SMS behind a flag (schedule insurance vs BSP delay).
-  // "console" logs the code for local/dev testing without any messaging provider.
-  OTP_CHANNEL: z.enum(["whatsapp", "sms", "console"]).default("whatsapp"),
+  // E4: WhatsApp default, SMS behind a flag (schedule insurance vs BSP delay). "bird" delivers the OTP
+  // as an SMS via bird.com (product decision 2026-07-18) while WhatsApp Business verification is pending
+  // — reverting is a one-line flip back to "whatsapp". "console" logs the code for local/dev testing
+  // without any messaging provider.
+  OTP_CHANNEL: z.enum(["whatsapp", "sms", "bird", "console"]).default("whatsapp"),
   // QA/test only: comma-separated phone numbers for which requestOtp returns the code in its
   // response, so end-to-end signup is testable on a real device with no WhatsApp BSP. ONLY
   // effective on the "console" channel and ONLY for numbers in this list — an arbitrary phone
@@ -105,6 +107,26 @@ export const envSchema = z.object({
   // would take the whole API down rather than just this one webhook).
   WHATSAPP_APP_SECRET: z.string().optional(),
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
+  // Bird (bird.com) SMS channel — only needed when OTP_CHANNEL=bird. Bird is a delivery pipe: we still
+  // generate/hash/verify the code ourselves (otp-store.ts), Bird only sends the SMS. BIRD_ACCESS_KEY is
+  // the secret (sent as `Authorization: AccessKey <key>`); the workspace + SMS channel IDs come from the
+  // Bird dashboard. Like the WHATSAPP_* vars these are optional so a misconfigured bird channel boots
+  // green and fails loud at send (BirdOtpSender) rather than crashing the whole API — the release
+  // workflow validates them before a production deploy.
+  BIRD_ACCESS_KEY: z.string().optional(),
+  BIRD_WORKSPACE_ID: z.string().optional(),
+  BIRD_SMS_CHANNEL_ID: z.string().optional(),
+  // Plain string (not .url()) so an injected empty value can never crash boot (same tradeoff as
+  // WHATSAPP_GRAPH_BASE_URL); the release deploy only injects it when a custom host is set.
+  BIRD_BASE_URL: z.string().default("https://api.bird.com"),
+  // Brand shown in the OTP SMS body ("<code> is your <brand> verification code."). The product/company
+  // name — LyniaGo — not the repo name. Overridable per-deploy without a code change.
+  BIRD_BRAND_NAME: z.string().default("LyniaGo"),
+  // Optional Android SMS Retriever app-hash (11 chars). When set it is appended to the OTP SMS so the
+  // app can auto-read the code with zero taps (Google SMS Retriever API). Leave empty to keep the SMS
+  // clean — iOS autofill (textContentType=oneTimeCode) and Android's autofill hint (autoComplete=
+  // sms-otp) still work without it. Derive it from the release signing cert (SMS Retriever docs).
+  BIRD_ANDROID_SMS_HASH: z.string().optional(),
   // --- KYC (lane E) ---
   // auto = submit to the vendor; manual = leave pending for admin review (T7 backstop).
   KYC_MODE: z.enum(["auto", "manual"]).default("auto"),
