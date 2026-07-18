@@ -72,6 +72,14 @@ const ACCOUNT_FEED_COPY: Record<string, { icon: string; title: string; message: 
   "rider.ban": { icon: "triangle-alert", title: "Account blocked", message: "Your account was blocked — contact support for details." },
   "rider.lift": { icon: "check", title: "Account restored", message: "Your account is back in good standing — you can go online again." },
   "rider.clear_hold": { icon: "check", title: "Account restored", message: "Your account is back in good standing — you can go online again." },
+  // UX18-04: customer.hold/lift previously sent zero push AND zero feed row (AdminCustomersService had
+  // no NotificationsService dependency at all) — a held customer's only signal was a 403 the next time
+  // they tried to broadcast. Copy mirrors the push now sent alongside the audit write.
+  "customer.hold": { icon: "triangle-alert", title: "Account paused", message: "Your account was paused — open the app for details." },
+  "customer.lift": { icon: "check", title: "Account restored", message: "Your account is back in good standing — you can place orders again." },
+  // UX18-04 sibling: a manual wallet credit (creditManual) previously sent zero push AND zero feed row
+  // either — the rider's balance changed with no proactive signal of any kind. Copy mirrors the push.
+  "wallet.credit": { icon: "banknote", title: "Wallet credited", message: "Your wallet balance was credited — open the app to see the new balance." },
 };
 const ACCOUNT_FEED_ACTIONS = Object.keys(ACCOUNT_FEED_COPY);
 
@@ -360,6 +368,28 @@ export class NotificationsFeedService {
           icon: "triangle-alert",
           title: "An update on your delivery",
           message: "There's a change with your assigned rider — our team is reviewing this trip.",
+          at,
+          unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        });
+      }
+
+      // UX18-05: liftRider — the direct undo of a suspension, most likely to fire while the SAME rider is
+      // still assigned to the SAME active order — never told the customer the "we're reviewing this trip"
+      // notice above was resolved, leaving it permanently unresolved in their feed. notifyCustomersOfRider
+      // StandingChange(profileId, resolved=true) now also writes this durable fallback, mirroring the
+      // notice row above.
+      const standingResolved = await this.prisma.auditLog.findMany({
+        where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_resolved" },
+        select: { id: true, target: true, createdAt: true },
+      });
+      for (const a of standingResolved) {
+        const at = a.createdAt.toISOString();
+        rows.push({
+          id: `rider-standing-resolved:${a.id}`,
+          orderId: a.target,
+          icon: "check",
+          title: "Your delivery is back on track",
+          message: "The review of your assigned rider is complete — your delivery is continuing as normal.",
           at,
           unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
         });

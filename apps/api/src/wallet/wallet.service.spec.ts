@@ -2,13 +2,14 @@ import { COMMISSION, isCommissionActive, perRideCommission, resolveCommissionRat
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
+import type { NotificationsService } from "../notifications/notifications.service";
 import type { PrismaService } from "../prisma/prisma.service";
 import { WalletService } from "./wallet.service";
 
 /** A WalletService over a stub prisma + the given env overrides. Only the fields a test touches exist. */
-function build(env: Partial<Env> = {}, prisma: Record<string, unknown> = {}) {
+function build(env: Partial<Env> = {}, prisma: Record<string, unknown> = {}, notifications?: NotificationsService) {
   const fullEnv = { COMMISSION_SHADOW_RATE_PCT: 10, WALLET_REVEAL: "false", WALLET_MANUAL_CREDIT_CAP_USD: 50, ...env } as unknown as Env;
-  return new WalletService(fullEnv, prisma as unknown as PrismaService);
+  return new WalletService(fullEnv, prisma as unknown as PrismaService, notifications);
 }
 
 describe("resolveCommissionRatePct (the flip is one server value, never hardcoded)", () => {
@@ -396,5 +397,22 @@ describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempoten
   it("rejects an amount above the manual-credit cap (unrelated to the idempotency path)", async () => {
     const svc = build({ WALLET_MANUAL_CREDIT_CAP_USD: 50 }, { rider: { findUnique: async () => ({ profileId: "r1" }) } });
     await expect(svc.creditManual({ riderId: "r1", amount: 999, rail: "manual", idemKey: "key-1", actorProfileId: "admin-1" })).rejects.toThrow(/between/i);
+  });
+
+  it("UX18-04: pushes the rider a best-effort 'Wallet credited' notice — previously zero push AND zero feed row", async () => {
+    const { tx } = makeTx();
+    const prisma = { rider: { findUnique: async () => ({ profileId: "r1" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const notified: Array<{ profileIds: string[]; msg: { title: string; body: string } }> = [];
+    const notifications = {
+      notifyProfiles: async (profileIds: string[], msg: { title: string; body: string }) => {
+        notified.push({ profileIds, msg });
+      },
+    } as unknown as NotificationsService;
+    const svc = build({}, prisma, notifications);
+    await svc.creditManual({ riderId: "r1", amount: 10, rail: "manual", idemKey: "key-1", actorProfileId: "admin-1" });
+    expect(notified).toHaveLength(1);
+    expect(notified[0]!.profileIds).toEqual(["r1"]);
+    expect(notified[0]!.msg).toMatchObject({ title: "Wallet credited" });
+    expect(notified[0]!.msg.body).toContain("$10.00");
   });
 });

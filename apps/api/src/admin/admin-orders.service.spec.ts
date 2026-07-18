@@ -363,6 +363,23 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(res).toMatchObject({ id: "o1", agreedFare: "7.50", auditId: "audit-9" });
   });
 
+  it("UX18-04: adjustFare pushes both parties a best-effort 'fare was updated' notice", async () => {
+    const { prisma } = makeTx({
+      order: { id: "o1", status: "assigned", agreedFare: dec("6.00"), riderId: "r1", customerId: "c1" },
+    });
+    const notified: Array<{ profileIds: string[]; msg: { title: string } }> = [];
+    const notifications = {
+      notifyProfiles: async (profileIds: string[], msg: { title: string }) => {
+        notified.push({ profileIds, msg });
+      },
+    } as unknown as NotificationsService;
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, notifications);
+    await svc.adjustFare("admin-1", "o1", { agreedFare: 7.5, reason: "GPS overcharge" });
+    expect(notified).toHaveLength(2);
+    expect(notified.find((n) => n.profileIds[0] === "c1")!.msg).toMatchObject({ title: "Your delivery's fare was updated" });
+    expect(notified.find((n) => n.profileIds[0] === "r1")!.msg).toMatchObject({ title: "A delivery's fare was updated" });
+  });
+
   it("adjustFare rejects an order that never had an agreed fare (nothing written)", async () => {
     const { prisma, calls } = makeTx({ order: { id: "o1", status: "open_for_offers", agreedFare: null } });
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);

@@ -33,9 +33,10 @@ export function FareAdjust({
       title="Adjust fare / record refund"
       consequence={
         <span>
-          Order <b>{id}</b> · current fare <b>${agreedOrProposed}</b>. A cash refund is only <b>recorded</b> here —
-          automatic netting off the rider&apos;s settlement arrives with the commission/billing infra (not yet live),
-          which will then consume this record.
+          Order <b>{id}</b> · current fare <b>${agreedOrProposed}</b>. Any cash refund between customer and rider
+          happens outside the app — this only corrects the recorded fare. If the order is already completed, the
+          rider&apos;s prepaid commission balance is adjusted automatically in the same step to match the corrected
+          fare.
         </span>
       }
       reasons={REASONS.orderAdjustFare}
@@ -107,8 +108,9 @@ export function CancelOrder({ id, connected }: { id: string; connected: boolean 
       title="Cancel this order?"
       consequence={
         <span>
-          Order <b>{id}</b> will be cancelled for both sides. The customer is notified and can re-broadcast; the rider
-          gets no strike if the reason is not theirs.
+          Order <b>{id}</b> will be cancelled for both sides. The customer is notified and can re-broadcast. This
+          action never strikes the rider — a strike is only recorded when a rider cancels their own job, never from
+          an ops-initiated cancellation.
         </span>
       }
       reasons={REASONS.orderCancel}

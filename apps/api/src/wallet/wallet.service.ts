@@ -18,6 +18,7 @@ import {
 import { Prisma } from "@prisma/client";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 /** Page size for the ledger history feed. */
@@ -59,6 +60,10 @@ export class WalletService {
   constructor(
     @Inject(ENV) private readonly env: Env,
     private readonly prisma: PrismaService,
+    // Optional so unit tests / order-lifecycle integration tests can construct with just (env, prisma)
+    // (mirrors admin-orders.service's optional NotificationsService — its module is @Global in the app,
+    // so no import wiring is needed to inject this).
+    private readonly notifications?: NotificationsService,
   ) {}
 
   /** The resolved live commission rate (%) — the env "flip" value, clamped, or the launch default (0). */
@@ -478,7 +483,7 @@ export class WalletService {
     const note = args.note ?? `Manual ${RAIL_LABEL[args.rail]} credit`;
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         const topUp = await tx.topUp.create({
           data: {
             riderId: args.riderId,
@@ -517,6 +522,16 @@ export class WalletService {
         });
         return { balance: balanceAfter };
       });
+      // UX18-04 sibling: WalletService had no NotificationsService dependency at all, so a manual credit
+      // — the rider's balance actually changing, right now — produced zero proactive signal (no push, and
+      // "wallet.credit" was absent from the feed's account-status synthesis until this same fix). Best-
+      // effort, post-commit: never affects the already-committed credit.
+      void this.notifications?.notifyProfiles([args.riderId], {
+        title: "Wallet credited",
+        body: `Your wallet was credited $${amount.toFixed(2)} — open the app to see the new balance.`,
+        data: { kind: "account" },
+      });
+      return result;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         // The idempotency key was already used — this credit already landed (or is landing in a

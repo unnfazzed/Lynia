@@ -37,6 +37,9 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   // UX17-02: written by notifyCustomersOfRiderStandingChange and read back by feedForUser (target=orderId)
   // as the customer-facing rider-standing feed fallback — so the free-text path must not be able to forge it.
   "order.rider_standing_notice",
+  // UX18-05: written by the same method's resolved=true path (called from liftRider) and read back by
+  // feedForUser as the "review resolved" feed fallback — same forgery risk as its sibling above.
+  "order.rider_standing_resolved",
   "issue.resolve",
   "sos.acknowledge",
   "wallet.credit",

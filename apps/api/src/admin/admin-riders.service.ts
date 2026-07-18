@@ -191,7 +191,22 @@ export class AdminRidersService {
    * rider's status changed, without cancelling anything (that stays a deliberate, separate ops call —
    * see the admin console's "still on a live delivery" banner on the rider page).
    */
-  private async notifyCustomersOfRiderStandingChange(profileId: string): Promise<void> {
+  private async notifyCustomersOfRiderStandingChange(profileId: string, resolved = false): Promise<void> {
+    // UX18-05: liftRider — the direct undo of a suspension, and the one action most likely to fire while
+    // the SAME rider is still assigned to the SAME active order — never resolved the alarming "we're
+    // reviewing this trip" notice suspend/ban left on the customer's feed. `resolved=true` (passed only
+    // from liftRider) swaps in honest "this is over, your rider is back" copy and a distinct audit action
+    // so the two notices read as separate feed rows instead of one that silently repeats.
+    const action = resolved ? "order.rider_standing_resolved" : "order.rider_standing_notice";
+    const copy = resolved
+      ? {
+          title: "Your delivery is back on track",
+          body: "The review of your assigned rider is complete — your delivery is continuing as normal.",
+        }
+      : {
+          title: "An update on your delivery",
+          body: "There's a change with your assigned rider — our team is reviewing this trip.",
+        };
     try {
       const activeOrders = await this.prisma.order.findMany({
         where: { riderId: profileId, status: { in: ACTIVE_RIDE_STATUSES } },
@@ -209,14 +224,14 @@ export class AdminRidersService {
           // committed standing change nor block the other orders' notices.
           await this.prisma.auditLog
             .create({
-              data: { actor: "system:rider-standing-notice", action: "order.rider_standing_notice", target: o.id, note: profileId },
+              data: { actor: "system:rider-standing-notice", action, target: o.id, note: profileId },
             })
             .catch((err: unknown) =>
-              this.logger.warn(`rider_standing_notice audit for order ${o.id} failed: ${(err as Error).message}`),
+              this.logger.warn(`${action} audit for order ${o.id} failed: ${(err as Error).message}`),
             );
           await this.notifications.notifyProfiles([o.customerId], {
-            title: "An update on your delivery",
-            body: "There's a change with your assigned rider — our team is reviewing this trip.",
+            title: copy.title,
+            body: copy.body,
             data: { orderId: o.id, kind: "account" },
           });
         }),
@@ -344,6 +359,11 @@ export class AdminRidersService {
       body: "Your account is back in good standing — you can go online again.",
       data: { kind: "account" },
     });
+    // UX18-05: suspendRider/banRider both tell the customer on any active order their rider's standing
+    // changed ("we're reviewing this trip") — liftRider is the direct undo, most likely to fire while that
+    // SAME order is still live, but never resolved that notice. resolved=true is a no-op when the rider has
+    // no active order (findMany returns empty), matching suspendRider/banRider's unconditional call.
+    void this.notifyCustomersOfRiderStandingChange(profileId, true);
     return result;
   }
 
@@ -372,6 +392,15 @@ export class AdminRidersService {
         select: { id: true },
       });
       return { id: profileId, accountStatus: RiderAccountStatus.BANNED, auditId: audit.id };
+    });
+    // Best-effort, post-commit: tell the banned rider themselves — suspendRider/liftRider/clearHold all
+    // push the rider directly, but banRider was the one standing-change action in this file that only
+    // notified the CUSTOMERS on the rider's active orders and never the rider, leaving a missed push here
+    // the rider's only signal (the durable `rider.ban` feed row is still there as a fallback either way).
+    void this.notifications.notifyProfiles([profileId], {
+      title: "Account blocked",
+      body: "Your account was blocked — contact support for details.",
+      data: { kind: "account" },
     });
     // KB-BOARD-REVOKE + DS15-05: evict from BOTH live-supply planes (board + geo) through the standing-
     // demotion funnel, mirroring suspendRider. Best-effort, post-commit; never throws.

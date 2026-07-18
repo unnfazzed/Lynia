@@ -206,4 +206,37 @@ describe("AdminCustomersService hold/lift (S·2 — mutation + audit in ONE $tra
     await expect(svc.holdCustomer("admin-1", "c1", { reason: "x" })).rejects.toThrow(/refresh and try again/i);
     expect(calls.audit).toBeNull();
   });
+
+  // UX18-04: holdCustomer/liftCustomerHold previously had NO NotificationsService dependency at all, so
+  // a held/lifted customer got zero push AND zero feed row (the `customer.hold`/`customer.lift` audit
+  // rows are now also read by notifications-feed.service's ACCOUNT_FEED_COPY as the durable fallback).
+  function spyNotifications() {
+    const notified: Array<{ profileIds: string[]; msg: { title: string } }> = [];
+    const notifications = {
+      notifyProfiles: async (profileIds: string[], msg: { title: string }) => {
+        notified.push({ profileIds, msg });
+      },
+    } as unknown as import("../notifications/notifications.service").NotificationsService;
+    return { notifications, notified };
+  }
+
+  it("UX18-04: holdCustomer pushes the held customer a best-effort 'Account paused' notice", async () => {
+    const { prisma } = makeTx();
+    const { notifications, notified } = spyNotifications();
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService, notifications);
+    await svc.holdCustomer("admin-1", "c1", { reason: "suspected fraud" });
+    expect(notified).toHaveLength(1);
+    expect(notified[0]!.profileIds).toEqual(["c1"]);
+    expect(notified[0]!.msg).toMatchObject({ title: "Account paused" });
+  });
+
+  it("UX18-04: liftCustomerHold pushes the customer a best-effort 'Account restored' notice", async () => {
+    const { prisma } = makeTx();
+    const { notifications, notified } = spyNotifications();
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService, notifications);
+    await svc.liftCustomerHold("admin-1", "c1", {});
+    expect(notified).toHaveLength(1);
+    expect(notified[0]!.profileIds).toEqual(["c1"]);
+    expect(notified[0]!.msg).toMatchObject({ title: "Account restored" });
+  });
 });

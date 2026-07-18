@@ -1,11 +1,18 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { maskPhone } from "../common/phone-mask";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData, fmtDate, reportsFor, round, toTripRow } from "./admin.shared";
 
 @Injectable()
 export class AdminCustomersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so unit tests can construct with just Prisma (mirrors admin-orders.service /
+    // admin-riders.service's optional NotificationsService — its module is @Global in the app, so no
+    // import wiring is needed to inject this).
+    private readonly notifications?: NotificationsService,
+  ) {}
 
   /**
    * Customers directory. A customer is a Profile with role `customer`. Aggregates real data the schema
@@ -140,7 +147,7 @@ export class AdminCustomersService {
    * 404s when the id isn't a customer profile.
    */
   async holdCustomer(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { onHold: true } });
       if (!customer) throw new NotFoundException("Customer not found");
       // DS13-04: CAS on the observed onHold (mirrors DS-03) so a concurrent hold/lift can't be silently
@@ -156,12 +163,23 @@ export class AdminCustomersService {
       });
       return { id: profileId, status: "on_hold" as const, auditId: audit.id };
     });
+    // Best-effort, post-commit: tell the customer their account changed (mirrors the rider suspend/lift
+    // pair in admin-riders.service — this customer counterpart previously sent nothing at all, so a hold
+    // was only discoverable via a 403 the next time the customer tried to broadcast an order). The
+    // `customer.hold` audit row already written above also drives the durable feed fallback (see
+    // ACCOUNT_FEED_COPY in notifications-feed.service.ts) if this push is missed.
+    void this.notifications?.notifyProfiles([profileId], {
+      title: "Account paused",
+      body: "Your account was paused — open the app for details.",
+      data: { kind: "account" },
+    });
+    return result;
   }
 
   /** S·2: lift a customer hold → back to active, clearing the reason. Reason optional. Mutation + audit
    *  in one transaction. 404s when the id isn't a customer. */
   async liftCustomerHold(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { onHold: true } });
       if (!customer) throw new NotFoundException("Customer not found");
       // DS13-04: CAS on the observed onHold (mirrors DS-03) so a concurrent hold/lift can't be silently
@@ -177,5 +195,13 @@ export class AdminCustomersService {
       });
       return { id: profileId, status: "active" as const, auditId: audit.id };
     });
+    // Best-effort, post-commit: tell the customer they're clear to order again (previously silent — the
+    // customer had to blindly retry a broadcast to discover the hold was lifted).
+    void this.notifications?.notifyProfiles([profileId], {
+      title: "Account restored",
+      body: "Your account is back in good standing — you can place orders again.",
+      data: { kind: "account" },
+    });
+    return result;
   }
 }
