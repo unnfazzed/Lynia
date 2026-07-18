@@ -1197,6 +1197,7 @@ require the `admin` role.
 | Rider onboarding + KYC | `apps/api/src/riders/rider.service.ts`, `apps/api/src/kyc/` |
 | WebSocket tracking | `apps/api/src/tracking/tracking.gateway.ts`, `tracking.service.ts` |
 | Push + device tokens | `apps/api/src/notifications/notifications.service.ts` |
+| In-app notifications feed | `apps/api/src/notifications/notifications-feed.service.ts` |
 | Cloud adapters | `apps/api/src/adapters/{storage,push,secrets}/` |
 | Schema + hot-path constraints | `apps/api/prisma/schema.prisma`, `prisma/migrations/0001_init/` |
 | Shared contracts / enums / pricing | `packages/shared/src/` |

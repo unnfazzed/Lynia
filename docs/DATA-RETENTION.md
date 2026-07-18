@@ -35,10 +35,11 @@
 | **Device tokens** | `device_tokens` | until sign-out | deleted on sign-out (already) + on erasure |
 | **Sessions** (refresh tokens) | `sessions` | until expiry | expired sessions hard-deleted **`SESSION_RETENTION_DAYS` = 30** after they lapse |
 | **Rider KYC fields** | `riders` (`bikeReg`, `photoUrl`, `kycRef`, `kycDeclineReason`, `suspendReason`) | life of the account | scrubbed on erasure; the row is kept (ledger) |
-| **Orders, ratings, audit log** | `orders`, `ratings`, `audit_logs` | retained (financial/dispute/compliance record) | never deleted; PII references anonymise via the profile scrub |
+| **Orders, ratings, audit log** | `orders`, `ratings`, `audit_logs` | retained (financial/dispute/compliance record) | never deleted; PII references anonymise via the profile scrub, and each table's own free-text field is scrubbed directly on its author's erasure: `ratings.comment` (rater), `orders.cancelReason` (either party) |
 | **Commission wallet ledger** | `commission_accounts`, `commission_ledger`, `top_ups` | retained (financial/compliance record, same class as the above row) | never deleted; the embedded `top_ups.phone` (mobile-money number) is nulled on erasure — see `docs/KNOWN_BUGS.md` DOC-16-01 (fixed) |
 | **Rider live position** | `riders.geog` / `riders.position_updated_at` | until inactive/erasure | nulled via raw SQL on erasure (PostGIS `Unsupported` column) |
-| **Order item photo / delivery proof** | `orders.item_photo_url`, `orders.delivery_proof_{key,lat,lng,at}` | life of the order | GCS object deleted + columns nulled on erasure |
+| **Order item photo / delivery proof** | `orders.item_photo_url`, `orders.pickup_photo_key`, `orders.delivery_proof_{key,lat,lng,at}` | life of the order | GCS object deleted + columns nulled on erasure |
+| **Issue / report free text** | `issues.description`, `reports.note` | life of the account | scrubbed on the opener's/reporter's own erasure (`description` emptied to `""`, a `NOT NULL` column; `note` nulled) |
 
 ## Erasure (right to be forgotten)
 
@@ -60,6 +61,11 @@
 - **Nulls the embedded `contactPhone`** in the `pickup`/`dropoff` JSON of every order this profile
   placed as customer (read-modify-write per order — the dialable contact PII isn't reachable via a
   bulk column update since it lives inside a JSON blob).
+- **Deletes the rider's pickup-photo GCS object** and nulls `orders.pickupPhotoKey`, alongside the
+  existing delivery-proof photo purge, for every order this profile rode as rider.
+- **Scrubs user-authored free text** on the erasing profile's own rows: `ratings.comment` (as
+  rater), `issues.description` (as opener, emptied to `""` — a `NOT NULL` column), `reports.note`
+  (as reporter), and `orders.cancelReason` (as either party to the order).
 - **Idempotent** — safe to re-run (an already-erased profile is a no-op).
 
 Orders, ratings, and audit rows are **kept** (anonymised by reference) — the delivery/financial record
