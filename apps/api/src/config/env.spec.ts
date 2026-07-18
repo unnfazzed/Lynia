@@ -182,6 +182,13 @@ describe("loadEnv — production launch-hygiene boot-guards", () => {
     expect(env.BIRD_BRAND_NAME).toBe("LyniaGo");
   });
 
+  it("allows OTP_CHANNEL=local-sms in production (LocalSmsOtpSender is real; fails loud at send)", () => {
+    // Same rationale as bird: a real delivery channel that 503s + is caught by the release workflow.
+    const env = loadEnv({ ...prodBase, OTP_CHANNEL: "local-sms" });
+    expect(env.OTP_CHANNEL).toBe("local-sms");
+    expect(env.LOCAL_SMS_SENDER_ID).toBe("LyniaGo");
+  });
+
   it("rejects a non-empty OTP_TEST_PHONES in production", () => {
     expect(() => loadEnv({ ...prodBase, OTP_TEST_PHONES: "+263770000011" })).toThrow(/OTP_TEST_PHONES/);
   });

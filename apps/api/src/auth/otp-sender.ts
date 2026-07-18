@@ -2,7 +2,7 @@ import { Logger, ServiceUnavailableException } from "@nestjs/common";
 import { maskPhone } from "../common/phone-mask";
 import type { Env } from "../config/env";
 
-export type OtpChannel = "whatsapp" | "sms" | "bird" | "console";
+export type OtpChannel = "whatsapp" | "sms" | "bird" | "local-sms" | "console";
 
 /** Send-adapter (E4): the channel is a flag, so an SMS/console fallback is config-only insurance
  *  against WhatsApp BSP onboarding delay — the auth subsystem is identical either way. */
@@ -91,15 +91,16 @@ export class WhatsAppOtpSender implements OtpSender {
 }
 
 /**
- * Pure builder for the OTP SMS text delivered via Bird. Kept separate so the two things that decide
- * whether the code auto-fills — the brand wording and the optional Android SMS-Retriever hash — are
- * unit-tested with no network in play. The code is placed first so iOS Security-Code AutoFill and
- * Android's autofill heuristics can find it. When `appHash` is set it is appended on its own line: the
- * SMS Retriever API requires the message to end with the app's 11-char hash and stay ≤140 bytes, which
- * lets the mobile app read the code with zero taps. Leave `appHash` unset to keep the SMS clean — iOS
- * (textContentType=oneTimeCode) and Android (autoComplete=sms-otp) autofill still work without it.
+ * Canonical autofill-friendly OTP SMS text, shared by every SMS-delivering channel (Bird, local A2P).
+ * Kept separate so the two things that decide whether the code auto-fills — the brand wording and the
+ * optional Android SMS-Retriever hash — are unit-tested with no network in play. The code is placed
+ * first so iOS Security-Code AutoFill and Android's autofill heuristics can find it. When `appHash` is
+ * set it is appended on its own line: the SMS Retriever API requires the message to end with the app's
+ * 11-char hash and stay ≤140 bytes, which lets the mobile app read the code with zero taps. Leave
+ * `appHash` unset to keep the SMS clean — iOS (textContentType=oneTimeCode) and Android
+ * (autoComplete=sms-otp) autofill still work without it.
  */
-export function buildBirdOtpMessage(code: string, opts: { brand: string; appHash?: string }): string {
+export function buildOtpSmsText(code: string, opts: { brand: string; appHash?: string }): string {
   const base = `${code} is your ${opts.brand} verification code. Don't share it with anyone.`;
   return opts.appHash ? `${base}\n\n${opts.appHash}` : base;
 }
@@ -141,7 +142,7 @@ export class BirdOtpSender implements OtpSender {
       );
       throw new ServiceUnavailableException("Couldn't send the verification code — try again shortly.");
     }
-    const text = buildBirdOtpMessage(code, {
+    const text = buildOtpSmsText(code, {
       brand: this.env.BIRD_BRAND_NAME,
       appHash: this.env.BIRD_ANDROID_SMS_HASH || undefined,
     });
@@ -165,6 +166,68 @@ export class BirdOtpSender implements OtpSender {
       // Log Bird's error (bad channel/workspace id, revoked access key, unregistered sender…) but never
       // the code. Bird returns 202 Accepted on success, which res.ok (200–299) covers.
       this.logger.error(`Bird OTP send failed: ${res.status} ${detail.slice(0, 300)}`);
+      throw new ServiceUnavailableException("Couldn't send the code — try again in a moment.");
+    }
+  }
+}
+
+/**
+ * Pure builder for the local-A2P SMS request body. This is the ONE place the wire format lives so it is
+ * trivial to align with whichever Zimbabwe provider you onboard (Econet A2P direct, or a local bulk-SMS
+ * aggregator plugged into Econet/NetOne/Telecel) — their field names vary. The default encodes the most
+ * common convention: recipient in E.164, an 11-char alphanumeric sender, and the message text. Adjust
+ * the keys here (and the auth header in LocalSmsOtpSender) to match the provider's API doc.
+ */
+export function buildLocalSmsRequest(phone: string, text: string, senderId: string): Record<string, unknown> {
+  return { to: phone, from: senderId, message: text };
+}
+
+/**
+ * Sends the OTP as a plain SMS via a local A2P gateway — the Zimbabwe fallback for when an international
+ * aggregator (Bird) is throttled on Econet's grey-route filtering (product decision 2026-07-18). Like
+ * Bird it is a delivery pipe only: we keep generating/hashing/verifying the code ourselves, so the verify
+ * path is unchanged and switching between "bird" and "local-sms" is a one-line OTP_CHANNEL flip. Fails
+ * LOUD on missing credentials or a non-2xx, and never logs the code (only the gateway's error body).
+ * The request shape + auth are deliberately generic (buildLocalSmsRequest + a Bearer key); confirm both
+ * against your provider's API before going live.
+ */
+export class LocalSmsOtpSender implements OtpSender {
+  private readonly logger = new Logger("LocalSmsOtpSender");
+  constructor(private readonly env: Env) {}
+  channel(): OtpChannel {
+    return "local-sms";
+  }
+  async send(phone: string, code: string): Promise<void> {
+    const url = this.env.LOCAL_SMS_API_URL;
+    const key = this.env.LOCAL_SMS_API_KEY;
+    if (!url || !key) {
+      this.logger.error(
+        "Local SMS OTP not configured — set LOCAL_SMS_API_URL and LOCAL_SMS_API_KEY (or change OTP_CHANNEL).",
+      );
+      throw new ServiceUnavailableException("Couldn't send the verification code — try again shortly.");
+    }
+    const text = buildOtpSmsText(code, {
+      brand: this.env.LOCAL_SMS_SENDER_ID,
+      appHash: this.env.LOCAL_SMS_ANDROID_HASH || undefined,
+    });
+    const body = buildLocalSmsRequest(phone, text, this.env.LOCAL_SMS_SENDER_ID);
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(OTP_SEND_TIMEOUT_MS),
+      });
+    } catch (err) {
+      this.logger.error(`Local SMS OTP network error: ${err instanceof Error ? err.message : String(err)}`);
+      throw new ServiceUnavailableException("Couldn't send the code — try again in a moment.");
+    }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      // Log the gateway's error (bad sender id, unregistered sender, auth failure…) but never the code.
+      this.logger.error(`Local SMS OTP send failed: ${res.status} ${detail.slice(0, 300)}`);
       throw new ServiceUnavailableException("Couldn't send the code — try again in a moment.");
     }
   }
@@ -203,6 +266,8 @@ export function selectOtpSender(env: Env): OtpSender {
       return new SmsOtpSender();
     case "bird":
       return new BirdOtpSender(env);
+    case "local-sms":
+      return new LocalSmsOtpSender(env);
     default:
       return new WhatsAppOtpSender(env);
   }

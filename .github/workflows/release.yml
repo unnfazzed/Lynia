@@ -203,6 +203,8 @@ jobs:
           BIRD_ENABLED: ${{ vars.BIRD_ENABLED }}
           BIRD_WORKSPACE_ID: ${{ vars.BIRD_WORKSPACE_ID }}
           BIRD_SMS_CHANNEL_ID: ${{ vars.BIRD_SMS_CHANNEL_ID }}
+          LOCAL_SMS_ENABLED: ${{ vars.LOCAL_SMS_ENABLED }}
+          LOCAL_SMS_API_URL: ${{ vars.LOCAL_SMS_API_URL }}
         run: |
           set -euo pipefail
           errors=()
@@ -244,6 +246,16 @@ jobs:
               errors+=("OTP_CHANNEL=bird but BIRD_ENABLED != true — no Bird credentials are injected, so every production sign-in OTP would 503. Arm Bird (BIRD_ENABLED=true + BIRD_WORKSPACE_ID / BIRD_SMS_CHANNEL_ID repo Variables + BIRD_ACCESS_KEY secret) or set OTP_CHANNEL=whatsapp.")
             elif [ -z "$(printf '%s' "$BIRD_WORKSPACE_ID" | tr -d '[:space:]')" ] || [ -z "$(printf '%s' "$BIRD_SMS_CHANNEL_ID" | tr -d '[:space:]')" ]; then
               errors+=("BIRD_ENABLED=true but BIRD_WORKSPACE_ID and/or BIRD_SMS_CHANNEL_ID repo Variables are empty — the service boots green yet every requestOtp 503s. Set both (Bird dashboard → Channels → your SMS channel).")
+            fi
+          fi
+          # Same "must actually SEND" guard for the local A2P SMS channel. LocalSmsOtpSender.send()
+          # requires the gateway URL + API key (apps/api/src/auth/otp-sender.ts); a missing one boots
+          # green and 503s every requestOtp. Like bird, no pre-launch ack window.
+          if [ "$OTP_CHANNEL" = "local-sms" ]; then
+            if [ "$LOCAL_SMS_ENABLED" != "true" ]; then
+              errors+=("OTP_CHANNEL=local-sms but LOCAL_SMS_ENABLED != true — no gateway credentials are injected, so every production sign-in OTP would 503. Arm it (LOCAL_SMS_ENABLED=true + LOCAL_SMS_API_URL repo Variable + LOCAL_SMS_API_KEY secret) or set OTP_CHANNEL=whatsapp.")
+            elif [ -z "$(printf '%s' "$LOCAL_SMS_API_URL" | tr -d '[:space:]')" ]; then
+              errors+=("LOCAL_SMS_ENABLED=true but LOCAL_SMS_API_URL repo Variable is empty — the service boots green yet every requestOtp 503s. Set it to your A2P gateway's send endpoint.")
             fi
           fi
           ack_active=false
@@ -497,6 +509,22 @@ jobs:
               ENV_VARS="${ENV_VARS};BIRD_ANDROID_SMS_HASH=${{ vars.BIRD_ANDROID_SMS_HASH }}"
             fi
             SECRETS="${SECRETS},BIRD_ACCESS_KEY=BIRD_ACCESS_KEY:latest"
+          fi
+
+          # Local A2P SMS OTP wiring (Zimbabwe fallback) is OPT-IN via LOCAL_SMS_ENABLED=true — same
+          # reason as the others: don't reference LOCAL_SMS_API_KEY before it exists in Secret Manager.
+          # Set OTP_CHANNEL=local-sms + the LOCAL_SMS_API_URL repo Variable and the key secret, then flip
+          # LOCAL_SMS_ENABLED=true. LOCAL_SMS_SENDER_ID / LOCAL_SMS_ANDROID_HASH are optional overrides
+          # (the app defaults the sender to "LyniaGo" and adds no Android hash).
+          if [ "${{ vars.LOCAL_SMS_ENABLED }}" = "true" ]; then
+            ENV_VARS="${ENV_VARS};LOCAL_SMS_API_URL=${{ vars.LOCAL_SMS_API_URL }}"
+            if [ -n "${{ vars.LOCAL_SMS_SENDER_ID }}" ]; then
+              ENV_VARS="${ENV_VARS};LOCAL_SMS_SENDER_ID=${{ vars.LOCAL_SMS_SENDER_ID }}"
+            fi
+            if [ -n "${{ vars.LOCAL_SMS_ANDROID_HASH }}" ]; then
+              ENV_VARS="${ENV_VARS};LOCAL_SMS_ANDROID_HASH=${{ vars.LOCAL_SMS_ANDROID_HASH }}"
+            fi
+            SECRETS="${SECRETS},LOCAL_SMS_API_KEY=LOCAL_SMS_API_KEY:latest"
           fi
 
           # OTel collector sidecar (docs/OBSERVABILITY.md → Production activation): when the

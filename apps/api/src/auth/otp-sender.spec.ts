@@ -3,10 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import {
   BirdOtpSender,
-  buildBirdOtpMessage,
   buildBirdSmsRequest,
+  buildLocalSmsRequest,
+  buildOtpSmsText,
   buildWhatsAppOtpRequest,
   ConsoleOtpSender,
+  LocalSmsOtpSender,
   selectOtpSender,
   SmsOtpSender,
   WhatsAppOtpSender,
@@ -19,6 +21,7 @@ describe("selectOtpSender", () => {
     expect(selectOtpSender(env("console")).channel()).toBe("console");
     expect(selectOtpSender(env("sms")).channel()).toBe("sms");
     expect(selectOtpSender(env("bird")).channel()).toBe("bird");
+    expect(selectOtpSender(env("local-sms")).channel()).toBe("local-sms");
     expect(selectOtpSender(env("whatsapp")).channel()).toBe("whatsapp");
   });
 });
@@ -106,16 +109,16 @@ describe("WhatsAppOtpSender.send", () => {
   });
 });
 
-describe("buildBirdOtpMessage", () => {
+describe("buildOtpSmsText", () => {
   it("puts the code first and names the brand (so iOS/Android autofill can find it)", () => {
-    const msg = buildBirdOtpMessage("123456", { brand: "LyniaGo" });
+    const msg = buildOtpSmsText("123456", { brand: "LyniaGo" });
     expect(msg.startsWith("123456 ")).toBe(true);
     expect(msg).toContain("LyniaGo verification code");
     expect(msg).not.toContain("\n"); // no app-hash line when the hash is unset
   });
 
   it("appends the Android SMS-Retriever hash on its own line, staying under 140 bytes", () => {
-    const msg = buildBirdOtpMessage("123456", { brand: "LyniaGo", appHash: "FA+9qCX9VSu" });
+    const msg = buildOtpSmsText("123456", { brand: "LyniaGo", appHash: "FA+9qCX9VSu" });
     expect(msg.endsWith("\n\nFA+9qCX9VSu")).toBe(true);
     // SMS Retriever requires the whole message to be <= 140 bytes.
     expect(Buffer.byteLength(msg, "utf8")).toBeLessThanOrEqual(140);
@@ -175,6 +178,64 @@ describe("BirdOtpSender.send", () => {
     const fetchMock = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
     await withFetch(fetchMock, () =>
       new BirdOtpSender(birdCfg()).send("+263770000001", "654321").catch(() => undefined),
+    );
+    const logged = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logged).not.toContain("654321");
+    vi.restoreAllMocks();
+  });
+});
+
+describe("buildLocalSmsRequest", () => {
+  it("builds the generic {to, from, message} body with the E.164 recipient and alphanumeric sender", () => {
+    const body = buildLocalSmsRequest("+263771234567", "hello", "LyniaGo") as Record<string, unknown>;
+    expect(body).toEqual({ to: "+263771234567", from: "LyniaGo", message: "hello" });
+  });
+});
+
+const localCfg = (over: Partial<Env> = {}): Env =>
+  ({
+    OTP_CHANNEL: "local-sms",
+    LOCAL_SMS_API_URL: "https://a2p.example/send",
+    LOCAL_SMS_API_KEY: "KEY",
+    LOCAL_SMS_SENDER_ID: "LyniaGo",
+    ...over,
+  }) as Env;
+
+describe("LocalSmsOtpSender.send", () => {
+  it("throws when not configured (loud fail — never a false 'sent')", async () => {
+    const sender = new LocalSmsOtpSender({ OTP_CHANNEL: "local-sms" } as Env);
+    await expect(sender.send("+263770000001", "111222")).rejects.toThrow(/couldn't send the verification code/i);
+  });
+
+  it("POSTs the SMS to the gateway with a Bearer key and resolves on 200", async () => {
+    let called: { url: string; init: RequestInit } | undefined;
+    const fetchMock = (async (url: string, init: RequestInit) => {
+      called = { url, init };
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    await withFetch(fetchMock, () => new LocalSmsOtpSender(localCfg()).send("+263771234567", "123456"));
+    expect(called?.url).toBe("https://a2p.example/send");
+    expect((called!.init.headers as Record<string, string>).authorization).toBe("Bearer KEY");
+    const sent = JSON.parse(called!.init.body as string);
+    expect(sent.to).toBe("+263771234567");
+    expect(sent.from).toBe("LyniaGo");
+    expect(sent.message).toContain("123456");
+    expect(sent.message).toContain("LyniaGo");
+  });
+
+  it("throws when the gateway rejects the send (so requestOtp errors, not a silent non-delivery)", async () => {
+    const fetchMock = (async () =>
+      new Response('{"error":"unregistered sender"}', { status: 403 })) as unknown as typeof fetch;
+    await expect(
+      withFetch(fetchMock, () => new LocalSmsOtpSender(localCfg()).send("+263770000001", "123456")),
+    ).rejects.toThrow(/couldn't send/i);
+  });
+
+  it("never logs the OTP code, even when the gateway rejects the send", async () => {
+    const errSpy = vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+    const fetchMock = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
+    await withFetch(fetchMock, () =>
+      new LocalSmsOtpSender(localCfg()).send("+263770000001", "654321").catch(() => undefined),
     );
     const logged = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(logged).not.toContain("654321");
