@@ -119,7 +119,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
         </div>
       ) : null}
 
-      <ReportsCallout reports={r.reports} subject="rider" />
+      <ReportsCallout reports={r.reportLog} subject="rider" />
 
       <section className="panels" style={{ marginBottom: tokens.space.lg }}>
         <KpiCard label="Trips" value={r.trips} hint={`since ${r.joined}`} size={22} />

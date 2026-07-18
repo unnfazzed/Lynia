@@ -1120,3 +1120,29 @@ hunted repeatedly across BH-01…BH-14.
 **Stopping rule:** 11 eng lanes + 8 design lanes, all adversarially verified; the P0 + 5 of 6 P1 fixed
 same-run with tests; the remainder deferred with explicit safe-fix specs and device-QA/asset rationale
 (not silent drops). Most lanes came back "unusually well-hardened for a pre-launch codebase."
+
+## Admin console review 2026-07-18 (engineering + design review) — `docs/ADMIN-ENG-DESIGN-REVIEW-2026-07-18.md`
+
+> Eng + design + journey + deploy review of the live IAP-gated admin console (`apps/admin` @ `599f0af`,
+> == deployed rev). The exact deployed source was built and driven headless (IAP blocks live authenticated QA)
+> across live/empty/offline/not-found states, screenshot-diffed against the `ui_kits/admin` design kit, with an
+> 8-lane adversarially-verified agentic pass. main == deployment (deploy #7 green on 599f0af). Two candidate
+> findings were refuted in verification (see the report §7). Branch `claude/admin-engineering-design-review-d3jcc3`.
+
+| ID | Finding | Location | Severity | Status |
+|----|---------|----------|----------|--------|
+| ADM-01 | Rider-detail page **500s for any reported rider**: the API returns `reports` as a **count (number)** + `reportLog` (array), but the console typed `RiderDetail.reports: ReportEntry[]` and passed the number into `<ReportsCallout>`, whose guard `!reports \|\| reports.length===0` lets a positive number through (`(n).length` is `undefined`) → `for…of` on a number throws → HTTP 500. Only riders with ≥1 report crash (0-report riders are falsy → early return); customer detail is unaffected (API returns no `reports` field there). | `apps/admin/app/components/ReportsCallout.tsx`, `app/lib/adminTypes.ts`, `app/riders/[id]/page.tsx:122`, `apps/api/src/admin/admin-riders.service.ts:575` | **HIGH** | **FIXED** — page reads `reportLog`; type corrected to `reports?: number` + `reportLog?: ReportEntry[]`; `ReportsCallout` hardened with `Array.isArray`. Verified end-to-end: reported-rider detail now 200 (was 500). |
+| ADM-02 | `ADMIN_CONSOLE_REQUIRE_AUTH` parsed with `=== "true"` → any other value (`1`/`yes`/`TRUE`/typo) silently **disables** the auth gate. Mitigated in prod (deploy never sets it; Cloud Run is IAP-invoker-only), but a fail-open footgun. | `apps/admin/middleware.ts:35` | MEDIUM | **OPEN (recommend)** — treat only `false`/`0` as off; fail closed on typos. |
+| ADM-03 | Overview (landing) page is a stripped-down placeholder vs the design kit: duplicate inline header/nav, wrong headline KPIs (missing Completed-today + Fares-today), **no "Needs attention" queue**, no funnel substrip, thin recent-orders table, no sidebar badges. Also an `/admin/overview` API-contract gap (data isn't returned). | `apps/admin/app/page.tsx`, `packages/design/ui_kits/admin/index.html` | HIGH (design) | **OPEN** — feature-sized rebuild (UI + API contract). |
+| ADM-04 | Overview KPI grid collapses to 1–2 columns instead of 4-across: `<main>` is a flex child without `flex:1`/`width:100%`, so the auto-fit grid can't expand. `orders`/`riders` lists share the inline-`<main>` (masked by wide tables). | `apps/admin/app/page.tsx:45` | MEDIUM (design) | **OPEN** — migrate the 3 inline-`<main>` pages to the shared `.content` shell. |
+| ADM-05 | Orders & Riders lists diverge from the shell/kit (inline styles, raw status **text** not colored pills, leftover "← Dashboard" back-link); the Riders "directory" actually defaults to the KYC-pending queue ("Riders — KYC review") and the directory can't show suspended/banned/on_hold **standing** (list contract lacks `accountStatus`). | `apps/admin/app/orders/page.tsx`, `app/riders/page.tsx` | MEDIUM (design) | **OPEN** — align to `DataTable`/`Pill`; split directory vs KYC queue; add standing. |
+| ADM-06 | No **sign-out / operator-identity** anywhere in the console (footer is a static label; kit shows the operator). Shared IAP console can't show "signed in as…" or sign out/switch. | `apps/admin/app` (global) | MEDIUM (journey) | **OPEN** — surface `x-lynia-operator`; add IAP sign-out link. |
+| ADM-07 | No rider **wallet management UI** (dup of DOC-16-03): `wallet-credit` + bulk seed-credit exist API-side, no console surface; Commission page is read-only. | `apps/admin/app/cash`, `apps/api admin.controller:287` | MEDIUM (journey) | **OPEN** — pre-rate-flip build. |
+| ADM-08 | `ConfirmModal` a11y: `aria-modal` with **no focus move/trap/restore**; reason/note/amount controls use `<span class="field-label">` not real `<label>`/`<fieldset>`; card section titles aren't headings. | `apps/admin/app/components/ConfirmModal.tsx` | MEDIUM (a11y) | **OPEN** — focus management + programmatic labels. |
+| ADM-09 | `adjustFare` omitted `revalidatePath("/orders")` (stale list Fare after an adjustment); `decideKyc` didn't revalidate the rider-detail KYC pill; stuck-banner dropped a space ("24 minCurrently"); "1 strike**s**" pluralization. | `apps/admin/app/orders/actions.ts`, `app/riders/actions.ts`, `app/orders/[id]/page.tsx`, `app/riders/page.tsx` | LOW/NIT | **FIXED** — all four corrected this PR. |
+| ADM-10 | Hardening/polish: IAP JWT alg not pinned (`iap-jwt.ts`), no clock-skew tolerance; proxy-header fallback trusts a forgeable header when audience unset; `StatusPill` omits `requested`; stale `audit.ts` "single write path" comment; dead `mutateRider` `target` param; `isPublicConsolePath` over-broad `startsWith("/icon")`. | `apps/admin/app/lib/*`, `app/components/StatusPill.tsx` | LOW/NIT | **OPEN (recommend)** — see report §2/§8. |
+
+**Refuted in verification (not bugs):** the "Issues feature is unbacked by the API" candidate (`admin-issues.controller.ts`
+implements it — the finder only scanned `admin/*.controller.ts`); and "report reason / issue type render as raw enums"
+(the code correctly uses `REPORT_REASON_LABELS`/`ISSUE_TYPE_LABELS[x] ?? x`; the raw display was a review-mock artifact
+from passing non-existent enum values). See report §7.

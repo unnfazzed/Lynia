@@ -153,7 +153,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         <div className="warnbar">
           <IconAlert />
           <span className="t">
-            <b>This order may be stuck.</b> {o.stuckNote ?? "No recent status update."} Currently at &ldquo;
+            <b>This order may be stuck.</b> {o.stuckNote ?? "No recent status update."}{" "}Currently at &ldquo;
             {STEPS[idx] ?? o.status}&rdquo;.{" "}
             {o.hasOpenIssue ? "The customer or rider has already filed a report — check Issues." : "No one has reported a problem yet."}
           </span>

@@ -34,6 +34,8 @@ export async function decideKyc(
   const ok = await adminPost(`/admin/riders/${profileId}/kyc`, body);
   if (!ok) throw new Error(`Failed to record KYC ${status} for rider ${profileId} (check API_BASE_URL / admin token).`);
   revalidatePath(`/riders/${profileId}/kyc`);
+  // Also refresh the rider-detail page — it renders the KYC status pill this decision changes.
+  revalidatePath(`/riders/${profileId}`);
   revalidatePath("/riders");
 }
 

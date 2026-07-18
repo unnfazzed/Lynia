@@ -10,7 +10,10 @@ import { IconAlert } from "./icons";
  * reads `tokens` + reuses the `.warnbar` danger-wash treatment; no white on a bright accent.
  */
 export function ReportsCallout({ reports, subject }: { reports?: ReportEntry[]; subject: "rider" | "customer" }) {
-  if (!reports || reports.length === 0) return null;
+  // Defensive: only render for a real, non-empty array. The API surfaces a report *count* (a number)
+  // on some detail shapes alongside the entry list; guarding on Array.isArray means a caller that
+  // accidentally passes the count can never crash this server component (it just renders nothing).
+  if (!Array.isArray(reports) || reports.length === 0) return null;
 
   // Count per reason so the headline reads "Unsafe behaviour ×2 · No-show ×1".
   const byReason = new Map<ReportReason, number>();
