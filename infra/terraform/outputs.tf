@@ -110,3 +110,13 @@ output "api_managed_certificate" {
     domains = google_compute_managed_ssl_certificate.api.managed[0].domains
   }
 }
+
+# --- Cloudflare DNS (dns.tf) ---
+output "cloudflare_dns_records" {
+  description = "Hostnames whose A records Terraform manages in Cloudflare (all -> load_balancer_ip). Empty when cloudflare_dns_enabled = false and DNS is still hand-managed."
+  value = concat(
+    [for r in cloudflare_dns_record.api : r.name],
+    [for r in cloudflare_dns_record.staging : r.name],
+    [for r in cloudflare_dns_record.admin : r.name],
+  )
+}

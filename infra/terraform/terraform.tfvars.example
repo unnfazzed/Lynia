@@ -51,3 +51,16 @@
 # -- Availability (pre-launch, not pilot) --
 # redis_tier = "STANDARD_HA"   # Redis replica for HA. Recreates the instance — Runbook §6.
 # (Cloud SQL REGIONAL HA: set availability_type = "REGIONAL" in sql.tf — Runbook §6.)
+
+# =============================================================================
+# Cloudflare DNS (dns.tf)
+# -----------------------------------------------------------------------------
+# Off by default — a plain apply is a no-op and existing hand-managed DNS is left
+# alone. Arming brings the product's A records under Terraform, all pointing at
+# the shared ALB (load_balancer_ip): api_domain always, staging_api_domain /
+# admin_domain only when their tiers are also enabled. Records are DNS-only
+# (grey-cloud); do NOT proxy them — it breaks Google-managed TLS + mobile cert
+# pinning (see the header of dns.tf).
+# cloudflare_dns_enabled = true
+# cloudflare_zone_id     = "0123456789abcdef0123456789abcdef"  # lyniafinance.com zone id
+# cloudflare_api_token   = "..."   # Zone:DNS:Edit token — keep in a VCS-ignored tfvars
