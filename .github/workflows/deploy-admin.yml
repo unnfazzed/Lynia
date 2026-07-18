@@ -10,8 +10,13 @@ name: Deploy Admin Console (Cloud Run)
 # deploy + promote instead — a crash-on-boot revision fails the deploy while the old revision keeps
 # serving; rollback is `gcloud run services update-traffic lynia-admin --to-revisions <PREV>=100`.
 #
-# ADMIN→API PATH: the console reaches the API over the VPC connector (internal), not the public
-# api_domain (plan resolved fork). It bears ADMIN_API_TOKEN (Secret Manager) and forwards X-Operator.
+# ADMIN→API PATH: the console reaches the API at its public HTTPS endpoint (ADMIN_API_BASE_URL =
+# https://<api_domain>), bearing ADMIN_API_TOKEN (Secret Manager) and forwarding X-Operator. This is
+# the launch-ready call: an internal Cloud-Run→Cloud-Run path needs --vpc-egress all-traffic to arrive
+# as "internal", which then routes the middleware's IAP-JWKS fetch (gstatic.com) through the connector
+# and breaks it unless a Cloud NAT is stood up. The public hop is TLS + admin-token + Cloud-Armor
+# protected; tightening to internal+NAT is a post-launch hardening. So the admin service takes NO VPC
+# connector.
 #
 # DORMANT UNTIL ARMED. Gated on the repo variable GCP_ADMIN_ENABLED == 'true'; until a maintainer arms
 # it this workflow is a clean no-op and never fails a push. Arming (founder, after terraform apply +
@@ -20,12 +25,14 @@ name: Deploy Admin Console (Cloud Run)
 #     GCP_ADMIN_ENABLED             "true" to arm this workflow
 #     GCP_PROJECT_ID, GCP_REGION, GCP_ARTIFACT_REPO           (shared with release.yml)
 #     GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT     (shared WIF deployer)
-#     VPC_CONNECTOR                                           (shared connector; internal API egress)
 #     ADMIN_CLOUD_RUN_SERVICE          Cloud Run service name (default lynia-admin)
 #     ADMIN_CLOUD_RUN_SERVICE_ACCOUNT  admin runtime SA email (terraform output)
-#     ADMIN_API_BASE_URL               internal API base URL the console calls
+#     ADMIN_API_BASE_URL               API base URL the console calls (https://<api_domain>)
 #     ADMIN_CONSOLE_IAP_AUDIENCE       LB backend-service audience (terraform output) for JWT verify
-#   Secret Manager (not a repo secret): ADMIN_API_TOKEN — the admin JWT, injected via --set-secrets.
+#   Secret Manager (not a repo secret): ADMIN_API_TOKEN — a LONG-LIVED admin JWT (role:"admin",
+#     signed HS256 with JWT_SIGNING_SECRET). NOT a normal login token: signAccess stamps a 15-min
+#     expiry (ACCESS_TTL_SECONDS), which would 401 the console 15 min after arming. Injected via
+#     --set-secrets. See docs/plans/2026-admin-console-arming.md §3 for the mint command.
 
 on:
   push:
@@ -64,7 +71,6 @@ jobs:
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           GCP_REGION: ${{ vars.GCP_REGION }}
           GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
-          VPC_CONNECTOR: ${{ vars.VPC_CONNECTOR }}
           ADMIN_CLOUD_RUN_SERVICE_ACCOUNT: ${{ vars.ADMIN_CLOUD_RUN_SERVICE_ACCOUNT }}
           ADMIN_API_BASE_URL: ${{ vars.ADMIN_API_BASE_URL }}
           ADMIN_CONSOLE_IAP_AUDIENCE: ${{ vars.ADMIN_CONSOLE_IAP_AUDIENCE }}
@@ -73,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          required="GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO VPC_CONNECTOR ADMIN_CLOUD_RUN_SERVICE_ACCOUNT ADMIN_API_BASE_URL ADMIN_CONSOLE_IAP_AUDIENCE GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT"
+          required="GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO ADMIN_CLOUD_RUN_SERVICE_ACCOUNT ADMIN_API_BASE_URL ADMIN_CONSOLE_IAP_AUDIENCE GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT"
           for v in $required; do
             if [ -z "${!v:-}" ]; then missing+=("$v"); fi
           done
@@ -162,7 +168,8 @@ jobs:
       #
       # --ingress internal-and-cloud-load-balancing: only the shared ALB (+ internal) reaches the
       # service; the org disables *.run.app at the edge. IAP on the LB backend (admin.tf) is the auth.
-      # --vpc-connector + --vpc-egress private-ranges-only: reach the API over the VPC (internal path).
+      # NO VPC connector: the console reaches the API at its public api_domain (ADMIN_API_BASE_URL) and
+      # fetches IAP JWKS from gstatic — both need default (public) egress, not a connector.
       # ADMIN_CONSOLE_IAP_AUDIENCE turns on middleware JWT verification of the IAP assertion.
       - name: Deploy to Cloud Run (new revision, no traffic)
         run: |
@@ -179,8 +186,6 @@ jobs:
             --platform managed \
             --port 8080 \
             --service-account "${{ vars.ADMIN_CLOUD_RUN_SERVICE_ACCOUNT }}" \
-            --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
-            --vpc-egress private-ranges-only \
             --ingress internal-and-cloud-load-balancing \
             --set-env-vars "$ENV_VARS" \
             --set-secrets "ADMIN_API_TOKEN=ADMIN_API_TOKEN:latest" \

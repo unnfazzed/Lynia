@@ -51,15 +51,32 @@ terraform apply
 
 ## 3. Populate the `ADMIN_API_TOKEN` secret
 
-Terraform created the **empty** secret container; the value is an admin JWT signed with the API's
-`JWT_SIGNING_SECRET` (Terraform can't mint it). Mint an admin-scoped token the API accepts, then:
+Terraform created the **empty** secret container. The value is an admin JWT the API accepts —
+`AdminGuard` requires `role: "admin"` and `JwtAuthGuard` verifies an HS256 signature over
+`JWT_SIGNING_SECRET`.
+
+> **Do NOT use a normal login token.** `TokenService.signAccess` stamps `expiresIn: ACCESS_TTL_SECONDS`
+> (default **900s / 15 min**), so a login token would 401 the console 15 minutes after you arm it. The
+> console needs a **long-lived** directly-signed token.
+
+Mint one (this must run where `JWT_SIGNING_SECRET` is available — read it from Secret Manager; the token
+never has to leave your shell):
 
 ```bash
-printf '%s' "<the-admin-jwt>" | gcloud secrets versions add ADMIN_API_TOKEN --data-file=-
+SECRET="$(gcloud secrets versions access latest --secret=JWT_SIGNING_SECRET)"
+TOKEN="$(node -e '
+  const jwt=require("jsonwebtoken");
+  // role:"admin" is what AdminGuard checks; sub is the audit fallback when no X-Operator (IAP sets one).
+  process.stdout.write(jwt.sign({role:"admin"}, process.env.SECRET,
+    {subject:"admin-console", algorithm:"HS256", expiresIn:"365d"}));
+' )"
+printf '%s' "$TOKEN" | gcloud secrets versions add ADMIN_API_TOKEN --data-file=-
 ```
 
-*Verify:* `gcloud secrets versions list ADMIN_API_TOKEN` shows one enabled version. (Rotation: add a new
-version and redeploy — `docs/SECRET-ROTATION.md`.)
+*Verify:* `gcloud secrets versions list ADMIN_API_TOKEN` shows one enabled version. **Rotation:** re-mint
+and add a new version, then re-run the deploy (also the compromise response in `docs/IR-RUNBOOK.md`).
+Because it's long-lived, IAP in front + the 365-day expiry are the containment — rotate on any operator
+offboarding or suspected leak.
 
 ## 4. Set the repo Variables (Settings → Secrets and variables → Actions → Variables)
 
@@ -71,14 +88,16 @@ Most are shared with the API and already set. Add the admin-specific ones from t
 | `ADMIN_CLOUD_RUN_SERVICE` | `lynia-admin` (default) |
 | `ADMIN_CLOUD_RUN_SERVICE_ACCOUNT` | `terraform output -raw ADMIN_CLOUD_RUN_SERVICE_ACCOUNT` |
 | `ADMIN_CONSOLE_IAP_AUDIENCE` | `terraform output -raw ADMIN_CONSOLE_IAP_AUDIENCE` |
-| `ADMIN_API_BASE_URL` | the API's internal base URL (see note) |
-| `VPC_CONNECTOR`, `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_ARTIFACT_REPO`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT` | already set for the API deploy |
+| `ADMIN_API_BASE_URL` | `https://<api_domain>` (the public API endpoint — see note) |
+| `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_ARTIFACT_REPO`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT` | already set for the API deploy |
 
-> **`ADMIN_API_BASE_URL` (internal path).** The console reaches the API over the VPC connector, not the
-> public `api_domain`. Use the API Cloud Run service URL (`https://<lynia-api-…>.run.app`); the API
-> accepts it because its ingress permits internal + LB traffic and the admin service egresses through the
-> VPC connector. If internal resolution proves unreliable in your project, the documented fallback is the
-> public `https://<api_domain>` (the console still bears `ADMIN_API_TOKEN`), at the cost of a public hop.
+> **`ADMIN_API_BASE_URL` (public, launch-ready).** The console calls the API at its public
+> `https://<api_domain>` and bears `ADMIN_API_TOKEN` (+ forwards `X-Operator`). An internal
+> Cloud-Run→Cloud-Run path was considered but reversed: it would need `--vpc-egress all-traffic` to
+> arrive as "internal", which then routes the middleware's IAP-JWKS fetch (`gstatic.com`) through the
+> connector and breaks JWT verification unless a Cloud NAT is added — real day-1 infra for a marginal
+> gain. The public hop is TLS + admin-token + Cloud-Armor protected. Tightening to internal + Cloud NAT
+> is a clean post-launch hardening. The admin service therefore takes **no VPC connector**.
 
 ## 5. Grant operators + enforce MFA
 

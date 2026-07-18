@@ -101,12 +101,13 @@ Add to `infra/terraform/` (new file `admin.tf` + variable additions), all gated 
 11. **Ingress** — set the admin Cloud Run service ingress to internal-and-cloud-load-balancing so the
     `*.run.app` origin isn't directly reachable (the org already disables `*.run.app` at the edge;
     this mirrors the API and the SECURITY-OPS "restrict the console's ingress" step).
-11a. **Internal admin→API path (resolved fork).** Attach the existing VPC connector (`VPC_CONNECTOR`,
-    already used by the API deploy) to the admin Cloud Run service with `--vpc-egress` covering the
-    API route, and set `API_BASE_URL` to the API's internal address. This keeps admin↔API off the
-    public internet. Confirm the API accepts the internal ingress path from admin (its ingress is
-    `internal-and-cloud-load-balancing`; internal VPC traffic qualifies). No new API-side contract —
-    admin still bears `ADMIN_API_TOKEN` + forwards `X-Operator`.
+11a. **admin→API path (resolved fork — REVISED 2026-07-18 to public).** The console calls the API at
+    its public `https://<api_domain>`, bearing `ADMIN_API_TOKEN` + forwarding `X-Operator`. The admin
+    service takes **no VPC connector**. Why the internal-VPC pick was reversed at arming time: an
+    internal Cloud-Run→Cloud-Run call only arrives as "internal" under `--vpc-egress all-traffic`,
+    which then routes the middleware's IAP-JWKS fetch (`gstatic.com`) through the connector and breaks
+    JWT verification unless a Cloud NAT is stood up — real day-1 infra for a marginal gain. Public hop
+    is TLS + admin-token + Cloud-Armor protected; internal + Cloud NAT is a post-launch hardening.
 
 ## Phase 4 — Deploy workflow (code, mergeable; runs on founder-set vars)
 
@@ -116,8 +117,7 @@ Add to `infra/terraform/` (new file `admin.tf` + variable additions), all gated 
     - `gcloud run deploy lynia-admin --region africa-south1 --service-account <runtime SA>
       --ingress internal-and-cloud-load-balancing --image …:$GITHUB_SHA` with env:
       - `NODE_ENV=production`
-      - `API_BASE_URL=<internal API URL>` + `--vpc-connector $VPC_CONNECTOR` (resolved fork — admin
-        reaches the API over the VPC, not the public `api_domain`).
+      - `API_BASE_URL=https://<api_domain>` (resolved fork revised to public — see 11a; no VPC connector).
       - `ADMIN_CONSOLE_IAP_AUDIENCE=<backend-service audience>` (Phase 1c JWT verification).
       - `ADMIN_API_TOKEN` from **Secret Manager** (`--set-secrets`), not a plaintext env var.
       - Leave `ADMIN_CONSOLE_REQUIRE_AUTH` unset (defaults on in prod); IAP supplies the header.
@@ -193,9 +193,10 @@ OAuth client + consent screen, grant operator IAM + MFA, set the repo variables/
   `X-Goog-IAP-JWT-Assertion` (signature + audience against Google's cached public keys) in addition to
   reading the email — identity stays unforgeable even if ingress is ever misconfigured or the service
   is hit directly. No UX cost (operators never see this path); pure operator-trust gain. See Phase 1c.
-- **[RESOLVED 2026-07-18] admin→API path: internal VPC URL.** Admin reaches the API over the VPC
-  connector / internal ingress, removing the public hop entirely (tighter surface + lower latency).
-  See the Phase 3/4 additions below.
+- **[RESOLVED 2026-07-18; REVISED at arming] admin→API path: public `api_domain`.** Initially picked
+  internal-VPC, reversed at arming because the internal path breaks the middleware's IAP-JWKS fetch
+  without a Cloud NAT (see Phase 3.11a). Public hop is token- + TLS- + Armor-protected; internal+NAT is
+  a post-launch hardening.
 
 ---
 
@@ -212,7 +213,8 @@ layout pinned; service-rollback section added; show-signed-in-operator step adde
 
 **VERDICT: APPROVE WITH CHANGES.** Scope is right-sized and reuses proven topology (boring by default,
 no innovation token spent). Both forks resolved by the founder (2026-07-18): verify the IAP JWT
-(Phase 1c) and reach the API over the internal VPC (Phase 3.11a / 4). Remaining pre-implementation
+(Phase 1c) and — revised at arming — reach the API over the public `api_domain` (Phase 3.11a / 4), the
+internal-VPC path being deferred to a post-launch Cloud-NAT hardening. Remaining pre-implementation
 gate: the Phase-1b/1c tests exist and gate CI before the deploy is armed. Everything else absorbed.
 
 NO UNRESOLVED DECISIONS
