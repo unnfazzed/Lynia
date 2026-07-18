@@ -193,8 +193,16 @@ export class PrivacyService {
       // the sole signal duplicateIdAccountCount uses to flag a ban-evader re-registering with the SAME
       // national ID. Nulling it here blinded that check for anyone who ever erased; the raw idNumber
       // ciphertext (recoverable PII) is still scrubbed.
-      await tx.profile.update({
-        where: { id: profileId },
+      //
+      // DS18-04 (TOCTOU CAS): the anonymise write is a CAS `updateMany` re-asserting the profile-level
+      // standing predicate (`onHold`, the customer S·2 hold) in its WHERE — not a blind update by id. The
+      // freshStanding re-read above is an unlocked SELECT feeding a JS gate; a customer-hold committing by an
+      // admin between that read and this write would otherwise slip through blind. Re-asserting it here makes
+      // the WRITE itself conditional (0 rows ⇒ the hold landed ⇒ abort), mirroring the DS-10 active-ride and
+      // admin-orders.service CAS guards. The rider-level standing (ban/suspend/rider-hold/cooldown/kyc-lock)
+      // is re-asserted on the rider CAS below, where those columns live.
+      const anonymised = await tx.profile.updateMany({
+        where: { id: profileId, onHold: false },
         data: {
           firstName: "Deleted",
           lastName: "User",
@@ -204,10 +212,24 @@ export class PrivacyService {
           phone: `erased:${profileId}`,
         },
       });
+      if (anonymised.count === 0) {
+        throw new ConflictException({ reason: "account_on_hold", message: ERASE_BLOCKED_MESSAGE });
+      }
 
-      // Scrub rider PII if this profile is a rider; keep the row for the ledger.
-      await tx.rider.updateMany({
-        where: { profileId },
+      // Scrub rider PII if this profile is a rider; keep the row for the ledger. DS18-04: the WHERE also
+      // re-asserts the rider-level standing predicate atomically (accountStatus not banned/suspended, not
+      // on the sticky RH-01 hold, no live cooldown, KYC not two-decline-locked) — the same predicate
+      // assertErasableStanding checks off the unlocked read. For a rider, a 0-row result means a restriction
+      // landed between the freshStanding read and here → abort (below); a non-rider matches no row here
+      // regardless (no riders row), so the count is only load-bearing when isRider.
+      const riderScrub = await tx.rider.updateMany({
+        where: {
+          profileId,
+          accountStatus: { notIn: [RiderAccountStatus.BANNED, RiderAccountStatus.SUSPENDED] },
+          onHold: false,
+          kycAttempts: { lt: KYC_LOCK_ATTEMPTS },
+          OR: [{ cooldownUntil: null }, { cooldownUntil: { lte: now } }],
+        },
         data: {
           bikeReg: "",
           vehicleInfo: null,
@@ -220,6 +242,11 @@ export class PrivacyService {
           isOnline: false,
         },
       });
+      if (isRider && riderScrub.count === 0) {
+        // A concurrent ban/suspend/hold/cooldown/KYC-lock landed after the freshStanding read — the CAS
+        // predicate no longer matches. Abort so self-erasure can't race past a just-landed restriction.
+        throw new ConflictException({ reason: "standing_changed", message: ERASE_BLOCKED_MESSAGE });
+      }
 
       // WD-NEW / Class-C erasure completeness: the rider's last precise position lives in TWO columns —
       // the readable `current_lat`/`current_lng` (nulled above) AND the PostGIS `geog` point that the
@@ -247,17 +274,48 @@ export class PrivacyService {
       // keys for post-commit GCS deletion, then null all four proof columns (keep the order row as the
       // ledger). Scoped to riderId == profileId — a proof on an order this user merely placed belongs to
       // the counterparty rider, not the erasing user. No-op for a non-rider profile.
+      //
+      // DS18-01: `pickupPhotoKey` — the rider-captured proof-of-pickup photo (GCS key under
+      // `pickup/<riderId>/`) — is the exact same class of rider-captured content, on a sibling column no
+      // prior erasure pass traced (it escaped both PII_MANIFEST and NON_PII_COLUMNS). Collect + null it in
+      // the SAME rider-scoped pass and purge its object post-commit alongside the delivery-proof photo.
       if (isRider) {
         const proofs = await tx.order.findMany({
-          where: { riderId: profileId, NOT: { deliveryProofKey: null } },
-          select: { deliveryProofKey: true },
+          where: { riderId: profileId, OR: [{ NOT: { deliveryProofKey: null } }, { NOT: { pickupPhotoKey: null } }] },
+          select: { deliveryProofKey: true, pickupPhotoKey: true },
         });
-        for (const p of proofs) if (p.deliveryProofKey) itemPhotoKeys.push(p.deliveryProofKey);
+        for (const p of proofs) {
+          if (p.deliveryProofKey) itemPhotoKeys.push(p.deliveryProofKey);
+          if (p.pickupPhotoKey) itemPhotoKeys.push(p.pickupPhotoKey);
+        }
         await tx.order.updateMany({
           where: { riderId: profileId },
-          data: { deliveryProofKey: null, deliveryProofLat: null, deliveryProofLng: null, deliveryProofAt: null },
+          data: {
+            deliveryProofKey: null,
+            deliveryProofLat: null,
+            deliveryProofLng: null,
+            deliveryProofAt: null,
+            pickupPhotoKey: null,
+          },
         });
       }
+
+      // DS18-02: user-authored free-text scrubs — the same class as Order.note (DS15-07), on the author's
+      // erasure. Each keeps its host row (rating score / issue / report / cancelled order stay as the
+      // ledger); only the free text the erasing user typed is nulled/emptied.
+      //   • ratings.comment — nulled on the RATER's (byProfileId) own ratings (score itself retained).
+      await tx.rating.updateMany({ where: { byProfileId: profileId, NOT: { comment: null } }, data: { comment: null } });
+      //   • issues.description — the issue OPENER's free-text. NOT NULL column → emptied to "" (like bikeReg).
+      await tx.issue.updateMany({ where: { openedByProfileId: profileId, NOT: { description: "" } }, data: { description: "" } });
+      //   • reports.note — the REPORTER's free-text note (distinct from orders.note; table-qualified in the
+      //     manifest so this isn't falsely covered by the orders.note entry).
+      await tx.report.updateMany({ where: { reporterProfileId: profileId, NOT: { note: null } }, data: { note: null } });
+      //   • orders.cancelReason — free text authored by whichever party cancelled; scrub when the erasing
+      //     user is EITHER party to the order (customer OR rider), unlike the customer-only note scrub below.
+      await tx.order.updateMany({
+        where: { OR: [{ customerId: profileId }, { riderId: profileId }], NOT: { cancelReason: null } },
+        data: { cancelReason: null },
+      });
 
       // Remove the standalone PII stores + log every device out.
       await tx.address.deleteMany({ where: { profileId } });
