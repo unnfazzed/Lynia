@@ -53,15 +53,37 @@ echo "IAP client: $IAP_CLIENT_ID"
 
 say "2. terraform apply (admin tier) — review the plan, then confirm"
 MEMBERS_HCL="$(printf '"%s", ' $IAP_MEMBERS)"; MEMBERS_HCL="[${MEMBERS_HCL%, }]"
+# Preserve tiers already live in state. Terraform variable values come from local tfvars, but the
+# founder's terraform.tfvars is gitignored — so a FRESH clone defaults every *_enabled flag OFF and
+# would plan to DESTROY whatever those flags provisioned (notably the staging tier). Detect a live
+# staging tier and carry staging_enabled forward so arming admin stays purely additive.
+STAGING_ENABLED=false
+if gcloud sql instances describe lynia-pg-staging --project "$PROJECT_ID" >/dev/null 2>&1; then
+  STAGING_ENABLED=true
+  echo "Detected a live staging tier (lynia-pg-staging) — carrying staging_enabled=true so it is not destroyed."
+fi
 cat > "$TF_DIR/admin.auto.tfvars" <<EOF
 admin_enabled                 = true
 admin_iap_oauth_client_id     = "$IAP_CLIENT_ID"
 admin_iap_oauth_client_secret = "$IAP_CLIENT_SECRET"
 admin_iap_members             = $MEMBERS_HCL
+staging_enabled               = $STAGING_ENABLED
 EOF
 chmod 600 "$TF_DIR/admin.auto.tfvars"   # holds the client secret — keep it out of VCS (.gitignore covers *.auto.tfvars)
 ( cd "$TF_DIR" && terraform init -input=false >/dev/null && terraform plan -out=admin.tfplan )
-read -r -p $'\nApply this plan? It touches the SHARED ALB (additions only). Type yes to apply: ' ok
+# HARD SAFETY: arming admin is additive. Refuse to apply a plan that DESTROYS anything — that means a
+# tier enabled via a tfvars this clone is missing (see staging note above), not an admin change.
+DESTROYS="$(cd "$TF_DIR" && terraform show -json admin.tfplan \
+  | jq '[.resource_changes[] | select(.change.actions | index("delete"))] | length')"
+if [ "${DESTROYS:-0}" != "0" ]; then
+  echo ""
+  echo "REFUSING TO APPLY: this plan would DESTROY ${DESTROYS} resource(s). Arming admin must be additive."
+  echo "Almost certainly a tier enabled via a tfvars this clone doesn't have. Inspect with:"
+  echo "  ( cd \"$TF_DIR\" && terraform show admin.tfplan | grep -E 'will be destroyed' )"
+  echo "Set the matching *_enabled flag(s) true in admin.auto.tfvars and re-run. Nothing was changed."
+  exit 1
+fi
+read -r -p $'\nApply this plan? It adds the admin tier + appends to the SHARED ALB (0 destroys, verified). Type yes to apply: ' ok
 [ "$ok" = "yes" ] || { echo "Aborted before apply. Nothing changed."; exit 1; }
 ( cd "$TF_DIR" && terraform apply admin.tfplan )
 
