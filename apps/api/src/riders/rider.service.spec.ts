@@ -799,6 +799,40 @@ describe("RiderService.applyKycResult", () => {
     expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, isOnline: false });
   });
 
+  it("DS18-04: row-locks the rider (FOR UPDATE) BEFORE the read that feeds the `expired` kycAttempts reset", async () => {
+    // The `current` read's kycAttempts is baked into the updateMany's data payload (deciding whether to
+    // write `kycAttempts:0`) BEFORE the write runs, and the updateMany WHERE never re-checks kycAttempts.
+    // Without a row lock, a concurrent adminSetKyc second-decline committing kycAttempts=2 in the gap
+    // between this read and this write would let a later `expired` webhook read the stale pre-lock count
+    // (< 2), reset kycAttempts:0, and silently unlock the admin's two-decline lock — reopening DS17-03.
+    // Taking `SELECT … FOR UPDATE` before the read (mirroring adminSetKyc) serializes the two transactions.
+    // Assert the lock is acquired before the read AND before the write.
+    const calls: string[] = [];
+    const prisma = {
+      $executeRaw: async () => { calls.push("lock"); return 0; },
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          calls.push("write");
+          data = args.data;
+          return { count: 1 };
+        },
+        // The locked read returns the admin-established lock (kycAttempts=2); the same mock also answers the
+        // post-update profileId fetch for the supply eviction.
+        findFirst: async () => { calls.push("read"); return { profileId: "p1", kycAttempts: 2 }; },
+      },
+    };
+    let data: Record<string, unknown> | undefined;
+    expect(await svc(prisma, {}).applyKycResult("sess_1", "expired", new Date())).toEqual({ updated: 1 });
+    // Lock first, then the read, then the write — the ordering that closes the read-then-decide race.
+    expect(calls[0]).toBe("lock");
+    expect(calls.indexOf("lock")).toBeLessThan(calls.indexOf("read"));
+    expect(calls.indexOf("read")).toBeLessThan(calls.indexOf("write"));
+    // And because the read (now serialized behind the lock) sees kycAttempts=2, the reset is suppressed:
+    // the admin's lock survives the `expired` webhook exactly as DS17-03 intends.
+    expect(data).not.toHaveProperty("kycAttempts");
+    expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, isOnline: false });
+  });
+
   it("F-13: a vendor DECLINE increments the A-02 counter under the monotonic guard (new decline only)", async () => {
     let where: Record<string, unknown> | undefined;
     let data: Record<string, unknown> | undefined;

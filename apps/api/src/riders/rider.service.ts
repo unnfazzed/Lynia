@@ -411,6 +411,18 @@ export class RiderService {
       // Read the flag first (kycRef is unique, so at most one row) so the updateMany below can route a
       // flagged match to manual review instead of applying the vendor's `verified`. `failed`/`expired`
       // outcomes are unaffected — the flag only matters for the auto-APPROVE path.
+      // DS18-04: row-lock the rider BEFORE the `current` read (mirrors adminSetKyc's `SELECT … FOR UPDATE`
+      // below, and order-lifecycle.service's lockRiderRow). The `current` read is a plain unlocked select
+      // whose kycAttempts value decides — in this transaction's `data` payload, before the updateMany runs —
+      // whether an `expired` reset writes `kycAttempts:0`. The updateMany's WHERE only re-checks
+      // kycRef + kycResolvedAt monotonicity at write time, never kycAttempts, so without this lock a
+      // concurrent adminSetKyc second-decline (which takes the SAME `FOR UPDATE` lock) committing
+      // kycAttempts=2 in the gap between this read and this write would reopen the exact DS17-03 lock-bypass
+      // race: a later-timestamped `expired` webhook reads the pre-lock kycAttempts (< 2), decides to reset,
+      // and silently wipes the admin's two-decline lock. Taking the lock here serializes this transaction
+      // against that adminSetKyc transaction instead of racing it — the CAS updateMany WHERE below still
+      // closes the independent replay/reorder race. kyc_ref is unique, so this locks at most one row.
+      await tx.$executeRaw`SELECT 1 FROM riders WHERE kyc_ref = ${kycRef} FOR UPDATE`;
       // DS17-03: this read runs UNCONDITIONALLY now (previously only for `verified`) and also pulls
       // kycAttempts, because the `expired` branch below must know the rider's current lock state before it
       // resets the counter — an automated expiry webhook must not silently wipe the A-02 two-decline lock an

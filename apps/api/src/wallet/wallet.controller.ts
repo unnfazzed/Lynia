@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { CreateTopupRequest } from "@lynia/shared";
 import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
@@ -44,7 +44,7 @@ export class WalletController {
 
   /** Poll a top-up intent until it reaches a terminal state (or expires at the 90s window). */
   @Get("topups/:id")
-  topup(@Param("id") topupId: string, @CurrentUser() id: string) {
+  topup(@Param("id", ParseUUIDPipe) topupId: string, @CurrentUser() id: string) {
     return this.wallet.getTopup(id, topupId);
   }
 }
