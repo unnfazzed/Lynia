@@ -34,8 +34,11 @@ RUN pnpm --filter @lynia/shared build \
 # --- runtime (slim; standalone server only) ---
 FROM node:22-slim AS runtime
 ENV NODE_ENV=production
-# Next standalone binds HOSTNAME:PORT. Cloud Run injects PORT (default 8080); bind all interfaces.
+# Next standalone binds HOSTNAME:PORT. Pin PORT=8080 so the image listens on the same port EXPOSE
+# advertises and the boot-smoke curls — Next standalone otherwise defaults to 3000. Cloud Run injects
+# its own PORT (also 8080) at runtime, which harmlessly matches. Bind all interfaces.
 ENV HOSTNAME=0.0.0.0
+ENV PORT=8080
 WORKDIR /repo
 # The standalone bundle mirrors the monorepo from the trace root (outputFileTracingRoot = repo root):
 # apps/admin/server.js + the traced node_modules live under .next/standalone/.
