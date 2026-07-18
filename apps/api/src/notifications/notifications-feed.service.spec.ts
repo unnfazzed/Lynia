@@ -398,6 +398,27 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     expect(feed.every((r) => r.orderId === null)).toBe(true);
   });
 
+  // BH-18: `to` distinguishes a `customer.hold`/`customer.lift` row (about the viewing CUSTOMER) from
+  // every other account-status row (about the viewing RIDER) — the client uses it to avoid routing a
+  // tap on a customer's own hold/lift notice to the rider-onboarding screen (the push.ts sibling fix).
+  it("BH-18: tags customer.hold/lift rows to:'customer' and every other account row to:'rider'", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([]);
+    prisma.auditLog.findMany.mockResolvedValue([
+      { id: "a1", action: "wallet.credit", createdAt: new Date("2026-07-06T11:30:00.000Z") },
+      { id: "a2", action: "customer.hold", createdAt: new Date("2026-07-06T11:00:00.000Z") },
+      { id: "a3", action: "customer.lift", createdAt: new Date("2026-07-05T09:00:00.000Z") },
+      { id: "a4", action: "rider.suspend", createdAt: new Date("2026-07-05T08:00:00.000Z") },
+    ]);
+
+    const feed = await service.feedForUser("me", NOW);
+    // customer.hold and rider.suspend share the "Account paused" title, so assert via the raw row ids.
+    expect(feed.find((r) => r.id === "account:a1")?.to).toBe("rider");
+    expect(feed.find((r) => r.id === "account:a2")?.to).toBe("customer");
+    expect(feed.find((r) => r.id === "account:a3")?.to).toBe("customer");
+    expect(feed.find((r) => r.id === "account:a4")?.to).toBe("rider");
+  });
+
   it("UX18-05: synthesizes a 'delivery is back on track' row when liftRider resolves a rider-standing notice", async () => {
     const { prisma, service } = makeDeps();
     // The customer's own order (riderId != viewer → customer view).

@@ -171,7 +171,11 @@ export class AdminCustomersService {
     void this.notifications?.notifyProfiles([profileId], {
       title: "Account paused",
       body: "Your account was paused — open the app for details.",
-      data: { kind: "account" },
+      // BH-18: `to: "customer"` distinguishes this from every other orderId-less `kind:"account"` push,
+      // which are all about the RIDER's own standing (pushDestination's no-orderId fallback is "/rider").
+      // Without it, a plain customer who never registered as a rider was routed to the rider-onboarding
+      // screen on tap instead of home.
+      data: { kind: "account", to: "customer" },
     });
     return result;
   }
@@ -200,7 +204,8 @@ export class AdminCustomersService {
     void this.notifications?.notifyProfiles([profileId], {
       title: "Account restored",
       body: "Your account is back in good standing — you can place orders again.",
-      data: { kind: "account" },
+      // BH-18: see the matching comment in holdCustomer above.
+      data: { kind: "account", to: "customer" },
     });
     return result;
   }

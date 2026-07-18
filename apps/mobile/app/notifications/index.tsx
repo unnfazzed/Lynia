@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { getNotificationsFeed, type NotificationRow } from "../../src/api/notifications";
+import { notificationRowDestination } from "../../src/push/push";
 import { Button, EmptyState, Heading, Icon, Screen, SkeletonList } from "../../src/ui";
 
 /**
@@ -79,9 +80,9 @@ export default function NotificationsScreen(): React.ReactElement {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
           {(feedQ.data ?? []).map((n) => (
-            // KB-FEED-SYNTH: an account-status row (KYC / standing change) has no orderId — route it to
-            // the rider home, mirroring where its push already lands (push.ts `kind: "account"` → /rider).
-            <Row key={n.id} n={n} onPress={() => router.push(n.orderId ? `/order/${n.orderId}` : "/rider")} />
+            // KB-FEED-SYNTH / BH-18: see notificationRowDestination for the destination rules — an
+            // account-status row (no orderId) routes by `to` (customer.hold/lift → home, else rider).
+            <Row key={n.id} n={n} onPress={() => router.push(notificationRowDestination(n))} />
           ))}
           <View style={{ height: tokens.space.xxl }} />
         </ScrollView>

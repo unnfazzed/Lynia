@@ -6,7 +6,21 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-18 (deep-sweep routine — orthogonal backend-correctness/concurrency hunt +
+**Last consolidated:** 2026-07-18 night (bug-hunt routine — agentic-loop hunt over the BH lane, mobile
+journeys + app↔API contract seams; see "Bug hunt 2026-07-18 night" near the bottom for BH-18…20, three
+MEDIUM findings, all fixed same-run with a regression test each: a THIRD, unstamped `kind:"account"`
+no-orderId push shape (`AdminCustomersService.holdCustomer`/`liftCustomerHold`, added by UX18-04) that
+`pushDestination`'s locked-in "no orderId ⇒ rider's own standing ⇒ /rider" fallback misrouted to the
+rider-onboarding screen instead of home, reproduced identically in the in-app Notifications feed; a
+durable pending-rating marker (BH-06) wiped by merely viewing a DIFFERENT past order on the generic
+`/order/:id` route instead of being left in place for its own order, the exact app-kill data-loss class
+BH-06 was built to close, reopened via ordinary navigation; and a rider's "customer may be offline" banner
+that could stick for the rest of an active delivery leg if the rider's own socket was disconnected at the
+exact moment a `presence:recovered` room broadcast fired, since a (re)joining socket never receives an
+event that fired before it joined. Phase-0.5 re-verified the **Auth/identity**, **Data-integrity**, and
+**Money-fraud** cluster headers (rotated away from KYC/Object-authz/Edge/abuse/Notifications-FCM/
+Mobile-journey-dead-ends) — all INTACT, 0 stale claims. Zero open sibling PRs at Phase 0.
+Prior: 2026-07-18 (deep-sweep routine — orthogonal backend-correctness/concurrency hunt +
 deep-sweep-owned cross-lane seams pass + adversarial API pass; see "Deep sweep 2026-07-18" near the bottom
 for DS18-01…05 — one HIGH (a rider-captured pickup-photo GCS object + DB pointer fully escaping
 right-to-erasure, the DS15-03 failure mode reproduced on a `_key`-suffixed column the coverage-scan regex
@@ -738,6 +752,43 @@ regression test; `pnpm typecheck` (5 packages) + `pnpm test` (1041 API tests + 4
   `rider.service.ts`): `applyKycResult` was the sole unguarded instance; `retryKyc`/`completeProfile`/
   `setOnline`/`becomeRider`/`adminSetKyc` all already CAS- or lock-guarded.
 - **DS18-05** (`grep -rn "@Param(" --include="*.controller.ts" apps/api/src` — 37 raw hits): `wallet.controller.ts:47` was the sole omission.
+
+---
+
+## Bug hunt 2026-07-18 night (bug-hunt routine) — `docs/BUG-HUNT-2026-07-18.md`
+
+Phase 0: zero open `claude/*` sibling PRs at session start. Phase 0.5 re-verified the **Auth/identity**,
+**Data-integrity**, and **Money-fraud** cluster headers (rotated away from KYC/Object-authz/Edge/abuse/
+Notifications-FCM/Mobile-journey-dead-ends, all re-checked by the last several routines) — JWT
+default-secret prod boot-guard + HS256 sign/verify pinning + `x-user-id` dev-fallback allowlist (Auth/
+identity), `reports` nullable-`order_id` unique constraint + `rankOffers` `Number.isFinite` NaN guard
+(Data-integrity), and confirmed `recordPayment`/`adjustFare`-driven settlement mechanics genuinely absent
+from `settlements.service.ts` (Money-fraud, still MOOT) — all three **INTACT**, 0 stale claims. Hunt ran
+via the agentic-loop engine (`Workflow({name:'lane-bug-hunt'}, args:'bug-hunt')`) — 5 finder lenses
+(journey-deadends, lifecycle, contract-seam, retry-safety, realtime-recovery), 3 candidates found (2 of 5
+lenses — contract-seam, retry-safety — returned zero), all 3 survived a 3-skeptic adversarial panel
+unanimously (9/9 "real" votes), then a repo-wide sibling-sweep per survivor. **Three findings, all
+MEDIUM — all fixed same-run**, each with a regression test; `pnpm typecheck` (5 packages) + full
+monorepo `pnpm test` (1064 API tests, 445 mobile tests) green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| BH-18 | `pushDestination()`'s `kind === "account"` no-orderId fallback (`push.ts:174`) was locked in as always meaning "the RIDER's own KYC/standing change" → `/rider`. UX18-04 added a THIRD, unstamped case: `AdminCustomersService.holdCustomer`/`liftCustomerHold` now push a `kind:"account"` notice with no orderId to a **CUSTOMER** ("Account paused"/"Account restored"). Tapping it (or a cold start replaying it) sent a plain customer who never registered as a rider to `/rider`, rendering the "Become a rider" onboarding screen instead of anything about their hold. The in-app Notifications feed screen (`apps/mobile/app/notifications/index.tsx:84`) had the identical untagged ternary, fed by `feedForUser`'s synthesized `customer.hold`/`customer.lift` rows (also carrying no discriminator) — same bug, two surfaces | `apps/mobile/src/push/push.ts`, `apps/mobile/app/notifications/index.tsx`, `apps/api/src/admin/admin-customers.service.ts`, `apps/api/src/notifications/notifications-feed.service.ts` | MEDIUM | **FIXED** — `holdCustomer`/`liftCustomerHold` now stamp `to:"customer"` on the push data (mirroring the `to` field the `sos`/`cancelled` dual-audience pushes already use); `pushDestination`'s account branch honors it (`/home` when `to==="customer"`, else the existing `/rider` fallback — no behaviour change for the untagged rider-standing pushes). Server-side `NotificationRow` gained the same optional `to` field, derived from the audit action string (`customer.*` → `"customer"`, else `"rider"`); the feed screen's routing ternary was extracted into a new pure `notificationRowDestination()` (`push.ts`) and reused. New tests in `admin-customers.service.spec.ts`, `notifications-feed.service.spec.ts`, and `push.test.ts` |
+| BH-19 | `reconcilePendingRating()` (`order-tracking.ts`) treated any `order.id !== pending.orderId` as proof the durable pending-rating marker (BH-06) was stale and unconditionally cleared it. But `/order/:id` is a GENERIC route reachable for ANY of the customer's past orders (Trip History, Earnings, Notifications all link into it) — unlike `rider/job.tsx`, which is only ever mounted for the rider's single current active job. So merely viewing a DIFFERENT past order after an app-kill mid-undo-window silently wiped the still-unsynced rating for the order that actually needed it, with no retry — the exact app-kill data-loss scenario BH-06 was built to close, reopened via ordinary navigation. Its own sibling `reconcilePendingSenderRating` already handles the identical situation correctly (returns `"wait"`, never clears, on a mismatch) | `apps/mobile/src/logic/order-tracking.ts` `reconcilePendingRating` | MEDIUM | **FIXED** — an orderId mismatch now returns `"wait"` (leaves the marker in place) instead of `"clear"`, matching `reconcilePendingSenderRating`'s pattern; the marker only clears once the customer is actually back on ITS OWN order screen (delivered→retry, completed→clear). Updated the pre-existing test that asserted the old "clear on mismatch" behaviour, plus a new BH-19 case in `order-tracking.test.ts` |
+| BH-20 | `customerStale` (rider `job.tsx`) is a one-way sticky flag set by a live `presence:stale` WS push and cleared only by a live `presence:recovered` push or an order-status change. Both are Socket.IO ROOM broadcasts — a socket that (re)joins after the event fired never receives it (room emit doesn't queue for late joiners). If the rider's own socket happened to be disconnected at the exact moment the customer reconnected (`presence:recovered` fired to the room), the rider's reconnect handler only calls `refetchJob()` (pure order/job REST invalidation, no presence field to reconcile) — so the false "customer may be offline" banner could stick for the rest of the active delivery leg even though the customer had been connected the whole time | `apps/api/src/tracking/tracking.gateway.ts` `subscribeOrder` | MEDIUM | **FIXED** — `subscribeOrder` now syncs the CURRENT customer-presence truth directly to a (re)joining RIDER socket (not the room): emits `presence:stale` if `customerStaleNotified` still has the order, else `presence:recovered`, via a new `syncCustomerPresenceToRider` helper. This reconciles on every subscribe, including reconnects, without re-notifying the customer's own socket. 2 new cases in `tracking.gateway.spec.ts` (`fakeSocket` gained an `emit` spy for asserting the client-targeted emit) |
+
+**Sibling-sweep evidence** (from the agentic-loop workflow's Phase 3, cross-checked manually):
+
+- **BH-18** (`grep -rn 'kind === "account"\|kind: "account"\|kind:"account"' apps/api/src apps/mobile/src apps/mobile/app packages`, `grep -rn 'pushDestination' apps/mobile`, `grep -rn 'orderId ? ' apps/mobile` — 11 hits): every other `kind:"account"` no-orderId push site (`wallet.service.ts` wallet-credit, `admin-riders.service.ts` suspend/lift/ban/clearHold, `rider.service.ts` KYC decision) is genuinely about the RIDER — confirmed by manual read of all 7 sites, none needed `to:"customer"`. `admin-customers.service.ts`'s two call sites were the sole gap; the mobile `push.ts` and `notifications/index.tsx` routing sites were the two consuming siblings, both fixed.
+- **BH-19** (`grep -rn "!== pending\.orderId\|!== pendingOrderId\|pending\.orderId\|pendingOrderId" apps/mobile/src apps/mobile/app`, `grep -rln "reconcilePendingRating\|reconcilePendingSenderRating\|reconcileConfirmItemsPending\|reconcilePendingTopup" apps/mobile` — 4 hits): `reconcileConfirmItemsPending`'s clear-on-mismatch (`rider-job.ts:94`) was confirmed a NON-sibling — `rider/job.tsx` is only ever mounted for the rider's single active job (`getActiveOrder()`), so "a different order is active" genuinely means the old one is gone there, unlike the generic `/order/:id` route. `reconcilePendingSenderRating` already had the correct "wait" pattern. Only `reconcilePendingRating` needed the fix.
+- **BH-20** (`grep -rn "presence:stale\|presence:recovered\|presenceStale\|presenceRecovered" apps packages`, `grep -rn "customerStale\|riderStale\|customerPresence\|riderPresence" apps` — 2 hits): the rider's `customerStale` flag in `job.tsx` was the only client-side presence-sticky state in the app; no rider-side-staleness-shown-to-customer sibling exists (the customer's tracker doesn't render a rider-presence banner at all). One call site to fix.
+
+**Suggestions (not implemented):** none this run — all three findings were straightforward client/server contract-completeness fixes within scope.
+
+**Stopping rule:** three findings this run (all MEDIUM, no CRITICAL/HIGH) — reported in full per the
+mandatory sibling-sweep evidence rule; 2 of 5 hunt lenses (contract-seam, retry-safety) returned zero
+findings, and the Phase-0.5 re-verification came back fully clean, consistent with this lane's surface
+having been hunted repeatedly across BH-01…BH-19.
 
 ---
 

@@ -1,4 +1,4 @@
-import { pushDestination, pushOnce } from "../push";
+import { notificationRowDestination, pushDestination, pushOnce } from "../push";
 
 // Regression guard: before this, tapping any push except the rider's "You got the job" (assigned)
 // was a no-op — despite copy like "tap to rate your rider" / "tap for details" on the
@@ -94,6 +94,17 @@ describe("pushDestination", () => {
     expect(pushDestination({ kind: "account", orderId: "" }, true)).toBe("/rider");
   });
 
+  // BH-18: AdminCustomersService.holdCustomer/liftCustomerHold push a THIRD kind:"account" no-orderId
+  // shape — about the CUSTOMER themselves, not a rider's own standing — stamped `to:"customer"`. Without
+  // honoring it, a plain customer (isRider=false, no rider profile) landed on the rider-onboarding
+  // "Become a rider" screen on tap instead of home.
+  it("BH-18: routes an account-kind push with no orderId to /home when to:'customer' (a customer's own hold/lift)", () => {
+    expect(pushDestination({ kind: "account", to: "customer" }, false)).toBe("/home");
+    // Even a dual-role account currently viewing as rider still gets the customer-hold destination —
+    // `to` is per-push authoritative, mirroring the sos/cancelled `to` precedence already documented above.
+    expect(pushDestination({ kind: "account", to: "customer" }, true)).toBe("/home");
+  });
+
   it("returns null for a payload with no orderId and no routable kind", () => {
     expect(pushDestination({ kind: "offer" }, false)).toBeNull();
   });
@@ -121,5 +132,24 @@ describe("pushOnce", () => {
     const push = jest.fn();
     pushOnce({ push }, "/rider/job", "/rider/job");
     expect(push).not.toHaveBeenCalled();
+  });
+});
+
+// BH-18: the in-app Notifications screen's own destination decision, mirroring pushDestination's
+// account-kind branch — extracted so the notifications/index.tsx tap handler is a thin `router.push(...)`
+// call over a unit-tested pure function instead of an inline, untested ternary.
+describe("notificationRowDestination", () => {
+  it("routes an order-scoped row to its order", () => {
+    expect(notificationRowDestination({ orderId: "o1" })).toBe("/order/o1");
+    expect(notificationRowDestination({ orderId: "o1", to: "customer" })).toBe("/order/o1");
+  });
+
+  it("routes an account-status row with no orderId to /home when to:'customer' (the customer's own hold/lift)", () => {
+    expect(notificationRowDestination({ orderId: null, to: "customer" })).toBe("/home");
+  });
+
+  it("falls back to /rider for every other account-status row with no orderId (KYC/standing/wallet-credit)", () => {
+    expect(notificationRowDestination({ orderId: null, to: "rider" })).toBe("/rider");
+    expect(notificationRowDestination({ orderId: null })).toBe("/rider");
   });
 });

@@ -171,7 +171,14 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
   // order whose assigned rider was just suspended/banned mid-delivery, and that push DOES carry an
   // orderId — routing it to /rider unconditionally sent a (usually non-rider) customer to the "Become a
   // rider" onboarding screen at the exact moment they're anxious about their live delivery.
-  if (kind === "account") return typeof orderId === "string" && orderId !== "" ? `/order/${orderId}` : "/rider";
+  // BH-18: a THIRD situation has no orderId either — AdminCustomersService.holdCustomer/liftCustomerHold
+  // pushes the CUSTOMER themselves (account-level, not order-level). The server stamps `to:"customer"`
+  // on that push (unlike the rider-standing pushes, which stay unstamped); honor it before falling back
+  // to "/rider" so a customer with no rider profile doesn't land on the rider-onboarding screen.
+  if (kind === "account") {
+    if (typeof orderId === "string" && orderId !== "") return `/order/${orderId}`;
+    return to === "customer" ? "/home" : "/rider";
+  }
   if (typeof orderId !== "string" || orderId === "") return null;
   // SOS to the counterparty: route the rider to their own job screen; the customer keeps the tracker.
   if (kind === "sos") return toRider ? "/rider/job" : `/order/${orderId}`;
@@ -181,6 +188,18 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
   if (typeof status === "string" && RIDER_BOARD_STATUSES.has(status)) return "/rider";
   if (status === "cancelled") return toRider ? "/rider/job" : `/order/${orderId}`;
   return `/order/${orderId}`;
+}
+
+/**
+ * BH-18: where tapping an in-app Notifications feed row should navigate — the feed's own analogue of
+ * {@link pushDestination}, extracted so the destination decision is unit-testable in isolation rather
+ * than inlined as a ternary in the screen component. An order-scoped row always goes to its order; an
+ * account-status row with no orderId routes by `to` (mirrors the push branch above: `to:"customer"` for
+ * AdminCustomersService's hold/lift rows, "/rider" for every other — currently untagged — account row).
+ */
+export function notificationRowDestination(row: { orderId: string | null; to?: "customer" | "rider" }): string {
+  if (row.orderId) return `/order/${row.orderId}`;
+  return row.to === "customer" ? "/home" : "/rider";
 }
 
 /**

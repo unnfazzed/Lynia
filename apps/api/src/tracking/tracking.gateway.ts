@@ -215,8 +215,35 @@ export class TrackingGateway
     // mutually exclusive and driven by the order relationship rather than the role.
     if (!(await this.tracking.isAssignedRider(user.sub, body.orderId))) {
       this.markCustomerPresent(client.id, body.orderId);
+    } else {
+      // BH-20: sync the CURRENT customer-presence truth to a (re)joining rider socket. `presence:stale`/
+      // `presence:recovered` are room broadcasts — a socket that (re)joins after the event fired never
+      // receives it (Socket.IO room emit doesn't queue for late joiners). If the rider's socket happened
+      // to be disconnected at the exact moment the customer recovered, `customerStale` on the rider's
+      // screen stuck true for the rest of the active leg with no self-heal, since neither the reconnect
+      // handler nor a foreground refetch touches it (both only invalidate order/job REST state). Emitting
+      // directly to THIS client (not the room) reconciles it on every subscribe, including the very first
+      // one, without re-notifying the customer's own socket.
+      this.syncCustomerPresenceToRider(client, body.orderId);
     }
     return { joined: body.orderId };
+  }
+
+  /** See the BH-20 comment at its call site in {@link subscribeOrder}. */
+  private syncCustomerPresenceToRider(client: Socket, orderId: string): void {
+    if (this.customerStaleNotified.has(orderId)) {
+      const p = this.customerPresence.get(orderId);
+      const payload: PresenceStaleEvent = {
+        orderId,
+        role: "customer",
+        lastSeenAt: p?.darkSince != null ? new Date(p.darkSince).toISOString() : null,
+        at: new Date().toISOString(),
+      };
+      client.emit(WS_EVENTS.presenceStale, payload);
+    } else {
+      const payload: PresenceRecoveredEvent = { orderId, role: "customer", at: new Date().toISOString() };
+      client.emit(WS_EVENTS.presenceRecovered, payload);
+    }
   }
 
   /** Record that a customer socket is live on an order room (C5). Increments the live count, clears
