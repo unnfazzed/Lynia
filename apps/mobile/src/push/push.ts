@@ -25,11 +25,14 @@ function currentPlatform(): "android" | "ios" | "web" | undefined {
  * Outcome of a registration attempt.
  *  - `{ registered: true, token }` — the device is now bound; `token` lets the caller unregister on
  *    sign-out / account switch.
- *  - `{ registered: false, retry: false }` — TERMINAL: no permission, a simulator, or Expo Go / missing
- *    Firebase config. The environment can't produce a token this process, so retrying would only spin;
- *    push stays off until the user changes the OS setting (which re-mounts the flow) or restarts.
- *  - `{ registered: false, retry: true }` — TRANSIENT: we DID acquire a token, but the register-with-API
- *    request failed (a dead zone / server blip). Worth retrying when reachability or the foreground returns.
+ *  - `{ registered: false, retry: false }` — TERMINAL: a simulator, Expo Go / missing Firebase config,
+ *    or a HARD-denied permission (the OS won't ask again). The environment can't produce a token this
+ *    process, so retrying would only spin; push stays off until the user changes the OS setting (which
+ *    re-mounts the flow) or restarts.
+ *  - `{ registered: false, retry: true }` — TRANSIENT: permission is not granted yet but the OS can still
+ *    ask (the primed explainer hasn't run / the user tapped "Not now"); OR we hold permission but the FCM
+ *    token mint or the register-with-API request failed on a flaky link. Worth retrying when the explainer
+ *    grants (via the push-kick), when reachability recovers, or on the next foreground.
  */
 export type PushRegistrationResult =
   | { registered: true; token: string }
@@ -44,7 +47,7 @@ export type PushRegistrationResult =
  * how a failure signals whether a retry could ever succeed.
  */
 export async function registerForPushNotificationsAsync(): Promise<PushRegistrationResult> {
-  let token: string;
+  let granted: boolean;
   try {
     // Push tokens are only ever issued to real hardware (incl. dev builds), never simulators.
     if (!Device.isDevice) return { registered: false, retry: false };
@@ -58,21 +61,34 @@ export async function registerForPushNotificationsAsync(): Promise<PushRegistrat
       });
     }
 
+    // CHECK — do NOT request. The raw OS permission dialog is owned by the primed explainer
+    // (app/permissions.tsx), which shows "here's why we ask" FIRST. This function runs from the root
+    // PushSync the instant a profile signs in — i.e. right after OTP verify, before the user has even
+    // picked a role — so requesting here popped the system dialog with zero context, raising the
+    // denial rate and killing push for anyone who reflexively tapped "Don't allow". Only proceed when
+    // permission is already granted; otherwise stay retryable so a later grant (the explainer's
+    // push-kick, or returning from Settings on a foreground) binds the token.
     const existing = await Notifications.getPermissionsAsync();
-    let granted = existing.granted;
-    if (!granted && existing.canAskAgain) {
-      granted = (await Notifications.requestPermissionsAsync()).granted;
-    }
-    if (!granted) return { registered: false, retry: false }; // user/OS denied — a retry-loop can't fix this
+    granted = existing.granted;
+    if (!granted) return { registered: false, retry: existing.canAskAgain };
+  } catch {
+    // Permission/channel probe failed — environmental (Expo Go, missing config), not transient.
+    return { registered: false, retry: false };
+  }
 
+  // Permission is granted. Acquiring the native FCM token is a SEPARATE failure domain: on a fresh
+  // install FCM must reach Google to mint the token, so on flaky 3G / a dead zone (the normal Harare
+  // cold-start) this THROWS transiently — a retry on reconnect/foreground can succeed, so it must NOT
+  // be classed terminal (the old code folded this into the outer catch and left push dead for the whole
+  // session). Only a null token (Expo Go / no Firebase config) is genuinely terminal.
+  let token: string;
+  try {
     const devToken = await Notifications.getDevicePushTokenAsync();
     const acquired = typeof devToken.data === "string" ? devToken.data : null;
-    if (!acquired) return { registered: false, retry: false }; // Expo Go / no Firebase config — not transient
+    if (!acquired) return { registered: false, retry: false };
     token = acquired;
   } catch {
-    // Permission/channel/device-token acquisition failed — environmental (Expo Go, missing config),
-    // not a transient network blip. Degrade silently and don't retry-loop.
-    return { registered: false, retry: false };
+    return { registered: false, retry: true };
   }
 
   // We hold a real token; the only remaining step that can fail transiently is the register POST.

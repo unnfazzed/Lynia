@@ -49,9 +49,15 @@ export async function getDeviceId(): Promise<string> {
 }
 
 export async function loadSession(): Promise<Session | null> {
-  const raw = await SecureStore.getItemAsync(KEY);
-  if (!raw) return null;
+  // The getItemAsync read itself can THROW, not just the JSON.parse: expo-secure-store surfaces a
+  // native error when the keystore entry can't be decrypted (a documented failure mode on low-end
+  // Android after OS updates / keystore corruption / resource pressure). If that rejection escapes,
+  // the boot load in auth-context never resolves and the app hangs on the splash forever with no way
+  // to sign in. Treat any read/parse failure as "no session" — the user re-authenticates, which is
+  // recoverable, unlike a permanently-stuck launch. Matches loadRolePreference/loadOnboardingSeen.
   try {
+    const raw = await SecureStore.getItemAsync(KEY);
+    if (!raw) return null;
     return JSON.parse(raw) as Session;
   } catch {
     return null;

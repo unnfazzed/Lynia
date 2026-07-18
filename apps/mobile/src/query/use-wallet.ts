@@ -5,7 +5,9 @@ import { getWallet, getWalletConfig, getWalletLedger } from "../api/wallet";
 /**
  * Wallet data hooks. The config drives feature visibility (the Earnings row + the Wallet route), so it's
  * cheap to read app-wide and cached a little longer than the balance. Balance + ledger revalidate on
- * focus/reconnect via the shared query client defaults.
+ * reconnect via the shared query client defaults; the wallet SCREEN additionally refetches on focus and
+ * exposes pull-to-refresh (the global client sets refetchOnWindowFocus:false), so a support-credit shows
+ * up as soon as the rider returns to the screen.
  */
 
 export const walletConfigKey = ["wallet", "config"] as const;

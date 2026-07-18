@@ -473,10 +473,18 @@ export default function OrderScreen(): React.ReactElement {
   // guard ref stops the reconcile effect below from firing an overlapping retry.
   const [pendingRating, setPendingRating] = useState<PendingRating | null>(null);
   const ratingRetryInFlight = useRef(false);
+  // Only a marker RECOVERED FROM STORAGE on cold start may be auto-submitted by the reconcile effect
+  // below. A marker armed LIVE this session (onArm) is committed solely by RatingCard's own 4s timer /
+  // unmount flush — auto-submitting it here would fire the rating the instant a star is tapped, making
+  // the "Undo" window a lie and committing an accidental tap irreversibly (rating is terminal server-side).
+  const ratingFromStorage = useRef(false);
   useEffect(() => {
     let alive = true;
     void loadPendingRating().then((p) => {
-      if (alive) setPendingRating(p);
+      if (alive) {
+        setPendingRating(p);
+        if (p) ratingFromStorage.current = true;
+      }
     });
     return () => {
       alive = false;
@@ -503,7 +511,7 @@ export default function OrderScreen(): React.ReactElement {
       void clearPendingRating();
       return;
     }
-    if (decision !== "retry" || !pendingRating || ratingRetryInFlight.current) return;
+    if (decision !== "retry" || !pendingRating || ratingRetryInFlight.current || !ratingFromStorage.current) return;
     ratingRetryInFlight.current = true;
     const { orderId: pid, score } = pendingRating;
     void rateOrder(pid, { score })
@@ -951,6 +959,9 @@ export default function OrderScreen(): React.ReactElement {
             saving={rateM.isPending}
             onRate={(n) => rateM.mutate(n)}
             onArm={(n) => {
+              // Armed live this session — RatingCard's own timer/unmount is the sole committer; keep
+              // the reconcile effect from firing it immediately and skipping the undo window.
+              ratingFromStorage.current = false;
               setPendingRating({ orderId, score: n });
               void savePendingRating(orderId, n);
             }}

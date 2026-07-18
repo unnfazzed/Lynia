@@ -14,10 +14,11 @@ jest.mock("expo-secure-store", () => ({
 }));
 
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../../logic/pickup-checklist-draft";
-import { clearDeviceState } from "../session";
+import { clearDeviceState, loadSession } from "../session";
 
 afterEach(() => {
   mockDeleteItemAsync.mockClear();
+  mockGetItemAsync.mockReset().mockResolvedValue(null);
 });
 
 describe("clearDeviceState (sign-out wipe, BH-17)", () => {
@@ -25,5 +26,26 @@ describe("clearDeviceState (sign-out wipe, BH-17)", () => {
     await clearDeviceState();
     const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
     expect(deletedKeys).toContain(PICKUP_CHECKLIST_DRAFT_KEY);
+  });
+});
+
+// Regression guard: the getItemAsync read itself can THROW (not just JSON.parse) when the keystore
+// entry can't be decrypted — a documented expo-secure-store failure on low-end Android. If that
+// rejection escapes loadSession, the boot load in auth-context never resolves and the app hangs on the
+// splash forever. loadSession must swallow it and report "no session" so the user can re-authenticate.
+describe("loadSession (keychain resilience)", () => {
+  it("returns null (does not reject) when the keychain read throws", async () => {
+    mockGetItemAsync.mockRejectedValueOnce(new Error("keystore decrypt failed"));
+    await expect(loadSession()).resolves.toBeNull();
+  });
+
+  it("returns null when the stored blob is corrupt JSON", async () => {
+    mockGetItemAsync.mockResolvedValueOnce("{not json");
+    await expect(loadSession()).resolves.toBeNull();
+  });
+
+  it("returns the parsed session on a healthy read", async () => {
+    mockGetItemAsync.mockResolvedValueOnce(JSON.stringify({ accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: "p1", role: "customer" }));
+    await expect(loadSession()).resolves.toMatchObject({ profileId: "p1", role: "customer" });
   });
 });

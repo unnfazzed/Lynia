@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { loadPermissionsPrimed, savePermissionsPrimed } from "../src/auth/session";
+import { requestPushRegistration } from "../src/push/push-kick";
 import { Button, Icon, type IconName, Screen } from "../src/ui";
 
 /**
@@ -68,6 +69,9 @@ export default function PermissionsScreen(): React.ReactElement {
     try {
       const existing = await Notifications.getPermissionsAsync();
       if (!existing.granted && existing.canAskAgain) await Notifications.requestPermissionsAsync();
+      // Root push registration is check-don't-request, so nudge it to bind a token now that the user
+      // has (possibly) just granted — otherwise it wouldn't register until the next foreground.
+      requestPushRegistration();
     } catch {
       /* best-effort */
     } finally {

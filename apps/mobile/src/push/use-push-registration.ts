@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { AppState, type NativeEventSubscription } from "react-native";
 import type { Session } from "../auth/session";
 import { subscribeReachability } from "../net/reachability";
+import { subscribePushKick } from "./push-kick";
 import {
   pushDestination,
   pushOnce,
@@ -112,6 +113,11 @@ export function usePushRegistration(session: Session | null): void {
 
     attempt();
 
+    // The primed permissions explainer (app/permissions.tsx) fires this the moment the user grants
+    // notifications, so a just-granted permission binds a token right away rather than waiting for the
+    // next foreground — registration is check-don't-request, so it needs an explicit re-attempt.
+    const kickUnsub = subscribePushKick(() => attempt());
+
     // A mid-process OS/FCM token rotation hands us a fresh token; without re-registering it, push
     // silently dies until the next cold start. Re-bind it and swap what cleanup will unregister.
     const rotationSub = Notifications.addPushTokenListener((token) => {
@@ -136,6 +142,7 @@ export function usePushRegistration(session: Session | null): void {
     return () => {
       cancelled = true;
       stopRetryTriggers();
+      kickUnsub();
       rotationSub.remove();
       if (registered) void unregisterForPushNotificationsAsync(registered);
     };
