@@ -80,6 +80,10 @@ jobs:
       - run: pnpm run build
       - run: pnpm --filter @lynia/api test
       - run: pnpm --filter @lynia/mobile test
+      # Admin typecheck/lint/build already run above via `turbo run …`; its tests do not (turbo run
+      # test has no admin task wired and the two lines above are per-filter). Gate the console-auth /
+      # IAP-JWT fail-closed specs explicitly — they are the security boundary for the deployed console.
+      - run: pnpm --filter @lynia/admin test
 
   schema:
     name: prisma migrate · constraint proof (PostGIS)

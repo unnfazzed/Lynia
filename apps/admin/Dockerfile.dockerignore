@@ -1,0 +1,18 @@
+# Build-context filter for the ADMIN image (apps/admin/Dockerfile). BuildKit prefers
+# <dockerfile>.dockerignore over the repo-root .dockerignore, which is tuned for the API image and
+# excludes apps/admin. Keep root config + packages/shared + apps/admin; drop everything else so the
+# context stays small and the layer cache stable.
+.git
+.github
+**/node_modules
+**/dist
+**/.turbo
+**/.expo
+**/.next
+docs
+infra
+apps/api
+apps/mobile
+*.md
+.env
+.env.*
