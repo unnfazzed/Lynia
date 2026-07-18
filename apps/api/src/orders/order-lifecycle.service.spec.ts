@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
+import type { StorageAdapter } from "../adapters/storage/storage.interface";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { OrdersService } from "./orders.service";
@@ -39,6 +40,10 @@ function build(methods: Record<string, unknown>) {
   // Prepaid commission debit — a no-op stub (the wallet has its own tests); the completion paths call
   // this inside the transaction. At ratePct 0 the real one is a no-op too.
   const wallet = { chargeCommission: vi.fn(async () => {}) };
+  // DS18-03: a photo retake purges the superseded GCS object (best-effort). Spy the deletes so a test can
+  // assert the previous key was cleaned up when a second attach overwrote the pointer.
+  const deletedObjects: string[] = [];
+  const storage = { deleteObject: vi.fn(async (k: string) => { deletedObjects.push(k); }) };
   const prisma = { ...methods } as Record<string, unknown>;
   // P1-6 trust tier: rate() counts the customer's PRIOR completed orders to decide if their rating
   // carries reputation weight. Default the count to an established customer (>= CUSTOMER_TRUST) so tests
@@ -57,8 +62,9 @@ function build(methods: Record<string, unknown>) {
     noopNotifications,
     orders as unknown as OrdersService,
     wallet as unknown as WalletService,
+    storage as unknown as StorageAdapter,
   );
-  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, kickedFromBoard, evictedFromSupply, orders, prisma, wallet };
+  return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, kickedFromBoard, evictedFromSupply, orders, prisma, wallet, storage, deletedObjects };
 }
 
 describe("OrderLifecycleService.advance", () => {
@@ -215,6 +221,31 @@ describe("OrderLifecycleService.attachPickupPhoto", () => {
     expect(writes).toEqual([{ pickupPhotoKey: key }, { pickupPhotoKey: retake }]);
   });
 
+  it("DS18-03: a retake purges the superseded GCS object so it can't orphan past erasure", async () => {
+    const prev = "pickup/r1/00000000-0000-4000-8000-000000000000.jpg";
+    const { svc, deletedObjects } = build({
+      order: {
+        // The order already carries a previous pickup photo; this attach overwrites the pointer.
+        findUnique: async () => ({ status: "picked_up", riderId: "r1", pickupPhotoKey: prev }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    });
+    await svc.attachPickupPhoto("o1", "r1", key);
+    // The old object is deleted; the new key is left intact (only the superseded one is purged).
+    expect(deletedObjects).toEqual([prev]);
+  });
+
+  it("DS18-03: a first attach (no previous key) deletes nothing", async () => {
+    const { svc, deletedObjects } = build({
+      order: {
+        findUnique: async () => ({ status: "en_route_pickup", riderId: "r1", pickupPhotoKey: null }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    });
+    await svc.attachPickupPhoto("o1", "r1", key);
+    expect(deletedObjects).toEqual([]);
+  });
+
   it("409s if the order left the window between the read and the CAS write", async () => {
     const { svc } = build({
       order: {
@@ -277,6 +308,18 @@ describe("OrderLifecycleService.attachDeliveryProof (KB-POD-DISPUTE Phase A)", (
     });
     await svc.attachDeliveryProof("o1", "r1", key);
     expect(data).toMatchObject({ deliveryProofKey: key, deliveryProofLat: null, deliveryProofLng: null });
+  });
+
+  it("DS18-03: a proof retake purges the superseded GCS object (best-effort, post-CAS)", async () => {
+    const prev = "delivery-proof/r1/00000000-0000-4000-8000-000000000000.jpg";
+    const { svc, deletedObjects } = build({
+      order: {
+        findUnique: async () => ({ status: "en_route_dropoff", riderId: "r1", deliveryProofKey: prev }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    });
+    await svc.attachDeliveryProof("o1", "r1", key);
+    expect(deletedObjects).toEqual([prev]);
   });
 
   it("409s if the order left the window between the read and the CAS write", async () => {

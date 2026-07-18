@@ -8,6 +8,7 @@ import {
   NotFoundException,
   type OnModuleDestroy,
   type OnModuleInit,
+  Optional,
   UnauthorizedException,
 } from "@nestjs/common";
 import { CUSTOMER_CANCELLABLE_STATUSES, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_CANCELLABLE_STATUSES, UNDELIVERED_ABUSE } from "@lynia/shared";
@@ -20,6 +21,7 @@ import type { Env } from "../config/env";
 import { NotificationsService } from "../notifications/notifications.service";
 import { OrdersService } from "./orders.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { WalletService } from "../wallet/wallet.service";
 
@@ -104,9 +106,24 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationsService,
     private readonly orders: OrdersService,
     private readonly wallet: WalletService,
+    // DS18-03: needed to purge a photo object superseded by a retake. @Optional so the unit harness (and
+    // any trimmed module) can construct the service without wiring StorageModule; a missing adapter just
+    // no-ops the best-effort cleanup. StorageModule is @Global in the app, so it's injected in production.
+    @Optional() @Inject(STORAGE) private readonly storage?: StorageAdapter,
   ) {}
 
   private sweep?: ReturnType<typeof setInterval>;
+
+  /** DS18-03: best-effort purge of a GCS object a retake superseded — a delete failure must never fail the
+   *  attach it runs behind (mirrors the erasure GCS purge). deleteObject is itself best-effort by contract
+   *  (a missing object is success); the try/catch is belt-and-braces so a transient error can't bubble. */
+  private async deleteSupersededObject(key: string): Promise<void> {
+    try {
+      await this.storage?.deleteObject(key);
+    } catch (err) {
+      this.logger.warn(`superseded photo delete failed for ${key}: ${(err as Error).message}`);
+    }
+  }
 
   onModuleInit(): void {
     const url = this.env.REDIS_URL;
@@ -270,7 +287,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   ): Promise<{ orderId: string; pickupPhotoKey: string }> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { status: true, riderId: true },
+      select: { status: true, riderId: true, pickupPhotoKey: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
@@ -290,6 +307,12 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       data: { pickupPhotoKey: key },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    // DS18-03: a retake just overwrote the DB pointer to a NEW object. The PREVIOUS object would otherwise
+    // orphan in GCS forever — no DB pointer is left for the right-to-erasure purge to find it (a residual
+    // leak). Best-effort delete of the superseded object, post-CAS; never fails the attach.
+    if (order.pickupPhotoKey && order.pickupPhotoKey !== key) {
+      await this.deleteSupersededObject(order.pickupPhotoKey);
+    }
     return { orderId, pickupPhotoKey: key };
   }
 
@@ -311,7 +334,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   ): Promise<{ orderId: string; deliveryProofKey: string }> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { status: true, riderId: true },
+      select: { status: true, riderId: true, deliveryProofKey: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
@@ -333,6 +356,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    // DS18-03: same retake-orphan cleanup as attachPickupPhoto — purge the object the previous key pointed
+    // at, so a replaced proof photo doesn't become permanently unreachable by the erasure purge.
+    if (order.deliveryProofKey && order.deliveryProofKey !== key) {
+      await this.deleteSupersededObject(order.deliveryProofKey);
+    }
     return { orderId, deliveryProofKey: key };
   }
 

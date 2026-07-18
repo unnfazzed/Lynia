@@ -6,7 +6,19 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-18 (UX-improvements routine — agentic-loop hunt over the UX lane; see the
+**Last consolidated:** 2026-07-18 (deep-sweep routine — orthogonal backend-correctness/concurrency hunt +
+deep-sweep-owned cross-lane seams pass + adversarial API pass; see "Deep sweep 2026-07-18" near the bottom
+for DS18-01…05 — one HIGH (a rider-captured pickup-photo GCS object + DB pointer fully escaping
+right-to-erasure, the DS15-03 failure mode reproduced on a `_key`-suffixed column the coverage-scan regex
+didn't match) and four MEDIUM/LOW findings (four user-authored free-text PII columns unscrubbed on erasure
+plus a manifest-coverage false-positive now closed with table-qualified coverage; a photo-retake GCS orphan
+gap; a KYC-lock-bypass race reopened by DS17-03's own unlocked second reader, with an identical sibling
+gap in `eraseAccount`'s standing check now CAS-guarded; a wallet route missing `ParseUUIDPipe`), all fixed
+same-run with regression tests. Phase 0/0.5 (6 spot-checked fixes + 3 rotated cluster headers, 17 members)
+came back fully clean — zero regressions, zero stale claims. Phase 1 (`lane-bug-hunt` workflow) and Phase 3
+(adversarial pass) each surfaced their share of the above; Phase 1.5's PII-across-representations seam pass
+found the bulk of it. Zero open sibling PRs at Phase 0.
+Prior: 2026-07-18 (UX-improvements routine — agentic-loop hunt over the UX lane; see the
 "UX review 2026-07-18" section near the bottom for UX18-01…05, five MEDIUM findings, all fixed same-run
 with regression tests where testable: an admin-console 404 mislabeling bug (`adminFetchResult` collapsed
 every 404 into "this endpoint hasn't shipped", so a genuinely-missing order/rider/customer/issue/KYC-review
@@ -679,6 +691,53 @@ testable; `pnpm typecheck` + `pnpm lint` + 916 API tests (+11) + 401 mobile test
 | UX16-06 | `notifyIssueResolved` (UX15-05) is push-only with no feed fallback, unlike every other push type (KB-FEED-SYNTH already closed this for offers/account-status) — by resolution time the order is typically long off-screen, so a missed push left zero durable trace the report was ever resolved | `apps/api/src/notifications/notifications.service.ts` `feedForUser` | MEDIUM | **FIXED** — new resolved-`Issue`-row synthesis in `feedForUser`, copy mirroring `notifyIssueResolved` per resolution type, not scoped to the order-lookback window. 2 new cases in `notifications.service.spec.ts` |
 | UX16-07 | Rider wallet screen's "Honest-copy card" still said "Lynia" instead of "LyniaGo" in both branches — the 07-14 brand sweep and UX15-06 both missed this file; the 0%-commission branch is what every rider sees today | `apps/mobile/app/wallet/index.tsx:141-142` | LOW | **FIXED** — both strings corrected to "LyniaGo" |
 | UX16-08 | Top-up "Cancel request" (`reset()`) unconditionally rotated the dedup `idempotencyKey`, even when cancelling a STILL-LIVE (`pending`) top-up whose server-side row and already-pushed rail prompt aren't recalled by the local reset — an immediate resend opened a second, independent pending top-up instead of deduping against the abandoned one. Dormant (`creditFromTopup` has no callers yet) but a real double-credit vector once a live rail confirmation ships | `apps/mobile/app/wallet/top-up.tsx` `reset`, `apps/api/src/wallet/wallet.service.ts` `createTopup` | LOW-MEDIUM (dormant) | **FIXED** — `reset()` only rotates the key when NOT cancelling a live (`step === "wait"`) top-up; "Try again" from a genuinely terminal state (timeout/declined) still gets a fresh key per BH-09's original intent |
+
+---
+
+## Deep sweep 2026-07-18 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-18.md`
+
+Phase 0: zero open `claude/*` sibling PRs at session start. Phase 0.5 spot-checked 6 recent FIXED findings
+(WD-021, WD-023, DS17-01, DS17-02, BH-15, UX18-05 — all **INTACT**) and re-verified three rotated
+"→ FIXED" cluster headers not re-checked in the last several runs — **KYC** (5 members), **Object-authz /
+IDOR** (5 members), **Edge/abuse** (7 members) — all **INTACT**, 17/17 members confirmed present and wired,
+0 stale claims. Hunt ran via the agentic-loop engine (`Workflow({name:'lane-bug-hunt'}, args:'deep-sweep'
+)`) — 5 finder lenses (tx-rollback, concurrency-idempotency, authz-idor, timer-expiry, adversarial-api), 2
+candidates found (3 of 5 lenses returned zero), both survived a 3-skeptic adversarial panel, then a
+repo-wide sibling-sweep per survivor. Phase 1.5 (deep-sweep-owned cross-lane seams pass) traced **PII
+across representations** — every field in `pii-manifest.ts` against the schema, JSON-embedded siblings, and
+GCS-object siblings a column scan misses — and surfaced the bulk of this run's findings, including a
+false-positive in the manifest's own bare-column-name coverage guard. Phase 3 adversarial pass (raw-API
+attacker against issues/reports/sos/notifications/uploads/wallet/privacy/health) came back clean, zero new
+gaps. **Five findings — one HIGH, three MEDIUM, one LOW-MEDIUM — all fixed same-run**, each with a
+regression test; `pnpm typecheck` (5 packages) + `pnpm test` (1041 API tests + 426 mobile tests) +
+`@lynia/api` build all green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| DS18-01 | `orders.pickupPhotoKey` (rider-captured proof-of-pickup photo — DB pointer + GCS object under `pickup/<riderId>/…`) was absent from `pii-manifest.ts` and never touched by `eraseAccount` — a rider's own erasure left their captured parcel photo (address-label-bearing, same class as `itemPhotoUrl`/`deliveryProofKey`, both already scrubbed) live forever, with `getSnapshot` still minting fresh signed read URLs for it to the counterparty. The coverage-scan regex matched only `_url$`-suffixed photo columns, so this `_key`-suffixed sibling dodged the exact guard DS15-03 built to catch this class | `apps/api/src/privacy/privacy.service.ts`, `apps/api/src/privacy/pii-manifest.ts`, `apps/api/src/orders/order-lifecycle.service.ts` | HIGH | **FIXED** — `pickup_photo_key` added to `PII_MANIFEST` (rider-scoped, null + GCS delete, matching `delivery_proof_key`); `eraseAccount`'s rider-proof block nulls it and queues the object for post-commit deletion; coverage-scan pattern widened to `(photo\|proof\|image)` so a `_key`-suffixed media column can't dodge it again. Test in `privacy.service.spec.ts` |
+| DS18-02 | Four user-authored free-text PII columns — `ratings.comment`, `issues.description`, `orders.cancelReason`, `reports.note` — unscrubbed on the author's erasure (the DS15-07 `orders.note` class, un-propagated to its siblings). The manifest's own coverage test matched by BARE column name, so the `orders.note` entry silently "covered" `reports.note` too (different table, same name) alongside two legitimately-retained ops-authored siblings (`audit_logs.note`, `commission_ledger.note`) — a false-positive in the exact guard meant to prevent this class of silent omission | `apps/api/src/privacy/privacy.service.ts`, `apps/api/src/privacy/pii-manifest.ts`, `apps/api/src/privacy/pii-manifest.spec.ts` | MEDIUM | **FIXED** — `PiiEntry` gained a `tables: readonly string[]` field; coverage now checked per `table.column` pair, closing the false-positive class permanently. All four columns scrubbed in `eraseAccount` on the author's erasure (score/issue-row/order-row retained, only free text cleared); the two ops-authored `note` siblings recorded as `NON_PII` with rationale. 5 new tests across `privacy.service.spec.ts` + `pii-manifest.spec.ts` |
+| DS18-03 | `attachPickupPhoto`/`attachDeliveryProof` allow a retake that overwrites the DB pointer WITHOUT deleting the previous GCS object — a replaced photo becomes permanently unreachable by the DS15-03 erasure purge (no pointer left to find it), a residual leak surviving even a correctly-executed erasure of the CURRENT photo. Confirmed rider `photoUrl` (KYC selfie) is NOT a sibling — written exactly once via `rider.create` (PK-guarded against re-creation), `retryKyc` never re-supplies it | `apps/api/src/orders/order-lifecycle.service.ts` | LOW-MEDIUM | **FIXED** — both functions now delete the previous GCS object (best-effort, non-blocking) whenever a retake overwrites an existing key with a different one. Tests in `order-lifecycle.service.spec.ts` |
+| DS18-04 | `applyKycResult`'s `expired` handler reads `kycAttempts` via a plain unlocked `findFirst`, bakes it into a later CAS `updateMany` whose WHERE never re-checks `kycAttempts` — reopening the exact DS17-03 race (a concurrent admin second-decline committing the two-decline lock in the gap gets silently undone by a later `expired` webhook). Identical unlocked-read-then-blind-write shape found in `privacy.service.ts eraseAccount`: a standing-check read fed a JS throw/allow decision but the scrub writes carried no CAS re-assertion of that same standing, so DS15-02's "TOCTOU-safe... re-asserted inside the transaction" claim described intent, not code | `apps/api/src/riders/rider.service.ts` (`applyKycResult`), `apps/api/src/privacy/privacy.service.ts` (`eraseAccount`) | MEDIUM | **FIXED** — `applyKycResult` takes a `SELECT ... FOR UPDATE` row lock before its `current` read, mirroring `adminSetKyc`'s existing lock on the same row. `eraseAccount`'s profile-anonymise and rider-scrub writes converted to CAS `updateMany`s re-asserting standing in the WHERE, 409 (`account_on_hold`/`standing_changed`) on 0-row match. Tests in `rider.service.spec.ts` + `privacy.service.spec.ts` |
+| DS18-05 | `GET /wallet/topups/:id` was the sole `:id` route in the API missing `ParseUUIDPipe` (all other 36 `@Param(` sites have it) — a non-UUID path value threw an unhandled Prisma `22P02` that `AllExceptionsFilter` coerced to a generic 500 instead of a clean 400; existing unit tests mocked Prisma with fake string ids so the real `::uuid` cast was never exercised | `apps/api/src/wallet/wallet.controller.ts` | MEDIUM (robustness/log-noise, no data risk) | **FIXED** — `ParseUUIDPipe` added, matching every sibling route. New `wallet.controller.spec.ts` (didn't exist before) boots a real Nest app and asserts a malformed id now 400s, service never called |
+
+**Sibling-sweep evidence** (full grep commands + hit counts in the dated report `docs/DEEP-SWEEP-2026-07-18.md`):
+
+- **DS18-01** (`grep -niE "photo|proof|image"` across `schema.prisma` + a `_key$` audit — 5 real
+  object-reference hits): only `pickup_photo_key` was unhandled; the other 4 (`profiles.photo_url`,
+  `riders.photo_url`, `orders.item_photo_url`, `orders.delivery_proof_key`) were already correctly scrubbed
+  pre-sweep.
+- **DS18-02** (`grep -nE "^\s+\w+\s+String" schema.prisma` filtered for user-authored text — 13 raw hits):
+  4 fixed this run; 3 ops-authored siblings recorded `NON_PII`; the rest (`settlements.method`,
+  `orders.size`, `addresses.label`, `sessions.userAgent`, `profiles.idNumber`, `riders.vehicleInfo`) already
+  out of scope or already covered.
+- **DS18-03** (a full-repo grep for every write site touching `pickupPhotoKey`/`deliveryProofKey`/
+  `itemPhotoUrl`/`photoUrl`): only the two rider-attach functions needed the fix; `cloneForRebroadcast`'s
+  pointer copy, `admin-orders.service.ts`'s read-URL mint, and `becomeRider`'s one-time write were all
+  confirmed non-siblings.
+- **DS18-04** (a full read→write pair review of every `findFirst`/`findUnique`/`updateMany`/`.update(` in
+  `rider.service.ts`): `applyKycResult` was the sole unguarded instance; `retryKyc`/`completeProfile`/
+  `setOnline`/`becomeRider`/`adminSetKyc` all already CAS- or lock-guarded.
+- **DS18-05** (`grep -rn "@Param(" --include="*.controller.ts" apps/api/src` — 37 raw hits): `wallet.controller.ts:47` was the sole omission.
 
 ---
 

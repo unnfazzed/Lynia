@@ -37,7 +37,7 @@ const buildRider = (r: RiderStanding | null | undefined) =>
 function eraseHarness(
   profile: ProfileInput,
   activeRide: boolean,
-  placedOrders: Array<{ id: string; pickup: unknown; dropoff: unknown; note?: unknown; itemPhotoUrl?: unknown }> = [],
+  placedOrders: Array<{ id: string; pickup: unknown; dropoff: unknown; note?: unknown; itemPhotoUrl?: unknown; pickupPhotoKey?: unknown; deliveryProofKey?: unknown }> = [],
   // DS-10: the active-ride guard is now ALSO re-checked inside the transaction. Defaults to no ride in
   // the tx (the common case); set true to exercise a ride that appeared between the pre-flight read and
   // the scrub.
@@ -49,6 +49,12 @@ function eraseHarness(
     txStanding?: { onHold?: boolean; rider?: RiderStanding | null };
     storage?: StorageAdapter;
     gateway?: TrackingGateway;
+    // DS18-04 (TOCTOU CAS): the anonymise / rider-scrub writes are now CAS updateManys that re-assert the
+    // standing predicate. These force the CAS row-count so a test can model a restriction landing AFTER the
+    // (clean) freshStanding read but BEFORE the write — the guard the assertErasableStanding re-read can't
+    // see. Default 1 (predicate still matched → write applied).
+    profileCasCount?: number;
+    riderScrubCount?: number;
   } = {},
 ) {
   const preflightRider = profile ? buildRider(profile.rider) : null;
@@ -69,9 +75,15 @@ function eraseHarness(
     profile: {
       // DS15-02: the in-tx standing re-read.
       findUnique: vi.fn(async () => txStanding),
-      update: vi.fn(async (a: unknown) => ((calls.profileUpdate = a), {})),
+      // DS18-04: the anonymise write is now a CAS updateMany (re-asserts the onHold predicate).
+      updateMany: vi.fn(async (a: unknown) => ((calls.profileUpdate = a), { count: extras.profileCasCount ?? 1 })),
     },
-    rider: { updateMany: vi.fn(async (a: unknown) => ((calls.riderUpdate = a), { count: 1 })) },
+    // DS18-04: the rider scrub re-asserts the rider standing predicate in its WHERE — force the row count.
+    rider: { updateMany: vi.fn(async (a: unknown) => ((calls.riderUpdate = a), { count: extras.riderScrubCount ?? 1 })) },
+    // DS18-02: user-authored free-text scrubs (rating comment / issue description / report note).
+    rating: { updateMany: vi.fn(async (a: unknown) => ((calls.ratingUpdate = a), { count: 1 })) },
+    issue: { updateMany: vi.fn(async (a: unknown) => ((calls.issueUpdate = a), { count: 1 })) },
+    report: { updateMany: vi.fn(async (a: unknown) => ((calls.reportUpdate = a), { count: 1 })) },
     // Class-C: geog + position_updated_at are nulled via raw SQL (Unsupported column). Flag the call so a
     // test can assert the rider's PostGIS position was scrubbed — not just the readable current_lat/lng.
     $executeRaw: vi.fn(async () => ((calls.rawScrub = true), 1)),
@@ -135,7 +147,7 @@ describe("PrivacyService.eraseAccount", () => {
       where: { raisedByProfileId: "p1" },
       data: { lat: null, lng: null },
     });
-    expect(tx.profile.update).toHaveBeenCalledOnce();
+    expect(tx.profile.updateMany).toHaveBeenCalledOnce();
     // DOC-16-01: TopUp.phone (the mobile-money number on every self-serve top-up) is the same class of
     // dialable PII as the waypoint/note phones, but lives in its own table — the profile/rider scrub above
     // never reaches it without this explicit call.
@@ -157,6 +169,53 @@ describe("PrivacyService.eraseAccount", () => {
     });
   });
 
+  it("DS18-01: nulls pickupPhotoKey on the rider's orders AND deletes its GCS object post-commit, scoped to riderId", async () => {
+    const deleted: string[] = [];
+    const storage = { deleteObject: vi.fn(async (k: string) => { deleted.push(k); }) } as unknown as StorageAdapter;
+    const { svc, orderUpdateManys } = eraseHarness(
+      { phone: "+263771234567", rider: {} },
+      false,
+      [{ id: "o1", pickup: {}, dropoff: {}, pickupPhotoKey: "pickup/p1/parcel.jpg" }],
+      false,
+      { storage },
+    );
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+    // The DB pointer is nulled in the same rider-scoped updateMany as the delivery-proof columns…
+    const scrub = orderUpdateManys.find((u) => u.data.pickupPhotoKey === null);
+    expect(scrub).toBeDefined();
+    expect(scrub!.where).toMatchObject({ riderId: "p1" });
+    // …and the GCS object itself is purged post-commit (the leak DS18-01 fixed — it escaped the manifest).
+    expect(deleted).toContain("pickup/p1/parcel.jpg");
+  });
+
+  it("DS18-02: nulls ratings.comment on the RATER's own ratings (score retained), scoped to byProfileId", async () => {
+    const { svc, calls } = eraseHarness({ phone: "+263771234567" }, false);
+    await svc.eraseAccount("p1");
+    expect(calls.ratingUpdate).toEqual({ where: { byProfileId: "p1", NOT: { comment: null } }, data: { comment: null } });
+  });
+
+  it("DS18-02: empties issues.description on the OPENER's issues (NOT NULL column → ''), scoped to openedByProfileId", async () => {
+    const { svc, calls } = eraseHarness({ phone: "+263771234567" }, false);
+    await svc.eraseAccount("p1");
+    expect(calls.issueUpdate).toEqual({ where: { openedByProfileId: "p1", NOT: { description: "" } }, data: { description: "" } });
+  });
+
+  it("DS18-02: nulls reports.note on the REPORTER's reports, scoped to reporterProfileId (distinct from orders.note)", async () => {
+    const { svc, calls } = eraseHarness({ phone: "+263771234567" }, false);
+    await svc.eraseAccount("p1");
+    expect(calls.reportUpdate).toEqual({ where: { reporterProfileId: "p1", NOT: { note: null } }, data: { note: null } });
+  });
+
+  it("DS18-02: nulls orders.cancelReason when the erasing user is EITHER party (customer OR rider)", async () => {
+    const { svc, orderUpdateManys } = eraseHarness({ phone: "+263771234567" }, false);
+    await svc.eraseAccount("p1");
+    const cancelScrub = orderUpdateManys.find((u) => u.data.cancelReason === null);
+    expect(cancelScrub).toBeDefined();
+    // Either party wrote it (whoever cancelled), so the scope is an OR over both roles — unlike the
+    // customer-only note scrub.
+    expect(cancelScrub!.where).toEqual({ OR: [{ customerId: "p1" }, { riderId: "p1" }], NOT: { cancelReason: null } });
+  });
+
   it("DOC-16-01: does NOT touch top_ups for a plain customer (no rider row — no TopUp rows can exist)", async () => {
     const { svc, tx } = eraseHarness({ phone: "+263771234567", rider: null }, false);
     await svc.eraseAccount("p1");
@@ -167,14 +226,14 @@ describe("PrivacyService.eraseAccount", () => {
     // Pre-flight read sees no ride (activeRide=false) but one exists by the time the tx runs.
     const { svc, tx } = eraseHarness({ phone: "+263771234567" }, false, [], true);
     await expect(svc.eraseAccount("p1")).rejects.toBeInstanceOf(ConflictException);
-    expect(tx.profile.update).not.toHaveBeenCalled();
+    expect(tx.profile.updateMany).not.toHaveBeenCalled();
     expect(tx.sosEvent.updateMany).not.toHaveBeenCalled();
   });
 
   it("is idempotent — an already-erased (tombstoned) profile is a no-op", async () => {
     const { svc, tx } = eraseHarness({ phone: "erased:p1" }, false);
     await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
-    expect(tx.profile.update).not.toHaveBeenCalled();
+    expect(tx.profile.updateMany).not.toHaveBeenCalled();
   });
 
   it("scrubs contactPhone from the pickup/dropoff JSON of orders the user placed (keeps coords/landmark)", async () => {
@@ -198,7 +257,7 @@ describe("PrivacyService.eraseAccount", () => {
 
   /* ── DS15-02: self-erasure is gated on the caller's standing (no ban/hold/lock evasion) ────────── */
 
-  // A rejected erasure must NOT anonymise: assert the tx.profile.update never fired.
+  // A rejected erasure must NOT anonymise: assert the tx.profile.updateMany never fired.
   const expectRejectedNoWrite = async (
     profile: ProfileInput,
     reason: string,
@@ -209,7 +268,7 @@ describe("PrivacyService.eraseAccount", () => {
     await svc.eraseAccount("p1").catch((e) => (caught = e));
     expect(caught).toBeInstanceOf(ConflictException);
     expect((caught as ConflictException).getResponse()).toMatchObject({ reason });
-    expect(tx.profile.update).not.toHaveBeenCalled();
+    expect(tx.profile.updateMany).not.toHaveBeenCalled();
   };
 
   it("refuses erasure for a BANNED rider (ban-evasion via delete-then-reregister)", async () => {
@@ -241,7 +300,7 @@ describe("PrivacyService.eraseAccount", () => {
     const cooldownUntil = new Date(Date.now() - 60 * 60 * 1000);
     const { svc, tx } = eraseHarness({ phone: "+263771234567", rider: { cooldownUntil } }, false);
     await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
-    expect(tx.profile.update).toHaveBeenCalledOnce();
+    expect(tx.profile.updateMany).toHaveBeenCalledOnce();
   });
 
   it("TOCTOU: an admin ban landing AFTER the pre-flight gate but before the scrub aborts the erasure", async () => {
@@ -252,6 +311,50 @@ describe("PrivacyService.eraseAccount", () => {
       "account_banned",
       { txStanding: { onHold: false, rider: { accountStatus: "banned" } } },
     );
+  });
+
+  /* ── DS18-04: the erasing WRITES are CAS updateManys re-asserting standing (TOCTOU past the in-tx read) ── */
+
+  it("DS18-04: a rider-standing change landing between the freshStanding read and the CAS write aborts (0-row rider scrub)", async () => {
+    // freshStanding re-read is CLEAN (active) — so assertErasableStanding passes — but the rider-scrub CAS
+    // matches 0 rows because a ban/suspend/hold/cooldown/kyc-lock committed in the gap before this write.
+    // The old code (blind updateMany by profileId, no standing predicate) would have anonymised anyway.
+    const { svc, tx } = eraseHarness({ phone: "+263771234567", rider: { accountStatus: "active" } }, false, [], false, {
+      riderScrubCount: 0,
+    });
+    let caught: unknown;
+    await svc.eraseAccount("p1").catch((e) => (caught = e));
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toMatchObject({ reason: "standing_changed" });
+    // The profile anonymise ran first (its CAS matched), but the whole tx rolls back on the throw — the
+    // sibling scrubs after the rider CAS never fire.
+    expect(tx.sosEvent.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("DS18-04: a customer-hold landing between the read and the CAS write aborts (0-row profile anonymise)", async () => {
+    // freshStanding clean, but the profile anonymise CAS (`where: { id, onHold: false }`) matches 0 rows —
+    // a customer S·2 hold committed in the gap. Assert the erasure rejects instead of anonymising past it.
+    const { svc, tx } = eraseHarness({ phone: "+263771234567" }, false, [], false, { profileCasCount: 0 });
+    let caught: unknown;
+    await svc.eraseAccount("p1").catch((e) => (caught = e));
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toMatchObject({ reason: "account_on_hold" });
+    // Aborted at the anonymise CAS — the rider scrub (and everything after) never ran.
+    expect(tx.rider.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("DS18-04: the rider scrub CAS re-asserts the full standing predicate in its WHERE", async () => {
+    const { svc, calls } = eraseHarness({ phone: "+263771234567", rider: {} }, false);
+    await svc.eraseAccount("p1");
+    const where = (calls.riderUpdate as { where: Record<string, unknown> }).where;
+    expect(where).toMatchObject({
+      profileId: "p1",
+      accountStatus: { notIn: ["banned", "suspended"] },
+      onHold: false,
+      kycAttempts: { lt: 2 },
+    });
+    // cooldown re-asserted as "null or already elapsed".
+    expect(where.OR).toBeDefined();
   });
 
   /* ── DS15-03: right-to-erasure purges the underlying GCS objects ───────────────────────────────── */
