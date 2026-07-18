@@ -44,9 +44,11 @@
 # client (Phase 5), set the vars below, apply, add the DNS A record (Phase 6).
 # admin_enabled                  = true
 # admin_domain                   = "lyniagoadmin.lyniafinance.com"  # already the default
+# Custom OAuth client from an EXTERNAL, published consent screen (Google-managed client won't work in an
+# org with no Cloud Identity directory; the IAP OAuth Admin API is shut down). See arming runbook §1.
 # admin_iap_oauth_client_id      = "XXXX.apps.googleusercontent.com"
 # admin_iap_oauth_client_secret  = "GOCSPX-..."   # keep in a VCS-ignored tfvars
-# admin_iap_members              = ["group:ops@lyniafinance.com"]  # operators (MFA at Workspace level)
+# admin_iap_members              = ["user:you@gmail.com"]  # ONLY authz boundary — explicit list, never allUsers
 
 # -- Availability (pre-launch, not pilot) --
 # redis_tier = "STANDARD_HA"   # Redis replica for HA. Recreates the instance — Runbook §6.

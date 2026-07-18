@@ -127,15 +127,27 @@ Add to `infra/terraform/` (new file `admin.tf` + variable additions), all gated 
 13. **Secret** — add `ADMIN_API_TOKEN` to Secret Manager (`infra/terraform/secrets.tf`) and grant the
     runtime SA per-secret accessor (the SA already has that pattern for other secrets).
 
-## Phase 5 — IAP + identity (founder / GCP console — SECURITY-OPS.md §A, Option 1)
+## Phase 5 — IAP + identity (founder / GCP console — see docs/plans/2026-admin-console-arming.md §1)
 
-14. Configure the **OAuth consent screen** (Internal / restricted to the Google Workspace domain).
-15. Create the **IAP OAuth client**; feed its id/secret to Terraform (Phase 3.8) as sensitive vars.
-16. **Enable IAP** on the admin backend service (done by Terraform once the client exists).
-17. Grant operators **`roles/iap.httpsResourceAccessor`**; enforce **MFA** at the Workspace level.
-18. Result: IAP sets `X-Goog-Authenticated-User-Email` → the console's default proxy header, no app
-    change needed. (Option 2, a self-hosted oauth2-proxy setting `ADMIN_CONSOLE_PROXY_HEADER`, is the
-    non-GCP fallback.)
+> REVISED at arming (2026-07-18) after verifying the live environment: the project's org has **no
+> Cloud Identity directory** (only a consumer `@gmail.com`), and the **IAP OAuth Admin API was shut
+> down 2026-03-19**. So the plan is a **custom OAuth client on an EXTERNAL, published consent screen**,
+> created by hand in the console — *not* an Internal/Workspace client, and *not* the Google-managed
+> client (which admits only in-directory users and would lock everyone out here).
+
+14. **Google Auth Platform → Audience → External → Publish (Production).** IAP uses only basic scopes,
+    so no Google verification is needed.
+15. **Create a custom Web-application OAuth client** (`Lynia Admin`) with redirect URI
+    `https://iap.googleapis.com/v1/oauth/clientIds/<id>:handleRedirect`; feed its id/secret to Terraform
+    (Phase 3.8, `admin_iap_oauth_client_id/secret`) — Terraform's custom-client `iap` block is correct.
+16. **Enable IAP** on the admin backend (Terraform, once the client id/secret are set). Terraform also
+    provisions the **IAP service agent**; `deploy-admin.yml` grants it `roles/run.invoker` on the admin
+    Cloud Run service (which runs `--no-allow-unauthenticated`).
+17. Grant operators **`roles/iap.httpsResourceAccessor`** (`admin_iap_members` — the ONLY authz
+    boundary, so keep it tight; never `allUsers`). No Workspace → enforce **MFA** as per-account
+    2-Step Verification on each operator's Google account.
+18. Result: IAP authenticates the operator and sets `X-Goog-IAP-JWT-Assertion`; the middleware
+    cryptographically verifies it (Phase 1c) and derives the operator from the verified `email` claim.
 
 ## Phase 6 — DNS + cutover (founder)
 

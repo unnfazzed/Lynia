@@ -16,14 +16,19 @@
 # It is re-runnable: existing brand/client/secret are detected and reused, not duplicated.
 set -euo pipefail
 
-# ---- Edit these four, then run: bash infra/scripts/arm-admin.sh ----
+# ---- Set these, then run: IAP_CLIENT_ID=… IAP_CLIENT_SECRET=… IAP_MEMBERS=… bash infra/scripts/arm-admin.sh
 PROJECT_ID="${PROJECT_ID:-lynia-500911}"
 REGION="${REGION:-africa-south1}"
 API_DOMAIN="${API_DOMAIN:-lyniago.lyniafinance.com}"       # the console calls https://<API_DOMAIN>
 GITHUB_REPO="${GITHUB_REPO:-unnfazzed/Lynia}"              # owner/repo for `gh variable set`
-# Operators allowed through IAP (Workspace identities). Space-separated. MFA is enforced in Workspace.
-IAP_MEMBERS="${IAP_MEMBERS:-group:ops@lyniafinance.com}"
-SUPPORT_EMAIL="${SUPPORT_EMAIL:-$(gcloud config get-value account 2>/dev/null)}"
+# Operators allowed through IAP. Space-separated Google accounts, e.g. "user:you@gmail.com". This is
+# the ONLY authorization boundary (External consent lets any Google account authenticate), so keep it
+# an explicit allowlist — never allUsers. REQUIRED (no default: a wrong default grants access to nobody
+# or, worse, the wrong person).
+: "${IAP_MEMBERS:?set IAP_MEMBERS to operator account(s), e.g. user:you@gmail.com (space-separated)}"
+# The custom OAuth client — created by hand ONCE in the console (see step 1). REQUIRED.
+: "${IAP_CLIENT_ID:?set IAP_CLIENT_ID to the console OAuth client id, ending apps.googleusercontent.com}"
+: "${IAP_CLIENT_SECRET:?set IAP_CLIENT_SECRET to the client secret, starting GOCSPX-}"
 # --------------------------------------------------------------------
 
 TF_DIR="$(cd "$(dirname "$0")/../terraform" && pwd)"
@@ -31,25 +36,19 @@ say() { printf '\n\033[1;36m== %s ==\033[0m\n' "$*"; }
 
 gcloud config set project "$PROJECT_ID" >/dev/null
 
-say "1. IAP OAuth brand + client"
+say "1. IAP API + custom OAuth client (client is created ONCE, by hand, in the console)"
 gcloud services enable iap.googleapis.com --project "$PROJECT_ID" >/dev/null
-BRAND="$(gcloud iap oauth-brands list --project "$PROJECT_ID" --format='value(name)' | head -1 || true)"
-if [ -z "$BRAND" ]; then
-  gcloud iap oauth-brands create --application_title="Lynia Admin" --support_email="$SUPPORT_EMAIL" \
-    --project "$PROJECT_ID" >/dev/null
-  BRAND="$(gcloud iap oauth-brands list --project "$PROJECT_ID" --format='value(name)' | head -1)"
-fi
-CLIENT="$(gcloud iap oauth-clients list "$BRAND" --project "$PROJECT_ID" \
-  --format='value(name)' --filter='displayName=lynia-admin-iap' | head -1 || true)"
-if [ -z "$CLIENT" ]; then
-  gcloud iap oauth-clients create "$BRAND" --display_name=lynia-admin-iap --project "$PROJECT_ID" >/dev/null
-  CLIENT="$(gcloud iap oauth-clients list "$BRAND" --project "$PROJECT_ID" \
-    --format='value(name)' --filter='displayName=lynia-admin-iap' | head -1)"
-fi
-IAP_CLIENT_ID="${CLIENT##*/}"
-IAP_CLIENT_SECRET="$(gcloud iap oauth-clients describe "$CLIENT" --project "$PROJECT_ID" \
-  --format='value(secret)')"
-echo "IAP client: $IAP_CLIENT_ID"
+# The IAP OAuth Admin API (gcloud iap oauth-brands/oauth-clients) was permanently shut down 2026-03-19,
+# so the client is NOT created here. And because this project's org has no Cloud Identity directory, the
+# default Google-managed OAuth client would admit nobody — you need a CUSTOM client on an EXTERNAL,
+# published consent screen. One-time console setup, BEFORE running this script:
+#   1) Google Auth Platform → Audience → User type = EXTERNAL → PUBLISH APP (Production).
+#   2) Google Auth Platform → Clients → Create client → Web application ("Lynia Admin"), with
+#      Authorized redirect URI:  https://iap.googleapis.com/v1/oauth/clientIds/<CLIENT_ID>:handleRedirect
+#   3) Export its id/secret as IAP_CLIENT_ID / IAP_CLIENT_SECRET (checked above).
+# (The IAP service agent + its run.invoker on the Cloud Run service are handled by Terraform +
+# deploy-admin.yml, not here.)
+echo "Using custom IAP OAuth client: $IAP_CLIENT_ID"
 
 say "2. terraform apply (admin tier) — review the plan, then confirm"
 MEMBERS_HCL="$(printf '"%s", ' $IAP_MEMBERS)"; MEMBERS_HCL="[${MEMBERS_HCL%, }]"

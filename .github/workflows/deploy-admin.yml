@@ -189,8 +189,22 @@ jobs:
             --ingress internal-and-cloud-load-balancing \
             --set-env-vars "$ENV_VARS" \
             --set-secrets "ADMIN_API_TOKEN=ADMIN_API_TOKEN:latest" \
-            --allow-unauthenticated \
+            --no-allow-unauthenticated \
             $TRAFFIC_FLAGS
+
+      # IAP (not allUsers) is the only thing allowed to invoke the console. --no-allow-unauthenticated
+      # above means the service rejects every caller except principals with run.invoker; grant that to
+      # the IAP service agent (Terraform's google_project_service_identity.iap ensures it exists). This
+      # is tighter than --allow-unauthenticated + ingress-lock: even a misrouted internal caller can't
+      # invoke without going through IAP. Idempotent.
+      - name: Grant IAP invoker on the admin service
+        run: |
+          set -euo pipefail
+          PROJNUM="$(gcloud projects describe "${{ vars.GCP_PROJECT_ID }}" --format='value(projectNumber)')"
+          IAP_SA="service-${PROJNUM}@gcp-sa-iap.iam.gserviceaccount.com"
+          gcloud run services add-iam-policy-binding "$SERVICE" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --member "serviceAccount:${IAP_SA}" --role roles/run.invoker
 
       - name: Promote new revision to 100%
         if: ${{ steps.prev.outputs.revision != '' }}

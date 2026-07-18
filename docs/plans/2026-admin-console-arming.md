@@ -13,18 +13,36 @@ SA all exist — this rides on them).
 
 ---
 
-## 1. Create the IAP OAuth client (GCP console)
+## 1. Create the IAP OAuth client (GCP console — by hand, one time)
 
-IAP is the human-auth boundary. Terraform does not create the OAuth brand/client (one brand per project,
-and it often must be made by hand for internal orgs), so make it first.
+IAP is the human-auth boundary. Two hard constraints shape this step:
 
-1. **APIs & Services → OAuth consent screen:** user type **Internal** (restricts to your Workspace
-   domain). Fill app name + support email. Save.
-2. **APIs & Services → Credentials → Create credentials → OAuth client ID:** type **Web application**,
-   name it `lynia-admin-iap`. Create.
-3. Copy the **client id** and **client secret** — they feed step 2.
+- The **IAP OAuth Admin API was permanently shut down 2026-03-19**, so the old
+  `gcloud iap oauth-brands/oauth-clients` path (and Terraform's `google_iap_brand`/`google_iap_client`)
+  no longer work. The client is created through the normal **Google Auth Platform** console flow.
+- This project's org has **no Cloud Identity directory** (verified: empty `directoryCustomerId`, only a
+  consumer `@gmail.com`). IAP's default **Google-managed** OAuth client only admits in-directory users,
+  so it would lock out **everyone, including you**. You therefore need a **custom OAuth client on an
+  EXTERNAL, published consent screen** — which is exactly what `admin.tf` is wired for.
 
-*Verify:* the client shows under Credentials as a Web application.
+Steps (Cloud console):
+1. **Google Auth Platform → Audience → User type = External → Publish app (Production).** IAP requests
+   only basic scopes (`openid`/`email`/`profile`), so publishing needs **no Google verification**. Do
+   not leave it in *Testing* (that caps you at ~100 test users and expires access every ~7 days).
+2. **Google Auth Platform → Clients → Create client → Web application**, name it `Lynia Admin`. Add the
+   **Authorized redirect URI** IAP requires:
+   `https://iap.googleapis.com/v1/oauth/clientIds/<THIS_CLIENT_ID>:handleRedirect` (the console shows the
+   exact string once the id is generated — paste it back into the client's redirect URIs).
+3. Copy the **client id** (`…apps.googleusercontent.com`) and **client secret** (`GOCSPX-…`) — they feed
+   `IAP_CLIENT_ID` / `IAP_CLIENT_SECRET` in step 2.
+
+*Verify:* the consent screen Audience reads **External / In production**, and the client shows under
+Clients as a Web application with the `iap.googleapis.com/...:handleRedirect` redirect URI.
+
+> Security note: because the consent screen is External, *any* Google account can complete sign-in — so
+> the IAP **IAM allowlist** (`admin_iap_members`, step 2) is your only authorization boundary. Keep it a
+> tight explicit list; never `allUsers`. There's no Workspace here, so enable **2-Step Verification on
+> each operator's own Google account** — that's your MFA.
 
 ## 2. `terraform apply` the admin tier
 
@@ -33,9 +51,9 @@ Put the IAP client + operators in a VCS-ignored tfvars (never commit the secret)
 ```hcl
 # infra/terraform/admin.auto.tfvars  (gitignored)
 admin_enabled                 = true
-admin_iap_oauth_client_id     = "XXXX.apps.googleusercontent.com"
-admin_iap_oauth_client_secret = "GOCSPX-..."
-admin_iap_members             = ["group:ops@lyniafinance.com"]   # or user:alice@lyniafinance.com
+admin_iap_oauth_client_id     = "XXXX.apps.googleusercontent.com"   # from step 1
+admin_iap_oauth_client_secret = "GOCSPX-..."                        # from step 1
+admin_iap_members             = ["user:you@gmail.com"]   # your operator Google account(s); never allUsers
 # admin_domain defaults to lyniagoadmin.lyniafinance.com
 # CARRY FORWARD any tier already live: the founder terraform.tfvars is gitignored, so a fresh clone
 # defaults every *_enabled flag OFF and would plan to DESTROY what they provisioned. If staging is
@@ -106,13 +124,22 @@ Most are shared with the API and already set. Add the admin-specific ones from t
 > gain. The public hop is TLS + admin-token + Cloud-Armor protected. Tightening to internal + Cloud NAT
 > is a clean post-launch hardening. The admin service therefore takes **no VPC connector**.
 
-## 5. Grant operators + enforce MFA
+## 5. Operators, MFA, and the IAP invoker binding
 
-`admin_iap_members` (step 2) already granted `roles/iap.httpsResourceAccessor`. Enforce **MFA** for those
-identities at the **Google Workspace admin** level (2-step verification). Add/remove operators later by
-editing `admin_iap_members` and re-applying.
+- **Operators:** `admin_iap_members` (step 2) already granted `roles/iap.httpsResourceAccessor`. This
+  is the *only* authorization boundary (External consent lets any Google account authenticate), so keep
+  it a tight explicit list. Add/remove operators by editing `admin_iap_members` and re-applying.
+- **MFA:** there's no Workspace to enforce it centrally, so enable **2-Step Verification on each
+  operator's own Google account** (`myaccount.google.com` → Security). Non-negotiable for a console
+  that can ban/KYC/record-cash.
+- **IAP → Cloud Run invoker:** the console runs with `--no-allow-unauthenticated`, so only the **IAP
+  service agent** may invoke it. Terraform creates that agent
+  (`google_project_service_identity.iap` → `terraform output -raw ADMIN_IAP_SERVICE_AGENT`), and
+  `deploy-admin.yml` grants it `roles/run.invoker` after each deploy — no manual step. (This is why a
+  misrouted internal caller still can't reach the console without going through IAP.)
 
-*Verify:* the IAP page for the `lynia-admin-backend` backend service lists your operator principals.
+*Verify:* the IAP page for the `lynia-admin-backend` backend service lists your operator principals, and
+`gcloud run services get-iam-policy lynia-admin` shows the IAP service agent as `roles/run.invoker`.
 
 ## 6. Arm CI + DNS, then cut over
 
