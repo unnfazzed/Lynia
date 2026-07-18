@@ -37,11 +37,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
         queryClient.clear();
       },
     });
-    void loadSession().then((s) => {
-      ref.current = s;
-      setSession(s);
-      setLoading(false);
-    });
+    void loadSession()
+      .then((s) => {
+        ref.current = s;
+        setSession(s);
+      })
+      // loadSession already swallows keychain errors, but a defensive .catch guarantees the splash is
+      // released even if the read rejects unexpectedly — a failed read is treated as "no session".
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const signIn = async (s: Session): Promise<void> => {

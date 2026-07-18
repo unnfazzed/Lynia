@@ -8,6 +8,7 @@ import React, { useEffect } from "react";
 import { View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../src/auth/auth-context";
+import { SessionGate } from "../src/auth/session-gate";
 import { isUpdateRequired, isVersionBelow } from "../src/config";
 import { useReachability } from "../src/net/use-reachability";
 import { useServerMinVersion } from "../src/net/use-server-version-gate";
@@ -122,6 +123,10 @@ export default function RootLayout(): React.ReactElement | null {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <PushSync />
+            {/* Redirects to /phone when the session drops to null after boot (sign-out or a
+                server-forced 401 logout) — cold-boot routing in app/index.tsx can't reach that
+                transition, so without this the user is stranded on an authless protected screen. */}
+            <SessionGate />
             <StatusBar style="dark" />
             {/* ToastProvider wraps the navigator so any screen can raise an in-app toast. Its strip is
                 absolutely positioned at the top inset; in the rare offline-and-toasting overlap it sits

@@ -247,3 +247,35 @@ EAS secret → `app.config.ts`); iOS uses Apple Maps, no key. Like the rest of P
 on the **dev build** — Expo Go can't exercise native maps — so the on-device visual QA of the map, the §5c
 stepper, and the earnings screens is the remaining design gate. **Current build status →
 `docs/PILOT-READINESS.md`.**
+
+---
+
+## 7. Android launch review — multi-agent design campaign (2026-07-18)
+
+> Pre-launch (31 July) design audit of `apps/mobile`, run as a parallel gstack multi-agent campaign: 8
+> design lanes scored **0–10** with "what would make it a 10" framing, reading the RN source (styles,
+> tokens, components, copy) — no live device. Full synthesis + go/no-go:
+> **`docs/ANDROID-LAUNCH-REVIEW-2026-07-18.md`** §2. Branch: `claude/g-stacks-android-deploy-4krxpb`.
+
+**Result: average 7.5/10, no design P0.** The token/color discipline is world-class (zero hardcoded hex
+across `app/`; three documented green roles with stated contrast). The gaps are consistent and device-pass-shaped:
+
+- **Typography 7/10 — font-scaling unset app-wide.** No `Text`/`TextInput` sets `allowFontScaling` or
+  `maxFontSizeMultiplier` (zero matches), so a raised Android system font size can overflow OTP boxes,
+  status pills, and the quantity stepper. Needs an app-wide `maxFontSizeMultiplier` guard.
+- **Spacing-layout 7/10 — profile-setup keyboard trap.** The post-OTP "Tell us who you are" form renders
+  fields + Save inside `<Screen>` with no ScrollView/KeyboardAvoidingView; on Android's default the keyboard
+  can cover the Save button. Fix by baking a `scroll` + keyboard-avoidance variant into the shared `Screen`.
+- **Color-contrast 7/10 — fill-green recovery link.** The rider "Location is off → Turn on" link renders in
+  `accent` (the green the tokens reserve for fills only), against the token system's own contrast intent.
+- **Journey-coherence 7/10 — mandatory profile setup.** A customer who just wants to send one parcel is
+  forced through the profile step before continuing — friction on the exact conversion the product wants.
+- **States 9/10, design-system 8/10, copy 8/10** — strongest lanes; remaining nits are the offline
+  Notifications screen honesty and extending color discipline to typography tokens. (The copy lane returned a
+  degraded rationale and should be re-run in the device pass.)
+
+These are **polish, not blockers**, and pair naturally with the on-device `/qa` pass (they're best judged on
+real hardware) — folded into the deferred backlog in `docs/ANDROID-LAUNCH-REVIEW-2026-07-18.md` §D5.
+
+**Verdict:** design CLEARED for 31 July; the P1 polish above rides with the on-device `/qa` gate.
+**Current build status → `docs/PILOT-READINESS.md`.**

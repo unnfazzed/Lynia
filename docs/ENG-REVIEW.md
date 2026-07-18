@@ -448,3 +448,55 @@ run remain founder actions (runbook in `docs/PILOT-READINESS.md`). **Current sta
 
 **Verdict:** batch-4 engineering CLEARED — the deferred scale/observability tail is closed; no contract or
 concurrency change. **Current status → `docs/PILOT-READINESS.md`.**
+
+---
+
+## 8. Android launch review — multi-agent eng campaign (2026-07-18)
+
+> Pre-launch (31 July) engineering audit of `apps/mobile`, run as a parallel gstack multi-agent campaign:
+> 11 staff-engineer finder lanes over the mobile codebase, each with an **adversarial verify pass** that
+> reads the actual code and tries to *refute* every P0/P1 before it counts. Full synthesis + go/no-go:
+> **`docs/ANDROID-LAUNCH-REVIEW-2026-07-18.md`**. Branch: `claude/g-stacks-android-deploy-4krxpb`.
+
+**Result:** the mobile client is mature — most lanes scored well and finders repeatedly called the surfaces
+"unusually well-hardened for a pre-launch codebase." The campaign confirmed **1 P0 + 6 P1** real defects.
+**The P0 and 5 of the 6 P1s are fixed in this pass, each with a regression test**; the sixth (a GPS
+data-cost double-emit) is deferred to the on-device `/qa` pass because its safe form needs first-fix-latency
+measurement on hardware (current behavior is functionally correct).
+
+**Fixed (with tests):**
+
+- **P0 — session-loss redirect.** Sign-out and a server-forced 401 logout cleared the session but never
+  navigated, stranding the user on a now-authless protected screen (only a force-kill recovered; on a
+  shared device the next user couldn't reach login at all). New `SessionGate` (`src/auth/session-gate.tsx`,
+  mounted in `app/_layout.tsx`) redirects to `/phone` on exactly the session present→null transition — the
+  one case cold-boot routing in `app/index.tsx` can never reach.
+- **P1 — splash hang on a keychain read throw.** `loadSession` guarded only the JSON parse, not the
+  `getItemAsync` read itself, which can throw on low-end Android keystore corruption; the unguarded
+  rejection left the boot load pending and the app stuck on the splash forever. Read is now try/caught and
+  the boot load has a `.catch`/`.finally(setLoading(false))`.
+- **P1 — push token-mint misclassified as terminal.** A transient FCM token acquisition failure on flaky
+  3G (the normal Harare cold-start) was folded into the terminal catch, so push stayed dead for the whole
+  session even after the network recovered. Token acquisition is now its own failure domain →
+  `{registered:false, retry:true}`; only a null token (Expo Go / no config) is terminal.
+- **P1 — permission dialog fired before the explainer.** The root `PushSync` *requested* OS notification
+  permission the instant a profile signed in (right after OTP-verify), popping the raw dialog with no
+  context and raising denials. Registration is now **check-don't-request** — `app/permissions.tsx`'s primed
+  explainer owns the dialog — with a small `push-kick` pub/sub so a fresh grant re-registers immediately.
+- **P1 — rating "Undo" bypass.** The order screen's reconcile effect (BH-06 cold-start heal) fired on a
+  live-armed rating, committing it the instant a star was tapped and making the 4 s Undo window a lie. The
+  retry is now gated on a `ratingFromStorage` ref so only cold-start-recovered markers self-heal; a
+  live-armed rating is committed solely by RatingCard's own timer/unmount.
+- **P1 — wallet balance staleness.** The global query client sets `refetchOnWindowFocus:false`, so an open
+  wallet screen never revalidated — a support-credit (the only working top-up path at launch) appeared not
+  to land. Added focus-refetch (via the stable query client), pull-to-refresh, and a "couldn't refresh —
+  last known" cue.
+
+**Deferred (device-QA / asset-gated), with safe-fix specs:** GPS double-emit, the notification-icon asset,
+offline-mutation spinner, and the selected P2/P3 tail — see `docs/ANDROID-LAUNCH-REVIEW-2026-07-18.md` §4
+and `docs/KNOWN_BUGS.md`.
+
+**Tested:** mobile typecheck clean; **441 tests pass** (56→59 suites, +15 regression tests); oxlint clean.
+
+**Verdict:** engineering CLEARED for 31 July, **conditional** on the pre-existing on-device `/qa` gate
+(LR16) and founder/vendor wiring. **Current status → `docs/PILOT-READINESS.md`.**

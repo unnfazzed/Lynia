@@ -1,8 +1,8 @@
 import { tokens, type WalletEntry } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";
-import { ScrollView, Text, View } from "react-native";
+import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { getTopup } from "../../src/api/wallet";
 import { clearPendingTopup, loadPendingTopup } from "../../src/auth/session";
 import { formatMoney } from "../../src/logic/money";
@@ -94,10 +94,23 @@ function usePendingTopupReconciliation(): PendingTopupBanner | null {
 
 export default function WalletScreen(): React.ReactElement {
   const router = useRouter();
+  const qc = useQueryClient();
   const { config } = useWalletConfig();
   const { wallet, isLoading, isFetching, isError, refetch } = useWallet();
-  const { page, isLoading: ledgerLoading } = useWalletLedger();
+  const { page, isLoading: ledgerLoading, refetch: refetchLedger } = useWalletLedger();
   const pendingTopupBanner = usePendingTopupReconciliation();
+
+  // The global query client sets refetchOnWindowFocus:false, so an open wallet screen never revalidates
+  // on its own. At launch a support-credit (the only working top-up path) is the rider's lifeline, and
+  // watching the balance NOT move after support says "done" reads as the app being broken. Refetch on
+  // every screen focus (via the stable query client, so this can't loop) so returning to the wallet —
+  // or foregrounding onto it — always pulls the latest balance + ledger.
+  useFocusEffect(
+    React.useCallback(() => {
+      void qc.invalidateQueries({ queryKey: walletKey });
+      void qc.invalidateQueries({ queryKey: walletLedgerKey });
+    }, [qc]),
+  );
 
   const floor = config?.floor ?? 2;
   const balance = wallet?.balance ?? 0;
@@ -127,7 +140,27 @@ export default function WalletScreen(): React.ReactElement {
           <Button label="Retry" onPress={refetch} loading={isFetching} />
         </EmptyState>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isFetching}
+              onRefresh={() => {
+                refetch();
+                refetchLedger();
+              }}
+              tintColor={tokens.color.muted}
+            />
+          }
+        >
+          {/* Cached balance is showing but the last refresh failed — say so rather than present a
+              possibly-stale figure as current. The root offline banner covers a full outage; this
+              covers a one-off refresh miss while otherwise online. */}
+          {isError && wallet != null ? (
+            <Text style={{ fontSize: 12, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
+              Couldn&apos;t refresh just now — showing your last known balance. Pull down to try again.
+            </Text>
+          ) : null}
           {pendingTopupBanner ? (
             <Card
               style={{
