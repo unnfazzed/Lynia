@@ -154,7 +154,10 @@ export default function VerifyScreen(): React.ReactElement {
         placeholder="000000"
         keyboardType="number-pad"
         maxLength={6}
-        autoComplete="one-time-code"
+        // Autofill: `sms-otp` is the Android autofill hint (AUTOFILL_HINT_SMS_OTP) for a code arriving by
+        // SMS; `oneTimeCode` drives iOS Security-Code AutoFill. Together they auto-populate this field
+        // now that the OTP is delivered over SMS (Bird) rather than WhatsApp.
+        autoComplete="sms-otp"
         textContentType="oneTimeCode"
         error={locked ? "That code won't work anymore — send a fresh one below." : undefined}
       />

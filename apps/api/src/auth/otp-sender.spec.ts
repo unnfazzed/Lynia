@@ -2,6 +2,9 @@ import { Logger } from "@nestjs/common";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import {
+  BirdOtpSender,
+  buildBirdOtpMessage,
+  buildBirdSmsRequest,
   buildWhatsAppOtpRequest,
   ConsoleOtpSender,
   selectOtpSender,
@@ -15,6 +18,7 @@ describe("selectOtpSender", () => {
   it("selects the channel from config", () => {
     expect(selectOtpSender(env("console")).channel()).toBe("console");
     expect(selectOtpSender(env("sms")).channel()).toBe("sms");
+    expect(selectOtpSender(env("bird")).channel()).toBe("bird");
     expect(selectOtpSender(env("whatsapp")).channel()).toBe("whatsapp");
   });
 });
@@ -99,6 +103,82 @@ describe("WhatsAppOtpSender.send", () => {
     await expect(
       withFetch(fetchMock, () => new WhatsAppOtpSender(cfg()).send("+263770000001", "123456")),
     ).rejects.toThrow(/couldn't send/i);
+  });
+});
+
+describe("buildBirdOtpMessage", () => {
+  it("puts the code first and names the brand (so iOS/Android autofill can find it)", () => {
+    const msg = buildBirdOtpMessage("123456", { brand: "LyniaGo" });
+    expect(msg.startsWith("123456 ")).toBe(true);
+    expect(msg).toContain("LyniaGo verification code");
+    expect(msg).not.toContain("\n"); // no app-hash line when the hash is unset
+  });
+
+  it("appends the Android SMS-Retriever hash on its own line, staying under 140 bytes", () => {
+    const msg = buildBirdOtpMessage("123456", { brand: "LyniaGo", appHash: "FA+9qCX9VSu" });
+    expect(msg.endsWith("\n\nFA+9qCX9VSu")).toBe(true);
+    // SMS Retriever requires the whole message to be <= 140 bytes.
+    expect(Buffer.byteLength(msg, "utf8")).toBeLessThanOrEqual(140);
+  });
+});
+
+describe("buildBirdSmsRequest", () => {
+  it("addresses the recipient as an E.164 phone number (keeps the '+') with a plain-text body", () => {
+    const body = buildBirdSmsRequest("+263771234567", "hello") as Record<string, unknown>;
+    expect(body.receiver).toEqual({ contacts: [{ identifierKey: "phonenumber", identifierValue: "+263771234567" }] });
+    expect(body.body).toEqual({ type: "text", text: { text: "hello" } });
+  });
+});
+
+const birdCfg = (over: Partial<Env> = {}): Env =>
+  ({
+    OTP_CHANNEL: "bird",
+    BIRD_ACCESS_KEY: "KEY",
+    BIRD_WORKSPACE_ID: "WS",
+    BIRD_SMS_CHANNEL_ID: "CH",
+    BIRD_BASE_URL: "https://bird.example",
+    BIRD_BRAND_NAME: "LyniaGo",
+    ...over,
+  }) as Env;
+
+describe("BirdOtpSender.send", () => {
+  it("throws when not configured (loud fail — never a false 'sent')", async () => {
+    const sender = new BirdOtpSender({ OTP_CHANNEL: "bird" } as Env);
+    await expect(sender.send("+263770000001", "111222")).rejects.toThrow(/couldn't send the verification code/i);
+  });
+
+  it("POSTs the SMS to the Bird channel with the AccessKey header and resolves on 202", async () => {
+    let called: { url: string; init: RequestInit } | undefined;
+    const fetchMock = (async (url: string, init: RequestInit) => {
+      called = { url, init };
+      return new Response("{}", { status: 202 });
+    }) as unknown as typeof fetch;
+    await withFetch(fetchMock, () => new BirdOtpSender(birdCfg()).send("+263771234567", "123456"));
+    expect(called?.url).toBe("https://bird.example/workspaces/WS/channels/CH/messages");
+    expect((called!.init.headers as Record<string, string>).authorization).toBe("AccessKey KEY");
+    const sent = JSON.parse(called!.init.body as string);
+    expect(sent.receiver.contacts[0].identifierValue).toBe("+263771234567");
+    expect(sent.body.text.text).toContain("123456");
+    expect(sent.body.text.text).toContain("LyniaGo");
+  });
+
+  it("throws when Bird rejects the send (so requestOtp errors, not a silent non-delivery)", async () => {
+    const fetchMock = (async () =>
+      new Response('{"error":{"message":"bad channel"}}', { status: 400 })) as unknown as typeof fetch;
+    await expect(
+      withFetch(fetchMock, () => new BirdOtpSender(birdCfg()).send("+263770000001", "123456")),
+    ).rejects.toThrow(/couldn't send/i);
+  });
+
+  it("never logs the OTP code, even when Bird rejects the send", async () => {
+    const errSpy = vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+    const fetchMock = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
+    await withFetch(fetchMock, () =>
+      new BirdOtpSender(birdCfg()).send("+263770000001", "654321").catch(() => undefined),
+    );
+    const logged = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logged).not.toContain("654321");
+    vi.restoreAllMocks();
   });
 });
 
