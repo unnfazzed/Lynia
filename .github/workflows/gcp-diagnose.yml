@@ -1,8 +1,9 @@
 # Read-only production diagnosis for the post-2026-07-08 deploy crash-loop
-# (docs/GCP-PROVISIONING-REVIEW.md §3). Dispatch-only; makes NO changes.
-# Auths with the same keyless WIF deployer identity as release.yml. Every probe
-# is best-effort: where the deployer SA lacks a role, the step records that
-# instead of failing, so one run maps both the crash cause and our IAM reach.
+# (docs/GCP-PROVISIONING-REVIEW.md §3) AND admin-console IAP sign-in failures
+# (e.g. IAP "Error code 11" — incorrectly configured OAuth client). Dispatch-only;
+# makes NO changes. Auths with the same keyless WIF deployer identity as release.yml.
+# Every probe is best-effort: where the deployer SA lacks a role, the step records
+# that instead of failing, so one run maps both the crash cause and our IAM reach.
 name: GCP Diagnose (read-only)
 
 on:
@@ -76,3 +77,37 @@ jobs:
               --format 'table(name, state, createTime)' --limit 5 \
               || echo "RESULT: secretmanager list DENIED for the deployer SA on $s"
           done
+
+      # Admin-console IAP edge autopsy — triage for sign-in "Error code 11" (incorrectly configured
+      # OAuth client). Reads the OAuth CLIENT ID that IAP is configured with on the admin backend and
+      # compares it, by eye, against the client under APIs & Services -> Credentials. Read paths are
+      # covered by roles/viewer (compute.*.get); each is best-effort so an unarmed admin tier or a
+      # missing role records a note rather than failing the run. NOTE: the client's authorized redirect
+      # URI is NOT readable here — the IAP OAuth Admin API was shut down 2026-03-19 (admin.tf), so that
+      # check stays console-only. Fixed Terraform resource names from infra/terraform/admin.tf + lb.tf.
+      - name: Admin console IAP config (error-code-11 triage — needs compute viewer)
+        run: |
+          set -uo pipefail
+          PROJECT="${{ vars.GCP_PROJECT_ID }}"
+          REGION="${{ vars.GCP_REGION }}"
+          BACKEND="lynia-admin-backend"
+          NEG="lynia-admin-neg"
+          CERT="lynia-admin-cert"
+          echo "How to read the oauth2ClientId below (vs the client on APIs & Services -> Credentials):"
+          echo "  * IDs MATCH  -> client is correct; Error 11 is the client's authorized redirect URI"
+          echo "                  (must include https://iap.googleapis.com/v1/oauth/clientIds/<ID>:handleRedirect)"
+          echo "                  or a rotated client SECRET. Both are console-only fixes."
+          echo "  * IDs DIFFER -> the backend points at the wrong/old client; re-apply Terraform with the"
+          echo "                  right admin_iap_oauth_client_id / admin_iap_oauth_client_secret (admin.tf)."
+          echo "=== IAP block + backends on the admin backend service ($BACKEND)"
+          gcloud compute backend-services describe "$BACKEND" --global --project "$PROJECT" \
+            --format 'yaml(iap.enabled, iap.oauth2ClientId, backends[].group, securityPolicy)' \
+            || echo "RESULT: backend-services.get DENIED, or $BACKEND absent (admin tier not armed?)"
+          echo "=== serverless NEG backing the admin backend ($NEG)"
+          gcloud compute network-endpoint-groups describe "$NEG" --region "$REGION" --project "$PROJECT" \
+            --format 'yaml(cloudRun.service, networkEndpointType)' \
+            || echo "RESULT: NEG describe DENIED, or $NEG absent"
+          echo "=== managed SSL cert for the admin domain ($CERT) — want status ACTIVE + domainStatus ACTIVE"
+          gcloud compute ssl-certificates describe "$CERT" --global --project "$PROJECT" \
+            --format 'yaml(managed.domains, managed.status, managed.domainStatus)' \
+            || echo "RESULT: ssl-certificates.get DENIED, or $CERT absent"
