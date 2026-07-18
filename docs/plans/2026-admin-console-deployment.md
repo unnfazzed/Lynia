@@ -39,12 +39,28 @@ middleware requires. Cloud Armor + Google-managed TLS as with the API.
      `EXPOSE 3000`; `CMD ["node", "apps/admin/server.js"]` (adjust to the standalone layout).
    - `PORT` respected (Cloud Run injects `8080` by default; set `--port` in deploy or honor `$PORT`).
 3. **`.dockerignore`** — confirm it doesn't exclude anything the admin build needs.
+4. **Standalone-in-monorepo layout (footgun, eng-review #4):** with a pnpm workspace, `next build`
+   emits `.next/standalone/apps/admin/server.js` (not a root `server.js`) and does NOT copy static
+   assets — pin the runtime copy layout exactly: `.next/standalone` → `/repo`, `.next/static` →
+   `/repo/apps/admin/.next/static`, `public/` → `/repo/apps/admin/public`; `CMD ["node",
+   "apps/admin/server.js"]`. The deploy workflow must run a real `docker build` + container boot smoke,
+   not just `next build`, or asset-404s ship silently.
 
-## Phase 2 — CI coverage (code, mergeable now)
+## Phase 1b — Test the security boundary (code, mergeable now — do this FIRST, eng-review #2)
 
-4. Add admin to `.github/workflows/ci.yml`: `pnpm --filter @lynia/admin typecheck`, `lint`, and a
-   `next build` smoke (the app has `typecheck`/`lint`/`build` scripts already). Without this the
-   console silently rots — it is currently absent from CI.
+5. **`apps/admin/app/lib/console-auth.test.ts`** — `evaluateConsoleAccess` is the fail-closed gate
+   guarding KYC-approve / ban / cash-record and today has **zero tests**. It is a pure function; test
+   it before the deploy exists. Cases: public-path bypass; prod defaults to require-auth; explicit
+   `ADMIN_CONSOLE_REQUIRE_AUTH` on/off override; empty/whitespace identity → 401 fail-closed; IAP
+   issuer-prefix stripping (`accounts.google.com:alice@corp` → `alice@corp`); operator normalization.
+
+## Phase 2 — CI test lane for admin (code, mergeable now)
+
+6. **Correction:** admin `typecheck`/`lint`/`build` ALREADY run in CI — root `turbo run
+   typecheck|lint|build` (`ci.yml:78-80`) fans out to `@lynia/admin`, which defines all three. The
+   real gap is the **test lane**: `ci.yml:81-82` runs `--filter @lynia/api test` + `--filter
+   @lynia/mobile test` only, so admin is excluded. Add `pnpm --filter @lynia/admin test` (or switch
+   the CI test step to root `turbo run test`) so the Phase-1b spec actually gates merges.
 
 ## Phase 3 — Terraform: Cloud Run + ALB wiring (code, founder applies)
 
@@ -118,6 +134,19 @@ Add to `infra/terraform/` (new file `admin.tf` + variable additions), all gated 
     (e.g. a KYC decision) is attributed to that human in the API **audit log** via `X-Operator`.
 24. Plain-HTTP `http://lyniagoadmin.lyniafinance.com` 301-redirects to HTTPS (existing `:80` redirect rule covers
     the shared IP).
+25. **Show the signed-in operator in the console UI** (design-review D-2) — the middleware already
+    forwards `x-lynia-operator`; surface "signed in as <operator>" so the human sees whose name lands
+    on every audit row. Small add, high trust value for an attributed admin tool.
+
+## Rollback (ops, eng-review #5)
+
+- **Service rollback (bad image):** `gcloud run services update-traffic lynia-admin --region
+  africa-south1 --to-revisions <PREV>=100`. Cloud Run keeps prior revisions. Consider deploying with
+  `--no-traffic` + a tag, smoke the tagged URL, then promote — so a broken revision never takes live
+  operator traffic. (The API's `rollback.yml`/canary/autoheal are deliberately NOT cloned here: an
+  internal console doesn't warrant that machinery, but "no rollback" should not be silent.)
+- **Config rollback:** the whole tier is flag-gated (`admin_enabled` / `GCP_ADMIN_ENABLED`) — flip
+  the flag to take the console dark without touching the API.
 
 ---
 
@@ -140,3 +169,30 @@ OAuth client + consent screen, grant operator IAM + MFA, set the repo variables/
   (tighter). Recommend public to start, matching how the token flow is already designed.
 - **Service ownership:** deploy workflow owns the Cloud Run service; Terraform owns the edge
   (NEG/backend/cert/URL-map/IAP) — mirrors the API split and avoids ownership fights.
+- **[OPEN — eng-review #3] IAP JWT verification vs. plaintext-header trust.** Trust
+  `X-Goog-Authenticated-User-Email` verbatim (rely solely on ingress lockdown), or additionally verify
+  the signed `X-Goog-IAP-JWT-Assertion` in the middleware so identity is unforgeable even on a direct
+  hit. Recommend verifying, given the console bans users and records cash. Awaiting founder call.
+- **[OPEN] admin→API path** now framed as a security fork, not just latency: public `api_domain`
+  keeps admin↔API on the token only; internal VPC URL removes the public hop entirely.
+
+---
+
+## GSTACK REVIEW REPORT
+
+| Run | Reviewer | Status | Findings |
+|-----|----------|--------|----------|
+| 1 | plan-eng-review (claude) | COMPLETE | 7 (1 correction, 1 top test gap, 1 security fork, 1 build footgun, 1 ops gap, 1 coupling-note, 1 minor) |
+| 1 | plan-design-review (claude) | COMPLETE | 2 (D-1 styled 401 [accept], D-2 show signed-in operator [do]) |
+
+**Absorbed into the plan:** Phase-1b security-boundary tests (was untested); Phase-2 rewritten (admin
+build/typecheck/lint already in CI via turbo — real gap is the test lane); standalone-in-monorepo copy
+layout pinned; service-rollback section added; show-signed-in-operator step added.
+
+**VERDICT: APPROVE WITH CHANGES.** Scope is right-sized and reuses proven topology (boring by default,
+no innovation token spent). Two blockers before implementation lands: (a) the console-auth tests exist
+and gate CI, (b) the IAP-trust fork is decided. Everything else is absorbed above.
+
+**UNRESOLVED DECISIONS:**
+- IAP JWT signature verification vs. plaintext-header-only trust (eng-review #3) — recommend verify.
+- admin→API reachability: public `api_domain` vs. internal VPC URL (security + latency).
