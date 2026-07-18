@@ -48,7 +48,7 @@ export function RiderActions({
           consequence="They can go online again immediately. Their strike count stays as it is."
           reasons={REASONS.riderLift}
           confirmLabel="Lift suspension"
-          onConfirm={(r) => mutateRider(id, "lift", name, r.reasonCode, r.note)}
+          onConfirm={(r) => mutateRider(id, "lift", r.reasonCode, r.note)}
         />
         <ConfirmModal
           action="rider.ban"
@@ -71,7 +71,7 @@ export function RiderActions({
           noteRequired
           notePlaceholder="Required — describe the incident and evidence."
           confirmLabel="Ban rider"
-          onConfirm={(r) => mutateRider(id, "ban", name, r.reasonCode, r.note)}
+          onConfirm={(r) => mutateRider(id, "ban", r.reasonCode, r.note)}
         />
       </>
     );
@@ -98,7 +98,7 @@ export function RiderActions({
           consequence="They can go online again immediately. This does not reset their cancel-strike count."
           reasons={REASONS.riderClearHold}
           confirmLabel="Clear hold"
-          onConfirm={(r) => mutateRider(id, "clear-hold", name, r.reasonCode, r.note)}
+          onConfirm={(r) => mutateRider(id, "clear-hold", r.reasonCode, r.note)}
         />
       ) : null}
       <ConfirmModal
@@ -121,7 +121,7 @@ export function RiderActions({
         noteRequired
         notePlaceholder="What happened? The rider sees this context when they contact support."
         confirmLabel="Suspend rider"
-        onConfirm={(r) => mutateRider(id, "suspend", name, r.reasonCode, r.note)}
+        onConfirm={(r) => mutateRider(id, "suspend", r.reasonCode, r.note)}
       />
     </>
   );

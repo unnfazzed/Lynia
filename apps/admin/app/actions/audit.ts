@@ -4,9 +4,12 @@ import { revalidatePath } from "next/cache";
 import { adminPostResult } from "../lib/api";
 
 /**
- * The single write path behind every destructive console action (suspend / lift / ban / decline /
- * refund / cancel / resolve / settle). <ConfirmModal> submits its form here carrying
- * `{ action, target, reasonCode, note }` plus the `path` to revalidate.
+ * Standalone audit-row write for a <ConfirmModal> action whose domain mutation does NOT already write
+ * the audit row itself. Most destructive actions (suspend / lift / ban / KYC decide / refund / cancel /
+ * resolve / wallet-credit) now hit a real endpoint that records the audit row in the SAME transaction —
+ * those set `auditInEndpoint` on the modal, which SKIPS this path to avoid double-recording. This path
+ * remains for actions with no dedicated endpoint yet. <ConfirmModal> submits `{ action, target,
+ * reasonCode, note }` plus the `path` to revalidate.
  *
  * A-01: audit-log write path — the `POST /admin/audit-actions` endpoint now EXISTS api-side, so this
  * write path is live (it persists the audit row from `{ action, target, reasonCode, note }`). When

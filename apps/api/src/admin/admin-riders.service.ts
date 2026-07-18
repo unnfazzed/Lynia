@@ -45,6 +45,7 @@ export class AdminRidersService {
         kycRef: true,
         idVerified: true,
         isOnline: true,
+        accountStatus: true,
         ratingAvg: true,
         ratingCount: true,
         tripsCount: true,
@@ -79,6 +80,9 @@ export class AdminRidersService {
       kycRef: r.kycRef,
       idVerified: r.idVerified,
       isOnline: r.isOnline,
+      // Account standing (A-04) so the directory can distinguish an active rider from a
+      // suspended/banned/held one — previously only visible on the detail page.
+      accountStatus: r.accountStatus,
       ratingAvg: r.ratingAvg,
       ratingCount: r.ratingCount,
       tripsCount: r.tripsCount,
@@ -86,6 +90,46 @@ export class AdminRidersService {
       cooldownUntil: r.cooldownUntil?.toISOString() ?? null,
       duplicateIdFlag: r.duplicateIdFlag,
     }));
+  }
+
+  /**
+   * Ops wallet view for a rider (DOC-16-03): the prepaid commission balance + the recent append-only
+   * ledger, so ops can actually see a rider's float and reconcile a manual credit from the console. The
+   * credit action itself is `POST riders/:id/wallet-credit` (WalletService.creditManual). Read-only.
+   * A rider with no wallet touch yet has no CommissionAccount row → balance "0.00", empty ledger.
+   */
+  async walletView(profileId: string) {
+    const [account, ledger] = await Promise.all([
+      this.prisma.commissionAccount.findUnique({ where: { riderId: profileId }, select: { balance: true } }),
+      this.prisma.commissionLedger.findMany({
+        where: { riderId: profileId },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true,
+          type: true,
+          amount: true,
+          balanceAfter: true,
+          note: true,
+          actor: true,
+          orderId: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+    return {
+      balance: (account?.balance ?? 0).toString(),
+      ledger: ledger.map((l) => ({
+        id: l.id,
+        type: l.type,
+        amount: l.amount.toString(),
+        balanceAfter: l.balanceAfter.toString(),
+        note: l.note ?? null,
+        actor: l.actor ?? null,
+        orderId: l.orderId ?? null,
+        at: l.createdAt.toISOString(),
+      })),
+    };
   }
 
   /**

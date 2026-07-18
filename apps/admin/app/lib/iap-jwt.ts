@@ -40,11 +40,16 @@ function jwks(): ReturnType<typeof createRemoteJWKSet> {
   return (cachedJwks ??= createRemoteJWKSet(IAP_JWKS_URL));
 }
 
-/** Default production verifier: verify signature via IAP JWKS, pinning issuer + audience. */
+/** Default production verifier: verify signature via IAP JWKS, pinning ALGORITHM + issuer + audience.
+ *  Pinning `algorithms: ["ES256"]` (the only algorithm IAP signs with) rejects an assertion that tries
+ *  to downgrade to a different alg; `clockTolerance` absorbs small clock skew between IAP and Cloud Run
+ *  so a valid assertion isn't spuriously rejected as expired/not-yet-valid. */
 const defaultVerifier: IapJwtVerifier = async (assertion, audience) => {
   const { payload } = await jwtVerify(assertion, jwks(), {
+    algorithms: ["ES256"],
     issuer: IAP_ISSUER,
     audience,
+    clockTolerance: "30s",
   });
   return payload;
 };

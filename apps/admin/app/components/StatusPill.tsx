@@ -19,6 +19,8 @@ export function Pill({ children, kind = "", dot = false }: { children: ReactNode
  * safety rule).
  */
 const STATUS_KIND: Record<string, PillKind> = {
+  // Pre-broadcast momentary state — neutral (it becomes open_for_offers within a tick).
+  requested: "mut",
   open_for_offers: "good",
   offer_selected: "good",
   assigned: "good",

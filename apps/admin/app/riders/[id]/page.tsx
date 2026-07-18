@@ -1,14 +1,24 @@
 import { tokens } from "@lynia/shared";
-import { adminFetchResult } from "../../lib/api";
-import type { RiderDetail, TripRow } from "../../lib/adminTypes";
+import { adminFetch, adminFetchResult } from "../../lib/api";
+import type { RiderDetail, TripRow, WalletView, WalletLedgerEntry } from "../../lib/adminTypes";
 import { DataTable, type Column } from "../../components/DataTable";
 import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { RiderActions } from "./RiderActions";
+import { WalletCreditButton } from "./WalletActions";
 import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconBike } from "../../components/icons";
+
+/** Humanize a commission-ledger entry type for the wallet ledger table. */
+const LEDGER_TYPE_LABEL: Record<WalletLedgerEntry["type"], string> = {
+  ride_commission: "Ride commission",
+  topup: "Top-up",
+  grace: "Grace credit",
+  adjustment: "Adjustment",
+  reversal: "Reversal",
+};
 
 /** Rider profile (kit `riders.html` detail): trips, rating, completion, cancel strikes, cooldown,
  *  cash owed, recent trips; suspend / lift / ban actions each reason-coded through <ConfirmModal>. */
@@ -55,6 +65,25 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
   const r = res.data;
   // Past the guard `r` is live data → connected; suspend/lift/ban actions are enabled.
   const connected = true;
+  // DOC-16-03: the prepaid-wallet view (balance + ledger). Best-effort — null if the endpoint is absent
+  // (older API) or unreachable, in which case the wallet card degrades to a "not available" note.
+  const wallet = await adminFetch<WalletView>(`/admin/riders/${id}/wallet`);
+
+  const ledgerCols: Column<WalletLedgerEntry>[] = [
+    { key: "at", header: "When", className: "mut", cell: (l) => new Date(l.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) },
+    { key: "type", header: "Type", cell: (l) => LEDGER_TYPE_LABEL[l.type] ?? l.type },
+    {
+      key: "amount",
+      header: "Amount",
+      className: "num",
+      cell: (l) => {
+        const v = Number(l.amount);
+        return <span style={{ color: v < 0 ? tokens.color.danger : tokens.color.accentText, fontWeight: 600 }}>{v < 0 ? "−" : "+"}${Math.abs(v).toFixed(2)}</span>;
+      },
+    },
+    { key: "balanceAfter", header: "Balance", className: "num", cell: (l) => `$${l.balanceAfter}` },
+    { key: "note", header: "Note", className: "mut", cell: (l) => l.note ?? "—" },
+  ];
 
   const tripCols: Column<TripRow>[] = [
     { key: "id", header: "Order", className: "mono", cell: (t) => t.id },
@@ -91,8 +120,8 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
         <div className="warnbar">
           <IconAlert />
           <span className="t">
-            <b>Suspended.</b> {r.suspendReason ? `${r.suspendReason} ` : ""}The rider cannot go online until the
-            suspension is lifted.
+            <b>Suspended.</b> {r.suspendReason ? `Reason: ${r.suspendReason}. ` : ""}The rider cannot go online until
+            the suspension is lifted.
           </span>
         </div>
       ) : null}
@@ -208,6 +237,35 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
           </section>
         </div>
       </div>
+
+      {/* DOC-16-03: prepaid commission wallet — balance, the manual-credit rail, and the ledger. */}
+      <section className="card" style={{ marginTop: tokens.space.lg }}>
+        <div className="block-title">
+          Prepaid wallet
+          <span className="right">
+            balance{" "}
+            <b style={{ color: wallet && Number(wallet.balance) < 0 ? tokens.color.danger : tokens.color.ink }}>
+              ${wallet ? wallet.balance : "—"}
+            </b>
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: tokens.space.md, flexWrap: "wrap" }}>
+          <WalletCreditButton id={r.id} name={r.name} connected={connected} />
+          <span style={{ fontSize: 12, color: tokens.color.muted }}>
+            Manual credits are the launch top-up rail — each is reason-coded and lands on the ledger below.
+          </span>
+        </div>
+        <DataTable
+          columns={ledgerCols}
+          rows={wallet?.ledger ?? []}
+          rowKey={(l) => l.id}
+          empty={
+            <div className="mut" style={{ textAlign: "center", padding: 20 }}>
+              {wallet ? "No wallet activity yet — no top-ups or ride commission recorded." : "Wallet view unavailable."}
+            </div>
+          }
+        />
+      </section>
     </main>
   );
 }

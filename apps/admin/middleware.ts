@@ -32,10 +32,12 @@ import { verifyIapAssertion } from "./app/lib/iap-jwt";
  */
 export async function middleware(req: NextRequest): Promise<NextResponse> {
   const nodeEnv = process.env.NODE_ENV;
+  // Fail CLOSED on a fat-fingered value: when the var is set, ONLY an explicit falsey token disables the
+  // gate — every other value (including a typo like "1"/"yes"/"TRUE") keeps auth ON. The old `=== "true"`
+  // parse silently disabled the gate for any non-"true" value, an easy foot-gun for a security control.
+  const rawRequireAuth = process.env.ADMIN_CONSOLE_REQUIRE_AUTH;
   const requireAuthOverride =
-    process.env.ADMIN_CONSOLE_REQUIRE_AUTH === undefined
-      ? undefined
-      : process.env.ADMIN_CONSOLE_REQUIRE_AUTH === "true";
+    rawRequireAuth === undefined ? undefined : !["false", "0", "no", "off"].includes(rawRequireAuth.trim().toLowerCase());
   const pathname = req.nextUrl.pathname;
 
   // Resolve the trusted operator only when auth is actually required (skips async JWT work for public

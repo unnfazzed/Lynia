@@ -76,6 +76,12 @@ export class AdminController {
     return this.admin.overview();
   }
 
+  /** Cheap sidebar attention badges (KYC backlog / open disputes / un-acked SOS) — rendered shell-wide. */
+  @Get("nav-counts")
+  navCounts() {
+    return this.admin.navCounts();
+  }
+
   /**
    * DS13-05: recent SOS events, newest first — the read-only ops surface that makes SOS no longer
    * write-only (its escalation push may reach zero registered admin devices). Strictly read-only.
@@ -134,6 +140,13 @@ export class AdminController {
     const rider = await this.ridersService.getRiderDetail(profileId);
     if (!rider) throw new NotFoundException("Rider not found");
     return rider;
+  }
+
+  /** Rider prepaid-wallet view (DOC-16-03): balance + recent ledger for the admin wallet UI. Read-only;
+   *  the credit action is `POST riders/:id/wallet-credit`. */
+  @Get("riders/:profileId/wallet")
+  riderWallet(@Param("profileId", ParseUUIDPipe) profileId: string) {
+    return this.ridersService.walletView(profileId);
   }
 
   /** Customers directory (D-2). `?filter=active|flagged|banned`; unknown values fall back to all. */

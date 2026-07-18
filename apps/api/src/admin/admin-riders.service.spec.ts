@@ -33,6 +33,7 @@ describe("AdminRidersService.listRiders", () => {
     kycRef: "sess_1",
     idVerified: false,
     isOnline: false,
+    accountStatus: "active",
     ratingAvg: 0,
     ratingCount: 0,
     tripsCount: 0,
@@ -58,6 +59,8 @@ describe("AdminRidersService.listRiders", () => {
     const rows = await svc.listRiders("pending");
     expect(where).toEqual({ kycStatus: "pending" });
     expect(rows[0]).toMatchObject({ profileId: "r1", name: "Tendai M", kycStatus: "pending" });
+    // Account standing is surfaced so the directory can flag suspended/banned/held riders (A-04).
+    expect(rows[0]!.accountStatus).toBe("active");
     // Masked: country code + last 4 kept, middle bulleted — never the full number.
     expect(rows[0]!.phone).toBe("+263•••••0001");
     expect(rows[0]!.phone).not.toContain("78200");
@@ -759,5 +762,48 @@ describe("AdminRidersService standing-change customer notification", () => {
     await flush();
     expect(standingAudits).toHaveLength(0);
     expect(notified.some((n) => n.profileIds[0] === "cust-1")).toBe(false);
+  });
+});
+
+describe("AdminRidersService.walletView", () => {
+  it("returns the prepaid balance + recent ledger, newest-first (DOC-16-03)", async () => {
+    const prisma = {
+      commissionAccount: { findUnique: async () => ({ balance: dec("12.50") }) },
+      commissionLedger: {
+        findMany: async (args: { orderBy: unknown; take: number }) => {
+          expect(args.orderBy).toEqual({ createdAt: "desc" });
+          expect(args.take).toBe(20);
+          return [
+            {
+              id: "l1",
+              type: "topup",
+              amount: dec("10.00"),
+              balanceAfter: dec("12.50"),
+              note: "launch grace",
+              actor: "admin-1",
+              orderId: null,
+              createdAt: new Date("2026-07-18T10:00:00Z"),
+            },
+          ];
+        },
+      },
+    };
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications, noGateway);
+    const out = await svc.walletView("r1");
+    expect(out.balance).toBe("12.50");
+    expect(out.ledger).toHaveLength(1);
+    expect(out.ledger[0]).toMatchObject({ type: "topup", amount: "10.00", balanceAfter: "12.50", actor: "admin-1" });
+    expect(out.ledger[0]!.at).toBe("2026-07-18T10:00:00.000Z");
+  });
+
+  it("degrades to a zero balance + empty ledger when the rider has no wallet row yet", async () => {
+    const prisma = {
+      commissionAccount: { findUnique: async () => null },
+      commissionLedger: { findMany: async () => [] },
+    };
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, pii, noStorage, noNotifications, noGateway);
+    const out = await svc.walletView("r1");
+    expect(out.balance).toBe("0");
+    expect(out.ledger).toEqual([]);
   });
 });
