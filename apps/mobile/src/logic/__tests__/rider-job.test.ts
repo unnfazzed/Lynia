@@ -1,5 +1,5 @@
 import { DELIVERY_OTP_MAX_ATTEMPTS as SHARED_DELIVERY_OTP_MAX_ATTEMPTS, UndeliveredReason } from "@lynia/shared";
-import { DELIVERY_OTP_MAX_ATTEMPTS, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../rider-job";
+import { advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../rider-job";
 
 describe("DELIVERY_OTP_MAX_ATTEMPTS", () => {
   it("is re-exported from @lynia/shared, not a locally-duplicated copy", () => {
@@ -27,6 +27,28 @@ describe("reconcileOtpAttempts", () => {
     expect(reconcileOtpAttempts({ local: 3, serverAttempts: 3 })).toBeNull();
     expect(reconcileOtpAttempts({ local: 3, serverAttempts: null })).toBeNull();
     expect(reconcileOtpAttempts({ local: 3, serverAttempts: undefined })).toBeNull();
+  });
+});
+
+// Regression guard (BH-16): a lost-response retry of advance() must not be shown a permanent scary error
+// once the server's own status proves the CAS transition already committed on the first attempt.
+describe("advanceReconciled", () => {
+  it("reconciles when the fresh status matches the requested step exactly (the exact repro)", () => {
+    expect(advanceReconciled("picked_up", "picked_up")).toBe(true);
+  });
+
+  it("reconciles when the fresh status has moved PAST the requested step (a later tap also landed)", () => {
+    expect(advanceReconciled("en_route_dropoff", "picked_up")).toBe(true);
+  });
+
+  it("does NOT reconcile a genuine conflict — the fresh status is still behind the requested step", () => {
+    expect(advanceReconciled("en_route_pickup", "picked_up")).toBe(false);
+    expect(advanceReconciled("assigned", "confirmed")).toBe(false);
+  });
+
+  it("does not treat an unrelated/terminal status as reconciled", () => {
+    expect(advanceReconciled("cancelled", "picked_up")).toBe(false);
+    expect(advanceReconciled("undelivered", "en_route_dropoff")).toBe(false);
   });
 });
 

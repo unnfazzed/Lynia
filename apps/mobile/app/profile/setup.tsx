@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { updateProfile } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
+import { useAuth } from "../../src/auth/auth-context";
 import { loadRolePreference } from "../../src/auth/session";
 import { Button, ErrorText, Field, Heading, Screen, Sub } from "../../src/ui";
 
@@ -15,6 +16,7 @@ import { Button, ErrorText, Field, Heading, Screen, Sub } from "../../src/ui";
  */
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
+  const { session, signIn } = useAuth();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [idNumber, setIdNumber] = useState("");
@@ -31,6 +33,9 @@ export default function ProfileSetupScreen(): React.ReactElement {
     setBusy(true);
     try {
       await updateProfile({ firstName: firstName.trim(), lastName: lastName.trim(), idNumber: idNumber.trim() });
+      // BH-15: clear the durable needsProfile flag now that the PATCH actually landed, so index.tsx's
+      // bootstrap redirect stops sending this account back here on future launches.
+      if (session) await signIn({ ...session, needsProfile: false });
       // Continue the sign-in fork the same way verify.tsx does for a returning user: a saved role goes
       // straight to its home, a brand-new account still sees the role picker.
       const chosen = await loadRolePreference();

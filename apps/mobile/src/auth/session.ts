@@ -8,6 +8,7 @@ import { KYC_DRAFT_KEY } from "../logic/kyc-draft";
 import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
 import { JOB_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY } from "../logic/rider-bid-draft";
+import { PICKUP_CHECKLIST_DRAFT_KEY } from "../logic/pickup-checklist-draft";
 import type { UndeliveredReason } from "@lynia/shared";
 import { randomUuidV4 } from "../util";
 
@@ -18,6 +19,11 @@ export interface Session {
   expiresIn: number;
   profileId: string;
   role: string;
+  // Captured from the server at sign-in (needsProfile: firstName === ""). Kept durable across an
+  // interrupted /profile/setup (app kill, dropped PATCH response) — the bootstrap redirect (index.tsx)
+  // reads this on every launch instead of only right after verifyOtp, so a killed setup step re-prompts
+  // on relaunch rather than silently landing the still-unnamed account on /home forever (BH-15).
+  needsProfile?: boolean;
 }
 
 const KEY = "lynia.session";
@@ -553,6 +559,10 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(JOB_KEY),
       // The rider's in-progress bid draft (selected order + typed price/ETA) must not rehydrate for the next user.
       SecureStore.deleteItemAsync(RIDER_BID_DRAFT_KEY),
+      // BH-17: the rider's pickup-item-verification draft (autosaved ticks) must not rehydrate for the
+      // next user on a shared device — every other per-order/per-session draft key here already is wiped;
+      // this one was missed when the draft itself was added.
+      SecureStore.deleteItemAsync(PICKUP_CHECKLIST_DRAFT_KEY),
       // Note: the per-order `lynia.lastActive.<orderId>` keys are keyed by order id and not enumerable
       // (no index like CODE_INDEX_KEY), so they linger but are lower-risk — the next user isn't routed to
       // them (the tracker only reads a key it already holds the id for), so nothing paints from them.

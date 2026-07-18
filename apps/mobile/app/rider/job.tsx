@@ -11,7 +11,7 @@ import {
   loadPickupChecklistDraft,
   savePickupChecklistDraft,
 } from "../../src/logic/pickup-checklist-draft";
-import { ACTIVE, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
+import { ACTIVE, advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
 import {
@@ -267,10 +267,35 @@ export default function RiderJob(): React.ReactElement {
       qc.setQueryData<OrderSnapshot | null>(["activeJob"], (o) => (o ? { ...o, status: to } : o));
       return { prev };
     },
-    onError: (e, _to, ctx) => {
+    // BH-16: clear a stale error from an earlier reconciled/failed attempt once a later advance actually
+    // succeeds — mirrors deliverM/undeliverM/senderRateM, none of which leave a permanent error banner
+    // behind once the server confirms the real state moved on.
+    onSuccess: () => setError(null),
+    onError: (e, to, ctx) => {
       // Restore the snapshot (incl. a legitimate null), but never write `undefined` back over the cache.
       if (ctx?.prev !== undefined) qc.setQueryData(["activeJob"], ctx.prev);
+      // BH-16: 409 = "Order changed, retry" — thrown when the CAS edge no longer matches, which a lost-
+      // response timeout retry can hit right after the server already committed THIS SAME advance on the
+      // first attempt. Mirrors deliverM/undeliverM's reconciliation: check the order directly, and if it
+      // already reached (or passed) the requested step, that's a success, not a failure — an unreconciled
+      // 409 here left a permanent "Couldn't update this delivery" banner even after onSettled's refresh()
+      // silently self-healed the status underneath it.
+      if (e instanceof ApiError && e.status === 409 && orderId) {
+        const failedOrderId = orderId;
+        void getOrder(failedOrderId)
+          .then((fresh) => {
+            if (advanceReconciled(fresh.status, to)) setError(null);
+            else fail(e);
+            refresh();
+          })
+          .catch(() => {
+            fail(e);
+            refresh();
+          });
+        return;
+      }
       fail(e);
+      refresh();
     },
     onSettled: refresh,
   });
