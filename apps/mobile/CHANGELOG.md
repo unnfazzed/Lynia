@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4](https://github.com/unnfazzed/Lynia/compare/v0.6.3...v0.6.4) (2026-07-18)
+
+
+### Bug Fixes
+
+* **mobile:** close P0/P1 launch blockers from gstack Android review (ALR-01..06) ([208c68d](https://github.com/unnfazzed/Lynia/commit/208c68d4c1e055f53ee022845ea5108f6c2c33cf))
+
 ## [0.6.3](https://github.com/unnfazzed/Lynia/compare/v0.6.2...v0.6.3) (2026-07-18)
 
 
