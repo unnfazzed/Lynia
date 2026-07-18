@@ -147,7 +147,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
         <div className="warnbar">
           <IconAlert />
           <span className="t">
-            <b>On hold.</b> Reliability score {r.reliabilityScore} is below the threshold to go online — and
+            <b>On hold.</b> Reliability score {r.reliabilityScore}{" "}is below the threshold to go online — and
             completing deliveries is the only way it recovers, which going online would let them do. Without
             &ldquo;Clear hold&rdquo; below, this rider is stuck permanently.
           </span>
@@ -177,12 +177,8 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
           hint={r.status === "cooldown" ? `cooldown ${r.cooldown}` : "3 strikes = auto-cooldown"}
           size={22}
         />
-        <KpiCard
-          label="Commission"
-          value={`$${r.commission}`}
-          hint="0% at launch · prepaid per ride"
-          size={22}
-        />
+        {/* Commission/balance is shown once, authoritatively, in the Prepaid-wallet card below — not
+            repeated as a KPI + a Details row (which read as three different figures for one number). */}
       </section>
 
       <div className="detail-grid">
@@ -220,17 +216,7 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
                     </span>
                   ),
                 },
-                {
-                  label: "Commission",
-                  value: (
-                    <span>
-                      ${r.commission} owed ·{" "}
-                      <a href="/cash" style={{ color: tokens.color.accentText }}>
-                        commission
-                      </a>
-                    </span>
-                  ),
-                },
+                // Commission/balance intentionally lives only in the Prepaid-wallet card below.
               ]}
             />
           </section>
@@ -259,7 +245,10 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
       {/* DOC-16-03: prepaid commission wallet — balance, the manual-credit rail, and the ledger. */}
       <section className="card" style={{ marginTop: tokens.space.lg }}>
         <div className="block-title">
-          Prepaid wallet
+          Prepaid wallet ·{" "}
+          <a href="/cash" style={{ color: tokens.color.accentText, fontWeight: 400, fontSize: 12, textDecoration: "none" }}>
+            commission overview →
+          </a>
           <span className="right">
             balance{" "}
             <b style={{ color: wallet && Number(wallet.balance) < 0 ? tokens.color.danger : tokens.color.ink }}>

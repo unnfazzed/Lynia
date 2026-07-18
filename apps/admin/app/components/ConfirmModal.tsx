@@ -51,7 +51,14 @@ export interface ConfirmModalProps {
    */
   amount?: { label: string; prefix?: string; placeholder?: string; required?: boolean };
 
-  onConfirm?: (result: { reasonCode: string | null; note: string; amount: string }) => void | Promise<void>;
+  onConfirm?: (result: {
+    reasonCode: string | null;
+    note: string;
+    amount: string;
+    /** Form-open idempotency key — stable across retries of ONE confirmed submit, fresh per modal-open.
+     *  A money-moving caller (wallet credit) forwards this so a lost-response retry can't double-apply. */
+    idempotencyKey: string;
+  }) => void | Promise<void>;
 }
 
 export function ConfirmModal(props: ConfirmModalProps) {
@@ -82,6 +89,11 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const [amountVal, setAmountVal] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // Form-open idempotency key: minted fresh each time the dialog OPENS and held stable while it stays
+  // open. A failed confirm keeps the dialog open, so re-clicking Confirm reuses this key and the endpoint
+  // dedups instead of double-applying — critical for the money-moving wallet-credit path. A brand-new
+  // open (or a new page) mints a new key, so a genuinely separate action is never deduped away.
+  const [formKey, setFormKey] = useState("");
 
   // A11y: stable ids so the dialog is labelled by its title, and the controls by their field labels.
   const titleId = useId();
@@ -162,7 +174,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
         if (!auditInEndpoint) await submitAdminAction(fd);
         // Await the caller's domain mutation so a thrown server-action rejection surfaces here instead
         // of escaping unhandled — a failed KYC / settlement / refund write must NOT report success.
-        await onConfirm?.({ reasonCode: reason, note, amount: amountVal });
+        await onConfirm?.({ reasonCode: reason, note, amount: amountVal, idempotencyKey: formKey });
         setOpen(false);
         reset();
       } catch (e) {
@@ -181,6 +193,8 @@ export function ConfirmModal(props: ConfirmModalProps) {
         disabled={disabled}
         onClick={() => {
           reset();
+          // Mint a fresh idempotency key for THIS open; retries within the open reuse it (see formKey).
+          setFormKey(crypto.randomUUID());
           setOpen(true);
         }}
       >

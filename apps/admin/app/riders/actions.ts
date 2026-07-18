@@ -73,12 +73,21 @@ export async function mutateRider(
  * DOC-16-03: record a manual prepaid credit to a rider's commission account from the console — the launch
  * top-up rail (grace credits, support corrections) that previously required a raw API call. Hits
  * `POST /admin/riders/:id/wallet-credit` (rail=manual); the endpoint's WalletService.creditManual writes
- * the ledger + audit row in its own transaction, attributing it to the middleware-asserted operator. The
- * idempotency key is minted per invocation — one confirmed submit = one credit (the modal's pending-disable
- * prevents a double-click; the endpoint also caps the amount and validates it). A bad amount THROWS so the
- * modal keeps the dialog open with the error rather than closing as a silent no-op.
+ * the ledger + audit row in its own transaction, attributing it to the middleware-asserted operator.
+ *
+ * `idempotencyKey` is the FORM-OPEN key from <ConfirmModal> (minted when the credit dialog opened, stable
+ * across retries within that open). Forwarding it — rather than minting a fresh one per server-action call —
+ * means a lost-response retry re-sends the SAME key, so the endpoint's exactly-once dedup collapses it to a
+ * single credit instead of double-crediting real balance. A brand-new dialog open mints a new key, so two
+ * genuinely-separate credits are never deduped away. (Server-side fallback mints one only if the client
+ * somehow sent none.) A bad amount THROWS so the modal keeps the dialog open with the error.
  */
-export async function creditRiderWallet(profileId: string, amount: string, note: string): Promise<void> {
+export async function creditRiderWallet(
+  profileId: string,
+  amount: string,
+  note: string,
+  idempotencyKey: string,
+): Promise<void> {
   if (!profileId) return;
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) {
@@ -87,7 +96,7 @@ export async function creditRiderWallet(profileId: string, amount: string, note:
   const ok = await adminPost(`/admin/riders/${profileId}/wallet-credit`, {
     amount: value,
     rail: "manual",
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey: idempotencyKey && idempotencyKey.length > 0 ? idempotencyKey : crypto.randomUUID(),
     note: note || null,
   });
   if (!ok) throw new Error(`Failed to credit rider ${profileId}'s wallet (check API_BASE_URL / admin token).`);
