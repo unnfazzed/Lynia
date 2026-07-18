@@ -15,7 +15,9 @@ interface Rider {
   kycStatus: "pending" | "verified" | "failed" | "expired";
   idVerified: boolean;
   isOnline: boolean;
-  accountStatus: "active" | "suspended" | "banned" | "on_hold";
+  accountStatus: "active" | "suspended" | "banned";
+  /** Separate reliability-hold flag (accountStatus has no on_hold member). */
+  onHold: boolean;
   ratingAvg: number;
   ratingCount: number;
   tripsCount: number;
@@ -29,7 +31,7 @@ const KYC_TABS = ["pending", "verified", "failed", "expired", "all"] as const;
 function standingPill(r: Rider) {
   if (r.accountStatus === "banned") return <Pill kind="bad">banned</Pill>;
   if (r.accountStatus === "suspended") return <Pill kind="bad">suspended</Pill>;
-  if (r.accountStatus === "on_hold") return <Pill kind="bad">on hold</Pill>;
+  if (r.onHold) return <Pill kind="bad">on hold</Pill>;
   if (r.cooldownUntil) return <Pill kind="mut">cooldown</Pill>;
   if (r.isOnline) return <Pill kind="good">online</Pill>;
   return <Pill kind="mut">offline</Pill>;

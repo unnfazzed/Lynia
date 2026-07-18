@@ -46,12 +46,17 @@ export async function decideKyc(
  * audit envelope the endpoints accept. Suspend/ban require a reason (enforced in the modal). Throws on a
  * failed write; only fires against a live API since the triggers are disabled off the connected path.
  */
+const RIDER_ACTIONS = ["suspend", "lift", "ban", "clear-hold"] as const;
+
 export async function mutateRider(
   profileId: string,
   action: "suspend" | "lift" | "ban" | "clear-hold",
   reasonCode: string | null,
   note: string,
 ): Promise<void> {
+  // Defense-in-depth: `action` is interpolated into the endpoint path, so refuse anything outside the
+  // known set even though every caller passes a literal (the type already constrains compile-time callers).
+  if (!(RIDER_ACTIONS as readonly string[]).includes(action)) throw new Error(`Unknown rider action: ${action}`);
   // The suspend/ban/lift/clear-hold endpoints bind ReasonRequired/ReasonOptional = { reason, note? } —
   // NOT the audit envelope. Send `reason` (the reason-code radio), not `reasonCode`, or the write 400s
   // (suspend/ban need a non-empty reason, which the modal enforces; lift/clear-hold's is optional).
@@ -69,12 +74,16 @@ export async function mutateRider(
  * top-up rail (grace credits, support corrections) that previously required a raw API call. Hits
  * `POST /admin/riders/:id/wallet-credit` (rail=manual); the endpoint's WalletService.creditManual writes
  * the ledger + audit row in its own transaction, attributing it to the middleware-asserted operator. The
- * idempotency key is minted per invocation — one confirmed submit = one credit. Amount is validated
- * server-side too (positive, ≤ the endpoint cap); this is a light client-side guard before the call.
+ * idempotency key is minted per invocation — one confirmed submit = one credit (the modal's pending-disable
+ * prevents a double-click; the endpoint also caps the amount and validates it). A bad amount THROWS so the
+ * modal keeps the dialog open with the error rather than closing as a silent no-op.
  */
 export async function creditRiderWallet(profileId: string, amount: string, note: string): Promise<void> {
+  if (!profileId) return;
   const value = Number(amount);
-  if (!profileId || !Number.isFinite(value) || value <= 0) return;
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error("Enter a positive amount to credit.");
+  }
   const ok = await adminPost(`/admin/riders/${profileId}/wallet-credit`, {
     amount: value,
     rail: "manual",

@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import type { NavCounts } from "../lib/adminTypes";
 import { IconAlert, IconBanknote, IconBike, IconIdCard, IconNavigation, IconPackage, IconPhone, IconUser } from "./icons";
@@ -32,13 +32,23 @@ const NAV: NavEntry[] = [
   { label: "Commission", href: "/cash", icon: <IconBanknote />, match: "/cash" },
 ];
 
-function isActive(pathname: string, match: string): boolean {
-  if (match === "/") return pathname === "/";
-  return pathname === match || pathname.startsWith(`${match}/`);
+/**
+ * Which single nav item is active. The Riders directory and the KYC-review queue share the /riders route
+ * (the queue is /riders?kyc=… and /riders/:id/kyc), so a plain prefix match would light "Riders" on every
+ * KYC page and NEVER light "KYC review". We disambiguate with kycMode (a kyc query param, or a /kyc path):
+ * in KYC mode only "KYC review" lights; otherwise "Riders" owns the /riders subtree.
+ */
+function isActive(entry: NavEntry, pathname: string, kycMode: boolean): boolean {
+  if (entry.match === "/kyc") return kycMode;
+  if (entry.match === "/riders") return pathname.startsWith("/riders") && !kycMode;
+  if (entry.match === "/") return pathname === "/";
+  return pathname === entry.match || pathname.startsWith(`${entry.match}/`);
 }
 
 export function Sidebar({ operator, counts }: { operator?: string | null; counts?: NavCounts | null }) {
   const pathname = usePathname() || "/";
+  const search = useSearchParams();
+  const kycMode = search.get("kyc") !== null || pathname.endsWith("/kyc");
 
   return (
     <aside className="sidenav">
@@ -55,6 +65,8 @@ export function Sidebar({ operator, counts }: { operator?: string | null; counts
         </div>
       </div>
 
+      {/* Primary navigation landmark so a screen reader can jump straight to it. */}
+      <nav aria-label="Primary" style={{ display: "contents" }}>
       {NAV.map((n) => {
         const count = n.badge && counts ? counts[n.badge] : 0;
         return (
@@ -62,7 +74,7 @@ export function Sidebar({ operator, counts }: { operator?: string | null; counts
             key={n.label}
             href={n.href}
             className="nav-item"
-            aria-current={isActive(pathname, n.match) ? "page" : undefined}
+            aria-current={isActive(n, pathname, kycMode) ? "page" : undefined}
           >
             <span style={{ display: "inline-flex", width: 17, height: 17, fontSize: 17 }}>{n.icon}</span>
             {n.label}
@@ -74,6 +86,7 @@ export function Sidebar({ operator, counts }: { operator?: string | null; counts
           </a>
         );
       })}
+      </nav>
 
       <div className="foot">
         <b>{operator || "Ops admin"}</b>

@@ -6,6 +6,9 @@ import {
 } from "./app/lib/console-auth";
 import { verifyIapAssertion } from "./app/lib/iap-jwt";
 
+/** One-shot guard so the unverified-proxy-mode warning logs once per isolate, not per request. */
+let warnedProxyFallback = false;
+
 /**
  * Fail-closed access gate for the admin console (docs/SECURITY.md P0-2).
  *
@@ -52,6 +55,17 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
         audience: iapAudience,
       });
     } else {
+      // Proxy-header mode trusts a PLAINTEXT header (no signature) — only safe when an upstream proxy
+      // overwrites it on every request. Warn ONCE per isolate in production so an accidentally-unset
+      // ADMIN_CONSOLE_IAP_AUDIENCE (which silently drops the stronger IAP-JWT verification) is visible in
+      // the logs rather than running unverified in the dark.
+      if (nodeEnv === "production" && !warnedProxyFallback) {
+        warnedProxyFallback = true;
+        console.warn(
+          "[admin-console] ADMIN_CONSOLE_IAP_AUDIENCE is unset — running in UNVERIFIED proxy-header mode. " +
+            "Operator identity is trusted from a plaintext header; set the IAP audience to enable signed-JWT verification.",
+        );
+      }
       const proxyHeaderName = process.env.ADMIN_CONSOLE_PROXY_HEADER ?? "x-goog-authenticated-user-email";
       operator = resolveProxyOperator({ proxyHeaderName, getHeader: (name) => req.headers.get(name) });
     }
