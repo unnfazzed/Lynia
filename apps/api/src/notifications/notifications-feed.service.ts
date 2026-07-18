@@ -11,6 +11,11 @@ export interface NotificationRow {
   // Nullable since KB-FEED-SYNTH: account-status rows (KYC / standing changes) are account-level, not
   // order-level, so they carry no orderId; the client routes those to the rider home instead.
   orderId: string | null;
+  // BH-18: which account this orderId-less row is about — only set on account-status rows (KYC/standing
+  // changes are almost always the RIDER's own; `customer.hold`/`customer.lift` are the one class that's
+  // about the viewing CUSTOMER). Mirrors the `to` field pushes already stamp on dual-audience events
+  // (see notifications.service.ts `Audience`). Absent on order-status/offer rows, which route by orderId.
+  to?: "customer" | "rider";
   icon: string;
   title: string;
   message: string;
@@ -313,6 +318,10 @@ export class NotificationsFeedService {
       rows.push({
         id: `account:${a.id}`,
         orderId: null,
+        // BH-18: `customer.hold`/`customer.lift` are the sole ACCOUNT_FEED_ACTIONS entries about the
+        // viewing customer, not the viewing rider — every other action string (`rider.*`, `wallet.credit`)
+        // is rider-facing, matching the untagged pre-existing "/rider" default on the client.
+        to: a.action.startsWith("customer.") ? "customer" : "rider",
         icon: copy.icon,
         title: copy.title,
         message: copy.message,

@@ -272,8 +272,11 @@ describe("reconcilePendingRating", () => {
     expect(reconcilePendingRating({ pending: { orderId: "o1", score: 5 }, order: { id: "o1", status: "completed" } })).toBe("clear");
   });
 
-  it("clears when a DIFFERENT order is now the live one — the pending marker is stale", () => {
-    expect(reconcilePendingRating({ pending: { orderId: "o1", score: 5 }, order: { id: "o2", status: "delivered" } })).toBe("clear");
+  it("BH-19: waits (never discards) when a DIFFERENT order is on screen — /order/:id is a generic route " +
+    "reachable for any past order (Trip History/Earnings/Notifications), unlike rider/job.tsx's single " +
+    "active job, so viewing an unrelated order must not wipe a still-unsynced rating for another one", () => {
+    expect(reconcilePendingRating({ pending: { orderId: "o1", score: 5 }, order: { id: "o2", status: "delivered" } })).toBe("wait");
+    expect(reconcilePendingRating({ pending: { orderId: "o1", score: 5 }, order: { id: "o2", status: "completed" } })).toBe("wait");
   });
 
   it("waits (never discards) when the same order sits at neither delivered nor completed", () => {

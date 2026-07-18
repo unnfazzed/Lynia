@@ -23,6 +23,10 @@ function fakeSocket(user?: { sub: string; role: string }, rooms: string[] = [], 
     leave: vi.fn(async (room: string) => {
       roomSet.delete(room);
     }),
+    // BH-20: subscribeOrder now emits directly to a (re)joining rider's own socket (client.emit), not
+    // just the room — a distinct spy from fakeServer()'s room-level `emit` so existing room-emit
+    // assertions are unaffected.
+    emit: vi.fn(),
   };
 }
 
@@ -769,6 +773,38 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("BH-20: a (re)joining rider socket is told presence:stale directly when the customer is currently escalated — " +
+    "closes the gap where the rider's socket was disconnected at the exact moment a presence:stale/recovered fired " +
+    "to the room, so the rejoin never learned the customer's actual current state", async () => {
+    vi.useFakeTimers();
+    try {
+      const { server } = fakeServer();
+      const g = gateway({ ...customerTracking(), isAssignedRider: vi.fn(async () => true) });
+      g.server = server as never;
+
+      // Simulate an already-escalated order (the customer went dark and the room broadcast already fired
+      // while this rider's socket was disconnected, so it never received the room event).
+      (g as unknown as { customerStaleNotified: Set<string> }).customerStaleNotified.add("ord-1");
+      const rider = fakeSocket({ sub: "r1", role: "rider" });
+      await g.subscribeOrder(rider as never, { orderId: "ord-1" });
+      expect(rider.emit).toHaveBeenCalledWith(WS_EVENTS.presenceStale, expect.objectContaining({ orderId: "ord-1", role: "customer" }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("BH-20: a (re)joining rider socket is told presence:recovered directly when the customer is NOT currently stale — " +
+    "closes the gap where a presence:recovered emitted to the room while the rider was disconnected was lost, " +
+    "leaving the 'customer may be offline' banner stuck", async () => {
+    const { server } = fakeServer();
+    const g = gateway({ ...customerTracking(), isAssignedRider: vi.fn(async () => true) });
+    g.server = server as never;
+    const rider = fakeSocket({ sub: "r1", role: "rider" });
+
+    await g.subscribeOrder(rider as never, { orderId: "ord-1" });
+    expect(rider.emit).toHaveBeenCalledWith(WS_EVENTS.presenceRecovered, expect.objectContaining({ orderId: "ord-1", role: "customer" }));
   });
 
   it("DS13-01: refutes a dark customer whose live socket is a rider-ROLE sender (matched by relationship, not role)", async () => {

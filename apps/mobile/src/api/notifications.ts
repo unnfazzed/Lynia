@@ -13,6 +13,9 @@ export interface NotificationRow {
   // Nullable since KB-FEED-SYNTH: account-status rows (KYC / standing changes) have no order — the
   // screen routes those to the rider home instead of /order/:id.
   orderId: string | null;
+  // BH-18: which account an orderId-less row is about ("customer" for customer.hold/lift, "rider" for
+  // every other account-status row) — see the matching field in the API's NotificationRow.
+  to?: "customer" | "rider";
   icon: IconName;
   title: string;
   message: string;

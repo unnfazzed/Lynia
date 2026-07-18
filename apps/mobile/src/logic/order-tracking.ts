@@ -151,10 +151,17 @@ export function reconcileDeliveryCode(input: {
  * is itself the "already rated" signal (also true if a concurrent session rated it first).
  *
  *   - "retry": the marker matches the live order and it's still `delivered` (ratable, no rating landed yet).
- *   - "clear": the order already moved to `completed`, OR a DIFFERENT order is now the live one — the
- *              marker is stale.
- *   - "wait":  no marker, no snapshot yet, or the same order sits at neither `delivered` nor `completed`
- *              (shouldn't normally happen — a rating only arms once delivered) — keep the marker, do nothing.
+ *   - "clear": the order already moved to `completed`.
+ *   - "wait":  no marker, no snapshot yet, a DIFFERENT order is on screen, or the same order sits at
+ *              neither `delivered` nor `completed` (shouldn't normally happen — a rating only arms once
+ *              delivered) — keep the marker, do nothing.
+ *
+ * BH-19: a mismatched `order.id` used to return "clear", but `/order/:id` is a generic route reachable
+ * for ANY of the customer's past orders (Trip History, Earnings, Notifications all link into it) — unlike
+ * `rider/job.tsx`, which is only ever mounted for the rider's single current active job. Wiping the marker
+ * just because a DIFFERENT order happened to be on screen silently dropped an app-killed rating tap with
+ * no retry, the exact class `reconcilePendingSenderRating` already handles correctly by leaving a
+ * mismatched marker in place ("wait") instead of clearing it.
  */
 export function reconcilePendingRating(input: {
   pending: { orderId: string; score: number } | null | undefined;
@@ -163,7 +170,7 @@ export function reconcilePendingRating(input: {
   const { pending, order } = input;
   if (!pending) return "wait";
   if (!order) return "wait";
-  if (order.id !== pending.orderId) return "clear";
+  if (order.id !== pending.orderId) return "wait";
   if (order.status === "completed") return "clear";
   if (order.status === "delivered") return "retry";
   return "wait";

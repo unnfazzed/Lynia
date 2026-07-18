@@ -239,4 +239,24 @@ describe("AdminCustomersService hold/lift (S·2 — mutation + audit in ONE $tra
     expect(notified[0]!.profileIds).toEqual(["c1"]);
     expect(notified[0]!.msg).toMatchObject({ title: "Account restored" });
   });
+
+  // BH-18: both pushes are the sole `kind:"account"` no-orderId push sent to a CUSTOMER — every other
+  // such push (KYC/standing, wallet-credit) is about the RIDER. Without `to:"customer"` stamped here,
+  // the mobile client's pushDestination() no-orderId fallback ("/rider") misrouted a plain customer to
+  // the rider-onboarding screen. See the matching mobile fix in push.ts.
+  it("BH-18: holdCustomer stamps to:'customer' on the push data so the client doesn't misroute to /rider", async () => {
+    const { prisma } = makeTx();
+    const { notifications, notified } = spyNotifications();
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService, notifications);
+    await svc.holdCustomer("admin-1", "c1", { reason: "suspected fraud" });
+    expect(notified[0]!.msg).toMatchObject({ data: { kind: "account", to: "customer" } });
+  });
+
+  it("BH-18: liftCustomerHold stamps to:'customer' on the push data so the client doesn't misroute to /rider", async () => {
+    const { prisma } = makeTx();
+    const { notifications, notified } = spyNotifications();
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService, notifications);
+    await svc.liftCustomerHold("admin-1", "c1", {});
+    expect(notified[0]!.msg).toMatchObject({ data: { kind: "account", to: "customer" } });
+  });
 });
