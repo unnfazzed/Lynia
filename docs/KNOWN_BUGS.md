@@ -6,7 +6,19 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-17 (wallet & data-lifecycle audit routine — agentic-loop hunt over the WD
+**Last consolidated:** 2026-07-18 (UX-improvements routine — agentic-loop hunt over the UX lane; see the
+"UX review 2026-07-18" section near the bottom for UX18-01…05, five MEDIUM findings, all fixed same-run
+with regression tests where testable: an admin-console 404 mislabeling bug (`adminFetchResult` collapsed
+every 404 into "this endpoint hasn't shipped", so a genuinely-missing order/rider/customer/issue/KYC-review
+record told the operator to wait for a future feature instead of "record not found" — now distinguishes a
+route-miss from a domain 404 via the response body); two false-consequence-copy bugs on admin order actions
+(fare-adjust claimed commission netting "isn't live yet" when `adjustFare` already nets it automatically;
+cancel-order claimed a reason-conditional rider strike the code never applies); and a notification-coherence
+cluster — customer hold/lift had ZERO push and ZERO feed row (no `NotificationsService` at all), with three
+siblings in the same class (`wallet.creditManual`, `adjustFare`, and `banRider`'s missing self-push) fixed
+alongside it, plus `liftRider` never resolving the "we're reviewing this trip" notice `suspendRider`/
+`banRider` leave on the affected customer's feed. Zero open sibling PRs at Phase 0.
+Prior: 2026-07-17 (wallet & data-lifecycle audit routine — agentic-loop hunt over the WD
 lane; see the "Wallet & data-lifecycle audit 2026-07-17" section near the bottom for WD-021…WD-023, three
 MEDIUM findings, all fixed same-run with a regression test each: `AdminOrdersService.adjudicateDelivered`
 charging commission off a pre-CAS stale `agreedFare` snapshot instead of re-reading post-lock; six
@@ -827,6 +839,46 @@ reason-coded over the audit seam, single-concern. `pnpm typecheck` + full monore
 
 **`KB-POD-DISPUTE` is now CLOSED** — Phase A (proof capture, IR16-11) + Phase B (adjudication, IR16-12) both shipped.
 **Still open in `KB-IDENTITY-BINDING`:** L3 hardware attestation + L0 destructive rebind (both gated — founder/vendor work).
+
+## UX review 2026-07-18 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-18.md`
+
+Phase 0 read this ledger + the 2026-07-17 UX report + the one open sibling PR at the time (`#295`,
+bug-hunt routine — mobile profile-setup dead end, `advanceM` 409 reconciliation, pickup-checklist
+sign-out wipe; no UX-lane overlap, no findings claimed here). Phase 0.5 re-verified 2 members each of
+three rotated "→ FIXED" cluster headers against current code — **Notifications/FCM** (dead-token pruning
++ `sendEach` ≤500 batching in `fcm.push.ts`), **Money-fraud** (`settlements.service.ts` confirmed still a
+read-only prepaid-model view — no `recordPayment`/`adjustFare`-driven settlement mechanics exist), **Ship/
+infra correctness** (Cloud Run `--timeout 3600` note in `lb.tf`, WIF/keyless-deploy files present) — 0/6
+regressed. Phase 1 ran the mandated agentic-loop hunt engine (`Workflow({name:'lane-bug-hunt'}, args:'ux'
+)`, 24 sub-agents: 4 finder lenses → 3-skeptic adversarial verify → sibling-sweep) — 5 candidates found (1
+of 4 lenses, recoverability, returned zero), all 5 survived unanimously (15/15 "real" votes). Every cited
+file:line was independently re-opened and re-verified by the orchestrator before fixing. All 5 findings
+fixed same-run. `pnpm typecheck` clean across all 5 packages (after `pnpm install` + Prisma-client-generate
++ `@lynia/shared` build, none of which existed yet in this fresh session); 1021 API tests (+9) + 415 mobile
+tests green; `apps/admin` has no test harness (repo precedent) so its 404-reason and copy-honesty fixes are
+typecheck+lint-verified only.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| UX18-01 | `adminFetchResult` unconditionally mapped ANY HTTP 404 to `reason:"not-implemented"`, with no way to distinguish "this endpoint hasn't shipped" from "the endpoint is live and correctly says this record doesn't exist." But `GET /admin/{orders,riders,riders/:id/kyc,customers,issues}/:id` all deliberately `NotFoundException` on a well-formed-but-missing id — so a stale bookmark, a purged row, or a typo'd id on any of the 5 admin detail pages told the operator "this endpoint hasn't shipped yet… it will show live data once the endpoint lands" instead of "record not found, check the id" | `apps/admin/app/lib/api.ts:47-58` (`adminFetchResult`), `apps/admin/app/components/states.tsx` (`OfflineBanner`/`connOffLabel`/`reasonTitle`/`reasonLine`) | MEDIUM | **FIXED** — a 404 now parses the response body: Nest's own unmatched-route 404 always reads `Cannot <METHOD> <path>` (no controller matched); anything else is a genuine domain 404, mapped to a new `"not-found"` reason with honest "record not found — check the id or go back to the list" copy. All 5 detail pages (`orders/riders/riders-kyc/customers/issues`) route through the same shared `reason`/`OfflineBanner`/`reasonTitle`/`reasonLine` helpers, so one fix covers all 5 — no per-page changes needed. `apps/admin` has no test harness; typecheck-verified |
+| UX18-02 | Admin "Adjust fare / record refund" modal claimed "automatic netting off the rider's settlement arrives with the commission/billing infra (**not yet live**)" — false for this action's actual backend: `AdminOrdersService.adjustFare` already auto-debits/credits the rider's real prepaid COMMISSION wallet in the SAME transaction (`wallet.adjustCommissionInTx`) whenever the order is completed with a charged `ride_commission` ledger row (shipped in WD-001/WD-012…015). The identical sentence is accurate on the sibling issue-refund modal (which really doesn't touch the wallet) — it was copy-pasted onto `FareAdjust` during the UX17-06 fix without checking the two code paths differ | `apps/admin/app/orders/[id]/OrderActions.tsx:34-39` (`FareAdjust`) | MEDIUM | **FIXED** — copy corrected: "this only corrects the recorded fare... if the order is already completed, the rider's prepaid commission balance is adjusted automatically in the same step." `apps/admin` has no test harness; typecheck-verified |
+| UX18-03 | Admin "Cancel order" modal claimed "the rider gets no strike **if the reason is not theirs**" — a reason-conditional consequence the code never implements. `AdminOrdersService.cancelOrder` never inspects/branches on `input.reason` and never touches `Rider.cancelStrikes` under ANY reason; the only writer of `cancelStrikes` is the RIDER-initiated `OrderLifecycleService.cancel` (a completely separate code path, gated on `isRider`) — an ops cancel never strikes the rider regardless of which reason is picked | `apps/admin/app/orders/[id]/OrderActions.tsx:108-113` (`CancelOrder`) | MEDIUM | **FIXED** — copy corrected: "This action never strikes the rider — a strike is only recorded when a rider cancels their own job, never from an ops-initiated cancellation." `apps/admin` has no test harness; typecheck-verified |
+| UX18-04 | `AdminCustomersService.holdCustomer`/`liftCustomerHold` had **NO `NotificationsService` dependency at all** — a held/lifted customer got zero push AND zero feed row (`customer.hold`/`customer.lift` were also absent from `ACCOUNT_FEED_COPY`); the only way to discover a hold was a 403 the next time the customer tried to broadcast an order, with zero signal when it was lifted. Sibling-sweep found the identical "money/standing action with zero notification" gap in three more places: `WalletService.creditManual` (also no `NotificationsService`, and `wallet.credit` also missing from `ACCOUNT_FEED_COPY`); `AdminOrdersService.adjustFare` (has `NotificationsService` but never called it, unlike its siblings `cancelOrder`/`adjudicateDelivered` in the SAME file); and `AdminRidersService.banRider` (pushes the customers on the rider's active orders but — unlike its siblings `suspendRider`/`liftRider`/`clearHold` — never pushes the banned rider themselves, though the `rider.ban` feed fallback still covers it) | `apps/api/src/admin/admin-customers.service.ts:142,163`, `apps/api/src/wallet/wallet.service.ts:464` (`creditManual`), `apps/api/src/admin/admin-orders.service.ts:291` (`adjustFare`), `apps/api/src/admin/admin-riders.service.ts:354` (`banRider`) | MEDIUM | **FIXED** — `NotificationsService` (optional, mirroring the existing admin-orders/admin-riders pattern) injected into `AdminCustomersService` and `WalletService`; `holdCustomer`/`liftCustomerHold`/`creditManual` now push post-commit; `customer.hold`/`customer.lift`/`wallet.credit` added to `ACCOUNT_FEED_COPY` (durable feed fallback — all three already `target`-the-profile in their existing audit rows, so no new audit write needed); `adjustFare` now pushes both customer and rider the corrected fare; `banRider` now also pushes the rider themselves. 6 new regression-test cases across `admin-customers.service.spec.ts` (×2), `wallet.service.spec.ts` (×1), `admin-orders.service.spec.ts` (×1), `admin-riders.service.spec.ts` (×1), `notifications-feed.service.spec.ts` (×1) |
+| UX18-05 | `suspendRider`/`banRider` both call `notifyCustomersOfRiderStandingChange` — a best-effort push + durable `order.rider_standing_notice` audit row telling the customer on the rider's active order "there's a change with your assigned rider, our team is reviewing this trip." `liftRider` — the DIRECT UNDO of a suspension, and the one action most likely to fire while the SAME rider is still assigned to the SAME active order — never calls it at all, so the alarming "under review" notice is left permanently unresolved in the customer's feed/push history even after the rider is cleared and the delivery continues normally | `apps/api/src/admin/admin-riders.service.ts:293-348` (`liftRider`); contrast `:275-285` (`suspendRider`) | MEDIUM | **FIXED** — `notifyCustomersOfRiderStandingChange` takes a `resolved` flag (default false): `resolved=true` (called only from `liftRider`) swaps in honest "your delivery is back on track — the review is complete" copy and a distinct `order.rider_standing_resolved` audit action (added to `RESERVED_AUDIT_ACTIONS`) so the two notices read as separate, resolved feed rows instead of one permanently-open one. `feedForUser` synthesizes the resolution row the same way as its `order.rider_standing_notice` sibling. 3 new cases across `admin-riders.service.spec.ts` (×2) + `notifications-feed.service.spec.ts` (×1); the existing `admin-audit.service.spec.ts` reserved-action test was also extended to cover the new action string |
+
+**Sibling-sweep evidence** (full grep commands + hit counts in the dated report):
+
+- **UX18-01** (`grep -rn "adminFetchResult<" apps/admin/app --include=*.tsx` — 15 hits; `grep -rn "NotFoundException(" apps/api/src/admin/admin.controller.ts apps/api/src/issues/admin-issues.controller.ts`): 5 of the 15 `adminFetchResult` call sites front an endpoint with a genuine per-record `NotFoundException` (orders/riders/riders-kyc/customers/issues detail) — all 5 share the one `adminFetchResult`/`states.tsx` code path, fixed at the source. The other 10 (list/overview/sos/cash endpoints) never throw a domain 404 today, so `"not-implemented"` stays correct for them.
+- **UX18-02/03** (`grep -rEzo "commission/billing\s*\n?\s*infra \(not yet live\)"` across `apps/admin/app` — 2 hits, both accounted for; `grep -rn "cancelStrikes" apps/api/src | grep -v spec`, `grep -n "consequence=" -A3 -r apps/admin` — 12 hits): both false-consequence claims were isolated single-file fixes; the broader `consequence=` sweep (17 blocks across 6 files, per UX17-05/06/07's prior full sweep) found no further false claims this run.
+- **UX18-04** (`grep -n "NotificationsService\|notifyProfiles\|constructor" apps/api/src/wallet/wallet.service.ts apps/api/src/admin/admin-{orders,riders,customers}.service.ts`, `grep -n "ACCOUNT_FEED_COPY\|ACCOUNT_FEED_ACTIONS" -A20 apps/api/src/notifications/notifications-feed.service.ts` — 16 hits): of the four admin/wallet services that mutate money or standing, `AdminCustomersService` and `WalletService` had zero `NotificationsService` dependency; `AdminOrdersService.adjustFare` and `AdminRidersService.banRider` had the dependency but an unused half — all four fixed this run, no further gaps in this class.
+- **UX18-05** (`grep -rn "notifyCustomersOfRiderStandingChange" --include="*.ts" .` — 4 hits: `suspendRider`, `banRider`, the method itself, and now `liftRider`): `liftRider` was the only one of the three standing-change actions that could leave an active order under the same rider without ever calling this method. `clearHold` is not a sibling — it only applies to a never-suspended, always-active rider (no `order.rider_standing_notice` could ever have been written for that rider, so there is nothing to resolve).
+
+**Suggestions (not implemented):** none this run — all 5 findings were straightforward copy-honesty/notification-coherence/error-state fixes within scope.
+
+**Stopping rule:** five MEDIUM findings this run (no CRITICAL/HIGH) — reported in full per the mandatory
+sibling-sweep evidence rule; 1 of 4 hunt lenses (recoverability) returned zero findings, and the Phase-0.5
+re-verification came back fully clean, consistent with this lane's surface having been hunted repeatedly
+across UX-2026-07-08…UX17-07.
 
 ## UX review 2026-07-17 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-17.md`
 

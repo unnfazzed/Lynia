@@ -616,10 +616,13 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
 // previously heard nothing. suspendRider/banRider now fire a best-effort post-commit notify to every
 // customer with an ACTIVE_RIDE_STATUSES order under this rider.
 describe("AdminRidersService standing-change customer notification", () => {
-  function makeTxWithOrders(activeOrders: Array<{ id: string; customerId: string }>) {
+  function makeTxWithOrders(
+    activeOrders: Array<{ id: string; customerId: string }>,
+    rider: Record<string, unknown> = { accountStatus: "active" },
+  ) {
     const tx = {
       rider: {
-        findUnique: async () => ({ accountStatus: "active" }),
+        findUnique: async () => rider,
         updateMany: async () => ({ count: 1 }),
       },
       auditLog: { create: async () => ({ id: "audit-9" }) },
@@ -716,5 +719,45 @@ describe("AdminRidersService standing-change customer notification", () => {
     await noOrders.svc.banRider("admin-1", "r1", { reason: "fraud" });
     await flush();
     expect(noOrders.standingAudits).toHaveLength(0);
+  });
+
+  /** banRider ALSO now pushes the banned rider themselves (UX18-04 sibling fix — every OTHER standing
+   *  action in this file already pushed the rider directly, banRider was the one gap). Isolate it from
+   *  the customer-facing notify by profileIds targeting the rider, not a customer. */
+  const riderOwnNotify = (notified: Array<{ profileIds: string[]; msg: unknown }>) =>
+    notified.filter((n) => n.profileIds[0] === "r1" && (n.msg as { data?: { orderId?: string } }).data?.orderId == null);
+
+  it("UX18-04: banRider now also pushes the banned rider themselves an 'Account blocked' notice", async () => {
+    const { svc, notified } = makeTxWithOrders([]);
+    await svc.banRider("admin-1", "r1", { reason: "fraud" });
+    await flush();
+    const own = riderOwnNotify(notified);
+    expect(own).toHaveLength(1);
+    expect(own[0]!.msg).toMatchObject({ title: "Account blocked" });
+  });
+
+  it("UX18-05: liftRider resolves the standing notice for the customer on the rider's active order", async () => {
+    const { svc, notified, standingAudits } = makeTxWithOrders(
+      [{ id: "order-1", customerId: "cust-1" }],
+      { accountStatus: "suspended", onHold: false, reliabilityScore: 100 },
+    );
+    await svc.liftRider("admin-1", "r1", {});
+    await flush();
+    // The resolution audit is targeted at the ORDER id (mirrors order.rider_standing_notice) so
+    // feedForUser's durable fallback can match it against the customer's own orders.
+    expect(standingAudits).toEqual([
+      { actor: "system:rider-standing-notice", action: "order.rider_standing_resolved", target: "order-1", note: "r1" },
+    ]);
+    const toCustomer = notified.find((n) => n.profileIds[0] === "cust-1");
+    expect(toCustomer).toBeDefined();
+    expect(toCustomer!.msg).toMatchObject({ title: "Your delivery is back on track", data: { orderId: "order-1", kind: "account" } });
+  });
+
+  it("UX18-05: liftRider is a no-op resolution notice when the rider has no active order", async () => {
+    const { svc, notified, standingAudits } = makeTxWithOrders([], { accountStatus: "suspended", onHold: false, reliabilityScore: 100 });
+    await svc.liftRider("admin-1", "r1", {});
+    await flush();
+    expect(standingAudits).toHaveLength(0);
+    expect(notified.some((n) => n.profileIds[0] === "cust-1")).toBe(false);
   });
 });

@@ -289,10 +289,10 @@ export class AdminOrdersService {
    * completion anomaly) had nothing to correct, so nothing is written for it.
    */
   async adjustFare(actor: string, orderId: string, input: { agreedFare: number; reason: string; note?: string | null }) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { id: true, agreedFare: true, riderId: true, status: true, suggestedFare: true },
+        select: { id: true, agreedFare: true, riderId: true, customerId: true, status: true, suggestedFare: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       // Only correct a fare that was actually agreed. Writing agreedFare onto an order that never had
@@ -367,8 +367,31 @@ export class AdminOrdersService {
         data: auditData(actor, "order.fare_adjust", orderId, input.reason, input.note),
         select: { id: true },
       });
-      return { id: orderId, agreedFare: input.agreedFare.toFixed(2), auditId: audit.id };
+      return {
+        id: orderId,
+        agreedFare: input.agreedFare.toFixed(2),
+        auditId: audit.id,
+        customerId: order.customerId,
+        riderId,
+      };
     });
+
+    // Best-effort, post-commit: tell both parties the fare was corrected — previously a silent
+    // ledger/balance change with zero proactive signal to either side (found alongside UX18-04's
+    // customer.hold/wallet.credit notification gaps). Never affects the already-committed correction.
+    void this.notifications?.notifyProfiles([result.customerId], {
+      title: "Your delivery's fare was updated",
+      body: `Your fare was corrected to $${result.agreedFare} by our team.`,
+      data: { orderId, kind: "order" },
+    });
+    if (result.riderId) {
+      void this.notifications?.notifyProfiles([result.riderId], {
+        title: "A delivery's fare was updated",
+        body: `The fare for order ${orderId} was corrected to $${result.agreedFare}.`,
+        data: { orderId, kind: "order" },
+      });
+    }
+    return { id: result.id, agreedFare: result.agreedFare, auditId: result.auditId };
   }
 
   /**

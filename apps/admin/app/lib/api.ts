@@ -6,7 +6,11 @@
  * operator diagnostic instead of collapsing every case into "API not connected" (QA D-3):
  *   - `unconfigured`     — API_BASE_URL is unset (the demo/offline path).
  *   - `unreachable`      — network error reaching the API.
- *   - `not-implemented`  — the endpoint 404'd (API is healthy, this feature just hasn't shipped).
+ *   - `not-implemented`  — the ROUTE 404'd (no controller matches — API is healthy, this endpoint
+ *                          just hasn't shipped).
+ *   - `not-found`        — the route matched and the API deliberately 404'd because the specific
+ *                          record (order/rider/customer/issue id) doesn't exist — a bad link, a
+ *                          purged row, or a typo, NOT an unshipped feature.
  *   - `error`            — any other non-ok response.
  * `adminFetch` keeps the legacy `T | null` shape (data or absent) for callers that don't need the
  * reason; it is a thin wrapper over `adminFetchResult`.
@@ -41,15 +45,28 @@ async function authHeaders(): Promise<Record<string, string>> {
   return h;
 }
 
-export type AdminReason = "unconfigured" | "unreachable" | "not-implemented" | "error";
+export type AdminReason = "unconfigured" | "unreachable" | "not-implemented" | "not-found" | "error";
 export type AdminResult<T> = { data: T } | { reason: AdminReason };
+
+/** Nest's own unmatched-route 404 (no controller method matches this path) always has this exact
+ *  message shape: `Cannot GET /admin/orders/abc`. A domain `NotFoundException("Order not found")`
+ *  thrown BY a matched controller carries its own descriptive message instead — never this one. */
+function isUnmatchedRoute404(body: unknown): boolean {
+  const message = (body as { message?: unknown } | null)?.message;
+  return typeof message === "string" && /^Cannot [A-Z]+ /.test(message);
+}
 
 export async function adminFetchResult<T>(path: string): Promise<AdminResult<T>> {
   const b = base();
   if (!b) return { reason: "unconfigured" };
   try {
     const res = await fetch(`${b}${path}`, { headers: await authHeaders(), cache: "no-store", signal: AbortSignal.timeout(ADMIN_FETCH_TIMEOUT_MS) });
-    if (res.status === 404) return { reason: "not-implemented" };
+    if (res.status === 404) {
+      const body = await res.json().catch(() => null);
+      // A body that didn't even parse as JSON isn't the API's own domain 404 — treat conservatively
+      // as the route simply not existing, the prior (safe) behavior.
+      return { reason: body === null || isUnmatchedRoute404(body) ? "not-implemented" : "not-found" };
+    }
     if (!res.ok) return { reason: "error" };
     return { data: (await res.json()) as T };
   } catch {

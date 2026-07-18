@@ -382,6 +382,45 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     expect(riderFeed.some((r) => r.title === "An update on your delivery")).toBe(false);
   });
 
+  it("UX18-04: synthesizes account rows for customer.hold/lift and wallet.credit — previously missing from ACCOUNT_FEED_COPY entirely", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([]); // account-level rows need no orders
+    prisma.auditLog.findMany.mockResolvedValue([
+      { id: "a1", action: "wallet.credit", createdAt: new Date("2026-07-06T11:30:00.000Z") },
+      { id: "a2", action: "customer.hold", createdAt: new Date("2026-07-06T11:00:00.000Z") },
+      { id: "a3", action: "customer.lift", createdAt: new Date("2026-07-05T09:00:00.000Z") },
+    ]);
+
+    const feed = await service.feedForUser("me", NOW);
+    const auditArg = prisma.auditLog.findMany.mock.calls[0][0];
+    expect(auditArg.where.action.in).toEqual(expect.arrayContaining(["customer.hold", "customer.lift", "wallet.credit"]));
+    expect(feed.map((r) => r.title)).toEqual(["Wallet credited", "Account paused", "Account restored"]);
+    expect(feed.every((r) => r.orderId === null)).toBe(true);
+  });
+
+  it("UX18-05: synthesizes a 'delivery is back on track' row when liftRider resolves a rider-standing notice", async () => {
+    const { prisma, service } = makeDeps();
+    // The customer's own order (riderId != viewer → customer view).
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", riderId: "rider", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+    ]);
+    prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
+      where.action === "order.rider_standing_resolved"
+        ? [{ id: "au2", target: "o1", createdAt: new Date("2026-07-06T11:30:00.000Z") }]
+        : [],
+    );
+
+    const custFeed = await service.feedForUser("cust", NOW);
+    const row = custFeed.find((r) => r.title === "Your delivery is back on track");
+    expect(row).toMatchObject({
+      id: "rider-standing-resolved:au2",
+      orderId: "o1",
+      icon: "check",
+      message: "The review of your assigned rider is complete — your delivery is continuing as normal.",
+      unread: true,
+    });
+  });
+
   it("UX17-03: an adjudicated `completed` shows the ops-override copy (customer + rider), a plain completion stays generic", async () => {
     const { prisma, service } = makeDeps();
     // o1 was ops-adjudicated to complete; o2 is an ordinary completion.

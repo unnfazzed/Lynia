@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { AdminReason } from "../lib/api";
-import { IconWifiOff } from "./icons";
+import { IconAlert, IconWifiOff } from "./icons";
 
 /** Empty state — the kit's `.empty` (icon / bold title / muted line). */
 export function EmptyState({ icon, title, line }: { icon: ReactNode; title: ReactNode; line: ReactNode }) {
@@ -27,6 +27,17 @@ export function OfflineBanner({ reason = "unconfigured" }: { reason?: AdminReaso
         <span>
           <b>This section isn&apos;t available yet.</b> The API is connected, but this endpoint hasn&apos;t shipped. It
           will show live data once the endpoint lands; actions here stay disabled until then.
+        </span>
+      </div>
+    );
+  }
+  if (reason === "not-found") {
+    return (
+      <div className="offline-banner">
+        <IconAlert />
+        <span>
+          <b>Record not found.</b> This id doesn&apos;t match anything in the API — it may have been deleted, or the
+          link/id is wrong. Check the id or go back to the list.
         </span>
       </div>
     );
@@ -70,11 +81,13 @@ export function OfflineBanner({ reason = "unconfigured" }: { reason?: AdminReaso
 export function connOffLabel(reason?: AdminReason): string {
   return reason === "not-implemented"
     ? "○ not available yet"
-    : reason === "unreachable"
-      ? "○ API unreachable"
-      : reason === "error"
-        ? "○ API error"
-        : "○ API not connected";
+    : reason === "not-found"
+      ? "○ not found"
+      : reason === "unreachable"
+        ? "○ API unreachable"
+        : reason === "error"
+          ? "○ API error"
+          : "○ API not connected";
 }
 
 /** Connection indicator for the page header (● live / ○ reason). */
@@ -85,7 +98,9 @@ export function Conn({ connected, reason }: { connected: boolean; reason?: Admin
 
 /** Empty-state title for a failed read: "not available yet" for a 404, "not connected" otherwise. */
 export function reasonTitle(reason: AdminReason, subject: string): string {
-  return reason === "not-implemented" ? `${subject} not available yet` : `${subject} not connected`;
+  if (reason === "not-implemented") return `${subject} not available yet`;
+  if (reason === "not-found") return `${subject} not found`;
+  return `${subject} not connected`;
 }
 
 /** Empty-state line matching the failure reason. `noun` completes "… to load {noun}". */
@@ -93,6 +108,10 @@ export function reasonLine(reason: AdminReason, noun: string): string {
   switch (reason) {
     case "not-implemented":
       return `This endpoint hasn't shipped yet — ${noun} will load once it lands.`;
+    case "not-found": {
+      const capped = noun.charAt(0).toUpperCase() + noun.slice(1);
+      return `${capped} doesn't exist — it may have been deleted, or the id in the link is wrong.`;
+    }
     case "unreachable":
       return `The API is unreachable — ${noun} can't be loaded right now.`;
     case "error":
