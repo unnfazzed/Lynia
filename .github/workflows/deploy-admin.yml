@@ -1,0 +1,196 @@
+name: Deploy Admin Console (Cloud Run)
+
+# Builds the admin console (apps/admin) container, pushes it to Artifact Registry, and deploys it to a
+# Cloud Run service (lynia-admin) fronted by the shared external HTTPS ALB with IAP in front
+# (infra/terraform/admin.tf). Companion to release.yml (the API). See
+# docs/plans/2026-admin-console-deployment.md.
+#
+# WHY separate from release.yml: the admin console has no DB migrations and does not warrant the API's
+# full canary/autoheal machinery (it is an internal, IAP-gated tool). It gets a boot-gated no-traffic
+# deploy + promote instead — a crash-on-boot revision fails the deploy while the old revision keeps
+# serving; rollback is `gcloud run services update-traffic lynia-admin --to-revisions <PREV>=100`.
+#
+# ADMIN→API PATH: the console reaches the API over the VPC connector (internal), not the public
+# api_domain (plan resolved fork). It bears ADMIN_API_TOKEN (Secret Manager) and forwards X-Operator.
+#
+# DORMANT UNTIL ARMED. Gated on the repo variable GCP_ADMIN_ENABLED == 'true'; until a maintainer arms
+# it this workflow is a clean no-op and never fails a push. Arming (founder, after terraform apply +
+# IAP setup — docs/plans/2026-admin-console-deployment.md Phases 3/5/6):
+#   Variables:
+#     GCP_ADMIN_ENABLED             "true" to arm this workflow
+#     GCP_PROJECT_ID, GCP_REGION, GCP_ARTIFACT_REPO           (shared with release.yml)
+#     GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT     (shared WIF deployer)
+#     VPC_CONNECTOR                                           (shared connector; internal API egress)
+#     ADMIN_CLOUD_RUN_SERVICE          Cloud Run service name (default lynia-admin)
+#     ADMIN_CLOUD_RUN_SERVICE_ACCOUNT  admin runtime SA email (terraform output)
+#     ADMIN_API_BASE_URL               internal API base URL the console calls
+#     ADMIN_CONSOLE_IAP_AUDIENCE       LB backend-service audience (terraform output) for JWT verify
+#   Secret Manager (not a repo secret): ADMIN_API_TOKEN — the admin JWT, injected via --set-secrets.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/admin/**"
+      - "packages/shared/**"
+      - ".github/workflows/deploy-admin.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-admin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: build · smoke · deploy
+    runs-on: ubuntu-latest
+    # The arming switch: no-op until a maintainer sets the variable post-provisioning.
+    if: ${{ vars.GCP_ADMIN_ENABLED == 'true' }}
+    environment: production
+    permissions:
+      contents: read
+      id-token: write # mints the OIDC token the Authenticate step federates via Workload Identity
+    env:
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPO }}/lynia-admin
+      SERVICE: ${{ vars.ADMIN_CLOUD_RUN_SERVICE || 'lynia-admin' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate required deploy config
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
+          VPC_CONNECTOR: ${{ vars.VPC_CONNECTOR }}
+          ADMIN_CLOUD_RUN_SERVICE_ACCOUNT: ${{ vars.ADMIN_CLOUD_RUN_SERVICE_ACCOUNT }}
+          ADMIN_API_BASE_URL: ${{ vars.ADMIN_API_BASE_URL }}
+          ADMIN_CONSOLE_IAP_AUDIENCE: ${{ vars.ADMIN_CONSOLE_IAP_AUDIENCE }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          missing=()
+          required="GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO VPC_CONNECTOR ADMIN_CLOUD_RUN_SERVICE_ACCOUNT ADMIN_API_BASE_URL ADMIN_CONSOLE_IAP_AUDIENCE GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT"
+          for v in $required; do
+            if [ -z "${!v:-}" ]; then missing+=("$v"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::GCP_ADMIN_ENABLED is true but these repo Variables are unset: ${missing[*]}. See docs/plans/2026-admin-console-deployment.md (arming)." >&2
+            exit 1
+          fi
+          echo "Admin deploy config OK."
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Build once and LOAD into the local docker so the boot smoke can run the exact image that ships.
+      # Single-platform (amd64) matches both the runner and Cloud Run. Registry layer cache keeps the
+      # pnpm install + next build warm across deploys.
+      - name: Build admin image (load for smoke)
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            -f apps/admin/Dockerfile \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max,image-manifest=true" \
+            -t "$IMAGE:${GITHUB_SHA}" -t "$IMAGE:latest" \
+            --load .
+
+      # Boot smoke: run the real container with the gate ON and prove BOTH that the server serves and
+      # that the fail-closed middleware is wired — a gated route returns 401 (no IAP identity present),
+      # and a public asset returns 200. This is what `next build` alone can't catch (asset-404s from a
+      # bad standalone copy layout, or a broken middleware) before it reaches operators.
+      - name: Container boot smoke
+        run: |
+          set -euo pipefail
+          docker run -d --name admin-smoke -p 8080:8080 \
+            -e NODE_ENV=production -e ADMIN_CONSOLE_REQUIRE_AUTH=true \
+            "$IMAGE:${GITHUB_SHA}"
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null "http://127.0.0.1:8080/favicon.ico"; then break; fi
+            sleep 1
+            if [ "$i" = "30" ]; then echo "::error::admin container never served /favicon.ico"; docker logs admin-smoke || true; exit 1; fi
+          done
+          # Public asset (bypasses the gate) must 200.
+          code_public=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/favicon.ico")
+          # A gated route with no IAP identity must fail closed (401), NOT render.
+          code_gated=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/")
+          echo "public /favicon.ico -> $code_public ; gated / -> $code_gated"
+          docker logs admin-smoke || true
+          docker rm -f admin-smoke || true
+          if [ "$code_public" != "200" ]; then echo "::error::public asset did not 200 ($code_public) — standalone static/public copy layout is likely wrong"; exit 1; fi
+          if [ "$code_gated" != "401" ]; then echo "::error::gated route did not fail closed ($code_gated) — the access middleware is not enforcing"; exit 1; fi
+
+      - name: Push admin image
+        run: |
+          set -euo pipefail
+          docker push "$IMAGE:${GITHUB_SHA}"
+          docker push "$IMAGE:latest"
+
+      # Remember the currently-serving revision so a failed deploy can be rolled back in seconds. Empty
+      # on the first-ever deploy (then the new revision must take 100%).
+      - name: Capture current serving revision (rollback target)
+        id: prev
+        run: |
+          set -euo pipefail
+          PREV="$(gcloud run services describe "$SERVICE" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --format json 2>/dev/null \
+            | jq -r '([.status.traffic[]? | select((.percent // 0) > 0)] | max_by(.percent) | .revisionName) // empty' \
+            || true)"
+          echo "revision=$PREV" >> "$GITHUB_OUTPUT"
+          echo "Current serving revision: ${PREV:-<none — first deploy>}"
+
+      # Deploy a NO-TRAFFIC revision first (when one already serves): gcloud waits for Ready, so a
+      # crash-on-boot revision fails HERE while the old revision keeps serving. Traffic is promoted in
+      # the next step. First-ever deploy takes 100% (a new service must route somewhere).
+      #
+      # --ingress internal-and-cloud-load-balancing: only the shared ALB (+ internal) reaches the
+      # service; the org disables *.run.app at the edge. IAP on the LB backend (admin.tf) is the auth.
+      # --vpc-connector + --vpc-egress private-ranges-only: reach the API over the VPC (internal path).
+      # ADMIN_CONSOLE_IAP_AUDIENCE turns on middleware JWT verification of the IAP assertion.
+      - name: Deploy to Cloud Run (new revision, no traffic)
+        run: |
+          set -euo pipefail
+          TRAFFIC_FLAGS="--no-traffic --tag candidate"
+          if [ -z "${{ steps.prev.outputs.revision }}" ]; then
+            TRAFFIC_FLAGS=""
+          fi
+          ENV_VARS="^;^NODE_ENV=production;API_BASE_URL=${{ vars.ADMIN_API_BASE_URL }};ADMIN_CONSOLE_IAP_AUDIENCE=${{ vars.ADMIN_CONSOLE_IAP_AUDIENCE }}"
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE:${GITHUB_SHA}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --platform managed \
+            --port 8080 \
+            --service-account "${{ vars.ADMIN_CLOUD_RUN_SERVICE_ACCOUNT }}" \
+            --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
+            --vpc-egress private-ranges-only \
+            --ingress internal-and-cloud-load-balancing \
+            --set-env-vars "$ENV_VARS" \
+            --set-secrets "ADMIN_API_TOKEN=ADMIN_API_TOKEN:latest" \
+            --allow-unauthenticated \
+            $TRAFFIC_FLAGS
+
+      - name: Promote new revision to 100%
+        if: ${{ steps.prev.outputs.revision != '' }}
+        run: |
+          set -euo pipefail
+          gcloud run services update-traffic "$SERVICE" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --to-latest

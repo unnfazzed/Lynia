@@ -98,6 +98,24 @@ resource "google_compute_url_map" "api" {
       default_service = google_compute_backend_service.staging[0].id
     }
   }
+
+  # Admin console rides the same ALB/IP under its own hostname → the IAP-protected admin backend
+  # (admin.tf). Zero-diff until admin_enabled.
+  dynamic "host_rule" {
+    for_each = var.admin_enabled ? [1] : []
+    content {
+      hosts        = [var.admin_domain]
+      path_matcher = "admin"
+    }
+  }
+
+  dynamic "path_matcher" {
+    for_each = var.admin_enabled ? [1] : []
+    content {
+      name            = "admin"
+      default_service = google_compute_backend_service.admin[0].id
+    }
+  }
 }
 
 # --- Google-managed TLS certificate for the API domain ---
@@ -122,6 +140,7 @@ resource "google_compute_target_https_proxy" "api" {
   ssl_certificates = concat(
     [google_compute_managed_ssl_certificate.api.id],
     var.staging_enabled ? [google_compute_managed_ssl_certificate.staging[0].id] : [],
+    var.admin_enabled ? [google_compute_managed_ssl_certificate.admin[0].id] : [],
   )
 }
 

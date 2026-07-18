@@ -7,10 +7,12 @@
     "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint -c ../../.oxlintrc.json app"
+    "lint": "oxlint -c ../../.oxlintrc.json app",
+    "test": "vitest run"
   },
   "dependencies": {
     "@lynia/shared": "workspace:*",
+    "jose": "^6.2.3",
     "next": "^16.2.10",
     "react": "18.3.1",
     "react-dom": "18.3.1"
@@ -20,6 +22,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "oxlint": "^1.73.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
   }
 }

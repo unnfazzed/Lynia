@@ -36,6 +36,18 @@
 # armor_waf_preview  = false   # enforce the OWASP WAF (deny 403) instead of log-only. Runbook §5 (observe preview first).
 # bucket_cors_origins = ["https://admin.lyniafinance.com"]  # only if the admin console does browser uploads; never ["*"].
 
+# =============================================================================
+# Admin console tier (admin.tf; docs/plans/2026-admin-console-deployment.md)
+# -----------------------------------------------------------------------------
+# All off by default — a plain apply is a no-op. Arming stands up the IAP-gated
+# admin console at admin_domain on the shared ALB. Sequence: create the IAP OAuth
+# client (Phase 5), set the vars below, apply, add the DNS A record (Phase 6).
+# admin_enabled                  = true
+# admin_domain                   = "lyniagoadmin.lyniafinance.com"  # already the default
+# admin_iap_oauth_client_id      = "XXXX.apps.googleusercontent.com"
+# admin_iap_oauth_client_secret  = "GOCSPX-..."   # keep in a VCS-ignored tfvars
+# admin_iap_members              = ["group:ops@lyniafinance.com"]  # operators (MFA at Workspace level)
+
 # -- Availability (pre-launch, not pilot) --
 # redis_tier = "STANDARD_HA"   # Redis replica for HA. Recreates the instance — Runbook §6.
 # (Cloud SQL REGIONAL HA: set availability_type = "REGIONAL" in sql.tf — Runbook §6.)

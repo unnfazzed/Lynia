@@ -195,6 +195,44 @@ variable "api_domain" {
   default     = "lyniago.lyniafinance.com"
 }
 
+# --- Admin console tier (admin.tf) — all gated off by default ---
+variable "admin_enabled" {
+  description = "Provision the admin console tier (admin.tf): the lynia-admin serverless NEG + IAP-protected backend + managed cert + runtime SA + ADMIN_API_TOKEN secret, exposed via the existing ALB at admin_domain. Off by default — zero diff until armed. Arming: docs/plans/2026-admin-console-deployment.md Phases 3/5/6."
+  type        = bool
+  default     = false
+}
+
+variable "admin_domain" {
+  description = "Hostname for the admin console on the shared load balancer (own managed cert; same LB IP as api_domain — add a second A record)."
+  type        = string
+  default     = "lyniagoadmin.lyniafinance.com"
+}
+
+variable "admin_cloud_run_service" {
+  description = "Name of the admin Cloud Run service (created by deploy-admin.yml, referenced by the admin serverless NEG). Must equal the ADMIN_CLOUD_RUN_SERVICE repo variable."
+  type        = string
+  default     = "lynia-admin"
+}
+
+variable "admin_iap_oauth_client_id" {
+  description = "IAP OAuth 2.0 client id for the admin backend service. Founder-created (OAuth consent screen + client, docs/SECURITY-OPS.md §A) — Terraform does not create the brand/client. Required when admin_enabled."
+  type        = string
+  default     = ""
+}
+
+variable "admin_iap_oauth_client_secret" {
+  description = "IAP OAuth 2.0 client secret paired with admin_iap_oauth_client_id. Required when admin_enabled. Read/set via a *.tfvars kept out of VCS."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "admin_iap_members" {
+  description = "Operator identities granted roles/iap.httpsResourceAccessor on the admin backend (e.g. [\"user:alice@corp.com\", \"group:ops@corp.com\"]). MFA is enforced at the Workspace level."
+  type        = list(string)
+  default     = []
+}
+
 # --- Staging stack (staging.tf) — all gated off by default ---
 variable "staging_enabled" {
   description = "Provision the staging tier (staging.tf): its own Cloud SQL + Redis + secrets + runtime SA + media bucket, exposed via the existing ALB at staging_api_domain. Off by default — zero diff until armed. Arming guide: docs/LAUNCH-EXECUTION-RUNBOOK.md §8e."

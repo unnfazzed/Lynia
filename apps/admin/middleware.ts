@@ -1,5 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { evaluateConsoleAccess } from "./app/lib/console-auth";
+import {
+  consoleAuthRequired,
+  evaluateConsoleAccess,
+  resolveProxyOperator,
+} from "./app/lib/console-auth";
+import { verifyIapAssertion } from "./app/lib/iap-jwt";
 
 /**
  * Fail-closed access gate for the admin console (docs/SECURITY.md P0-2).
@@ -9,27 +14,48 @@ import { evaluateConsoleAccess } from "./app/lib/console-auth";
  * identity asserted by an upstream identity-aware proxy (GCP IAP / OAuth2 proxy) before any page or
  * server action runs, and refuses to serve at all in production when none is present.
  *
+ * Two trust modes (see app/lib/console-auth.ts + app/lib/iap-jwt.ts):
+ *   - IAP-JWT (recommended): when ADMIN_CONSOLE_IAP_AUDIENCE is set, the operator is derived from the
+ *     cryptographically-verified `x-goog-iap-jwt-assertion` (signature + issuer + audience). The
+ *     plaintext email header is NOT trusted, so a request that reaches the service without a valid IAP
+ *     signature — e.g. if ingress is ever misconfigured — cannot forge an operator.
+ *   - Proxy-header: when no IAP audience is configured (OAuth2-proxy, or legacy IAP), the operator is
+ *     read from ADMIN_CONSOLE_PROXY_HEADER (default IAP's x-goog-authenticated-user-email).
+ *
  * Config:
  *   - ADMIN_CONSOLE_REQUIRE_AUTH  — "true"/"false" to force the gate on/off (default: on in production).
- *   - ADMIN_CONSOLE_PROXY_HEADER  — header the proxy sets (default: x-goog-authenticated-user-email, IAP).
+ *   - ADMIN_CONSOLE_IAP_AUDIENCE  — enables IAP-JWT mode; the LB backend-service audience string.
+ *   - ADMIN_CONSOLE_PROXY_HEADER  — header the proxy sets in proxy-header mode (default IAP's header).
  *
  * When allowed, the resolved operator is forwarded to downstream pages/actions as `x-lynia-operator`
  * so admin mutations can be attributed to a real human in the audit log.
  */
-export function middleware(req: NextRequest): NextResponse {
-  const proxyHeaderName = process.env.ADMIN_CONSOLE_PROXY_HEADER ?? "x-goog-authenticated-user-email";
+export async function middleware(req: NextRequest): Promise<NextResponse> {
+  const nodeEnv = process.env.NODE_ENV;
   const requireAuthOverride =
     process.env.ADMIN_CONSOLE_REQUIRE_AUTH === undefined
       ? undefined
       : process.env.ADMIN_CONSOLE_REQUIRE_AUTH === "true";
+  const pathname = req.nextUrl.pathname;
 
-  const decision = evaluateConsoleAccess({
-    nodeEnv: process.env.NODE_ENV,
-    requireAuthOverride,
-    proxyHeaderName,
-    getHeader: (name) => req.headers.get(name),
-    pathname: req.nextUrl.pathname,
-  });
+  // Resolve the trusted operator only when auth is actually required (skips async JWT work for public
+  // assets and dev). IAP-JWT mode wins when an audience is configured; otherwise fall back to the
+  // proxy header. A failed/absent JWT resolves to null → the policy fails closed below.
+  let operator: string | null = null;
+  if (consoleAuthRequired({ nodeEnv, requireAuthOverride, pathname })) {
+    const iapAudience = process.env.ADMIN_CONSOLE_IAP_AUDIENCE;
+    if (iapAudience && iapAudience.trim() !== "") {
+      operator = await verifyIapAssertion({
+        assertion: req.headers.get("x-goog-iap-jwt-assertion"),
+        audience: iapAudience,
+      });
+    } else {
+      const proxyHeaderName = process.env.ADMIN_CONSOLE_PROXY_HEADER ?? "x-goog-authenticated-user-email";
+      operator = resolveProxyOperator({ proxyHeaderName, getHeader: (name) => req.headers.get(name) });
+    }
+  }
+
+  const decision = evaluateConsoleAccess({ nodeEnv, requireAuthOverride, pathname, operator });
 
   if (!decision.allow) {
     return new NextResponse(decision.message ?? "Unauthorized", {
