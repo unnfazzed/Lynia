@@ -37,12 +37,19 @@ admin_iap_oauth_client_id     = "XXXX.apps.googleusercontent.com"
 admin_iap_oauth_client_secret = "GOCSPX-..."
 admin_iap_members             = ["group:ops@lyniafinance.com"]   # or user:alice@lyniafinance.com
 # admin_domain defaults to lyniagoadmin.lyniafinance.com
+# CARRY FORWARD any tier already live: the founder terraform.tfvars is gitignored, so a fresh clone
+# defaults every *_enabled flag OFF and would plan to DESTROY what they provisioned. If staging is
+# live, set staging_enabled = true here (the arm-admin.sh script auto-detects this and refuses to
+# apply any plan with destroys).
+staging_enabled               = true   # ONLY if your staging tier is currently provisioned
 ```
 
 ```bash
 cd infra/terraform
 terraform plan    # expect: admin NEG + backend(+IAP) + cert + runtime SA + ADMIN_API_TOKEN secret,
-                  # and the admin host rule + cert appended to the shared ALB. NO changes to the API/prod.
+                  # and the admin host rule + cert appended to the shared ALB.
+                  # MUST read "0 to destroy". Any destroy = a live tier whose *_enabled flag this clone
+                  # is missing (see the staging_enabled note above) — fix that before applying.
 terraform apply
 ```
 
