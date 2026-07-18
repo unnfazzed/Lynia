@@ -47,8 +47,8 @@ export function OfflineBanner({ reason = "unconfigured" }: { reason?: AdminReaso
       <div className="offline-banner">
         <IconWifiOff />
         <span>
-          <b>API unreachable.</b> The console can&apos;t reach <span className="mono">API_BASE_URL</span>. Live data and
-          actions are unavailable until the connection recovers.
+          <b>API unreachable.</b> The console can&apos;t reach the API right now. Live data and actions are unavailable
+          until the connection recovers.
         </span>
       </div>
     );

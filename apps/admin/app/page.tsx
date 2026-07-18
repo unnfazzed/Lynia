@@ -1,12 +1,15 @@
 import { tokens } from "@lynia/shared";
 import { adminFetchResult } from "./lib/api";
-import { connOffLabel, reasonLine } from "./components/states";
+import { Conn, OfflineBanner, reasonLine, reasonTitle } from "./components/states";
+import { KpiCard } from "./components/KpiCard";
+import { StatusPill } from "./components/StatusPill";
+import { IconAlert, IconIdCard, IconBanknote } from "./components/icons";
 
 /**
- * Monitor/support console (CONCEPT §4). Reads the API's /admin/overview (lane F). Configure
- * API_BASE_URL (+ an admin ADMIN_API_TOKEN) to show live data; falls back to a placeholder
- * state when the API is unconfigured, unreachable, or the endpoint hasn't shipped (QA D-3 — the
- * header + fallback copy name which case it is).
+ * Monitor/support console overview (CONCEPT §4, kit `ui_kits/admin/index.html`). Reads /admin/overview.
+ * Headline KPIs + a pilot-funnel strip + a "needs attention" queue (stuck order / open dispute / KYC
+ * backlog / commission) + recent orders. Degrades to an honest offline/empty state when the API is
+ * unconfigured, unreachable, or the endpoint hasn't shipped (the header + fallback copy name the case).
  */
 interface Overview {
   ordersByStatus: Record<string, number>;
@@ -17,81 +20,141 @@ interface Overview {
     pctBroadcastsWithOffer: number;
     expiryRatePct: number;
   };
-  recentOrders: Array<{ id: string; status: string; proposedFare: string; agreedFare: string | null; createdAt: string }>;
+  today: { completed: number; completionRatePct: number | null; fares: string };
+  attention: { kycPending: number; openIssues: number; stuckOrders: number; stuckOrderId: string | null };
+  recentOrders: Array<{
+    id: string;
+    status: string;
+    route: string;
+    rider: string | null;
+    proposedFare: string;
+    agreedFare: string | null;
+    createdAt: string;
+  }>;
 }
 
-/* DS card: white surface floating on --surface via the soft ambient shadow (no visible border). */
-const card = {
-  background: tokens.color.bg,
-  border: "none",
-  borderRadius: tokens.radius.card,
-  boxShadow: "var(--shadow-card)",
-  padding: tokens.space.lg,
-} as const;
-
-export default async function DashboardPage() {
+export default async function OverviewPage() {
   const res = await adminFetchResult<Overview>("/admin/overview");
   const data = "data" in res ? res.data : null;
   const reason = "data" in res ? undefined : res.reason;
+  const connected = data !== null;
 
-  const panels = [
-    { label: "Live orders", value: data ? liveOrders(data.ordersByStatus) : "—", hint: "open_for_offers / assigned" },
-    { label: "Riders online", value: data ? `${data.riders.online}/${data.riders.verified}` : "—", hint: "online / verified" },
-    { label: "Offers per broadcast", value: data ? data.metrics.offersPerBroadcast : "—", hint: "pilot funnel (§8)" },
-    { label: "Expiry rate", value: data ? `${data.metrics.expiryRatePct}%` : "—", hint: "broadcasts that drew no rider" },
-  ];
+  const attentionRows = data ? buildAttention(data) : [];
 
   return (
-    <main style={{ maxWidth: 1040, margin: "0 auto", padding: tokens.space.xl }}>
-      <header style={{ display: "flex", alignItems: "center", gap: tokens.space.md, marginBottom: tokens.space.xl }}>
-        {/* 32px: the static mark's crease facets only resolve at ≥32px (brand crease rule). */}
-        <img src="/brand/lyniago-mark.svg" alt="LyniaGo" width={32} height={32} style={{ display: "block" }} />
-        {/* Dense-console page header sits on --text-h2 (20/700). */}
-        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>LyniaGo — operations</h1>
-        <nav style={{ display: "flex", gap: tokens.space.md, marginLeft: tokens.space.lg }}>
-          <a href="/riders" style={{ fontSize: 14, color: tokens.color.muted, textDecoration: "none" }}>Riders</a>
-          <a href="/orders" style={{ fontSize: 14, color: tokens.color.muted, textDecoration: "none" }}>Orders</a>
-        </nav>
-        <span style={{ marginLeft: "auto", fontSize: 12, color: data ? tokens.color.accentText : tokens.color.muted }}>
-          {data ? "● live" : connOffLabel(reason)}
-        </span>
+    <main className="content">
+      <header className="page">
+        <h1>Overview</h1>
+        <span className="sub">Harare pilot · monitor &amp; support console</span>
+        <Conn connected={connected} reason={reason} />
       </header>
 
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: tokens.space.lg }}>
-        {panels.map((p) => (
-          <div key={p.label} style={card}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: tokens.color.muted }}>{p.label}</div>
-            {/* --text-display (28); only 400/600/700 webfonts ship, so 700 is the max real weight. */}
-            <div style={{ fontSize: 28, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{p.value}</div>
-            <div style={{ fontSize: 12, color: tokens.color.muted }}>{p.hint}</div>
-          </div>
-        ))}
+      {!connected ? <OfflineBanner reason={reason} /> : null}
+
+      {/* Headline KPIs — the two the design leads with (completed + fares today) sit beside live supply. */}
+      <section className="panels" style={{ marginBottom: tokens.space.md }}>
+        <KpiCard label="Live orders" value={data ? liveOrders(data.ordersByStatus) : "—"} hint="open for offers + in delivery" />
+        <KpiCard label="Riders online" value={data ? `${data.riders.online}/${data.riders.verified}` : "—"} hint="online / verified" />
+        <KpiCard
+          label="Completed today"
+          value={data ? data.today.completed : "—"}
+          hint={data && data.today.completionRatePct != null ? `${data.today.completionRatePct}% completion rate` : "delivered today"}
+        />
+        <KpiCard label="Fares today" value={data ? `$${data.today.fares}` : "—"} hint="agreed fares, all cash" />
       </section>
 
-      <section style={{ ...card, marginTop: tokens.space.xl }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: tokens.space.md }}>Recent orders</div>
+      {/* Secondary pilot-funnel strip. */}
+      <section className="card substrip" style={{ marginBottom: tokens.space.lg }}>
+        <span className="m"><b>{data ? data.metrics.offersPerBroadcast : "—"}</b>offers / broadcast</span>
+        <span className="m"><b>{data ? `${data.metrics.expiryRatePct}%` : "—"}</b>expiry rate</span>
+        <span className="m"><b>{data ? (data.ordersByStatus.cancelled ?? 0) : "—"}</b>cancelled</span>
+        <span className="m"><b>{data ? data.attention.kycPending : "—"}</b>KYC pending</span>
+        <span className="m"><b>{data ? data.attention.openIssues : "—"}</b>open disputes</span>
+        <span className="m"><b>{data ? `${data.metrics.pctBroadcastsWithOffer}%` : "—"}</b>broadcasts with an offer</span>
+      </section>
+
+      {/* Needs-attention queue — the operational heart of the overview. */}
+      {connected ? (
+        <section className="card" style={{ marginBottom: tokens.space.lg }}>
+          <div className="block-title">
+            Needs attention {attentionRows.length > 0 ? <span className="count">{attentionRows.length}</span> : null}
+          </div>
+          {attentionRows.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {attentionRows.map((row, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "12px 0",
+                    borderTop: i === 0 ? "none" : `1px solid ${tokens.color.line}`,
+                    fontSize: 13,
+                  }}
+                >
+                  <span style={{ display: "inline-flex", width: 18, height: 18, color: row.danger ? tokens.color.danger : tokens.color.muted }}>
+                    {row.icon}
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    <b>{row.title}</b> — {row.detail}
+                  </span>
+                  <a className="btn ghost" href={row.href}>
+                    {row.action}
+                  </a>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: tokens.color.muted, padding: "4px 0" }}>
+              All clear — no stuck orders, open disputes, or KYC backlog right now.
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {/* Recent orders. */}
+      <section className="card">
+        <div className="block-title">
+          Recent orders
+          <a className="right" href="/orders" style={{ color: tokens.color.accentText, textDecoration: "none", fontWeight: 600 }}>
+            All orders →
+          </a>
+        </div>
         {data && data.recentOrders.length > 0 ? (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <table className="data">
             <thead>
-              <tr style={{ color: tokens.color.muted, textAlign: "left" }}>
-                <th style={{ padding: "8px 8px" }}>Order</th>
-                <th style={{ padding: "8px 8px" }}>Status</th>
-                <th style={{ padding: "8px 8px" }}>Fare</th>
+              <tr>
+                <th>Order</th>
+                <th>Route</th>
+                <th>Status</th>
+                <th>Rider</th>
+                <th>Fare</th>
+                <th>Created</th>
               </tr>
             </thead>
             <tbody>
               {data.recentOrders.map((o) => (
-                <tr key={o.id} style={{ borderTop: `1px solid ${tokens.color.line}` }}>
-                  <td style={{ padding: "8px 8px", fontFamily: "monospace" }}>{o.id.slice(0, 8)}</td>
-                  <td style={{ padding: "8px 8px" }}>{o.status}</td>
-                  <td style={{ padding: "8px 8px", fontVariantNumeric: "tabular-nums" }}>${o.agreedFare ?? o.proposedFare}</td>
+                <tr key={o.id} className="rowlink">
+                  <td className="mono">
+                    <a href={`/orders/${o.id}`} style={{ color: tokens.color.accentText, textDecoration: "none" }}>
+                      {o.id.slice(0, 8)}
+                    </a>
+                  </td>
+                  <td>{o.route}</td>
+                  <td>
+                    <StatusPill status={o.status} />
+                  </td>
+                  <td className="mut">{o.rider ?? "—"}</td>
+                  <td className="num">${o.agreedFare ?? o.proposedFare}</td>
+                  <td className="mut num">{timeAgo(o.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
           <div style={{ fontSize: 14, color: tokens.color.muted }}>
-            {data ? "No orders yet." : reasonLine(reason ?? "unconfigured", "recent orders")}
+            {data ? "No orders yet." : `${reasonTitle(reason ?? "unconfigured", "Recent orders")} — ${reasonLine(reason ?? "unconfigured", "recent orders")}`}
           </div>
         )}
       </section>
@@ -100,5 +163,69 @@ export default async function DashboardPage() {
 }
 
 function liveOrders(byStatus: Record<string, number>): number {
-  return (byStatus.open_for_offers ?? 0) + (byStatus.assigned ?? 0);
+  const inFlight = ["open_for_offers", "assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"];
+  return inFlight.reduce((sum, s) => sum + (byStatus[s] ?? 0), 0);
+}
+
+interface AttentionRow {
+  title: string;
+  detail: string;
+  action: string;
+  href: string;
+  icon: React.ReactNode;
+  danger?: boolean;
+}
+
+/** Compose the needs-attention queue from the overview's attention signals — only surface live problems. */
+function buildAttention(data: Overview): AttentionRow[] {
+  const rows: AttentionRow[] = [];
+  const { stuckOrders, stuckOrderId, openIssues, kycPending } = data.attention;
+  if (stuckOrders > 0) {
+    rows.push({
+      title: `${stuckOrders} order${stuckOrders === 1 ? "" : "s"} may be stuck`,
+      detail: "no status update in 25+ min while in delivery.",
+      action: "Review order",
+      href: stuckOrderId ? `/orders/${stuckOrderId}` : "/orders",
+      icon: <IconAlert />,
+      danger: true,
+    });
+  }
+  if (openIssues > 0) {
+    rows.push({
+      title: `${openIssues} open dispute${openIssues === 1 ? "" : "s"}`,
+      detail: "a customer or rider is waiting on a resolution.",
+      action: "Investigate",
+      href: "/issues",
+      icon: <IconAlert />,
+    });
+  }
+  if (kycPending > 0) {
+    rows.push({
+      title: `${kycPending} rider${kycPending === 1 ? "" : "s"} waiting on KYC`,
+      detail: "verification review is holding them off the road.",
+      action: "Review queue",
+      href: "/riders?kyc=pending",
+      icon: <IconIdCard />,
+    });
+  }
+  rows.push({
+    title: "Commission is 0%",
+    detail: "launch period — nothing is collected yet.",
+    action: "View",
+    href: "/cash",
+    icon: <IconBanknote />,
+  });
+  return rows;
+}
+
+/** Compact "N min ago" for the recent-orders Created column. Server-rendered once; no hydration risk. */
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  const days = Math.round(hrs / 24);
+  return `${days} d ago`;
 }

@@ -1,6 +1,10 @@
-import { OrderStatus, tokens } from "@lynia/shared";
+import { OrderStatus } from "@lynia/shared";
 import { adminFetchResult } from "../lib/api";
-import { connOffLabel, reasonLine } from "../components/states";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
+import { DataTable, type Column } from "../components/DataTable";
+import { FilterNav } from "../components/FilterNav";
+import { StatusPill } from "../components/StatusPill";
+import { IconPackage } from "../components/icons";
 
 interface Order {
   id: string;
@@ -15,14 +19,7 @@ interface Order {
 }
 
 const STATUSES = Object.values(OrderStatus);
-/* DS card: white surface floating on --surface via the soft ambient shadow (no visible border). */
-const card = {
-  background: tokens.color.bg,
-  border: "none",
-  borderRadius: tokens.radius.card,
-  boxShadow: "var(--shadow-card)",
-  padding: tokens.space.lg,
-} as const;
+const FILTERS = [{ value: "", label: "all" }, ...STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))];
 
 export default async function OrdersPage({
   searchParams,
@@ -34,83 +31,56 @@ export default async function OrdersPage({
   const res = await adminFetchResult<Order[]>(`/admin/orders${active ? `?status=${active}` : ""}`);
   const orders = "data" in res ? res.data : null;
   const reason = "data" in res ? undefined : res.reason;
+  const connected = orders !== null;
+
+  const columns: Column<Order>[] = [
+    { key: "id", header: "Order", className: "mono", cell: (o) => o.id.slice(0, 8) },
+    { key: "status", header: "Status", cell: (o) => <StatusPill status={o.status} /> },
+    { key: "fare", header: "Fare", className: "num", cell: (o) => `$${o.agreedFare ?? o.proposedFare}` },
+    { key: "distance", header: "Distance", className: "num", cell: (o) => (o.distanceKm != null ? `${o.distanceKm} km` : "—") },
+    {
+      key: "note",
+      header: "Note",
+      className: "mut",
+      cell: (o) =>
+        o.cancelReason ? `cancelled${o.cancelledByRole ? ` (${o.cancelledByRole})` : ""}: ${o.cancelReason}` : "—",
+    },
+  ];
 
   return (
-    <main style={{ maxWidth: 1040, margin: "0 auto", padding: tokens.space.xl }}>
-      <header style={{ display: "flex", alignItems: "center", gap: tokens.space.md, marginBottom: tokens.space.lg }}>
-        <a href="/" style={{ color: tokens.color.muted, textDecoration: "none", fontSize: 14 }}>← Dashboard</a>
-        {/* Dense-console page header sits on --text-h2 (20/700). */}
-        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Orders monitor</h1>
-        <span style={{ marginLeft: "auto", fontSize: 12, color: orders ? tokens.color.accentText : tokens.color.muted }}>
-          {orders ? "● live" : connOffLabel(reason)}
-        </span>
+    <main className="content">
+      <header className="page">
+        <h1>Orders monitor</h1>
+        <span className="sub">Live order status across the pilot</span>
+        <Conn connected={connected} reason={reason} />
       </header>
 
-      <nav style={{ display: "flex", flexWrap: "wrap", gap: tokens.space.sm, marginBottom: tokens.space.lg }}>
-        {["", ...STATUSES].map((s) => (
-          <a
-            key={s || "all"}
-            href={s ? `/orders?status=${s}` : "/orders"}
-            // DS selected state = accent wash + accent text, not a CTA fill. 32px pill is a
-            // desktop pointer target; the 44px --target-min rule is mobile-first.
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              minHeight: 32,
-              fontSize: 12,
-              padding: "6px 14px",
-              borderRadius: 999,
-              textDecoration: "none",
-              fontWeight: s === active ? 600 : 400,
-              color: s === active ? tokens.color.accentText : tokens.color.muted,
-              background: s === active ? tokens.color.accentWash : "transparent",
-              border: `1px solid ${s === active ? tokens.color.accentText : tokens.color.line}`,
-            }}
-          >
-            {(s || "all").replace(/_/g, " ")}
-          </a>
-        ))}
-      </nav>
+      {!connected ? <OfflineBanner reason={reason} /> : null}
 
-      <section style={card}>
-        {orders && orders.length > 0 ? (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead>
-              <tr style={{ color: tokens.color.muted, textAlign: "left" }}>
-                <th style={{ padding: "8px 8px" }}>Order</th>
-                <th style={{ padding: "8px 8px" }}>Status</th>
-                <th style={{ padding: "8px 8px" }}>Fare</th>
-                <th style={{ padding: "8px 8px" }}>Distance</th>
-                <th style={{ padding: "8px 8px" }}>Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((o) => (
-                <tr key={o.id} style={{ borderTop: `1px solid ${tokens.color.line}` }}>
-                  <td style={{ padding: "8px 8px", fontFamily: "monospace" }}>
-                    <a href={`/orders/${o.id}`} style={{ color: tokens.color.accentText, textDecoration: "none" }}>
-                      {o.id.slice(0, 8)}
-                    </a>
-                  </td>
-                  <td style={{ padding: "8px 8px" }}>{o.status}</td>
-                  <td style={{ padding: "8px 8px", fontVariantNumeric: "tabular-nums" }}>${o.agreedFare ?? o.proposedFare}</td>
-                  <td style={{ padding: "8px 8px", fontVariantNumeric: "tabular-nums" }}>{o.distanceKm != null ? `${o.distanceKm} km` : "—"}</td>
-                  <td style={{ padding: "8px 8px", color: tokens.color.muted }}>
-                    {o.cancelReason ? `cancelled${o.cancelledByRole ? ` (${o.cancelledByRole})` : ""}: ${o.cancelReason}` : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div style={{ fontSize: 14, color: tokens.color.muted }}>
-            {orders ? "No orders in this view." : reasonLine(reason ?? "unconfigured", "orders")}
-          </div>
-        )}
-        {/* The list is capped server-side (take: 100); without this note a full page reads as "that's
-            all there is" when older rows are simply not fetched. Pagination is a separate follow-up. */}
+      <FilterNav items={FILTERS} active={active} hrefFor={(v) => (v ? `/orders?status=${v}` : "/orders")} />
+
+      <section className="card">
+        <DataTable
+          columns={columns}
+          rows={orders ?? []}
+          rowKey={(o) => o.id}
+          getRowHref={(o) => `/orders/${o.id}`}
+          rowLabel={(o) => `Open order ${o.id.slice(0, 8)}`}
+          empty={
+            connected ? (
+              <EmptyState icon={<IconPackage />} title="No orders in this view" line="Try a different status filter." />
+            ) : (
+              <EmptyState
+                icon={<IconPackage />}
+                title={reasonTitle(reason ?? "unconfigured", "Orders")}
+                line={reasonLine(reason ?? "unconfigured", "orders")}
+              />
+            )
+          }
+        />
+        {/* The list is capped server-side (take: 100); note it so a full page doesn't read as "that's all". */}
         {orders && orders.length >= 100 ? (
-          <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: tokens.space.md }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12 }}>
             Showing the latest 100 orders — older orders aren&apos;t listed. Filter by status to narrow the view.
           </div>
         ) : null}

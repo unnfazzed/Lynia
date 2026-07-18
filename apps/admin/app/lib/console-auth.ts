@@ -42,12 +42,14 @@ export interface ConsoleAccessDecision {
   message?: string;
 }
 
-/** Paths that must always load (framework internals, static assets, health) — never gated. */
+/** Paths that must always load (framework internals + static assets) — never gated. */
 export function isPublicConsolePath(pathname: string): boolean {
   return (
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.ico" ||
-    pathname.startsWith("/icon") ||
+    // The app icon route(s) — `/icon.png` etc. Match the dot so a hypothetical `/iconography` page can't
+    // slip through the gate on a loose prefix.
+    pathname.startsWith("/icon.") ||
     pathname.startsWith("/brand/") ||
     pathname.startsWith("/fonts/") ||
     pathname === "/robots.txt"

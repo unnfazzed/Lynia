@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import { Sidebar } from "./components/Sidebar";
+import { adminFetch } from "./lib/api";
+import type { NavCounts } from "./lib/adminTypes";
 
 export const metadata: Metadata = {
   title: "LyniaGo — Admin",
@@ -13,13 +16,20 @@ export const metadata: Metadata = {
 // ships permanently "API not connected" even when the runtime env is set correctly (QA finding D-1).
 export const dynamic = "force-dynamic";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // The real human operator the fail-closed middleware asserted (verified IAP identity), forwarded as
+  // `x-lynia-operator`. Absent on the dev/offline path — the Sidebar then shows a generic label.
+  const operator = (await headers()).get("x-lynia-operator");
+  // Cheap attention badges (KYC backlog / open disputes / un-acked SOS) rendered shell-wide. Best-effort:
+  // null on the offline/unconfigured path, so the sidebar simply renders no badges.
+  const counts = await adminFetch<NavCounts>("/admin/nav-counts");
+
   return (
     <html lang="en">
       <body>
         {/* Ops-console shell: 216px sidebar (kit shell.js) + the page's own <main>. */}
         <div className="shell">
-          <Sidebar />
+          <Sidebar operator={operator} counts={counts} />
           {children}
         </div>
       </body>

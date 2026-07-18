@@ -49,7 +49,6 @@ export async function decideKyc(
 export async function mutateRider(
   profileId: string,
   action: "suspend" | "lift" | "ban" | "clear-hold",
-  target: string,
   reasonCode: string | null,
   note: string,
 ): Promise<void> {
@@ -63,4 +62,25 @@ export async function mutateRider(
   if (!ok) throw new Error(`Failed to ${action} rider ${profileId} (check API_BASE_URL / admin token).`);
   revalidatePath(`/riders/${profileId}`);
   revalidatePath("/riders");
+}
+
+/**
+ * DOC-16-03: record a manual prepaid credit to a rider's commission account from the console — the launch
+ * top-up rail (grace credits, support corrections) that previously required a raw API call. Hits
+ * `POST /admin/riders/:id/wallet-credit` (rail=manual); the endpoint's WalletService.creditManual writes
+ * the ledger + audit row in its own transaction, attributing it to the middleware-asserted operator. The
+ * idempotency key is minted per invocation — one confirmed submit = one credit. Amount is validated
+ * server-side too (positive, ≤ the endpoint cap); this is a light client-side guard before the call.
+ */
+export async function creditRiderWallet(profileId: string, amount: string, note: string): Promise<void> {
+  const value = Number(amount);
+  if (!profileId || !Number.isFinite(value) || value <= 0) return;
+  const ok = await adminPost(`/admin/riders/${profileId}/wallet-credit`, {
+    amount: value,
+    rail: "manual",
+    idempotencyKey: crypto.randomUUID(),
+    note: note || null,
+  });
+  if (!ok) throw new Error(`Failed to credit rider ${profileId}'s wallet (check API_BASE_URL / admin token).`);
+  revalidatePath(`/riders/${profileId}`);
 }

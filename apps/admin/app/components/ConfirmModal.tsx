@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { submitAdminAction } from "../actions/audit";
 
 type TriggerVariant = "ghost" | "danger" | "solid" | "quiet";
@@ -83,13 +83,53 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // A11y: stable ids so the dialog is labelled by its title, and the controls by their field labels.
+  const titleId = useId();
+  const amountId = useId();
+  const noteId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Where focus was before the dialog opened — restored on close (WCAG 2.4.3).
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!open) return;
+    // Move focus INTO the dialog on open, and remember where it was so we can restore it on close.
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
+    const focusables = () =>
+      Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+    focusables()[0]?.focus();
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+      // Trap Tab within the dialog so focus can't reach the (inert) page behind it.
+      if (e.key === "Tab") {
+        const items = focusables();
+        if (items.length === 0) return;
+        const first = items[0]!;
+        const last = items[items.length - 1]!;
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      // Restore focus to the trigger (or wherever it was) when the dialog closes.
+      restoreFocusRef.current?.focus?.();
+    };
   }, [open]);
 
   function reset() {
@@ -156,13 +196,16 @@ export function ConfirmModal(props: ConfirmModalProps) {
             if (e.target === e.currentTarget) setOpen(false);
           }}
         >
-          <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
-            <h3>{title}</h3>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialogRef}>
+            <h3 id={titleId}>{title}</h3>
             <div className="body">{consequence}</div>
 
             {reasons.length > 0 ? (
-              <>
-                <span className="field-label">Reason — required</span>
+              // <fieldset>/<legend> so screen readers announce the radio group's purpose.
+              <fieldset style={{ border: "none", margin: 0, padding: 0, minWidth: 0 }}>
+                <legend className="field-label" style={{ padding: 0 }}>
+                  Reason — required
+                </legend>
                 <div className="reason-list">
                   {reasonOpts.map((r) => (
                     <label key={r.value}>
@@ -177,17 +220,18 @@ export function ConfirmModal(props: ConfirmModalProps) {
                     </label>
                   ))}
                 </div>
-              </>
+              </fieldset>
             ) : null}
 
             {amount ? (
               <>
-                <span className="field-label">
+                <label className="field-label" htmlFor={amountId}>
                   {amount.label} {amount.required ? "— required" : "(optional)"}
-                </span>
+                </label>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {amount.prefix ? <span className="num" style={{ fontWeight: 600 }}>{amount.prefix}</span> : null}
                   <input
+                    id={amountId}
                     type="number"
                     inputMode="decimal"
                     min="0"
@@ -209,8 +253,11 @@ export function ConfirmModal(props: ConfirmModalProps) {
               </>
             ) : null}
 
-            <span className="field-label">Note {noteRequired ? "— required" : "(optional)"}</span>
+            <label className="field-label" htmlFor={noteId}>
+              Note {noteRequired ? "— required" : "(optional)"}
+            </label>
             <textarea
+              id={noteId}
               value={note}
               placeholder={notePlaceholder}
               onChange={(e) => setNote(e.target.value)}

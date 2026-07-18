@@ -274,3 +274,30 @@ export interface RiderDetail {
   reportLog?: ReportEntry[];
   trail: TripRow[];
 }
+
+/* ── Sidebar attention badges (GET /admin/nav-counts) ──────── */
+export interface NavCounts {
+  kycPending: number;
+  openIssues: number;
+  sosPending: number;
+}
+
+/* ── Rider prepaid wallet (DOC-16-03 — GET /admin/riders/:id/wallet) ── */
+/** One append-only commission-ledger row (credit +, debit −). `type` mirrors the API's
+ *  CommissionEntryType; `actor` is "system" or the admin profile id that wrote a manual credit. */
+export interface WalletLedgerEntry {
+  id: string;
+  type: "ride_commission" | "topup" | "grace" | "adjustment" | "reversal";
+  amount: string;
+  balanceAfter: string;
+  note: string | null;
+  actor: string | null;
+  orderId: string | null;
+  at: string;
+}
+
+export interface WalletView {
+  /** Prepaid commission balance (negative ⇒ owed). API-owned string. */
+  balance: string;
+  ledger: WalletLedgerEntry[];
+}
