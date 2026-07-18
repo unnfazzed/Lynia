@@ -33,7 +33,7 @@ Trace each claim to the authoritative artifact from the hierarchy and check whet
 
 ## 4. Classify each discrepancy — do NOT edit yet
 - **STALE_DOC** — code/design is correct, the doc is out of date. → safe to auto-fix the doc.
-- **CODE_BUG** — the doc reflects a real design/PRD/mockup decision and the *code* diverges from it. → DO NOT touch the doc. Register it in `docs/KNOWN_BUGS.md` as OPEN with the owning lane (bug-hunt / UX / deep-sweep per docs/ROUTINES.md) so tonight's fix routines — which all read that ledger in Phase 0 — pick it up and fix it. This is how doc reconciliation feeds the bug routines; never silently sit on a divergence.
+- **CODE_BUG** — the doc reflects a real design/PRD/mockup decision and the *code* diverges from it. → DO NOT touch the doc. Register it in `docs/KNOWN_BUGS.md` as OPEN with the owning lane (bug-hunt / UX / deep-sweep / wallet-audit per docs/ROUTINES.md) so tonight's fix routines — which all read that ledger in Phase 0 — pick it up and fix it. This is how doc reconciliation feeds the bug routines; never silently sit on a divergence.
 - **ORPHAN** — doc describes something that no longer exists in code or design. → flag for removal (it may be aspirational/planned; don't silently delete).
 - **AMBIGUOUS** — you cannot tell which side is right. → flag for a human in the report. Never guess.
 
