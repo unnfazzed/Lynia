@@ -267,7 +267,10 @@ export interface RiderDetail {
    *  rider with activeOrders > 0 has a live delivery a standing change doesn't touch by itself. */
   activeOrders: number;
   joined: string;
-  /** Conduct/safety reports filed against this rider (A-05). Absent/empty ⇒ never reported. */
-  reports?: ReportEntry[];
+  /** How many conduct/safety reports have been filed against this rider (A-05). 0 ⇒ never reported.
+   *  (The API returns this as a count; the entries themselves are `reportLog`.) */
+  reports?: number;
+  /** The recent conduct/safety report entries (A-05) — what `<ReportsCallout>` renders. */
+  reportLog?: ReportEntry[];
   trail: TripRow[];
 }

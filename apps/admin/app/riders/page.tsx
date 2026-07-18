@@ -107,7 +107,7 @@ export default async function RidersPage({
                     {r.tripsCount} / {r.ratingCount > 0 ? r.ratingAvg.toFixed(1) : "—"}
                   </td>
                   <td style={{ padding: "8px 8px", color: tokens.color.muted }}>
-                    {[r.isOnline ? "online" : null, r.cancelStrikes > 0 ? `${r.cancelStrikes} strikes` : null, r.cooldownUntil ? "cooldown" : null].filter(Boolean).join(", ") || "—"}
+                    {[r.isOnline ? "online" : null, r.cancelStrikes > 0 ? `${r.cancelStrikes} strike${r.cancelStrikes === 1 ? "" : "s"}` : null, r.cooldownUntil ? "cooldown" : null].filter(Boolean).join(", ") || "—"}
                   </td>
                   <td style={{ padding: "8px 8px" }}>
                     {r.kycStatus === "pending" ? (

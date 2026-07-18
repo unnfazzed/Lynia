@@ -50,4 +50,7 @@ export async function adjustFare(
   });
   if (!ok) throw new Error(`Failed to adjust fare for order ${id} (check API_BASE_URL / admin token).`);
   revalidatePath(`/orders/${id}`);
+  // Also refresh the list — its Fare column shows agreed→proposed and would otherwise serve a stale
+  // value after an adjustment (parity with cancelOrder / adjudicateDelivered above).
+  revalidatePath("/orders");
 }
