@@ -21,8 +21,7 @@ duplicated across them — `PILOT-READINESS.md` holds it once.
 | [`CEO-REVIEW.md`](./CEO-REVIEW.md) | 📋 Review log (CEO/product) | Strategy/economics/investor reviews across **Plan → Build checkpoint → Ship**. Decision history; status lives in `PILOT-READINESS.md`. |
 | [`ENG-REVIEW.md`](./ENG-REVIEW.md) | 📋 Review log (engineering) | Architecture + correctness reviews across **Plan → Build → Ship** (offer-loop concurrency, the P0 audits, GCP provisioning). Defines the stable `ET1`–`ET10` IDs. |
 | [`DESIGN-REVIEW.md`](./DESIGN-REVIEW.md) | 📋 Review log (design) | Design/UX reviews across **Plan → Build → Ship** (system lock, two-sided consultation, ship-prep visual QA). Calibrates against `DESIGN.md`. |
-| [`INDRIVE-UX-REVIEW.md`](./INDRIVE-UX-REVIEW.md) | 📋 Review (UX/latency) | Perceived-speed & responsiveness audit vs inDrive: the auction/tracking are polled not pushed, no optimistic UI, marker teleport + camera-fight, plus architecture/scale smells — with a P0→P2 fix roadmap mapped to inDrive parity. Complements the visual `DESIGN-REVIEW.md` and the architecture `COMPETITOR-REVIEW.md`. |
-| [`COMPETITOR-REVIEW.md`](./COMPETITOR-REVIEW.md) | 📋 Review (architecture) | Architecture/competitor benchmarking: `ARCHITECTURE.md` weighed against inDrive, Gojek, Grab, and Chowdeck — engineering decisions ranked in fair weight classes, drawn from public sources. Complements the UX `INDRIVE-UX-REVIEW.md`. |
+| [`COMPETITOR-REVIEW.md`](./COMPETITOR-REVIEW.md) | 📋 Review (architecture) | Architecture/competitor benchmarking: `ARCHITECTURE.md` weighed against inDrive, Gojek, Grab, and Chowdeck — engineering decisions ranked in fair weight classes, drawn from public sources. (The companion inDrive UX/latency review shipped its whole P0–P2 roadmap and was retired to git history, 2026-07-19.) |
 | [`DESIGN.md`](./DESIGN.md) | 🟢 Living (spec) | Design system + UX spec (tokens, components, §5c journey, the full two-sided IA) and the `DT1`–`DT13` build-task status table. The baseline every design review calibrates against. |
 | [`DESIGN-SYSTEM.md`](./DESIGN-SYSTEM.md) | 🟢 Living | Design-system adoption record: how the LyniaGo system in `packages/design/` was vendored, the token reconciliation into `packages/shared`, what is wired into the apps, and the device/build follow-ups. |
 | [`OBSERVABILITY.md`](./OBSERVABILITY.md) | 🟢 Living (spec) | Observability spec: latency SLOs, the metric vocabulary (fixed-cardinality labels), and the OTLP-push collector runbook (`OTEL_EXPORTER_OTLP_ENDPOINT`). |
@@ -33,6 +32,32 @@ duplicated across them — `PILOT-READINESS.md` holds it once.
 | [`IR-RUNBOOK.md`](./IR-RUNBOOK.md) | 🟢 Living (runbook) | Incident response: severity triage, containment moves (session revoke, secret rotation, WAF tighten, rollback), eradicate/recover, breach notification (Zimbabwe DPA), blameless post-mortem, and the detections that should page. |
 | [`PILOT-READINESS.md`](./PILOT-READINESS.md) | 🟢 Living (current) | Where the build actually stands: T0–T13 scorecard and the remaining gates, plus the **founder action runbook** (WhatsApp BSP / Didit / FCM wiring) and the **vendor-free QA-testing** guide. **The single source of truth for status.** |
 | [`LAUNCH-READINESS.md`](./LAUNCH-READINESS.md) | 🟢 Living (campaign) | The pilot-ready → **launch-ready review strategy**: three tracks (Engineering hardening · Performance proof · UI/device QA) as the stable `LR1`–`LR21` gates with machine-checkable exit tests, the parallel agentic (Claude/gstack) execution model, and the final go/no-go checklist. |
+
+## Routine ledgers & reports (the other things you'll see in this folder)
+
+The scheduled Claude routines (`ROUTINES.md` is the canonical spec, `routines/*.md` the live
+trigger-prompt mirrors) keep their working state here:
+
+- **Ledgers (living):** `KNOWN_BUGS.md` (the shared bug ledger every routine dedupes through),
+  `REFACTOR-LEDGER.md` (hotspot map + debt register), `doc-sync-report.md` + `.last-doc-sync`
+  (the doc-reconciliation routine's latest run, overwritten each run).
+- **Dated reports (one per lane):** `BUG-HUNT-*`, `UX-USABILITY-REVIEW-*`, `DEEP-SWEEP-*`,
+  `WALLET-DATA-AUDIT-*`, `REFACTOR-*`, `PR-HEALTH-REPORT-*`. **Only the most recent report per
+  lane is kept on `main`** (2026-07-19 cleanup; retention rule in `ROUTINES.md`) — older runs
+  live in git history, and their durable findings are already in the ledgers.
+- **Plans (`plans/`):** design/arming docs that are still load-bearing (admin-console deployment
+  + arming, rider-wallet design + brief, identity/POD hardening, test-APK build, DS3 plan, and
+  the superseded-but-still-cited prepaid-commission note). Fully-executed plans are retired to
+  git history once nothing cites them.
+- **Campaign trackers still in flight:** `LAUNCH-READINESS.md` (LR gates), the GCP reviews
+  (`GCP-PROVISIONING-REVIEW.md`, `GCP-PENDING-REVIEW-2026-07-13.md` — cited by CI drift/diagnose
+  workflows), `INFRA-HARDENING-ROLLOUT.md` (deferred hardening flags),
+  `ANDROID-LAUNCH-REVIEW-2026-07-18.md` + `ADMIN-CONSOLE-LAUNCH-SMOKE-TEST.md` (the 31 Jul
+  launch pair), `FRAUD-REVIEW.md` (threat-model narrative; live status is in `KNOWN_BUGS.md`).
+
+Everything else that was point-in-time (one-off reviews whose findings shipped, executed fix
+plans, superseded snapshots) is pruned from the working tree — `git log --follow docs/<file>`
+recovers any of it.
 
 ## Reading order
 
