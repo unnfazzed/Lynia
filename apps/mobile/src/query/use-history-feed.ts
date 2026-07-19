@@ -2,6 +2,7 @@ import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { type EarningsSummary, getEarningsSummary, getHistory, type OrderHistoryRow } from "../api/orders";
 import { loadHistorySnapshot, saveHistorySnapshot } from "../net/history-store";
+import { walletKey, walletLedgerKey } from "./use-wallet";
 
 /**
  * The shared `["history"]` feed with on-device warm-paint, consumed by BOTH the trips list and the
@@ -42,11 +43,18 @@ export const EARNINGS_SUMMARY_KEY = ["earnings", "summary"] as const;
  * completion self-healed via a WS reconnect or a foreground resume can't drift from the mutation's own
  * onSuccess by only remembering `["activeJob"]`. Every rider-side call site (job.tsx's `refresh`, the
  * rider job socket's reconnect self-heal) should go through this rather than re-typing the query-key list.
+ *
+ * WD-025: a `delivered` transition also debits the wallet balance server-side in the same transaction
+ * (`WalletService.chargeCommission`), so the wallet balance/ledger keys are invalidated here too — the
+ * Earnings tab's commission-balance row reads `walletKey` directly and would otherwise keep painting the
+ * pre-debit balance for the rest of its 30s staleTime after a delivery/adjudication.
  */
 export function invalidateRiderJobQueries(qc: QueryClient): void {
   void qc.invalidateQueries({ queryKey: ["activeJob"] });
   void qc.invalidateQueries({ queryKey: HISTORY_KEY });
   void qc.invalidateQueries({ queryKey: EARNINGS_SUMMARY_KEY });
+  void qc.invalidateQueries({ queryKey: walletKey });
+  void qc.invalidateQueries({ queryKey: walletLedgerKey });
 }
 
 /** Customer-side counterpart — no earnings aggregate on that side, so Trip History only. */
