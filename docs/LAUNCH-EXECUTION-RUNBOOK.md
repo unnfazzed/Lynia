@@ -259,51 +259,49 @@ gh workflow run release.yml --ref main
 ```
 Prefer keeping API contracts backward-compatible; this gate is the escape hatch, not the routine.
 
-## 9. Adopt the hand-made GCP resources into Terraform (one `terraform import` session)
+## 9. Adopt the hand-made GCP resources into Terraform (one script run)
 
 Three Secret Manager secrets were created with ad-hoc `gcloud` commands and live outside the
 Terraform blueprint: `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, `WHATSAPP_ACCESS_TOKEN`. Adopting
 them makes Terraform own the secret *containers* + IAM (drift-detected, re-creatable) while the
-*values* stay manual — correct for vendor credentials. Run once, from `infra/terraform/`:
+*values* stay manual — correct for vendor credentials.
+
+**The resource blocks are now committed** (`infra/terraform/secrets.tf`,
+`google_secret_manager_secret.vendor` + `…_iam_member.vendor_runtime`), and the import session is
+a single idempotent script — run once with founder credentials (CI cannot: the deployer SA is
+deliberately read-only on the state bucket):
 
 ```bash
-# 1) FIRST add the resource blocks (do not apply before importing — apply would try to CREATE
-#    secrets that already exist and error). Append to secrets.tf:
-cat >> secrets.tf <<'EOF'
+# Prereqs: terraform >= 1.5, gcloud authed as the founder, and the APPLIED terraform.tfvars
+# present in infra/terraform/ (gitignored — same content as the TF_PROD_TFVARS secret, §10).
+scripts/adopt-vendor-secrets.sh            # defaults to project lynia-500911
+```
 
-# Vendor secrets — containers adopted via `terraform import` (runbook §9); VALUES are added
-# manually as new versions and never live in state/git.
-resource "google_secret_manager_secret" "vendor" {
-  for_each  = toset(["DIDIT_API_KEY", "DIDIT_WEBHOOK_SECRET", "WHATSAPP_ACCESS_TOKEN"])
-  secret_id = each.key
-  project   = local.project_id
-  labels    = var.labels
-  replication {
-    auto {}
-  }
-  depends_on = [google_project_service.apis]
-}
+The script imports each container + accessor binding (skipping anything already in state or not
+yet created live), then proves the adoption with a targeted plan. It **never applies**, and it
+exits red if the plan wants to *change* a container — a replace there would delete live
+credential versions, so reconcile `secrets.tf` to reality instead of applying. Binding-only
+creates are tolerated (additive; the next real apply lands them).
 
-resource "google_secret_manager_secret_iam_member" "vendor_runtime" {
-  for_each  = google_secret_manager_secret.vendor
-  project   = local.project_id
-  secret_id = each.value.secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.runtime.email}"
-}
-EOF
+Until the script has run, the nightly drift audit (§10) reports "a `terraform apply` is
+pending" for these three resources — that is the designed reminder. Resolve it by **running the
+script (import)**, never by a bare `terraform apply`, which would collide with the live secrets.
 
-# 2) Import each container + its existing runtime-SA accessor binding:
+When more vendor secrets get armed (release.yml already wires `BIRD_ACCESS_KEY` and
+`LOCAL_SMS_API_KEY` the same opt-in way), add the new names to the `for_each` list in
+`secrets.tf` and re-run the script.
+
+Manual fallback (what the script automates), from `infra/terraform/`:
+
+```bash
 for s in DIDIT_API_KEY DIDIT_WEBHOOK_SECRET WHATSAPP_ACCESS_TOKEN; do
   terraform import "google_secret_manager_secret.vendor[\"$s\"]" "projects/$PROJECT/secrets/$s"
   terraform import "google_secret_manager_secret_iam_member.vendor_runtime[\"$s\"]" \
     "projects/$PROJECT/secrets/$s roles/secretmanager.secretAccessor serviceAccount:$RUNTIME_SA"
 done
-
-# 3) Confirm a clean adoption — expect "No changes" (or only label additions):
-terraform plan
-# Commit the secrets.tf addition. Standing rule: any emergency gcloud change gets a follow-up
-# PR that makes Terraform own the result (precedent: the deployer repoAdmin grant, iam.tf).
+terraform plan   # expect "No changes" (binding-only creates are OK)
+# Standing rule: any emergency gcloud change gets a follow-up PR that makes Terraform own the
+# result (precedent: the deployer repoAdmin grant, iam.tf).
 ```
 
 If `dockerhub-remote` (the Artifact Registry Docker Hub mirror from §3) was created by hand and you
