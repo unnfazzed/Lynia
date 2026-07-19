@@ -705,6 +705,49 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.pickupPhotoUrl).toBeNull();
   });
 
+  it("serves the SAME signed pickup-photo URL across consecutive polls (mint cached — device image cache stays valid)", async () => {
+    // The device's image cache is keyed on the URL string: a fresh signature per 15s poll made the
+    // phone re-download an identical photo for the whole delivery (and burned a signBlob IAM call per
+    // poll). Two polls on one instance must yield one mint and byte-identical URLs.
+    let minted = 0;
+    const storage = { createReadUrl: vi.fn(async (key: string) => `https://signed.example/${key}?sig=${++minted}`) } as unknown as StorageAdapter;
+    const s = svc(row({ status: "picked_up", pickupPhotoKey: "pickup/rider-1/photo.jpg" }), storage);
+    const first = await s.getSnapshot("ord-1", "cust-1");
+    const second = await s.getSnapshot("ord-1", "cust-1");
+    expect(first.pickupPhotoUrl).toBe("https://signed.example/pickup/rider-1/photo.jpg?sig=1");
+    expect(second.pickupPhotoUrl).toBe(first.pickupPhotoUrl);
+    expect(storage.createReadUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cache a failed pickup-photo mint — the next poll re-tries and recovers", async () => {
+    const createReadUrl = vi
+      .fn<(key: string, ttl: number) => Promise<string>>()
+      .mockRejectedValueOnce(new Error("GCS blip"))
+      .mockResolvedValueOnce("https://signed.example/pickup/rider-1/photo.jpg?sig=ok");
+    const s = svc(row({ pickupPhotoKey: "pickup/rider-1/photo.jpg" }), { createReadUrl } as unknown as StorageAdapter);
+    expect((await s.getSnapshot("ord-1", "cust-1")).pickupPhotoUrl).toBeNull();
+    expect((await s.getSnapshot("ord-1", "cust-1")).pickupPhotoUrl).toBe("https://signed.example/pickup/rider-1/photo.jpg?sig=ok");
+  });
+
+  it("coalesces the open-auction ridersNearby count onto one geo query within its TTL (micro-cache)", async () => {
+    // Every 15s open-auction poll used to run its own PostGIS radius query for an informational
+    // count. Within the cache TTL, repeat polls (and same-block auctions) share one query. Targeting
+    // (broadcastToNearbyRiders) deliberately does NOT go through this cache — covered by the create()
+    // specs above, which assert nearbyRiders is called with the raw coordinates on every broadcast.
+    const nearbyRiders = vi.fn(async () => [{ profileId: "rider-9", distanceM: 500 }] as NearbyRider[]);
+    const tracking = { nearbyRiders, getLivePosition: async () => null } as unknown as TrackingService;
+    const s = new OrdersService(
+      { order: { findUnique: async () => row({ status: "open_for_offers" }) } } as unknown as PrismaService,
+      {} as OfferExpiryService,
+      tracking,
+      noNotifications,
+      noGateway,
+    );
+    expect((await s.getSnapshot("ord-1", "cust-1")).ridersNearby).toBe(1);
+    expect((await s.getSnapshot("ord-1", "cust-1")).ridersNearby).toBe(1);
+    expect(nearbyRiders).toHaveBeenCalledTimes(1);
+  });
+
   it("prefers the Redis live rider position over the stale PG columns", async () => {
     const tracking = {
       nearbyRiders: async (): Promise<NearbyRider[]> => [],

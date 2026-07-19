@@ -77,6 +77,35 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
   }
 }
 
+// ---------------------------------------------------------------------------
+// Conditional GETs — the bandwidth half of the polling loops. The API stamps an ETag on every JSON
+// body and answers a matching If-None-Match with an EMPTY 304 (Express weak ETags, pinned in
+// apps/api/src/main.ts). We remember the last ETag + body per GET path and revalidate instead of
+// re-downloading: an unchanged 15s auction poll / 30s home poll / 5s KYC poll costs headers only
+// (~0.2 KB) instead of the full JSON — the difference between "polling" and "re-downloading the
+// app's state on a loop" on metered 2G/3G. Memory-only by design: it is a REVALIDATION store, not
+// an offline cache (React Query owns offline warm paint), and it's cleared on sign-out so a shared
+// device can't serve one user's bodies to the next (S1).
+// ---------------------------------------------------------------------------
+const MAX_ETAG_ENTRIES = 100;
+const etagStore = new Map<string, { etag: string; body: string }>();
+
+/** Forget every stored ETag/body. Called on BOTH sign-out paths (deliberate + token-expiry). */
+export function clearConditionalCache(): void {
+  etagStore.clear();
+}
+
+function rememberEtag(path: string, etag: string, body: string): void {
+  if (!etagStore.has(path) && etagStore.size >= MAX_ETAG_ENTRIES) {
+    // Bounded: drop the oldest-inserted entry (Map preserves insertion order). The hot pollers
+    // re-insert on every 200, so they stay resident; one-off screens age out.
+    const oldest = etagStore.keys().next().value;
+    if (oldest !== undefined) etagStore.delete(oldest);
+  }
+  etagStore.delete(path); // delete-then-set so re-validated paths count as freshly inserted
+  etagStore.set(path, { etag, body });
+}
+
 // Single-flight: concurrent 401s (the order screen runs two 4s pollers) share ONE refresh. The
 // backend rotates refresh tokens — without this, the second request would refresh with a token the
 // first just revoked and get a false sign-out.
@@ -103,6 +132,10 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
   const { method = "GET", body, auth = true } = opts;
   const session = hooks?.getSession() ?? null;
 
+  // Conditional-GET: hold the entry captured NOW (not a re-lookup at response time), so a concurrent
+  // request evicting this path from the bounded store can't leave a 304 with no body to serve.
+  const conditional = method === "GET" ? etagStore.get(path) : undefined;
+
   // KB-IDENTITY-BINDING L1: attach the stable per-install device id so the server can throttle per-device
   // signup + surface the recycle signal. Best-effort — a keychain read failure just omits the header
   // (the server treats a missing id as an older client and leaves the device logic inert).
@@ -115,6 +148,7 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
         ...(auth && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         ...(deviceId ? { "x-device-id": deviceId } : {}),
+        ...(conditional ? { "If-None-Match": conditional.etag } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
@@ -141,9 +175,19 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
     if (refreshed) {
       res = await send(refreshed.accessToken);
     } else {
+      // Token-expiry sign-out: scrub the conditional-GET store with the session (S1 — a shared
+      // device must not revalidate the previous user's cached bodies into the next session).
+      clearConditionalCache();
       hooks?.onSignOut();
       throw new ApiError(401, "Your session expired — sign in again.");
     }
+  }
+
+  // 304 Not Modified: the body we already hold is still current — serve it without downloading a
+  // byte. Only reachable when WE sent the If-None-Match (guarded on `conditional`); a stray 304
+  // without one falls through to the error path like any other non-2xx.
+  if (res.status === 304 && conditional) {
+    return JSON.parse(conditional.body) as T;
   }
 
   if (!res.ok) {
@@ -154,6 +198,12 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
   // yields undefined, and a literal "null" parses to null, both of which callers treat as "none".
   if (res.status === 204) return undefined as T;
   const text = await res.text();
+  // Remember the validator for the next poll of this path. `?.` tolerates header-less Response
+  // stubs in tests; a response with no ETag simply isn't revalidatable and is served fresh next time.
+  if (method === "GET" && text) {
+    const etag = res.headers?.get("etag");
+    if (etag) rememberEtag(path, etag, text);
+  }
   return (text ? JSON.parse(text) : undefined) as T;
 }
 

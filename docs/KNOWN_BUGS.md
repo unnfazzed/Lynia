@@ -1307,3 +1307,20 @@ same-run with tests; the remainder deferred with explicit safe-fix specs and dev
 implements it — the finder only scanned `admin/*.controller.ts`); and "report reason / issue type render as raw enums"
 (the code correctly uses `REPORT_REASON_LABELS`/`ISSUE_TYPE_LABELS[x] ?? x`; the raw display was a review-mock artifact
 from passing non-existent enum values). See report §7.
+
+## Interactive performance session 2026-07-19 (mobile speed/latency/cost) — `docs/PERFORMANCE.md`
+
+Human-requested performance push (reduce latency + metered-data cost, "radically fast on low
+connectivity"), not a bug-hunt lane — but the audit surfaced two genuine defects, both fixed
+same-run with regression tests. The wider (non-defect) optimization work — API gzip/brotli
+compression, ETag/`304` conditional GETs, `MicroCache` (single-flight TTL) on the snapshot hot
+path, React Query disk persistence with a live-state-excluding allowlist, `getSnapshot`
+side-read parallelization — plus the ranked deferred backlog (lightweight heartbeat endpoint,
+notifications-feed materialization, expo-image, socket sharing, list virtualization, CDN/edge)
+lives in `docs/PERFORMANCE.md`; future lanes should treat that backlog as known, not rediscover
+it. `pnpm typecheck` + full test suite green.
+
+| ID | Description | Area | Sev | Owning lane | Status |
+|---|---|---|---|---|---|
+| PERF19-01 | Pickup-photo signed read URL was **re-minted on every snapshot poll** — a fresh V4 signature (new query string) every 15s made the phone's image cache miss, so the SAME pickup photo re-downloaded every poll for the entire delivery leg on metered data, and each poll burned one GCP `signBlob` IAM call against the project-shared signing quota (the very quota DS-07 throttles minting to protect). | `apps/api/src/orders/orders.service.ts` `getSnapshot` | MEDIUM | BH/perf | **FIXED** — signed URL micro-cached per object key for 10 min of its 15-min validity (byte-stable URL across polls; a served URL always has ≥5 min life left; mint failures never cached). Tests: `orders.service.spec.ts` (same-URL-across-polls, one mint; failed-mint retry). |
+| PERF19-02 | Home compose screen persisted the order draft to **SecureStore on every keystroke** in the landmark/note/item fields — serialized keychain round-trips (slow on the target low-end Androids) queued on the typing path, i.e. input latency where the product most needs to feel instant. | `apps/mobile/app/home.tsx` draft-persist effect | LOW-MEDIUM | UX/perf | **FIXED** — trailing 500 ms debounce with an unmount flush (navigate-away right after typing still saves; a hard kill inside the window loses ≤0.5s of draft edits vs. every keystroke previously — accepted). |
