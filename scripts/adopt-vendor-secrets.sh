@@ -23,7 +23,11 @@ set -uo pipefail
 
 PROJECT="${1:-lynia-500911}"
 RUNTIME_SA="lynia-run@${PROJECT}.iam.gserviceaccount.com"
-SECRETS=(DIDIT_API_KEY DIDIT_WEBHOOK_SECRET WHATSAPP_ACCESS_TOKEN)
+# Keep in lockstep with google_secret_manager_secret.vendor in infra/terraform/secrets.tf.
+# Names that don't exist live yet (e.g. BIRD_ACCESS_KEY before Bird arming) are fine: they are
+# skipped at import and their pending CREATE is tolerated in the plan check below.
+SECRETS=(DIDIT_API_KEY DIDIT_WEBHOOK_SECRET WHATSAPP_ACCESS_TOKEN BIRD_ACCESS_KEY)
+LIVE=()
 
 PASS=0 FAIL=0 WARN=0
 ok()   { PASS=$((PASS+1)); printf '  \033[32mPASS\033[0m %s\n' "$1"; }
@@ -51,9 +55,10 @@ ok "terraform init (backend: gs://lynia-tfstate)"
 hdr "Import vendor secret containers + accessor bindings"
 for s in "${SECRETS[@]}"; do
   if ! gcloud secrets describe "$s" --project "$PROJECT" >/dev/null 2>&1; then
-    warn "secret $s does not exist live — skipped" "create it when arming that vendor, then re-run this script"
+    warn "secret $s does not exist live — nothing to import" "OK pre-arming: the next terraform apply creates the container (add its value as a version BEFORE flipping the vendor's ENABLED flag), or hand-create it while arming and re-run this script"
     continue
   fi
+  LIVE+=("$s")
 
   addr="google_secret_manager_secret.vendor[\"$s\"]"
   if terraform state list "$addr" 2>/dev/null | grep -q .; then
@@ -87,14 +92,26 @@ code=$?
 if [ "$code" -eq 0 ]; then
   ok "plan clean — containers + bindings fully adopted (runbook §9 done)"
 elif [ "$code" -eq 2 ]; then
-  if grep -Eq '# google_secret_manager_secret\.vendor\[' "$plan_log"; then
-    bad "plan wants to CHANGE a vendor secret container — DO NOT APPLY" \
-        "a replace would delete live credential versions; reconcile secrets.tf to live reality (see plan below)"
+  # Only plan actions on containers that EXIST live are dangerous (worst case a replace, which
+  # deletes live credential versions). Pending CREATEs for pre-listed, not-yet-armed names
+  # (e.g. BIRD_ACCESS_KEY) and accessor-binding creates are additive and tolerated.
+  danger=false
+  if [ "${#LIVE[@]}" -gt 0 ]; then
+    for s in "${LIVE[@]}"; do
+      if grep -Eq "# google_secret_manager_secret\.vendor\[\"$s\"\]" "$plan_log"; then
+        bad "plan wants to CHANGE the live vendor secret container $s — DO NOT APPLY" \
+            "a replace would delete live credential versions; reconcile secrets.tf to live reality (see plan below)"
+        danger=true
+      fi
+    done
+  fi
+  if [ "$danger" = "true" ]; then
     grep -E '^ *([#~+-]|will be|must be)' "$plan_log" | head -40
     exit 1
   fi
-  warn "plan pending only for accessor bindings (additive)" "the next real terraform apply lands them; nothing to do now"
-  grep -E '# google_secret_manager_secret_iam_member' "$plan_log" | head -10
+  warn "plan pending only for additive resources (pre-arming containers and/or accessor bindings)" \
+       "the next real terraform apply lands them; for a new container, add its value as a version before flipping the vendor's ENABLED flag"
+  grep -E '# google_secret_manager_secret(_iam_member)?\.' "$plan_log" | head -10
 else
   bad "terraform plan errored" "read the log: $plan_log"
   exit 1

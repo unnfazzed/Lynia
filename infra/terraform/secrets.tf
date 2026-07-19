@@ -93,15 +93,20 @@ resource "google_secret_manager_secret_iam_member" "runtime_access" {
 # Run scripts/adopt-vendor-secrets.sh once (founder credentials — CI's deployer SA is read-only
 # on the state bucket by design); it imports idempotently, then proves the plan is clean.
 #
-# When Bird / local-SMS OTP get armed (release.yml wires BIRD_ACCESS_KEY / LOCAL_SMS_API_KEY the
-# same way), add those names here and re-run the script.
+# BIRD_ACCESS_KEY is pre-listed ahead of its arming (Bird is the priority OTP channel — decision
+# 2026-07-19): if the container doesn't exist live yet, the adopt script tolerates the pending
+# CREATE (and a founder apply materializes it), or hand-create it while arming and re-run the
+# script to import. Either way, add the key VALUE as a version BEFORE flipping BIRD_ENABLED=true —
+# the deploy resolves BIRD_ACCESS_KEY:latest, and a container with zero versions fails the deploy.
+# When local-SMS OTP gets armed (release.yml wires LOCAL_SMS_API_KEY the same way), add that name
+# here and re-run the script.
 #
 # Deliberately NO `labels` (unlike the runtime secrets above): the hand-created containers carry
 # none, so a labels argument would leave a standing in-place diff that nags the nightly drift
 # audit until someone applies right next to live credentials. Add labels in a real apply session
 # if ever wanted.
 resource "google_secret_manager_secret" "vendor" {
-  for_each  = toset(["DIDIT_API_KEY", "DIDIT_WEBHOOK_SECRET", "WHATSAPP_ACCESS_TOKEN"])
+  for_each  = toset(["DIDIT_API_KEY", "DIDIT_WEBHOOK_SECRET", "WHATSAPP_ACCESS_TOKEN", "BIRD_ACCESS_KEY"])
   secret_id = each.key
   project   = local.project_id
 
