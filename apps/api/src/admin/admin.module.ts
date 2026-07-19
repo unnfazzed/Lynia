@@ -6,6 +6,7 @@ import { WalletModule } from "../wallet/wallet.module";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminController } from "./admin.controller";
 import { AdminCustomersService } from "./admin-customers.service";
+import { AdminKycReviewService } from "./admin-kyc-review.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminService } from "./admin.service";
@@ -17,6 +18,13 @@ import { AdminService } from "./admin.service";
   // WalletModule exports WalletService — the admin manual-credit path for the commission wallet.
   imports: [SettlementsModule, TrackingModule, SosModule, WalletModule],
   controllers: [AdminController],
-  providers: [AdminService, AdminOrdersService, AdminRidersService, AdminCustomersService, AdminAuditService],
+  providers: [
+    AdminService,
+    AdminOrdersService,
+    AdminRidersService,
+    AdminKycReviewService,
+    AdminCustomersService,
+    AdminAuditService,
+  ],
 })
 export class AdminModule {}

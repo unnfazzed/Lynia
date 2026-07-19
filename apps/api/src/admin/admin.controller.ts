@@ -10,6 +10,7 @@ import { SosService } from "../sos/sos.service";
 import { WalletService } from "../wallet/wallet.service";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
+import { AdminKycReviewService } from "./admin-kyc-review.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminService } from "./admin.service";
@@ -64,6 +65,7 @@ export class AdminController {
     private readonly admin: AdminService,
     private readonly ordersService: AdminOrdersService,
     private readonly ridersService: AdminRidersService,
+    private readonly kycReviewService: AdminKycReviewService,
     private readonly customersService: AdminCustomersService,
     private readonly audit: AdminAuditService,
     private readonly settlements: SettlementsService,
@@ -114,7 +116,7 @@ export class AdminController {
   /** KYC doc-review detail for one rider (A-02). 404s when the profile isn't a rider. */
   @Get("riders/:profileId/kyc")
   async kycReview(@Param("profileId", ParseUUIDPipe) profileId: string) {
-    const review = await this.ridersService.getKycReview(profileId);
+    const review = await this.kycReviewService.getKycReview(profileId);
     if (!review) throw new NotFoundException("Rider not found");
     return review;
   }
