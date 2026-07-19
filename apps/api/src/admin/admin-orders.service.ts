@@ -201,9 +201,11 @@ export class AdminOrdersService {
    * On adjudication the order is force-completed and the rider is credited exactly like a normal
    * completion — a successful trip (tripsCount + reliability recovery, mirroring completeOrder) and the
    * prepaid commission debit (no-op at rate 0; the delivery IS commissionable — the rider did the work).
-   * The customer is notified with a 48h contest window; a contest is the existing "report a problem"
-   * (raise an issue) path, which lands in the disputes queue where ops can refund/re-adjudicate. Reason
-   * required. All mutations + the audit row commit in ONE transaction (never one without the other).
+   * The customer is notified and can contest via the existing "report a problem" (raise an issue) path,
+   * which lands in the disputes queue where ops can refund/re-adjudicate — `IssuesService.raise` has no
+   * time-based gating, so this stays open indefinitely; the push/feed copy must not claim a deadline the
+   * code doesn't enforce. Reason required. All mutations + the audit row commit in ONE transaction (never
+   * one without the other).
    */
   async adjudicateDelivered(actor: string, orderId: string, input: { reason: string; note?: string | null }) {
     const result = await this.prisma.$transaction(async (tx) => {
@@ -272,12 +274,12 @@ export class AdminOrdersService {
     this.gateway?.emitOrderStatus(orderId, "completed");
     void this.notifications?.notifyProfiles([result.customerId], {
       title: "Delivery marked complete after review",
-      body: "Our team reviewed the rider's proof and marked this delivery complete. If that's not right, open the app to report a problem within 48 hours.",
+      body: "Our team reviewed the delivery and marked it complete. If that's not right, open the app to report a problem.",
       data: { orderId, kind: "order" },
     });
     void this.notifications?.notifyProfiles([result.riderId], {
       title: "Delivery confirmed",
-      body: "Our team reviewed your proof and confirmed this delivery. Thanks for adding the evidence.",
+      body: "Our team reviewed the delivery and confirmed it as complete.",
       data: { orderId, kind: "order" },
     });
     return { id: result.id, status: result.status, auditId: result.auditId };

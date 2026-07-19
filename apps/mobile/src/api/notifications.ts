@@ -14,8 +14,12 @@ export interface NotificationRow {
   // screen routes those to the rider home instead of /order/:id.
   orderId: string | null;
   // BH-18: which account an orderId-less row is about ("customer" for customer.hold/lift, "rider" for
-  // every other account-status row) — see the matching field in the API's NotificationRow.
+  // every other account-status row). UX19-03: on order-status rows this is instead the VIEWER's
+  // per-order role, used by notificationRowDestination to replicate pushDestination's rider-only
+  // screen routing — see the matching field in the API's NotificationRow.
   to?: "customer" | "rider";
+  // UX19-03: the raw order-status this row is about (undefined for offer/account rows).
+  status?: string;
   icon: IconName;
   title: string;
   message: string;

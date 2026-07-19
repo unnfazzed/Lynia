@@ -56,6 +56,24 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     expect(new Set(feed.map((r) => r.id)).size).toBe(feed.length);
   });
 
+  // UX19-03: `to` + `status` let the client (notificationRowDestination) replicate pushDestination's
+  // rider-only screen routing for a feed tap — without these a rider's own "assigned"/"cancelled" row
+  // always fell back to /order/:id, a dead-control detour the equivalent push doesn't take.
+  it("stamps the viewer's per-order voice and the raw status on every order-status row", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", riderId: "rider", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+    ]);
+    const custFeed = await service.feedForUser("cust", NOW);
+    expect(custFeed[0]).toMatchObject({ to: "customer", status: "assigned" });
+
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", riderId: "rider", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+    ]);
+    const riderFeed = await service.feedForUser("rider", NOW);
+    expect(riderFeed[0]).toMatchObject({ to: "rider", status: "assigned" });
+  });
+
   it("carries the parent orderId on every row, so the client can navigate a tapped notification", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
@@ -449,8 +467,9 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       where.action === "order.adjudicate_delivered" ? [{ target: "o1" }] : [],
     );
 
-    // Customer view (riderId != viewer) — adjudicated order shows the review + 48h contest copy; the
-    // ordinary completion keeps the generic FEED_NOTICES.completed copy.
+    // Customer view (riderId != viewer) — adjudicated order shows the review copy (UX19-02: no fabricated
+    // deadline — `IssuesService.raise` has no time-based gating); the ordinary completion keeps the
+    // generic FEED_NOTICES.completed copy.
     prisma.order.findMany.mockResolvedValue([
       { id: "o1", riderId: "rider", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
       { id: "o2", riderId: "rider", events: [{ status: "completed", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
@@ -458,23 +477,26 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     const custFeed = await service.feedForUser("cust", NOW);
     expect(custFeed.find((r) => r.orderId === "o1")).toMatchObject({
       title: "Delivery marked complete after review",
-      message: expect.stringContaining("within 48 hours"),
+      message: expect.stringContaining("report a problem"),
     });
+    expect(custFeed.find((r) => r.orderId === "o1")?.message).not.toMatch(/48 hours?/i);
     expect(custFeed.find((r) => r.orderId === "o2")).toMatchObject({ title: "Delivery complete" });
     // It queried the durable adjudication audit rows for the in-view orders.
     expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { target: { in: ["o1", "o2"] }, action: "order.adjudicate_delivered" } }),
     );
 
-    // Rider view (riderId === viewer) — the adjudicated completion shows the rider-voiced "we reviewed your
-    // proof" copy, not the generic "Nice work".
+    // Rider view (riderId === viewer) — the adjudicated completion shows the rider-voiced review copy, not
+    // the generic "Nice work", and (UX19-04) doesn't thank the rider for evidence that may never have been
+    // submitted — proof-of-drop capture is optional and adjudicateDelivered has no evidence precondition.
     prisma.order.findMany.mockResolvedValue([
       { id: "o1", riderId: "me", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
     ]);
     const riderFeed = await service.feedForUser("me", NOW);
     expect(riderFeed[0]).toMatchObject({
       title: "Delivery confirmed",
-      message: expect.stringContaining("reviewed your proof"),
+      message: expect.stringContaining("reviewed the delivery"),
     });
+    expect(riderFeed[0].message).not.toMatch(/your proof|the evidence/i);
   });
 });
