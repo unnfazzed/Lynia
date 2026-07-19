@@ -1,9 +1,14 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import type IORedis from "ioredis";
 import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
-import { MicroCache } from "../common/micro-cache";
+import { MicroCache, type MicroCacheL2 } from "../common/micro-cache";
+import { createRedisClient } from "../common/redis";
+import { ENV } from "../config/config.module";
+import type { Env } from "../config/env";
+import { MetricsService } from "../observability/metrics.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -95,15 +100,35 @@ function riderWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown
 }
 
 @Injectable()
-export class OrdersService {
+export class OrdersService implements OnModuleDestroy {
   private readonly logger = new Logger(OrdersService.name);
 
   // Read-through micro-caches on the snapshot hot path (DoorDash-style request coalescing, scaled to
-  // this API): in-memory, per-instance, single-flight, bounded. Strictly for reads whose few seconds
-  // of per-instance staleness is explicitly fine — never for anything that gates money, assignment,
-  // or auth (broadcast targeting, bid acceptance and pricing all bypass these).
-  private readonly nearbyCountCache = new MicroCache<number>(200);
-  private readonly pickupPhotoUrlCache = new MicroCache<string>(500);
+  // this API): in-memory L1, single-flight, bounded — plus the wave-2 standardized-caching upgrades:
+  // hit/miss/coalesced metrics (closed vocabularies, see MetricsService.recordMicroCache), ±10% TTL
+  // jitter (stampede hardening), and an OPT-IN shared Redis L2 (MICRO_CACHE_REDIS_L2) so the 2-3
+  // Cloud Run instances share warm entries. Strictly for reads whose few seconds of staleness is
+  // explicitly fine — never for anything that gates money, assignment, or auth (broadcast targeting,
+  // bid acceptance and pricing all bypass these). The closures below resolve `this.metricsSvc`/L2 at
+  // CALL time, so field-initializer order vs constructor params is never a hazard.
+  private readonly nearbyCountCache = new MicroCache<number>(200, {
+    ttlJitterRatio: 0.1,
+    onEvent: (o) => this.metricsSvc?.recordMicroCache("nearby_count", o),
+    l2: () => this.microCacheL2(),
+    l2KeyPrefix: "mc:nearby:",
+  });
+  private readonly pickupPhotoUrlCache = new MicroCache<string>(500, {
+    ttlJitterRatio: 0.1,
+    onEvent: (o) => this.metricsSvc?.recordMicroCache("pickup_photo_url", o),
+    l2: () => this.microCacheL2(),
+    l2KeyPrefix: "mc:photo:",
+  });
+
+  // Lazy, optional Redis client backing the micro-cache L2 (its OWN client, deliberately not
+  // TrackingService's — that one carries the live-position/waitlist planes and must never queue
+  // behind cache traffic). Created on first use only when BOTH flags allow; quit on shutdown.
+  private microCacheL2Client: IORedis | null = null;
+  private microCacheL2Started = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -115,7 +140,42 @@ export class OrdersService {
     // pickup-photo path keep their 5-arg construction; Nest always injects it in production (the
     // storage adapter module is @Global) and getSnapshot degrades to a null URL without it.
     @Inject(STORAGE) private readonly storage?: StorageAdapter,
+    // Both @Global-provided (ConfigModule / ObservabilityModule) so Nest always injects them in
+    // production; TS-optional keeps the existing ≤6-arg spec constructions valid — with them absent
+    // the caches run flagless (wave-1 behavior) and metrics are a no-op.
+    @Inject(ENV) private readonly env?: Env,
+    private readonly metricsSvc?: MetricsService,
   ) {}
+
+  /** Resolve the shared L2 adapter, or null when not enabled/configured. Every command the adapter
+   *  runs is best-effort inside MicroCache — a Redis blip degrades to L1-only, never to an error. */
+  private microCacheL2(): MicroCacheL2 | null {
+    if (this.env?.MICRO_CACHE_REDIS_L2 !== "true" || !this.env.REDIS_URL) return null;
+    if (!this.microCacheL2Started) {
+      this.microCacheL2Started = true;
+      this.microCacheL2Client = createRedisClient(this.env.REDIS_URL);
+      this.microCacheL2Client.on("error", (err: Error) =>
+        this.logger.warn(`micro-cache L2 redis error: ${err.message}`),
+      );
+    }
+    const client = this.microCacheL2Client;
+    if (!client) return null;
+    return {
+      get: (key) => client.get(key),
+      set: async (key, value, ttlMs) => {
+        await client.set(key, value, "PX", Math.max(1, Math.round(ttlMs)));
+      },
+    };
+  }
+
+  /** The runtime kill-switch (MICRO_CACHE_DISABLED) plus the per-cache "TTL 0 disables it" rule. */
+  private microCacheBypassed(ttlMs: number): boolean {
+    return this.env?.MICRO_CACHE_DISABLED === "true" || ttlMs <= 0;
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.microCacheL2Client) await this.microCacheL2Client.quit().catch(() => {});
+  }
 
   /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */
   async create(input: CreateOrderRequest, customerId: string) {
@@ -359,18 +419,18 @@ export class OrdersService {
       const pt = pickupPoint(pickup);
       if (!pt) return null;
       const radiusM = createdAt ? effectiveBroadcastRadiusM(createdAt) : baseBroadcastRadiusM();
-      // Micro-cached (NEARBY_COUNT_TTL_MS) + single-flighted: this runs on EVERY open-auction snapshot
-      // poll, and the count is informational — a few seconds of staleness is invisible next to the 15s
-      // poll cadence, while dense areas stop fanning identical PostGIS radius queries at the DB. The
-      // key buckets coordinates to ~110 m (3 decimals) — noise against a ≥3 km radius — and carries the
-      // radius so the policy-widened reach of an ageing auction still gets its own count. A loader
-      // failure is NOT cached (getOrLoad propagates it), so a geo blip stays a one-poll `null`.
+      // Micro-cached (NEARBY_COUNT_TTL_MS, env-overridable) + single-flighted: this runs on EVERY
+      // open-auction snapshot poll, and the count is informational — a few seconds of staleness is
+      // invisible next to the 15s poll cadence, while dense areas stop fanning identical PostGIS
+      // radius queries at the DB. The key buckets coordinates to ~110 m (3 decimals) — noise against
+      // a ≥3 km radius — and carries the radius so the policy-widened reach of an ageing auction
+      // still gets its own count. A loader failure is NOT cached (getOrLoad propagates it), so a geo
+      // blip stays a one-poll `null`. MICRO_CACHE_DISABLED / TTL 0 route straight to the loader.
+      const ttlMs = this.env?.MICRO_CACHE_TTL_MS_NEARBY_COUNT ?? NEARBY_COUNT_TTL_MS;
+      const load = async (): Promise<number> => (await this.tracking.nearbyRiders(pt.lat, pt.lng, radiusM)).length;
+      if (this.microCacheBypassed(ttlMs)) return await load();
       const key = `${pt.lat.toFixed(3)},${pt.lng.toFixed(3)}:${radiusM}`;
-      return await this.nearbyCountCache.getOrLoad(
-        key,
-        NEARBY_COUNT_TTL_MS,
-        async () => (await this.tracking.nearbyRiders(pt.lat, pt.lng, radiusM)).length,
-      );
+      return await this.nearbyCountCache.getOrLoad(key, ttlMs, load);
     } catch {
       return null; // supply unknown — never let a geo blip surface a false "no riders online"
     }
@@ -679,8 +739,12 @@ export class OrdersService {
             profile: { select: { phone: true } },
           },
         },
+        // Wave-2 payload trim: every OrderEvent writer in the codebase creates {orderId, status} only
+        // — lat/lng have never been written non-null, and no client (mobile Stepper/receipt, admin
+        // timeline) reads them. Serializing two forever-null fields per event on the hottest response
+        // was pure bytes; the DB columns stay (additive schema, nothing dropped).
         events: {
-          select: { status: true, lat: true, lng: true, createdAt: true },
+          select: { status: true, createdAt: true },
           orderBy: { createdAt: "asc" },
         },
       },
@@ -760,11 +824,13 @@ export class OrdersService {
       // valid across polls (no more re-downloading an identical photo every 15s) and spares a `signBlob`
       // IAM call per poll. A mint failure is not cached: the next poll re-tries.
       pickupPhotoKey && storage
-        ? this.pickupPhotoUrlCache
-            .getOrLoad(pickupPhotoKey, PICKUP_PHOTO_URL_CACHE_TTL_MS, () =>
-              storage.createReadUrl(pickupPhotoKey, PICKUP_PHOTO_READ_URL_TTL_SECONDS),
-            )
-            .catch(() => null)
+        ? (() => {
+            const ttlMs = this.env?.MICRO_CACHE_TTL_MS_PICKUP_PHOTO_URL ?? PICKUP_PHOTO_URL_CACHE_TTL_MS;
+            const mint = (): Promise<string> => storage.createReadUrl(pickupPhotoKey, PICKUP_PHOTO_READ_URL_TTL_SECONDS);
+            return (this.microCacheBypassed(ttlMs) ? mint() : this.pickupPhotoUrlCache.getOrLoad(pickupPhotoKey, ttlMs, mint)).catch(
+              () => null,
+            );
+          })()
         : null,
     ]);
 

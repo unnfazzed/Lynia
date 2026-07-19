@@ -14,6 +14,7 @@ import { useReachability } from "../src/net/use-reachability";
 import { useServerMinVersion } from "../src/net/use-server-version-gate";
 import { queryClient, wireFocusManager } from "../src/query/client";
 import { persistBuster, PERSIST_MAX_AGE_MS, queryPersister, shouldPersistQuery } from "../src/query/persist";
+import { useBootstrap } from "../src/query/use-bootstrap";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { AnalyticsProvider } from "../src/telemetry/analytics";
 import { start as startRum } from "../src/telemetry/rum";
@@ -28,6 +29,14 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 /** Syncs the device's FCM token with the signed-in profile. Renders nothing; lives under AuthProvider. */
 function PushSync(): null {
   usePushRegistration(useAuth().session);
+  return null;
+}
+
+/** Wave-2 W1: fires the one-round-trip boot aggregate as soon as the session is known and seeds the
+ *  query cache (me + active order/job), so the first screens paint without their own fetches. Renders
+ *  nothing; lives under AuthProvider + the query provider. Failure seeds nothing — screens self-serve. */
+function BootstrapSync(): null {
+  useBootstrap(useAuth().session);
   return null;
 }
 
@@ -136,6 +145,7 @@ export default function RootLayout(): React.ReactElement | null {
         >
           <AuthProvider>
             <PushSync />
+            <BootstrapSync />
             {/* Redirects to /phone when the session drops to null after boot (sign-out or a
                 server-forced 401 logout) — cold-boot routing in app/index.tsx can't reach that
                 transition, so without this the user is stranded on an authless protected screen. */}

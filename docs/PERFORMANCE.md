@@ -69,6 +69,34 @@ presigned uploads.
 
 ---
 
+## Wave 2 (2026-07-19, PR "perf wave 2") — the agentic-loop program
+
+User-approved program (`docs/ROUTINES.md` gained the standing half — the weekly performance
+watch). What shipped, mapped to the DoorDash principles it implements:
+
+| Change | Where | Principle / effect |
+|---|---|---|
+| **`GET /app/bootstrap` — BFF cold-start aggregate** | `apps/api/src/app-bootstrap/*`; mobile `src/api/bootstrap.ts`, `src/query/use-bootstrap.ts`, seeded at the root (`app/_layout.tsx`) | DoorDash "better API design" (their aggregation cut order-detail P99 >2s→<100ms). One authed, compressed, ETag-able response (me + role-appropriate active order + version minimum) seeds the query cache as soon as the session is known — the signed-in boot becomes ONE round trip and the first screens paint without their own fetches. Old clients/endpoints untouched; 404 ⇒ seed nothing, screens self-serve. |
+| **Layered-cache upgrade: metrics + runtime flags + optional Redis L2 + TTL jitter** | `apps/api/src/common/micro-cache.ts`, `observability/metrics.service.ts` (`micro_cache_requests_total{cache,outcome}`), `config/env.ts` (`MICRO_CACHE_*`), wiring in `orders.service.ts` | DoorDash standardized caching: hit rates first-class observable (closed label vocabularies), per-revision runtime control (kill-switch + per-cache TTL override, `0` disables one cache), opt-in shared L2 over Redis (instances share warm entries; every command best-effort, L1-only degradation), ±10% TTL jitter (stampede hardening). Defaults = wave-1 behavior exactly. |
+| **`POST /riders/heartbeat` — lightweight liveness beat** | `apps/api/src/riders/{rider.service,riders.controller}.ts`, `tracking.service.ts` (`hasNotifyWaiters` O(1) probe); mobile `src/api/riders.ts` (`sendHeartbeat` with 404→legacy fallback), `app/rider/index.tsx` | The 20s beat was the full `setOnline` mutation (gate read + CAS + waitlist GEOSEARCH per rider per beat — the dominant per-rider write cost). Now: ONE guarded UPDATE carrying the same standing predicate (demoted/offline ⇒ same precise 403 as before — regression-tested), `recordFix` for position, and the waitlist drain gated on a ZCARD probe (GEOSEARCH only when someone is actually waiting; go-online transitions still drain unconditionally). ~3-4× fewer statements per beat. |
+| **Notifications feed parallelized** | `apps/api/src/notifications/notifications-feed.service.ts` | 9 serial reads → 2 dependency levels (user-scoped ∥, then order-scoped ∥). Output byte-identical (final sort owns ordering); all 50 specs unchanged-green. |
+| **KYC-pending `/me` poll cadence by review mode** | `apps/mobile/app/rider/index.tsx` | `auto` mode keeps 5s (vendor answers in minutes); `manual` mode (ops review — hours/days) drops to a 60s safety net: was ~17k requests/day of radio wakeups per waiting rider. Focus/foreground refetch still gives instant flips to an active checker. |
+| **Snapshot `events[]` payload trim** | `apps/api/src/orders/orders.service.ts` (+ contract-pinning spec), mobile `OrderEvent` type | `lat`/`lng` were serialized on every event of every snapshot poll forever-null (no writer ever set them, no client ever read them). Dropped from the select; DB columns untouched. |
+
+**Loop A (hunt + adversarial verify) outcome — honest accounting:** round 1's six lenses produced
+~25 candidates; the four that received BOTH skeptic verdicts were all REFUTED (each "cost" proved
+to be single-digit milliseconds behind a 300-600ms mobile RTT — the gate works). The API session
+usage limit then killed the remaining verifier/finder agents, leaving ~21 candidates UNVERIFIED —
+deliberately NOT fixed blind. They are queued for the weekly performance watch (Phase-0 KNOWN
+list): auction countdown ticker re-rendering the order screen every second (extraction touches SR
+thresholds + expiry refetch + urgency styling — wants render-count proof + device QA);
+ComposeMap/JobDetailsCard/board-card re-renders per keystroke (memo boundaries); offers-list 15s
+poll while the socket is live (socket-gate like UX15-11, keep a slow safety net); home 30s
+active-order poll gating; rider-offline 8s activeJob poll; socket self-heal refetch cadence on
+reconnect ATTEMPTS; `recordFix` Redis pipelining; presence-watchdog + `kickRiderFromBoard`
+fetchSockets scans; boot keystore-read overlap; native font embedding (config plugin — needs an
+EAS build); push-registration timing vs first paint.
+
 ## How to verify
 
 - **Client RUM** (`apps/mobile/src/telemetry/rum.ts` → `/client-metrics`): watch `apifetch`
@@ -93,18 +121,14 @@ presigned uploads.
 
 ---
 
-## Ranked backlog (next wins, deliberately not in this PR)
+## Ranked backlog (next wins)
 
-1. **Lightweight rider heartbeat endpoint.** The 20s heartbeat reuses the full `setOnline`
-   mutation: standing gate `findUnique` + CAS `UPDATE` + `recordFix` + a `drainNotifyWaiters`
-   GEOSEARCH per rider per beat — the dominant per-rider write cost at scale
-   (`apps/api/src/riders/rider.service.ts:262-354`, client `app/rider/index.tsx:313-350`).
-   A dedicated heartbeat that only refreshes presence/position would cut it ~3-4×. Deferred:
-   presence/assignment-adjacent (waitlist drain timing is product behavior) → design carefully,
-   conservative implementation + regression tests per repo policy.
-2. **Materialize the notifications feed.** `feedForUser` rebuilds from ~9 sequential queries per
-   open (`apps/api/src/notifications/notifications-feed.service.ts`). Either `Promise.all` the
-   independent reads (cheap, same shape as the snapshot fix) or introduce a notifications table.
+1. ~~**Lightweight rider heartbeat endpoint.**~~ **SHIPPED in wave 2** (`POST /riders/heartbeat`,
+   see the wave-2 table above). Remaining tail: `recordFix`'s two sequential Redis RTTs could
+   pipeline (PW candidate queue).
+2. ~~**Parallelize the notifications feed.**~~ **SHIPPED in wave 2** (two dependency levels).
+   The bigger lift — a materialized notifications table — stays here if the feed's query count
+   itself ever matters again.
 3. **`expo-image` for remote photos** (disk/memory cache, downsampling, `recyclingKey`) — now
    worth it since URLs are stable. Native module → new dev-build/fingerprint, so batch with the
    next EAS build train.

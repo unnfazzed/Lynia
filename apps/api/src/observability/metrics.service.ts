@@ -13,6 +13,7 @@
 import { Global, Injectable, Module } from "@nestjs/common";
 import type { ClientMetricEvent } from "@lynia/shared";
 import { type Attributes, type Counter, type Histogram, type Meter, metrics } from "@opentelemetry/api";
+import type { MicroCacheOutcome } from "../common/micro-cache";
 
 const METER_NAME = "lynia-api";
 
@@ -36,7 +37,8 @@ type CounterName =
   | "match_select_total"
   | "offers_made_total"
   | "client_samples_dropped_total"
-  | "whatsapp_otp_delivery_failed_total";
+  | "whatsapp_otp_delivery_failed_total"
+  | "micro_cache_requests_total";
 
 /** Fixed label vocabularies — NEVER accept ids/phones/lat-lng/raw-urls as labels (cardinality). */
 export type MatchSelectOutcome = "assigned" | "taken" | "unavailable" | "not_open" | "forbidden" | "error";
@@ -49,6 +51,11 @@ export type OffersMadeOutcome = "created" | "conflict" | "forbidden" | "error";
 export type StatusClass = "2xx" | "3xx" | "4xx" | "5xx";
 /** Client-supplied role. Bounded → safe as a label; the appVersion is bucketed separately (see below). */
 export type ClientRole = "rider" | "customer";
+/** Named read-through micro-caches (common/micro-cache.ts call sites). CLOSED vocabulary — a new
+ *  cached surface adds its name here, never a dynamic string (cardinality). Outcomes come from
+ *  `MicroCacheOutcome` (hit | l2_hit | miss | coalesced | error), also closed. Together they make
+ *  hit rates first-class observable — the DoorDash caching lesson wave 2 adopts. */
+export type MicroCacheName = "nearby_count" | "pickup_photo_url";
 
 /** Client latency ceiling (ms). Zod already caps `ms` at 60s; we re-clamp so a bug/tamper can't leak. */
 const CLIENT_MS_MAX = 60_000;
@@ -181,6 +188,13 @@ export class MetricsService {
   /** Client-reported count of skew-poisoned samples it discarded before sending (labelled by role only). */
   incClientDropped(count: number, role: ClientRole): void {
     this.counter("client_samples_dropped_total").add(count, { role });
+  }
+
+  /** One micro-cache lookup outcome (both labels are closed vocabularies — see {@link MicroCacheName}).
+   *  Hit rate per cache = hit+l2_hit over total; a sagging rate or an `error` spike is the signal the
+   *  DoorDash caching playbook says to alert on before users feel it. */
+  recordMicroCache(cache: MicroCacheName, outcome: MicroCacheOutcome): void {
+    this.counter("micro_cache_requests_total").add(1, { cache, outcome });
   }
 
   /**

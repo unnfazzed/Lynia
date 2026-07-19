@@ -729,6 +729,28 @@ describe("OrdersService.getSnapshot", () => {
     expect((await s.getSnapshot("ord-1", "cust-1")).pickupPhotoUrl).toBe("https://signed.example/pickup/rider-1/photo.jpg?sig=ok");
   });
 
+  it("keeps the snapshot's events payload lean — status + createdAt only (lat/lng were never written by any event writer)", async () => {
+    let capturedArgs: { select?: { events?: { select?: Record<string, boolean> } } } | undefined;
+    const s = new OrdersService(
+      {
+        order: {
+          findUnique: async (args: typeof capturedArgs) => {
+            capturedArgs = args;
+            return row();
+          },
+        },
+      } as unknown as PrismaService,
+      {} as OfferExpiryService,
+      noTracking,
+      noNotifications,
+      noGateway,
+    );
+    await s.getSnapshot("ord-1", "cust-1");
+    // Pins the wire contract: re-adding dead per-event fields to the hottest polled response is a
+    // payload regression, not a harmless select tweak.
+    expect(capturedArgs?.select?.events?.select).toEqual({ status: true, createdAt: true });
+  });
+
   it("coalesces the open-auction ridersNearby count onto one geo query within its TTL (micro-cache)", async () => {
     // Every 15s open-auction poll used to run its own PostGIS radius query for an informational
     // count. Within the cache TTL, repeat polls (and same-block auctions) share one query. Targeting

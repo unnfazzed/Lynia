@@ -12,7 +12,7 @@ import { makeOffer } from "../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
 import { loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { pushOnce } from "../../src/push/push";
-import { retryKyc, setOnline } from "../../src/api/riders";
+import { retryKyc, sendHeartbeat, setOnline } from "../../src/api/riders";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../src/logic/gates";
@@ -221,10 +221,19 @@ export default function RiderHome(): React.ReactElement {
   // makeOffer too — the UI shouldn't pretend otherwise). `rider: null` = hasn't started rider setup.
   // While the check is `pending`, poll so a vendor webhook flipping the rider to verified clears the
   // gate on its own — no manual Refresh needed. Stop polling once it resolves (verified/failed).
+  // Cadence by review mode (wave-2 perf): in `auto` mode the vendor answers within minutes, so 5s
+  // keeps the "verified!" moment snappy; in `manual` mode the pending state is an OPS review lasting
+  // hours or days — 5s polling there was ~17k requests/day of radio wakeups per waiting rider for a
+  // transition that lands via ops, so it slows to a 60s safety net (the screen also refetches on
+  // focus/foreground, so a rider actively checking still sees the flip quickly).
   const meQ = useQuery({
     queryKey: ["me"],
     queryFn: getMe,
-    refetchInterval: (query) => (query.state.data?.rider?.kycStatus === "pending" ? 5000 : false),
+    refetchInterval: (query) => {
+      const rider = query.state.data?.rider;
+      if (rider?.kycStatus !== "pending") return false;
+      return rider.kycMode === "manual" ? 60_000 : 5000;
+    },
   });
   // Reconcile the local toggle with the server's is_online on first load. is_online only flips on an
   // explicit toggle call — there's no server-side staleness sweep — so if the app was killed mid-shift
@@ -318,9 +327,10 @@ export default function RiderHome(): React.ReactElement {
     let failures = 0;
     const t = setInterval(() => {
       // Send the rider's last-known position on every heartbeat (not just the initial go-online) so an
-      // idle online rider stays in the server's nearby-rider index (rider.service.setOnline persists it)
-      // and keeps receiving nearby-order broadcasts. Read via ref so a location tick can't reset this timer.
-      setOnline(true, locRef.current ?? undefined)
+      // idle online rider stays in the server's nearby-rider index and keeps receiving nearby-order
+      // broadcasts. sendHeartbeat hits the lightweight beat endpoint (wave-2 W3) and self-falls-back to
+      // the legacy setOnline beat on an older API. Read via ref so a location tick can't reset this timer.
+      sendHeartbeat(locRef.current ?? undefined)
         .then(() => {
           failures = 0;
           setBeatStale(false);

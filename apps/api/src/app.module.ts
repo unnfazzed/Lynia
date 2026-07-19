@@ -16,6 +16,7 @@ import { ClientMetricsModule } from "./observability/client-metrics.module";
 import { MetricsInterceptor } from "./observability/metrics.interceptor";
 import { ObservabilityModule } from "./observability/metrics.service";
 import { OffersModule } from "./offers/offers.module";
+import { AppBootstrapModule } from "./app-bootstrap/app-bootstrap.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { PrivacyModule } from "./privacy/privacy.module";
@@ -50,6 +51,7 @@ import { WalletModule } from "./wallet/wallet.module";
     // Lane C — the offer loop.
     MatchingModule,
     OrdersModule,
+    AppBootstrapModule,
     OffersModule,
     // Lane D — live tracking (Socket.IO gateway + nearby-rider geo).
     TrackingModule,

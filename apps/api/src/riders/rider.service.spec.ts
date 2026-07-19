@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import type { KycVendor } from "../kyc/kyc-vendor";
 import { StubKycVendor } from "../kyc/kyc-vendor";
@@ -27,6 +27,10 @@ const trackingStub = {
   evictFromGeo: async () => {},
   claimNotifyWaitersNear: async () => [],
   clearNotifyWaiters: async () => {},
+  // heartbeat (wave-2 W3): position refresh is a no-op here; the probe reads "no waiters" so the
+  // beat-drain stays off unless a test wires its own tracking stub with spies.
+  recordFix: async () => {},
+  hasNotifyWaiters: async () => false,
 } as unknown as import("../tracking/tracking.service").TrackingService;
 const notificationsStub = {
   notifyRidersAvailable: async () => new Set<string>(),
@@ -667,6 +671,120 @@ describe("RiderService.setOnline", () => {
     }
     // The refusal carries a machine-readable `reason` the app keys off (not just the message string).
     expect((threw as { getResponse: () => { reason: string } }).getResponse().reason).toBe("on_hold");
+  });
+});
+
+describe("RiderService.heartbeat (wave-2 W3 — the lightweight 20s beat)", () => {
+  /** Direct construction so a test can wire its own tracking spies (svc() pins the shared stub). */
+  const heartbeatSvc = (prisma: Record<string, unknown>, tracking: Record<string, unknown>) => {
+    if (!prisma.$executeRaw) prisma.$executeRaw = async () => 1;
+    return new RiderService(
+      prisma as unknown as PrismaService,
+      {} as Env,
+      new StubKycVendor(),
+      pii,
+      tracking as unknown as import("../tracking/tracking.service").TrackingService,
+      gatewayStub,
+      notificationsStub,
+    );
+  };
+  /** Let the fire-and-forget beat-drain settle so its calls are observable. */
+  const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+
+  it("refreshes liveness with ONE guarded UPDATE — no standing pre-read, no commission read, no toggle", async () => {
+    let sql = "";
+    const findUnique = vi.fn();
+    const s = svc(
+      {
+        rider: { findUnique },
+        $executeRaw: async (strings: TemplateStringsArray) => {
+          sql = strings.join("?");
+          return 1;
+        },
+      },
+      {},
+    );
+    expect(await s.heartbeat("p1")).toEqual({ online: true });
+    // The single statement carries the WHOLE standing predicate the setOnline CAS enforces…
+    expect(sql).toContain("last_heartbeat_at = now()");
+    expect(sql).toContain("is_online = true");
+    expect(sql).toContain("account_status = 'active'");
+    expect(sql).toContain("on_hold = false");
+    // …and it must never flip the online flag (a beat is not a toggle).
+    expect(sql).not.toContain("is_online = true,");
+    // The gate re-read runs ONLY on a miss — a healthy beat is exactly one DB statement.
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it("REGRESSION (standing enforcement): a rider demoted mid-shift cannot keep beating — the miss re-derives the precise refusal", async () => {
+    let threw: unknown;
+    const s = svc(
+      {
+        rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: true, cooldownUntil: null }) },
+        $executeRaw: async () => 0, // the guarded UPDATE matched nothing: on_hold flipped under us
+      },
+      {},
+    );
+    try {
+      await s.heartbeat("p1");
+    } catch (e) {
+      threw = e;
+    }
+    expect((threw as { getResponse: () => { reason: string } }).getResponse().reason).toBe("on_hold");
+  });
+
+  it("403s generically when standing is clean but the rider simply isn't online (toggled off elsewhere)", async () => {
+    const s = svc(
+      {
+        rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null }) },
+        $executeRaw: async () => 0,
+      },
+      {},
+    );
+    await expect(s.heartbeat("p1")).rejects.toThrow(/go online/i);
+  });
+
+  it("403s 'not a rider' when the profile has no rider row at all", async () => {
+    const s = svc({ rider: { findUnique: async () => null }, $executeRaw: async () => 0 }, {});
+    await expect(s.heartbeat("p1")).rejects.toThrow(/not a rider/i);
+  });
+
+  it("persists the beat's position via recordFix, and skips the waitlist GEOSEARCH when the O(1) probe says empty", async () => {
+    const recordFix = vi.fn(async () => {});
+    const claimNotifyWaitersNear = vi.fn(async () => []);
+    const s = heartbeatSvc(
+      { rider: { findUnique: vi.fn() } },
+      { recordFix, hasNotifyWaiters: async () => false, claimNotifyWaitersNear, clearNotifyWaiters: async () => {} },
+    );
+    expect(await s.heartbeat("p1", { lat: -17.83, lng: 31.05 })).toEqual({ online: true });
+    await flush();
+    expect(recordFix).toHaveBeenCalledWith("p1", -17.83, 31.05);
+    expect(claimNotifyWaitersNear).not.toHaveBeenCalled(); // empty waitlist ⇒ no GEOSEARCH this beat
+  });
+
+  it("still drains waiters on a beat when the probe says someone is queued (≤20s to a ping, as before)", async () => {
+    const claimNotifyWaitersNear = vi.fn(async () => []);
+    const s = heartbeatSvc(
+      { rider: { findUnique: vi.fn() } },
+      { recordFix: async () => {}, hasNotifyWaiters: async () => true, claimNotifyWaitersNear, clearNotifyWaiters: async () => {} },
+    );
+    await s.heartbeat("p1", { lat: -17.83, lng: 31.05 });
+    await flush();
+    expect(claimNotifyWaitersNear).toHaveBeenCalledTimes(1);
+  });
+
+  it("a recordFix failure never fails the beat (position is best-effort, liveness is the point)", async () => {
+    const s = heartbeatSvc(
+      { rider: { findUnique: vi.fn() } },
+      {
+        recordFix: async () => {
+          throw new Error("redis down");
+        },
+        hasNotifyWaiters: async () => false,
+        claimNotifyWaitersNear: async () => [],
+      },
+    );
+    expect(await s.heartbeat("p1", { lat: -17.83, lng: 31.05 })).toEqual({ online: true });
   });
 });
 

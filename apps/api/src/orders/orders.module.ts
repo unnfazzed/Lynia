@@ -13,5 +13,8 @@ import { OrdersService } from "./orders.service";
   imports: [MatchingModule, TrackingModule, WalletModule],
   controllers: [OrdersController, LifecycleController],
   providers: [OrdersService, OrderLifecycleService],
+  // AppBootstrapModule aggregates the cold-start reads (wave-2 W1) — it needs the same activeFor*
+  // reads the /orders/mine endpoints serve. Acyclic: this module imports nothing from it.
+  exports: [OrdersService],
 })
 export class OrdersModule {}

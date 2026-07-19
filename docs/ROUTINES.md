@@ -1,6 +1,6 @@
 # Scheduled Claude Routines — canonical spec
 
-This file is the single source of truth for the seven recurring Claude routines that run
+This file is the single source of truth for the eight recurring Claude routines that run
 against this repo. Each routine's cron prompt is kept **self-contained** (a routine must not
 depend on this file existing to function), but this spec is authoritative when a prompt and
 this file disagree — the next prompt revision must be reconciled against it.
@@ -25,7 +25,7 @@ mandatory sibling-sweep — the two blind spots that let IR16-01…06 sit live u
 headers and in the seams between lanes).
 Prior: 2026-07-15 (added the wallet & data-lifecycle audit routine).
 
-## The seven routines
+## The eight routines
 
 | Routine | Cron (UTC) | Environment | Lane |
 |---|---|---|---|
@@ -36,6 +36,7 @@ Prior: 2026-07-15 (added the wallet & data-lifecycle audit routine).
 | Deep bug sweep | `0 3 * * *` | env_01V3Lw… | Backend correctness, concurrency, security, adversarial API |
 | Wallet & data-lifecycle audit | `0 9 */2 * *` (every 2nd day) | env_01V3Lw… | Wallet/earnings/admin data-lifecycle correctness — money & reporting integrity |
 | PR health & delivery watchdog | `0 2,8,14,20 * * *` | env_01V3Lw… | CI/merge/deploy babysitting for **all** PRs |
+| Performance watch | `0 11 * * 0` (Sundays) | env_01V3Lw… | Latency / bandwidth / battery / server-cost regressions + new perf wins (mobile + API) — see `docs/PERFORMANCE.md` |
 
 The three overnight bug-finding routines run 2 hours apart (23:00 → 01:00 → 03:00) **by
 design**: each one's ledger/report PR must be merged before the next routine starts, so the
@@ -75,7 +76,7 @@ PR while that routine's session is still pushing to the same branch.
 4. **Never merge on red.** Auto-merge means merge-on-green, not merge-regardless. Failing or
    missing required checks always block; fix forward first.
 
-## Bug-dedup protocol (the four bug-finders)
+## Bug-dedup protocol (the four bug-finders + the weekly performance watch)
 
 `docs/KNOWN_BUGS.md` is the coordination ledger. Duplicate findings across routines are a
 process failure; the ledger is how the routines stay disjoint.
@@ -362,6 +363,47 @@ stay conservative. `Settlement` is dormant — don't build against it.
 file:line, repro, severity, confidence) + `docs/KNOWN_BUGS.md` rows (`WD-` prefix). Ships
 ready-for-review + auto-merge on green per universal policy 1; skip the PR only when nothing new
 and no doc updates are worth shipping.
+
+## Performance watch (11:00 UTC, Sundays)
+
+Added 2026-07-19 (user request — the standing half of the wave-2 agentic-loop performance
+program; strategy, shipped optimizations and the ranked backlog live in `docs/PERFORMANCE.md`).
+Weekly (`0 11 * * 0`), outside every routine-boundary hour (23/01/03/05/07/09) and the watchdog's
+slots (02/08/14/20), so on Sundays it starts from a fully settled tree after the day's chain. It
+is the fifth bug-finder in the dedup protocol above, lane prefix `PW-`.
+
+**Mission:** keep the app *radically fast on the target network* (metered 2G/3G, ~300-600 ms RTT,
+low-end Android) and the serving cost flat-or-falling — by (a) catching regressions against the
+production scorecard, and (b) landing the next confirmed optimization from the hunt or the
+backlog, every week, in the same run.
+
+**Phase 0 — ledger read (dedup):** `docs/KNOWN_BUGS.md`, `docs/PERFORMANCE.md` (shipped state +
+ranked backlog — treat backlog items as KNOWN, not fresh findings), and tonight's open `claude/*`
+sibling PRs, per the bug-dedup protocol.
+
+**Phase 1 — scorecard:** check the latency/cost signals for drift vs. the prior run: client RUM
+(`client_apifetch_latency_ms` p50/p95 per role, glass metrics), `micro_cache_requests_total` hit
+rates per cache, `http_request_duration_ms` on the hot routes (order snapshot, offers, feed,
+bootstrap, heartbeat), and any bundle/payload growth visible in the repo (new unbounded arrays,
+dropped `select`s). Where dashboards aren't reachable from the routine environment, derive what's
+derivable from code + note the gap honestly in the report.
+
+**Phase 2 — hunt (agentic loop):** run the perf lens set over the code — server query efficiency,
+payload shape, mobile re-render cost, polling/radio, cold-start path, cost hotspots — via
+`lane-bug-hunt` with a custom lane (`{ key: "perf", … }`) or an equivalent finder→adversarial-
+verify loop (2 skeptics per finding: measurable-impact + safe-to-fix; majority-refuted dies).
+
+**Phase 3 — fix in-run:** every CONFIRMED code finding is fixed the same run with a regression
+test, per universal policy 2. Sensitive areas (bid acceptance / order assignment / agreed-price /
+KYC gating / presence & standing enforcement) stay conservative; caching is allowed only where
+staleness is provably inconsequential (the `MicroCache` rules — never money, assignment, or
+auth). Founder-gated infra items (CDN/edge, Cloud Run scaling, log sampling) are NOT code — log
+them OPEN with an owner in `docs/KNOWN_BUGS.md` instead of half-shipping terraform.
+
+**Phase 4 — ship:** `docs/PERF-WATCH-<date>.md` (IDs `PW-###`, file:line, evidence, measured or
+estimated impact, fix) + `docs/KNOWN_BUGS.md` rows (`PW-` prefix) + a `docs/PERFORMANCE.md`
+backlog re-rank **in the same PR** as the fixes; ready-for-review + auto-merge on green per
+universal policy 1. Skip the PR only when the scorecard is flat AND the hunt came back dry.
 
 ## Known constraints of the routine environments
 

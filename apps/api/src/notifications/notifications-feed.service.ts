@@ -131,25 +131,50 @@ export class NotificationsFeedService {
    * the user was pushed. `now` is injectable so unread-recency is deterministic under test.
    */
   async feedForUser(userId: string, now: Date = new Date()): Promise<NotificationRow[]> {
-    const orders = await this.prisma.order.findMany({
-      where: { OR: [{ customerId: userId }, { riderId: userId }] },
-      orderBy: { createdAt: "desc" },
-      take: FEED_ORDER_LOOKBACK,
-      select: {
-        id: true,
-        riderId: true,
-        // `rebroadcastOfId` links a rider-bail clone back to the order it replaced; `expiryNoSupply`
-        // flags a genuine "nobody was online" expiry; `cancelledBy` is the canceller's profile id (used
-        // for actor-suppression below — a row about your OWN action is noise, mirroring the push).
-        rebroadcastOfId: true,
-        expiryNoSupply: true,
-        cancelledBy: true,
-        events: {
-          select: { status: true, createdAt: true },
-          orderBy: { createdAt: "asc" },
+    // Wave-2 perf: this method synthesizes the feed from ~9 reads that used to run strictly
+    // sequentially — nine serial DB round-trips per open. They form exactly two dependency levels:
+    // three are USER-scoped (orders, account audits, resolved issues) and run together right here;
+    // the other six need only the id lists derived from `orders`, so they run together next. Every
+    // row-building loop below is byte-identical to the sequential version — the final newest-first
+    // sort + cap make append order irrelevant to the output.
+    const [orders, accountAudits, resolvedIssues] = await Promise.all([
+      this.prisma.order.findMany({
+        where: { OR: [{ customerId: userId }, { riderId: userId }] },
+        orderBy: { createdAt: "desc" },
+        take: FEED_ORDER_LOOKBACK,
+        select: {
+          id: true,
+          riderId: true,
+          // `rebroadcastOfId` links a rider-bail clone back to the order it replaced; `expiryNoSupply`
+          // flags a genuine "nobody was online" expiry; `cancelledBy` is the canceller's profile id (used
+          // for actor-suppression below — a row about your OWN action is noise, mirroring the push).
+          rebroadcastOfId: true,
+          expiryNoSupply: true,
+          cancelledBy: true,
+          events: {
+            select: { status: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+          },
         },
-      },
-    });
+      }),
+      // KB-FEED-SYNTH account-status rows (KYC decision + admin standing changes) — consumed by the
+      // account loop below; user-scoped, so it needs nothing from `orders`.
+      this.prisma.auditLog.findMany({
+        where: { target: userId, action: { in: ACCOUNT_FEED_ACTIONS } },
+        orderBy: { createdAt: "desc" },
+        take: FEED_ROW_CAP,
+        select: { id: true, action: true, createdAt: true },
+      }),
+      // UX-2026-07-16 resolved-issue rows — consumed by the issues loop below; also user-scoped, and
+      // deliberately NOT bounded by the order lookback (a resolution can land long after the order
+      // ages out of FEED_ORDER_LOOKBACK).
+      this.prisma.issue.findMany({
+        where: { openedByProfileId: userId, status: "resolved" },
+        orderBy: { resolvedAt: "desc" },
+        take: FEED_ROW_CAP,
+        select: { id: true, orderId: true, resolution: true, resolvedAt: true },
+      }),
+    ]);
 
     // Map an original (cancelled) order id → the fresh clone auto-broadcast in its place (F-01). The
     // clone shares the customer and is strictly newer than the original, so whenever the cancelled
@@ -160,39 +185,68 @@ export class NotificationsFeedService {
       if (order.rebroadcastOfId) cloneByOriginal.set(order.rebroadcastOfId, order.id);
     }
 
-    // Fix 1: for expired orders the customer is viewing, distinguish "riders bid but you didn't pick in
-    // time" from the default "raise your price" nudge. Offer rows are never deleted on expiry (only
-    // flipped to `expired`), so a plain count over the durable rows recovers "did any rider ever bid"
-    // on a cold read, long after the window closed. One batched query for all expired orders in view.
+    // Every id list the order-scoped reads key on derives from `orders` in plain code — so the six
+    // remaining reads share ONE parallel level. Empty id lists short-circuit to [] without a query.
     const expiredOrderIds = orders
       .filter((o) => o.riderId !== userId && o.events.some((e) => e.status === "expired"))
       .map((o) => o.id);
-    const orderIdsWithOffers = new Set<string>();
-    if (expiredOrderIds.length > 0) {
-      const withOffers = await this.prisma.offer.findMany({
-        where: { orderId: { in: expiredOrderIds } },
-        select: { orderId: true },
-        distinct: ["orderId"],
-      });
-      for (const o of withOffers) orderIdsWithOffers.add(o.orderId);
-    }
-
-    // UX17-03: an ops "adjudicate delivered" override writes a plain `completed` OrderEvent
-    // (indistinguishable from an ordinary completion) but pushes bespoke copy — "marked complete after
-    // review" (customer) and "delivery confirmed" (rider). Without this, a missed push leaves the generic
-    // FEED_NOTICES.completed row, omitting the one fact that matters (this was an ops override, not a
-    // normal completion). The action is durably recorded as an AuditLog row targeted at the order id, so
-    // one batched query over the in-view orders recovers the set on a cold read; the per-order loop below
-    // swaps in role-appropriate copy for a `completed` event on these.
     const orderIds = orders.map((o) => o.id);
-    const adjudicatedOrderIds = new Set<string>();
-    if (orderIds.length > 0) {
-      const adjudicated = await this.prisma.auditLog.findMany({
-        where: { target: { in: orderIds }, action: "order.adjudicate_delivered" },
-        select: { target: true },
-      });
-      for (const a of adjudicated) adjudicatedOrderIds.add(a.target);
-    }
+    const customerViewOrderIds = orders.filter((o) => o.riderId !== userId).map((o) => o.id);
+
+    const [withOffers, adjudicated, offers, sosEvents, standingNotices, standingResolved] = await Promise.all([
+      // Fix 1: for expired orders the customer is viewing, distinguish "riders bid but you didn't pick
+      // in time" from the default "raise your price" nudge. Offer rows are never deleted on expiry
+      // (only flipped to `expired`), so a plain count over the durable rows recovers "did any rider
+      // ever bid" on a cold read, long after the window closed.
+      expiredOrderIds.length > 0
+        ? this.prisma.offer.findMany({
+            where: { orderId: { in: expiredOrderIds } },
+            select: { orderId: true },
+            distinct: ["orderId"],
+          })
+        : [],
+      // UX17-03: an ops "adjudicate delivered" override writes a plain `completed` OrderEvent
+      // (indistinguishable from an ordinary completion) but pushes bespoke copy — "marked complete
+      // after review" (customer) and "delivery confirmed" (rider). The action is durably recorded as
+      // an AuditLog row targeted at the order id; the per-order loop below swaps in role-appropriate
+      // copy for a `completed` event on these.
+      orderIds.length > 0
+        ? this.prisma.auditLog.findMany({
+            where: { target: { in: orderIds }, action: "order.adjudicate_delivered" },
+            select: { target: true },
+          })
+        : [],
+      // KB-FEED-SYNTH "New offer" rows — consumed by the offers loop below.
+      customerViewOrderIds.length > 0
+        ? this.prisma.offer.findMany({
+            where: { orderId: { in: customerViewOrderIds } },
+            select: { id: true, orderId: true, createdAt: true },
+          })
+        : [],
+      // UX17-01 SOS counterparty fallback — consumed by the SOS loop below.
+      orderIds.length > 0
+        ? this.prisma.sosEvent.findMany({
+            where: { orderId: { in: orderIds }, raisedByProfileId: { not: userId } },
+            select: { id: true, orderId: true, createdAt: true },
+          })
+        : [],
+      // UX17-02 rider-standing notice fallback — consumed by the standing loop below.
+      customerViewOrderIds.length > 0
+        ? this.prisma.auditLog.findMany({
+            where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_notice" },
+            select: { id: true, target: true, createdAt: true },
+          })
+        : [],
+      // UX18-05 standing-resolved counterpart — consumed right after the notice loop.
+      customerViewOrderIds.length > 0
+        ? this.prisma.auditLog.findMany({
+            where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_resolved" },
+            select: { id: true, target: true, createdAt: true },
+          })
+        : [],
+    ]);
+    const orderIdsWithOffers = new Set<string>(withOffers.map((o) => o.orderId));
+    const adjudicatedOrderIds = new Set<string>(adjudicated.map((a) => a.target));
 
     const rows: NotificationRow[] = [];
     for (const order of orders) {
@@ -292,39 +346,28 @@ export class NotificationsFeedService {
 
     // KB-FEED-SYNTH: "New offer" rows. notifyNewOffer pushes the customer when a rider bids on their
     // order, but that push never produced a feed row (the feed was derived from order-status events
-    // only). Recover it from the durable Offer rows on the caller's own (customer-view) orders — ONE
-    // batched query. An offer and its order's own status events are DIFFERENT events, so no dedup is
-    // needed. Copy mirrors notifyNewOffer's push (the feed↔push contract).
-    const customerViewOrderIds = orders.filter((o) => o.riderId !== userId).map((o) => o.id);
-    if (customerViewOrderIds.length > 0) {
-      const offers = await this.prisma.offer.findMany({
-        where: { orderId: { in: customerViewOrderIds } },
-        select: { id: true, orderId: true, createdAt: true },
+    // only). Recovered from the durable Offer rows on the caller's own (customer-view) orders —
+    // prefetched in the parallel level above. An offer and its order's own status events are
+    // DIFFERENT events, so no dedup is needed. Copy mirrors notifyNewOffer's push (the feed↔push
+    // contract).
+    for (const offer of offers) {
+      const at = offer.createdAt.toISOString();
+      rows.push({
+        id: `offer:${offer.id}`,
+        orderId: offer.orderId,
+        icon: "banknote",
+        title: "New offer",
+        message: "A rider responded to your delivery — tap to compare offers.",
+        at,
+        unread: now.getTime() - offer.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
       });
-      for (const offer of offers) {
-        const at = offer.createdAt.toISOString();
-        rows.push({
-          id: `offer:${offer.id}`,
-          orderId: offer.orderId,
-          icon: "banknote",
-          title: "New offer",
-          message: "A rider responded to your delivery — tap to compare offers.",
-          at,
-          unread: now.getTime() - offer.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
-        });
-      }
     }
 
     // KB-FEED-SYNTH: account-status rows (KYC decision + admin standing changes). Those pushes
     // (notifyKycDecision, suspend/lift/ban/clearHold) never produced a feed row either. Both the manual
     // admin path and the automated KYC webhook write an AuditLog row keyed by target=profileId, so
-    // synthesize from those — no Notification table. Account-level, so orderId is null.
-    const accountAudits = await this.prisma.auditLog.findMany({
-      where: { target: userId, action: { in: ACCOUNT_FEED_ACTIONS } },
-      orderBy: { createdAt: "desc" },
-      take: FEED_ROW_CAP,
-      select: { id: true, action: true, createdAt: true },
-    });
+    // synthesize from those (prefetched in the user-scoped level) — no Notification table.
+    // Account-level, so orderId is null.
     for (const a of accountAudits) {
       const copy = ACCOUNT_FEED_COPY[a.action];
       if (!copy) continue; // defensive: only the mapped actions were queried
@@ -351,23 +394,17 @@ export class NotificationsFeedService {
     // orders that the viewer did NOT raise (mirroring the push's counterparty-only target — the raiser
     // already knows they raised it). ONE batched query over the orders already in view. Copy is a verbatim
     // mirror of the push (the feed↔push contract).
-    if (orderIds.length > 0) {
-      const sosEvents = await this.prisma.sosEvent.findMany({
-        where: { orderId: { in: orderIds }, raisedByProfileId: { not: userId } },
-        select: { id: true, orderId: true, createdAt: true },
+    for (const event of sosEvents) {
+      const at = event.createdAt.toISOString();
+      rows.push({
+        id: `sos:${event.id}`,
+        orderId: event.orderId,
+        icon: "triangle-alert",
+        title: "SOS on your delivery",
+        message: "The other party raised an SOS on this trip. Stay safe — LyniaGo's safety team has been alerted.",
+        at,
+        unread: now.getTime() - event.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
       });
-      for (const event of sosEvents) {
-        const at = event.createdAt.toISOString();
-        rows.push({
-          id: `sos:${event.id}`,
-          orderId: event.orderId,
-          icon: "triangle-alert",
-          title: "SOS on your delivery",
-          message: "The other party raised an SOS on this trip. Stay safe — LyniaGo's safety team has been alerted.",
-          at,
-          unread: now.getTime() - event.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
-        });
-      }
     }
 
     // UX17-02: rider-standing-change feed fallback for the affected customer. suspend/ban fire a best-effort
@@ -378,45 +415,35 @@ export class NotificationsFeedService {
     // those on the viewer's own CUSTOMER-view orders (customerViewOrderIds is exactly order.riderId !== userId
     // — the rider gets their own rider.suspend/ban account row via ACCOUNT_FEED_ACTIONS, so this must not
     // also show to the rider). ONE batched query; copy is a verbatim mirror of the push.
-    if (customerViewOrderIds.length > 0) {
-      const standingNotices = await this.prisma.auditLog.findMany({
-        where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_notice" },
-        select: { id: true, target: true, createdAt: true },
+    for (const a of standingNotices) {
+      const at = a.createdAt.toISOString();
+      rows.push({
+        id: `rider-standing:${a.id}`,
+        orderId: a.target,
+        icon: "triangle-alert",
+        title: "An update on your delivery",
+        message: "There's a change with your assigned rider — our team is reviewing this trip.",
+        at,
+        unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
       });
-      for (const a of standingNotices) {
-        const at = a.createdAt.toISOString();
-        rows.push({
-          id: `rider-standing:${a.id}`,
-          orderId: a.target,
-          icon: "triangle-alert",
-          title: "An update on your delivery",
-          message: "There's a change with your assigned rider — our team is reviewing this trip.",
-          at,
-          unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
-        });
-      }
+    }
 
-      // UX18-05: liftRider — the direct undo of a suspension, most likely to fire while the SAME rider is
-      // still assigned to the SAME active order — never told the customer the "we're reviewing this trip"
-      // notice above was resolved, leaving it permanently unresolved in their feed. notifyCustomersOfRider
-      // StandingChange(profileId, resolved=true) now also writes this durable fallback, mirroring the
-      // notice row above.
-      const standingResolved = await this.prisma.auditLog.findMany({
-        where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_resolved" },
-        select: { id: true, target: true, createdAt: true },
+    // UX18-05: liftRider — the direct undo of a suspension, most likely to fire while the SAME rider is
+    // still assigned to the SAME active order — never told the customer the "we're reviewing this trip"
+    // notice above was resolved, leaving it permanently unresolved in their feed. notifyCustomersOfRider
+    // StandingChange(profileId, resolved=true) now also writes this durable fallback, mirroring the
+    // notice row above.
+    for (const a of standingResolved) {
+      const at = a.createdAt.toISOString();
+      rows.push({
+        id: `rider-standing-resolved:${a.id}`,
+        orderId: a.target,
+        icon: "check",
+        title: "Your delivery is back on track",
+        message: "The review of your assigned rider is complete — your delivery is continuing as normal.",
+        at,
+        unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
       });
-      for (const a of standingResolved) {
-        const at = a.createdAt.toISOString();
-        rows.push({
-          id: `rider-standing-resolved:${a.id}`,
-          orderId: a.target,
-          icon: "check",
-          title: "Your delivery is back on track",
-          message: "The review of your assigned rider is complete — your delivery is continuing as normal.",
-          at,
-          unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
-        });
-      }
     }
 
     // UX-2026-07-16: resolved-issue rows, mirroring the KB-FEED-SYNTH pattern above. `notifyIssueResolved`
@@ -424,12 +451,6 @@ export class NotificationsFeedService {
     // always answerable from the feed, not just a push that may never have landed. Not scoped to the
     // order-lookback window (like the account rows above) since a resolution can land long after the
     // order itself ages out of FEED_ORDER_LOOKBACK.
-    const resolvedIssues = await this.prisma.issue.findMany({
-      where: { openedByProfileId: userId, status: "resolved" },
-      orderBy: { resolvedAt: "desc" },
-      take: FEED_ROW_CAP,
-      select: { id: true, orderId: true, resolution: true, resolvedAt: true },
-    });
     for (const issue of resolvedIssues) {
       if (!issue.resolution || !issue.resolvedAt) continue; // defensive: resolved rows always carry both
       const copy = ISSUE_RESOLUTION_FEED_COPY[issue.resolution];

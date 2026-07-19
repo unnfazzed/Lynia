@@ -46,6 +46,20 @@ export const envSchema = z.object({
   DATABASE_CONNECTION_LIMIT: z.coerce.number().int().positive().optional(),
   DATABASE_POOL_TIMEOUT: z.coerce.number().int().nonnegative().optional(),
   REDIS_URL: z.string().min(1).optional(),
+  // --- Micro-cache runtime control (docs/PERFORMANCE.md wave 2 — the DoorDash "runtime flags per
+  // cache" lesson, expressed as per-revision env so ops can flip behavior without a code deploy). ---
+  // Kill-switch: "true" bypasses every read-through micro-cache (loaders run directly). The escape
+  // hatch if cached staleness is ever suspected in an incident; default off.
+  MICRO_CACHE_DISABLED: z.enum(["true", "false"]).default("false"),
+  // Opt-in shared L2 over the existing Redis: instances then share warm entries (hit rate rises with
+  // instance count). Off by default — L1-only is wave-1 behavior; requires REDIS_URL to have effect.
+  MICRO_CACHE_REDIS_L2: z.enum(["true", "false"]).default("false"),
+  // Per-cache TTL overrides (ms). Absent ⇒ the code defaults (orders.service.ts constants). Bounded
+  // to keep a typo from pinning informational reads for hours: 0 disables that single cache.
+  MICRO_CACHE_TTL_MS_NEARBY_COUNT: z.coerce.number().int().min(0).max(300_000).optional(),
+  // Ceiling 600s = the code default: a cached signed URL must always reach the client with ≥5 min of
+  // its 15-min validity left (photo download headroom on 2G) — a higher override would break that.
+  MICRO_CACHE_TTL_MS_PICKUP_PHOTO_URL: z.coerce.number().int().min(0).max(600_000).optional(),
   // Cloud chosen: GCP (2026-06-27). Single value today; the adapter seam (D7) is where a second
   // cloud would slot in.
   CLOUD_PROVIDER: z.enum(["gcp"]).default("gcp"),

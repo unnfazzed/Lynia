@@ -24,6 +24,11 @@ const SetOnline = z.object({
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
 });
+// The 20s liveness beat (wave-2 W3): position only, no `online` flag — a beat can never toggle state.
+const Heartbeat = z.object({
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+});
 
 @Controller("riders")
 @UseGuards(JwtAuthGuard)
@@ -58,5 +63,14 @@ export class RidersController {
   online(@Body(new ZodBody(SetOnline)) body: z.infer<typeof SetOnline>, @CurrentUser() id: string) {
     const location = body.lat != null && body.lng != null ? { lat: body.lat, lng: body.lng } : undefined;
     return this.riders.setOnline(id, body.online, location);
+  }
+
+  /** Wave-2 W3: the 20s liveness beat, split off the full online toggle — refreshes heartbeat +
+   *  position for an already-online rider in good standing (see rider.service.heartbeat for the
+   *  conservative invariants). Old clients keep beating via PATCH /online untouched. */
+  @Post("heartbeat")
+  heartbeat(@Body(new ZodBody(Heartbeat)) body: z.infer<typeof Heartbeat>, @CurrentUser() id: string) {
+    const location = body.lat != null && body.lng != null ? { lat: body.lat, lng: body.lng } : undefined;
+    return this.riders.heartbeat(id, location);
   }
 }
