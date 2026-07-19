@@ -85,10 +85,22 @@ export class AdminService {
         },
       }),
       this.prisma.offer.findMany({ distinct: ["orderId"], select: { orderId: true } }),
-      // Today's throughput: trips that reached the drop-off (deliveredAt stamped today) + the fares on them.
-      this.prisma.order.count({ where: { deliveredAt: { gte: startOfDay } } }),
-      this.prisma.order.count({ where: { undeliveredAt: { gte: startOfDay } } }),
-      this.prisma.order.aggregate({ _sum: { agreedFare: true }, where: { deliveredAt: { gte: startOfDay } } }),
+      // Today's throughput: orders CURRENTLY `completed` (not merely `deliveredAt`-stamped, which stays
+      // set forever even if the order is later admin-cancelled post-delivery — WD-024) whose completion
+      // landed today. `completedAt` is only ever written in the same update as `status:"completed"`
+      // (order-lifecycle's `rate()`/`completeOrder`, `adjustFare`'s adjudication mirror, and
+      // `adjudicateDelivered`'s force-complete of a disputed `undelivered` order all set both together),
+      // so this also picks up an adjudicated-delivered order same-day (WD-026) that never got a
+      // `deliveredAt` at all.
+      this.prisma.order.count({ where: { status: "completed", completedAt: { gte: startOfDay } } }),
+      // Mirror: only orders STILL `undelivered` today count toward the failure side of the completion
+      // rate — one later adjudicated back to `completed` (WD-026) must stop counting here, even though
+      // its `undeliveredAt` timestamp from the original failed hand-off is never cleared.
+      this.prisma.order.count({ where: { status: "undelivered", undeliveredAt: { gte: startOfDay } } }),
+      this.prisma.order.aggregate({
+        _sum: { agreedFare: true },
+        where: { status: "completed", completedAt: { gte: startOfDay } },
+      }),
       // Needs-attention signals.
       this.prisma.rider.count({ where: { kycStatus: "pending" } }),
       this.prisma.issue.count({ where: { status: { in: ["open", "investigating"] } } }),
