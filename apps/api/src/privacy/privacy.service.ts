@@ -377,14 +377,19 @@ export class PrivacyService {
       }
     });
 
-    // DS15-05: post-commit, best-effort — pull an erased rider out of the TTL-less `rider:geo` Redis
-    // sorted set. PG's is_online (now false) stays the nearbyRiders authority, so a missed eviction is
-    // harmless; this just stops a ghost entry lingering in the GEOSEARCH candidate window / leaking Redis
-    // memory. Mirrors the auto-hold eviction in order-lifecycle (never affects the committed erasure).
+    // DS15-05 / DS19-02: post-commit, best-effort — pull an erased rider out of BOTH live-supply planes,
+    // the `rider:geo` Redis sorted set AND the board rooms, through the standing-demotion funnel. The
+    // sessions were revoked in-transaction (session.deleteMany), but an already-open WebSocket authenticated
+    // at handshake keeps its board-room subscriptions until it disconnects on its own — so a geo-only
+    // eviction (the prior DS15-05 shape) left the erased rider a board ghost still receiving board pushes.
+    // Every other demotion path (admin suspend/ban, KYC lapse, auto-hold, cancel/dispute-strike limits)
+    // evicts both planes via evictRiderFromSupply; erasure is the funnel bypass this closes. PG's is_online
+    // (now false) stays the nearbyRiders authority, so a missed eviction is harmless; never affects the
+    // committed erasure (evictRiderFromSupply never throws — geo half is internally `.catch`ed).
     if (isRider) {
       void this.gateway
-        ?.evictRiderFromGeo(profileId)
-        ?.catch((err) => this.logger.warn(`geo eviction after erasure failed for ${profileId}: ${(err as Error).message}`));
+        ?.evictRiderFromSupply(profileId)
+        ?.catch((err) => this.logger.warn(`supply eviction after erasure failed for ${profileId}: ${(err as Error).message}`));
     }
 
     // DS15-03: post-commit, best-effort — purge the underlying GCS objects (KYC selfie/ID-document +

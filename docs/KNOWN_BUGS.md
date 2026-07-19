@@ -6,7 +6,26 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-19 (UX-improvements routine — agentic-loop hunt over the UX lane; see
+**Last consolidated:** 2026-07-19 (deep-sweep routine — orthogonal backend-correctness/concurrency hunt +
+deep-sweep-owned cross-lane seams pass + adversarial API pass; see the "Deep sweep 2026-07-19" section near
+the bottom and `docs/DEEP-SWEEP-2026-07-19.md` for DS19-01…02 — one MEDIUM and one LOW, both fixed same-run
+with regression tests. The Phase-1.5 seam trace ran over **rider standing**
+(`accountStatus`/`onHold`/`isOnline`/`kycStatus`) across all 14 standing writers: DS19-01 (MEDIUM) is two
+sibling `applyReliabilityDelta` call sites — `rate()`'s customer-rating flow and `cancel()`'s
+below-strike-limit branch — that trip an `onHold` reliability hold without forcing the rider offline or
+evicting them from the live-supply planes (the standing demotion `markUndelivered` and the two DS17-02
+strike-limit paths already handle correctly), leaving a held-but-`isOnline:true` rider a GEOSEARCH/board
+ghost; DS19-02 (LOW) is `eraseAccount`'s post-commit eviction being geo-only (`evictRiderFromGeo`) instead
+of the both-planes `evictRiderFromSupply` funnel every other demotion path uses, so an already-open
+WebSocket kept its board rooms past erasure. The same seam trace flagged **`KB-HOLD-SESSION-SCOPE`**
+(now OPEN, LOW) — session/token revocation on demotion is implemented only for admin suspend/ban, and
+`refresh()` re-checks only `accountStatus`, so a velocity-held/KYC-lapsed rider keeps authenticated API
+access indefinitely; logged for a product decision, deliberately NOT fixed speculatively. Phase-0.5
+re-verified the **Notifications/FCM** and **Edge/abuse** cluster headers (rotated away from the KYC/
+Object-authz/Mobile-journey-dead-ends and Auth-identity/Data-integrity/Money-fraud clusters the prior two
+routines re-checked) — both INTACT, 0 stale claims. Phase 1 (`lane-bug-hunt`, 5 lenses) returned 0
+candidates; Phase 3 adversarial API pass came back clean. Zero open sibling PRs at Phase 0.
+Prior: 2026-07-19 (UX-improvements routine — agentic-loop hunt over the UX lane; see
 `docs/UX-USABILITY-REVIEW-2026-07-19.md` and the "UX review 2026-07-19" section near the bottom for
 UX19-01…04, three MEDIUM + one LOW finding, all fixed same-run with regression tests where testable: the
 admin issues queue's empty state claimed "No open issues" regardless of the active status filter (a
@@ -227,6 +246,7 @@ KB-CONFIRMITEMS-RETRY, KB-PUSH-TOKEN-RACE, KB-DELIVERY-CODE-ROTATION-SIGNAL) wer
 | KB-SETTLEMENT-DROP | The dormant `Settlement` table + `Refund.settlementId` are still un-dropped (was `DOC-16-06`, re-triaged 2026-07-16). Zero functional impact — unread/unwritten either way. | `apps/api/prisma/schema.prisma`, `docs/plans/2026-rider-wallet-design.md` Premise 6 | LOW (housekeeping only) | 2 | 2026-07-16 WD audit re-affirmed the deferral (doc updated) rather than run a destructive `DROP TABLE` bundled into a bug-fix PR — the wallet has now soaked through PR1 + WD-001..017 with zero references either way. Owning lane: refactor routine (dead-code removal is explicitly in its remit) — do the actual drop in a dedicated maintenance-window migration. |
 | KB-IDENTITY-BINDING | **Identity is phone-only, so cheap SIMs → unlimited accounts** (FRAUD P2-5 multi-accounting + P2-8 phone-recycling: `verifyOtp` does `profile.upsert({ where:{ phone }})`, so a recycled MSISDN inherits the prior owner's profile+history, and a fresh SIM mints a fresh identity with no device attestation). Verified STILL LIVE 2026-07-16. **Reputation-weaponisation half DE-FANGED by IR16-09** (customer trust tier); **soft device binding + recycle signal shipped as IR16-10** (per-device signup throttle + `Session.deviceId` + a P2-8 recycle-suspicion log). Remaining open: the *destructive* recycle-rebind (deferred — high login-path false-positive risk) and hardware attestation (L3). | `apps/api/src/auth/auth.service.ts`, `apps/api/prisma/schema.prisma` (`Session.deviceId`), `packages/shared/src/phone.ts` | LOW-MEDIUM (further reduced) | — (product/vendor) | **Remaining work is founder/vendor-gated:** **L3 hardware attestation** (Play Integrity / App Attest) needs a native config plugin + vendor setup + on-device verification; **L0 destructive rebind** needs a product decision on the false-positive/lockout trade-off (detection signal shipped instead). **Layered plan (docs/plans/2026-identity-and-pod-hardening.md):** L2 trust tier ✅ (IR16-09), L1 soft device-id + throttle ✅ (IR16-10), L0 recycle detection ✅ / rebind deferred, L3 attestation (gated). The trunk-0 duplicate-identity bug (a *different* normalization defect) IS fixed. |
 | KB-POD-DISPUTE | **No positive proof-of-delivery dispute resolution** (FRAUD P2-6): a recipient who takes the goods then withholds the delivery code strands the rider (`confirmDelivery` hard-requires the OTP). **Phase A shipped (IR16-11):** the rider can now attach proof-of-drop evidence (photo + GPS + time) and the admin order-detail surfaces it for adjudication. **Phase B still open** — there's no *action* yet to record the trip as *delivered* over a withheld code (it stays `undelivered`). | `apps/api/src/orders/order-lifecycle.service.ts`, `apps/api/src/admin/admin-orders.service.ts`, admin issue-resolution | LOW-MEDIUM | — (product) | **Phase A done; Phase B is a product decision.** The "force-complete on adjudicated dispute" admin action is a new resolution path with its own abuse surface (an admin marking undelivered trips delivered) — needs a decision on the adjudication bar (photo+geofence enough?), the customer dispute/reversal window, and whether an adjudicated delivery is commissionable at go-live. Evidence to adjudicate on now exists (IR16-11). See `docs/plans/2026-identity-and-pod-hardening.md`. |
+| KB-HOLD-SESSION-SCOPE | **Session/token revocation on rider demotion is scoped only to admin suspend/ban, not to `onHold`/KYC-lapse** (surfaced by the 2026-07-19 deep-sweep rider-standing seam trace). `suspendRider`/`banRider` revoke sessions in-transaction (`session.updateMany({profileId, revokedAt:null}, {revokedAt})`, IR16-01) and `auth.service.ts refresh()` re-reads `s.profile.rider.accountStatus` as a backstop (hard-rejects suspended/banned) — but `refresh()` re-checks **only `accountStatus`**, never `onHold`/`kycStatus`. So a velocity-held / reliability-held / KYC-lapsed (expired/failed) rider keeps full authenticated API access, including token refresh, **indefinitely** — the supply-plane eviction + `isOnline:false` (DS17-02 / DS19-01 / DS19-02) remove them from matching/board, but not from the authenticated API surface. This MAY be intentional: a held/lapsed rider plausibly needs to stay logged in to retry KYC, contact support, or finish an already-active delivery. **Not a proven defect — a flagged asymmetry needing a product decision** on whether hold/KYC-lapse should also cut sessions BEFORE any code change (a session-revoke here without that call is exactly the speculative behavior change this flag warns against). | `apps/api/src/auth/auth.service.ts` (`refresh()`, ~line 360/377 — `accountStatus`-only recheck), `apps/api/src/admin/admin-riders.service.ts` (`suspendRider`/`banRider` in-tx `session.updateMany` revoke sites, ~line 330/438) | LOW | 1 | Found by the 2026-07-19 deep-sweep Phase-1.5 rider-standing seam pass. **Needs a product decision** on whether a hold/KYC-lapse demotion should revoke sessions (like ban/suspend) or deliberately preserve them (retry-KYC / support / active-delivery access). No code change made — logged OPEN pending that call. |
 
 ### Recently closed (this session's remediation PRs)
 
@@ -723,6 +743,41 @@ testable; `pnpm typecheck` + `pnpm lint` + 916 API tests (+11) + 401 mobile test
 | UX16-08 | Top-up "Cancel request" (`reset()`) unconditionally rotated the dedup `idempotencyKey`, even when cancelling a STILL-LIVE (`pending`) top-up whose server-side row and already-pushed rail prompt aren't recalled by the local reset — an immediate resend opened a second, independent pending top-up instead of deduping against the abandoned one. Dormant (`creditFromTopup` has no callers yet) but a real double-credit vector once a live rail confirmation ships | `apps/mobile/app/wallet/top-up.tsx` `reset`, `apps/api/src/wallet/wallet.service.ts` `createTopup` | LOW-MEDIUM (dormant) | **FIXED** — `reset()` only rotates the key when NOT cancelling a live (`step === "wait"`) top-up; "Try again" from a genuinely terminal state (timeout/declined) still gets a fresh key per BH-09's original intent |
 
 ---
+
+## Deep sweep 2026-07-19 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-19.md`
+
+Phase 0: zero open `claude/*` sibling PRs at session start. Phase 0.5 re-verified two rotated "→ FIXED"
+cluster headers not re-checked in the last few runs — **Notifications/FCM** and **Edge/abuse** (rotated
+away from KYC/Object-authz/Mobile-journey-dead-ends checked by the 2026-07-19 UX run and Auth-identity/
+Data-integrity/Money-fraud checked by the 2026-07-18-night bug-hunt) — **both INTACT, 0 stale claims**.
+Phase 1 (`lane-bug-hunt`, 5 lenses: tx-rollback, concurrency-idempotency, authz-IDOR, timer-expiry,
+adversarial-API) returned **0 candidates**. Phase 1.5 (deep-sweep-owned cross-lane seams pass) traced
+**rider standing** (`accountStatus`/`onHold`/`isOnline`/`kycStatus`) across all **14 standing writers** — the
+seam this codebase funnels through `TrackingGateway.evictRiderFromSupply` — and surfaced this run's findings:
+2 sub-sites of one MEDIUM (DS19-01), 1 LOW (DS19-02), plus 1 flagged-not-fixed asymmetry logged OPEN
+(`KB-HOLD-SESSION-SCOPE`). Phase 3 adversarial raw-API pass (orders/offers/wallet/riders/kyc/auth/issues/
+reports/sos/notifications/uploads) came back clean — fare/commission manipulation, IDOR, TOCTOU/replay, and
+gate-bypass classes all already closed. **Two findings — one MEDIUM, one LOW, zero CRITICAL/HIGH — both fixed
+same-run** with regression tests; `pnpm typecheck` (5 packages) + `pnpm test` (1070 API tests + 449 mobile
+tests) + `@lynia/api` build all green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| DS19-01 | Two sibling `applyReliabilityDelta` call sites trip `onHold:true` (score below `RELIABILITY.ON_HOLD_BELOW`) without the standing-demotion invariant the rest of the codebase enforces — no `isOnline:false` in the same write, no post-commit supply-plane eviction. **(a)** `rate()`'s customer-rating flow: a low rating (`<= LOW_RATING_AT`) from a trusted/distinct-pair customer can cross the threshold; the `tx.rider.update` writes `{...reliability}` only. **(b)** `cancel()`'s below-strike-limit branch: a 1st/2nd pre-pickup cancel's `-prePickupCancel` penalty can cross it; the `else` writes `{cancelStrikes, ...reliability}` only. Either flips `onHold:true` while `isOnline` stays `true` and the rider keeps their board rooms + `rider:geo` entry until an admin clears the hold or they go offline — inflating the admin online count and leaving a live GEOSEARCH/board ghost (though `offers.service`'s standing gate already blocks their bids). `markUndelivered` (the reference `newlyHeld` impl) and the two DS17-02 strike-limit paths were already correct — these two incidental-hold sub-sites read as "rating"/"strike" code, not "demotion" code, so no prior standing sweep grepped all three `applyReliabilityDelta` sites. | `apps/api/src/orders/order-lifecycle.service.ts` (`rate`, `cancel`) | MEDIUM | **FIXED** — both sub-sites mirror `markUndelivered`'s `newlyHeld` pattern: compute whether this delta NEWLY trips the hold, add `isOnline:false` to the same `tx.rider.update`, capture the rider id outer-scope, and evict via `evictRiderFromSupply` post-commit (best-effort, `.catch`-guarded; `rate()` gained a new post-commit block, `cancel()` a second guard alongside `strikeLimitRiderId`). 5 tests in `order-lifecycle.service.spec.ts` (rate positive + 2 negatives incl. untrusted-`{}`; cancel below-limit positive + negative). |
+| DS19-02 | On a rider's own account erasure, the post-commit best-effort eviction called only `evictRiderFromGeo(profileId)` — never `kickRiderFromBoard`. Sessions ARE revoked in-tx (`session.deleteMany`), but an already-open WebSocket (authenticated at handshake, independent of the deleted session row) keeps its board-room subscriptions until it disconnects on its own. Every other demotion path (admin suspend/ban, KYC-lapse, auto-hold, cancel/dispute-strike limits) evicts BOTH planes via `evictRiderFromSupply`; erasure was geo-only — a funnel bypass predating the KB-BOARD-REVOKE board-kick + the `evictRiderFromSupply` funnel that unified both planes. Surfaced as the sole standalone/unpaired `evictRiderFromGeo(` caller outside the funnel's own internals (the `markUndelivered` site is correctly paired with `kickRiderFromBoard`; `setOnline(false)`'s geo-only call is voluntary-offline, DS17-02-dispositioned as correct-by-design). | `apps/api/src/privacy/privacy.service.ts` | LOW | **FIXED** — erasure's rider-eviction block now calls `evictRiderFromSupply(profileId)` (geo + board) in place of the geo-only call, keeping the same optional-gateway/best-effort/`.catch`-guarded/never-throws shape. Tests in `privacy.service.spec.ts` (rider erasure calls the funnel with the profile id; a non-rider erasure calls no supply-eviction method). |
+
+**Sibling-sweep evidence** (full grep output + per-hit disposition in `docs/DEEP-SWEEP-2026-07-19.md`):
+
+- **DS19-01** (`grep -rn "applyReliabilityDelta" apps/api/src` — 3 service call sites):
+  `order-lifecycle.service.ts:487` (`markUndelivered`) already correct (reference impl); `:622` (`rate`) and
+  `:762` (`cancel` below-limit) **fixed this run**; `admin-orders.service.ts:241` (`adjudicateDelivered`) and
+  `order-lifecycle.service.ts:950` (`completeOrder`) **not siblings** — recovery-only (raise the score, can
+  never trip a hold).
+- **DS19-02** (`grep -rn "evictRiderFromGeo(" apps/api/src --include=*.ts`, excluding specs):
+  `order-lifecycle.service.ts:528` correctly PAIRED with `kickRiderFromBoard(:535)`; `tracking.gateway.ts:414/464`
+  the funnel's own internals (not a caller); `rider.service.ts setOnline(false)` geo-only **by design**
+  (voluntary offline — pre-existing, out of scope, previously dispositioned DS17-02); `privacy.service.ts:386`
+  the sole standalone caller — **fixed this run**.
 
 ## Deep sweep 2026-07-18 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-18.md`
 

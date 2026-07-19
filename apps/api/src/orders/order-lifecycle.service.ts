@@ -542,6 +542,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   /** Customer rates the rider after delivery; this closes the order and updates the rider's score. */
   async rate(orderId: string, customerId: string, score: number, comment?: string): Promise<LifecycleResult> {
+    // DS19-01: set when a low rating's reliability penalty NEWLY trips the hold below, so we can evict the
+    // rider from the live-supply planes after commit — the same standing demotion markUndelivered's
+    // velocity hold and cancel()'s strike limit perform (see the newlyHeld note at the rider.update below).
+    let newlyHeldRiderId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
@@ -624,9 +628,18 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
                   isPenalty ? -RELIABILITY.PENALTY.lowRating : RELIABILITY.RECOVER_PER_COMPLETION,
                 )
               : {};
+          // DS19-01: a low rating's -lowRating penalty can push reliabilityScore below ON_HOLD_BELOW and
+          // flip onHold:true — the same standing demotion markUndelivered (velocity) and cancel() (strike
+          // limit) perform. Those paths force isOnline:false in the same write and evict the rider from the
+          // live-supply planes post-commit; this one didn't, leaving a rating-held rider isOnline:true with
+          // their board rooms + `rider:geo` entry until an admin cleared the hold or they went offline — a
+          // GEOSEARCH/board ghost inflating the admin online count. `reliability` is `{}` when the rating
+          // carried no weight, so guard with an `in` check before reading onHold; only a NEW hold demotes.
+          const newlyHeld = "onHold" in reliability && reliability.onHold === true && !rider.onHold;
+          if (newlyHeld) newlyHeldRiderId = order.riderId;
           await tx.rider.update({
             where: { profileId: order.riderId },
-            data: { ratingAvg, ratingCount, tripsCount: rider.tripsCount + 1, ...reliability },
+            data: { ratingAvg, ratingCount, tripsCount: rider.tripsCount + 1, ...reliability, ...(newlyHeld ? { isOnline: false } : {}) },
           });
         }
         // Prepaid commission debit (design Flow 1): same transaction as completion, after the rider row
@@ -637,6 +650,16 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
+    // DS19-01: a rating that newly tripped the reliability hold above forced the rider offline in-tx —
+    // now pull them out of BOTH live-supply planes (geo + board) through the standing-demotion funnel,
+    // mirroring the cancel-strike-limit and markUndelivered auto-hold evictions. Best-effort, post-commit;
+    // evictRiderFromSupply never throws, so the `void`/`.catch` can't surface an unhandled rejection and it
+    // can never affect the committed rating/completion.
+    if (newlyHeldRiderId) {
+      void this.gateway.evictRiderFromSupply(newlyHeldRiderId).catch((err) => {
+        this.logger.warn(`supply eviction after rating hold failed for ${newlyHeldRiderId}: ${(err as Error).message}`);
+      });
+    }
     this.safeEmit(orderId, "completed");
     return { orderId, status: "completed" };
   }
@@ -712,6 +735,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // their board subscription + `rider:geo` entry (still receiving board pushes, still a GEOSEARCH ghost)
     // for up to the whole 2h cooldown. Captured in-tx and funnelled through evictRiderFromSupply post-commit.
     let strikeLimitRiderId: string | null = null;
+    // DS19-01: set when a BELOW-limit rider cancel (strike 1 or 2) still pushes reliability under the hold
+    // threshold and newly trips onHold — a standing demotion the pre-existing strike-limit branch handled
+    // but this branch didn't. Forced offline in-tx + funnelled through evictRiderFromSupply post-commit, the
+    // same as strikeLimitRiderId (the two are mutually exclusive — a cancel hits exactly one branch).
+    let reliabilityHoldRiderId: string | null = null;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
@@ -778,9 +806,16 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           // board supply planes — evictRiderFromSupply post-commit, like every other demotion path.
           strikeLimitRiderId = order.riderId;
         } else {
+          // DS19-01: below the strike limit the rider stays online — but the -prePickupCancel penalty can
+          // itself drop reliabilityScore below ON_HOLD_BELOW and flip onHold:true (the same standing
+          // demotion markUndelivered's velocity hold performs). When it NEWLY holds, force the rider offline
+          // in this same write and evict them from the supply planes post-commit via the shared block below,
+          // mirroring the strike-limit branch — else a cancel-held rider stays isOnline:true, a board/geo ghost.
+          const newlyHeld = reliability.onHold === true && !(rider?.onHold ?? false);
+          if (newlyHeld) reliabilityHoldRiderId = order.riderId;
           await tx.rider.update({
             where: { profileId: order.riderId },
-            data: { cancelStrikes: strikes, ...reliability },
+            data: { cancelStrikes: strikes, ...reliability, ...(newlyHeld ? { isOnline: false } : {}) },
           });
         }
         // F-01: the rider bailed on an assigned-but-not-collected job (rider cancels are blocked
@@ -807,6 +842,14 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     if (strikeLimitRiderId) {
       void this.gateway.evictRiderFromSupply(strikeLimitRiderId).catch((err) => {
         this.logger.warn(`supply eviction after cancel-strike limit failed for ${strikeLimitRiderId}: ${(err as Error).message}`);
+      });
+    }
+    // DS19-01: a below-strike-limit cancel whose reliability penalty newly tripped the hold above forced the
+    // rider offline in-tx — evict them from the supply planes too (mutually exclusive with the strike-limit
+    // branch, so no double eviction). Same best-effort/never-throws shape as every other post-commit eviction.
+    if (reliabilityHoldRiderId) {
+      void this.gateway.evictRiderFromSupply(reliabilityHoldRiderId).catch((err) => {
+        this.logger.warn(`supply eviction after cancel reliability hold failed for ${reliabilityHoldRiderId}: ${(err as Error).message}`);
       });
     }
     // Live WS status for any open tracking screen (both cancel shapes). Raw emit rather than safeEmit,

@@ -404,12 +404,15 @@ describe("PrivacyService.eraseAccount", () => {
     expect((storage.deleteObject as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 
-  /* ── DS15-05: an erased rider is evicted from the rider:geo Redis index ─────────────────────────── */
+  /* ── DS15-05 / DS19-02: an erased rider is evicted from BOTH live-supply planes (geo + board) ────── */
 
-  it("evicts an erased RIDER from the geo index post-commit (best-effort)", async () => {
+  // DS19-02: erasure must funnel through evictRiderFromSupply (geo + board), not the geo-only DS15-05 call —
+  // sessions are revoked in-tx but an already-open WebSocket keeps its board rooms until it disconnects, so a
+  // geo-only eviction left the erased rider a board ghost. Every OTHER demotion path evicts both planes.
+  it("evicts an erased RIDER from BOTH supply planes post-commit (geo + board, via the funnel)", async () => {
     const evicted: string[] = [];
     const gateway = {
-      evictRiderFromGeo: vi.fn(async (id: string) => {
+      evictRiderFromSupply: vi.fn(async (id: string) => {
         evicted.push(id);
       }),
     } as unknown as TrackingGateway;
@@ -418,11 +421,11 @@ describe("PrivacyService.eraseAccount", () => {
     expect(evicted).toEqual(["p1"]);
   });
 
-  it("does NOT evict a plain CUSTOMER (no rider row) from the geo index", async () => {
-    const gateway = { evictRiderFromGeo: vi.fn(async () => {}) } as unknown as TrackingGateway;
+  it("does NOT evict a plain CUSTOMER (no rider row) from the supply planes", async () => {
+    const gateway = { evictRiderFromSupply: vi.fn(async () => {}) } as unknown as TrackingGateway;
     const { svc } = eraseHarness({ phone: "+263771234567" }, false, [], false, { gateway });
     await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
-    expect((gateway.evictRiderFromGeo as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect((gateway.evictRiderFromSupply as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 
   /* ── DS15-07: Order.note free-text is scrubbed on the erasing customer's own orders ─────────────── */

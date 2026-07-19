@@ -550,6 +550,77 @@ describe("OrderLifecycleService.rate", () => {
     await svc.rate("o1", "c1", 5);
     expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), { orderId: "o1", riderId: "r1", agreedFare: 7 });
   });
+
+  // DS19-01: a low rating whose penalty NEWLY trips onHold is a standing demotion — like markUndelivered's
+  // velocity hold and cancel()'s strike limit it must force the rider offline in the same write AND evict
+  // them from the live-supply planes post-commit, else a rating-held rider stays isOnline:true, a board/geo ghost.
+  it("DS19-01: a low rating that newly trips onHold forces the rider offline and evicts them from supply", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc, evictedFromSupply } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => 5, // established/trusted customer → the rating carries reliability weight
+      },
+      rating: { create: async () => ({}), count: async () => 0 }, // distinct pair
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        // 68 - lowRating(10) = 58 < ON_HOLD_BELOW(60) → newly trips onHold; the rider was online + not held.
+        findUnique: async () => ({ ratingAvg: 5, ratingCount: 1, tripsCount: 3, reliabilityScore: 68, onHold: false, heldReason: null }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.rate("o1", "c1", 2);
+    // Forced offline in the same write as the hold…
+    expect(riderData).toMatchObject({ reliabilityScore: 58, onHold: true, isOnline: false });
+    // …and evicted from BOTH supply planes (geo + board) through the funnel, post-commit + best-effort.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evictedFromSupply).toEqual(["r1"]);
+  });
+
+  it("DS19-01: a rating that does NOT trip onHold leaves isOnline untouched and evicts nobody", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc, evictedFromSupply } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      rating: { create: async () => ({}), count: async () => 0 },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        // A clean 5-star → +RECOVER, well clear of the hold threshold; no demotion.
+        findUnique: async () => ({ ratingAvg: 4, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.rate("o1", "c1", 5);
+    expect(riderData).not.toHaveProperty("isOnline");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evictedFromSupply).toEqual([]);
+  });
+
+  it("DS19-01: a low rating from an UNTRUSTED customer (reliability stays {}) never forces offline or evicts", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc, evictedFromSupply } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", customerId: "new-cust", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => 0, // untrusted customer → reliability stays {} → no penalty applied at all
+      },
+      rating: { create: async () => ({}), count: async () => 0 },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        // Score sits one lowRating penalty above the threshold — it WOULD trip if the untrusted rating counted.
+        findUnique: async () => ({ ratingAvg: 5, ratingCount: 1, tripsCount: 3, reliabilityScore: 68, onHold: false, heldReason: null }),
+        update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+      },
+    });
+    await svc.rate("o1", "new-cust", 1);
+    expect(riderData).not.toHaveProperty("isOnline");
+    expect(riderData).not.toHaveProperty("onHold");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evictedFromSupply).toEqual([]);
+  });
 });
 
 describe("OrderLifecycleService.rateSender", () => {
@@ -838,6 +909,47 @@ describe("OrderLifecycleService.cancel", () => {
       }),
     );
     await svc.cancel("o1", "r1");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evictedFromSupply).toEqual([]);
+  });
+
+  // DS19-01: a BELOW-limit rider cancel (strike 1 or 2) whose -prePickupCancel penalty itself pushes the
+  // score under ON_HOLD_BELOW newly trips onHold — a standing demotion the strike-limit branch already
+  // handled but this branch didn't. It must force the rider offline in-tx and evict them from supply.
+  it("DS19-01: a below-limit cancel whose penalty newly trips onHold forces offline + evicts from supply", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc, evictedFromSupply } = build(
+      cancellable({
+        rider: {
+          // 1 prior strike → this is strike 2 (below the limit of 3). Score 63 - prePickupCancel(5) = 58 <
+          // ON_HOLD_BELOW(60) → newly trips onHold; the rider was online + not previously held.
+          findUnique: async () => ({ cancelStrikes: 1, reliabilityScore: 63, onHold: false, heldReason: null }),
+          update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+        },
+      }),
+    );
+    const res = await svc.cancel("o1", "r1");
+    // Still below the strike limit → no cooldown, but the reliability hold forced them offline in-tx.
+    expect(res.cooldownUntil).toBeNull();
+    expect(riderData).toMatchObject({ cancelStrikes: 2, reliabilityScore: 58, onHold: true, isOnline: false });
+    // …and evicted from BOTH supply planes through the funnel, post-commit + best-effort.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(evictedFromSupply).toEqual(["r1"]);
+  });
+
+  it("DS19-01: a below-limit cancel that does NOT cross the hold threshold leaves isOnline untouched and evicts nobody", async () => {
+    let riderData: Record<string, unknown> | undefined;
+    const { svc, evictedFromSupply } = build(
+      cancellable({
+        rider: {
+          // Score 80 - prePickupCancel(5) = 75, comfortably above ON_HOLD_BELOW(60) → no demotion.
+          findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false, heldReason: null }),
+          update: async (a: { data: Record<string, unknown> }) => { riderData = a.data; return {}; },
+        },
+      }),
+    );
+    await svc.cancel("o1", "r1");
+    expect(riderData).not.toHaveProperty("isOnline");
     await new Promise((r) => setTimeout(r, 0));
     expect(evictedFromSupply).toEqual([]);
   });
