@@ -83,8 +83,8 @@ export function AdjudicateDelivered({
           ) : null}
           Overturns the <b>undelivered</b> outcome on order <b>{id}</b> to <b>delivered</b>
           {hasEvidence ? " — only when the proof above confirms the drop and the recipient withheld the code" : ""}. The
-          rider is credited a completed trip and commission; the customer is notified and can contest within 48 hours.
-          Recorded in the audit log.
+          rider is credited a completed trip and commission; the customer is notified and can report a problem via the
+          app at any time. Recorded in the audit log.
         </span>
       }
       reasons={REASONS.orderAdjudicateDelivered}

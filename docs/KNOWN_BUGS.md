@@ -6,7 +6,23 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-18 night (bug-hunt routine — agentic-loop hunt over the BH lane, mobile
+**Last consolidated:** 2026-07-19 (UX-improvements routine — agentic-loop hunt over the UX lane; see
+`docs/UX-USABILITY-REVIEW-2026-07-19.md` and the "UX review 2026-07-19" section near the bottom for
+UX19-01…04, three MEDIUM + one LOW finding, all fixed same-run with regression tests where testable: the
+admin issues queue's empty state claimed "No open issues" regardless of the active status filter (a
+literal falsehood when filtered to a different status with open issues elsewhere in the queue), with the
+customers directory caught by the sibling-sweep in the identical unfixed state; the adjudicated-delivery
+push/feed/admin copy across 4 sites promised a "48-hour contest window" that `IssuesService.raise()`
+enforces nowhere (report-a-problem stays open indefinitely); the same push bodies unconditionally thanked
+the rider "for adding the evidence" even when `adjudicateDelivered` has no precondition on proof-of-drop
+evidence existing (the admin console's own modal explicitly supports a zero-evidence override); and a
+rider's own "assigned"/"cancelled" in-app feed-row tap detoured through the dead-control `/order/:id`
+screen instead of the live job screen the equivalent push opens directly (no pickup/confirm/bail controls
+for an active job; no call button for a cancelled one where the rider is still holding the parcel).
+Phase-0.5 re-verified the **KYC**, **Object-authz/IDOR**, and **Mobile-journey-dead-ends** cluster headers
+(rotated away from Notifications/FCM/Money-fraud/Ship-infra-correctness/Auth-identity/Data-integrity) —
+all INTACT, 0/6 stale claims. Zero open sibling PRs at Phase 0.
+Prior: 2026-07-18 night (bug-hunt routine — agentic-loop hunt over the BH lane, mobile
 journeys + app↔API contract seams; see "Bug hunt 2026-07-18 night" near the bottom for BH-18…20, three
 MEDIUM findings, all fixed same-run with a regression test each: a THIRD, unstamped `kind:"account"`
 no-orderId push shape (`AdminCustomersService.holdCustomer`/`liftCustomerHold`, added by UX18-04) that
@@ -964,6 +980,45 @@ reason-coded over the audit seam, single-concern. `pnpm typecheck` + full monore
 
 **`KB-POD-DISPUTE` is now CLOSED** — Phase A (proof capture, IR16-11) + Phase B (adjudication, IR16-12) both shipped.
 **Still open in `KB-IDENTITY-BINDING`:** L3 hardware attestation + L0 destructive rebind (both gated — founder/vendor work).
+
+## UX review 2026-07-19 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-19.md`
+
+Phase 0 read this ledger + the 2026-07-18 UX report; `mcp__github__list_pull_requests` (state=open) showed
+only the standing `release-please` bot PR (#324) — zero open `claude/*` sibling PRs (the 23:00 bug-hunt
+routine's PR, #323/BH-18..20, had already merged). Phase 0.5 re-verified 2 members each of three rotated
+"→ FIXED" cluster headers against current code — **KYC** (the monotonic `kycResolvedAt` replay/reorder
+guard in `rider.service.ts:434`), **Object-authz/IDOR** (the wash-trade `customerId===riderId` reject and
+the offer-assignment `FOR UPDATE` TOCTOU guard, both in `offers.service.ts`), **Mobile journey dead-ends**
+(the `markUndelivered` flow and the rider bid-draft sign-out wipe) — 0/6 regressed. Phase 1 ran the
+mandated agentic-loop hunt engine (`Workflow({name:'lane-bug-hunt'}, args:'ux')`, 20 sub-agents: 4 finder
+lenses → 3-skeptic adversarial verify → sibling-sweep) — 4 candidates found (1 of 4 lenses, recoverability,
+returned zero), all 4 survived verification. Every cited file:line was independently re-opened and
+re-verified by the orchestrator before fixing. All 4 findings fixed same-run. `pnpm typecheck` clean across
+all 5 packages (after `pnpm install` + Prisma-client-generate + `@lynia/shared` build, none of which
+existed yet in this fresh session); 1065 API tests (+1 new — the other 3 fix sites share existing test
+files whose assertions were rewritten, not net-new cases) + 449 mobile tests (+4 new) green; `apps/admin`
+has no test harness (repo precedent) so its empty-state and confirmation-copy fixes are
+typecheck+lint-verified only.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| UX19-01 | `issues/page.tsx`'s `FilterNav` (all/open/investigating/resolved) genuinely changes the fetched rows via `?status=...`, but the connected-empty `EmptyState` was one static "No open issues" / "Disputes opened from the app land here with the order attached." for EVERY filter value — filtering to `resolved` with zero resolved rows, while open issues sit elsewhere in the queue, told the operator "No open issues," a literally false claim on the safety/dispute desk (the exact class `orders/page.tsx`/`riders/page.tsx` were already fixed to avoid). Sibling-sweep found the identical unfixed gap in `customers/page.tsx` (its `FilterNav` — all/active/on_hold/flagged — genuinely changes the query, but nothing in the empty state varied with it) | `apps/admin/app/issues/page.tsx:66-80`; sibling `apps/admin/app/customers/page.tsx:91-105` | MEDIUM | **FIXED** — both pages now swap to filter-aware copy ("No issues in this view" / "Try a different status filter." and "No customers in this view" / "Try a different filter.") whenever a real filter is active, keeping the reassuring unfiltered message only for `active === "all"`. `apps/admin` has no test harness; typecheck+lint-verified |
+| UX19-02 | The customer push, its feed-row mirror, and the admin confirmation modal for an ops "adjudicate delivered" override all claimed the customer "can contest within 48 hours" / "report a problem within 48 hours." But `IssuesService.raise()` (`issues.service.ts:55-87`) — the actual mechanism behind "report a problem" — never reads `completedAt` or any elapsed-time value; a report at day 30 succeeds identically to one at hour 1. A customer who read the stated deadline literally and waited would wrongly believe they'd lost the right to dispute | `apps/api/src/admin/admin-orders.service.ts:204,275` (`adjudicateDelivered`); siblings `apps/api/src/notifications/notifications-feed.service.ts:256`, `apps/admin/app/orders/[id]/OrderActions.tsx:86` | MEDIUM | **FIXED** — dropped the fabricated deadline from all 4 sites (push, JSDoc, feed mirror, admin modal); regression tests assert the corrected copy and assert "48 hours" is absent. 1 case rewritten in `admin-orders.service.spec.ts`, 1 in `notifications-feed.service.spec.ts` |
+| UX19-03 | `pushDestination` special-cases a rider's own `assigned` push to `/rider/job` (the only screen with pickup/confirm/bail controls) and a rider's own `cancelled` push to the same screen (the only place rendering `CancelledHandback`'s "you still have the parcel — call the sender" guidance; `/order/:id`'s `LiveTrackingCard` call button never renders for `cancelled`). `notificationRowDestination`, the in-app feed's own destination function, took no `status` parameter at all, so tapping the identical feed row for either event always fell back to `/order/:id` — the dead-control screen the push deliberately avoids, on the two highest-stakes rider notifications | `apps/mobile/src/push/push.ts:126-127,187,200-203` | MEDIUM | **FIXED** — `NotificationRow` (API + mobile) gained `to`/`status` fields on order-status rows (stamped from the same per-order voice already used to pick copy, plus the raw `event.status`); `notificationRowDestination` now mirrors `pushDestination`'s two rider-only branches before falling back to `/order/:id`. Evaluated `completed` (routed by the push to `/rider`) as a possible third sibling — `/order/:id` renders a valid summary for a rider-viewed `completed` order, so left unchanged (not a dead end). 1 new case in `notifications-feed.service.spec.ts`, 4 new cases in `push.test.ts` |
+| UX19-04 | The same `adjudicateDelivered` push bodies (customer + rider) and their feed mirror unconditionally claimed the team "reviewed your proof"/"reviewed the rider's proof" and thanked the rider "for adding the evidence" — but `adjudicateDelivered` has no precondition on `deliveryProofKey`/proof-of-drop existing, and the admin console's own modal explicitly supports and warns about a zero-evidence override ("No proof-of-drop evidence was submitted for this order — you're overriding based on the reason and note alone") | `apps/api/src/admin/admin-orders.service.ts:273-281`; sibling `apps/api/src/notifications/notifications-feed.service.ts:261` | LOW | **FIXED** — same edit site as UX19-02 (both false claims live in the same two `notifyProfiles` calls): reworded to "reviewed the delivery and marked it complete" / "...confirmed it as complete," accurate regardless of whether evidence was attached. Covered by the same UX19-02 regression tests (asserting the evidence-claim strings are absent) |
+
+**Sibling-sweep evidence** (full grep commands + hit counts in the dated report):
+
+- **UX19-01** (`grep -rln "FilterNav" apps/admin/app --include=*.tsx | grep -v components/FilterNav.tsx` — 4 hits): `orders/page.tsx`/`riders/page.tsx` already filter-aware from earlier UX passes (no action); `issues/page.tsx`/`customers/page.tsx` fixed this run. Re-run post-fix confirms all 4 admin list pages now vary empty-state copy with the active filter.
+- **UX19-02/04** (`grep -rn "within 48 hours\|48-hour\|48h contest"` + `grep -rniE "reviewed (the|your|rider's) proof|thanks for (submitting|providing|adding)"` across `apps/api/src apps/admin/app apps/mobile`): pre-fix 4 hits for the deadline claim + 3 for the evidence claim, all inside the same `adjudicateDelivered`/feed-mirror code path, fixed together. Post-fix: 0 live-code hits for either phrase (2 residual hits are the routine's own explanatory code comments referencing the fixed history, verified by reading both lines — not user-facing copy).
+- **UX19-03** (`grep -rn "notificationRowDestination\|pushDestination" apps/ --include="*.ts" --include="*.tsx"`, `grep -rln "CancelledHandback\|still have the parcel" apps/mobile`): the hunt's sibling-sweep confirmed `cancelled` as a genuine new sibling of the `assigned` anchor bug (both routed by the same function, so one fix — adding `status`-aware routing — closes both); `completed` was evaluated and left unchanged since `/order/:id` renders a valid summary for that status (not a dead end), confirmed by a dedicated new test.
+
+**Suggestions (not implemented):** none this run — all 4 findings were straightforward copy-honesty/notification-coherence/error-state fixes within scope.
+
+**Stopping rule:** three MEDIUM + one LOW finding this run (no CRITICAL/HIGH) — reported in full per the
+mandatory sibling-sweep evidence rule; 1 of 4 hunt lenses (recoverability) returned zero findings, and the
+Phase-0.5 re-verification came back fully clean, consistent with this lane's surface having been hunted
+repeatedly across UX-2026-07-08…UX18.
 
 ## UX review 2026-07-18 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-18.md`
 

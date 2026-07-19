@@ -65,11 +65,15 @@ export default async function IssuesPage({
           rowLabel={(i) => `Investigate ${i.id}`}
           empty={
             connected ? (
-              <EmptyState
-                icon={<IconCheck />}
-                title="No open issues"
-                line="Disputes opened from the app land here with the order attached."
-              />
+              active === "all" ? (
+                <EmptyState
+                  icon={<IconCheck />}
+                  title="No open issues"
+                  line="Disputes opened from the app land here with the order attached."
+                />
+              ) : (
+                <EmptyState icon={<IconCheck />} title="No issues in this view" line="Try a different status filter." />
+              )
             ) : (
               <EmptyState
                 icon={<IconAlert />}

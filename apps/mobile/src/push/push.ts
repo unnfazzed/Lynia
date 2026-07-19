@@ -193,12 +193,25 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
 /**
  * BH-18: where tapping an in-app Notifications feed row should navigate — the feed's own analogue of
  * {@link pushDestination}, extracted so the destination decision is unit-testable in isolation rather
- * than inlined as a ternary in the screen component. An order-scoped row always goes to its order; an
- * account-status row with no orderId routes by `to` (mirrors the push branch above: `to:"customer"` for
- * AdminCustomersService's hold/lift rows, "/rider" for every other — currently untagged — account row).
+ * than inlined as a ternary in the screen component. An account-status row with no orderId routes by
+ * `to` (mirrors the push branch above: `to:"customer"` for AdminCustomersService's hold/lift rows,
+ * "/rider" for every other — currently untagged — account row).
+ *
+ * UX19-03: an order-scoped row does NOT always go to its order — a rider viewing their OWN `assigned` or
+ * `cancelled` row must land on the same screen the equivalent push opens (`/rider/job`, via
+ * RIDER_JOB_SCREEN_STATUSES / the `cancelled` branch in {@link pushDestination}), or they hit a
+ * dead-control detour: `/order/:id` renders no pickup/confirm/bail controls for an active "assigned" job
+ * (just an "Open your job" button that then pushes to /rider/job), and for `cancelled` its LiveTrackingCard
+ * (the only place that screen renders a call button) never renders for a cancelled order — so a rider who
+ * had already collected the parcel gets no hand-back guidance and no way to call the sender, unlike the
+ * dedicated CancelledHandback screen `/rider/job` shows for the exact same event.
  */
-export function notificationRowDestination(row: { orderId: string | null; to?: "customer" | "rider" }): string {
-  if (row.orderId) return `/order/${row.orderId}`;
+export function notificationRowDestination(row: { orderId: string | null; to?: "customer" | "rider"; status?: string }): string {
+  if (row.orderId) {
+    if (row.to === "rider" && typeof row.status === "string" && RIDER_JOB_SCREEN_STATUSES.has(row.status)) return "/rider/job";
+    if (row.to === "rider" && row.status === "cancelled") return "/rider/job";
+    return `/order/${row.orderId}`;
+  }
   return row.to === "customer" ? "/home" : "/rider";
 }
 

@@ -152,4 +152,26 @@ describe("notificationRowDestination", () => {
     expect(notificationRowDestination({ orderId: null, to: "rider" })).toBe("/rider");
     expect(notificationRowDestination({ orderId: null })).toBe("/rider");
   });
+
+  // UX19-03: a rider's own "assigned"/"cancelled" feed row must land on the same screen the equivalent
+  // push opens (pushDestination's RIDER_JOB_SCREEN_STATUSES / cancelled branches), not the dead-control
+  // /order/:id detour (no pickup/confirm/bail controls for an active job; no call button for a cancelled
+  // one — CancelledHandback's hand-back guidance only renders at /rider/job).
+  it("routes a rider's own 'assigned' row to /rider/job, mirroring pushDestination", () => {
+    expect(notificationRowDestination({ orderId: "o1", to: "rider", status: "assigned" })).toBe("/rider/job");
+  });
+
+  it("routes a rider's own 'cancelled' row to /rider/job, mirroring pushDestination", () => {
+    expect(notificationRowDestination({ orderId: "o1", to: "rider", status: "cancelled" })).toBe("/rider/job");
+  });
+
+  it("does not apply the rider-job detour to the customer's own 'assigned'/'cancelled' row", () => {
+    expect(notificationRowDestination({ orderId: "o1", to: "customer", status: "assigned" })).toBe("/order/o1");
+    expect(notificationRowDestination({ orderId: "o1", to: "customer", status: "cancelled" })).toBe("/order/o1");
+  });
+
+  it("leaves every other rider-voiced status routed to /order/:id (only assigned/cancelled dead-end)", () => {
+    expect(notificationRowDestination({ orderId: "o1", to: "rider", status: "completed" })).toBe("/order/o1");
+    expect(notificationRowDestination({ orderId: "o1", to: "rider", status: "delivered" })).toBe("/order/o1");
+  });
 });

@@ -623,7 +623,7 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     await expect(svc.adjudicateDelivered("admin-1", "o1", { reason: "x" })).rejects.toThrow(/refresh and try again/i);
   });
 
-  it("notifies the customer with a 48h contest window, and the rider, post-commit", async () => {
+  it("notifies the customer with an honest, undated report path, and the rider, post-commit (UX19-02/04)", async () => {
     const notified: Array<{ ids: string[]; msg: Record<string, unknown> }> = [];
     const notifications = {
       notifyProfiles: async (ids: string[], msg: Record<string, unknown>) => { notified.push({ ids, msg }); },
@@ -632,7 +632,14 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, notifications, wallet as unknown as WalletService);
     await svc.adjudicateDelivered("admin-1", "o1", { reason: "x" });
     await new Promise((r) => setTimeout(r, 0));
-    expect(notified.find((n) => n.ids.includes("c1"))?.msg.body).toMatch(/report a problem within 48 hours/i);
-    expect(notified.some((n) => n.ids.includes("r1"))).toBe(true);
+    const customerMsg = notified.find((n) => n.ids.includes("c1"))?.msg;
+    // UX19-02: `IssuesService.raise` enforces no deadline, so the push must not claim one.
+    expect(customerMsg?.body).toMatch(/report a problem/i);
+    expect(customerMsg?.body).not.toMatch(/48 hours?/i);
+    const riderMsg = notified.find((n) => n.ids.includes("r1"))?.msg;
+    expect(riderMsg).toBeTruthy();
+    // UX19-04: adjudicateDelivered has no precondition on proof-of-drop evidence existing, so the rider
+    // push must not thank them for evidence that may never have been submitted.
+    expect(riderMsg?.body).not.toMatch(/your proof|adding the evidence/i);
   });
 });

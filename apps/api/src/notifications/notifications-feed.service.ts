@@ -11,11 +11,17 @@ export interface NotificationRow {
   // Nullable since KB-FEED-SYNTH: account-status rows (KYC / standing changes) are account-level, not
   // order-level, so they carry no orderId; the client routes those to the rider home instead.
   orderId: string | null;
-  // BH-18: which account this orderId-less row is about — only set on account-status rows (KYC/standing
+  // BH-18: which account this orderId-less row is about — set on account-status rows (KYC/standing
   // changes are almost always the RIDER's own; `customer.hold`/`customer.lift` are the one class that's
   // about the viewing CUSTOMER). Mirrors the `to` field pushes already stamp on dual-audience events
-  // (see notifications.service.ts `Audience`). Absent on order-status/offer rows, which route by orderId.
+  // (see notifications.service.ts `Audience`).
+  // UX19-03: also set on order-status rows, to the VIEWER's per-order role (the same voice FEED_NOTICES
+  // vs. FEED_NOTICES_RIDER was already chosen for) — lets the client replicate `pushDestination`'s
+  // rider-only screen routing (`notificationRowDestination`) instead of always falling back to /order/:id.
   to?: "customer" | "rider";
+  // UX19-03: the raw order-status this row is about (undefined for offer/account rows, which don't need
+  // status-aware routing). Mirrors the `status` field `pushDestination` already branches on.
+  status?: string;
   icon: string;
   title: string;
   message: string;
@@ -173,11 +179,11 @@ export class NotificationsFeedService {
 
     // UX17-03: an ops "adjudicate delivered" override writes a plain `completed` OrderEvent
     // (indistinguishable from an ordinary completion) but pushes bespoke copy — "marked complete after
-    // review" / a 48h contest window (customer) and "we reviewed your proof" (rider). Without this, a
-    // missed push leaves the generic FEED_NOTICES.completed row, omitting the one fact that matters (this
-    // was an ops override, not a normal completion). The action is durably recorded as an AuditLog row
-    // targeted at the order id, so one batched query over the in-view orders recovers the set on a cold
-    // read; the per-order loop below swaps in role-appropriate copy for a `completed` event on these.
+    // review" (customer) and "delivery confirmed" (rider). Without this, a missed push leaves the generic
+    // FEED_NOTICES.completed row, omitting the one fact that matters (this was an ops override, not a
+    // normal completion). The action is durably recorded as an AuditLog row targeted at the order id, so
+    // one batched query over the in-view orders recovers the set on a cold read; the per-order loop below
+    // swaps in role-appropriate copy for a `completed` event on these.
     const orderIds = orders.map((o) => o.id);
     const adjudicatedOrderIds = new Set<string>();
     if (orderIds.length > 0) {
@@ -244,21 +250,23 @@ export class NotificationsFeedService {
 
         // UX17-03: this `completed` event was an ops adjudication override, not an ordinary completion —
         // swap the generic "Delivery complete"/"Nice work" copy for the bespoke copy each party was
-        // actually pushed (customer: reviewed + 48h contest window; rider: "we reviewed your proof").
-        // Mirrors the cancelled→rebroadcast / expired→no-supply overrides above; touches only `completed`
-        // events on adjudicated orders, nothing else. Copy is a verbatim mirror of adjudicateDelivered's pushes.
+        // actually pushed. Mirrors the cancelled→rebroadcast / expired→no-supply overrides above; touches
+        // only `completed` events on adjudicated orders, nothing else. Copy is a verbatim mirror of
+        // adjudicateDelivered's pushes — UX19-02 dropped the fabricated "48h contest window" (`IssuesService.raise`
+        // has no time-based gating) and UX19-04 dropped the unconditional "reviewed your proof"/"adding the
+        // evidence" claim (proof-of-drop capture is optional; adjudicateDelivered has no evidence precondition).
         if (event.status === "completed" && adjudicatedOrderIds.has(order.id)) {
           notice = isCustomerView
             ? {
                 icon: "check",
                 title: "Delivery marked complete after review",
                 message:
-                  "Our team reviewed the rider's proof and marked this delivery complete. If that's not right, open the app to report a problem within 48 hours.",
+                  "Our team reviewed the delivery and marked it complete. If that's not right, open the app to report a problem.",
               }
             : {
                 icon: "check",
                 title: "Delivery confirmed",
-                message: "Our team reviewed your proof and confirmed this delivery. Thanks for adding the evidence.",
+                message: "Our team reviewed the delivery and confirmed it as complete.",
               };
         }
 
@@ -267,6 +275,12 @@ export class NotificationsFeedService {
           // Stable per (order, status, time): an order can revisit a status, so the timestamp keys it.
           id: `${order.id}:${event.status}:${at}`,
           orderId,
+          // UX19-03: the raw status routes the tap (see notificationRowDestination); `to` carries the
+          // SAME per-order voice used to pick FEED_NOTICES vs. FEED_NOTICES_RIDER above, not the
+          // (possibly redirected) `orderId` — a rider viewing their own `assigned`/`cancelled` row must
+          // route to /rider/job exactly like the push does, matching event.status, not any copy override.
+          to: isCustomerView ? "customer" : "rider",
+          status: event.status,
           icon: notice.icon,
           title: notice.title,
           message: notice.message,

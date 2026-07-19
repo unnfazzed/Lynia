@@ -90,11 +90,15 @@ export default async function CustomersPage({
           rowLabel={(c) => `Open ${c.name}`}
           empty={
             connected ? (
-              <EmptyState
-                icon={<IconUser />}
-                title="No customers in this view"
-                line="New sign-ups appear here after their first broadcast."
-              />
+              active === "all" ? (
+                <EmptyState
+                  icon={<IconUser />}
+                  title="No customers in this view"
+                  line="New sign-ups appear here after their first broadcast."
+                />
+              ) : (
+                <EmptyState icon={<IconUser />} title="No customers in this view" line="Try a different filter." />
+              )
             ) : (
               <EmptyState
                 icon={<IconUser />}
