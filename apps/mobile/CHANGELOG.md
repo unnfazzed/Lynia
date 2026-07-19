@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1](https://github.com/unnfazzed/Lynia/compare/v0.7.0...v0.7.1) (2026-07-19)
+
+
+### Bug Fixes
+
+* **bug-hunt:** BH-18..20 — account-push misroute, pending-rating wipe, sticky presence banner ([#323](https://github.com/unnfazzed/Lynia/issues/323)) ([03ff2e9](https://github.com/unnfazzed/Lynia/commit/03ff2e951a72170f23a180cb749ff6cb2c00318d))
+* **ux:** UX19-01..04 — filter-blind admin empty states, fabricated 48h contest deadline, dead-control feed-tap detour, false evidence-review claim ([#325](https://github.com/unnfazzed/Lynia/issues/325)) ([fcdca21](https://github.com/unnfazzed/Lynia/commit/fcdca213b6cf022fdc2fef3ddbed407324c7dba7))
+
 ## [0.7.0](https://github.com/unnfazzed/Lynia/compare/v0.6.4...v0.7.0) (2026-07-18)
 
 
