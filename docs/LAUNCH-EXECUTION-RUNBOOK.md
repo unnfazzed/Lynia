@@ -287,19 +287,26 @@ Until the script has run, the nightly drift audit (§10) reports "a `terraform a
 pending" for these three resources — that is the designed reminder. Resolve it by **running the
 script (import)**, never by a bare `terraform apply`, which would collide with the live secrets.
 
-When more vendor secrets get armed (release.yml already wires `BIRD_ACCESS_KEY` and
-`LOCAL_SMS_API_KEY` the same opt-in way), add the new names to the `for_each` list in
-`secrets.tf` and re-run the script.
+`BIRD_ACCESS_KEY` is **pre-listed** (Bird is the priority OTP channel — decision 2026-07-19)
+even though it may not exist live yet: the script skips what isn't created and tolerates its
+pending CREATE, so Bird arming never mints new unmanaged drift. Two equivalent arm-time paths:
+hand-create the secret while arming and re-run the script (import), or `terraform apply` first
+(creates the empty container) and then add the value. **Either way the value version must exist
+before flipping `BIRD_ENABLED=true`** — the deploy resolves `BIRD_ACCESS_KEY:latest`, and a
+container with zero versions fails the deploy. When local-SMS gets armed, add
+`LOCAL_SMS_API_KEY` to the `for_each` list the same way and re-run the script.
 
 Manual fallback (what the script automates), from `infra/terraform/`:
 
 ```bash
-for s in DIDIT_API_KEY DIDIT_WEBHOOK_SECRET WHATSAPP_ACCESS_TOKEN; do
+for s in DIDIT_API_KEY DIDIT_WEBHOOK_SECRET WHATSAPP_ACCESS_TOKEN BIRD_ACCESS_KEY; do
+  # a name that doesn't exist live yet (e.g. BIRD_ACCESS_KEY pre-arming) errors here — skip it;
+  # its container is created by the next apply instead of imported
   terraform import "google_secret_manager_secret.vendor[\"$s\"]" "projects/$PROJECT/secrets/$s"
   terraform import "google_secret_manager_secret_iam_member.vendor_runtime[\"$s\"]" \
     "projects/$PROJECT/secrets/$s roles/secretmanager.secretAccessor serviceAccount:$RUNTIME_SA"
 done
-terraform plan   # expect "No changes" (binding-only creates are OK)
+terraform plan   # expect "No changes" (creates for bindings / pre-arming containers are OK)
 # Standing rule: any emergency gcloud change gets a follow-up PR that makes Terraform own the
 # result (precedent: the deployer repoAdmin grant, iam.tf).
 ```
