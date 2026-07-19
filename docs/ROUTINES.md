@@ -180,6 +180,11 @@ process failure; the ledger is how the routines stay disjoint.
   severity, status, fixing PR.
 - **Dated report files** (same PR): `docs/BUG-HUNT-<date>.md`, `docs/UX-USABILITY-REVIEW-<date>.md`,
   `docs/DEEP-SWEEP-<date>.md`, `docs/WALLET-DATA-AUDIT-<date>.md` — mirroring the existing formats.
+- **Report retention (2026-07-19 docs cleanup): only the most recent report per lane stays on `main`.**
+  When a routine lands a new dated report (including `PR-HEALTH-REPORT-*` and `REFACTOR-<date>`), it
+  deletes the lane's previous one in the same PR — git history is the archive, `KNOWN_BUGS.md` (and
+  `REFACTOR-LEDGER.md`) carry the durable findings. The doc-sync routine prunes any stragglers. The
+  PR-health watchdog's "most recent report" read is unaffected — the newest file is always present.
 
 ## Agentic-loop engine (the bug-finders' hunt step)
 
@@ -209,7 +214,8 @@ Three stages (see the script for the exact shape):
 The pipeline is un-barriered: each lens's candidates verify the moment that lens returns, and stop conditions
 are the fixed lens set (single round) — extend to loop-until-dry (repeat finder rounds until K consecutive
 rounds surface nothing new) or a token budget for a deeper hunt. First live run: `WD-018…WD-020`
-(`docs/AGENTIC-LOOP-BUGHUNT-2026-07-16.md`) — the loop surfaced a **prod-breaking HIGH the prior linear WD
+(report `AGENTIC-LOOP-BUGHUNT-2026-07-16.md`, retired to git history; findings live in `KNOWN_BUGS.md`) —
+the loop surfaced a **prod-breaking HIGH the prior linear WD
 runs missed** (an operator identity written into an `@db.Uuid` FK column, aborting every admin cancel) **plus
 its unfixed sibling** in admin issue-resolution, which is the recall gain the engine exists to capture.
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/unnfazzed/Lynia/compare/v0.7.1...v0.7.2) (2026-07-19)
+
+
+### Bug Fixes
+
+* **wallet:** gate admin KPI counts on current status + invalidate wallet cache on completion (WD-024..026) ([e8c090c](https://github.com/unnfazzed/Lynia/commit/e8c090cbd52fe9097894169789891e1aa7777f90))
+
 ## [0.7.1](https://github.com/unnfazzed/Lynia/compare/v0.7.0...v0.7.1) (2026-07-19)
 
 

@@ -6,7 +6,27 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-19 (deep-sweep routine — orthogonal backend-correctness/concurrency hunt +
+**Last consolidated:** 2026-07-19 (wallet & data-lifecycle audit routine — agentic-loop hunt over the WD
+lane; see the "Wallet & data-lifecycle audit 2026-07-19" section near the bottom and
+`docs/WALLET-DATA-AUDIT-2026-07-19.md` for WD-024…WD-026 — one HIGH and two MEDIUM findings, all fixed
+same-run with regression tests. WD-024 and WD-026 share one root cause: the admin overview's "Completed
+today"/"Fares today"/completion-rate KPIs (`AdminService.overview()`) gated on the `deliveredAt`/
+`undeliveredAt` timestamps alone rather than the order's CURRENT status, so a post-delivery admin cancel
+(WD-024, `delivered` is deliberately non-terminal) kept a cancelled order counting as completed forever,
+and `adjudicateDelivered`'s force-complete of a disputed `undelivered` order (WD-026) — which stamps
+`completedAt` but never `deliveredAt`, and never clears `undeliveredAt` — was permanently invisible to
+`today.completed`/`today.fares` while staying permanently double-counted as a failure. Both fixed by adding
+the matching `status` filter alongside each timestamp gate, mirroring the convention `settlements.service.ts`
+already used. WD-025 is the same client-cache-omission class WD-022 (07-17) fixed, on a query key that
+run's sibling-sweep didn't check: the Earnings tab's commission-balance row (`CommissionRow` →
+`useWallet()`) was never invalidated by the shared `invalidateRiderJobQueries` funnel a ride completion
+funnels through, so a rider glancing at Earnings shortly before completing a delivery could see the
+pre-debit balance for up to 30s with no staleness indicator — fixed by adding the two wallet keys to that
+one shared funnel. Phase-0.5 re-verified the **Money-fraud** (MOOT), **Ship/infra correctness**, and
+**Auth/identity** cluster headers (the three least-recently rotated — the prior three routines had already
+covered the other six today/yesterday) — all three INTACT, 0 stale claims. Zero open sibling PRs at
+Phase 0.
+Prior: 2026-07-19 (deep-sweep routine — orthogonal backend-correctness/concurrency hunt +
 deep-sweep-owned cross-lane seams pass + adversarial API pass; see the "Deep sweep 2026-07-19" section near
 the bottom and `docs/DEEP-SWEEP-2026-07-19.md` for DS19-01…02 — one MEDIUM and one LOW, both fixed same-run
 with regression tests. The Phase-1.5 seam trace ran over **rider standing**
@@ -1307,6 +1327,63 @@ same-run with tests; the remainder deferred with explicit safe-fix specs and dev
 implements it — the finder only scanned `admin/*.controller.ts`); and "report reason / issue type render as raw enums"
 (the code correctly uses `REPORT_REASON_LABELS`/`ISSUE_TYPE_LABELS[x] ?? x`; the raw display was a review-mock artifact
 from passing non-existent enum values). See report §7.
+
+## Wallet & data-lifecycle audit 2026-07-19 (wallet & data-lifecycle audit routine) — `docs/WALLET-DATA-AUDIT-2026-07-19.md`
+
+Fifth run of the `WD-` lane. Phase 0: zero open `claude/*` sibling PRs at session start. Phase 0.5
+re-verified the **Money-fraud** (MOOT), **Ship/infra correctness**, and **Auth/identity** cluster headers —
+the three least-recently rotated (the prior three routines had already covered the other six cluster
+headers within the last 1-2 days) — all confirmed **INTACT**, no stale claims. Hunt ran via the
+agentic-loop engine (`Workflow({name: 'lane-bug-hunt'}, args: 'wallet')`) — 8 diverse finder lenses
+(exactly-once-credit, ledger-reconciliation, per-ride-debit, earnings-tab, admin-dashboard-kpi,
+admin-action-authz-audit, concurrency-races, contract-nullability), 3 candidates found (5 of 8 lenses
+returned zero), all 3 survived a 3-skeptic adversarial panel (one finding split 2/3 real, majority
+threshold met), then a repo-wide sibling-sweep per survivor. **Three findings, one HIGH and two
+MEDIUM — all fixed this run**, each with a regression test; `pnpm typecheck` + `pnpm test` (1071 API
+tests, 449 mobile tests) + `apps/api` build all green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| WD-024 | `AdminService.overview()`'s "Completed today"/"Fares today" headline KPIs keyed off the `deliveredAt` timestamp alone (`order.count`/`order.aggregate` with `where:{deliveredAt:{gte:startOfDay}}`), never checking the order's CURRENT `status`. `delivered` is deliberately non-terminal, so `AdminOrdersService.cancelOrder` can still act on it (a fraud/dispute cancel) — its update sets `status:'cancelled'` but never clears `deliveredAt`/`agreedFare`. An order delivered today then cancelled later the same day permanently kept counting toward `today.completed`, `today.fares`, and `completionRatePct`'s numerator despite showing `status:'cancelled'` everywhere else in the console | `apps/api/src/admin/admin.service.ts:89-91` | HIGH | **FIXED** — both the count and the fares aggregate (plus the mirrored undelivered-count) now also gate on the order's current `status` ("completed"/"undelivered" respectively), matching the convention `settlements.service.ts`'s period query already used. Regression test in `admin.service.spec.ts` asserts the exact `where`-clause shape |
+| WD-025 | The Earnings tab's commission-balance row (`CommissionRow` → `useWallet()`, `apps/mobile/app/earnings/index.tsx`) was never invalidated by a ride completion. `WalletService.chargeCommission` debits the same balance in the same server transaction as completion (both the normal path and `adjudicateDelivered`'s force-complete), but the shared rider-side funnel `invalidateRiderJobQueries` (WD-022) only invalidated activeJob/history/earnings-summary, never `walletKey`/`walletLedgerKey` — those were invalidated only inside the dedicated Wallet screen. A rider who'd opened Earnings within the shared 30s staleTime shortly before completing a delivery saw the pre-debit balance with no staleness indicator | `apps/mobile/src/query/use-history-feed.ts:46` | MEDIUM | **FIXED** — `invalidateRiderJobQueries` now also invalidates `walletKey`/`walletLedgerKey`, closing every identified call site (the mutation `onSuccess` handlers and the WS reconnect self-heal) in one shared-funnel change. Regression test in `use-history-feed.test.ts` |
+| WD-026 | `AdminOrdersService.adjudicateDelivered` force-completes a disputed `undelivered` order (`status:'completed', completedAt:new Date()`, commission charged) but never stamps `deliveredAt` and never clears `undeliveredAt`. Sharing WD-024's root cause, this permanently excluded an adjudicated completion from `today.completed`/`today.fares` (no `deliveredAt` ever set) while leaving it permanently double-counted as a failure in `undeliveredToday` (the original failed-hand-off timestamp is never cleared) — `completionRatePct`'s denominator carries a real, commissioned completion as a failure forever with no numerator credit | `apps/api/src/admin/admin.service.ts:89-91`, `apps/api/src/admin/admin-orders.service.ts:227` | MEDIUM | **FIXED** — same fix as WD-024 (status-gated KPI queries): an adjudicated order (status now `completed`) is no longer matched by the `status:"undelivered"` filter, and IS matched by the `status:"completed"` filter via its `completedAt` stamp. Same regression test in `admin.service.spec.ts` covers both |
+
+**Sibling-sweep evidence:**
+
+- **WD-024 / WD-026** (`grep -rn "deliveredAt:\s*{" apps/api/src --include=*.ts | grep -v spec`,
+  `grep -rn "undeliveredAt:\s*{" apps/api/src --include=*.ts | grep -v spec`, `grep -rln
+  "startOfDay\|startOfWeek\|startOfMonth" apps/api/src --include=*.ts | grep -v spec`, `grep -n
+  "deliveredAt\|completedAt\|undeliveredAt\|status:" apps/api/src/settlements/settlements.service.ts` — 4
+  hits excluding the two lines fixed): `order-lifecycle.service.ts:175`/`:481` already pair the timestamp
+  with the matching `status` — not siblings. `settlements.service.ts:92` already uses exactly this fix's
+  pattern (`status:"completed", completedAt:{...}`), confirming `admin.service.ts` was the one outlier.
+  **No further siblings.**
+- **WD-025** (`grep -rn "walletKey\|walletLedgerKey" apps/mobile/src apps/mobile/app`, `grep -rn
+  'invalidateQueries\|invalidateRiderJobQueries\|invalidateCustomerOrderHistory' apps/mobile/app
+  apps/mobile/src | grep -v __tests__`, `grep -rn "useWallet(\|useWalletLedger(" apps/mobile/app
+  apps/mobile/src | grep -v __tests__` — 9 + 30 + 6 hits): `walletKey`/`walletLedgerKey` are read in
+  exactly two places — `wallet/index.tsx` (already self-invalidating, not a sibling) and
+  `earnings/index.tsx`'s `CommissionRow` (the reported bug); every rider-side completion path funnels
+  through the single `invalidateRiderJobQueries` helper, so the one shared-funnel fix closes every call
+  site. **No further siblings.**
+
+**Why prior sweeps missed these:** WD-024/WD-026 sit in `AdminService.overview()`, read by four prior WD
+runs through the lens of "does the number reconcile" rather than "does the filter survive a later status
+transition on the same row" — both bugs only manifest when an admin action (cancel, adjudicate) interposes
+on an already-moved order, an edge a straight-line completion trace never exercises; the existing
+`admin.service.spec.ts` tests mocked the count/aggregate calls by argument shape without asserting the
+shape itself was correct, so they'd have passed unchanged even with the bug present. WD-025 is the same
+class WD-022 (07-17) fixed, on a query key that run's sibling-sweep was scoped away from (WD-022 checked
+`["history"]`/`["earnings","summary"]`, not the separate `use-wallet.ts` module Earnings only reads
+incidentally via `CommissionRow`).
+
+**Suggestions (not implemented):** none this run — all three findings were straightforward
+correctness/data-integrity fixes within scope.
+
+**Stopping rule:** three findings this run (one HIGH, two MEDIUM) — reported in full per the mandatory
+sibling-sweep evidence rule, not padding; 5 of 8 hunt lenses returned zero and the Phase-0.5 re-verification
+came back clean, consistent with the wallet/ledger core continuing to converge while its newer edges
+(admin force-complete adjudication, cross-screen query-cache funnels) still turn up real gaps.
 
 ## Interactive performance session 2026-07-19 (mobile speed/latency/cost) — `docs/PERFORMANCE.md`
 

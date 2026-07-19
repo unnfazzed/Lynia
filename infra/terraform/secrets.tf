@@ -82,3 +82,42 @@ resource "google_secret_manager_secret_iam_member" "runtime_access" {
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.runtime.email}"
 }
+
+# --- Vendor secret containers, adopted via `terraform import` (runbook §9) ---
+# DIDIT_API_KEY / DIDIT_WEBHOOK_SECRET / WHATSAPP_ACCESS_TOKEN were created with ad-hoc `gcloud
+# secrets create` during vendor arming; Terraform owns the CONTAINERS + IAM (drift-detected,
+# re-creatable) while the VALUES stay hand-added versions that never touch state or git.
+#
+# DO NOT `terraform apply` these before they are imported: a create collides with the live
+# secrets, and any plan that wants to REPLACE a container would delete live credential versions.
+# Run scripts/adopt-vendor-secrets.sh once (founder credentials — CI's deployer SA is read-only
+# on the state bucket by design); it imports idempotently, then proves the plan is clean.
+#
+# When Bird / local-SMS OTP get armed (release.yml wires BIRD_ACCESS_KEY / LOCAL_SMS_API_KEY the
+# same way), add those names here and re-run the script.
+#
+# Deliberately NO `labels` (unlike the runtime secrets above): the hand-created containers carry
+# none, so a labels argument would leave a standing in-place diff that nags the nightly drift
+# audit until someone applies right next to live credentials. Add labels in a real apply session
+# if ever wanted.
+resource "google_secret_manager_secret" "vendor" {
+  for_each  = toset(["DIDIT_API_KEY", "DIDIT_WEBHOOK_SECRET", "WHATSAPP_ACCESS_TOKEN"])
+  secret_id = each.key
+  project   = local.project_id
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Runtime-SA read access, per-secret (mirrors runtime_access above). If a binding was never
+# granted by hand for one of these, the import skips it and the next apply CREATES it —
+# additive and safe, unlike the container-replace case called out above.
+resource "google_secret_manager_secret_iam_member" "vendor_runtime" {
+  for_each  = google_secret_manager_secret.vendor
+  secret_id = each.value.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.runtime.email}"
+}

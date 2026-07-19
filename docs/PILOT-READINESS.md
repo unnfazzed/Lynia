@@ -42,7 +42,8 @@ sections through this update.
 
 ## 🟢 Update — 2026-07-01: inDrive-parity pass landed (the app now *feels* live)
 
-Since the 06-29 update, the **inDrive UX / latency review** ([`INDRIVE-UX-REVIEW.md`](./INDRIVE-UX-REVIEW.md))
+Since the 06-29 update, the **inDrive UX / latency review** (`INDRIVE-UX-REVIEW.md`, retired to git
+history after every roadmap item shipped)
 ran and its **P0 + P1 roadmap shipped end-to-end** (three review-hardened batches, merged via PRs #79/#80).
 The gap it flagged — a correct product that didn't yet *feel* like inDrive — is closed for the moments that
 matter:
