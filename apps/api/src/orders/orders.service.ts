@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
+import { MicroCache } from "../common/micro-cache";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -37,6 +38,20 @@ function assertWithinServiceCorridor(pickup: LatLng, dropoff: LatLng): void {
  *  that refreshes it, short enough that a leaked URL goes stale fast (matches the admin KYC-photo
  *  review TTL). */
 const PICKUP_PHOTO_READ_URL_TTL_SECONDS = 900;
+
+/** How long a minted pickup-photo URL is served from cache: 2/3 of its signed validity, so a cached
+ *  URL always reaches the client with ≥5 minutes of life left — ample to download a photo on 2G.
+ *  Reusing the SAME URL string across the 15s snapshot polls is the point, not just saving the mint:
+ *  the device's image cache is keyed on the URL, so a per-poll fresh signature made the phone
+ *  re-download an identical photo every poll for the whole delivery (and burned a GCP `signBlob`
+ *  IAM call each time — a project-shared quota, see uploads.controller.ts DS-07). */
+const PICKUP_PHOTO_URL_CACHE_TTL_MS = (PICKUP_PHOTO_READ_URL_TTL_SECONDS * 1000 * 2) / 3;
+
+/** Freshness window for the informational nearby-rider count (2·b1). The client polls it at 15s; a
+ *  10s TTL means a rider coming online is still seen promptly, while concurrent auctions from the
+ *  same block (and the create→first-poll pair) coalesce onto one PostGIS radius query instead of
+ *  each running their own. Counts only — broadcast/push TARGETING never reads this cache. */
+const NEARBY_COUNT_TTL_MS = 10_000;
 
 /**
  * Fix 6: ops-internal cancel-reason strings that must NOT be shown verbatim to the customer/rider. The
@@ -82,6 +97,13 @@ function riderWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
+
+  // Read-through micro-caches on the snapshot hot path (DoorDash-style request coalescing, scaled to
+  // this API): in-memory, per-instance, single-flight, bounded. Strictly for reads whose few seconds
+  // of per-instance staleness is explicitly fine — never for anything that gates money, assignment,
+  // or auth (broadcast targeting, bid acceptance and pricing all bypass these).
+  private readonly nearbyCountCache = new MicroCache<number>(200);
+  private readonly pickupPhotoUrlCache = new MicroCache<string>(500);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -337,8 +359,18 @@ export class OrdersService {
       const pt = pickupPoint(pickup);
       if (!pt) return null;
       const radiusM = createdAt ? effectiveBroadcastRadiusM(createdAt) : baseBroadcastRadiusM();
-      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, radiusM);
-      return nearby.length;
+      // Micro-cached (NEARBY_COUNT_TTL_MS) + single-flighted: this runs on EVERY open-auction snapshot
+      // poll, and the count is informational — a few seconds of staleness is invisible next to the 15s
+      // poll cadence, while dense areas stop fanning identical PostGIS radius queries at the DB. The
+      // key buckets coordinates to ~110 m (3 decimals) — noise against a ≥3 km radius — and carries the
+      // radius so the policy-widened reach of an ageing auction still gets its own count. A loader
+      // failure is NOT cached (getOrLoad propagates it), so a geo blip stays a one-poll `null`.
+      const key = `${pt.lat.toFixed(3)},${pt.lng.toFixed(3)}:${radiusM}`;
+      return await this.nearbyCountCache.getOrLoad(
+        key,
+        NEARBY_COUNT_TTL_MS,
+        async () => (await this.tracking.nearbyRiders(pt.lat, pt.lng, radiusM)).length,
+      );
     } catch {
       return null; // supply unknown — never let a geo blip surface a false "no riders online"
     }
@@ -671,57 +703,70 @@ export class OrdersService {
     if (revealed && isCustomer) counterpartyPhone = order.rider?.profile.phone ?? null;
     else if ((revealed || handbackReveal) && isRider) counterpartyPhone = order.customer.phone;
 
-    // Freshest rider position: the live-position index (Redis) leads the PG columns, which only
-    // hold the last throttled flush. Fall back to the PG snapshot on a miss / no-Redis.
-    let rider = null as
-      | { profileId: string; currentLat: number | null; currentLng: number | null; updatedAt: Date | null }
-      | null;
-    if (order.rider) {
-      const live = await this.tracking.getLivePosition(order.rider.profileId);
-      rider = {
-        profileId: order.rider.profileId,
-        currentLat: live ? live.lat : order.rider.currentLat,
-        currentLng: live ? live.lng : order.rider.currentLng,
-        // F-02: on a Redis miss use the dedicated position timestamp — NOT `updatedAt` (@updatedAt,
-        // bumped by any rider-row write) — so a stale position can't render as live off a fresh stamp.
-        updatedAt: live ? new Date(live.at) : order.rider.positionUpdatedAt,
-      };
-    }
+    // The snapshot's side-reads are independent of one another, and this is the hottest read path in
+    // the API (polled every 15s per live order + refetched on every WS event) — so they run in
+    // PARALLEL rather than as a sequential await chain. Each slot resolves null when its status gate
+    // is off; behavior per slot is unchanged from the sequential version it replaces.
+    const storage = this.storage; // consts (not `this.`/`order.` members) so the closures below narrow
+    const pickupPhotoKey = order.pickupPhotoKey;
+    const [rider, ridersNearby, rebroadcastedToId, hadOffers, pickupPhotoUrl] = await Promise.all([
+      // Freshest rider position: the live-position index (Redis) leads the PG columns, which only
+      // hold the last throttled flush. Fall back to the PG snapshot on a miss / no-Redis.
+      (async () => {
+        if (!order.rider) return null;
+        const live = await this.tracking.getLivePosition(order.rider.profileId);
+        return {
+          profileId: order.rider.profileId,
+          currentLat: live ? live.lat : order.rider.currentLat,
+          currentLng: live ? live.lng : order.rider.currentLng,
+          // F-02: on a Redis miss use the dedicated position timestamp — NOT `updatedAt` (@updatedAt,
+          // bumped by any rider-row write) — so a stale position can't render as live off a fresh stamp.
+          updatedAt: live ? new Date(live.at) : order.rider.positionUpdatedAt,
+        };
+      })(),
 
-    // 2·b1: live supply count while the auction is open, so a 15s poll self-heals a transient "no
-    // riders online" the moment a rider comes online. Null on every non-open status (like expiresAt),
-    // and best-effort — a geo blip yields null → the client keeps the calm "finding riders" state.
-    const ridersNearby = order.status === "open_for_offers" ? await this.countNearbyForPickup(order.pickup, order.createdAt) : null;
+      // 2·b1: live supply count while the auction is open, so a 15s poll self-heals a transient "no
+      // riders online" the moment a rider comes online. Null on every non-open status (like expiresAt),
+      // and best-effort — a geo blip yields null → the client keeps the calm "finding riders" state.
+      order.status === "open_for_offers" ? this.countNearbyForPickup(order.pickup, order.createdAt) : null,
 
-    // F-01: if this (cancelled) order was auto re-broadcast after the assigned rider bailed, expose the
-    // NEW clone's id so the customer's cancelled terminal can offer a "follow your re-sent request" link.
-    // Forward link only — the clone back-links via `rebroadcastOfId`; nothing on the original points at
-    // the clone, so resolve it on demand. Scoped to `cancelled` so it's a single extra read on a terminal
-    // status, never on the hot live-tracking path.
-    const rebroadcastedToId =
+      // F-01: if this (cancelled) order was auto re-broadcast after the assigned rider bailed, expose the
+      // NEW clone's id so the customer's cancelled terminal can offer a "follow your re-sent request" link.
+      // Forward link only — the clone back-links via `rebroadcastOfId`; nothing on the original points at
+      // the clone, so resolve it on demand. Scoped to `cancelled` so it's a single extra read on a terminal
+      // status, never on the hot live-tracking path.
       order.status === "cancelled"
-        ? ((await this.prisma.order.findFirst({ where: { rebroadcastOfId: order.id }, select: { id: true } }))?.id ??
-          null)
-        : null;
+        ? this.prisma.order
+            .findFirst({ where: { rebroadcastOfId: order.id }, select: { id: true } })
+            .then((clone) => clone?.id ?? null)
+        : null,
 
-    // Fix 1: on an expired order, did any rider ever bid? Offer rows are never deleted on expiry (only
-    // flipped to `expired`), so a plain count recovers "riders engaged" on a COLD read into an
-    // already-expired order — where the client's live `bidCount` query sees nothing, because it queries
-    // only `pending` offers, which no longer exist post-expiry. Lets the expired terminal show honest
-    // "riders offered, the window closed" copy instead of "raise your price". Scoped to `expired`
-    // (a cheap indexed count); null on every other status. Additive — older clients ignore it.
-    const hadOffers =
-      order.status === "expired" ? (await this.prisma.offer.count({ where: { orderId: order.id } })) > 0 : null;
+      // Fix 1: on an expired order, did any rider ever bid? Offer rows are never deleted on expiry (only
+      // flipped to `expired`), so a plain count recovers "riders engaged" on a COLD read into an
+      // already-expired order — where the client's live `bidCount` query sees nothing, because it queries
+      // only `pending` offers, which no longer exist post-expiry. Lets the expired terminal show honest
+      // "riders offered, the window closed" copy instead of "raise your price". Scoped to `expired`
+      // (a cheap indexed count); null on every other status. Additive — older clients ignore it.
+      order.status === "expired"
+        ? this.prisma.offer.count({ where: { orderId: order.id } }).then((n) => n > 0)
+        : null,
 
-    // §5c proof-of-pickup: resolve the stored object key to a short-lived signed read URL for BOTH
-    // parties — the customer seeing "parcel is with your rider — photo attached" is the whole trust
-    // point, and the rider gets their own attach confirmed. Same on-demand minting as the admin KYC
-    // review (createReadUrl over the stored key, never a stored URL), and best-effort: a storage blip
-    // serves null rather than failing the snapshot the tracker depends on.
-    const pickupPhotoUrl =
-      order.pickupPhotoKey && this.storage
-        ? await this.storage.createReadUrl(order.pickupPhotoKey, PICKUP_PHOTO_READ_URL_TTL_SECONDS).catch(() => null)
-        : null;
+      // §5c proof-of-pickup: resolve the stored object key to a short-lived signed read URL for BOTH
+      // parties — the customer seeing "parcel is with your rider — photo attached" is the whole trust
+      // point, and the rider gets their own attach confirmed. Same on-demand minting as the admin KYC
+      // review (createReadUrl over the stored key, never a stored URL), and best-effort: a storage blip
+      // serves null rather than failing the snapshot the tracker depends on. Micro-cached at 2/3 of the
+      // signed TTL so consecutive polls reuse the SAME URL string — that keeps the device's image cache
+      // valid across polls (no more re-downloading an identical photo every 15s) and spares a `signBlob`
+      // IAM call per poll. A mint failure is not cached: the next poll re-tries.
+      pickupPhotoKey && storage
+        ? this.pickupPhotoUrlCache
+            .getOrLoad(pickupPhotoKey, PICKUP_PHOTO_URL_CACHE_TTL_MS, () =>
+              storage.createReadUrl(pickupPhotoKey, PICKUP_PHOTO_READ_URL_TTL_SECONDS),
+            )
+            .catch(() => null)
+        : null,
+    ]);
 
     return {
       id: order.id,

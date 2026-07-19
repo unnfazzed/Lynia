@@ -1,5 +1,5 @@
 import { tokens } from "@lynia/shared";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import Constants from "expo-constants";
 import { Stack, type ErrorBoundaryProps } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -13,6 +13,7 @@ import { isUpdateRequired, isVersionBelow } from "../src/config";
 import { useReachability } from "../src/net/use-reachability";
 import { useServerMinVersion } from "../src/net/use-server-version-gate";
 import { queryClient, wireFocusManager } from "../src/query/client";
+import { persistBuster, PERSIST_MAX_AGE_MS, queryPersister, shouldPersistQuery } from "../src/query/persist";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { AnalyticsProvider } from "../src/telemetry/analytics";
 import { start as startRum } from "../src/telemetry/rum";
@@ -120,7 +121,19 @@ export default function RootLayout(): React.ReactElement | null {
           src/telemetry/analytics.tsx). Inside SafeAreaProvider (the SDK reads insets) and above
           the navigator so screen autocapture sees every route. */}
       <AnalyticsProvider>
-        <QueryClientProvider client={queryClient}>
+        {/* Warm boot: restore the allowlisted slice of the query cache from disk so a cold start on a
+            slow/dead link paints last-known data instantly and revalidates behind it, instead of
+            skeletons until the network answers. Live order/offer/board state is deliberately NOT
+            persisted — see src/query/persist.ts. */}
+        <PersistQueryClientProvider
+          client={queryClient}
+          persistOptions={{
+            persister: queryPersister,
+            maxAge: PERSIST_MAX_AGE_MS,
+            buster: persistBuster,
+            dehydrateOptions: { shouldDehydrateQuery: shouldPersistQuery },
+          }}
+        >
           <AuthProvider>
             <PushSync />
             {/* Redirects to /phone when the session drops to null after boot (sign-out or a
@@ -140,7 +153,7 @@ export default function RootLayout(): React.ReactElement | null {
               </View>
             </ToastProvider>
           </AuthProvider>
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </AnalyticsProvider>
     </SafeAreaProvider>
   );

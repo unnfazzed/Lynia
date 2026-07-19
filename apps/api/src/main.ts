@@ -1,8 +1,11 @@
 import "reflect-metadata";
+import { constants as zlibConstants } from "node:zlib";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
+import compression from "compression";
 import { AppModule } from "./app.module";
+import { cacheHeaders } from "./common/cache-headers.middleware";
 import { corsOriginResolver, parseAllowedOrigins } from "./common/cors";
 import { securityHeaders } from "./common/security-headers.middleware";
 import { parseTrustProxy } from "./common/trust-proxy";
@@ -65,8 +68,34 @@ async function bootstrap(): Promise<void> {
   // refresh caps become a platform-wide DoS (and give zero per-attacker granularity). See TRUST_PROXY.
   app.getHttpAdapter().getInstance().set("trust proxy", parseTrustProxy(env.TRUST_PROXY));
 
+  // Pin Express's weak-ETag generation ON (it is the default, but the mobile client's conditional-GET
+  // layer now DEPENDS on it: it echoes the ETag as If-None-Match and expects an empty 304 when the
+  // body hasn't changed — see apps/mobile/src/api/client.ts). Pinning makes the contract explicit
+  // instead of an inherited default a future Express upgrade could silently flip.
+  app.getHttpAdapter().getInstance().set("etag", "weak");
+
+  // Compress response bodies (gzip/deflate, and brotli for clients that advertise it). The target
+  // market is metered 2G/3G — a JSON snapshot compresses ~4-8×, which is the single cheapest
+  // latency/bandwidth win on that profile, paid for with negligible CPU. Registered before routing so
+  // every handler (and the 1 MB-bounded JSON bodies they return) flows through it; the LB/CDN layer
+  // does no compression of its own (see infra/terraform/lb.tf). Socket.IO traffic is unaffected —
+  // engine.io attaches to the raw HTTP server, not the Express middleware chain.
+  app.use(
+    compression({
+      // Don't spend CPU on tiny bodies — below ~1 KB the gzip header overhead eats the win.
+      threshold: 1024,
+      // Brotli's zlib default quality is 11 (archival), which is orders of magnitude too slow for
+      // per-request dynamic JSON; 4 compresses slightly better than gzip at comparable speed.
+      brotli: { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 } },
+    }),
+  );
+
   // Security response headers (Helmet-equivalent, dependency-free) on every response.
   app.use(securityHeaders);
+
+  // Deterministic Cache-Control on every response: GETs are store-but-revalidate (pairs with the
+  // ETag/304 contract above), mutations are no-store. Route-level opt-outs override after this runs.
+  app.use(cacheHeaders);
 
   // Explicit CORS allow-list (replaces the implicit default): native apps send no Origin and are
   // allowed; browser origins must be listed in CORS_ALLOWED_ORIGINS, else the request is refused.

@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { logout } from "../api/auth";
-import { configureApi } from "../api/client";
+import { clearConditionalCache, configureApi } from "../api/client";
 import { queryClient } from "../query/client";
+import { clearPersistedQueries } from "../query/persist";
 import { clearDeviceState, clearSession, loadSession, saveSession, type Session } from "./session";
 
 interface AuthState {
@@ -35,6 +36,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
         // A token-expiry sign-out must scrub the previous user's device state too (S1).
         void clearDeviceState();
         queryClient.clear();
+        // …including the persisted query cache on disk — don't wait for the throttled persister to
+        // flush the cleared state. (The in-memory ETag store is scrubbed at the throw site in
+        // src/api/client.ts, before this callback runs.)
+        void clearPersistedQueries();
       },
     });
     void loadSession()
@@ -70,9 +75,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     await clearSession();
     // Shared devices are common in the target market: also clear the previous user's cached queries
     // and per-device state (draft addresses, disclaimer flag, role, delivery codes) so the next user
-    // doesn't inherit them or skip the liability disclaimer (S1).
+    // doesn't inherit them or skip the liability disclaimer (S1). The conditional-GET (ETag) store
+    // and the persisted on-disk query cache hold the same user's data, so they go too.
     await clearDeviceState();
     queryClient.clear();
+    clearConditionalCache();
+    await clearPersistedQueries();
   };
 
   return <AuthContext.Provider value={{ session, loading, signIn, signOut }}>{children}</AuthContext.Provider>;

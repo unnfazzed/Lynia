@@ -1,6 +1,6 @@
 import { __resetReachability } from "../../net/reachability";
 import type { Session } from "../../auth/session";
-import { ApiError, apiFetch, configureApi } from "../client";
+import { ApiError, apiFetch, clearConditionalCache, configureApi } from "../client";
 
 /**
  * These cover the refresh-and-retry path in apiFetch, whose one job here is to tell apart a genuinely
@@ -22,14 +22,17 @@ function baseSession(): Session {
   };
 }
 
-/** A minimal Response stub — only the fields apiFetchInner/doRefresh touch. */
-function makeResponse(status: number, body: unknown): Response {
+/** A minimal Response stub — only the fields apiFetchInner/doRefresh touch. Pass `headers` to
+ *  exercise the conditional-GET path (lookup is case-insensitive, like real Headers). */
+function makeResponse(status: number, body: unknown, headers?: Record<string, string>): Response {
   const text = typeof body === "string" ? body : JSON.stringify(body);
+  const lower = Object.fromEntries(Object.entries(headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
   return {
     ok: status >= 200 && status < 300,
     status,
     text: async () => text,
     json: async () => JSON.parse(text),
+    ...(headers ? { headers: { get: (name: string) => lower[name.toLowerCase()] ?? null } } : {}),
   } as unknown as Response;
 }
 
@@ -59,6 +62,7 @@ beforeEach(() => {
   });
   fetchMock = jest.fn();
   global.fetch = fetchMock as unknown as typeof fetch;
+  clearConditionalCache(); // the ETag store is module-level — isolate it per test
 });
 
 afterEach(() => {
@@ -180,5 +184,103 @@ describe("apiFetch refresh path — transient vs definitive failure", () => {
     // v4-shaped so the server's zod .uuid() would accept it, and identical across calls (per-install stable).
     expect(seen[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
     expect(seen[1]).toBe(seen[0]);
+  });
+});
+
+describe("apiFetch conditional GETs — ETag revalidation on the polling loops", () => {
+  /** Headers the mock fetch saw, per call, for asserting If-None-Match behavior. */
+  const sentHeaders = (call: number): Record<string, string> =>
+    (fetchMock.mock.calls[call]?.[1]?.headers as Record<string, string>) ?? {};
+
+  it("revalidates a repeated GET with If-None-Match and serves the remembered body on 304", async () => {
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(200, { fare: "2.50" }, { ETag: 'W/"abc"' }))
+      .mockResolvedValueOnce(makeResponse(304, ""));
+
+    const first = await apiFetch<{ fare: string }>("/orders/ord-1");
+    expect(sentHeaders(0)["If-None-Match"]).toBeUndefined(); // nothing to validate against yet
+
+    const second = await apiFetch<{ fare: string }>("/orders/ord-1");
+    expect(sentHeaders(1)["If-None-Match"]).toBe('W/"abc"');
+    // The 304's (empty) body is never parsed — the remembered 200 body is served, as a fresh object.
+    expect(second).toEqual(first);
+  });
+
+  it("replaces the remembered validator+body when the resource actually changed (200 with a new ETag)", async () => {
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(200, { status: "open_for_offers" }, { ETag: 'W/"v1"' }))
+      .mockResolvedValueOnce(makeResponse(200, { status: "assigned" }, { ETag: 'W/"v2"' }))
+      .mockResolvedValueOnce(makeResponse(304, ""));
+
+    await apiFetch("/orders/ord-1");
+    const changed = await apiFetch<{ status: string }>("/orders/ord-1");
+    expect(changed.status).toBe("assigned");
+
+    const revalidated = await apiFetch<{ status: string }>("/orders/ord-1");
+    expect(sentHeaders(2)["If-None-Match"]).toBe('W/"v2"'); // validates against the NEW version…
+    expect(revalidated.status).toBe("assigned"); // …and serves the new body on 304
+  });
+
+  it("tracks validators per path — one endpoint's ETag never leaks onto another's request", async () => {
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(200, { a: 1 }, { ETag: 'W/"path-a"' }))
+      .mockResolvedValueOnce(makeResponse(200, { b: 2 }, { ETag: 'W/"path-b"' }))
+      .mockResolvedValueOnce(makeResponse(304, ""));
+
+    await apiFetch("/a");
+    await apiFetch("/b");
+    const a = await apiFetch<{ a: number }>("/a");
+    expect(sentHeaders(2)["If-None-Match"]).toBe('W/"path-a"');
+    expect(a).toEqual({ a: 1 });
+  });
+
+  it("never attaches If-None-Match to a non-GET (a mutation must always execute)", async () => {
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(200, { ok: true }, { ETag: 'W/"get"' }))
+      .mockResolvedValueOnce(makeResponse(200, { ok: true }));
+
+    await apiFetch("/orders/ord-1");
+    await apiFetch("/orders/ord-1", { method: "POST", body: {} });
+    expect(sentHeaders(1)["If-None-Match"]).toBeUndefined();
+  });
+
+  it("a response without an ETag is simply not revalidatable — no header on the next request", async () => {
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(200, { ok: true })) // no headers at all (older stub shape)
+      .mockResolvedValueOnce(makeResponse(200, { ok: true }));
+
+    await apiFetch("/plain");
+    await apiFetch("/plain");
+    expect(sentHeaders(1)["If-None-Match"]).toBeUndefined();
+  });
+
+  it("clearConditionalCache() forgets everything (sign-out scrub, S1) — next GET is unconditional", async () => {
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(200, { mine: true }, { ETag: 'W/"user-a"' }))
+      .mockResolvedValueOnce(makeResponse(200, { mine: false }, { ETag: 'W/"user-b"' }));
+
+    await apiFetch("/me");
+    clearConditionalCache();
+    await apiFetch("/me");
+    expect(sentHeaders(1)["If-None-Match"]).toBeUndefined();
+  });
+
+  it("scrubs the store on the token-expiry sign-out path (definitive refresh rejection)", async () => {
+    // Seed a validator, then hit the revoked-refresh flow; afterwards a signed-in-again GET must not
+    // revalidate against the previous session's entry.
+    fetchMock.mockResolvedValueOnce(makeResponse(200, { mine: true }, { ETag: 'W/"user-a"' }));
+    await apiFetch("/me");
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/auth/refresh")) return makeResponse(401, { message: "revoked" });
+      return AUTH_GUARD_401;
+    });
+    await expect(apiFetch("/me")).rejects.toMatchObject({ status: 401 });
+
+    session = baseSession(); // "signs back in"
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce(makeResponse(200, { mine: false }, { ETag: 'W/"user-b"' }));
+    await apiFetch("/me");
+    expect(sentHeaders(0)["If-None-Match"]).toBeUndefined();
   });
 });

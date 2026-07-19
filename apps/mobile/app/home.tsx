@@ -13,6 +13,7 @@ import {
   DISCLAIMER_POLICY_VERSION,
   draftFromParams,
   emptyItem,
+  type FormDraft,
   type ItemRow,
   loadDraft,
   MAX_ITEMS,
@@ -251,9 +252,15 @@ export default function HomeScreen(): React.ReactElement {
   }, []);
 
   // Persist the draft (PII-free) whenever a persisted field changes, after initial hydration.
+  // DEBOUNCED: landmark/note/item edits change these deps once per KEYSTROKE, and each save is a
+  // SecureStore keychain round-trip — slow, serialized, and sitting right on the typing path (typed
+  // fast, the writes queue up behind the input). One trailing write after a quiet half-second keeps
+  // the draft just as durable without making the keyboard wait on the keychain.
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingDraft = useRef<FormDraft | null>(null);
   useEffect(() => {
     if (!hydrated.current) return;
-    void saveDraft({
+    pendingDraft.current = {
       pickupPoint,
       pickupLandmark,
       dropPoint,
@@ -263,8 +270,25 @@ export default function HomeScreen(): React.ReactElement {
       declaredValue,
       proposedFare,
       idempotencyNonce,
-    });
+    };
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      draftTimer.current = null;
+      const d = pendingDraft.current;
+      pendingDraft.current = null;
+      if (d) void saveDraft(d);
+    }, 500);
   }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, note, declaredValue, proposedFare, idempotencyNonce]);
+  // Flush any pending debounced draft on unmount so navigating away right after typing loses nothing.
+  useEffect(
+    () => () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+      const d = pendingDraft.current;
+      pendingDraft.current = null;
+      if (d) void saveDraft(d);
+    },
+    [],
+  );
 
   // Moving either pin is the fix for an out-of-area result — drop the state so it doesn't linger over
   // a now-valid route. Only fires on a real pin change (not on the submit that set it).
