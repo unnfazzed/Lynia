@@ -307,7 +307,8 @@ report) before a reliability penalty lands.
   evidence (photo + GPS + time) on the undelivered flow; Phase B (`IR16-12`) added
   `POST /admin/orders/:id/adjudicate-delivered`, a CAS-guarded admin action that force-completes an
   `undelivered` order — crediting the trip, recovering reliability, charging commission, and
-  notifying both parties (customer gets a 48h contest window) — over a withheld code. See
+  notifying both parties (the customer can report a problem via the existing issue-raise flow, with
+  no time limit) — over a withheld code. See
   `docs/KNOWN_BUGS.md` `KB-POD-DISPUTE`.
 - **P2-7 · Didit webhook signature enforcement is conditional on `KYC_PROVIDER === "didit"`.**
   `kyc.controller.ts:60-82` — verification runs only inside `if (secret)`; under provider/secret config

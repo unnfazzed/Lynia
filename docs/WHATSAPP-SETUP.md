@@ -81,8 +81,10 @@ hurt account standing.
 
 Development and QA are **not blocked**: use `OTP_CHANNEL=console` (+ `OTP_TEST_PHONES` for
 device testing) — the send-adapter design (E4) exists precisely to absorb this onboarding
-delay. `OTP_TEST_PHONES` must be empty and `OTP_CHANNEL=whatsapp` before real launch
-(docs/PILOT-READINESS.md).
+delay. `OTP_TEST_PHONES` must be empty and `OTP_CHANNEL` must not be `console` (or the
+unimplemented `sms` stub) before real launch (docs/PILOT-READINESS.md). `bird` and `local-sms`
+are also valid production channels — see `apps/api/src/config/env.ts` — if WhatsApp BSP
+onboarding is still pending at launch.
 
 To sanity-check credentials end-to-end at any time (mirrors what `WhatsAppOtpSender` sends —
 requires the recipient to be a verified test recipient on the API Setup page while on the test

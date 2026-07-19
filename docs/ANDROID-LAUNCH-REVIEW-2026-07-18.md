@@ -137,7 +137,9 @@ scope per-mutation and verify each on-device.
 - `LiveMap` doesn't gate the fit on `onMapReady` / has no map-load-failure fallback → possible blank/wide
   tracking map on low-end Android (verify on-device).
 - Rider mid-trip location-permission revocation only detected at stream start (no in-trip warning).
-- Notifications feed routes an orderId-less row to `/rider` regardless of role.
+- ~~Notifications feed routes an orderId-less row to `/rider` regardless of role.~~ **Fixed by BH-18**
+  (`docs/KNOWN_BUGS.md`) later the same day — `push.ts`/`notifications/index.tsx` now honor a `to`
+  discriminator stamped on customer-account pushes.
 - Customer per-order `lynia.lastActive.<orderId>` snapshots not wiped on sign-out (orphan; low-risk).
 - No global JS error / unhandled-rejection handler (render errors are caught by the ErrorBoundary; non-render
   crashes are hard native crashes with no telemetry).

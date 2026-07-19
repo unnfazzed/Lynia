@@ -20,6 +20,10 @@ identity in front of it:
 4. Grant operators `roles/iap.httpsResourceAccessor`. Enforce **MFA** at the Workspace level.
 5. IAP sets `X-Goog-Authenticated-User-Email` — the middleware's default `ADMIN_CONSOLE_PROXY_HEADER`.
    No app change needed. Leave `ADMIN_CONSOLE_REQUIRE_AUTH` unset (defaults on in prod).
+5a. **Recommended, and now armed in prod:** also set `ADMIN_CONSOLE_IAP_AUDIENCE` (from
+    `terraform output` on `infra/terraform/admin.tf` — the LB backend-service audience string) so the
+    middleware verifies the signed `x-goog-iap-jwt-assertion` (`apps/admin/app/lib/iap-jwt.ts`, ES256 +
+    JWKS + clock-skew tolerance) instead of trusting the plaintext email header alone.
 
 **Option 2 — self-hosted OAuth2 proxy** (e.g. oauth2-proxy) in front of the console: point
 `ADMIN_CONSOLE_PROXY_HEADER` at the header it sets (e.g. `x-forwarded-email`).
@@ -123,7 +127,7 @@ deliberate, verified switch.
 
 | Control | Code / config |
 |---|---|
-| Console fail-closed gate | `apps/admin/middleware.ts`, `app/lib/console-auth.ts` |
+| Console fail-closed gate | `apps/admin/middleware.ts`, `app/lib/console-auth.ts`, `app/lib/iap-jwt.ts` |
 | Edge WAF / rate limit | `infra/terraform/armor.tf` (+ vars) |
 | App rate limiting | `apps/api/src/common/throttle.guard.ts` + `@Throttle` |
 | Security headers / CORS | `apps/api/src/common/{security-headers.middleware,cors}.ts` |

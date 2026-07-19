@@ -5,6 +5,12 @@
 **Design source of truth:** `packages/design/ui_kits/admin/*.html` — the kit `globals.css` says the console
 "reproduces 1:1".
 
+> **Superseded (2026-07-19 doc-sync):** the §8 recommendations below were built in later same-window commits
+> (`d0acd6e`, `7e809a8`, `aa0a107`) — D1–D5, J1, and the single-rider half of J2 are shipped; the admin
+> **bulk seed-credit** action from J2 is still open (see `docs/KNOWN_BUGS.md` `ADM-07`). E2/E3 are also fixed.
+> This point-in-time review is kept as the historical record of what prompted that work; check
+> `docs/KNOWN_BUGS.md` for current status rather than the recommendation list below.
+
 ## How this was reviewed
 
 - The live site is **fail-closed behind Google IAP**: every unauthenticated request 302-redirects to Google

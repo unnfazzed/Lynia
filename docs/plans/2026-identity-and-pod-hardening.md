@@ -70,7 +70,8 @@ independently useful.
   **CAS** guard against a double-adjudicate race. It credits the rider a clean trip (`tripsCount++`),
   recovers reliability (`FOR UPDATE` on the rider row), charges commission (no-op at the 0% launch rate),
   writes an `OrderEvent` + a reserved-action `AuditLog` row (`order.adjudicate_delivered`), and post-commit
-  notifies the customer (48-hour contest window via the existing issue-raise flow) and the rider. The admin
+  notifies the customer (via the existing issue-raise flow, which has no time-bound window — see UX19-02,
+  `docs/KNOWN_BUGS.md`) and the rider. The admin
   order-detail renders the "Mark delivered (code bypass)…" control on an `undelivered` order with a rider,
   directly below the Phase-A evidence panel.
 
@@ -80,7 +81,9 @@ independently useful.
 - **Default posture:** ops-in-the-loop force-complete (safer and simpler for a low-volume pilot) — not a
   rider-favourable auto-provisional state.
 - **Commission:** an adjudicated delivery IS commissionable (charged in-tx; no-op at the 0% launch rate).
-- **Customer reversal window:** 48 hours, via the existing issue-raise flow (the customer notification says so).
+- **Customer reversal window:** no fixed deadline — the customer can report a problem via the existing
+  issue-raise flow at any time (`IssuesService.raise` has no elapsed-time gating; the earlier 48-hour figure
+  in the customer notification was fabricated copy, corrected by UX19-02).
 
 ---
 

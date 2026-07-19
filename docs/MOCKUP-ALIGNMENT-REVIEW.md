@@ -69,8 +69,8 @@
 |---|---|---|---|
 | splash (0·1) | Brand splash while booting | ✅ | `app/index.tsx:26-31` green dove + wordmark boot screen |
 | onboard (0·2) | 3-slide intro carousel | ✅ | `app/onboarding.tsx:11-96` skippable slides, dot progress, once-per-install |
-| login (0·3) | Phone login → OTP | ✅ | `app/phone.tsx:33-45` WhatsApp copy, Send code |
-| otp (0·4) | WhatsApp 6-digit verify | ✅ | `app/verify.tsx:104-176` verify + resend + lockout recovery |
+| login (0·3) | Phone login → OTP | ✅ | `app/phone.tsx:33-45` SMS-OTP copy, Send code |
+| otp (0·4) | SMS 6-digit verify | ✅ | `app/verify.tsx:104-176` verify + resend + lockout recovery |
 | role_select (0·5) | Choose role (send/earn) | ✅ | `app/role.tsx:29-51` two options, customer default, persists preference |
 | register (0·6) | Profile registration (name + ID, not KYC) | ✅ | `app/profile/setup.tsx:45-79` name + national ID, stored not verified |
 | perm_loc (0·7) | Prime location | ✅ | `app/permissions.tsx:81-92` "Turn on location" step |
@@ -116,8 +116,8 @@
 |---|---|---|---|
 | splash (0·1) | Brand boot moment | ✅ | `app/index.tsx:22-32` accent-green dove splash |
 | onboard (0·2) | Onboarding carousel | ✅ | `app/onboarding.tsx:11-97` slide 3 = "Earn as a rider" |
-| login (0·3) | Phone sign-in | ✅ | `app/phone.tsx:28-48` "We'll WhatsApp a one-time code" |
-| otp (0·4) | WhatsApp OTP | ✅ | `app/verify.tsx:104-181` verify + resend/lockout recovery |
+| login (0·3) | Phone sign-in | ✅ | `app/phone.tsx:28-48` "We'll text you a one-time code" |
+| otp (0·4) | SMS OTP | ✅ | `app/verify.tsx:104-181` verify + resend/lockout recovery |
 | role_select (0·5) | Choose role | ✅ | `app/role.tsx:29-51` persists preference |
 | perm_loc (0·6) | Location priming | ✅ | `app/permissions.tsx:81-92` |
 | perm_notif (0·7) | Notification priming | ✅ | `app/permissions.tsx:94-104` |
@@ -196,7 +196,7 @@ The mockups' own ⚑ GAP flags call some of these out as undesigned — the code
 The original review (2026-07-05) found the core loop faithful but the shell "largely not built," with three P0 journey-integrity breaks. Between then and this re-audit the code was brought into line with the designs (the designs are the source of truth). Shipped:
 
 - **P0 resolved** — rider undeliverable flow (client `markUndelivered` + reason picker; post-pickup cancel hidden via the shared `RIDER_CANCELLABLE` set); `order:taken` / `bid:expired` WS events → rider "not chosen" + "window closed" states + board card removal; cancel-anytime with reason + reason/who-cancelled on the terminal; post-pickup customer-cancel hand-back (frozen snapshot + ack).
-- **Shell built** — onboarding carousel, customer registration (0·6), permission priming (0·7/0·8), notifications centre, settings, help hub (WhatsApp), bike & documents, force-update gate, no-GPS gate (rider), green splash, earnings zero-state hero, map-anchored home, WhatsApp OTP copy, sender's note field, one-tap Accept segment.
+- **Shell built** — onboarding carousel, customer registration (0·6), permission priming (0·7/0·8), notifications centre, settings, help hub (WhatsApp), bike & documents, force-update gate, no-GPS gate (rider), green splash, earnings zero-state hero, map-anchored home, SMS OTP copy, sender's note field, one-tap Accept segment.
 
 Rate-the-sender (4·7) — noted as deferred in the baseline — is now built as a recorded-only rating (`app/rider/job.tsx:403-438`). The remaining gaps are the edge/branch states listed above.
 
