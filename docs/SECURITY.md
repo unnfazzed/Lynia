@@ -80,17 +80,17 @@ Trust boundaries — every arrow crossing one is a place an attacker operates:
   └───────────────┬─────────────────────────┬────────────────────────-┘
                   │ HTTPS/WSS               │ (should be) restricted
          ┌────────▼─────────┐      ┌─────────▼──────────┐
-         │  Public API      │      │  Admin console     │  ◀── currently no
-         │  (Cloud Run/ALB) │      │  (Next.js)         │      operator auth (§5 P0-2)
+         │  Public API      │      │  Admin console     │  ◀── IAP (verified
+         │  (Cloud Run/ALB) │      │  (Next.js)         │      JWT, §5 P0-2)
          └────────┬─────────┘      └─────────┬──────────┘
-                  │ VPC (private)            │ shared admin token
+                  │ VPC (private)            │ IAP + shared admin token
      ┌────────────▼───────────────────────-─▼─────────────┐
      │  Postgres · Redis · GCS · Secret Manager            │
      └─────────────────────────────────────────────────────┘
                   │ outbound
      ┌────────────▼─────────────┐
-     │ Vendors: WhatsApp · FCM · │  ◀── vendor compromise / webhook spoofing
-     │ Didit (inbound webhook)   │
+     │ Vendors: WhatsApp/Bird/   │  ◀── vendor compromise / webhook spoofing
+     │ local SMS · FCM · Didit   │
      └───────────────────────────┘
 ```
 
@@ -190,7 +190,7 @@ take effect · ⬜ deferred (needs a vendor/platform not available in-repo).
 | Item | Status | Notes |
 |---|---|---|
 | P0-1 JWT secret fail-closed | ✅ | `config/env.ts` prod boot-guard + tests |
-| P0-2 Admin console auth | 🟨 | Fail-closed proxy-auth middleware shipped (`apps/admin/middleware.ts`); IAP/SSO+MFA is the founder step. Audit-log write path already existed (A-01) |
+| P0-2 Admin console auth | ✅ | Fail-closed proxy-auth middleware shipped (`apps/admin/middleware.ts`); IAP is armed in prod with cryptographic JWT verification (`apps/admin/app/lib/iap-jwt.ts`, `algorithms:["ES256"]` + `clockTolerance`, `infra/terraform/admin.tf`) — see [ADMIN-CONSOLE-LAUNCH-SMOKE-TEST](ADMIN-CONSOLE-LAUNCH-SMOKE-TEST.md)'s "Known environment" table. Audit-log write path already existed (A-01) |
 | P0-3 WAF / Cloud Armor | 🟨 | `infra/terraform/armor.tf` + backend attachment; needs `terraform apply` |
 | P1-1 CI security scanning | 🟨 | `ci.yml` audit+gitleaks job, `codeql.yml`, `dependabot.yml`, minimized perms; runs on next CI |
 | P1-2 Global rate limiting | ✅ | `ThrottleGuard` + `@Throttle` on refresh/order/offer/select + tests |
@@ -205,7 +205,7 @@ take effect · ⬜ deferred (needs a vendor/platform not available in-repo).
 | P3-2 Secret rotation | ✅ (code) 🟨 (runbook) | Dual-secret JWT + hash-key separation in `token.service.ts`/`env.ts` + tests; [SECRET-ROTATION](SECRET-ROTATION.md) |
 | P3-4 KYC bucket CMEK + retention | 🟨 | Gated `kyc_cmek_enabled` / `kyc_retention_days` (`kms.tf`, `storage.tf`); rollout in [SECURITY-OPS §E3](SECURITY-OPS.md) |
 | P3-1 Mobile cert pinning | 🟨 | Gated config plugin merged (`apps/mobile/plugins/with-certificate-pinning.js`), inert until `LYNIA_TLS_PINS` is set; arming + on-device validation runbook in [MOBILE-CERT-PINNING](MOBILE-CERT-PINNING.md) |
-| P0-2 Admin SSO+MFA (IAP) · P3-3 Maps-key restriction · P3-5 WAF tuning · P3-6 pentest | 📋 | Precise founder/platform runbooks in [SECURITY-OPS](SECURITY-OPS.md); IR runbook in [IR-RUNBOOK](IR-RUNBOOK.md) |
+| P3-3 Maps-key restriction · P3-5 WAF tuning · P3-6 pentest | 📋 | Precise founder/platform runbooks in [SECURITY-OPS](SECURITY-OPS.md); IR runbook in [IR-RUNBOOK](IR-RUNBOOK.md) |
 
 The subsections below keep the full design detail (the "what & why & acceptance test") for each item.
 
@@ -324,8 +324,9 @@ Pre-remediation state, now fixed — see the implementation-status table above
 
 **P2-4 · Launch-hygiene fail-closed guards**
 `apps/api/src/config/env.ts:249-261`
-- Add a production `superRefine`: reject boot if `OTP_CHANNEL !== "whatsapp"` **or**
-  `OTP_TEST_PHONES` is non-empty in production (today these are enforced only by a comment).
+- Add a production `superRefine`: reject boot if `OTP_CHANNEL` is `console` (dev-only) or the
+  unimplemented `sms` stub — `whatsapp`, `bird`, and `local-sms` are all valid production channels —
+  **or** `OTP_TEST_PHONES` is non-empty in production (today these are enforced only by a comment).
   Same treatment for `KYC_PROVIDER === "stub"` in production.
 - *Accept:* a prod deploy with the test-phone OTP bypass enabled refuses to boot.
 
@@ -393,9 +394,9 @@ principles. The controls:
 - **Retention & deletion** — define and enforce a retention schedule: KYC media deleted on the
   legal minimum; location traces (`OrderEvent`) aggregated/pruned after the operational window;
   a user-deletion path that tombstones PII while preserving financial-ledger integrity.
-- **Third-party data flows** — WhatsApp, FCM, Didit each receive the minimum (a phone, a
-  device token, an ID-verification session). Data-processing agreements on file; vendor keys
-  are rotatable and least-scope.
+- **Third-party data flows** — WhatsApp, Bird, the local A2P SMS gateway, FCM, Didit each
+  receive the minimum (a phone, a device token, an ID-verification session). Data-processing
+  agreements on file; vendor keys are rotatable and least-scope.
 - **Subject rights** — a documented process for access/deletion requests.
 
 ---

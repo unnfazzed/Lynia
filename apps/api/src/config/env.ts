@@ -86,7 +86,8 @@ export const envSchema = z.object({
   // response, so end-to-end signup is testable on a real device with no WhatsApp BSP. ONLY
   // effective on the "console" channel and ONLY for numbers in this list — an arbitrary phone
   // is never exposed, so this is not an account-takeover hole. Empty = exposure off (default).
-  // MUST be empty (and OTP_CHANNEL=whatsapp) before real launch — see docs/PILOT-READINESS.md.
+  // MUST be empty (and OTP_CHANNEL not "console" or the unimplemented "sms" stub) before real launch —
+  // see docs/PILOT-READINESS.md.
   OTP_TEST_PHONES: z.string().default(""),
   // WhatsApp Cloud API (Meta) — only needed when OTP_CHANNEL=whatsapp. ACCESS_TOKEN is the secret.
   WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
