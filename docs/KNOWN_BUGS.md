@@ -6,7 +6,30 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-19 (wallet & data-lifecycle audit routine — agentic-loop hunt over the WD
+**Last consolidated:** 2026-07-19 night (bug-hunt routine — agentic-loop hunt over the BH lane, mobile
+journeys + app↔API contract seams; see "Bug hunt 2026-07-19 night" near the bottom for BH-21…22, two
+MEDIUM findings, all fixed same-run with regression tests: a rider's already-sent bids on OTHER open
+orders (`bidIds`/`sentOffers`, `rider/index.tsx`) lived only in `useState` — a process death mid-auction
+wiped the ONLY record of which orders the rider had already bid on (no `/offers/mine`-shaped endpoint
+exists to reconstruct it), so already-bid orders silently reappeared as freshly biddable on relaunch
+with no "offer sent" indicator; fixed by persisting `sentOffers` to SecureStore (mirroring the existing
+compose-draft persistence) and deriving `bidIds` from it instead of a parallel, driftable `useState`.
+And `IssuesService.raise()` ("get help with this trip") had no idempotency key, unlike its siblings
+`OrdersService.create`/`WalletService.createTopup` — a lost-response retry could double-create a
+dispute, and since each is independently `refund`-resolvable up to the full fare, a double-refund
+vector; fixed with the same client-derived-key + partial-unique-index + P2002-fallback shape those
+siblings already use. Phase-0.5 re-verified the **Data-integrity**, **KYC**, and **Mobile-journey-
+dead-ends** cluster headers (Data-integrity was the most stale at 4 routines back; KYC and
+Mobile-journey-dead-ends tied for second-most-stale) — all three INTACT, 0 stale claims. Sibling-sweep
+on BH-21's pattern (session-only `useState<Set>` gating a live list, no persistence) found one
+lower-severity sibling left OPEN (`BH-21-SIB-1`, a customer-side dismissed-counter-offer flag —
+cosmetic-only, fully recoverable by re-tapping Decline, not a dead-end or data-loss); everything else
+was already-guarded or (for the live board's `expiredOrderIds`/`takenOrderIds`) confirmed not
+applicable since the underlying query is deliberately excluded from disk persistence. BH-22's sweep
+traced every other user-retriable `.create(` call site and found each already-guarded by either an
+idempotency key, a natural DB unique constraint, or (for SOS) an intentional no-dedupe safety design.
+Zero open sibling PRs at Phase 0.
+Prior: 2026-07-19 (wallet & data-lifecycle audit routine — agentic-loop hunt over the WD
 lane; see the "Wallet & data-lifecycle audit 2026-07-19" section near the bottom and
 `docs/WALLET-DATA-AUDIT-2026-07-19.md` for WD-024…WD-026 — one HIGH and two MEDIUM findings, all fixed
 same-run with regression tests. WD-024 and WD-026 share one root cause: the admin overview's "Completed
@@ -267,6 +290,7 @@ KB-CONFIRMITEMS-RETRY, KB-PUSH-TOKEN-RACE, KB-DELIVERY-CODE-ROTATION-SIGNAL) wer
 | KB-IDENTITY-BINDING | **Identity is phone-only, so cheap SIMs → unlimited accounts** (FRAUD P2-5 multi-accounting + P2-8 phone-recycling: `verifyOtp` does `profile.upsert({ where:{ phone }})`, so a recycled MSISDN inherits the prior owner's profile+history, and a fresh SIM mints a fresh identity with no device attestation). Verified STILL LIVE 2026-07-16. **Reputation-weaponisation half DE-FANGED by IR16-09** (customer trust tier); **soft device binding + recycle signal shipped as IR16-10** (per-device signup throttle + `Session.deviceId` + a P2-8 recycle-suspicion log). Remaining open: the *destructive* recycle-rebind (deferred — high login-path false-positive risk) and hardware attestation (L3). | `apps/api/src/auth/auth.service.ts`, `apps/api/prisma/schema.prisma` (`Session.deviceId`), `packages/shared/src/phone.ts` | LOW-MEDIUM (further reduced) | — (product/vendor) | **Remaining work is founder/vendor-gated:** **L3 hardware attestation** (Play Integrity / App Attest) needs a native config plugin + vendor setup + on-device verification; **L0 destructive rebind** needs a product decision on the false-positive/lockout trade-off (detection signal shipped instead). **Layered plan (docs/plans/2026-identity-and-pod-hardening.md):** L2 trust tier ✅ (IR16-09), L1 soft device-id + throttle ✅ (IR16-10), L0 recycle detection ✅ / rebind deferred, L3 attestation (gated). The trunk-0 duplicate-identity bug (a *different* normalization defect) IS fixed. |
 | KB-POD-DISPUTE | **No positive proof-of-delivery dispute resolution** (FRAUD P2-6): a recipient who takes the goods then withholds the delivery code strands the rider (`confirmDelivery` hard-requires the OTP). **Phase A shipped (IR16-11):** the rider can now attach proof-of-drop evidence (photo + GPS + time) and the admin order-detail surfaces it for adjudication. **Phase B still open** — there's no *action* yet to record the trip as *delivered* over a withheld code (it stays `undelivered`). | `apps/api/src/orders/order-lifecycle.service.ts`, `apps/api/src/admin/admin-orders.service.ts`, admin issue-resolution | LOW-MEDIUM | — (product) | **Phase A done; Phase B is a product decision.** The "force-complete on adjudicated dispute" admin action is a new resolution path with its own abuse surface (an admin marking undelivered trips delivered) — needs a decision on the adjudication bar (photo+geofence enough?), the customer dispute/reversal window, and whether an adjudicated delivery is commissionable at go-live. Evidence to adjudicate on now exists (IR16-11). See `docs/plans/2026-identity-and-pod-hardening.md`. |
 | KB-HOLD-SESSION-SCOPE | **Session/token revocation on rider demotion is scoped only to admin suspend/ban, not to `onHold`/KYC-lapse** (surfaced by the 2026-07-19 deep-sweep rider-standing seam trace). `suspendRider`/`banRider` revoke sessions in-transaction (`session.updateMany({profileId, revokedAt:null}, {revokedAt})`, IR16-01) and `auth.service.ts refresh()` re-reads `s.profile.rider.accountStatus` as a backstop (hard-rejects suspended/banned) — but `refresh()` re-checks **only `accountStatus`**, never `onHold`/`kycStatus`. So a velocity-held / reliability-held / KYC-lapsed (expired/failed) rider keeps full authenticated API access, including token refresh, **indefinitely** — the supply-plane eviction + `isOnline:false` (DS17-02 / DS19-01 / DS19-02) remove them from matching/board, but not from the authenticated API surface. This MAY be intentional: a held/lapsed rider plausibly needs to stay logged in to retry KYC, contact support, or finish an already-active delivery. **Not a proven defect — a flagged asymmetry needing a product decision** on whether hold/KYC-lapse should also cut sessions BEFORE any code change (a session-revoke here without that call is exactly the speculative behavior change this flag warns against). | `apps/api/src/auth/auth.service.ts` (`refresh()`, ~line 360/377 — `accountStatus`-only recheck), `apps/api/src/admin/admin-riders.service.ts` (`suspendRider`/`banRider` in-tx `session.updateMany` revoke sites, ~line 330/438) | LOW | 1 | Found by the 2026-07-19 deep-sweep Phase-1.5 rider-standing seam pass. **Needs a product decision** on whether a hold/KYC-lapse demotion should revoke sessions (like ban/suspend) or deliberately preserve them (retry-KYC / support / active-delivery access). No code change made — logged OPEN pending that call. |
+| BH-21-SIB-1 | **A customer-dismissed counter-offer card reappears after a process death** — `declinedCounterIds` (`order/[id].tsx:86`), the "I dismissed this counter" flag `isPendingCounter` reads (`!declined`), is the same session-only `useState<Set<string>>` shape BH-21 fixed for the rider's `bidIds`/`sentOffers`, but was consciously left unfixed this run: a process death mid-negotiation just makes a previously-Declined counter-offer card reappear with Accept/Decline controls on relaunch — the counter is still genuinely live server-side either way, so this is a repeat-of-already-seen-information annoyance, not a dead end, data loss, or financial-integrity issue (the customer can simply decline it again, or accept it if they've changed their mind, which is legitimate). | `apps/mobile/app/order/[id].tsx:86` | LOW | 1 | Found by the 2026-07-19 bug-hunt routine's BH-21 sibling-sweep. Left OPEN rather than adding a third SecureStore-persistence key (alongside the rider bid-compose draft and BH-21's sent-offers list) for a cosmetic, fully-recoverable repeat. Owning lane: BH (bug hunting) — fix opportunistically in a future BH run if it recurs as a user complaint, or fold into a UX pass. |
 
 ### Recently closed (this session's remediation PRs)
 
@@ -843,6 +867,41 @@ regression test; `pnpm typecheck` (5 packages) + `pnpm test` (1041 API tests + 4
   `rider.service.ts`): `applyKycResult` was the sole unguarded instance; `retryKyc`/`completeProfile`/
   `setOnline`/`becomeRider`/`adminSetKyc` all already CAS- or lock-guarded.
 - **DS18-05** (`grep -rn "@Param(" --include="*.controller.ts" apps/api/src` — 37 raw hits): `wallet.controller.ts:47` was the sole omission.
+
+---
+
+## Bug hunt 2026-07-19 night (bug-hunt routine) — `docs/BUG-HUNT-2026-07-19.md`
+
+Phase 0: zero open `claude/*` sibling PRs at session start. Phase 0.5 re-verified the
+**Data-integrity**, **KYC**, and **Mobile-journey-dead-ends** cluster headers (rotated to the three
+least-recently checked — Data-integrity 4 routines back, KYC and Mobile-journey-dead-ends tied at 3
+back) — the `reports` unique index + `rankOffers` NaN guard + migration-0015 check constraints/rating
+composite-unique + national-ID AES-GCM encryption (Data-integrity), the unsigned-webhook fail-closed
+503 + unique `kyc_ref` + monotonic `kyc_resolved_at` guard + F-13 retry cap (KYC), and
+`markUndelivered`/resend-OTP-cooldown/`MapPicker`-timeout/cold-start-restore all reaching real wired
+mutations, not dead stubs (Mobile-journey-dead-ends) — all three **INTACT**, 0 stale claims. Hunt ran
+via the agentic-loop engine (`Workflow({name:'lane-bug-hunt'}, args:'bug-hunt')`) — 5 finder lenses, 2
+candidates found, both survived a 3-skeptic adversarial panel unanimously (6/6 "real" votes), then a
+repo-wide sibling-sweep per survivor. **Two findings, both MEDIUM — both fixed same-run**, each with
+regression tests; `pnpm typecheck` (5 packages) + full monorepo `pnpm test` (1089 API tests, 482 mobile
+tests) green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| BH-21 | A rider's already-sent bids on OTHER open orders (`bidIds`, the board's "already bid" filter; `sentOffers`, the "your offer is in" countdown cards) lived only in plain `useState` (`rider/index.tsx`) — unlike the single in-progress compose draft (`rider-bid-draft.ts`, persisted since JOURNEY-BUGS), the LIST of offers already sent this session had no SecureStore mirror and no server-side reconstruction path (no `/offers/mine`-shaped endpoint exists). A process death (OS memory reclaim, crash, force-close) mid-auction wiped it: on relaunch, already-bid orders silently reappeared as freshly biddable with no "offer sent" indicator, and their countdown cards never came back, for every order except the one the rider happened to manually retap (which self-healed via the server's existing "one round only" 409). | `apps/mobile/app/rider/index.tsx`, `apps/mobile/src/logic/rider-bid-draft.ts` | MEDIUM | **FIXED** — `sentOffers` persisted to SecureStore (`saveRiderSentOffers`/`loadRiderSentOffers`, mirroring `saveRiderBidDraft`/`loadRiderBidDraft`), restored on mount with expired-window entries dropped (`isSentOfferExpired`). `bidIds` is now derived (`useMemo` over `sentOffers`) instead of a parallel `useState`, so the two can't drift — this also fixes a smaller pre-existing gap where going offline cleared `sentOffers` but not `bidIds`. New tests: `rider-bid-draft.test.ts` gains `parseRiderSentOffers` (5 cases) and `isSentOfferExpired` (4 cases) |
+| BH-22 | `IssuesService.raise()` ("get help with this trip") did an unconditional `prisma.issue.create` with no idempotency key and no unique constraint, unlike its siblings `OrdersService.create`/`WalletService.createTopup` (both dedupe on a client-generated `idempotencyKey`) and `ReportsService.report()` (upserts on a compound unique). The mobile `GetHelpControl` sheet fired a bare `useMutation` with no durable "already sent" marker. On a client-side timeout where the POST had actually landed, a retry with the same type/description created a SECOND, independent `Issue` row for the same order+opener — each independently `refund`-resolvable by ops up to the order's full fare, with no cross-issue aggregation: a double-refund vector. The controller's own comment had flagged "no per-order dedup/cap" as a known gap; only the abuse-rate throttle half was ever implemented. | `apps/api/src/issues/issues.service.ts`, `apps/mobile/src/ui/safety.tsx`, `packages/shared/src/contracts.ts`, `apps/api/prisma/schema.prisma` | MEDIUM | **FIXED** — `RaiseIssueRequest` gains an optional `idempotencyKey`; `Issue` gets a nullable `idempotency_key` column (migration 0035) + a `CONCURRENTLY`-built partial unique index on `(opened_by_profile_id, idempotency_key)` (migration 0036, mirrors 0028/0029's `TopUp` pattern). `raise()` pre-checks the key and catches a racing `P2002` on create, both returning the original issue — the exact shape `WalletService.createTopup` already uses. The mobile sheet derives the key from `(orderId, type, description)` + a nonce that rotates on close/success (`uuidV4FromSeed`, mirroring `home.tsx`'s order-create key). New tests: `issues.service.spec.ts` gains 3 BH-22 cases, mirroring `wallet.service.spec.ts`'s existing BH-09 `createTopup` idempotency suite |
+
+**Sibling-sweep evidence:**
+
+- **BH-21** (`grep -rn "useState<Set" apps/mobile/app apps/mobile/src`, `grep -rn "this session\|this app session" apps/mobile/app apps/mobile/src` — 6 hits): `order/[id].tsx`'s `declinedCounterIds` is the same session-only-Set shape but materially lower severity — a process death just makes an already-dismissed counter-offer card reappear (annoying, fully recoverable by re-tapping Decline; not a dead-end or data loss, since the counter is still genuinely live server-side either way) — left OPEN this run as `BH-21-SIB-1` rather than adding a third persistence key for a cosmetic repeat. `rider/job.tsx`'s `checkedItems` (already has its own persisted `savePickupChecklistDraft` mirror) and both `job.tsx`/`index.tsx`'s `ackedHandbacks` (already hydrates from the genuinely-persisted `loadAcknowledgedHandbacks`) are already-guarded. `use-rider-board.ts`'s `expiredOrderIds`/`takenOrderIds` are confirmed NOT applicable: the underlying `["openOrders"]` query is deliberately excluded from the app's disk-persisted query cache (`query/persist.ts`'s allowlist), so a cold start always re-fetches a fresh board with nothing stale to mis-flag.
+- **BH-22** (`grep -rn "prisma\.\w*\.create(" apps/api/src`, `grep -rn "\.create(" apps/api/src | grep -v "prisma\."`, `grep -rln "idempotencyKey" apps/api/src apps/mobile/src packages/shared/src` — 7 top-level + ~35 in-transaction create sites): every other user-retriable creation path traced and confirmed already-guarded — `Offer.create` by the `@@unique([orderId,riderId])` "one round" constraint, `Report.upsert`/`Block.upsert` by compound-unique upserts, `Rating.create` by the migration-0015 composite unique (re-verified this run's own Phase-0.5), `Rider.create` (signup) by the `profileId` PK + DS13-06's `P2002`→409 mapping. `SosEvent.create` is confirmed **intentionally** non-deduped (the SOS control's own comment: duplicate alerts are the deliberately safe failure mode; its `useEffect` only fires once per sheet-open regardless of network timing). `Issue.create` was the sole genuine gap, now fixed.
+
+**Suggestions (not implemented):** none this run — both findings were straightforward client/server
+persistence + idempotency fixes within scope.
+
+**Stopping rule:** two findings this run (both MEDIUM, no CRITICAL/HIGH) — reported in full per the
+mandatory sibling-sweep evidence rule; the Phase-0.5 re-verification came back fully clean, consistent
+with this lane's surface having been hunted repeatedly across BH-01…BH-20.
 
 ---
 

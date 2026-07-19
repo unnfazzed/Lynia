@@ -568,11 +568,20 @@ model Issue {
   resolvedByAdminId String?          @map("resolved_by_admin_id") @db.Uuid
   resolvedAt        DateTime?        @map("resolved_at")
   createdAt         DateTime         @default(now()) @map("created_at")
+  // BH-22: client-generated create-request dedup key (mirrors TopUp.idempotencyKey). A lost-response
+  // retry on `POST /orders/:id/issues` hits the same row (P2002 on the partial unique index below)
+  // instead of opening a second dispute for the same complaint. Nullable — an old client that doesn't
+  // send one just never dedupes.
+  idempotencyKey String? @map("idempotency_key")
 
   @@index([status, createdAt])
   @@index([orderId])
   @@map("issues")
 }
+
+// (Partial unique index on (opened_by_profile_id, idempotency_key) WHERE idempotency_key IS NOT NULL —
+// added by raw SQL migration since Prisma's schema DSL can't express a partial index; built
+// CONCURRENTLY, see migrations 0035_issue_idempotency_column / 0036_issue_idempotency_index.)
 
 // Report-a-user after a trip (both roles). subjectProfileId is indexed so ops can count reports per
 // party (feeds fault attribution alongside the reliability score).

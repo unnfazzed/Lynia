@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
 import type { RaiseIssueRequest, ResolveIssueRequest } from "@lynia/shared";
+import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -61,6 +62,66 @@ describe("IssuesService.raise", () => {
     });
     expect(res).toMatchObject({ id: "iss-1", status: "open", type: "not_delivered" });
     expect(notifications.notifyOps).toHaveBeenCalledTimes(1);
+  });
+
+  // BH-22: a client-side timeout can leave a POST that actually landed with no visible confirmation —
+  // a naive retry with the same idempotencyKey must return the ORIGINAL issue, not open a second dispute
+  // for the same complaint (which ops could then independently resolve with two refunds).
+  it("BH-22: a retry with the same idempotency key returns the original issue, not a second one", async () => {
+    const create = vi.fn();
+    const existing = { id: "iss-1", status: "open", type: "not_delivered", createdAt: new Date("2026-07-01T00:00:00Z") };
+    const prisma = {
+      order: { findUnique: async () => order },
+      issue: { findFirst: async () => existing, create },
+    };
+    const svc = new IssuesService(prisma as unknown as PrismaService, noNotifications, fakeGateway());
+
+    const body: RaiseIssueRequest = { ...raiseBody, idempotencyKey: "key-1" };
+    const res = await svc.raise("ord-1", body, "rider-1");
+
+    expect(res).toMatchObject({ id: "iss-1", status: "open", type: "not_delivered" });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("BH-22: a concurrent replay that races the pre-check (P2002) still returns the winner's issue, not a 500", async () => {
+    const winner = { id: "iss-2", status: "open", type: "not_delivered", createdAt: new Date("2026-07-01T00:00:00Z") };
+    let findFirstCalls = 0;
+    const prisma = {
+      order: { findUnique: async () => order },
+      issue: {
+        findFirst: async () => {
+          findFirstCalls += 1;
+          return findFirstCalls === 1 ? null : winner; // no existing row on the pre-check, then the racing winner
+        },
+        create: async () => {
+          throw new Prisma.PrismaClientKnownRequestError(
+            "Unique constraint failed on the fields: (`opened_by_profile_id`,`idempotency_key`)",
+            { code: "P2002", clientVersion: "5.22.0" },
+          );
+        },
+      },
+    };
+    const svc = new IssuesService(prisma as unknown as PrismaService, noNotifications, fakeGateway());
+
+    const body: RaiseIssueRequest = { ...raiseBody, idempotencyKey: "key-2" };
+    const res = await svc.raise("ord-1", body, "rider-1");
+
+    expect(res).toMatchObject({ id: "iss-2" });
+  });
+
+  it("BH-22: two different keys (or no key) each create their own issue — no false-positive dedup", async () => {
+    let n = 0;
+    const create = vi.fn(async () => {
+      n += 1;
+      return { id: `iss-${n}`, status: "open", type: "not_delivered", createdAt: new Date("2026-07-01T00:00:00Z") };
+    });
+    const prisma = { order: { findUnique: async () => order }, issue: { findFirst: async () => null, create } };
+    const svc = new IssuesService(prisma as unknown as PrismaService, noNotifications, fakeGateway());
+
+    await svc.raise("ord-1", raiseBody, "rider-1");
+    await svc.raise("ord-1", { ...raiseBody, idempotencyKey: "key-3" }, "rider-1");
+
+    expect(create).toHaveBeenCalledTimes(2);
   });
 });
 
