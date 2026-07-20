@@ -11,7 +11,7 @@ import {
   Optional,
   UnauthorizedException,
 } from "@nestjs/common";
-import { CUSTOMER_CANCELLABLE_STATUSES, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_CANCELLABLE_STATUSES, RIDER_STRIKE_COOLDOWN_MS, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
@@ -19,75 +19,32 @@ import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { NotificationsService } from "../notifications/notifications.service";
+import {
+  CANCEL_STRIKE_LIMIT,
+  type CancelResult,
+  connectionFromUrl,
+  CUSTOMER_CANCELLABLE,
+  DELIVERY_PROOF_STATUSES,
+  FORWARD,
+  type ForwardStatus,
+  type LifecycleResult,
+  PICKUP_PHOTO_STATUSES,
+  POST_PICKUP_FOR_UNDELIVERED,
+  QUEUE_NAME,
+  RATING_WINDOW_MS,
+  RECONCILE_INTERVAL_MS,
+  RIDER_CANCELLABLE,
+} from "./order-lifecycle.constants";
 import { OrdersService } from "./orders.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { WalletService } from "../wallet/wallet.service";
 
-/** Forward, rider-driven transitions. `delivered` (OTP-gated) and `completed` (rating/auto-close)
- *  are handled by their own methods, not this map. Each edge stamps one milestone timestamp. */
-const FORWARD = {
-  confirmed: { from: "assigned", stamp: "confirmedAt" },
-  en_route_pickup: { from: "confirmed", stamp: "pickupStartedAt" },
-  picked_up: { from: "en_route_pickup", stamp: "collectedAt" },
-  en_route_dropoff: { from: "picked_up", stamp: undefined },
-} as const;
-
-/** Cancellation matrix (INTERFACE-AUDIT C3), server-enforced. Customer: any live status (pre- OR
- *  post-pickup). Rider: ONLY up to arrival at pickup — blocked from `picked_up` onward (the parcel is
- *  on the bike; a post-pickup failure is an `undelivered(breakdown)`, not a cancel). Both sets are the
- *  shared source of truth the clients import for the cancel affordance. */
-const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
-const RIDER_CANCELLABLE = new Set<string>(RIDER_CANCELLABLE_STATUSES);
-/** A hand-off can only FAIL after the parcel is collected (C6/F-02): picked_up or en_route_dropoff. */
-const POST_PICKUP_FOR_UNDELIVERED = new Set<string>(["picked_up", "en_route_dropoff"]);
-/** The pickup-photo attach window (§5c "Mark collected (+ pickup photo)"): at the pickup, or just
- *  collected. Wider than the checklist's en_route_pickup-only gate on purpose — the photo is optional
- *  and must never delay the collect, so an upload still in flight when the rider taps "Confirm
- *  collected" can land after the advance to picked_up instead of 409ing into the void. Typed as the
- *  Prisma enum (not a Set<string>) because the CAS `where` reuses it verbatim. */
-const PICKUP_PHOTO_STATUSES: readonly OrderStatus[] = ["en_route_pickup", "picked_up"];
-/** KB-POD-DISPUTE Phase A — the proof-of-drop attach window: at the door before giving up
- *  (en_route_dropoff) OR just after marking the hand-off failed (undelivered), so a rider can attach
- *  evidence either while disputing or right after. Optional, never gates a status. Typed as the Prisma
- *  enum because the CAS `where` reuses it verbatim. */
-const DELIVERY_PROOF_STATUSES: readonly OrderStatus[] = ["en_route_dropoff", "undelivered"];
-/** Repeated rider cancels earn a cooldown that blocks going online (T4 no-show penalty). */
-const CANCEL_STRIKE_LIMIT = 3;
-// DS20-03: the cooldown duration is the shared RIDER_STRIKE_COOLDOWN_MS (policy.ts) — the same value
-// the dispute-strike path in issues.service uses, both writing `riders.cooldownUntil`. Sourced from one
-// constant so the two axes can't drift into a silent-truncation bug.
-/** How long after delivery a customer has to rate before the order auto-closes (so completion
- *  metrics never stall on an un-rated order — D6a / T3). Pilot value; tune on real behaviour. */
-export const RATING_WINDOW_MS = 6 * 60 * 60 * 1000;
-/** How often the DB reconciler sweeps for orphaned delivered orders (Redis-independent backstop). */
-const RECONCILE_INTERVAL_MS = 15 * 60 * 1000;
-const QUEUE_NAME = "rating-autoclose";
-
-type ForwardStatus = keyof typeof FORWARD;
-export interface LifecycleResult {
-  orderId: string;
-  status: string;
-}
-export interface CancelResult {
-  orderId: string;
-  status: "cancelled";
-  cancelledBy: "customer" | "rider";
-  cooldownUntil: Date | null;
-}
-
-/** Plain ioredis options so BullMQ owns its connections (mirrors offer-expiry.service.ts). */
-function connectionFromUrl(url: string) {
-  const u = new URL(url);
-  return {
-    host: u.hostname,
-    port: u.port ? Number(u.port) : 6379,
-    username: u.username || undefined,
-    password: u.password || undefined,
-    maxRetriesPerRequest: null,
-  };
-}
+// Lifecycle policy constants + shared types now live in ./order-lifecycle.constants (roadmap 3.4).
+// RATING_WINDOW_MS stays re-exported here so existing importers of the service module are unaffected.
+export { RATING_WINDOW_MS } from "./order-lifecycle.constants";
+export type { CancelResult, LifecycleResult } from "./order-lifecycle.constants";
 
 /**
  * The post-assignment delivery lifecycle (CONCEPT §5 tracker). Every transition is a guarded CAS
