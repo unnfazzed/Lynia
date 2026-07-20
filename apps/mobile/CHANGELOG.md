@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.4](https://github.com/unnfazzed/Lynia/compare/v0.7.3...v0.7.4) (2026-07-20)
+
+
+### Bug Fixes
+
+* **mobile,api,admin:** active-order error visibility + commission-rate copy honesty + fare-adjust feed fallback (UX20-01..04) ([#340](https://github.com/unnfazzed/Lynia/issues/340)) ([1095e70](https://github.com/unnfazzed/Lynia/commit/1095e701439cccd48cb74e517bb7221ef3422bf1))
+* **mobile,api:** persist rider sent-offer list and dedupe issue-raise (BH-21, BH-22) ([#339](https://github.com/unnfazzed/Lynia/issues/339)) ([87078e9](https://github.com/unnfazzed/Lynia/commit/87078e9df62c48ec2393c5cc61c74951fa45fbc1))
+
+
+### Performance Improvements
+
+* **wave-2:** BFF bootstrap, standardized cache layer, lightweight heartbeat, feed parallelization + weekly perf routine ([#338](https://github.com/unnfazzed/Lynia/issues/338)) ([d52eb97](https://github.com/unnfazzed/Lynia/commit/d52eb97694da338bd92c48e307c32c9a6b49944c))
+
 ## [0.7.3](https://github.com/unnfazzed/Lynia/compare/v0.7.2...v0.7.3) (2026-07-19)
 
 
