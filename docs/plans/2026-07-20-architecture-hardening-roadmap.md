@@ -1,6 +1,39 @@
 # Lynia — Architecture & Engineering Hardening Roadmap (2026-07-20)
 
-**Status:** PROPOSED — nothing here is executed yet. This document is the deliverable of a
+**Status:** IN EXECUTION. Phases 1 and 2 are fully executed and pushed on this branch; Phase 3 and 4
+are partly executed. The plan below is preserved as authored; this section tracks what has shipped.
+
+## Execution status (2026-07-20)
+
+| Item | Status | Notes |
+|---|---|---|
+| **1.1** Crash reporting | ✅ **done (API)** | `@sentry/node` env-gated init + exception-filter capture, inert without DSN. Mobile/admin stay on the LR20 device runbook (bundle-size/native gates) — founder step. |
+| **1.2** shared money tests | ✅ **done** | 97 tests pinning pricing/policy/ranking/geo, incl. the float-rounding quirks 2.1 preserves. |
+| **1.3** ledger integrity job | ✅ **done** | `WalletIntegrityService` + scheduler-guarded endpoint + nightly Terraform job + drift metric; corrected the stale `TODOS.md` claim. Terraform apply = founder. |
+| **1.4** retry taxonomy | ✅ **done** | `ApiError.retryable` + explicit non-retryable mutations + retry-ownership table (ARCHITECTURE §14). |
+| **1.5** business alerts | ✅ **done** | 5 business alert policies extend `monitoring.tf` + runbooks. Apply + notification channel = founder. |
+| **1.6** admin money tests | ✅ **done** | 24 tests; surfaced AH20-01/02 (now resolved in 2.2). |
+| **1.7** restore drill | ✅ **done** | `docs/RESTORE-DRILL.md` + verifier script. Running the drill = founder. |
+| **2.1** decimal-safe money | ✅ **done** | `@lynia/shared/money.ts` (integer-cents) + migrated wallet/settlements/admin-orders; behaviour-preserving. |
+| **2.2** idempotency | ✅ **done** | AH20-01 fare-adjust replay guard fixed + tested; AH20-02 verified safe (issue-resolve CAS); inventory table (ARCHITECTURE §13). |
+| **2.3** fault pack | ✅ **done** | 5 top-up fault-injection tests (double webhook, late/declined, mid-write crash, float-exact). |
+| **2.4** transition table | ✅ **done** | `order-lifecycle.transitions.ts` + 15-test spec + §7 note (recorded the `requested`-state divergence). |
+| **2.5** PaymentRail seam | ✅ **done** | `adapters/payments/` interface + inert stub, mirroring the KycVendor seam. |
+| **3.2** import-boundary CI | ✅ **done** | dependency-cruiser + baseline (`--ignore-known`): fails only on NEW cycles / ui→api couplings. |
+| **3.3** admin contract dedup | ✅ **assessed** | Determined NOT a mechanical dedup (admin types are a distinct privileged surface); recorded in the file header; real fix needs an admin-contracts design decision (deferred). |
+| **3.6** RF-05 design pass | ✅ **done** | `docs/RF-05-WS-GATEWAY-STATE.md` classifies the 5 gateway maps; RF-05 → SCOPED. |
+| **4.5** review doctrine | ✅ **done** | Path-scoped sensitive-lane review doctrine in `docs/ROUTINES.md`. |
+| **3.1** kill switches | ⏳ **deferred** | Env kill-switch *pattern* already exists; the core/non-core map + per-surface switches are a follow-on (moderate, touches feature modules). |
+| **3.4** god-service decomposition | ⏳ **deferred** | L / SENSITIVE — the roadmap's own rule is one behaviour-preserving extraction per PR with characterization tests. Groundwork laid (2.4 transition table). Best as dedicated per-PR sessions, not an autonomous batch. |
+| **3.5** mobile screen decomposition | ⏳ **deferred** | L / SENSITIVE (bid-acceptance UI). The 14 ui→api couplings are now tracked by the 3.2 baseline so progress is measurable; do per-screen with device QA. |
+| **4.1** fixtures · **4.2** contract gate · **4.3** placebo reruns · **4.4** a11y · **4.6** semantic tokens | ⏳ **deferred** | Real but lower-criticality; 4.3 deliberately deferred (needs failure-triggered CI scripting that can't be verified without breaking CI). |
+
+**Founder-gated to finish** (code shipped inert): Sentry account/DSN (1.1), Terraform apply + a real
+notification channel (1.3/1.5), the restore drill run (1.7), and mobile/admin Sentry wiring on-device.
+
+---
+
+**Status (original):** PROPOSED — nothing here is executed yet. This document is the deliverable of a
 planning session; each item is designed to be picked up cold by a future session (interactive
 or routine) as its own PR.
 
