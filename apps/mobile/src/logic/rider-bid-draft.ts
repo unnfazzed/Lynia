@@ -104,3 +104,61 @@ export function buildSentOfferEntry(order: OpenOrder, sentFare: string, sentEtaN
   const expiresAt = new Date(new Date(order.createdAt).getTime() + OFFER_WINDOW_MS).toISOString();
   return { order, fare: sentFare, etaMinutes: Math.round(sentEtaNum), expiresAt };
 }
+
+/**
+ * BH-21: unlike the single in-progress compose draft above, the LIST of offers a rider has already
+ * sent this session (`sentOffers`, and the `bidIds` the board filter derives from it) used to live only
+ * in `useState` — a process death (OS memory reclaim, crash, force-close) mid-auction wiped it with no
+ * server-side reconstruction path (there is no `/offers/mine`-shaped endpoint), so on relaunch already-bid
+ * orders silently reappeared as freshly biddable and their "your offer is in" cards never came back.
+ * Persisted the same way as the compose draft (best-effort SecureStore, PII-free — `order` is already the
+ * board's redacted public shape).
+ */
+export const RIDER_SENT_OFFERS_KEY = "lynia.riderSentOffers";
+
+export function parseRiderSentOffers(raw: string | null | undefined): SentOffer[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(
+      (e): e is SentOffer =>
+        !!e &&
+        typeof e === "object" &&
+        typeof (e as Partial<SentOffer>).order?.id === "string" &&
+        typeof (e as Partial<SentOffer>).expiresAt === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function loadRiderSentOffers(): Promise<SentOffer[]> {
+  try {
+    return parseRiderSentOffers(await SecureStore.getItemAsync(RIDER_SENT_OFFERS_KEY));
+  } catch {
+    return [];
+  }
+}
+
+// Best-effort, mirroring saveRiderBidDraft/clearRiderBidDraft above. An empty list deletes the key
+// rather than storing "[]" so going offline (which clears sentOffers) also clears the persisted store.
+export async function saveRiderSentOffers(offers: SentOffer[]): Promise<void> {
+  try {
+    if (offers.length === 0) {
+      await SecureStore.deleteItemAsync(RIDER_SENT_OFFERS_KEY);
+    } else {
+      await SecureStore.setItemAsync(RIDER_SENT_OFFERS_KEY, JSON.stringify(offers));
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** A restored sent-offer whose auction window already closed while the app was dead — same treatment
+ *  as isRiderBidDraftExpired: drop it silently rather than showing a countdown for a window that's gone. */
+export function isSentOfferExpired(offer: SentOffer, now: number): boolean {
+  const closesAt = new Date(offer.expiresAt).getTime();
+  if (Number.isNaN(closesAt)) return true;
+  return closesAt <= now;
+}

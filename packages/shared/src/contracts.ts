@@ -173,6 +173,11 @@ export const RaiseIssueRequest = z.object({
   orderId: z.string().uuid(),
   type: z.enum(["not_delivered", "wrong_item", "damaged", "payment_dispute", "rider_conduct", "customer_conduct", "other"]),
   description: z.string().min(1).max(1000),
+  // BH-22: client-derived from (orderId, type, description), mirroring CreateOrderRequest.idempotencyKey.
+  // A lost-response retry resubmits the identical content and hits the same key; the server dedupes on
+  // (openedByProfileId, idempotencyKey) and returns the original issue instead of opening a second one.
+  // Optional for back-compat with old clients, who keep the prior no-dedupe behavior.
+  idempotencyKey: z.string().uuid().optional(),
 });
 export type RaiseIssueRequest = z.infer<typeof RaiseIssueRequest>;
 

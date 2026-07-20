@@ -7,6 +7,7 @@ import {
   type ResolveIssueRequest,
   RIDER_STRIKE_LIMIT,
 } from "@lynia/shared";
+import { Prisma } from "@prisma/client";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -64,17 +65,44 @@ export class IssuesService {
     else if (order.riderId && callerId === order.riderId) openedByRole = "rider";
     else throw new ForbiddenException("You weren't on this order");
 
-    const issue = await this.prisma.issue.create({
-      data: {
-        orderId,
-        openedByProfileId: callerId,
-        openedByRole,
-        type: body.type,
-        description: body.description,
-        // status defaults to `open`.
-      },
-      select: { id: true, status: true, type: true, createdAt: true },
-    });
+    // BH-22: a lost-response retry (client timeout/dropped connection after the POST actually landed)
+    // must return the ORIGINAL issue, not open a second one for the same complaint — mirrors
+    // WalletService.createTopup's idempotency-key dedup. Checked before any other work so a replay is
+    // cheap. Old clients that don't send a key keep the prior no-dedupe behavior.
+    if (body.idempotencyKey) {
+      const existing = await this.prisma.issue.findFirst({
+        where: { openedByProfileId: callerId, idempotencyKey: body.idempotencyKey },
+        select: { id: true, status: true, type: true, createdAt: true },
+      });
+      if (existing) return { id: existing.id, status: existing.status, type: existing.type, createdAt: existing.createdAt.toISOString() };
+    }
+
+    let issue;
+    try {
+      issue = await this.prisma.issue.create({
+        data: {
+          orderId,
+          openedByProfileId: callerId,
+          openedByRole,
+          type: body.type,
+          description: body.description,
+          idempotencyKey: body.idempotencyKey ?? null,
+          // status defaults to `open`.
+        },
+        select: { id: true, status: true, type: true, createdAt: true },
+      });
+    } catch (err) {
+      // A concurrent replay of the same idempotency key raced us and won (P2002 on the partial unique
+      // (opened_by_profile_id, idempotency_key) index) — return their issue instead of a spurious 5xx.
+      if (body.idempotencyKey && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const winner = await this.prisma.issue.findFirst({
+          where: { openedByProfileId: callerId, idempotencyKey: body.idempotencyKey },
+          select: { id: true, status: true, type: true, createdAt: true },
+        });
+        if (winner) return { id: winner.id, status: winner.status, type: winner.type, createdAt: winner.createdAt.toISOString() };
+      }
+      throw err;
+    }
 
     // Best-effort escalation to ops — a push failure can't fail the issue the customer/rider just raised.
     void this.notifications.notifyOps({

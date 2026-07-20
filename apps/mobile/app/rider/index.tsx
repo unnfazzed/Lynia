@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, usePathname, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
@@ -17,7 +17,17 @@ import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch"
 import { useRiderBoard } from "../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../src/logic/gates";
 import { formatMoney } from "../../src/logic/money";
-import { buildSentOfferEntry, clearRiderBidDraft, isRiderBidDraftExpired, loadRiderBidDraft, saveRiderBidDraft, type SentOffer } from "../../src/logic/rider-bid-draft";
+import {
+  buildSentOfferEntry,
+  clearRiderBidDraft,
+  isRiderBidDraftExpired,
+  isSentOfferExpired,
+  loadRiderBidDraft,
+  loadRiderSentOffers,
+  saveRiderBidDraft,
+  saveRiderSentOffers,
+  type SentOffer,
+} from "../../src/logic/rider-bid-draft";
 import { Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../src/ui";
 import { SentOfferCard } from "../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../src/ui/safety";
@@ -96,13 +106,39 @@ export default function RiderHome(): React.ReactElement {
   const [eta, setEta] = useState("");
   // Offer mode (3·1): "accept" takes the asking price in one tap; "counter" opens the fare field.
   const [offerMode, setOfferMode] = useState<"accept" | "counter">("accept");
-  const [bidIds, setBidIds] = useState<Set<string>>(() => new Set());
   // Offers the rider has sent this session — rendered with a live "customer's window closes in"
   // countdown, and flipped to a distinct "that window closed" state on a `bid:expired` push. The 1s
   // countdown clock itself lives INSIDE each SentOfferCard (PERF): a screen-level ticker used to
   // re-render this whole board — every open-order card, gate and the compose form — once a second
   // for the length of any auction the rider had bid into.
+  // BH-21: persisted to SecureStore (hydrate/save effects below) so a process death mid-auction
+  // doesn't wipe the record of what the rider already bid on — see rider-bid-draft.ts.
   const [sentOffers, setSentOffers] = useState<SentOffer[]>([]);
+  // `bidIds` is purely derived from `sentOffers` (the ids of orders already bid on this session) —
+  // deriving instead of a parallel setBidIds means the two can never drift, and the persistence/offline
+  // clear below (`setSentOffers([])`) covers both for free.
+  const bidIds = useMemo(() => new Set(sentOffers.map((s) => s.order.id)), [sentOffers]);
+  // BH-21: restore any sent offers that survived a kill/relaunch, dropping ones whose 90s auction
+  // window already closed while the app was dead (same treatment as the compose-draft hydrate below —
+  // a cold start never receives the live bid:expired/order:taken event that would otherwise clear them).
+  const sentOffersHydrated = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    void loadRiderSentOffers().then((offers) => {
+      if (!cancelled) {
+        const now = Date.now();
+        setSentOffers(offers.filter((o) => !isSentOfferExpired(o, now)));
+      }
+      if (!cancelled) sentOffersHydrated.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (!sentOffersHydrated.current) return;
+    void saveRiderSentOffers(sentOffers);
+  }, [sentOffers]);
 
   // JOURNEY-BUGS: restore a bid-compose card that survived a kill/rotation mid-auction (see the
   // save effect below). Gate saving on this — otherwise the initial blank state would overwrite a
@@ -467,7 +503,6 @@ export default function RiderHome(): React.ReactElement {
   // rider can edit the form between a failed send and the "already responded" 409 retry (the error
   // state re-enables editing), and reading live state here showed the just-edited, never-sent price.
   const recordSentOffer = (s: OpenOrder, sentFare: string, sentEtaNum: number): void => {
-    setBidIds((prev) => new Set(prev).add(s.id));
     const entry = buildSentOfferEntry(s, sentFare, sentEtaNum);
     setSentOffers((prev) => [entry, ...prev.filter((p) => p.order.id !== s.id)]);
   };

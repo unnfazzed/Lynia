@@ -1,4 +1,4 @@
-import { buildSentOfferEntry, isRiderBidDraftExpired, parseRiderBidDraft } from "../rider-bid-draft";
+import { buildSentOfferEntry, isRiderBidDraftExpired, isSentOfferExpired, parseRiderBidDraft, parseRiderSentOffers } from "../rider-bid-draft";
 
 const validSelected = {
   id: "order-1",
@@ -92,5 +92,59 @@ describe("isRiderBidDraftExpired (bug hunt 2026-07-16: cold-start restore must r
   it("treats an unparseable createdAt as expired rather than trusting it", () => {
     const bad = { ...draft, selected: { ...validSelected, createdAt: "not-a-date" } };
     expect(isRiderBidDraftExpired(bad, Date.now())).toBe(true);
+  });
+});
+
+// BH-21: unlike the single compose draft above, the LIST of offers a rider has already sent this
+// session (bidIds/sentOffers) used to live only in useState — a process death mid-auction wiped it
+// with no server-side reconstruction path, so already-bid orders silently reappeared as freshly
+// biddable on relaunch. parseRiderSentOffers/isSentOfferExpired are the pure hydrate/expiry gates
+// the restore effect uses so this is unit-testable without mounting the rider board screen.
+describe("parseRiderSentOffers (BH-21: sent-offer list must survive a process death)", () => {
+  const sentA = { order: validSelected, fare: "2.50", etaMinutes: 8, expiresAt: "2026-07-12T00:01:30.000Z" };
+
+  it("returns an empty list when there's nothing stored", () => {
+    expect(parseRiderSentOffers(null)).toEqual([]);
+    expect(parseRiderSentOffers(undefined)).toEqual([]);
+    expect(parseRiderSentOffers("")).toEqual([]);
+  });
+
+  it("round-trips a well-formed list", () => {
+    expect(parseRiderSentOffers(JSON.stringify([sentA]))).toEqual([sentA]);
+  });
+
+  it("survives malformed JSON without throwing", () => {
+    expect(parseRiderSentOffers("{not json")).toEqual([]);
+  });
+
+  it("drops entries missing an order id or expiresAt rather than crashing the whole restore", () => {
+    const malformed = { order: { pickup: {} }, fare: "2.50" };
+    expect(parseRiderSentOffers(JSON.stringify([sentA, malformed]))).toEqual([sentA]);
+  });
+
+  it("rejects a non-array payload", () => {
+    expect(parseRiderSentOffers(JSON.stringify({ sentA }))).toEqual([]);
+  });
+});
+
+describe("isSentOfferExpired (BH-21: a restored sent-offer whose window already closed must be dropped)", () => {
+  const closesAt = new Date(validSelected.createdAt).getTime() + 90_000; // OFFER_WINDOW_MS
+  const offer = buildSentOfferEntry(validSelected, "2.50", 8);
+
+  it("is not expired while the auction window is still open", () => {
+    expect(isSentOfferExpired(offer, closesAt - 1)).toBe(false);
+  });
+
+  it("is expired the instant the window closes", () => {
+    expect(isSentOfferExpired(offer, closesAt)).toBe(true);
+  });
+
+  it("is expired well after the window closed (the app-killed-mid-auction repro)", () => {
+    expect(isSentOfferExpired(offer, closesAt + 60_000)).toBe(true);
+  });
+
+  it("treats an unparseable expiresAt as expired rather than trusting it", () => {
+    const bad = { ...offer, expiresAt: "not-a-date" };
+    expect(isSentOfferExpired(bad, Date.now())).toBe(true);
   });
 });

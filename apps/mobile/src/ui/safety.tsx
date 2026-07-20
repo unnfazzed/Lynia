@@ -2,7 +2,7 @@ import { SOS_POLICY, tokens } from "@lynia/shared";
 import type { IssueType, ReportReason } from "@lynia/shared";
 import { useMutation } from "@tanstack/react-query";
 import * as Location from "expo-location";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Linking, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../api/client";
@@ -17,6 +17,7 @@ import {
   canSubmitReport,
   telUri,
 } from "../logic/safety";
+import { randomUuidV4, uuidV4FromSeed } from "../util";
 import { Button, ErrorText, Field, haptic, Icon } from "./index";
 
 /**
@@ -141,9 +142,17 @@ export function GetHelpControl({ orderId }: { orderId: string }): React.ReactEle
   const [type, setType] = useState<IssueType | null>(null);
   const [desc, setDesc] = useState("");
   const [done, setDone] = useState(false);
+  // BH-22: a client-side timeout can leave a POST that actually landed with no visible confirmation —
+  // the sheet stays on the form, and re-tapping "Send to our team" must dedupe against the same
+  // complaint instead of opening a second dispute. Derived from (orderId, type, description) + a nonce
+  // that rotates on close/success, mirroring home.tsx's order idempotencyKey: identical content within
+  // one open reuses the same key (retry-safe), while a genuinely new complaint (edited content, or a
+  // deliberate re-raise after a fresh open) gets a fresh one.
+  const [idemNonce, setIdemNonce] = useState<string>(() => randomUuidV4());
+  const idempotencyKey = useMemo(() => uuidV4FromSeed(`${idemNonce}|${orderId}|${type}|${desc}`), [idemNonce, orderId, type, desc]);
 
   const m = useMutation({
-    mutationFn: () => raiseIssue(orderId, { type: type!, description: desc.trim() }),
+    mutationFn: () => raiseIssue(orderId, { type: type!, description: desc.trim(), idempotencyKey }),
     onSuccess: () => setDone(true),
   });
 
@@ -154,6 +163,7 @@ export function GetHelpControl({ orderId }: { orderId: string }): React.ReactEle
       setDone(false);
       setType(null);
       setDesc("");
+      setIdemNonce(randomUuidV4());
       m.reset();
     }, 250);
   }
