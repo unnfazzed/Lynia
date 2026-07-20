@@ -66,6 +66,9 @@
 - **Scrubs user-authored free text** on the erasing profile's own rows: `ratings.comment` (as
   rater), `issues.description` (as opener, emptied to `""` — a `NOT NULL` column), `reports.note`
   (as reporter), and `orders.cancelReason` (as either party to the order).
+- **Evicts an erased rider from both live-supply planes** (`rider:geo` Redis index + WebSocket
+  board-room subscriptions) post-commit via `evictRiderFromSupply` (DS19-02) — closes the gap where
+  an already-open socket kept receiving board pushes after erasure.
 - **Idempotent** — safe to re-run (an already-erased profile is a no-op).
 
 Orders, ratings, and audit rows are **kept** (anonymised by reference) — the delivery/financial record
