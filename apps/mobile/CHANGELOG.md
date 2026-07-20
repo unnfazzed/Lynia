@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/unnfazzed/Lynia/compare/v0.9.0...v0.10.0) (2026-07-20)
+
+
+### Features
+
+* **mobile:** wire @sentry/react-native crash reporting (roadmap 1.1 / LR20) ([7bf836e](https://github.com/unnfazzed/Lynia/commit/7bf836e88bc7f5177ceb75602e84e588607ce5f6))
+
 ## [0.9.0](https://github.com/unnfazzed/Lynia/compare/v0.8.1...v0.9.0) (2026-07-20)
 
 
