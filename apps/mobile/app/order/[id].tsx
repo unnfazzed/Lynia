@@ -1,4 +1,4 @@
-import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, rankOffers, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,6 +8,7 @@ import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../s
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { SORT_MODES, type SortMode, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
+import { orderOffers } from "../../src/logic/order-offers";
 import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, shouldCancelBeforeRebroadcast } from "../../src/logic/order-tracking";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
@@ -357,26 +358,9 @@ export default function OrderScreen(): React.ReactElement {
 
   // Order the offers for display (D-d): best-match blends price + rating + ETA and marks the top pick;
   // the other modes are plain single-key sorts. Selection is unaffected — the customer still chooses.
-  const orderedOffers = useMemo((): { offer: OfferRow; recommended: boolean }[] => {
-    const offers = offersQ.data ?? [];
-    if (offers.length === 0) return [];
-    if (sortMode === "best") {
-      const ranked = rankOffers(
-        offers.map((o) => ({
-          offeredFare: Number(o.offeredFare),
-          ratingAvg: Number(o.rider.ratingAvg),
-          ratingCount: o.rider.ratingCount,
-          etaMinutes: o.etaMinutes,
-        })),
-      );
-      return ranked.map((r) => ({ offer: offers[r.index]!, recommended: r.recommended }));
-    }
-    const sorted = [...offers];
-    if (sortMode === "cheapest") sorted.sort((a, b) => Number(a.offeredFare) - Number(b.offeredFare));
-    else if (sortMode === "fastest") sorted.sort((a, b) => a.etaMinutes - b.etaMinutes);
-    else sorted.sort((a, b) => Number(b.rider.ratingAvg) - Number(a.rider.ratingAvg));
-    return sorted.map((offer) => ({ offer, recommended: false }));
-  }, [offersQ.data, sortMode]);
+  // Offer ordering (roadmap 3.5): the pure ranking/sort logic now lives in src/logic/order-offers
+  // (unit-tested there); the screen just memoizes it over the current offers + sort mode.
+  const orderedOffers = useMemo(() => orderOffers(offersQ.data ?? [], sortMode), [offersQ.data, sortMode]);
 
   const selectM = useMutation({
     mutationFn: (offerId: string) => selectOffer(orderId, offerId),
