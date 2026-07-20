@@ -85,3 +85,46 @@ jobs:
           # controls live in the Expo/Play consoles, not this runner.
           eas build --platform android --profile "$PROFILE" --non-interactive --no-wait $SUBMIT_FLAG
           echo "EAS build queued (profile: $PROFILE, auto-submit: ${SUBMIT_FLAG:-off})." >> "$GITHUB_STEP_SUMMARY"
+
+      # Best-effort release-candidate size visibility (DoorDash app-size discipline, docs/APP-SIZE.md).
+      # The build above runs with --no-wait, so the .aab is usually STILL building on EAS servers here;
+      # when a recently-finished Android build IS available, this records its raw .aab byte size to the
+      # run summary. NEVER breaks a release — continue-on-error plus internal guards degrade every
+      # failure mode to a note.
+      #
+      # We deliberately DO NOT download bundletool to compute Play's exact per-device delivery size:
+      # that would mean pulling an unpinned third-party jar into a release job. We report the raw .aab
+      # size and note that Play's actual per-device DOWNLOAD is smaller — an App Bundle is split per
+      # device ABI / screen density / language at install time (the precise number is in Play Console).
+      - name: Measure AAB size (best-effort)
+        continue-on-error: true
+        working-directory: apps/mobile
+        run: |
+          set -uo pipefail
+          echo "## 📦 Release artifact size (.aab)" >> "$GITHUB_STEP_SUMMARY"
+          # Newest Android build for this project (auth comes from the EAS CLI set up above). --json
+          # requires --non-interactive. With --no-wait the current build may have no artifact yet.
+          BUILDS_JSON="$(eas build:list --json --non-interactive --platform android --limit 1 2>/dev/null || true)"
+          URL="$(printf '%s' "$BUILDS_JSON" | jq -r '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl // empty' 2>/dev/null || true)"
+          if [ -z "${URL:-}" ]; then
+            echo "_Latest Android build has no downloadable artifact yet (the build was queued with \`--no-wait\` and is likely still running). The .aab size will be visible on the EAS build page and in the Play Console._" >> "$GITHUB_STEP_SUMMARY"
+            echo "AAB size: artifact not available yet (build still in progress) — non-fatal."
+            exit 0
+          fi
+          AAB="$RUNNER_TEMP/release.aab"
+          if ! curl -fsSL "$URL" -o "$AAB"; then
+            echo "_Could not download the build artifact to measure it (non-fatal)._" >> "$GITHUB_STEP_SUMMARY"
+            echo "AAB size: download failed — non-fatal."
+            exit 0
+          fi
+          BYTES=$(stat -c %s "$AAB")
+          human() { awk -v b="$1" 'BEGIN { split("B KiB MiB GiB", u); i = 1; while (b >= 1024 && i < 4) { b /= 1024; i++ } printf (i == 1 ? "%d %s" : "%.2f %s"), b, u[i] }'; }
+          echo "Release AAB (pre-split) size: $(human "$BYTES") ($BYTES bytes)"
+          {
+            echo ""
+            echo "| Artifact | Raw .aab size |"
+            echo "|---|---:|"
+            echo "| Release AAB (before Play split) | $(human "$BYTES") ($BYTES bytes) |"
+            echo ""
+            echo "> Play delivers a **smaller** per-device download than the raw .aab: the App Bundle is split by device ABI, screen density and language at install time. The precise per-device download size is in the Play Console (\"App bundle explorer\")."
+          } >> "$GITHUB_STEP_SUMMARY"

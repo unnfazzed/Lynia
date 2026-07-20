@@ -93,7 +93,41 @@ const config: ExpoConfig = {
     // Pin Kotlin to 1.9.25: expo-modules-core's Compose Compiler (1.5.15) requires it, and the SDK-52
     // default (1.9.24) fails :expo-modules-core:compileReleaseKotlin. prebuild regenerates android/,
     // so this must live in config, not a hand-edit of build.gradle.
-    ["expo-build-properties", { android: { kotlinVersion: "1.9.25" } }],
+    //
+    // Android release-build size shrink (every option name verified against the installed
+    // expo-build-properties@0.13.3 build/pluginConfig.d.ts — same "verify against plugin source"
+    // convention as the expo-location note above):
+    //   • enableProguardInReleaseBuilds turns on R8 code shrinking + obfuscation, dropping unreachable
+    //     Java/Kotlin from the release AAB. Release-only — debug/dev client builds are untouched.
+    //   • enableShrinkResourcesInReleaseBuilds strips unused resources (drawables/strings/layouts); it
+    //     only takes effect with R8 on, so it is deliberately paired with the flag above.
+    // These are NATIVE build settings, so — exactly like the expo-location manifest change above — they
+    // shift the expo-updates `fingerprint` runtimeVersion. The next ship therefore has to go out as a
+    // store release (mobile-release.yml); it is NOT OTA-able onto existing installs.
+    //
+    // extraProguardRules is kept intentionally SMALL. React Native core, expo-modules-core, Google Play
+    // Services and OkHttp/Okio all ship their own consumer ProGuard rules, so blanket `-keep`s would
+    // just neuter the shrink we are turning on. The only belt-and-braces rule is for a library that
+    // ships NONE: react-native-maps@1.18.x (verified — no consumer-rules.pro and no consumerProguardFiles
+    // in its android/build.gradle), whose Fabric view-manager / command classes R8 full-mode can strip
+    // because JS reaches them by string name. posthog-react-native has no native Android module (pure
+    // JS) and socket.io-client is pure JS too, so neither needs a rule.
+    [
+      "expo-build-properties",
+      {
+        android: {
+          kotlinVersion: "1.9.25",
+          enableProguardInReleaseBuilds: true,
+          enableShrinkResourcesInReleaseBuilds: true,
+          extraProguardRules: [
+            // Keep react-native-maps' bridge package (it ships no consumer rules) + hush the matching
+            // missing-class warnings so R8 can't strip the classes JS/Fabric reach reflectively.
+            "-keep class com.rnmaps.maps.** { *; }",
+            "-dontwarn com.rnmaps.maps.**",
+          ].join("\n"),
+        },
+      },
+    ],
     // TLS certificate pinning for the API/WS host (SECURITY §P3-1). GATED on LYNIA_TLS_PINS: attached
     // ONLY when pins are supplied, so an unpinned build never even loads the plugin (mirrors the Maps/
     // FCM/EAS "attach only when provisioned" pattern). Arming needs real Google-Trust-Services SPKI pins

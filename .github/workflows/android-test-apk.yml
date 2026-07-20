@@ -100,6 +100,63 @@ jobs:
             -Pandroid.injected.signing.key.alias=lynia-test \
             -Pandroid.injected.signing.key.password=lyniatest
 
+      # Release-candidate size visibility (DoorDash app-size discipline, docs/APP-SIZE.md): report the
+      # built APK's on-disk size and an uncompressed per-category breakdown (native libs per ABI, dex,
+      # resources) to the run summary, so a size regression is obvious on the QA build — long before a
+      # real release. Informational only: guarded throughout, so a parse oddity is non-fatal and this
+      # step never fails the QA build. Pure shell (unzip/awk ship on ubuntu-latest).
+      - name: Size report
+        working-directory: apps/mobile/android/app/build/outputs/apk/release
+        run: |
+          set -uo pipefail
+          APK="$(ls -1 *.apk 2>/dev/null | head -n1 || true)"
+          if [ -z "${APK:-}" ] || [ ! -f "$APK" ]; then
+            echo "::notice::Size report: no APK found under $(pwd) — skipping (non-fatal)."
+            exit 0
+          fi
+          TOTAL=$(stat -c %s "$APK")
+          human() { awk -v b="$1" 'BEGIN { split("B KiB MiB GiB", u); i = 1; while (b >= 1024 && i < 4) { b /= 1024; i++ } printf (i == 1 ? "%d %s" : "%.2f %s"), b, u[i] }'; }
+          # Headline to the log.
+          echo "QA APK total size: $(human "$TOTAL") — $APK ($TOTAL bytes)"
+          # Markdown breakdown to the run summary. `unzip -l` lists UNCOMPRESSED entry sizes; the on-disk
+          # APK above is the compressed artifact. `|| true` keeps a listing hiccup from failing the step.
+          {
+            echo "## 📦 QA APK size report"
+            echo ""
+            echo "**On-disk APK (signed release, universal):** $(human "$TOTAL") — \`$APK\` ($TOTAL bytes)"
+            echo ""
+            echo "| Category (uncompressed) | Size |"
+            echo "|---|---:|"
+            unzip -l "$APK" 2>/dev/null | awk '
+              function human(b,   u, i) {
+                split("B KiB MiB GiB", u, " "); i = 1
+                while (b >= 1024 && i < 4) { b /= 1024; i++ }
+                return sprintf((i == 1 ? "%d %s" : "%.2f %s"), b, u[i])
+              }
+              # data rows only: length in $1 is a pure integer and there is a name column
+              $1 ~ /^[0-9]+$/ && NF >= 4 {
+                len = $1; name = $4
+                for (k = 5; k <= NF; k++) name = name " " $k
+                if (name ~ /\/$/) next                       # skip directory entries (length 0)
+                if (name ~ /^lib\//) { split(name, p, "/"); if (p[2] != "") { lib[p[2]] += len; haveLib = 1 } }
+                else if (name ~ /^classes[0-9]*\.dex$/) dex += len
+                else if (name ~ /^(res\/|assets\/)/) resassets += len
+                else if (name ~ /^resources\.arsc$/) arsc += len
+                else other += len
+              }
+              END {
+                for (a in lib) printf "| lib/%s (native) | %s |\n", a, human(lib[a])
+                if (!haveLib) printf "| lib/ (native) | %s |\n", human(0)
+                printf "| classes*.dex | %s |\n", human(dex)
+                printf "| res/ + assets/ | %s |\n", human(resassets)
+                printf "| resources.arsc | %s |\n", human(arsc)
+                printf "| other | %s |\n", human(other)
+              }
+            ' || true
+            echo ""
+            echo "> On-disk APK is the compressed artifact; category rows are uncompressed in-APK sizes (\`unzip -l\`). This is a **universal** QA APK — a real Play release ships an **AAB**, split per device/ABI/density, so the actual per-device download is smaller (see mobile-release.yml's AAB measurement and docs/APP-SIZE.md)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Print signing SHA-1 (restrict the Maps key to this in GCP)
         run: keytool -list -v -keystore "$RUNNER_TEMP/test.keystore" -storepass lyniatest -alias lynia-test | grep -i "SHA1:" || true
 
