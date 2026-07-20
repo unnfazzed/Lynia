@@ -6,7 +6,28 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-20 (deep-sweep routine — agentic-loop hunt over the deep-sweep lane; see
+**Last consolidated:** 2026-07-20 (bug-hunt routine — agentic-loop hunt over the bug-hunt lane; see
+`docs/BUG-HUNT-2026-07-20.md` and the "Bug hunt 2026-07-20 night" section near the bottom for BH-23/24,
+two MEDIUM findings, both fixed same-run with regression tests. BH-23: `clearDeviceState()`'s sign-out
+wipe (`apps/mobile/src/auth/session.ts`) imported and deleted `RIDER_BID_DRAFT_KEY` but never its sibling
+`RIDER_SENT_OFFERS_KEY` (added by BH-21 after this wipe was last touched), so a signed-out rider's
+already-sent bids on OTHER open orders survived on a shared device and rehydrated for the next rider
+signed in within the same ~90s auction windows — painting a stranger's fare/eta as their own pending offer
+and hiding the underlying orders from their board as "already bid". Fixed by adding the missing key to the
+delete list, the same gap-shape BH-17 closed for `PICKUP_CHECKLIST_DRAFT_KEY`. BH-24: the mobile `OfferRow`
+type declares `rider.ratingAvg` as `string`, but the API sends the underlying Prisma `Float` as a raw JSON
+number (unlike `offeredFare`, a `Decimal` the server explicitly `.toString()`s) — confirmed wrong by
+contrast with `apps/mobile/src/api/auth.ts`, which correctly types the same field `number` for `/auth/me`.
+`order/[id].tsx` persisted the chosen offer's rating verbatim into a `RiderIdentity`, and
+`rider-identity.ts`'s restore guard did a strict `typeof === "string"` check that silently reset it to
+`"0"` on every reload — showing "★ 0.0" for a real assigned rider on the live-tracking card. Fixed by
+coercing to `String(...)` at the write site and making the restore guard also accept (and self-heal) a
+raw JSON number. Phase-0.5 re-verified the **KYC**, **Data-integrity**, and **Mobile-journey-dead-ends**
+cluster headers (rotated to the three least-recently checked — all three last verified by yesterday's
+2026-07-19 bug-hunt/UX runs, while the other six were re-checked earlier today by the deep-sweep and UX
+routines) — all 3 INTACT, 0 stale claims. Zero open `claude/*` sibling PRs at Phase 0.
+`pnpm typecheck` + `pnpm test` (1161 API + 517 mobile) green.
+Prior: 2026-07-20 (deep-sweep routine — agentic-loop hunt over the deep-sweep lane; see
 `docs/DEEP-SWEEP-2026-07-20.md` and the "Deep sweep 2026-07-20" section near the bottom for DS20-01…03 —
 one MEDIUM, one HIGH, one LOW, all fixed same-run with regression tests. DS20-01 (MEDIUM): two separate
 `STUCK_AFTER_MS` constants (`admin.service.ts` 25 min off `order.updatedAt` vs `admin.shared.ts` 20 min off
@@ -956,6 +977,41 @@ regression test; `pnpm typecheck` (5 packages) + `pnpm test` (1041 API tests + 4
   `rider.service.ts`): `applyKycResult` was the sole unguarded instance; `retryKyc`/`completeProfile`/
   `setOnline`/`becomeRider`/`adminSetKyc` all already CAS- or lock-guarded.
 - **DS18-05** (`grep -rn "@Param(" --include="*.controller.ts" apps/api/src` — 37 raw hits): `wallet.controller.ts:47` was the sole omission.
+
+---
+
+## Bug hunt 2026-07-20 night (bug-hunt routine) — `docs/BUG-HUNT-2026-07-20.md`
+
+Phase 0: zero open `claude/*` sibling PRs at session start. Phase 0.5 re-verified the **KYC**,
+**Data-integrity**, and **Mobile-journey-dead-ends** cluster headers (the three least-recently checked —
+all last verified by yesterday's 2026-07-19 bug-hunt/UX runs, while Object-authz/IDOR, Ship/infra
+correctness, Money-fraud, Auth/identity, Notifications/FCM, and Edge/abuse were all re-checked earlier
+today by the deep-sweep and UX routines) — the unsigned-webhook fail-closed 503 + unique `kyc_ref` +
+monotonic `kyc_resolved_at` guard + F-13 retry cap (KYC), `rankOffers`'s `Number.isFinite` guard +
+migrations 0014/0015/0017 + national-ID AES-256-GCM encryption (Data-integrity), and `markUndelivered`/
+resend-OTP-cooldown/cold-start-restore all reaching real wired mutations (Mobile-journey-dead-ends) — all
+three **INTACT**, 0 stale claims. Hunt ran via the agentic-loop engine
+(`Workflow({name:'lane-bug-hunt'}, args:'bug-hunt')`) — 5 finder lenses, 2 candidates found, both survived
+a 3-skeptic adversarial panel unanimously (6/6 "real" votes), then a repo-wide sibling-sweep per survivor.
+**Two findings, both MEDIUM — both fixed same-run**, each with regression tests; `pnpm typecheck`
+(5 packages) + full monorepo `pnpm test` (1161 API tests, 517 mobile tests) green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| BH-23 | A rider's already-sent bids on OTHER open orders (`RIDER_SENT_OFFERS_KEY`, added by BH-21) had no entry in `clearDeviceState()`'s sign-out wipe (`apps/mobile/src/auth/session.ts`) — only its sibling `RIDER_BID_DRAFT_KEY` (the single in-progress compose draft) was wiped. A signed-out rider's sent-offer list survived on a shared device: the next rider signed in within the same ~90s auction windows had it silently restored, painting a stranger's fare/eta as their own "your offer is in" card and hiding the underlying orders from their board as already-bid. | `apps/mobile/src/auth/session.ts` | MEDIUM | **FIXED** — `RIDER_SENT_OFFERS_KEY` imported and added to the delete list, mirroring the BH-17 fix for `PICKUP_CHECKLIST_DRAFT_KEY`. New test in `session.test.ts`. |
+| BH-24 | `OfferRow.rider.ratingAvg` is typed `string` (`apps/mobile/src/api/offers.ts`) but the API sends the underlying Prisma `Float` as a raw JSON number (confirmed wrong by contrast with `apps/mobile/src/api/auth.ts`, which correctly types the same field `number`). `order/[id].tsx` persisted it verbatim into a `RiderIdentity`, and `rider-identity.ts`'s restore guard's strict `typeof === "string"` check silently reset it to `"0"` on every reload — the live-tracking card showed "★ 0.0" for a real assigned rider. | `apps/mobile/src/logic/rider-identity.ts`, `apps/mobile/app/order/[id].tsx` | MEDIUM | **FIXED** — write site now coerces with `String(...)`; restore guard also accepts and self-heals a raw JSON number. New file `rider-identity.test.ts` (4 cases). |
+
+**Sibling-sweep evidence** (full grep commands + disposition in the dated report):
+
+- **BH-23** (`grep -rn "RIDER_BID_DRAFT_KEY\|RIDER_SENT_OFFERS_KEY\|PICKUP_CHECKLIST_DRAFT_KEY\|deleteItemAsync" apps/mobile/src/auth/session.ts`, `grep -rn "^export const [A-Z_]*KEY" apps/mobile/src`): enumerated every exported `*_KEY` constant against `clearDeviceState()`'s ~26-key delete list — `RIDER_SENT_OFFERS_KEY` was the sole gap; every other per-user/per-session key was already present.
+- **BH-24** (`grep -rn "ratingAvg" --include=*.ts --include=*.tsx .`, `grep -rn "typeof parsed\." apps/mobile`): 6 other `ratingAvg` call sites all tolerant (`Number(...)` coercion or pass-through props into a component that itself coerces, none persisting the raw value); the `typeof parsed.*` sweep found one other hit (`client.ts:275`, gating a genuinely-string error-body field) — not a sibling. `ratingAvg` was the sole field with this declared-string/actual-number mismatch feeding a strict-`typeof` restore guard.
+
+**Suggestions (not implemented):** none this run — both findings were straightforward client-side
+persistence-completeness and wire-type-coercion fixes within scope.
+
+**Stopping rule:** two findings this run (both MEDIUM, no CRITICAL/HIGH) — reported in full per the
+mandatory sibling-sweep evidence rule; the Phase-0.5 re-verification came back fully clean, consistent
+with this lane's surface having been hunted repeatedly across BH-01…BH-22.
 
 ---
 

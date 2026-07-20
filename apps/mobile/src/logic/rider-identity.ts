@@ -49,7 +49,18 @@ export async function loadRiderIdentity(orderId: string): Promise<RiderIdentity 
       firstName: parsed.firstName,
       lastName: typeof parsed.lastName === "string" ? parsed.lastName : "",
       photoUrl: typeof parsed.photoUrl === "string" ? parsed.photoUrl : null,
-      ratingAvg: typeof parsed.ratingAvg === "string" ? parsed.ratingAvg : "0",
+      // BH-24: the caller (order/[id].tsx) writes this field from OfferRow.rider.ratingAvg, whose
+      // declared `string` type is a lie — the API sends the Prisma Float `ratingAvg` as a raw JSON
+      // number (unlike `offeredFare`, a Decimal the server explicitly .toString()s). A strict
+      // `typeof === "string"` check on that round-tripped value silently reset every rating to "0" on
+      // every reload. Accept either wire shape and normalize to a string, self-healing already-persisted
+      // numeric values on disk as well as any future write.
+      ratingAvg:
+        typeof parsed.ratingAvg === "string"
+          ? parsed.ratingAvg
+          : typeof parsed.ratingAvg === "number"
+            ? String(parsed.ratingAvg)
+            : "0",
       ratingCount: typeof parsed.ratingCount === "number" ? parsed.ratingCount : 0,
       tripsCount: typeof parsed.tripsCount === "number" ? parsed.tripsCount : 0,
     };
