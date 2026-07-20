@@ -60,13 +60,25 @@ Crashlytics is the alternative):
 - [ ] Add Sentry (or Crashlytics) per the above; forced test crash visible from a release build.
 - [ ] Consider the same for the admin app (`@sentry/nextjs`) — lower priority.
 
-> **API side already wired (roadmap 1.1).** `@sentry/node` is initialized in `apps/api/src/main.ts`
-> via `observability/sentry.ts`, and `AllExceptionsFilter` reports every unexpected 500 (with its
-> correlationId). It is **inert until `SENTRY_DSN` is set** — founder step: provision the Sentry
-> project, put the DSN in Secret Manager, expose it to the runtime SA, then confirm a forced test
-> error appears in the dashboard. The mobile (`@sentry/react-native`) and admin (`@sentry/nextjs`)
-> halves are the device/build-gated steps above and are intentionally left for an on-device pass so
-> the calibrated JS bundle-size budget isn't changed blind.
+> **API side wired (roadmap 1.1).** `@sentry/node` is initialized in `apps/api/src/main.ts` via
+> `observability/sentry.ts`, `AllExceptionsFilter` reports every unexpected 500 (with its
+> correlationId), and the deploy plumbing exists: `release.yml` injects `SENTRY_DSN` (secret) +
+> `SENTRY_ENVIRONMENT=production` behind the **`SENTRY_ENABLED`** repo Variable, exactly like the
+> Didit/WhatsApp/Bird vendor gates. It is **inert until activated** — founder steps:
+>
+> 1. Create a Sentry project (Node.js) → copy its DSN.
+> 2. `gcloud secrets create SENTRY_DSN …` + `gcloud secrets versions add SENTRY_DSN --data-file=-` with
+>    the DSN, then grant the **runtime SA** `roles/secretmanager.secretAccessor` on it.
+> 3. Set the repo Variable **`SENTRY_ENABLED=true`** (optionally `SENTRY_TRACES_SAMPLE_RATE`, default 0.1).
+> 4. Deploy (push to `main`); the startup log should read `Sentry enabled (env=production)`. Force a
+>    test error and confirm it appears in the dashboard with its correlationId.
+>
+> Order matters: create the secret (step 2) **before** flipping `SENTRY_ENABLED` (step 3), or the
+> `--set-secrets` deploy fails on a missing target — the same rule the vendor gates follow.
+>
+> The mobile (`@sentry/react-native`) and admin (`@sentry/nextjs`) halves are the device/build-gated
+> steps above and are intentionally left for an on-device pass so the calibrated JS bundle-size budget
+> isn't changed blind.
 
 ## Background GPS during Maps navigation (foreground service) — NEW BINARY required
 

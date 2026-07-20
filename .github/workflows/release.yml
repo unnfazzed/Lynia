@@ -527,6 +527,20 @@ jobs:
             SECRETS="${SECRETS},LOCAL_SMS_API_KEY=LOCAL_SMS_API_KEY:latest"
           fi
 
+          # Sentry crash reporting (roadmap 1.1 / LR20) is OPT-IN via SENTRY_ENABLED=true — same reason
+          # as the vendor keys above: don't reference the SENTRY_DSN secret before it exists in Secret
+          # Manager (a missing --set-secrets target fails the whole deploy). Create the SENTRY_DSN secret
+          # + grant the runtime SA secretAccessor first, THEN set SENTRY_ENABLED=true. The API's
+          # initSentry() is inert when SENTRY_DSN is unset, so leaving this off changes nothing.
+          # SENTRY_TRACES_SAMPLE_RATE is an optional repo Variable override (the app defaults to 0.1).
+          if [ "${{ vars.SENTRY_ENABLED }}" = "true" ]; then
+            ENV_VARS="${ENV_VARS};SENTRY_ENVIRONMENT=production"
+            if [ -n "${{ vars.SENTRY_TRACES_SAMPLE_RATE }}" ]; then
+              ENV_VARS="${ENV_VARS};SENTRY_TRACES_SAMPLE_RATE=${{ vars.SENTRY_TRACES_SAMPLE_RATE }}"
+            fi
+            SECRETS="${SECRETS},SENTRY_DSN=SENTRY_DSN:latest"
+          fi
+
           # OTel collector sidecar (docs/OBSERVABILITY.md → Production activation): when the
           # OTEL_SIDECAR_ENABLED repo Variable is true, the release deploys BOTH containers
           # explicitly — the revision spec is fully code-driven, so a hand-edited or broken sidecar
