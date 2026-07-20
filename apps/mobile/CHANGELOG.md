@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/unnfazzed/Lynia/compare/v0.8.0...v0.8.1) (2026-07-20)
+
+
+### Bug Fixes
+
+* **mobile:** pin @babel/runtime to 7.x — the v8 major broke expo export ([397e7e7](https://github.com/unnfazzed/Lynia/commit/397e7e71140b25e9acc51e6c5ebe8433b839c664))
+
 ## [0.8.0](https://github.com/unnfazzed/Lynia/compare/v0.7.5...v0.8.0) (2026-07-20)
 
 
