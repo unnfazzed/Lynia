@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # adopt-vendor-secrets.sh — one-command execution of docs/LAUNCH-EXECUTION-RUNBOOK.md §9:
 # import the hand-created vendor secret containers (DIDIT_API_KEY, DIDIT_WEBHOOK_SECRET,
-# WHATSAPP_ACCESS_TOKEN) plus their runtime-SA accessor bindings into Terraform state, then
+# WHATSAPP_ACCESS_TOKEN, BIRD_ACCESS_KEY) plus their runtime-SA accessor bindings into Terraform state, then
 # prove the adoption is clean. Idempotent — anything already in state is skipped, so
 # re-running (including after extending the list in secrets.tf) is always safe.
 #
