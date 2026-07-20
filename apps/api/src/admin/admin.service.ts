@@ -4,7 +4,7 @@ import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
-import { computeFunnel, routeOf } from "./admin.shared";
+import { computeFunnel, routeOf, STUCK_AFTER_MS } from "./admin.shared";
 
 /** In-flight (assigned…drop-off) statuses — an order here that hasn't changed in a while is "stuck". */
 const IN_FLIGHT_STATUSES = [
@@ -14,8 +14,6 @@ const IN_FLIGHT_STATUSES = [
   "picked_up",
   "en_route_dropoff",
 ] as const;
-/** No order-row write (status change) in this long, while in-flight ⇒ surface it on the ops dashboard. */
-const STUCK_AFTER_MS = 25 * 60 * 1000;
 
 /**
  * Dashboard-level reads for the admin console. The per-domain admin operations live in their own
@@ -50,6 +48,11 @@ export class AdminService {
     // console labels these figures "today" and they reset at 00:00 UTC (≈02:00 Harare).
     const now = new Date();
     const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    // DS20-01: shared threshold (admin.shared.STUCK_AFTER_MS) so this dashboard aggregate and the
+    // per-order detail badge (admin-orders.service) can't drift to different minutes. The dashboard
+    // deliberately keys off `order.updatedAt` — one cheap indexed range query, no per-order OrderEvent
+    // join — while the detail page uses the last OrderEvent.createdAt (more precise, already loaded).
+    // Same threshold, different data source on purpose: don't "unify" the clock into an N+1 here.
     const stuckCutoff = new Date(now.getTime() - STUCK_AFTER_MS);
     const [
       byStatus,

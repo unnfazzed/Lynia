@@ -6,7 +6,29 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-20 (UX-improvements routine — agentic-loop hunt over the UX lane; see
+**Last consolidated:** 2026-07-20 (deep-sweep routine — agentic-loop hunt over the deep-sweep lane; see
+`docs/DEEP-SWEEP-2026-07-20.md` and the "Deep sweep 2026-07-20" section near the bottom for DS20-01…03 —
+one MEDIUM, one HIGH, one LOW, all fixed same-run with regression tests. DS20-01 (MEDIUM): two separate
+`STUCK_AFTER_MS` constants (`admin.service.ts` 25 min off `order.updatedAt` vs `admin.shared.ts` 20 min off
+the last `OrderEvent.createdAt`) had drifted, so the same order could read "stuck" on its detail page yet not
+appear in the ops-dashboard alert (a non-status write like `attachPickupPhoto` bumps `updatedAt` without an
+`OrderEvent`); both call sites now import the single 20-min `admin.shared.STUCK_AFTER_MS`, with the two
+intentional data-source clocks preserved + commented. DS20-02 (HIGH): the WS `rider:location` handler
+`@MessageBody`-typed but never runtime-validated the untrusted socket JSON, broadcasting the raw lat/lng to
+the customer's map (`coalescePositionEmit`) and persisting it (`recordFix`) with none of the bounded-lat/lng
+zod validation every sibling REST path enforces — now `safeParse`d through a new shared `RiderLocationEvent`
+schema (rejects out-of-range/NaN before emit/persist) with the `recordFix` call try/catch-wrapped like the
+REST heartbeat caller. DS20-03 (LOW hardening): `riders.cooldownUntil`'s two independent writers (3rd
+cancel-strike + 3rd dispute-strike) each hardcoded their own equal 2h literal with an unconditional
+overwrite, so a future drift would let the shorter one silently truncate a longer sibling cooldown; hoisted a
+single `RIDER_STRIKE_COOLDOWN_MS` into `policy.ts` and made both writes take the later of the fresh window
+and any existing future cooldown (read under the already-held row lock), so a cooldown can never shorten.
+Phase-0.5 re-verified the **Object-authz/IDOR**, **Ship/infra correctness**, and **Money-fraud** cluster
+headers (rotated away from Auth/identity / Notifications-FCM / Edge/abuse and KYC / Mobile-journey-dead-ends
+just checked by the two 2026-07-20/-19 UX runs) — all 3 INTACT/MOOT-confirmed, 0 stale claims. Zero open
+`claude/*` sibling PRs at Phase 0. `pnpm typecheck` + `pnpm test` (1114 API + 21 admin + 492 mobile) +
+`pnpm build` all green.
+Prior: 2026-07-20 (UX-improvements routine — agentic-loop hunt over the UX lane; see
 `docs/UX-USABILITY-REVIEW-2026-07-20.md` and the "UX review 2026-07-20" section near the bottom for
 UX20-01…04, four MEDIUM findings, all fixed same-run with regression tests where testable. UX20-01 is a
 query-error-as-negative-state gap: the customer home screen's `activeOrderQ` and the rider dashboard's
@@ -789,6 +811,57 @@ testable; `pnpm typecheck` + `pnpm lint` + 916 API tests (+11) + 401 mobile test
 | UX16-08 | Top-up "Cancel request" (`reset()`) unconditionally rotated the dedup `idempotencyKey`, even when cancelling a STILL-LIVE (`pending`) top-up whose server-side row and already-pushed rail prompt aren't recalled by the local reset — an immediate resend opened a second, independent pending top-up instead of deduping against the abandoned one. Dormant (`creditFromTopup` has no callers yet) but a real double-credit vector once a live rail confirmation ships | `apps/mobile/app/wallet/top-up.tsx` `reset`, `apps/api/src/wallet/wallet.service.ts` `createTopup` | LOW-MEDIUM (dormant) | **FIXED** — `reset()` only rotates the key when NOT cancelling a live (`step === "wait"`) top-up; "Try again" from a genuinely terminal state (timeout/declined) still gets a fresh key per BH-09's original intent |
 
 ---
+
+## Deep sweep 2026-07-20 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-20.md`
+
+Phase 0: zero open `claude/*` sibling PRs at session start (confirmed via `mcp__github__list_pull_requests`
+state=open, empty result). Phase 0.5 re-verified three "→ FIXED" cluster headers not re-checked in the last
+few runs — **Object-authz/IDOR**, **Ship/infra correctness**, and **Money-fraud** (rotated away from
+Auth/identity / Notifications-FCM / Edge/abuse checked by the 2026-07-20 UX run, and KYC /
+Mobile-journey-dead-ends checked by the 2026-07-19 UX run) — **all 3 INTACT/MOOT-confirmed, 0 stale claims**
+(Object-authz: self-bid block `offers.service.ts:38-41`, standing gate `:61-79`, `listForOrder` gate
+`:161-167`, `getSnapshot` party gate `orders.service.ts:754-758`; Ship/infra: Cloud Run timeout / VPC
+connector / dedicated SA / keyless `signBlob` / WIF; Money-fraud: full `settlements.service.ts` read +
+repo-wide `recordPayment`/`autoPause`/`markPaid` grep — the removed post-paid engine's sinks don't exist).
+Phase 1 (`lane-bug-hunt`, 5 lenses: tx-rollback, concurrency-idempotency, authz-IDOR, timer-expiry,
+adversarial-API) returned **2 candidates**, both confirmed REAL by a 3-skeptic adversarial panel (3/3, high
+confidence) → DS20-01 (timer-expiry) and DS20-02 (adversarial-API). Phase 1.5 (deep-sweep-owned cross-lane
+seams pass) traced **"a single DB column with two writers"** (the IR16-02 class) across every Rider/Order
+counter/flag column (`tripsCount`, `ratingAvg`/`ratingCount`, `cancelStrikes`, `disputeStrikes`,
+`cooldownUntil`, `kycAttempts`, `accountStatus`/`suspendReason`, `reliabilityScore`/`onHold`/`heldReason`,
+`deliveryOtpAttempts`, `deliveryAttempts`/`undeliveredReason`/`undeliveredAt`, position/heartbeat) — **all
+RACE-SAFE** (FOR UPDATE + CAS discipline holds) **except `cooldownUntil`'s two independent writers → DS20-03**.
+Phase 3 adversarial raw-API pass (wallet/orders/offers/issues/sos/privacy/uploads/admin) came back **clean,
+zero new gaps**. **Three findings — one MEDIUM (DS20-01), one HIGH (DS20-02), one LOW (DS20-03), zero
+CRITICAL — all fixed same-run** with regression tests; `pnpm typecheck` (5 packages) + `pnpm test` (1114 API
++ 21 admin + 492 mobile tests) + `pnpm build` (`@lynia/api` inclusive) all green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| DS20-01 | Two separate `STUCK_AFTER_MS` constants governed the "stuck order" heuristic and had drifted: `admin.service.ts:18` declared its own `25 * 60 * 1000` (25 min, keyed off `order.updatedAt`) feeding the ops-dashboard `stuckOrders` count/`stuckOrderId`, while `admin.shared.ts:65` declared a SEPARATE `20 * 60 * 1000` (20 min, keyed off the last `OrderEvent.createdAt`) feeding the per-order detail badge (`admin-orders.service.ts:513`). Neither imported the other, so the same order could read "stuck" on its detail page (>20 min since last OrderEvent) while NOT appearing in the dashboard alert (<25 min since `updatedAt`) — e.g. a non-status write like `attachPickupPhoto`/`confirmItems` bumps `updatedAt` without an `OrderEvent`, diverging the two clocks in the 20–25 min window. | `apps/api/src/admin/admin.service.ts`, `apps/api/src/admin/admin.shared.ts` | MEDIUM | **FIXED** — `admin.shared.STUCK_AFTER_MS` (20 min, the A-04 design value) is now the single source of truth both call sites import; `admin.service.ts`'s own literal deleted. The two DIFFERENT data sources (`updatedAt` aggregate vs last-`OrderEvent.createdAt`) are preserved intentionally, with a one-line comment at each usage site. Regression test in `admin.service.spec.ts` asserts the dashboard query's `updatedAt.lt` cutoff == `now - STUCK_AFTER_MS`. |
+| DS20-02 | The WS `@SubscribeMessage(riderLocation)` handler (`tracking.gateway.ts:319-340`) typed `@MessageBody()` as `{orderId;lat;lng}` but never `.parse()`d the untrusted socket JSON at runtime. It broadcast the raw `lat`/`lng` to the order room's `position` event (`coalescePositionEmit`) BEFORE persistence and called `recordFix(user.sub, body.lat, body.lng)` with zero guard and no try/catch — unlike every sibling REST path (`riders.controller.ts:22-31` SetOnline/Heartbeat, `lifecycle.controller.ts:16-20` AttachDeliveryProof), which all validate the identical bounded lat/lng before the same `recordFix` sink. A rider client could stream an out-of-range/NaN fix that was broadcast live to the customer's map and persisted. | `apps/api/src/tracking/tracking.gateway.ts` (`riderLocation`) | HIGH | **FIXED** — added a shared `RiderLocationEvent` zod schema (`contracts.ts`, mirroring `BoardSubscribeEvent`: `orderId` uuid + the SAME bounded lat/lng the REST siblings use). The handler now `safeParse`s `@MessageBody() body: unknown` and rejects out-of-range/NaN/malformed with `{error:"invalid"}` BEFORE the auth check and emit; `recordFix` is wrapped in try/catch mirroring the REST heartbeat caller so a persist failure no longer rejects the socket unhandled. Regression tests in `tracking.gateway.spec.ts` (out-of-range lat + NaN lng rejected before emit/persist; in-range still works; persist failure resolves `{ok:true}`). |
+| DS20-03 | `riders.cooldownUntil` has two independent writers — the 3rd cancel-strike (`order-lifecycle.service.ts:58/800-803`) and the 3rd dispute-strike (`issues.service.ts:23/298`) — each with its own hardcoded `2 * 60 * 60 * 1000` literal (not sourced from `policy.ts`) and an unconditional overwrite that never reads the existing value. They only avoid clobbering each other because the two literals happen to be equal; if either drifted, the writer firing SECOND with the shorter duration would silently TRUNCATE a longer cooldown the other just set (a rider mid-dispute-cooldown who also trips a cancel-strike would be shortened, not extended). No repro today, but no invariant enforced "cooldown never shortens." | `apps/api/src/orders/order-lifecycle.service.ts`, `apps/api/src/issues/issues.service.ts` | LOW | **FIXED** — hoisted `RIDER_STRIKE_COOLDOWN_MS` into `policy.ts` (alongside `RIDER_STRIKE_LIMIT`); both writers import it and their local literals are deleted. Both write sites now take the later of the fresh window and any existing FUTURE `cooldownUntil` (read under the same already-held row lock, inside the same tx), so a write can never shorten an active cooldown. Also fixed the stale `tracking.service.ts:251-252` comment (DS19-01 made "on_hold rider stays isOnline:true" false for newly-tripped holds — reworded for pre-existing/legacy holds). Regression tests in `issues.service.spec.ts` (a shorter fresh cooldown doesn't shorten a longer existing one; a fresh cooldown extends a shorter existing one). |
+
+**Sibling-sweep evidence** (full grep output + per-hit disposition in `docs/DEEP-SWEEP-2026-07-20.md`):
+
+- **DS20-01** (`grep -rn "STUCK_AFTER_MS\|25 \* 60 \* 1000\|20 \* 60 \* 1000" apps/api/src/`, excluding
+  specs): the stuck-threshold literal appears in **exactly 2 files, no third occurrence**. Post-fix,
+  `admin.shared.ts:71` is the sole definition (20 min); `admin.service.ts:7` and `admin-orders.service.ts:19`
+  both import it.
+- **DS20-02** (`grep -rn "@SubscribeMessage" apps/api/src/` → 4 handlers; `grep -rn "@MessageBody"` → 3
+  body-takers): `boardSubscribe:283` already `.parse()`s via `BoardSubscribeEvent` (correct); `boardLeave:310`
+  takes no body; `subscribeOrder:200`'s `orderId` feeds only an ownership-checked Prisma lookup + room join
+  (no numeric broadcast/persist sink — **assessed, not this defect class**, left as-is); `riderLocation:319`
+  the sole unvalidated numeric sink — **fixed this run**.
+- **DS20-03** (`grep -rn "cooldownUntil:" apps/api/src/`, excluding specs): the only two `data:`-side
+  **writers** are `order-lifecycle.service.ts` (cancel-strike) and `issues.service.ts` (dispute-strike);
+  every other hit is a `select` read or type decl. `grep -rn "2 \* 60 \* 60 \* 1000"` post-fix shows the
+  literal in **exactly one place** — the new `policy.ts:241 RIDER_STRIKE_COOLDOWN_MS`; the other duration
+  literals in the tree (`RECYCLE_DORMANCY_MS`, `RATING_WINDOW_MS`, `FEED_UNREAD_WINDOW_MS`, `NOTIFY_TTL_MS`)
+  are unrelated single-writer constants, correctly left alone.
+
+**Stopping rule.** 2 new MEDIUM+HIGH findings this run (DS20-01 MEDIUM, DS20-02 HIGH), no CRITICAL, plus one
+LOW hardening item (DS20-03) — not padded with noise.
 
 ## Deep sweep 2026-07-19 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-19.md`
 

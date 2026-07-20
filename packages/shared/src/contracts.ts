@@ -312,6 +312,19 @@ export const BoardSubscribeEvent = z.object({
 });
 export type BoardSubscribeEvent = z.infer<typeof BoardSubscribeEvent>;
 
+/** `rider:location` payload — an assigned rider's GPS fix streamed for an active order (WS_EVENTS.
+ *  riderLocation). DS20-02: the SAME bounded lat/lng every REST sibling enforces (riders.controller
+ *  SetOnline/Heartbeat, lifecycle.controller AttachDeliveryProof) — the gateway must `.parse()` this
+ *  at runtime, not trust the TS annotation, so an out-of-range/NaN fix is never broadcast to the order
+ *  room or persisted via recordFix. lat/lng are REQUIRED here (unlike the optional board-subscribe
+ *  position): a location beat with no coordinates is meaningless. */
+export const RiderLocationEvent = z.object({
+  orderId: z.string().uuid(),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
+export type RiderLocationEvent = z.infer<typeof RiderLocationEvent>;
+
 /** Redacted waypoint a browsing (pre-assignment) rider may see: point + landmark only. `.strict()`
  *  so a stray `contactPhone` is REJECTED, not silently stripped — the board must never carry PII. */
 export const PublicWaypoint = z.object({ point: LatLng, landmark: z.string() }).strict();

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminService } from "./admin.service";
+import { STUCK_AFTER_MS } from "./admin.shared";
 
 /** Decimal-like stub — Prisma returns Decimal objects the service serializes via toString(). */
 const dec = (s: string) => ({ toString: () => s });
@@ -143,5 +144,45 @@ describe("AdminService.overview", () => {
     // must NOT satisfy the undelivered-today where-clause either.
     const undeliveredToday = seenCountWheres.find((w) => "undeliveredAt" in w);
     expect(undeliveredToday).toMatchObject({ status: "undelivered" });
+  });
+
+  // DS20-01: the ops-dashboard stuck-order query and the per-order detail badge (admin-orders.service)
+  // must be governed by ONE shared threshold. admin.service used to redeclare its own 25-min literal
+  // while admin.shared exported 20 min, so the same order could read "stuck" on its detail page yet not
+  // appear in the dashboard alert. Assert the dashboard's `updatedAt` cutoff is exactly `now -
+  // STUCK_AFTER_MS` (the shared constant admin-orders.service also imports), proving the drift is gone.
+  it("keys the stuck-order dashboard query off the SHARED STUCK_AFTER_MS threshold (no drift)", async () => {
+    const seenCountWheres: Record<string, unknown>[] = [];
+    const prisma = {
+      order: {
+        groupBy: async () => [],
+        count: async (args?: { where?: Record<string, unknown> }) => {
+          seenCountWheres.push(args?.where ?? {});
+          return 0;
+        },
+        aggregate: async () => ({ _sum: { agreedFare: null } }),
+        findFirst: async () => null,
+        findMany: async () => [],
+      },
+      offer: { count: async () => 0, findMany: async () => [] },
+      rider: { count: async () => 0 },
+      issue: { count: async () => 0 },
+    };
+
+    const before = Date.now();
+    await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
+    const after = Date.now();
+
+    // The stuck query is the in-flight-status count that also bounds `updatedAt`.
+    const stuckWhere = seenCountWheres.find((w) => "updatedAt" in w) as
+      | { updatedAt: { lt: Date } }
+      | undefined;
+    expect(stuckWhere).toBeTruthy();
+    const cutoffMs = stuckWhere!.updatedAt.lt.getTime();
+    // cutoff == now - STUCK_AFTER_MS, with `now` captured somewhere in [before, after].
+    expect(cutoffMs).toBeGreaterThanOrEqual(before - STUCK_AFTER_MS);
+    expect(cutoffMs).toBeLessThanOrEqual(after - STUCK_AFTER_MS);
+    // And the shared constant is the 20-min A-04 value, not the old 25-min drift.
+    expect(STUCK_AFTER_MS).toBe(20 * 60 * 1000);
   });
 });

@@ -24,6 +24,7 @@ import {
   PRESENCE_ESCALATION_MS,
   type PresenceRecoveredEvent,
   type PresenceStaleEvent,
+  RiderLocationEvent,
   WS_EVENTS,
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
@@ -319,23 +320,36 @@ export class TrackingGateway
   @SubscribeMessage(WS_EVENTS.riderLocation)
   async riderLocation(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { orderId: string; lat: number; lng: number },
+    @MessageBody() body: unknown,
   ): Promise<{ ok: true } | { error: string }> {
     const user = client.data.user as SocketUser | undefined;
     if (!user) return { error: "unauthenticated" };
-    if (!(await this.tracking.isAssignedRider(user.sub, body.orderId))) return { error: "forbidden" };
+    // DS20-02: the socket payload is untrusted JSON — validate the bounded lat/lng (the SAME schema the
+    // REST siblings enforce) at RUNTIME before it can reach the order room or the DB. An out-of-range /
+    // NaN / malformed fix is dropped with an error ack (this gateway's error convention) BEFORE
+    // coalescePositionEmit, so garbage is never broadcast to the customer or persisted via recordFix.
+    const parsed = RiderLocationEvent.safeParse(body);
+    if (!parsed.success) return { error: "invalid" };
+    const { orderId, lat, lng } = parsed.data;
+    if (!(await this.tracking.isAssignedRider(user.sub, orderId))) return { error: "forbidden" };
 
     // Emit-before-persist (P1-1a): the customer's live position must not be gated on the DB write.
     // Best-effort PUSH — a null server or emit failure never blocks the (still-persisted) fix. The
     // emit is coalesced to ≤1/sec per room server-side (E3), so the persist below still runs on every
     // fix while the room is shielded from a flood.
-    this.coalescePositionEmit(orderRoom(body.orderId), {
+    this.coalescePositionEmit(orderRoom(orderId), {
       riderId: user.sub,
-      lat: body.lat,
-      lng: body.lng,
+      lat,
+      lng,
       at: new Date().toISOString(),
     });
-    await this.tracking.recordFix(user.sub, body.lat, body.lng);
+    // DS20-02: mirror the REST heartbeat caller (rider.service.heartbeat) — a persistence failure is
+    // best-effort and must not reject the socket handler unhandled (the live position already went out).
+    try {
+      await this.tracking.recordFix(user.sub, lat, lng);
+    } catch (err) {
+      this.logger.warn(`recordFix on rider:location failed for ${user.sub}: ${(err as Error).message}`);
+    }
     return { ok: true };
   }
 

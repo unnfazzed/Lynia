@@ -248,8 +248,10 @@ export class TrackingService implements OnModuleDestroy {
    * (offers.service §5d). Board-eligibility must not be looser than the offer gate: a rider who can't
    * make an offer must not receive new-order board broadcasts. `onlineRefusalReason` is the shared
    * standing authority (KYC + banned/suspended + reliability on_hold + no-show cooldown); the separate
-   * `isOnline` check mirrors the offer gate's online invariant. NB an on_hold rider stays isOnline:true
-   * (a reliability drop sets onHold without forcing offline), so the standing check is load-bearing here.
+   * `isOnline` check mirrors the offer gate's online invariant. NB the standing check is still
+   * load-bearing: since DS19-01 a NEWLY-tripped reliability hold forces isOnline:false in the same write,
+   * but a PRE-EXISTING hold predating that fix (or a legacy on_hold row) can still carry isOnline:true,
+   * so onlineRefusalReason — not isOnline alone — is what actually keeps a held rider off the board.
    */
   async isBoardEligible(riderId: string): Promise<boolean> {
     const rider = await this.prisma.rider.findUnique({

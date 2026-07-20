@@ -5,6 +5,7 @@ import {
   type IssueStatus,
   type RaiseIssueRequest,
   type ResolveIssueRequest,
+  RIDER_STRIKE_COOLDOWN_MS,
   RIDER_STRIKE_LIMIT,
 } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
@@ -17,10 +18,9 @@ const ISSUE_STATUSES = ["open", "investigating", "resolved"] as const;
 type IssueStatusFilter = (typeof ISSUE_STATUSES)[number];
 
 // FRAUD P2-4: a dispute strike reaching RIDER_STRIKE_LIMIT triggers the same coarse consequence a
-// cancel-strike limit does — a 2h cooldown + forced offline. Kept in lockstep with COOLDOWN_MS in
-// order-lifecycle.service (the cancel path); duplicated here rather than imported to avoid pulling the
-// whole lifecycle service into the issues module for one constant.
-const DISPUTE_STRIKE_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+// cancel-strike limit does — a cooldown + forced offline. DS20-03: the duration is now the shared
+// RIDER_STRIKE_COOLDOWN_MS (policy.ts), the same constant the cancel path in order-lifecycle.service
+// uses, so the two writers of `riders.cooldownUntil` can't drift into a silent-truncation bug.
 
 /** Landmark out of a stored Waypoint JSON — the human label, never the point or contactPhone. */
 function landmark(w: unknown): string {
@@ -290,12 +290,18 @@ export class IssuesService {
         // triggers (2h cooldown + forced offline, isOnline:false removes them from nearbyRiders), then
         // reset the counter so the next dispute starts a fresh cycle.
         await tx.$executeRaw`SELECT 1 FROM riders WHERE profile_id = ${order.riderId}::uuid FOR UPDATE`;
-        const rider = await tx.rider.findUnique({ where: { profileId: order.riderId }, select: { disputeStrikes: true } });
+        // DS20-03: read cooldownUntil under the same row lock so the write below can extend (never
+        // shorten) an already-active cooldown a sibling strike axis (cancel-strike, order-lifecycle) set.
+        const rider = await tx.rider.findUnique({ where: { profileId: order.riderId }, select: { disputeStrikes: true, cooldownUntil: true } });
         const strikes = (rider?.disputeStrikes ?? 0) + 1;
         if (strikes >= RIDER_STRIKE_LIMIT) {
+          // DS20-03: never SHORTEN an already-active cooldown — take the later of the fresh window and
+          // any existing future cooldownUntil the cancel-strike axis may have set on this same column.
+          const fresh = new Date(Date.now() + RIDER_STRIKE_COOLDOWN_MS);
+          const cooldownUntil = rider?.cooldownUntil && rider.cooldownUntil > fresh ? rider.cooldownUntil : fresh;
           await tx.rider.update({
             where: { profileId: order.riderId },
-            data: { disputeStrikes: 0, cooldownUntil: new Date(Date.now() + DISPUTE_STRIKE_COOLDOWN_MS), isOnline: false },
+            data: { disputeStrikes: 0, cooldownUntil, isOnline: false },
           });
           // DS17-02: the strike-limit forced this rider offline — evict them from the geo + board supply
           // planes post-commit, like every other standing demotion.

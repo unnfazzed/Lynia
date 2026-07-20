@@ -9,6 +9,9 @@ import { boardCell, boardCellNeighborhood } from "@lynia/shared";
 import { BOARD_ROOM, boardGeoRoom, orderRoom } from "./tracking.constants";
 import { POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, TrackingGateway } from "./tracking.gateway";
 
+/** DS20-02: riderLocation now validates orderId as a uuid, so its tests need a real one. */
+const ORD_UUID = "22222222-2222-4222-8222-222222222222";
+
 /** Minimal socket fake: maintains a live `rooms` Set (like a real Socket) as join/leave run, and
  *  carries the authenticated user in `data`. */
 function fakeSocket(user?: { sub: string; role: string }, rooms: string[] = [], id = "sock-1") {
@@ -217,7 +220,7 @@ describe("TrackingGateway.emitOffersChanged", () => {
 });
 
 describe("TrackingGateway.riderLocation", () => {
-  it("emits the position before (and independent of) the DB persist", async () => {
+  it("emits the position before the DB persist, and (DS20-02) a persist failure is swallowed, not rejected", async () => {
     const { server, to, emit } = fakeServer();
     const recordFix = vi.fn(async () => {
       throw new Error("db down");
@@ -225,11 +228,11 @@ describe("TrackingGateway.riderLocation", () => {
     const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix });
     g.server = server as never;
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
-    // Persist fails, so the call rejects — but the customer's live position already went out.
-    await expect(
-      g.riderLocation(client as never, { orderId: "ord-1", lat: -17.8, lng: 31.0 }),
-    ).rejects.toThrow("db down");
-    expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+    // The customer's live position already went out; the best-effort persist failing must NOT reject the
+    // socket handler unhandled (mirrors the REST heartbeat caller's try/catch).
+    const res = await g.riderLocation(client as never, { orderId: ORD_UUID, lat: -17.8, lng: 31.0 });
+    expect(res).toEqual({ ok: true });
+    expect(to).toHaveBeenCalledWith(orderRoom(ORD_UUID));
     expect(emit).toHaveBeenCalledWith(WS_EVENTS.position, expect.objectContaining({ lat: -17.8, lng: 31.0 }));
   });
 
@@ -238,9 +241,51 @@ describe("TrackingGateway.riderLocation", () => {
     const g = gateway({ isAssignedRider: vi.fn(async () => false) });
     g.server = server as never;
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
-    const res = await g.riderLocation(client as never, { orderId: "ord-1", lat: 0, lng: 0 });
+    const res = await g.riderLocation(client as never, { orderId: ORD_UUID, lat: 0, lng: 0 });
     expect(res).toEqual({ error: "forbidden" });
     expect(to).not.toHaveBeenCalled();
+  });
+
+  // DS20-02: the WS payload is untrusted JSON — an out-of-range / NaN / malformed fix must be rejected
+  // at runtime (the same bounded lat/lng the REST siblings enforce) BEFORE it can broadcast or persist.
+  it("rejects an out-of-range latitude before any emit or persist", async () => {
+    const { server, to } = fakeServer();
+    const recordFix = vi.fn(async () => {});
+    const isAssignedRider = vi.fn(async () => true);
+    const g = gateway({ isAssignedRider, recordFix });
+    g.server = server as never;
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    const res = await g.riderLocation(client as never, { orderId: ORD_UUID, lat: 999999, lng: 31.0 } as never);
+    expect(res).toEqual({ error: "invalid" });
+    // Garbage never reached the auth check, the room, or the DB sink.
+    expect(isAssignedRider).not.toHaveBeenCalled();
+    expect(to).not.toHaveBeenCalled();
+    expect(recordFix).not.toHaveBeenCalled();
+  });
+
+  it("rejects a NaN longitude before any emit or persist", async () => {
+    const { server, to } = fakeServer();
+    const recordFix = vi.fn(async () => {});
+    const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix });
+    g.server = server as never;
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    const res = await g.riderLocation(client as never, { orderId: ORD_UUID, lat: -17.8, lng: Number.NaN } as never);
+    expect(res).toEqual({ error: "invalid" });
+    expect(to).not.toHaveBeenCalled();
+    expect(recordFix).not.toHaveBeenCalled();
+  });
+
+  it("accepts an in-range fix exactly as before (emits + persists)", async () => {
+    const { server, to, emit } = fakeServer();
+    const recordFix = vi.fn(async () => {});
+    const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix });
+    g.server = server as never;
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    const res = await g.riderLocation(client as never, { orderId: ORD_UUID, lat: -17.83, lng: 31.05 });
+    expect(res).toEqual({ ok: true });
+    expect(to).toHaveBeenCalledWith(orderRoom(ORD_UUID));
+    expect(emit).toHaveBeenCalledWith(WS_EVENTS.position, expect.objectContaining({ lat: -17.83, lng: 31.05 }));
+    expect(recordFix).toHaveBeenCalledWith("rider-1", -17.83, 31.05);
   });
 
   it("coalesces a flood to ≤1 emit/sec per room: leading edge now, one trailing flush of the LATEST", async () => {
@@ -252,9 +297,9 @@ describe("TrackingGateway.riderLocation", () => {
       g.server = server as never;
       const client = fakeSocket({ sub: "rider-1", role: "rider" });
       // Three fixes in the same instant (a flooding client).
-      await g.riderLocation(client as never, { orderId: "ord-1", lat: 1, lng: 1 });
-      await g.riderLocation(client as never, { orderId: "ord-1", lat: 2, lng: 2 });
-      await g.riderLocation(client as never, { orderId: "ord-1", lat: 3, lng: 3 });
+      await g.riderLocation(client as never, { orderId: ORD_UUID, lat: 1, lng: 1 });
+      await g.riderLocation(client as never, { orderId: ORD_UUID, lat: 2, lng: 2 });
+      await g.riderLocation(client as never, { orderId: ORD_UUID, lat: 3, lng: 3 });
       // Only the leading edge has gone out; the room is shielded from the other two.
       expect(emit).toHaveBeenCalledTimes(1);
       expect(emit).toHaveBeenLastCalledWith(WS_EVENTS.position, expect.objectContaining({ lat: 1, lng: 1 }));
@@ -279,11 +324,11 @@ describe("TrackingGateway.riderLocation", () => {
       const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix: vi.fn(async () => {}) });
       g.server = server as never;
       const client = fakeSocket({ sub: "rider-1", role: "rider" });
-      await g.riderLocation(client as never, { orderId: "ord-1", lat: 1, lng: 1 });
+      await g.riderLocation(client as never, { orderId: ORD_UUID, lat: 1, lng: 1 });
       expect(emit).toHaveBeenCalledTimes(1);
       // Let the window fully elapse with nothing buffered, then send another fix.
       await vi.advanceTimersByTimeAsync(POSITION_COALESCE_MS + 50);
-      await g.riderLocation(client as never, { orderId: "ord-1", lat: 9, lng: 9 });
+      await g.riderLocation(client as never, { orderId: ORD_UUID, lat: 9, lng: 9 });
       expect(emit).toHaveBeenCalledTimes(2);
       expect(emit).toHaveBeenLastCalledWith(WS_EVENTS.position, expect.objectContaining({ lat: 9, lng: 9 }));
     } finally {
@@ -298,16 +343,16 @@ describe("TrackingGateway.prunePositionRooms", () => {
     const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix: vi.fn(async () => {}) });
     g.server = server as never;
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
-    await g.riderLocation(client as never, { orderId: "ord-1", lat: 1, lng: 1 });
+    await g.riderLocation(client as never, { orderId: ORD_UUID, lat: 1, lng: 1 });
     const map = (g as unknown as { positionEmit: Map<string, { lastEmit: number }> }).positionEmit;
-    const st = map.get(orderRoom("ord-1"));
+    const st = map.get(orderRoom(ORD_UUID));
     expect(st).toBeTruthy();
     // Recent → kept.
     g.prunePositionRooms(st!.lastEmit + 1);
-    expect(map.has(orderRoom("ord-1"))).toBe(true);
+    expect(map.has(orderRoom(ORD_UUID))).toBe(true);
     // Quiet past the TTL → pruned so the map can't grow unbounded.
     g.prunePositionRooms(st!.lastEmit + POSITION_ROOM_TTL_MS + 1);
-    expect(map.has(orderRoom("ord-1"))).toBe(false);
+    expect(map.has(orderRoom(ORD_UUID))).toBe(false);
   });
 });
 
