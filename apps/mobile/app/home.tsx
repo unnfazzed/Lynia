@@ -1,6 +1,6 @@
 import { CreateOrderRequest, normalizePhone, quoteFare, tokens } from "@lynia/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
 import { ApiError } from "../src/api/client";
@@ -164,10 +164,25 @@ export default function HomeScreen(): React.ReactElement {
   // has the same restore via mine/active. Poll slowly + refetch on foreground so the banner reflects a
   // status change that happened while backgrounded. Seeds the per-order cache so tapping through paints
   // instantly.
+  // PERF20-01: the poll is gated on this screen being the VISIBLE route. Home stays mounted beneath
+  // /order/[id] for the whole auction+delivery (expo-router stack), and React Query's focusManager is
+  // AppState-only — so this 30s FULL-snapshot poll used to run for the entire life of every order,
+  // duplicating the order screen's own (socket-gated) snapshot stream on a second cache key over
+  // metered data. Gated, it polls only while the banner it feeds is actually on screen; the
+  // focus-effect below revalidates the instant the customer navigates back so the banner is never
+  // stale on return.
+  const [homeFocused, setHomeFocused] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setHomeFocused(true);
+      void qc.invalidateQueries({ queryKey: ["activeCustomerOrder"] });
+      return () => setHomeFocused(false);
+    }, [qc]),
+  );
   const activeOrderQ = useQuery({
     queryKey: ["activeCustomerOrder"],
     queryFn: getActiveCustomerOrder,
-    refetchInterval: 30_000,
+    refetchInterval: homeFocused ? 30_000 : false,
   });
   // WD-022: also refresh Trip History on resume — an order that completed/cancelled while backgrounded
   // must not leave a stale Trip History list behind the (now-correct) home banner.

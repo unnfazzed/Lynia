@@ -2,12 +2,12 @@ import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, rankOffers, tokens
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { AccessibilityInfo, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../src/logic/journey";
 import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
-import { auctionHeaderText, formatClock, SORT_MODES, type SortMode, spokenRemaining, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
+import { SORT_MODES, type SortMode, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, shouldCancelBeforeRebroadcast } from "../../src/logic/order-tracking";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
@@ -20,6 +20,7 @@ import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch"
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
 import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
+import { AuctionClock } from "../../src/ui/order/AuctionClock";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
 import { LiveTrackingCard } from "../../src/ui/order/LiveTrackingCard";
 import { PickupPhoto } from "../../src/ui/order/PickupPhoto";
@@ -39,8 +40,6 @@ const POST_PICKUP_CANCEL = new Set<string>(["picked_up", "en_route_dropoff"]);
 // mis-tap just reopens the compose flow. POST_PICKUP_CANCEL is the subset that ALSO warns the parcel is
 // already on the bike.
 const MATCHED_CANCEL = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES.filter((s) => s !== "open_for_offers"));
-
-const URGENT_MS = 20_000;
 // C2: after a rider bail the order flips to `cancelled` and the server pushes `order:rebroadcast` on the
 // (now dead) order's room to move the customer to the fresh auction. Hold the socket open for this grace
 // window past `cancelled` so that push can still land — bounded, so a genuinely terminal cancel doesn't
@@ -328,70 +327,33 @@ export default function OrderScreen(): React.ReactElement {
   }, [status]);
 
   // --- Auction countdown ---
-  // Tick a 1s clock ONLY while open_for_offers with a known expiry. During a socket reconnect we
-  // freeze the last value (we can't trust wall-clock drift vs. the server), so the ticker skips.
+  // PERF20-02: the 1s ticker lives INSIDE <AuctionClock/> (src/ui/order/AuctionClock.tsx) so each
+  // tick re-renders that one row, not this whole screen — a screen-level remainingMs state used to
+  // re-render every bid card once a second for the length of the auction (the anti-pattern the rider
+  // board already fixed via SentOfferCard's internal ticker). This screen hears only threshold
+  // crossings: `urgent` (last 20s — drives the pre-dead-end "Raise price & send again" affordance)
+  // and the zero-crossing refetch nudge. Freeze semantics are the child's, unchanged: hold the last
+  // value while the socket is down after having been live.
   const expiresAt = orderQ.data?.expiresAt ?? null;
-  const [remainingMs, setRemainingMs] = useState<number | null>(null);
   // Only freeze once the socket has genuinely dropped AFTER being live — same gate as the
   // "reconnecting" banner. Freezing on the pre-first-connect window (plain !connected) would leave the
   // countdown static with no indication on a slow link until the WS finally connects.
   const frozen = wasConnected.current && !connected;
-  useEffect(() => {
-    if (status !== "open_for_offers" || expiresAt == null) {
-      setRemainingMs(null);
-      return;
-    }
-    const end = new Date(expiresAt).getTime();
-    const compute = () => setRemainingMs(Math.max(0, end - Date.now()));
-    compute();
-    if (frozen) return; // hold the last value; don't advance a clock we can't trust
-    const iv = setInterval(compute, 1000);
-    return () => clearInterval(iv);
-  }, [status, expiresAt, frozen]);
+  const [urgent, setUrgent] = useState(false);
+  // JOURNEY-BUGS: at 0:00 the screen used to just sit on "Finding riders…" for up to the 15s poll
+  // interval before the status transition (expired / a late bid landing) showed up. The clock fires
+  // this once at the threshold instead of waiting out the poll.
+  const refetchAtZero = useCallback(() => void orderQ.refetch(), [orderQ.refetch]);
 
-  // SR thresholds fire once each (not a per-second live region, which is unusable).
-  const firedThresholds = useRef<Set<number>>(new Set());
   useEffect(() => {
-    firedThresholds.current.clear();
     // A rider bail navigates to a NEW order id on the SAME screen instance (expo-router reuses it on a
     // param change), so reset the transition trackers — otherwise the new auction's bids don't buzz
-    // until they exceed the previous order's stale count, and a status cue could carry over.
+    // until they exceed the previous order's stale count, and a status cue could carry over. (The
+    // clock's own fired-once thresholds reset via its `key={orderId}` remount.)
     prevBidCount.current = 0;
     bidsSeeded.current = false;
     prevStatus.current = undefined;
   }, [orderId]);
-  useEffect(() => {
-    if (remainingMs == null || status !== "open_for_offers") return;
-    const fire = (key: number, msg: string) => {
-      if (remainingMs <= key && !firedThresholds.current.has(key)) {
-        firedThresholds.current.add(key);
-        AccessibilityInfo.announceForAccessibility(msg);
-      }
-    };
-    fire(60_000, "Offer window: 1 minute left");
-    fire(30_000, "Offer window: 30 seconds left");
-    fire(0, "Offer window closing");
-    // JOURNEY-BUGS: at 0:00 the screen used to just sit on "Finding riders…" for up to the 15s poll
-    // interval before the status transition (expired / a late bid landing) showed up. Nudge a refetch
-    // right at the threshold instead of waiting out the poll.
-    if (remainingMs <= 0 && !firedThresholds.current.has(-1)) {
-      firedThresholds.current.add(-1);
-      void orderQ.refetch();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on remainingMs/status only; orderQ.refetch is stable.
-  }, [remainingMs, status]);
-
-  // Amber-urgency colour crossfade over the last 20s (instant under reduce-motion).
-  const urgent = remainingMs != null && remainingMs <= URGENT_MS;
-  const urgencyAnim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const to = urgent ? 1 : 0;
-    if (reduceMotion) {
-      urgencyAnim.setValue(to);
-      return;
-    }
-    Animated.timing(urgencyAnim, { toValue: to, duration: 200, useNativeDriver: false }).start();
-  }, [urgent, reduceMotion, urgencyAnim]);
 
   // Order the offers for display (D-d): best-match blends price + rating + ETA and marks the top pick;
   // the other modes are plain single-key sorts. Selection is unaffected — the customer still chooses.
@@ -749,32 +711,20 @@ export default function OrderScreen(): React.ReactElement {
                 </Text>
               </Card>
             ) : null}
-            {/* Live header: bid count the moment the first bid lands, else a "finding" state; a
-                reconnecting hint when the auction socket is down and we're on the poll fallback.
-                Right-aligned countdown shares the baseline — calm (muted) until the last 20s, then
-                amber-urgency (danger, bold), with a paused dot when the socket is reconnecting. */}
-            <View style={{ flexDirection: "row", alignItems: "baseline", marginBottom: tokens.space.lg }}>
-              <Text style={{ flex: 1, fontSize: 14, color: tokens.color.muted }}>
-                {auctionHeaderText({ remainingMs, bidCount, noRiders, reconnecting: connectionState === "reconnecting" })}
-              </Text>
-              {remainingMs != null ? (
-                <Animated.Text
-                  accessibilityLabel={spokenRemaining(remainingMs)}
-                  style={{
-                    fontSize: 14,
-                    fontVariant: ["tabular-nums"],
-                    fontWeight: urgent ? "700" : "400",
-                    color: urgencyAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [tokens.color.muted, tokens.color.danger],
-                    }),
-                  }}
-                >
-                  {formatClock(remainingMs)}
-                  {frozen ? " ·" : ""}
-                </Animated.Text>
-              ) : null}
-            </View>
+            {/* Live header + right-aligned 1s countdown, extracted (PERF20-02) so the tick re-renders
+                only that row. Keyed by orderId: a rider-bail rebroadcast remounts it, resetting the
+                fired-once SR thresholds + zero-refetch for the new auction. */}
+            <AuctionClock
+              key={orderId}
+              expiresAt={expiresAt}
+              frozen={frozen}
+              reduceMotion={reduceMotion}
+              reconnecting={connectionState === "reconnecting"}
+              bidCount={bidCount}
+              noRiders={noRiders}
+              onUrgentChange={setUrgent}
+              onZero={refetchAtZero}
+            />
             {urgent ? (
               // Pre-surface the recovery affordance BEFORE the dead-end — same destination as the
               // expired state's "Send another request". Ghost so it doesn't compete with "Choose".
