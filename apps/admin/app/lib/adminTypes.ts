@@ -3,6 +3,17 @@
  * fields; the api endpoints behind several of them are still pending (see the A-0x tickets), so every
  * page degrades to the offline/empty state when `adminFetch` returns null. Monetary values are
  * strings (matching the existing Order.proposedFare contract) — the API owns rounding.
+ *
+ * RELATIONSHIP TO `@lynia/shared` (roadmap 3.3 determination): the shared ENUMS below are imported from
+ * the single source of truth (never re-declared). The RESPONSE INTERFACES, however, are a deliberately
+ * DISTINCT admin-privileged surface, NOT duplicates of the rider/customer contracts in
+ * `@lynia/shared/contracts.ts` — e.g. `WalletLedgerEntry` here exposes `balanceAfter`/`actor` and the
+ * `ride_commission`/`reversal` entry types that the rider-facing `WalletEntry` intentionally hides. So
+ * these cannot simply `import` the shared shapes without leaking admin-only fields onto rider surfaces
+ * (or losing them here). Unifying them would mean promoting a new *admin-contracts* surface into a shared
+ * package — a public-API design decision (the RF-07 rule: any new shared export gets its own reviewed
+ * PR), deliberately deferred rather than done as a mechanical move. Keep admin-only shapes here; import
+ * only shapes that already exist in shared and match exactly.
  */
 import type { IssueType, IssueStatus, IssueResolution, ReportReason, Role } from "@lynia/shared";
 
