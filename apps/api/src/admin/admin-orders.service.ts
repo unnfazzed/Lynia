@@ -8,6 +8,7 @@ import {
   type OrderStatus,
   perRideCommission,
   RELIABILITY,
+  subMoney,
   TERMINAL_STATUSES,
 } from "@lynia/shared";
 import { applyReliabilityDelta } from "../riders/reliability";
@@ -18,10 +19,8 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import { WalletService } from "../wallet/wallet.service";
 import { auditData, deriveItems, ORDER_TIMELINE, routeOf, STATUS_STEP, STUCK_AFTER_MS } from "./admin.shared";
 
-/** 2dp round — matches the rounding convention used across wallet.service / settlements.service. */
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
+// Money math uses the shared money seam directly (subMoney for exact integer-cents fare/commission
+// deltas); the former local round2 helper is gone — nothing here rounds a standalone value any more.
 
 // KB-POD-DISPUTE Phase A: TTL for the proof-of-drop photo read URL — long enough for an ops review pass,
 // short enough that a cached admin response can't fetch the object indefinitely (mirrors admin-riders).
@@ -312,6 +311,21 @@ export class AdminOrdersService {
         throw new ConflictException("Order has no agreed fare to adjust");
       }
       const oldFare = Number(order.agreedFare);
+      // AH20-01 idempotency: adjusting to the fare the order ALREADY has is a no-op — either a genuine
+      // "nothing to correct" or a double-submit / lost-response retry of a prior adjust. Proceeding would
+      // append a second zero-delta `order.fare_adjust` AuditLog row (and, pre-guard, re-enter the
+      // commission-reconciliation block for a 0 delta). Short-circuit before any write and return the
+      // current state, so a replay is exactly-once by construction. Regression: admin-orders.service.spec.
+      if (input.agreedFare === oldFare) {
+        return {
+          id: orderId,
+          agreedFare: oldFare.toFixed(2),
+          auditId: null as string | null,
+          customerId: order.customerId,
+          riderId: order.riderId,
+          noop: true,
+        };
+      }
       // DS-03: CAS on the exact fare we read so two operators adjusting concurrently can't both commit
       // (last-writer-wins + a duplicate audit row for one logical correction). The loser sees a 0-count
       // and is told to refresh — the same optimistic-concurrency guard the lifecycle transitions use.
@@ -340,7 +354,7 @@ export class AdminOrdersService {
         });
         if (charged?.ratePct != null) {
           const rate = Number(charged.ratePct);
-          const deltaFare = round2(input.agreedFare - oldFare);
+          const deltaFare = subMoney(input.agreedFare, oldFare);
           // WD-012 (DOC-16-04 / FRAUD-REVIEW P0-2): the correction path had the same no-floor gap as the
           // initial charge — an admin (or an admin colluding with a rider) could downward-adjust a fare
           // with no bound, crediting back commission never legitimately owed. Floor each side (independently
@@ -357,7 +371,7 @@ export class AdminOrdersService {
           const suggestedFare = order.suggestedFare != null ? Number(order.suggestedFare) : null;
           const oldBasis = commissionBasis(oldFare, suggestedFare);
           const newBasis = commissionBasis(input.agreedFare, suggestedFare);
-          const deltaCommission = round2(perRideCommission(newBasis, rate) - perRideCommission(oldBasis, rate));
+          const deltaCommission = subMoney(perRideCommission(newBasis, rate), perRideCommission(oldBasis, rate));
           // Fare went up → bigger debit (negative amount); fare went down → credit the difference back.
           await this.wallet.adjustCommissionInTx(tx, {
             riderId,
@@ -378,11 +392,18 @@ export class AdminOrdersService {
       return {
         id: orderId,
         agreedFare: input.agreedFare.toFixed(2),
-        auditId: audit.id,
+        auditId: audit.id as string | null,
         customerId: order.customerId,
         riderId,
+        noop: false,
       };
     });
+
+    // A no-op replay (AH20-01) committed nothing — skip the "your fare was corrected" pushes so a
+    // double-submit doesn't spam both parties about a change that didn't happen.
+    if (result.noop) {
+      return { id: result.id, agreedFare: result.agreedFare, auditId: result.auditId };
+    }
 
     // Best-effort, post-commit: tell both parties the fare was corrected — previously a silent
     // ledger/balance change with zero proactive signal to either side (found alongside UX18-04's

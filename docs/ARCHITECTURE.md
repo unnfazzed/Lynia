@@ -668,6 +668,16 @@ stateDiagram-v2
     undelivered --> [*]
 ```
 
+> **Machine-checkable mirror (roadmap 2.4).** This diagram is now mirrored by
+> `apps/api/src/orders/order-lifecycle.transitions.ts` — one declarative `TRANSITIONS` table
+> (from × event → to, with the guard, side-effects, compensation, and `file:method` source of each
+> edge), asserted exhaustively by `order-lifecycle.transitions.spec.ts`. It is a **verification
+> artifact only** (nothing consumes it at runtime yet; wiring the services to it is roadmap 3.4).
+> **Divergence found:** the `requested` state above is defined in the `OrderStatus` enum but the code
+> never writes it — `create()` mints an order directly at `open_for_offers`, so `requested` has no
+> incoming edge in the real machine. The diagram keeps the node for completeness; the table (and its
+> spec) pin that no transition targets it, so writing `requested` later is a deliberate change.
+
 Rules encoded around the transitions:
 
 - **Delivery OTP**: `confirmDelivery` takes a row lock (`SELECT ... FOR UPDATE`) so the attempt-count
@@ -993,6 +1003,29 @@ Where the pattern is applied:
 The rule of thumb the codebase follows: **check-then-act is never split across statements** for
 contended state — the guard lives in the `WHERE` clause of the write, so the database arbitrates the
 race, and a unique index catches anything the guard misses.
+
+### Idempotency inventory (money-moving & state-changing operations)
+
+Retries and double-submits are a *when*, not an *if* (a hurried operator double-clicks; a 2G link drops
+a response and the client resends). Every operation that moves money or changes durable state is
+**exactly-once by construction** — a deterministic key, a CAS, or both. This table is the authority on
+which mechanism protects each (roadmap 2.2 verification pass):
+
+| Operation | Idempotency mechanism | Evidence |
+|---|---|---|
+| Top-up create (`POST /wallet/topups`) | client `idempotencyKey` → partial unique `(rider_id, idempotency_key)` | migrations 0028/0029; a retry hits the same pending intent (BH-09) |
+| Top-up credit (rail / manual) | credit CAS transitions `pending→confirmed` + unique `topUpId` on the ledger row | exactly-once credit; a replayed confirm can neither re-transition nor double-credit |
+| Admin manual credit | `providerRef @unique` (the form-open key); P2002 caught → returns already-credited balance | WD-003; `wallet.service.creditManual` |
+| Per-ride commission debit | partial unique `(rider_id, order_id)` WHERE `type='ride_commission'` | WD-015 (migrations 0030/0031); one debit per order, ever |
+| Fare adjust | **no-op guard** (adjust-to-current short-circuits) + `agreedFare` CAS | AH20-01 (roadmap 2.2); a same-value replay writes nothing |
+| Refund (issue resolve) | refund created **inside** the issue-resolve CAS (`WHERE status != 'resolved'`) | AH20-02 verified; a second resolve gets 409, so at most one refund per issue |
+| Order lifecycle transitions | status-guarded CAS (`WHERE status=<prior>`) | §13 table above; one event per real transition |
+| Offer make / select | unique `(order_id, rider_id)` / `one_active_ride` | §13 table above |
+
+Deliberately deferred (recorded in `TODOS.md` / roadmap): client-persisted stored-response replay
+(Airbnb-style) — the server-side keys + CAS above already give exactly-once, so the client half is added
+only if a real client-retry duplicate is observed. The future PSP-webhook path (EcoCash rail, wallet PR2)
+must dedupe inbound events by provider event id and join this table.
 
 ---
 
