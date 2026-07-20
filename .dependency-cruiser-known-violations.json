@@ -15,41 +15,11 @@
   },
   {
     "type": "dependency",
-    "from": "apps/mobile/src/ui/order/CounterOfferCard.tsx",
-    "to": "apps/mobile/src/api/offers.ts",
-    "unresolvedTo": "../../api/offers",
-    "dependencyTypes": [
-      "local",
-      "type-only",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "mobile-ui-no-api"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "apps/mobile/src/ui/order/LiveTrackingCard.tsx",
     "to": "apps/mobile/src/api/orders.ts",
     "unresolvedTo": "../../api/orders",
     "dependencyTypes": [
       "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "mobile-ui-no-api"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/mobile/src/ui/rider/JobDetailsCard.tsx",
-    "to": "apps/mobile/src/api/orders.ts",
-    "unresolvedTo": "../../api/orders",
-    "dependencyTypes": [
-      "local",
-      "type-only",
       "import"
     ],
     "rule": {
@@ -78,21 +48,6 @@
     "unresolvedTo": "../../api/uploads",
     "dependencyTypes": [
       "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "mobile-ui-no-api"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/mobile/src/ui/rider/terminals.tsx",
-    "to": "apps/mobile/src/api/orders.ts",
-    "unresolvedTo": "../../api/orders",
-    "dependencyTypes": [
-      "local",
-      "type-only",
       "import"
     ],
     "rule": {

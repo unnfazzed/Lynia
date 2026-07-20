@@ -28,10 +28,10 @@ module.exports = {
     {
       name: "mobile-ui-no-api",
       comment:
-        "The mobile design-system layer (src/ui) should not reach the network layer (src/api) — UI takes props, data flows in via src/query. 14 baselined violations (roadmap 3.5 removes them); NEW ones fail CI.",
+        "The mobile design-system layer (src/ui) should not FETCH from the network layer (src/api) — UI takes props, data flows in via src/query. Only VALUE imports count (a type-only import of an API response shape to type a prop isn't fetching, so it's excluded — roadmap 3.5 refinement). Remaining baselined value-couplings ratchet to 0 as screens decompose; NEW ones fail CI.",
       severity: "error",
       from: { path: "^apps/mobile/src/ui/" },
-      to: { path: "^apps/mobile/src/api/" },
+      to: { path: "^apps/mobile/src/api/", dependencyTypesNot: ["type-only"] },
     },
     {
       name: "no-orphans",
