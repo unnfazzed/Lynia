@@ -330,7 +330,7 @@ report) before a reliability penalty lands.
 - **`on_hold` self-clear is impossible** — the only way to raise reliability requires being assigned,
   which requires being online, which `on_hold` blocks (`reliability.ts`); a rider can never earn their
   way out on their own. **Fixed (admin side):** `POST /admin/riders/:id/clear-hold`
-  (`admin.controller.ts:212`, `admin-riders.service.ts` `clearHold`) now gives an admin an explicit
+  (`admin.controller.ts:239`, `admin-riders.service.ts` `clearHold`) now gives an admin an explicit
   escape hatch — previously an `on_hold` rider had no admin action at all (only `suspended` riders got
   Lift/Ban). Self-service recovery is still absent, so the P0-1 interaction (self-dealing as the only
   *self*-service recovery) still applies.

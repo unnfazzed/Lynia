@@ -103,21 +103,21 @@ traced to an existing closed ledger item.
 
 - `apps/api/src/orders/order-lifecycle.service.ts:487` (`markUndelivered`) — **already correct** (the
   reference `newlyHeld` + `isOnline:false` + `evictRiderFromGeo`/`kickRiderFromBoard` implementation).
-- `apps/api/src/orders/order-lifecycle.service.ts:622` (`rate`) — **fixed this run** (sub-site a).
-- `apps/api/src/orders/order-lifecycle.service.ts:762` (`cancel`, below-limit branch) — **fixed this run**
+- `apps/api/src/orders/order-lifecycle.service.ts:628` (`rate`) — **fixed this run** (sub-site a).
+- `apps/api/src/orders/order-lifecycle.service.ts:786` (`cancel`, below-limit branch) — **fixed this run**
   (sub-site b).
 - `apps/api/src/admin/admin-orders.service.ts:241` (`adjudicateDelivered`) — **not a sibling**: applies
   `RECOVER_PER_COMPLETION` (recovery only, raises the score) — a recovery can never *trip* a hold, only
   clear one; there's no demotion to evict for.
-- `apps/api/src/orders/order-lifecycle.service.ts:950` (`completeOrder`) and `:487`'s recovery peers —
+- `apps/api/src/orders/order-lifecycle.service.ts:993` (`completeOrder`) and `:487`'s recovery peers —
   recovery paths, same reasoning: raise-only, no demotion.
 
 ```
 apps/api/src/admin/admin-orders.service.ts:241  (recovery — not a sibling)
 apps/api/src/orders/order-lifecycle.service.ts:487  (markUndelivered — already correct)
-apps/api/src/orders/order-lifecycle.service.ts:622  (rate — FIXED)
-apps/api/src/orders/order-lifecycle.service.ts:762  (cancel below-limit — FIXED)
-apps/api/src/orders/order-lifecycle.service.ts:950  (completeOrder recovery — not a sibling)
+apps/api/src/orders/order-lifecycle.service.ts:628  (rate — FIXED)
+apps/api/src/orders/order-lifecycle.service.ts:786  (cancel below-limit — FIXED)
+apps/api/src/orders/order-lifecycle.service.ts:993  (completeOrder recovery — not a sibling)
 ```
 
 **DS19-02** — `grep -rn "evictRiderFromGeo(" apps/api/src --include=*.ts` (excluding specs) surfaces:
@@ -125,7 +125,7 @@ apps/api/src/orders/order-lifecycle.service.ts:950  (completeOrder recovery — 
 ```
 apps/api/src/orders/order-lifecycle.service.ts:528  (markUndelivered auto-hold — PAIRED with kickRiderFromBoard right below at :535 — correct)
 apps/api/src/tracking/tracking.gateway.ts:414       (the funnel's own definition; :464 the internal call inside evictRiderFromSupply — not a caller)
-apps/api/src/privacy/privacy.service.ts:386         (the sole STANDALONE/unpaired caller — FIXED this run → evictRiderFromSupply)
+apps/api/src/privacy/privacy.service.ts:391         (the sole STANDALONE/unpaired caller — FIXED this run → evictRiderFromSupply)
 ```
 
 Disposition:
@@ -136,7 +136,7 @@ Disposition:
   — a voluntary go-offline doesn't need a board-kick the way a forced demotion does. Dispositioned as
   correct by a prior sweep (**DS17-02**). **Pre-existing, out of scope, previously dispositioned** — not
   touched this run.
-- `privacy.service.ts:386` — **fixed this run**: swapped the geo-only `evictRiderFromGeo(profileId)` for the
+- `privacy.service.ts:391` — **fixed this run**: swapped the geo-only `evictRiderFromGeo(profileId)` for the
   `evictRiderFromSupply(profileId)` funnel (evicts geo + board), keeping the same optional-gateway /
   best-effort / `.catch`-guarded / never-throws shape.
 

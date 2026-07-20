@@ -384,6 +384,7 @@ graph TB
         settlements["SettlementsModule<br/>prepaid commission (read-only)"]
         clientMetrics["ClientMetricsModule<br/>RUM ingest"]
         wallet["WalletModule<br/>rider prepaid commission balance"]
+        appBootstrap["AppBootstrapModule (C)<br/>BFF cold-start aggregate"]
     end
 
     auth --> prisma
@@ -396,6 +397,7 @@ graph TB
     uploads --> storage & auth
     admin --> prisma & auth & tracking & wallet
     wallet --> prisma
+    appBootstrap --> auth & orders
     matching -.->|schedules| orders
 
     config -.-> features
@@ -414,6 +416,9 @@ Notable cross-module wiring:
   (not best-effort) so the per-ride commission debit commits atomically with the order completing.
 - **`OffersModule`** and **`MatchingModule`** are the two halves of the offer loop; both write the
   `orders`/`offers` tables under the same concurrency guards ([§13](#13-concurrency-safety-model)).
+- **`AppBootstrapModule`** (`GET /app/bootstrap`, wave-2 perf) composes `AuthService.getProfile` +
+  `OrdersService.activeForRider`/`activeForCustomer` via `Promise.all` — no new query logic, just a
+  single round trip for the client's cold-start read.
 
 Bootstrap (`main.ts`) initializes OpenTelemetry **before** the Nest app (so HTTP is patched before
 the server starts), enables `rawBody` (needed to HMAC-verify the Didit webhook against the unparsed
@@ -1098,6 +1103,7 @@ require the `admin` role.
 | `POST /auth/logout` | Auth | Revoke the current session |
 | `GET /auth/me` | Auth | Authenticated profile (+ rider record) |
 | `PATCH /auth/me` | Auth | Post-OTP profile setup (name) |
+| `GET /app/bootstrap` | App (BFF) | Cold-start aggregate — profile + role-appropriate active order in one round trip (wave-2 perf) |
 | `POST /orders` | Orders | Create a delivery, name a price → `open_for_offers` |
 | `POST /orders/disclaimer` | Orders | Acknowledge the pre-broadcast disclaimer (A1-8) |
 | `POST /orders/notify-me` | Orders | Register to be pinged when a rider comes online nearby (2·b1) |
@@ -1125,6 +1131,7 @@ require the `admin` role.
 | `POST /riders/become` | Riders | Upgrade to rider; start KYC |
 | `POST /riders/kyc/retry` | Riders | Re-run KYC (pending/failed) |
 | `PATCH /riders/online` | Riders | Go online/offline (gated on KYC + standing + commission floor — [§9](#9-rider-onboarding--kyc)) |
+| `POST /riders/heartbeat` | Riders | Lightweight liveness beat — position + presence only, same standing enforcement as `PATCH /riders/online` (wave-2 perf) |
 | `GET /riders/nearby` | Tracking | Nearby online riders (PostGIS radius) |
 | `GET /wallet/config` | Wallet | Commission feature flag + policy (rate, floor, grace, top-up bounds) |
 | `GET /wallet` | Wallet | Rider's prepaid commission balance |

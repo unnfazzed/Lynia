@@ -1,6 +1,6 @@
 # Routine prompt source of truth
 
-The seven scheduled Claude routines (see `docs/ROUTINES.md` for the canonical spec) run from
+The eight scheduled Claude routines (see `docs/ROUTINES.md` for the canonical spec) run from
 **cron trigger prompts that live inside the trigger config**, not in this repo. That made them
 un-reviewable and let the spec drift ahead of what actually runs (see the 2026-07-16 routines
 audit). These files are the **version-controlled mirror** of each live trigger's prompt, so the
@@ -15,6 +15,15 @@ prompts can be diffed, reviewed, and reconciled against `docs/ROUTINES.md` like 
 | `refactoring.md` | Refactoring | `0 7 */2 * *` |
 | `wallet-data-audit.md` | Wallet, earnings & admin data-lifecycle audit | `0 9 */2 * *` |
 | `pr-health-watchdog.md` | PR health & delivery watchdog | `0 2,8,14,20 * * *` |
+| *(none yet — see note)* | Performance watch | `0 11 * * 0` |
+
+> **Performance watch has no mirror file yet.** `docs/ROUTINES.md` added this 8th routine
+> 2026-07-19 (its own `## Performance watch` section), but its live trigger prompt was never
+> landed here per the "Edit the file here and land it" convention above. Not auto-authored by the
+> doc-reconciliation routine — writing a trigger-prompt mirror is new operational content, not a
+> reconciliation edit, and a guessed prompt body would itself be a stale doc the moment it diverged
+> from the real live trigger. Needs a human (or the routine's next prompt-audit pass) to add
+> `performance-watch.md` from the actual live trigger text.
 
 ## Keeping the live triggers in sync
 
