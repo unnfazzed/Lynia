@@ -194,8 +194,10 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     "|---|---:|---:|---:|:--:|",
     ...mdRows,
     "",
-    // Escape underscores so a path like `_expo/...` can't perturb the `_..._` italic span on GitHub.
-    `_Hermes bundle measured from: ${hermesSource.replace(/_/g, "\\_")}._`,
+    // Escape for the `_..._` italic span on GitHub: backslashes FIRST (so a `\` already in the path
+    // can't turn a later `\_` into an ambiguous sequence — CodeQL js/incomplete-sanitization), then
+    // underscores so a path like `_expo/...` can't close the span early.
+    `_Hermes bundle measured from: ${hermesSource.replace(/\\/g, "\\\\").replace(/_/g, "\\_")}._`,
     over.length > 0
       ? "\n> ❌ **Over budget.** Bundle growth must be **intentional** (DoorDash app-size discipline). If this increase is legitimate, raise the relevant number in `apps/mobile/size-budget.json` **in this PR** with a one-sentence justification in the PR description; otherwise find what grew and trim it. See `docs/APP-SIZE.md`."
       : "",
