@@ -213,7 +213,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                 // A short-lived signed GCS URL (mirrors the KYC photo), so a plain <img>, not next/image.
                 <img
                   src={o.deliveryProof.photoUrl}
-                  alt="Rider's proof-of-drop photo"
+                  alt="Rider's proof of drop-off at the recipient"
                   style={{ width: "100%", borderRadius: tokens.radius.input, border: `1px solid ${tokens.color.line}` }}
                 />
               ) : (
