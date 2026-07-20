@@ -83,19 +83,37 @@ watch). What shipped, mapped to the DoorDash principles it implements:
 | **KYC-pending `/me` poll cadence by review mode** | `apps/mobile/app/rider/index.tsx` | `auto` mode keeps 5s (vendor answers in minutes); `manual` mode (ops review — hours/days) drops to a 60s safety net: was ~17k requests/day of radio wakeups per waiting rider. Focus/foreground refetch still gives instant flips to an active checker. |
 | **Snapshot `events[]` payload trim** | `apps/api/src/orders/orders.service.ts` (+ contract-pinning spec), mobile `OrderEvent` type | `lat`/`lng` were serialized on every event of every snapshot poll forever-null (no writer ever set them, no client ever read them). Dropped from the select; DB columns untouched. |
 
-**Loop A (hunt + adversarial verify) outcome — honest accounting:** round 1's six lenses produced
-~25 candidates; the four that received BOTH skeptic verdicts were all REFUTED (each "cost" proved
-to be single-digit milliseconds behind a 300-600ms mobile RTT — the gate works). The API session
-usage limit then killed the remaining verifier/finder agents, leaving ~21 candidates UNVERIFIED —
-deliberately NOT fixed blind. They are queued for the weekly performance watch (Phase-0 KNOWN
-list): auction countdown ticker re-rendering the order screen every second (extraction touches SR
-thresholds + expiry refetch + urgency styling — wants render-count proof + device QA);
-ComposeMap/JobDetailsCard/board-card re-renders per keystroke (memo boundaries); offers-list 15s
-poll while the socket is live (socket-gate like UX15-11, keep a slow safety net); home 30s
-active-order poll gating; rider-offline 8s activeJob poll; socket self-heal refetch cadence on
-reconnect ATTEMPTS; `recordFix` Redis pipelining; presence-watchdog + `kickRiderFromBoard`
-fetchSockets scans; boot keystore-read overlap; native font embedding (config plugin — needs an
-EAS build); push-registration timing vs first paint.
+**Loop A (hunt + adversarial verify) outcome — honest accounting** (after the resumed run
+completed the verification pass):
+
+- **CONFIRMED by both skeptics and SHIPPED (wave-2b follow-up PR):**
+  - *Home's 30s full-snapshot poll ran for the entire life of every order* — home stays mounted
+    beneath `/order/[id]` and the focus manager is AppState-only, so the poll duplicated the
+    order screen's own socket-gated stream on a second cache key over metered data
+    (**PERF20-01**). Fixed: navigation-focus-gated interval + on-focus revalidation
+    (`app/home.tsx`).
+  - *The auction countdown ticker re-rendered the whole ~1200-line order screen every second*
+    for the length of every auction, on the JS thread the Choose tap competes with
+    (**PERF20-02**). Fixed: extracted `<AuctionClock/>` (`src/ui/order/AuctionClock.tsx`) owning
+    the 1s tick, SR thresholds, urgency crossfade and the zero-crossing refetch nudge; the
+    parent hears only threshold crossings, keyed by orderId for rebroadcast resets — the same
+    pattern the rider board's SentOfferCard already used. Render-isolation regression test pins
+    it (`auction-clock.test.tsx`).
+- **REFUTED with reasons** (the gate working — none of these are worth touching): per-fix order
+  SELECT before position emits (~2ms behind a 600-1200ms RTT); `activeForRider` probe merge
+  (safety-refuted: rewrites DS16-02/R8 ordering pins and drags stale status into the §5d
+  phone-reveal choke point); `subscribeOrder` double-read (off every latency path — the room
+  join precedes it and the ack never hits the wire); `ratings.by_profile_id` index (a once-per-
+  order-lifetime ~5-30ms count at pilot scale).
+- **STILL UNVERIFIED** (a second usage-limit window killed rounds 2-3 + 16 verifier pairs;
+  queued as KNOWN for the weekly performance watch — not fixed blind):
+  ComposeMap/JobDetailsCard/board-card re-renders per keystroke (memo boundaries); offers-list
+  15s poll while the socket is live (socket-gate like UX15-11, keep a slow safety net);
+  rider-offline 8s activeJob poll; socket self-heal refetch cadence on reconnect ATTEMPTS;
+  `recordFix` Redis pipelining; presence-watchdog + `kickRiderFromBoard` fetchSockets scans;
+  boot keystore-read overlap; native font embedding (config plugin — needs an EAS build);
+  push-registration timing vs first paint; KYC 5s→mode-aware poll and dead `events[].lat/lng`
+  were self-verified and shipped in the main wave-2 PR (PERF19-03/04).
 
 ## How to verify
 
