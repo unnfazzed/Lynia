@@ -18,9 +18,14 @@ import { useBootstrap } from "../src/query/use-bootstrap";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { AnalyticsProvider } from "../src/telemetry/analytics";
 import { start as startRum } from "../src/telemetry/rum";
+import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
 import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
 import { useAppFonts } from "../src/ui/fonts";
 import ForceUpdateScreen from "./force-update";
+
+// Crash reporting (roadmap 1.1 / LR20) — first thing at module load so native + JS handlers are armed
+// before any app code runs. Inert unless EXPO_PUBLIC_SENTRY_DSN is set (dev/jest stay silent).
+initSentry();
 
 // Keep the native splash up until the fonts register (nothing else holds it — expo-router's
 // keep-alive no-ops without expo-splash-screen). Rejects if already prevented (e.g. Fast Refresh).
@@ -80,10 +85,15 @@ function AppNavigator(): React.ReactElement {
  * unrecoverable white-screen crash in production. Deliberately minimal — calm, on-brand copy and a
  * single "Reload" action that calls expo-router's `retry()` to clear the error state and re-render the
  * route. Wrapped in its own SafeAreaProvider because this can render above RootLayout's provider tree
- * (when the layout subtree itself threw), so Screen's insets still resolve. This is a recovery path,
- * not crash reporting (telemetry is gated separately elsewhere).
+ * (when the layout subtree itself threw), so Screen's insets still resolve. It also REPORTS the crash
+ * to Sentry (roadmap 1.1) — a no-op until a DSN is set — so the white-screen path that recovery hides
+ * is still observed.
  */
-export function ErrorBoundary({ retry }: ErrorBoundaryProps): React.ReactElement {
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps): React.ReactElement {
+  // Report the render-time exception once (before offering recovery); inert unless Sentry is configured.
+  useEffect(() => {
+    captureException(error);
+  }, [error]);
   return (
     <SafeAreaProvider>
       <Screen>
@@ -101,7 +111,7 @@ export function ErrorBoundary({ retry }: ErrorBoundaryProps): React.ReactElement
   );
 }
 
-export default function RootLayout(): React.ReactElement | null {
+function RootLayout(): React.ReactElement | null {
   // Self-hosted Inter — the splash stays up until the fonts register so no
   // Text mounts before its family is available. Font assets are bundled (no network), so on the
   // rare load error we fall through to the system-font fallback rather than block the app.
@@ -168,3 +178,7 @@ export default function RootLayout(): React.ReactElement | null {
     </SafeAreaProvider>
   );
 }
+
+// Wrap the router root so Sentry attaches its error boundary + touch instrumentation. Inert
+// (passthrough) until initSentry() runs with a DSN — see src/telemetry/sentry.ts.
+export default wrap(RootLayout);

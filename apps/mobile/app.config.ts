@@ -56,6 +56,11 @@ const config: ExpoConfig = {
   icon: "./assets/icon.png",
   plugins: [
     "expo-router",
+    // Sentry crash reporting (roadmap 1.1 / LR20). The config plugin wires the native SDK + source-map
+    // upload hooks into the EAS build; runtime capture stays inert until EXPO_PUBLIC_SENTRY_DSN is set
+    // (src/telemetry/sentry.ts). Source-map upload additionally needs a SENTRY_AUTH_TOKEN EAS secret —
+    // absent it, builds still succeed and crashes still report (with minified JS frames).
+    "@sentry/react-native",
     [
       "expo-splash-screen",
       { image: "./assets/splash-icon.png", imageWidth: 120, resizeMode: "contain", backgroundColor: "#FFFFFF" },
