@@ -49,6 +49,10 @@ export default function EarningsScreen(): React.ReactElement {
   const router = useRouter();
   // Shared warm-paint feed (same on-device snapshot as the trips list; load+persist+paused rule shared).
   const { rows, showingStale, isFetching, isError, refetch } = useHistoryFeed();
+  // UX20-02: the explainer card below reads this too — CommissionRow already branches on the live rate,
+  // and the card must not keep insisting "0%... when that goes live" once it has.
+  const { config } = useWalletConfig();
+  const commissionLive = (config?.ratePct ?? 0) > 0;
   // Earnings = the agreed fare on deliveries I've delivered as the rider — the fare is fixed at
   // hand-off and doesn't change based on the customer's rating, so a `delivered` trip (rated or not,
   // up to the 6h auto-close window) counts here just like `completed`. Excluding it used to make a
@@ -143,14 +147,14 @@ export default function EarningsScreen(): React.ReactElement {
           ))}
 
           {/* §6 decided: rider commission = % of the amount paid per ride, deducted from a pre-funded
-              commission account (prepaid per-ride model). 0% for the launch period — riders keep the full
-              fare for now. Copy tracks COMMISSION.ratePct in @lynia/shared. */}
+              commission account (prepaid per-ride model). Copy tracks COMMISSION.ratePct in @lynia/shared —
+              UX20-02: gated on the live rate so it can't keep claiming "0%... when that goes live" once
+              CommissionRow above has already switched to live-rate copy. */}
           <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
             <Text style={{ fontSize: 12, color: tokens.color.highlightInk, lineHeight: 18 }}>
-              A record of work done — not a payout balance. You keep the full agreed fare during the launch period
-              (0% commission for the first few months); payment is cash, outside the app. Later, a small commission —
-              a percentage of each delivery — will be deducted per ride from a commission account you top up in
-              advance. When that goes live, a per-ride commission line and your account balance will appear here.
+              {commissionLive
+                ? "A record of work done — not a payout balance. Payment is cash, outside the app. A small commission — a percentage of each delivery — is deducted per ride from the commission account above, which you top up in advance."
+                : "A record of work done — not a payout balance. You keep the full agreed fare during the launch period (0% commission for the first few months); payment is cash, outside the app. Later, a small commission — a percentage of each delivery — will be deducted per ride from a commission account you top up in advance. When that goes live, a per-ride commission line and your account balance will appear here."}
             </Text>
           </Card>
           <View style={{ height: tokens.space.xxl }} />

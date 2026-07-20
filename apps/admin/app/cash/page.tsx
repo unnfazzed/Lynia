@@ -23,6 +23,10 @@ export default async function CashPage() {
   const view = "data" in res ? res.data : null;
   const reason = "data" in res ? undefined : res.reason;
   const connected = view !== null;
+  // UX20-02: three pieces of copy below used to hardcode the launch-era "still 0%" narrative regardless
+  // of the live rate — once ops flips COMMISSION_RATE_PCT, they'd contradict the correctly-updating
+  // headline/KPI on this same page. Gate on the live rate like those already do.
+  const rateIsZero = view ? view.ratePct === 0 : true;
   const rate = view ? `${view.ratePct}%` : "—";
 
   const columns: Column<CommissionRiderRow>[] = [
@@ -75,16 +79,29 @@ export default async function CashPage() {
       >
         <span aria-hidden="true">⚠</span>
         <span>
-          <b>Commission is {rate} during the launch period.</b> Riders keep the full agreed fare; nothing is
-          collected yet. The prepaid wallet (top-ups and the per-ride deduction) is live — the figures below
-          are informational ride volume at 0%, not money owed.
+          {rateIsZero ? (
+            <>
+              <b>Commission is {rate} during the launch period.</b> Riders keep the full agreed fare; nothing is
+              collected yet. The prepaid wallet (top-ups and the per-ride deduction) is live — the figures below
+              are informational ride volume at 0%, not money owed.
+            </>
+          ) : (
+            <>
+              <b>Commission is {rate}.</b> The figures below reflect money actually being deducted from riders'
+              prepaid balances, per completed ride.
+            </>
+          )}
         </span>
       </div>
 
       <section className="panels" style={{ marginBottom: tokens.space.lg }}>
         <KpiCard label="Commission rate" value={rate} hint="% of the amount paid, per ride" />
         <KpiCard label="Rides" value={view ? view.kpis.rides : "—"} hint="completed, this period" />
-        <KpiCard label="Fares delivered" value={view ? `$${view.kpis.fares}` : "—"} hint="riders keep this at 0%" />
+        <KpiCard
+          label="Fares delivered"
+          value={view ? `$${view.kpis.fares}` : "—"}
+          hint={rateIsZero ? "riders keep this at 0%" : "before commission"}
+        />
         <KpiCard label="Commission accrued" value={view ? `$${view.kpis.commission}` : "—"} hint="at the current rate" />
       </section>
 
@@ -114,9 +131,9 @@ export default async function CashPage() {
           }
         />
         <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
-          Once the rate turns on, each completed ride will deduct its commission from the rider&apos;s pre-funded
-          account; a low balance blocks going online until they top up. Balance, top-ups and the per-ride
-          deduction ledger are already live — only the rate itself is still 0%.
+          {rateIsZero
+            ? "Once the rate turns on, each completed ride will deduct its commission from the rider's pre-funded account; a low balance blocks going online until they top up. Balance, top-ups and the per-ride deduction ledger are already live — only the rate itself is still 0%."
+            : "Each completed ride deducts its commission from the rider's pre-funded account; a low balance blocks going online until they top up."}
         </div>
       </section>
     </main>

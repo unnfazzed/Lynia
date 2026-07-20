@@ -6,29 +6,31 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-19 night (bug-hunt routine — agentic-loop hunt over the BH lane, mobile
-journeys + app↔API contract seams; see "Bug hunt 2026-07-19 night" near the bottom for BH-21…22, two
-MEDIUM findings, all fixed same-run with regression tests: a rider's already-sent bids on OTHER open
-orders (`bidIds`/`sentOffers`, `rider/index.tsx`) lived only in `useState` — a process death mid-auction
-wiped the ONLY record of which orders the rider had already bid on (no `/offers/mine`-shaped endpoint
-exists to reconstruct it), so already-bid orders silently reappeared as freshly biddable on relaunch
-with no "offer sent" indicator; fixed by persisting `sentOffers` to SecureStore (mirroring the existing
-compose-draft persistence) and deriving `bidIds` from it instead of a parallel, driftable `useState`.
-And `IssuesService.raise()` ("get help with this trip") had no idempotency key, unlike its siblings
-`OrdersService.create`/`WalletService.createTopup` — a lost-response retry could double-create a
-dispute, and since each is independently `refund`-resolvable up to the full fare, a double-refund
-vector; fixed with the same client-derived-key + partial-unique-index + P2002-fallback shape those
-siblings already use. Phase-0.5 re-verified the **Data-integrity**, **KYC**, and **Mobile-journey-
-dead-ends** cluster headers (Data-integrity was the most stale at 4 routines back; KYC and
-Mobile-journey-dead-ends tied for second-most-stale) — all three INTACT, 0 stale claims. Sibling-sweep
-on BH-21's pattern (session-only `useState<Set>` gating a live list, no persistence) found one
-lower-severity sibling left OPEN (`BH-21-SIB-1`, a customer-side dismissed-counter-offer flag —
-cosmetic-only, fully recoverable by re-tapping Decline, not a dead-end or data-loss); everything else
-was already-guarded or (for the live board's `expiredOrderIds`/`takenOrderIds`) confirmed not
-applicable since the underlying query is deliberately excluded from disk persistence. BH-22's sweep
-traced every other user-retriable `.create(` call site and found each already-guarded by either an
-idempotency key, a natural DB unique constraint, or (for SOS) an intentional no-dedupe safety design.
-Zero open sibling PRs at Phase 0.
+**Last consolidated:** 2026-07-20 (UX-improvements routine — agentic-loop hunt over the UX lane; see
+`docs/UX-USABILITY-REVIEW-2026-07-20.md` and the "UX review 2026-07-20" section near the bottom for
+UX20-01…04, four MEDIUM findings, all fixed same-run with regression tests where testable. UX20-01 is a
+query-error-as-negative-state gap: the customer home screen's `activeOrderQ` and the rider dashboard's
+`activeQ` never read `.isError`, so a real query error (non-2xx or 2 exhausted retries) collapsed to the
+exact same `null` as a genuine "no active order/job" — a rider with an assigned job or a customer with a
+live order who hit this on a flaky connection saw the ordinary browse/board UI with zero indication the
+check failed and zero way back; both screens now show a compact error-with-retry banner instead. UX20-02
+and UX20-03 are the same defect class (hardcoded "0%/launch period" commission copy that never reads the
+live, operator-flippable `COMMISSION_RATE_PCT`) found independently by two finder lenses: the admin
+overview's needs-attention "Commission is 0%" row was structurally incapable of ever changing (the
+`Overview` API response had no rate field at all — `AdminService.overview()` now resolves and returns the
+live rate); the rider Earnings screen's explainer card and three strings on the admin Commission page kept
+insisting "0%... still 0%" beside sibling copy on the SAME screens that already correctly read the live
+rate — all 4 sites now gate on it. UX20-04 is a notification-coherence gap: `adjustFare`'s post-commit push
+had zero durable feed fallback (its `order.fare_adjust` audit is order-targeted, so it matched neither the
+per-event `FEED_NOTICES` synthesis, which needs an `OrderEvent` that `adjustFare` never writes, nor the
+profile-targeted `ACCOUNT_FEED_ACTIONS` synthesis) — a missed push left zero durable record for either
+party that their fare was corrected; a new synthesis block recovers it for both parties, mirroring the
+existing `order.rider_standing_notice` pattern. Phase-0.5 re-verified the **Auth/identity**,
+**Notifications/FCM**, and **Edge/abuse** cluster headers (rotated away from KYC/Object-authz-IDOR/
+Mobile-journey-dead-ends, which the 2026-07-19 UX run picked) — all three INTACT, 0/6 stale claims. Two
+open sibling PRs at Phase 0 (#339 bug-hunt BH-21/22, #338 performance wave-2) — neither in the UX lane;
+both branches' `KNOWN_BUGS.md` diffs read against `main` and contain only their own lane's entries, no
+overlap.
 Prior: 2026-07-19 (wallet & data-lifecycle audit routine — agentic-loop hunt over the WD
 lane; see the "Wallet & data-lifecycle audit 2026-07-19" section near the bottom and
 `docs/WALLET-DATA-AUDIT-2026-07-19.md` for WD-024…WD-026 — one HIGH and two MEDIUM findings, all fixed
@@ -1114,6 +1116,47 @@ reason-coded over the audit seam, single-concern. `pnpm typecheck` + full monore
 
 **`KB-POD-DISPUTE` is now CLOSED** — Phase A (proof capture, IR16-11) + Phase B (adjudication, IR16-12) both shipped.
 **Still open in `KB-IDENTITY-BINDING`:** L3 hardware attestation + L0 destructive rebind (both gated — founder/vendor work).
+
+## UX review 2026-07-20 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-20.md`
+
+Phase 0 read this ledger + the 2026-07-19 UX report; `mcp__github__list_pull_requests` (state=open) showed
+two open Claude PRs — #339 (bug-hunt routine, BH-21/22) and #338 (performance routine) — neither in the UX
+lane; both branches' `docs/KNOWN_BUGS.md` diffs were read against `main` and contain only their own lane's
+ledger entries, no overlap. Phase 0.5 re-verified 2 members each of three rotated "→ FIXED" cluster
+headers against current code — **Auth/identity** (the JWT HS256 algorithm pin in `token.service.ts:50,53`
+and the JWT-secret boot guard in `env.secrets.ts:13`), **Notifications/FCM** (dead-token pruning in
+`notifications.service.ts:78,368-370`), **Edge/abuse** (the global `ThrottlerGuard`/`@Throttle` wiring and
+the dependency-free Helmet-equivalent `security-headers.middleware.ts:12-28`) — 0/6 regressed. Phase 1 ran
+the mandated agentic-loop hunt engine (`Workflow({name:'lane-bug-hunt'}, args:'ux')`, 20 sub-agents: 4
+finder lenses → 3-skeptic adversarial verify → sibling-sweep) — 4 candidates found (1 of 4 lenses,
+recoverability, returned zero), all 4 survived verification (12/12 "real" votes, all high confidence).
+Every cited file:line was independently re-opened and re-verified by the orchestrator before fixing. All 4
+findings fixed same-run. `pnpm typecheck && pnpm lint && pnpm build` clean across all 5 packages (after
+`pnpm install` + Prisma-client-generate + `@lynia/shared` build, none of which existed yet in this fresh
+session); 1087 API tests (+2 — 1 new `it` for UX20-04, 1 assertion extended for UX20-02) + 473 mobile tests
+unchanged (the three mobile fix sites are App Router screen components with no existing test coverage in
+this repo, matching established precedent) green; `apps/admin` has no test harness (repo precedent) so its
+copy-honesty fixes are typecheck+lint-verified only.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| UX20-01 | The customer home screen's `activeOrderQ` (`const activeOrder = activeOrderQ.data ?? null;`) and the rider dashboard's `activeQ` (`activeQ.data && ... ? activeQ.data : null`) never read `.isError` — a real `ApiError` (non-2xx, or 2 exhausted retries on a timeout/offline fetch) settled the query to `isError:true, data:undefined`, collapsing to the exact same `null` as a genuine "no active order/job." The restore banner (home's `ActiveOrderBanner`, rider dashboard's "You have an active job" card) silently didn't render — a rider with a genuine assigned job, or a customer with a genuine live order, who reopened the app under a flaky connection saw the ordinary browse/board UI with zero indication the check failed and zero way back. The same file's `meQ.isError`/`openQ.isError` already guard the identical shape elsewhere — this pair was the gap | `apps/mobile/app/home.tsx:142`; `apps/mobile/app/rider/index.tsx:198-199` | MEDIUM | **FIXED** — both screens now render a compact error-with-retry banner (`ActiveOrderCheckFailedBanner`/`ActiveJobCheckFailedBanner`) in place of the silent `null` fallthrough whenever the query errors. A same-shape, lower-severity sibling (`home.tsx:124`, `meQ.data?.onHold` not checking `meQ.isError`) was evaluated and left unfixed — not a dead end, since `onBroadcast`'s existing reactive 403 catch (`home.tsx:502-506`) still blocks a held customer the moment they attempt to broadcast. Mobile screens have no unit-test harness in this repo; typecheck+lint-verified |
+| UX20-02 | The admin overview's needs-attention queue (`buildAttention()`) unconditionally pushed `{title: "Commission is 0%", detail: "launch period — nothing is collected yet."}` — the `Overview` API response had no commission-rate field at all, so the string was structurally incapable of ever varying, even after ops performs the documented rate flip (`COMMISSION_RATE_PCT`), directly contradicting the sibling `/cash` page one click away | `apps/admin/app/page.tsx:211-217` (`buildAttention`); `apps/api/src/admin/admin.service.ts` (`overview()`) | MEDIUM | **FIXED** — `AdminService.overview()` now returns `commissionRatePct` (resolved via `resolveCommissionRatePct(env.COMMISSION_RATE_PCT)`, the same helper every other rate-aware surface already uses — required adding `@Inject(ENV)` to the service's constructor, no module wiring change since `ConfigModule` is `@Global()`); `buildAttention()` branches on it. `admin.service.spec.ts` extended with a live-rate assertion |
+| UX20-03 | The rider Earnings screen's highlight-wash explainer card unconditionally read "...0% commission for the first few months... When that goes live... will appear here," rendered directly below `CommissionRow`, which already correctly swaps to live "top up to keep riding" copy once `config.ratePct > 0` — a contradiction on the same screen once the rate flips. The admin Commission page's headline/KPI already correctly read the live rate, but 3 other strings on the SAME page never gated on it ("...informational ride volume at 0%, not money owed"; KPI hint "riders keep this at 0%"; footer "...only the rate itself is still 0%") | `apps/mobile/app/earnings/index.tsx:148-155`; `apps/admin/app/cash/page.tsx:78-80,87,117-119` | MEDIUM | **FIXED** — the earnings-screen card now branches on `useWalletConfig().config.ratePct > 0`; all 3 cash-page strings now branch on a `rateIsZero` flag derived from `view.ratePct`. Same defect class as UX20-02, found independently by the copy-honesty finder lens; fixed together in one commission-copy pass. Mobile screen has no unit-test harness; admin has no test harness — both typecheck+lint-verified |
+| UX20-04 | `AdjustFare()` writes an `order.fare_adjust` AuditLog row (targeted at `orderId`, not a profileId) and best-effort pushes both parties post-commit — but writes no `OrderEvent` (so it can't surface via the per-event `FEED_NOTICES` synthesis) and the audit's target doesn't match `ACCOUNT_FEED_ACTIONS` (which key off a profileId target) — unlike every sibling admin action in this exact class (`order.adjudicate_delivered`, `order.rider_standing_notice`/`_resolved`, the four `ACCOUNT_FEED_COPY` entries). A missed push (backgrounded app, dead FCM token, transient batch failure — all routine here) left zero durable record for either party that their fare was corrected | `apps/api/src/admin/admin-orders.service.ts:374-401` (`adjustFare`); `apps/api/src/notifications/notifications-feed.service.ts` | MEDIUM | **FIXED** — a new synthesis block in `feedForUser` recovers a "Fare updated" row for BOTH parties from the durable `order.fare_adjust` audit (one batched query over all in-view `orderIds`, since `adjustFare` notifies both sides — unlike the customer-only `order.rider_standing_notice`), copy quoting the corrected fare to match the push. Sibling-sweep of all 9 `auditData(actor` call sites in `apps/admin/src` found no other gap: `order.cancel` already writes a plain `OrderEvent`, covered by the standard synthesis; `order.adjudicate_delivered` already has a bespoke block; the four `customer.*`/`rider.*` actions are all in `ACCOUNT_FEED_COPY`. 1 new case in `notifications-feed.service.spec.ts` |
+
+**Sibling-sweep evidence** (full grep commands + hit counts in the dated report):
+
+- **UX20-01** (`grep -rn "\.data ?? null"` / `"Q\.data &&"` / `"\.data ??"` across `apps/mobile apps/admin` — 8 hits): 2 ARE the confirmed bug (fixed); the other 6 were each individually re-opened and confirmed already-guarded by an explicit `.isError` branch elsewhere in the same file (`rider/job.tsx`'s `jobQ`, `order/[id].tsx`'s `offersQ`, `notifications/index.tsx`'s `feedQ`, `rider/index.tsx`'s `openQ`, `use-history-feed.ts`'s shared hook whose two screen consumers already branch on the `isError` it returns). One same-shape sibling (`home.tsx:124` `meQ.data?.onHold`) was evaluated and left as a non-bug — a reactive server-side 403 backstop already closes the gap it would otherwise open.
+- **UX20-02/03** (`grep -rn "0% commission\|When that goes live\|first few months\|still 0%\|no commission yet\|not money owed\|nothing is collected"` across `apps packages/shared` — pre-fix 8 live-code hits across 3 files): all 8 fixed this run; post-fix 0 remaining ungated hits (5 surviving occurrences are internal JSDoc/comments, verified by reading each, none user-facing).
+- **UX20-04** (`grep -n "auditData(actor" apps/api/src/admin/*.ts` — 9 hits across 4 action families): `order.fare_adjust` fixed this run; `order.adjudicate_delivered` and all four `ACCOUNT_FEED_COPY` actions already covered; `order.cancel` confirmed covered by its own `OrderEvent` write in the same transaction (not a gap).
+
+**Suggestions (not implemented):** none this run — all 4 findings were straightforward error-state/copy-honesty/notification-coherence fixes within scope.
+
+**Stopping rule:** four MEDIUM findings this run (no CRITICAL/HIGH) — reported in full per the mandatory
+sibling-sweep evidence rule; 1 of 4 hunt lenses (recoverability) returned zero findings, and the Phase-0.5
+re-verification came back fully clean, consistent with this lane's surface having been hunted repeatedly
+across UX-2026-07-08…UX19-04.
 
 ## UX review 2026-07-19 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-19.md`
 

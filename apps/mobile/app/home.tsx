@@ -84,6 +84,42 @@ function ActiveOrderBanner({ order }: { order: OrderSnapshot }): React.ReactElem
   );
 }
 
+/**
+ * UX20-01: the active-order check failing (not just returning "none") must be visible — a customer with
+ * a genuine live order who hits a query error on this check would otherwise see zero indication they may
+ * have an order in flight and zero way back to it (the same dead-end class BH-13 closed for the rider
+ * board, here triggered by an error rather than a missed cache invalidation).
+ */
+function ActiveOrderCheckFailedBanner({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }): React.ReactElement {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: tokens.space.sm,
+        backgroundColor: tokens.color.bg,
+        borderRadius: tokens.radius.card,
+        borderWidth: 1,
+        borderColor: tokens.color.danger,
+        padding: tokens.space.md,
+        marginBottom: tokens.space.sm,
+        ...tokens.shadow.card,
+      }}
+    >
+      <Icon name="wifi-off" size={20} color={tokens.color.danger} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: tokens.font.size.body, fontWeight: "700", color: tokens.color.ink }}>
+          Couldn&apos;t check for an active order
+        </Text>
+        <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted }}>
+          If you have a delivery in progress, retry to find your way back to it.
+        </Text>
+      </View>
+      <Button label="Retry" variant="ghost" onPress={onRetry} loading={retrying} />
+    </View>
+  );
+}
+
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
@@ -550,7 +586,11 @@ export default function HomeScreen(): React.ReactElement {
             already in flight (getSnapshot/cancel/rating all still work for a held customer). So a customer
             put on hold mid-delivery keeps a way into that live order — the only nav entry point on this
             headerless screen — rather than being locked out of it entirely by the wall below. */}
-        {activeOrder ? <ActiveOrderBanner order={activeOrder} /> : null}
+        {activeOrder ? (
+          <ActiveOrderBanner order={activeOrder} />
+        ) : activeOrderQ.isError ? (
+          <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
+        ) : null}
         <EmptyState icon="triangle-alert" title={ACCOUNT_ON_HOLD_COPY.title} message={ACCOUNT_ON_HOLD_COPY.message}>
           <SupportCallRow />
           <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} loading={meQ.isFetching} />
@@ -611,6 +651,8 @@ export default function HomeScreen(): React.ReactElement {
           {activeOrder ? (
             // UX review #1: a live order the customer can be killed away from — always offer the way back.
             <ActiveOrderBanner order={activeOrder} />
+          ) : activeOrderQ.isError ? (
+            <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
           ) : null}
 
           {draftRestored ? (
