@@ -125,3 +125,83 @@ jobs:
           echo "✓ one_active_ride, GiST geog index, and otp_hash all present"
       - name: Offer-loop concurrency tests (ET1/ET2/ET3)
         run: pnpm --filter @lynia/api test:int
+
+  # Per-PR JS bundle-size guardrail (docs/APP-SIZE.md). The "prevention" half of the app-size program:
+  # the DoorDash discipline that bundle growth must be INTENTIONAL, not accidental — every extra byte is
+  # metered mobile data for our users in Zimbabwe (Play download + expo-updates OTA both pay it). It
+  # exports the app's JS with Metro/Hermes (no Android SDK — pure JS, like mobile-ota.yml) and fails when
+  # the export exceeds apps/mobile/size-budget.json. Report-only until that budget is calibrated (0 = no
+  # gate), so turning this on can never redden CI by itself.
+  mobile-bundle-size:
+    name: mobile js bundle · size budget
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history so the changed-files guard below can diff against the PR base / previous push.
+          # A shallow checkout wouldn't contain that base commit to compare against (the `security` job
+          # above already fetches full history for the same class of reason).
+          fetch-depth: 0
+
+      # ci.yml runs on every PR and has no per-job path filter (its other jobs must run everywhere), so
+      # we gate THIS job in-job: only spend a pnpm install + Metro export when the change can actually
+      # move the JS bundle. On unrelated PRs this exits early and the job stays green and fast — no
+      # install, no export. Fails SAFE (runs the check) if a base commit can't be resolved.
+      - name: Detect mobile-relevant changes
+        id: changes
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git rev-parse -q --verify "$BASE^{commit}" >/dev/null; then
+            echo "::notice::No base commit to diff against — running the bundle-size check to be safe."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only "$BASE" HEAD)"
+          # Paths that can change what Metro bundles: the app itself, the two workspace packages it
+          # imports at bundle time, the lockfile (a dep bump can balloon the bundle), and this workflow.
+          if printf '%s\n' "$CHANGED" \
+             | grep -Eq '^(apps/mobile/|packages/shared/|packages/design/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
+            echo "::notice::Mobile-relevant paths changed — running the JS bundle-size check."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No mobile-relevant paths changed — skipping the JS bundle-size check."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: pnpm/action-setup@v6
+        if: steps.changes.outputs.run == 'true'
+
+      - uses: actions/setup-node@v6
+        if: steps.changes.outputs.run == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        if: steps.changes.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile=false
+
+      # The app imports @lynia/shared at bundle time, so build it before exporting (as mobile-ota.yml does).
+      - name: Build shared package
+        if: steps.changes.outputs.run == 'true'
+        run: pnpm --filter @lynia/shared build
+
+      # Pure Metro/JS export: compiles the Hermes bytecode bundle with the host `hermesc`, no Android
+      # SDK/NDK needed. Output goes to a temp dir outside the working tree.
+      - name: Export Android JS bundle (expo export)
+        if: steps.changes.outputs.run == 'true'
+        working-directory: apps/mobile
+        run: pnpm exec expo export --platform android --output-dir "$RUNNER_TEMP/expo-export-android"
+
+      # Measure vs apps/mobile/size-budget.json and fail when over budget (report-only while the budget
+      # is 0/uncalibrated). Writes a size table to the run summary.
+      - name: Check bundle size against budget
+        if: steps.changes.outputs.run == 'true'
+        working-directory: apps/mobile
+        run: node scripts/check-bundle-size.mjs "$RUNNER_TEMP/expo-export-android"
