@@ -69,6 +69,14 @@ export const envSchema = z.object({
   GCP_STORAGE_PROJECT_ID: z.string().optional(),
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalUrl,
   OTEL_SERVICE_NAME: z.string().default("lynia-api"),
+  // --- Crash / error reporting (Sentry, roadmap 1.1 / LR20) ---
+  // Inert without a DSN: initSentry() no-ops when SENTRY_DSN is unset, so dev/test and any env the
+  // founder hasn't provisioned stay quiet (mirrors the OTEL/push seam). Set as a Secret Manager value
+  // wired into the runtime SA to turn it on. Traces sample rate is bounded [0,1]; environment tags the
+  // release channel in the dashboard.
+  SENTRY_DSN: z.string().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
+  SENTRY_ENVIRONMENT: z.string().optional(),
   // --- Push (lane A4) ---
   // "fcm" sends via firebase-admin (ADC creds on Cloud Run — no key in env); "noop" logs only
   // (dev/test, and prod until the Firebase project + messaging role are provisioned).

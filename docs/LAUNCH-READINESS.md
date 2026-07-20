@@ -189,6 +189,9 @@ The four deliberate deferrals in `infra/terraform/README.md` flip from "pilot-le
 3. **Bucket CORS** from `*` to the real admin origin.
 4. **Backups/DR:** verify automated backups + PITR on `lynia-pg`, then run a **real restore drill**
    into a scratch instance and boot the API against it. A backup that has never restored is a hope.
+   Runbook + verification script are prepped — see [`docs/RESTORE-DRILL.md`](RESTORE-DRILL.md)
+   (`scripts/restore-drill-verify.sh`); founder executes the drill and records the RTO (box stays
+   unchecked until it has actually run).
 
 Plus: `terraform validate`/`plan` as a CI job (the ENG-REVIEW §3 method note — it has never run in
 CI), and the org-policy `allUsers`/ingress verification before any re-arm.

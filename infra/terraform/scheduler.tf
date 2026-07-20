@@ -13,6 +13,7 @@
 locals {
   retention_purge_uri      = "https://${var.api_domain}/admin/retention/purge"
   settlement_autopause_uri = "https://${var.api_domain}/admin/cash/settlements/auto-pause"
+  wallet_integrity_uri     = "https://${var.api_domain}/admin/wallet/integrity-check"
 }
 
 # Daily retention sweep (LR8): GPS scrub + expired-session purge.
@@ -38,6 +39,36 @@ resource "google_cloud_scheduler_job" "retention_purge" {
     oidc_token {
       service_account_email = google_service_account.runtime.email
       audience              = local.retention_purge_uri
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Nightly wallet ledger integrity sweep (roadmap 1.3): asserts every account balance == sum(ledger),
+# every confirmed top-up has its credit, every ride_commission debit carries its receipt, and no credit
+# points at a non-confirmed top-up. Read-only; a nonzero drift pages via wallet_integrity_drift_total
+# (see monitoring.tf) rather than failing the run. Runs at 04:00 Harare, after the 03:00 retention sweep.
+resource "google_cloud_scheduler_job" "wallet_integrity" {
+  count = var.scheduler_jobs_enabled ? 1 : 0
+
+  name      = "lynia-wallet-integrity"
+  project   = local.project_id
+  region    = var.scheduler_region
+  schedule  = "0 4 * * *"
+  time_zone = "Africa/Harare"
+
+  attempt_deadline = "320s"
+  retry_config {
+    retry_count = 3
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = local.wallet_integrity_uri
+    oidc_token {
+      service_account_email = google_service_account.runtime.email
+      audience              = local.wallet_integrity_uri
     }
   }
 

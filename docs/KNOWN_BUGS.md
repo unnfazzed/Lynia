@@ -730,6 +730,20 @@ report for detail and the residual server-side hardening item recorded under Sug
 
 ---
 
+## Architecture-hardening roadmap 2026-07-20 (interactive) — `docs/plans/2026-07-20-architecture-hardening-roadmap.md`
+
+Findings surfaced while executing the roadmap's Phase-1 test items (admin money-action tests, 1.6). Both
+are money-path idempotency gaps on the admin console; the roadmap's Phase-2.2 item owns the fixes (a
+deterministic idempotency key + dedup), so they are recorded here (with a pinning test already in place)
+rather than fixed in the test-only pass.
+
+| ID | Finding | Location | Severity | Status |
+|---|---|---|---|---|
+| AH20-01 | `adjustFare` carries **no idempotency key** — unlike `creditRiderWallet` (`providerRef @unique`, WD-003). A double-confirm / lost-response retry re-posts `{agreedFare,reason,note}`, re-writing the `FareAdjust` AuditLog row and, on a completed order, re-settling the rider's prepaid commission a second time. Nothing lets the backend dedup it. | `apps/admin/app/orders/actions.ts:37` → API fare-adjust endpoint (`admin-orders.service.ts`) | MEDIUM | **OPEN** — current non-idempotent behavior pinned by a test (`apps/admin/app/orders/actions.test.ts`, "is NOT replay-safe" + `// TODO(1.6)`). Fix owned by roadmap 2.2 (idempotency key + AuditLog dedup). |
+| AH20-02 | `resolveIssue` (refund path) carries no idempotency key and relies entirely on the issue state-transition (already-resolved → non-2xx) to block a double-refund; the `Refund` table has no unique constraint. If that transition isn't atomic under a row lock, a concurrent double-submit could double-refund. Lower confidence — needs a look at the endpoint's locking. | `apps/admin/app/issues/actions.ts:15` → issue-resolve/refund endpoint | LOW-MEDIUM | **OPEN** — to verify + harden under roadmap 2.2 (add a `Refund` uniqueness backstop keyed on issue). |
+
+---
+
 ## Agentic-loop bug hunt 2026-07-16 (wallet & data-lifecycle lane) — `docs/AGENTIC-LOOP-BUGHUNT-2026-07-16.md`
 
 Interactive run of a new multi-agent "loop-until-dry + adversarial-verify + sibling-sweep" engine (8

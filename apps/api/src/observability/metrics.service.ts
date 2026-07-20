@@ -38,7 +38,9 @@ type CounterName =
   | "offers_made_total"
   | "client_samples_dropped_total"
   | "whatsapp_otp_delivery_failed_total"
-  | "micro_cache_requests_total";
+  | "micro_cache_requests_total"
+  | "wallet_integrity_runs_total"
+  | "wallet_integrity_drift_total";
 
 /** Fixed label vocabularies — NEVER accept ids/phones/lat-lng/raw-urls as labels (cardinality). */
 export type MatchSelectOutcome = "assigned" | "taken" | "unavailable" | "not_open" | "forbidden" | "error";
@@ -56,6 +58,15 @@ export type ClientRole = "rider" | "customer";
  *  `MicroCacheOutcome` (hit | l2_hit | miss | coalesced | error), also closed. Together they make
  *  hit rates first-class observable — the DoorDash caching lesson wave 2 adopts. */
 export type MicroCacheName = "nearby_count" | "pickup_photo_url";
+
+/** The completeness invariants the nightly wallet integrity job asserts (roadmap 1.3). CLOSED
+ *  vocabulary — one label per invariant class, never an id/rider, so the drift counter stays low
+ *  cardinality and 1.5 can alert on `wallet_integrity_drift_total > 0`. See WalletIntegrityService. */
+export type WalletIntegrityDrift =
+  | "balance_mismatch" // cached balance ≠ sum(ledger) for an account
+  | "missing_topup_credit" // a confirmed TopUp with no matching ledger credit
+  | "missing_receipt" // a ride_commission row missing its ratePct/fare show-the-math fields
+  | "orphan_topup_credit"; // a ledger credit whose topUp is missing or not confirmed
 
 /** Client latency ceiling (ms). Zod already caps `ms` at 60s; we re-clamp so a bug/tamper can't leak. */
 const CLIENT_MS_MAX = 60_000;
@@ -205,6 +216,20 @@ export class MetricsService {
    */
   incWhatsappOtpDeliveryFailed(reason: string): void {
     this.counter("whatsapp_otp_delivery_failed_total").add(1, { reason });
+  }
+
+  /** One completed run of the nightly wallet integrity job (roadmap 1.3) — the denominator that
+   *  lets an alert distinguish "0 drift because healthy" from "0 drift because the job stopped
+   *  running". Always emitted, even on a clean run. */
+  recordWalletIntegrityRun(): void {
+    this.counter("wallet_integrity_runs_total").add(1);
+  }
+
+  /** `count` ledger-completeness violations of one `kind` found by the integrity job. A clean run
+   *  emits nothing here (so any nonzero sample is actionable); the `kind` label is a closed
+   *  vocabulary — never a rider/account id. This is the series 1.5's ledger-drift alert watches. */
+  recordWalletIntegrityDrift(kind: WalletIntegrityDrift, count: number): void {
+    if (count > 0) this.counter("wallet_integrity_drift_total").add(count, { kind });
   }
 }
 

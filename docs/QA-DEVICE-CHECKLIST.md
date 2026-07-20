@@ -60,6 +60,14 @@ Crashlytics is the alternative):
 - [ ] Add Sentry (or Crashlytics) per the above; forced test crash visible from a release build.
 - [ ] Consider the same for the admin app (`@sentry/nextjs`) — lower priority.
 
+> **API side already wired (roadmap 1.1).** `@sentry/node` is initialized in `apps/api/src/main.ts`
+> via `observability/sentry.ts`, and `AllExceptionsFilter` reports every unexpected 500 (with its
+> correlationId). It is **inert until `SENTRY_DSN` is set** — founder step: provision the Sentry
+> project, put the DSN in Secret Manager, expose it to the runtime SA, then confirm a forced test
+> error appears in the dashboard. The mobile (`@sentry/react-native`) and admin (`@sentry/nextjs`)
+> halves are the device/build-gated steps above and are intentionally left for an on-device pass so
+> the calibrated JS bundle-size budget isn't changed blind.
+
 ## Background GPS during Maps navigation (foreground service) — NEW BINARY required
 
 > The "Follow route in Google Maps" hand-off backgrounds the rider app; the Android foreground

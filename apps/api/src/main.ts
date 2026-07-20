@@ -11,6 +11,7 @@ import { securityHeaders } from "./common/security-headers.middleware";
 import { parseTrustProxy } from "./common/trust-proxy";
 import { loadEnv } from "./config/env";
 import { initObservability } from "./observability/otel";
+import { initSentry } from "./observability/sentry";
 
 /**
  * Defense-in-depth process-level backstops (F-12). The reliability-critical paths already attach a
@@ -47,6 +48,14 @@ function installProcessBackstops(): void {
 async function bootstrap(): Promise<void> {
   installProcessBackstops();
   const env = loadEnv();
+  // Crash reporting first (inert without SENTRY_DSN) so its global handlers are installed before any
+  // async runs — mirrors the process backstops above, which catch what Sentry then also reports.
+  initSentry({
+    dsn: env.SENTRY_DSN,
+    environment: env.SENTRY_ENVIRONMENT,
+    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    release: env.OTEL_SERVICE_NAME,
+  });
   // Start tracing before the app so the SDK can patch http before the server begins handling requests.
   await initObservability(env.OTEL_SERVICE_NAME, env.OTEL_EXPORTER_OTLP_ENDPOINT);
 

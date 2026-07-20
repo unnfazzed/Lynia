@@ -1039,6 +1039,30 @@ graph TB
 - If `REDIS_URL` is unset entirely, offer-expiry is disabled (logged) but the reconciler still
   closes stale deliveries — the system degrades, it doesn't break.
 
+### Retry ownership
+
+Every request that fails can be re-executed by *some* layer, and the failure mode to fear is
+**amplification** — several layers each retrying the same call turn a blip into a self-inflicted
+outage (DoorDash's June-19th post), while an ambiguous money write retried without care double-charges.
+The rule here is **one owner per flow, classify before retrying, default non-retryable** (Airbnb's
+double-payment lesson). The table is the authority on who may retry what:
+
+| Layer | Retries | Policy | Owns |
+|---|---|---|---|
+| **TanStack Query (reads)** | `shouldRetry`, cap 2 | Retry only a **retryable** `ApiError` (status 0 / 5xx); a 4xx is a deterministic answer and never retried; an outage *pauses* the query (`onlineManager`) rather than burning retries. | Idempotent GETs |
+| **TanStack Query (writes)** | `mutations.retry = false` | **Non-retryable by default.** A money-moving / state-changing POST is never silently re-sent by the client. A per-mutation `retry:` is a deliberate, reviewed exception and must carry an idempotency key. | All mutations |
+| **API client (`api/client.ts`)** | Single re-send after a 401 token refresh | Not a general retry — one replay of the original request with a fresh access token, guarded by single-flight refresh. | Auth token rotation |
+| **BullMQ workers** | `attempts: 3`, exp. backoff 5s | The *server-side* owner of retrying time-based transitions. Idempotent via `jobId = orderId` (a retry can't fire the transition twice). Broadcast-widening ticks opt **out** (`attempts` unset) — best-effort by design. | Offer expiry, rating auto-close |
+| **DB reconcilers (`setInterval`)** | Periodic sweep (offer ~2 min, lifecycle ~15 min) | The Redis-independent backstop, not a retry of a specific call — re-derives the correct state from the DB. Guarded CAS so it converges, never double-acts. | Self-heal for lost jobs / Redis outage |
+| **Socket.IO client** | Built-in reconnection | Transport reconnect only; on reconnect the client re-subscribes and the server re-emits a snapshot. Carries no mutation. | Live-tracking presence |
+| **Cloud Scheduler jobs** | `retry_count = 3` | Retries the nightly POST (retention purge, wallet integrity, settlement auto-pause). Each endpoint is idempotent / read-only, so a retried run is safe. | Scheduled sweeps |
+
+`ApiError.retryable` (`api/client.ts`) is the single per-error classifier both client policies read:
+`true` only for a dropped link (status 0) or a transient 5xx. Everything else — including any error a
+layer can't classify — is treated as non-retryable on the write path. The PSP-webhook redelivery layer
+(future EcoCash rail, wallet PR2) joins this table as its own row and must dedupe inbound events by
+provider event id.
+
 ---
 
 ## 15. CI / CD pipeline

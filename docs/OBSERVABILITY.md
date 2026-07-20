@@ -134,6 +134,26 @@ Suggested thresholds: **page** at p95 > SLO sustained for 10 min; **warn** at p9
 latency alerts with error-rate alerts off the counters, e.g.
 `sum(rate(match_select_total{outcome="error"}[5m])) / sum(rate(match_select_total[5m]))`.
 
+### Business-vital alerts (roadmap 1.5)
+
+Latency SLOs tell you the API is slow; these tell you the **marketplace is unhealthy** — the signals a
+courier operator actually cares about. All live in `infra/terraform/monitoring.tf` under the same
+`slo_alerts_enabled` gate and share `alert_notification_channels`. Each has a runbook line here:
+
+| Alert | Condition (PromQL) | Runbook |
+|---|---|---|
+| **Wallet ledger integrity drift** | `sum(increase(wallet_integrity_drift_total[24h])) > 0` | The nightly sweep (`POST /admin/wallet/integrity-check`) found a completeness violation. Pull the WARN log line (`wallet_integrity DRIFT …`) for the sample refs, identify the rider/top-up, and reconcile **before the next payout**. Never dismiss — this is real money visibility. |
+| **Integrity job not running** | `sum(increase(wallet_integrity_runs_total[25h])) < 1` | The denominator guard: a 0-drift reading is only trustworthy if the job ran. Check Cloud Scheduler `lynia-wallet-integrity` and the endpoint's auth (AdminOrSchedulerGuard / runtime SA). |
+| **API 5xx rate > 2%** | `…{status_class="5xx"}… > 0.02` | Usually a bad deploy. First mitigation: re-point traffic to the previous Cloud Run revision (`rollback.yml`), then diagnose from the Sentry release + correlation IDs. |
+| **Offer-make error rate > 5%** | `offers_made_total{outcome="error"}` ratio | Riders can't bid. Distinct from `conflict`/`forbidden` (normal race/permission outcomes). Check the offers module + DB. |
+| **WhatsApp OTP delivery failures** | `sum(rate(whatsapp_otp_delivery_failed_total[5m])) > 0.2` | Users can't receive login codes. Check Meta Cloud API status + `WHATSAPP_*` config. |
+
+**Not yet alertable — needs instrumentation first.** BullMQ **queue age/depth** and **top-up-confirm
+lag** have no metric series emitted today, so no policy can be written against them (a PromQL policy on a
+non-existent metric 400s at apply, same as the LR9 SLO gate). Emitting these (a queue-depth gauge on the
+offer/lifecycle workers; a confirm-latency histogram on the top-up path) is the prerequisite follow-up
+before their alerts can be added.
+
 ## Caveat — these are SERVER-side latencies
 
 The server histograms here measure time **inside the API process** (or, for `position_emit_latency_ms`,

@@ -8,6 +8,7 @@
  */
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { captureException } from "../observability/sentry";
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -34,6 +35,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       `Unhandled exception [${correlationId}] ${req.method ?? "?"} ${req.url ?? "?"}`,
       exception instanceof Error ? exception.stack : String(exception),
     );
+    // Aggregated crash view (roadmap 1.1) — a no-op unless SENTRY_DSN is configured. The correlationId
+    // ties the Sentry event back to this server log line and the generic 500 the client received.
+    captureException(exception, { correlationId, method: req.method, url: req.url });
 
     res.status(500).json({ statusCode: 500, message: "Internal server error", correlationId });
   }

@@ -26,6 +26,17 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+
+  /**
+   * The per-error half of the retry taxonomy (docs/ARCHITECTURE.md §Retry ownership). `true` only for
+   * a dropped link (status 0) or a transient server 5xx — cases a retry could plausibly clear. A 4xx is
+   * a deterministic answer (auth, validation, a domain conflict) that a retry would only repeat, wasting
+   * the scarce bandwidth this app is built around. The retry *policy* (shouldRetry for reads; the
+   * mutation default for writes) decides whether to act on this classification — it never overrides it.
+   */
+  get retryable(): boolean {
+    return this.status === 0 || this.status >= 500;
+  }
 }
 
 /** Lift a machine-readable reason code off a Nest error body, if present. Checks the fields the API is
