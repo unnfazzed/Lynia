@@ -22,6 +22,7 @@ interface Overview {
   };
   today: { completed: number; completionRatePct: number | null; fares: string };
   attention: { kycPending: number; openIssues: number; stuckOrders: number; stuckOrderId: string | null };
+  commissionRatePct: number;
   recentOrders: Array<{
     id: string;
     status: string;
@@ -208,13 +209,26 @@ function buildAttention(data: Overview): AttentionRow[] {
       icon: <IconIdCard />,
     });
   }
-  rows.push({
-    title: "Commission is 0%",
-    detail: "launch period — nothing is collected yet.",
-    action: "View",
-    href: "/cash",
-    icon: <IconBanknote />,
-  });
+  // UX20-02: this used to be a hardcoded "Commission is 0%" literal that could never reflect the real,
+  // operator-flippable rate — an ops flip to a live rate kept this row insisting nothing was collected,
+  // directly contradicted by the very next click into /cash. Read the live rate instead.
+  rows.push(
+    data.commissionRatePct > 0
+      ? {
+          title: `Commission is ${data.commissionRatePct}%`,
+          detail: "being deducted per ride from riders' prepaid balance.",
+          action: "View",
+          href: "/cash",
+          icon: <IconBanknote />,
+        }
+      : {
+          title: "Commission is 0%",
+          detail: "launch period — nothing is collected yet.",
+          action: "View",
+          href: "/cash",
+          icon: <IconBanknote />,
+        },
+  );
   return rows;
 }
 

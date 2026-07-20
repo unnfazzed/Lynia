@@ -151,6 +151,9 @@ export class NotificationsFeedService {
           rebroadcastOfId: true,
           expiryNoSupply: true,
           cancelledBy: true,
+          // UX20-04: the current agreed fare, so a fare-adjust feed row can quote the corrected amount
+          // exactly like the push does.
+          agreedFare: true,
           events: {
             select: { status: true, createdAt: true },
             orderBy: { createdAt: "asc" },
@@ -193,7 +196,7 @@ export class NotificationsFeedService {
     const orderIds = orders.map((o) => o.id);
     const customerViewOrderIds = orders.filter((o) => o.riderId !== userId).map((o) => o.id);
 
-    const [withOffers, adjudicated, offers, sosEvents, standingNotices, standingResolved] = await Promise.all([
+    const [withOffers, adjudicated, offers, sosEvents, standingNotices, standingResolved, fareAdjustments] = await Promise.all([
       // Fix 1: for expired orders the customer is viewing, distinguish "riders bid but you didn't pick
       // in time" from the default "raise your price" nudge. Offer rows are never deleted on expiry
       // (only flipped to `expired`), so a plain count over the durable rows recovers "did any rider
@@ -241,6 +244,14 @@ export class NotificationsFeedService {
       customerViewOrderIds.length > 0
         ? this.prisma.auditLog.findMany({
             where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_resolved" },
+            select: { id: true, target: true, createdAt: true },
+          })
+        : [],
+      // UX20-04 fare-adjust fallback — consumed by the fare-adjust loop below; scoped to ALL orderIds
+      // (adjustFare pushes both parties), so it belongs to this order-scoped level like the SOS read.
+      orderIds.length > 0
+        ? this.prisma.auditLog.findMany({
+            where: { target: { in: orderIds }, action: "order.fare_adjust" },
             select: { id: true, target: true, createdAt: true },
           })
         : [],
@@ -361,6 +372,37 @@ export class NotificationsFeedService {
         at,
         unread: now.getTime() - offer.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
       });
+    }
+
+    // UX20-04: adjustFare's post-commit push (customer "Your delivery's fare was updated" / rider "A
+    // delivery's fare was updated") had no durable feed fallback — order.fare_adjust's AuditLog is
+    // targeted at orderId, but adjustFare writes no OrderEvent (so it never surfaces via FEED_NOTICES
+    // above) and the audit's target doesn't match ACCOUNT_FEED_ACTIONS (which key off a profileId
+    // target), so a missed push left zero durable trace for either party. Recover it the same way
+    // order.rider_standing_notice does below — one batched query over the orders already in view — but
+    // scoped to ALL orderIds (not just customerViewOrderIds), since adjustFare pushes both parties.
+    if (fareAdjustments.length > 0) {
+      const orderById = new Map(orders.map((o) => [o.id, o]));
+      for (const a of fareAdjustments) {
+        const order = orderById.get(a.target);
+        if (!order) continue; // defensive: target always one of the queried orders
+        const isCustomerView = order.riderId !== userId;
+        const fare = order.agreedFare != null ? Number(order.agreedFare).toFixed(2) : null;
+        const at = a.createdAt.toISOString();
+        rows.push({
+          id: `fare-adjust:${a.id}`,
+          orderId: a.target,
+          to: isCustomerView ? "customer" : "rider",
+          icon: "banknote",
+          title: "Fare updated",
+          message:
+            (isCustomerView ? "Your fare was corrected" : "The fare for this delivery was corrected") +
+            (fare ? ` to $${fare}` : "") +
+            " by our team.",
+          at,
+          unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        });
+      }
     }
 
     // KB-FEED-SYNTH: account-status rows (KYC decision + admin standing changes). Those pushes

@@ -1,5 +1,8 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
+import { resolveCommissionRatePct } from "@lynia/shared";
 import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
+import { ENV } from "../config/config.module";
+import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
 import { computeFunnel, routeOf } from "./admin.shared";
 
@@ -21,7 +24,10 @@ const STUCK_AFTER_MS = 25 * 60 * 1000;
  */
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   /** Cheap counts for the sidebar attention badges (KYC backlog, open disputes, un-acked SOS). Kept
    *  separate from `overview()` so the shell can render badges on every page without its heavy query set. */
@@ -139,6 +145,9 @@ export class AdminService {
         stuckOrders: stuckCount,
         stuckOrderId: stuckOldest?.id ?? null,
       },
+      // UX20-02: the live, server-authoritative commission rate — the needs-attention "Commission is 0%"
+      // row used to be a hardcoded literal that could never reflect the real (operator-flippable) rate.
+      commissionRatePct: resolveCommissionRatePct(this.env.COMMISSION_RATE_PCT),
       recentOrders: recent.map((o) => ({
         id: o.id,
         status: o.status,

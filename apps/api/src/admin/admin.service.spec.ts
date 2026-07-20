@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminService } from "./admin.service";
 
 /** Decimal-like stub — Prisma returns Decimal objects the service serializes via toString(). */
 const dec = (s: string) => ({ toString: () => s });
+const envStub = (COMMISSION_RATE_PCT?: string) => ({ COMMISSION_RATE_PCT } as unknown as Env);
 
 describe("AdminService.overview", () => {
   it("adds today throughput, needs-attention signals, and enriched recent orders", async () => {
@@ -59,12 +61,15 @@ describe("AdminService.overview", () => {
       issue: { count: async () => 2 }, // open + investigating disputes
     };
 
-    const out = await new AdminService(prisma as unknown as PrismaService).overview();
+    const out = await new AdminService(prisma as unknown as PrismaService, envStub("10")).overview();
 
     // Today throughput drives the two headline KPIs the kit design shows.
     expect(out.today).toEqual({ completed: 9, completionRatePct: 90, fares: "86.40" });
     // Needs-attention signals for the overview queue.
     expect(out.attention).toEqual({ kycPending: 3, openIssues: 2, stuckOrders: 2, stuckOrderId: "stuck-1" });
+    // UX20-02: the live commission rate, resolved from env — the console's needs-attention "Commission
+    // is 0%" row must read this instead of a hardcoded literal.
+    expect(out.commissionRatePct).toBe(10);
     // Recent orders carry the route + rider name for the design's table.
     expect(out.recentOrders[0]).toMatchObject({
       id: "ord_1",
@@ -90,7 +95,7 @@ describe("AdminService.overview", () => {
       rider: { count: async () => 0 },
       issue: { count: async () => 0 },
     };
-    const out = await new AdminService(prisma as unknown as PrismaService).overview();
+    const out = await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
     expect(out.today.completionRatePct).toBeNull();
     expect(out.today.fares).toBe("0");
     expect(out.attention.stuckOrderId).toBeNull();
@@ -126,7 +131,7 @@ describe("AdminService.overview", () => {
       issue: { count: async () => 0 },
     };
 
-    await new AdminService(prisma as unknown as PrismaService).overview();
+    await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
 
     // A cancelled-post-delivery order (status "cancelled", deliveredAt still set from before the cancel)
     // must NOT satisfy the completed-today where-clause — it has to require the CURRENT status too.
