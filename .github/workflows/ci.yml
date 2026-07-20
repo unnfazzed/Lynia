@@ -77,6 +77,21 @@ jobs:
       - run: pnpm --filter @lynia/api prisma:generate
       - run: pnpm run typecheck
       - run: pnpm run lint
+      # Backwards-compatibility gate for the shared API wire contracts (roadmap 4.2). Mobile OTA +
+      # app-store review lag means old installed clients keep calling the new API for weeks, so a
+      # BREAKING contract change (field removed/retyped, bound narrowed, enum value dropped,
+      # optional→required, object made strict) must be deliberate — typecheck alone only proves this
+      # repo agrees with itself, not that DEPLOYED old binaries still parse. This diffs the shared
+      # zod contracts against the committed snapshot (packages/shared/contract-snapshot.json, built
+      # above via `pnpm --filter @lynia/shared build`) and fails on a breaking change. Additive
+      # changes (a new OPTIONAL field, a widened bound) always pass. The `contract-change` PR label
+      # sets CONTRACT_CHANGE_OK=1, which downgrades the failure to a warning so a deliberate break can
+      # ship (re-baseline in the same PR with `pnpm contract:snapshot`). On push/main with no PR the
+      # label expression is empty, so the gate simply enforces the committed snapshot.
+      - name: Contract back-compat gate (shared API contracts)
+        env:
+          CONTRACT_CHANGE_OK: ${{ contains(github.event.pull_request.labels.*.name, 'contract-change') && '1' || '' }}
+        run: pnpm run contract:check
       # Import-boundary + cycle enforcement (roadmap 3.2). Baselined: fails only on a NEW circular
       # import or a NEW mobile ui→api coupling, never on the pre-existing knots being worked down.
       - run: pnpm run depcruise
