@@ -41,6 +41,7 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `offers_made_total`             | counter   | 1    | `outcome`                       | —          |
 | `client_samples_dropped_total`  | counter   | 1    | `role`                          | —          |
 | `whatsapp_otp_delivery_failed_total` | counter | 1 | `reason`                     | —          |
+| `micro_cache_requests_total`    | counter   | 1    | `cache`, `outcome`               | —          |
 
 > **Client RUM (present, not future).** The four `client_*_latency_ms` histograms and the
 > `client_samples_dropped_total` counter are the **glass-to-glass** signal — the mobile app measures
@@ -71,6 +72,8 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
   it's Meta's raw `errors[0].title` string from the webhook payload (`whatsapp-webhook.ts`), with no
   code-enforced cap analogous to `bucketAppVersion` — bounded in practice only by Meta's own error
   catalog, not by Lynia.
+- `micro_cache_requests_total` `cache` ∈ `nearby_count | pickup_photo_url`; `outcome` ∈
+  `hit | l2_hit | miss | coalesced | error` (both closed vocabularies, see `docs/PERFORMANCE.md`).
 
 ### Explicit histogram buckets
 
