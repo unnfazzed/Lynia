@@ -38,7 +38,8 @@ import { WhatsappWebhookController } from "./whatsapp-webhook.controller";
     },
   ],
   // OTP_STORE is exported so the global ThrottleGuard (registered in AppModule) can reuse the same
-  // Redis-backed fixed-window counter this module already provides.
-  exports: [TokenService, JwtAuthGuard, AdminGuard, AdminOrSchedulerGuard, OTP_STORE],
+  // Redis-backed fixed-window counter this module already provides. AuthService joins the exports for
+  // AppBootstrapModule (wave-2 W1), which aggregates getProfile into the one-round-trip cold start.
+  exports: [TokenService, JwtAuthGuard, AdminGuard, AdminOrSchedulerGuard, OTP_STORE, AuthService],
 })
 export class AuthModule {}

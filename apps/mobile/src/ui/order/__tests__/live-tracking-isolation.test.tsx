@@ -26,7 +26,7 @@ const baseSnapshot: OrderSnapshot = {
   pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },
   dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" },
   rider: { profileId: "r1", currentLat: -17.825, currentLng: 31.055, updatedAt: "2026-07-12T12:00:00.000Z" },
-  events: [{ status: "assigned", lat: null, lng: null, createdAt: "2026-07-12T11:50:00.000Z" }],
+  events: [{ status: "assigned", createdAt: "2026-07-12T11:50:00.000Z" }],
   counterpartyPhone: null,
   expiresAt: null,
 };

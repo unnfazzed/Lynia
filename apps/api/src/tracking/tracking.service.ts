@@ -582,6 +582,20 @@ export class TrackingService implements OnModuleDestroy {
    * route the tap to that live auction. Best-effort and a no-op without Redis (returns []); a Redis error
    * yields [].
    */
+  /** O(1) probe: does ANYONE currently sit on the notify-me waitlist? (The geo set is a zset, so
+   *  ZCARD is exact and constant-time.) Lets the heartbeat beat-drain skip the GEOSEARCH claim script
+   *  entirely in the common empty-list case (wave-2 W3). Best-effort with the SAME degradation shape
+   *  as claimNotifyWaitersNear: no Redis, or a Redis error, reads as "no waiters". */
+  async hasNotifyWaiters(): Promise<boolean> {
+    const redis = this.getRedis();
+    if (!redis) return false;
+    try {
+      return (await redis.zcard(NOTIFY_GEO_KEY)) > 0;
+    } catch {
+      return false;
+    }
+  }
+
   async claimNotifyWaitersNear(
     lat: number,
     lng: number,

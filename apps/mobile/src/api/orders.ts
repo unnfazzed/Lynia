@@ -26,8 +26,6 @@ export interface CreateOrderResult {
 
 export interface OrderEvent {
   status: OrderStatus;
-  lat: number | null;
-  lng: number | null;
   createdAt: string;
 }
 export interface OrderSnapshot {

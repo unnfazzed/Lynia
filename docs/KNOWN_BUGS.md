@@ -1503,3 +1503,24 @@ it. `pnpm typecheck` + full test suite green.
 |---|---|---|---|---|---|
 | PERF19-01 | Pickup-photo signed read URL was **re-minted on every snapshot poll** — a fresh V4 signature (new query string) every 15s made the phone's image cache miss, so the SAME pickup photo re-downloaded every poll for the entire delivery leg on metered data, and each poll burned one GCP `signBlob` IAM call against the project-shared signing quota (the very quota DS-07 throttles minting to protect). | `apps/api/src/orders/orders.service.ts` `getSnapshot` | MEDIUM | BH/perf | **FIXED** — signed URL micro-cached per object key for 10 min of its 15-min validity (byte-stable URL across polls; a served URL always has ≥5 min life left; mint failures never cached). Tests: `orders.service.spec.ts` (same-URL-across-polls, one mint; failed-mint retry). |
 | PERF19-02 | Home compose screen persisted the order draft to **SecureStore on every keystroke** in the landmark/note/item fields — serialized keychain round-trips (slow on the target low-end Androids) queued on the typing path, i.e. input latency where the product most needs to feel instant. | `apps/mobile/app/home.tsx` draft-persist effect | LOW-MEDIUM | UX/perf | **FIXED** — trailing 500 ms debounce with an unmount flush (navigate-away right after typing still saves; a hard kill inside the window loses ≤0.5s of draft edits vs. every keystroke previously — accepted). |
+
+## Interactive performance session 2026-07-19 — wave 2 (agentic-loop program) — `docs/PERFORMANCE.md`
+
+The user-approved expansion of the morning's performance push: three agentic loops (multi-lens
+hunt → 2-skeptic adversarial verify → build → prove) plus the standing **weekly performance
+watch routine** (now the 8th routine — `docs/ROUTINES.md`, lane `PW-`, Sundays 11:00 UTC).
+Shipped workstreams (all with regression tests; see the wave-2 table in `docs/PERFORMANCE.md`):
+`GET /app/bootstrap` BFF cold-start aggregate + client cache seeding; MicroCache runtime flags +
+hit/miss metrics + optional Redis L2 + TTL jitter; `POST /riders/heartbeat` lightweight beat
+(standing enforcement preserved — one guarded UPDATE carries the same predicate, demoted riders
+still 403 with the precise reason; waitlist drain kept on transitions + ZCARD-gated on beats);
+notifications feed parallelized (9 serial reads → 2 levels, output byte-identical). Hunt
+verification note: the four Loop-A candidates that received both skeptic verdicts were ALL
+refuted; ~21 candidates left unverified by an API usage limit were queued for the PW lane
+(listed in `docs/PERFORMANCE.md` wave-2 section) — deliberately not fixed blind. Two ledgerable
+defects found and fixed same-run:
+
+| ID | Description | Area | Sev | Owning lane | Status |
+|---|---|---|---|---|---|
+| PERF19-03 | KYC-pending `/me` poll ran at a flat **5s for the entire pending window regardless of review mode** — in `manual` mode (ops review, hours-to-days) that's ~17k requests/day of radio wakeups per waiting rider for a transition that lands via ops action, on the exact cheap-Android/metered-data profile the app targets. | `apps/mobile/app/rider/index.tsx` KYC poll | LOW-MEDIUM | UX/perf (PW) | **FIXED** — cadence by `me.rider.kycMode`: `auto` keeps 5s (vendor answers in minutes), `manual` drops to a 60s safety net; focus/foreground refetch still gives an actively-checking rider the instant flip. |
+| PERF19-04 | Every order-snapshot response serialized `events[].lat`/`events[].lng` — **written by no event creator (always null) and read by no client** — dead bytes per event on the hottest polled response since the events feature landed. | `apps/api/src/orders/orders.service.ts` `getSnapshot` events select; mobile `OrderEvent` type | LOW | BH/perf (PW) | **FIXED** — select trimmed to `{status, createdAt}` (DB columns untouched); wire contract pinned by a spec so the dead fields can't quietly return. |

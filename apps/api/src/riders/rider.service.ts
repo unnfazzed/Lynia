@@ -354,6 +354,69 @@ export class RiderService {
   }
 
   /**
+   * Lightweight presence beat (wave-2 W3). The mobile app beats every 20s while online, and that beat
+   * used to replay the FULL setOnline mutation — standing-gate read + commission read + CAS write +
+   * waitlist GEOSEARCH per rider per beat — the dominant per-rider server cost at scale. This path
+   * refreshes only what a beat MEANS (liveness + position), with the sensitive invariants kept
+   * deliberately conservative:
+   *
+   *  - ONE guarded UPDATE refreshes `last_heartbeat_at` only while the rider is STILL online AND in
+   *    good standing (`active` + not on-hold) — the same predicate setOnline's go-online CAS enforces.
+   *    Every mid-shift demotion path (admin suspend/ban, reliability hold, KYC lapse, cancel-limit
+   *    cooldown) already forces `is_online = false` + supply eviction at write time, so a demoted
+   *    rider matches 0 rows on the next beat and gets the SAME precise 403 refusal the old
+   *    setOnline-beat produced — re-derived below exactly like setOnline's CAS-miss path.
+   *  - `drainNotifyWaiters` still runs unconditionally on every real go-ONLINE transition (setOnline).
+   *    On beats it runs only when the O(1) `hasNotifyWaiters` probe says the list is non-empty, so the
+   *    common empty-waitlist case stops paying a GEOSEARCH every 20s while a queued customer is still
+   *    pinged within one beat (≤20s) by an already-online rider nearby — the same outcome as before.
+   *  - No commission re-read: the prepaid floor gates the go-ONLINE transition, and at CAS-miss time
+   *    the refusal re-derivation below still loads it (exact parity with setOnline's miss path).
+   */
+  async heartbeat(profileId: string, location?: { lat: number; lng: number }): Promise<{ online: boolean }> {
+    const claimed = await this.prisma.$executeRaw`
+      UPDATE riders
+      SET last_heartbeat_at = now(),
+          updated_at = now()
+      WHERE profile_id = ${profileId}::uuid
+        AND is_online = true
+        AND account_status = 'active'
+        AND on_hold = false`;
+    if (claimed === 0) {
+      // Not beating: offline (toggled off elsewhere / forced by a demotion) or standing changed.
+      // Re-derive the precise refusal exactly like setOnline's CAS-miss path so the app renders the
+      // right blocked state; with clean standing but is_online=false, fall through to the generic 403
+      // the client maps to "You were taken offline. Tap Go online to retry."
+      const now = await this.prisma.rider.findUnique({
+        where: { profileId },
+        select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
+      });
+      if (!now) throw new ForbiddenException("Not a rider");
+      const commissionActive = isCommissionActive(resolveCommissionRatePct(this.env.COMMISSION_RATE_PCT));
+      const commissionBalance = await this.loadCommissionBalance(profileId, commissionActive);
+      const reason = onlineRefusalReason({ ...now, commissionActive, commissionBalance });
+      if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
+      throw new ForbiddenException("You're offline — go online to keep receiving jobs.");
+    }
+    // Same position persistence as setOnline's go-online write: keeps an IDLE online rider present in
+    // the nearby-rider index (recordFix throttles its own PG writes; Redis errors are swallowed inside).
+    if (location) {
+      try {
+        await this.tracking.recordFix(profileId, location.lat, location.lng);
+      } catch (err) {
+        this.logger.warn(`recordFix on heartbeat failed for ${profileId}: ${(err as Error).message}`);
+      }
+      // Beat-drain behind the O(1) probe (see doc above). Fire-and-forget and fully best-effort, like
+      // setOnline's own drain — a probe/drain failure can never fail the beat.
+      void this.tracking
+        .hasNotifyWaiters()
+        .then((any) => (any ? this.drainNotifyWaiters(location.lat, location.lng) : undefined))
+        .catch(() => {});
+    }
+    return { online: true };
+  }
+
+  /**
    * 2·b1: drain the "notify me" waiting list near a newly-online rider and push those customers. Fully
    * best-effort — swallows everything (no Redis, a geo miss, a push outage) so it can never disturb the
    * setOnline that spawned it. Separated out (not inlined) so the fire-and-forget has its own try/catch.
