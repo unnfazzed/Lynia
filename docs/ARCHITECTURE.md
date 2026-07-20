@@ -1096,6 +1096,29 @@ layer can't classify — is treated as non-retryable on the write path. The PSP-
 (future EcoCash rail, wallet PR2) joins this table as its own row and must dedupe inbound events by
 provider event id.
 
+### Core vs non-core (kill switches)
+
+Uber's driver-app lesson: keep the **core** — the path a user cannot complete their job without —
+deliberately small and un-disableable, and give everything **non-core** a kill switch that fails soft,
+so a catastrophic failure in a peripheral feature can never block the core flow. Lynia's core is the
+money path plus the two safety-critical surfaces:
+
+| Tier | Surfaces | Kill switch? |
+|---|---|---|
+| **Core** (never disable) | auth/OTP · the offer loop · order lifecycle · wallet/commission · live tracking · SOS | **No** — by design. These cannot be turned off; a failure here is an incident, not a toggle. |
+| **Non-core** (fail soft) | in-app notifications feed · reports surfaces · ratings-adjacent extras | **Yes** — flip the switch and the surface degrades to empty/disabled, never erroring into the core flow. |
+
+Non-core switches follow the existing env-flag pattern (deploy-time, logged + revertible via Cloud Run
+revisions — the Airbnb "config changes are changes" guardrail for free), not a runtime DB flag (that
+would be new admin product surface; deferred). Shipped switches:
+
+- **`NOTIFICATIONS_FEED_ENABLED`** (roadmap 3.1) — `GET /notifications/feed` is a ~9-read synthesis
+  off the money path; when `false` the endpoint returns an empty feed instead of running the query, so
+  a slow/broken feed can't take down checkout. The client already renders an empty feed as its ordinary
+  "nothing yet" state, so the degrade is invisible beyond the missing rows.
+
+The rule: a new non-core surface ships with its kill switch from day one; core surfaces never get one.
+
 ---
 
 ## 15. CI / CD pipeline
