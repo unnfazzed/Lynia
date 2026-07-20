@@ -29,6 +29,7 @@ import {
   type PendingSenderRating,
   type RiderJobTerminal,
 } from "../../src/auth/session";
+import { fmtClock } from "../../src/logic/format-time";
 import { formatMoney } from "../../src/logic/money";
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
@@ -46,12 +47,6 @@ import { BailSheet } from "../../src/ui/rider/BailSheet";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
 /** A short local clock label (e.g. "3:40 PM") for a cooldown-until timestamp; empty on a bad date. */
-function fmtClock(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
 export default function RiderJob(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
