@@ -1,5 +1,6 @@
 export * from "./enums";
 export * from "./contracts";
+export * from "./money";
 export * from "./policy";
 export * from "./geo";
 export * from "./pricing";
