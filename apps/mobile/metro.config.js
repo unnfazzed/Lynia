@@ -6,10 +6,13 @@
  * that one package rather than enabling exports resolution globally, which
  * changes resolution for the whole dependency tree.
  */
-const { getDefaultConfig } = require("expo/metro-config");
+// getSentryExpoConfig is a drop-in for expo's getDefaultConfig that also wires the Sentry Metro
+// serializer (debug-id → source-map upload during EAS build). It returns the same config object, so
+// the posthog subpath resolver below applies unchanged. Sentry stays inert at runtime without a DSN.
+const { getSentryExpoConfig } = require("@sentry/react-native/metro");
 const path = require("path");
 
-const config = getDefaultConfig(__dirname);
+const config = getSentryExpoConfig(__dirname);
 
 // Neither package exposes ./package.json through its exports map, so resolve
 // each entry point and walk up to the package root (<root>/dist/index.js).

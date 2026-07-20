@@ -37,27 +37,27 @@ Run the core journeys on a **≤2 GB-RAM device** under **throttled 3G/EDGE** an
 
 ## LR20 — crash telemetry (Sentry) + store readiness
 
-### Crash telemetry runbook (do on the dev build — native SDK, not verifiable off-device)
-There is client RUM (`apps/mobile/src/telemetry/rum.ts`) but **no crash reporter** — a crash on a
-tester's phone is currently invisible. Wire `@sentry/react-native` (catches JS **and** native crashes;
-Crashlytics is the alternative):
+### Crash telemetry (roadmap 1.1) — CODE WIRED; founder finishes on a device build
 
-1. `cd apps/mobile && npx @sentry/wizard@latest -i reactNative` (or `expo install @sentry/react-native`).
-2. Add the Expo config plugin in `app.config.ts` (`plugins: ["@sentry/react-native/expo"]`) with the
-   org/project.
-3. Init behind an env DSN so it's **inert without config** (mirrors the OTEL/push seam):
-   ```ts
-   import * as Sentry from "@sentry/react-native";
-   if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
-     Sentry.init({ dsn: process.env.EXPO_PUBLIC_SENTRY_DSN, tracesSampleRate: 0.1 });
-   }
-   export default Sentry.wrap(RootLayout); // wrap the router root
-   ```
-4. Add `EXPO_PUBLIC_SENTRY_DSN` as an EAS secret; keep it unset in dev so local runs stay quiet.
-5. **Verify**: trigger a forced test crash from a **release** build → it appears in the Sentry dashboard
-   with a symbolicated stack. (This is the LR20 exit test.)
+`@sentry/react-native` (~6.10) is now integrated (catches JS **and** native crashes — the gap client
+RUM/PostHog couldn't see):
+- `apps/mobile/src/telemetry/sentry.ts` — `initSentry()` (inert unless `EXPO_PUBLIC_SENTRY_DSN` is set;
+  perf tracing OFF by default for the metered-data market; no PII).
+- `app/_layout.tsx` — `initSentry()` at module load, `Sentry.wrap(RootLayout)`, and the `ErrorBoundary`
+  reports render crashes.
+- `app.config.ts` — the `@sentry/react-native` config plugin; `metro.config.js` uses
+  `getSentryExpoConfig` (source-map upload hook, posthog resolver preserved).
+- **Size:** adds ~974 KB to the Hermes bundle (+19%) / ~817 KB to the export total — `size-budget.json`
+  raised accordingly (a real metered-data cost; see APP-SIZE.md). Trimming it would mean stripping
+  Sentry's optional Replay/tracing via Metro flags — a follow-on if the size is a concern.
 
-- [ ] Add Sentry (or Crashlytics) per the above; forced test crash visible from a release build.
+**Founder steps to activate (device-gated — not verifiable off-device):**
+1. Add `EXPO_PUBLIC_SENTRY_DSN` (+ optionally `_ENVIRONMENT`, `_TRACES_SAMPLE_RATE`) as an **EAS build
+   secret** (and, for symbolicated JS frames, a `SENTRY_AUTH_TOKEN` EAS secret for source-map upload).
+2. Build a **release** and force a test crash → confirm it appears in the Sentry dashboard with a
+   symbolicated stack. (This is the LR20 exit test.) Keep the DSN unset in dev so local runs stay quiet.
+
+- [ ] Activate per the founder steps; forced test crash visible from a release build.
 - [ ] Consider the same for the admin app (`@sentry/nextjs`) — lower priority.
 
 > **API side wired (roadmap 1.1).** `@sentry/node` is initialized in `apps/api/src/main.ts` via
