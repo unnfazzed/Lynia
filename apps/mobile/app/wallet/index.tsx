@@ -5,20 +5,11 @@ import React from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { getTopup } from "../../src/api/wallet";
 import { clearPendingTopup, loadPendingTopup } from "../../src/auth/session";
+import { fmtDateTime } from "../../src/logic/format-time";
 import { formatMoney } from "../../src/logic/money";
 import { reconcilePendingTopup } from "../../src/logic/topup";
 import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../src/query/use-wallet";
 import { Button, Card, EmptyState, Heading, Screen, SkeletonRows, Sub } from "../../src/ui";
-
-function fmtWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return (
-    d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) +
-    " · " +
-    d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-  );
-}
 
 /** One ledger receipt. A debit renders in ink (never red text on white); a credit in the text-green.
  *  Commission debits show the checkable math the server stored ("10% of $3.00"). */
@@ -28,7 +19,7 @@ function LedgerRow({ entry }: { entry: WalletEntry }): React.ReactElement {
   const sign = credit ? "+" : "−";
   return (
     <View
-      accessibilityLabel={`${entry.title}, ${entry.meta}, ${credit ? "credit" : "debit"} ${formatMoney(Math.abs(entry.amount))}, ${fmtWhen(entry.createdAt)}`}
+      accessibilityLabel={`${entry.title}, ${entry.meta}, ${credit ? "credit" : "debit"} ${formatMoney(Math.abs(entry.amount))}, ${fmtDateTime(entry.createdAt)}`}
       style={{ flexDirection: "row", alignItems: "center", paddingVertical: tokens.space.sm }}
     >
       <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
@@ -37,7 +28,7 @@ function LedgerRow({ entry }: { entry: WalletEntry }): React.ReactElement {
         </Text>
         <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }} numberOfLines={1}>
           {entry.meta ? `${entry.meta} · ` : ""}
-          {fmtWhen(entry.createdAt)}
+          {fmtDateTime(entry.createdAt)}
         </Text>
       </View>
       <Text style={{ fontSize: 16, fontWeight: "700", color: amountColor, fontVariant: ["tabular-nums"] }}>

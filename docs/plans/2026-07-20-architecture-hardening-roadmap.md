@@ -1,9 +1,10 @@
 # Lynia — Architecture & Engineering Hardening Roadmap (2026-07-20)
 
-**Status:** IN EXECUTION. Phases 1–2 shipped in PR #360 (merged). The deferred items (3.1, the 3.4/3.5
-decompositions, and the Phase-4 remainder) are shipping in a follow-up PR. **22 of 24 items are done or
-meaningfully started**; only 4.3 (placebo CI) and 4.4 (structural a11y) remain deferred, with reasons.
-The plan below is preserved as authored; this section tracks what has shipped.
+**Status:** IN EXECUTION. Phases 1–2 shipped in PR #360 (merged); the deferred items shipped across
+follow-up PRs (#362 and a third). **23 of 24 items are done or meaningfully advanced** — only 4.3
+(placebo CI reruns) remains deferred, with reasons. The 3.4/3.5 decompositions each have **two** verified
+behaviour-preserving extractions landed, with the rest tracked (the 3.2 baseline counts the remaining
+genuine ui→api couplings). The plan below is preserved as authored; this section tracks what has shipped.
 
 ## Execution status (2026-07-20)
 
@@ -26,12 +27,13 @@ The plan below is preserved as authored; this section tracks what has shipped.
 | **3.6** RF-05 design pass | ✅ **done** | `docs/RF-05-WS-GATEWAY-STATE.md` classifies the 5 gateway maps; RF-05 → SCOPED. |
 | **4.5** review doctrine | ✅ **done** | Path-scoped sensitive-lane review doctrine in `docs/ROUTINES.md`. |
 | **3.1** kill switches | ✅ **done** (follow-up PR) | `NOTIFICATIONS_FEED_ENABLED` fail-soft kill switch + core/non-core map (ARCHITECTURE §Core vs non-core); 2 tests. |
-| **3.4** god-service decomposition | ◑ **started** (follow-up PR) | First behaviour-preserving seam: lifecycle policy constants → `order-lifecycle.constants.ts` (1084→1041 lines); 181 orders tests green + a constants spec. Further seams remain (per the one-per-PR discipline). |
-| **3.5** mobile screen decomposition | ◑ **started** (follow-up PR) | First extraction: offer-ordering logic → `src/logic/order-offers.ts`, unit-tested (6 tests); OTA-safe. More sections + the 14 ui→api couplings (3.2 baseline) remain, per-screen with device QA. |
+| **3.4** god-service decomposition | ◑ **advancing** (follow-up PRs) | Two behaviour-preserving seams: lifecycle policy constants → `order-lifecycle.constants.ts` (1084→1041) and the customer-safe cancel-reason mapping → `cancel-reason.ts` (out of `orders.service.ts`), each with a spec; full orders suite green. Further seams remain (one-per-PR discipline). |
+| **3.5** mobile screen decomposition | ◑ **advancing** (follow-up PRs) | Two extractions: offer-ordering logic → `src/logic/order-offers.ts` (6 tests) and the shared time formatters → `src/logic/format-time.ts` (deduping `rider/job` + `wallet`, 3 tests). OTA-safe. The remaining genuine ui→api couplings (6, per the refined 3.2 baseline) need per-screen device QA. |
 | **4.1** fixtures | ✅ **done** (follow-up PR) | Contract-validated fixture factories in `@lynia/shared` (self-tested); one API test migrated. |
 | **4.2** contract gate | ✅ **done** (follow-up PR) | 46-contract JSON-Schema snapshot + CI back-compat gate with `contract-change` label bypass (no new dep). |
 | **4.6** semantic tokens | ✅ **done** (follow-up PR) | Additive `semantic` role layer over the raw `color` scale; 2 tests. Adopting roles in `ui/` + linting raw imports is a follow-on. |
-| **4.3** placebo reruns · **4.4** structural a11y | ⏳ **deferred** | 4.3 needs failure-triggered CI scripting unverifiable without breaking CI. 4.4's safe form needs either breaking required-props across 14+ call sites or non-trivial a11y-lint/axe infra (oxlint has no jsx-a11y) — bigger than a safe additive slice; mobile already carries ~140 a11y props. |
+| **4.4** structural a11y | ✅ **done** (follow-up PR) | Enabled oxlint's native jsx-a11y on the admin web app + fixed the 2 real defects it found; disabled only the opinionated `prefer-tag-over-role`. Console a11y enforced every lint. (Mobile RN a11y — ~140 props already — and required-props-on-shared-components remain follow-ons.) |
+| **4.3** placebo reruns | ⏳ **deferred** | The only remaining item. Needs failure-triggered CI scripting that can't be verified without deliberately breaking CI; low value with no current flake evidence. |
 
 **Founder-gated to finish** (code shipped inert): Sentry account/DSN (1.1), Terraform apply + a real
 notification channel (1.3/1.5), the restore drill run (1.7), and mobile/admin Sentry wiring on-device.

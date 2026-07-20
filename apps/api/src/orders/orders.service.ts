@@ -14,6 +14,7 @@ import { OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
+import { customerSafeCancelReason } from "./cancel-reason";
 import { buildBoardNewOrderEvent, pickupPoint, publicWaypoint } from "./waypoints";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
@@ -58,21 +59,7 @@ const PICKUP_PHOTO_URL_CACHE_TTL_MS = (PICKUP_PHOTO_READ_URL_TTL_SECONDS * 1000 
  *  each running their own. Counts only — broadcast/push TARGETING never reads this cache. */
 const NEARBY_COUNT_TTL_MS = 10_000;
 
-/**
- * Fix 6: ops-internal cancel-reason strings that must NOT be shown verbatim to the customer/rider. The
- * admin cancel taxonomy (apps/admin/app/lib/reasons.ts `orderCancel`) includes trust & safety language
- * — "Suspected fraud", "Safety concern" — that reads as an accusation with no context or next step when
- * rendered raw on a party's cancelled terminal. Map those to calm, actionable copy at the snapshot
- * boundary. Reasons already safe to show ("Rider unreachable", "Customer asked ops to cancel") and any
- * free-text party-initiated reason are left untouched (unknown ⇒ pass through). The RAW reason stays
- * intact everywhere ops sees it (admin views + the audit trail) — only the customer/rider view is remapped.
- */
-const CUSTOMER_SAFE_CANCEL_MESSAGE = "Cancelled by the LyniaGo team — contact support if you have questions.";
-const OPS_INTERNAL_CANCEL_REASONS = new Set<string>(["Suspected fraud", "Safety concern"]);
-function customerSafeCancelReason(raw: string | null): string | null {
-  if (raw == null) return null;
-  return OPS_INTERNAL_CANCEL_REASONS.has(raw) ? CUSTOMER_SAFE_CANCEL_MESSAGE : raw;
-}
+// Customer-safe cancel-reason mapping (Fix 6) now lives in ./cancel-reason (roadmap 3.4), unit-tested there.
 
 /** The fields `create`'s response is built from, shared by the fresh-create path and both
  *  idempotent-replay paths (pre-existing match, and the loser of a concurrent create race). */
