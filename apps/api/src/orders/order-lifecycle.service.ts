@@ -11,7 +11,7 @@ import {
   Optional,
   UnauthorizedException,
 } from "@nestjs/common";
-import { CUSTOMER_CANCELLABLE_STATUSES, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_CANCELLABLE_STATUSES, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { CUSTOMER_CANCELLABLE_STATUSES, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_CANCELLABLE_STATUSES, RIDER_STRIKE_COOLDOWN_MS, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
@@ -55,7 +55,9 @@ const PICKUP_PHOTO_STATUSES: readonly OrderStatus[] = ["en_route_pickup", "picke
 const DELIVERY_PROOF_STATUSES: readonly OrderStatus[] = ["en_route_dropoff", "undelivered"];
 /** Repeated rider cancels earn a cooldown that blocks going online (T4 no-show penalty). */
 const CANCEL_STRIKE_LIMIT = 3;
-const COOLDOWN_MS = 2 * 60 * 60 * 1000;
+// DS20-03: the cooldown duration is the shared RIDER_STRIKE_COOLDOWN_MS (policy.ts) — the same value
+// the dispute-strike path in issues.service uses, both writing `riders.cooldownUntil`. Sourced from one
+// constant so the two axes can't drift into a silent-truncation bug.
 /** How long after delivery a customer has to rate before the order auto-closes (so completion
  *  metrics never stall on an un-rated order — D6a / T3). Pilot value; tune on real behaviour. */
 export const RATING_WINDOW_MS = 6 * 60 * 60 * 1000;
@@ -779,7 +781,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         await this.lockRiderRow(tx, order.riderId);
         const rider = await tx.rider.findUnique({
           where: { profileId: order.riderId },
-          select: { cancelStrikes: true, reliabilityScore: true, onHold: true, heldReason: true },
+          // DS20-03: read the current cooldownUntil under the same row lock so the write below can
+          // extend (never shorten) an already-active cooldown a sibling strike axis may have set.
+          select: { cancelStrikes: true, reliabilityScore: true, onHold: true, heldReason: true, cooldownUntil: true },
         });
         const strikes = (rider?.cancelStrikes ?? 0) + 1;
         // Reliability (Q2): a rider cancel is server-blocked post-pickup, so it's ALWAYS a pre-pickup
@@ -797,7 +801,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         );
         if (strikes >= CANCEL_STRIKE_LIMIT) {
           // Hit the limit: reset the counter, force offline, start the cooldown.
-          cooldownUntil = new Date(Date.now() + COOLDOWN_MS);
+          // DS20-03: never SHORTEN an already-active cooldown — take the later of the fresh window and
+          // any existing future cooldownUntil a sibling strike axis (dispute-strike, issues.service) set.
+          const fresh = new Date(Date.now() + RIDER_STRIKE_COOLDOWN_MS);
+          cooldownUntil = rider?.cooldownUntil && rider.cooldownUntil > fresh ? rider.cooldownUntil : fresh;
           await tx.rider.update({
             where: { profileId: order.riderId },
             data: { cancelStrikes: 0, cooldownUntil, isOnline: false, ...reliability },

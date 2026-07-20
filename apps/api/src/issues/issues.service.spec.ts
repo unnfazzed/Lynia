@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
 import type { RaiseIssueRequest, ResolveIssueRequest } from "@lynia/shared";
+import { RIDER_STRIKE_COOLDOWN_MS } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
@@ -241,6 +242,55 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
     // a GEOSEARCH ghost for the whole cooldown. Post-commit + best-effort, so let the `void` settle first.
     await flush();
     expect((gateway as unknown as { evictRiderFromSupply: ReturnType<typeof vi.fn> }).evictRiderFromSupply).toHaveBeenCalledWith("rider-1");
+  });
+
+  // DS20-03: `riders.cooldownUntil` has two independent writers (this dispute-strike path and the
+  // cancel-strike path in order-lifecycle), both sourcing RIDER_STRIKE_COOLDOWN_MS now. The write must
+  // EXTEND, never SHORTEN: a rider already mid-cancel-cooldown (a longer future cooldownUntil) who then
+  // trips the dispute-strike limit must keep the longer window, not have it truncated to now + 2h.
+  it("DS20-03: a shorter fresh cooldown never shortens an existing longer cooldownUntil in the future", async () => {
+    const riderUpdate = vi.fn(async (_args: { where: unknown; data: Record<string, unknown> }) => ({}));
+    // Existing cooldown far past the fresh 2h window (e.g. a longer sibling cooldown already active).
+    const existingCooldown = new Date(Date.now() + RIDER_STRIKE_COOLDOWN_MS + 60 * 60 * 1000);
+    const tx = {
+      issue: {
+        findUnique: async () => ({ id: "iss-1", status: "investigating", orderId: "ord-1", openedByProfileId: "cust-1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      order: { findUnique: async () => ({ riderId: "rider-1" }) },
+      $executeRaw: async () => 1,
+      // 3rd dispute strike hits the limit AND a longer cooldown is already on record.
+      rider: { findUnique: async () => ({ disputeStrikes: 2, cooldownUntil: existingCooldown }), update: riderUpdate },
+      auditLog: { create: async () => ({}) },
+    };
+    await txSvc(tx, fakeGateway()).resolve("admin-1", "iss-1", { resolution: "rider_strike", note: "3rd, but already cooling" });
+
+    const call = riderUpdate.mock.calls[0]![0];
+    // The longer existing cooldown is preserved verbatim — not truncated to now + RIDER_STRIKE_COOLDOWN_MS.
+    expect((call.data.cooldownUntil as Date).getTime()).toBe(existingCooldown.getTime());
+  });
+
+  it("DS20-03: a fresh cooldown DOES extend a shorter existing cooldownUntil", async () => {
+    const riderUpdate = vi.fn(async (_args: { where: unknown; data: Record<string, unknown> }) => ({}));
+    // An existing cooldown expiring soon (shorter than the fresh 2h window) must be extended.
+    const shortExisting = new Date(Date.now() + 60 * 1000);
+    const tx = {
+      issue: {
+        findUnique: async () => ({ id: "iss-1", status: "investigating", orderId: "ord-1", openedByProfileId: "cust-1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      order: { findUnique: async () => ({ riderId: "rider-1" }) },
+      $executeRaw: async () => 1,
+      rider: { findUnique: async () => ({ disputeStrikes: 2, cooldownUntil: shortExisting }), update: riderUpdate },
+      auditLog: { create: async () => ({}) },
+    };
+    const before = Date.now();
+    await txSvc(tx, fakeGateway()).resolve("admin-1", "iss-1", { resolution: "rider_strike", note: "3rd" });
+
+    const call = riderUpdate.mock.calls[0]![0];
+    // The fresh window (≈ now + RIDER_STRIKE_COOLDOWN_MS) wins over the soon-expiring existing value.
+    expect((call.data.cooldownUntil as Date).getTime()).toBeGreaterThanOrEqual(before + RIDER_STRIKE_COOLDOWN_MS);
+    expect((call.data.cooldownUntil as Date).getTime()).toBeGreaterThan(shortExisting.getTime());
   });
 
   it("DS17-02: a dispute strike BELOW the limit does NOT evict from supply (the rider stays online)", async () => {

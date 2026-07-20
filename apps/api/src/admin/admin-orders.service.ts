@@ -510,6 +510,10 @@ export class AdminOrdersService {
     const current = STATUS_STEP[order.status] ?? -1;
     const lastEventAt = order.events.length ? order.events[order.events.length - 1]!.createdAt : order.createdAt;
     const active = ACTIVE_RIDE_STATUSES.includes(order.status);
+    // DS20-01: shared threshold (admin.shared.STUCK_AFTER_MS), the same value the ops-dashboard
+    // aggregate uses — the two can't drift now. This detail page keys off the last OrderEvent.createdAt
+    // (more precise, and the events are already loaded here) rather than the dashboard's cheaper
+    // order.updatedAt aggregate — an intentional data-source difference, not a bug to reconcile.
     const stuck = active && now - lastEventAt.getTime() > STUCK_AFTER_MS;
     const stuckMins = Math.round((now - lastEventAt.getTime()) / 60000);
 

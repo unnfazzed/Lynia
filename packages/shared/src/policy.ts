@@ -231,6 +231,16 @@ export const SOS_POLICY = {
 export const RIDER_STRIKE_LIMIT = 3;
 
 /**
+ * DS20-03: how long a rider is cooled-down (blocked from going online) once they hit
+ * {@link RIDER_STRIKE_LIMIT} on EITHER strike axis — a 3rd cancel-strike (order-lifecycle) or a 3rd
+ * dispute-strike (issues). Both write `riders.cooldownUntil`, so they must source the SAME duration
+ * from here: previously each hardcoded `2 * 60 * 60 * 1000` independently, and if either drifted the
+ * shorter one firing second would silently TRUNCATE a longer cooldown the other just set. The single
+ * constant + the "cooldown never shortens" write guard at both sites keep the two axes consistent.
+ */
+export const RIDER_STRIKE_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+
+/**
  * Customer trust tier for reputation weighting (FRAUD P1-6 residual / KB-IDENTITY-BINDING, demand side).
  *
  * The per-pair cap ({@link OrderLifecycleService.rate}) already stops ONE colluding customer+rider pair

@@ -60,8 +60,14 @@ export const STATUS_STEP: Record<string, number> = {
   completed: 7,
 };
 
-// A live order with no OrderEvent for this long is flagged as possibly stuck (the kit's stuck-order
-// edge case). Heuristic only — the customer hasn't necessarily reported a problem.
+// DS20-01: THE single stuck-order threshold — the one source of truth both the ops dashboard
+// aggregate (admin.service.overview) and the per-order detail badge (admin-orders.service) import,
+// so the two can never drift to different minute values (they did: 25 vs 20). 20 min matches the
+// A-04 design spec ("Threshold ~15–20 min", DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md). Heuristic only —
+// the customer hasn't necessarily reported a problem. NB the two call sites measure elapsed time from
+// DIFFERENT data sources on purpose (documented at each usage): the dashboard uses `order.updatedAt`
+// (one cheap aggregate query, no per-order OrderEvent join) while the detail page uses the last
+// `OrderEvent.createdAt` (already-loaded events, more precise). Same threshold, different clock.
 export const STUCK_AFTER_MS = 20 * 60 * 1000;
 
 /** Pilot funnel (CONCEPT §8) from raw counts. Pure, so it's unit-tested. */
