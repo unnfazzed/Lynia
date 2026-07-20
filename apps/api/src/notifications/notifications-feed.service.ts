@@ -144,6 +144,9 @@ export class NotificationsFeedService {
         rebroadcastOfId: true,
         expiryNoSupply: true,
         cancelledBy: true,
+        // UX20-04: the current agreed fare, so a fare-adjust feed row can quote the corrected amount
+        // exactly like the push does.
+        agreedFare: true,
         events: {
           select: { status: true, createdAt: true },
           orderBy: { createdAt: "asc" },
@@ -312,6 +315,43 @@ export class NotificationsFeedService {
           at,
           unread: now.getTime() - offer.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
         });
+      }
+    }
+
+    // UX20-04: adjustFare's post-commit push (customer "Your delivery's fare was updated" / rider "A
+    // delivery's fare was updated") had no durable feed fallback — order.fare_adjust's AuditLog is
+    // targeted at orderId, but adjustFare writes no OrderEvent (so it never surfaces via FEED_NOTICES
+    // above) and the audit's target doesn't match ACCOUNT_FEED_ACTIONS (which key off a profileId
+    // target), so a missed push left zero durable trace for either party. Recover it the same way
+    // order.rider_standing_notice does below — one batched query over the orders already in view — but
+    // scoped to ALL orderIds (not just customerViewOrderIds), since adjustFare pushes both parties.
+    if (orderIds.length > 0) {
+      const fareAdjustments = await this.prisma.auditLog.findMany({
+        where: { target: { in: orderIds }, action: "order.fare_adjust" },
+        select: { id: true, target: true, createdAt: true },
+      });
+      if (fareAdjustments.length > 0) {
+        const orderById = new Map(orders.map((o) => [o.id, o]));
+        for (const a of fareAdjustments) {
+          const order = orderById.get(a.target);
+          if (!order) continue; // defensive: target always one of the queried orders
+          const isCustomerView = order.riderId !== userId;
+          const fare = order.agreedFare != null ? Number(order.agreedFare).toFixed(2) : null;
+          const at = a.createdAt.toISOString();
+          rows.push({
+            id: `fare-adjust:${a.id}`,
+            orderId: a.target,
+            to: isCustomerView ? "customer" : "rider",
+            icon: "banknote",
+            title: "Fare updated",
+            message:
+              (isCustomerView ? "Your fare was corrected" : "The fare for this delivery was corrected") +
+              (fare ? ` to $${fare}` : "") +
+              " by our team.",
+            at,
+            unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+          });
+        }
       }
     }
 

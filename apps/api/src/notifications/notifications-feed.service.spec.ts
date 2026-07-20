@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../prisma/prisma.service";
 import { NotificationsFeedService } from "./notifications-feed.service";
 
+/** Decimal-like stub — Prisma returns Decimal objects the service reads via Number(). */
+const dec = (s: string) => ({ toString: () => s, valueOf: () => Number(s) });
+
 function makeDeps() {
   const prisma = {
     order: {
@@ -498,5 +501,41 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       message: expect.stringContaining("reviewed the delivery"),
     });
     expect(riderFeed[0].message).not.toMatch(/your proof|the evidence/i);
+  });
+
+  it("UX20-04: synthesizes a fare-updated row for BOTH parties from order.fare_adjust — adjustFare's push had no durable feed fallback", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", riderId: "rider", agreedFare: dec("12.50"), events: [] },
+    ]);
+    prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
+      where.action === "order.fare_adjust"
+        ? [{ id: "au1", target: "o1", createdAt: new Date("2026-07-06T11:00:00.000Z") }]
+        : [],
+    );
+
+    // Customer view (riderId != viewer): "Your fare was corrected to $12.50 by our team."
+    const custFeed = await service.feedForUser("cust", NOW);
+    expect(custFeed.find((r) => r.id === "fare-adjust:au1")).toMatchObject({
+      orderId: "o1",
+      to: "customer",
+      icon: "banknote",
+      title: "Fare updated",
+      message: "Your fare was corrected to $12.50 by our team.",
+      unread: true,
+    });
+
+    // Rider view (riderId === viewer) of the SAME audit row: rider-voiced copy.
+    const riderFeed = await service.feedForUser("rider", NOW);
+    expect(riderFeed.find((r) => r.id === "fare-adjust:au1")).toMatchObject({
+      orderId: "o1",
+      to: "rider",
+      title: "Fare updated",
+      message: "The fare for this delivery was corrected to $12.50 by our team.",
+    });
+
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { target: { in: ["o1"] }, action: "order.fare_adjust" } }),
+    );
   });
 });
