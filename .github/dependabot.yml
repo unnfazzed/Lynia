@@ -41,6 +41,13 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # Metro-resolution shim for posthog-react-native's UNDECLARED dep (apps/mobile pins it so
+      # Metro can resolve `@babel/runtime/*` from posthog's compiled dist — see that package.json).
+      # @babel/runtime 8 removed the `./regenerator` subpath posthog's dist requires, so the 7→8
+      # grouped bump (#356) broke `expo export` (caught by the mobile-bundle-size CI guard). The
+      # major can only move when posthog's dist stops requiring the removed subpath.
+      - dependency-name: "@babel/runtime"
+        update-types: ["version-update:semver-major"]
       # Expo-SDK-managed native layer — these packages' versions are pinned by the Expo SDK, not
       # chosen independently, and must move in lockstep during a deliberate `expo install` / SDK
       # upgrade. They are 0.x, so Dependabot classifies a breaking bump (e.g. react-native
