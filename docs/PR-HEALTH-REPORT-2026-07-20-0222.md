@@ -93,13 +93,15 @@ This is the same **KB-PROD-DEPLOY-GATE** issue flagged in the 07-17, 07-18, 07-1
   `main`**, including two PRs with real user-facing changes (BH-21/22 mobile fixes, wave-2 perf).
 - **NEW this run — Deploy Admin Console (Cloud Run), run
   [`29711414283`](https://github.com/unnfazzed/Lynia/actions/runs/29711414283)** (commit `1095e70`,
-  which touches `apps/admin`): job `build · smoke · deploy` has been `waiting` on what is evidently
-  the same class of `environment` reviewer gate since **2026-07-20 01:46:25 UTC** — ~35 minutes and
-  growing as of this report. This workflow is new (added 2026-07-18) and every run before this one
-  deployed cleanly within ~1 minute of being queued; this is the first time it has hit the gate,
-  suggesting whatever human action cleared the main `production` gate on 07-17 either didn't cover
-  this newer Environment, or the admin console's Environment protection rule was configured with a
-  required reviewer independently.
+  which touches `apps/admin`): job `build · smoke · deploy` has been `waiting` since **2026-07-20
+  01:46:25 UTC** — ~35 minutes and growing as of this report. Confirmed by reading both workflow
+  files (`release.yml` line 145, `deploy-admin.yml` line 59): **both jobs declare the identical
+  `environment: production`** — this isn't two separate gates, it's the same single GitHub Environment
+  protection rule now blocking two different workflows. This workflow is new (added 2026-07-18) and
+  every run before this one deployed cleanly within ~1 minute of being queued; the required-reviewer
+  rule on `production` was evidently re-added (or never fully removed) after the 07-17 report's fix,
+  and now that it's live again it catches every workflow that targets that Environment, not just
+  Release.
 - As in every prior report, I could not unstick either myself: no `mcp__github__*` tool can approve a
   pending Environment deployment review (confirmed again this run via a fresh tool search) — only PR
   review methods exist, a different gate. Per the hard guardrails I must never bypass a gate I can't
@@ -116,13 +118,15 @@ a second pipeline):**
    auto-deploy the 3 commits queued behind it — those runs were already cancelled — so a fresh
    `workflow_dispatch` (or push-triggered) run against current `main` will be needed after approval to
    actually ship `1095e70`/`87078e9`/`d52eb97`.
-2. This routine strongly recommends, again: go to **Settings → Environments** for both `production`
-   (API) and whatever Environment the admin console workflow targets, and either remove the
-   required-reviewer rule or assign a reviewer/team who can approve promptly within minutes, not
-   hours — plus a notification (Slack/email/PagerDuty webhook on the `deployment_status` event with
-   state `waiting`) so a human is alerted the moment either gate engages. A recurring routine has no
-   tool-level path to clear this, so without a config change or an attentive human, every future
-   report will just re-flag a longer wait, and now on two pipelines instead of one.
+2. This routine strongly recommends, again: go to **Settings → Environments → `production`** (the one
+   Environment both `release.yml` and `deploy-admin.yml` target — confirmed by reading both workflow
+   files) and either remove the required-reviewer rule for good this time or assign a reviewer/team
+   who can approve promptly within minutes, not hours — plus a notification (Slack/email/PagerDuty
+   webhook on the `deployment_status` event with state `waiting`) so a human is alerted the moment the
+   gate engages. Since it's a single Environment, one fix clears both stuck pipelines. A recurring
+   routine has no tool-level path to clear this, so without a config change or an attentive human,
+   every future report will just re-flag a longer wait across an ever-growing set of workflows that
+   happen to target `production`.
 
 This remains — and worsens as — a carry-over item for the next run.
 
@@ -136,7 +140,7 @@ This remains — and worsens as — a carry-over item for the next run.
   user-facing perf changes + 2 new endpoints. Not yet in production (behind the stuck gate above).
 - **`1095e70` / PR #340** (UX20-01..04) — merged 01:46 UTC, ~36 min ago as of this report. Not yet in
   production (behind the stuck gate above); also the commit whose admin-console deploy is itself now
-  stuck on the newly-discovered second gate.
+  stuck on the same `production` Environment gate via `deploy-admin.yml`.
 
 All three are well under the 48h escalation threshold, but are flagged together because they're the
 direct, growing evidence of the KB-PROD-DEPLOY-GATE escalation above — production's gap to `main` grew
@@ -149,9 +153,10 @@ anything these PRs did wrong.
 
 **KB-PROD-DEPLOY-GATE (fifth consecutive report; longest stall yet — ~15h40m and counting on
 production; now also blocking the admin console deploy, ~35m and counting).** Production is 4 commits
-behind `main` and the admin console is 1 commit behind, both because their respective `environment`
-required-reviewer approval gates have not been cleared. See the escalation section above for the two
-remediation options (approve both pending runs — noting Release will still need a fresh run afterward
-to actually ship the queued commits — or reconfigure/remove the gates so they stop silently stalling
+behind `main` and the admin console is 1 commit behind, both because the single shared `production`
+GitHub Environment's required-reviewer approval gate has not been cleared (`release.yml` and
+`deploy-admin.yml` both declare `environment: production`). See the escalation section above for the
+two remediation options (approve both pending runs — noting Release will still need a fresh run
+afterward to actually ship the queued commits — or reconfigure/remove the gate so it stops silently stalling
 every release). This routine cannot approve Environment deployment reviews or edit Environment
 protection rules through the available `mcp__github__*` tools.
