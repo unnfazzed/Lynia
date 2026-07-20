@@ -60,6 +60,41 @@ export const color = {
   onAccent: "#FFFFFF",
 } as const;
 
+/**
+ * Semantic colour roles (roadmap 4.6) — the two-layer token model DoorDash's Prism uses: raw scale
+ * (`color` above) → semantic names that map to it. Ported from the design package's CSS semantic
+ * aliases (the `--text-…`, `--surface-…`, `--action-…`, `--state-…` block in
+ * packages/design/tokens/colors.css) so the TS tokens carry the same layer the CSS already does.
+ * Prefer these role names in new UI ("what is this
+ * colour FOR") over the raw scale ("which green") — it makes a future re-theme or dark mode a change to
+ * this map, not a codebase sweep. ADDITIVE: the raw `color` scale is unchanged, so nothing breaks.
+ */
+export const semantic = {
+  text: {
+    body: color.ink,
+    secondary: color.muted,
+    onAccent: color.onAccent,
+    accent: color.accentText, // green that READS (small text/icons)
+  },
+  surface: {
+    page: color.bg,
+    card: color.bg,
+    sunken: color.surface,
+    selected: color.accentWash,
+  },
+  border: {
+    default: color.line,
+    strong: color.muted,
+  },
+  action: {
+    // Primary actions carry white labels → the sunlight-contrast CTA fill, never the raw brand green.
+    primary: color.cta,
+    primaryPressed: color.ctaPressed,
+  },
+  marker: { recommended: color.highlight },
+  state: { error: color.danger, success: color.success },
+} as const;
+
 /** 8pt spacing scale. `screen` is the 16px edge padding (320px-first — NOT 24px). */
 export const space = {
   xs: 4,

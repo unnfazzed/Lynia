@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import type { MakeOfferRequest } from "@lynia/shared";
+import { type MakeOfferRequest, makeOffer } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { MetricsService } from "../observability/metrics.service";
@@ -47,12 +47,9 @@ function svc(prisma: Partial<Record<string, unknown>>, gateway = fakeGateway(), 
   };
 }
 
-const offerInput: MakeOfferRequest = {
-  orderId: "11111111-1111-1111-1111-111111111111",
-  type: "accept",
-  offeredFare: 2.5,
-  etaMinutes: 10,
-};
+// Shared fixture (roadmap 4.1): a rider accepting the customer's price at $2.50, ETA 10min. The exact
+// orderId is only ever read back via `offerInput.orderId`, so the fixture's value flows through unchanged.
+const offerInput: MakeOfferRequest = makeOffer();
 
 describe("OffersService.makeOffer", () => {
   it("404s when the order does not exist", async () => {

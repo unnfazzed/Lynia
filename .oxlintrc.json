@@ -14,7 +14,13 @@
     "unicorn/consistent-function-scoping": "off",
     // toSorted()/toReversed() need lib ES2023; the repo targets ES2022.
     "unicorn/no-array-sort": "off",
-    "unicorn/no-array-reverse": "off"
+    "unicorn/no-array-reverse": "off",
+    // jsx-a11y (roadmap 4.4) runs only where the plugin is enabled (the admin web app's lint script,
+    // --jsx-a11y-plugin — RN/api have no DOM). `prefer-tag-over-role` is opinionated, not an a11y
+    // defect: `role="dialog"` IS accessible, and swapping to a native <dialog> changes focus/escape
+    // behaviour. Off; every other jsx-a11y correctness rule (missing/redundant alt, aria-*, labels)
+    // stays on to catch real issues in the console.
+    "jsx-a11y/prefer-tag-over-role": "off"
   },
   "overrides": [
     {

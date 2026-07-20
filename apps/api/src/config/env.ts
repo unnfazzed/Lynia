@@ -248,6 +248,14 @@ export const envSchema = z.object({
   // (`commission_low_balance` only fires once the rate is > 0, so visibility never blocks going online).
   // Set to "false" to hide it again (a kill-switch). "true"/"false".
   WALLET_REVEAL: z.enum(["true", "false"]).default("true"),
+  // --- Non-core kill switches (roadmap 3.1) ---
+  // NON-CORE surface kill switch. The in-app notifications feed (GET /notifications/feed) is derived
+  // from ~9 reads per open; it is NOT on the money path (browse → bid → accept → pay → settle). If it
+  // ever misbehaves (a slow query, a bad synthesis), flip this to "false" and the endpoint FAILS SOFT —
+  // returns an empty feed instead of erroring — so a non-core defect can never block checkout. Core
+  // surfaces (auth, offer loop, order lifecycle, wallet, tracking, SOS) have NO such switch by design:
+  // they cannot be turned off. See docs/ARCHITECTURE.md §Core vs non-core.
+  NOTIFICATIONS_FEED_ENABLED: z.enum(["true", "false"]).default("true"),
   // Per-entry cap (USD) on an ops manual credit — an abuse backstop on the admin credit path
   // (design OV-3A). Default $50 (= COMMISSION.maxTopUp).
   WALLET_MANUAL_CREDIT_CAP_USD: z.coerce.number().positive().default(50),

@@ -167,7 +167,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                   // image here. A short-lived signed GCS URL, so a plain <img>, not next/image.
                   <img
                     src={r.photoUrl}
-                    alt="The rider's photo, taken in the app at signup"
+                    alt="The rider, captured in the app at signup"
                     style={{ width: "100%", height: 170, objectFit: "cover", borderRadius: tokens.radius.input, border: `1px solid ${tokens.color.line}` }}
                   />
                 ) : (
