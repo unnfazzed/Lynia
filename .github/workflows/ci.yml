@@ -77,6 +77,9 @@ jobs:
       - run: pnpm --filter @lynia/api prisma:generate
       - run: pnpm run typecheck
       - run: pnpm run lint
+      # Import-boundary + cycle enforcement (roadmap 3.2). Baselined: fails only on a NEW circular
+      # import or a NEW mobile ui→api coupling, never on the pre-existing knots being worked down.
+      - run: pnpm run depcruise
       - run: pnpm run build
       - run: pnpm --filter @lynia/api test
       - run: pnpm --filter @lynia/mobile test
