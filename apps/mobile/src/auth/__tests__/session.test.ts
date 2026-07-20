@@ -14,6 +14,7 @@ jest.mock("expo-secure-store", () => ({
 }));
 
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../../logic/pickup-checklist-draft";
+import { RIDER_SENT_OFFERS_KEY } from "../../logic/rider-bid-draft";
 import { clearDeviceState, loadSession } from "../session";
 
 afterEach(() => {
@@ -26,6 +27,15 @@ describe("clearDeviceState (sign-out wipe, BH-17)", () => {
     await clearDeviceState();
     const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
     expect(deletedKeys).toContain(PICKUP_CHECKLIST_DRAFT_KEY);
+  });
+
+  // BH-23: RIDER_SENT_OFFERS_KEY (added by BH-21, after this wipe was last touched) was never added to
+  // the delete list — a signed-out rider's already-sent bids on other open orders survived and rehydrated
+  // for the next rider on a shared device, painting their fare/eta as the new rider's own pending offers.
+  it("deletes the rider sent-offers key — BH-21's persistence added after this wipe was last updated", async () => {
+    await clearDeviceState();
+    const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
+    expect(deletedKeys).toContain(RIDER_SENT_OFFERS_KEY);
   });
 });
 

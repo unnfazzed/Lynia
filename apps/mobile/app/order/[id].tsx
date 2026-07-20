@@ -596,7 +596,10 @@ export default function OrderScreen(): React.ReactElement {
         firstName: chosen.rider.profile.firstName,
         lastName: chosen.rider.profile.lastName,
         photoUrl: chosen.rider.profile.photoUrl,
-        ratingAvg: chosen.rider.ratingAvg,
+        // BH-24: OfferRow.rider.ratingAvg is declared `string` but the API actually sends a raw JSON
+        // number (a Prisma Float, unlike the Decimal `offeredFare` the server .toString()s) — coerce
+        // explicitly so what's persisted genuinely matches RiderIdentity's `string` field.
+        ratingAvg: String(chosen.rider.ratingAvg),
         ratingCount: chosen.rider.ratingCount,
         tripsCount: chosen.rider.tripsCount,
       };
