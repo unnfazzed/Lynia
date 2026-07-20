@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/unnfazzed/Lynia/compare/v0.7.5...v0.8.0) (2026-07-20)
+
+
+### Features
+
+* **mobile:** calibrate JS bundle-size budget + record measured size deltas ([b5ebfbe](https://github.com/unnfazzed/Lynia/commit/b5ebfbe5134ea4c083e5d34759c448fed4077af9))
+* **mobile:** DoorDash-style app-size program — lean icon imports, size guardrails (wip) ([91ab44c](https://github.com/unnfazzed/Lynia/commit/91ab44cc54e277c7d03709ca5fcdc8d044ebb51a))
+
+
+### Bug Fixes
+
+* **mobile:** escape backslashes before underscores in size-report markdown (CodeQL) ([aeb2839](https://github.com/unnfazzed/Lynia/commit/aeb2839e4eb0d97e06d9e3b94442f3924d1280f8))
+
 ## [0.7.5](https://github.com/unnfazzed/Lynia/compare/v0.7.4...v0.7.5) (2026-07-20)
 
 
