@@ -40,19 +40,21 @@ Android-only today. iOS is not built or shipped yet (see the iOS checklist below
 
 ## Levers applied
 
-<!-- ORCHESTRATOR: measured numbers -->
-<!--
-Fill in once measured (numbers come straight from the CI size steps / a local `expo export`):
+Measured on 2026-07-20 (before = `main` @ `bc1ed92`, after = this program's branch):
 
 | Metric | Before | After | Delta |
 |---|---:|---:|---:|
-| QA APK total (on-disk, universal) | … | … | … |
-| Hermes JS bundle (`.hbc`) | … | … | … |
-| Release AAB (raw, pre-split) | … | … | … |
+| QA APK total (on-disk, universal, no R8) | 72,972,672 B (69.6 MiB) | _pending branch verification build_ | — |
+| Hermes JS bundle (`.hbc`) | 6,883,309 B (6.56 MiB) | 5,015,672 B (4.78 MiB) | **−1,867,637 B (−27.1%)** |
+| Android `expo export` total (JS + assets) | 13,116,438 B (12.51 MiB) | 11,248,801 B (10.73 MiB) | **−1,867,637 B (−14.2%)** |
+| Release AAB (raw, pre-split) | _not yet measured — `mobile-release.yml` is dormant until EAS is armed; its "Measure AAB size" step reports this on the first armed release_ | | |
+
+Assets were byte-identical before/after (41 files, 6,230,271 B), so the whole JS delta is icon
+bytecode — direct evidence the barrel import was bundling the full Lucide set. The `.hbc` saving
+also shrinks every future OTA download.
 
 Method: "Size report" step in android-test-apk.yml (native APK); `expo export` +
 scripts/check-bundle-size.mjs (JS bundle). See "How to measure locally".
--->
 
 Two levers are applied in this program (in `apps/mobile`, via the sibling change set):
 
