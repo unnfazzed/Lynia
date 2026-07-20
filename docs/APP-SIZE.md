@@ -40,11 +40,14 @@ Android-only today. iOS is not built or shipped yet (see the iOS checklist below
 
 ## Levers applied
 
-Measured on 2026-07-20 (before = `main` @ `bc1ed92`, after = this program's branch):
+Measured on 2026-07-20 (before = `main` @ `bc1ed92`, run 29729902349; after = `main` @ `e72f90f`
+post-merge, run 29739035561 — identical workflow, method, and runner class):
 
 | Metric | Before | After | Delta |
 |---|---:|---:|---:|
-| QA APK total (on-disk, universal, no R8) | 72,972,672 B (69.6 MiB) | _pending branch verification build_ | — |
+| QA APK total (on-disk, universal) | 72,972,672 B (69.6 MiB) | 59,791,441 B (57.0 MiB) | **−13,181,231 B (−18.1%)** |
+| — of which `classes*.dex` (uncompressed) | 34.6 MiB | 8.6 MiB | **−75%** (R8 minification) |
+| — of which native `lib/` (4 ABIs, uncompressed) | ~49 MiB | ~49 MiB | unchanged (expected — R8 doesn't touch `.so`; Play's AAB split ships one ABI per device) |
 | Hermes JS bundle (`.hbc`) | 6,883,309 B (6.56 MiB) | 5,015,672 B (4.78 MiB) | **−1,867,637 B (−27.1%)** |
 | Android `expo export` total (JS + assets) | 13,116,438 B (12.51 MiB) | 11,248,801 B (10.73 MiB) | **−1,867,637 B (−14.2%)** |
 | Release AAB (raw, pre-split) | _not yet measured — `mobile-release.yml` is dormant until EAS is armed; its "Measure AAB size" step reports this on the first armed release_ | | |
@@ -65,6 +68,10 @@ Two levers are applied in this program (in `apps/mobile`, via the sibling change
    the standard Android release-size win. It runs at the native build step (EAS `.aab` and the QA
    `assembleRelease` APK), so it shrinks the **binary**, not the OTA JS bundle. Because Expo CNG
    regenerates `android/`, this MUST live in config, never a hand-edit of `build.gradle`.
+   **First-R8-release smoke test:** R8/`shrinkResources` failure modes only manifest at runtime in
+   release mode. The QA APK (`android-test-apk.yml`) now builds with R8 on, so before the first
+   store cut with shrinking enabled, sideload it once and exercise the reflective/resource-sensitive
+   surfaces: map render, push notification (icon), image picker, secure store, splash, OTA check.
 2. **Per-icon Lucide imports (kill the barrel import).** `src/ui/Icon.tsx` imported its glyphs as a
    named import from the `lucide-react-native` package root — a *barrel* that re-exports the entire
    icon set. Metro/Hermes tree-shaking through a barrel is unreliable, so the whole set risked
@@ -116,7 +123,7 @@ Audit of `apps/mobile/package.json` runtime dependencies:
 | `expo` + the `expo-*` modules (`-location`, `-notifications`, `-image-picker`, `-secure-store`, `-file-system`, `-task-manager`, `-updates`, `-router`, `-splash-screen`, `-font`, `-constants`, `-application`, `-device`, `-localization`, `-web-browser`, `-image-manipulator`, `-status-bar`, `-linking`, `-build-properties`) | Native + JS | Each autolinks a native module (`.dex`/`.so`) + JS glue | Individually small, collectively a real slice of the binary — but they **share `expo-modules-core`**, which is exactly why we prefer an Expo module over a third-party equivalent. Each one here maps to a real capability; audit the list when adding, don't accumulate. |
 | `@tanstack/react-query` (+ `-persist-client`, `query-async-storage-persister`) | JS (moderate) | Hermes bundle | The one data-fetch/cache layer (see `PERFORMANCE.md`). Justified and central — do not add a second caching/fetching lib. |
 | `socket.io-client` | JS (moderate) | Hermes bundle | The one realtime transport. Sizeable but core to the offer loop / live tracking. One realtime SDK only. |
-| `posthog-react-native` | JS (+ small native) | Hermes bundle | The one analytics SDK, and it's **key-gated** (only initializes when a key is present, `src/telemetry/analytics.tsx`) — but its code still ships regardless. Justify keeping it at each review; never add a second analytics/telemetry SDK alongside it. |
+| `posthog-react-native` | JS | Hermes bundle | The one analytics SDK, and it's **key-gated** (only initializes when a key is present, `src/telemetry/analytics.tsx`) — but its code still ships regardless. Justify keeping it at each review; never add a second analytics/telemetry SDK alongside it. |
 | `lucide-react-native` | JS | Hermes bundle (SVG path data per glyph) | Icons. Subject to the **barrel-import** trap (see Levers) — must be imported per-icon so only used glyphs bundle. |
 | `@expo-google-fonts/inter` | JS + font assets | Bundle + `assets/` (TTF) | Ship **only the weights actually used**; each Inter weight is a real TTF. Candidate for native font embedding on a future EAS build (`PERFORMANCE.md` backlog). |
 
