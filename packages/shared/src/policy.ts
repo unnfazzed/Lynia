@@ -8,6 +8,8 @@
  * (Q1 corridor, Q2 reliability), RIDER-JOURNEY-AUDIT.md (R-01 reliability).
  */
 
+import { percentOf, roundToCents } from "./money";
+
 /**
  * Q2 — Rider reliability score. A rider starts at {@link RELIABILITY.START}; events adjust it, and
  * dropping below {@link RELIABILITY.ON_HOLD_BELOW} trips an auto `on_hold` (blocks going online until
@@ -190,7 +192,7 @@ export function isCommissionActive(ratePct: number): boolean {
  * constant); it defaults to {@link COMMISSION.ratePct} only for callers that predate the flip override.
  */
 export function perRideCommission(amountPaid: number, ratePct: number = COMMISSION.ratePct): number {
-  return Math.round(amountPaid * (ratePct / 100) * 100) / 100;
+  return percentOf(amountPaid, ratePct);
 }
 
 /**
@@ -203,7 +205,7 @@ export function perRideCommission(amountPaid: number, ratePct: number = COMMISSI
  */
 export function commissionBasis(agreedFare: number, suggestedFare: number | null | undefined): number {
   if (suggestedFare == null || !Number.isFinite(suggestedFare) || suggestedFare <= 0) return agreedFare;
-  const floor = Math.round(suggestedFare * COMMISSION.basisFloorPct * 100) / 100;
+  const floor = roundToCents(suggestedFare * COMMISSION.basisFloorPct);
   return Math.max(agreedFare, floor);
 }
 

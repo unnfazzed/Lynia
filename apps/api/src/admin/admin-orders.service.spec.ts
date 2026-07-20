@@ -405,6 +405,20 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.audit).toBeNull();
   });
 
+  it("AH20-01: adjusting to the fare the order already has is an idempotent no-op (no CAS, no duplicate audit row)", async () => {
+    // The default order's agreedFare is $6.00. Re-submitting $6.00 (a double-click / lost-response retry)
+    // must NOT append a second zero-delta fare_adjust audit row or re-run the commission reconciliation.
+    const { prisma, calls } = makeTx();
+    const notified: unknown[] = [];
+    const notifications = { notifyProfiles: async (...a: unknown[]) => { notified.push(a); } } as unknown as NotificationsService;
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, notifications);
+    const res = await svc.adjustFare("admin-1", "o1", { agreedFare: 6.0, reason: "no change" });
+    expect(calls.orderUpdate).toBeNull(); // no CAS write
+    expect(calls.audit).toBeNull(); // no duplicate audit row
+    expect(notified).toHaveLength(0); // no spurious "fare updated" pushes
+    expect(res).toMatchObject({ id: "o1", agreedFare: "6.00", auditId: null });
+  });
+
   it("adjustFare on a completed order that already charged commission reconciles the ledger (WD-001)", async () => {
     // The order completed at $10 and was charged at 10% (a ride_commission row with ratePct=10 exists).
     // Correcting the fare down to $7 must credit back the over-charged commission delta, computed at the

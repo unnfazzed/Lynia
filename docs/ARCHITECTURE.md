@@ -668,6 +668,16 @@ stateDiagram-v2
     undelivered --> [*]
 ```
 
+> **Machine-checkable mirror (roadmap 2.4).** This diagram is now mirrored by
+> `apps/api/src/orders/order-lifecycle.transitions.ts` — one declarative `TRANSITIONS` table
+> (from × event → to, with the guard, side-effects, compensation, and `file:method` source of each
+> edge), asserted exhaustively by `order-lifecycle.transitions.spec.ts`. It is a **verification
+> artifact only** (nothing consumes it at runtime yet; wiring the services to it is roadmap 3.4).
+> **Divergence found:** the `requested` state above is defined in the `OrderStatus` enum but the code
+> never writes it — `create()` mints an order directly at `open_for_offers`, so `requested` has no
+> incoming edge in the real machine. The diagram keeps the node for completeness; the table (and its
+> spec) pin that no transition targets it, so writing `requested` later is a deliberate change.
+
 Rules encoded around the transitions:
 
 - **Delivery OTP**: `confirmDelivery` takes a row lock (`SELECT ... FOR UPDATE`) so the attempt-count
@@ -994,6 +1004,29 @@ The rule of thumb the codebase follows: **check-then-act is never split across s
 contended state — the guard lives in the `WHERE` clause of the write, so the database arbitrates the
 race, and a unique index catches anything the guard misses.
 
+### Idempotency inventory (money-moving & state-changing operations)
+
+Retries and double-submits are a *when*, not an *if* (a hurried operator double-clicks; a 2G link drops
+a response and the client resends). Every operation that moves money or changes durable state is
+**exactly-once by construction** — a deterministic key, a CAS, or both. This table is the authority on
+which mechanism protects each (roadmap 2.2 verification pass):
+
+| Operation | Idempotency mechanism | Evidence |
+|---|---|---|
+| Top-up create (`POST /wallet/topups`) | client `idempotencyKey` → partial unique `(rider_id, idempotency_key)` | migrations 0028/0029; a retry hits the same pending intent (BH-09) |
+| Top-up credit (rail / manual) | credit CAS transitions `pending→confirmed` + unique `topUpId` on the ledger row | exactly-once credit; a replayed confirm can neither re-transition nor double-credit |
+| Admin manual credit | `providerRef @unique` (the form-open key); P2002 caught → returns already-credited balance | WD-003; `wallet.service.creditManual` |
+| Per-ride commission debit | partial unique `(rider_id, order_id)` WHERE `type='ride_commission'` | WD-015 (migrations 0030/0031); one debit per order, ever |
+| Fare adjust | **no-op guard** (adjust-to-current short-circuits) + `agreedFare` CAS | AH20-01 (roadmap 2.2); a same-value replay writes nothing |
+| Refund (issue resolve) | refund created **inside** the issue-resolve CAS (`WHERE status != 'resolved'`) | AH20-02 verified; a second resolve gets 409, so at most one refund per issue |
+| Order lifecycle transitions | status-guarded CAS (`WHERE status=<prior>`) | §13 table above; one event per real transition |
+| Offer make / select | unique `(order_id, rider_id)` / `one_active_ride` | §13 table above |
+
+Deliberately deferred (recorded in `TODOS.md` / roadmap): client-persisted stored-response replay
+(Airbnb-style) — the server-side keys + CAS above already give exactly-once, so the client half is added
+only if a real client-retry duplicate is observed. The future PSP-webhook path (EcoCash rail, wallet PR2)
+must dedupe inbound events by provider event id and join this table.
+
 ---
 
 ## 14. Background jobs & self-healing
@@ -1038,6 +1071,30 @@ graph TB
   stall on an un-rated order (T3).
 - If `REDIS_URL` is unset entirely, offer-expiry is disabled (logged) but the reconciler still
   closes stale deliveries — the system degrades, it doesn't break.
+
+### Retry ownership
+
+Every request that fails can be re-executed by *some* layer, and the failure mode to fear is
+**amplification** — several layers each retrying the same call turn a blip into a self-inflicted
+outage (DoorDash's June-19th post), while an ambiguous money write retried without care double-charges.
+The rule here is **one owner per flow, classify before retrying, default non-retryable** (Airbnb's
+double-payment lesson). The table is the authority on who may retry what:
+
+| Layer | Retries | Policy | Owns |
+|---|---|---|---|
+| **TanStack Query (reads)** | `shouldRetry`, cap 2 | Retry only a **retryable** `ApiError` (status 0 / 5xx); a 4xx is a deterministic answer and never retried; an outage *pauses* the query (`onlineManager`) rather than burning retries. | Idempotent GETs |
+| **TanStack Query (writes)** | `mutations.retry = false` | **Non-retryable by default.** A money-moving / state-changing POST is never silently re-sent by the client. A per-mutation `retry:` is a deliberate, reviewed exception and must carry an idempotency key. | All mutations |
+| **API client (`api/client.ts`)** | Single re-send after a 401 token refresh | Not a general retry — one replay of the original request with a fresh access token, guarded by single-flight refresh. | Auth token rotation |
+| **BullMQ workers** | `attempts: 3`, exp. backoff 5s | The *server-side* owner of retrying time-based transitions. Idempotent via `jobId = orderId` (a retry can't fire the transition twice). Broadcast-widening ticks opt **out** (`attempts` unset) — best-effort by design. | Offer expiry, rating auto-close |
+| **DB reconcilers (`setInterval`)** | Periodic sweep (offer ~2 min, lifecycle ~15 min) | The Redis-independent backstop, not a retry of a specific call — re-derives the correct state from the DB. Guarded CAS so it converges, never double-acts. | Self-heal for lost jobs / Redis outage |
+| **Socket.IO client** | Built-in reconnection | Transport reconnect only; on reconnect the client re-subscribes and the server re-emits a snapshot. Carries no mutation. | Live-tracking presence |
+| **Cloud Scheduler jobs** | `retry_count = 3` | Retries the nightly POST (retention purge, wallet integrity, settlement auto-pause). Each endpoint is idempotent / read-only, so a retried run is safe. | Scheduled sweeps |
+
+`ApiError.retryable` (`api/client.ts`) is the single per-error classifier both client policies read:
+`true` only for a dropped link (status 0) or a transient 5xx. Everything else — including any error a
+layer can't classify — is treated as non-retryable on the write path. The PSP-webhook redelivery layer
+(future EcoCash rail, wallet PR2) joins this table as its own row and must dedupe inbound events by
+provider event id.
 
 ---
 

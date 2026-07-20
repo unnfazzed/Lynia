@@ -76,6 +76,33 @@ PR while that routine's session is still pushing to the same branch.
 4. **Never merge on red.** Auto-merge means merge-on-green, not merge-regardless. Failing or
    missing required checks always block; fix forward first.
 
+## Sensitive-lane review doctrine (roadmap 4.5)
+
+Because every routine auto-merges on green with no human in the loop, **the review is the safety
+culture** — so it is path-scoped, not one generic pass (the DoorDash "AI reviewer engineers actually
+listen to" lesson: load area-specific doctrine, and stay silent unless a comment would change the code).
+
+**A diff that touches a money / trust lane — `apps/api/src/{wallet,settlements,offers,orders,matching}/`,
+`apps/api/src/{kyc,riders}/` (KYC gating), the admin money actions, or `packages/shared/src/{policy,pricing,money}.ts` —
+must state in its PR body, and the review must confirm:**
+
+1. **Idempotency** — the deterministic key / CAS / unique-constraint that makes the operation
+   exactly-once (name it, or say why the op is naturally idempotent). Cross-check the inventory in
+   `docs/ARCHITECTURE.md §13`.
+2. **State transition** — which order-lifecycle edge(s) it exercises, checked against the declarative
+   table in `apps/api/src/orders/order-lifecycle.transitions.ts`. No new illegal transition.
+3. **Money arithmetic** — any money math goes through the `@lynia/shared` money seam
+   (`addMoney`/`subMoney`/`roundToCents`/`percentOf`), never ad-hoc float `+`/`-`/`Math.round`.
+4. **A regression test** that would fail without the change (sensitive fixes are conservative +
+   test-backed per Universal policy 1).
+
+A sensitive-lane PR that doesn't answer 1–4 is **not green regardless of CI** — the reviewer blocks it.
+For all other lanes, keep the precision bar: comment only when it would change the code.
+
+> **Editing a routine's trigger:** a live trigger's `session_context` cannot be reconstructed by
+> delete-and-recreate — follow the in-place update procedure in `docs/routines/README.md`. Changing a
+> routine's *prompt* to carry this doctrine is an in-place edit, never a re-create.
+
 ## Bug-dedup protocol (the four bug-finders + the weekly performance watch)
 
 `docs/KNOWN_BUGS.md` is the coordination ledger. Duplicate findings across routines are a

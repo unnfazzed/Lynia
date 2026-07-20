@@ -9,15 +9,18 @@ starts from reasoning, not archaeology.
 
 - **What:** Periodic job (or ops procedure) matching Econet's merchant statement exports
   against confirmed `TopUp` rows.
-- **Why:** The nightly integrity job proves our own ledger is internally consistent; only
-  statement matching catches money that reached the merchant account but never credited a
-  wallet (or a credit with no matching receipt).
+- **Why:** The nightly integrity job (`WalletIntegrityService`, `POST /admin/wallet/integrity-check`,
+  scheduled in `infra/terraform/scheduler.tf`) proves our own ledger is internally consistent —
+  balance == sum(ledger), every confirmed top-up credited, no orphan credits; only statement
+  matching catches money that reached the merchant account but never credited a wallet (or a
+  credit with no matching receipt).
 - **Pros:** Closes the last money-visibility gap; turns "where did the rider's $5 go"
   disputes into a lookup.
 - **Cons:** Needs statement-export access from Econet; meaningless at pilot volume.
 - **Context:** Deliberately cut from the wallet build (Approach A, design doc
   `docs/plans/2026-rider-wallet-design.md`). The wallet ships with an internal
-  ledger-vs-balance integrity job only.
+  ledger-vs-balance integrity job only — that job (design step 6) was specified but unbuilt
+  until roadmap item 1.3 landed it; this remaining item is the *external* statement-matching half.
 - **Trigger / blocked by:** EcoCash rail live (wallet PR2) AND commission rate flipped
   AND sustained top-up volume (guide: >20 confirmed top-ups/week).
 

@@ -82,3 +82,156 @@ resource "google_monitoring_alert_policy" "match_select_error_rate" {
 
   depends_on = [google_project_service.apis]
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Business-vital alerts (roadmap 1.5). The SLO policies above watch latency; these watch the
+# marketplace's money/health signals — the Uber lesson "alert on the business's vital signs, not just
+# CPU". Same LR9 gate (slo_alerts_enabled) and same notification_channels as the SLO block: the metric
+# series must exist in GMP before the policy can be created, and — critically — a notification channel
+# must be configured (var.alert_notification_channels defaults to [], which creates policies that fire
+# in the console but PAGE NO ONE). Wiring a real channel is the founder half of LR9.
+#
+# NOTE — deferred for lack of a series: BullMQ queue age/depth and top-up-confirm lag have NO metric
+# emitted today, so no alert can be written against them without first instrumenting the workers/rail.
+# Tracked in docs/OBSERVABILITY.md; do not add a policy here until the series exists (it would 400 on apply).
+
+# Ledger integrity drift — the single highest-value money monitor (roadmap 1.3 emits the series). ANY
+# nonzero drift over a day means the nightly sweep found a completeness violation (balance≠ledger, a
+# confirmed top-up with no credit, a missing receipt, an orphan credit). Page immediately.
+resource "google_monitoring_alert_policy" "wallet_integrity_drift" {
+  count = var.slo_alerts_enabled ? 1 : 0
+
+  display_name = "Lynia money — wallet ledger integrity drift"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "wallet_integrity_drift_total increased over 24h"
+
+    condition_prometheus_query_language {
+      query               = "sum(increase(wallet_integrity_drift_total[24h])) > 0"
+      duration            = "0s"
+      evaluation_interval = "300s"
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+
+  documentation {
+    content   = "The nightly wallet integrity sweep found a ledger-completeness violation (a rider balance ≠ sum(ledger), a confirmed top-up with no credit, a ride_commission missing its receipt, or a credit tied to a non-confirmed top-up). This is money visibility — investigate before the next payout. Job: POST /admin/wallet/integrity-check (WalletIntegrityService). See docs/OBSERVABILITY.md."
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Integrity-job liveness — the denominator guard. Without this, "0 drift" is ambiguous: healthy, or the
+# job stopped running? Fire if no run completed in >25h (the nightly job should tick once/24h).
+resource "google_monitoring_alert_policy" "wallet_integrity_stalled" {
+  count = var.slo_alerts_enabled ? 1 : 0
+
+  display_name = "Lynia money — wallet integrity job not running"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "no wallet_integrity_runs_total in 25h"
+
+    condition_prometheus_query_language {
+      query               = "sum(increase(wallet_integrity_runs_total[25h])) < 1"
+      duration            = "0s"
+      evaluation_interval = "300s"
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+
+  documentation {
+    content   = "The nightly wallet integrity sweep has not completed a run in over 25 hours — a 0-drift reading is therefore not trustworthy. Check the Cloud Scheduler job `lynia-wallet-integrity` and the /admin/wallet/integrity-check endpoint. See docs/OBSERVABILITY.md."
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# API 5xx rate — the post-deploy blast-radius signal. >2% of requests 5xx over 10m pages. Uses the
+# http_request histogram's implicit _count series, split by the status_class label recordHttp sets.
+resource "google_monitoring_alert_policy" "api_5xx_rate" {
+  count = var.slo_alerts_enabled ? 1 : 0
+
+  display_name = "Lynia — API 5xx rate > 2%"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "5xx ratio over 2% for 10m"
+
+    condition_prometheus_query_language {
+      query               = "sum(rate(http_request_duration_ms_count{status_class=\"5xx\"}[5m])) / clamp_min(sum(rate(http_request_duration_ms_count[5m])), 1) > 0.02"
+      duration            = "600s"
+      evaluation_interval = "60s"
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+
+  documentation {
+    content   = "More than 2% of API requests returned 5xx over 10 minutes — usually a bad deploy or a downstream failure. First mitigation: re-point traffic to the previous Cloud Run revision (rollback.yml). See docs/OBSERVABILITY.md."
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Offer-creation failure rate — a marketplace vital sign. >5% of offer-make attempts erroring over 10m
+# (the `error` outcome, not the normal `conflict`/`forbidden` race/permission outcomes) pages.
+resource "google_monitoring_alert_policy" "offers_error_rate" {
+  count = var.slo_alerts_enabled ? 1 : 0
+
+  display_name = "Lynia — Offer-make error rate > 5%"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "offers_made error ratio over 5% for 10m"
+
+    condition_prometheus_query_language {
+      query               = "sum(rate(offers_made_total{outcome=\"error\"}[5m])) / clamp_min(sum(rate(offers_made_total[5m])), 1) > 0.05"
+      duration            = "600s"
+      evaluation_interval = "60s"
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+
+  documentation {
+    content   = "More than 5% of offer-make attempts returned `error` over 10 minutes — riders can't bid. Distinct from `conflict`/`forbidden`, which are normal race/permission outcomes. See docs/OBSERVABILITY.md."
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# WhatsApp OTP delivery failures — the async half of a send failure the login path can't see. A spike
+# means riders/customers can't receive their login code. >0.2 failures/sec sustained over 10m pages.
+resource "google_monitoring_alert_policy" "whatsapp_otp_delivery" {
+  count = var.slo_alerts_enabled ? 1 : 0
+
+  display_name = "Lynia — WhatsApp OTP delivery failures"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "whatsapp_otp_delivery_failed rate elevated for 10m"
+
+    condition_prometheus_query_language {
+      query               = "sum(rate(whatsapp_otp_delivery_failed_total[5m])) > 0.2"
+      duration            = "600s"
+      evaluation_interval = "60s"
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+
+  documentation {
+    content   = "WhatsApp OTP deliveries are failing at the delivery-status webhook (Meta reported `failed` after accepting the send). Sustained failures mean users can't log in. Check Meta Cloud API status and the WHATSAPP_* config. See docs/OBSERVABILITY.md."
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_project_service.apis]
+}

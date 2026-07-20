@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { COMMISSION, commissionBasis, perRideCommission } from "@lynia/shared";
+import { addMoney, COMMISSION, commissionBasis, perRideCommission, roundToCents } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
@@ -38,10 +38,8 @@ export interface CommissionOverview {
   rows: CommissionRiderRow[];
 }
 
-/** 2dp round — the same money rounding the rest of the API uses. */
-function round(n: number): number {
-  return Math.round(n * 100) / 100;
-}
+/** 2dp money round — the shared money seam (roundToCents ≡ the former local Math.round(n*100)/100). */
+const round = roundToCents;
 
 /** Calendar date (YYYY-MM-DD), UTC — stable + testable, no locale/timezone drift (mirrors admin.service). */
 function fmtDate(d: Date): string {
@@ -111,7 +109,7 @@ export class SettlementsService {
     const chargedByOrder = new Map<string, number>();
     for (const r of ledgerRows) {
       if (!r.orderId) continue;
-      chargedByOrder.set(r.orderId, (chargedByOrder.get(r.orderId) ?? 0) + Number(r.amount));
+      chargedByOrder.set(r.orderId, addMoney(chargedByOrder.get(r.orderId) ?? 0, Number(r.amount)));
     }
 
     // Aggregate per rider in JS: ride count, gross fares, and per-ride-summed commission.

@@ -1,5 +1,6 @@
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
+  addMoney,
   COMMISSION,
   type CommissionConfig,
   commissionBasis,
@@ -7,6 +8,8 @@ import {
   isCommissionActive,
   perRideCommission,
   resolveCommissionRatePct,
+  roundToCents,
+  subMoney,
   type Topup,
   TOPUP_WINDOW_MS,
   type TopupRail,
@@ -24,10 +27,9 @@ import { PrismaService } from "../prisma/prisma.service";
 /** Page size for the ledger history feed. */
 const LEDGER_PAGE_SIZE = 25;
 
-/** 2dp round — the same money rounding the rest of the API uses (mirrors settlements.service). */
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
+/** 2dp money round — now the shared money seam (roundToCents ≡ the former local Math.round(n*100)/100).
+ *  Balance add/subtract go through addMoney/subMoney (integer cents, exact) rather than float ±. */
+const round2 = roundToCents;
 
 /** Decimal | null → number | undefined, for the wire shape (contracts type money as plain numbers). */
 function num(d: Prisma.Decimal | number | null | undefined): number | undefined {
@@ -245,7 +247,7 @@ export class WalletService {
     if (existing) return;
 
     const balance = Number(locked[0]?.balance ?? 0);
-    const balanceAfter = round2(balance - amount);
+    const balanceAfter = subMoney(balance, amount);
     await tx.commissionLedger.create({
       data: {
         riderId,
@@ -288,7 +290,7 @@ export class WalletService {
     await tx.$executeRaw`INSERT INTO commission_accounts (rider_id) VALUES (${args.riderId}::uuid) ON CONFLICT (rider_id) DO NOTHING`;
     const locked = await tx.$queryRaw<Array<{ balance: string }>>`
       SELECT balance FROM commission_accounts WHERE rider_id = ${args.riderId}::uuid FOR UPDATE`;
-    const balanceAfter = round2(Number(locked[0]?.balance ?? 0) + amount);
+    const balanceAfter = addMoney(Number(locked[0]?.balance ?? 0), amount);
     await tx.commissionLedger.create({
       data: {
         riderId: args.riderId,
@@ -407,7 +409,7 @@ export class WalletService {
       await tx.$executeRaw`INSERT INTO commission_accounts (rider_id) VALUES (${args.riderId}::uuid) ON CONFLICT (rider_id) DO NOTHING`;
       const locked = await tx.$queryRaw<Array<{ balance: string }>>`
         SELECT balance FROM commission_accounts WHERE rider_id = ${args.riderId}::uuid FOR UPDATE`;
-      const balanceAfter = round2(Number(locked[0]?.balance ?? 0) + amount);
+      const balanceAfter = addMoney(Number(locked[0]?.balance ?? 0), amount);
       await tx.commissionLedger.create({
         data: {
           riderId: args.riderId,
@@ -445,7 +447,7 @@ export class WalletService {
       await tx.$executeRaw`INSERT INTO commission_accounts (rider_id) VALUES (${topUp.riderId}::uuid) ON CONFLICT (rider_id) DO NOTHING`;
       const locked = await tx.$queryRaw<Array<{ balance: string }>>`
         SELECT balance FROM commission_accounts WHERE rider_id = ${topUp.riderId}::uuid FOR UPDATE`;
-      const balanceAfter = round2(Number(locked[0]?.balance ?? 0) + amount);
+      const balanceAfter = addMoney(Number(locked[0]?.balance ?? 0), amount);
       await tx.commissionLedger.create({
         data: { riderId: topUp.riderId, type: "topup", amount, balanceAfter, topUpId, actor: "system" },
       });
@@ -498,7 +500,7 @@ export class WalletService {
         await tx.$executeRaw`INSERT INTO commission_accounts (rider_id) VALUES (${args.riderId}::uuid) ON CONFLICT (rider_id) DO NOTHING`;
         const locked = await tx.$queryRaw<Array<{ balance: string }>>`
           SELECT balance FROM commission_accounts WHERE rider_id = ${args.riderId}::uuid FOR UPDATE`;
-        const balanceAfter = round2(Number(locked[0]?.balance ?? 0) + amount);
+        const balanceAfter = addMoney(Number(locked[0]?.balance ?? 0), amount);
         await tx.commissionLedger.create({
           data: {
             riderId: args.riderId,

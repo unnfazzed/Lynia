@@ -730,6 +730,20 @@ report for detail and the residual server-side hardening item recorded under Sug
 
 ---
 
+## Architecture-hardening roadmap 2026-07-20 (interactive) — `docs/plans/2026-07-20-architecture-hardening-roadmap.md`
+
+Findings surfaced while executing the roadmap's Phase-1 test items (admin money-action tests, 1.6). Both
+are money-path idempotency gaps on the admin console; the roadmap's Phase-2.2 item owns the fixes (a
+deterministic idempotency key + dedup), so they are recorded here (with a pinning test already in place)
+rather than fixed in the test-only pass.
+
+| ID | Finding | Location | Severity | Status |
+|---|---|---|---|---|
+| AH20-01 | `adjustFare` carried **no idempotency guard** — a double-confirm / lost-response retry re-posting `{agreedFare,reason,note}` appended a second zero-delta `order.fare_adjust` AuditLog row (and re-entered the completed-order commission reconciliation for a 0 delta). | `admin-orders.service.ts` `adjustFare` | MEDIUM | **FIXED** (roadmap 2.2) — server-side idempotency guard: adjusting to the fare the order already has short-circuits before any CAS/commission/audit write and returns current state, so a replay is exactly-once. Regression test `admin-orders.service.spec.ts` "AH20-01 …". |
+| AH20-02 | `resolveIssue` (refund path) carries no idempotency key; concern was a concurrent double-submit double-refunding. | `issues.service.ts` `resolveIssue` | LOW-MEDIUM | **VERIFIED — NOT A BUG (guarded).** The refund `tx.refund.create` runs INSIDE the issue-resolve CAS (`updateMany where status != resolved` → `claimed.count===0` throws Conflict), so only the one writer that flips the issue to `resolved` creates the refund — a second submit gets "already resolved". Double-refund is structurally prevented by the atomic transition. A belt-and-suspenders `Refund` unique index is deferred (needs a new `issueId` column + backfill; no correctness gain over the CAS). |
+
+---
+
 ## Agentic-loop bug hunt 2026-07-16 (wallet & data-lifecycle lane) — `docs/AGENTIC-LOOP-BUGHUNT-2026-07-16.md`
 
 Interactive run of a new multi-agent "loop-until-dry + adversarial-verify + sibling-sweep" engine (8

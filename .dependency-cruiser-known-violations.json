@@ -1,0 +1,448 @@
+[
+  {
+    "type": "dependency",
+    "from": "apps/mobile/src/ui/AddressSearch.tsx",
+    "to": "apps/mobile/src/api/places.ts",
+    "unresolvedTo": "../api/places",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "mobile-ui-no-api"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "apps/mobile/src/ui/order/CounterOfferCard.tsx",
+    "to": "apps/mobile/src/api/offers.ts",
+    "unresolvedTo": "../../api/offers",
+    "dependencyTypes": [
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "mobile-ui-no-api"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "apps/mobile/src/ui/order/LiveTrackingCard.tsx",
+    "to": "apps/mobile/src/api/orders.ts",
+    "unresolvedTo": "../../api/orders",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "mobile-ui-no-api"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "apps/mobile/src/ui/rider/JobDetailsCard.tsx",
+    "to": "apps/mobile/src/api/orders.ts",
+    "unresolvedTo": "../../api/orders",
+    "dependencyTypes": [
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "mobile-ui-no-api"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "apps/mobile/src/ui/rider/PickupChecklist.tsx",
+    "to": "apps/mobile/src/api/orders.ts",
+    "unresolvedTo": "../../api/orders",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "mobile-ui-no-api"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "apps/mobile/src/ui/rider/PickupChecklist.tsx",
+    "to": "apps/mobile/src/api/uploads.ts",
+    "unresolvedTo": "../../api/uploads",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "mobile-ui-no-api"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "apps/mobile/src/ui/rider/terminals.tsx",
+    "to": "apps/mobile/src/api/orders.ts",
+    "unresolvedTo": "../../api/orders",
+    "dependencyTypes": [
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "mobile-ui-no-api"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "apps/mobile/src/ui/safety.tsx",
+    "to": "apps/mobile/src/api/client.ts",
+    "unresolvedTo": "../api/client",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "mobile-ui-no-api"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "apps/mobile/src/ui/safety.tsx",
+    "to": "apps/mobile/src/api/safety.ts",
+    "unresolvedTo": "../api/safety",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "mobile-ui-no-api"
+    }
+  },
+  {
+    "type": "cycle",
+    "from": "apps/mobile/src/api/client.ts",
+    "to": "apps/mobile/src/auth/session.ts",
+    "unresolvedTo": "../auth/session",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "apps/mobile/src/auth/session.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/logic/rider-bid-draft.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/api/orders.ts",
+        "dependencyTypes": [
+          "local",
+          "type-only",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/api/client.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "apps/mobile/src/api/client.ts",
+    "to": "apps/mobile/src/telemetry/rum.ts",
+    "unresolvedTo": "../telemetry/rum",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "apps/mobile/src/telemetry/rum.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/api/client.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "apps/mobile/src/auth/session.ts",
+    "to": "apps/mobile/src/net/history-store.ts",
+    "unresolvedTo": "../net/history-store",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "apps/mobile/src/net/history-store.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/api/orders.ts",
+        "dependencyTypes": [
+          "local",
+          "type-only",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/api/client.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/auth/session.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "apps/mobile/src/auth/session.ts",
+    "to": "apps/mobile/src/net/last-active-store.ts",
+    "unresolvedTo": "../net/last-active-store",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "apps/mobile/src/net/last-active-store.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/api/orders.ts",
+        "dependencyTypes": [
+          "local",
+          "type-only",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/api/client.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/auth/session.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "apps/mobile/src/logic/last-active.ts",
+    "to": "apps/mobile/src/api/orders.ts",
+    "unresolvedTo": "../api/orders",
+    "dependencyTypes": [
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "apps/mobile/src/api/orders.ts",
+        "dependencyTypes": [
+          "local",
+          "type-only",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/api/client.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/auth/session.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/net/last-active-store.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/logic/last-active.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "module",
+    "from": "apps/admin/app/lib/console-auth.ts",
+    "to": "apps/admin/app/lib/console-auth.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/admin/app/lib/iap-jwt.ts",
+    "to": "apps/admin/app/lib/iap-jwt.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/api/src/auth/phone-backfill.ts",
+    "to": "apps/api/src/auth/phone-backfill.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/api/src/orders/order-lifecycle.transitions.ts",
+    "to": "apps/api/src/orders/order-lifecycle.transitions.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/api/src/privacy/pii-manifest.ts",
+    "to": "apps/api/src/privacy/pii-manifest.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/api/src/riders/kyc-decline-reasons.ts",
+    "to": "apps/api/src/riders/kyc-decline-reasons.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/logic/fare-band.ts",
+    "to": "apps/mobile/src/logic/fare-band.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/logic/gates.ts",
+    "to": "apps/mobile/src/logic/gates.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/logic/otp.ts",
+    "to": "apps/mobile/src/logic/otp.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/realtime/use-foreground-refetch.ts",
+    "to": "apps/mobile/src/realtime/use-foreground-refetch.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/ui/BottomSheet.tsx",
+    "to": "apps/mobile/src/ui/BottomSheet.tsx",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  }
+]

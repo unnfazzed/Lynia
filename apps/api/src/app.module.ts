@@ -4,6 +4,7 @@ import { AllExceptionsFilter } from "./common/all-exceptions.filter";
 import { PiiCryptoModule } from "./common/pii-crypto.module";
 import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
+import { PaymentsModule } from "./adapters/payments/payments.module";
 import { PushModule } from "./adapters/push/push.module";
 import { SecretsModule } from "./adapters/secrets/secrets.module";
 import { StorageModule } from "./adapters/storage/storage.module";
@@ -43,6 +44,9 @@ import { WalletModule } from "./wallet/wallet.module";
     StorageModule,
     SecretsModule,
     PushModule,
+    // Vendor-agnostic top-up rail seam (roadmap 2.5). Bound to an inert stub until the live EcoCash
+    // client (wallet PR2) lands; nothing consumes PAYMENT_RAIL yet, so this is purely additive.
+    PaymentsModule,
     // Push notifications + device-token registry (consumes the PUSH seam).
     NotificationsModule,
     HealthModule,

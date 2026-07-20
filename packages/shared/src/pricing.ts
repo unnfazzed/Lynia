@@ -6,6 +6,7 @@
  * Pilot numbers are USD for Harare-corridor motorbike-courier runs; tune at the pricing T0 spike.
  */
 import type { LatLng } from "./contracts";
+import { roundToCents } from "./money";
 
 export const FARE = {
   /** Flag-fall: pickup + handling, independent of distance. */
@@ -18,7 +19,8 @@ export const FARE = {
 } as const;
 
 const toRad = (deg: number): number => (deg * Math.PI) / 180;
-const round2 = (n: number): number => Math.round(n * 100) / 100;
+// Money rounding centralised in ./money (roundToCents === the former local round2, to the cent).
+const round2 = roundToCents;
 
 /** Great-circle distance between two points (Haversine), in kilometres. */
 export function haversineKm(a: LatLng, b: LatLng): number {

@@ -9,6 +9,8 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
+    "depcruise": "depcruise --config .dependency-cruiser.cjs --ignore-known .dependency-cruiser-known-violations.json apps/api/src apps/mobile/src apps/admin/app packages/shared/src",
+    "depcruise:baseline": "depcruise --config .dependency-cruiser.cjs --output-type baseline apps/api/src apps/mobile/src apps/admin/app packages/shared/src > .dependency-cruiser-known-violations.json",
     "test": "turbo run test",
     "dev": "turbo run dev",
     "db:up": "docker compose up -d",
@@ -18,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "dependency-cruiser": "^18.1.0",
     "turbo": "^2.10.5",
     "typescript": "^6.0.3"
   },

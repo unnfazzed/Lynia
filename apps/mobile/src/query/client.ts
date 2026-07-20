@@ -11,12 +11,23 @@ import { ApiError } from "../api/client";
  * cover a brief blip, not the whole outage. Exported for unit testing.
  */
 export function shouldRetry(failureCount: number, error: unknown): boolean {
-  if (error instanceof ApiError && error.status !== 0 && error.status < 500) return false;
+  // A non-retryable ApiError (a 4xx deterministic answer) is never retried. An unexpected non-ApiError
+  // throw is treated as transient — for a READ, re-issuing a GET is safe. Writes do not come through
+  // here (see the `mutations` policy below). Delegates the per-error classification to ApiError.retryable.
+  if (error instanceof ApiError && !error.retryable) return false;
   return failureCount < 2;
 }
 
 export const queryClient = new QueryClient({
   defaultOptions: {
+    mutations: {
+      // Retry ownership (docs/ARCHITECTURE.md §Retry ownership): writes are NON-RETRYABLE by default —
+      // a money-moving or state-changing POST that fails ambiguously must not be silently re-sent from
+      // the client (Airbnb's "default non-retryable"). This is TanStack's default too; pinning it here
+      // makes the safe choice explicit so a future `retry:` on an individual mutation is a deliberate,
+      // reviewed act (and must carry an idempotency key — see the wallet/top-up flows).
+      retry: false,
+    },
     queries: {
       retry: shouldRetry,
       refetchOnWindowFocus: false,
