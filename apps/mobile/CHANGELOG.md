@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/unnfazzed/Lynia/compare/v0.8.1...v0.9.0) (2026-07-20)
+
+
+### Features
+
+* architecture hardening roadmap — Phase 1 (safety net & visibility) ([8846519](https://github.com/unnfazzed/Lynia/commit/8846519295dab9effebd03fea81b6c0c56c17961))
+
 ## [0.8.1](https://github.com/unnfazzed/Lynia/compare/v0.8.0...v0.8.1) (2026-07-20)
 
 
