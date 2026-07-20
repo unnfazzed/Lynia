@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.5](https://github.com/unnfazzed/Lynia/compare/v0.7.4...v0.7.5) (2026-07-20)
+
+
+### Performance Improvements
+
+* **wave-2b:** ship the two Loop-A-confirmed fixes — focus-gated home poll, extracted auction clock ([#345](https://github.com/unnfazzed/Lynia/issues/345)) ([c6411df](https://github.com/unnfazzed/Lynia/commit/c6411df70d4d900afbba61ae81ec262e4fa1552a))
+
 ## [0.7.4](https://github.com/unnfazzed/Lynia/compare/v0.7.3...v0.7.4) (2026-07-20)
 
 
