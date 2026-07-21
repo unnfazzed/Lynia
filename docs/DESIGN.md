@@ -48,6 +48,13 @@ Body text ≥ 4.5:1 contrast; green **text** uses `--accent-text` (≈7:1) and t
 (white label ≈4.7:1) for **sunlight readability** (riders outdoors). **Never set text in `--accent`** — the bright
 fill green fails contrast; that is exactly what `--accent-text` is for.
 
+**Semantic colour roles (roadmap 4.6, additive):** a role layer on top of the raw scale above — `--text-*`,
+`--surface-*`, `--border-*`, `--action-*`, `--marker-*`, `--state-*` in `packages/design/tokens/colors.css`,
+mirrored by the `semantic` export in `@lynia/shared`'s `design-tokens.ts`. Each role maps straight to a raw
+token (`--text-accent` → `--accent-text`, `--action-primary` → `--cta-fill`, etc.) — nothing new to tune,
+just names for "what a colour is FOR" so a future re-theme is a change to this map, not a codebase sweep.
+Prefer role names in new UI; the raw scale still exists underneath and nothing in it changed.
+
 **Type:** **Inter** (UI + display) — the same open-source typeface Grab uses in-product; self-hosted 400/600/700
 in `packages/design/assets/fonts` with a system-font (Roboto) fallback, `font-display: swap`. **Tabular numerals**
 for fares, ETAs, ratings — in the app always via the shared `tabular` style helper (`apps/mobile/src/ui`), never ad hoc. Grab-dense scale: 24px screen titles, 18px card titles, **14px body, 12px captions**,
