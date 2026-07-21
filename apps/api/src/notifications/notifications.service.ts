@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { OFFER_WINDOW_MS } from "@lynia/shared";
 import { PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
+import { auditData } from "../admin/admin.shared";
 
 /**
  * TTL (seconds) for time-critical broadcast/rebroadcast/riders-available pushes: the offer window. A
@@ -224,6 +225,26 @@ export class NotificationsService {
       // list and leaves the rest queued for the next nearby rider — so a no-token/transient-FCM miss
       // never silently drops a customer who asked to be told.
       const delivered = new Set<string>();
+
+      // UX21-02: this push (unlike every other single-recipient push type — offers, account/standing
+      // changes, fare-adjust, issue-resolved, SOS) had no KB-FEED-SYNTH durable feed fallback, so a
+      // customer who missed it (backgrounded app, cleared OS tray, a different device) could never learn
+      // a rider came online near them. Written for every waiter processed here, independent of push
+      // delivery (mirroring adjustFare's audit-then-best-effort-push shape), in its own try/catch so a
+      // transient DB hiccup can never block the push sends below. Live-order waiters key the row to the
+      // order (`order.riders_available_notify`, synthesized in notifications-feed.service.ts alongside
+      // `order.fare_adjust`); everyone else keys it to their own profile (`customer.riders_available_notify`,
+      // an ACCOUNT_FEED_COPY entry — there's no specific order left to reference).
+      try {
+        const auditRows = waiters.map((w) =>
+          w.orderId && openIds.has(w.orderId)
+            ? auditData("system:notify-riders-available", "order.riders_available_notify", w.orderId)
+            : auditData("system:notify-riders-available", "customer.riders_available_notify", w.profileId),
+        );
+        if (auditRows.length > 0) await this.prisma.auditLog.createMany({ data: auditRows });
+      } catch (err) {
+        this.logger.warn(`notifyRidersAvailable feed-fallback audit write failed: ${(err as Error).message}`);
+      }
 
       // Live-order waiters: one push each (each carries its own orderId). A customer has at most one
       // waiter and an order has one customer, so there's no batching to share here.

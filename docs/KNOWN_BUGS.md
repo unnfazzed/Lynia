@@ -6,7 +6,14 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-20 (bug-hunt routine — agentic-loop hunt over the bug-hunt lane; see
+**Last consolidated:** 2026-07-21 (UX-improvements routine — agentic-loop hunt over the UX lane; see
+`docs/UX-USABILITY-REVIEW-2026-07-21.md` and the "UX review 2026-07-21" section near the bottom for
+UX21-01/UX21-02 — both MEDIUM, both fixed same-run: a zero-`error.tsx` gap that let the admin console's
+two busiest bare-form Server Actions (KYC quick-approve, order follow-up note) crash to Next's generic
+error screen instead of the console's own inline retryable error text, and a missing durable feed
+fallback for the "a rider's online near you" push, the one push type in the app with no KB-FEED-SYNTH
+recovery path).
+Prior consolidation: 2026-07-20 (bug-hunt routine — agentic-loop hunt over the bug-hunt lane; see
 `docs/BUG-HUNT-2026-07-20.md` and the "Bug hunt 2026-07-20 night" section near the bottom for BH-23/24,
 two MEDIUM findings, both fixed same-run with regression tests. BH-23: `clearDeviceState()`'s sign-out
 wipe (`apps/mobile/src/auth/session.ts`) imported and deleted `RIDER_BID_DRAFT_KEY` but never its sibling
@@ -1679,3 +1686,22 @@ window and queued as KNOWN for the weekly performance-watch routine (full accoun
 |---|---|---|---|---|---|
 | PERF20-01 | Home's 30s **full-snapshot** active-order poll ran for the ENTIRE life of every order: home stays mounted beneath `/order/[id]` (expo-router stack) and React Query's focusManager is AppState-only, so the poll (~1.5-3.5 KB full `getSnapshot` incl. Redis position read + signed photo URL) duplicated the order screen's own socket-gated snapshot stream on a second cache key — ~120 redundant requests/hour of metered radio for a banner that reads 5 fields, defeating the order screen's poll suspension during delivery. | `apps/mobile/app/home.tsx` restore-banner poll | MEDIUM | PW (perf) | **FIXED** — interval gated on navigation focus (`useFocusEffect` sets a focused flag; poll runs only while home is the visible route) paired with on-focus revalidation so the banner is never stale on return. AppState foreground refetch unchanged. |
 | PERF20-02 | The auction countdown was a **screen-level 1s state** (`remainingMs`) that re-rendered the entire ~1200-line order screen — every bid card, entrance animation and sort chip — once per second for the length of every auction, contending on the low-end-Android JS thread with the highest-stakes tap (Choose). The repo had already named and fixed this exact anti-pattern on the rider board (SentOfferCard's internal ticker). | `apps/mobile/app/order/[id].tsx` countdown | MEDIUM | PW (perf) | **FIXED** — extracted `src/ui/order/AuctionClock.tsx` owning the tick, SR fired-once thresholds (60s/30s/closing), amber-urgency crossfade and the 0:00 refetch nudge; parent hears only threshold crossings (`onUrgentChange` for the last-20s affordance, `onZero`), keyed by orderId so a rider-bail rebroadcast resets cleanly. Regression: `auction-clock.test.tsx` pins render isolation (ticking clock, zero parent re-renders) + all threshold semantics. |
+
+---
+
+## UX review 2026-07-21 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-21.md`
+
+Phase 0: one open PR (`#370`, a `release-please` version bump with no code diff) — no sibling `claude/*`
+bug-fix branches to cross-check. Phase 0.5 rotated to the three cluster headers neither 2026-07-19 nor
+2026-07-20 had re-checked — **Money-fraud** (MOOT), **Data-integrity**, **Ship/infra correctness** — 6/6
+sampled members confirmed intact, no fresh findings. Hunt ran via the agentic-loop engine
+(`Workflow({name: 'lane-bug-hunt'}, args: 'ux')`) — 4 finder lenses (2 returned empty), 2 candidates
+found, both survived a 3-skeptic adversarial panel, then a repo-wide sibling-sweep per survivor. **Two
+findings, both MEDIUM — both fixed this run**, one with 5 new regression tests, the other (`apps/admin`,
+no test harness in this repo) typecheck+lint+build-verified; `pnpm typecheck` + `pnpm test` (1166 API
+tests incl. 5 new, 517 mobile tests) all green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| UX21-01 | The admin console's two busiest one-tap write actions — KYC quick-approve (`riders/page.tsx`'s `KycAction`) and "log a follow-up note" (`orders/[id]/page.tsx`) — were bare `<form action={serverAction}>` submits whose server actions deliberately `throw` on a failed API write (`setKyc`/`logOrderFollowUpNote`, both explicitly comment that silently failing-open is unacceptable). Every other admin write action already wraps its POST in client-side try/catch and shows the failure inline (`ConfirmModal`, `AcknowledgeButton`) — these two didn't, and with **zero `error.tsx`/`global-error.tsx` anywhere in `apps/admin`**, a transient API failure blew past the row straight to Next's generic unstyled crash screen: no sidebar, no rider/order context, no in-place retry. | `apps/admin/app/riders/page.tsx`, `apps/admin/app/riders/actions.ts`, `apps/admin/app/orders/[id]/page.tsx`, `apps/admin/app/actions/audit.ts` | MEDIUM | **FIXED** — `KycSubmitButton.tsx` → `KycApproveButton` (calls `setKyc` directly inside `useTransition`, catches + shows the error inline, mirroring `AcknowledgeButton`); new `orders/[id]/FollowUpNoteButton.tsx` (same pattern for `logOrderFollowUpNote`); new root `apps/admin/app/error.tsx` backstop (styled, sidebar-preserving, "Try again") for any future gap in this class. Sibling-sweep: 0 other bare `<form action={...}>` submits anywhere in `apps/admin` (grep evidence in the dated report §4). |
+| UX21-02 | "A rider's online near you" — the push fulfilling a customer's "notify me when a rider comes online" request (`NotificationsService.notifyRidersAvailable`) — had no in-app Notifications feed fallback, the one push kind in the app without a KB-FEED-SYNTH durable recovery path (offer/account-standing/fare-adjust/issue-resolved/SOS all have one). It's pure fire-and-forget over ephemeral Redis waiter state (1h TTL, drained on claim) with zero DB write recording the event. A customer who missed the push (backgrounded app, cleared OS tray, a different signed-in device) had no way to ever learn a rider came online near their pickup. | `apps/api/src/notifications/notifications.service.ts` `notifyRidersAvailable`, `apps/api/src/notifications/notifications-feed.service.ts` | MEDIUM | **FIXED** — `notifyRidersAvailable` now writes a durable `AuditLog` row for every waiter processed (independent of push delivery, own try/catch so a DB blip can never block the push): `order.riders_available_notify` (target=orderId) for the live-order case, `customer.riders_available_notify` (target=profileId) for the generic case. `notifications-feed.service.ts` synthesizes both — a new order-scoped loop (mirroring `order.fare_adjust`) and a new `ACCOUNT_FEED_COPY` entry — copy mirroring the actual push in both branches. Sibling-sweep: of 7 push-`kind` sites across `notifications.service.ts`/`sos.service.ts`/`issues.service.ts`, the other 3 kinds (`offer`/`issue`/`sos`) already have feed fallbacks; the one remaining kind (`broadcast`, the rider-side "new delivery nearby" ping) was evaluated and left as a non-bug — a missed broadcast push isn't a blocker since the rider board (WS + REST poll) is already a durable, always-current source of truth for open jobs, unlike the customer side's `riders_available` signal, which had no pull-based equivalent. 5 new tests (3 in `notifications.service.spec.ts`, 2 in `notifications-feed.service.spec.ts`). |

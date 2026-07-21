@@ -4,8 +4,7 @@ import { DataTable, type Column } from "../components/DataTable";
 import { FilterNav } from "../components/FilterNav";
 import { Pill } from "../components/StatusPill";
 import { IconBike } from "../components/icons";
-import { setKyc } from "./actions";
-import { KycSubmitButton } from "./KycSubmitButton";
+import { KycApproveButton } from "./KycSubmitButton";
 
 interface Rider {
   profileId: string;
@@ -139,8 +138,8 @@ export default async function RidersPage({
   );
 }
 
-/** KYC-queue row action: inline reason-less Approve (form → setKyc) + a Review link to the doc-review
- *  screen where the reason-coded decline + document compare live. */
+/** KYC-queue row action: inline reason-less Approve (KycApproveButton) + a Review link to the
+ *  doc-review screen where the reason-coded decline + document compare live. */
 function KycAction({ r }: { r: Rider }) {
   if (r.kycStatus !== "pending") {
     return (
@@ -150,12 +149,8 @@ function KycAction({ r }: { r: Rider }) {
     );
   }
   return (
-    <span style={{ display: "flex", gap: 6 }}>
-      <form action={setKyc} style={{ display: "inline" }}>
-        <input type="hidden" name="profileId" value={r.profileId} />
-        <input type="hidden" name="status" value="verified" />
-        <KycSubmitButton label="Approve" solid />
-      </form>
+    <span style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+      <KycApproveButton profileId={r.profileId} />
       <a className="btn ghost" href={`/riders/${r.profileId}/kyc`}>
         Review
       </a>

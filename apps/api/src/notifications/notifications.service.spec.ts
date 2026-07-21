@@ -22,6 +22,10 @@ function makeDeps() {
     profile: {
       findMany: vi.fn().mockResolvedValue([]),
     },
+    // UX21-02: notifyRidersAvailable's durable feed-fallback audit write.
+    auditLog: {
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   };
   // The service fans out through the batched `sendEach`; the default mock accepts every message.
   const push: PushAdapter = {
@@ -295,6 +299,43 @@ describe("NotificationsService — notifyRidersAvailable delivery set (F-18 at-l
 
     expect(push.sendEach).not.toHaveBeenCalled();
     expect(delivered.size).toBe(0);
+  });
+});
+
+describe("NotificationsService — notifyRidersAvailable durable feed fallback (UX21-02)", () => {
+  it("writes an order-targeted audit row for a live-order waiter, independent of push delivery", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([{ id: "ord-9", createdAt: new Date() }]);
+    prisma.deviceToken.findMany.mockResolvedValue([]); // no device — push delivers to nobody
+
+    await service.notifyRidersAvailable([{ profileId: "cust-1", orderId: "ord-9" }]);
+
+    expect(push.sendEach).not.toHaveBeenCalled();
+    expect(prisma.auditLog.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ action: "order.riders_available_notify", target: "ord-9" })],
+    });
+  });
+
+  it("writes a profile-targeted audit row for a generic (no live order) waiter", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.deviceToken.findMany.mockResolvedValue([]);
+
+    await service.notifyRidersAvailable([{ profileId: "cust-1" }]);
+
+    expect(prisma.auditLog.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ action: "customer.riders_available_notify", target: "cust-1" })],
+    });
+  });
+
+  it("still sends the push when the audit write itself fails (best-effort, never blocks delivery)", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.auditLog.createMany.mockRejectedValue(new Error("db blip"));
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "t1", profileId: "cust-1" }]);
+
+    const delivered = await service.notifyRidersAvailable([{ profileId: "cust-1" }]);
+
+    expect([...delivered]).toEqual(["cust-1"]);
+    expect(push.sendEach).toHaveBeenCalled();
   });
 });
 
