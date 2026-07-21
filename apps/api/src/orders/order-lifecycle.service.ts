@@ -244,33 +244,43 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     riderId: string,
     key: string,
   ): Promise<{ orderId: string; pickupPhotoKey: string }> {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      select: { status: true, riderId: true, pickupPhotoKey: true },
+    // DS18-03 + DS21-01: the read of the previous key, the party/window/namespace checks, and the write all
+    // run under a `SELECT … FOR UPDATE` row lock (mirroring confirmDelivery). DS18-03 fixed the SEQUENTIAL
+    // retake-orphan (a single rider re-taking their photo), but two CONCURRENT attach calls for the same order
+    // (e.g. a client retry duplicating an in-flight request) could each read the same pre-write key BEFORE
+    // either committed: both writes then land (the old CAS guarded only `status`, which neither call changes),
+    // and each request's superseded-object cleanup compared against its OWN stale pre-write snapshot — so
+    // NEITHER detected the OTHER's just-persisted key, and the loser's uploaded GCS object orphaned with zero
+    // DB pointer, permanently unreachable by privacy.service's right-to-erasure purge. The lock serialises the
+    // two: the second caller blocks on FOR UPDATE until the first commits, then reads the first's just-
+    // committed key and correctly deletes IT as superseded — no orphan. The lock also subsumes the old CAS
+    // (nothing can move the row between the locked read and the write), so a plain `update` is safe here.
+    const previousKey = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        Array<{ status: string; rider_id: string | null; pickup_photo_key: string | null }>
+      >`SELECT status, rider_id, pickup_photo_key FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      const o = rows[0];
+      if (!o) throw new NotFoundException("Order not found");
+      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (!PICKUP_PHOTO_STATUSES.includes(o.status as OrderStatus)) {
+        throw new ConflictException("A pickup photo can only be added while collecting the parcel");
+      }
+      // The key must live under this caller's own pickup namespace — POST /uploads/pickup-photo mints
+      // keys as `pickup/<callerId>/<uuid>` — so a rider can't persist a key that points at another
+      // user's object (mirrors the becomeRider KYC-key guard in rider.service.ts).
+      if (!key.startsWith(`pickup/${riderId}/`)) {
+        throw new BadRequestException("Invalid photo key");
+      }
+      await tx.order.update({ where: { id: orderId }, data: { pickupPhotoKey: key } });
+      return o.pickup_photo_key;
     });
-    if (!order) throw new NotFoundException("Order not found");
-    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
-    if (!PICKUP_PHOTO_STATUSES.includes(order.status)) {
-      throw new ConflictException("A pickup photo can only be added while collecting the parcel");
-    }
-    // The key must live under this caller's own pickup namespace — POST /uploads/pickup-photo mints
-    // keys as `pickup/<callerId>/<uuid>` — so a rider can't persist a key that points at another
-    // user's object (mirrors the becomeRider KYC-key guard in rider.service.ts).
-    if (!key.startsWith(`pickup/${riderId}/`)) {
-      throw new BadRequestException("Invalid photo key");
-    }
-    // CAS on the attach window — a concurrent advance past picked_up (or a cancel) between the read
-    // above and this write must not let a stale attach land on the now-later status.
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: { in: [...PICKUP_PHOTO_STATUSES] } },
-      data: { pickupPhotoKey: key },
-    });
-    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-    // DS18-03: a retake just overwrote the DB pointer to a NEW object. The PREVIOUS object would otherwise
-    // orphan in GCS forever — no DB pointer is left for the right-to-erasure purge to find it (a residual
-    // leak). Best-effort delete of the superseded object, post-CAS; never fails the attach.
-    if (order.pickupPhotoKey && order.pickupPhotoKey !== key) {
-      await this.deleteSupersededObject(order.pickupPhotoKey);
+    // DS18-03/DS21-01: a retake just overwrote the DB pointer to a NEW object. Purge the object the PREVIOUS
+    // key pointed at — read INSIDE the lock, so it reflects any concurrent writer that committed before us —
+    // else it would orphan in GCS with no DB pointer left for the right-to-erasure purge (a residual leak).
+    // Best-effort, POST-commit and outside the transaction (a GCS delete must never sit inside a DB tx);
+    // never fails the attach.
+    if (previousKey && previousKey !== key) {
+      await this.deleteSupersededObject(previousKey);
     }
     return { orderId, pickupPhotoKey: key };
   }
@@ -291,34 +301,41 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     lat?: number,
     lng?: number,
   ): Promise<{ orderId: string; deliveryProofKey: string }> {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      select: { status: true, riderId: true, deliveryProofKey: true },
+    // DS18-03 + DS21-01: row-locked read-validate-write, identical to attachPickupPhoto — see the long note
+    // there. The prior read + party/window/namespace checks + write are serialised under `SELECT … FOR
+    // UPDATE` so two concurrent proof attaches can't both read the same pre-write key and orphan the loser's
+    // GCS object past the right-to-erasure purge; the lock subsumes the old status CAS, so a plain `update`
+    // is safe (a concurrent transition that would have failed the CAS instead moves the row to a status this
+    // locked read rejects with the same 409).
+    const previousKey = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        Array<{ status: string; rider_id: string | null; delivery_proof_key: string | null }>
+      >`SELECT status, rider_id, delivery_proof_key FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      const o = rows[0];
+      if (!o) throw new NotFoundException("Order not found");
+      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (!DELIVERY_PROOF_STATUSES.includes(o.status as OrderStatus)) {
+        throw new ConflictException("Proof of drop-off can only be added at the door or right after marking it undelivered");
+      }
+      if (!key.startsWith(`delivery-proof/${riderId}/`)) {
+        throw new BadRequestException("Invalid photo key");
+      }
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          deliveryProofKey: key,
+          deliveryProofLat: lat ?? null,
+          deliveryProofLng: lng ?? null,
+          deliveryProofAt: new Date(),
+        },
+      });
+      return o.delivery_proof_key;
     });
-    if (!order) throw new NotFoundException("Order not found");
-    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
-    if (!DELIVERY_PROOF_STATUSES.includes(order.status)) {
-      throw new ConflictException("Proof of drop-off can only be added at the door or right after marking it undelivered");
-    }
-    if (!key.startsWith(`delivery-proof/${riderId}/`)) {
-      throw new BadRequestException("Invalid photo key");
-    }
-    // CAS on the attach window so a concurrent transition (e.g. the customer cancels, or the rider
-    // confirms delivery) between the read and this write can't land a stale proof on a now-terminal order.
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: { in: [...DELIVERY_PROOF_STATUSES] } },
-      data: {
-        deliveryProofKey: key,
-        deliveryProofLat: lat ?? null,
-        deliveryProofLng: lng ?? null,
-        deliveryProofAt: new Date(),
-      },
-    });
-    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-    // DS18-03: same retake-orphan cleanup as attachPickupPhoto — purge the object the previous key pointed
-    // at, so a replaced proof photo doesn't become permanently unreachable by the erasure purge.
-    if (order.deliveryProofKey && order.deliveryProofKey !== key) {
-      await this.deleteSupersededObject(order.deliveryProofKey);
+    // DS18-03/DS21-01: same retake-orphan cleanup as attachPickupPhoto — purge the object the PREVIOUS key
+    // (read inside the lock) pointed at, best-effort and post-commit, so a replaced proof photo doesn't
+    // become permanently unreachable by the erasure purge.
+    if (previousKey && previousKey !== key) {
+      await this.deleteSupersededObject(previousKey);
     }
     return { orderId, deliveryProofKey: key };
   }

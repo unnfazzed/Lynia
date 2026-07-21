@@ -6,7 +6,29 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-21 (UX-improvements routine — agentic-loop hunt over the UX lane; see
+**Last consolidated:** 2026-07-21 (deep-sweep routine — agentic-loop hunt over the deep-sweep lane; see
+`docs/DEEP-SWEEP-2026-07-21.md` and the "Deep sweep 2026-07-21" section near the bottom for DS21-01/DS21-02 —
+one MEDIUM, one LOW, both fixed same-run with regression tests. DS21-01 (MEDIUM): `attachPickupPhoto` /
+`attachDeliveryProof` (`order-lifecycle.service.ts`) ran their photo-key read → CAS `updateMany`-on-`status`
+→ delete-of-the-pre-write-snapshot's-key with no transaction/row lock, so two concurrent attach calls for the
+same order (a client retry duplicating an in-flight request) both read the same pre-write key, both writes
+land (the CAS guards only `status`, unchanged), and each request's cleanup compares only its OWN stale
+pre-read — so NEITHER purges the OTHER's just-persisted key and the loser's GCS object orphans with zero DB
+pointer, unreachable by the right-to-erasure purge (the DS15-03/DS18-01/DS18-03 orphan class, reopened via a
+race). Fixed by wrapping both in a `SELECT … FOR UPDATE` row-locked `$transaction` (mirroring
+`confirmDelivery`) with a plain post-lock `update` (the lock subsumes the old CAS) and the superseded-object
+delete moved post-commit using the key read UNDER THE LOCK — so the second caller blocks, reads the first's
+committed key, and purges it. DS21-02 (LOW): the two feed-backing audit actions `order.riders_available_notify`
+and `customer.riders_available_notify` (added in UX21-02, read back by `notifications-feed.service.ts` to
+render an "A rider's online near you" row) were never added to `admin-audit.service.ts`'s
+`RESERVED_AUDIT_ACTIONS`, so an admin-token holder could `POST /admin/audit-actions` to forge a compliance
+row / a victim's fake feed notification — the same un-propagated-sibling drift WD-023 fixed once for three KYC
+strings. Fixed by reserving both and adding a durable `FEED_READ_ACTIONS ⊆ RESERVED_AUDIT_ACTIONS` invariant
+test so the class can't drift a third time. Phase-0.5 re-verified the **Auth/identity**, **Notifications/FCM**,
+and **Edge/abuse** cluster headers (rotated to the 3 least-recently-checked, last done by the UX 2026-07-20
+run) — all INTACT, 0 stale claims. Zero open `claude/*` sibling PRs at Phase 0. `pnpm typecheck` (5 packages) +
+`pnpm test` (1169 API + 45 admin + 517 mobile) + `pnpm build` (`@lynia/api`) all green.
+Prior: 2026-07-21 (UX-improvements routine — agentic-loop hunt over the UX lane; see
 `docs/UX-USABILITY-REVIEW-2026-07-21.md` and the "UX review 2026-07-21" section near the bottom for
 UX21-01/UX21-02 — both MEDIUM, both fixed same-run: a zero-`error.tsx` gap that let the admin console's
 two busiest bare-form Server Actions (KYC quick-approve, order follow-up note) crash to Next's generic
@@ -853,6 +875,56 @@ testable; `pnpm typecheck` + `pnpm lint` + 916 API tests (+11) + 401 mobile test
 | UX16-08 | Top-up "Cancel request" (`reset()`) unconditionally rotated the dedup `idempotencyKey`, even when cancelling a STILL-LIVE (`pending`) top-up whose server-side row and already-pushed rail prompt aren't recalled by the local reset — an immediate resend opened a second, independent pending top-up instead of deduping against the abandoned one. Dormant (`creditFromTopup` has no callers yet) but a real double-credit vector once a live rail confirmation ships | `apps/mobile/app/wallet/top-up.tsx` `reset`, `apps/api/src/wallet/wallet.service.ts` `createTopup` | LOW-MEDIUM (dormant) | **FIXED** — `reset()` only rotates the key when NOT cancelling a live (`step === "wait"`) top-up; "Try again" from a genuinely terminal state (timeout/declined) still gets a fresh key per BH-09's original intent |
 
 ---
+
+## Deep sweep 2026-07-21 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-21.md`
+
+Phase 0: zero open `claude/*` sibling PRs at session start. Phase 0.5 re-verified the three "→ FIXED" cluster
+headers least-recently re-checked — **Auth/identity**, **Notifications/FCM**, and **Edge/abuse** (last done by
+the UX 2026-07-20 daytime run) — **all 3 INTACT, 0 stale claims** (Auth: JWT HS256 alg pin
+`token.service.ts:50/53`, OTP-verify TOCTOU `auth.service.ts:281-286`; Notifications: dead-token pruning
+`notifications.service.ts:389-391` + `fcm.push.ts:102,137`, batched `sendEach ≤ 500` `fcm.push.ts:14,128-129`;
+Edge: global ThrottleGuard `app.module.ts:87` + `common/throttle.guard.ts:52`, outbound fetch timeouts
+`didti-kyc-vendor.ts:37` + `otp-sender.ts:18,78,158,221`). Phase 1 (`lane-bug-hunt`, 5 lenses: tx-rollback,
+concurrency-idempotency, authz-IDOR, timer-expiry, adversarial-API) returned **1 candidate**, confirmed REAL by
+a 3-skeptic adversarial panel (3/3, high) → DS21-01. Phase 1.5 (deep-sweep-owned cross-lane seams pass) picked
+the never-before-used seam **"a value threaded through a notification/feed/push or an admin action must
+re-assert its trust boundary at each hop"** (the audit-forgery / notify-me-orderId class) and traced the
+`AuditLog.action` write→feed-read seam across all **6 writer/reader pairs** (`order.riders_available_notify` +
+`customer.riders_available_notify` STALE → DS21-02; `order.fare_adjust`, `order.rider_standing_notice`/
+`_resolved`, `rider.kyc_approve`/`wallet.credit` via `ACCOUNT_FEED_ACTIONS`, `order.adjudicate_delivered` all
+sound), plus other hops on the seam found sound (push `data.orderId` → party-gated re-fetch; notify-me orderId
+Redis association ownership check `orders.service.ts:325-343`; WS `board:new-order` `.strict()` PII rejection;
+WS presence role server-derivation; SOS/issue push counterparty server-derivation). Phase 3 adversarial raw-API
+pass (six attack classes: IDOR/identity-cross-check, CAS/row-lock discipline, idempotency, KYC/standing gates,
+fare manipulation, wallet abuse) came back **clean, zero new gaps**; `KB-HOLD-SESSION-SCOPE` re-confirmed
+unchanged/already-OPEN (not new). **Two findings — one MEDIUM (DS21-01), one LOW (DS21-02), zero CRITICAL/HIGH
+— both fixed same-run** with regression tests; `pnpm typecheck` (5 packages) + `pnpm test` (1169 API + 45 admin
++ 517 mobile tests) + `pnpm build` (`@lynia/api` inclusive) all green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| DS21-01 | `attachPickupPhoto` (`order-lifecycle.service.ts:242-276`) and `attachDeliveryProof` (`:287-324`) each ran a `findUnique`-of-the-photo-key-column → CAS `updateMany`-on-`status` → conditional delete-of-the-pre-write-snapshot's-key, none wrapped in a transaction or row lock. Two near-simultaneous calls for the SAME order (e.g. a client retry duplicating an in-flight request) both read the same pre-existing key (e.g. null) before either write committed; both CAS writes succeed (they guard only `status`, which neither call changes), so the second clobbers the first in the DB — but each request's cleanup compares only against its OWN stale pre-write read, so NEITHER detects or deletes the OTHER's just-persisted key. The loser's uploaded GCS object is left with zero DB pointer anywhere, permanently unreachable by `privacy.service.ts`'s `eraseAccount` PII purge (which only knows the CURRENT `pickupPhotoKey`/`deliveryProofKey` column) — the right-to-erasure orphan class DS15-03/DS18-01/DS18-03 closed for the SEQUENTIAL case, reopened via a race. | `apps/api/src/orders/order-lifecycle.service.ts` (`attachPickupPhoto`, `attachDeliveryProof`) | MEDIUM | **FIXED** — both methods now wrap the read + party/window/namespace checks + write in a `$transaction` taking a `SELECT … FOR UPDATE` row lock (via `$queryRaw`, mirroring `confirmDelivery`), then do a plain post-lock `tx.order.update` (the lock subsumes the old CAS — a concurrent transition instead moves the row to a status the locked read rejects with the same 409). The previous key is read INSIDE the lock and returned; `deleteSupersededObject` runs post-commit, outside the tx, on that lock-read key — so the second caller blocks on FOR UPDATE, reads the first's committed key, and purges it (no orphan). Error types/messages, idempotent-retake semantics, key-namespace check, and lat/lng/`deliveryProofAt` handling unchanged. Regression tests: unit spec migrated to the `$queryRaw`/`update` shape + two DS21-01 tests per method (read+write inside one tx and purge uses the lock-read key; two sequential different-key attaches purge exactly the first key once); int spec (real transactional PostGIS) gains a TRUE concurrent `Promise.allSettled` proof that exactly the loser object is purged. |
+| DS21-02 | The feed synthesizer (`notifications-feed.service.ts`) reads back `order.riders_available_notify` (order-scoped, `:271`) and `customer.riders_available_notify` (account-scoped via `ACCOUNT_FEED_ACTIONS`, `:97-103,174`) to render an "A rider's online near you" row; their only legitimate writer is `notifyRidersAvailable` (actor `system:notify-riders-available`, `notifications.service.ts:241-244`). Neither was in `admin-audit.service.ts`'s `RESERVED_AUDIT_ACTIONS` — the only guard on the free-text `POST /admin/audit-actions` (`admin.controller.ts:196-202`). An admin-scoped-JWT holder could `POST {action:"customer.riders_available_notify", target:"<any profileId>"}` (or the order variant) past the denylist, forging a compliance-audit row indistinguishable from a real system-generated one AND causing the victim's next feed load to render a fake notification with no underlying state change. Same un-propagated-sibling shape WD-023 fixed once for three KYC strings; UX21-02 (which added these two feed-read actions) silently reopened it. | `apps/api/src/admin/admin-audit.service.ts`, `apps/api/src/notifications/notifications-feed.service.ts` | LOW | **FIXED** — added both action strings to `RESERVED_AUDIT_ACTIONS` (free-text path now 400s them). Converted the class into a write-time guard: exported a minimal `FEED_READ_ACTIONS` (union of `ACCOUNT_FEED_ACTIONS` + the inline order-scoped literals) from `notifications-feed.service.ts` and added a unit test asserting `FEED_READ_ACTIONS ⊆ RESERVED_AUDIT_ACTIONS`, so a future feed-read action added without reserving it fails at test time. Also added a rejection test for the two new strings, mirroring the WD-023 KYC-sibling test. |
+
+**Sibling-sweep evidence** (full grep output + per-hit disposition in `docs/DEEP-SWEEP-2026-07-21.md`):
+
+- **DS21-01** (`grep -rn 'pickupPhotoKey: true\|deliveryProofKey: true' apps/api/src --include=*.ts`, excluding
+  specs; plus `grep -rln 'updateMany({\s*where: {.*status' apps/api/src`): the read-key-column → CAS-on-status
+  → delete-pre-write-snapshot pattern exists in **exactly 2 call sites, both fixed** (`attachPickupPhoto`,
+  `attachDeliveryProof`). The other `*Key: true` hits (`admin-orders.service.ts:459`, `orders.service.ts:718`,
+  `privacy.service.ts:285`) are plain reads (admin detail / `getSnapshot` / the erasure purge) with no CAS +
+  no superseded delete → no orphan-on-race; the other `updateMany`-on-status sites (`matching.service.ts`,
+  `admin-orders.service.ts`, sibling lifecycle CASes) write no photo-key column and do no object delete. No
+  third untouched sibling.
+- **DS21-02** (`grep -n 'action:' apps/api/src/notifications/notifications-feed.service.ts`): the feed reads 5
+  inline action literals plus `ACCOUNT_FEED_ACTIONS` (the 10 keys of `ACCOUNT_FEED_COPY`). Diffing that full
+  feed-read set against the pre-fix `RESERVED_AUDIT_ACTIONS`, **exactly 2 were missing** —
+  `customer.riders_available_notify` and `order.riders_available_notify`, both added this run. Post-fix
+  `FEED_READ_ACTIONS ⊆ RESERVED_AUDIT_ACTIONS` holds and is now enforced by a unit test.
+
+**Stopping rule.** Exactly 2 new findings this run (DS21-01 MEDIUM, DS21-02 LOW), zero CRITICAL/HIGH — not
+padded. Phase 1 raised 1 candidate (verified 3/3 real), Phase 1.5 surfaced the single audit-forgery seam gap,
+Phase 3 clean.
 
 ## Deep sweep 2026-07-20 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-20.md`
 

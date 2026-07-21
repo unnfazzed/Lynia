@@ -103,6 +103,28 @@ const ACCOUNT_FEED_COPY: Record<string, { icon: string; title: string; message: 
 const ACCOUNT_FEED_ACTIONS = Object.keys(ACCOUNT_FEED_COPY);
 
 /**
+ * DS21-02: every `AuditLog.action` string this feed synthesizer reads back to render a row — the union of
+ * {@link ACCOUNT_FEED_COPY}'s profile-targeted account actions and the order-targeted inline literals used
+ * in the `where: { action: … }` reads inside {@link NotificationsFeedService.feedForUser}. Each of these is
+ * trusted to synthesize a feed row from a bare `AuditLog` entry, so EVERY one must also be reserved in
+ * admin-audit.service's `RESERVED_AUDIT_ACTIONS` — otherwise the free-text `POST /admin/audit-actions` path
+ * could forge a compliance-audit row that renders as a real feed notification with no underlying mutation.
+ * This is the audit-forgery class WD-023 fixed once for the KYC strings and UX21-02 silently reopened for
+ * the two `riders_available_notify` actions. A colocated unit test (`admin-audit.service.spec`) asserts
+ * `FEED_READ_ACTIONS ⊆ RESERVED_AUDIT_ACTIONS`, so the next feed-read action added here without reserving
+ * it fails at test time — converting this recurring drift into a write-time guard so it can't recur again.
+ * NOTE: keep this in sync when adding any new `action:` read to `feedForUser` (the test enforces it).
+ */
+export const FEED_READ_ACTIONS: readonly string[] = [
+  ...ACCOUNT_FEED_ACTIONS,
+  "order.adjudicate_delivered",
+  "order.rider_standing_notice",
+  "order.rider_standing_resolved",
+  "order.fare_adjust",
+  "order.riders_available_notify",
+];
+
+/**
  * UX-2026-07-16: feed copy for a resolved "get help with this trip" issue, mirroring
  * `notifyIssueResolved`'s push copy word-for-word (the feed↔push contract every other push type already
  * has). Before this, a resolved issue had a best-effort push and nothing else — if the push was missed

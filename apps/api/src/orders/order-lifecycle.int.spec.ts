@@ -51,7 +51,13 @@ const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersSer
 // A real WalletService (rate 0 via empty env) exercises the commission-debit call in the completion
 // path as a no-op — the R1 regression that both completion paths still complete with wallet tables present.
 const wallet = new WalletService({} as Env, prisma);
-const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders, wallet);
+// DS21-01: capture superseded-photo GCS deletes so the concurrent-attach race test can prove the loser's
+// object is purged (no orphan). A missing storage adapter would just no-op the best-effort cleanup.
+const deletedObjects: string[] = [];
+const storageStub = {
+  deleteObject: async (k: string) => { deletedObjects.push(k); },
+} as unknown as import("../adapters/storage/storage.interface").StorageAdapter;
+const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders, wallet, storageStub);
 const trackingStub = { evictFromGeo: async () => {}, claimNotifyWaitersNear: async () => [], clearNotifyWaiters: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
 const notificationsStub = { notifyRidersAvailable: async () => {}, notifyProfiles: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
 const riders = new RiderService(prisma, {} as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env), trackingStub, gateway, notificationsStub);
@@ -296,6 +302,37 @@ describe("delivery lifecycle", () => {
     const after = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { deliveryOtpAttempts: true } });
     expect(after.deliveryOtpAttempts).toBe(5); // exactly the cap — the FOR UPDATE lock prevents over-counting/bypass
     expect(await statusOf(orderId)).toBe("en_route_dropoff"); // never wrongly delivered
+  });
+
+  it("DS21-01: concurrent pickup-photo attaches serialize so the superseded object is always purged (no GCS orphan)", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId } = await assign(customer, rider);
+    await lifecycle.advance(orderId, rider, "confirmed");
+    await lifecycle.advance(orderId, rider, "en_route_pickup");
+
+    deletedObjects.length = 0;
+    const keyA = `pickup/${rider}/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg`;
+    const keyB = `pickup/${rider}/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jpg`;
+    // Two near-simultaneous attach calls for the SAME order (e.g. a client retry duplicating an in-flight
+    // request). Pre-DS21-01 both read the same pre-write key (null) and neither purged the other's object —
+    // the loser orphaned in GCS with no DB pointer, unreachable by privacy.service's right-to-erasure purge.
+    // The `SELECT … FOR UPDATE` lock serialises them: the second caller blocks until the first commits, then
+    // reads the first's just-committed key and purges IT as superseded.
+    const results = await Promise.allSettled([
+      lifecycle.attachPickupPhoto(orderId, rider, keyA),
+      lifecycle.attachPickupPhoto(orderId, rider, keyB),
+    ]);
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true); // both idempotent attaches succeed
+
+    const finalKey = (
+      await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { pickupPhotoKey: true } })
+    ).pickupPhotoKey;
+    expect([keyA, keyB]).toContain(finalKey);
+    // Exactly one object purged, and it's the one NOT persisted — the loser's object is gone, so nothing
+    // orphans past the erasure purge (which only knows the CURRENT pickupPhotoKey column).
+    const loser = finalKey === keyA ? keyB : keyA;
+    expect(deletedObjects).toEqual([loser]);
   });
 });
 
