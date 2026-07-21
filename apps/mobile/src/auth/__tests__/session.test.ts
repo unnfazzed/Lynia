@@ -13,8 +13,14 @@ jest.mock("expo-secure-store", () => ({
   setItemAsync: (...args: unknown[]) => mockSetItemAsync(...args),
 }));
 
+import { HISTORY_SNAPSHOT_KEY } from "../../net/history-store";
+import { RECENTS_KEY as SAVED_PLACES_RECENTS_KEY, SAVED_KEY as SAVED_PLACES_SAVED_KEY } from "../../logic/saved-places";
+import { MY_PICKUP_PHONE_KEY, RECIPIENTS_KEY } from "../../logic/saved-recipients";
+import { KYC_DRAFT_KEY } from "../../logic/kyc-draft";
+import { RIDER_IDENTITY_KEY } from "../../logic/rider-identity";
+import { JOB_KEY } from "../../net/last-active-store";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../../logic/pickup-checklist-draft";
-import { RIDER_SENT_OFFERS_KEY } from "../../logic/rider-bid-draft";
+import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../../logic/rider-bid-draft";
 import { clearDeviceState, loadSession } from "../session";
 
 afterEach(() => {
@@ -36,6 +42,64 @@ describe("clearDeviceState (sign-out wipe, BH-17)", () => {
     await clearDeviceState();
     const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
     expect(deletedKeys).toContain(RIDER_SENT_OFFERS_KEY);
+  });
+});
+
+// RF-10 characterization (pin current behavior before extracting the non-auth SecureStore groups into
+// device-state.ts): clearDeviceState() must keep wiping exactly this key set, including the "oddities" —
+// the device id, onboarding-seen, and permissions-primed flags are install-level and deliberately survive
+// sign-out, and the session token itself is cleared separately by clearSession().
+describe("clearDeviceState (full key-wipe characterization, RF-10 pin)", () => {
+  it("wipes every non-order-scoped key clearDeviceState is documented to own", async () => {
+    await clearDeviceState();
+    const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
+    expect(deletedKeys).toEqual(
+      expect.arrayContaining([
+        "lynia.orderDraft",
+        "lynia.disclaimerAccepted",
+        "lynia.rolePreference",
+        "lynia.deliveryCode.index",
+        "lynia.handbackAck",
+        "lynia.confirmItemsPending",
+        "lynia.riderJobTerminal",
+        "lynia.pendingRating",
+        "lynia.pendingSenderRating",
+        "lynia.pendingTopup",
+        SAVED_PLACES_RECENTS_KEY,
+        SAVED_PLACES_SAVED_KEY,
+        RECIPIENTS_KEY,
+        MY_PICKUP_PHONE_KEY,
+        KYC_DRAFT_KEY,
+        HISTORY_SNAPSHOT_KEY,
+        RIDER_IDENTITY_KEY,
+        JOB_KEY,
+        RIDER_BID_DRAFT_KEY,
+        RIDER_SENT_OFFERS_KEY,
+        PICKUP_CHECKLIST_DRAFT_KEY,
+      ]),
+    );
+  });
+
+  it("wipes each indexed per-order delivery-code key (code + attempts high-water + rotation baseline)", async () => {
+    mockGetItemAsync.mockImplementation(async (key: string) =>
+      key === "lynia.deliveryCode.index" ? JSON.stringify(["order-1", "order-2"]) : null,
+    );
+    await clearDeviceState();
+    const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
+    for (const orderId of ["order-1", "order-2"]) {
+      expect(deletedKeys).toContain(`lynia.deliveryCode.${orderId}`);
+      expect(deletedKeys).toContain(`lynia.deliveryCodeAttempts.${orderId}`);
+      expect(deletedKeys).toContain(`lynia.deliveryCodeRotatedAt.${orderId}`);
+    }
+  });
+
+  it("does NOT wipe the device id, onboarding-seen, permissions-primed, or session keys", async () => {
+    await clearDeviceState();
+    const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
+    expect(deletedKeys).not.toContain("lynia.deviceId");
+    expect(deletedKeys).not.toContain("lynia.onboardingSeen");
+    expect(deletedKeys).not.toContain("lynia.permissionsPrimed");
+    expect(deletedKeys).not.toContain("lynia.session");
   });
 });
 
