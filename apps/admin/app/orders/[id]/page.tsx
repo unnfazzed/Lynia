@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared";
 import { adminFetchResult } from "../../lib/api";
-import { logOrderFollowUpNote } from "../../actions/audit";
 import type { OrderDetail } from "../../lib/adminTypes";
+import { FollowUpNoteButton } from "./FollowUpNoteButton";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { FareAdjust, CancelOrder, AdjudicateDelivered } from "./OrderActions";
@@ -364,18 +364,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                       Call rider
                     </a>
                   ) : null}
-                  <form action={logOrderFollowUpNote.bind(null, o.id)}>
-                    {/* The action/target are NOT client-supplied hidden inputs (F-07): they are hardcoded
-                        server-side and the order id is a Next-bound (encrypted) argument, so this form
-                        cannot be tampered into forging an arbitrary audit row. */}
-                    {/* This only writes an audit-log note — no push/SMS/call reaches the rider. The old
-                        label ("Nudge rider — 'Are you OK to continue?'") implied a message was sent,
-                        which it never was; an ops agent believing they'd contacted the rider would wait
-                        for a reply that could never come. Call the rider (above) for a real nudge. */}
-                    <button type="submit" className="btn ghost" disabled={!connected} style={{ width: "100%" }}>
-                      Log a follow-up note (doesn&apos;t contact the rider)
-                    </button>
-                  </form>
+                  {/* The order id is a server-bound prop (not a client-supplied hidden input, F-07), so
+                      this cannot be tampered into forging an arbitrary audit row. This only writes an
+                      audit-log note — no push/SMS/call reaches the rider. The old label ("Nudge rider —
+                      'Are you OK to continue?'") implied a message was sent, which it never was; an ops
+                      agent believing they'd contacted the rider would wait for a reply that could never
+                      come. Call the rider (above) for a real nudge. */}
+                  <FollowUpNoteButton orderId={o.id} disabled={!connected} />
                 </>
               ) : null}
               {live ? (

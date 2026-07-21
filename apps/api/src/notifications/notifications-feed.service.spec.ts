@@ -538,4 +538,48 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       expect.objectContaining({ where: { target: { in: ["o1"] }, action: "order.fare_adjust" } }),
     );
   });
+
+  it("UX21-02: synthesizes a customer-voiced row from order.riders_available_notify — the live-order 'notify me' push had no durable feed fallback", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([{ id: "o1", riderId: null, events: [] }]);
+    prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
+      where.action === "order.riders_available_notify"
+        ? [{ id: "au1", target: "o1", createdAt: new Date("2026-07-06T11:00:00.000Z") }]
+        : [],
+    );
+
+    const custFeed = await service.feedForUser("cust", NOW);
+
+    expect(custFeed.find((r) => r.id === "riders-available:au1")).toMatchObject({
+      orderId: "o1",
+      to: "customer",
+      icon: "bike",
+      title: "A rider's online near you",
+      message: "Riders are being pinged on your live request — tap to follow the offers.",
+      unread: true,
+    });
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { target: { in: ["o1"] }, action: "order.riders_available_notify" } }),
+    );
+  });
+
+  it("UX21-02: synthesizes an account-level row from customer.riders_available_notify — the generic (no-live-order) 'notify me' push had no durable feed fallback", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: { in: string[] } } }) =>
+      where.action && "in" in where.action && where.action.in.includes("customer.riders_available_notify")
+        ? [{ id: "au2", action: "customer.riders_available_notify", createdAt: new Date("2026-07-06T11:00:00.000Z") }]
+        : [],
+    );
+
+    const feed = await service.feedForUser("cust", NOW);
+
+    expect(feed.find((r) => r.id === "account:au2")).toMatchObject({
+      orderId: null,
+      to: "customer",
+      icon: "bike",
+      title: "A rider's online near you",
+      message: "Riders are back near your pickup — send your parcel again to get offers.",
+      unread: true,
+    });
+  });
 });

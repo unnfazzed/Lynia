@@ -91,6 +91,14 @@ const ACCOUNT_FEED_COPY: Record<string, { icon: string; title: string; message: 
   // UX18-04 sibling: a manual wallet credit (creditManual) previously sent zero push AND zero feed row
   // either — the rider's balance changed with no proactive signal of any kind. Copy mirrors the push.
   "wallet.credit": { icon: "banknote", title: "Wallet credited", message: "Your wallet balance was credited — open the app to see the new balance." },
+  // UX21-02: the generic (no-live-order) half of "notify me when a rider's online" had no feed fallback
+  // either — there's no specific order left to reference by the time riders come back online, so this is
+  // an account-level row (orderId: null) like the standing/KYC rows above. Copy mirrors the push.
+  "customer.riders_available_notify": {
+    icon: "bike",
+    title: "A rider's online near you",
+    message: "Riders are back near your pickup — send your parcel again to get offers.",
+  },
 };
 const ACCOUNT_FEED_ACTIONS = Object.keys(ACCOUNT_FEED_COPY);
 
@@ -196,7 +204,7 @@ export class NotificationsFeedService {
     const orderIds = orders.map((o) => o.id);
     const customerViewOrderIds = orders.filter((o) => o.riderId !== userId).map((o) => o.id);
 
-    const [withOffers, adjudicated, offers, sosEvents, standingNotices, standingResolved, fareAdjustments] = await Promise.all([
+    const [withOffers, adjudicated, offers, sosEvents, standingNotices, standingResolved, fareAdjustments, ridersAvailableNotices] = await Promise.all([
       // Fix 1: for expired orders the customer is viewing, distinguish "riders bid but you didn't pick
       // in time" from the default "raise your price" nudge. Offer rows are never deleted on expiry
       // (only flipped to `expired`), so a plain count over the durable rows recovers "did any rider
@@ -252,6 +260,15 @@ export class NotificationsFeedService {
       orderIds.length > 0
         ? this.prisma.auditLog.findMany({
             where: { target: { in: orderIds }, action: "order.fare_adjust" },
+            select: { id: true, target: true, createdAt: true },
+          })
+        : [],
+      // UX21-02 "notify me" (live-order case) fallback — consumed by the loop below. Only the order's own
+      // customer can ever have a notify-me waiter tied to it (DS15-09 ownership check), so this is scoped
+      // to customerViewOrderIds like the standing-notice reads, not all orderIds.
+      customerViewOrderIds.length > 0
+        ? this.prisma.auditLog.findMany({
+            where: { target: { in: customerViewOrderIds }, action: "order.riders_available_notify" },
             select: { id: true, target: true, createdAt: true },
           })
         : [],
@@ -403,6 +420,25 @@ export class NotificationsFeedService {
           unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
         });
       }
+    }
+
+    // UX21-02: "notify me when a rider's online" (live-order case) feed fallback. notifyRidersAvailable
+    // pushes the customer "riders are being pinged on your live request", but that push never produced a
+    // feed row — the durable order.riders_available_notify audit written alongside it (see
+    // notifications.service.ts) recovers it here, one batched query over the orders already in view.
+    // Always customer-voiced (only the order's own customer can have a waiter tied to it).
+    for (const a of ridersAvailableNotices) {
+      const at = a.createdAt.toISOString();
+      rows.push({
+        id: `riders-available:${a.id}`,
+        orderId: a.target,
+        to: "customer",
+        icon: "bike",
+        title: "A rider's online near you",
+        message: "Riders are being pinged on your live request — tap to follow the offers.",
+        at,
+        unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+      });
     }
 
     // KB-FEED-SYNTH: account-status rows (KYC decision + admin standing changes). Those pushes
