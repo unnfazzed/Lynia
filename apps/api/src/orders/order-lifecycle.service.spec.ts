@@ -149,58 +149,54 @@ describe("OrderLifecycleService.confirmItems", () => {
 
 describe("OrderLifecycleService.attachPickupPhoto", () => {
   const key = "pickup/r1/11111111-1111-4111-8111-111111111111.jpg";
+  // DS21-01: attachPickupPhoto now reads the row under a `SELECT … FOR UPDATE` $queryRaw (snake_case
+  // columns) inside a $transaction, then writes with a plain `order.update` — the lock serialises concurrent
+  // callers so nothing can move the row between the locked read and the write (no CAS `updateMany` anymore).
+  const row = (over: Record<string, unknown> = {}) => [
+    { status: "en_route_pickup", rider_id: "r1", pickup_photo_key: null, ...over },
+  ];
 
   it("404s for a missing order", async () => {
-    const { svc } = build({ order: { findUnique: async () => null } });
+    const { svc } = build({ $queryRaw: async () => [] });
     await expect(svc.attachPickupPhoto("o1", "r1", key)).rejects.toThrow(/not found/i);
   });
 
   it("403s when the caller is not the assigned rider", async () => {
-    const { svc } = build({
-      order: { findUnique: async () => ({ status: "en_route_pickup", riderId: "r1" }) },
-    });
+    const { svc } = build({ $queryRaw: async () => row() });
     await expect(svc.attachPickupPhoto("o1", "other", key)).rejects.toThrow(/assigned rider/i);
   });
 
   it("409s outside the attach window (before the pickup leg, and after heading to drop-off)", async () => {
     for (const status of ["assigned", "confirmed", "en_route_dropoff", "delivered", "cancelled"]) {
-      const { svc } = build({ order: { findUnique: async () => ({ status, riderId: "r1" }) } });
+      const { svc } = build({ $queryRaw: async () => row({ status }) });
       await expect(svc.attachPickupPhoto("o1", "r1", key)).rejects.toThrow(/while collecting/i);
     }
   });
 
   it("400s a key outside the rider's own pickup namespace (can't persist someone else's object)", async () => {
-    const { svc } = build({
-      order: { findUnique: async () => ({ status: "en_route_pickup", riderId: "r1" }) },
-    });
+    const { svc } = build({ $queryRaw: async () => row() });
     await expect(svc.attachPickupPhoto("o1", "r1", "pickup/victim/photo.jpg")).rejects.toThrow(/invalid photo key/i);
     await expect(svc.attachPickupPhoto("o1", "r1", "kyc/r1/photo.jpg")).rejects.toThrow(/invalid photo key/i);
   });
 
-  it("persists the key at en_route_pickup via a CAS bounded to the attach window", async () => {
+  it("persists the key at en_route_pickup via a plain (row-locked) update", async () => {
     let args: { where: Record<string, unknown>; data: Record<string, unknown> } | undefined;
     const { svc } = build({
+      $queryRaw: async () => row(),
       order: {
-        findUnique: async () => ({ status: "en_route_pickup", riderId: "r1" }),
-        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+        update: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
           args = a;
-          return { count: 1 };
+          return {};
         },
       },
     });
     await expect(svc.attachPickupPhoto("o1", "r1", key)).resolves.toEqual({ orderId: "o1", pickupPhotoKey: key });
     expect(args!.data).toEqual({ pickupPhotoKey: key });
-    // The CAS covers BOTH window statuses, so an upload that lands just after the collect still attaches.
-    expect(args!.where).toEqual({ id: "o1", status: { in: ["en_route_pickup", "picked_up"] } });
+    expect(args!.where).toEqual({ id: "o1" });
   });
 
   it("still attaches at picked_up — a slow upload must not lose to the one-tap collect", async () => {
-    const { svc } = build({
-      order: {
-        findUnique: async () => ({ status: "picked_up", riderId: "r1" }),
-        updateMany: async () => ({ count: 1 }),
-      },
-    });
+    const { svc } = build({ $queryRaw: async () => row({ status: "picked_up" }), order: { update: async () => ({}) } });
     await expect(svc.attachPickupPhoto("o1", "r1", key)).resolves.toEqual({ orderId: "o1", pickupPhotoKey: key });
   });
 
@@ -208,11 +204,11 @@ describe("OrderLifecycleService.attachPickupPhoto", () => {
     const retake = "pickup/r1/22222222-2222-4222-8222-222222222222.jpg";
     const writes: Record<string, unknown>[] = [];
     const { svc } = build({
+      $queryRaw: async () => row(),
       order: {
-        findUnique: async () => ({ status: "en_route_pickup", riderId: "r1" }),
-        updateMany: async (a: { data: Record<string, unknown> }) => {
+        update: async (a: { data: Record<string, unknown> }) => {
           writes.push(a.data);
-          return { count: 1 };
+          return {};
         },
       },
     });
@@ -224,11 +220,9 @@ describe("OrderLifecycleService.attachPickupPhoto", () => {
   it("DS18-03: a retake purges the superseded GCS object so it can't orphan past erasure", async () => {
     const prev = "pickup/r1/00000000-0000-4000-8000-000000000000.jpg";
     const { svc, deletedObjects } = build({
-      order: {
-        // The order already carries a previous pickup photo; this attach overwrites the pointer.
-        findUnique: async () => ({ status: "picked_up", riderId: "r1", pickupPhotoKey: prev }),
-        updateMany: async () => ({ count: 1 }),
-      },
+      // The order already carries a previous pickup photo; this attach overwrites the pointer.
+      $queryRaw: async () => row({ status: "picked_up", pickup_photo_key: prev }),
+      order: { update: async () => ({}) },
     });
     await svc.attachPickupPhoto("o1", "r1", key);
     // The old object is deleted; the new key is left intact (only the superseded one is purged).
@@ -237,63 +231,113 @@ describe("OrderLifecycleService.attachPickupPhoto", () => {
 
   it("DS18-03: a first attach (no previous key) deletes nothing", async () => {
     const { svc, deletedObjects } = build({
-      order: {
-        findUnique: async () => ({ status: "en_route_pickup", riderId: "r1", pickupPhotoKey: null }),
-        updateMany: async () => ({ count: 1 }),
-      },
+      $queryRaw: async () => row({ pickup_photo_key: null }),
+      order: { update: async () => ({}) },
     });
     await svc.attachPickupPhoto("o1", "r1", key);
     expect(deletedObjects).toEqual([]);
   });
 
-  it("409s if the order left the window between the read and the CAS write", async () => {
-    const { svc } = build({
+  // DS21-01: the previous-key read and the write must both run INSIDE the same row-locked $transaction, and
+  // the superseded-object purge must use the key read UNDER THE LOCK — not a value read before the tx. This
+  // is what closes the concurrent-double-attach orphan: a second caller blocking on FOR UPDATE reads the
+  // FIRST caller's just-committed key and deletes IT. Here `$queryRaw` returns the key a concurrent writer
+  // committed first; the purge must target exactly that key.
+  it("DS21-01: reads the prior key + writes inside ONE $transaction and purges the lock-read key (race-safe)", async () => {
+    const concurrentlyCommitted = "pickup/r1/99999999-9999-4999-8999-999999999999.jpg";
+    let insideTx = false;
+    let queryInsideTx: boolean | undefined;
+    let updateInsideTx: boolean | undefined;
+    const h = build({
+      $queryRaw: async () => {
+        queryInsideTx = insideTx;
+        return row({ status: "picked_up", pickup_photo_key: concurrentlyCommitted });
+      },
       order: {
-        findUnique: async () => ({ status: "picked_up", riderId: "r1" }),
-        // A concurrent advance flipped the row to en_route_dropoff — the CAS `where` no longer matches.
-        updateMany: async () => ({ count: 0 }),
+        update: async () => {
+          updateInsideTx = insideTx;
+          return {};
+        },
       },
     });
-    await expect(svc.attachPickupPhoto("o1", "r1", key)).rejects.toThrow(/changed, retry/i);
+    // build() installs a passthrough $transaction; wrap it so we can assert both the read and the write ran
+    // inside the callback (i.e. under the FOR UPDATE lock), not before entering it.
+    const passthrough = (h.prisma as unknown as { $transaction: (cb: (tx: unknown) => unknown) => unknown }).$transaction;
+    (h.prisma as unknown as Record<string, unknown>).$transaction = async (cb: (tx: unknown) => unknown) => {
+      insideTx = true;
+      try {
+        return await passthrough(cb);
+      } finally {
+        insideTx = false;
+      }
+    };
+    await h.svc.attachPickupPhoto("o1", "r1", key);
+    expect(queryInsideTx).toBe(true);
+    expect(updateInsideTx).toBe(true);
+    // The loser's object (the key the concurrent writer committed, observed under the lock) is purged — no
+    // orphan escapes the right-to-erasure purge.
+    expect(h.deletedObjects).toEqual([concurrentlyCommitted]);
+  });
+
+  // DS21-01: two SEQUENTIAL attaches with different keys (the serialized outcome the lock guarantees for two
+  // concurrent ones) purge exactly the FIRST key, exactly once — the second read observes the first's stored
+  // key and deletes it. Models the race being closed rather than each request purging only its own stale read.
+  it("DS21-01: sequential attaches with different keys purge exactly the first key once", async () => {
+    const first = "pickup/r1/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg";
+    const second = "pickup/r1/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jpg";
+    let stored: string | null = null;
+    const { svc, deletedObjects } = build({
+      // The locked read reflects whatever a prior committed attach left in the column.
+      $queryRaw: async () => row({ status: "picked_up", pickup_photo_key: stored }),
+      order: { update: async (a: { data: Record<string, unknown> }) => { stored = a.data.pickupPhotoKey as string; return {}; } },
+    });
+    await svc.attachPickupPhoto("o1", "r1", first);
+    await svc.attachPickupPhoto("o1", "r1", second);
+    expect(deletedObjects).toEqual([first]);
   });
 });
 
 describe("OrderLifecycleService.attachDeliveryProof (KB-POD-DISPUTE Phase A)", () => {
   const key = "delivery-proof/r1/11111111-1111-4111-8111-111111111111.jpg";
+  // DS21-01: same row-locked read (`SELECT … FOR UPDATE` via $queryRaw, snake_case columns) + plain update
+  // as attachPickupPhoto.
+  const row = (over: Record<string, unknown> = {}) => [
+    { status: "en_route_dropoff", rider_id: "r1", delivery_proof_key: null, ...over },
+  ];
 
   it("404s for a missing order", async () => {
-    const { svc } = build({ order: { findUnique: async () => null } });
+    const { svc } = build({ $queryRaw: async () => [] });
     await expect(svc.attachDeliveryProof("o1", "r1", key)).rejects.toThrow(/not found/i);
   });
 
   it("403s when the caller is not the assigned rider", async () => {
-    const { svc } = build({ order: { findUnique: async () => ({ status: "en_route_dropoff", riderId: "r1" }) } });
+    const { svc } = build({ $queryRaw: async () => row() });
     await expect(svc.attachDeliveryProof("o1", "other", key)).rejects.toThrow(/assigned rider/i);
   });
 
   it("409s outside the attach window (only at the door or right after undelivered)", async () => {
     for (const status of ["assigned", "confirmed", "en_route_pickup", "picked_up", "delivered", "completed", "cancelled"]) {
-      const { svc } = build({ order: { findUnique: async () => ({ status, riderId: "r1" }) } });
+      const { svc } = build({ $queryRaw: async () => row({ status }) });
       await expect(svc.attachDeliveryProof("o1", "r1", key)).rejects.toThrow(/proof of drop-off/i);
     }
   });
 
   it("400s a key outside the rider's own delivery-proof namespace", async () => {
-    const { svc } = build({ order: { findUnique: async () => ({ status: "en_route_dropoff", riderId: "r1" }) } });
+    const { svc } = build({ $queryRaw: async () => row() });
     await expect(svc.attachDeliveryProof("o1", "r1", "delivery-proof/victim/p.jpg")).rejects.toThrow(/invalid photo key/i);
     await expect(svc.attachDeliveryProof("o1", "r1", "pickup/r1/p.jpg")).rejects.toThrow(/invalid photo key/i);
   });
 
-  it("persists key + GPS + a server timestamp via a CAS bounded to the window (at the door AND after undelivered)", async () => {
+  it("persists key + GPS + a server timestamp via a plain (row-locked) update (at the door AND after undelivered)", async () => {
     let args: { where: Record<string, unknown>; data: Record<string, unknown> } | undefined;
     const { svc } = build({
+      $queryRaw: async () => row({ status: "undelivered" }),
       order: {
-        findUnique: async () => ({ status: "undelivered", riderId: "r1" }),
-        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => { args = a; return { count: 1 }; },
+        update: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => { args = a; return {}; },
       },
     });
     await expect(svc.attachDeliveryProof("o1", "r1", key, -17.83, 31.05)).resolves.toEqual({ orderId: "o1", deliveryProofKey: key });
-    expect(args!.where).toEqual({ id: "o1", status: { in: ["en_route_dropoff", "undelivered"] } });
+    expect(args!.where).toEqual({ id: "o1" });
     expect(args!.data).toMatchObject({ deliveryProofKey: key, deliveryProofLat: -17.83, deliveryProofLng: 31.05 });
     expect(args!.data.deliveryProofAt).toBeInstanceOf(Date);
   });
@@ -301,35 +345,58 @@ describe("OrderLifecycleService.attachDeliveryProof (KB-POD-DISPUTE Phase A)", (
   it("allows attaching without GPS (a denied/failed fix must never block the photo) — coords null", async () => {
     let data: Record<string, unknown> | undefined;
     const { svc } = build({
+      $queryRaw: async () => row(),
       order: {
-        findUnique: async () => ({ status: "en_route_dropoff", riderId: "r1" }),
-        updateMany: async (a: { data: Record<string, unknown> }) => { data = a.data; return { count: 1 }; },
+        update: async (a: { data: Record<string, unknown> }) => { data = a.data; return {}; },
       },
     });
     await svc.attachDeliveryProof("o1", "r1", key);
     expect(data).toMatchObject({ deliveryProofKey: key, deliveryProofLat: null, deliveryProofLng: null });
   });
 
-  it("DS18-03: a proof retake purges the superseded GCS object (best-effort, post-CAS)", async () => {
+  it("DS18-03: a proof retake purges the superseded GCS object (best-effort, post-commit)", async () => {
     const prev = "delivery-proof/r1/00000000-0000-4000-8000-000000000000.jpg";
     const { svc, deletedObjects } = build({
-      order: {
-        findUnique: async () => ({ status: "en_route_dropoff", riderId: "r1", deliveryProofKey: prev }),
-        updateMany: async () => ({ count: 1 }),
-      },
+      $queryRaw: async () => row({ delivery_proof_key: prev }),
+      order: { update: async () => ({}) },
     });
     await svc.attachDeliveryProof("o1", "r1", key);
     expect(deletedObjects).toEqual([prev]);
   });
 
-  it("409s if the order left the window between the read and the CAS write", async () => {
-    const { svc } = build({
+  // DS21-01: the superseded purge uses the delivery-proof key read UNDER THE LOCK, not a pre-tx read — so a
+  // concurrent second proof attach reads the first's just-committed key and purges it (no orphan). Mirrors
+  // the attachPickupPhoto race test.
+  it("DS21-01: purges the lock-read prior key (race-safe orphan close)", async () => {
+    const concurrentlyCommitted = "delivery-proof/r1/99999999-9999-4999-8999-999999999999.jpg";
+    let insideTx = false;
+    let queryInsideTx: boolean | undefined;
+    let updateInsideTx: boolean | undefined;
+    const h = build({
+      $queryRaw: async () => {
+        queryInsideTx = insideTx;
+        return row({ delivery_proof_key: concurrentlyCommitted });
+      },
       order: {
-        findUnique: async () => ({ status: "en_route_dropoff", riderId: "r1" }),
-        updateMany: async () => ({ count: 0 }),
+        update: async () => {
+          updateInsideTx = insideTx;
+          return {};
+        },
       },
     });
-    await expect(svc.attachDeliveryProof("o1", "r1", key)).rejects.toThrow(/changed, retry/i);
+    const passthrough = (h.prisma as unknown as { $transaction: (cb: (tx: unknown) => unknown) => unknown }).$transaction;
+    (h.prisma as unknown as Record<string, unknown>).$transaction = async (cb: (tx: unknown) => unknown) => {
+      insideTx = true;
+      try {
+        return await passthrough(cb);
+      } finally {
+        insideTx = false;
+      }
+    };
+    await h.svc.attachDeliveryProof("o1", "r1", key);
+    expect(queryInsideTx).toBe(true);
+    expect(updateInsideTx).toBe(true);
+    expect(h.deletedObjects).toEqual([concurrentlyCommitted]);
   });
 });
 

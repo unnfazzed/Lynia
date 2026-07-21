@@ -40,6 +40,16 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   // UX18-05: written by the same method's resolved=true path (called from liftRider) and read back by
   // feedForUser as the "review resolved" feed fallback — same forgery risk as its sibling above.
   "order.rider_standing_resolved",
+  // DS21-02: `NotificationsService.notifyRidersAvailable` (actor "system:notify-riders-available") writes
+  // these two action strings — order-scoped for a live-order waiter, profile-scoped for the generic
+  // "notify me when riders are back" waiter — and feedForUser reads BOTH back to synthesize an "A rider's
+  // online near you" row. Added in UX21-02 but never reserved here, reopening the exact WD-023 audit-forgery
+  // drift: without them an admin-token holder could POST /admin/audit-actions to forge either a compliance
+  // row or a victim's fake feed notification with no underlying state change. See the FEED_READ_ACTIONS ⊆
+  // RESERVED_AUDIT_ACTIONS test in admin-audit.service.spec — it now fails automatically if a future
+  // feed-read action is added without reserving it, so this class can't drift a third time.
+  "order.riders_available_notify",
+  "customer.riders_available_notify",
   "issue.resolve",
   "sos.acknowledge",
   "wallet.credit",
