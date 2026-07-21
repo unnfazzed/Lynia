@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/unnfazzed/Lynia/compare/v0.10.1...v0.10.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* **mobile,admin:** earnings list-vs-total reconciliation + stale stuck-order copy (WD-027/WD-028) ([#377](https://github.com/unnfazzed/Lynia/issues/377)) ([25e7d58](https://github.com/unnfazzed/Lynia/commit/25e7d586fdc192c6016208e9ef965c687b95a358))
+
 ## [0.10.1](https://github.com/unnfazzed/Lynia/compare/v0.10.0...v0.10.1) (2026-07-21)
 
 
