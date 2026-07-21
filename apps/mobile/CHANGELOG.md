@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/unnfazzed/Lynia/compare/v0.10.0...v0.10.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **mobile:** BH-23/24 — sign-out leaks sent bids; rider rating corrupts to 0.0 ([#369](https://github.com/unnfazzed/Lynia/issues/369)) ([364e535](https://github.com/unnfazzed/Lynia/commit/364e535ee81b593b95673e536c2aec01b1a012b7))
+
 ## [0.10.0](https://github.com/unnfazzed/Lynia/compare/v0.9.0...v0.10.0) (2026-07-20)
 
 
