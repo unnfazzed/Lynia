@@ -36,6 +36,25 @@ const STANDING_SELECT = {
   rider: { select: { accountStatus: true, onHold: true, cooldownUntil: true, kycAttempts: true } },
 } as const;
 
+/** Select shape for the pre-flight profile read `eraseAccount` threads through the whole erasure. */
+const ERASURE_PROFILE_SELECT = {
+  id: true,
+  phone: true,
+  photoUrl: true,
+  onHold: true,
+  rider: {
+    select: {
+      accountStatus: true,
+      onHold: true,
+      cooldownUntil: true,
+      kycAttempts: true,
+      photoUrl: true,
+      kycRef: true,
+    },
+  },
+} as const;
+type ErasureProfile = Prisma.ProfileGetPayload<{ select: typeof ERASURE_PROFILE_SELECT }>;
+
 /**
  * An order waypoint (`pickup` / `dropoff`) is a JSON blob `{ point, landmark, contactPhone }`.
  * `contactPhone` is dialable PII the API masks everywhere else — but it lives inside a Json column, so
@@ -107,29 +126,18 @@ export class PrivacyService {
     }
   }
 
-  /** Right to erasure. Anonymises the caller's profile + scrubs their PII; keeps the order/audit ledger. */
-  async eraseAccount(profileId: string): Promise<{ erased: true }> {
-    const now = new Date();
+  /**
+   * Pre-flight: fetch the profile (+ the fields the post-commit purge needs), reject a strandable active
+   * ride, short-circuit an already-erased profile as a no-op, and fast-reject on standing. Returns either
+   * `{ erased: true }` (idempotent no-op) or the profile + isRider flag `eraseAccount` threads through the
+   * transaction and the post-commit purge.
+   */
+  private async preflight(profileId: string, now: Date): Promise<{ erased: true } | { erased: false; profile: ErasureProfile; isRider: boolean }> {
     const profile = await this.prisma.profile.findUnique({
       where: { id: profileId },
       // photoUrl + rider.{photoUrl,kycRef} are captured so the post-commit GCS purge (DS15-03) has the
       // object keys AFTER the tx nulls the DB pointers; the rest backs the standing gate (DS15-02).
-      select: {
-        id: true,
-        phone: true,
-        photoUrl: true,
-        onHold: true,
-        rider: {
-          select: {
-            accountStatus: true,
-            onHold: true,
-            cooldownUntil: true,
-            kycAttempts: true,
-            photoUrl: true,
-            kycRef: true,
-          },
-        },
-      },
+      select: ERASURE_PROFILE_SELECT,
     });
     if (!profile) throw new NotFoundException("Profile not found");
     const isRider = profile.rider != null;
@@ -155,228 +163,237 @@ export class PrivacyService {
     // hold / cooldown / KYC lock). Pre-flight reject here for a fast, clear error…
     this.assertErasableStanding(profile, now);
 
-    // Class-C: GCS object keys for the item photos on the erasing customer's own orders, collected inside
-    // the tx and deleted post-commit alongside the KYC/profile photos (deleteObject swallows its errors).
-    const itemPhotoKeys: string[] = [];
+    return { erased: false, profile, isRider };
+  }
 
-    await this.prisma.$transaction(async (tx) => {
-      // Re-check the active-ride guard INSIDE the transaction (DS-10). The pre-flight read above is
-      // a fast rejection, but between it and this scrub a counterparty could select this rider onto a
-      // new order (or the customer could place one), which the outer read wouldn't see — anonymising
-      // mid-ride would then break the counterparty's live delivery. Re-reading here narrows that
-      // window to the transaction itself.
-      const activeMidErase = await tx.order.findFirst({
-        where: {
-          status: { in: ACTIVE_RIDE_STATUSES },
-          OR: [{ customerId: profileId }, { riderId: profileId }],
-        },
-        select: { id: true },
+  /** In-tx: re-check the active-ride + standing guards (TOCTOU) and anonymise the profile row. */
+  private async anonymiseProfileTx(tx: Prisma.TransactionClient, profileId: string, now: Date): Promise<void> {
+    // Re-check the active-ride guard INSIDE the transaction (DS-10). The pre-flight read above is
+    // a fast rejection, but between it and this scrub a counterparty could select this rider onto a
+    // new order (or the customer could place one), which the outer read wouldn't see — anonymising
+    // mid-ride would then break the counterparty's live delivery. Re-reading here narrows that
+    // window to the transaction itself.
+    const activeMidErase = await tx.order.findFirst({
+      where: {
+        status: { in: ACTIVE_RIDE_STATUSES },
+        OR: [{ customerId: profileId }, { riderId: profileId }],
+      },
+      select: { id: true },
+    });
+    if (activeMidErase) {
+      throw new ConflictException("Finish or cancel your active delivery before deleting your account");
+    }
+
+    // DS15-02 (TOCTOU): re-read + re-assert standing INSIDE the tx. The pre-flight gate above is a fast
+    // reject, but between it and this scrub an admin could commit a ban/suspend/hold — anonymising past
+    // it would strip the standing controls (and, with idNumberHash preserved below, still be caught on
+    // re-registration, but we must not let the erasure itself race past a just-landed restriction).
+    const freshStanding = await tx.profile.findUnique({
+      where: { id: profileId },
+      select: STANDING_SELECT,
+    });
+    if (freshStanding) this.assertErasableStanding(freshStanding, now);
+
+    // Anonymise the profile. phone is UNIQUE + NOT NULL, so it becomes a non-dialable tombstone
+    // (frees the real number for a genuine re-signup, which mints a fresh profile).
+    //
+    // DS15-02(b): idNumberHash is deliberately NOT nulled. It's a one-way HMAC (never raw PII), and it's
+    // the sole signal duplicateIdAccountCount uses to flag a ban-evader re-registering with the SAME
+    // national ID. Nulling it here blinded that check for anyone who ever erased; the raw idNumber
+    // ciphertext (recoverable PII) is still scrubbed.
+    //
+    // DS18-04 (TOCTOU CAS): the anonymise write is a CAS `updateMany` re-asserting the profile-level
+    // standing predicate (`onHold`, the customer S·2 hold) in its WHERE — not a blind update by id. The
+    // freshStanding re-read above is an unlocked SELECT feeding a JS gate; a customer-hold committing by an
+    // admin between that read and this write would otherwise slip through blind. Re-asserting it here makes
+    // the WRITE itself conditional (0 rows ⇒ the hold landed ⇒ abort), mirroring the DS-10 active-ride and
+    // admin-orders.service CAS guards. The rider-level standing (ban/suspend/rider-hold/cooldown/kyc-lock)
+    // is re-asserted on the rider CAS below, where those columns live.
+    const anonymised = await tx.profile.updateMany({
+      where: { id: profileId, onHold: false },
+      data: {
+        firstName: "Deleted",
+        lastName: "User",
+        email: null,
+        idNumber: null,
+        photoUrl: null,
+        phone: `erased:${profileId}`,
+      },
+    });
+    if (anonymised.count === 0) {
+      throw new ConflictException({ reason: "account_on_hold", message: ERASE_BLOCKED_MESSAGE });
+    }
+  }
+
+  /**
+   * In-tx: scrub every remaining PII surface (rider standing fields, geo, top-up phone, proof-of-drop
+   * photos, user-authored free text, the standalone PII stores, GPS trails, and placed-order waypoint/
+   * note/photo PII). Mutates `itemPhotoKeys` with every GCS object key the post-commit purge must delete.
+   */
+  private async scrubPiiTx(tx: Prisma.TransactionClient, profileId: string, isRider: boolean, now: Date, itemPhotoKeys: string[]): Promise<void> {
+    // Scrub rider PII if this profile is a rider; keep the row for the ledger. DS18-04: the WHERE also
+    // re-asserts the rider-level standing predicate atomically (accountStatus not banned/suspended, not
+    // on the sticky RH-01 hold, no live cooldown, KYC not two-decline-locked) — the same predicate
+    // assertErasableStanding checks off the unlocked read. For a rider, a 0-row result means a restriction
+    // landed between the freshStanding read and here → abort (below); a non-rider matches no row here
+    // regardless (no riders row), so the count is only load-bearing when isRider.
+    const riderScrub = await tx.rider.updateMany({
+      where: {
+        profileId,
+        accountStatus: { notIn: [RiderAccountStatus.BANNED, RiderAccountStatus.SUSPENDED] },
+        onHold: false,
+        kycAttempts: { lt: KYC_LOCK_ATTEMPTS },
+        OR: [{ cooldownUntil: null }, { cooldownUntil: { lte: now } }],
+      },
+      data: {
+        bikeReg: "",
+        vehicleInfo: null,
+        photoUrl: "",
+        kycRef: null,
+        kycDeclineReason: null,
+        suspendReason: null,
+        currentLat: null,
+        currentLng: null,
+        isOnline: false,
+      },
+    });
+    if (isRider && riderScrub.count === 0) {
+      // A concurrent ban/suspend/hold/cooldown/KYC-lock landed after the freshStanding read — the CAS
+      // predicate no longer matches. Abort so self-erasure can't race past a just-landed restriction.
+      throw new ConflictException({ reason: "standing_changed", message: ERASE_BLOCKED_MESSAGE });
+    }
+
+    // WD-NEW / Class-C erasure completeness: the rider's last precise position lives in TWO columns —
+    // the readable `current_lat`/`current_lng` (nulled above) AND the PostGIS `geog` point that the
+    // nearby-rider index is actually built on. `geog` is a Prisma `Unsupported(...)` column, so a Prisma
+    // `updateMany` CAN'T touch it (it's absent from the generated types) — it needs raw SQL. Without
+    // this, an "erased" rider kept their exact last GPS location in `geog` forever, the same residual
+    // location PII class DS-01 scrubbed for SosEvent/OrderEvent. Also null positionUpdatedAt so no stale
+    // "live position" timestamp survives. No-op for a non-rider profile (no matching riders row).
+    if (isRider) {
+      await tx.$executeRaw`UPDATE riders SET geog = NULL, position_updated_at = NULL WHERE profile_id = ${profileId}::uuid`;
+    }
+
+    // DOC-16-01: `top_ups.phone` (the mobile-money number captured on every self-serve wallet top-up) is
+    // the same class of dialable contact PII as the waypoint/note phones stripped below — but it lives
+    // in its own table, referenced by riderId, so the profile/rider scrub above never reaches it. A
+    // no-op for a non-rider profile (no TopUp rows can exist without a rider row). Keep the TopUp rows
+    // themselves (financial ledger — CommissionLedger.topUpId references them); only null the phone.
+    if (isRider) {
+      await tx.topUp.updateMany({ where: { riderId: profileId, NOT: { phone: null } }, data: { phone: null } });
+    }
+
+    // KB-POD-DISPUTE Phase A cleanup: proof-of-drop evidence the erasing user captured AS THE RIDER is
+    // their PII — the photo they took + their precise GPS at the door — the same location-PII class as
+    // the OrderEvent GPS scrubbed below and the itemPhotoUrl photos scrubbed above. Collect the photo
+    // keys for post-commit GCS deletion, then null all four proof columns (keep the order row as the
+    // ledger). Scoped to riderId == profileId — a proof on an order this user merely placed belongs to
+    // the counterparty rider, not the erasing user. No-op for a non-rider profile.
+    //
+    // DS18-01: `pickupPhotoKey` — the rider-captured proof-of-pickup photo (GCS key under
+    // `pickup/<riderId>/`) — is the exact same class of rider-captured content, on a sibling column no
+    // prior erasure pass traced (it escaped both PII_MANIFEST and NON_PII_COLUMNS). Collect + null it in
+    // the SAME rider-scoped pass and purge its object post-commit alongside the delivery-proof photo.
+    if (isRider) {
+      const proofs = await tx.order.findMany({
+        where: { riderId: profileId, OR: [{ NOT: { deliveryProofKey: null } }, { NOT: { pickupPhotoKey: null } }] },
+        select: { deliveryProofKey: true, pickupPhotoKey: true },
       });
-      if (activeMidErase) {
-        throw new ConflictException("Finish or cancel your active delivery before deleting your account");
+      for (const p of proofs) {
+        if (p.deliveryProofKey) itemPhotoKeys.push(p.deliveryProofKey);
+        if (p.pickupPhotoKey) itemPhotoKeys.push(p.pickupPhotoKey);
       }
-
-      // DS15-02 (TOCTOU): re-read + re-assert standing INSIDE the tx. The pre-flight gate above is a fast
-      // reject, but between it and this scrub an admin could commit a ban/suspend/hold — anonymising past
-      // it would strip the standing controls (and, with idNumberHash preserved below, still be caught on
-      // re-registration, but we must not let the erasure itself race past a just-landed restriction).
-      const freshStanding = await tx.profile.findUnique({
-        where: { id: profileId },
-        select: STANDING_SELECT,
-      });
-      if (freshStanding) this.assertErasableStanding(freshStanding, now);
-
-      // Anonymise the profile. phone is UNIQUE + NOT NULL, so it becomes a non-dialable tombstone
-      // (frees the real number for a genuine re-signup, which mints a fresh profile).
-      //
-      // DS15-02(b): idNumberHash is deliberately NOT nulled. It's a one-way HMAC (never raw PII), and it's
-      // the sole signal duplicateIdAccountCount uses to flag a ban-evader re-registering with the SAME
-      // national ID. Nulling it here blinded that check for anyone who ever erased; the raw idNumber
-      // ciphertext (recoverable PII) is still scrubbed.
-      //
-      // DS18-04 (TOCTOU CAS): the anonymise write is a CAS `updateMany` re-asserting the profile-level
-      // standing predicate (`onHold`, the customer S·2 hold) in its WHERE — not a blind update by id. The
-      // freshStanding re-read above is an unlocked SELECT feeding a JS gate; a customer-hold committing by an
-      // admin between that read and this write would otherwise slip through blind. Re-asserting it here makes
-      // the WRITE itself conditional (0 rows ⇒ the hold landed ⇒ abort), mirroring the DS-10 active-ride and
-      // admin-orders.service CAS guards. The rider-level standing (ban/suspend/rider-hold/cooldown/kyc-lock)
-      // is re-asserted on the rider CAS below, where those columns live.
-      const anonymised = await tx.profile.updateMany({
-        where: { id: profileId, onHold: false },
-        data: {
-          firstName: "Deleted",
-          lastName: "User",
-          email: null,
-          idNumber: null,
-          photoUrl: null,
-          phone: `erased:${profileId}`,
-        },
-      });
-      if (anonymised.count === 0) {
-        throw new ConflictException({ reason: "account_on_hold", message: ERASE_BLOCKED_MESSAGE });
-      }
-
-      // Scrub rider PII if this profile is a rider; keep the row for the ledger. DS18-04: the WHERE also
-      // re-asserts the rider-level standing predicate atomically (accountStatus not banned/suspended, not
-      // on the sticky RH-01 hold, no live cooldown, KYC not two-decline-locked) — the same predicate
-      // assertErasableStanding checks off the unlocked read. For a rider, a 0-row result means a restriction
-      // landed between the freshStanding read and here → abort (below); a non-rider matches no row here
-      // regardless (no riders row), so the count is only load-bearing when isRider.
-      const riderScrub = await tx.rider.updateMany({
-        where: {
-          profileId,
-          accountStatus: { notIn: [RiderAccountStatus.BANNED, RiderAccountStatus.SUSPENDED] },
-          onHold: false,
-          kycAttempts: { lt: KYC_LOCK_ATTEMPTS },
-          OR: [{ cooldownUntil: null }, { cooldownUntil: { lte: now } }],
-        },
-        data: {
-          bikeReg: "",
-          vehicleInfo: null,
-          photoUrl: "",
-          kycRef: null,
-          kycDeclineReason: null,
-          suspendReason: null,
-          currentLat: null,
-          currentLng: null,
-          isOnline: false,
-        },
-      });
-      if (isRider && riderScrub.count === 0) {
-        // A concurrent ban/suspend/hold/cooldown/KYC-lock landed after the freshStanding read — the CAS
-        // predicate no longer matches. Abort so self-erasure can't race past a just-landed restriction.
-        throw new ConflictException({ reason: "standing_changed", message: ERASE_BLOCKED_MESSAGE });
-      }
-
-      // WD-NEW / Class-C erasure completeness: the rider's last precise position lives in TWO columns —
-      // the readable `current_lat`/`current_lng` (nulled above) AND the PostGIS `geog` point that the
-      // nearby-rider index is actually built on. `geog` is a Prisma `Unsupported(...)` column, so a Prisma
-      // `updateMany` CAN'T touch it (it's absent from the generated types) — it needs raw SQL. Without
-      // this, an "erased" rider kept their exact last GPS location in `geog` forever, the same residual
-      // location PII class DS-01 scrubbed for SosEvent/OrderEvent. Also null positionUpdatedAt so no stale
-      // "live position" timestamp survives. No-op for a non-rider profile (no matching riders row).
-      if (isRider) {
-        await tx.$executeRaw`UPDATE riders SET geog = NULL, position_updated_at = NULL WHERE profile_id = ${profileId}::uuid`;
-      }
-
-      // DOC-16-01: `top_ups.phone` (the mobile-money number captured on every self-serve wallet top-up) is
-      // the same class of dialable contact PII as the waypoint/note phones stripped below — but it lives
-      // in its own table, referenced by riderId, so the profile/rider scrub above never reaches it. A
-      // no-op for a non-rider profile (no TopUp rows can exist without a rider row). Keep the TopUp rows
-      // themselves (financial ledger — CommissionLedger.topUpId references them); only null the phone.
-      if (isRider) {
-        await tx.topUp.updateMany({ where: { riderId: profileId, NOT: { phone: null } }, data: { phone: null } });
-      }
-
-      // KB-POD-DISPUTE Phase A cleanup: proof-of-drop evidence the erasing user captured AS THE RIDER is
-      // their PII — the photo they took + their precise GPS at the door — the same location-PII class as
-      // the OrderEvent GPS scrubbed below and the itemPhotoUrl photos scrubbed above. Collect the photo
-      // keys for post-commit GCS deletion, then null all four proof columns (keep the order row as the
-      // ledger). Scoped to riderId == profileId — a proof on an order this user merely placed belongs to
-      // the counterparty rider, not the erasing user. No-op for a non-rider profile.
-      //
-      // DS18-01: `pickupPhotoKey` — the rider-captured proof-of-pickup photo (GCS key under
-      // `pickup/<riderId>/`) — is the exact same class of rider-captured content, on a sibling column no
-      // prior erasure pass traced (it escaped both PII_MANIFEST and NON_PII_COLUMNS). Collect + null it in
-      // the SAME rider-scoped pass and purge its object post-commit alongside the delivery-proof photo.
-      if (isRider) {
-        const proofs = await tx.order.findMany({
-          where: { riderId: profileId, OR: [{ NOT: { deliveryProofKey: null } }, { NOT: { pickupPhotoKey: null } }] },
-          select: { deliveryProofKey: true, pickupPhotoKey: true },
-        });
-        for (const p of proofs) {
-          if (p.deliveryProofKey) itemPhotoKeys.push(p.deliveryProofKey);
-          if (p.pickupPhotoKey) itemPhotoKeys.push(p.pickupPhotoKey);
-        }
-        await tx.order.updateMany({
-          where: { riderId: profileId },
-          data: {
-            deliveryProofKey: null,
-            deliveryProofLat: null,
-            deliveryProofLng: null,
-            deliveryProofAt: null,
-            pickupPhotoKey: null,
-          },
-        });
-      }
-
-      // DS18-02: user-authored free-text scrubs — the same class as Order.note (DS15-07), on the author's
-      // erasure. Each keeps its host row (rating score / issue / report / cancelled order stay as the
-      // ledger); only the free text the erasing user typed is nulled/emptied.
-      //   • ratings.comment — nulled on the RATER's (byProfileId) own ratings (score itself retained).
-      await tx.rating.updateMany({ where: { byProfileId: profileId, NOT: { comment: null } }, data: { comment: null } });
-      //   • issues.description — the issue OPENER's free-text. NOT NULL column → emptied to "" (like bikeReg).
-      await tx.issue.updateMany({ where: { openedByProfileId: profileId, NOT: { description: "" } }, data: { description: "" } });
-      //   • reports.note — the REPORTER's free-text note (distinct from orders.note; table-qualified in the
-      //     manifest so this isn't falsely covered by the orders.note entry).
-      await tx.report.updateMany({ where: { reporterProfileId: profileId, NOT: { note: null } }, data: { note: null } });
-      //   • orders.cancelReason — free text authored by whichever party cancelled; scrub when the erasing
-      //     user is EITHER party to the order (customer OR rider), unlike the customer-only note scrub below.
       await tx.order.updateMany({
-        where: { OR: [{ customerId: profileId }, { riderId: profileId }], NOT: { cancelReason: null } },
-        data: { cancelReason: null },
+        where: { riderId: profileId },
+        data: {
+          deliveryProofKey: null,
+          deliveryProofLat: null,
+          deliveryProofLng: null,
+          deliveryProofAt: null,
+          pickupPhotoKey: null,
+        },
       });
+    }
 
-      // Remove the standalone PII stores + log every device out.
-      await tx.address.deleteMany({ where: { profileId } });
-      await tx.deviceToken.deleteMany({ where: { profileId } });
-      await tx.session.deleteMany({ where: { profileId } });
-
-      // Scrub the GPS trail on every order this user was part of (keep the status events themselves).
-      await tx.orderEvent.updateMany({
-        where: { order: { OR: [{ customerId: profileId }, { riderId: profileId }] } },
-        data: { lat: null, lng: null },
-      });
-
-      // Scrub the precise location on every SOS this user raised (DS-01). `SosEvent` stores exact
-      // lat/lng + raisedByProfileId and was added after this erasure logic — it was previously left
-      // behind, retaining the most sensitive location data in the system (emergency moments) tied to
-      // the (now anonymised) profile id forever. Keep the row (safety/incident ledger), null the GPS —
-      // exactly as we do for OrderEvent above.
-      await tx.sosEvent.updateMany({
-        where: { raisedByProfileId: profileId },
-        data: { lat: null, lng: null },
-      });
-
-      // Scrub the dialable contact PII embedded in the pickup/dropoff JSON of every order this profile
-      // PLACED (as the customer — the party who supplied those contacts). Prisma can't patch a nested
-      // JSON key in bulk, so read-modify-write each order; a single user's order count is bounded and
-      // this runs once at erasure. Orders where the profile was only the rider aren't touched: those
-      // contacts belong to the counterparty customer, not the erasing user.
-      const placed = await tx.order.findMany({
-        where: { customerId: profileId },
-        select: { id: true, pickup: true, dropoff: true, note: true, itemPhotoUrl: true },
-      });
-      for (const o of placed) {
-        const pickup = stripWaypointPhone(o.pickup);
-        const dropoff = stripWaypointPhone(o.dropoff);
-        // DS15-07: Order.note is customer-entered free-text delivery instructions ("call 077… if the gate's
-        // locked") — the same class of dialable/address PII as the waypoint contactPhone, and the order is
-        // retained forever as the ledger. Null it on the erasing customer's OWN orders only (like the
-        // contactPhone scrub above: a note on an order the profile merely rode belongs to the counterparty
-        // customer, not the erasing user, so those aren't in this customerId-scoped set).
-        const clearNote = o.note != null;
-        // Class-C (surfaced by the PII manifest guard): itemPhotoUrl is a customer-uploaded photo of the
-        // parcel on their OWN placed order — user-supplied content that can incidentally show address
-        // labels / IDs. The DB reference here is the GCS object key; null it and delete the object post-
-        // commit (like the KYC/profile photos), so the media doesn't outlive the erasure request. Same
-        // customerId scope as the note/waypoint scrub — a photo on an order the profile merely rode is the
-        // counterparty's content, not the erasing user's.
-        const clearItemPhoto = typeof o.itemPhotoUrl === "string" && o.itemPhotoUrl.length > 0;
-        if (clearItemPhoto) itemPhotoKeys.push(o.itemPhotoUrl!);
-        if (pickup === undefined && dropoff === undefined && !clearNote && !clearItemPhoto) continue;
-        await tx.order.update({
-          where: { id: o.id },
-          data: {
-            ...(pickup !== undefined ? { pickup } : {}),
-            ...(dropoff !== undefined ? { dropoff } : {}),
-            ...(clearNote ? { note: null } : {}),
-            ...(clearItemPhoto ? { itemPhotoUrl: null } : {}),
-          },
-        });
-      }
+    // DS18-02: user-authored free-text scrubs — the same class as Order.note (DS15-07), on the author's
+    // erasure. Each keeps its host row (rating score / issue / report / cancelled order stay as the
+    // ledger); only the free text the erasing user typed is nulled/emptied.
+    //   • ratings.comment — nulled on the RATER's (byProfileId) own ratings (score itself retained).
+    await tx.rating.updateMany({ where: { byProfileId: profileId, NOT: { comment: null } }, data: { comment: null } });
+    //   • issues.description — the issue OPENER's free-text. NOT NULL column → emptied to "" (like bikeReg).
+    await tx.issue.updateMany({ where: { openedByProfileId: profileId, NOT: { description: "" } }, data: { description: "" } });
+    //   • reports.note — the REPORTER's free-text note (distinct from orders.note; table-qualified in the
+    //     manifest so this isn't falsely covered by the orders.note entry).
+    await tx.report.updateMany({ where: { reporterProfileId: profileId, NOT: { note: null } }, data: { note: null } });
+    //   • orders.cancelReason — free text authored by whichever party cancelled; scrub when the erasing
+    //     user is EITHER party to the order (customer OR rider), unlike the customer-only note scrub below.
+    await tx.order.updateMany({
+      where: { OR: [{ customerId: profileId }, { riderId: profileId }], NOT: { cancelReason: null } },
+      data: { cancelReason: null },
     });
 
+    // Remove the standalone PII stores + log every device out.
+    await tx.address.deleteMany({ where: { profileId } });
+    await tx.deviceToken.deleteMany({ where: { profileId } });
+    await tx.session.deleteMany({ where: { profileId } });
+
+    // Scrub the GPS trail on every order this user was part of (keep the status events themselves).
+    await tx.orderEvent.updateMany({
+      where: { order: { OR: [{ customerId: profileId }, { riderId: profileId }] } },
+      data: { lat: null, lng: null },
+    });
+
+    // Scrub the precise location on every SOS this user raised (DS-01). `SosEvent` stores exact
+    // lat/lng + raisedByProfileId and was added after this erasure logic — it was previously left
+    // behind, retaining the most sensitive location data in the system (emergency moments) tied to
+    // the (now anonymised) profile id forever. Keep the row (safety/incident ledger), null the GPS —
+    // exactly as we do for OrderEvent above.
+    await tx.sosEvent.updateMany({
+      where: { raisedByProfileId: profileId },
+      data: { lat: null, lng: null },
+    });
+
+    // Scrub the dialable contact PII embedded in the pickup/dropoff JSON of every order this profile
+    // PLACED (as the customer — the party who supplied those contacts). Prisma can't patch a nested
+    // JSON key in bulk, so read-modify-write each order; a single user's order count is bounded and
+    // this runs once at erasure. Orders where the profile was only the rider aren't touched: those
+    // contacts belong to the counterparty customer, not the erasing user.
+    const placed = await tx.order.findMany({
+      where: { customerId: profileId },
+      select: { id: true, pickup: true, dropoff: true, note: true, itemPhotoUrl: true },
+    });
+    for (const o of placed) {
+      const pickup = stripWaypointPhone(o.pickup);
+      const dropoff = stripWaypointPhone(o.dropoff);
+      // DS15-07: Order.note is customer-entered free-text delivery instructions ("call 077… if the gate's
+      // locked") — the same class of dialable/address PII as the waypoint contactPhone, and the order is
+      // retained forever as the ledger. Null it on the erasing customer's OWN orders only (like the
+      // contactPhone scrub above: a note on an order the profile merely rode belongs to the counterparty
+      // customer, not the erasing user, so those aren't in this customerId-scoped set).
+      const clearNote = o.note != null;
+      // Class-C (surfaced by the PII manifest guard): itemPhotoUrl is a customer-uploaded photo of the
+      // parcel on their OWN placed order — user-supplied content that can incidentally show address
+      // labels / IDs. The DB reference here is the GCS object key; null it and delete the object post-
+      // commit (like the KYC/profile photos), so the media doesn't outlive the erasure request. Same
+      // customerId scope as the note/waypoint scrub — a photo on an order the profile merely rode is the
+      // counterparty's content, not the erasing user's.
+      const clearItemPhoto = typeof o.itemPhotoUrl === "string" && o.itemPhotoUrl.length > 0;
+      if (clearItemPhoto) itemPhotoKeys.push(o.itemPhotoUrl!);
+      if (pickup === undefined && dropoff === undefined && !clearNote && !clearItemPhoto) continue;
+      await tx.order.update({
+        where: { id: o.id },
+        data: {
+          ...(pickup !== undefined ? { pickup } : {}),
+          ...(dropoff !== undefined ? { dropoff } : {}),
+          ...(clearNote ? { note: null } : {}),
+          ...(clearItemPhoto ? { itemPhotoUrl: null } : {}),
+        },
+      });
+    }
+  }
+
+  /** Post-commit, best-effort: evict an erased rider from live supply, then purge the now-orphaned GCS objects. */
+  private async postCommitPurge(profileId: string, isRider: boolean, profile: ErasureProfile, itemPhotoKeys: string[]): Promise<void> {
     // DS15-05 / DS19-02: post-commit, best-effort — pull an erased rider out of BOTH live-supply planes,
     // the `rider:geo` Redis sorted set AND the board rooms, through the standing-demotion funnel. The
     // sessions were revoked in-transaction (session.deleteMany), but an already-open WebSocket authenticated
@@ -404,6 +421,25 @@ export class PrivacyService {
         await this.storage.deleteObject(key);
       }
     }
+  }
+
+  /** Right to erasure. Anonymises the caller's profile + scrubs their PII; keeps the order/audit ledger. */
+  async eraseAccount(profileId: string): Promise<{ erased: true }> {
+    const now = new Date();
+    const pre = await this.preflight(profileId, now);
+    if (pre.erased) return { erased: true };
+    const { profile, isRider } = pre;
+
+    // Class-C: GCS object keys for the item photos on the erasing customer's own orders, collected inside
+    // the tx and deleted post-commit alongside the KYC/profile photos (deleteObject swallows its errors).
+    const itemPhotoKeys: string[] = [];
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.anonymiseProfileTx(tx, profileId, now);
+      await this.scrubPiiTx(tx, profileId, isRider, now, itemPhotoKeys);
+    });
+
+    await this.postCommitPurge(profileId, isRider, profile, itemPhotoKeys);
 
     this.logger.log(`Account ${profileId} erased (anonymised in place)`);
     return { erased: true };
