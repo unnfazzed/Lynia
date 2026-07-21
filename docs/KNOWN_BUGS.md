@@ -6,7 +6,24 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-21 (deep-sweep routine — agentic-loop hunt over the deep-sweep lane; see
+**Last consolidated:** 2026-07-21 (wallet & data-lifecycle audit routine — agentic-loop hunt over the WD
+lane; see the "Wallet & data-lifecycle audit 2026-07-21" section near the bottom and
+`docs/WALLET-DATA-AUDIT-2026-07-21.md` for WD-027/WD-028 — one MEDIUM, one LOW, both fixed same-run with
+regression tests. WD-027 (MEDIUM): the Earnings screen's hero total/count came from the server's
+unbounded, rider-role-only aggregate while the itemized list beneath was filtered from a capped 50-row
+page shared across both the customer and rider roles of the account, so an account disproportionately
+active as a customer could see a truthful non-zero total over a silently blank or truncated list with no
+explanation; fixed with a new `earningsCoverageNote` helper that renders an honest note whenever the list
+under-represents the total. WD-028 (LOW): the admin console's "needs attention" stuck-order row hardcoded a
+stale "25+ min" figure DS20-01 (2026-07-20) had deliberately unified away on the backend to 20 min, since
+DS20-01's own sibling-sweep never crossed into `apps/admin`; fixed by hoisting the threshold to a new
+`STUCK_AFTER_MINUTES` constant in `packages/shared` that both the API and the admin console now derive
+from, closing the drift class by construction. Phase-0.5 re-verified the **Object-authz/IDOR**, **KYC**,
+and **Mobile-journey-dead-ends** cluster headers (rotated to the 3 least-recently-checked, last done by
+the deep-sweep/bug-hunt 2026-07-20 runs) — all INTACT, 0 stale claims. Zero open `claude/*` sibling PRs at
+Phase 0. `pnpm typecheck` (5 packages, force-executed) + `pnpm test` (1169 API + 45 admin + 120 shared +
+524 mobile) + `pnpm build` (`@lynia/api`, `@lynia/admin`) all green.
+Prior: 2026-07-21 (deep-sweep routine — agentic-loop hunt over the deep-sweep lane; see
 `docs/DEEP-SWEEP-2026-07-21.md` and the "Deep sweep 2026-07-21" section near the bottom for DS21-01/DS21-02 —
 one MEDIUM, one LOW, both fixed same-run with regression tests. DS21-01 (MEDIUM): `attachPickupPhoto` /
 `attachDeliveryProof` (`order-lifecycle.service.ts`) ran their photo-key read → CAS `updateMany`-on-`status`
@@ -1708,6 +1725,53 @@ correctness/data-integrity fixes within scope.
 sibling-sweep evidence rule, not padding; 5 of 8 hunt lenses returned zero and the Phase-0.5 re-verification
 came back clean, consistent with the wallet/ledger core continuing to converge while its newer edges
 (admin force-complete adjudication, cross-screen query-cache funnels) still turn up real gaps.
+
+## Wallet & data-lifecycle audit 2026-07-21 (wallet & data-lifecycle audit routine) — `docs/WALLET-DATA-AUDIT-2026-07-21.md`
+
+Sixth run of the `WD-` lane. Phase 0: zero open `claude/*` sibling PRs at session start; all 26 numbered
+`WD-` findings (WD-001…WD-026) confirmed FIXED against current code, only `DOC-16-03`/`ADM-07` (bulk
+seed-credit UI, a feature gap) and `KB-SETTLEMENT-DROP` (housekeeping) remain genuinely open in this lane.
+Phase 0.5 re-verified the **Object-authz/IDOR**, **KYC**, and **Mobile-journey-dead-ends** cluster headers
+— the three least-recently rotated (Object-authz/IDOR last checked deep-sweep 07-20, KYC and
+Mobile-journey-dead-ends last checked bug-hunt 07-20 night) — 2 named members each confirmed present in
+code, all **INTACT**, no stale claims. Hunt ran via the agentic-loop engine
+(`Workflow({name: 'lane-bug-hunt'}, args: 'wallet')`) — 8 diverse finder lenses, 2 candidates found (6 of 8
+lenses returned zero), both survived a 3-skeptic adversarial panel unanimously, then a repo-wide
+sibling-sweep per survivor (both came back clean — no siblings). **Two findings, one MEDIUM and one LOW —
+both fixed this run**, each with a regression test; `pnpm typecheck` (force-executed, all 5 packages) +
+`pnpm test` (1169 API + 45 admin + 120 shared + 524 mobile) + `apps/api` build + `apps/admin` build all
+green.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| WD-027 | The Earnings screen's hero total/count (`tripCount`/`total`) come from the server's unbounded, rider-role-only aggregate (`earningsSummary`), while the itemized list beneath (`trips`) is filtered from `useHistoryFeed()`'s capped 50-row page — shared across BOTH the customer and rider roles of the same account (`historyForUser` has no per-role cap). An account disproportionately active as a customer relative to how often it rides could see the hero card correctly report a non-zero total/trip count while the list beneath rendered fewer rows than that count, or none at all, with no indication anything was missing — the `tripCount === 0` zero-state branch is never reached (tripCount is nonzero), so the screen fell into the main branch and silently rendered a blank area under a truthful total | `apps/mobile/app/earnings/index.tsx:103,126` | MEDIUM | **FIXED** — new `earningsCoverageNote(tripCount, shownTripCount)` helper (`apps/mobile/src/logic/earnings.ts`) distinguishes "nothing shown" from "partially shown" and renders an explanatory `EmptyState`/footnote instead of blank space whenever the list under-represents the total. Regression test: `earnings.test.ts` |
+| WD-028 | The admin overview's "needs attention" stuck-order row hardcoded "no status update in 25+ min while in delivery," quoting the 25-minute admin-dashboard-only literal DS20-01 (2026-07-20) deliberately unified away when it fixed the two BACKEND call sites drifting to different minute values (25 vs 20). DS20-01's own sibling-sweep was scoped to `apps/api` and never crossed into `apps/admin`, where the number is unavoidably re-typed as prose (a separate deployable) — so this frontend copy kept the old, abandoned figure, overstating the real 20-minute threshold to ops by 5 minutes | `apps/admin/app/page.tsx:187` | LOW | **FIXED** — hoisted the number to a new `STUCK_AFTER_MINUTES` constant in `packages/shared/src/policy.ts`; `apps/api/src/admin/admin.shared.ts`'s `STUCK_AFTER_MS` now derives from it, and `apps/admin/app/page.tsx`'s copy reads it via a template literal — the two can no longer independently drift (closed by construction, not just by this sweep). Regression: `policy.test.ts` pins the constant; `admin.service.spec.ts` cross-checks `STUCK_AFTER_MS === STUCK_AFTER_MINUTES * 60 * 1000` |
+
+**Sibling-sweep evidence:**
+
+- **WD-027** (`grep -rnE "\b\w+(Count|Total)\s*===\s*0\s*\?" apps/mobile/app apps/mobile/src --include="*.tsx" --include="*.ts" | grep -v __tests__`,
+  `grep -rn "useEarningsSummary|earningsSummary" apps/mobile --include="*.tsx" --include="*.ts" | grep -v __tests__`):
+  `earnings/index.tsx` is the only screen that reads `useEarningsSummary()` at all — no sibling call site
+  pairs an unbounded-aggregate zero-gate with a differently-scoped rendered list. **No further siblings.**
+- **WD-028** (`grep -rnE "[0-9]+\+? ?min" apps/admin/app --include="*.tsx"`, `grep -rn
+  "RIDER_STRIKE_LIMIT|RIDER_STRIKE_COOLDOWN_MS|ON_HOLD_BELOW|SOS_POLICY" apps/admin --include="*.tsx" --include="*.ts"`):
+  post-fix, zero hardcoded minute-figures and zero independently-duplicated policy constants remain
+  anywhere in `apps/admin`. **No further siblings.**
+
+**Why prior sweeps missed these:** WD-027 requires an account disproportionately active as a customer
+relative to how often it rides — every prior earnings-tab pass (WD-004, WD-011, WD-022, WD-025) happened to
+exercise rider-typical accounts, where the capped combined-role window naturally stays rider-dominated and
+the header/list agree. WD-028 is a doc-drift bug in the mirror direction of DS20-01's own fix: DS20-01
+fixed the two backend literals but its sibling-sweep never crossed into `apps/admin` (a separate deployable
+with no shared-import path for the constant at the time), one hop outside its own sweep radius.
+
+**Suggestions (not implemented):** none this run — both findings were straightforward correctness/UX-honesty
+fixes within scope.
+
+**Stopping rule:** two findings this run (one MEDIUM, one LOW) — reported in full per the mandatory
+sibling-sweep evidence rule, not padding; 6 of 8 hunt lenses returned zero, consistent with the
+wallet/ledger/admin-KPI core continuing to converge while newer/adjacent surfaces (earnings list-vs-total
+reconciliation, admin console copy mirroring a backend constant) still turn up narrow, real gaps.
 
 ## Interactive performance session 2026-07-19 (mobile speed/latency/cost) — `docs/PERFORMANCE.md`
 

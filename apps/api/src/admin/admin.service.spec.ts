@@ -1,3 +1,4 @@
+import { STUCK_AFTER_MINUTES } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
@@ -184,5 +185,8 @@ describe("AdminService.overview", () => {
     expect(cutoffMs).toBeLessThanOrEqual(after - STUCK_AFTER_MS);
     // And the shared constant is the 20-min A-04 value, not the old 25-min drift.
     expect(STUCK_AFTER_MS).toBe(20 * 60 * 1000);
+    // WD-028: STUCK_AFTER_MS derives from the SAME @lynia/shared constant the admin console's
+    // needs-attention copy reads for its "N+ min" prose, so the two can't independently drift again.
+    expect(STUCK_AFTER_MS).toBe(STUCK_AFTER_MINUTES * 60 * 1000);
   });
 });

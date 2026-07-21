@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { STUCK_AFTER_MINUTES, tokens } from "@lynia/shared";
 import { adminFetchResult } from "./lib/api";
 import { Conn, OfflineBanner, reasonLine, reasonTitle } from "./components/states";
 import { KpiCard } from "./components/KpiCard";
@@ -184,7 +184,10 @@ function buildAttention(data: Overview): AttentionRow[] {
   if (stuckOrders > 0) {
     rows.push({
       title: `${stuckOrders} order${stuckOrders === 1 ? "" : "s"} may be stuck`,
-      detail: "no status update in 25+ min while in delivery.",
+      // WD-028: sourced from the same STUCK_AFTER_MINUTES the API's stuck-order aggregate + per-order
+      // detail badge derive their threshold from (admin.shared.ts) — this app can't import server-side
+      // code directly, but the copy must still name the SAME number so it can't drift stale again.
+      detail: `no status update in ${STUCK_AFTER_MINUTES}+ min while in delivery.`,
       action: "Review order",
       href: stuckOrderId ? `/orders/${stuckOrderId}` : "/orders",
       icon: <IconAlert />,
