@@ -105,6 +105,13 @@
         ]
       },
       {
+        "name": "apps/mobile/src/auth/device-state.ts",
+        "dependencyTypes": [
+          "local",
+          "export"
+        ]
+      },
+      {
         "name": "apps/mobile/src/logic/rider-bid-draft.ts",
         "dependencyTypes": [
           "local",
@@ -160,7 +167,7 @@
   },
   {
     "type": "cycle",
-    "from": "apps/mobile/src/auth/session.ts",
+    "from": "apps/mobile/src/auth/device-state.ts",
     "to": "apps/mobile/src/net/history-store.ts",
     "unresolvedTo": "../net/history-store",
     "dependencyTypes": [
@@ -200,12 +207,19 @@
           "local",
           "import"
         ]
+      },
+      {
+        "name": "apps/mobile/src/auth/device-state.ts",
+        "dependencyTypes": [
+          "local",
+          "export"
+        ]
       }
     ]
   },
   {
     "type": "cycle",
-    "from": "apps/mobile/src/auth/session.ts",
+    "from": "apps/mobile/src/auth/device-state.ts",
     "to": "apps/mobile/src/net/last-active-store.ts",
     "unresolvedTo": "../net/last-active-store",
     "dependencyTypes": [
@@ -245,6 +259,13 @@
           "local",
           "import"
         ]
+      },
+      {
+        "name": "apps/mobile/src/auth/device-state.ts",
+        "dependencyTypes": [
+          "local",
+          "export"
+        ]
       }
     ]
   },
@@ -283,6 +304,13 @@
         "dependencyTypes": [
           "local",
           "import"
+        ]
+      },
+      {
+        "name": "apps/mobile/src/auth/device-state.ts",
+        "dependencyTypes": [
+          "local",
+          "export"
         ]
       },
       {
@@ -366,6 +394,15 @@
   },
   {
     "type": "module",
+    "from": "apps/mobile/src/logic/format-time.ts",
+    "to": "apps/mobile/src/logic/format-time.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
     "from": "apps/mobile/src/logic/gates.ts",
     "to": "apps/mobile/src/logic/gates.ts",
     "rule": {
@@ -386,6 +423,15 @@
     "type": "module",
     "from": "apps/mobile/src/realtime/use-foreground-refetch.ts",
     "to": "apps/mobile/src/realtime/use-foreground-refetch.ts",
+    "rule": {
+      "severity": "info",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/telemetry/sentry.ts",
+    "to": "apps/mobile/src/telemetry/sentry.ts",
     "rule": {
       "severity": "info",
       "name": "no-orphans"
