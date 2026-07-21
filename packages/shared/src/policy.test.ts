@@ -8,6 +8,7 @@ import {
   customerRatingCarriesWeight,
   broadcastRadiusAtMs,
   BROADCAST,
+  STUCK_AFTER_MINUTES,
 } from "./policy";
 
 /**
@@ -21,6 +22,15 @@ describe("COMMISSION constants", () => {
     expect(COMMISSION.ratePct).toBe(0); // 0% during the pilot — nothing deducted
     expect(COMMISSION.basisFloorPct).toBe(0.5);
     expect(COMMISSION.model).toBe("prepaid_per_ride");
+  });
+});
+
+// WD-028: apps/api's STUCK_AFTER_MS (admin.shared.ts) and apps/admin's needs-attention copy
+// (app/page.tsx) both derive from this ONE constant now, precisely so they can't drift to different
+// minute figures again (they did once: 25 in the admin console's hardcoded prose vs 20 here/API-side).
+describe("STUCK_AFTER_MINUTES", () => {
+  it("pins the current threshold both the API and admin console derive from", () => {
+    expect(STUCK_AFTER_MINUTES).toBe(20);
   });
 });
 

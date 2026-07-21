@@ -2,6 +2,7 @@ import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { earningsCoverageNote } from "../../src/logic/earnings";
 import { formatMoney } from "../../src/logic/money";
 import { useEarningsSummary, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useWallet, useWalletConfig } from "../../src/query/use-wallet";
@@ -71,6 +72,10 @@ export default function EarningsScreen(): React.ReactElement {
   const localTotal = trips.reduce((sum, o) => sum + (Number(o.agreedFare) || 0), 0);
   const total = earningsSummary ? Number(earningsSummary.total) : localTotal;
   const tripCount = earningsSummary ? earningsSummary.count : trips.length;
+  // WD-027: tripCount is the server's unbounded rider-only aggregate; `trips` is filtered from the
+  // capped, both-roles shared history page, so the two can disagree — say so instead of silently
+  // rendering fewer (or zero) rows under a non-zero total.
+  const coverageNote = earningsCoverageNote(tripCount, trips.length);
 
   return (
     <Screen>
@@ -123,28 +128,41 @@ export default function EarningsScreen(): React.ReactElement {
             </Text>
           </Card>
 
-          {trips.map((o) => (
-            <Card key={o.id}>
-              <Pressable
-                onPress={() => router.push(`/order/${o.id}`)}
-                accessibilityRole="button"
-                accessibilityLabel={`Open trip ${o.pickup.landmark || "pickup"} to ${o.dropoff.landmark || "drop-off"}`}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
-                    <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }} numberOfLines={1}>
-                      {o.pickup.landmark || "Pickup"} → {o.dropoff.landmark || "Drop-off"}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
-                      {fmtDate(o.createdAt)}
-                      {o.status === "delivered" ? " · Awaiting rating" : ""}
-                    </Text>
-                  </View>
-                  <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(o.agreedFare ?? o.proposedFare)}</Text>
-                </View>
-              </Pressable>
-            </Card>
-          ))}
+          {trips.length === 0 ? (
+            <EmptyState
+              icon="banknote"
+              title="Recent trips not shown here"
+              message={coverageNote ?? "Older delivered trips aren't shown here. Check Trip history for your full record."}
+            />
+          ) : (
+            <>
+              {trips.map((o) => (
+                <Card key={o.id}>
+                  <Pressable
+                    onPress={() => router.push(`/order/${o.id}`)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open trip ${o.pickup.landmark || "pickup"} to ${o.dropoff.landmark || "drop-off"}`}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
+                        <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }} numberOfLines={1}>
+                          {o.pickup.landmark || "Pickup"} → {o.dropoff.landmark || "Drop-off"}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
+                          {fmtDate(o.createdAt)}
+                          {o.status === "delivered" ? " · Awaiting rating" : ""}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(o.agreedFare ?? o.proposedFare)}</Text>
+                    </View>
+                  </Pressable>
+                </Card>
+              ))}
+              {coverageNote ? (
+                <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: tokens.space.sm, marginBottom: tokens.space.sm }}>{coverageNote}</Text>
+              ) : null}
+            </>
+          )}
 
           {/* §6 decided: rider commission = % of the amount paid per ride, deducted from a pre-funded
               commission account (prepaid per-ride model). Copy tracks COMMISSION.ratePct in @lynia/shared —

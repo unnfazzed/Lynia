@@ -1,4 +1,4 @@
-import { type OrderStatus, REPORT_REASON_LABELS, type ReportReason } from "@lynia/shared";
+import { type OrderStatus, REPORT_REASON_LABELS, type ReportReason, STUCK_AFTER_MINUTES } from "@lynia/shared";
 import type { Prisma } from "@prisma/client";
 import type { PrismaService } from "../prisma/prisma.service";
 
@@ -68,7 +68,7 @@ export const STATUS_STEP: Record<string, number> = {
 // DIFFERENT data sources on purpose (documented at each usage): the dashboard uses `order.updatedAt`
 // (one cheap aggregate query, no per-order OrderEvent join) while the detail page uses the last
 // `OrderEvent.createdAt` (already-loaded events, more precise). Same threshold, different clock.
-export const STUCK_AFTER_MS = 20 * 60 * 1000;
+export const STUCK_AFTER_MS = STUCK_AFTER_MINUTES * 60 * 1000;
 
 /** Pilot funnel (CONCEPT §8) from raw counts. Pure, so it's unit-tested. */
 export function computeFunnel(i: {

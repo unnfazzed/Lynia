@@ -243,6 +243,16 @@ export const RIDER_STRIKE_LIMIT = 3;
 export const RIDER_STRIKE_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 
 /**
+ * DS20-01: the single stuck-order threshold — apps/api's ops-dashboard aggregate and per-order detail
+ * badge both import {@link STUCK_AFTER_MS} (derived from this) so they can't drift to different minute
+ * values (they did once: 25 vs 20). WD-028: the admin console's own "needs attention" row copy is a
+ * separate app/deployable that can't import server-side constants directly, but it must still describe
+ * the SAME threshold — hardcoding the minute figure there let it drift stale (25+) after the API side
+ * was corrected to 20. Both now read this one number.
+ */
+export const STUCK_AFTER_MINUTES = 20;
+
+/**
  * Customer trust tier for reputation weighting (FRAUD P1-6 residual / KB-IDENTITY-BINDING, demand side).
  *
  * The per-pair cap ({@link OrderLifecycleService.rate}) already stops ONE colluding customer+rider pair
