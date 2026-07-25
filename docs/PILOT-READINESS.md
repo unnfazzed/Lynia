@@ -239,8 +239,22 @@ gcloud secrets add-iam-policy-binding <SECRET_NAME> --project "$PROJECT" \
 Then add `<ENV_NAME>=<SECRET_NAME>:latest` to the `--set-secrets` list in `release.yml` and push to `main`.
 (Better long-term: track it in `infra/terraform/secrets.tf` — the pattern is there for the existing three.)
 
-### 1. WhatsApp BSP — production OTP  🔴 longest lead time, start first
-Real users can't sign up until OTP leaves the dev `console` channel. The send is now **implemented** against
+### 1. Production OTP — Bird SMS (priority) or WhatsApp BSP
+
+Real users can't sign up until OTP leaves the dev `console` channel. There are two production-ready
+channels behind the `otp-sender.ts` seam; pick one and flip `OTP_CHANNEL`.
+
+**Bird SMS is the priority channel** (decision 2026-07-19) — it sidesteps WhatsApp's business-
+verification lead time and delivers the code as a plain SMS. The send is fully implemented and tested
+(`apps/api/src/auth/otp-sender.ts` → `BirdOtpSender`); arming is an account + a key + three repo
+Variables, **no code**. Full step-by-step runbook: **`docs/BIRD-SETUP.md`**. In short: store
+`BIRD_ACCESS_KEY` in Secret Manager, set the `BIRD_WORKSPACE_ID` / `BIRD_SMS_CHANNEL_ID` repo
+Variables, set `OTP_CHANNEL=bird`, flip `BIRD_ENABLED=true`, and redeploy — the release job's launch-
+hygiene guard refuses to ship a half-armed Bird config. (`local-sms` is the Zimbabwe A2P fallback for
+when Bird's international route is throttled on Econet.)
+
+#### WhatsApp BSP (alternative / fallback)  🔴 longest lead time
+The send is now **implemented** against
 the Meta **WhatsApp Cloud API** (`apps/api/src/auth/otp-sender.ts` → `WhatsAppOtpSender` + `buildWhatsAppOtpRequest`)
 — it sends the OTP as an authentication-template message and fails loud if misconfigured. What remains is the
 **account + an approved template** (the lead-time item), then set three values and flip a flag:
@@ -416,9 +430,14 @@ channels regardless of `OTP_TEST_PHONES`.
 Everything codeable through P0/P1 is shipped and CI-green. What remains, grouped by who unblocks it:
 
 ### 🔴 Pilot gates — founder / vendor action (not code)
-- [ ] **WhatsApp BSP — production OTP.** Meta Cloud API app + Business verification + an approved
-      authentication-category template, then set `WHATSAPP_*` values and flip `WHATSAPP_ENABLED=true` /
-      `OTP_CHANNEL=whatsapp`. *(Longest lead time — start first. The send is implemented behind the seam.)*
+- [ ] **Bird SMS — production OTP (priority channel).** Store `BIRD_ACCESS_KEY` in Secret Manager, set
+      the `BIRD_WORKSPACE_ID` / `BIRD_SMS_CHANNEL_ID` repo Variables, `OTP_CHANNEL=bird`, and flip
+      `BIRD_ENABLED=true`. Runbook: `docs/BIRD-SETUP.md`. *(Send is implemented + tested behind the seam;
+      chosen over WhatsApp to avoid business-verification lead time — decision 2026-07-19.)*
+- [ ] **WhatsApp BSP — production OTP (alternative).** Meta Cloud API app + Business verification + an
+      approved authentication-category template, then set `WHATSAPP_*` values and flip
+      `WHATSAPP_ENABLED=true` / `OTP_CHANNEL=whatsapp`. *(Longest lead time. The send is implemented
+      behind the seam.)*
 - [ ] **Didit ZIM-ID — real KYC run.** Create the account/key (one-command `pnpm didit:setup`), store the
       two secrets, flip `DIDIT_ENABLED=true`, then run a real Zimbabwean ID and record the false-reject rate.
 - [ ] **Firebase project — live FCM send.** `firebase projects:addfirebase lynia-500911`, register the
