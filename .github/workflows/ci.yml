@@ -223,3 +223,39 @@ jobs:
         if: steps.changes.outputs.run == 'true'
         working-directory: apps/mobile
         run: node scripts/check-bundle-size.mjs "$RUNNER_TEMP/expo-export-android"
+
+  # Terraform config validation with DEFAULTS ONLY — deliberately no tfvars.
+  #
+  # This is the condition every human hits and CI never did. gcp-drift-detect.yml is the only other
+  # job that runs Terraform, and it writes the TF_PROD_TFVARS secret to terraform.tfvars first, so it
+  # always holds real values and can never exercise the defaults. That blind spot shipped a config
+  # where the Cloudflare provider rejected its own default empty token, breaking `import`, `plan` and
+  # `apply` for anyone without the production tfvars — the whole module, not just the DNS it gates.
+  #
+  # -backend=false keeps this credential-free and stateless: no GCS backend, no GCP auth, no secrets,
+  # so it runs on every PR including from a fork. It validates provider configuration and variable
+  # wiring, which is exactly the class that broke; it is NOT a substitute for the nightly drift plan,
+  # which is what catches state divergence.
+  terraform-validate:
+    name: terraform validate · defaults only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          # The wrapper rewrites stdout and swallows the real exit code on failure.
+          terraform_wrapper: false
+
+      - name: Validate with no tfvars present
+        working-directory: infra/terraform
+        run: |
+          set -euo pipefail
+          # Guard the premise: a stray tfvars would supply the values whose absence this job exists to
+          # test, turning it into a silent no-op that reports green.
+          if ls ./*.tfvars ./*.tfvars.json >/dev/null 2>&1; then
+            echo "::error::A tfvars file is committed under infra/terraform. This job must run on DEFAULTS ONLY — with one present it validates the opposite of what it is for. Remove it (they are gitignored for a reason)."
+            exit 1
+          fi
+          terraform init -backend=false -input=false -no-color
+          terraform validate -no-color

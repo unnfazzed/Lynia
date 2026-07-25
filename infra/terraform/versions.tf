@@ -45,9 +45,19 @@ provider "google-beta" {
 
 # Cloudflare — DNS-only management of the lyniafinance.com zone (dns.tf).
 # Gated by cloudflare_dns_enabled (default false): with the flag off, every
-# cloudflare_dns_record has count = 0, so no API call is made and an empty token
-# is fine — a plain apply stays a no-op. The token is supplied via a VCS-ignored
-# *.tfvars when you opt in (mirrors admin_iap_oauth_client_secret).
+# cloudflare_dns_record has count = 0, so no API call is ever made. The token is
+# supplied via a VCS-ignored *.tfvars when you opt in (mirrors
+# admin_iap_oauth_client_secret).
+#
+# The token is normalised to null when unset. Provider configuration is evaluated
+# before EVERY operation, whatever the count on the resources below, and this
+# provider's api_token carries a format validator that rejects "". Passing the raw
+# variable therefore failed `import`, `plan` and `apply` alike for anyone without a
+# real token — the whole config, not just DNS. null means "unset", and the
+# plugin-framework skips attribute validators on null, so validation is deferred
+# until a resource actually needs the token. The comparison (rather than just
+# defaulting the variable to null) also absorbs an explicit `cloudflare_api_token
+# = ""` in a tfvars, which is the natural thing to write when told it is optional.
 provider "cloudflare" {
-  api_token = var.cloudflare_api_token
+  api_token = var.cloudflare_api_token != "" ? var.cloudflare_api_token : null
 }
