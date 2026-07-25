@@ -156,6 +156,89 @@ describe("TrackingGateway.boardLeave", () => {
   });
 });
 
+describe("TrackingGateway board-room re-scope serialization (BH-25)", () => {
+  it("serializes overlapping board:subscribe calls on the same socket so re-scopes can't interleave", async () => {
+    // Before the fix, two board:subscribe calls arriving close together on one socket (e.g. the mobile
+    // client's `connect` handler and its loc-change effect both firing on resume from background) ran
+    // as independent concurrent handler invocations mutating the SAME live `client.rooms` Set — a socket
+    // could end up joined to both a stale room and the fresh one.
+    const g = gateway({ isBoardEligible: vi.fn(async () => true) });
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+
+    const order: string[] = [];
+    let releaseFirst: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let firstBlocked = false;
+    client.join.mockImplementation(async (room: string) => {
+      if (room === BOARD_ROOM && !firstBlocked) {
+        firstBlocked = true;
+        order.push("first:join:start");
+        await gate; // hold the FIRST call open so a concurrent call has a window to race in
+        order.push("first:join:end");
+      } else {
+        order.push(`second:join:${room}`);
+      }
+      client.rooms.add(room);
+    });
+
+    const first = g.boardSubscribe(client as never, {}); // no loc → BOARD_ROOM, blocks mid-join
+    await Promise.resolve();
+    await Promise.resolve();
+    const second = g.boardSubscribe(client as never, { lat: -17.83, lng: 31.05 }); // loc → geo rooms
+
+    releaseFirst();
+    await first;
+    await second;
+
+    // Every one of `second`'s joins ran strictly AFTER `first`'s finished — the two never interleaved.
+    const firstEndIdx = order.indexOf("first:join:end");
+    const firstSecondJoinIdx = order.findIndex((e) => e.startsWith("second:join:"));
+    expect(firstEndIdx).toBeGreaterThanOrEqual(0);
+    expect(firstSecondJoinIdx).toBeGreaterThan(firstEndIdx);
+  });
+
+  it("serializes board:subscribe against a concurrent board:leave on the same socket", async () => {
+    const g = gateway({ isBoardEligible: vi.fn(async () => true) });
+    const client = fakeSocket({ sub: "rider-1", role: "rider" }, [BOARD_ROOM]);
+
+    const order: string[] = [];
+    let releaseLeave: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseLeave = resolve;
+    });
+    let leaveBlocked = false;
+    client.leave.mockImplementation(async (room: string) => {
+      if (room === BOARD_ROOM && !leaveBlocked) {
+        leaveBlocked = true;
+        order.push("leave:start");
+        await gate;
+        order.push("leave:end");
+      }
+      client.rooms.delete(room);
+    });
+    client.join.mockImplementation(async (room: string) => {
+      order.push(`join:${room}`);
+      client.rooms.add(room);
+    });
+
+    const leave = g.boardLeave(client as never); // blocks mid-leave
+    await Promise.resolve();
+    await Promise.resolve();
+    const subscribe = g.boardSubscribe(client as never, { lat: -17.83, lng: 31.05 });
+
+    releaseLeave();
+    await leave;
+    await subscribe;
+
+    const leaveEndIdx = order.indexOf("leave:end");
+    const firstJoinIdx = order.findIndex((e) => e.startsWith("join:"));
+    expect(leaveEndIdx).toBeGreaterThanOrEqual(0);
+    expect(firstJoinIdx).toBeGreaterThan(leaveEndIdx);
+  });
+});
+
 describe("TrackingGateway.kickRiderFromBoard (KB-BOARD-REVOKE)", () => {
   it("forces the target rider's socket(s) to leave EVERY board room but keeps their order room", async () => {
     const kept = orderRoom("their-active-order");
@@ -484,7 +567,7 @@ describe("TrackingGateway.scanPresence (C5 watchdog)", () => {
   it("re-arms after the order recovers (rider reconnected / ride ended)", async () => {
     const stale = [{ orderId: "ord-1", riderId: "r1", lastSeenAt: null }];
     let round = 0;
-    // scan 1: stale → emit; scan 2: recovered (empty) → drop; scan 3: stale again → emit.
+    // scan 1: stale → emit; scan 2: recovered (empty) → drop + BH-25 recovery emit; scan 3: stale again → emit.
     const findStaleRiderPresence = vi.fn(async () => (round === 1 ? [] : stale));
     const { server, emit } = fakeServer();
     const g = gateway({ findStaleRiderPresence });
@@ -496,7 +579,13 @@ describe("TrackingGateway.scanPresence (C5 watchdog)", () => {
     await g.scanPresence();
     round = 2;
     await g.scanPresence();
-    expect(emit).toHaveBeenCalledTimes(2); // once on the first dark, once after re-arming
+    // Once on the first dark, once on the BH-25 recovery emit, once after re-arming.
+    expect(emit).toHaveBeenCalledTimes(3);
+    expect(emit).toHaveBeenNthCalledWith(
+      2,
+      WS_EVENTS.presenceRecovered,
+      expect.objectContaining({ orderId: "ord-1", role: "rider" }),
+    );
   });
 
   it("never throws when the scan query fails (best-effort interval)", async () => {
@@ -531,6 +620,28 @@ describe("TrackingGateway.scanPresence (C5 watchdog)", () => {
     round = 1;
     await g.scanPresence(); // recovered → release the cluster-wide claim
     expect(releasePresenceEscalation).toHaveBeenCalledWith("rider:ord-1");
+  });
+
+  it("BH-25: pushes presence:recovered role:rider when a dark order recovers, mirroring the customer-side emit", async () => {
+    // Before the fix, this recovery path only cleared `staleNotified`/released the cluster claim — it
+    // never told the customer's app the rider was back, so a self-heal with no fresh GPS `position` push
+    // (riderLiveInRoom refuting a heartbeat-write-lag false positive) left the "rider offline" card stuck
+    // until the ride's next status change.
+    const stale = [{ orderId: "ord-1", riderId: "r1", lastSeenAt: null }];
+    let round = 0;
+    const findStaleRiderPresence = vi.fn(async () => (round === 1 ? [] : stale));
+    const { server, emit } = fakeServer();
+    const g = gateway({ findStaleRiderPresence });
+    g.server = server as never;
+    round = 0;
+    await g.scanPresence();
+    emit.mockClear();
+    round = 1;
+    await g.scanPresence(); // recovered
+    expect(emit).toHaveBeenCalledWith(
+      WS_EVENTS.presenceRecovered,
+      expect.objectContaining({ orderId: "ord-1", role: "rider" }),
+    );
   });
 
   it("does NOT escalate a stale-heartbeat rider whose socket is live in the order room (parked ≠ dark)", async () => {
