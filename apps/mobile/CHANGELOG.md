@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.3](https://github.com/unnfazzed/Lynia/compare/v0.10.2...v0.10.3) (2026-07-25)
+
+
+### Bug Fixes
+
+* **api,mobile:** rider presence-recovery push + board-room re-scope race (BH-25a/BH-25b) ([b7935f3](https://github.com/unnfazzed/Lynia/commit/b7935f3c70495a018d34c418e250b9e761d1c5aa))
+
 ## [0.10.2](https://github.com/unnfazzed/Lynia/compare/v0.10.1...v0.10.2) (2026-07-21)
 
 
