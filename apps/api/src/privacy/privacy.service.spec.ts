@@ -459,7 +459,7 @@ describe("PrivacyService.purgeExpiredData", () => {
   it("scrubs GPS + SOS coords past the window and purges long-lapsed sessions, returning counts", async () => {
     let gpsWhere: { createdAt: { lt: Date } } | undefined;
     let sosWhere: { createdAt: { lt: Date } } | undefined;
-    let sessWhere: { expiresAt: { lt: Date } } | undefined;
+    let sessWhere: { OR: [{ expiresAt: { lt: Date } }, { revokedAt: { lt: Date } }] } | undefined;
     const prisma = {
       orderEvent: {
         updateMany: async (a: { where: { createdAt: { lt: Date } }; data: unknown }) => {
@@ -477,7 +477,9 @@ describe("PrivacyService.purgeExpiredData", () => {
         },
       },
       session: {
-        deleteMany: async (a: { where: { expiresAt: { lt: Date } } }) => ((sessWhere = a.where), { count: 7 }),
+        deleteMany: async (a: {
+          where: { OR: [{ expiresAt: { lt: Date } }, { revokedAt: { lt: Date } }] };
+        }) => ((sessWhere = a.where), { count: 7 }),
       },
     } as unknown as PrismaService;
     const svc = new PrivacyService(prisma, env);
@@ -489,6 +491,29 @@ describe("PrivacyService.purgeExpiredData", () => {
     // 90-day GPS cutoff (shared by order + SOS coords), 30-day session cutoff, measured back from `now`.
     expect(gpsWhere!.createdAt.lt.toISOString()).toBe(new Date("2026-04-07T00:00:00Z").toISOString());
     expect(sosWhere!.createdAt.lt.toISOString()).toBe(new Date("2026-04-07T00:00:00Z").toISOString());
-    expect(sessWhere!.expiresAt.lt.toISOString()).toBe(new Date("2026-06-06T00:00:00Z").toISOString());
+    expect(sessWhere!.OR[0].expiresAt.lt.toISOString()).toBe(new Date("2026-06-06T00:00:00Z").toISOString());
+  });
+
+  // Every refresh rotates a session out and marks it revoked, but leaves its ORIGINAL expiresAt. With a
+  // one-year REFRESH_TTL a dead row would otherwise sit for a year+ before the expiresAt arm could
+  // reach it, so the revokedAt arm is what actually bounds the table. Purging it is safe: the rotation
+  // grace is minutes, and a token replayed against a purged row still hard-rejects as unknown.
+  it("also purges rows revoked longer ago than the window, not just lapsed ones", async () => {
+    let sessWhere: { OR: [{ expiresAt: { lt: Date } }, { revokedAt: { lt: Date } }] } | undefined;
+    const prisma = {
+      orderEvent: { updateMany: async () => ({ count: 0 }) },
+      sosEvent: { updateMany: async () => ({ count: 0 }) },
+      session: {
+        deleteMany: async (a: {
+          where: { OR: [{ expiresAt: { lt: Date } }, { revokedAt: { lt: Date } }] };
+        }) => ((sessWhere = a.where), { count: 3 }),
+      },
+    } as unknown as PrismaService;
+
+    const res = await new PrivacyService(prisma, env).purgeExpiredData(new Date("2026-07-06T00:00:00Z"));
+
+    expect(res.sessionsPurged).toBe(3);
+    // Both arms ride the same 30-day retention clock measured back from `now`.
+    expect(sessWhere!.OR[1].revokedAt.lt.toISOString()).toBe(new Date("2026-06-06T00:00:00Z").toISOString());
   });
 });
