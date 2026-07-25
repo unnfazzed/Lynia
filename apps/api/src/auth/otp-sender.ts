@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Logger, ServiceUnavailableException } from "@nestjs/common";
 import { maskPhone } from "../common/phone-mask";
 import type { Env } from "../config/env";
@@ -106,16 +107,24 @@ export function buildOtpSmsText(code: string, opts: { brand: string; appHash?: s
 }
 
 /**
- * Pure builder for the Bird Channels-API SMS request body. Bird addresses the recipient as an E.164
- * phone number (the '+' is kept, unlike Meta's Graph API), and a plain-text SMS carries its content in
- * body.text.text. The sender is the number/ID bound to the configured channel, so no originator field
- * is set here. See docs.bird.com/api/channels-api → Programmable SMS.
+ * Pure builder for the Bird SMS-API request body (`POST /v1/sms/messages`). Bird addresses the
+ * recipient as an E.164 phone number (the '+' is kept, unlike Meta's Graph API).
+ *
+ * `category` is REQUIRED on free-text sends and is always "authentication" here: it is how Bird
+ * classifies the traffic for routing and carrier filtering, which is exactly what an OTP needs on a
+ * route (Zimbabwe / Econet) where untagged bulk traffic is the first thing to be grey-listed.
+ *
+ * `from` is optional — omitted, Bird picks a sender from its shared pool. Set BIRD_SMS_FROM once a
+ * dedicated alphanumeric sender ID or number is registered, so the SMS shows the brand instead of a
+ * pool sender.
+ *
+ * NOTE: this replaced the older Channels API (`/workspaces/{ws}/channels/{ch}/messages`), which is
+ * not routable on the regional hosts — it answers `RouteNotFound`. See docs/BIRD-SETUP.md.
  */
-export function buildBirdSmsRequest(phone: string, text: string): Record<string, unknown> {
-  return {
-    receiver: { contacts: [{ identifierKey: "phonenumber", identifierValue: phone }] },
-    body: { type: "text", text: { text } },
-  };
+export function buildBirdSmsRequest(phone: string, text: string, opts?: { from?: string }): Record<string, unknown> {
+  const body: Record<string, unknown> = { to: phone, text, category: "authentication" };
+  if (opts?.from) body.from = opts.from;
+  return body;
 }
 
 /**
@@ -134,26 +143,29 @@ export class BirdOtpSender implements OtpSender {
   }
   async send(phone: string, code: string): Promise<void> {
     const key = this.env.BIRD_ACCESS_KEY;
-    const workspaceId = this.env.BIRD_WORKSPACE_ID;
-    const channelId = this.env.BIRD_SMS_CHANNEL_ID;
-    if (!key || !workspaceId || !channelId) {
-      this.logger.error(
-        "Bird OTP not configured — set BIRD_ACCESS_KEY, BIRD_WORKSPACE_ID, and BIRD_SMS_CHANNEL_ID (or change OTP_CHANNEL).",
-      );
+    if (!key) {
+      this.logger.error("Bird OTP not configured — set BIRD_ACCESS_KEY (or change OTP_CHANNEL).");
       throw new ServiceUnavailableException("Couldn't send the verification code — try again shortly.");
     }
     const text = buildOtpSmsText(code, {
       brand: this.env.BIRD_BRAND_NAME,
       appHash: this.env.BIRD_ANDROID_SMS_HASH || undefined,
     });
-    const body = buildBirdSmsRequest(phone, text);
-    const url = `${this.env.BIRD_BASE_URL}/workspaces/${workspaceId}/channels/${channelId}/messages`;
+    const body = buildBirdSmsRequest(phone, text, { from: this.env.BIRD_SMS_FROM || undefined });
+    const url = `${this.env.BIRD_BASE_URL}/v1/sms/messages`;
 
     let res: Response;
     try {
       res = await fetch(url, {
         method: "POST",
-        headers: { authorization: `AccessKey ${key}`, "content-type": "application/json" },
+        headers: {
+          authorization: `Bearer ${key}`,
+          "content-type": "application/json",
+          // Bird dedupes retries carrying the same key. A fresh key per attempt is deliberate: a
+          // resend must produce a real second SMS (the user tapped "resend"), so this only makes a
+          // future transport-level retry of THIS request safe — it never suppresses a resend.
+          "idempotency-key": randomUUID(),
+        },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(OTP_SEND_TIMEOUT_MS),
       });
@@ -163,11 +175,14 @@ export class BirdOtpSender implements OtpSender {
     }
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      // Log Bird's error (bad channel/workspace id, revoked access key, unregistered sender…) but never
-      // the code. Bird returns 202 Accepted on success, which res.ok (200–299) covers.
+      // Log Bird's error (revoked key, no eligible sender for the destination E12003, insufficient
+      // wallet balance…) but never the code.
       this.logger.error(`Bird OTP send failed: ${res.status} ${detail.slice(0, 300)}`);
       throw new ServiceUnavailableException("Couldn't send the code — try again in a moment.");
     }
+    // 202 Accepted means Bird TOOK the message, not that it landed: delivery is asynchronous and the
+    // message can still end up undelivered/failed/expired. Nothing here can observe that — closing
+    // that gap needs the delivery-status webhook (docs/BIRD-SETUP.md, "Agent tooling").
   }
 }
 

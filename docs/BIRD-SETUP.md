@@ -16,13 +16,14 @@ this doc — that is a separate, per-developer credential and is **not** part of
 
 ## What is already built (no code work remains)
 
-- **Sender** — `BirdOtpSender.send()` POSTs the OTP as an SMS via Bird's Channels API. It fails
-  **loud**: missing credentials or a non-2xx from Bird throws, so `requestOtp` surfaces an error
+- **Sender** — `BirdOtpSender.send()` POSTs the OTP to Bird's SMS API (`POST /v1/sms/messages`). It
+  fails **loud**: missing credentials or a non-2xx from Bird throws, so `requestOtp` surfaces an error
   instead of a false "sent". The OTP code is never logged (only Bird's error body is).
 - **Request shape** — `buildBirdSmsRequest()` addresses the recipient as an E.164 number (the `+`
-  is kept, unlike Meta's Graph API) and carries the text in `body.text.text`. The message body is
-  the shared autofill-friendly text (`buildOtpSmsText` — code first, so iOS Security-Code AutoFill
-  and Android's `sms-otp` hint pick it up).
+  is kept, unlike Meta's Graph API), carries the text in `text`, and always tags `category:
+  "authentication"` — how Bird classifies the traffic for routing and carrier filtering. The message
+  body is the shared autofill-friendly text (`buildOtpSmsText` — code first, so iOS Security-Code
+  AutoFill and Android's `sms-otp` hint pick it up), measured at **69 chars / 1 segment / GSM_7BIT**.
 - **We still own the code** — generation, HMAC hashing, TTL, rate-limits, and verification all stay
   in `otp-store.ts`. Bird is a **delivery pipe only**, so the entire verify path, brute-force caps,
   and session issuance are identical to the WhatsApp channel.
@@ -32,9 +33,15 @@ this doc — that is a separate, per-developer credential and is **not** part of
   the service can never boot green and then 503 every sign-in.
 - **Secret container** — `infra/terraform/secrets.tf` pre-lists `BIRD_ACCESS_KEY`; the runtime SA's
   read binding is managed by `scripts/adopt-vendor-secrets.sh`.
-- **Tests** — `apps/api/src/auth/otp-sender.spec.ts` covers the request shape, the `AccessKey`
-  header, the 202-Accepted success path, the loud-throw on rejection, and that the code is never
-  logged.
+- **Tests** — `apps/api/src/auth/otp-sender.spec.ts` covers the request shape, the `Bearer` header,
+  the `authentication` category, the per-send idempotency key, `from` passthrough/omission, the
+  202-Accepted success path, the loud-throw on rejection, and that the code is never logged.
+
+> **Superseded (2026-07-25):** this doc previously described Bird's **Channels API**
+> (`/workspaces/{ws}/channels/{ch}/messages`, `Authorization: AccessKey`, host `api.bird.com`). That
+> route answers `RouteNotFound` on the regional hosts and there is no channel concept in Bird's
+> current CLI. The integration now targets `POST /v1/sms/messages`. `BIRD_WORKSPACE_ID` and
+> `BIRD_SMS_CHANNEL_ID` are **gone** — the API key is workspace-scoped and the SMS API has no channels.
 
 ## Config reference
 
@@ -42,42 +49,68 @@ this doc — that is a separate, per-developer credential and is **not** part of
 |---|---|---|---|
 | `OTP_CHANNEL` | repo Variable | ✅ set to `bird` | flips the live channel |
 | `BIRD_ENABLED` | repo Variable | ✅ set to `true` | arms the `release.yml` injection block |
-| `BIRD_WORKSPACE_ID` | repo Variable | ✅ | Bird dashboard → workspace |
-| `BIRD_SMS_CHANNEL_ID` | repo Variable | ✅ | Bird dashboard → Channels → your SMS channel |
-| `BIRD_ACCESS_KEY` | Secret Manager | ✅ | Bird dashboard → Access keys (sent as `Authorization: AccessKey <key>`) |
-| `BIRD_BASE_URL` | repo Variable | optional | defaults to `https://api.bird.com` |
+| `BIRD_SMS_FROM` | repo Variable | ✅ | the sender ID, e.g. `LyniaGo`. **Required for +263** — without it Bird has no eligible shared-pool sender and rejects every send with `E12003` |
+| `BIRD_ACCESS_KEY` | Secret Manager | ✅ | Bird dashboard → API keys (`bk_<region>_…`, sent as `Authorization: Bearer <key>`) |
+| `BIRD_BASE_URL` | repo Variable | optional | defaults to `https://eu1.platform.bird.com`. **Region-scoped** — must match the workspace's region (`bird auth status` reports it; the key prefix encodes it) |
 | `BIRD_BRAND_NAME` | repo Variable | optional | defaults to `LyniaGo` — shown in the SMS body |
 | `BIRD_ANDROID_SMS_HASH` | repo Variable | optional | 11-char SMS Retriever app-hash for zero-tap autofill (defer until a release build exists) |
 
 The request Bird receives:
 
 ```
-POST {BIRD_BASE_URL}/workspaces/{BIRD_WORKSPACE_ID}/channels/{BIRD_SMS_CHANNEL_ID}/messages
-Authorization: AccessKey {BIRD_ACCESS_KEY}
+POST {BIRD_BASE_URL}/v1/sms/messages
+Authorization: Bearer {BIRD_ACCESS_KEY}
 Content-Type: application/json
+Idempotency-Key: <uuid, fresh per send>
 
-{"receiver":{"contacts":[{"identifierKey":"phonenumber","identifierValue":"+263771234567"}]},
- "body":{"type":"text","text":{"text":"123456 is your LyniaGo verification code. Don't share it with anyone."}}}
+{"to":"+263771234567","text":"123456 is your LyniaGo verification code. Don't share it with anyone.",
+ "category":"authentication","from":"LyniaGo"}
 ```
 
-Bird returns **202 Accepted** on success (`res.ok`, 200–299, covers it).
+Bird returns **202 Accepted** on success (`res.ok`, 200–299, covers it) — but `accepted` means Bird
+**took** the message, not that it landed. Delivery is asynchronous
+(`accepted → sent → delivered | undelivered | failed | expired`) and nothing in the send path can
+observe the outcome. Closing that gap needs the delivery-status webhook (not yet built).
+
+### Verified end-to-end (2026-07-25)
+
+A live send to a real Econet handset, via `bird sms send --from LyniaGo --category authentication`:
+
+| | |
+|---|---|
+| `status` | `accepted` → **`delivered`** in **6.6 s** |
+| `mcc_mnc` | `64804` — Econet Wireless Zimbabwe |
+| `segments` | `{characters: 69, count: 1, encoding: GSM_7BIT}` — one segment, no UCS-2 penalty |
+| `cost` | **€0.195173** per message |
+| `from` | `LyniaGo` accepted with no sender pre-registration |
+
+That retires the grey-route risk this doc previously flagged as the main unknown for `+263`. Note the
+per-message cost: at ~€0.20 an OTP, send-side rate limits are a spend control, not just an abuse
+control.
 
 ## Arming checklist (in order)
 
 You have paid for SMS — these are the remaining steps. All need founder credentials (Bird dashboard,
 GCP, and repo admin); none are code.
 
-1. ☐ **Gather the three Bird IDs** from the Bird dashboard:
-   - **Workspace ID** → `BIRD_WORKSPACE_ID`
-   - **SMS channel ID** (Channels → your provisioned SMS channel) → `BIRD_SMS_CHANNEL_ID`
-   - **Access key** (Settings → Access keys → create a key scoped to send on that channel) →
-     the secret value for `BIRD_ACCESS_KEY`
+1. ☐ **Mint one API key** in the Bird dashboard (Settings → API keys), scoped to send SMS. The value
+   looks like `bk_eu1_…` and becomes `BIRD_ACCESS_KEY`. That is the **only** ID needed — the key
+   carries the workspace, and the SMS API has no channels.
 
-2. ☐ **Confirm the sender is provisioned for Zimbabwe (+263).** Bird sends from the number / sender
-   ID bound to the channel, so no originator field is set in our request — make sure the channel's
-   registered sender can deliver to `+263` handsets (an alphanumeric sender ID or a provisioned
-   number, per Bird's Zimbabwe routing). If Bird's international route is throttled on Econet's
-   grey-route filtering, the `local-sms` channel (`docs`-noted A2P fallback) is the backstop.
+   ✅ **Already confirmed for this account** (2026-07-25), so nothing to discover here:
+   workspace `LyniaGo` / `ws_01kxv3schvem4a89399mk86188`, region **eu1**, sender **`LyniaGo`**.
+
+2. ☑ **Confirm the sender reaches Zimbabwe (+263)** — **done, see "Verified end-to-end" above.**
+   `LyniaGo` was accepted as an alphanumeric sender with no pre-registration and delivered to Econet
+   (`mcc_mnc 64804`) in 6.6 s. Set it as `BIRD_SMS_FROM`; **omitting it fails every send with
+   `E12003`**, because Bird's shared pool has no eligible sender for `+263`.
+
+   Re-run the proof any time with the `bird` CLI (see "Agent tooling" below):
+   ```bash
+   bird sms send --to +263… --from LyniaGo --category authentication --text "…"
+   bird sms get <sms_…>       # poll until status=delivered — "accepted" is not delivery
+   ```
+   If Econet ever does start grey-listing this route, the `local-sms` channel is the backstop.
 
 3. ☐ **Store the access key in GCP Secret Manager** as `BIRD_ACCESS_KEY` and grant the runtime SA
    read access. The container is pre-listed in Terraform; the value is added by hand (it never
@@ -106,25 +139,30 @@ GCP, and repo admin); none are code.
    > The deploy resolves `BIRD_ACCESS_KEY:latest` — a container with **zero versions fails the
    > deploy**, so add the value version **before** flipping `BIRD_ENABLED=true`.
 
-4. ☐ **Smoke-test the credentials end-to-end** (mirrors exactly what `BirdOtpSender` sends). Use a
-   test recipient you control; a 202 confirms the channel + key + sender all work:
+4. ☐ **Smoke-test the key end-to-end** (mirrors exactly what `BirdOtpSender` sends). Use a recipient
+   you control. A 202 proves the **key** works; then read the message back, because 202 only means
+   Bird accepted it:
 
    ```bash
-   curl -i -X POST \
-     "https://api.bird.com/workspaces/<WORKSPACE_ID>/channels/<SMS_CHANNEL_ID>/messages" \
-     -H "Authorization: AccessKey <ACCESS_KEY>" \
+   curl -i -X POST "https://eu1.platform.bird.com/v1/sms/messages" \
+     -H "Authorization: Bearer <BIRD_ACCESS_KEY>" \
      -H "Content-Type: application/json" \
-     -d '{"receiver":{"contacts":[{"identifierKey":"phonenumber","identifierValue":"+263771234567"}]},"body":{"type":"text","text":{"text":"123456 is your LyniaGo verification code. Do not share it with anyone."}}}'
+     -H "Idempotency-Key: $(uuidgen)" \
+     -d '{"to":"+263771234567","from":"LyniaGo","category":"authentication","text":"123456 is your LyniaGo verification code. Don'"'"'t share it with anyone."}'
+
+   # then confirm it actually landed (status must reach "delivered")
+   curl -s "https://eu1.platform.bird.com/v1/sms/messages/<sms_id>" \
+     -H "Authorization: Bearer <BIRD_ACCESS_KEY>" | jq '{status, delivered_at, last_error, cost}'
    ```
 
 5. ☐ **Set the repo Variables** (Settings → Secrets and variables → Actions → Variables, or `gh`):
 
    ```bash
-   gh variable set OTP_CHANNEL        --body "bird"
-   gh variable set BIRD_ENABLED       --body "true"
-   gh variable set BIRD_WORKSPACE_ID  --body "<WORKSPACE_ID>"
-   gh variable set BIRD_SMS_CHANNEL_ID --body "<SMS_CHANNEL_ID>"
-   # Optional overrides (defaults are api.bird.com / LyniaGo / no Android hash):
+   gh variable set OTP_CHANNEL   --body "bird"
+   gh variable set BIRD_ENABLED  --body "true"
+   gh variable set BIRD_SMS_FROM --body "LyniaGo"
+   # Optional overrides (defaults are eu1.platform.bird.com / LyniaGo / no Android hash;
+   # override BIRD_BASE_URL only if the workspace is not in eu1):
    # gh variable set BIRD_BRAND_NAME --body "LyniaGo"
    ```
 

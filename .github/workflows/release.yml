@@ -201,8 +201,7 @@ jobs:
           OTP_WHATSAPP_UNARMED_ACK: ${{ vars.OTP_WHATSAPP_UNARMED_ACK }}
           OTP_WHATSAPP_UNARMED_ACK_EXPIRES: ${{ vars.OTP_WHATSAPP_UNARMED_ACK_EXPIRES }}
           BIRD_ENABLED: ${{ vars.BIRD_ENABLED }}
-          BIRD_WORKSPACE_ID: ${{ vars.BIRD_WORKSPACE_ID }}
-          BIRD_SMS_CHANNEL_ID: ${{ vars.BIRD_SMS_CHANNEL_ID }}
+          BIRD_SMS_FROM: ${{ vars.BIRD_SMS_FROM }}
           LOCAL_SMS_ENABLED: ${{ vars.LOCAL_SMS_ENABLED }}
           LOCAL_SMS_API_URL: ${{ vars.LOCAL_SMS_API_URL }}
         run: |
@@ -243,9 +242,9 @@ jobs:
           # the fast path chosen precisely to be armed now, so an unarmed bird deploy is always an error.
           if [ "$OTP_CHANNEL" = "bird" ]; then
             if [ "$BIRD_ENABLED" != "true" ]; then
-              errors+=("OTP_CHANNEL=bird but BIRD_ENABLED != true — no Bird credentials are injected, so every production sign-in OTP would 503. Arm Bird (BIRD_ENABLED=true + BIRD_WORKSPACE_ID / BIRD_SMS_CHANNEL_ID repo Variables + BIRD_ACCESS_KEY secret) or set OTP_CHANNEL=whatsapp.")
-            elif [ -z "$(printf '%s' "$BIRD_WORKSPACE_ID" | tr -d '[:space:]')" ] || [ -z "$(printf '%s' "$BIRD_SMS_CHANNEL_ID" | tr -d '[:space:]')" ]; then
-              errors+=("BIRD_ENABLED=true but BIRD_WORKSPACE_ID and/or BIRD_SMS_CHANNEL_ID repo Variables are empty — the service boots green yet every requestOtp 503s. Set both (Bird dashboard → Channels → your SMS channel).")
+              errors+=("OTP_CHANNEL=bird but BIRD_ENABLED != true — no Bird credentials are injected, so every production sign-in OTP would 503. Arm Bird (BIRD_ENABLED=true + BIRD_SMS_FROM repo Variable + BIRD_ACCESS_KEY secret) or set OTP_CHANNEL=whatsapp.")
+            elif [ -z "$(printf '%s' "$BIRD_SMS_FROM" | tr -d '[:space:]')" ]; then
+              errors+=("BIRD_ENABLED=true but the BIRD_SMS_FROM repo Variable is empty — Zimbabwe (+263) has no eligible sender in Bird's shared pool, so every OTP send is rejected with E12003 ('No eligible sender is available for this message') while the service still boots green. Set it to the registered sender ID (e.g. LyniaGo).")
             fi
           fi
           # Same "must actually SEND" guard for the local A2P SMS channel. LocalSmsOtpSender.send()
@@ -494,11 +493,13 @@ jobs:
 
           # Bird (bird.com) SMS OTP wiring is OPT-IN via BIRD_ENABLED=true — same reason as WhatsApp/Didit:
           # don't reference BIRD_ACCESS_KEY before it exists in Secret Manager. Set OTP_CHANNEL=bird + the
-          # BIRD_WORKSPACE_ID / BIRD_SMS_CHANNEL_ID repo Variables and the access-key secret, then flip
-          # BIRD_ENABLED=true. BIRD_BASE_URL / BIRD_BRAND_NAME / BIRD_ANDROID_SMS_HASH are optional
-          # overrides (the app defaults to api.bird.com / "LyniaGo" / no Android hash).
+          # BIRD_SMS_FROM repo Variable and the API-key secret, then flip BIRD_ENABLED=true. No workspace
+          # or channel id is needed: the key is workspace-scoped and the SMS API has no channels.
+          # BIRD_BASE_URL / BIRD_BRAND_NAME / BIRD_ANDROID_SMS_HASH are optional overrides (the app
+          # defaults to eu1.platform.bird.com / "LyniaGo" / no Android hash) — override BIRD_BASE_URL if
+          # the workspace is not in eu1.
           if [ "${{ vars.BIRD_ENABLED }}" = "true" ]; then
-            ENV_VARS="${ENV_VARS};BIRD_WORKSPACE_ID=${{ vars.BIRD_WORKSPACE_ID }};BIRD_SMS_CHANNEL_ID=${{ vars.BIRD_SMS_CHANNEL_ID }}"
+            ENV_VARS="${ENV_VARS};BIRD_SMS_FROM=${{ vars.BIRD_SMS_FROM }}"
             if [ -n "${{ vars.BIRD_BASE_URL }}" ]; then
               ENV_VARS="${ENV_VARS};BIRD_BASE_URL=${{ vars.BIRD_BASE_URL }}"
             fi
