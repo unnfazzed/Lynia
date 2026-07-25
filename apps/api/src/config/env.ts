@@ -96,7 +96,18 @@ export const envSchema = z.object({
   // as the JWT secret — the dev default / any <32-char key is rejected in production (see boot-guard).
   PII_ENCRYPTION_KEY: z.string().min(16).default(INSECURE_PII_KEY_DEFAULT),
   ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
-  REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
+  // One year. Sign-in is the ONLY place an OTP is sent, so this is what decides how often a user pays
+  // the SMS round-trip again: refresh rotates the session and re-stamps this window, so anyone who
+  // opens the app at least once a year never re-verifies (product decision 2026-07-25 — the inDrive
+  // "stay signed in" model). Only a >1y dormant user is asked for a code again.
+  //
+  // Two consequences worth knowing. (1) A stolen handset grants access for up to this long unless the
+  // session is revoked — the trade every consumer app makes, bounded by logout/revoke. (2) Phone is the
+  // account key, so the dormant users who DO re-verify are now concentrated in the 12-months-plus band,
+  // where carrier number recycling is likeliest — the window in which someone can inherit a recycled
+  // number's account. That path is unchanged here and is still only a log line (P2-8, auth.service.ts);
+  // making it measurable, and deciding how hard to gate the rebind, is tracked separately.
+  REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(31_536_000),
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
   // E4: WhatsApp default, SMS behind a flag (schedule insurance vs BSP delay). "bird" delivers the OTP
   // as an SMS via bird.com (product decision 2026-07-18) while WhatsApp Business verification is pending;

@@ -464,9 +464,15 @@ export class PrivacyService {
       data: { lat: null, lng: null },
     });
 
-    // Sessions that lapsed more than the window ago are dead auth artifacts.
+    // Sessions that lapsed more than the window ago are dead auth artifacts. A REVOKED row is dead the
+    // moment it is revoked — every refresh rotates one out, and logout revokes — so it is purged on the
+    // same clock measured from `revokedAt` rather than waiting for its original `expiresAt`. Without
+    // this a rotated-away row would linger for the whole REFRESH_TTL (a year), which is where the row
+    // count would otherwise come from. Safe: the rotation-replay grace is bounded by
+    // REFRESH_GRACE_TTL_MS (minutes), and a token replayed against a purged row still hard-rejects as
+    // an unknown session (auth.service.ts), so only the bloat is lost, not the rejection.
     const sessions = await this.prisma.session.deleteMany({
-      where: { expiresAt: { lt: sessionCutoff } },
+      where: { OR: [{ expiresAt: { lt: sessionCutoff } }, { revokedAt: { lt: sessionCutoff } }] },
     });
 
     this.logger.log(

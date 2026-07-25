@@ -461,6 +461,14 @@ jobs:
           # SCHEDULER_SERVICE_ACCOUNT lets the daily Cloud Scheduler jobs (retention purge — runbook §2)
           # authenticate with a Google OIDC token minted as the runtime SA (AdminOrSchedulerGuard).
           ENV_VARS="^;^NODE_ENV=production;APP_ENV=production;CLOUD_PROVIDER=gcp;STORAGE_BUCKET=lynia-media;GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }};OTP_CHANNEL=${{ vars.OTP_CHANNEL || 'whatsapp' }};OTP_TEST_PHONES=${{ vars.OTP_TEST_PHONES }};KYC_PROVIDER=${{ vars.KYC_PROVIDER || 'didit' }};PUSH_PROVIDER=${{ vars.PUSH_PROVIDER || 'fcm' }};MIN_SUPPORTED_APP_VERSION=${{ vars.MIN_SUPPORTED_APP_VERSION }};SCHEDULER_SERVICE_ACCOUNT=${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}"
+          # How long a signed-in user stays signed in (the app defaults to one year — see env.ts). Set
+          # the repo Variable only to override; it is here so the window can be shortened WITHOUT a code
+          # deploy, which is what you want during an incident (a device-theft report, a suspected token
+          # leak) rather than shipping a build to change a number.
+          if [ -n "${{ vars.REFRESH_TTL_SECONDS }}" ]; then
+            ENV_VARS="${ENV_VARS};REFRESH_TTL_SECONDS=${{ vars.REFRESH_TTL_SECONDS }}"
+          fi
+
           SECRETS="DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest,PII_ENCRYPTION_KEY=PII_ENCRYPTION_KEY:latest"
 
           # Didit KYC vendor wiring is OPT-IN via DIDIT_ENABLED=true. Gating it keeps launch-safe /

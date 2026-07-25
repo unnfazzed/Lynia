@@ -33,7 +33,7 @@
 | **KYC media** (selfie, ID photo) | Cloud Storage `kyc/{userId}/…` | **legal minimum** (AML/KYC) after the rider goes inactive/rejected | deleted by the bucket lifecycle — the gated `kyc_retention_days` in `infra/terraform/storage.tf` (founder enables) |
 | **Saved addresses** | `addresses` | life of the account | deleted on erasure |
 | **Device tokens** | `device_tokens` | until sign-out | deleted on sign-out (already) + on erasure |
-| **Sessions** (refresh tokens) | `sessions` | until expiry | expired sessions hard-deleted **`SESSION_RETENTION_DAYS` = 30** after they lapse |
+| **Sessions** (refresh tokens) | `sessions` | until expiry (**`REFRESH_TTL_SECONDS` = 1 year**, rolling — each refresh re-stamps it) | hard-deleted **`SESSION_RETENTION_DAYS` = 30** after they lapse **or after they are revoked**, whichever comes first |
 | **Rider KYC fields** | `riders` (`bikeReg`, `photoUrl`, `kycRef`, `kycDeclineReason`, `suspendReason`) | life of the account | scrubbed on erasure; the row is kept (ledger) |
 | **Orders, ratings, audit log** | `orders`, `ratings`, `audit_logs` | retained (financial/dispute/compliance record) | never deleted; PII references anonymise via the profile scrub, and each table's own free-text field is scrubbed directly on its author's erasure: `ratings.comment` (rater), `orders.cancelReason` (either party) |
 | **Commission wallet ledger** | `commission_accounts`, `commission_ledger`, `top_ups` | retained (financial/compliance record, same class as the above row) | never deleted; the embedded `top_ups.phone` (mobile-money number) is nulled on erasure — see `docs/KNOWN_BUGS.md` DOC-16-01 (fixed) |
@@ -83,7 +83,12 @@ same pattern as the settlement auto-pause — no in-process cron dependency) inv
 - **GPS scrub** — `order_events` older than `GPS_RETENTION_DAYS` have their coords nulled.
 - **SOS GPS scrub** — `sos_events` older than `GPS_RETENTION_DAYS` (same clock) have their coords
   nulled; the event row is kept.
-- **Session purge** — sessions that lapsed more than `SESSION_RETENTION_DAYS` ago are deleted.
+- **Session purge** — sessions that lapsed more than `SESSION_RETENTION_DAYS` ago are deleted, and so
+  are sessions **revoked** longer ago than that window. The revoked arm is what actually bounds the
+  table: every refresh rotates a row out and marks it revoked while leaving its original `expiresAt`,
+  so on a one-year `REFRESH_TTL_SECONDS` a dead row would otherwise linger for a year before the
+  lapsed arm could reach it. Safe to purge early — the rotation-replay grace is minutes, and a token
+  presented against a deleted row still hard-rejects as an unknown session.
 
 Returns the counts. A standalone run is also possible via the same service.
 
