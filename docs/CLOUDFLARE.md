@@ -53,6 +53,25 @@ cloudflare_api_token   = "<token scoped to Zone:DNS:Edit>"
 A Google-managed certificate only issues once the hostname resolves to the LB IP,
 so enabling DNS here is also what unblocks TLS for a newly-armed tier.
 
+### No Cloudflare token needed when DNS is off
+
+With `cloudflare_dns_enabled = false` you need **no** Cloudflare credentials to run
+Terraform. Leave `cloudflare_api_token` unset and `terraform init` / `validate` /
+`plan` / `import` all work against defaults.
+
+That was not always true. Until 2026-07-25 the provider received the variable's
+empty-string default directly, and its format validator rejected `""` at
+provider-configuration time — which Terraform evaluates before *every* operation,
+regardless of the `count = 0` on the DNS records. The result was that the whole
+module was unusable without a token: `scripts/adopt-vendor-secrets.sh` failed 100%
+of the time for anyone who did not have the production `terraform.tfvars`, with an
+error naming Cloudflare while the actual task was importing GCP secrets. CI never
+caught it because the nightly drift probe injects the real tfvars before running.
+
+The token is now normalised to `null` when empty (`infra/terraform/versions.tf`),
+and the `terraform validate · defaults only` CI job runs with no tfvars present so
+the same class of breakage fails at PR time instead of in someone's shell.
+
 ## First-time authorization (required, interactive)
 
 The `cloudflare` server is OAuth-gated: authorization triggers on first tool use
