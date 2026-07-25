@@ -26,7 +26,7 @@ RUNTIME_SA="lynia-run@${PROJECT}.iam.gserviceaccount.com"
 # Keep in lockstep with google_secret_manager_secret.vendor in infra/terraform/secrets.tf.
 # Names that don't exist live yet (e.g. BIRD_ACCESS_KEY before Bird arming) are fine: they are
 # skipped at import and their pending CREATE is tolerated in the plan check below.
-SECRETS=(DIDIT_API_KEY DIDIT_WEBHOOK_SECRET WHATSAPP_ACCESS_TOKEN BIRD_ACCESS_KEY)
+SECRETS=(DIDIT_API_KEY DIDIT_WEBHOOK_SECRET WHATSAPP_ACCESS_TOKEN BIRD_ACCESS_KEY BIRD_WEBHOOK_SECRET)
 LIVE=()
 
 PASS=0 FAIL=0 WARN=0

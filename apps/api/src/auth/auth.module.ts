@@ -7,6 +7,7 @@ import { AdminOrSchedulerGuard } from "./admin-or-scheduler.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { BirdWebhookController } from "./bird-webhook.controller";
 import { OTP_SENDER, selectOtpSender } from "./otp-sender";
 import { InMemoryOtpStore, OTP_STORE, type OtpStore, RedisOtpStore } from "./otp-store";
 import { TokenService } from "./token.service";
@@ -14,7 +15,7 @@ import { WhatsappWebhookController } from "./whatsapp-webhook.controller";
 
 @Global()
 @Module({
-  controllers: [AuthController, WhatsappWebhookController],
+  controllers: [AuthController, WhatsappWebhookController, BirdWebhookController],
   providers: [
     AuthService,
     TokenService,

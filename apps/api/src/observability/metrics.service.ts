@@ -38,6 +38,7 @@ type CounterName =
   | "offers_made_total"
   | "client_samples_dropped_total"
   | "whatsapp_otp_delivery_failed_total"
+  | "bird_otp_delivery_failed_total"
   | "micro_cache_requests_total"
   | "wallet_integrity_runs_total"
   | "wallet_integrity_drift_total";
@@ -216,6 +217,18 @@ export class MetricsService {
    */
   incWhatsappOtpDeliveryFailed(reason: string): void {
     this.counter("whatsapp_otp_delivery_failed_total").add(1, { reason });
+  }
+
+  /**
+   * One OTP SMS that Bird accepted (202) but never delivered, reported by the delivery-status
+   * webhook — the async half of a send failure the synchronous path cannot see. `status` is Bird's
+   * terminal event minus the `sms.` prefix (`undelivered` | `failed` | `rejected` | `expired`) and
+   * `code` its error code (e.g. `E12003`); both are closed vocabularies. The carrier's own
+   * `carrier_error_code` is deliberately excluded — it is carrier-defined and unbounded. Never the
+   * phone number.
+   */
+  incBirdOtpDeliveryFailed(status: string, code: string): void {
+    this.counter("bird_otp_delivery_failed_total").add(1, { status, code });
   }
 
   /** One completed run of the nightly wallet integrity job (roadmap 1.3) — the denominator that

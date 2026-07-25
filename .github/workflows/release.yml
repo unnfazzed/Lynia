@@ -510,6 +510,13 @@ jobs:
               ENV_VARS="${ENV_VARS};BIRD_ANDROID_SMS_HASH=${{ vars.BIRD_ANDROID_SMS_HASH }}"
             fi
             SECRETS="${SECRETS},BIRD_ACCESS_KEY=BIRD_ACCESS_KEY:latest"
+            # The delivery-status webhook arms SEPARATELY from the sender: its signing secret only
+            # exists once the Bird endpoint has been created (Bird returns whsec_… exactly once), and
+            # the deploy resolves :latest — so referencing an empty container would fail the deploy.
+            # Create the endpoint, store the secret, then flip BIRD_WEBHOOK_ENABLED=true.
+            if [ "${{ vars.BIRD_WEBHOOK_ENABLED }}" = "true" ]; then
+              SECRETS="${SECRETS},BIRD_WEBHOOK_SECRET=BIRD_WEBHOOK_SECRET:latest"
+            fi
           fi
 
           # Local A2P SMS OTP wiring (Zimbabwe fallback) is OPT-IN via LOCAL_SMS_ENABLED=true — same

@@ -106,7 +106,13 @@ resource "google_secret_manager_secret_iam_member" "runtime_access" {
 # audit until someone applies right next to live credentials. Add labels in a real apply session
 # if ever wanted.
 resource "google_secret_manager_secret" "vendor" {
-  for_each  = toset(["DIDIT_API_KEY", "DIDIT_WEBHOOK_SECRET", "WHATSAPP_ACCESS_TOKEN", "BIRD_ACCESS_KEY"])
+  for_each = toset([
+    "DIDIT_API_KEY",
+    "DIDIT_WEBHOOK_SECRET",
+    "WHATSAPP_ACCESS_TOKEN",
+    "BIRD_ACCESS_KEY",
+    "BIRD_WEBHOOK_SECRET",
+  ])
   secret_id = each.key
   project   = local.project_id
 

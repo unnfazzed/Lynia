@@ -144,6 +144,12 @@ export const envSchema = z.object({
   // rejects the send with E12003 ("No eligible sender is available for this message"), which is what
   // Zimbabwe/+263 does. Set this once a sender is registered for the destination country.
   BIRD_SMS_FROM: z.string().optional(),
+  // Signing secret for Bird's delivery-status webhook (`whsec_…`), returned EXACTLY ONCE when the
+  // endpoint is created and never retrievable again — capture it at creation or rotate the endpoint.
+  // Optional for the same boot-tradeoff as the vars above, but BirdWebhookController fails closed
+  // when it is missing in production or while Bird is the live OTP channel: an unverifiable receiver
+  // is worse than no receiver, since anyone could then forge delivery events.
+  BIRD_WEBHOOK_SECRET: z.string().optional(),
   // Plain string (not .url()) so an injected empty value can never crash boot (same tradeoff as
   // WHATSAPP_GRAPH_BASE_URL). Bird's API is REGION-SCOPED and the host must match the workspace's
   // region — `bird auth status` reports it, and the key prefix encodes it (`bk_eu1_…` → eu1). The
