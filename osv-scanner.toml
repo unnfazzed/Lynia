@@ -1,0 +1,39 @@
+# osv-scanner exceptions — read `docs/SECURITY.md` §9 (Dependency management) before adding one.
+#
+# The CI gate ("dependency audit · secret scan" in .github/workflows/ci.yml) fails the build on any
+# CVSS >= 7 advisory in pnpm-lock.yaml. That gate is the P1-1 acceptance criterion ("High-CVE PR
+# fails"), so an entry here is a deliberate, time-boxed risk acceptance — not a way to quiet noise.
+#
+# Every entry MUST carry an `ignoreUntil` so the exception expires and CI forces a re-review.
+# Prefer a `pnpm.overrides` bump in package.json; only ignore when upstream has no compatible fix.
+
+[[IgnoredVulns]]
+id = "GHSA-mh99-v99m-4gvg"
+ignoreUntil = 2026-10-31
+reason = """
+brace-expansion: DoS via unbounded expansion length causing an out-of-memory crash (CVSS 7.5).
+
+Not exploitable here, and upstream has no compatible fix:
+
+1. Build-time only. Two legacy copies remain in the tree, both behind dev/build tooling that never
+   ships into the API server or the mobile/admin runtime bundle:
+     - brace-expansion@1.1.16 <- minimatch@3 <- glob@7, @expo/cli, @expo/metro-config,
+       @expo/fingerprint, @react-native/codegen, jest-config/runtime/reporters, rimraf@2/@3
+     - brace-expansion@2.1.2  <- minimatch@9 <- glob@10 <- @expo/cli, @expo/config-plugins,
+       cacache, rimraf@5, sucrase
+   The brace patterns fed to these come from developer-authored glob config, not from user or
+   attacker input, so the OOM path is not reachable by a remote party.
+
+2. No backport exists. 1.1.16 and 2.1.2 are the final releases of their lines; the advisory covers
+   everything from 0 to the single fixed release, 5.0.8.
+
+3. Forcing 5.0.8 would break the build. v1/v2 export the expander as a bare function
+   (`module.exports = expandTop`); v5 exports it as a named property (`exports.expand`). Overriding
+   minimatch@3/@9 onto v5 makes `require('brace-expansion')` return an object, so every consumer
+   above crashes with "expand is not a function".
+
+The still-maintained 5.x line IS patched: package.json pins `brace-expansion@>=5.0.0 <5.0.8` to
+>=5.0.8 via pnpm.overrides, so this exception covers only the two legacy lines. Both should
+disappear when the Expo SDK 52 toolchain is upgraded (it owns both minimatch@3 and minimatch@9);
+re-check then, or when this entry expires.
+"""
