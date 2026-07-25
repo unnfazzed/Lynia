@@ -10,6 +10,10 @@ plain SMS while WhatsApp Business verification is still pending, and reverting i
 `OTP_CHANNEL` flip. See `docs/WHATSAPP-SETUP.md` for the WhatsApp path and `docs/PILOT-READINESS.md`
 for how vendor config reaches the running service.
 
+For driving the Bird **dashboard/API from a Claude Code session** (inspecting channels, chasing a
+message that never arrived), see [Agent tooling](#agent-tooling--mcp-server--skills) at the end of
+this doc — that is a separate, per-developer credential and is **not** part of arming the channel.
+
 ## What is already built (no code work remains)
 
 - **Sender** — `BirdOtpSender.send()` POSTs the OTP as an SMS via Bird's Channels API. It fails
@@ -148,3 +152,78 @@ gh workflow run release.yml --ref main
 
 `BIRD_ENABLED` can stay `true` (the injection is inert unless `OTP_CHANNEL=bird`), so flipping back
 to Bird later is just re-setting `OTP_CHANNEL=bird`.
+
+## Agent tooling — MCP server + skills
+
+Bird ships agent tooling so a Claude Code session can operate the Bird platform directly (list
+channels, look up a message, check a sending domain) instead of the founder clicking through the
+dashboard. Wired the same way as Cloudflare — see [`CLOUDFLARE.md`](./CLOUDFLARE.md) for the
+identical pattern.
+
+> **This is a per-developer credential, not runtime config.** The MCP server authenticates *you*
+> against your Bird account over OAuth. It is completely separate from `BIRD_ACCESS_KEY`, which is
+> the service's own key in Secret Manager and the only thing the API uses to send OTPs. Nothing in
+> this section is required to arm or run the OTP channel.
+
+### What's set up
+
+The Bird MCP server is registered at **project scope** in [`.mcp.json`](../.mcp.json), so every
+Claude Code session opened in this repo picks it up:
+
+| Server | URL                    | Auth             | Why |
+| ------ | ---------------------- | ---------------- | --- |
+| `bird` | `https://mcp.bird.com` | OAuth (per user) | Messaging, channels, contacts, sending domains, webhooks |
+
+`https://mcp.platform.bird.com` is an older alias for the same resource (same authorization server,
+`https://platform.bird.com`). Prefer `mcp.bird.com` — it is the hostname Bird's own plugin ships.
+
+### First-time authorization (required, interactive)
+
+Authorization triggers on first tool use and opens a browser to sign in to Bird. This must be done
+in an **interactive Claude Code session on your own machine** — it cannot be completed in a
+headless/remote session (the same constraint as the `cloudflare` server).
+
+1. Open this repo with `claude`.
+2. Approve the project MCP servers when prompted (project-scoped servers are `Pending approval`
+   until you accept them once).
+3. The first time a Bird tool runs, complete the OAuth flow in the browser.
+
+Check status any time with:
+
+```bash
+claude mcp list
+```
+
+### Skills (optional, per-developer)
+
+Bird also publishes **agent skills** — packaged procedures that teach the agent the `bird` CLI
+workflows (send/inspect email, manage sending domains, manage webhook endpoints), including the
+traps: a send returns `202 accepted`, which means Bird took the message, **not** that it landed, so
+the skill has the agent read the message back for the real outcome. Like gstack and the Cloudflare
+skills, these are installed per-developer, not vendored into the repo:
+
+```bash
+curl -fsSL https://cli.bird.com/install.sh | sh    # the `bird` CLI the skills drive
+claude plugin marketplace add messagebird/bird-ai
+claude plugin install bird@bird-ai
+```
+
+Then run `/reload-plugins`. Every skill gates on `bird auth status --format json` returning
+`"valid": true` before doing anything, and the CLI's exit codes are semantic — `2` bad usage/input,
+`3` not found, `4` auth denied, `1` everything else — so an agent loop can branch without parsing
+prose.
+
+> **Heads-up:** the plugin's manifest declares its *own* copy of the Bird MCP server (same
+> `https://mcp.bird.com`), so installing it on top of the `.mcp.json` entry above gives you two Bird
+> connections. They don't collide — plugin servers are scoped, so the plugin's tools arrive as
+> `mcp__plugin_bird_bird__*` while the project server's stay `mcp__bird__*` — but the tool surface
+> and its per-turn context cost are duplicated. The skills only need the `bird` CLI, not the MCP
+> server, so the cheapest setup is the project server for tools plus the plugin for skills, and
+> living with the overlap.
+
+### Reference
+
+- Marketplace: <https://github.com/messagebird/bird-ai>
+- Agent skills: <https://bird.com/docs/ai/agent-skills>
+- MCP server: <https://bird.com/docs/ai/mcp-server>
+- CLI for agents: <https://bird.com/docs/ai/cli-for-agents>
