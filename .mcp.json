@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "bird": {
+      "type": "http",
+      "url": "https://mcp.bird.com"
+    },
     "cloudflare": {
       "type": "http",
       "url": "https://mcp.cloudflare.com/mcp"
