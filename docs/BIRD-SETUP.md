@@ -69,8 +69,9 @@ Idempotency-Key: <uuid, fresh per send>
 
 Bird returns **202 Accepted** on success (`res.ok`, 200–299, covers it) — but `accepted` means Bird
 **took** the message, not that it landed. Delivery is asynchronous
-(`accepted → sent → delivered | undelivered | failed | expired`) and nothing in the send path can
-observe the outcome. Closing that gap needs the delivery-status webhook (not yet built).
+(`accepted → sent → delivered | undelivered | failed | rejected | expired`) and the send path cannot
+observe the outcome. That is what the delivery-status webhook below is for; the send logs the
+returned `sms_id` next to the **masked** number so a failure event can be traced back to a sign-in.
 
 ### Verified end-to-end (2026-07-25)
 
@@ -190,6 +191,44 @@ gh workflow run release.yml --ref main
 
 `BIRD_ENABLED` can stay `true` (the injection is inert unless `OTP_CHANNEL=bird`), so flipping back
 to Bird later is just re-setting `OTP_CHANNEL=bird`.
+
+## Delivery-status webhook (arms separately)
+
+`POST /webhooks/bird` (`bird-webhook.controller.ts`) receives Bird's async `sms.*` events — the only
+signal that an accepted OTP never reached the handset. Without it a dropped code is invisible to
+both the user (waiting forever) and ops (no log, no metric).
+
+It is **observability only**: a log line plus `bird_otp_delivery_failed_total{status,code}` per
+non-delivery, no DB write. Labels are closed vocabularies (`undelivered|failed|rejected|expired` and
+Bird's error code); the carrier's own `carrier_error_code` is excluded as unbounded, and the phone
+number never reaches a log or a label.
+
+Bird uses the **Standard Webhooks** format, verified fail-closed: HMAC-SHA256 over
+`{webhook-id}.{webhook-timestamp}.{raw body}`, base64, constant-time compared, with a **5-minute
+replay window** (a captured delivery stays validly signed forever, so age is the only thing that
+stops a replay). A signature-valid delivery whose body we cannot parse is swallowed rather than
+500'd — erroring back at Bird would trigger its retry storm for a fault that is purely ours.
+
+**Arming, in this order** (the flag is separate from `BIRD_ENABLED` because the deploy resolves
+`BIRD_WEBHOOK_SECRET:latest`, and referencing a container with zero versions fails the deploy):
+
+1. ☐ **Create the endpoint** — dashboard (Developers → Webhooks) or CLI, subscribed to the
+   non-delivery events:
+   ```bash
+   bird webhooks create https://lyniago.lyniafinance.com/webhooks/bird \
+     --events sms.delivered,sms.undelivered,sms.failed,sms.rejected,sms.expired
+   ```
+   > **Capture the `secret` (`whsec_…`) from the create response immediately** — Bird returns it
+   > exactly once and it can never be retrieved again. Losing it means recreating the endpoint.
+
+2. ☐ **Store it** as `BIRD_WEBHOOK_SECRET` in Secret Manager (same `--data-file=-` pattern as
+   step 3 above, so the value never lands in shell history), then `scripts/adopt-vendor-secrets.sh`.
+
+3. ☐ **Flip the flag and redeploy:** `gh variable set BIRD_WEBHOOK_ENABLED --body "true"`.
+
+4. ☐ **Verify** with a real delivery — `bird webhooks test <endpoint-id>` sends a live request to the
+   URL. Until step 3 lands, the receiver correctly answers **401** to everything (an unverifiable
+   receiver is worse than none), so Bird may show the endpoint as degraded in the meantime.
 
 ## Agent tooling — MCP server + skills
 

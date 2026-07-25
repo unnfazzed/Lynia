@@ -181,8 +181,17 @@ export class BirdOtpSender implements OtpSender {
       throw new ServiceUnavailableException("Couldn't send the code — try again in a moment.");
     }
     // 202 Accepted means Bird TOOK the message, not that it landed: delivery is asynchronous and the
-    // message can still end up undelivered/failed/expired. Nothing here can observe that — closing
-    // that gap needs the delivery-status webhook (docs/BIRD-SETUP.md, "Agent tooling").
+    // message can still end up undelivered/failed/expired. The outcome arrives later at
+    // BirdWebhookController, which only knows the message by its `sms_id` — so record that id here,
+    // beside the MASKED number, as the one link between a user's failed sign-in and the webhook's
+    // failure event. Best-effort: a body we can't parse must never turn a successful send into a
+    // failure, and the code is never logged.
+    try {
+      const smsId = (JSON.parse(await res.text()) as { id?: string }).id;
+      if (smsId) this.logger.log(`Bird OTP accepted → ${maskPhone(phone)} (sms_id=${smsId})`);
+    } catch {
+      // No id to correlate with — the send still succeeded, which is what this method promises.
+    }
   }
 }
 

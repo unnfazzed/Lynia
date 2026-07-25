@@ -41,6 +41,7 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `offers_made_total`             | counter   | 1    | `outcome`                       | —          |
 | `client_samples_dropped_total`  | counter   | 1    | `role`                          | —          |
 | `whatsapp_otp_delivery_failed_total` | counter | 1 | `reason`                     | —          |
+| `bird_otp_delivery_failed_total` | counter | 1 | `status`, `code`                  | —          |
 | `micro_cache_requests_total`    | counter   | 1    | `cache`, `outcome`               | —          |
 
 > **Client RUM (present, not future).** The four `client_*_latency_ms` histograms and the
@@ -147,6 +148,7 @@ courier operator actually cares about. All live in `infra/terraform/monitoring.t
 | **API 5xx rate > 2%** | `…{status_class="5xx"}… > 0.02` | Usually a bad deploy. First mitigation: re-point traffic to the previous Cloud Run revision (`rollback.yml`), then diagnose from the Sentry release + correlation IDs. |
 | **Offer-make error rate > 5%** | `offers_made_total{outcome="error"}` ratio | Riders can't bid. Distinct from `conflict`/`forbidden` (normal race/permission outcomes). Check the offers module + DB. |
 | **WhatsApp OTP delivery failures** | `sum(rate(whatsapp_otp_delivery_failed_total[5m])) > 0.2` | Users can't receive login codes. Check Meta Cloud API status + `WHATSAPP_*` config. |
+| **Bird OTP delivery failures** | `sum(rate(bird_otp_delivery_failed_total[5m])) > 0.2` | Users can't receive login codes on the SMS channel. The send returned 202, so this is the ONLY signal. Split by `status`: `rejected` is usually account-level (wallet balance, no eligible sender → `code=E12003`), `undelivered`/`expired` point at the carrier (Econet) rather than at us. `bird sms get <sms_id>` shows the per-message timeline. |
 
 **Not yet alertable — needs instrumentation first.** BullMQ **queue age/depth** and **top-up-confirm
 lag** have no metric series emitted today, so no policy can be written against them (a PromQL policy on a
