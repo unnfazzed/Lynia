@@ -128,8 +128,21 @@ describe("buildOtpSmsText", () => {
 describe("buildBirdSmsRequest", () => {
   it("addresses the recipient as an E.164 phone number (keeps the '+') with a plain-text body", () => {
     const body = buildBirdSmsRequest("+263771234567", "hello") as Record<string, unknown>;
-    expect(body.receiver).toEqual({ contacts: [{ identifierKey: "phonenumber", identifierValue: "+263771234567" }] });
-    expect(body.body).toEqual({ type: "text", text: { text: "hello" } });
+    expect(body.to).toBe("+263771234567");
+    expect(body.text).toBe("hello");
+  });
+
+  // Free-text sends are rejected without a category, and "authentication" is what tells Bird to route
+  // this as OTP traffic rather than bulk — the difference that matters on a grey-route-filtered network.
+  it("always classifies the message as authentication traffic", () => {
+    expect(buildBirdSmsRequest("+263771234567", "hello").category).toBe("authentication");
+  });
+
+  // Omitted, Bird picks from its shared pool; a destination with no eligible pool sender rejects the
+  // send (E12003), so `from` must reach the wire verbatim when configured.
+  it("omits 'from' unless a sender is configured, and passes it through when it is", () => {
+    expect(buildBirdSmsRequest("+263771234567", "hello")).not.toHaveProperty("from");
+    expect(buildBirdSmsRequest("+263771234567", "hello", { from: "LyniaGo" }).from).toBe("LyniaGo");
   });
 });
 
@@ -137,8 +150,6 @@ const birdCfg = (over: Partial<Env> = {}): Env =>
   ({
     OTP_CHANNEL: "bird",
     BIRD_ACCESS_KEY: "KEY",
-    BIRD_WORKSPACE_ID: "WS",
-    BIRD_SMS_CHANNEL_ID: "CH",
     BIRD_BASE_URL: "https://bird.example",
     BIRD_BRAND_NAME: "LyniaGo",
     ...over,
@@ -150,24 +161,62 @@ describe("BirdOtpSender.send", () => {
     await expect(sender.send("+263770000001", "111222")).rejects.toThrow(/couldn't send the verification code/i);
   });
 
-  it("POSTs the SMS to the Bird channel with the AccessKey header and resolves on 202", async () => {
+  it("POSTs to the region-scoped SMS API with a Bearer key and resolves on 202", async () => {
     let called: { url: string; init: RequestInit } | undefined;
     const fetchMock = (async (url: string, init: RequestInit) => {
       called = { url, init };
       return new Response("{}", { status: 202 });
     }) as unknown as typeof fetch;
-    await withFetch(fetchMock, () => new BirdOtpSender(birdCfg()).send("+263771234567", "123456"));
-    expect(called?.url).toBe("https://bird.example/workspaces/WS/channels/CH/messages");
-    expect((called!.init.headers as Record<string, string>).authorization).toBe("AccessKey KEY");
+    await withFetch(fetchMock, () =>
+      new BirdOtpSender(birdCfg({ BIRD_SMS_FROM: "LyniaGo" } as Partial<Env>)).send("+263771234567", "123456"),
+    );
+    // The channels route (/workspaces/{ws}/channels/{ch}/messages) answers RouteNotFound on the
+    // regional hosts — this endpoint is the one that exists.
+    expect(called?.url).toBe("https://bird.example/v1/sms/messages");
+    const headers = called!.init.headers as Record<string, string>;
+    expect(headers.authorization).toBe("Bearer KEY");
+    expect(headers["idempotency-key"]).toBeTruthy();
     const sent = JSON.parse(called!.init.body as string);
-    expect(sent.receiver.contacts[0].identifierValue).toBe("+263771234567");
-    expect(sent.body.text.text).toContain("123456");
-    expect(sent.body.text.text).toContain("LyniaGo");
+    expect(sent.to).toBe("+263771234567");
+    expect(sent.category).toBe("authentication");
+    expect(sent.from).toBe("LyniaGo");
+    expect(sent.text).toContain("123456");
+    expect(sent.text).toContain("LyniaGo");
+  });
+
+  // A resend must produce a real second SMS, so the key must differ per attempt — reusing one would
+  // let Bird dedupe the resend away and strand the user with no code.
+  it("uses a fresh idempotency key per send so a resend is never deduped away", async () => {
+    const keys: string[] = [];
+    const fetchMock = (async (_url: string, init: RequestInit) => {
+      keys.push((init.headers as Record<string, string>)["idempotency-key"]);
+      return new Response("{}", { status: 202 });
+    }) as unknown as typeof fetch;
+    await withFetch(fetchMock, async () => {
+      const sender = new BirdOtpSender(birdCfg());
+      await sender.send("+263771234567", "123456");
+      await sender.send("+263771234567", "123456");
+    });
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it("omits 'from' when no sender is configured (Bird falls back to its shared pool)", async () => {
+    let body: Record<string, unknown> | undefined;
+    const fetchMock = (async (_url: string, init: RequestInit) => {
+      body = JSON.parse(init.body as string);
+      return new Response("{}", { status: 202 });
+    }) as unknown as typeof fetch;
+    await withFetch(fetchMock, () => new BirdOtpSender(birdCfg()).send("+263771234567", "123456"));
+    expect(body).not.toHaveProperty("from");
   });
 
   it("throws when Bird rejects the send (so requestOtp errors, not a silent non-delivery)", async () => {
+    // The real shape of the rejection this guards against: no sender eligible for the destination.
     const fetchMock = (async () =>
-      new Response('{"error":{"message":"bad channel"}}', { status: 400 })) as unknown as typeof fetch;
+      new Response(
+        '{"error":{"code":"E12003","type":"validation_error","message":"No eligible sender is available for this message."}}',
+        { status: 400 },
+      )) as unknown as typeof fetch;
     await expect(
       withFetch(fetchMock, () => new BirdOtpSender(birdCfg()).send("+263770000001", "123456")),
     ).rejects.toThrow(/couldn't send/i);

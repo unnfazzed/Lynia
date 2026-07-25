@@ -131,18 +131,24 @@ export const envSchema = z.object({
   // would take the whole API down rather than just this one webhook).
   WHATSAPP_APP_SECRET: z.string().optional(),
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
-  // Bird (bird.com) SMS channel — only needed when OTP_CHANNEL=bird. Bird is a delivery pipe: we still
+  // Bird (bird.com) SMS — only needed when OTP_CHANNEL=bird. Bird is a delivery pipe: we still
   // generate/hash/verify the code ourselves (otp-store.ts), Bird only sends the SMS. BIRD_ACCESS_KEY is
-  // the secret (sent as `Authorization: AccessKey <key>`); the workspace + SMS channel IDs come from the
-  // Bird dashboard. Like the WHATSAPP_* vars these are optional so a misconfigured bird channel boots
-  // green and fails loud at send (BirdOtpSender) rather than crashing the whole API — the release
-  // workflow validates them before a production deploy.
+  // the secret — a workspace-scoped API key (`bk_<region>_…`) sent as `Authorization: Bearer <key>`.
+  // Because the key already carries the workspace, the send needs no workspace/channel id: the SMS API
+  // (POST /v1/sms/messages) has no notion of channels at all. Optional like the WHATSAPP_* vars so a
+  // misconfigured bird channel boots green and fails loud at send (BirdOtpSender) rather than crashing
+  // the whole API — the release workflow validates it before a production deploy.
   BIRD_ACCESS_KEY: z.string().optional(),
-  BIRD_WORKSPACE_ID: z.string().optional(),
-  BIRD_SMS_CHANNEL_ID: z.string().optional(),
+  // Sender shown on the OTP SMS: an alphanumeric sender ID (1–11 chars), an E.164 number, or a short
+  // code. Omitted, Bird picks from its shared pool — but a destination with no eligible pool sender
+  // rejects the send with E12003 ("No eligible sender is available for this message"), which is what
+  // Zimbabwe/+263 does. Set this once a sender is registered for the destination country.
+  BIRD_SMS_FROM: z.string().optional(),
   // Plain string (not .url()) so an injected empty value can never crash boot (same tradeoff as
-  // WHATSAPP_GRAPH_BASE_URL); the release deploy only injects it when a custom host is set.
-  BIRD_BASE_URL: z.string().default("https://api.bird.com"),
+  // WHATSAPP_GRAPH_BASE_URL). Bird's API is REGION-SCOPED and the host must match the workspace's
+  // region — `bird auth status` reports it, and the key prefix encodes it (`bk_eu1_…` → eu1). The
+  // default is eu1; override per-deploy for a workspace in another region (e.g. us1).
+  BIRD_BASE_URL: z.string().default("https://eu1.platform.bird.com"),
   // Brand shown in the OTP SMS body ("<code> is your <brand> verification code."). The product/company
   // name — LyniaGo — not the repo name. Overridable per-deploy without a code change.
   BIRD_BRAND_NAME: z.string().default("LyniaGo"),

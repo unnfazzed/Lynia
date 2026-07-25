@@ -178,7 +178,8 @@ describe("loadEnv — production launch-hygiene boot-guards", () => {
     // workflow, so it boots green like the whatsapp channel rather than being rejected here.
     const env = loadEnv({ ...prodBase, OTP_CHANNEL: "bird" });
     expect(env.OTP_CHANNEL).toBe("bird");
-    expect(env.BIRD_BASE_URL).toBe("https://api.bird.com");
+    // Bird's API is region-scoped; the host must match the workspace's region (bk_eu1_… → eu1).
+    expect(env.BIRD_BASE_URL).toBe("https://eu1.platform.bird.com");
     expect(env.BIRD_BRAND_NAME).toBe("LyniaGo");
   });
 
