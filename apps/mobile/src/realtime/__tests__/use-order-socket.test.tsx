@@ -145,3 +145,76 @@ describe("useOrderSocket Trip History self-heal (WD-022)", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: HISTORY_KEY });
   });
 });
+
+describe("useOrderSocket rider presence recovery (BH-25)", () => {
+  // Regression guard: the server now pushes presence:recovered role:"rider" when a previously-escalated
+  // rider is no longer dark (either a fresh GPS fix resumed, already handled by the `position` handler,
+  // or a heartbeat-lag self-heal with NO fresh GPS push coming at all). Before this fix the customer's
+  // socket hook had no listener for it, so a self-healed order's "rider offline" card stayed stuck until
+  // the ride's next status change.
+  // PresenceRecoveredEvent.orderId is a strict `z.string().uuid()` (unlike this file's other fixtures'
+  // "order-N" ids) — a non-UUID payload fails safeParse and the handler no-ops before ever reaching the
+  // role/orderId checks, so these need real UUIDs to actually exercise the listener.
+  const ORDER_4 = "44444444-4444-4444-8444-444444444444";
+  const ORDER_5 = "55555555-5555-4555-8555-555555555555";
+  const ORDER_6 = "66666666-6666-4666-8666-666666666666";
+
+  it("refetches the order snapshot on presence:recovered role:rider for THIS order", () => {
+    const qc = new QueryClient();
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId={ORDER_4} />
+        </QueryClientProvider>,
+      );
+    });
+
+    const spy = jest.spyOn(qc, "invalidateQueries");
+    act(() => {
+      mockLastSocket.trigger("presence:recovered", { orderId: ORDER_4, role: "rider", at: "2026-07-25T00:00:00Z" });
+    });
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: orderKey(ORDER_4) });
+  });
+
+  it("ignores presence:recovered role:customer (that's this app's OWN staleness, not the rider's)", () => {
+    const qc = new QueryClient();
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId={ORDER_5} />
+        </QueryClientProvider>,
+      );
+    });
+
+    const spy = jest.spyOn(qc, "invalidateQueries");
+    spy.mockClear();
+    act(() => {
+      mockLastSocket.trigger("presence:recovered", { orderId: ORDER_5, role: "customer", at: "2026-07-25T00:00:00Z" });
+    });
+
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: orderKey(ORDER_5) });
+  });
+
+  it("ignores presence:recovered for a DIFFERENT order id (a leaked cross-order event)", () => {
+    const qc = new QueryClient();
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId={ORDER_6} />
+        </QueryClientProvider>,
+      );
+    });
+
+    const spy = jest.spyOn(qc, "invalidateQueries");
+    spy.mockClear();
+    act(() => {
+      mockLastSocket.trigger("presence:recovered", { orderId: "77777777-7777-4777-8777-777777777777", role: "rider", at: "2026-07-25T00:00:00Z" });
+    });
+
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: orderKey(ORDER_6) });
+  });
+});

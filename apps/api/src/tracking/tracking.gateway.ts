@@ -120,6 +120,11 @@ export class TrackingGateway
    *  continuously-dark customer is escalated once. Re-armed on the customer's re-subscribe. */
   private readonly customerStaleNotified = new Set<string>();
 
+  /** BH-25: serializes concurrent board:subscribe/board:leave invocations for the SAME socket so their
+   *  leave/join loops over the mutable `client.rooms` Set can't interleave (see runBoardOpSerialized).
+   *  Keyed by socket id; cleared on disconnect so it never outlives the socket. */
+  private readonly boardOpChain = new Map<string, Promise<unknown>>();
+
   constructor(
     @Inject(ENV) private readonly env: Env,
     private readonly tokens: TokenService,
@@ -171,6 +176,9 @@ export class TrackingGateway
    * isn't lost once the key expires. Best-effort — a flush failure must never surface to the socket.
    */
   handleDisconnect(client: Socket): void {
+    // BH-25: drop this socket's board-op serialization chain — it can never outlive the connection, and
+    // leaving it would grow the map unboundedly across reconnects on a long-lived instance.
+    this.boardOpChain.delete(client.id);
     // C5 customer-presence: release the customer's rooms first (independent of the rider flush). The
     // last customer socket dropping off an order starts its dark clock; scanPresence escalates it if
     // the ride is still active PRESENCE_ESCALATION_MS later.
@@ -273,6 +281,24 @@ export class TrackingGateway
     }
   }
 
+  /** BH-25: run `op` after any board-room mutation already in flight for this socket finishes, so
+   *  overlapping board:subscribe/board:leave calls on the same socket never interleave their
+   *  leave/join loops against the shared `client.rooms` Set. Chains onto the prior op regardless of
+   *  whether it resolved or rejected (a failed op must not wedge the queue for the next one); this
+   *  call's own rejection still propagates to its caller. */
+  private runBoardOpSerialized<T>(socketId: string, op: () => Promise<T>): Promise<T> {
+    const prior = this.boardOpChain.get(socketId) ?? Promise.resolve();
+    const result = prior.then(op, op);
+    this.boardOpChain.set(
+      socketId,
+      result.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return result;
+  }
+
   /**
    * A KYC-verified, online rider subscribes to the new-order board (§3.10). With a position (lat &
    * lng) the board is geo-scoped: the rider joins its cell + 8 neighbours (3×3), so it only receives
@@ -291,30 +317,41 @@ export class TrackingGateway
 
     const { lat, lng } = BoardSubscribeEvent.parse(body ?? {});
 
-    // Re-scope cleanly: drop any board room this socket already sits in (a prior geo neighbourhood or
-    // the city-wide room) before joining the fresh set, so moving riders don't accumulate stale rooms.
-    for (const room of client.rooms) {
-      if (room.startsWith("board:geo:") || room === BOARD_ROOM) await client.leave(room);
-    }
+    // BH-25: the leave/join loops below are serialized per-socket (see runBoardOpSerialized) — Socket.IO
+    // does not queue concurrent event invocations for the same client, so two board:subscribe calls (or
+    // a subscribe racing a leave) arriving close together would otherwise interleave their awaits against
+    // the same mutable `client.rooms` Set and could leave the socket joined to BOTH a stale room and the
+    // fresh one, defeating the geo-scoping this re-scope exists to guarantee.
+    return this.runBoardOpSerialized(client.id, async () => {
+      // Re-scope cleanly: drop any board room this socket already sits in (a prior geo neighbourhood or
+      // the city-wide room) before joining the fresh set, so moving riders don't accumulate stale rooms.
+      for (const room of client.rooms) {
+        if (room.startsWith("board:geo:") || room === BOARD_ROOM) await client.leave(room);
+      }
 
-    if (lat !== undefined && lng !== undefined) {
-      const rooms = boardCellNeighborhood(lat, lng).map(boardGeoRoom);
-      for (const room of rooms) await client.join(room);
-      return { joined: rooms.length };
-    }
-    await client.join(BOARD_ROOM);
-    return { joined: "board" };
+      if (lat !== undefined && lng !== undefined) {
+        const rooms = boardCellNeighborhood(lat, lng).map(boardGeoRoom);
+        for (const room of rooms) await client.join(room);
+        return { joined: rooms.length };
+      }
+      await client.join(BOARD_ROOM);
+      return { joined: "board" };
+    });
   }
 
   /** Rider leaves the board (go-offline / unmount). */
   @SubscribeMessage(WS_EVENTS.boardLeave)
   async boardLeave(@ConnectedSocket() client: Socket): Promise<{ left: string }> {
-    // Leave the city-wide room AND every geo-cell room a located subscribe joined (boardSubscribe joins
-    // a 3×3 neighbourhood) — otherwise an offline rider keeps receiving new-order pushes on those rooms.
-    for (const room of client.rooms) {
-      if (room.startsWith("board:geo:") || room === BOARD_ROOM) await client.leave(room);
-    }
-    return { left: "board" };
+    // BH-25 sibling: same per-socket serialization as boardSubscribe — a leave racing a subscribe on the
+    // same socket shares the exact mutate-the-live-`client.rooms`-Set-across-awaits shape.
+    return this.runBoardOpSerialized(client.id, async () => {
+      // Leave the city-wide room AND every geo-cell room a located subscribe joined (boardSubscribe joins
+      // a 3×3 neighbourhood) — otherwise an offline rider keeps receiving new-order pushes on those rooms.
+      for (const room of client.rooms) {
+        if (room.startsWith("board:geo:") || room === BOARD_ROOM) await client.leave(room);
+      }
+      return { left: "board" };
+    });
   }
 
   @SubscribeMessage(WS_EVENTS.riderLocation)
@@ -631,11 +668,18 @@ export class TrackingGateway
       const stale = await this.tracking.findStaleRiderPresence(PRESENCE_ESCALATION_MS);
       const staleIds = new Set(stale.map((s) => s.orderId));
       // Drop recovered/ended orders so a reconnect re-arms the one-shot escalation — and release the
-      // cluster-wide claim so the re-arm works across instances, not just this one.
+      // cluster-wide claim so the re-arm works across instances, not just this one. BH-25: mirror the
+      // customer-side recovery emit (markCustomerPresent's `emitPresenceRecovered(orderId, "customer")`)
+      // for this direction too — an order dropping out of `staleIds` here means either the rider's
+      // heartbeat resumed naturally OR `riderLiveInRoom`'s self-heal touched it (a false-positive dark
+      // reading from heartbeat-write lag, not a real GPS gap, so no fresh `position` push is coming to
+      // clear the customer's "rider offline" card on its own). Without this, a self-healed order stayed
+      // stuck showing stale until the ride's next status change.
       for (const id of this.staleNotified) {
         if (!staleIds.has(id)) {
           this.staleNotified.delete(id);
           void this.tracking.releasePresenceEscalation(`rider:${id}`);
+          this.emitPresenceRecovered(id, "rider");
         }
       }
       for (const s of stale) {

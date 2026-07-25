@@ -1,4 +1,10 @@
-import { OrderRebroadcastEvent, PresenceStaleEvent, WS_EVENTS, type OffersChangedEvent } from "@lynia/shared";
+import {
+  OrderRebroadcastEvent,
+  PresenceRecoveredEvent,
+  PresenceStaleEvent,
+  WS_EVENTS,
+  type OffersChangedEvent,
+} from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
@@ -97,6 +103,17 @@ export function useOrderSocket(
       const parsed = PresenceStaleEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId || parsed.data.role !== "rider") return;
       riderStaleRef.current?.();
+    });
+
+    // BH-25: mirror of the above — the rider's dark period ended (either a fresh GPS fix resumed, which
+    // the `position` handler below already reconciles, or the server self-healed a heartbeat-lag false
+    // positive with no GPS push coming). Refetch so a self-heal (no `position` push) still picks up the
+    // freshly-touched `rider.updatedAt` and clears the "rider offline" card — otherwise it stayed stuck
+    // until the ride's next status change.
+    socket.on(WS_EVENTS.presenceRecovered, (raw: unknown) => {
+      const parsed = PresenceRecoveredEvent.safeParse(raw);
+      if (!parsed.success || parsed.data.orderId !== orderId || parsed.data.role !== "rider") return;
+      refetchOrder();
     });
 
     // New live-auction signal: the offer set changed. Payload is signal-only; refetch the offer list.
