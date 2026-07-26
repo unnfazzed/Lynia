@@ -109,6 +109,18 @@ export const envSchema = z.object({
   // making it measurable, and deciding how hard to gate the rebind, is tracked separately.
   REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(31_536_000),
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  // OTP send caps (auth.service.ts `rlFrom`). Overridable so the ceiling can be TIGHTENED during an
+  // incident, or widened for a launch push, without shipping code — the lever you want at 2am.
+  //
+  // The global daily cap is a SPEND ceiling as much as an abuse one: `POST /auth/otp/request` is
+  // unauthenticated because it IS the signup entry point, and on the live Bird channel each send costs
+  // ~EUR 0.195. So worst-case daily spend is roughly OTP_RL_GLOBAL_MAX x that price. The default is
+  // sized for a pilot (500/day ~ EUR 98/day), not for launch volume — raise the repo Variable before
+  // opening signups, or real users will hit the ceiling.
+  OTP_RL_PHONE_MAX: z.coerce.number().int().positive().default(5), // per phone, per hour
+  OTP_RL_IP_MAX: z.coerce.number().int().positive().default(20), // per IP, per hour
+  OTP_RL_GLOBAL_MAX: z.coerce.number().int().positive().default(500), // all senders, per day
+  OTP_RL_DEVICE_SIGNUP_MAX: z.coerce.number().int().positive().default(3), // NEW accounts per device, per day
   // E4: WhatsApp default, SMS behind a flag (schedule insurance vs BSP delay). "bird" delivers the OTP
   // as an SMS via bird.com (product decision 2026-07-18) while WhatsApp Business verification is pending;
   // "local-sms" delivers via a local A2P gateway (the Zimbabwe fallback for when Bird's international
