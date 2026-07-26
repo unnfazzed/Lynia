@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminPost } from "../lib/api";
+import { adminPostResult, describeAdminPostFailure } from "../lib/api";
 
 /** Approve/decline a rider's KYC from the review queue (the manual T7 backstop). */
 export async function setKyc(formData: FormData): Promise<void> {
@@ -10,8 +10,8 @@ export async function setKyc(formData: FormData): Promise<void> {
   if (!profileId || !(status === "verified" || status === "failed" || status === "pending")) return;
 
   // Surface a failed compliance write — silently failing-open on a KYC decision is unacceptable.
-  const ok = await adminPost(`/admin/riders/${profileId}/kyc`, { status });
-  if (!ok) throw new Error(`Failed to set KYC=${status} for rider ${profileId} (check API_BASE_URL / admin token).`);
+  const res = await adminPostResult(`/admin/riders/${profileId}/kyc`, { status });
+  if (!res.ok) throw new Error(`Failed to set KYC=${status} for rider ${profileId}: ${describeAdminPostFailure(res)}`);
   revalidatePath("/riders");
 }
 
@@ -31,8 +31,8 @@ export async function decideKyc(
 ): Promise<void> {
   const body =
     status === "failed" ? { status, reasonCode, note: note || null } : { status, note: note || null };
-  const ok = await adminPost(`/admin/riders/${profileId}/kyc`, body);
-  if (!ok) throw new Error(`Failed to record KYC ${status} for rider ${profileId} (check API_BASE_URL / admin token).`);
+  const res = await adminPostResult(`/admin/riders/${profileId}/kyc`, body);
+  if (!res.ok) throw new Error(`Failed to record KYC ${status} for rider ${profileId}: ${describeAdminPostFailure(res)}`);
   revalidatePath(`/riders/${profileId}/kyc`);
   // Also refresh the rider-detail page — it renders the KYC status pill this decision changes.
   revalidatePath(`/riders/${profileId}`);
@@ -60,11 +60,11 @@ export async function mutateRider(
   // The suspend/ban/lift/clear-hold endpoints bind ReasonRequired/ReasonOptional = { reason, note? } —
   // NOT the audit envelope. Send `reason` (the reason-code radio), not `reasonCode`, or the write 400s
   // (suspend/ban need a non-empty reason, which the modal enforces; lift/clear-hold's is optional).
-  const ok = await adminPost(`/admin/riders/${profileId}/${action}`, {
+  const res = await adminPostResult(`/admin/riders/${profileId}/${action}`, {
     reason: reasonCode ?? "",
     note: note || null,
   });
-  if (!ok) throw new Error(`Failed to ${action} rider ${profileId} (check API_BASE_URL / admin token).`);
+  if (!res.ok) throw new Error(`Failed to ${action} rider ${profileId}: ${describeAdminPostFailure(res)}`);
   revalidatePath(`/riders/${profileId}`);
   revalidatePath("/riders");
 }
@@ -93,12 +93,12 @@ export async function creditRiderWallet(
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error("Enter a positive amount to credit.");
   }
-  const ok = await adminPost(`/admin/riders/${profileId}/wallet-credit`, {
+  const res = await adminPostResult(`/admin/riders/${profileId}/wallet-credit`, {
     amount: value,
     rail: "manual",
     idempotencyKey: idempotencyKey && idempotencyKey.length > 0 ? idempotencyKey : crypto.randomUUID(),
     note: note || null,
   });
-  if (!ok) throw new Error(`Failed to credit rider ${profileId}'s wallet (check API_BASE_URL / admin token).`);
+  if (!res.ok) throw new Error(`Failed to credit rider ${profileId}'s wallet: ${describeAdminPostFailure(res)}`);
   revalidatePath(`/riders/${profileId}`);
 }

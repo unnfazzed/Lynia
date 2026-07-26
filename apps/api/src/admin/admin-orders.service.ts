@@ -323,6 +323,7 @@ export class AdminOrdersService {
           auditId: null as string | null,
           customerId: order.customerId,
           riderId: order.riderId,
+          status: order.status,
           noop: true,
         };
       }
@@ -395,6 +396,7 @@ export class AdminOrdersService {
         auditId: audit.id as string | null,
         customerId: order.customerId,
         riderId,
+        status: fresh?.status ?? order.status,
         noop: false,
       };
     });
@@ -414,10 +416,18 @@ export class AdminOrdersService {
       data: { orderId, kind: "order" },
     });
     if (result.riderId) {
+      // UX26-03: `status` is stamped ONLY on the rider's own push — pushDestination's generic
+      // RIDER_JOB_SCREEN_STATUSES/RIDER_BOARD_STATUSES checks don't gate on the `to` field the way
+      // notificationRowDestination's feed-row equivalent does (they trust that a status-carrying push
+      // is only ever sent to the party STATUS_NOTICES designates), so stamping it on the CUSTOMER's
+      // push too would misroute a customer to /rider/job (assigned) or /rider (completed). Scoping it
+      // to the rider's push keeps that invariant intact while letting a rider still on the exact
+      // `assigned` job land on `/rider/job` directly, matching every other `assigned`-status touchpoint
+      // instead of one extra tap through `/order/:id`.
       void this.notifications?.notifyProfiles([result.riderId], {
         title: "A delivery's fare was updated",
         body: `The fare for order ${orderId} was corrected to $${result.agreedFare}.`,
-        data: { orderId, kind: "order" },
+        data: { orderId, kind: "order", status: result.status },
       });
     }
     return { id: result.id, agreedFare: result.agreedFare, auditId: result.auditId };

@@ -380,6 +380,26 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(notified.find((n) => n.profileIds[0] === "r1")!.msg).toMatchObject({ title: "A delivery's fare was updated" });
   });
 
+  it("UX26-03: adjustFare's rider push carries the order's current status (routes to /rider/job when assigned), but the customer push never does", async () => {
+    const { prisma } = makeTx({
+      order: { id: "o1", status: "assigned", agreedFare: dec("6.00"), riderId: "r1", customerId: "c1" },
+    });
+    const notified: Array<{ profileIds: string[]; msg: { data?: Record<string, unknown> } }> = [];
+    const notifications = {
+      notifyProfiles: async (profileIds: string[], msg: { data?: Record<string, unknown> }) => {
+        notified.push({ profileIds, msg });
+      },
+    } as unknown as NotificationsService;
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, notifications);
+    await svc.adjustFare("admin-1", "o1", { agreedFare: 7.5, reason: "GPS overcharge" });
+    const riderMsg = notified.find((n) => n.profileIds[0] === "r1")!.msg;
+    const customerMsg = notified.find((n) => n.profileIds[0] === "c1")!.msg;
+    expect(riderMsg.data).toEqual({ orderId: "o1", kind: "order", status: "assigned" });
+    // Stamping `status` on the customer's push too would misroute them via pushDestination's ungated
+    // RIDER_JOB_SCREEN_STATUSES check (see the comment at the call site) — must stay absent.
+    expect(customerMsg.data).toEqual({ orderId: "o1", kind: "order" });
+  });
+
   it("adjustFare rejects an order that never had an agreed fare (nothing written)", async () => {
     const { prisma, calls } = makeTx({ order: { id: "o1", status: "open_for_offers", agreedFare: null } });
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);

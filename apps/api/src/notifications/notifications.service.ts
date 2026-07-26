@@ -298,6 +298,7 @@ export class NotificationsService {
     profileId: string,
     orderId: string,
     resolution: "refund" | "rider_strike" | "close_no_action",
+    riderOrderStatus?: string,
   ): Promise<void> {
     try {
       const copy =
@@ -306,7 +307,15 @@ export class NotificationsService {
           : resolution === "rider_strike"
             ? { title: "Your report was resolved", body: "We've taken action on this trip — thanks for flagging it." }
             : { title: "Your report was resolved", body: "We looked into this trip and closed it out — tap for details." };
-      await this.send([profileId], { ...copy, data: { orderId, kind: "issue" } });
+      // UX26-03 sibling: `riderOrderStatus` is only ever passed when the opener IS the rider (see
+      // IssuesService.resolve) — see AdminOrdersService.adjustFare for why this must stay scoped to the
+      // rider's own push and never stamped on a customer's.
+      const data: Record<string, string> = { orderId, kind: "issue" };
+      if (riderOrderStatus !== undefined) {
+        data.status = riderOrderStatus;
+        data.to = "rider";
+      }
+      await this.send([profileId], { ...copy, data });
     } catch (err) {
       this.logger.warn(`notifyIssueResolved(${orderId}) failed: ${(err as Error).message}`);
     }
