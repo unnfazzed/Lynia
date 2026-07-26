@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { IssueResolution, ResolveIssueRequest } from "@lynia/shared";
-import { adminPost } from "../lib/api";
+import { adminPostResult, describeAdminPostFailure } from "../lib/api";
 
 /**
  * Resolve a dispute (A-05) — the domain half of a <ConfirmModal> confirm on the investigation screen.
@@ -27,8 +27,8 @@ export async function resolveIssue(
     ...(resolution === "refund" && refundAmount ? { refundAmount: Number(refundAmount) } : {}),
   };
 
-  const ok = await adminPost(`/admin/issues/${id}/resolve`, body);
-  if (!ok) throw new Error(`Failed to resolve issue ${id} as ${resolution} (check API_BASE_URL / admin token).`);
+  const res = await adminPostResult(`/admin/issues/${id}/resolve`, body);
+  if (!res.ok) throw new Error(`Failed to resolve issue ${id} as ${resolution}: ${describeAdminPostFailure(res)}`);
 
   revalidatePath(`/issues/${id}`);
   revalidatePath("/issues");

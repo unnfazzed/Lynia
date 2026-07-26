@@ -297,6 +297,9 @@ export class NotificationsFeedService {
     ]);
     const orderIdsWithOffers = new Set<string>(withOffers.map((o) => o.orderId));
     const adjudicatedOrderIds = new Set<string>(adjudicated.map((a) => a.target));
+    // UX26-03: shared by the fare-adjust and resolved-issue rows below — both need to look an orderId
+    // back up against the already-fetched, lookback-bounded `orders` list to derive `to`/`status`.
+    const orderById = new Map(orders.map((o) => [o.id, o]));
 
     const rows: NotificationRow[] = [];
     for (const order of orders) {
@@ -421,7 +424,6 @@ export class NotificationsFeedService {
     // order.rider_standing_notice does below — one batched query over the orders already in view — but
     // scoped to ALL orderIds (not just customerViewOrderIds), since adjustFare pushes both parties.
     if (fareAdjustments.length > 0) {
-      const orderById = new Map(orders.map((o) => [o.id, o]));
       for (const a of fareAdjustments) {
         const order = orderById.get(a.target);
         if (!order) continue; // defensive: target always one of the queried orders
@@ -432,6 +434,12 @@ export class NotificationsFeedService {
           id: `fare-adjust:${a.id}`,
           orderId: a.target,
           to: isCustomerView ? "customer" : "rider",
+          // UX26-03: the order's CURRENT status (the last event in the ascending-ordered `events` list
+          // this query selects — there's no top-level `status` column on this projection), so
+          // notificationRowDestination can route a rider still on the exact `assigned`/`cancelled` job
+          // straight to `/rider/job` (gated on `to === "rider"` there, so this is safe to stamp
+          // unconditionally — unlike pushDestination's ungated equivalent check).
+          status: order.events.at(-1)?.status,
           icon: "banknote",
           title: "Fare updated",
           message:
@@ -555,9 +563,15 @@ export class NotificationsFeedService {
       if (!issue.resolution || !issue.resolvedAt) continue; // defensive: resolved rows always carry both
       const copy = ISSUE_RESOLUTION_FEED_COPY[issue.resolution];
       const at = issue.resolvedAt.toISOString();
+      // UX26-03 sibling: the order may be outside FEED_ORDER_LOOKBACK (this loop is deliberately not
+      // bounded by it, per the comment above) — `order` is undefined in that case and `to`/`status`
+      // stay unset, falling back to the existing `/order/:id` routing rather than guessing.
+      const order = orderById.get(issue.orderId);
       rows.push({
         id: `issue:${issue.id}`,
         orderId: issue.orderId,
+        to: order ? (order.riderId === userId ? "rider" : "customer") : undefined,
+        status: order ? order.events.at(-1)?.status : undefined,
         icon: "check",
         title: copy.title,
         message: copy.message,

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminPostResult } from "../lib/api";
+import { adminPostResult, describeAdminPostFailure } from "../lib/api";
 
 /**
  * Acknowledge an SOS (DS13-05) — the ops write that marks an emergency alert as being handled. POSTs
@@ -15,17 +15,10 @@ import { adminPostResult } from "../lib/api";
  */
 export async function acknowledgeSos(id: string): Promise<void> {
   const res = await adminPostResult(`/admin/sos/${id}/ack`, {});
-  if (!res.ok && res.reason !== "unconfigured") {
-    // UX-2026-07-16: this used to say "check API_BASE_URL / admin token" for EVERY failure — dev/infra
-    // diagnosis text shown to an operator mid-SOS-triage regardless of the real cause (an expired
-    // session, a stale row, a genuine server error). Classify by the actual reason instead.
-    const message =
-      res.reason === "unreachable"
-        ? "Couldn't reach the server — try again."
-        : res.status === 401 || res.status === 403
-          ? "Your session may have expired — reload the page."
-          : `The server rejected this (HTTP ${res.status}) — try again or check with engineering.`;
-    throw new Error(message);
-  }
+  // UX-2026-07-16: this used to say "check API_BASE_URL / admin token" for EVERY failure — dev/infra
+  // diagnosis text shown to an operator mid-SOS-triage regardless of the real cause (an expired
+  // session, a stale row, a genuine server error). describeAdminPostFailure (UX26-02) classifies by
+  // the actual reason instead; `unconfigured` stays a silent no-op here (the offline/demo path).
+  if (!res.ok && res.reason !== "unconfigured") throw new Error(describeAdminPostFailure(res));
   revalidatePath("/sos");
 }

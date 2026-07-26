@@ -103,6 +103,37 @@ describe("clearDeviceState (full key-wipe characterization, RF-10 pin)", () => {
   });
 });
 
+// Regression guard (UX26-01): a device whose keystore can't persist writes must still be able to sign
+// up. Before this fix, a thrown SecureStore.setItemAsync escaped getDeviceId(), client.ts's
+// `.catch(() => null)` silently omitted `x-device-id`, and auth.service.ts hard-rejects new-account
+// creation with no device id — a permanent onboarding dead end with no recovery path.
+describe("getDeviceId (keystore resilience)", () => {
+  it("falls back to a process-lifetime id instead of throwing when the keystore write fails", async () => {
+    jest.resetModules();
+    mockGetItemAsync.mockResolvedValueOnce(null);
+    mockSetItemAsync.mockRejectedValueOnce(new Error("keystore write failed"));
+    const { getDeviceId: freshGetDeviceId } = require("../session") as typeof import("../session");
+    await expect(freshGetDeviceId()).resolves.toEqual(expect.any(String));
+  });
+
+  it("falls back to a process-lifetime id instead of throwing when the keystore read fails", async () => {
+    jest.resetModules();
+    mockGetItemAsync.mockRejectedValueOnce(new Error("keystore decrypt failed"));
+    const { getDeviceId: freshGetDeviceId } = require("../session") as typeof import("../session");
+    await expect(freshGetDeviceId()).resolves.toEqual(expect.any(String));
+  });
+
+  it("caches and returns the same id across calls on a healthy keystore", async () => {
+    jest.resetModules();
+    mockGetItemAsync.mockResolvedValueOnce(null);
+    mockSetItemAsync.mockResolvedValueOnce(undefined);
+    const { getDeviceId: freshGetDeviceId } = require("../session") as typeof import("../session");
+    const first = await freshGetDeviceId();
+    const second = await freshGetDeviceId();
+    expect(second).toBe(first);
+  });
+});
+
 // Regression guard: the getItemAsync read itself can THROW (not just JSON.parse) when the keystore
 // entry can't be decrypted — a documented expo-secure-store failure on low-end Android. If that
 // rejection escapes loadSession, the boot load in auth-context never resolves and the app hangs on the
