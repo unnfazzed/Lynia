@@ -6,7 +6,16 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-25 (bug-hunt routine — agentic-loop hunt over the bug-hunt lane; see the
+**Last consolidated:** 2026-07-26 (deep-sweep routine — agentic-loop hunt over the deep-sweep lane; see
+the "Deep sweep 2026-07-26" section near the bottom and `docs/DEEP-SWEEP-2026-07-26.md`. **Clean run,
+zero new findings**: Phase 1 (5 finder lenses) returned 0 candidates, Phase 1.5's PII-across-
+representations seam trace found the invariant intact, Phase 3's adversarial API pass found zero new
+gaps, and Phase 0.5 re-verified the Notifications/FCM, Edge/abuse, and Auth/identity cluster headers as
+all INTACT. Fable-5 was unavailable all run (usage limit) — Phase 1/0.5/3 fell back to the session model
+per the routine's explicit fallback policy, noted in the report. One open `claude/*` sibling PR at Phase
+0 (#392, UX26-01/02/03) — out of lane, no overlap. Docs-only PR (report + this ledger entry); no code
+changed.
+Prior: 2026-07-25 (bug-hunt routine — agentic-loop hunt over the bug-hunt lane; see the
 "Bug hunt 2026-07-25 night" section near the bottom and `docs/BUG-HUNT-2026-07-25.md` for BH-25a/BH-25b —
 both MEDIUM, both fixed same-run with regression tests. BH-25a: `presence:recovered` role:"rider" was
 never emitted by `scanPresence()`'s stale-rider recovery loop (the customer→rider mirror of BH-08's
@@ -1918,3 +1927,34 @@ run's independent code read found that the hunt's sweep missed) — all 10 fixed
 
 **Phase 0.5 cluster headers checked:** KYC, Object-authz/IDOR, Mobile-journey-dead-ends — 3/3 intact, no
 fresh findings.
+
+---
+
+## Deep sweep 2026-07-26 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-26.md`
+
+**Clean run — zero new findings.** Phase 0: one open `claude/*` sibling PR (#392, tonight's UX26-01/02/03,
+out of lane, no overlap); also noted two commits already on `main` from an earlier interactive session
+(`65350ff`, `e2d8d36` — closed the per-device signup-cap bypass and the SIM-recycle blank-device-id
+detection bypass in `auth.service.ts`) so the hunt didn't re-derive them. Phase 0.5 rotated to
+**Notifications/FCM**, **Edge/abuse**, and **Auth/identity** (the last re-checked given tonight's two
+device-id commits landed in the same file) — all 3 **INTACT**, 0 stale claims. Phase 1
+(`lane-bug-hunt` agentic loop, 5 finder lenses: tx-rollback, concurrency-idempotency, authz-IDOR,
+timer-expiry, adversarial-API) returned **0 candidates from all 5 lenses**. Phase 1.5 (cross-lane seams
+pass, rotation) picked the last unused seam in the standing menu — **PII across representations** —
+traced the schema-coverage guard (38/38 tests green), every JSON-embedded PII sibling
+(`Order.pickup`/`dropoff` waypoint `contactPhone`), every storage-object sibling (`kyc-object`,
+`item_photo_url`, `pickup_photo_key`, `delivery_proof_key` all delete in lockstep with their DB-pointer
+null in `postCommitPurge`), and Redis-resident PII outside the schema scan's reach (`otp:<phone>` keys
+are self-expiring, not a durable-erasure gap) — **seam INTACT, no fresh finding**. Phase 3 (adversarial
+direct-API pass, 7 attack classes across orders/offers/wallet/admin/issues/sos/uploads/privacy/auth/kyc/
+riders/reports + all three webhook controllers) — **zero new gaps**, every candidate traced to an
+existing control.
+
+**Model note:** Fable-5 was unavailable the entire run (`"You've reached your Fable 5 limit"` on every
+Phase-1 finder agent, confirmed on a second attempt); Phase 1/0.5/3 fell back to the session model
+(Sonnet 5) per the routine's explicit fallback policy — the hunt still ran at full depth (5 lenses × up
+to 3-skeptic adversarial verify × sibling-sweep, ~650k subagent tokens). A future run should retry the
+Fable/Opus split rather than assume this run's clean result was a lighter-weight pass.
+
+No code changes this run (docs-only: this ledger entry + `docs/DEEP-SWEEP-2026-07-26.md`, which also
+supersedes and replaces `docs/DEEP-SWEEP-2026-07-21.md` per the report-retention policy).
