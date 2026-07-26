@@ -239,10 +239,15 @@ export class MetricsService {
    * passing the OTP may not be the person who owns the account. Phone is the account key
    * (`profile.upsert where phone`), so this is the only signal that a recycled number is inheriting
    * an account. Counting it makes the rate alertable instead of buried in a log line. Never the
-   * phone number; `dormant` is a two-value label.
+   * phone number; both labels are two-value. `device` splits "presented an id we have never seen
+   * for this account" (`new`) from "presented no id at all" (`absent`) — the second is the
+   * fail-safe arm, counted because the absence of an attestable device is itself the signal.
    */
-  incIdentityNewDeviceVerify(dormant: boolean): void {
-    this.counter("identity_new_device_verify_total").add(1, { dormant: dormant ? "true" : "false" });
+  incIdentityNewDeviceVerify(dormant: boolean, device: "new" | "absent"): void {
+    this.counter("identity_new_device_verify_total").add(1, {
+      dormant: dormant ? "true" : "false",
+      device,
+    });
   }
 
   /** One completed run of the nightly wallet integrity job (roadmap 1.3) — the denominator that

@@ -261,6 +261,11 @@ export class AuthService {
     // Same canonicalization as requestOtp — the OTP was stored (and the profile is keyed) under E.164.
     const phone = normalizePhone(rawPhone);
     if (!phone) throw new BadRequestException("Enter a valid phone number");
+    // `x-device-id` is a raw client header, so normalise it once, here, and use ONLY this below. An
+    // empty or whitespace-only header must mean "absent", not "the device whose id is the empty
+    // string" — otherwise every such caller shares one identity, which would both collide in the
+    // per-device signup cap and let them match each other's stored sessions.
+    const device = deviceId?.trim() || undefined;
     const done = this.metrics.startTimer();
     // Record duration + the mapped result on EVERY exit path, then re-throw so callers see the error.
     const record = (result: OtpVerifyResult): void => this.metrics.recordOtpVerify(done(), result);
@@ -324,26 +329,13 @@ export class AuthService {
         // somehow omits the header still gets in, so this can never lock out someone already
         // registered. It is a 400, not a 429 — the caller sent a malformed request, and conflating it
         // with the rate limit would make a genuine cap-hit indistinguishable from a broken client.
-        if (!deviceId) {
+        if (!device) {
           throw new BadRequestException("A device id is required to create an account.");
         }
         // A fresh SIM is free; a fresh device is not. This is now unconditional on the signup path.
-        await this.enforceRate(`rl:signup:device:${deviceId}`, rlFrom(this.env).deviceSignup);
-      } else if (deviceId && !existing.sessions.some((s) => s.deviceId === deviceId)) {
-        // L0: an existing account verifying from a device never seen for it. If it's been dormant this
-        // long, flag a possible SIM recycle (P2-8) — a NON-destructive ops signal only. Auto-detaching
-        // the account on a device change would lock out a legit user who reinstalled or changed phones;
-        // the destructive rebind is deliberately deferred (see docs/plans/2026-identity-and-pod-hardening.md).
-        const newest = existing.sessions[0]?.createdAt?.getTime() ?? 0;
-        const dormant = Date.now() - newest > RECYCLE_DORMANCY_MS;
-        this.logger.warn(
-          `identity: account ${existing.id} verified from a NEW device${dormant ? " after >90d dormancy — POSSIBLE SIM RECYCLE (P2-8)" : " (device change)"}`,
-        );
-        // A log line can't be alerted on. Phone is the account key, so a dormant re-verify from an
-        // unseen device is the shape a carrier number-recycle takes — the person passing the OTP may
-        // not be the person who owns the account. Counting it makes the rate visible before deciding
-        // how hard to gate the rebind.
-        this.metrics.incIdentityNewDeviceVerify(dormant);
+        await this.enforceRate(`rl:signup:device:${device}`, rlFrom(this.env).deviceSignup);
+      } else {
+        this.flagUnrecognisedDevice(existing, device);
       }
 
       const profile = await this.prisma.profile.upsert({
@@ -353,7 +345,7 @@ export class AuthService {
         select: { id: true, role: true, firstName: true },
       });
 
-      const session = await this.issueSession(profile.id, profile.role, userAgent, deviceId);
+      const session = await this.issueSession(profile.id, profile.role, userAgent, device);
       record("ok");
       return { ...session, profileId: profile.id, role: profile.role, needsProfile: profile.firstName === "" };
     } catch (err) {
@@ -362,6 +354,47 @@ export class AuthService {
       if (!(err instanceof UnauthorizedException)) record("error");
       throw err;
     }
+  }
+
+  /**
+   * KB-IDENTITY-BINDING L0 — recycle detection for an EXISTING account. Emits a WARN + a counter when
+   * the verifying device is not one we have seen on this account, and says nothing otherwise.
+   *
+   * Observability ONLY. It takes no decision, alters no state, and returns nothing, so no security
+   * action is ever skipped on account of what the client put in `x-device-id`. That is the whole
+   * reason it lives in its own method rather than as a branch on the verify path: there, a condition
+   * on a client-supplied header sat upstream of session issuance, which is both hard to reason about
+   * and exactly what CodeQL's user-controlled-bypass rule (correctly) objects to.
+   *
+   * Fail-safe on absence. This used to read `if (deviceId && !known)`, so a client that simply omitted
+   * the header skipped recycle detection entirely — one dropped header silenced the alarm, which is
+   * the same "non-compliance is rewarded" shape as the signup cap this PR closes. An absent id is not
+   * evidence of a known device; it is the absence of evidence, and it is flagged as `device="absent"`.
+   *
+   * Non-destructive by design: auto-detaching the account on a device change would lock out anyone who
+   * reinstalled or changed handsets. The destructive rebind stays deferred — see
+   * docs/plans/2026-identity-and-pod-hardening.md.
+   */
+  private flagUnrecognisedDevice(
+    existing: { id: string; sessions: { deviceId: string | null; createdAt: Date }[] },
+    device?: string,
+  ): void {
+    if (device !== undefined && existing.sessions.some((s) => s.deviceId === device)) return;
+
+    // Newest session first (the query orders by createdAt desc), so [0] is the last time this account
+    // was actually used. No session at all ⇒ 0 ⇒ treated as maximally dormant, which is right: an
+    // account with no session history has certainly not been used inside the window.
+    const newest = existing.sessions[0]?.createdAt?.getTime() ?? 0;
+    const dormant = Date.now() - newest > RECYCLE_DORMANCY_MS;
+    const how = device === undefined ? "UNIDENTIFIED device (no x-device-id)" : "NEW device";
+    this.logger.warn(
+      `identity: account ${existing.id} verified from a ${how}${dormant ? " after >90d dormancy — POSSIBLE SIM RECYCLE (P2-8)" : " (device change)"}`,
+    );
+    // A log line can't be alerted on. Phone is the account key, so a dormant re-verify from an
+    // unrecognised device is the shape a carrier number-recycle takes — the person passing the OTP may
+    // not be the person who owns the account. Counting it makes the rate visible before deciding how
+    // hard to gate the rebind.
+    this.metrics.incIdentityNewDeviceVerify(dormant, device === undefined ? "absent" : "new");
   }
 
   async refresh(refreshToken: string, userAgent?: string): Promise<SessionTokens> {

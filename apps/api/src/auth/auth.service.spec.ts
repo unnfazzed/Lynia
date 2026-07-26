@@ -408,6 +408,59 @@ describe("AuthService.verifyOtp", () => {
     await expect(svc.verifyOtp("+263770000071", "654321")).resolves.toMatchObject({ profileId: "p1" });
   });
 
+  // L0 recycle detection used to read `if (deviceId && !known)`, so a client that simply omitted the
+  // header skipped it entirely — one dropped header silenced the SIM-recycle alarm, the same
+  // "non-compliance is rewarded" shape as the signup cap above. Absence of an id is not evidence of a
+  // known device, so it is flagged, tagged `absent` to keep it separable from a genuinely new id.
+  it("KB-IDENTITY-BINDING L0: flags an EXISTING account verifying with NO device id (fail-safe, not skipped)", async () => {
+    const { svc, store, metrics } = make(baseEnv, fakePrisma());
+    await store.put("+263770000072", tokens.hash("654321"), 300);
+    await svc.verifyOtp("+263770000072", "654321");
+    // sessions: [] ⇒ newest = 0 ⇒ dormant, which is right: an account with no session history has
+    // certainly not been used inside the 90d window.
+    expect(metrics.incIdentityNewDeviceVerify).toHaveBeenCalledWith(true, "absent");
+  });
+
+  it("KB-IDENTITY-BINDING L0: a RECOGNISED device on an existing account is not flagged", async () => {
+    const prisma = {
+      profile: {
+        findUnique: async () => ({ id: "p1", sessions: [{ deviceId: "known-device", createdAt: new Date() }] }),
+        upsert: async () => profileRow,
+      },
+      session: { create: async () => ({ id: "s1" }) },
+    };
+    const { svc, store, metrics } = make(baseEnv, prisma);
+    await store.put("+263770000073", tokens.hash("654321"), 300);
+    await svc.verifyOtp("+263770000073", "654321", "ua", "known-device");
+    expect(metrics.incIdentityNewDeviceVerify).not.toHaveBeenCalled();
+  });
+
+  // An empty/whitespace header must mean "absent", never "the device whose id is the empty string" —
+  // otherwise every such caller shares one identity: they collide in the per-device signup cap and can
+  // match each other's stored sessions.
+  it("KB-IDENTITY-BINDING: treats a blank device id as absent, not as a shared device identity", async () => {
+    const prisma = {
+      profile: { findUnique: async () => null, upsert: async () => profileRow },
+      session: { create: async () => ({ id: "s1" }) },
+    };
+    const { svc, store } = make(baseEnv, prisma);
+    await store.put("+263770000074", tokens.hash("654321"), 300);
+    // Blank ⇒ absent ⇒ the signup gate rejects it, exactly as a missing header does.
+    await expect(svc.verifyOtp("+263770000074", "654321", "ua", "   ")).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("KB-IDENTITY-BINDING: never persists a blank device id on the session", async () => {
+    let created: Record<string, unknown> | undefined;
+    const prisma = {
+      profile: { findUnique: async () => ({ id: "p1", sessions: [] }), upsert: async () => profileRow },
+      session: { create: async (args: { data: Record<string, unknown> }) => { created = args.data; return { id: "s1" }; } },
+    };
+    const { svc, store } = make(baseEnv, prisma);
+    await store.put("+263770000075", tokens.hash("654321"), 300);
+    await svc.verifyOtp("+263770000075", "654321", "ua", "  ");
+    expect(created!.deviceId).toBeNull();
+  });
+
   it("records otp_verify_duration with the mapped result label on every exit path", async () => {
     const expired = make(baseEnv, fakePrisma());
     await expect(expired.svc.verifyOtp("+263770000020", "123456")).rejects.toThrow();
@@ -448,11 +501,13 @@ describe("AuthService.verifyOtp", () => {
 describe("AuthService.verifyOtp — post-verify retry grace (§6)", () => {
   const profileRow = { id: "p1", role: "customer", firstName: "" };
   /** Grace-path prisma: upsert for the first verify, findUnique (plain read) for grace retries,
-   *  and session ids that increment so each mint is provably a FRESH session. */
+   *  and session ids that increment so each mint is provably a FRESH session. The `sessions: []`
+   *  on the profile read mirrors the real `select` — the device check now runs on every verify of an
+   *  existing account, so an absent array here is a shape mismatch with production, not a shortcut. */
   const gracePrisma = () => {
     let sessions = 0;
     return {
-      profile: { upsert: async () => profileRow, findUnique: async () => profileRow },
+      profile: { upsert: async () => profileRow, findUnique: async () => ({ ...profileRow, sessions: [] }) },
       session: { create: async () => ({ id: `s${++sessions}` }) },
     };
   };
