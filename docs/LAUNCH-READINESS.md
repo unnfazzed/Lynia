@@ -193,11 +193,11 @@ The four deliberate deferrals in `infra/terraform/README.md` flip from "pilot-le
    (`scripts/restore-drill-verify.sh`); founder executes the drill and records the RTO (box stays
    unchecked until it has actually run).
 
-Plus: `terraform validate`/`plan` as a CI job (the ENG-REVIEW §3 method note — it has never run in
-CI), and the org-policy `allUsers`/ingress verification before any re-arm.
+Plus: the org-policy `allUsers`/ingress verification before any re-arm.
 
 - **Exit test:** Terraform diff applied by founder; restore drill documented with timings (RTO/RPO
-  numbers in `ENG-REVIEW.md`); CI runs `terraform validate` on PRs touching `infra/`.
+  numbers in `ENG-REVIEW.md`); CI runs `terraform validate` (defaults-only, no backend) on every PR
+  (`.github/workflows/ci.yml`'s `terraform-validate` job).
 
 ### LR8 — PII & data protection
 

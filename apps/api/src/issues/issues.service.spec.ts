@@ -347,8 +347,13 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
 // row but never told the opener — a customer/rider who raised "get help with this trip" had no push, no
 // feed row, and no status endpoint, so a real problem could silently vanish from their view forever.
 describe("IssuesService.resolve — notifies the opener post-commit", () => {
-  function txSvcWithNotify(tx: Record<string, unknown>, notifications: NotificationsService) {
-    const prisma = { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaService;
+  function txSvcWithNotify(tx: Record<string, unknown>, notifications: NotificationsService, riderOrderStatus = "en_route_pickup") {
+    // UX26-03: notifyIssueResolved's rider-order-status lookup runs POST-commit against the top-level
+    // `prisma`, not `tx` — only reached when the opener is the rider.
+    const prisma = {
+      $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
+      order: { findUnique: async () => ({ status: riderOrderStatus }) },
+    } as unknown as PrismaService;
     return new IssuesService(prisma, notifications, fakeGateway());
   }
 
@@ -378,23 +383,41 @@ describe("IssuesService.resolve — notifies the opener post-commit", () => {
       };
       await txSvcWithNotify(tx, notifications).resolve("admin-1", "iss-1", body);
       await flush();
-      expect(notifyIssueResolved).toHaveBeenCalledWith("cust-1", "ord-1", body.resolution);
+      // Customer opener: no rider-order-status lookup, so the 4th arg stays undefined.
+      expect(notifyIssueResolved).toHaveBeenCalledWith("cust-1", "ord-1", body.resolution, undefined);
     }
   });
 
-  it("notifies the RIDER opener when a rider raised the issue, not the customer", async () => {
+  it("notifies the RIDER opener when a rider raised the issue, not the customer, and passes the order's current status", async () => {
     const notifyIssueResolved = vi.fn(async () => {});
     const notifications = { notifyOps: vi.fn(async () => {}), notifyIssueResolved } as unknown as NotificationsService;
     const tx = {
       ...baseTx,
       issue: {
-        findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1", openedByProfileId: "rider-1" }),
+        findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1", openedByProfileId: "rider-1", openedByRole: "rider" }),
         updateMany: async () => ({ count: 1 }),
       },
     };
-    await txSvcWithNotify(tx, notifications).resolve("admin-1", "iss-1", { resolution: "close_no_action" });
+    await txSvcWithNotify(tx, notifications, "assigned").resolve("admin-1", "iss-1", { resolution: "close_no_action" });
     await flush();
-    expect(notifyIssueResolved).toHaveBeenCalledWith("rider-1", "ord-1", "close_no_action");
+    // UX26-03: a rider opener's push carries the order's live status so pushDestination can route them
+    // straight to /rider/job for `assigned` instead of the generic /order/:id detour.
+    expect(notifyIssueResolved).toHaveBeenCalledWith("rider-1", "ord-1", "close_no_action", "assigned");
+  });
+
+  it("does NOT pass a rider-order-status lookup for a customer opener, even though `order.riderId` exists on the order", async () => {
+    const notifyIssueResolved = vi.fn(async () => {});
+    const notifications = { notifyOps: vi.fn(async () => {}), notifyIssueResolved } as unknown as NotificationsService;
+    const tx = {
+      ...baseTx,
+      issue: {
+        findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1", openedByProfileId: "cust-1", openedByRole: "customer" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    };
+    await txSvcWithNotify(tx, notifications, "assigned").resolve("admin-1", "iss-1", { resolution: "close_no_action" });
+    await flush();
+    expect(notifyIssueResolved).toHaveBeenCalledWith("cust-1", "ord-1", "close_no_action", undefined);
   });
 
   it("does not notify when the CAS conflict throws before commit (nothing to tell the opener)", async () => {

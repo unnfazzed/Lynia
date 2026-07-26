@@ -318,6 +318,32 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     });
   });
 
+  it("UX26-03 sibling: the resolved-issue row carries to/status for a rider opener still in the order lookback, routing them to /rider/job", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", riderId: "me", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+    ]);
+    prisma.issue.findMany.mockResolvedValue([
+      { id: "i1", orderId: "o1", resolution: "close_no_action", resolvedAt: new Date("2026-07-06T11:30:00.000Z") },
+    ]);
+
+    const feed = await service.feedForUser("me", NOW);
+    expect(feed.find((r) => r.id === "issue:i1")).toMatchObject({ to: "rider", status: "assigned" });
+  });
+
+  it("UX26-03 sibling: the resolved-issue row leaves to/status undefined when the order has aged out of the lookback (falls back to /order/:id)", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([]); // order outside FEED_ORDER_LOOKBACK — not in view
+    prisma.issue.findMany.mockResolvedValue([
+      { id: "i1", orderId: "o1", resolution: "close_no_action", resolvedAt: new Date("2026-07-06T11:30:00.000Z") },
+    ]);
+
+    const feed = await service.feedForUser("me", NOW);
+    const row = feed.find((r) => r.id === "issue:i1");
+    expect(row?.to).toBeUndefined();
+    expect(row?.status).toBeUndefined();
+  });
+
   it("UX-2026-07-16: resolved-issue row copy branches on resolution, matching notifyIssueResolved", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([]);
@@ -537,6 +563,35 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { target: { in: ["o1"] }, action: "order.fare_adjust" } }),
     );
+  });
+
+  it("UX26-03: the fare-adjust row carries the order's current status (last event), so a rider viewer routes straight to /rider/job", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o1",
+        riderId: "rider",
+        agreedFare: dec("12.50"),
+        events: [
+          { status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") },
+          { status: "confirmed", createdAt: new Date("2026-07-06T10:05:00.000Z") },
+        ],
+      },
+    ]);
+    prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
+      where.action === "order.fare_adjust"
+        ? [{ id: "au1", target: "o1", createdAt: new Date("2026-07-06T11:00:00.000Z") }]
+        : [],
+    );
+
+    const riderFeed = await service.feedForUser("rider", NOW);
+    // The LAST event ("confirmed"), not the first — notificationRowDestination only special-cases
+    // "assigned"/"cancelled" for `to === "rider"`, so this stays on the generic /order/:id route, but the
+    // field itself must reflect the order's live status, not a stale earlier one.
+    expect(riderFeed.find((r) => r.id === "fare-adjust:au1")).toMatchObject({ to: "rider", status: "confirmed" });
+
+    const custFeed = await service.feedForUser("cust", NOW);
+    expect(custFeed.find((r) => r.id === "fare-adjust:au1")).toMatchObject({ to: "customer", status: "confirmed" });
   });
 
   it("UX21-02: synthesizes a customer-voiced row from order.riders_available_notify — the live-order 'notify me' push had no durable feed fallback", async () => {

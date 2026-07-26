@@ -148,8 +148,11 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
   const conditional = method === "GET" ? etagStore.get(path) : undefined;
 
   // KB-IDENTITY-BINDING L1: attach the stable per-install device id so the server can throttle per-device
-  // signup + surface the recycle signal. Best-effort — a keychain read failure just omits the header
-  // (the server treats a missing id as an older client and leaves the device logic inert).
+  // signup + surface the recycle signal. getDeviceId() already falls back to a process-lifetime id on a
+  // keystore failure rather than throwing (session.ts) — this catch is a last-resort backstop only; the
+  // server treats a genuinely missing id as an older client and leaves the device logic inert, but new
+  // accounts now hard-require it, so silently omitting the header here would re-open an onboarding dead
+  // end (see session.ts's getDeviceId for the full story).
   const deviceId = await getDeviceId().catch(() => null);
 
   const send = (accessToken?: string): Promise<Response> =>

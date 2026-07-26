@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminPost } from "../lib/api";
+import { adminPostResult, describeAdminPostFailure } from "../lib/api";
 
 /**
  * S·2 customer account-hold mutations — hold / lift via `POST /admin/customers/:id/{hold|lift}`. The
@@ -22,11 +22,11 @@ export async function mutateCustomer(
 ): Promise<void> {
   // Defense-in-depth: `action` is interpolated into the endpoint path — refuse anything off the known set.
   if (!(CUSTOMER_ACTIONS as readonly string[]).includes(action)) throw new Error(`Unknown customer action: ${action}`);
-  const ok = await adminPost(`/admin/customers/${profileId}/${action}`, {
+  const res = await adminPostResult(`/admin/customers/${profileId}/${action}`, {
     reason: reasonCode ?? "",
     note: note || null,
   });
-  if (!ok) throw new Error(`Failed to ${action} customer ${profileId} (check API_BASE_URL / admin token).`);
+  if (!res.ok) throw new Error(`Failed to ${action} customer ${profileId}: ${describeAdminPostFailure(res)}`);
   revalidatePath(`/customers/${profileId}`);
   revalidatePath("/customers");
 }

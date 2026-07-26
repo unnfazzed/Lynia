@@ -236,7 +236,7 @@ export class IssuesService {
     const result = await this.prisma.$transaction(async (tx) => {
       const issue = await tx.issue.findUnique({
         where: { id },
-        select: { id: true, status: true, orderId: true, openedByProfileId: true },
+        select: { id: true, status: true, orderId: true, openedByProfileId: true, openedByRole: true },
       });
       if (!issue) throw new NotFoundException("Issue not found");
 
@@ -322,6 +322,7 @@ export class IssuesService {
         resolution: body.resolution,
         resolvedAt: resolvedAt.toISOString(),
         openedByProfileId: issue.openedByProfileId,
+        openedByRole: issue.openedByRole,
         orderId: issue.orderId,
       };
     });
@@ -340,7 +341,19 @@ export class IssuesService {
     // Best-effort, post-commit (mirrors DS13-03's push-parity pattern): tell the opener how their
     // reported issue was resolved. Fired outside the transaction so a push failure can never roll back
     // the resolution that already committed.
-    void this.notifications.notifyIssueResolved(result.openedByProfileId, result.orderId, result.resolution);
+    //
+    // UX26-03 sibling (of AdminOrdersService.adjustFare): stamp the order's current status ONLY when
+    // the opener is the RIDER, so pushDestination's ungated RIDER_JOB_SCREEN_STATUSES/RIDER_BOARD_
+    // STATUSES checks route them straight to /rider/job (assigned/cancelled) or /rider (completed)
+    // instead of the generic /order/:id detour. Never stamped for a customer opener — pushDestination
+    // doesn't gate that check on the `to` field, so stamping status there would misroute a customer to
+    // a rider-only screen.
+    let riderOrderStatus: string | undefined;
+    if (result.openedByRole === "rider") {
+      const order = await this.prisma.order.findUnique({ where: { id: result.orderId }, select: { status: true } });
+      riderOrderStatus = order?.status;
+    }
+    void this.notifications.notifyIssueResolved(result.openedByProfileId, result.orderId, result.resolution, riderOrderStatus);
 
     return { id: result.id, status: result.status, resolution: result.resolution, resolvedAt: result.resolvedAt };
   }

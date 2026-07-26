@@ -6,7 +6,8 @@ executable, ledger-sized PRs. No code changes here; this is the classification t
 
 ## The state
 
-`tracking.gateway.ts` (784 lines) holds five in-memory, per-process structures:
+`tracking.gateway.ts` (828 lines) holds five in-memory, per-process structures this design pass
+classifies for Redis-vs-process placement:
 
 | Structure | Shape | Purpose |
 |---|---|---|
@@ -15,6 +16,12 @@ executable, ledger-sized PRs. No code changes here; this is the classification t
 | `customerStaleNotified` | `Set<orderId>` | customer-side twin of the above |
 | `customerPresence` | `Map<orderId, {live, darkSince}>` | is the customer watching? drives the "customer went dark" signal |
 | `customerSocketOrders` | `Map<socketId, Set<orderId>>` | which orders a socket subscribed to (cleanup on disconnect) |
+
+A sixth structure, `boardOpChain` (`Map<socketId, Promise<unknown>>`, added by BH-25 to serialize a
+socket's concurrent `board:subscribe`/`board:leave` calls so their `client.rooms` mutations can't
+interleave), landed after this design pass. It's outside this classification's scope — it's a
+same-process synchronization primitive, not routing/presence data, so the Redis-vs-process question
+this doc asks doesn't apply to it.
 
 The gateway runs behind the `@socket.io/redis-adapter`, which fans **events** across API instances —
 but these **maps live in one process's heap**. The question RF-05 asks: for each, does correctness
@@ -58,7 +65,7 @@ depend on all instances agreeing, or is per-process state fine?
    `tracking-presence.ts` module with a narrow typed interface (`recordEmit`, `shouldEmit`,
    `markStale`, `presenceFor`, …), gateway calls unchanged. Characterization tests on the coalesce
    window + stale-dedup first (the gateway's existing integration tests are the net). No behaviour
-   change; shrinks the 784-line gateway.
+   change; shrinks the 828-line gateway.
 2. **Verify `customerPresence` authority** — trace every read; assert (with a test) that the
    "customer went dark" decision is backed by `fetchSockets`, not the bare map. Fix only if a bare
    read drives a signal.

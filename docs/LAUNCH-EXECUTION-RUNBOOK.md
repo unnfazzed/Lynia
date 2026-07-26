@@ -299,7 +299,7 @@ container with zero versions fails the deploy. When local-SMS gets armed, add
 Manual fallback (what the script automates), from `infra/terraform/`:
 
 ```bash
-for s in DIDIT_API_KEY DIDIT_WEBHOOK_SECRET WHATSAPP_ACCESS_TOKEN BIRD_ACCESS_KEY; do
+for s in DIDIT_API_KEY DIDIT_WEBHOOK_SECRET WHATSAPP_ACCESS_TOKEN BIRD_ACCESS_KEY BIRD_WEBHOOK_SECRET; do
   # a name that doesn't exist live yet (e.g. BIRD_ACCESS_KEY pre-arming) errors here — skip it;
   # its container is created by the next apply instead of imported
   terraform import "google_secret_manager_secret.vendor[\"$s\"]" "projects/$PROJECT/secrets/$s"

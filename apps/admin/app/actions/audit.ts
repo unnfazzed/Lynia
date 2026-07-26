@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminPostResult } from "../lib/api";
+import { adminPostResult, describeAdminPostFailure } from "../lib/api";
 
 /**
  * Standalone audit-row write for a <ConfirmModal> action whose domain mutation does NOT already write
@@ -34,8 +34,7 @@ export async function submitAdminAction(formData: FormData): Promise<void> {
   // failure (network error or non-2xx) MUST throw so the awaiting <ConfirmModal> keeps the dialog open
   // and tells the operator the action was NOT recorded — a swallowed audit-write is unacceptable.
   if (!result.ok && result.reason !== "unconfigured") {
-    const detail = result.reason === "http" ? `HTTP ${result.status}` : "API unreachable";
-    throw new Error(`Failed to record audit action "${action}" for ${target} (${detail}).`);
+    throw new Error(`Failed to record audit action "${action}" for ${target}: ${describeAdminPostFailure(result)}`);
   }
 
   // Refresh the originating page so a live console reflects the mutation. Safe no-op effect on the
@@ -66,8 +65,7 @@ export async function logOrderFollowUpNote(orderId: string, _formData: FormData)
   });
 
   if (!result.ok && result.reason !== "unconfigured") {
-    const detail = result.reason === "http" ? `HTTP ${result.status}` : "API unreachable";
-    throw new Error(`Failed to record audit action "${action}" for ${orderId} (${detail}).`);
+    throw new Error(`Failed to record audit action "${action}" for ${orderId}: ${describeAdminPostFailure(result)}`);
   }
 
   revalidatePath(path);

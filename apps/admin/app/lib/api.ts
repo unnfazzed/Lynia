@@ -90,7 +90,16 @@ export type AdminPostResult =
   | { ok: true }
   | { ok: false; reason: "unconfigured" }
   | { ok: false; reason: "unreachable" }
-  | { ok: false; reason: "http"; status: number };
+  | { ok: false; reason: "http"; status: number; message?: string };
+
+/** Nest's standard exception body shape: `{ statusCode, message, error }`. `message` is a plain string
+ *  for a single `throw new XException("...")`, or a string array for a class-validator failure. */
+function extractHttpMessage(body: unknown): string | undefined {
+  const message = (body as { message?: unknown } | null)?.message;
+  if (typeof message === "string") return message;
+  if (Array.isArray(message) && message.every((m) => typeof m === "string")) return message.join("; ");
+  return undefined;
+}
 
 export async function adminPostResult(path: string, body: unknown): Promise<AdminPostResult> {
   const b = base();
@@ -103,7 +112,10 @@ export async function adminPostResult(path: string, body: unknown): Promise<Admi
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(ADMIN_FETCH_TIMEOUT_MS),
     });
-    if (!res.ok) return { ok: false, reason: "http", status: res.status };
+    if (!res.ok) {
+      const message = extractHttpMessage(await res.json().catch(() => null));
+      return { ok: false, reason: "http", status: res.status, message };
+    }
     return { ok: true };
   } catch {
     return { ok: false, reason: "unreachable" };
@@ -113,4 +125,19 @@ export async function adminPostResult(path: string, body: unknown): Promise<Admi
 export async function adminPost(path: string, body: unknown): Promise<boolean> {
   const r = await adminPostResult(path, body);
   return r.ok;
+}
+
+/**
+ * UX26-02: the single funnel every admin write action's failure path should call — classifies WHY a
+ * write failed instead of the one-size-fits-all "check API_BASE_URL / admin token" text that used to
+ * mask an expired session, a stale-row business rejection, or a real server error alike (the class
+ * UX16-04 first fixed for `acknowledgeSos`, generalized here so the sweep doesn't have to re-find each
+ * sibling by hand). Prefers the API's own validation message (e.g. "Only an undelivered order can be
+ * adjudicated") when the server sent one — that message is deliberately operator-actionable.
+ */
+export function describeAdminPostFailure(res: Exclude<AdminPostResult, { ok: true }>): string {
+  if (res.reason === "unconfigured") return "The admin API isn't configured (API_BASE_URL unset).";
+  if (res.reason === "unreachable") return "Couldn't reach the server — try again.";
+  if (res.status === 401 || res.status === 403) return "Your session may have expired — reload the page.";
+  return res.message ?? `The server rejected this (HTTP ${res.status}) — try again or check with engineering.`;
 }

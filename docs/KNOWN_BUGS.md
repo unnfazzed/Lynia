@@ -6,7 +6,16 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-07-25 (bug-hunt routine — agentic-loop hunt over the bug-hunt lane; see the
+**Last consolidated:** 2026-07-26 (deep-sweep routine — agentic-loop hunt over the deep-sweep lane; see
+the "Deep sweep 2026-07-26" section near the bottom and `docs/DEEP-SWEEP-2026-07-26.md`. **Clean run,
+zero new findings**: Phase 1 (5 finder lenses) returned 0 candidates, Phase 1.5's PII-across-
+representations seam trace found the invariant intact, Phase 3's adversarial API pass found zero new
+gaps, and Phase 0.5 re-verified the Notifications/FCM, Edge/abuse, and Auth/identity cluster headers as
+all INTACT. Fable-5 was unavailable all run (usage limit) — Phase 1/0.5/3 fell back to the session model
+per the routine's explicit fallback policy, noted in the report. One open `claude/*` sibling PR at Phase
+0 (#392, UX26-01/02/03) — out of lane, no overlap. Docs-only PR (report + this ledger entry); no code
+changed.
+Prior: 2026-07-25 (bug-hunt routine — agentic-loop hunt over the bug-hunt lane; see the
 "Bug hunt 2026-07-25 night" section near the bottom and `docs/BUG-HUNT-2026-07-25.md` for BH-25a/BH-25b —
 both MEDIUM, both fixed same-run with regression tests. BH-25a: `presence:recovered` role:"rider" was
 never emitted by `scanPresence()`'s stale-rider recovery loop (the customer→rider mirror of BH-08's
@@ -1882,3 +1891,70 @@ per survivor. **Two findings, both MEDIUM — both fixed this run** with regress
 BH-25a — `grep -rn "emitPresenceRecovered"` / `grep -rn "presenceRecovered"` — 2 hits each before the fix
 (one direction each), now 2 hits each, symmetric. BH-25b — `grep -rn "for (const room of client.rooms)\|for (const room of s.rooms)"` — 3 hits (`boardSubscribe` fixed, `boardLeave` fixed as a confirmed
 sibling, `kickRiderFromBoard` ledgered OPEN as a distinct, non-matching TOCTOU shape).
+
+---
+
+## UX review 2026-07-26 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-26.md`
+
+Phase 0: zero open `claude/*` PRs (`mcp__github__list_pull_requests` state=open returned `[]`) — the
+2026-07-25 night bug-hunt PR (#388) and everything after it were already merged onto `main`, including
+two same-day auth commits (`65350ff`, `e2d8d36`) folded into PR #391 that turned out to be the root
+cause of this run's HIGH finding. Phase 0.5 rotated to the UX lane's least-recently-checked headers
+(UX21 already re-checked Money-fraud/Data-integrity/Ship-infra-correctness; UX19/UX20 covered the rest)
+— **KYC**, **Object-authz/IDOR**, **Mobile-journey-dead-ends** — 3/3 sampled headers confirmed intact
+(webhook fail-closed guard, wash-trade rejection, rider cooldown gate all present in code), no fresh
+findings from the spot-check. Hunt ran via the agentic-loop engine
+(`Workflow({name: 'lane-bug-hunt'}, args: 'ux')`) — 4 finder lenses, 3 candidates found, all 3 survived
+adversarial verification (2 unanimous REAL, 1 on a 2-of-3 majority after independent re-verification
+narrowed its scope — see the dated report). **Three findings — one HIGH, two MEDIUM — all fixed this
+run**, plus 4 additional sibling sites the mandatory sweep turned up; `pnpm typecheck` + `pnpm test` all
+green (`@lynia/api` 1222/1222, `@lynia/mobile` 530/530, `@lynia/admin` typecheck+lint clean).
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| UX26-01 | **New-account sign-up became a permanent, misleadingly-labelled dead end on a device whose keystore can't persist writes.** The same-day commit `65350ff` made `x-device-id` mandatory for account creation (`auth.service.ts` throws 400 `"A device id is required to create an account."` when absent) to close a per-device signup-cap bypass — but `apps/mobile/src/api/client.ts`'s `getDeviceId().catch(() => null)` silently omits the header on ANY `SecureStore` failure, and `getDeviceId()` (`session.ts`) could throw on both `getItemAsync` (documented keystore-decrypt failure on low-end Android) and `setItemAsync`. Worse, the 400 fires AFTER the OTP is already consumed server-side, so a same-code retry falls into the generic 401 "Code expired or never requested" path, looping the user into "Send a fresh code" forever — a resend can never fix a broken keystore. | `apps/api/src/auth/auth.service.ts:332-334`, `apps/mobile/src/auth/session.ts` (`getDeviceId`), `apps/mobile/src/api/client.ts:150-153` | HIGH | **FIXED** — `getDeviceId()` now catches both the read and write failure and falls back to a process-lifetime-only id (never persisted, so a relaunch mints a fresh one) instead of throwing, so `x-device-id` is still sent and the server's per-device signup gate is still satisfied — it just can't dedupe across restarts on that one broken device. 3 new regression tests in `session.test.ts` (write failure, read failure, healthy-keystore caching unchanged). |
+| UX26-02 | **All 10 admin-console write actions collapsed every server-rejection reason into a hardcoded "check API_BASE_URL / admin token" message**, discarding the API's own deliberately-written validation text (e.g. "Only an undelivered order can be adjudicated", a KYC CAS conflict) and misreporting session expiry as an infra/config problem. The 2026-07-16 UX pass (UX16-04) fixed this exact class for `sos/actions.ts` alone; it was never generalized. | `apps/admin/app/{orders,riders,customers,issues}/actions.ts`, `apps/admin/app/actions/audit.ts`, `apps/admin/app/lib/api.ts` | MEDIUM | **FIXED** — `adminPostResult` now captures the API's `message` body on a non-2xx response; a new shared funnel `describeAdminPostFailure` (unconfigured/unreachable/401-403/http-with-message/generic) replaces the hardcoded string at all 10 call sites, and `sos/actions.ts` was refactored onto the same funnel (retiring the duplicated classification it used to carry alone) so the class can't drift back apart. |
+| UX26-03 | **`adjustFare`'s rider push/feed row carried no order-status field, so a rider still on the exact `assigned` job (right after admin corrects the fare) got routed to `/order/:id` instead of `/rider/job` directly** — one extra tap, not a dead end (independent re-verification found the hunt's original "bare dead-control screen" characterization overstated: `/order/:id` already renders `LiveTrackingCard` with map/ETA/call/SOS/an "Open your job" link for an active rider viewer). The same gap exists on `notifyIssueResolved`'s push/feed row when the issue opener is the rider. | `apps/api/src/admin/admin-orders.service.ts` (`adjustFare`), `apps/api/src/notifications/notifications-feed.service.ts`, `apps/api/src/issues/issues.service.ts`, `apps/api/src/notifications/notifications.service.ts` (`notifyIssueResolved`) | MEDIUM (downgraded from the hunt's initial severity after independent verification) | **FIXED** — `status` is now stamped on the rider's push/feed row only (never the customer's — `pushDestination`'s generic `RIDER_JOB_SCREEN_STATUSES`/`RIDER_BOARD_STATUSES` checks aren't gated on `to` the way the feed-row equivalent is, so stamping status on the customer's push would misroute them to a rider-only screen). 4 new regression tests (`admin-orders.service.spec.ts`, `notifications.service.spec.ts`, `notifications-feed.service.spec.ts` ×2, `issues.service.spec.ts` ×2) pin both the fix and the customer-safety invariant. |
+
+**Sibling-sweep evidence** (full grep commands + per-hit disposition in `docs/UX-USABILITY-REVIEW-2026-07-26.md`):
+UX26-02 — `grep -rln adminPost /home/user/Lynia --include=*.ts` — 10 live call sites across
+`orders/actions.ts` (×3), `riders/actions.ts` (×4), `customers/actions.ts` (×1), `issues/actions.ts`
+(×1, a NEW sibling the hunt's own sweep found), plus `actions/audit.ts` (×2, a second NEW sibling this
+run's independent code read found that the hunt's sweep missed) — all 10 fixed. UX26-03 —
+`grep -rn 'kind:' apps/api/src --include='*.ts'` cross-checked against `push.ts`'s `kind ===` branches —
+`notifyIssueResolved`'s `kind:"issue"` push/feed pair confirmed as a real sibling (fixed); the
+`broadcast`/`sos`/`offer` kinds already have correct or non-applicable routing (unchanged).
+
+**Phase 0.5 cluster headers checked:** KYC, Object-authz/IDOR, Mobile-journey-dead-ends — 3/3 intact, no
+fresh findings.
+
+---
+
+## Deep sweep 2026-07-26 (deep-sweep routine) — `docs/DEEP-SWEEP-2026-07-26.md`
+
+**Clean run — zero new findings.** Phase 0: one open `claude/*` sibling PR (#392, tonight's UX26-01/02/03,
+out of lane, no overlap); also noted two commits already on `main` from an earlier interactive session
+(`65350ff`, `e2d8d36` — closed the per-device signup-cap bypass and the SIM-recycle blank-device-id
+detection bypass in `auth.service.ts`) so the hunt didn't re-derive them. Phase 0.5 rotated to
+**Notifications/FCM**, **Edge/abuse**, and **Auth/identity** (the last re-checked given tonight's two
+device-id commits landed in the same file) — all 3 **INTACT**, 0 stale claims. Phase 1
+(`lane-bug-hunt` agentic loop, 5 finder lenses: tx-rollback, concurrency-idempotency, authz-IDOR,
+timer-expiry, adversarial-API) returned **0 candidates from all 5 lenses**. Phase 1.5 (cross-lane seams
+pass, rotation) picked the last unused seam in the standing menu — **PII across representations** —
+traced the schema-coverage guard (38/38 tests green), every JSON-embedded PII sibling
+(`Order.pickup`/`dropoff` waypoint `contactPhone`), every storage-object sibling (`kyc-object`,
+`item_photo_url`, `pickup_photo_key`, `delivery_proof_key` all delete in lockstep with their DB-pointer
+null in `postCommitPurge`), and Redis-resident PII outside the schema scan's reach (`otp:<phone>` keys
+are self-expiring, not a durable-erasure gap) — **seam INTACT, no fresh finding**. Phase 3 (adversarial
+direct-API pass, 7 attack classes across orders/offers/wallet/admin/issues/sos/uploads/privacy/auth/kyc/
+riders/reports + all three webhook controllers) — **zero new gaps**, every candidate traced to an
+existing control.
+
+**Model note:** Fable-5 was unavailable the entire run (`"You've reached your Fable 5 limit"` on every
+Phase-1 finder agent, confirmed on a second attempt); Phase 1/0.5/3 fell back to the session model
+(Sonnet 5) per the routine's explicit fallback policy — the hunt still ran at full depth (5 lenses × up
+to 3-skeptic adversarial verify × sibling-sweep, ~650k subagent tokens). A future run should retry the
+Fable/Opus split rather than assume this run's clean result was a lighter-weight pass.
+
+No code changes this run (docs-only: this ledger entry + `docs/DEEP-SWEEP-2026-07-26.md`, which also
+supersedes and replaces `docs/DEEP-SWEEP-2026-07-21.md` per the report-retention policy).
