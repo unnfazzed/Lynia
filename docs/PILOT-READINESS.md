@@ -248,8 +248,8 @@ channels behind the `otp-sender.ts` seam; pick one and flip `OTP_CHANNEL`.
 verification lead time and delivers the code as a plain SMS. The send is fully implemented and tested
 (`apps/api/src/auth/otp-sender.ts` → `BirdOtpSender`); arming is an account + a key + three repo
 Variables, **no code**. Full step-by-step runbook: **`docs/BIRD-SETUP.md`**. In short: store
-`BIRD_ACCESS_KEY` in Secret Manager, set the `BIRD_WORKSPACE_ID` / `BIRD_SMS_CHANNEL_ID` repo
-Variables, set `OTP_CHANNEL=bird`, flip `BIRD_ENABLED=true`, and redeploy — the release job's launch-
+`BIRD_ACCESS_KEY` in Secret Manager, set the `BIRD_SMS_FROM` repo
+Variable, set `OTP_CHANNEL=bird`, flip `BIRD_ENABLED=true`, and redeploy — the release job's launch-
 hygiene guard refuses to ship a half-armed Bird config. (`local-sms` is the Zimbabwe A2P fallback for
 when Bird's international route is throttled on Econet.)
 
@@ -431,7 +431,7 @@ Everything codeable through P0/P1 is shipped and CI-green. What remains, grouped
 
 ### 🔴 Pilot gates — founder / vendor action (not code)
 - [ ] **Bird SMS — production OTP (priority channel).** Store `BIRD_ACCESS_KEY` in Secret Manager, set
-      the `BIRD_WORKSPACE_ID` / `BIRD_SMS_CHANNEL_ID` repo Variables, `OTP_CHANNEL=bird`, and flip
+      `BIRD_SMS_FROM`, `OTP_CHANNEL=bird`, and flip
       `BIRD_ENABLED=true`. Runbook: `docs/BIRD-SETUP.md`. *(Send is implemented + tested behind the seam;
       chosen over WhatsApp to avoid business-verification lead time — decision 2026-07-19.)*
 - [ ] **WhatsApp BSP — production OTP (alternative).** Meta Cloud API app + Business verification + an
