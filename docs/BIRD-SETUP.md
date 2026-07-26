@@ -173,12 +173,13 @@ GCP, and repo admin); none are code.
 
 6. ☐ **Redeploy** — push to `main` (or `gh workflow run release.yml --ref main`). The release job's
    "Validate production launch-hygiene config" step confirms Bird is fully armed before it builds:
-   if `OTP_CHANNEL=bird` but `BIRD_ENABLED != true` or the workspace/channel IDs are empty, it fails
+   if `OTP_CHANNEL=bird` but `BIRD_ENABLED != true` or `BIRD_SMS_FROM` is empty, it fails
    fast with the exact remediation instead of shipping a service that 503s every OTP.
 
 7. ☐ **Verify on a real device** — request an OTP from the app against the live API and confirm the
    SMS arrives and the code verifies. Watch the API logs for `Bird OTP send failed:` (the loud path
-   logs Bird's error — bad channel/workspace id, revoked key, unregistered sender — never the code).
+   logs Bird's error — revoked key, no eligible sender for the destination (E12003), insufficient
+   wallet balance, unregistered sender — never the code).
 
 ## Rollback
 
