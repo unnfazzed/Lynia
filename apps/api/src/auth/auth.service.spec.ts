@@ -188,9 +188,11 @@ describe("AuthService.updateProfile", () => {
   const row = { id: "p1", role: "customer", firstName: "Chipo", lastName: "Marufu", phone: "+263771111111", email: null, photoUrl: null, ordersCount: 0, rider: null };
 
   // The write now runs in a $transaction (DS-11): profile.update + a duplicate-ID recompute that
-  // persists the A-04 flag on the rider row. `dupCount` = how many OTHER accounts share the new ID.
-  // `opts.kycStatus`/`opts.storedIdHash` drive the post-verification ID-lock pre-check (DS-11 hardening).
-  function makeUpdate(dupCount = 0, opts: { kycStatus?: string; storedIdHash?: string; writeCount?: number } = {}) {
+  // persists the A-04 flag on the rider row. `dupCount` = how many OTHER accounts share the new ID
+  // (INCLUDING erased tombstones — the reviewer-flag count); `opts.liveDupCount` = how many LIVE
+  // accounts share it (the one-ID-one-account hard-block count, distinguishable by its erased-excluding
+  // NOT clause). `opts.kycStatus`/`opts.storedIdHash` drive the post-verification ID-lock pre-check.
+  function makeUpdate(dupCount = 0, opts: { kycStatus?: string; storedIdHash?: string; writeCount?: number; liveDupCount?: number } = {}) {
     const rec: { written?: Record<string, unknown>; flag?: { where: unknown; data: Record<string, unknown> } } = {};
     const profileRow = {
       ...row,
@@ -198,13 +200,15 @@ describe("AuthService.updateProfile", () => {
       rider: opts.kycStatus ? { kycStatus: opts.kycStatus } : row.rider,
     };
     const tx = {
+      // The one-ID-one-account claim path takes a pg advisory xact lock before its live count.
+      $executeRaw: async () => 0,
       profile: {
         // Name-only edits (no idNumber) still take the plain update path...
         update: async (a: { data: Record<string, unknown> }) => ((rec.written = a.data), { id: "p1" }),
         // ...but an ID write goes through the guarded CAS updateMany (Fix 2). `writeCount` lets a test
         // simulate the race where the KYC webhook committed `verified` mid-write → 0 rows matched.
         updateMany: async (a: { data: Record<string, unknown> }) => ((rec.written = a.data), { count: opts.writeCount ?? 1 }),
-        count: async () => dupCount,
+        count: async (a: { where: Record<string, unknown> }) => ("NOT" in a.where ? (opts.liveDupCount ?? 0) : dupCount),
       },
       rider: {
         updateMany: async (a: { where: unknown; data: Record<string, unknown> }) => ((rec.flag = a), { count: 1 }),
@@ -235,9 +239,35 @@ describe("AuthService.updateProfile", () => {
     expect(rec.flag).toBeUndefined();
   });
 
-  it("DS-11: recomputes the A-04 duplicate-ID flag = true when the new ID collides with another account", async () => {
-    const { svc, rec } = makeUpdate(1);
+  it("DS-11: recomputes the A-04 flag = true when the new ID collides with an ERASED account (returning user)", async () => {
+    // Live count 0 (only a tombstone carries the ID) → the write is allowed; the reviewer flag still sets.
+    const { svc, rec } = makeUpdate(1, { liveDupCount: 0 });
     await svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-123456-A-42" });
+    expect(rec.flag).toEqual({ where: { profileId: "p1" }, data: { duplicateIdFlag: true } });
+  });
+
+  // One-ID-one-account (2026-07-26): an ID already on another LIVE account is refused at the write.
+  it("409s (id_in_use) when the new ID is already on another LIVE account — nothing written", async () => {
+    const { svc, rec } = makeUpdate(1, { liveDupCount: 1 });
+    try {
+      await svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-123456-A-42" });
+      throw new Error("expected updateProfile to throw");
+    } catch (e) {
+      expect((e as { getResponse: () => unknown }).getResponse()).toMatchObject({ reason: "id_in_use" });
+    }
+    expect(rec.written).toBeUndefined();
+    expect(rec.flag).toBeUndefined();
+  });
+
+  it("re-sending the caller's own stored ID skips the live-block (no new claim — legacy dupes stay idempotent)", async () => {
+    // Even with a live collision present, stored hash === incoming hash means no new claim is being
+    // made, so the write must not start 409ing (a legacy pre-policy duplicate resending their own ID).
+    const { svc, rec } = makeUpdate(1, { liveDupCount: 1, storedIdHash: pii.hashId("63-123456-A-42") });
+    await expect(
+      svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-123456-A-42" }),
+    ).resolves.toBeDefined();
+    expect(rec.written).toMatchObject({ idNumberHash: pii.hashId("63-123456-A-42") });
+    // The reviewer flag still reflects the collision.
     expect(rec.flag).toEqual({ where: { profileId: "p1" }, data: { duplicateIdFlag: true } });
   });
 

@@ -241,10 +241,13 @@ model Rider {
   // settlement auto-pause (A-06). suspendReason carries the admin reason code / "settlement_overdue".
   accountStatus   RiderAccountStatus @default(active) @map("account_status")
   suspendReason   String?   @map("suspend_reason")
-  // Duplicate-account guard (A-04). Set true at onboarding when this rider's national ID already
-  // appears on another account — a ban-evasion / second-SIM signal. A FLAG, not a block: the ID isn't
-  // unique (phone is the account key), so a legit re-entry and a deliberate duplicate look identical;
-  // ops decides on the KYC review. Snapshot at become-rider; admin.getKycReview recomputes it live.
+  // Duplicate-account guard (A-04; hardened 2026-07-26 to one-ID-one-account). A national ID on
+  // another LIVE profile is now hard-REFUSED (409 id_in_use) at every ID-writing path
+  // (completeProfile / auth.updateProfile, advisory-lock serialized) and at becomeRider — so this flag
+  // no longer marks live collisions going forward. It persists for what remains: legacy pre-policy
+  // rows, and collisions with ERASED tombstones (DS15-02b keeps their idNumberHash; a restricted
+  // account can't self-erase, so a tombstone match is a legit returning user — allowed through, but
+  // still reviewed: applyKycResult holds a flagged auto-verify, admin.getKycReview recomputes live).
   duplicateIdFlag Boolean   @default(false) @map("duplicate_id_flag")
   // Reliability (Q2). Starts at 100; cancels/no-shows/low-ratings decrement, clean deliveries recover.
   // onHold is the derived auto-gate (score < threshold) — a separate axis from accountStatus; a rider
