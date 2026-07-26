@@ -62,8 +62,17 @@ describe("AdminKycReviewService.getKycReview (A-04 duplicate ID)", () => {
     const svc = new AdminKycReviewService(prisma as unknown as PrismaService, pii, noStorage);
     const r = (await svc.getKycReview("r1"))!;
     // Only OTHER accounts with the same ID are queried — matched on the HMAC hash, not the raw number.
-    expect(where).toMatchObject({ idNumberHash: pii.hashId("63-123456-A-42"), id: { not: "r1" } });
+    // IR26-04: the match runs over typed AND vendor-verified hashes, in both directions.
+    expect(where).toMatchObject({
+      id: { not: "r1" },
+      OR: [
+        { idNumberHash: { in: [pii.hashId("63-123456-A-42")] } },
+        { rider: { verifiedIdHash: { in: [pii.hashId("63-123456-A-42")] } } },
+      ],
+    });
     expect(r.duplicateIdFlag).toBe(true);
+    // No vendor document data persisted → tri-state unknown, not false.
+    expect(r.verifiedIdMismatch).toBeNull();
     expect(r.duplicateIdAccounts).toHaveLength(2);
     // Phones masked (A-03); a banned rider surfaces its standing so the reviewer catches ban-evasion.
     expect(r.duplicateIdAccounts[0]).toMatchObject({
@@ -89,6 +98,42 @@ describe("AdminKycReviewService.getKycReview (A-04 duplicate ID)", () => {
     expect(queried).toBe(false);
     expect(r.duplicateIdAccounts).toEqual([]);
     expect(r.duplicateIdFlag).toBe(false);
+  });
+
+  // IR26-04 vendor-document dedupe: the reviewer screen must expose the "typed a fake number, showed a
+  // real document" tell, and collide through the verified-document hash even when typed hashes differ.
+  it("reports verifiedIdMismatch=true and queries BOTH hashes when the vendor doc disagrees with the typed ID", async () => {
+    let where: unknown;
+    const vendorHash = pii.hashId("63-999999-Z-99");
+    const prisma = {
+      rider: { findUnique: async () => riderRow({ verifiedIdHash: vendorHash }) },
+      profile: {
+        findMany: async (args: { where: unknown }) => {
+          where = args.where;
+          return [];
+        },
+      },
+    };
+    const svc = new AdminKycReviewService(prisma as unknown as PrismaService, pii, noStorage);
+    const r = (await svc.getKycReview("r1"))!;
+    expect(r.verifiedIdMismatch).toBe(true);
+    expect(where).toMatchObject({
+      id: { not: "r1" },
+      OR: [
+        { idNumberHash: { in: [pii.hashId("63-123456-A-42"), vendorHash] } },
+        { rider: { verifiedIdHash: { in: [pii.hashId("63-123456-A-42"), vendorHash] } } },
+      ],
+    });
+  });
+
+  it("reports verifiedIdMismatch=false when the vendor-verified document matches the typed ID", async () => {
+    const prisma = {
+      rider: { findUnique: async () => riderRow({ verifiedIdHash: pii.hashId("63-123456-A-42") }) },
+      profile: { findMany: async () => [] },
+    };
+    const svc = new AdminKycReviewService(prisma as unknown as PrismaService, pii, noStorage);
+    const r = (await svc.getKycReview("r1"))!;
+    expect(r.verifiedIdMismatch).toBe(false);
   });
 });
 

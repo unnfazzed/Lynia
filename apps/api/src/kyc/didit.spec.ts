@@ -5,6 +5,7 @@ import {
   canonicalizeDiditBody,
   decideDiditKyc,
   diditTimestampFresh,
+  extractDiditDocumentNumber,
   extractDiditScore,
   mapDiditStatus,
   verifyDiditSignature,
@@ -44,6 +45,39 @@ describe("extractDiditScore", () => {
     expect(extractDiditScore({ score: 1.4 })).toBeNull();
     expect(extractDiditScore({ score: "0.9" })).toBeNull();
     expect(extractDiditScore(null)).toBeNull();
+  });
+});
+
+describe("extractDiditDocumentNumber (IR26-04 vendor-document dedupe)", () => {
+  it("reads the per-feature id_verification document/personal number", () => {
+    expect(extractDiditDocumentNumber({ decision: { id_verification: { document_number: "63-123456-A-42" } } })).toBe(
+      "63-123456-A-42",
+    );
+    expect(extractDiditDocumentNumber({ decision: { id_verification: { personal_number: "63123456A42" } } })).toBe(
+      "63123456A42",
+    );
+  });
+  it("reads the kyc-feature alias and the top-level fallback", () => {
+    expect(extractDiditDocumentNumber({ decision: { kyc: { document_number: "63-123456-A-42" } } })).toBe("63-123456-A-42");
+    expect(extractDiditDocumentNumber({ document_number: "63-123456-A-42" })).toBe("63-123456-A-42");
+  });
+  it("prefers id_verification over the kyc alias when both are present, and trims whitespace", () => {
+    const payload = {
+      decision: { id_verification: { document_number: " 63-111111-A-11 " }, kyc: { document_number: "63-222222-B-22" } },
+    };
+    expect(extractDiditDocumentNumber(payload)).toBe("63-111111-A-11");
+  });
+  it("fails open to null on junk: missing, non-string, out-of-bounds length, or digit-free values", () => {
+    expect(extractDiditDocumentNumber({ status: "Approved" })).toBeNull();
+    expect(extractDiditDocumentNumber(null)).toBeNull();
+    expect(extractDiditDocumentNumber({ decision: { id_verification: { document_number: 12345 } } })).toBeNull();
+    expect(extractDiditDocumentNumber({ decision: { id_verification: { document_number: "123" } } })).toBeNull(); // < 4 chars
+    expect(extractDiditDocumentNumber({ decision: { id_verification: { document_number: "x".repeat(41) } } })).toBeNull();
+    expect(extractDiditDocumentNumber({ decision: { id_verification: { document_number: "NO-DIGITS-HERE" } } })).toBeNull();
+    // A junk primary must not mask a valid fallback further down the probe order.
+    expect(
+      extractDiditDocumentNumber({ decision: { id_verification: { document_number: "123" }, kyc: { document_number: "63-123456-A-42" } } }),
+    ).toBe("63-123456-A-42");
   });
 });
 

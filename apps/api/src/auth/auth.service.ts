@@ -10,6 +10,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -170,70 +171,83 @@ export class AuthService {
       }
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      // idNumber is stored on the account record (0·6). Only write it when provided so a name-only edit
-      // (or the returning-user path) never clears an existing value.
-      if (idNumberHash) {
-        // One-ID-one-account (2026-07-26, mirrors rider.service.completeProfile): when this write CLAIMS
-        // an ID the profile doesn't already hold (stored ≠ incoming — resending your own ID makes no new
-        // claim and stays idempotent, incl. for legacy pre-policy duplicates), refuse if another LIVE
-        // account carries it. The advisory xact lock serializes concurrent claimers of the SAME hash
-        // across both ID-writing routes, closing the count-then-write race. Erased tombstones (DS15-02b
-        // keeps their hash; a restricted account can't self-erase) are a returning user — allowed, and
-        // still caught by the A-04 flag recompute below.
-        if (storedIdHash !== idNumberHash) {
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${idNumberHash}))`;
-          const liveDupes = await tx.profile.count({
-            where: { idNumberHash, id: { not: profileId }, NOT: { phone: { startsWith: "erased:" } } },
-          });
-          if (liveDupes > 0) {
-            this.logger.warn(`Profile ${profileId} refused a national ID already on another live account (one-ID-one-account)`);
-            throw new ConflictException({
-              reason: "id_in_use",
-              message: "This national ID is already linked to another account. Contact support if it's yours.",
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // idNumber is stored on the account record (0·6). Only write it when provided so a name-only edit
+        // (or the returning-user path) never clears an existing value.
+        if (idNumberHash) {
+          // One-ID-one-account (2026-07-26, mirrors rider.service.completeProfile): when this write CLAIMS
+          // an ID the profile doesn't already hold (stored ≠ incoming — resending your own ID makes no new
+          // claim and stays idempotent, incl. for legacy pre-policy duplicates), refuse if another LIVE
+          // account carries it. The advisory xact lock serializes concurrent claimers of the SAME hash
+          // across both ID-writing routes, closing the count-then-write race. Erased tombstones (DS15-02b
+          // keeps their hash; a restricted account can't self-erase) are a returning user — allowed, and
+          // still caught by the A-04 flag recompute below.
+          if (storedIdHash !== idNumberHash) {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${idNumberHash}))`;
+            const liveDupes = await tx.profile.count({
+              where: { idNumberHash, id: { not: profileId }, NOT: { phone: { startsWith: "erased:" } } },
             });
+            if (liveDupes > 0) {
+              this.logger.warn(`Profile ${profileId} refused a national ID already on another live account (one-ID-one-account)`);
+              throw new ConflictException({
+                reason: "id_in_use",
+                message: "This national ID is already linked to another account. Contact support if it's yours.",
+              });
+            }
+          }
+          // The pre-check above is check-then-write: the KYC webhook (applyKycResult) can commit `verified`
+          // between that read and this write, so an iteration that observed a non-verified status could
+          // still land a new ID after the freeze took effect. Make the ID-writing update a CAS that
+          // re-asserts the freeze atomically — it matches only when the rider is NOT (verified AND actually
+          // changing the ID), i.e. the exact condition the pre-check gates on, evaluated at write time. A
+          // re-send of the SAME id (or a not-yet-verified rider) still writes; a genuine change against a
+          // now-verified rider matches 0 rows → the same "ID frozen" error.
+          const written = await tx.profile.updateMany({
+            where: {
+              id: profileId,
+              NOT: { AND: [{ rider: { kycStatus: "verified" } }, { idNumberHash: { not: idNumberHash } }] },
+            },
+            // Store the national ID encrypted at rest + its dedup hash (LR8); never the raw number.
+            data: { firstName: body.firstName, lastName: body.lastName, idNumber: this.pii.encryptId(body.idNumber!), idNumberHash },
+          });
+          if (written.count === 0) {
+            throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
+          }
+        } else {
+          await tx.profile.update({
+            where: { id: profileId },
+            data: { firstName: body.firstName, lastName: body.lastName },
+          });
+        }
+
+        // DS-11: recompute the A-04 reviewer flag whenever idNumber is rewritten (completeProfile does the
+        // same). The live-block above already refuses a swap onto a LIVE colliding ID; this keeps the
+        // reviewer signal honest for what remains — erased-tombstone (returning-user) and legacy
+        // pre-policy collisions, and laundering a flagged ID back to a clean one (flag must clear too).
+        // Persist on the rider row (updateMany: a no-op for a non-rider caller), in the same tx.
+        if (idNumberHash) {
+          const dupCount = await tx.profile.count({ where: { idNumberHash, id: { not: profileId } } });
+          await tx.rider.updateMany({ where: { profileId }, data: { duplicateIdFlag: dupCount > 0 } });
+          if (dupCount > 0) {
+            this.logger.warn(
+              `Profile ${profileId} changed national ID to one already on another account — A-04 flag set (DS-11)`,
+            );
           }
         }
-        // The pre-check above is check-then-write: the KYC webhook (applyKycResult) can commit `verified`
-        // between that read and this write, so an iteration that observed a non-verified status could
-        // still land a new ID after the freeze took effect. Make the ID-writing update a CAS that
-        // re-asserts the freeze atomically — it matches only when the rider is NOT (verified AND actually
-        // changing the ID), i.e. the exact condition the pre-check gates on, evaluated at write time. A
-        // re-send of the SAME id (or a not-yet-verified rider) still writes; a genuine change against a
-        // now-verified rider matches 0 rows → the same "ID frozen" error.
-        const written = await tx.profile.updateMany({
-          where: {
-            id: profileId,
-            NOT: { AND: [{ rider: { kycStatus: "verified" } }, { idNumberHash: { not: idNumberHash } }] },
-          },
-          // Store the national ID encrypted at rest + its dedup hash (LR8); never the raw number.
-          data: { firstName: body.firstName, lastName: body.lastName, idNumber: this.pii.encryptId(body.idNumber!), idNumberHash },
-        });
-        if (written.count === 0) {
-          throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
-        }
-      } else {
-        await tx.profile.update({
-          where: { id: profileId },
-          data: { firstName: body.firstName, lastName: body.lastName },
+      });
+    } catch (err) {
+      // IR26-05: the partial unique index on live id_number_hash (migration 0039) backstops the
+      // advisory-locked count above at the DB level — a bypassing write path racing this one
+      // P2002s; surface it as the same 409 the in-app check raises, not a raw 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException({
+          reason: "id_in_use",
+          message: "This national ID is already linked to another account. Contact support if it's yours.",
         });
       }
-
-      // DS-11: recompute the A-04 reviewer flag whenever idNumber is rewritten (completeProfile does the
-      // same). The live-block above already refuses a swap onto a LIVE colliding ID; this keeps the
-      // reviewer signal honest for what remains — erased-tombstone (returning-user) and legacy
-      // pre-policy collisions, and laundering a flagged ID back to a clean one (flag must clear too).
-      // Persist on the rider row (updateMany: a no-op for a non-rider caller), in the same tx.
-      if (idNumberHash) {
-        const dupCount = await tx.profile.count({ where: { idNumberHash, id: { not: profileId } } });
-        await tx.rider.updateMany({ where: { profileId }, data: { duplicateIdFlag: dupCount > 0 } });
-        if (dupCount > 0) {
-          this.logger.warn(
-            `Profile ${profileId} changed national ID to one already on another account — A-04 flag set (DS-11)`,
-          );
-        }
-      }
-    });
+      throw err;
+    }
     return this.getProfile(profileId);
   }
 

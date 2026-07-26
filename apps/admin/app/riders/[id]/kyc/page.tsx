@@ -154,6 +154,22 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
         </div>
       ) : null}
 
+      {/* IR26-04 vendor-document dedupe: the ID number Didit VERIFIED disagrees with the number the
+          applicant TYPED — the "typed a fake number, showed a real document" ban-evasion tell. The
+          webhook already held this verify for review; the reviewer resolves it here. */}
+      {r.verifiedIdMismatch === true ? (
+        <div className="warnbar">
+          <IconAlert />
+          <span className="t">
+            <b>ID-check document doesn&apos;t match the typed ID.</b> The document number verified by the
+            ID check is different from the national ID this applicant typed (
+            <span className="mono">{r.idNumber ?? "—"}</span>). Compare the Didit document details against
+            the application before deciding — a deliberate mismatch is the shape of a banned identity
+            re-registering under a made-up number.
+          </span>
+        </div>
+      ) : null}
+
       <div className="detail-grid">
         <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.lg }}>
           <section className="card">

@@ -71,6 +71,39 @@ export function decideDiditKyc(status: string, score: number | null): { status: 
 }
 
 /**
+ * Pull the DOCUMENT NUMBER the vendor actually verified out of a Didit decision webhook, or null when
+ * the payload doesn't expose one (IR26-04 vendor-document dedupe). Didit's terminal decision payload
+ * carries the extracted document fields under the per-feature `decision` results — the ID-verification
+ * feature exposes `document_number` / `personal_number` (alias `kyc` on some workflow versions); we
+ * probe those documented shapes defensively, same approach as {@link extractDiditScore}.
+ *
+ * Deliberately fail-open to null: a shape mismatch (or a workflow that omits document data) degrades
+ * to the pre-IR26-04 behavior — the caller logs the absence so ops can see extraction coverage, but a
+ * verify is never held hostage to a field we couldn't find. Bounds mirror the typed-ID contract
+ * (4–40 chars, at least one digit) so junk (empty strings, booleans, prose) can't mint a hash.
+ */
+export function extractDiditDocumentNumber(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  const decision = (p.decision ?? {}) as Record<string, unknown>;
+  const idVerification = (decision.id_verification ?? {}) as Record<string, unknown>;
+  const kyc = (decision.kyc ?? {}) as Record<string, unknown>;
+  const candidates = [
+    idVerification.document_number,
+    idVerification.personal_number,
+    kyc.document_number,
+    kyc.personal_number,
+    p.document_number,
+  ];
+  for (const c of candidates) {
+    if (typeof c !== "string") continue;
+    const v = c.trim();
+    if (v.length >= 4 && v.length <= 40 && /\d/.test(v)) return v;
+  }
+  return null;
+}
+
+/**
  * Whole-number floats (1.0) → integers (1), recursively. Part of the X-Signature-V2 canonical form;
  * matches Didit's server-side canonicalisation. (Mostly a no-op in JS, where JSON.parse already
  * collapses 1.0 → 1 — kept for exact parity with the documented contract.)

@@ -38,6 +38,7 @@ export class AdminKycReviewService {
         kycDeclineReason: true,
         idVerified: true,
         duplicateIdFlag: true,
+        verifiedIdHash: true,
         updatedAt: true,
         photoUrl: true,
         profile: { select: { firstName: true, lastName: true, phone: true, idNumber: true, idNumberHash: true } },
@@ -55,14 +56,21 @@ export class AdminKycReviewService {
       : null;
 
     // A-04 duplicate-account guard: the live set of OTHER accounts sharing this national ID, so the
-    // reviewer can compare them before approving (a national ID isn't unique — phone is — so a second
-    // SIM can re-onboard under the same ID). Recomputed here rather than trusting the become-rider
-    // snapshot: a colliding account may have been created, edited or deleted since. Phones are masked
-    // (A-03) — the reviewer matches on the ID, not the phone.
-    const duplicateIdAccounts = rider.profile.idNumberHash
+    // reviewer can compare them before approving (post-IR26-01 a LIVE collision is blocked at claim
+    // time, so what shows here is an erased-tombstone returning user or a legacy pre-policy pair).
+    // Recomputed here rather than trusting the become-rider snapshot: a colliding account may have
+    // been created, edited or deleted since. IR26-04: matches on the TYPED hash and the
+    // vendor-VERIFIED document hash, in both directions — a ban-evader who typed a fake number but
+    // showed the real document collides through `verifiedIdHash` where the typed hashes disagree.
+    // Phones are masked (A-03) — the reviewer matches on the ID, not the phone.
+    const idHashes = [...new Set([rider.profile.idNumberHash, rider.verifiedIdHash].filter((h): h is string => !!h))];
+    const duplicateIdAccounts = idHashes.length
       ? (
           await this.prisma.profile.findMany({
-            where: { idNumberHash: rider.profile.idNumberHash, id: { not: rider.profileId } },
+            where: {
+              id: { not: rider.profileId },
+              OR: [{ idNumberHash: { in: idHashes } }, { rider: { verifiedIdHash: { in: idHashes } } }],
+            },
             select: {
               id: true,
               firstName: true,
@@ -108,6 +116,11 @@ export class AdminKycReviewService {
       // means "review the ID before approving".
       duplicateIdFlag: rider.duplicateIdFlag,
       duplicateIdAccounts,
+      // IR26-04: true when the vendor-verified document number's hash disagrees with the TYPED national
+      // ID — the "typed a fake number, showed a real document" tell. null = unknown (no vendor doc data
+      // persisted yet, or no typed ID to compare against), so the console can render tri-state honestly.
+      verifiedIdMismatch:
+        rider.verifiedIdHash && rider.profile.idNumberHash ? rider.verifiedIdHash !== rider.profile.idNumberHash : null,
     };
   }
 }

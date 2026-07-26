@@ -99,58 +99,71 @@ export class RiderService {
       throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      // One-ID-one-account (2026-07-26): when this write CLAIMS an ID the profile doesn't already hold
-      // (stored hash ≠ incoming — a resend of the caller's own ID makes no new claim and must stay
-      // idempotent, incl. for legacy pre-policy duplicates), refuse if another LIVE account carries it.
-      // The advisory xact lock serializes concurrent claimers of the SAME hash across both ID-writing
-      // routes (here + auth.updateProfile), closing the count-then-write race — two parallel signups
-      // typing one ID can't both pass the count. Erased tombstones don't block (returning user; see
-      // liveDuplicateIdAccountCount) but still set the reviewer flag below.
-      if (existing?.idNumberHash !== idNumberHash) {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${idNumberHash}))`;
-        if ((await this.liveDuplicateIdAccountCount(tx, profileId, idNumberHash)) > 0) {
-          this.logger.warn(`Profile ${profileId} refused a national ID already on another live account (one-ID-one-account)`);
-          throw new ConflictException({
-            reason: "id_in_use",
-            message: "This national ID is already linked to another account. Contact support if it's yours.",
-          });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // One-ID-one-account (2026-07-26): when this write CLAIMS an ID the profile doesn't already hold
+        // (stored hash ≠ incoming — a resend of the caller's own ID makes no new claim and must stay
+        // idempotent, incl. for legacy pre-policy duplicates), refuse if another LIVE account carries it.
+        // The advisory xact lock serializes concurrent claimers of the SAME hash across both ID-writing
+        // routes (here + auth.updateProfile), closing the count-then-write race — two parallel signups
+        // typing one ID can't both pass the count. Erased tombstones don't block (returning user; see
+        // liveDuplicateIdAccountCount) but still set the reviewer flag below.
+        if (existing?.idNumberHash !== idNumberHash) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${idNumberHash}))`;
+          if ((await this.liveDuplicateIdAccountCount(tx, profileId, idNumberHash)) > 0) {
+            this.logger.warn(`Profile ${profileId} refused a national ID already on another live account (one-ID-one-account)`);
+            throw new ConflictException({
+              reason: "id_in_use",
+              message: "This national ID is already linked to another account. Contact support if it's yours.",
+            });
+          }
         }
-      }
 
-      // The pre-check above is check-then-write: the KYC webhook (applyKycResult) can commit `verified`
-      // between that read and this write, so an iteration that observed a non-verified status can still
-      // land a new ID after the freeze took effect. Make the ID-writing update a CAS that re-asserts the
-      // freeze atomically — it matches only when the rider is NOT (verified AND actually changing the ID),
-      // i.e. the exact condition the pre-check gates on, evaluated at write time. A re-send of the SAME id
-      // (idNumberHash unchanged) or a not-yet-verified rider still writes; a genuine change against a
-      // now-verified rider matches 0 rows → the same "ID frozen" error.
-      const written = await tx.profile.updateMany({
-        where: {
-          id: profileId,
-          NOT: { AND: [{ rider: { kycStatus: "verified" } }, { idNumberHash: { not: idNumberHash } }] },
-        },
-        data: {
-          firstName: data.firstName,
-          lastName: data.lastName,
-          idNumber: this.pii.encryptId(data.idNumber),
-          idNumberHash,
-        },
-      });
-      if (written.count === 0) {
-        throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
+        // The pre-check above is check-then-write: the KYC webhook (applyKycResult) can commit `verified`
+        // between that read and this write, so an iteration that observed a non-verified status can still
+        // land a new ID after the freeze took effect. Make the ID-writing update a CAS that re-asserts the
+        // freeze atomically — it matches only when the rider is NOT (verified AND actually changing the ID),
+        // i.e. the exact condition the pre-check gates on, evaluated at write time. A re-send of the SAME id
+        // (idNumberHash unchanged) or a not-yet-verified rider still writes; a genuine change against a
+        // now-verified rider matches 0 rows → the same "ID frozen" error.
+        const written = await tx.profile.updateMany({
+          where: {
+            id: profileId,
+            NOT: { AND: [{ rider: { kycStatus: "verified" } }, { idNumberHash: { not: idNumberHash } }] },
+          },
+          data: {
+            firstName: data.firstName,
+            lastName: data.lastName,
+            idNumber: this.pii.encryptId(data.idNumber),
+            idNumberHash,
+          },
+        });
+        if (written.count === 0) {
+          throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
+        }
+        // A-04 reviewer signal (DS-11 parity — auth.updateProfile already recomputes; this sibling route
+        // previously only logged). After the live-block above, a surviving collision is an erased tombstone
+        // (returning user) or a legacy pre-policy duplicate. Persist it on the rider row in the same tx —
+        // a no-op for a not-yet-rider caller (becomeRider snapshots the flag at onboarding instead). We
+        // don't tell the applicant: surfacing the FLAG would only coach a ban-evader to change the ID.
+        const dupCount = await tx.profile.count({ where: { idNumberHash, id: { not: profileId } } });
+        await tx.rider.updateMany({ where: { profileId }, data: { duplicateIdFlag: dupCount > 0 } });
+        if (dupCount > 0) {
+          this.logger.warn(`Profile ${profileId} completed signup with a national ID already on another (erased/legacy) account (A-04)`);
+        }
+        });
+    } catch (err) {
+      // IR26-05: the partial unique index on live id_number_hash (migration 0039) is the DB-level
+      // backstop behind the advisory-locked count above — if a bypassing write path ever races this
+      // one, the index P2002s; surface it as the same 409 the in-app check raises, not a raw 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException({
+          reason: "id_in_use",
+          message: "This national ID is already linked to another account. Contact support if it's yours.",
+        });
       }
-      // A-04 reviewer signal (DS-11 parity — auth.updateProfile already recomputes; this sibling route
-      // previously only logged). After the live-block above, a surviving collision is an erased tombstone
-      // (returning user) or a legacy pre-policy duplicate. Persist it on the rider row in the same tx —
-      // a no-op for a not-yet-rider caller (becomeRider snapshots the flag at onboarding instead). We
-      // don't tell the applicant: surfacing the FLAG would only coach a ban-evader to change the ID.
-      const dupCount = await tx.profile.count({ where: { idNumberHash, id: { not: profileId } } });
-      await tx.rider.updateMany({ where: { profileId }, data: { duplicateIdFlag: dupCount > 0 } });
-      if (dupCount > 0) {
-        this.logger.warn(`Profile ${profileId} completed signup with a national ID already on another (erased/legacy) account (A-04)`);
-      }
-    });
+      throw err;
+    }
     return { ok: true };
   }
 
@@ -511,6 +524,10 @@ export class RiderService {
     status: "verified" | "failed" | "expired",
     eventAt: Date,
     reason?: string | null,
+    // IR26-04: the document number the vendor actually verified (extractDiditDocumentNumber), when the
+    // decision payload exposes one. Only consulted on a `verified` outcome; null degrades to the
+    // pre-IR26-04 behavior so a payload-shape mismatch can never wedge real verifications.
+    verifiedDocNumber?: string | null,
   ): Promise<{ updated: number }> {
     // DS15-06: the CAS status mutation AND its AuditLog row commit in ONE transaction — matching the
     // manual adminSetKyc path and admin-riders.service's suspend/lift/ban CAS+audit pairs. Previously the
@@ -546,8 +563,42 @@ export class RiderService {
       // resets the counter — an automated expiry webhook must not silently wipe the A-02 two-decline lock an
       // admin already applied. kycRef is unique, so at most one row. For verified/failed the extra
       // kycAttempts field is simply read and unused (a harmless no-op beyond the existing flag read).
-      const current = await tx.rider.findFirst({ where: { kycRef }, select: { duplicateIdFlag: true, kycAttempts: true } });
-      const holdForReview = status === "verified" && current?.duplicateIdFlag === true;
+      const current = await tx.rider.findFirst({
+        where: { kycRef },
+        select: { profileId: true, duplicateIdFlag: true, kycAttempts: true, profile: { select: { idNumberHash: true } } },
+      });
+      // IR26-04 vendor-document dedupe. The typed-ID gate (IR26-01) blocks reusing a number someone
+      // TYPED — a ban-evader's remaining move is typing a DIFFERENT number while showing the same real
+      // document to the vendor. When the decision payload exposes the verified document number, hash it
+      // (pii.hashId normalizes punctuation/case, so it's directly comparable to Profile.idNumberHash)
+      // and refuse to auto-verify when:
+      //  - docMismatch: it doesn't match what this applicant typed (or they have no typed ID — a
+      //    legacy pre-IR26-02 rider we can't corroborate), OR
+      //  - docCollision: it matches ANOTHER account's typed hash or vendor-verified hash (erased
+      //    tombstones included — same reviewer-decides semantics as duplicateIdFlag).
+      // Absent doc number (null) → both false → exactly the pre-IR26-04 behavior. The raw number is
+      // never persisted or logged — only the HMAC hash (LR8).
+      const docHash = status === "verified" && verifiedDocNumber && current ? this.pii.hashId(verifiedDocNumber) : null;
+      let docMismatch = false;
+      let docCollision = false;
+      if (docHash && current) {
+        docMismatch = current.profile.idNumberHash !== docHash;
+        const [profileHits, riderHits] = await Promise.all([
+          tx.profile.count({ where: { idNumberHash: docHash, id: { not: current.profileId } } }),
+          tx.rider.count({ where: { verifiedIdHash: docHash, profileId: { not: current.profileId } } }),
+        ]);
+        docCollision = profileHits > 0 || riderHits > 0;
+        if (docMismatch || docCollision) {
+          this.logger.warn(
+            `KYC ${kycRef}: vendor-verified document ${docMismatch ? "does not match the typed national ID" : ""}${docMismatch && docCollision ? " and " : ""}${docCollision ? "collides with another account" : ""} — held for review (IR26-04)`,
+          );
+        }
+      } else if (status === "verified" && !verifiedDocNumber) {
+        // Coverage signal, not an error: tells ops whether the Didit workflow/payload actually carries
+        // document data (the extraction is fail-open by design — see extractDiditDocumentNumber).
+        this.logger.log(`KYC ${kycRef}: verified webhook carried no document number — vendor-doc dedupe skipped`);
+      }
+      const holdForReview = status === "verified" && (current?.duplicateIdFlag === true || docMismatch || docCollision);
       const res = await tx.rider.updateMany({
         where: { kycRef, OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] },
         data: {
@@ -557,6 +608,10 @@ export class RiderService {
           // the same webhook delivery can't be reprocessed.
           ...(holdForReview ? {} : { kycStatus: status, idVerified: status === "verified" }),
           kycResolvedAt: eventAt,
+          // IR26-04: persist the vendor-verified document hash EVEN when holding for review — a later
+          // applicant presenting the same physical document must collide with this row too, and the
+          // admin review screen surfaces the mismatch/collision from it.
+          ...(docHash ? { verifiedIdHash: docHash } : {}),
           // Record the auto-decline reason (Didit score below the threshold) so the rider app can show
           // why, and clear any stale reason on a verify/expiry (unchanged for `expired`; a flagged
           // `verified` held for review isn't a resolved decision yet, so its stale decline reason, if
@@ -596,8 +651,17 @@ export class RiderService {
       if (res.count > 0 && holdForReview) {
         const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
         if (rider) {
+          // The audit reason names every condition that held the verify (IR26-04 widened this beyond
+          // the original duplicate_id_flag), so the review trail says WHY without exposing any hash.
+          const holdReason = [
+            current?.duplicateIdFlag ? "duplicate_id_flag" : null,
+            docMismatch ? "verified_id_mismatch" : null,
+            docCollision ? "verified_id_collision" : null,
+          ]
+            .filter(Boolean)
+            .join("+");
           await tx.auditLog.create({
-            data: auditData("system:kyc-webhook", "rider.kyc_review_required", rider.profileId, "duplicate_id_flag", null),
+            data: auditData("system:kyc-webhook", "rider.kyc_review_required", rider.profileId, holdReason, null),
           });
         }
         // No notifyProfileId: the rider isn't told anything changed — they're still `pending`, same as

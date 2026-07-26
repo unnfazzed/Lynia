@@ -200,7 +200,9 @@ export class PrivacyService {
     // DS15-02(b): idNumberHash is deliberately NOT nulled. It's a one-way HMAC (never raw PII), and it's
     // the sole signal duplicateIdAccountCount uses to flag a ban-evader re-registering with the SAME
     // national ID. Nulling it here blinded that check for anyone who ever erased; the raw idNumber
-    // ciphertext (recoverable PII) is still scrubbed.
+    // ciphertext (recoverable PII) is still scrubbed. Rider.verifiedIdHash (IR26-04, the vendor-verified
+    // document hash) is retained by the same argument — one-way hash, ban-evasion dedupe signal; the
+    // rider scrub below deliberately leaves it in place.
     //
     // DS18-04 (TOCTOU CAS): the anonymise write is a CAS `updateMany` re-asserting the profile-level
     // standing predicate (`onHold`, the customer S·2 hold) in its WHERE — not a blind update by id. The

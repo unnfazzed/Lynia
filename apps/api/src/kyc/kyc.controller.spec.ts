@@ -26,18 +26,20 @@ function signV2(raw: string): string {
 const freshTs = (): string => String(Math.floor(Date.now() / 1000));
 
 /** Records applyKycResult calls so we can assert it fires only for terminal statuses, plus the
- *  last event time passed (for the monotonic guard). */
+ *  last event time passed (for the monotonic guard) and the vendor document number (IR26-04). */
 function fakeRiders(updated = 1) {
   const calls: Array<[string, string]> = [];
   let lastEventAt: Date | undefined;
+  let lastDocNumber: string | null | undefined;
   const riders = {
-    applyKycResult: async (ref: string, status: string, eventAt: Date) => {
+    applyKycResult: async (ref: string, status: string, eventAt: Date, _reason?: string | null, docNumber?: string | null) => {
       calls.push([ref, status]);
       lastEventAt = eventAt;
+      lastDocNumber = docNumber;
       return { updated };
     },
   } as unknown as RiderService;
-  return { riders, calls, eventAt: () => lastEventAt };
+  return { riders, calls, eventAt: () => lastEventAt, docNumber: () => lastDocNumber };
 }
 
 const ctl = (riders: RiderService, env: Partial<Env>) => new KycController(riders, env as Env);
@@ -49,6 +51,25 @@ describe("KycController.callback", () => {
     const res = await ctl(riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(raw));
     expect(res).toEqual({ updated: 1 });
     expect(calls).toEqual([["s_1", "verified"]]);
+  });
+
+  // IR26-04: the vendor-verified document number rides the decision payload into applyKycResult, so the
+  // service can dedupe on what the vendor SAW rather than what the applicant typed. Absent → null, and
+  // the service degrades to typed-ID-only behavior.
+  it("passes the extracted document number through to applyKycResult (null when the payload omits it)", async () => {
+    const withDoc = fakeRiders();
+    const rawDoc = JSON.stringify({
+      session_id: "s_doc",
+      status: "Approved",
+      decision: { id_verification: { document_number: "63-123456-A-42" } },
+    });
+    await ctl(withDoc.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(rawDoc));
+    expect(withDoc.docNumber()).toBe("63-123456-A-42");
+
+    const withoutDoc = fakeRiders();
+    const rawBare = JSON.stringify({ session_id: "s_bare", status: "Approved" });
+    await ctl(withoutDoc.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(rawBare));
+    expect(withoutDoc.docNumber()).toBeNull();
   });
 
   it("maps Didit's \"Kyc Expired\" to the terminal `expired` state (1·b2)", async () => {
