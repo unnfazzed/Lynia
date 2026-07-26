@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.4](https://github.com/unnfazzed/Lynia/compare/v0.10.3...v0.10.4) (2026-07-26)
+
+
+### Bug Fixes
+
+* **ux:** close a keystore-failure signup dead end, unify admin write-action errors, fix rider push routing (UX26-01/02/03) ([#392](https://github.com/unnfazzed/Lynia/issues/392)) ([f588e6a](https://github.com/unnfazzed/Lynia/commit/f588e6ac183d8157fe83d5717c72e5593985ef7c))
+
 ## [0.10.3](https://github.com/unnfazzed/Lynia/compare/v0.10.2...v0.10.3) (2026-07-25)
 
 
