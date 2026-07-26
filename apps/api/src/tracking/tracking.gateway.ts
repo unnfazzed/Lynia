@@ -35,22 +35,15 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { BOARD_ROOM, boardGeoRoom, orderRoom, parseBearer } from "./tracking.constants";
+import { PositionCoalescer, POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, type PositionPayload } from "./position-coalescer";
 import { TrackingService } from "./tracking.service";
+
+export { POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS };
 
 interface SocketUser {
   sub: string;
   role: string;
 }
-
-interface PositionPayload {
-  riderId: string;
-  lat: number;
-  lng: number;
-  at: string;
-}
-
-/** Server-side coalesce window: at most one `position` emit per order room per this interval (E3). */
-export const POSITION_COALESCE_MS = 1_000;
 
 /** How often the presence watchdog scans active rides for a dark rider socket (INTERFACE-AUDIT C5).
  *  Pilot-simple: ONE Nest interval over `ACTIVE_RIDE_STATUSES` orders, no new infra. The escalation
@@ -61,17 +54,6 @@ export const PRESENCE_SCAN_INTERVAL_MS = 30_000;
  *  continuous dark period so a peer instance can't re-emit; the primary re-arm is the explicit release
  *  on recovery, this is just the backstop if the releasing instance dies. */
 export const PRESENCE_STALE_DEDUP_TTL_S = 600;
-
-/** A per-order `positionEmit` coalesce entry with no fix for this long is stale (the ride ended or the
- *  rider went offline) — pruned on the presence scan so the map can't grow unbounded over an instance's
- *  lifetime. A later fix simply re-creates the entry as a fresh leading edge. */
-export const POSITION_ROOM_TTL_MS = 60_000;
-
-interface CoalesceState {
-  lastEmit: number;
-  timer?: ReturnType<typeof setTimeout>;
-  pending?: PositionPayload;
-}
 
 /**
  * Live tracking (ET4). WS is best-effort PUSH only — GET /orders/:id (lane C) stays the source of
@@ -89,8 +71,9 @@ export class TrackingGateway
   @WebSocketServer() server!: Server;
 
   /** Per-order-room coalesce state — server-side throttle so one fast/misbehaving client can't flood
-   *  a room with position emits (E3). Keyed by order room; entries are dropped once a window drains. */
-  private readonly positionEmit = new Map<string, CoalesceState>();
+   *  a room with position emits (E3). RF-05a: extracted to `position-coalescer.ts`; only the flush
+   *  callback (the actual socket emit + metrics) crosses back into gateway territory. */
+  private readonly positionCoalescer = new PositionCoalescer((room, payload) => this.flushPositionEmit(room, payload));
 
   /** Presence-watchdog interval handle (C5). Started in afterInit once the server exists. */
   private presenceTimer?: ReturnType<typeof setInterval>;
@@ -391,41 +374,12 @@ export class TrackingGateway
   }
 
   /**
-   * Server-side coalesce of `position` emits to ≤1 per room per POSITION_COALESCE_MS (E3). Leading
-   * edge fires immediately (preserving emit-before-persist / low first-fix latency); further fixes
-   * inside the window overwrite a single buffered payload that a trailing timer flushes at window end,
-   * so the customer always converges on the rider's latest position without a flood. Measures the SLO
-   * on emitted fixes only. Never throws — a null server or timer hiccup must not affect the persist.
+   * Server-side coalesce of `position` emits to ≤1 per room per POSITION_COALESCE_MS (E3). See
+   * {@link PositionCoalescer} for the buffering/timer logic (RF-05a extraction). Measures the SLO on
+   * emitted fixes only. Never throws — a null server or timer hiccup must not affect the persist.
    */
   private coalescePositionEmit(room: string, payload: PositionPayload): void {
-    const now = Date.now();
-    const state = this.positionEmit.get(room) ?? { lastEmit: 0 };
-    if (now - state.lastEmit >= POSITION_COALESCE_MS) {
-      state.lastEmit = now;
-      state.pending = undefined;
-      this.positionEmit.set(room, state);
-      this.flushPositionEmit(room, payload);
-      return;
-    }
-    // Inside the window: buffer the latest fix and ensure a single trailing flush is scheduled.
-    state.pending = payload;
-    this.positionEmit.set(room, state);
-    if (!state.timer) {
-      state.timer = setTimeout(() => {
-        const s = this.positionEmit.get(room);
-        if (!s) return;
-        s.timer = undefined;
-        const next = s.pending;
-        s.pending = undefined;
-        if (next) {
-          s.lastEmit = Date.now();
-          this.flushPositionEmit(room, next);
-        } else {
-          this.positionEmit.delete(room); // window drained with nothing buffered — release the entry
-        }
-      }, POSITION_COALESCE_MS - (now - state.lastEmit));
-      state.timer.unref?.();
-    }
+    this.positionCoalescer.record(room, payload);
   }
 
   /** Fire one `position` emit and record its glass-to-server latency. Best-effort. */
@@ -713,15 +667,11 @@ export class TrackingGateway
     await this.scanCustomerPresence();
   }
 
-  /** Drop `positionEmit` coalesce entries that have gone quiet (no fix for POSITION_ROOM_TTL_MS and no
-   *  pending trailing flush) so the map is bounded by CURRENTLY-active rides, not by every ride the
-   *  instance has ever served. Public for unit testing without driving real timers. */
+  /** Drop coalesce entries that have gone quiet (no fix for POSITION_ROOM_TTL_MS and no pending
+   *  trailing flush) so the map is bounded by CURRENTLY-active rides, not by every ride the instance
+   *  has ever served. Public for unit testing without driving real timers. */
   prunePositionRooms(now: number = Date.now()): void {
-    for (const [room, state] of this.positionEmit) {
-      if (!state.timer && now - state.lastEmit > POSITION_ROOM_TTL_MS) {
-        this.positionEmit.delete(room);
-      }
-    }
+    this.positionCoalescer.prune(now);
   }
 
   /** Customer half of the watchdog (C5 mirror). Split out so a failure in either direction can't
