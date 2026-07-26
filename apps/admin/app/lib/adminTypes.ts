@@ -208,8 +208,13 @@ export interface KycReview {
   submittedAt: string;
   /** A-04: true if this rider's national ID already sat on another account at onboarding (snapshot). */
   duplicateIdFlag: boolean;
-  /** A-04: the live set of OTHER accounts sharing this national ID — empty ⇒ no collision now. */
+  /** A-04: the live set of OTHER accounts sharing this national ID — empty ⇒ no collision now.
+   *  IR26-04: also includes accounts matched through the vendor-VERIFIED document hash. */
   duplicateIdAccounts: DuplicateIdAccount[];
+  /** IR26-04: true = the document number the KYC vendor verified does NOT match the typed national ID
+   *  ("typed a fake number, showed a real document"); false = they match; null = unknown (no vendor
+   *  document data persisted, or no typed ID to compare). */
+  verifiedIdMismatch: boolean | null;
 }
 
 /** One other account sharing this rider's national ID (A-04 duplicate-account guard). */

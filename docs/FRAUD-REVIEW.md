@@ -212,8 +212,12 @@ identity.)
 another LIVE account is now hard-BLOCKED (409 `id_in_use`) at `completeProfile`/`auth.updateProfile`
 (advisory-lock serialized) and at `becomeRider` (which now also requires an ID), not just flagged.
 Erased tombstones and legacy pre-policy duplicates still go through the flag → manual-review path.
-Residual: a *different/forged typed* ID with the real document shown to Didit — needs vendor-document
-dedupe (see `docs/plans/2026-identity-and-pod-hardening.md`).
+**IR26-04/05 (same day, follow-up PR):** the forged-typed-ID residual is closed too — the document
+number Didit VERIFIED is persisted (`Rider.verifiedIdHash`) and a `verified` webhook is held for manual
+review on mismatch-vs-typed or collision with another account's typed/verified hash; plus a DB-level
+partial unique index on live `id_number_hash` (migration 0039). Remaining residual: a genuinely
+different physical document that passes the vendor (L3 attestation territory — see
+`docs/plans/2026-identity-and-pod-hardening.md`).
 
 ### P1-4 · OTP verify — attempt cap is a TOCTOU race + the endpoint is unthrottled → account takeover
 **`apps/api/src/auth/auth.service.ts:240` (`verifyOtp`), `auth.controller.ts:33-34` (`@Throttle` on `/auth/otp/verify`), `otp-store.ts:51-56,105-107`**

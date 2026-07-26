@@ -22,7 +22,7 @@ import { ZodBody } from "../common/zod.pipe";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { RiderService } from "../riders/rider.service";
-import { decideDiditKyc, diditTimestampFresh, extractDiditScore, verifyDiditSignature, verifyDiditSignatureV2 } from "./didit";
+import { decideDiditKyc, diditTimestampFresh, extractDiditDocumentNumber, extractDiditScore, verifyDiditSignature, verifyDiditSignatureV2 } from "./didit";
 
 // A-02: a decline MUST carry the reason code (recorded on the rider + audit log — a compliance
 // invariant, so it's server-enforced here, not only in the admin ConfirmModal). The admin sends a
@@ -113,6 +113,10 @@ export class KycController {
       decision.status,
       eventAt,
       decision.reason ?? null,
+      // IR26-04: the document number the vendor verified (or null when the payload omits it — the
+      // service degrades to typed-ID-only dedupe and logs the coverage gap). Hashed downstream; the
+      // raw number is never persisted or logged.
+      extractDiditDocumentNumber(payload),
     );
     if (res.updated === 0) {
       // No rider has this ref, or the event was stale/duplicate — surface for reconciliation.

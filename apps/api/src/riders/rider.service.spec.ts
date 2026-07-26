@@ -1178,6 +1178,83 @@ describe("RiderService.applyKycResult", () => {
     expect(data).toMatchObject({ kycStatus: "failed", idVerified: false });
   });
 
+  // IR26-04 vendor-document dedupe: applyKycResult keys off the document number the vendor VERIFIED,
+  // not just what the applicant typed. Shared harness: an unflagged rider whose typed ID is
+  // 63-123456-A-42; `profileHits`/`riderHits` simulate the two collision probes.
+  function docPrisma(over: { typedHash?: string | null; profileHits?: number; riderHits?: number } = {}) {
+    const rec: { data?: Record<string, unknown>; audit?: Record<string, unknown> } = {};
+    const prisma = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          rec.data = args.data;
+          return { count: 1 };
+        },
+        findFirst: async () => ({
+          profileId: "p1",
+          duplicateIdFlag: false,
+          kycAttempts: 0,
+          profile: { idNumberHash: over.typedHash === undefined ? pii.hashId("63-123456-A-42") : over.typedHash },
+        }),
+        count: async () => over.riderHits ?? 0,
+      },
+      profile: { count: async () => over.profileHits ?? 0 },
+      auditLog: { create: async (args: { data: Record<string, unknown> }) => { rec.audit = args.data; return {}; } },
+    };
+    return { prisma, rec };
+  }
+
+  it("IR26-04: a verified doc number matching the typed ID (across punctuation) auto-verifies and persists the hash", async () => {
+    const { prisma, rec } = docPrisma();
+    // Vendor returns the same physical number unpunctuated — pii.hashId normalizes, so they collide.
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true, verifiedIdHash: pii.hashId("63-123456-A-42") });
+  });
+
+  it("IR26-04: a verified doc number that DISAGREES with the typed ID is held for review (typed fake, showed real)", async () => {
+    const { prisma, rec } = docPrisma();
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63-999999-Z-99");
+    // Held: status not flipped, but the vendor hash IS persisted so future applicants collide with it.
+    expect(rec.data).not.toHaveProperty("kycStatus");
+    expect(rec.data).not.toHaveProperty("idVerified");
+    expect(rec.data).toMatchObject({ verifiedIdHash: pii.hashId("63-999999-Z-99") });
+    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_mismatch" });
+  });
+
+  it("IR26-04: a rider with NO typed ID (legacy) cannot be corroborated — held as a mismatch", async () => {
+    const { prisma, rec } = docPrisma({ typedHash: null });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63-123456-A-42");
+    expect(rec.data).not.toHaveProperty("kycStatus");
+    expect(rec.audit).toMatchObject({ reasonCode: "verified_id_mismatch" });
+  });
+
+  it("IR26-04: a verified doc number colliding with another PROFILE's typed hash is held (reason verified_id_collision)", async () => {
+    const { prisma, rec } = docPrisma({ profileHits: 1 });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(rec.data).not.toHaveProperty("kycStatus");
+    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_collision" });
+  });
+
+  it("IR26-04: a verified doc number colliding with another RIDER's vendor-verified hash is held too", async () => {
+    const { prisma, rec } = docPrisma({ riderHits: 1 });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(rec.data).not.toHaveProperty("kycStatus");
+    expect(rec.audit).toMatchObject({ reasonCode: "verified_id_collision" });
+  });
+
+  it("IR26-04: no document number in the payload degrades to the pre-IR26-04 behavior (auto-verify, nothing persisted)", async () => {
+    const { prisma, rec } = docPrisma();
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, null);
+    expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(rec.data).not.toHaveProperty("verifiedIdHash");
+  });
+
+  it("IR26-04: a `failed` outcome ignores the document number entirely (no persist, no hold logic)", async () => {
+    const { prisma, rec } = docPrisma();
+    await svc(prisma, {}).applyKycResult("sess_1", "failed", new Date(), "score_below_threshold", "63-999999-Z-99");
+    expect(rec.data).toMatchObject({ kycStatus: "failed" });
+    expect(rec.data).not.toHaveProperty("verifiedIdHash");
+  });
+
   it("DS15-06: the status mutation and its audit row are atomic — an audit-write failure rolls the mutation back (no committed-without-audit decision)", async () => {
     const calls: string[] = [];
     let committed = false;

@@ -49,9 +49,12 @@
 - **Refuses while a delivery is live** (`ConflictException`) — a customer with an active order, or a
   rider mid-ride (`ACTIVE_RIDE_STATUSES`), must finish or cancel first, so erasure can't strand a delivery.
 - **Anonymises the profile** — `firstName="Deleted"`, `lastName="User"`, `email=null`,
-  `idNumber=null`, `idNumberHash=null`, `photoUrl=null`, and `phone` → a unique, non-dialable tombstone
-  (`erased:<id>`) so the account can't be logged into or re-identified, and the real number is free for
-  a genuine re-signup (which creates a fresh profile).
+  `idNumber=null` (the recoverable ciphertext), `photoUrl=null`, and `phone` → a unique, non-dialable
+  tombstone (`erased:<id>`) so the account can't be logged into or re-identified, and the real number is
+  free for a genuine re-signup (which creates a fresh profile). `idNumberHash` — and the rider's
+  `verifiedIdHash` (IR26-04) — are deliberately **retained**: both are one-way HMACs (never raw PII) and
+  are the duplicate-ID / ban-evasion dedupe signal (DS15-02b); erased tombstones are excluded from the
+  one-ID-one-account *block* (IR26-01), so retention never locks a returning user out of their own ID.
 - **Scrubs rider PII** (bike reg, photo, KYC refs/reasons, last position) — row kept for the ledger.
 - **Deletes** saved addresses, device tokens, and sessions (logs every device out).
 - **Nulls the GPS trail** on all of the user's orders' `order_events`.

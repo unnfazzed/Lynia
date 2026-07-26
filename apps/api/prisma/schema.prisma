@@ -211,6 +211,13 @@ model Rider {
   // or out-of-order delivery can't overwrite a newer decision (see RiderService.applyKycResult).
   kycRef          String?   @unique @map("kyc_ref")
   kycResolvedAt   DateTime? @map("kyc_resolved_at")
+  // IR26-04 vendor-document dedupe: the HMAC hash (LR8 — never the raw number) of the document number
+  // the KYC VENDOR actually verified, persisted from the Didit decision webhook on a `verified`
+  // outcome. The dedupe axis the typed idNumberHash can't cover — a ban-evader can TYPE a different
+  // number but must SHOW the same physical document. pii.hashId normalizes before hashing, so this is
+  // directly comparable to Profile.idNumberHash. Retained on erasure like idNumberHash (DS15-02b).
+  // Partial index managed via raw SQL (migration 0038).
+  verifiedIdHash  String?   @map("verified_id_hash")
   isOnline        Boolean   @default(false) @map("is_online")
   lastHeartbeatAt DateTime? @map("last_heartbeat_at")
   currentLat      Float?    @map("current_lat")
