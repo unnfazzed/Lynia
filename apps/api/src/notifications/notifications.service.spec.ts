@@ -386,6 +386,26 @@ describe("NotificationsService — new-offer notice", () => {
   });
 });
 
+describe("NotificationsService — issue-resolved notice (UX26-03)", () => {
+  it("carries no status/to when the opener is the customer (riderOrderStatus omitted)", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+    await service.notifyIssueResolved("cust", "o1", "refund");
+    expect(push.sendEach).toHaveBeenCalledWith([
+      expect.objectContaining({ token: "c1", data: { orderId: "o1", kind: "issue" } }),
+    ]);
+  });
+
+  it("stamps status + to:'rider' when the opener is the rider, so a rider still on the job routes straight there", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "r1" }]);
+    await service.notifyIssueResolved("rider-1", "o1", "close_no_action", "assigned");
+    expect(push.sendEach).toHaveBeenCalledWith([
+      expect.objectContaining({ token: "r1", data: { orderId: "o1", kind: "issue", status: "assigned", to: "rider" } }),
+    ]);
+  });
+});
+
 describe("NotificationsService — new-broadcast notice (rider primary channel, CONCEPT §3.10)", () => {
   it("pushes the new order to every supplied nearby rider, batched, with a `broadcast` kind", async () => {
     const { prisma, push, service } = makeDeps();

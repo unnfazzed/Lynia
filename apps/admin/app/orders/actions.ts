@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminPost } from "../lib/api";
+import { adminPostResult, describeAdminPostFailure } from "../lib/api";
 
 /**
  * Admin order mutations (item 1). Each is the domain half of a <ConfirmModal> confirm — the audit-log
@@ -13,11 +13,11 @@ import { adminPost } from "../lib/api";
 export async function cancelOrder(id: string, reasonCode: string | null, note: string): Promise<void> {
   // Binds ReasonRequired = { reason, note? } — send `reason` (not the audit envelope's `reasonCode`),
   // else the cancel 400s on the missing required field.
-  const ok = await adminPost(`/admin/orders/${id}/cancel`, {
+  const res = await adminPostResult(`/admin/orders/${id}/cancel`, {
     reason: reasonCode ?? "",
     note: note || null,
   });
-  if (!ok) throw new Error(`Failed to cancel order ${id} (check API_BASE_URL / admin token).`);
+  if (!res.ok) throw new Error(`Failed to cancel order ${id}: ${describeAdminPostFailure(res)}`);
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders");
 }
@@ -25,11 +25,11 @@ export async function cancelOrder(id: string, reasonCode: string | null, note: s
 /** KB-POD-DISPUTE Phase B: adjudicate a rider-raised `undelivered` order as DELIVERED despite a withheld
  *  code. Binds ReasonRequired = { reason, note? }, same shape as cancel. */
 export async function adjudicateDelivered(id: string, reasonCode: string | null, note: string): Promise<void> {
-  const ok = await adminPost(`/admin/orders/${id}/adjudicate-delivered`, {
+  const res = await adminPostResult(`/admin/orders/${id}/adjudicate-delivered`, {
     reason: reasonCode ?? "",
     note: note || null,
   });
-  if (!ok) throw new Error(`Failed to adjudicate order ${id} as delivered (check API_BASE_URL / admin token).`);
+  if (!res.ok) throw new Error(`Failed to adjudicate order ${id} as delivered: ${describeAdminPostFailure(res)}`);
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders");
 }
@@ -43,12 +43,12 @@ export async function adjustFare(
   // The endpoint binds FareAdjust = { agreedFare: number, reason: string(min1), note? } — NOT the
   // audit envelope. Send exactly that shape: coerce the numeric-string input to a number and map the
   // reason-code radio to `reason` (a mismatch here is a silent 400 the audit row can't reveal).
-  const ok = await adminPost(`/admin/orders/${id}/fare`, {
+  const res = await adminPostResult(`/admin/orders/${id}/fare`, {
     agreedFare: Number(newFare),
     reason: reasonCode ?? "",
     note: note || null,
   });
-  if (!ok) throw new Error(`Failed to adjust fare for order ${id} (check API_BASE_URL / admin token).`);
+  if (!res.ok) throw new Error(`Failed to adjust fare for order ${id}: ${describeAdminPostFailure(res)}`);
   revalidatePath(`/orders/${id}`);
   // Also refresh the list — its Fare column shows agreed→proposed and would otherwise serve a stale
   // value after an adjustment (parity with cancelOrder / adjudicateDelivered above).

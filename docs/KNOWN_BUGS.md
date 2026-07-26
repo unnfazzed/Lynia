@@ -1882,3 +1882,39 @@ per survivor. **Two findings, both MEDIUM — both fixed this run** with regress
 BH-25a — `grep -rn "emitPresenceRecovered"` / `grep -rn "presenceRecovered"` — 2 hits each before the fix
 (one direction each), now 2 hits each, symmetric. BH-25b — `grep -rn "for (const room of client.rooms)\|for (const room of s.rooms)"` — 3 hits (`boardSubscribe` fixed, `boardLeave` fixed as a confirmed
 sibling, `kickRiderFromBoard` ledgered OPEN as a distinct, non-matching TOCTOU shape).
+
+---
+
+## UX review 2026-07-26 (UX-improvements routine) — `docs/UX-USABILITY-REVIEW-2026-07-26.md`
+
+Phase 0: zero open `claude/*` PRs (`mcp__github__list_pull_requests` state=open returned `[]`) — the
+2026-07-25 night bug-hunt PR (#388) and everything after it were already merged onto `main`, including
+two same-day auth commits (`65350ff`, `e2d8d36`) folded into PR #391 that turned out to be the root
+cause of this run's HIGH finding. Phase 0.5 rotated to the UX lane's least-recently-checked headers
+(UX21 already re-checked Money-fraud/Data-integrity/Ship-infra-correctness; UX19/UX20 covered the rest)
+— **KYC**, **Object-authz/IDOR**, **Mobile-journey-dead-ends** — 3/3 sampled headers confirmed intact
+(webhook fail-closed guard, wash-trade rejection, rider cooldown gate all present in code), no fresh
+findings from the spot-check. Hunt ran via the agentic-loop engine
+(`Workflow({name: 'lane-bug-hunt'}, args: 'ux')`) — 4 finder lenses, 3 candidates found, all 3 survived
+adversarial verification (2 unanimous REAL, 1 on a 2-of-3 majority after independent re-verification
+narrowed its scope — see the dated report). **Three findings — one HIGH, two MEDIUM — all fixed this
+run**, plus 4 additional sibling sites the mandatory sweep turned up; `pnpm typecheck` + `pnpm test` all
+green (`@lynia/api` 1222/1222, `@lynia/mobile` 530/530, `@lynia/admin` typecheck+lint clean).
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| UX26-01 | **New-account sign-up became a permanent, misleadingly-labelled dead end on a device whose keystore can't persist writes.** The same-day commit `65350ff` made `x-device-id` mandatory for account creation (`auth.service.ts` throws 400 `"A device id is required to create an account."` when absent) to close a per-device signup-cap bypass — but `apps/mobile/src/api/client.ts`'s `getDeviceId().catch(() => null)` silently omits the header on ANY `SecureStore` failure, and `getDeviceId()` (`session.ts`) could throw on both `getItemAsync` (documented keystore-decrypt failure on low-end Android) and `setItemAsync`. Worse, the 400 fires AFTER the OTP is already consumed server-side, so a same-code retry falls into the generic 401 "Code expired or never requested" path, looping the user into "Send a fresh code" forever — a resend can never fix a broken keystore. | `apps/api/src/auth/auth.service.ts:332-334`, `apps/mobile/src/auth/session.ts` (`getDeviceId`), `apps/mobile/src/api/client.ts:150-153` | HIGH | **FIXED** — `getDeviceId()` now catches both the read and write failure and falls back to a process-lifetime-only id (never persisted, so a relaunch mints a fresh one) instead of throwing, so `x-device-id` is still sent and the server's per-device signup gate is still satisfied — it just can't dedupe across restarts on that one broken device. 3 new regression tests in `session.test.ts` (write failure, read failure, healthy-keystore caching unchanged). |
+| UX26-02 | **All 10 admin-console write actions collapsed every server-rejection reason into a hardcoded "check API_BASE_URL / admin token" message**, discarding the API's own deliberately-written validation text (e.g. "Only an undelivered order can be adjudicated", a KYC CAS conflict) and misreporting session expiry as an infra/config problem. The 2026-07-16 UX pass (UX16-04) fixed this exact class for `sos/actions.ts` alone; it was never generalized. | `apps/admin/app/{orders,riders,customers,issues}/actions.ts`, `apps/admin/app/actions/audit.ts`, `apps/admin/app/lib/api.ts` | MEDIUM | **FIXED** — `adminPostResult` now captures the API's `message` body on a non-2xx response; a new shared funnel `describeAdminPostFailure` (unconfigured/unreachable/401-403/http-with-message/generic) replaces the hardcoded string at all 10 call sites, and `sos/actions.ts` was refactored onto the same funnel (retiring the duplicated classification it used to carry alone) so the class can't drift back apart. |
+| UX26-03 | **`adjustFare`'s rider push/feed row carried no order-status field, so a rider still on the exact `assigned` job (right after admin corrects the fare) got routed to `/order/:id` instead of `/rider/job` directly** — one extra tap, not a dead end (independent re-verification found the hunt's original "bare dead-control screen" characterization overstated: `/order/:id` already renders `LiveTrackingCard` with map/ETA/call/SOS/an "Open your job" link for an active rider viewer). The same gap exists on `notifyIssueResolved`'s push/feed row when the issue opener is the rider. | `apps/api/src/admin/admin-orders.service.ts` (`adjustFare`), `apps/api/src/notifications/notifications-feed.service.ts`, `apps/api/src/issues/issues.service.ts`, `apps/api/src/notifications/notifications.service.ts` (`notifyIssueResolved`) | MEDIUM (downgraded from the hunt's initial severity after independent verification) | **FIXED** — `status` is now stamped on the rider's push/feed row only (never the customer's — `pushDestination`'s generic `RIDER_JOB_SCREEN_STATUSES`/`RIDER_BOARD_STATUSES` checks aren't gated on `to` the way the feed-row equivalent is, so stamping status on the customer's push would misroute them to a rider-only screen). 4 new regression tests (`admin-orders.service.spec.ts`, `notifications.service.spec.ts`, `notifications-feed.service.spec.ts` ×2, `issues.service.spec.ts` ×2) pin both the fix and the customer-safety invariant. |
+
+**Sibling-sweep evidence** (full grep commands + per-hit disposition in `docs/UX-USABILITY-REVIEW-2026-07-26.md`):
+UX26-02 — `grep -rln adminPost /home/user/Lynia --include=*.ts` — 10 live call sites across
+`orders/actions.ts` (×3), `riders/actions.ts` (×4), `customers/actions.ts` (×1), `issues/actions.ts`
+(×1, a NEW sibling the hunt's own sweep found), plus `actions/audit.ts` (×2, a second NEW sibling this
+run's independent code read found that the hunt's sweep missed) — all 10 fixed. UX26-03 —
+`grep -rn 'kind:' apps/api/src --include='*.ts'` cross-checked against `push.ts`'s `kind ===` branches —
+`notifyIssueResolved`'s `kind:"issue"` push/feed pair confirmed as a real sibling (fixed); the
+`broadcast`/`sos`/`offer` kinds already have correct or non-applicable routing (unchanged).
+
+**Phase 0.5 cluster headers checked:** KYC, Object-authz/IDOR, Mobile-journey-dead-ends — 3/3 intact, no
+fresh findings.

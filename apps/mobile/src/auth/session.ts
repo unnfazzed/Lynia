@@ -34,13 +34,26 @@ let deviceIdCache: string | null = null;
 /** The device's stable install id (created + persisted on first use). Cached in-memory after first read. */
 export async function getDeviceId(): Promise<string> {
   if (deviceIdCache) return deviceIdCache;
-  let id = await SecureStore.getItemAsync(DEVICE_ID_KEY);
-  if (!id) {
-    id = randomUuidV4();
-    await SecureStore.setItemAsync(DEVICE_ID_KEY, id);
+  try {
+    let id = await SecureStore.getItemAsync(DEVICE_ID_KEY);
+    if (!id) {
+      id = randomUuidV4();
+      await SecureStore.setItemAsync(DEVICE_ID_KEY, id);
+    }
+    deviceIdCache = id;
+    return id;
+  } catch {
+    // getItemAsync/setItemAsync can both THROW (not just return null), same documented keystore
+    // failure loadSession above guards against. Left unhandled, client.ts's `.catch(() => null)`
+    // turns this into a silently-omitted x-device-id header — and the server now hard-requires that
+    // header to create a new account (auth.service.ts, KB-IDENTITY-BINDING L1), so a broken keystore
+    // permanently blocks onboarding with no recovery path. Fall back to a process-lifetime-only id
+    // (never persisted, so a relaunch mints a new one) rather than propagating the failure: it still
+    // satisfies the server's per-device signup gate for this session instead of dead-ending signup.
+    const id = randomUuidV4();
+    deviceIdCache = id;
+    return id;
   }
-  deviceIdCache = id;
-  return id;
 }
 
 export async function loadSession(): Promise<Session | null> {
