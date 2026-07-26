@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -157,11 +158,13 @@ export class AuthService {
     // colliding ID). Block a genuine CHANGE (new hash ≠ stored hash) once verified; a real correction
     // goes through support/admin. Pre-verification edits and first-time customer entry are unaffected
     // (recompute of the A-04 flag below still keeps the reviewer signal honest in that window).
+    let storedIdHash: string | null = null;
     if (idNumberHash) {
       const existing = await this.prisma.profile.findUnique({
         where: { id: profileId },
         select: { idNumberHash: true, rider: { select: { kycStatus: true } } },
       });
+      storedIdHash = existing?.idNumberHash ?? null;
       if (existing?.rider?.kycStatus === "verified" && existing.idNumberHash && existing.idNumberHash !== idNumberHash) {
         throw new ForbiddenException("Your ID is locked after verification — contact support to change it.");
       }
@@ -171,6 +174,26 @@ export class AuthService {
       // idNumber is stored on the account record (0·6). Only write it when provided so a name-only edit
       // (or the returning-user path) never clears an existing value.
       if (idNumberHash) {
+        // One-ID-one-account (2026-07-26, mirrors rider.service.completeProfile): when this write CLAIMS
+        // an ID the profile doesn't already hold (stored ≠ incoming — resending your own ID makes no new
+        // claim and stays idempotent, incl. for legacy pre-policy duplicates), refuse if another LIVE
+        // account carries it. The advisory xact lock serializes concurrent claimers of the SAME hash
+        // across both ID-writing routes, closing the count-then-write race. Erased tombstones (DS15-02b
+        // keeps their hash; a restricted account can't self-erase) are a returning user — allowed, and
+        // still caught by the A-04 flag recompute below.
+        if (storedIdHash !== idNumberHash) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${idNumberHash}))`;
+          const liveDupes = await tx.profile.count({
+            where: { idNumberHash, id: { not: profileId }, NOT: { phone: { startsWith: "erased:" } } },
+          });
+          if (liveDupes > 0) {
+            this.logger.warn(`Profile ${profileId} refused a national ID already on another live account (one-ID-one-account)`);
+            throw new ConflictException({
+              reason: "id_in_use",
+              message: "This national ID is already linked to another account. Contact support if it's yours.",
+            });
+          }
+        }
         // The pre-check above is check-then-write: the KYC webhook (applyKycResult) can commit `verified`
         // between that read and this write, so an iteration that observed a non-verified status could
         // still land a new ID after the freeze took effect. Make the ID-writing update a CAS that
@@ -196,11 +219,11 @@ export class AuthService {
         });
       }
 
-      // DS-11: the A-04 duplicate-ID / ban-evasion flag is otherwise computed ONLY at completeProfile
-      // / becomeRider. Rewriting idNumber here without recomputing it lets a rider onboard under a
-      // clean ID (flag clear) and later swap in the real, colliding ID — or launder a flagged ID to a
-      // clean one — silently bypassing the reviewer's signal. Recompute against the new hash and
-      // persist it on the rider row (updateMany: a no-op for a non-rider caller), in the same tx.
+      // DS-11: recompute the A-04 reviewer flag whenever idNumber is rewritten (completeProfile does the
+      // same). The live-block above already refuses a swap onto a LIVE colliding ID; this keeps the
+      // reviewer signal honest for what remains — erased-tombstone (returning-user) and legacy
+      // pre-policy collisions, and laundering a flagged ID back to a clean one (flag must clear too).
+      // Persist on the rider row (updateMany: a no-op for a non-rider caller), in the same tx.
       if (idNumberHash) {
         const dupCount = await tx.profile.count({ where: { idNumberHash, id: { not: profileId } } });
         await tx.rider.updateMany({ where: { profileId }, data: { duplicateIdFlag: dupCount > 0 } });

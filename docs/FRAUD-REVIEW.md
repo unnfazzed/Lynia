@@ -208,6 +208,13 @@ identity.)
 `duplicateIdAccountCount` against banned/suspended accounts specifically) and route a match to
 `KYC_MODE=manual`-style human review instead of auto-approving, rather than only ever flag-and-log.
 
+**Update 2026-07-26 (IR26-01…03):** superseded by the one-ID-one-account rule — a national ID on
+another LIVE account is now hard-BLOCKED (409 `id_in_use`) at `completeProfile`/`auth.updateProfile`
+(advisory-lock serialized) and at `becomeRider` (which now also requires an ID), not just flagged.
+Erased tombstones and legacy pre-policy duplicates still go through the flag → manual-review path.
+Residual: a *different/forged typed* ID with the real document shown to Didit — needs vendor-document
+dedupe (see `docs/plans/2026-identity-and-pod-hardening.md`).
+
 ### P1-4 · OTP verify — attempt cap is a TOCTOU race + the endpoint is unthrottled → account takeover
 **`apps/api/src/auth/auth.service.ts:240` (`verifyOtp`), `auth.controller.ts:33-34` (`@Throttle` on `/auth/otp/verify`), `otp-store.ts:51-56,105-107`**
 

@@ -17,7 +17,7 @@ independently useful.
 
 | Sub-problem | State | Residual |
 |---|---|---|
-| **Rider** ban-evasion | Mitigated: KYC national-ID + `idNumberHash` dedup + `duplicateIdFlag` holds re-registrants | Low (only a genuinely different real ID — unsolvable by tech) |
+| **Rider** ban-evasion | **Hard-blocked (2026-07-26, IR26-01…03 — one-ID-one-account):** a national ID on another LIVE account is refused (409 `id_in_use`) at every ID-write (`completeProfile`/`auth.updateProfile`, advisory-lock serialized) and at `becomeRider` (which now requires an ID); erased tombstones/legacy dupes still route flag → manual review | Low: a *different/forged typed* ID with the real document shown to Didit → **vendor-doc dedupe follow-up** (persist the doc number Didit verified, key the block on it; needs the live decision-payload shape). DB-level partial unique index on `id_number_hash` deferred until prod data confirmed clean of legacy live dupes. |
 | **Customer** Sybil (reputation/spam) | L2 weaponisation half DE-FANGED (IR16-09); identity-cost half open | Medium |
 | **Phone recycling** (P2-8) | Unmitigated — recycled SIM inherits old account's PII/history | Medium (privacy/takeover) |
 

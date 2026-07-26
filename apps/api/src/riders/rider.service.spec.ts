@@ -94,7 +94,7 @@ describe("RiderService.becomeRider", () => {
     };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumber: "63-1-A" }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
@@ -113,7 +113,7 @@ describe("RiderService.becomeRider", () => {
           return {};
         },
       },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumber: "63-1-A" }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
@@ -123,7 +123,54 @@ describe("RiderService.becomeRider", () => {
     expect(created).toMatchObject({ kycStatus: "verified", idVerified: true, duplicateIdFlag: false });
   });
 
-  it("flags (does not reject) a rider whose national ID already sits on another account (A-04)", async () => {
+  // One-ID-one-account (2026-07-26): a national ID already on another LIVE account hard-blocks rider
+  // onboarding — the ban-evasion second-SIM path (banned original can't self-erase, so it stays live
+  // and keeps blocking). Refused BEFORE vendor.submit, so no paid Didit session is ever minted for it.
+  it("409s (id_in_use) when the national ID is already on another LIVE account — no vendor call, no rider row", async () => {
+    let created = false;
+    let submitted = false;
+    const vendor: KycVendor = {
+      submit: async () => {
+        submitted = true;
+        return { ref: "sess_x", status: "pending" };
+      },
+    };
+    const prisma = {
+      rider: {
+        findUnique: async () => null,
+        create: async () => {
+          created = true;
+          return {};
+        },
+      },
+      profile: {
+        update: async () => ({}),
+        findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42") }),
+        count: async (args: { where: Record<string, unknown> }) => {
+          // The BLOCK count is the live one — it must exclude erased tombstones and self.
+          expect(args.where).toMatchObject({
+            idNumberHash: pii.hashId("63-123456-A-42"),
+            id: { not: "p1" },
+            NOT: { phone: { startsWith: "erased:" } },
+          });
+          return 1;
+        },
+      },
+      $transaction: async (ops: unknown[]) => ops,
+    };
+    const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
+    try {
+      await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
+      throw new Error("expected becomeRider to throw");
+    } catch (e) {
+      // Stable machine-readable reason (BH-04 pattern) so the client can special-case it.
+      expect((e as { getResponse: () => unknown }).getResponse()).toMatchObject({ reason: "id_in_use" });
+    }
+    expect(submitted).toBe(false);
+    expect(created).toBe(false);
+  });
+
+  it("allows + flags (A-04) when the only ID collision is an ERASED tombstone — the returning-user shape", async () => {
     let created: Record<string, unknown> | undefined;
     const prisma = {
       rider: {
@@ -136,47 +183,44 @@ describe("RiderService.becomeRider", () => {
       profile: {
         update: async () => ({}),
         findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42") }),
-        // Another account already carries this ID — matched on the HMAC hash, not the raw number.
-        count: async (args: { where: Record<string, unknown> }) => {
-          expect(args.where).toMatchObject({ idNumberHash: pii.hashId("63-123456-A-42"), id: { not: "p1" } });
-          return 1;
-        },
+        // Live count (has the erased-exclusion NOT clause) → 0; reviewer-flag count (all accounts,
+        // incl. tombstones) → 1. DS15-02b keeps the hash on erasure precisely for this signal.
+        count: async (args: { where: Record<string, unknown> }) => ("NOT" in args.where ? 0 : 1),
       },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
     const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
-    // Onboarding still succeeds — flag, don't block.
+    // Onboarding succeeds — a returning user must not be locked out of their own identity — but the
+    // reviewer flag is set, so applyKycResult still holds an auto-verify for human review (DOC-16-05).
     expect(res.kycStatus).toBe("verified");
     expect(created).toMatchObject({ duplicateIdFlag: true });
   });
 
-  it("does not flag when the account has no national ID yet (A-04)", async () => {
-    let created: Record<string, unknown> | undefined;
-    let counted = false;
+  it("400s when the profile has no national ID yet — rider onboarding requires it (one-ID-one-account)", async () => {
+    let created = false;
     const prisma = {
       rider: {
         findUnique: async () => null,
-        create: async (args: { data: Record<string, unknown> }) => {
-          created = args.data;
+        create: async () => {
+          created = true;
           return {};
         },
       },
       profile: {
         update: async () => ({}),
-        findUnique: async () => ({ idNumber: null }),
-        count: async () => {
-          counted = true;
-          return 0;
-        },
+        findUnique: async () => ({ idNumberHash: null }),
+        count: async () => 0,
       },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
-    await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
-    // No ID → nothing to collide on; the count query is skipped entirely.
-    expect(counted).toBe(false);
-    expect(created).toMatchObject({ duplicateIdFlag: false });
+    // An ID-less rider would reach vendor KYC entirely undeduped — the stock client always writes the
+    // ID via completeProfile first, so only a raw API caller ever sees this.
+    await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" })).rejects.toThrow(
+      /add your national id/i,
+    );
+    expect(created).toBe(false);
   });
 
   it("manual mode skips the vendor and returns no url", async () => {
@@ -185,7 +229,7 @@ describe("RiderService.becomeRider", () => {
     };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumber: "63-1-A" }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "manual" }, vendor);
@@ -202,7 +246,7 @@ describe("RiderService.becomeRider", () => {
     });
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumber: "63-1-A" }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       // The create transaction loses the race and throws a P2002.
       $transaction: async () => { throw p2002; },
     };
@@ -217,7 +261,7 @@ describe("RiderService.becomeRider", () => {
     const vendor: KycVendor = { submit: async () => { throw new Error("didit 502"); } };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => { created = true; return {}; } },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumber: "63-1-A" }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
@@ -231,21 +275,61 @@ describe("RiderService.becomeRider", () => {
 describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
   const data = { firstName: "Chipo", lastName: "M", idNumber: "63-123456-A-42" };
 
-  it("writes the profile and succeeds even when the ID is a duplicate (flag, never block)", async () => {
-    let updated: Record<string, unknown> | undefined;
+  // One-ID-one-account (2026-07-26): claiming an ID that's already on another LIVE account is refused
+  // outright — this is the write-path gate that keeps a second-SIM signup from ever holding a banned
+  // account's national ID (the banned original can't self-erase, so it stays live and keeps blocking).
+  it("409s (id_in_use) when the ID is already on another LIVE account — nothing written", async () => {
+    let wrote = false;
     const prisma = {
       profile: {
-        // Fix 2: completeProfile now reads the existing profile to enforce the post-verification ID
+        findUnique: async () => ({ idNumberHash: null, rider: null }),
+        updateMany: async () => {
+          wrote = true;
+          return { count: 1 };
+        },
+        count: async (args: { where: Record<string, unknown> }) => {
+          // The block count is the live one: excludes self and erased tombstones.
+          expect(args.where).toMatchObject({
+            idNumberHash: pii.hashId("63-123456-A-42"),
+            id: { not: "p1" },
+            NOT: { phone: { startsWith: "erased:" } },
+          });
+          return 1;
+        },
+      },
+      rider: { updateMany: async () => ({ count: 0 }) },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto" });
+    try {
+      await s.completeProfile("p1", data);
+      throw new Error("expected completeProfile to throw");
+    } catch (e) {
+      expect((e as { getResponse: () => unknown }).getResponse()).toMatchObject({ reason: "id_in_use" });
+    }
+    expect(wrote).toBe(false);
+  });
+
+  it("allows an ID whose only collision is an ERASED tombstone (returning user) and persists the A-04 flag", async () => {
+    let updated: Record<string, unknown> | undefined;
+    let flag: { where: unknown; data: Record<string, unknown> } | undefined;
+    const prisma = {
+      profile: {
+        // Fix 2: completeProfile reads the existing profile to enforce the post-verification ID
         // freeze. A fresh signup (no rider row / not verified) passes the guard untouched.
         findUnique: async () => ({ idNumberHash: null, rider: null }),
-        // Fix 2: the ID-writing update is now a CAS updateMany that re-asserts the freeze atomically.
+        // Fix 2: the ID-writing update is a CAS updateMany that re-asserts the freeze atomically.
         updateMany: async (args: { data: Record<string, unknown> }) => {
           updated = args.data;
           return { count: 1 };
         },
-        count: async (args: { where: Record<string, unknown> }) => {
-          expect(args.where).toMatchObject({ idNumberHash: pii.hashId("63-123456-A-42"), id: { not: "p1" } });
-          return 2;
+        // Live (block) count has the erased-exclusion NOT clause → 0; the reviewer-flag count sees the
+        // tombstone (DS15-02b keeps its hash for exactly this signal) → 1.
+        count: async (args: { where: Record<string, unknown> }) => ("NOT" in args.where ? 0 : 1),
+      },
+      rider: {
+        updateMany: async (args: { where: unknown; data: Record<string, unknown> }) => {
+          flag = args;
+          return { count: 1 };
         },
       },
     };
@@ -255,23 +339,28 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
     expect(updated).toMatchObject({ firstName: "Chipo", lastName: "M", idNumberHash: pii.hashId("63-123456-A-42") });
     expect(pii.isEncrypted(updated?.idNumber as string)).toBe(true);
     expect(pii.decryptId(updated?.idNumber as string)).toBe("63-123456-A-42");
+    // DS-11 parity: the reviewer flag is recomputed and persisted on the rider row in the same tx.
+    expect(flag).toEqual({ where: { profileId: "p1" }, data: { duplicateIdFlag: true } });
   });
 
-  it("does not run the collision query when the ID is unique", async () => {
-    let counted = false;
+  it("unique ID → writes and clears the A-04 flag", async () => {
+    let flag: Record<string, unknown> | undefined;
     const prisma = {
       profile: {
         findUnique: async () => ({ idNumberHash: null, rider: null }),
         updateMany: async () => ({ count: 1 }),
-        count: async () => {
-          counted = true;
-          return 0;
+        count: async () => 0,
+      },
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          flag = args.data;
+          return { count: 1 };
         },
       },
     };
     const s = svc(prisma, { KYC_MODE: "auto" });
     expect(await s.completeProfile("p1", data)).toEqual({ ok: true });
-    expect(counted).toBe(true);
+    expect(flag).toEqual({ duplicateIdFlag: false });
   });
 
   // Fix 2: the KYC-freeze bypass. PATCH /auth/me already blocks a verified rider from swapping their
@@ -298,6 +387,7 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
 
   it("allows a verified rider to re-submit the SAME ID (idempotent, not a change)", async () => {
     let wrote = false;
+    let liveCounted = false;
     const prisma = {
       profile: {
         // Same hash as the incoming ID → not a change → allowed through the freeze guard.
@@ -306,12 +396,20 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
           wrote = true;
           return { count: 1 };
         },
-        count: async () => 0,
+        // Resending your own stored ID makes no new claim → the one-ID-one-account live-block is
+        // skipped entirely (a legacy pre-policy duplicate must not start 409ing its own resends);
+        // only the A-04 flag recompute (no NOT clause) runs.
+        count: async (args: { where: Record<string, unknown> }) => {
+          if ("NOT" in args.where) liveCounted = true;
+          return 0;
+        },
       },
+      rider: { updateMany: async () => ({ count: 1 }) },
     };
     const s = svc(prisma, { KYC_MODE: "auto" });
     expect(await s.completeProfile("p1", data)).toEqual({ ok: true });
     expect(wrote).toBe(true);
+    expect(liveCounted).toBe(false);
   });
 
   // Fix 2: the check-then-write race. The pre-check reads a non-verified status, but the KYC webhook
