@@ -57,6 +57,27 @@ describe("loadEnv — broadcast reach overrides", () => {
   });
 });
 
+describe("loadEnv — OTP send caps", () => {
+  it("defaults to the pilot-sized ceiling (the global cap is a SPEND ceiling, ~EUR 98/day on Bird)", () => {
+    const env = loadEnv(base);
+    expect(env.OTP_RL_PHONE_MAX).toBe(5);
+    expect(env.OTP_RL_IP_MAX).toBe(20);
+    expect(env.OTP_RL_GLOBAL_MAX).toBe(500);
+    expect(env.OTP_RL_DEVICE_SIGNUP_MAX).toBe(3);
+  });
+
+  it("coerces overrides so the ceiling can be tightened mid-incident without a deploy", () => {
+    const env = loadEnv({ ...base, OTP_RL_GLOBAL_MAX: "50", OTP_RL_PHONE_MAX: "2" });
+    expect(env.OTP_RL_GLOBAL_MAX).toBe(50);
+    expect(env.OTP_RL_PHONE_MAX).toBe(2);
+  });
+
+  it("rejects a zero/negative cap at boot — 0 would silently disable OTP entirely", () => {
+    expect(() => loadEnv({ ...base, OTP_RL_GLOBAL_MAX: "0" })).toThrow(/Invalid environment configuration/);
+    expect(() => loadEnv({ ...base, OTP_RL_DEVICE_SIGNUP_MAX: "-1" })).toThrow(/Invalid environment configuration/);
+  });
+});
+
 describe("loadEnv — commission wallet", () => {
   it("reveals the wallet by default (visible from launch, even at 0% commission)", () => {
     const env = loadEnv({ ...base });

@@ -39,6 +39,7 @@ type CounterName =
   | "client_samples_dropped_total"
   | "whatsapp_otp_delivery_failed_total"
   | "bird_otp_delivery_failed_total"
+  | "identity_new_device_verify_total"
   | "micro_cache_requests_total"
   | "wallet_integrity_runs_total"
   | "wallet_integrity_drift_total";
@@ -229,6 +230,19 @@ export class MetricsService {
    */
   incBirdOtpDeliveryFailed(status: string, code: string): void {
     this.counter("bird_otp_delivery_failed_total").add(1, { status, code });
+  }
+
+  /**
+   * An EXISTING account re-verified from a device never seen for it (P2-8). `dormant` splits the two
+   * very different meanings: `false` is the everyday case (new handset, reinstall), while `true` —
+   * no fresh session for >90 days — is the shape a carrier number-recycle takes, where the person
+   * passing the OTP may not be the person who owns the account. Phone is the account key
+   * (`profile.upsert where phone`), so this is the only signal that a recycled number is inheriting
+   * an account. Counting it makes the rate alertable instead of buried in a log line. Never the
+   * phone number; `dormant` is a two-value label.
+   */
+  incIdentityNewDeviceVerify(dormant: boolean): void {
+    this.counter("identity_new_device_verify_total").add(1, { dormant: dormant ? "true" : "false" });
   }
 
   /** One completed run of the nightly wallet integrity job (roadmap 1.3) — the denominator that

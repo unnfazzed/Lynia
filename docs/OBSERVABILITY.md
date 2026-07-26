@@ -42,6 +42,7 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `client_samples_dropped_total`  | counter   | 1    | `role`                          | —          |
 | `whatsapp_otp_delivery_failed_total` | counter | 1 | `reason`                     | —          |
 | `bird_otp_delivery_failed_total` | counter | 1 | `status`, `code`                  | —          |
+| `identity_new_device_verify_total` | counter | 1 | `dormant`                       | —          |
 | `micro_cache_requests_total`    | counter   | 1    | `cache`, `outcome`               | —          |
 
 > **Client RUM (present, not future).** The four `client_*_latency_ms` histograms and the
@@ -75,6 +76,9 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
   catalog, not by Lynia.
 - `micro_cache_requests_total` `cache` ∈ `nearby_count | pickup_photo_url`; `outcome` ∈
   `hit | l2_hit | miss | coalesced | error` (both closed vocabularies, see `docs/PERFORMANCE.md`).
+- `identity_new_device_verify_total` `dormant` ∈ `true | false` — `true` means the account had no
+  session newer than 90 days when the unseen device verified. Deliberately a *label*, not two
+  metrics: the ratio is the signal, and it's only readable if both arms share a series.
 
 ### Explicit histogram buckets
 
@@ -149,6 +153,8 @@ courier operator actually cares about. All live in `infra/terraform/monitoring.t
 | **Offer-make error rate > 5%** | `offers_made_total{outcome="error"}` ratio | Riders can't bid. Distinct from `conflict`/`forbidden` (normal race/permission outcomes). Check the offers module + DB. |
 | **WhatsApp OTP delivery failures** | `sum(rate(whatsapp_otp_delivery_failed_total[5m])) > 0.2` | Users can't receive login codes. Check Meta Cloud API status + `WHATSAPP_*` config. |
 | **Bird OTP delivery failures** | `sum(rate(bird_otp_delivery_failed_total[5m])) > 0.2` | Users can't receive login codes on the SMS channel. The send returned 202, so this is the ONLY signal. Split by `status`: `rejected` is usually account-level (wallet balance, no eligible sender → `code=E12003`), `undelivered`/`expired` point at the carrier (Econet) rather than at us. `bird sms get <sms_id>` shows the per-message timeline. |
+
+| **Dormant-account device rebind spike** | `sum(increase(identity_new_device_verify_total{dormant="true"}[24h])) > 5` | Phone is the account key, so an account dormant >90d re-verifying from an unseen device is the exact shape a **carrier number recycle** takes — the person who passed the OTP may not be the person who owns the account (P2-8). One a week is normal (reinstall, new handset). A cluster is not: pull the `identity: account … POSSIBLE SIM RECYCLE` WARN lines, check whether the accounts carry a wallet balance or KYC record, and freeze payouts on any that do before deciding to rebind. Threshold is a pilot-volume guess — re-baseline once a month of data exists. |
 
 **Not yet alertable — needs instrumentation first.** BullMQ **queue age/depth** and **top-up-confirm
 lag** have no metric series emitted today, so no policy can be written against them (a PromQL policy on a

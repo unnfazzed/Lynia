@@ -23,13 +23,24 @@ const baseEnv = {
   REFRESH_TTL_SECONDS: 2_592_000,
   OTP_TTL_SECONDS: 300,
   OTP_CHANNEL: "console",
+  // The send caps are env-driven, so they must be present here or every limiter reads `undefined`
+  // for its max and silently stops capping — which would make the cap tests pass for the wrong reason.
+  // These mirror the schema defaults in config/env.ts.
+  OTP_RL_PHONE_MAX: 5,
+  OTP_RL_IP_MAX: 20,
+  OTP_RL_GLOBAL_MAX: 500,
+  OTP_RL_DEVICE_SIGNUP_MAX: 3,
 } as Env;
 
 const tokens = new TokenService(baseEnv);
 
 /** Spy metrics fake — OTP-verify recording is best-effort; keep tests off the OTel path. */
 const fakeMetrics = () =>
-  ({ startTimer: () => () => 0, recordOtpVerify: vi.fn() }) as unknown as MetricsService;
+  ({
+    startTimer: () => () => 0,
+    recordOtpVerify: vi.fn(),
+    incIdentityNewDeviceVerify: vi.fn(),
+  }) as unknown as MetricsService;
 
 function make(env: Env, prisma: Partial<Record<string, unknown>>) {
   const store = new InMemoryOtpStore();
@@ -94,6 +105,7 @@ describe("AuthService phone identity is E.164-normalized", () => {
     let upsertWhere: { phone?: string } = {};
     const prisma = {
       profile: {
+        findUnique: async () => ({ id: "p9", role: "customer", firstName: "", sessions: [] }),
         upsert: async (args: { where: { phone: string } }) => {
           upsertWhere = args.where;
           return { id: "p9", role: "customer", firstName: "" };
@@ -275,8 +287,11 @@ describe("AuthService.updateProfile", () => {
 
 describe("AuthService.verifyOtp", () => {
   const profileRow = { id: "p1", role: "customer", firstName: "" };
+  // findUnique now runs on EVERY verify (it used to sit behind `if (deviceId)`), so the shared fake
+  // must answer it. Defaulting to an existing profile makes the default case SIGN-IN, which needs no
+  // device id; the signup-specific tests below override it to null and pass one explicitly.
   const fakePrisma = () => ({
-    profile: { upsert: async () => profileRow },
+    profile: { findUnique: async () => ({ ...profileRow, sessions: [] }), upsert: async () => profileRow },
     session: { create: async () => ({ id: "s1" }) },
   });
 
@@ -370,11 +385,27 @@ describe("AuthService.verifyOtp", () => {
     }
   });
 
-  it("KB-IDENTITY-BINDING: no device id (older client) → device logic is inert, verify behaves exactly as before", async () => {
-    // fakePrisma has NO profile.findUnique; if the device branch ran it would throw. It must not.
-    const { svc, store } = make(baseEnv, fakePrisma());
+  // The per-device signup cap used to sit behind `if (deviceId)`, which made it opt-out: sending a
+  // random id got you capped, sending none skipped the check entirely (CodeQL js/user-controlled-bypass).
+  // Creating an account now REQUIRES the header, so omitting it can no longer buy uncapped signups.
+  it("KB-IDENTITY-BINDING L1: rejects NEW-account creation with no device id (the cap can't be opted out of)", async () => {
+    const prisma = {
+      profile: { findUnique: async () => null, upsert: async () => profileRow },
+      session: { create: async () => ({ id: "s1" }) },
+    };
+    const { svc, store } = make(baseEnv, prisma);
     await store.put("+263770000070", tokens.hash("654321"), 300);
-    await expect(svc.verifyOtp("+263770000070", "654321")).resolves.toMatchObject({ profileId: "p1" });
+    // 400, not 429: the request is malformed. Conflating it with the rate limit would make a genuine
+    // cap-hit indistinguishable from a broken client.
+    await expect(svc.verifyOtp("+263770000070", "654321")).rejects.toMatchObject({ status: 400 });
+  });
+
+  // Scoped to CREATION deliberately. Someone already registered must never be locked out by a client
+  // that stops sending the header — only new accounts are gated.
+  it("KB-IDENTITY-BINDING L1: still signs in an EXISTING account with no device id", async () => {
+    const { svc, store } = make(baseEnv, fakePrisma());
+    await store.put("+263770000071", tokens.hash("654321"), 300);
+    await expect(svc.verifyOtp("+263770000071", "654321")).resolves.toMatchObject({ profileId: "p1" });
   });
 
   it("records otp_verify_duration with the mapped result label on every exit path", async () => {
@@ -401,7 +432,10 @@ describe("AuthService.verifyOtp", () => {
 
   it("clears needsProfile once the profile has a name", async () => {
     const prisma = {
-      profile: { upsert: async () => ({ id: "p2", role: "rider", firstName: "Tendai" }) },
+      profile: {
+        findUnique: async () => ({ id: "p2", role: "rider", firstName: "Tendai", sessions: [] }),
+        upsert: async () => ({ id: "p2", role: "rider", firstName: "Tendai" }),
+      },
       session: { create: async () => ({ id: "s2" }) },
     };
     const { svc, store } = make(baseEnv, prisma);
@@ -473,7 +507,10 @@ describe("AuthService.verifyOtp — post-verify retry grace (§6)", () => {
     };
     const { svc, store } = make(baseEnv, prisma);
     await store.put("+263770000043", tokens.hash("654321"), 300);
-    await svc.verifyOtp("+263770000043", "654321");
+    // findUnique stays null throughout, so the live verify is a SIGNUP and needs a device id. The
+    // point of the test is the SECOND call: the grace path finding no profile must fall through to
+    // "expired" rather than minting an account from a grace hit.
+    await svc.verifyOtp("+263770000043", "654321", "ua", "device-grace");
     await expect(svc.verifyOtp("+263770000043", "654321")).rejects.toThrow(/expired or never/i);
   });
 
