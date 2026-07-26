@@ -427,15 +427,16 @@ describe("TrackingGateway.prunePositionRooms", () => {
     g.server = server as never;
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
     await g.riderLocation(client as never, { orderId: ORD_UUID, lat: 1, lng: 1 });
-    const map = (g as unknown as { positionEmit: Map<string, { lastEmit: number }> }).positionEmit;
-    const st = map.get(orderRoom(ORD_UUID));
+    const coalescer = (g as unknown as { positionCoalescer: { peek: (room: string) => { lastEmit: number } | undefined } })
+      .positionCoalescer;
+    const st = coalescer.peek(orderRoom(ORD_UUID));
     expect(st).toBeTruthy();
     // Recent → kept.
     g.prunePositionRooms(st!.lastEmit + 1);
-    expect(map.has(orderRoom(ORD_UUID))).toBe(true);
+    expect(coalescer.peek(orderRoom(ORD_UUID))).toBeTruthy();
     // Quiet past the TTL → pruned so the map can't grow unbounded.
     g.prunePositionRooms(st!.lastEmit + POSITION_ROOM_TTL_MS + 1);
-    expect(map.has(orderRoom(ORD_UUID))).toBe(false);
+    expect(coalescer.peek(orderRoom(ORD_UUID))).toBeFalsy();
   });
 });
 
