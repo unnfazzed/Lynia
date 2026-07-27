@@ -19,6 +19,14 @@ updates:
     # the Express major it drags in, the jest/react-test-renderer stack only with the Expo SDK,
     # TypeScript majors with the deprecations they hard-error on.
     ignore:
+      # @sentry/react-native 6 -> 8 landed as a grouped production bump (02ef04c) and added ~720 KB
+      # to the Android Hermes bundle — over the size budget, and invisible at review time because the
+      # same batch broke the Metro export (lucide's dropped `history` icon), so the size job failed
+      # before it could measure. A crash-reporter major is a coupled migration like the rest of this
+      # list: upgrade it deliberately, in its own PR, measuring the bundle (docs/APP-SIZE.md) and
+      # re-checking the Sentry init/API surface — never as one line in an 18-package batch.
+      - dependency-name: "@sentry/react-native"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "prisma"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@prisma/*"
