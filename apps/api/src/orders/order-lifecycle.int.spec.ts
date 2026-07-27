@@ -70,7 +70,7 @@ const storageStub = {
 const lifecycle = new OrderLifecycleService({ ...MERCHANT_FLAGS_OFF } as Env, prisma, tokens, gateway, noopNotifications, noopOrders, wallet, storageStub);
 const trackingStub = { evictFromGeo: async () => {}, claimNotifyWaitersNear: async () => [], clearNotifyWaiters: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
 const notificationsStub = { notifyRidersAvailable: async () => {}, notifyProfiles: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
-const riders = new RiderService(prisma, { ...MERCHANT_FLAGS_OFF } as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env), trackingStub, gateway, notificationsStub);
+const riders = new RiderService(prisma, { ...MERCHANT_FLAGS_OFF } as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij", ...MERCHANT_FLAGS_OFF } as Env), trackingStub, gateway, notificationsStub);
 
 async function clean(): Promise<void> {
   await prisma.orderEvent.deleteMany({});
