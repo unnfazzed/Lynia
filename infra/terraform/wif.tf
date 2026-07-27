@@ -38,16 +38,24 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.repository"  = "assertion.repository"
     "attribute.environment" = "has(assertion.environment) ? assertion.environment : \"none\""
     "attribute.ref"         = "has(assertion.ref) ? assertion.ref : \"none\""
+    # Composite claim so privileged principalSets can be REPO-qualified. Binding the provisioner to
+    # attribute.environment/infra alone would match ANY identity in this pool carrying an `infra`
+    # environment — adding a second provider to github-pool later would silently widen it to another
+    # repo's `infra` environment. repo_env pins repo AND environment in one value.
+    "attribute.repo_env"    = "assertion.repository + \":\" + (has(assertion.environment) ? assertion.environment : \"none\")"
   }
 
   # Hard gate: only OIDC tokens minted for THIS repo may use the provider.
   # The ref clause makes the branch boundary GCP-enforced rather than delegated to a GitHub setting.
   # workflow_dispatch runs the *branch's* copy of a workflow, so someone with commit access could
   # otherwise edit terraform-apply.yml on a branch and dispatch it — every control inside that file
-  # is attacker-editable. Tokens WITHOUT an environment claim are untouched (the deployer path is
-  # repository-scoped and keeps working from any branch); only environment-declaring jobs — i.e. the
-  # ones that can reach the provisioner principalSet — are pinned to main.
-  attribute_condition = "assertion.repository == \"${var.github_repository}\" && (!has(assertion.environment) || assertion.ref == \"refs/heads/main\")"
+  # is attacker-editable. Scoped to the `infra` environment ONLY (review P2-3): deploy-staging
+  # (environment: staging), deploy-admin and rollback.yml (environment: production) all support
+  # workflow_dispatch from a branch, and rollback.yml is the BREAK-GLASS path — an incident
+  # responder on a hotfix branch must never find the token exchange refusing them. Tokens without
+  # an environment claim, and tokens for environments other than `infra`, keep working from any
+  # ref; only the environment that can reach the provisioner principalSet is pinned to main.
+  attribute_condition = "assertion.repository == \"${var.github_repository}\" && (!has(assertion.environment) || assertion.environment != \"infra\" || assertion.ref == \"refs/heads/main\")"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"

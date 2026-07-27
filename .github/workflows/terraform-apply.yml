@@ -15,9 +15,16 @@ name: Terraform Apply (gated)
 #     gcp-drift-detect.yml already uses). It is gitignored, so without it terraform runs on
 #     variables.tf DEFAULTS — which would destroy staging, the admin tier, the Cloudflare records,
 #     and the provisioner SA this workflow authenticates with. Both jobs fail closed if it is unset.
-#  3. THE APPROVED PLAN IS THE APPLIED PLAN. `plan -out=tfplan` is uploaded as an artifact and
-#     applied verbatim. The first draft re-planned inside apply, so the reviewer's approval was not
-#     binding on what executed.
+#  3. THE PLAN IS NEVER PERSISTED. The second draft uploaded `tfplan` as a CI artifact — but a
+#     binary plan embeds the PRIOR STATE SNAPSHOT unredacted (`sensitive = true` is a display flag
+#     for `terraform show`, not storage encryption), so the artifact contained every
+#     random_password (JWT/PII), SQL passwords, and the Cloudflare token, downloadable by anyone
+#     with repo read. Now: the plan job is REVIEW-ONLY (text summary; the plan file dies with the
+#     runner), and the gated apply job re-plans and applies inside the same workspace. Deliberate
+#     tradeoff: the approval binds INTENT rather than a byte-exact plan — state can move between
+#     approval and execution (the destroy guard therefore re-runs INSIDE the gated job, and the
+#     concurrency group + terraform's state lock serialize applies). Do not "fix" this back to an
+#     artifact without solving the state-secrets problem first.
 #  4. main-ONLY. `workflow_dispatch` runs the *branch's* copy of this file, so every control here is
 #     attacker-editable from a branch. The runtime ref check below is defence-in-depth ONLY; the
 #     real boundaries are (a) the `infra` environment's deployment-branch policy and (b) the WIF
@@ -36,8 +43,10 @@ name: Terraform Apply (gated)
 #        - Required reviewers: yourself.
 #        - Deployment branches: "Selected branches" → `main` ONLY.
 #      A referenced-but-missing environment is auto-created by GitHub with NO protection rules,
-#      which would let an unreviewed apply run. The preflight below refuses to proceed if the
-#      environment has no protection rules, but configure it properly anyway.
+#      which would let an unreviewed apply run — there is NO in-workflow check that can catch this
+#      (reading environment protection rules needs an admin-scoped token CI does not hold), so the
+#      ordering of these arming steps is itself the control. Verify the reviewers are set BEFORE
+#      step 3, e.g.: gh api repos/unnfazzed/Lynia/environments/infra --jq '.protection_rules'.
 #   3. gh variable set GCP_PROVISIONER_ENABLED --body "true"
 #      gh variable set GCP_PROVISIONER_SERVICE_ACCOUNT --body "<the SA email>"
 #      gh secret   set TF_PROD_TFVARS < infra/terraform/terraform.tfvars
@@ -146,32 +155,39 @@ jobs:
             echo "::error::terraform plan failed"; cat plan.txt; exit 1
           fi
 
-          # Destroy guard: a routine apply must never delete infrastructure by surprise.
+          # Destroy pre-warning for the reviewer. "forget" (removed{} blocks) counts too — dropping
+          # a resource from management silently is also never routine. The BINDING destroy guard
+          # runs again inside the gated apply job; this one exists so the reviewer knows before
+          # approving, loudly (job annotation, not just the summary).
           terraform show -json tfplan > plan.json
-          destroys=$(jq '[.resource_changes[]? | select(.change.actions[]? == "delete")] | length' plan.json)
+          destroys=$(jq '[.resource_changes[]? | select(.change.actions[]? | IN("delete","forget"))] | length' plan.json)
           if [ "$destroys" -gt 0 ] && [ "$ALLOW_DESTROY" != "destroy" ]; then
-            echo "::error::plan deletes ${destroys} resource(s); re-run with allow_destroy=destroy if intended."
-            jq -r '.resource_changes[]? | select(.change.actions[]? == "delete") | "  DELETE " + .address' plan.json
+            echo "::error::plan deletes/forgets ${destroys} resource(s); re-run with allow_destroy=destroy if intended."
+            jq -r '.resource_changes[]? | select(.change.actions[]? | IN("delete","forget")) | "  REMOVE " + .address' plan.json
             exit 1
+          fi
+          if [ "$destroys" -gt 0 ]; then
+            echo "::warning title=DESTRUCTIVE APPLY QUEUED::${destroys} resource(s) will be deleted/forgotten — read the plan summary before approving."
           fi
 
           {
-            echo "### Terraform plan (${destroys} deletion(s))"
+            echo "### Terraform plan (${destroys} deletion(s)/forget(s))"
+            if [ "$destroys" -gt 0 ]; then
+              echo '**Resources being REMOVED (approve only if intended):**'
+              echo '```'
+              jq -r '.resource_changes[]? | select(.change.actions[]? | IN("delete","forget")) | "  REMOVE " + .address' plan.json
+              echo '```'
+            fi
             echo '```'
-            terraform show -no-color tfplan | tail -c 60000
+            # head, not tail: terraform prints the change list first and the summary line last —
+            # on an oversized plan the reviewer must lose the tail, never the resource changes.
+            terraform show -no-color tfplan | head -c 60000
+            echo ''
+            echo '[output truncated at 60000 bytes if the plan was larger]'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
-      # The binary plan is the artifact the apply job consumes, so what was approved is what runs.
-      # Retained briefly: it describes infra topology (not secrets — terraform redacts sensitive
-      # values in plan output, and state itself is never uploaded).
-      - name: Upload plan
-        if: ${{ steps.plan.outputs.exitcode == '2' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan
-          path: infra/terraform/tfplan
-          retention-days: 1
+          # The binary plan (which embeds unredacted prior state) dies with this runner —
+          # deliberately never uploaded anywhere. See header note 3.
 
   apply:
     name: apply (requires human approval)
@@ -204,15 +220,12 @@ jobs:
         with:
           terraform_wrapper: false
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: tfplan
-          path: infra/terraform
-
-      - name: terraform apply (the approved plan, verbatim)
+      - name: terraform plan + apply (inside the gate)
         working-directory: infra/terraform
         env:
           TF_PROD_TFVARS: ${{ secrets.TF_PROD_TFVARS }}
+          TF_TARGET: ${{ inputs.target }}
+          ALLOW_DESTROY: ${{ inputs.allow_destroy }}
         run: |
           set -euo pipefail
           if [ -z "$TF_PROD_TFVARS" ]; then
@@ -220,8 +233,23 @@ jobs:
           fi
           printf '%s\n' "$TF_PROD_TFVARS" > terraform.tfvars
           terraform init -input=false -no-color
-          # Applying the saved plan file: no re-plan, no -target to re-thread, and terraform itself
-          # refuses if state moved since the plan was taken. The approval is therefore binding.
+
+          # Fresh plan inside the gated job (the reviewed plan is never persisted — it embeds
+          # unredacted state; header note 3). The concurrency group + terraform's state lock
+          # serialize runs, and the destroy guard below re-runs HERE, in the job the approval
+          # actually gates — so even if state moved after review, deletions cannot slip through.
+          args=(-input=false -no-color -out=tfplan)
+          [ -n "$TF_TARGET" ] && args+=(-target="$TF_TARGET")
+          terraform plan "${args[@]}"
+
+          terraform show -json tfplan > plan.json
+          destroys=$(jq '[.resource_changes[]? | select(.change.actions[]? | IN("delete","forget"))] | length' plan.json)
+          if [ "$destroys" -gt 0 ] && [ "$ALLOW_DESTROY" != "destroy" ]; then
+            echo "::error::plan now deletes/forgets ${destroys} resource(s) (state may have moved since review); re-run with allow_destroy=destroy if intended."
+            jq -r '.resource_changes[]? | select(.change.actions[]? | IN("delete","forget")) | "  REMOVE " + .address' plan.json
+            exit 1
+          fi
+
           terraform apply -input=false -no-color tfplan
 
       - name: Summarise post-apply outputs (non-sensitive only)

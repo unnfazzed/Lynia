@@ -26,7 +26,10 @@
 # The custom roles below remove *casual* data-plane reach (secret payloads, media objects) so the
 # common case is least-privilege, but they do NOT make this SA safe to expose. Its real containment
 # is the WIF condition + the environment gate, not the role list. Treat any ability to run
-# terraform-apply.yml as equivalent to project ownership.
+# terraform-apply.yml as equivalent to project ownership. Hardening worth doing at arming time
+# (review P3-5): an org-level IAM DENY policy on iam.serviceAccounts.setIamPolicy targeting this
+# SA's own resource name — closing the "grant itself a wider WIF binding" loop with a control the
+# SA cannot lift. Org-level policies are outside this module's project scope; Console/gcloud step.
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 
 resource "google_service_account" "provisioner" {
@@ -104,6 +107,9 @@ resource "google_project_iam_member" "provisioner_roles" {
     "roles/vpcaccess.admin",                 # network.tf serverless connector      (added post-review)
     "roles/servicenetworking.networksAdmin", # network.tf private service access    (added post-review)
     "roles/iap.admin",                       # admin.tf IAP backend bindings        (added post-review)
+    "roles/iam.roleAdmin",                   # the custom roles in THIS file — projectIamAdmin does
+    #                                          NOT carry iam.roles.*; without this, the first CI
+    #                                          apply touching provisioner.tf dies mid-run (P2-4)
   ]) : toset([])
   project = local.project_id
   role    = each.value
@@ -132,6 +138,23 @@ resource "google_storage_bucket_iam_member" "provisioner_tfstate_write" {
   member = "serviceAccount:${google_service_account.provisioner[0].email}"
 }
 
+# Staging media bucket only: staging.tf sets force_destroy = true, and destroying/replacing a
+# bucket requires enumerating and deleting its objects — which the bucket-level custom role above
+# deliberately cannot do. Scoped to the staging bucket; lynia-media (KYC documents,
+# force_destroy = false) stays object-inaccessible.
+resource "google_storage_bucket_iam_member" "provisioner_staging_objects" {
+  count  = var.ci_provisioner_enabled && var.staging_enabled ? 1 : 0
+  bucket = google_storage_bucket.staging_media[0].name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.provisioner[0].email}"
+}
+
+# NOTE (review P3-2): var.emit_deployer_sa_key is INCOMPATIBLE with CI apply — creating an SA key
+# needs iam.serviceAccountKeys.create (roles/iam.serviceAccountKeyAdmin), deliberately not granted
+# (the org disables SA keys anyway, wif.tf). If that flag is ever true, apply locally.
+# NOTE (review P3-3): var.create_project is likewise out of scope for CI apply (needs
+# projectCreator + billing at the org level — never grant those to a repo-reachable SA).
+
 # Cloud Run services run AS the runtime SA, so Terraform must be able to actAs it.
 resource "google_service_account_iam_member" "provisioner_actas_runtime" {
   count              = var.ci_provisioner_enabled ? 1 : 0
@@ -140,15 +163,17 @@ resource "google_service_account_iam_member" "provisioner_actas_runtime" {
   member             = "serviceAccount:${google_service_account.provisioner[0].email}"
 }
 
-# WIF binding — the load-bearing containment. principalSet on attribute.environment/infra means only
-# a job declaring `environment: infra` can impersonate this SA; the provider's attribute_condition
-# (wif.tf) additionally pins the ref to main, so GCP — not a GitHub checkbox — enforces the branch
-# boundary. Both matter: the environment gate alone would let any branch's edited workflow through.
+# WIF binding — the load-bearing containment. Bound to the COMPOSITE repo_env attribute
+# ("owner/repo:infra", wif.tf) rather than attribute.environment alone, so the binding stays pinned
+# to THIS repository even if another provider is ever added to github-pool (review P3-4). The
+# provider's attribute_condition additionally pins the infra environment to refs/heads/main, so
+# GCP — not a GitHub checkbox — enforces the branch boundary. Both matter: the environment gate
+# alone would let any branch's edited workflow through.
 resource "google_service_account_iam_member" "provisioner_wif" {
   count              = var.ci_provisioner_enabled ? 1 : 0
   service_account_id = google_service_account.provisioner[0].name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.environment/infra"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repo_env/${var.github_repository}:infra"
 }
 
 output "CI_PROVISIONER_SERVICE_ACCOUNT" {
