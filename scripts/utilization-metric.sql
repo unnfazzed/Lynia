@@ -3,9 +3,10 @@
 -- the tripwire for the merchant-vertical thesis is a fleet average < 1 order/active-rider/day
 -- by Sep 15 (revisit rider-recruitment pacing and Restaurants launch scope before P5).
 --
--- "Active rider" on a day = a rider who had >= 1 order reach `assigned` (or beyond) that day,
--- OR sent a heartbeat that day (is-online activity without work still counts as supply that
--- showed up and found nothing — that is exactly what the tripwire must see).
+-- "Active rider" on a day = a rider who got attached to an order CREATED that day (the query
+-- keys on the order's creation day, not the assignment moment — there is no assignment
+-- timestamp column), OR sent a heartbeat that day (is-online activity without work still
+-- counts as supply that showed up and found nothing — exactly what the tripwire must see).
 --
 -- Run weekly against prod (read-only). At pilot scale a manual run is enough:
 --   psql "$DATABASE_URL" -f scripts/utilization-metric.sql

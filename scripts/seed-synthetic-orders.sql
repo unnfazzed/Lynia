@@ -8,7 +8,7 @@
 -- so a "not production" blocklist check passes on any laptop with APP_ENV unset while
 -- pointed at the prod DATABASE_URL; require the explicit staging opt-in instead):
 --   1. Refuses to run if the database already contains real-looking data (any order whose
---      customer phone does not carry the +263771000 synthetic prefix while orders exist).
+--      customer phone does not carry the +2637710 synthetic prefix while orders exist).
 --   2. Invoke ONLY via the explicit allow-list check:
 --        [ "$APP_ENV" = "staging" ] && psql "$DATABASE_URL" -f scripts/seed-synthetic-orders.sql \
 --          || echo "refusing: APP_ENV must be explicitly 'staging'"
@@ -58,8 +58,8 @@ ON CONFLICT (profile_id) DO NOTHING;
 
 -- ~100k orders across terminal + a sliver of active statuses, spread over 120 days.
 -- Status mix approximates a real book: mostly completed/delivered, some cancelled/expired,
--- few active (active ones get riders and respect one_active_ride by giving each rider
--- at most one active order).
+-- few active. Active (`requested`) rows are seeded UNASSIGNED (rider_id NULL), so the
+-- one_active_ride partial unique index holds trivially.
 WITH customers AS (
   SELECT id, row_number() OVER () rn FROM profiles WHERE phone LIKE '+26377100%'
 ),
