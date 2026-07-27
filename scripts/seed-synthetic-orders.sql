@@ -4,11 +4,14 @@
 -- ~100k orders + 500 riders + 5k customers shaped like real Harare traffic, so ALTER TABLE
 -- rehearsals on `orders` measure something.
 --
--- STAGING ONLY. Two guards:
+-- STAGING ONLY. Two guards (ALLOW-LIST semantics — env.ts defaults APP_ENV to "production",
+-- so a "not production" blocklist check passes on any laptop with APP_ENV unset while
+-- pointed at the prod DATABASE_URL; require the explicit staging opt-in instead):
 --   1. Refuses to run if the database already contains real-looking data (any order whose
 --      customer phone does not carry the +263771000 synthetic prefix while orders exist).
---   2. Run it via:  APP_ENV must NOT be production — check before invoking:
---        [ "$APP_ENV" != "production" ] && psql "$DATABASE_URL" -f scripts/seed-synthetic-orders.sql
+--   2. Invoke ONLY via the explicit allow-list check:
+--        [ "$APP_ENV" = "staging" ] && psql "$DATABASE_URL" -f scripts/seed-synthetic-orders.sql \
+--          || echo "refusing: APP_ENV must be explicitly 'staging'"
 --
 -- Everything synthetic is tagged: phones +2637710xxxxx, item_desc 'synthetic:...'.
 -- Cleanup: DELETE FROM orders WHERE item_desc LIKE 'synthetic:%'; then profiles by phone prefix.
