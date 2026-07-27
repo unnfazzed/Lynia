@@ -221,8 +221,10 @@ cd infra/terraform
 echo 'staging_enabled = true' >> terraform.tfvars
 terraform apply       # review: everything is new + gated; prod's only diff is the LB host rule/cert
 
-# 2. DNS: add an A record for staging.lyniafinance.com → the SAME load_balancer_ip output as prod.
-#    The staging managed cert goes ACTIVE after DNS propagates (can take ~30 min).
+# 2. DNS: if cloudflare_dns_enabled = true (dns.tf), the staging A record is created BY THIS APPLY —
+#    nothing to do by hand. Otherwise add an A record for staging.lyniafinance.com → the SAME
+#    load_balancer_ip output as prod. Either way the managed cert goes ACTIVE after DNS
+#    propagates (can take ~30 min).
 
 # 3. Arm the workflow from the Terraform outputs:
 gh variable set GCP_STAGING_ENABLED --body "true"
