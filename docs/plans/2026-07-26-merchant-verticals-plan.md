@@ -1,6 +1,7 @@
 # Merchant Verticals — Build, Design & Deployment Plan
 
-**Status:** approved (office-hours review 2026-07-27; Approach A, full build — see §0a)
+**Status:** P0 COMPLETE (2026-07-27, see §0c) · design track in flight · P1 ready
+(approved at office-hours review 2026-07-27; Approach A, full build — see §0a)
 **Target launch:** Restaurants vertical, Sept–Oct 2026
 **Source pack:** `LyniaGo_Merchant_Handoff` (`00_START_HERE`, `01_CONCEPT`, `02_MERCHANT_SPEC`, `03_BUILD_PLAN`)
 **Scope of this doc:** how the merchant build is structured in the repo, how it is designed, tested and
@@ -110,6 +111,26 @@ outside-voice (independent model) challenge produced three P1 corrections, accep
 12. **Cut-line addition (outside voice #8):** the founder-side cut line (§0a) also triggers on
     Play **closed-testing/production-access gates** (new developer accounts: 12 testers /
     14 days) — the second (merchant) binary submission stacks on the first's approval.
+
+## 0c. P0 execution record (2026-07-27) — done, open, next
+
+P0 engineering is **complete and merged**: PRs #402 (status-keyed-query audit + utilization
+tripwire + synthetic staging seed), #403 (flag registry + public `GET /app/feature-flags` +
+golden matrix + boundary rule), #404 (`apps/merchant` scaffold), #408 (main restored to
+green after the dependabot incident — lucide icon, find-my-way advisory, and a **measured
+720 KB Sentry bundle regression** now pinned + dependabot-ignored; merchant flags wired into
+both deploy workflows so **launch is a repo-Variable flip**), #411+#413 (gated
+`terraform apply` from CI, twice security-reviewed, dormant until armed).
+
+Full narrative, verification state, and the ordered step lists (staging exit gate, gated-
+apply arming, design reconciliation, P1 task order):
+**`docs/plans/2026-07-27-p0-execution-report.md`**. The Design Lab brief handed to the
+founder is preserved verbatim at **`docs/plans/2026-07-27-merchant-design-brief.md`**.
+
+Open at time of writing: the **P0 exit gate** (staging migration rehearsal — founder-gated
+on `GCP_STAGING_ENABLED`; P1 migrations do not ship before it), the **design track**
+(founder in Claude Design Lab; output reconciles against `packages/design` before P3/P4),
+and the optional **gated-apply arming** (ordered steps in the workflow header).
 
 ## 0. The one-line summary
 
