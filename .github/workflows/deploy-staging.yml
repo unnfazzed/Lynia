@@ -131,6 +131,12 @@ jobs:
       # + stub KYC boot here so the k6 harness and QA devices can authenticate vendor-free, while
       # secret-strength/Redis guards still apply. --max-instances caps the cost of a runaway.
       - name: Deploy to Cloud Run (staging)
+        # Merchant kill switches come in as env (mapped from the STAGING_* Variables), never as
+        # ${{ }} inside the script — see the validation loop below.
+        env:
+          RESTAURANTS_ENABLED: ${{ vars.STAGING_RESTAURANTS_ENABLED }}
+          MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.STAGING_MERCHANT_DISPATCH_AUTO_ENABLED }}
+          MERCHANT_WALLET_ENABLED: ${{ vars.STAGING_MERCHANT_WALLET_ENABLED }}
         run: |
           set -euo pipefail
           # "^;^" sets ; as the env delimiter — values may contain commas (OTP_TEST_PHONES) and @
@@ -138,10 +144,18 @@ jobs:
           ENV_VARS="^;^NODE_ENV=production;APP_ENV=staging;CLOUD_PROVIDER=gcp;STORAGE_BUCKET=lynia-media-staging;GCP_STORAGE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }};OTP_CHANNEL=console;KYC_PROVIDER=stub;PUSH_PROVIDER=noop;OTP_TEST_PHONES=${{ vars.STAGING_OTP_TEST_PHONES }};MIN_SUPPORTED_APP_VERSION=${{ vars.STAGING_MIN_SUPPORTED_APP_VERSION }};SCHEDULER_SERVICE_ACCOUNT=${{ vars.STAGING_CLOUD_RUN_SERVICE_ACCOUNT }}"
           # Merchant-vertical kill switches, staging-scoped (plan §0b.3). Separate STAGING_* Variables
           # so the vertical can be exercised end-to-end here (QA, the P4 E2E gate) while prod stays
-          # dark — the whole point of a staging tier. Unset injects "false" (the schema's fail-safe).
-          ENV_VARS="${ENV_VARS};RESTAURANTS_ENABLED=${{ vars.STAGING_RESTAURANTS_ENABLED || 'false' }}"
-          ENV_VARS="${ENV_VARS};MERCHANT_DISPATCH_AUTO_ENABLED=${{ vars.STAGING_MERCHANT_DISPATCH_AUTO_ENABLED || 'false' }}"
-          ENV_VARS="${ENV_VARS};MERCHANT_WALLET_ENABLED=${{ vars.STAGING_MERCHANT_WALLET_ENABLED || 'false' }}"
+          # dark — the whole point of a staging tier. Unset yields "false" (the schema's fail-safe).
+          # Values arrive via `env:` and are whitelist-validated: a `;` in a Variable value would
+          # otherwise be read as the ENV_VARS delimiter and inject an extra key (here that could
+          # override APP_ENV=staging), and raw ${{ }} in a run: block is a shell-injection sink.
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED; do
+            _val="${!_flag:-false}"
+            case "$_val" in
+              true|false) ;;
+              *) echo "::error::STAGING_${_flag} must be exactly 'true' or 'false' (got '${_val}')"; exit 1 ;;
+            esac
+            ENV_VARS="${ENV_VARS};${_flag}=${_val}"
+          done
 
           SECRETS="DATABASE_URL=DATABASE_URL_STAGING:latest,REDIS_URL=REDIS_URL_STAGING:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET_STAGING:latest,PII_ENCRYPTION_KEY=PII_ENCRYPTION_KEY_STAGING:latest"
 

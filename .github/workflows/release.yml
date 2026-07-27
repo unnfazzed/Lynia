@@ -440,6 +440,12 @@ jobs:
       # moves only in the canary step below. First-ever deploy skips --no-traffic (a new service
       # must route 100% somewhere).
       - name: Deploy to Cloud Run (new revision, no traffic)
+        # Merchant kill switches come in as env, never as ${{ }} inside the script — see the
+        # validation loop below for why (delimiter breakout + injection).
+        env:
+          RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
+          MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
+          MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
         run: |
           set -euo pipefail
           TRAFFIC_FLAGS="--no-traffic --tag canary"
@@ -471,15 +477,27 @@ jobs:
 
           # Merchant-vertical kill switches (docs/plans/2026-07-26-merchant-verticals-plan.md §0b.3).
           # Wired NOW, while every flag is off, so going live is a repo-Variable change — never a code
-          # edit to this workflow at the moment you least want one. Unset injects "false" (the env
-          # schema's own fail-safe default), so today's behaviour is identical to not passing them.
+          # edit to this workflow at the moment you least want one. Unset yields "false" (matching the
+          # env schema's own fail-safe), so today's behaviour is identical to not passing them.
           # Restaurants go-live = `gh variable set RESTAURANTS_ENABLED --body "true"` + the next
           # deploy (or an immediate `gcloud run services update`); rollback is the same flip back.
           # The pilot COHORT (which merchants are live) is domain data, not an env var — flipping
           # RESTAURANTS_ENABLED opens the vertical, `Merchant.pilotEnabled` decides who is in it.
-          ENV_VARS="${ENV_VARS};RESTAURANTS_ENABLED=${{ vars.RESTAURANTS_ENABLED || 'false' }}"
-          ENV_VARS="${ENV_VARS};MERCHANT_DISPATCH_AUTO_ENABLED=${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED || 'false' }}"
-          ENV_VARS="${ENV_VARS};MERCHANT_WALLET_ENABLED=${{ vars.MERCHANT_WALLET_ENABLED || 'false' }}"
+          #
+          # Values arrive via `env:` (NOT ${{ }} inside this script) and are whitelist-validated to
+          # exactly true|false. Two reasons, both real: a `;` in a Variable value would otherwise be
+          # read as the ENV_VARS delimiter and silently inject an extra key — and because these lines
+          # append AFTER the hardcoded APP_ENV=production above, and gcloud takes the LAST occurrence
+          # of a duplicated key, such an injection could override the very guard that comment promises
+          # is un-overridable. Raw ${{ }} in a run: block is also a shell-injection sink.
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED; do
+            _val="${!_flag:-false}"
+            case "$_val" in
+              true|false) ;;
+              *) echo "::error::${_flag} must be exactly 'true' or 'false' (got '${_val}')"; exit 1 ;;
+            esac
+            ENV_VARS="${ENV_VARS};${_flag}=${_val}"
+          done
 
           SECRETS="DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest,PII_ENCRYPTION_KEY=PII_ENCRYPTION_KEY:latest"
 

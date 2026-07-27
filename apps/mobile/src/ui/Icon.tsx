@@ -19,7 +19,10 @@ import ChevronUp from "lucide-react-native/dist/cjs/icons/chevron-up";
 import CircleAlert from "lucide-react-native/dist/cjs/icons/circle-alert";
 import Clock from "lucide-react-native/dist/cjs/icons/clock";
 import Flag from "lucide-react-native/dist/cjs/icons/flag";
-import History from "lucide-react-native/dist/cjs/icons/history";
+// lucide-react-native 1.27.0 renamed the `history` glyph to `rotate-ccw-clock` and dropped the old
+// path, which broke every suite importing this barrel (deps bump 02ef04c). Same glyph, new filename;
+// the public `history` key below is unchanged so no call site moves.
+import History from "lucide-react-native/dist/cjs/icons/rotate-ccw-clock";
 import IdCard from "lucide-react-native/dist/cjs/icons/id-card";
 import Inbox from "lucide-react-native/dist/cjs/icons/inbox";
 import LifeBuoy from "lucide-react-native/dist/cjs/icons/life-buoy";
