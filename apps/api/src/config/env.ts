@@ -296,7 +296,7 @@ export const envSchema = z.object({
   // domain rows (Merchant/Profile), NOT here. Mobile reads these via GET /app/feature-flags (the
   // version-gate precedent) — flipping one is a Cloud Run env update (~1 min revision), the accepted
   // kill-switch latency. Names are mirrored in @lynia/shared MerchantFeatureFlagsResponse; remove
-  // per the flag-cleanup TODO once Restaurants is permanently live.
+  // per TODOS.md "Post-launch flag cleanup (the Piranha pass)" once Restaurants is permanently live.
   RESTAURANTS_ENABLED: z.enum(["true", "false"]).default("false"),
   MERCHANT_DISPATCH_AUTO_ENABLED: z.enum(["true", "false"]).default("false"),
   MERCHANT_WALLET_ENABLED: z.enum(["true", "false"]).default("false"),

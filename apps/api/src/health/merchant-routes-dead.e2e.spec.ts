@@ -47,7 +47,7 @@ function collectControllers(mod: unknown, seen = new Set<unknown>()): Array<{ na
   ];
   const found = controllers.map((c) => ({
     name: (c as { name?: string }).name ?? "anonymous",
-    path: String(Reflect.getMetadata("path", c) ?? ""),
+    path: String(Reflect.getMetadata("path", c as object) ?? ""),
   }));
   return [...found, ...imports.flatMap((m) => collectControllers(m, seen))];
 }
