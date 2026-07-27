@@ -50,6 +50,67 @@ An office-hours concept review pressure-tested this plan before execution. Full 
   fleet average **<1 order/active-rider/day by Sept 15** puts the utilization thesis in
   question — revisit rider-recruitment pacing and Restaurants launch scope before P5.
 
+## 0b. Engineering review outcome (2026-07-27) — locked architecture decisions
+
+`/plan-eng-review` ran against this plan + the repo before P0 code. All decisions locked; the
+outside-voice (independent model) challenge produced three P1 corrections, accepted below.
+
+**Locked decisions (binding on P0–P2 implementation):**
+
+1. **State model (1A):** merchant orders reuse the existing `OrderStatus` skeleton + a new
+   nullable **`merchantPhase`** enum column for merchant-only sub-states. No new `OrderStatus`
+   values; `one_active_ride` (migration `0001_init` :150) keeps covering merchant orders
+   unchanged.
+2. **FloatLedger is purely derived (2A):** no stored `balanceAfter` (deliberate divergence from
+   `CommissionLedger` — the plan's "derived, never stored" non-negotiable wins; document with a
+   schema comment). Headroom = SUM over unresolved entries, partial-indexed.
+3. **Flags (3A):** env kill switches via the existing `env.ts` z.enum pattern
+   (`RESTAURANTS_ENABLED`, `MERCHANT_DISPATCH_AUTO_ENABLED`, `MERCHANT_WALLET_ENABLED`),
+   mirrored in `packages/shared`; cohort gating on `Merchant`/`Profile` domain rows
+   (`Merchant.pilotEnabled`). No flags table. **Plus (outside voice #4): a named P0 deliverable —
+   a server flags/config endpoint (the `/wallet/config` precedent) so mobile can read flag state;
+   "remote config" for the app = this endpoint.**
+4. **Golden test (4A):** extend `offer-loop.int.spec.ts` + `order-lifecycle.int.spec.ts` into a
+   flags-absent / flags-off matrix + a merchant-routes-404-when-disabled spec, **plus a
+   seeded-cohort leg** (pilot merchant/profile rows seeded, vertical on) so the matrix tests the
+   state production will actually run.
+5. **FloatLedger idempotency at the DB (5A, corrected by outside voice #2):**
+   **`UNIQUE (order_id, type, rider_id)`** partial unique via raw-SQL migration (WD-015
+   pattern). Three columns, not two — reassignment legitimately writes a second RESERVE for a
+   different rider on the same order.
+6. **Concurrency proofs deferred (6B, founder's call, risk accepted)** — the merchantPhase
+   pair-guard race and concurrent-RESERVE race are covered by unit tests + the P4 E2E gate, not
+   dedicated int-spec proofs. **Mitigation accepted (outside voice #3): the reserve transaction
+   takes `SELECT … FOR UPDATE` on the rider row**, closing the same-rider race by serialization
+   (the wallet's existing pattern). Pair-coherence (no `status=delivered` with a live
+   `merchantPhase`) is added to the P2 gate invariants.
+7. **Non-negotiable #4 re-scoped (outside voice #1 — the big correction):** "never refactor live
+   Express" was fiction under decision 1: Express machinery keys on status with no type filter
+   (`offer-expiry.service.ts` sweep, notifications, the lifecycle CAS table), so merchant orders
+   sit inside its blast radius by construction. New wording: **"Express edits are limited to
+   `orderType` filters, each enumerated by a P0 status-keyed-query audit and covered by the
+   golden matrix."** The P0 audit (grep every status-keyed read/write on `orders`) is a named
+   P0 task; discovering this mid-P2 was the failure mode.
+8. **Dormant-code protection (outside voice #7):** merchant test suites become **required CI
+   checks from the first P1 PR** (not P4), and `docs/KNOWN_BUGS.md` gets a merchant lane in the
+   dedupe protocol — the repo's auto-merge routines must never rewrite an untested dormant money
+   path.
+9. **Staging rehearsals get a synthetic-data step (outside voice #5):** prod is empty pre-launch,
+   so "no long lock on a prod-sized clone" requires a seeded synthetic dataset (orders at
+   ~100k-row scale) as part of P0 staging arming.
+10. **P3 pre-decision (outside voice #9):** the merchant dashboard's install mode (browser tab vs
+    installed PWA/TWA vs a merchant role in the existing Expo app) is an explicit design-track
+    decision before P3 — Wake Lock/audio/WS survival on cheap Android tablets is a product
+    constraint, not polish. Tablet ownership + data cost land in the merchant onboarding
+    checklist.
+11. **Float funding definition (outside voice #10):** whose money the float is (rider self-funded
+    at v1 per the concept, platform-advanced later) is added to the design track's economics
+    questions and the merchant/rider onboarding copy — headroom sizing and WRITE_OFF loss
+    allocation both hinge on it.
+12. **Cut-line addition (outside voice #8):** the founder-side cut line (§0a) also triggers on
+    Play **closed-testing/production-access gates** (new developer accounts: 12 testers /
+    14 days) — the second (merchant) binary submission stacks on the first's approval.
+
 ## 0. The one-line summary
 
 Merchant verticals ship as **new order types inside the existing app**, built on **trunk-based development
@@ -250,7 +311,7 @@ The pipeline already has the tiers — `deploy-staging.yml` → release-please �
 
 | Phase | Engineering | Design (runs ahead) | Exit gate |
 |---|---|---|---|
-| **P0** | Staging Cloud SQL clone + staging deploy; close the 3 source unknowns (§8); **build the flag registry**; dependency-cruiser boundary rule; scaffold `apps/merchant`; stand up the **Express golden regression test**; **rider-utilization metric** (orders/active-rider/day, §0a) | `/design-consultation` on the merchant vertical; confirm `packages/design` covers dashboard + new tabs or extend it; **Design Lab: first divergent mockups** | No-op migration applies **and** rolls back on staging; audit answers written down; **Express green and untouched** |
+| **P0** | Staging Cloud SQL clone + staging deploy; close the 3 source unknowns (§8); **build the flag registry**; dependency-cruiser boundary rule; scaffold `apps/merchant`; stand up the **Express golden regression test**; **rider-utilization metric** (orders/active-rider/day, §0a); **status-keyed-query audit** (§0b.7); **server flags/config endpoint** (§0b.3); **synthetic staging dataset** (§0b.9) | `/design-consultation` on the merchant vertical; confirm `packages/design` covers dashboard + new tabs or extend it; **Design Lab: first divergent mockups** | No-op migration applies **and** rolls back on staging; audit answers written down; **Express green and untouched** |
 | **P1** | Additive migration set; **`FloatLedger`** + merchant `CommissionLedger` (clone the existing append-only, idempotent, signed shape) | Lock **customer Restaurants flow** + **merchant dashboard** → reconcile to tokens → `/design-html` → `/design-review` | Migration: no long lock on a prod-sized clone; a full cash order's float nets to zero; derived balances match hand-computed |
 | **P2** | **The spine, before any UI:** one guarded `OrderTransitionService` (transition table + row-level locking, `UPDATE … WHERE status=EXPECTED`); every failure path; per-state timeouts via the BullMQ reconciler + rider heartbeat; per-customer COD controls (reuse `onHold` + strikes) | Design **rider** AUTO-offer / pay-merchant / float-widget screens while eng builds the spine | **Non-negotiable:** every exception path terminates; every terminal state nets the float or books one `WRITE_OFF`; **no path strands float**; dual-confirm cannot deadlock |
 | **P3** | `apps/merchant`: login, WebSocket queue (reuse TrackingModule) + page audio + wake lock + connection banner, accept/reject + prep time, **evidence-bearing confirms**, refund path, catalog + hours editor, weekly commission view | `/design-review` on the running dashboard | Tablet reboot → banner within heartbeat; new order rings after one login tap; **scripted spoofed-SMS confirm blocked** by amount/ref check; post-accept reject produces `REFUND_PENDING` |
@@ -268,7 +329,10 @@ The pipeline already has the tiers — `deploy-staging.yml` → release-please �
 2. **Every terminal state resolves money cleanly**, including `DELIVERY_FAILED` / `RETURN_TO_MERCHANT`. **No order
    may strand a rider's float.**
 3. **Payment confirmations carry evidence** (txn reference + amount), never a bare boolean.
-4. **Never refactor live Express code in v1.** AUTO dispatch and merchant POD are parallel additions behind flags.
+4. **Express edits are limited to `orderType` filters** — each enumerated by the P0
+   status-keyed-query audit and covered by the golden matrix (re-scoped at eng review, §0b.7;
+   the old absolute "never refactor live Express" was unimplementable under the shared-table
+   state model). AUTO dispatch and merchant POD remain parallel additions behind flags.
 5. **Additive, expand/contract migrations only**, rehearsed on a staging clone, deployed in Express off-hours.
 
 **Cut line if the schedule slips — sacrifice in this order:**
@@ -311,3 +375,23 @@ WebSocket gateway exists; `CommissionLedger` **already has reversal/adjustment**
    `packages/design/handoff/design-tokens.ts`.
 
 Each is a small, independently-mergeable, flag-dormant PR — so even P0 reaches `main` without touching Express.
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1* | CLEAR | *covered by `/office-hours` 2026-07-27 (design doc APPROVED, 8/10 adversarial) |
+| Codex Review | `/codex review` | Independent 2nd opinion | 1 | CLEAR | outside voice (Claude subagent — Codex CLI absent): 12 findings, 3 P1 accepted as corrections |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR | 6 issues (4 architecture, 1 code quality, 1 tests), all decided; 0 critical gaps open |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | scheduled inside P0–P1 design track (plan §6) |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | not applicable pre-code |
+
+**CROSS-MODEL:** the outside voice confirmed the review's reuse map and flag/ledger decisions, and
+overturned two of them in part: non-negotiable #4 re-scoped to orderType-filter edits (§0b.7) and
+the FloatLedger unique key widened to (order_id, type, rider_id) (§0b.5). Both accepted by the
+founder. The 6B risk (no dedicated concurrency proofs) was mitigated with rider-row `FOR UPDATE`
+rather than reversed.
+
+**VERDICT:** ENG CLEARED (CEO covered by office hours) — ready to implement P0.
+
+NO UNRESOLVED DECISIONS
