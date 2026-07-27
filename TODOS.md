@@ -79,3 +79,45 @@ starts from reasoning, not archaeology.
   (Expo tree-shaking needs the package-exports resolution `metro.config.js` deliberately avoids).
 - **Trigger / blocked by:** Founder's EAS/Expo account setup complete. The EAS project already exists
   (`25b2785d-94e0-4ecc-9940-bd9f9d8eb27c`); only the env vars + a release build remain.
+
+## Merchant verticals (from /plan-eng-review 2026-07-27, plan §0b)
+
+### DispatchDecision retention policy
+
+- **What:** Pruning/archival rule for the append-only `DispatchDecision` log (every AUTO tick
+  logs candidates, offers, outcomes).
+- **Why:** It is the batching-decision dataset, but unbounded on the hot DB; without an owner it
+  becomes a slow-creep table nobody prunes.
+- **Pros:** Prevents unbounded growth; keeps the batching analysis window intact deliberately
+  rather than accidentally.
+- **Cons:** Meaningless at pilot volume — months from mattering.
+- **Context:** The log exists to be mined ("batching when the log shows 3+ concurrent orders
+  within ~2km/10min", plan §5); retention must preserve enough history for that analysis.
+- **Trigger / blocked by:** `DispatchDecision` table exists (P4) AND row count > ~500k or 6
+  months of data, whichever first.
+
+### Post-launch flag cleanup (the Piranha pass)
+
+- **What:** Delete `RESTAURANTS_ENABLED` / `MERCHANT_*` kill switches, the golden-matrix
+  flags-off legs, and dead flag branches once Restaurants is permanently live.
+- **Why:** Stale flags are dead branches with security edges; the repo's own precedent is that
+  kill switches persist forever unless scheduled for removal (eng review outside-voice #11).
+- **Pros:** Keeps `env.ts` and the test matrix honest; removes untested code paths.
+- **Cons:** None real — calendar entry.
+- **Context:** Uber built Piranha because nobody deletes flags voluntarily. Solo founder needs
+  the tripwire written down.
+- **Trigger / blocked by:** Restaurants stable in prod ~4 weeks with the kill switch never pulled.
+
+### Merchant commission settlement infrastructure
+
+- **What:** The actual weekly billing/settlement path (statements, payment collection,
+  reconciliation) for merchant commission.
+- **Why:** Launch runs 0% commission with ledger accrual only; the concept defers settlement
+  infra ~6–8 months, but nothing tracked says so — the accruing ledger silently becomes real
+  money owed with no way to collect it.
+- **Pros:** Converts an implicit deferral into a scheduled decision with a tripwire.
+- **Cons:** Pure paperwork today.
+- **Context:** Mirrors the wallet TODOs' tripwire style. Commission ledger entries accrue from
+  the first merchant order; settlement is the missing half.
+- **Trigger / blocked by:** Any decision to schedule commission rate > 0% — settlement must be
+  built BEFORE the rate flips.
