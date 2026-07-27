@@ -1,0 +1,239 @@
+name: Terraform Apply (gated)
+
+# Runs `terraform apply` from CI behind a human approval gate, so infra changes stop requiring a
+# laptop with gcloud + terraform + state access (docs/LAUNCH-EXECUTION-RUNBOOK.md §8e).
+#
+# THIS FILE WAS REWRITTEN AFTER AN ADVERSARIAL SECURITY REVIEW of its first draft, which found
+# 5 P1 issues. Each control below exists because the review broke the previous version:
+#
+#  1. NO `${{ }}` INTERPOLATION INSIDE ANY `run:` BLOCK. Inputs arrive via `env:` and are
+#     whitelist-validated. The first draft interpolated `inputs.target`/`inputs.confirm` directly,
+#     which is shell injection — and it sat in the UNAPPROVED plan job, which authenticates as a SA
+#     that can read gs://lynia-tfstate, where random_password values (JWT signing secret, PII
+#     encryption key) live in plaintext. RCE with no human click. Never reintroduce `${{ }}` here.
+#  2. terraform.tfvars IS MATERIALISED from the TF_PROD_TFVARS secret (the pattern
+#     gcp-drift-detect.yml already uses). It is gitignored, so without it terraform runs on
+#     variables.tf DEFAULTS — which would destroy staging, the admin tier, the Cloudflare records,
+#     and the provisioner SA this workflow authenticates with. Both jobs fail closed if it is unset.
+#  3. THE APPROVED PLAN IS THE APPLIED PLAN. `plan -out=tfplan` is uploaded as an artifact and
+#     applied verbatim. The first draft re-planned inside apply, so the reviewer's approval was not
+#     binding on what executed.
+#  4. main-ONLY. `workflow_dispatch` runs the *branch's* copy of this file, so every control here is
+#     attacker-editable from a branch. The runtime ref check below is defence-in-depth ONLY; the
+#     real boundaries are (a) the `infra` environment's deployment-branch policy and (b) the WIF
+#     attribute_condition pinning the ref (infra/terraform/wif.tf). Arming step 2 is not optional.
+#  5. DESTROY GUARD. A plan containing any `delete` action fails unless `allow_destroy` is typed.
+#     Terraform destroying infrastructure should never be a surprise inside a routine apply.
+#
+# DORMANT UNTIL ARMED — gated on the repo variable GCP_PROVISIONER_ENABLED == 'true'.
+#
+# ARMING (founder, one-time — do these IN ORDER; step 3 last):
+#   1. Bootstrap the SA once out of band (chicken-and-egg: creating it needs provisioning rights).
+#      Either a local `terraform apply` with ci_provisioner_enabled = true, or Cloud Console:
+#      IAM → Service Accounts → create `lynia-provisioner`, grant the roles in provisioner.tf,
+#      then add the WIF principalSet binding.
+#   2. Create the `infra` GitHub Environment and configure BOTH:
+#        - Required reviewers: yourself.
+#        - Deployment branches: "Selected branches" → `main` ONLY.
+#      A referenced-but-missing environment is auto-created by GitHub with NO protection rules,
+#      which would let an unreviewed apply run. The preflight below refuses to proceed if the
+#      environment has no protection rules, but configure it properly anyway.
+#   3. gh variable set GCP_PROVISIONER_ENABLED --body "true"
+#      gh variable set GCP_PROVISIONER_SERVICE_ACCOUNT --body "<the SA email>"
+#      gh secret   set TF_PROD_TFVARS < infra/terraform/terraform.tfvars
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "apply" to confirm you intend to change infrastructure'
+        required: true
+        default: ""
+      target:
+        description: "Optional -target=ADDRESS (leave blank for a full apply; use sparingly)"
+        required: false
+        default: ""
+      allow_destroy:
+        description: 'Type "destroy" ONLY if this plan is meant to delete resources'
+        required: false
+        default: ""
+
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: plan (read-only, no approval needed)
+    if: ${{ vars.GCP_PROVISIONER_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      exitcode: ${{ steps.plan.outputs.exitcode }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Defence-in-depth only (this file is editable on the branch being dispatched) — the binding
+      # controls are the environment's deployment-branch policy and the WIF ref condition.
+      - name: Guard — main only, and validated inputs
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          TF_TARGET: ${{ inputs.target }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::terraform-apply may only run from main (got ${REF})."; exit 1
+          fi
+          if [ "$CONFIRM" != "apply" ]; then
+            echo "::error::confirm input must be exactly 'apply'."; exit 1
+          fi
+          # Terraform addresses: letters, digits, _ . : / " and the [ ] index form, plus -.
+          # Anything else — notably $ ` ; & | ( ) newline — is rejected rather than escaped.
+          # Bracket-expression order matters: `]` must come FIRST and `-` LAST, or POSIX ends the
+          # class at that `]` and the pattern silently matches nothing (verified: the naive
+          # `[A-Za-z0-9_.:/"[]-]` rejects even `google_service_account.provisioner[0]`).
+          # Defence-in-depth only — TF_TARGET is passed as an array element below, never through a
+          # shell string, so it is not an injection sink even if this check were absent.
+          if [ -n "$TF_TARGET" ] && ! printf '%s' "$TF_TARGET" | grep -qE '^[]A-Za-z0-9_.:/"[-]+$'; then
+            echo "::error::invalid -target address."; exit 1
+          fi
+
+      - name: Authenticate to GCP (read-only deployer SA)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - name: terraform plan
+        id: plan
+        working-directory: infra/terraform
+        env:
+          TF_PROD_TFVARS: ${{ secrets.TF_PROD_TFVARS }}
+          TF_TARGET: ${{ inputs.target }}
+          ALLOW_DESTROY: ${{ inputs.allow_destroy }}
+        run: |
+          set -euo pipefail
+          # Fail CLOSED: without the real tfvars terraform plans against variables.tf defaults, which
+          # reads as "destroy every armed tier". Never let that plan reach a reviewer.
+          if [ -z "$TF_PROD_TFVARS" ]; then
+            echo "::error::TF_PROD_TFVARS secret is unset — refusing to plan against variables.tf defaults."
+            exit 1
+          fi
+          printf '%s\n' "$TF_PROD_TFVARS" > terraform.tfvars
+
+          args=(-input=false -no-color -lock=false -detailed-exitcode -out=tfplan)
+          [ -n "$TF_TARGET" ] && args+=(-target="$TF_TARGET")
+
+          terraform init -input=false -no-color
+          set +e
+          terraform plan "${args[@]}" > plan.txt 2>&1
+          code=$?
+          set -e
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+
+          if [ "$code" -eq 1 ]; then
+            echo "::error::terraform plan failed"; cat plan.txt; exit 1
+          fi
+
+          # Destroy guard: a routine apply must never delete infrastructure by surprise.
+          terraform show -json tfplan > plan.json
+          destroys=$(jq '[.resource_changes[]? | select(.change.actions[]? == "delete")] | length' plan.json)
+          if [ "$destroys" -gt 0 ] && [ "$ALLOW_DESTROY" != "destroy" ]; then
+            echo "::error::plan deletes ${destroys} resource(s); re-run with allow_destroy=destroy if intended."
+            jq -r '.resource_changes[]? | select(.change.actions[]? == "delete") | "  DELETE " + .address' plan.json
+            exit 1
+          fi
+
+          {
+            echo "### Terraform plan (${destroys} deletion(s))"
+            echo '```'
+            terraform show -no-color tfplan | tail -c 60000
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The binary plan is the artifact the apply job consumes, so what was approved is what runs.
+      # Retained briefly: it describes infra topology (not secrets — terraform redacts sensitive
+      # values in plan output, and state itself is never uploaded).
+      - name: Upload plan
+        if: ${{ steps.plan.outputs.exitcode == '2' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: infra/terraform/tfplan
+          retention-days: 1
+
+  apply:
+    name: apply (requires human approval)
+    needs: plan
+    # exitcode 2 = changes pending; 0 = no-op, so don't wake a human for nothing.
+    if: ${{ vars.GCP_PROVISIONER_ENABLED == 'true' && needs.plan.outputs.exitcode == '2' }}
+    runs-on: ubuntu-latest
+    environment: infra
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Guard — main only
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [ "$REF" = "refs/heads/main" ] || { echo "::error::apply may only run from main (got ${REF})."; exit 1; }
+
+      - name: Authenticate to GCP (provisioner SA — bindable only from this environment)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PROVISIONER_SERVICE_ACCOUNT }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: infra/terraform
+
+      - name: terraform apply (the approved plan, verbatim)
+        working-directory: infra/terraform
+        env:
+          TF_PROD_TFVARS: ${{ secrets.TF_PROD_TFVARS }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TF_PROD_TFVARS" ]; then
+            echo "::error::TF_PROD_TFVARS secret is unset — refusing to apply."; exit 1
+          fi
+          printf '%s\n' "$TF_PROD_TFVARS" > terraform.tfvars
+          terraform init -input=false -no-color
+          # Applying the saved plan file: no re-plan, no -target to re-thread, and terraform itself
+          # refuses if state moved since the plan was taken. The approval is therefore binding.
+          terraform apply -input=false -no-color tfplan
+
+      - name: Summarise post-apply outputs (non-sensitive only)
+        working-directory: infra/terraform
+        run: |
+          set -euo pipefail
+          # No -raw/-json: terraform prints <sensitive> for sensitive outputs, so generated DB URLs
+          # and secrets cannot land in the summary.
+          {
+            echo "### Applied. Non-sensitive outputs"
+            echo '```'
+            terraform output -no-color || true
+            echo '```'
+            echo "Sensitive outputs are redacted — read them locally with \`terraform output -raw <NAME>\`."
+          } >> "$GITHUB_STEP_SUMMARY"
