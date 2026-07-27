@@ -97,7 +97,10 @@ about the tabs** — tab rollout itself can ship OTA behind the flags endpoint. 
   The synthetic dataset for it is ready (`scripts/seed-synthetic-orders.sql`, staging
   allow-list guarded). Rehearsal runs as soon as staging is armed; P1 migrations do not ship
   before it.
-- **Deliberate deferral vs §0b.4:** the golden matrix's **seeded-cohort leg** needs the
-  `Merchant` table and ships with the first P1 schema PR, not P0 (P0 bans schema changes).
+- **Deliberate deferral vs §0b.4:** the golden matrix's **seeded-cohort leg** ships with the
+  first P1 PR, not P0. Precision (review-corrected): the `merchants` table and
+  `orders.merchant_id` have existed **since migration 0001** — what does *not* exist until P1
+  is the cohort **gating** (`Merchant.pilotEnabled`, pilot `Profile` gating) and any flag
+  *consumer* for a seeded cohort to exercise, so a P0 cohort leg would assert against nothing.
   **This paragraph is the tracking record**; the golden-matrix spec (lands in the next P0 PR)
   carries a TODO pointing back here and at §0b.4.

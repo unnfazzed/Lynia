@@ -3,55 +3,65 @@
 -- the tripwire for the merchant-vertical thesis is a fleet average < 1 order/active-rider/day
 -- by Sep 15 (revisit rider-recruitment pacing and Restaurants launch scope before P5).
 --
--- "Active rider" on a day = a rider who got attached to an order CREATED that day (the query
--- keys on the order's creation day, not the assignment moment — there is no assignment
--- timestamp column), OR sent a heartbeat that day (is-online activity without work still
--- counts as supply that showed up and found nothing — exactly what the tripwire must see).
+-- Definitions (history-table-accurate; review-corrected):
+--   assignments(day)  = order_events rows with status 'assigned' created that day — the true
+--                       "an order reached a rider that day" signal (not order-creation day).
+--   active_riders(day)= distinct riders attached to an order with an 'assigned' event that day
+--                       (attribution uses the order's current rider_id — on the rare
+--                       reassignment this credits the final rider; acceptable at pilot scale)
+--                       PLUS, for TODAY'S ROW ONLY, riders whose last_heartbeat_at is today.
+--                       riders.last_heartbeat_at is a single overwritten column, so heartbeat
+--                       presence CANNOT be reconstructed for past days — historical rows count
+--                       working riders only and therefore OVERSTATE utilization for idle-rider
+--                       days. For tripwire purposes run this daily (or at least weekly) and
+--                       archive today's row; never read a historical row as heartbeat-accurate.
+--   orders_per_active_rider = assignments / active_riders.
 --
--- Run weekly against prod (read-only). At pilot scale a manual run is enough:
 --   psql "$DATABASE_URL" -f scripts/utilization-metric.sql
 
 WITH days AS (
   SELECT d::date AS day
   FROM generate_series(current_date - interval '13 days', current_date, interval '1 day') AS d
 ),
-supply AS ( -- riders who showed up: heartbeat or assignment activity that day
-  SELECT DISTINCT day, rider_id FROM (
-    SELECT date(o.created_at) AS day, o.rider_id
-    FROM orders o
-    WHERE o.rider_id IS NOT NULL
-      AND o.created_at >= current_date - interval '13 days'
-    UNION
-    SELECT date(r.last_heartbeat_at) AS day, r.profile_id AS rider_id
-    FROM riders r
-    WHERE r.last_heartbeat_at >= current_date - interval '13 days'
-  ) s
+assignment_events AS (
+  SELECT date(e.created_at) AS day, e.order_id, o.rider_id, o.order_type
+  FROM order_events e
+  JOIN orders o ON o.id = e.order_id
+  WHERE e.status = 'assigned'
+    AND e.created_at >= current_date - interval '13 days'
 ),
-demand AS ( -- orders that actually got a rider that day (assigned or beyond at some point)
-  SELECT date(o.created_at) AS day,
-         count(*)                                        AS orders_total,
-         count(*) FILTER (WHERE o.order_type = 'parcel') AS orders_express,
-         count(*) FILTER (WHERE o.order_type = 'merchant') AS orders_merchant,
-         count(*) FILTER (WHERE o.rider_id IS NOT NULL)  AS orders_assigned
-  FROM orders o
-  WHERE o.created_at >= current_date - interval '13 days'
-  GROUP BY 1
+supply AS (
+  SELECT day, count(DISTINCT rider_id) AS active_riders
+  FROM (
+    SELECT day, rider_id FROM assignment_events WHERE rider_id IS NOT NULL
+    UNION
+    SELECT current_date AS day, r.profile_id AS rider_id  -- heartbeat arm: TODAY ONLY (see header)
+    FROM riders r
+    WHERE date(r.last_heartbeat_at) = current_date
+  ) s
+  GROUP BY day
+),
+demand AS (
+  SELECT day,
+         count(*)                                          AS assignments,
+         count(*) FILTER (WHERE order_type = 'parcel')     AS express,
+         count(*) FILTER (WHERE order_type = 'merchant')   AS merchant
+  FROM assignment_events
+  GROUP BY day
 )
 SELECT
   days.day,
-  COALESCE(d.orders_total, 0)                    AS orders_total,
-  COALESCE(d.orders_assigned, 0)                 AS orders_assigned,
-  COALESCE(d.orders_express, 0)                  AS express,
-  COALESCE(d.orders_merchant, 0)                 AS merchant,
-  COALESCE(s.active_riders, 0)                   AS active_riders,
-  ROUND(COALESCE(d.orders_assigned, 0)::numeric
-        / NULLIF(s.active_riders, 0), 2)         AS orders_per_active_rider
+  COALESCE(d.assignments, 0)               AS assignments,
+  COALESCE(d.express, 0)                   AS express,
+  COALESCE(d.merchant, 0)                  AS merchant,
+  COALESCE(s.active_riders, 0)             AS active_riders,
+  ROUND(COALESCE(d.assignments, 0)::numeric
+        / NULLIF(s.active_riders, 0), 2)   AS orders_per_active_rider,
+  (days.day = current_date)                AS heartbeat_arm_included
 FROM days
 LEFT JOIN demand d ON d.day = days.day
-LEFT JOIN (SELECT day, count(*) AS active_riders FROM supply GROUP BY 1) s ON s.day = days.day
+LEFT JOIN supply s ON s.day = days.day
 ORDER BY days.day;
 
--- Tripwire check (14-day fleet average):
---   SELECT ROUND(avg(orders_per_active_rider), 2) FROM (<the query above>) t
---   WHERE active_riders > 0;
--- < 1.00 by Sep 15 => the utilization thesis is in trouble (plan §0a).
+-- Tripwire check: track TODAY'S orders_per_active_rider (the only heartbeat-accurate row)
+-- across daily runs; a sustained value < 1.00 approaching Sep 15 fires the §0a trigger.
