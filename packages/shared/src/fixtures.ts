@@ -28,6 +28,7 @@ import type {
   CreateOrderRequest,
   LatLng,
   MakeOfferRequest,
+  MerchantFeatureFlagsResponse,
   OrderItem,
   Topup,
   TopupRail,
@@ -238,6 +239,20 @@ export function makeTopup(overrides?: Partial<Topup>): Topup {
  * to the launch-inert state (`enabled: false`, `ratePct: 0`) so a fixture consumer opts INTO an active
  * commission regime explicitly.
  */
+/**
+ * Merchant-vertical kill-switch state — parses against `MerchantFeatureFlagsResponse` (`.strict()`).
+ * Defaults to the launch-inert all-off state so a fixture consumer opts INTO an enabled vertical
+ * explicitly (mirrors makeCommissionConfig's posture).
+ */
+export function makeMerchantFeatureFlags(
+  overrides?: Partial<MerchantFeatureFlagsResponse>,
+): MerchantFeatureFlagsResponse {
+  return make<MerchantFeatureFlagsResponse>(
+    { restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false },
+    overrides,
+  );
+}
+
 export function makeCommissionConfig(overrides?: Partial<CommissionConfig>): CommissionConfig {
   return make<CommissionConfig>(
     { enabled: false, ratePct: 0, floor: 2, graceCredit: 1, minTopUp: 1, maxTopUp: 100 },

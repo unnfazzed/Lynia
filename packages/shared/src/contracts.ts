@@ -453,6 +453,21 @@ export type ClientMetricsBatch = z.infer<typeof ClientMetricsBatch>;
 export const VersionGateResponse = z.object({ minSupportedVersion: z.string().max(24) }).strict();
 export type VersionGateResponse = z.infer<typeof VersionGateResponse>;
 
+/** `GET /app/feature-flags` — merchant-vertical kill switches, served publicly (the version-gate
+ *  precedent: read at app cold start BEFORE sign-in; a dormant tab must be able to learn it's
+ *  dormant). Server truth is the env flags (plan §0b.3); all-false is the launch-inert default.
+ *  This is the mobile app's "remote config" for the Restaurants rollout — tabs ship dark in the
+ *  binary/OTA and light up when their flag flips. Cohort gating (which pilot merchants/devices)
+ *  is a separate, authenticated concern on domain rows — it does NOT belong in this contract. */
+export const MerchantFeatureFlagsResponse = z
+  .object({
+    restaurantsEnabled: z.boolean(),
+    merchantDispatchAutoEnabled: z.boolean(),
+    merchantWalletEnabled: z.boolean(),
+  })
+  .strict();
+export type MerchantFeatureFlagsResponse = z.infer<typeof MerchantFeatureFlagsResponse>;
+
 // ---------------------------------------------------------------------------
 // Rider prepaid commission wallet (docs/plans/2026-rider-wallet-design.md)
 // ---------------------------------------------------------------------------

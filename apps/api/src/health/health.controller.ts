@@ -1,5 +1,5 @@
 import { Controller, Get, Header, Inject, ServiceUnavailableException } from "@nestjs/common";
-import type { VersionGateResponse } from "@lynia/shared";
+import type { MerchantFeatureFlagsResponse, VersionGateResponse } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { HealthService, type HealthReport } from "./health.service";
@@ -36,5 +36,22 @@ export class HealthController {
   @Header("Cache-Control", "public, max-age=300")
   versionGate(): VersionGateResponse {
     return { minSupportedVersion: this.env.MIN_SUPPORTED_APP_VERSION };
+  }
+
+  // Merchant-vertical kill switches (docs/plans/2026-07-26-merchant-verticals-plan.md §0b.3).
+  // Public and unauthenticated by the same reasoning as the version gate: the app reads it at cold
+  // start BEFORE sign-in, and a dark Restaurants tab must be able to learn it's dark. Server truth
+  // is the env flags — flipping one is a Cloud Run env update; with max-age=60 every device
+  // converges within a minute of the new revision serving. Cohort gating (WHICH merchants/devices
+  // are in the pilot) is deliberately NOT here — that's authenticated domain data, and this
+  // endpoint must stay a cheap static read that can never add load-shed pressure.
+  @Get("app/feature-flags")
+  @Header("Cache-Control", "public, max-age=60")
+  featureFlags(): MerchantFeatureFlagsResponse {
+    return {
+      restaurantsEnabled: this.env.RESTAURANTS_ENABLED === "true",
+      merchantDispatchAutoEnabled: this.env.MERCHANT_DISPATCH_AUTO_ENABLED === "true",
+      merchantWalletEnabled: this.env.MERCHANT_WALLET_ENABLED === "true",
+    };
   }
 }

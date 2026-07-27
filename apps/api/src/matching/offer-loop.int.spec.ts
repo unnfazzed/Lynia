@@ -13,8 +13,20 @@ import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { TrackingService } from "../tracking/tracking.service";
 import { MatchingService } from "./matching.service";
 
+// Golden-matrix leg (plan §0b.4 / audit doc "P0 exit-gate status"): every Env constructed in this
+// proof carries the merchant kill switches EXPLICITLY OFF, making this suite the
+// "flags-present-and-off" leg of the Express golden matrix. In P0 no service consumes these keys,
+// so this leg is equivalent-by-construction to flags-absent (the pre-flag suite on main's history);
+// the moment a P1+ consumer reads a flag inside the offer loop, this harness becomes load-bearing
+// automatically — identical assertions must keep passing with the flags off.
+const MERCHANT_FLAGS_OFF = {
+  RESTAURANTS_ENABLED: "false",
+  MERCHANT_DISPATCH_AUTO_ENABLED: "false",
+  MERCHANT_WALLET_ENABLED: "false",
+} as const;
+
 const prisma = new PrismaService();
-const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
+const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-0123456789", ACCESS_TTL_SECONDS: 900, ...MERCHANT_FLAGS_OFF } as Env);
 // Push is fire-and-forget; a no-op stub keeps the concurrency proof off the notification path.
 const noopNotifications = { notifyOrderStatus: async () => {}, notifyOrderExpired: async () => {} } as unknown as NotificationsService;
 // bid:expired is best-effort; a no-op gateway keeps the concurrency proof off the socket path.

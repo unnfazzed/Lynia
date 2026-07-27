@@ -45,3 +45,33 @@ describe("HealthController — app/version-gate (server-driven force-update)", (
     );
   });
 });
+
+describe("HealthController — app/feature-flags (merchant kill switches, plan §0b.3)", () => {
+  it("serves the launch-inert all-off default when no flag env is set (fail-safe OFF)", () => {
+    expect(controllerWith(okReport).featureFlags()).toEqual({
+      restaurantsEnabled: false,
+      merchantDispatchAutoEnabled: false,
+      merchantWalletEnabled: false,
+    });
+  });
+
+  it("reports a flag on when its env var is explicitly 'true', leaving the others off", () => {
+    const controller = controllerWith(okReport, { ...baseSource, RESTAURANTS_ENABLED: "true" });
+    expect(controller.featureFlags()).toEqual({
+      restaurantsEnabled: true,
+      merchantDispatchAutoEnabled: false,
+      merchantWalletEnabled: false,
+    });
+  });
+
+  it("rejects a malformed flag value at boot instead of guessing (z.enum true/false)", () => {
+    expect(() => loadEnv({ ...baseSource, RESTAURANTS_ENABLED: "yes" })).toThrow(
+      /Invalid environment configuration/,
+    );
+  });
+
+  it("parses against the shared wire contract exactly (strict schema, no extra keys)", async () => {
+    const { MerchantFeatureFlagsResponse } = await import("@lynia/shared");
+    expect(() => MerchantFeatureFlagsResponse.parse(controllerWith(okReport).featureFlags())).not.toThrow();
+  });
+});

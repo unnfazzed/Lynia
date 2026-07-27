@@ -291,6 +291,15 @@ export const envSchema = z.object({
   // surfaces (auth, offer loop, order lifecycle, wallet, tracking, SOS) have NO such switch by design:
   // they cannot be turned off. See docs/ARCHITECTURE.md §Core vs non-core.
   NOTIFICATIONS_FEED_ENABLED: z.enum(["true", "false"]).default("true"),
+  // --- Merchant verticals kill switches (docs/plans/2026-07-26-merchant-verticals-plan.md §0b.3) ---
+  // Env-var flags per the eng-review decision 3A: fail-safe OFF by default; cohort gating lives on
+  // domain rows (Merchant/Profile), NOT here. Mobile reads these via GET /app/feature-flags (the
+  // version-gate precedent) — flipping one is a Cloud Run env update (~1 min revision), the accepted
+  // kill-switch latency. Names are mirrored in @lynia/shared MerchantFeatureFlagsResponse; remove
+  // per the flag-cleanup TODO once Restaurants is permanently live.
+  RESTAURANTS_ENABLED: z.enum(["true", "false"]).default("false"),
+  MERCHANT_DISPATCH_AUTO_ENABLED: z.enum(["true", "false"]).default("false"),
+  MERCHANT_WALLET_ENABLED: z.enum(["true", "false"]).default("false"),
   // Per-entry cap (USD) on an ops manual credit — an abuse backstop on the admin credit path
   // (design OV-3A). Default $50 (= COMMISSION.maxTopUp).
   WALLET_MANUAL_CREDIT_CAP_USD: z.coerce.number().positive().default(50),
