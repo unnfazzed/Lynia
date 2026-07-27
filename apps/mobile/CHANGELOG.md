@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.5](https://github.com/unnfazzed/Lynia/compare/v0.10.4...v0.10.5) (2026-07-27)
+
+
+### Bug Fixes
+
+* **ci,mobile:** restore main to green; harden the merchant flag wiring ([8617d95](https://github.com/unnfazzed/Lynia/commit/8617d951458481066ea077b5fd5acb2768125db2))
+* **mobile:** pin @sentry/react-native to ~6.10 — the 720 KB bundle regression ([a4c9710](https://github.com/unnfazzed/Lynia/commit/a4c971023e4c401f11cc04a046474cca80013386))
+
 ## [0.10.4](https://github.com/unnfazzed/Lynia/compare/v0.10.3...v0.10.4) (2026-07-26)
 
 
