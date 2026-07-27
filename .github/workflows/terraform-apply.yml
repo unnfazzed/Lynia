@@ -93,9 +93,14 @@ jobs:
           if [ "$CONFIRM" != "apply" ]; then
             echo "::error::confirm input must be exactly 'apply'."; exit 1
           fi
-          # Terraform addresses: letters, digits, _ . - and the [""] index form. Anything else —
-          # notably $ ` ; & | ( ) newline — is rejected rather than escaped.
-          if [ -n "$TF_TARGET" ] && ! printf '%s' "$TF_TARGET" | grep -qE '^[A-Za-z0-9_.:/"[]-]+$'; then
+          # Terraform addresses: letters, digits, _ . : / " and the [ ] index form, plus -.
+          # Anything else — notably $ ` ; & | ( ) newline — is rejected rather than escaped.
+          # Bracket-expression order matters: `]` must come FIRST and `-` LAST, or POSIX ends the
+          # class at that `]` and the pattern silently matches nothing (verified: the naive
+          # `[A-Za-z0-9_.:/"[]-]` rejects even `google_service_account.provisioner[0]`).
+          # Defence-in-depth only — TF_TARGET is passed as an array element below, never through a
+          # shell string, so it is not an injection sink even if this check were absent.
+          if [ -n "$TF_TARGET" ] && ! printf '%s' "$TF_TARGET" | grep -qE '^[]A-Za-z0-9_.:/"[-]+$'; then
             echo "::error::invalid -target address."; exit 1
           fi
 
