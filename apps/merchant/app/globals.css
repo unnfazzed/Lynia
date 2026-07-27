@@ -1,0 +1,18 @@
+/* Minimal reset for the P0 scaffold. The real styling arrives with the P3 design track:
+ * packages/design tokens (accent/cta/accentText split — see docs/DESIGN-SYSTEM.md) via the
+ * approved /design-html output. Deliberately no ad-hoc colors here so nothing has to be
+ * un-invented when the design system lands. */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  line-height: 1.5;
+}
