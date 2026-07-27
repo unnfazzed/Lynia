@@ -1,6 +1,6 @@
 # Merchant Verticals — Build, Design & Deployment Plan
 
-**Status:** proposed (not yet started)
+**Status:** approved (office-hours review 2026-07-27; Approach A, full build — see §0a)
 **Target launch:** Restaurants vertical, Sept–Oct 2026
 **Source pack:** `LyniaGo_Merchant_Handoff` (`00_START_HERE`, `01_CONCEPT`, `02_MERCHANT_SPEC`, `03_BUILD_PLAN`)
 **Scope of this doc:** how the merchant build is structured in the repo, how it is designed, tested and
@@ -9,6 +9,46 @@ deployed, and — above all — **how it ships without ever putting the live Exp
 > Where this doc and the code disagree, **the code wins** — reconcile and flag it.
 
 ---
+
+## 0a. Office-hours review outcome (2026-07-27) — ground truth and decisions
+
+An office-hours concept review pressure-tested this plan before execution. Full record:
+`~/.gstack/projects/unnfazzed-Lynia/root-claude-feature-planning-deployment-wkbc92-design-20260727-071004.md`
+(adversarially reviewed, 8/10). Corrections and decisions binding on this plan:
+
+- **Ground truth correction: Express is NOT live.** The handoff pack's premise ("the live
+  Express product, the only revenue product") is ahead of reality: Express is built and
+  deployed but **pre-launch, awaiting Google Play approval, with zero users**. Everything in
+  this plan that protects "live Express" applies from the moment Express launches; until
+  then the protection posture is still followed (it is free) but the real risk being managed
+  is sequencing, not regression.
+- **Decision: Approach A — full build, full steam** (founder's call over the session's
+  spine-first recommendation, on the rider-utilization argument: the targeted rider fleet
+  needs multi-vertical order density to retain, so Restaurants is Express's supply-retention
+  strategy). P0→P5 execute in sequence per this plan.
+- **Go-to-market milestones (now part of the plan):** Play approval → launch weekend
+  targeting **100 registered riders** → **500 riders by end of August** → **September:
+  onboard 5+ named pilot restaurants** → mid-October Restaurants launch.
+- **Geographic strategy: density-first around the Harare CBD.** Riders already concentrate
+  in the CBD; pilot merchants are recruited from the restaurants around those concentration
+  zones so Express + Restaurants order flow overlaps one tight radius. Dispatch radius and
+  delivery-fee assumptions tune for dense-urban distances first.
+- **Founder-side cut line (trigger-based, pre-agreed):** if Play approval hasn't landed by
+  mid-August, or fewer than 5 merchants are committed by **September 15**, or rider
+  activation is materially behind (see the utilization metric below), then P0–P2 and the
+  design track continue but **P4/P5 do not start** and the October date slips per §7's cut
+  line. A downshift by rule, not a debate.
+- **Merchant recruitment moves to August.** P5's "onboard 5–10 pilot restaurants" is pulled
+  forward as parallel founder street-work: 5+ named, committed CBD merchants by Sept 15
+  (stretch: two weeks). Each yes also captures 2–3 customer referrals (the named demand-side
+  list) and the ground-truth economics (current order channel, delivery cost/turn-aways).
+- **Economics ship as config, not constants.** Delivery fee, commission display, COD caps,
+  float sizes are flags/config so September's merchant conversations can tune them without
+  a rebuild.
+- **New P0 task — rider-utilization metric:** track **orders per active rider per day**
+  from Express launch day (a SQL query + weekly check suffices at pilot scale). Trigger: a
+  fleet average **<1 order/active-rider/day by Sept 15** puts the utilization thesis in
+  question — revisit rider-recruitment pacing and Restaurants launch scope before P5.
 
 ## 0. The one-line summary
 
@@ -210,7 +250,7 @@ The pipeline already has the tiers — `deploy-staging.yml` → release-please �
 
 | Phase | Engineering | Design (runs ahead) | Exit gate |
 |---|---|---|---|
-| **P0** | Staging Cloud SQL clone + staging deploy; close the 3 source unknowns (§8); **build the flag registry**; dependency-cruiser boundary rule; scaffold `apps/merchant`; stand up the **Express golden regression test** | `/design-consultation` on the merchant vertical; confirm `packages/design` covers dashboard + new tabs or extend it; **Design Lab: first divergent mockups** | No-op migration applies **and** rolls back on staging; audit answers written down; **Express green and untouched** |
+| **P0** | Staging Cloud SQL clone + staging deploy; close the 3 source unknowns (§8); **build the flag registry**; dependency-cruiser boundary rule; scaffold `apps/merchant`; stand up the **Express golden regression test**; **rider-utilization metric** (orders/active-rider/day, §0a) | `/design-consultation` on the merchant vertical; confirm `packages/design` covers dashboard + new tabs or extend it; **Design Lab: first divergent mockups** | No-op migration applies **and** rolls back on staging; audit answers written down; **Express green and untouched** |
 | **P1** | Additive migration set; **`FloatLedger`** + merchant `CommissionLedger` (clone the existing append-only, idempotent, signed shape) | Lock **customer Restaurants flow** + **merchant dashboard** → reconcile to tokens → `/design-html` → `/design-review` | Migration: no long lock on a prod-sized clone; a full cash order's float nets to zero; derived balances match hand-computed |
 | **P2** | **The spine, before any UI:** one guarded `OrderTransitionService` (transition table + row-level locking, `UPDATE … WHERE status=EXPECTED`); every failure path; per-state timeouts via the BullMQ reconciler + rider heartbeat; per-customer COD controls (reuse `onHold` + strikes) | Design **rider** AUTO-offer / pay-merchant / float-widget screens while eng builds the spine | **Non-negotiable:** every exception path terminates; every terminal state nets the float or books one `WRITE_OFF`; **no path strands float**; dual-confirm cannot deadlock |
 | **P3** | `apps/merchant`: login, WebSocket queue (reuse TrackingModule) + page audio + wake lock + connection banner, accept/reject + prep time, **evidence-bearing confirms**, refund path, catalog + hours editor, weekly commission view | `/design-review` on the running dashboard | Tablet reboot → banner within heartbeat; new order rings after one login tap; **scripted spoofed-SMS confirm blocked** by amount/ref check; post-accept reject produces `REFUND_PENDING` |
