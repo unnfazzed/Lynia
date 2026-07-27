@@ -1,0 +1,159 @@
+name: Terraform Apply (gated)
+
+# Runs `terraform apply` from CI behind a HUMAN APPROVAL GATE, so infra changes stop requiring a
+# laptop with gcloud + terraform + state access (docs/LAUNCH-EXECUTION-RUNBOOK.md §8e).
+#
+# THE GATE IS THE POINT. Three independent controls, all load-bearing:
+#   1. `workflow_dispatch` only — never fires on push/merge. Infra never changes as a side effect
+#      of shipping code.
+#   2. `environment: infra` — a GitHub Environment configured with YOU as a required reviewer, so
+#      the apply job pauses until a human clicks Approve. Plan output is visible in the job log
+#      BEFORE approval (the plan job runs first, unreviewed and read-only).
+#   3. A separate provisioner SA (infra/terraform/provisioner.tf) that ONLY workflows running in
+#      the `infra` environment can federate to. The release/deploy pipelines keep the read-only
+#      deployer SA — a compromised release pipeline still cannot touch infrastructure.
+#
+# TYPED CONFIRMATION: `apply` must be typed into the confirm input. A mis-click on the Run
+# workflow button then does nothing; it takes intent to change infrastructure.
+#
+# DORMANT UNTIL ARMED — gated on the repo variable GCP_PROVISIONER_ENABLED == 'true'.
+# Arming (founder, one-time bootstrap — see provisioner.tf's BOOTSTRAP note):
+#   1. Create the SA + roles + WIF binding once out of band (local apply, or Console clicks:
+#      IAM → Service Accounts → create `lynia-provisioner`, grant the roles listed in
+#      provisioner.tf, then bind principalSet .../attribute.environment/infra).
+#   2. Create the `infra` GitHub Environment with yourself as a required reviewer.
+#   3. gh variable set GCP_PROVISIONER_ENABLED --body "true"
+#      gh variable set GCP_PROVISIONER_SERVICE_ACCOUNT --body "<the SA email>"
+# After that, every apply — including changes to provisioner.tf itself — runs here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "apply" to confirm you intend to change infrastructure'
+        required: true
+        default: ""
+      target:
+        description: "Optional -target=... (leave blank for a full apply; use sparingly)"
+        required: false
+        default: ""
+
+# Never let two applies race for the state lock.
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Plan runs FIRST, unapproved and read-only, so the reviewer approves against a real diff
+  # rather than a promise. It uses the same read-only deployer SA the nightly drift probe uses.
+  plan:
+    name: plan (read-only, no approval needed)
+    if: ${{ vars.GCP_PROVISIONER_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      exitcode: ${{ steps.plan.outputs.exitcode }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Guard — confirmation phrase
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm }}" != "apply" ]; then
+            echo "::error::confirm input must be exactly 'apply' (got '${{ inputs.confirm }}'). Refusing."
+            exit 1
+          fi
+
+      - name: Authenticate to GCP (read-only deployer SA)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: terraform plan
+        id: plan
+        working-directory: infra/terraform
+        run: |
+          set -euo pipefail
+          terraform init -input=false -no-color
+          # -lock=false keeps the PLAN read-only against the state lock (the deployer SA has only
+          # objectViewer on the bucket and cannot take a lock anyway).
+          set +e
+          terraform plan -input=false -lock=false -no-color -detailed-exitcode \
+            ${{ inputs.target && format('-target={0}', inputs.target) || '' }} > plan.txt 2>&1
+          code=$?
+          set -e
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Terraform plan"
+            echo '```'
+            tail -c 60000 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$code" in
+            0) echo "No changes — apply will be a no-op." ;;
+            2) echo "Changes pending — review the plan above before approving the apply." ;;
+            *) echo "::error::terraform plan failed"; cat plan.txt; exit 1 ;;
+          esac
+
+  apply:
+    name: apply (requires human approval)
+    needs: plan
+    # exitcode 2 = changes pending. 0 = nothing to do, so don't wake a human for a no-op.
+    if: ${{ vars.GCP_PROVISIONER_ENABLED == 'true' && needs.plan.outputs.exitcode == '2' }}
+    runs-on: ubuntu-latest
+    # THE GATE: configure this Environment with a required reviewer. Without that reviewer the
+    # environment provides no protection — the workflow would apply unattended.
+    environment: infra
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Authenticate to GCP (provisioner SA — only bindable from this environment)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PROVISIONER_SERVICE_ACCOUNT }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: terraform apply
+        working-directory: infra/terraform
+        run: |
+          set -euo pipefail
+          terraform init -input=false -no-color
+          # Re-plans inside apply: the approved plan and the applied plan are the same code, and
+          # state may have moved between approval and execution. The human reviewed the intent;
+          # terraform re-derives the diff at execution time.
+          terraform apply -input=false -auto-approve -no-color \
+            ${{ inputs.target && format('-target={0}', inputs.target) || '' }}
+
+      - name: Summarise post-apply outputs (non-sensitive only)
+        working-directory: infra/terraform
+        run: |
+          set -euo pipefail
+          # `terraform output` without -raw redacts sensitive values, so this can never print the
+          # generated DB URLs / secrets that live in state.
+          {
+            echo "### Applied. Non-sensitive outputs"
+            echo '```'
+            terraform output -no-color || true
+            echo '```'
+            echo "Sensitive outputs (DB URLs, tokens) are redacted — read them with"
+            echo "\`terraform output -raw <NAME>\` locally, or set them straight into repo secrets."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -302,3 +302,10 @@ variable "settlement_autopause_enabled" {
   type        = bool
   default     = false
 }
+
+# --- CI terraform provisioner (provisioner.tf + .github/workflows/terraform-apply.yml) ---
+variable "ci_provisioner_enabled" {
+  description = "Create the lynia-provisioner SA that lets `terraform apply` run from CI behind the human-reviewed `infra` GitHub Environment, instead of from a founder laptop. Off by default — zero diff until you opt in. Keeps the release deployer SA read-only against infrastructure (iam.tf), so a compromised release pipeline still cannot create or destroy infra. Bootstrap note: the first creation of this SA needs provisioning rights, so do it once out of band (a local apply, or Console clicks); every apply after that can run from CI."
+  type        = bool
+  default     = false
+}

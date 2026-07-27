@@ -20,9 +20,18 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   display_name                       = "GitHub OIDC"
   project                            = local.project_id
 
+  # `attribute.environment` carries the GitHub Environment a job declares (`environment: infra`).
+  # It exists so the gated-apply SA (provisioner.tf) can be bound to principalSet
+  # .../attribute.environment/infra — i.e. only a workflow running in the human-reviewed `infra`
+  # Environment may impersonate a provisioner, not merely "any workflow in this repo". Jobs that
+  # declare no environment simply carry no such claim, so every existing repository-scoped
+  # binding (the deployer) is unaffected. Adding a mapping is an in-place provider update —
+  # confirm the plan says "update in-place", never "must be replaced" (a replacement would break
+  # keyless auth for the running deploy workflows until it settles).
   attribute_mapping = {
-    "google.subject"       = "assertion.sub"
-    "attribute.repository" = "assertion.repository"
+    "google.subject"        = "assertion.sub"
+    "attribute.repository"  = "assertion.repository"
+    "attribute.environment" = "assertion.environment"
   }
 
   # Hard gate: only OIDC tokens minted for THIS repo may use the provider.

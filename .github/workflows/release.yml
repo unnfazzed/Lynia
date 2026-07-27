@@ -469,6 +469,18 @@ jobs:
             ENV_VARS="${ENV_VARS};REFRESH_TTL_SECONDS=${{ vars.REFRESH_TTL_SECONDS }}"
           fi
 
+          # Merchant-vertical kill switches (docs/plans/2026-07-26-merchant-verticals-plan.md §0b.3).
+          # Wired NOW, while every flag is off, so going live is a repo-Variable change — never a code
+          # edit to this workflow at the moment you least want one. Unset injects "false" (the env
+          # schema's own fail-safe default), so today's behaviour is identical to not passing them.
+          # Restaurants go-live = `gh variable set RESTAURANTS_ENABLED --body "true"` + the next
+          # deploy (or an immediate `gcloud run services update`); rollback is the same flip back.
+          # The pilot COHORT (which merchants are live) is domain data, not an env var — flipping
+          # RESTAURANTS_ENABLED opens the vertical, `Merchant.pilotEnabled` decides who is in it.
+          ENV_VARS="${ENV_VARS};RESTAURANTS_ENABLED=${{ vars.RESTAURANTS_ENABLED || 'false' }}"
+          ENV_VARS="${ENV_VARS};MERCHANT_DISPATCH_AUTO_ENABLED=${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED || 'false' }}"
+          ENV_VARS="${ENV_VARS};MERCHANT_WALLET_ENABLED=${{ vars.MERCHANT_WALLET_ENABLED || 'false' }}"
+
           SECRETS="DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest,PII_ENCRYPTION_KEY=PII_ENCRYPTION_KEY:latest"
 
           # Didit KYC vendor wiring is OPT-IN via DIDIT_ENABLED=true. Gating it keeps launch-safe /
