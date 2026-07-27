@@ -51,7 +51,10 @@ module.exports = {
       name: "no-orphans",
       comment: "An unreferenced module is usually dead code or a missing wire-up. Info-level so it surfaces without blocking.",
       severity: "info",
-      from: { orphan: true, pathNot: ["\\.d\\.ts$", "(^|/)index\\.[jt]sx?$", "\\.(spec|test)\\.[jt]sx?$", "\\.config\\.[jt]s$"] },
+      // Next.js app-router entry files (page/layout/route/…) are invoked by the framework's file
+      // conventions, never imported — a self-contained one (like the merchant scaffold's
+      // placeholder page) is an entrypoint, not dead code.
+      from: { orphan: true, pathNot: ["\\.d\\.ts$", "(^|/)index\\.[jt]sx?$", "\\.(spec|test)\\.[jt]sx?$", "\\.config\\.[jt]s$", "(^|/)(page|layout|template|route|error|loading|not-found|middleware)\\.[jt]sx?$"] },
       to: {},
     },
   ],
