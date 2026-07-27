@@ -34,6 +34,20 @@ module.exports = {
       to: { path: "^apps/mobile/src/api/", dependencyTypesNot: ["type-only"] },
     },
     {
+      name: "express-no-merchant-coupling",
+      comment:
+        "Merchant-vertical one-way boundary (docs/plans/2026-07-26-merchant-verticals-plan.md §2.3 + §0b): " +
+        "live Express modules (matching/offers/orders + the workers they host) must NEVER depend on merchant " +
+        "code — coupling may only point merchant→shared, so a merchant defect cannot reach the Express paths. " +
+        "Dormant-by-construction until apps/api/src/merchant exists; it cannot be exercised by a spec import " +
+        "because spec files are excluded from the cruise (see exclude below). The sanctioned exception class " +
+        "(orderType FILTERS inside Express queries, per the §0b.7 audit) adds no import edge, so it never " +
+        "trips this rule.",
+      severity: "error",
+      from: { path: "^apps/api/src/(matching|offers|orders)/" },
+      to: { path: "^apps/api/src/merchant" },
+    },
+    {
       name: "no-orphans",
       comment: "An unreferenced module is usually dead code or a missing wire-up. Info-level so it surfaces without blocking.",
       severity: "info",

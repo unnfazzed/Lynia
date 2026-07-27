@@ -19,8 +19,18 @@ import type { OrdersService } from "./orders.service";
 import { WalletService } from "../wallet/wallet.service";
 import { OrderLifecycleService } from "./order-lifecycle.service";
 
+// Golden-matrix leg (plan §0b.4 / audit doc "P0 exit-gate status"): every Env constructed in this
+// proof carries the merchant kill switches EXPLICITLY OFF — the "flags-present-and-off" leg of the
+// Express golden matrix. Equivalent-by-construction to flags-absent in P0 (no consumer reads these
+// keys yet); becomes load-bearing automatically when P1+ adds flag consumers to the lifecycle path.
+const MERCHANT_FLAGS_OFF = {
+  RESTAURANTS_ENABLED: "false",
+  MERCHANT_DISPATCH_AUTO_ENABLED: "false",
+  MERCHANT_WALLET_ENABLED: "false",
+} as const;
+
 const prisma = new PrismaService();
-const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
+const tokens = new TokenService({ JWT_SIGNING_SECRET: "int-test-secret-0123456789", ACCESS_TTL_SECONDS: 900, ...MERCHANT_FLAGS_OFF } as Env);
 // Push is fire-and-forget; a no-op stub keeps the lifecycle proof off the notification path.
 const noopNotifications = {
   notifyOrderStatus: async () => {},
@@ -50,17 +60,17 @@ const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersSer
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
 // A real WalletService (rate 0 via empty env) exercises the commission-debit call in the completion
 // path as a no-op — the R1 regression that both completion paths still complete with wallet tables present.
-const wallet = new WalletService({} as Env, prisma);
+const wallet = new WalletService({ ...MERCHANT_FLAGS_OFF } as Env, prisma);
 // DS21-01: capture superseded-photo GCS deletes so the concurrent-attach race test can prove the loser's
 // object is purged (no orphan). A missing storage adapter would just no-op the best-effort cleanup.
 const deletedObjects: string[] = [];
 const storageStub = {
   deleteObject: async (k: string) => { deletedObjects.push(k); },
 } as unknown as import("../adapters/storage/storage.interface").StorageAdapter;
-const lifecycle = new OrderLifecycleService({} as Env, prisma, tokens, gateway, noopNotifications, noopOrders, wallet, storageStub);
+const lifecycle = new OrderLifecycleService({ ...MERCHANT_FLAGS_OFF } as Env, prisma, tokens, gateway, noopNotifications, noopOrders, wallet, storageStub);
 const trackingStub = { evictFromGeo: async () => {}, claimNotifyWaitersNear: async () => [], clearNotifyWaiters: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
 const notificationsStub = { notifyRidersAvailable: async () => {}, notifyProfiles: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
-const riders = new RiderService(prisma, {} as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env), trackingStub, gateway, notificationsStub);
+const riders = new RiderService(prisma, { ...MERCHANT_FLAGS_OFF } as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij", ...MERCHANT_FLAGS_OFF } as Env), trackingStub, gateway, notificationsStub);
 
 async function clean(): Promise<void> {
   await prisma.orderEvent.deleteMany({});
