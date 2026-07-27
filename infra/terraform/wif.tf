@@ -23,19 +23,31 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   # `attribute.environment` carries the GitHub Environment a job declares (`environment: infra`).
   # It exists so the gated-apply SA (provisioner.tf) can be bound to principalSet
   # .../attribute.environment/infra — i.e. only a workflow running in the human-reviewed `infra`
-  # Environment may impersonate a provisioner, not merely "any workflow in this repo". Jobs that
-  # declare no environment simply carry no such claim, so every existing repository-scoped
-  # binding (the deployer) is unaffected. Adding a mapping is an in-place provider update —
-  # confirm the plan says "update in-place", never "must be replaced" (a replacement would break
-  # keyless auth for the running deploy workflows until it settles).
+  # Environment may impersonate a provisioner, not merely "any workflow in this repo".
+  #
+  # The has() guards are NOT decoration. The OIDC token carries an `environment` claim ONLY when the
+  # job declares one, and a mapping expression that dereferences an ABSENT claim rejects the token
+  # exchange outright — it does not yield an empty attribute. Without the guard, every existing
+  # no-environment job (ci.yml, gcp-drift-detect.yml, release.yml's build steps, terraform-apply's
+  # own plan job) would lose keyless auth the moment this applied: all CI deploys, simultaneously.
+  # An earlier revision of this block shipped unguarded; it was never applied, and this corrects it.
+  # Verify with a no-environment job on a scratch branch before arming, and confirm the plan says
+  # "update in-place", never "must be replaced".
   attribute_mapping = {
     "google.subject"        = "assertion.sub"
     "attribute.repository"  = "assertion.repository"
-    "attribute.environment" = "assertion.environment"
+    "attribute.environment" = "has(assertion.environment) ? assertion.environment : \"none\""
+    "attribute.ref"         = "has(assertion.ref) ? assertion.ref : \"none\""
   }
 
   # Hard gate: only OIDC tokens minted for THIS repo may use the provider.
-  attribute_condition = "assertion.repository == \"${var.github_repository}\""
+  # The ref clause makes the branch boundary GCP-enforced rather than delegated to a GitHub setting.
+  # workflow_dispatch runs the *branch's* copy of a workflow, so someone with commit access could
+  # otherwise edit terraform-apply.yml on a branch and dispatch it — every control inside that file
+  # is attacker-editable. Tokens WITHOUT an environment claim are untouched (the deployer path is
+  # repository-scoped and keeps working from any branch); only environment-declaring jobs — i.e. the
+  # ones that can reach the provisioner principalSet — are pinned to main.
+  attribute_condition = "assertion.repository == \"${var.github_repository}\" && (!has(assertion.environment) || assertion.ref == \"refs/heads/main\")"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
