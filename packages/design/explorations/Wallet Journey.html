@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rider Wallet — full journey</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:#e7eaed;font-family:var(--font-sans);color:var(--ink);padding:32px 28px 64px}
+  .head{max-width:1200px;margin:0 auto 8px}
+  .head h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0}
+  .head p{font-size:14px;color:var(--muted);margin:6px 0 0;max-width:820px;line-height:1.55}
+  .head .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .chip{font-size:12px;font-weight:600;color:var(--muted);background:#fff;border:1px solid #d4dade;border-radius:999px;padding:5px 12px}
+  .chip b{color:var(--ink);font-weight:700}
+  .sec{max-width:100%;margin:36px auto 0}
+  .sec-label{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 6px}
+  .sec-label::after{content:"";flex:1;height:1px;background:#cfd5da}
+  .sec-note{font-size:13px;color:var(--muted);margin:0 0 14px;max-width:760px;line-height:1.5}
+  .rail{display:flex;align-items:flex-start;gap:6px;overflow-x:auto;padding:4px 2px 18px}
+  .step{display:flex;align-items:center;gap:6px;flex:none}
+  .arrow{color:#9aa4ad;font-size:22px;flex:none;align-self:center;margin-top:150px}
+  .cap{font-size:12px;font-weight:600;color:var(--ink);margin:0 0 8px;padding:0 2px;min-height:34px;max-width:var(--pw)}
+  .cap span{display:block;font-weight:400;color:var(--muted);font-size:11px;margin-top:1px}
+  .phone{--pw:246px;--ph:476px;width:var(--pw)}
+  .phone .fit{width:var(--pw);height:var(--ph);overflow:hidden;border-radius:26px;box-shadow:0 12px 30px rgba(20,24,27,.18)}
+  .phone iframe{width:408px;height:788px;border:0;transform:scale(.603);transform-origin:top left;background:#eceff1}
+  .desk{--dw:560px;width:var(--dw)}
+  .desk .cap{max-width:var(--dw)}
+  .desk .fit{width:var(--dw);height:462px;overflow:hidden;border-radius:14px;box-shadow:0 12px 30px rgba(20,24,27,.16);border:1px solid #d4dade}
+  .desk iframe{width:1280px;height:1056px;border:0;transform:scale(.4375);transform-origin:top left;background:#fff}
+  .admin-row{display:flex;gap:28px;flex-wrap:wrap}
+  .entry{background:#fff;border:1px solid #d4dade;border-radius:12px;padding:12px 16px;font-size:13px;color:var(--muted);line-height:1.5;max-width:820px;margin:0 auto 0 0}
+  .entry b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>Rider commission wallet — full journey</h1>
+  <p>Every screen from the moment commission goes live, following the emotional arc from the brief: <b>reveal → first debit → warned → gated → fix → back online</b>. The journey starts in <b>Earnings</b> — the tweaked "Commission balance ›" row is the only entry point into the wallet, and it only appears once the server flips commission on. Live embeds — each tile is the real Design Component driven into the state shown.</p>
+  <div class="meta">
+    <span class="chip">Rate <b>0% at launch → 10%</b></span>
+    <span class="chip">Floor to ride <b>$2.00</b></span>
+    <span class="chip">Grace credit <b>$5.00</b></span>
+    <span class="chip">Top-up <b>$5–$50</b></span>
+    <span class="chip">Rails <b>EcoCash · InnBucks · O'mari</b></span>
+    <span class="chip">Prompt window <b>90s</b></span>
+    <span class="chip">Payment <b>off-platform (prepaid float)</b></span>
+  </div>
+</div>
+
+<div class="sec">
+  <div class="sec-label">Entry — from Earnings</div>
+  <div class="sec-note">The wallet has no tab of its own. Riders reach it through the existing <b>Earnings</b> screen (rider journey 5·1) — the design already carries a tappable <b>Commission balance ›</b> row. It's server-flag gated: hidden until the commission flip. Below is the real earnings design, unchanged.</div>
+  <div class="rail" id="rail-entry"></div>
+</div>
+
+<div class="sec">
+  <div class="sec-label">Core journey</div>
+  <div class="sec-note">The happy path most riders will see week to week.</div>
+  <div class="rail" id="rail-main"></div>
+</div>
+
+<div class="sec">
+  <div class="sec-label">Edge &amp; recovery states</div>
+  <div class="sec-note">Every state the wallet and top-up flow must handle. All are real component states, not mockups.</div>
+  <div class="rail" id="rail-edge"></div>
+</div>
+
+<div class="sec" style="max-width:1200px;margin-left:auto;margin-right:auto">
+  <div class="sec-label">Admin ops — the other side of the ledger</div>
+  <div class="sec-note">Commission overview, seed-credits, and per-rider wallet management (manual credit, freeze). Context for the API the app talks to.</div>
+  <div class="admin-row" id="admin-row"></div>
+</div>
+
+<script>
+  const E = "journey/single-screen.html?id=earnings";
+  const EN = "journey/single-screen.html?id=earnings_new";
+  const W = "../templates/wallet/Wallet.dc.html";
+  const T = "../templates/top-up/TopUp.dc.html";
+  const G = "../templates/gate-state/GateState.dc.html";
+
+  const ENTRY = [
+    { cap: "0 · Earnings (5·1)", sub: "Commission balance › row", src: E, props: null },
+    { cap: "Earnings · new rider (5·2)", sub: "first fare starts here", src: EN, props: null },
+  ];
+  const MAIN = [
+    { cap: "1 · Reveal", sub: "$5 grace already there", src: W, props: { screenState: "first-open" } },
+    { cap: "2 · First debit", sub: "receipt shows the math", src: W, props: { screenState: "loaded" } },
+    { cap: "3 · Low balance", sub: "warned, not ambushed", src: W, props: { screenState: "low" } },
+    { cap: "4 · Gated", sub: "blocked by the $2 floor", src: G, props: { state: "gated" } },
+    { cap: "5 · Top up", sub: "amount + phone + rail", src: T, props: { step: "amount" } },
+    { cap: "6 · Prompt sent", sub: "90s approve on phone", src: T, props: { step: "ussd-wait" } },
+    { cap: "7 · Credited", sub: "balance ticks up", src: T, props: { step: "success" } },
+    { cap: "8 · Back online", sub: "quiet toast", src: G, props: { state: "cleared" } },
+  ];
+  const EDGE = [
+    { cap: "Negative balance", sub: "owed · ink on red wash", src: W, props: { screenState: "negative" } },
+    { cap: "Empty history", sub: "first-run, no rides", src: W, props: { screenState: "empty" } },
+    { cap: "Loading", sub: "skeletons, not spinners", src: W, props: { screenState: "loading" } },
+    { cap: "Offline", sub: "cached + stale label", src: W, props: { screenState: "offline" } },
+    { cap: "Top-up expired", sub: "\u201cno money moved\u201d", src: T, props: { step: "timeout" } },
+    { cap: "Top-up declined", sub: "payment failed", src: T, props: { step: "declined" } },
+    { cap: "InnBucks rail", sub: "same prompt flow", src: T, props: { step: "ussd-wait", rail: "innbucks" } },
+    { cap: "O'mari rail", sub: "same prompt flow", src: T, props: { step: "ussd-wait", rail: "omari" } },
+  ];
+  const ADMIN = [
+    { cap: "Commission overview + bulk seed-credit", src: "../ui_kits/admin/cash.html", after: null },
+    { cap: "Rider wallet — ledger, manual credit, freeze", src: "../ui_kits/admin/riders.html", after: (w) => { try { w.showDetail("Farai Rusike"); } catch (e) {} } },
+  ];
+
+  function driveDC(iframe, props) {
+    if (!props) return;
+    const w = iframe.contentWindow;
+    let tries = 0;
+    (function apply() {
+      tries++;
+      try {
+        if (w.__dcSetProps && w.__dcRootName && w.__dcRootName()) { w.__dcSetProps(w.__dcRootName(), props); }
+        else if (tries < 40) return void setTimeout(apply, 100);
+      } catch (e) { if (tries < 40) return void setTimeout(apply, 120); }
+      if (tries < 6) setTimeout(apply, 350);
+    })();
+  }
+  function phone(item) {
+    const step = document.createElement("div"); step.className = "step";
+    const col = document.createElement("div"); col.className = "phone";
+    col.innerHTML = '<div class="cap">' + item.cap + '<span>' + item.sub + '</span></div><div class="fit"><iframe loading="eager" src="' + item.src + '"></iframe></div>';
+    const fr = col.querySelector("iframe");
+    fr.addEventListener("load", () => driveDC(fr, item.props));
+    step.appendChild(col);
+    return step;
+  }
+  function arrow() { const a = document.createElement("div"); a.className = "arrow"; a.textContent = "\u2192"; return a; }
+  function fillRail(id, items, withArrows) {
+    const rail = document.getElementById(id);
+    items.forEach((it, i) => { rail.appendChild(phone(it)); if (withArrows && i < items.length - 1) rail.appendChild(arrow()); });
+  }
+  fillRail("rail-entry", ENTRY, false);
+  fillRail("rail-main", MAIN, true);
+  fillRail("rail-edge", EDGE, false);
+
+  const ar = document.getElementById("admin-row");
+  ADMIN.forEach((it) => {
+    const col = document.createElement("div"); col.className = "desk";
+    col.innerHTML = '<div class="cap">' + it.cap + '</div><div class="fit"><iframe loading="eager" src="' + it.src + '"></iframe></div>';
+    const fr = col.querySelector("iframe");
+    if (it.after) fr.addEventListener("load", () => setTimeout(() => it.after(fr.contentWindow), 500));
+    ar.appendChild(col);
+  });
+</script>
+</body>
+</html>

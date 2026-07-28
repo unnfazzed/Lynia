@@ -1,0 +1,155 @@
+<!-- @dsCard group="Mobile app" viewport="1180x1720" name="Trust, safety & recovery · 2026 gap review" subtitle="The 11 net-new safety/recovery screens shipped in code (PR #98) with no mockup — now designed to the real safety.ts / gates.ts contracts. SOS (both roles), report + block, order-level help, OTP resend/expiry/lockout, rider-went-dark escalation, go-online gate states, KYC ID-photo loop. Decisions final: 999 · Lynia safety line +263 77 883 1938 · contact-support = tel: call. See HANDOFF.md + BACKLOG-PLAN.md Wave 1/3/4." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LyniaGo — trust, safety & recovery flows (handoff)</title>
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  html, body { margin: 0; background: #eceff1; }
+  body { font-family: var(--font-sans); color: var(--ink); padding: 28px 32px 56px; box-sizing: border-box; }
+  .head { max-width: 1100px; margin: 0 auto 8px; }
+  .head h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 6px; }
+  .head p { font-size: 14px; color: var(--muted); line-height: 1.55; margin: 0; max-width: 820px; }
+  .head .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .fact { font-size: 12px; font-weight: 600; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; }
+  .fact b { color: var(--accent-text); font-weight: 700; }
+  .sec { max-width: 1140px; margin: 34px auto 0; }
+  .sec > h2 { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 3px; display: flex; align-items: center; gap: 10px; }
+  .sec > h2 .role { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); background: var(--surface); border-radius: 5px; padding: 3px 8px; }
+  .sec > .lead { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 0 0 20px; max-width: 780px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, 336px); gap: 30px 30px; justify-content: center; }
+  .cell { width: 336px; }
+  .cap { display: flex; align-items: center; gap: 8px; height: 26px; margin-bottom: 9px; }
+  .badge { font-size: 11px; font-weight: 700; color: var(--on-accent); background: var(--accent-text); border-radius: 6px; padding: 2px 7px; font-variant-numeric: tabular-nums; }
+  .ttl { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .phone { width: 336px; height: 640px; border-radius: 30px; border: 8px solid #14181b; overflow: hidden; position: relative; background: var(--surface); box-shadow: 0 14px 40px rgba(20,24,27,.22); }
+  .notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 100px; height: 20px; background: #14181b; border-radius: 0 0 12px 12px; z-index: 30; }
+  .screen { height: 100%; overflow: hidden; background: var(--surface); }
+  .note { margin-top: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 13px; box-shadow: var(--shadow-card); }
+  .ref { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; color: #8a6a00; background: var(--highlight); border-radius: 5px; padding: 2px 7px; margin-bottom: 8px; }
+  .ref.p0 { color: #fff; background: var(--danger); }
+  .ref.p1 { color: #fff; background: var(--accent-text); }
+  .nrow { display: flex; gap: 7px; font-size: 12px; line-height: 1.45; margin-top: 5px; }
+  .nrow .k { flex: 0 0 54px; font-weight: 700; color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: .04em; padding-top: 1px; }
+  .nrow .v { flex: 1; color: var(--ink); }
+  .nrow .v.cta { color: var(--accent-text); font-weight: 600; }
+  .nrow .v code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; background: var(--surface); border-radius: 4px; padding: 1px 5px; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../assets/lynia-icons.js"></script>
+<script src="../../_ds_bundle.js"></script>
+</head>
+<body>
+<div class="head">
+  <h1>Trust, safety &amp; recovery — engineering handoff</h1>
+  <p>Eleven net-new screens from the 2026 journey gap review. These were <strong>shipped in app code (PR&nbsp;#98) with no design</strong>; this gallery aligns the UI to the real contracts in <strong>apps/mobile/src/api/safety.ts</strong> and <strong>logic/gates.ts</strong>. Rendered at production fidelity from the design-system components. Flow context: the pannable maps in <strong>explorations/journey/</strong>. Backlog IDs map to <strong>BACKLOG-PLAN.md</strong> (Wave&nbsp;1/3/4); <strong>P0</strong> = launch-blocker, <strong>P1</strong> = launch.</p>
+  <div class="facts">
+    <span class="fact">Emergency: <b>999</b></span>
+    <span class="fact">Lynia safety line: <b>+263&nbsp;77&nbsp;883&nbsp;1938</b></span>
+    <span class="fact">Contact support = <b>tel: call</b></span>
+    <span class="fact">SOS log is <b>best-effort</b> — never gates the numbers</span>
+    <span class="fact">Blocking decision <b>Q3 · resolved</b></span>
+  </div>
+</div>
+<div id="root"></div>
+
+<script>window.__LYNIA_KIT_PAGE = true;</script>
+<script type="text/babel" src="kit-parts.js"></script>
+<script type="text/babel" src="../support/parts.js"></script>
+<script type="text/babel" src="../../explorations/journey/screens.jsx"></script>
+<script type="text/babel" src="../../explorations/journey/screens-safety.jsx"></script>
+<script type="text/babel" src="../../explorations/journey/rider-screens.jsx"></script>
+<script type="text/babel" src="../../explorations/journey/rider-screens-safety.jsx"></script>
+<script type="text/babel">
+const REG = { c: window.LJ, r: window.RJ };
+
+const SECTIONS = [
+  {
+    title: "SOS on a live trip", role: "Both roles · shared control",
+    lead: "One emergency control, pinned over the live map on every active trip and job — the highest-risk moment is the in-person cash hand-off. Tapping SOS opens a confirm sheet; it never dials by itself. Contract: SosContacts { emergencyNumber, safetyLine } + best-effort POST /orders/:id/sos.",
+    cells: [
+      { r: "c", id: "sos_idle", badge: "B1·1", title: "Idle — SOS pinned", ref: "R-16 · P1", p1: true, trigger: "Any live trip / job", logic: "Danger pill top-right, ≥44px, aria \u201cEmergency — call for help\u201d. Same control on the rider job map.", cta: "Tap SOS → confirm" },
+      { r: "c", id: "sos_confirm", badge: "B1·2", title: "Confirm step", ref: "Q3 · resolved", trigger: "Tap SOS", logic: "Deliberate 2nd step so a pocket-tap can't fire. Confirm shows numbers immediately + best-effort logs trip+location.", cta: "Show emergency numbers" },
+      { r: "c", id: "sos_contacts", badge: "B1·3", title: "Emergency contacts", ref: "Q3 · resolved", trigger: "Confirm", logic: "Two tel: rows — Call 999 dominant, Lynia safety line second. Alerted-team confirmation when the log succeeds.", cta: "Call 999 (tel:)" },
+      { r: "c", id: "sos_error", badge: "B1·4", title: "Log failed (offline)", ref: "Offline-first", trigger: "/sos POST fails", logic: "Numbers are client-side constants — the tel: rows render even with no data. A safety control never dead-ends on the network.", cta: "Call 999 (still works)" },
+    ],
+  },
+  {
+    title: "Report + block, and order-level help", role: "Both roles",
+    lead: "Post-trip report of the counterparty (reportUser: reason + optional block) and a job-scoped help entry (raiseIssue: type + description) that's deliberately distinct from the generic account Help → WhatsApp dead end.",
+    cells: [
+      { r: "c", id: "report", badge: "B2·1", title: "Report + block rider", ref: "F-15 / R-11 · P1", p1: true, trigger: "Delivered / rate screen", logic: "reportUser(reason, block?). Block prevents any future rematch. Reason rows ≥44px; block is a labelled checkbox, not colour-only.", cta: "Send report" },
+      { r: "c", id: "report_done", badge: "B2·2", title: "Report sent", ref: "F-15 / R-11", trigger: "Send report", logic: "ReportResult { id, blocked } → calm terminal. States reviewer anonymity + that the block is in force.", cta: "Done" },
+      { r: "c", id: "trip_help", badge: "B3·1", title: "Get help with this trip", ref: "X-1 · P1", p1: true, trigger: "Any order / job screen", logic: "raiseIssue(type, description) with order context attached up top. Kills the generic-WhatsApp dead end.", cta: "Send to Lynia" },
+      { r: "c", id: "trip_help_sent", badge: "B3·2", title: "Issue logged", ref: "X-1", trigger: "Send to Lynia", logic: "RaisedIssue { id, status } → confirmation + open status pill; follow-up on WhatsApp. Conflicts resolve to clean copy, never a raw error.", cta: "Back to order" },
+    ],
+  },
+  {
+    title: "OTP resend, expiry & lockout", role: "Customer (rider inherits)",
+    lead: "Extends the existing \u201cCheck your WhatsApp\u201d screen (0·4). The idle Resend affordance is retrofitted in place; these are the throttled / re-sent / recovery states. Eng requirement baked in: a fresh code resets the attempt counter so a resend can't land in a locked record.",
+    cells: [
+      { r: "c", id: "otp_cooldown", badge: "C·1", title: "Resend cooldown", ref: "A0-1 / R0-1 · Wave 4", trigger: "Tap Resend", logic: "Visible 60s timer (role=status). Verify stays enabled — the timer throttles resends, never blocks entry.", cta: "— wait, or Verify" },
+      { r: "c", id: "otp_resent", badge: "C·2", title: "Code re-sent", ref: "A0-1 / R0-1", trigger: "Timer ends → Resend", logic: "New code AND attempt counter reset server-side. Quiet role=status banner; focus returns to the field; cooldown restarts.", cta: "Verify the new code" },
+      { r: "c", id: "otp_locked", badge: "C·3", title: "Expired / locked", ref: "A0-1 / R0-1", trigger: "10-min expiry or 5 wrong tries", logic: "Recovery state, never a dead end — one primary action issues a fresh code and resets attempts. Error tied to the input via aria-describedby.", cta: "Send a fresh code" },
+      { r: "c", id: "track_dark", badge: "D·1", title: "Rider went dark", ref: "R-04 / R-05 · C5", trigger: "Position stale > ~2 min", logic: "Escalation of track_paused: muted marker + warning banner (never a red alarm), Call-your-rider promoted to dominant CTA. SOS stays pinned.", cta: "Call your rider" },
+    ],
+  },
+  {
+    title: "Go-online gate states", role: "Rider",
+    lead: "The rider taps \u201cGo online\u201d and the rules API refuses — one reason-keyed EmptyState template (icon / title / message / actions as props), exactly how gates.ts models OnlineGateReason. Every dead end keeps a real exit; the two terminal reasons expose a tel: support row (the #1 failure this cluster fixes).",
+    cells: [
+      { r: "r", id: "gate_out_of_area", badge: "A1", title: "Outside service area", ref: "A1-1 / R2-2 · Wave 3", trigger: "Go online outside corridor", logic: "isOutOfServiceArea → refuse(out_of_area). Refresh re-checks position against SERVICE_CORRIDOR. Needs Q1 (corridor definition).", cta: "Refresh status" },
+      { r: "r", id: "gate_cooldown", badge: "A2", title: "Short cooldown", ref: "gates.ts · cooldown", trigger: "Recent cancellation", logic: "refuse(cooldown) — short, self-healing. Retry announces the remaining wait if refused again.", cta: "Try again" },
+      { r: "r", id: "gate_banned", badge: "A3", title: "Account closed", ref: "gates.ts · banned", trigger: "Permanent close", logic: "refuse(banned) — terminal but not punitive. The tel: support row is the mandatory exit; add out_of_area + banned to the reason union.", cta: "Call Lynia support" },
+      { r: "r", id: "gate_kyc_locked", badge: "A4", title: "Verification locked", ref: "R-04 · isKycLocked", trigger: "2 failed ID checks", logic: "Self-resubmit exhausted → support finishes verification together. Today's UI shows only a useless Refresh; this replaces it.", cta: "Call Lynia support" },
+    ],
+  },
+  {
+    title: "KYC ID-photo loop", role: "Rider",
+    lead: "Extends the KycForm \u201cPhoto added — retake\u201d row into a full capture → preview → upload loop with a recoverable failure. Glare/blur is the top decline reason, so the rider self-filters at preview instead of burning one of two attempts. Hard rule, stated in the UI: a retake never wipes the last good photo — it's only replaced once the new one uploads.",
+    cells: [
+      { r: "r", id: "photo_capture", badge: "E·1", title: "Capture", ref: "P3 · KYC photo", trigger: "Tap the photo row", logic: "Card-shaped frame guide + the three readability rules. Shutter 68px, aria \u201cTake photo\u201d.", cta: "Take photo" },
+      { r: "r", id: "photo_preview", badge: "E·2", title: "Preview & self-check", ref: "P3 · KYC photo", trigger: "Take photo", logic: "\u201cCan you read everything?\u201d gate before upload — filters glare/blur here. Retake keeps the current saved photo.", cta: "Use this photo" },
+      { r: "r", id: "photo_uploading", badge: "E·3", title: "Uploading (non-blocking)", ref: "P3 · KYC photo", trigger: "Use this photo", logic: "Visible progress (role=status), the rest of the form stays editable, Submit disabled until the photo lands. Never a full-screen spinner.", cta: "— keep filling the form" },
+      { r: "r", id: "photo_failed", badge: "E·4", title: "Upload failed", ref: "P3 · recoverable", trigger: "Connection drops mid-upload", logic: "Retry in place + keep-current option. The preserve rule is stated outright — a failed retry never wipes anything.", cta: "Try again" },
+    ],
+  },
+];
+
+function Cell({ n }) {
+  const R = REG[n.r] && REG[n.r][n.id];
+  const refCls = "ref" + (n.p0 ? " p0" : n.p1 ? " p1" : "");
+  return (
+    <div className="cell">
+      <div className="cap"><span className="badge">{n.badge}</span><span className="ttl">{n.title}</span></div>
+      <div className="phone"><div className="notch" /><div className="screen">{R ? R() : null}</div></div>
+      <div className="note">
+        <span className={refCls}>{n.ref}</span>
+        <div className="nrow"><span className="k">Trigger</span><span className="v">{n.trigger}</span></div>
+        <div className="nrow"><span className="k">Logic</span><span className="v">{n.logic}</span></div>
+        <div className="nrow"><span className="k">CTA</span><span className="v cta">{n.cta}</span></div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ s }) {
+  return (
+    <div className="sec">
+      <h2>{s.title} <span className="role">{s.role}</span></h2>
+      <p className="lead">{s.lead}</p>
+      <div className="grid">{s.cells.map((c) => <Cell key={c.r + c.id} n={c} />)}</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.Fragment>{SECTIONS.map((s, i) => <Section key={i} s={s} />)}</React.Fragment>
+);
+</script>
+</body>
+</html>

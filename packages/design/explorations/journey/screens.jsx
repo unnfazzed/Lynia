@@ -1,3 +1,7 @@
+/* file-scoped: Babel classic scripts share one global scope, so every declaration below is
+   wrapped in an IIFE — only window.LJ / window.RJ leave this file. Without it, a later-loading
+   sibling silently overwrites same-named screens (customer Profile vs rider Profile, etc.). */
+(() => {
 /* LyniaGo — customer journey flow-map: static screen renderers.
    Every tile is composed from the REAL design-system bundle + kit primitives (frozen state, no
    interactivity) so the map reads at production fidelity. Registers window.LJ (id -> render fn). */
@@ -5,7 +9,12 @@
 const DS = window.LyniaDesignSystem_94c56a;
 const K = window.LyniaKit;
 const SUP = window.LyniaSupport;
-const { Button, Card, Field, StatusPill, Stepper, EmptyState, Heading, Sub, Label, SkeletonList, Icon, OfflineBanner } = DS;
+const { Button, Card, Field, StatusPill, Stepper, EmptyState, Heading, Sub, Label, SkeletonList, Icon, OfflineBanner, BrandHeader, LiveOrderCard, ReorderRail, RestaurantCard } = DS;
+const Money = DS.Money || (({ v, size = 14, weight = 700, color = "var(--ink)" }) => <span className="lynia-tabular" style={{ fontSize: size, fontWeight: weight, color }}>${v}</span>);
+/* Guard: a bundle compiled before AppHome existed would otherwise throw through React
+   reconciliation and unmount the whole page. */
+const AppHome = DS.AppHome || (() => <div style={{ padding: 20, fontSize: 12, color: "var(--muted)" }}>Home needs a design-system rebuild (AppHome missing from the bundle).</div>);
+const AppScreen = DS.AppScreen || (({ children }) => <div style={{ height: "100%", overflow: "hidden" }}>{children}</div>);
 const { Dove, Wordmark, Pad, Top, SystemState } = SUP;
 
 const noop = () => {};
@@ -106,6 +115,29 @@ function QtyStepper({ value }) {
       <span style={{ minWidth: 24, textAlign: "center", fontSize: 18, fontWeight: 700, color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>{value}</span>
       {btn("+")}
     </div>
+  );
+}
+
+/* ── HOME — the Food-customer home IS the customer home. When the Restaurants screens are on the
+   page (all-screens gallery) we render RC.home itself, so 0·9 and Food 0·1 are the same call, the
+   same shell and the same photo slots. The fallback below is the identical screen for pages that
+   don't load the Restaurants files (the journey map), where photo slots can't mount. ── */
+const LAUNCHER_VENUES = [
+  { name: "Sadza Republic", rating: "4.7", ratingCount: 210, eta: "25–35", fee: "1.50" },
+  { name: "Huku House", rating: "4.5", ratingCount: 96, eta: "30–40", fee: "2.00" },
+  { name: "Café Msasa", rating: "4.8", ratingCount: 44, eta: "35–45", fee: "2.50" },
+];
+const LAUNCHER_LIVE = [
+  { id: "food", title: "Sadza Republic · 6 min away", meta: "Cash at the door · $15.50", step: 4, icon: "utensils" },
+  { id: "ride", title: "Parcel to Msasa · rider 4 min away", meta: "Delivery code 4192 · $3.36", step: 5 },
+];
+function LauncherHome() {
+  const foodHome = window.RC && window.RC.home;
+  if (foodHome) return foodHome();
+  return (
+    <AppScreen tab="home" dark bg="var(--accent)">
+      <AppHome address="12 Lanark Rd, Belgravia" live={LAUNCHER_LIVE} restaurants={LAUNCHER_VENUES} />
+    </AppScreen>
   );
 }
 
@@ -440,9 +472,9 @@ function AddrConfirm() {
 /* ── A1-8 · PRE-BROADCAST LIABILITY DISCLAIMER (accept-to-continue sheet over home) ── */
 function Disclaimer() {
   const rows = [
-    ["triangle-alert", "Sending is at your own risk", "If your parcel is lost, damaged or not delivered, LyniaGo isn't liable — you're hiring an independent rider."],
-    ["banknote", "Payment is between you and your rider", "You agree the price in the app and pay cash directly. LyniaGo isn't involved in payment or any money dispute."],
-    ["user", "LyniaGo connects you — that's all", "We match you with a nearby rider. We don't carry, insure or guarantee your parcel."],
+    ["triangle-alert", "Sending is at your own risk", "If your parcel is lost, damaged or not delivered, Lynia isn't liable — you're hiring an independent rider."],
+    ["banknote", "Payment is between you and your rider", "You agree the price in the app and pay cash directly. Lynia isn't involved in payment or any money dispute."],
+    ["user", "Lynia connects you — that's all", "We match you with a nearby rider. We don't carry, insure or guarantee your parcel."],
   ];
   return (
     <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
@@ -495,13 +527,13 @@ function AuctionCounter() {
         <div style={{ display: "flex", alignItems: "stretch", gap: 8, marginBottom: 12 }}>
           <div style={{ flex: 1, background: "var(--surface)", borderRadius: "var(--radius-input)", padding: "9px 10px" }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", color: "var(--muted)" }}>YOUR PRICE</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: "var(--ink)" }} className="lynia-tabular">$3.00</div>
+            <Money v="3.00" size={20} />
           </div>
           <div style={{ display: "grid", placeItems: "center", color: "var(--muted)" }}><Icon name="arrow-right" size={16} color="var(--muted)" /></div>
           <div style={{ flex: 1, background: "var(--accent-wash)", borderRadius: "var(--radius-input)", padding: "9px 10px" }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", color: "var(--accent-text)" }}>THEIR OFFER</div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-              <div style={{ fontSize: 20, fontWeight: 700, color: "var(--accent-text)" }} className="lynia-tabular">$3.50</div>
+              <Money v="3.50" size={20} color="var(--accent-text)" />
               <span style={{ fontSize: 12, fontWeight: 700, color: "var(--highlight-ink)" }}>+$0.50</span>
             </div>
           </div>
@@ -559,7 +591,7 @@ function Undelivered() {
         </div>
         <div style={{ display: "flex", gap: 8, padding: "9px 11px", borderRadius: "var(--radius-input)", background: "var(--surface)", marginBottom: 12 }}>
           <Icon name="triangle-alert" size={15} color="var(--muted)" />
-          <span style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.45 }}>Sending is at your own risk — arrange the parcel directly with your rider. LyniaGo isn't liable for non-delivery.</span>
+          <span style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.45 }}>Sending is at your own risk — arrange the parcel directly with your rider. Lynia isn't liable for non-delivery.</span>
         </div>
         <CallRow label="Your rider" name="Tendai M." phone="+263 78 202 1180" />
       </Card>
@@ -578,7 +610,7 @@ const Splash = () => (
 const Login = () => (
   <Pad>
     <Lockup />
-    <Heading>Sign in to get started</Heading>
+    <Heading>Welcome to Lynia</Heading>
     <Sub>We'll WhatsApp a one-time code to this number.</Sub>
     <Field label="Phone number" value="+263 77 245 1180" onChange={noop} inputMode="tel" />
     <Button label="Send code" onClick={noop} />
@@ -590,6 +622,8 @@ const Otp = () => (
     <Sub>We sent a 6-digit code to +263 77 245 1180 on WhatsApp.</Sub>
     <Field label="6-digit code" value="418207" onChange={noop} inputMode="numeric" hint="No WhatsApp on this number? Contact support to sign up." />
     <Button label="Verify" onClick={noop} />
+    {/* C-OTP idle · resend affordance — cooldown / resent / locked states live in screens-safety.jsx */}
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 44, fontSize: 13.5, fontWeight: 600, color: "var(--accent-text)", cursor: "pointer" }}>Didn't get it? Resend code</div>
     <Button label="Back" variant="ghost" onClick={noop} />
   </Pad>
 );
@@ -598,7 +632,7 @@ const Otp = () => (
 const Register = () => (
   <Pad>
     <Heading>Tell us who you are</Heading>
-    <Sub>You're sending parcels. Just a name and ID for your account record.</Sub>
+    <Sub>You're sending parcels. Just a name and ID for your account record — no documents, no verification.</Sub>
     <Field label="Full name" value="Chipo Marufu" onChange={noop} />
     <div style={{ position: "relative" }}>
       <Field label="Phone number" value="+263 77 245 1180" onChange={noop} inputMode="tel" hint="Verified on WhatsApp ✓" />
@@ -606,7 +640,7 @@ const Register = () => (
         <Icon name="check" size={13} color="var(--accent-text)" /> Verified
       </span>
     </div>
-    <Field label="National ID number" value="63-123456-A-42" onChange={noop} hint="Stored on your account record." />
+    <Field label="National ID number" value="63-123456-A-42" onChange={noop} hint="Stored on your account only — we don't verify it. Riders go through a separate ID check." />
     <Button label="Continue" onClick={noop} />
   </Pad>
 );
@@ -630,9 +664,9 @@ function RoleSelect() {
       <Lockup />
       <Heading>How do you want to start?</Heading>
       <Sub>It's one account — pick how you'll use LyniaGo now, and switch anytime.</Sub>
-      <Opt icon="package" title="Send a parcel" desc="Post a delivery and let nearby riders bid." selected={true} />
+      <Opt icon="shopping-bag" title="Use LyniaGo" desc="Order food, send parcels, more services soon." selected={true} />
       <Opt icon="bike" title="Earn as a rider" desc="Deliver parcels near you and get paid in cash." selected={false} />
-      <Button label="Continue — send parcels" onClick={noop} />
+      <Button label="Continue as a customer" onClick={noop} />
     </Pad>
   );
 }
@@ -675,7 +709,7 @@ const History = () => (
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }} className="lynia-tabular">{t.date} · {t.role}{t.rating ? ` · ★ ${t.rating}` : ""}</div>
           </div>
           <div style={{ textAlign: "right", flexShrink: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)" }} className="lynia-tabular">${t.fare}</div>
+            <Money v={t.fare} size={15} />
             <div style={{ height: 4 }} />
             <StatusPill status={t.status} tone={t.status === "expired" ? "offline" : "neutral"} />
           </div>
@@ -686,7 +720,15 @@ const History = () => (
 );
 
 /* ── SUPPORT (copied from support kit, static) ── */
-function Onboarding() {
+/* Onboarding carousel — three slides: Food, Send, then the promise both share. Product-neutral
+   framing: LyniaGo is the app, the services are what's inside it. */
+const ONBOARD = [
+  { icon: "utensils", title: "Food from kitchens near you", body: "Order from restaurants in your corridor — you see the arrival window before you pay." },
+  { icon: "banknote", title: "Name your price to send", body: "Say what you'll pay to send a parcel. Riders bid for it — no fixed tariff, no haggling in the street." },
+  { icon: "check", title: "One app, one code", body: "Same riders, same delivery code at the door, cash if that's how you pay. More services soon." },
+];
+function Onboarding({ slide = 0 }) {
+  const s = ONBOARD[slide] || ONBOARD[0];
   return (
     <Pad style={{ display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 12 }}>
@@ -695,15 +737,15 @@ function Onboarding() {
       </div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 6 }}>
         <div style={{ width: 120, height: 120, borderRadius: "50%", background: "var(--accent-wash)", display: "grid", placeItems: "center", marginBottom: 18 }}>
-          <Icon name="banknote" size={52} color="var(--accent-text)" />
+          <Icon name={s.icon} size={52} color="var(--accent-text)" />
         </div>
-        <div style={{ fontSize: 22, fontWeight: 700, color: "var(--ink)" }}>Name your price</div>
-        <div style={{ fontSize: 14, lineHeight: 1.55, color: "var(--muted)", maxWidth: 240 }}>Say what you'll pay to send your parcel — no fixed tariffs, no haggling in the street.</div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: "var(--ink)" }}>{s.title}</div>
+        <div style={{ fontSize: 14, lineHeight: 1.55, color: "var(--muted)", maxWidth: 240 }}>{s.body}</div>
       </div>
       <div style={{ display: "flex", justifyContent: "center", gap: 7, marginBottom: 16 }}>
-        {[0, 1, 2].map((n) => <span key={n} style={{ width: n === 0 ? 22 : 7, height: 7, borderRadius: 999, background: n === 0 ? "var(--accent)" : "var(--line)" }} />)}
+        {[0, 1, 2].map((n) => <span key={n} style={{ width: n === slide ? 22 : 7, height: 7, borderRadius: 999, background: n === slide ? "var(--accent)" : "var(--line)" }} />)}
       </div>
-      <Button label="Next" onClick={noop} />
+      <Button label={slide === 2 ? "Get started" : "Next"} onClick={noop} />
     </Pad>
   );
 }
@@ -806,58 +848,84 @@ function Settings() {
 /* ── SYSTEM / EDGE ── */
 const PermLoc = () => <SystemState icon="navigation" title="Turn on location" message="LyniaGo uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery." primary="Allow location" secondary="Enter address manually" />;
 const PermNotif = () => <SystemState icon="phone" title="Stay in the loop" message="Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered." primary="Turn on notifications" secondary="Not now" />;
-const OnHold = () => <SystemState icon="triangle-alert" title="Your account is on hold" message="We've paused your account while we review recent activity. This usually takes 24 hours — reach out if you think it's a mistake." primary="Contact support" secondary="Sign out" />;
+/* Retrofit (plan §2, Cluster A shared requirement): "Contact support" is a real tel: call row, not dead text. */
+const OnHold = () => (
+  <Pad style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 4, fontFamily: "var(--font-sans)" }}>
+    <div style={{ width: 84, height: 84, borderRadius: "50%", background: "var(--surface)", display: "grid", placeItems: "center", marginBottom: 14 }}>
+      <Icon name="triangle-alert" size={34} color="var(--accent-text)" />
+    </div>
+    <div style={{ fontSize: 19, fontWeight: 700, color: "var(--ink)" }}>Your account is on hold</div>
+    <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--muted)", maxWidth: 230 }}>We've paused your account while we review recent activity. This usually takes 24 hours — call us if you think it's a mistake.</div>
+    <div style={{ alignSelf: "stretch", marginTop: 18 }}>
+      <CallRow label="Support" name="Lynia support" phone="+263 77 883 1938" />
+      <Button label="Sign out" variant="ghost" onClick={noop} />
+    </div>
+  </Pad>
+);
 const ForceUpdate = () => <SystemState tone="green" brand title="Time to update" message="A new version of LyniaGo is ready with the latest fixes. Update to keep sending." primary="Update now" />;
 const NoGps = () => <SystemState icon="wifi-off" title="Can't find your location" message="Turn on GPS so we can set your pickup and match nearby riders. Or enter your pickup address by hand." primary="Open location settings" secondary="Enter address manually" />;
 const GenericError = () => <SystemState icon="circle-alert" title="Something went wrong" message="That didn't load. Check your connection and try again — your order is safe." primary="Try again" secondary="Back home" />;
 function OfflineHome() {
   return (
-    <div style={{ position: "relative", height: "100%" }}>
+    <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column" }}>
       <OfflineBanner state="offline" />
-      <Home pins={true} expanded={false} />
+      <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+        <Home pins={true} expanded={false} />
+      </div>
     </div>
   );
 }
 
+/* Every screen sits in the DS AppScreen shell — same status bar, same root tab bar, same sticky
+   footer geometry as the Food journey. Root screens name their tab; pushed screens omit it.
+   Screens that already carry their own shell (the shared home) are passed through untouched. */
+const S = (node, o = {}) => <AppScreen tab={o.tab} bg={o.bg} dark={o.dark}>{node}</AppScreen>;
+
 window.LJ = {
-  splash: () => <Splash />,
-  onboard: () => <Onboarding />,
-  login: () => <Login />,
-  otp: () => <Otp />,
-  register: () => <Register />,
-  role_select: () => <RoleSelect />,
-  perm_loc: () => <PermLoc />,
-  perm_notif: () => <PermNotif />,
-  home_empty: () => <Home pins={false} expanded={false} />,
-  home_pins: () => <Home pins={true} expanded={false} />,
-  home_expanded: () => <Home pins={true} expanded={true} />,
-  disclaimer: () => <Disclaimer />,
-  addr_search: () => <AddrSearch />,
-  addr_map_confirm: () => <AddrConfirm />,
-  auction_finding: () => <Auction variant="finding" />,
-  auction_live: () => <Auction variant="live" />,
-  select_race: () => <Auction variant="race" />,
-  auction_counter: () => <AuctionCounter />,
-  auction_expired: () => <Auction variant="expired" />,
-  no_riders: () => <Auction variant="noriders" />,
-  track_code: () => <Tracking variant="code" />,
-  track_active: () => <Tracking variant="active" />,
-  track_paused: () => <Tracking variant="paused" />,
-  rider_cancelled: () => <RiderCancelled />,
-  undelivered: () => <Undelivered />,
-  cancel: () => <Tracking variant="cancel" />,
-  cancelled: () => <Tracking variant="cancelled" />,
-  delivered_rate: () => <Tracking variant="rate" />,
-  completed: () => <Tracking variant="completed" />,
-  profile: () => <Profile />,
-  history: () => <History />,
-  notifications: () => <Notifications />,
-  notif_empty: () => <Notifications empty />,
-  help: () => <Help />,
-  settings: () => <Settings />,
-  offline: () => <OfflineHome />,
-  on_hold: () => <OnHold />,
-  force_update: () => <ForceUpdate />,
-  no_gps: () => <NoGps />,
-  generic_error: () => <GenericError />,
+  splash: () => S(<Splash />, { bg: "var(--accent)", dark: true }),
+  onboard: () => S(<Onboarding slide={0} />),
+  onboard_send: () => S(<Onboarding slide={1} />),
+  onboard_shared: () => S(<Onboarding slide={2} />),
+  login: () => S(<Login />),
+  otp: () => S(<Otp />),
+  register: () => S(<Register />),
+  role_select: () => S(<RoleSelect />),
+  perm_loc: () => S(<PermLoc />),
+  perm_notif: () => S(<PermNotif />),
+  home_launcher: () => <LauncherHome />,
+  home_empty: () => S(<Home pins={false} expanded={false} />),
+  home_pins: () => S(<Home pins={true} expanded={false} />),
+  home_expanded: () => S(<Home pins={true} expanded={true} />),
+  disclaimer: () => S(<Disclaimer />),
+  addr_search: () => S(<AddrSearch />),
+  addr_map_confirm: () => S(<AddrConfirm />),
+  auction_finding: () => S(<Auction variant="finding" />),
+  auction_live: () => S(<Auction variant="live" />),
+  select_race: () => S(<Auction variant="race" />),
+  auction_counter: () => S(<AuctionCounter />),
+  auction_expired: () => S(<Auction variant="expired" />),
+  no_riders: () => S(<Auction variant="noriders" />),
+  track_code: () => S(<Tracking variant="code" />),
+  track_active: () => S(<Tracking variant="active" />),
+  track_paused: () => S(<Tracking variant="paused" />),
+  rider_cancelled: () => S(<RiderCancelled />),
+  undelivered: () => S(<Undelivered />),
+  cancel: () => S(<Tracking variant="cancel" />),
+  cancelled: () => S(<Tracking variant="cancelled" />),
+  delivered_rate: () => S(<Tracking variant="rate" />),
+  completed: () => S(<Tracking variant="completed" />),
+  profile: () => S(<Profile />, { tab: "acct" }),
+  /* One Orders list across every service (D-02b) — the same screen the Food journey shows. */
+  history: () => (window.RC && window.RC.orders ? window.RC.orders() : S(<History />, { tab: "orders" })),
+  notifications: () => S(<Notifications />),
+  notif_empty: () => S(<Notifications empty />),
+  help: () => S(<Help />),
+  settings: () => S(<Settings />),
+  offline: () => S(<OfflineHome />),
+  on_hold: () => S(<OnHold />),
+  force_update: () => S(<ForceUpdate />, { bg: "var(--accent)", dark: true }),
+  no_gps: () => S(<NoGps />),
+  generic_error: () => S(<GenericError />),
 };
+
+})();

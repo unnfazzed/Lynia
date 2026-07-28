@@ -1,5 +1,12 @@
 # LyniaGo Design System — Engineering Handoff
 
+> **⚠ July 2026 update:** the customer home, rider IA and a new Restaurants vertical changed after
+> this guide's flows were built. The delta handoff (what to keep, what's retired, what's net-new)
+> is **`handoff/update-2026-07/`** — README for the flow, CLAUDE-CODE-PROMPT.md as the work order.
+> Screen source of truth: `explorations/journey/All Screens Gallery.html`. Everything below remains
+> valid except where that update says otherwise (notably: rider Earnings/weekly settlement retired;
+> map home is now the Send destination, not the root).
+
 This folder is the **LyniaGo design system**: the brand, design tokens, reusable UI components, and
 high-fidelity UI kits for the LyniaGo motorbike-courier product (customer + rider mobile app, admin
 ops console, and the support/onboarding/edge flows). It was built against the `unnfazzed/Lynia`
@@ -179,20 +186,20 @@ net-new screens** were added in this review and need wiring:
   pickup* (parcel on the bike) differs from before.
 
 *P1*
-- **R-16 · Rider SOS / report.** No emergency control or report-a-customer on a live cash hand-off —
-  highest-value safety gap. (Flagged on the map.)
+- **R-16 · Rider SOS / report.** ✅ **Designed** (`ui_kits/mobile/safety-flows.html`, §SOS + §Report). Emergency control on every live trip/job (both roles, one shared sheet) + report/block. Wire `raiseSos` / `reportUser`; see the trust/safety section below.
 - **R-06 · Counter re-counter rules.** ✅ **Decided (seam contract C1):** one round, no counter-back
   — the customer accepts or declines; a declined counter stays live at the countered price until the
   window closes. No "your counter was countered" screen exists or is needed.
 - **R-03 · Hand-off lockout recovery.** 5 wrong codes → lockout is designed; the lockout screen now
   has **"Ask customer to re-send the code"** — wire it to ping the sender (contract C4).
 - **R-04 / R-05 · Mid-job connection.** Escalation threshold decided: **~2 min dark** on either side
-  (contract C5). Still to wire: the escalation itself, and the guard on a *deliberate* go-offline /
-  app-close while holding a parcel (block or warn, don't silently allow).
+  (contract C5). ✅ **Designed** — customer `track_dark` escalation (`safety-flows.html` §OTP/D·1). Still
+  to wire: the escalation push itself, and the guard on a *deliberate* go-offline / app-close while
+  holding a parcel (block or warn, don't silently allow — Wave 2).
 - **R0-2 · Notifications-denied fallback.** A rider who declines push misses new-order and
   "you were picked" pings — warn and offer a fallback.
-- **X-1 · Order-level support.** Let a rider raise an issue tied to a specific job with its context,
-  not just generic WhatsApp help.
+- **X-1 · Order-level support.** ✅ **Designed** — "Get help with this trip/job" (`safety-flows.html`
+  §Report, B3·1/B3·2) files an `raiseIssue` tied to the order, not generic WhatsApp.
 
 *P2/P3 roadmap (flagged on the map, deliberately not designed)* — reliability dashboard, demand /
 heat-map hint, multi-job queue, scheduled shifts, in-app payout / mobile money (EcoCash), incentives
@@ -252,6 +259,60 @@ for customer-first users; permission priming runs once per device, not once per 
 **What's next:** the remaining (non-seam) backlog is sequenced in `BACKLOG-PLAN.md` — Waves 1–2
 (reliability maths, SOS both roles, report/block, order-level support, auction-integrity eng) are
 the pre-launch set.
+
+## 2026 trust, safety & recovery — design done, wire it
+
+Eleven screens were **shipped in app code (PR #98) with no design** — the biggest single design/code
+drift in the review. They're now designed at production fidelity to the real contracts and gathered
+in one handoff gallery: **`ui_kits/mobile/safety-flows.html`** (`@dsCard` → Design-System tab, "Mobile
+app"). Flow context is the two maps in `explorations/journey/` (new bands B1–D on the customer map,
+A1–A4 + B1–E on the rider map). Renderers live in `explorations/journey/screens-safety.jsx`
+(customer, `window.LJ`) and `rider-screens-safety.jsx` (rider, `window.RJ`).
+
+**Product decisions baked in (final, 5 Jul — closes blocking decision Q3):** emergency number **999** ·
+Lynia staffed safety line **+263 77 883 1938** · every contact-support action is a **`tel:` call**
+(not a WhatsApp/chat dead end) · the SOS server log is **best-effort and never gates the numbers**
+(they're client-side constants so they work offline).
+
+**SOS — both roles, one shared control** (`raiseSos`, `SosContacts { emergencyNumber, safetyLine }`).
+Pinned danger pill on every live-trip / live-job map → deliberate confirm sheet (a pocket-tap can't
+fire it) → two `tel:` rows (Call 999 dominant, safety line second). Confirming best-effort `POST
+/orders/:id/sos` with trip + location; the **offline state (B1·4)** still renders both numbers because
+a safety control must never dead-end on the network.
+
+**Report + block** (`reportUser(reason, block?)` → `ReportResult { id, blocked }`). Post-trip, from the
+rate screen, both roles. Blocking prevents any future rematch; the confirmation states reviewer
+anonymity. **Order-level help** (`raiseIssue(type, description)` → `RaisedIssue { id, status }`) — job
+context attached, distinct from the generic account Help→WhatsApp dead end (kills X-1).
+
+**OTP resend / expiry / lockout** (extends the 0·4 "Check your WhatsApp" screen; the idle Resend
+affordance is retrofitted in place). 60s throttle timer (`role=status`, Verify stays enabled) → re-sent
+(**a fresh code resets the attempt counter server-side**, so a resend can't land in a locked record) →
+expired/locked recovery (one action issues a fresh code + resets attempts; never a dead end). Closes
+A0-1 / R0-1.
+
+**Rider-went-dark escalation** (`track_dark`, contract C5). Escalates `track_paused` past ~2 min stale:
+muted marker + warning banner (never a red alarm), Call-your-rider promoted to the dominant CTA, SOS
+still pinned.
+
+**Go-online gate states — rider** (`gates.ts` `OnlineGateReason`). One reason-keyed `EmptyState`
+template — `out_of_area` / `cooldown` / `banned` / `kyc_locked`, icon/title/message/actions as props.
+Every state keeps a real exit; the two terminal reasons (`banned`, `kyc_locked`) expose a `tel:`
+support row — the mandatory exit that today's dead-end screens lack. Also retrofitted onto the existing
+on-hold screen (S·2, both apps). Eng: **add `out_of_area` + `banned` to the reason union** and each
+variant falls out for free. `out_of_area` needs Q1 (service-corridor definition, Wave 3).
+
+**KYC ID-photo loop — rider** (extends the KycForm photo row; fix P3). Capture (frame guide + 3
+readability rules) → preview self-check ("can you read everything?" — filters glare/blur before it
+burns one of two attempts) → non-blocking upload (form stays editable, Submit gated) → recoverable
+failure. Hard rule stated in the UI and enforced in wiring: **a retake never wipes the last good photo
+— it's only replaced once the new one uploads.**
+
+Backlog mapping: this clears **Wave 1** (SOS, report/block, order-support) end-to-end on the design
+side, plus the Wave-3 out-of-area gate and Wave-4 OTP-resilience screens. The two highest-severity
+map gap-flags (Rider SOS, order support) are removed from both journey maps.
+
+---
 
 ## 2026 admin ops console — handoff (design system · engineering · design)
 
@@ -316,14 +377,10 @@ lane F). Tickets:
   OTP evidence attached; resolutions (**refund / rider strike / close-no-action**) must write to the
   order, the rider's strike count (3 → auto-cooldown, per mobile contract) and the customer record.
   The "delivery code not entered = unconfirmed delivery" rule should be a server flag, not a note.
-- **A-06 · Commission (prepaid per-ride).** Commission is a **percentage of the amount paid per ride**,
-  deducted per completed ride from a **commission account the rider pre-funds**; a low balance blocks
-  going online until they top up. The rate is **0% for the launch period** (nothing collected), so
-  `cash.html` is a read-only overview of ride volume + commission accrued at the current rate. This
-  **replaced** the old weekly 15% cash-settlement engine (no more weekly billing, refund-netting,
-  record-payment or overdue auto-pause). Rate/gating live in `@lynia/shared` `COMMISSION`; the prepaid
-  wallet (balance, top-ups, per-ride deduction ledger) is a later build — see
-  `docs/plans/2026-biker-prepaid-commission.md`.
+- **A-06 · Cash settlement engine.** Weekly **15% commission** on agreed fares, settlement day Friday,
+  refunds **netted** off a rider's commission, 7-days-overdue **auto-pauses** the rider account. These
+  are assumptions baked into `cash.html` — **product must confirm the rate, cycle, netting and
+  auto-pause rules** before this is built. Record-payment method enum: cash-at-agent / EcoCash / netted.
 - **A-07 · Offline / stale discipline.** On socket drop the console shows the reconnecting banner,
   dims data and **disables all mutating actions** — mirror this: never let an action fire against
   stale state; re-enable on reconnect.

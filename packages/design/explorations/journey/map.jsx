@@ -8,28 +8,29 @@ const { Icon: Ic } = DSc;
 /* ── geometry ── */
 const COLW = 430, X0 = 150, PHONE_H = 640, TILE_W = 336, TITLE_H = 34, ANNO_GAP = 12;
 const X = (c) => X0 + c * COLW;
-const B = { B0: 120, B1: 1020, B2s: 1920, B2b: 2820, B3s: 3720, B3b: 4620, B4: 5520, B5: 6480, B6: 7420 };
-const CANVAS_W = 3560, CANVAS_H = 8380;
+const B = { B0: 120, B1: 1020, B2s: 1920, B2b: 2820, B3s: 3720, B3b: 4620, B4: 5520, B5: 6480, B6: 7420, B7: 8440, B8: 9580 };
+const CANVAS_W = 4000, CANVAS_H = 10740;
 
 /* ── nodes ── */
 const N = {};
 function node(id, col, band, badge, title, anno, bg) { N[id] = { id, x: X(col), y: band, col, band, badge, title, anno, bg }; }
 // Act 0 — first run
 node("splash", 0, B.B0, "0·1", "Splash", { p: "Brand launch moment while the app boots.", s: "Loading (2s, dove lift-in)", c: "— auto-advances" }, "var(--accent)");
-node("onboard", 1, B.B0, "0·2", "Onboarding carousel", { p: "Explain the offer-loop in 3 slides. First install only.", s: "Slide 1 of 3 · skippable", c: "Next / Get started" });
+node("onboard", 1, B.B0, "0·2", "Onboarding carousel (3 slides)", { p: "Three slides: food from kitchens near you, name-your-price sending, then the promise both share — one app, one code at the door, more services soon. First install only.", s: "Slide 1 of 3 · skippable", c: "Next / Get started" });
 node("login", 2, B.B0, "0·3", "Phone login", { p: "Capture the phone number to send an OTP.", s: "Empty → typing", c: "Send code" });
-node("otp", 3, B.B0, "0·4", "WhatsApp OTP", { p: "Verify the 6-digit code delivered over WhatsApp.", s: "Awaiting 6 digits", c: "Verify" });
-node("role_select", 4, B.B0, "0·5", "Choose your role", { p: "One account, two roles — chosen first. 'Send a parcel' continues below; 'Earn as a rider' exits to the Rider journey map (KYC takes over there). Switch anytime.", s: "Send parcels selected", c: "Continue — send parcels" });
+node("otp", 3, B.B0, "0·4", "WhatsApp OTP", { p: "Verify the 6-digit code delivered over WhatsApp. Extended (C-OTP): a Resend-code affordance now sits under Verify — the cooldown / resent / locked states are drawn in the C band below.", s: "Awaiting 6 digits · resend idle", c: "Verify" });
+node("role_select", 4, B.B0, "0·5", "Choose your role", { p: "One account, two roles — chosen first. 'Use LyniaGo' (order food, send parcels, more services soon) continues below; 'Earn as a rider' exits to the Rider journey map (KYC takes over there). Switch anytime.", s: "Customer selected", c: "Continue as a customer" });
 node("register", 5, B.B0, "0·6", "Profile registration", { p: "After choosing to send parcels: full name + national ID, stored on the account record — NOT verified (no KYC). Phone pre-filled from OTP. Riders KYC separately.", s: "First sign-up", c: "Continue" });
 node("perm_loc", 6, B.B0, "0·7", "Permission · location", { p: "Prime GPS before the OS dialog — sets pickup, matches riders.", s: "Pre-permission", c: "Allow location" });
 node("perm_notif", 7, B.B0, "0·8", "Permission · notifications", { p: "Prime push so offers & arrival alerts land.", s: "Pre-permission", c: "Turn on notifications" });
+node("home_launcher", 8, B.B0, "0·9", "Home", { p: "The root screen after first run — the same home the Food journey uses (DS AppHome): green brand header + floating search, service tiles (Send · Food · Pharmacy), a live-order card per running job — rides and food alike — then restaurants near you. Send opens the map composer.", s: "Live food + ride on the home", c: "Tap Send" });
 // Act 1 — compose (search-first addressing)
-node("home_empty", 0, B.B1, "1·1", "Map home · no address", { p: "Default screen. Two address rows (Pickup / Drop-off) sit above the map — tap either to search.", s: "Empty · sheet peek", c: "Tap Where to?" });
+node("home_empty", 0, B.B1, "1·1", "Send composer · no address", { p: "Reached from the launcher's Send tile. Two address rows (Pickup / Drop-off) sit above the map — tap either to search.", s: "Empty · sheet peek", c: "Tap Where to?" });
 node("addr_search", 1, B.B1, "1·2", "Address search", { p: "Type an address or landmark; Google Places returns matches. Saved (Home/Work), recents, current location, or set-on-map.", s: "Typing · live results", c: "Pick a place" });
 node("addr_map_confirm", 2, B.B1, "1·3", "Confirm pin on map", { p: "Refine the exact point by dragging the pin; add a building/landmark note. The point stores lat/lng + place_id.", s: "Adjusting pin", c: "Confirm drop-off" });
-node("home_pins", 3, B.B1, "1·4", "Home · both set", { p: "Both addresses resolved & Google-linked. Fill item, price and both phone numbers.", s: "Required path filled", c: "Broadcast (enabling)" });
-node("home_expanded", 4, B.B1, "1·5", "Home · sheet expanded", { p: "Optional declared value; ready to broadcast.", s: "Complete · valid", c: "Broadcast request" });
-node("disclaimer", 5, B.B1, "1·6", "Broadcast disclaimer", { p: "Accept-to-continue gate: sending is at your own risk, LyniaGo isn't liable for non-delivery, and isn't involved in payment or disputes. Consent recorded.", s: "Must accept", c: "Agree & broadcast" });
+node("home_pins", 3, B.B1, "1·4", "Send · both set", { p: "Both addresses resolved & Google-linked. Fill item, price and both phone numbers.", s: "Required path filled", c: "Broadcast (enabling)" });
+node("home_expanded", 4, B.B1, "1·5", "Send · sheet expanded", { p: "Optional declared value; ready to broadcast.", s: "Complete · valid", c: "Broadcast request" });
+node("disclaimer", 5, B.B1, "1·6", "Broadcast disclaimer", { p: "Accept-to-continue gate: sending is at your own risk, Lynia isn't liable for non-delivery, and isn't involved in payment or disputes. Consent recorded.", s: "Must accept", c: "Agree & broadcast" });
 // Act 2 — auction
 node("auction_finding", 0, B.B2s, "2·1", "Auction · finding", { p: "Order broadcast; 90s window open, pinging nearby riders.", s: "Open · no offers yet", c: "Cancel order" });
 node("auction_live", 1, B.B2s, "2·2", "Auction · offers live", { p: "Riders' offers stream in; sort & pick. RECOMMENDED = best blend.", s: "3 bidding · sorted best", c: "Choose this rider" });
@@ -57,18 +58,33 @@ node("help", 4, B.B5, "A·5", "Help & support", { p: "Topic list; live help rout
 node("settings", 5, B.B5, "A·6", "Settings", { p: "Profile, notifications, language, payment, sign-out.", s: "Default", c: "— (row actions)" });
 // System / edge
 node("offline", 0, B.B6, "S·1", "Offline banner", { p: "Global muted banner over any screen when the socket drops.", s: "Offline", c: "— auto-recovers" });
-node("on_hold", 1, B.B6, "S·2", "Account on hold", { p: "Account paused pending review — hand back an action.", s: "Blocking", c: "Contact support" });
+node("on_hold", 1, B.B6, "S·2", "Account on hold", { p: "Account paused pending review. Retrofitted (plan §2·A): 'Contact support' is now a real tel: call row (+263 77 883 1938), not dead text — every blocking state keeps an exit.", s: "Blocking", c: "Call Lynia support" });
 node("force_update", 2, B.B6, "S·3", "Force update", { p: "Hard version gate — must update to continue.", s: "Blocking", c: "Update now" }, "var(--accent)");
 node("no_gps", 3, B.B6, "S·4", "Location off / no GPS", { p: "GPS unavailable — offer settings or manual address.", s: "Blocking (recoverable)", c: "Open location settings" });
 node("generic_error", 4, B.B6, "S·5", "Generic error", { p: "Catch-all load failure; reassures the order is safe.", s: "Error", c: "Try again" });
+// NEW · Trust & safety (plan §2 · B1–B3) — aligns the UI shipped in PR #98 to safety.ts
+node("sos_idle", 0, B.B7, "B1·1", "SOS · live-trip control", { nw: 1, p: "The emergency control, pinned over the live map on every active trip (both roles — same control on the rider's job map). Entry: track_code → delivered, any live state. Tapping SOS opens the confirm sheet — it never dials by itself.", s: "Idle · live trip", c: "Tap SOS", h: "1st SOS pill · 2nd rider call row · 3rd timeline", ic: "phone (rows) · SOS is a text pill, no new glyph", a: "≥44px target, aria-label “Emergency — call for help”, danger/white contrast 5.9:1", ref: "track_active (3·2)" }, undefined);
+node("sos_confirm", 1, B.B7, "B1·2", "SOS · confirm", { nw: 1, p: "Deliberate second step so a pocket-tap can't fire an alert. Confirming shows the numbers immediately and best-effort logs the SOS (POST /orders/:id/sos with trip + location) — the log never gates the numbers.", s: "Confirm sheet", c: "Show emergency numbers", h: "1st confirm button · 2nd explainer · 3rd cancel", ic: "triangle-alert", a: "56px confirm button; sheet title announced first; Cancel ≥44px", ref: "disclaimer sheet (1·6)" });
+node("sos_contacts", 2, B.B7, "B1·3", "SOS · contacts", { nw: 1, p: "The two tel: rows from the SosContacts contract (emergencyNumber + safetyLine). Call-emergency is the single dominant element — sized for a panicked one-handed user. Numbers final: 999 · +263 77 883 1938.", s: "Contacts shown · log OK", c: "Call 999", h: "1st Call-999 row · 2nd safety line · 3rd alerted note", ic: "phone, arrow-right, check", a: "Call row 76px, aria “Emergency — call for help”; both rows are plain tel: links", ref: "CallRow (3·1/3·2)" });
+node("sos_error", 3, B.B7, "B1·4", "SOS · log failed (offline)", { nw: 1, p: "Offline-first hard requirement: the /sos log call failed (no data), but the tel: rows still render — numbers are hard-coded client-side and phone calls don't need the app. A safety control never dead-ends on the network.", s: "Error · offline", c: "Call 999 (still works)", h: "1st Call-999 row · 2nd safety line · 3rd no-connection note", ic: "phone, wifi-off", a: "Identical targets to B1·3; error note is role=status, not an alert sound", ref: "offline banner (S·1)" });
+node("report", 4, B.B7, "B2·1", "Report + block rider", { nw: 1, p: "Post-trip report of the counterparty (both roles), entered from the delivered/rating screen. Matches reportUser: reason + optional block flag — blocking prevents any future rematch.", s: "Reason picked · block on", c: "Send report", h: "1st reason list · 2nd block toggle · 3rd details field", ic: "bike, user, banknote, circle-alert, check", a: "Reason rows ≥44px; toggle is a labelled checkbox, not colour-only", ref: "Undelivered reason list (3·b5)" });
+node("report_done", 5, B.B7, "B2·2", "Report sent", { nw: 1, p: "ReportResult { id, blocked } → calm terminal. States reviewer anonymity and that the block is in force — then releases back to the trip.", s: "Confirmation", c: "Done", h: "1st title · 2nd reassurance copy · 3rd done", ic: "check", a: "Title read as heading; single ≥44px action", ref: "EmptyState (2·b3)" });
+node("trip_help", 6, B.B7, "B3·1", "Get help with this trip", { nw: 1, p: "Order-level help from the customer order screen — deliberately distinct from account Help (A·5, WhatsApp): the order context is attached up top and it files an Issue via raiseIssue (type + description).", s: "Issue type picked", c: "Send to Lynia", h: "1st issue-type list · 2nd order context · 3rd details", ic: "package, inbox, banknote, user, circle-alert", a: "Type rows ≥44px; order context readable by screen reader before the list", ref: "help (A·5) — contrast on purpose" });
+node("trip_help_sent", 7, B.B7, "B3·2", "Issue logged", { nw: 1, p: "RaisedIssue { id, status } → confirmation with the issue id + an open status pill; follow-up lands on WhatsApp. R1-style conflicts resolve to clean copy (“this order already closed”), never a raw error.", s: "Submitted · open", c: "Back to order", h: "1st we've-got-it · 2nd issue id + status · 3rd back", ic: "check", a: "Status pill has text, not colour-only; action ≥44px", ref: "kyc_verified card (rider 1·4)" });
+// NEW · OTP resend states (C) + rider-went-dark escalation (D)
+node("otp_cooldown", 0, B.B8, "C·1", "OTP · resend cooldown", { nw: 1, p: "Resend pressed → a visible 60s cooldown with a live timer. Verify stays available for a code that's still on its way — the timer throttles resends, it never blocks entry.", s: "Counting down · 0:42", c: "— wait, or Verify", h: "1st code field · 2nd timer · 3rd back", ic: "clock", a: "Timer is role=status (polite); disabled resend still announced with the wait time", ref: "otp (0·4)" });
+node("otp_resent", 1, B.B8, "C·2", "OTP · code re-sent", { nw: 1, p: "Fresh code re-issued server-side — new code AND attempt counter reset (the eng-review requirement, so a resend can't land in a locked record). Quiet confirmation; cooldown restarts.", s: "Resend sent", c: "Verify the new code", h: "1st sent banner · 2nd code field · 3rd timer", ic: "check, clock", a: "Banner is role=status; focus returns to the code field", ref: "offer_sent notice (rider 3·2)" });
+node("otp_locked", 2, B.B8, "C·3", "OTP · expired / locked", { nw: 1, p: "Code expired (10 min) or 5 wrong tries — the recovery state, never a dead end: one primary action issues a fresh code and resets attempts. Recovery copy final.", s: "Expired / locked", c: "Send a fresh code", h: "1st field error · 2nd recovery copy · 3rd fresh-code button", ic: "— (field error state)", a: "Error tied to the input via aria-describedby; recovery button ≥44px", ref: "handoff_wrong (rider 4·b1)" });
+node("track_dark", 3, B.B8, "D·1", "Rider went dark · escalated", { nw: 1, p: "Escalation of track_paused once the rider's position is stale past ~2 min: muted rider marker, a warning banner (never a red alarm), and Call-your-rider promoted to the dominant CTA. SOS stays pinned on the map.", s: "Stale > 2 min", c: "Call Tendai M.", h: "1st Call CTA · 2nd warning banner · 3rd muted map", ic: "triangle-alert, phone", a: "Banner role=status; Call button 52px primary; marker mute not colour-only (pause chip)", ref: "track_paused (3·b1)" });
 
 /* ── edges ── */
 // kind: flow | trans | ret | branch | err | reach   ·  route: h | rail | railup | drop | lift
 const E = [
   ["splash", "onboard", "flow", "h"], ["onboard", "login", "flow", "h"], ["login", "otp", "flow", "h"],
-  ["otp", "role_select", "flow", "h"], ["role_select", "register", "flow", "h", "Send parcels"],
+  ["otp", "role_select", "flow", "h"], ["role_select", "register", "flow", "h", "Customer"],
   ["register", "perm_loc", "flow", "h"], ["perm_loc", "perm_notif", "flow", "h"],
-  ["perm_notif", "home_empty", "trans", "rail", "First launch complete"],
+  ["perm_notif", "home_launcher", "flow", "h", "First launch complete"],
+  ["home_launcher", "home_empty", "trans", "rail", "Tap Send"],
   ["home_empty", "addr_search", "flow", "h", "Tap an address row"], ["addr_search", "addr_map_confirm", "flow", "h", "Pick a place"],
   ["addr_map_confirm", "home_pins", "flow", "h", "Confirm location"], ["home_pins", "home_expanded", "flow", "h"],
   ["home_expanded", "disclaimer", "flow", "h", "Broadcast"],
@@ -94,8 +110,15 @@ const E = [
   ["cancel", "cancelled", "err", "h"],
   ["track_active", "delivered_rate", "trans", "rail", "Parcel delivered"],
   ["delivered_rate", "completed", "flow", "h"],
-  ["completed", "home_empty", "ret", "railup", "Send another parcel"],
+  ["completed", "home_launcher", "ret", "railup", "Back home — send another"],
   ["profile", "history", "flow", "h"],
+  ["sos_idle", "sos_confirm", "flow", "h", "Tap SOS"],
+  ["sos_confirm", "sos_contacts", "flow", "h", "Show numbers"],
+  ["sos_contacts", "sos_error", "err", "h", "Log call fails"],
+  ["report", "report_done", "flow", "h", "Send report"],
+  ["trip_help", "trip_help_sent", "flow", "h", "Send to Lynia"],
+  ["otp_cooldown", "otp_resent", "flow", "h", "Timer ends → resend"],
+  ["otp_resent", "otp_locked", "err", "h", "Expires / 5 wrong tries"],
 ];
 
 /* ── clusters (zone rects) ── */
@@ -113,6 +136,8 @@ const LABELS = [
   [B.B3s, "ACT 3 · Track the delivery", "Hand-off code, live 7-step timeline, call the rider."],
   [B.B3b, "↳ Tracking branches", null],
   [B.B4, "ACT 4 · Close the loop", "Confirm delivery by OTP, rate the rider, back to send another."],
+  [B.B7, "NEW · Trust & safety — SOS, report, get help (plan §2 · B1–B3)", "Shipped in code (PR #98) with no mockup — these align the UI to the real contracts in safety.ts. Decisions final (5 Jul): 999 emergency · +263 77 883 1938 Lynia safety line · contact-support = tel: call. SOS entry: the pill on any live-trip map · report entry: delivered/rate (4·1) · get-help entry: any order screen."],
+  [B.B8, "NEW · OTP resend states (C) + rider-went-dark escalation (D)", "C extends the existing 0·4 “Check your WhatsApp” screen — the idle resend affordance is retrofitted in place up there; these are the cooldown / resent / locked states. D escalates 3·b1 after ~2 min of stale position."],
 ];
 
 /* ── gap flags (not-yet-designed) ── */
@@ -179,6 +204,7 @@ function Tile({ n }) {
     <div style={{ position: "absolute", left: n.x, top: n.y, width: TILE_W, fontFamily: "var(--font-sans)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, height: 26, marginBottom: 8 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--on-accent)", background: "var(--accent-text)", borderRadius: 6, padding: "2px 7px", fontVariantNumeric: "tabular-nums" }}>{n.badge}</span>
+        {n.anno.nw ? <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".05em", color: "#8a6a00", background: "var(--highlight)", borderRadius: 5, padding: "2px 6px" }}>NEW</span> : null}
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", letterSpacing: "-0.01em" }}>{n.title}</span>
       </div>
       <Phone h={PHONE_H} bg={n.bg}>{LJ[n.id]()}</Phone>
@@ -190,6 +216,14 @@ function Tile({ n }) {
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7, fontSize: 12, fontWeight: 600, color: "var(--accent-text)" }}>
           <Ic name="arrow-right" size={13} color="var(--accent-text)" /> {n.anno.c}
         </div>
+        {n.anno.h || n.anno.ic || n.anno.a || n.anno.ref ? (
+          <div style={{ marginTop: 9, paddingTop: 8, borderTop: "1px dashed var(--line)", display: "flex", flexDirection: "column", gap: 3 }}>
+            {n.anno.h ? <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}><b style={{ color: "var(--ink)", fontWeight: 700 }}>Hierarchy</b> · {n.anno.h}</div> : null}
+            {n.anno.ic ? <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}><b style={{ color: "var(--ink)", fontWeight: 700 }}>Icons</b> · {n.anno.ic}</div> : null}
+            {n.anno.a ? <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}><b style={{ color: "var(--ink)", fontWeight: 700 }}>A11y</b> · {n.anno.a}</div> : null}
+            {n.anno.ref ? <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}><b style={{ color: "var(--ink)", fontWeight: 700 }}>Ref</b> · {n.anno.ref}</div> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

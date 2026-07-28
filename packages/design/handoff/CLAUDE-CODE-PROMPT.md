@@ -76,6 +76,31 @@ Bring the app primitives back to parity with `packages/design/components/`:
 Keep every green-on-white text usage on `accentText`; keep white-on-green fills on `cta`;
 keep bright `accent` on non-text fills only (map pins, stepper ring graphic).
 
+## New UI to build — 2026 trust, safety & recovery (NOT a token refresh)
+
+Separate from the parity work above, eleven **net-new screens** were designed to close the biggest
+design/code drift (shipped in app PR #98 with no mockup). These are **new UI to implement against real
+contracts**, not a visual reconciliation. Preview: `packages/design/ui_kits/mobile/safety-flows.html`;
+full contracts in `packages/design/HANDOFF.md` → "2026 trust, safety & recovery"; flow context in
+`packages/design/explorations/journey/`. Build each in `apps/mobile` using the primitives:
+
+- **SOS (both roles)** — pinned danger pill on every live trip/job → confirm sheet → two `tel:` rows.
+  Wire `raiseSos` + `SosContacts { emergencyNumber, safetyLine }` + best-effort `POST /orders/:id/sos`.
+  **Hard values:** emergency **999**, Lynia safety line **+263 77 883 1938**. The numbers are
+  client-side constants and must render even when the log POST fails (offline).
+- **Report + block (both roles)** — `reportUser(reason, block?)` → `ReportResult { id, blocked }`.
+- **Order-level help (both roles)** — `raiseIssue(type, description)` → `RaisedIssue { id, status }`.
+- **OTP resend / expiry / lockout (customer)** — resend must **reset the attempt counter** server-side.
+- **Rider-went-dark (customer)** — escalate on ~2 min presence staleness (contract C5).
+- **Go-online gates (rider)** — `gates.ts` `OnlineGateReason`; **add `out_of_area` + `banned` to the
+  union**. `banned` / `kyc_locked` must expose a `tel:` support row (no dead ends).
+- **KYC ID-photo loop (rider)** — capture → preview → non-blocking upload → recoverable failure. A
+  retake must **never wipe the last good photo** until the new one uploads.
+
+Also retrofitted (small): the **on-hold** screen (both apps) now has a real `tel:` support row, not
+dead "Contact support" text. Blocking product decision **Q3 (SOS behaviour) is resolved** — the values
+above are final.
+
 ## App-logic tickets carried by the design (do NOT silently implement — list them)
 
 These are behaviour changes the design implies but shouldn't be bundled into a visual

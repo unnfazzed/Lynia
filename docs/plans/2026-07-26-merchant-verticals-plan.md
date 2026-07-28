@@ -1,8 +1,12 @@
 # Merchant Verticals — Build, Design & Deployment Plan
 
-**Status:** P0 COMPLETE (2026-07-27, see §0c) · design track in flight · P1 ready
-(approved at office-hours review 2026-07-27; Approach A, full build — see §0a)
-**Target launch:** Restaurants vertical, Sept–Oct 2026
+**Status:** P0 COMPLETE (2026-07-27, see §0c) · **superseded as the execution plan (2026-07-28)** —
+the design track landed (July 2026 design update in `packages/design/`) and the founder moved to a
+**joint Restaurants + Send launch**. Execution now runs per
+`docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md`, which restates §0a's phased GTM and
+the P1–P5 phase table; this doc's §0b locked decisions, §2 repo strategy, §4 test gates and §7
+money-safety non-negotiables remain binding as amended there.
+**Target launch:** ~~Restaurants vertical, Sept–Oct 2026~~ → one joint launch, see the 2026-07-28 plan
 **Source pack:** `LyniaGo_Merchant_Handoff` (`00_START_HERE`, `01_CONCEPT`, `02_MERCHANT_SPEC`, `03_BUILD_PLAN`)
 **Scope of this doc:** how the merchant build is structured in the repo, how it is designed, tested and
 deployed, and — above all — **how it ships without ever putting the live Express product at risk.**

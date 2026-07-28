@@ -8,8 +8,8 @@ const { Icon: Ic } = DSc;
 /* ── geometry ── */
 const COLW = 430, X0 = 150, PHONE_H = 640, TILE_W = 336, TITLE_H = 34, ANNO_GAP = 12;
 const X = (c) => X0 + c * COLW;
-const B = { B0: 120, B1: 1020, B2: 1920, B3: 2820, B4: 3720, B4b: 4620, B5: 5520, B6: 6480, B7: 7440 };
-const CANVAS_W = 3260, CANVAS_H = 8400;
+const B = { B0: 120, B1: 1020, B2: 1920, B3: 2820, B4: 3720, B4b: 4620, B5: 5520, B5b: 6480, B6: 7440, B7: 8400, B8: 9420, B9: 10560, B10: 11700 };
+const CANVAS_W = 3260, CANVAS_H = 12760;
 
 /* ── nodes ── */
 const N = {};
@@ -57,6 +57,13 @@ node("job_cancelled", 6, B.B4b, "4·b5", "Customer cancelled", { p: "The custome
 // Act 5 — earnings
 node("earnings", 0, B.B5, "5·1", "Earnings", { p: "Lean by design: total agreed-&-delivered, a trip list, and the off-platform cash disclaimer. A record of work — not a wallet.", s: "With trips", c: "— review only" });
 node("earnings_new", 1, B.B5, "5·2", "Earnings · new rider", { p: "Zero trips — $0.00 with a warm 'your first fare starts here' rather than an empty ledger. (Edge)", s: "Empty · new", c: "Go online" });
+// Act 5b — commission wallet (post-flip reveal, plan §2 wallet)
+node("wallet", 0, B.B5b, "5b·1", "Wallet", { nw: 1, p: "The dedicated commission wallet, opened from the Earnings 'Commission balance ›' row (server-flag gated until the flip). Balance hero uses --surface with an icon tile — deliberately distinct from the green earnings hero (one green money hero per app). Show-the-math receipts + honest-copy card.", s: "Positive · $4.85", c: "Top up", ic: "banknote, package", a: "Receipt rows carry full-sentence labels; money is tabular", ref: "earnings (5·1) row" });
+node("topup_amount", 1, B.B5b, "5b·2", "Top up · amount", { nw: 1, p: "Amount entry — min $5 enforced inline, quick-amount chips, a phone-number field (pre-filled with the rider's registered line, editable — this is the number the prompt is pushed to), then the rail selector. EcoCash / InnBucks / O'mari all push a prompt to that number, so there's one flow, not a manual branch. The screen's one primary CTA.", s: "$10 · O'mari", c: "Request $10.00 via O'mari", ic: "— rail badges", a: "Labels above inputs; chips & rails ≥44px; phone validated to local 07x format", ref: "wallet (5b·1)" });
+node("topup_wait", 2, B.B5b, "5b·3", "Payment prompt · wait", { nw: 1, p: "The one sanctioned wait animation — a 90-second countdown while the chosen rail's prompt sits on the rider's phone. The screen names the rail + the number; calm copy + a cancel affordance; a timeout returns 'the request expired — no money moved. Try again.'", s: "Approving · 62s", c: "— await approval", ic: "— countdown ring", a: "Countdown is role=status; ring crossfades to danger in the last 20s", ref: "customer auction timer" });
+node("topup_success", 3, B.B5b, "5b·4", "Top up · success", { nw: 1, p: "Credit cleared: balance ticks up and the new top-up row appears at the top of the ledger, labelled with the rail used.", s: "+$10.00 · confirmed", c: "Back to wallet", ic: "check, banknote", a: "Single ≥44px action", ref: "kyc_verified (1·4) tone" });
+node("wallet_low", 4, B.B5b, "5b·b1", "Wallet · low / owed", { nw: 1, p: "Negative / below-floor variant: the hero switches to --danger-wash with the amount in ink (never red text on white), a below-floor chip, and the owed caption. The number netts against the next top-up.", s: "Owed · −$0.30", c: "Top up", ic: "banknote", a: "Danger is a wash, never red text; amount stays ink", ref: "gate_commission (A5)" });
+node("topup_declined", 5, B.B5b, "5b·b2", "Top up · declined", { nw: 1, p: "Prompt was answered but the payment failed — distinct from the expired/timeout path. Honest reason-copy names the rail ('no money left your EcoCash; balance too low or you declined on the phone'). One 'Try again' action returns to the amount step. No money moved.", s: "Declined · no money moved", c: "Try again", ic: "circle-alert", a: "Reuses the EmptyState template; calm not alarming — icon in muted, not red", ref: "topup_wait (5b·3)" });
 // Persistent — account
 node("profile", 0, B.B6, "A·1", "Account", { p: "Identity, rating, verified badge; entry to bike/docs, trips, earnings, sign-out.", s: "Default", c: "Bike & documents" });
 node("bike_docs", 1, B.B6, "A·2", "Bike & documents", { p: "The verified ID, bike registration and rider photo, each with a status pill. Read-only; changes route to support.", s: "All verified", c: "— (support to edit)" });
@@ -65,10 +72,29 @@ node("settings", 3, B.B6, "A·4", "Settings", { p: "Bike & documents, notificati
 node("help", 4, B.B6, "A·5", "Help & support", { p: "Rider-framed topics (undeliverable, wrong code, account); live help routes to WhatsApp.", s: "Default", c: "Chat on WhatsApp" });
 // System / edge
 node("offline", 0, B.B7, "S·1", "Offline banner", { p: "Global muted banner over any screen when the socket drops — shown here over the board.", s: "Offline", c: "— auto-recovers" });
-node("on_hold", 1, B.B7, "S·2", "Account on hold", { p: "Suspended pending review (e.g. repeated cancels/complaints) — blocks riding, hands back a support action.", s: "Blocking", c: "Contact support" });
+node("on_hold", 1, B.B7, "S·2", "Account on hold", { p: "Suspended pending review (e.g. repeated cancels/complaints) — blocks riding. Retrofitted (plan §2·A): 'Contact support' is now a real tel: call row (+263 77 883 1938), not dead text — same exit the A-band gate states inherit.", s: "Blocking", c: "Call Lynia support" });
 node("force_update", 2, B.B7, "S·3", "Force update", { p: "Hard version gate — must update to keep riding.", s: "Blocking", c: "Update now" }, "var(--accent)");
 node("no_gps", 3, B.B7, "S·4", "Location off / no GPS", { p: "GPS unavailable — can't go online; offers settings.", s: "Blocking (recoverable)", c: "Open location settings" });
 node("generic_error", 4, B.B7, "S·5", "Generic error", { p: "Catch-all load failure; reassures the active job is safe.", s: "Error", c: "Try again" });
+// NEW · Go-online gate states (plan §2 · A1–A4) — one reason-keyed EmptyState template (gates.ts)
+node("gate_out_of_area", 0, B.B8, "A1", "Gate · out of area", { nw: 1, p: "Rider tapped Go online outside the Harare service corridor (fix R10, isOutOfServiceArea). Same dashboard, offline pill, reason-keyed EmptyState. Refreshing re-checks position against SERVICE_CORRIDOR.", s: "Refused · out_of_area", c: "Refresh status", h: "1st title · 2nd Refresh action · 3rd why-copy", ic: "circle-alert", a: "Title is the screen-reader heading; action 52px", ref: "no_gps (S·4) + customer no_riders (2·b1)" });
+node("gate_cooldown", 1, B.B8, "A2", "Gate · cooldown", { nw: 1, p: "Refused with reason `cooldown` after a recent cancellation — short, self-healing. Copy matches gates.ts ONLINE_GATE_COPY verbatim in tone: calm, no blame, a clear retry.", s: "Refused · cooldown", c: "Try again", h: "1st title · 2nd Try-again action · 3rd why-copy", ic: "clock", a: "Retry announces remaining wait if refused again", ref: "on_hold (S·2)" });
+node("gate_banned", 2, B.B8, "A3", "Gate · account closed", { nw: 1, p: "Reason `banned` — permanent, shipped in code (PR #98) with no mockup. Final but not punitive: states the fact, offers the mistake-path. The support call row is the mandatory exit — a dead end without one is the #1 failure this cluster fixes.", s: "Refused · banned (terminal)", c: "Call Lynia support", h: "1st title · 2nd support call row · 3rd why-copy", ic: "triangle-alert, phone", a: "Call row ≥44px with visible number; Sign out ≥44px", ref: "kyc_failed (1·b1)" });
+node("gate_kyc_locked", 3, B.B8, "A4", "Gate · verification locked", { nw: 1, p: "Fix R4: isKycLocked — 2 failed ID checks exhausts self-resubmit; today's UI shows only a useless Refresh. Support finishes verification together with the rider — the lock is a hand-off, not a punishment.", s: "Refused · kyc lock", c: "Call Lynia support", h: "1st title · 2nd support call row · 3rd why-copy", ic: "triangle-alert, phone", a: "Call row ≥44px with visible number", ref: "kyc_failed (1·b1)" });
+node("gate_commission", 4, B.B8, "A5", "Gate · top up to keep riding", { nw: 1, p: "commission_low_balance refusal — balance below the $2 floor blocks going online. Joins the gate family (same layout/voice as cooldown/on-hold): status → reason → the EXACT amount needed → one CTA deep-linking into the Wallet top-up. Clears to a quiet 'you're back online' once a credit lifts the floor. Never fires at 0%.", s: "Refused · commission_low_balance", c: "Top up $1.15", h: "1st title · 2nd amount callout + CTA · 3rd reassurance", ic: "banknote", a: "Reads status → reason → amount → action in one pass; calm (mint), not punitive", ref: "wallet (5b·1) · rider_offline (2·1)" });
+// NEW · Trust & safety (plan §2 · B1–B3) — aligns the UI shipped in PR #98 to safety.ts
+node("sos_idle", 0, B.B9, "B1·1", "SOS · live-job control", { nw: 1, p: "Same shared SOS control as the customer map, pinned over the job map on every live stage — table-stakes for an in-person cash hand-off. Tapping opens the confirm sheet; it never dials by itself.", s: "Idle · live job", c: "Tap SOS", h: "1st SOS pill · 2nd recipient call row · 3rd stepper", ic: "phone · SOS is a text pill, no new glyph", a: "≥44px, aria-label “Emergency — call for help”, one-handed reach (top-right)", ref: "job_dropoff (4·5)" });
+node("sos_confirm", 1, B.B9, "B1·2", "SOS · confirm", { nw: 1, p: "Deliberate second step (shared sheet — customer B1·2). Confirming shows the numbers immediately and best-effort logs the SOS with job + location; the log never gates the numbers.", s: "Confirm sheet", c: "Show emergency numbers", h: "1st confirm button · 2nd explainer · 3rd cancel", ic: "triangle-alert", a: "56px confirm; Cancel ≥44px", ref: "customer SOS B1·2" });
+node("sos_contacts", 2, B.B9, "B1·3", "SOS · contacts", { nw: 1, p: "SosContacts tel: rows — Call-999 dominant, Lynia safety line second. The offline/error state is drawn once on the customer map (B1·4) — identical here: numbers render even when the log call fails.", s: "Contacts shown", c: "Call 999", h: "1st Call-999 row · 2nd safety line · 3rd alerted note", ic: "phone, arrow-right, check", a: "Call row 76px, aria “Emergency — call for help”; plain tel: links", ref: "customer SOS B1·3/B1·4" });
+node("report", 3, B.B9, "B2·1", "Report + block customer", { nw: 1, p: "Post-job report of the counterparty from the delivered/rate-the-sender screen. Matches reportUser: reason + optional block — a blocked customer's requests never reach this rider's board again.", s: "Reason picked · block on", c: "Send report", h: "1st reason list · 2nd block toggle · 3rd details", ic: "user, banknote, circle-alert, inbox, check", a: "Reason rows ≥44px; block toggle labelled, not colour-only", ref: "Undelivered reason list (4·b2)" });
+node("report_done", 4, B.B9, "B2·2", "Report sent", { nw: 1, p: "ReportResult { id, blocked } → calm terminal: anonymity stated, block confirmed, straight back to the board.", s: "Confirmation", c: "Back to board", h: "1st title · 2nd reassurance · 3rd back", ic: "check", a: "Single ≥44px action", ref: "not_chosen (3·b1) tone" });
+node("job_help", 5, B.B9, "B3·1", "Get help with this job", { nw: 1, p: "Job-level help from the rider job screen — distinct from account Help (A·5, WhatsApp): job context attached, files an Issue via raiseIssue (type + description).", s: "Issue type picked", c: "Send to Lynia", h: "1st issue-type list · 2nd job context · 3rd details", ic: "phone, banknote, map-pin, package, circle-alert", a: "Type rows ≥44px", ref: "help (A·5) — contrast on purpose" });
+node("job_help_sent", 6, B.B9, "B3·2", "Issue logged", { nw: 1, p: "RaisedIssue { id, status } → confirmation with issue id + open status pill; follow-up on WhatsApp. Conflicts resolve to clean copy (“this order already closed”), never a raw error.", s: "Submitted · open", c: "Back to job", h: "1st we've-got-it · 2nd issue id + status · 3rd back", ic: "check", a: "Status pill carries text, not colour-only", ref: "kyc_verified (1·4)" });
+// NEW · KYC ID-photo states (plan §2 · E) — extends the KycForm photo row
+node("photo_capture", 0, B.B10, "E·1", "ID photo · capture", { nw: 1, p: "Camera stage for the ID photo (fix P3): card-shaped frame guide + the three readability rules. Entry: the photo row on kyc_form (1·2).", s: "Camera open", c: "Take photo (shutter)", h: "1st frame guide · 2nd shutter · 3rd rules line", ic: "x (close) · shutter is a control, not a glyph", a: "Shutter 68px, aria “Take photo”; white-on-ink contrast", ref: "kyc_form (1·2)" });
+node("photo_preview", 1, B.B10, "E·2", "ID photo · preview", { nw: 1, p: "Self-check before upload — glare/blur is the top decline reason (KYC_DECLINE_REASON_LABELS), so the rider filters it here instead of burning one of two attempts. Retake keeps the current saved photo.", s: "Reviewing", c: "Use this photo", h: "1st photo · 2nd readability question · 3rd use/retake", ic: "— (photo placeholder)", a: "Actions ≥44px; question is the heading", ref: "kyc_failed reasons (1·b1)" });
+node("photo_uploading", 2, B.B10, "E·3", "ID photo · uploading", { nw: 1, p: "Non-blocking upload inside the form: visible progress, the rest of the form stays editable, Submit disabled until the photo lands. Slow networks are the norm here — never a full-screen spinner.", s: "Uploading · 60%", c: "— keep filling the form", h: "1st progress row · 2nd form fields · 3rd disabled submit", ic: "id-card", a: "Progress is role=status with percent text, not colour-only", ref: "kyc_form (1·2)" });
+node("photo_failed", 3, B.B10, "E·4", "ID photo · upload failed", { nw: 1, p: "Recoverable failure (fix P3): retry in place, and the retake-preserve rule stated outright — the last good photo is only replaced once a new one uploads. A failed retry never wipes anything.", s: "Failed · recoverable", c: "Try again", h: "1st failure row + retry · 2nd keep-current option · 3rd preserve note", ic: "circle-alert, check", a: "Error tied to the photo row; both actions ≥44px", ref: "handoff_wrong recovery (4·b1)" });
 
 /* ── edges ──  kind: flow | trans | ret | branch | err · route: h | rail | railB | railup | drop | lift */
 const E = [
@@ -110,7 +136,21 @@ const E = [
   ["job_delivered", "rider_offline", "ret", "railup", "Free for next job"],
   ["job_delivered", "earnings", "trans", "railB", "Fare recorded"],
   ["earnings", "earnings_new", "branch", "h", "New rider"],
+  ["earnings", "wallet", "trans", "rail", "Commission balance ›"],
+  ["wallet", "topup_amount", "flow", "h", "Top up"],
+  ["wallet", "wallet_low", "branch", "drop", "Low / owed"],
+  ["topup_amount", "topup_wait", "flow", "h", "Request prompt"],
+  ["topup_wait", "topup_success", "flow", "h", "Approved"],
+  ["topup_wait", "topup_declined", "branch", "drop", "Declined"],
+  ["topup_success", "wallet", "ret", "lift", "Balance updated"],
   ["profile", "bike_docs", "flow", "h", "Bike & documents"],
+  ["sos_idle", "sos_confirm", "flow", "h", "Tap SOS"],
+  ["sos_confirm", "sos_contacts", "flow", "h", "Show numbers"],
+  ["report", "report_done", "flow", "h", "Send report"],
+  ["job_help", "job_help_sent", "flow", "h", "Send to Lynia"],
+  ["photo_capture", "photo_preview", "flow", "h", "Take photo"],
+  ["photo_preview", "photo_uploading", "flow", "h", "Use this photo"],
+  ["photo_uploading", "photo_failed", "err", "h", "Connection drops"],
 ];
 
 /* ── clusters (zone rects) ── */
@@ -128,6 +168,10 @@ const LABELS = [
   [B.B4, "ACT 4 · The active job", "Confirm → navigate to pickup → collect → navigate to drop-off → enter the recipient's 6-digit code → delivered."],
   [B.B4b, "↳ Job branches & failures", null],
   [B.B5, "ACT 5 · Earnings", "A lean record of work done — total agreed & delivered, trip list, and the off-platform cash disclaimer. Not a wallet."],
+  [B.B5b, "ACT 5b · Commission wallet (post-flip reveal)", "Ships hidden behind a server flag until the 5% flip. Balance hero (surface — distinct from the green earnings hero) → Top up (the one primary CTA) → show-the-math receipts → honest-copy card. Top-up: amount + rail → the 90s EcoCash USSD wait → success, or a manual instruction card for InnBucks / O'mari."],
+  [B.B8, "NEW · Go-online gate states (plan §2 · A1–A5)", "ONE reason-keyed EmptyState template — icon / title / message / actions as props, exactly how gates.ts models OnlineGateReason (add out_of_area + banned to the union and each variant falls out for free). Every dead end has a real exit: Contact support is a tappable tel: call row (+263 77 883 1938), also retrofitted onto the existing on-hold screen (S·2). The commission_low_balance gate (A5) joins the same family, deep-linking into the Wallet top-up (5b)."],
+  [B.B9, "NEW · Trust & safety — SOS, report, get help (plan §2 · B1–B3)", "Aligns the UI shipped in PR #98 to the real contracts in safety.ts. The SOS confirm/contacts sheet is one shared component with the customer map (offline/error state drawn there, B1·4). Decisions final (5 Jul): 999 · +263 77 883 1938 · tel: for support."],
+  [B.B10, "NEW · KYC ID-photo states (plan §2 · E)", "Extends the KycForm “Photo added — retake” row into a full loop: capture → preview → upload, with a recoverable failure. A retake never wipes the last good photo."],
 ];
 
 /* ── gap flags (not-yet-designed, with severity) ── */
@@ -136,8 +180,7 @@ const GAPS = [
   [4, B.B2, "P3", "Scheduled availability / shifts", "Online is all-or-nothing now — no way to set hours, get reminded for peak windows, or reserve a shift.", B.B2 + 300],
   [4, B.B3, "P2", "Multi-job queue", "One offer / one job at a time — no way to line up the next parcel while finishing the current one."],
   [3, B.B4b, "P2", "Ratings & reliability dashboard", "The reliability score is mentioned (bail warning) but never shown — no acceptance rate, cancels, or rating trend the rider can see."],
-  [2, B.B4b, "P1", "Rider SOS / report", "No emergency control or report-a-customer on a live job — table-stakes for an in-person cash hand-off."],
-  [2, B.B5, "P3", "In-app payout / mobile money", "Cash-only by decision — but EcoCash is the dominant rail. No wallet, payout, or reconciliation. Roadmap: the superapp finance spine."],
+  [2, B.B5, "P3", "Rider payout / cash-out", "Earnings are cash, off-platform — there's no in-app payout or mobile-money cash-out. (The commission wallet, Act 5b, is the inverse: riders fund it to pay commission; it isn't a payout balance.)"],
   [3, B.B5, "P3", "Incentives & bike-leasing hook", "No peak-hour bonuses, streaks, or the bike-leasing / credit upsell that the longer-term superapp vision rests on."],
 ];
 
@@ -193,6 +236,7 @@ function Tile({ n }) {
     <div style={{ position: "absolute", left: n.x, top: n.y, width: TILE_W, fontFamily: "var(--font-sans)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, height: 26, marginBottom: 8 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--on-accent)", background: "var(--accent-text)", borderRadius: 6, padding: "2px 7px", fontVariantNumeric: "tabular-nums" }}>{n.badge}</span>
+        {n.anno.nw ? <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".05em", color: "#8a6a00", background: "var(--highlight)", borderRadius: 5, padding: "2px 6px" }}>NEW</span> : null}
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", letterSpacing: "-0.01em" }}>{n.title}</span>
       </div>
       <Phone h={PHONE_H} bg={n.bg}>{RJ[n.id]()}</Phone>
@@ -204,6 +248,14 @@ function Tile({ n }) {
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7, fontSize: 12, fontWeight: 600, color: "var(--accent-text)" }}>
           <Ic name="arrow-right" size={13} color="var(--accent-text)" /> {n.anno.c}
         </div>
+        {n.anno.h || n.anno.ic || n.anno.a || n.anno.ref ? (
+          <div style={{ marginTop: 9, paddingTop: 8, borderTop: "1px dashed var(--line)", display: "flex", flexDirection: "column", gap: 3 }}>
+            {n.anno.h ? <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}><b style={{ color: "var(--ink)", fontWeight: 700 }}>Hierarchy</b> · {n.anno.h}</div> : null}
+            {n.anno.ic ? <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}><b style={{ color: "var(--ink)", fontWeight: 700 }}>Icons</b> · {n.anno.ic}</div> : null}
+            {n.anno.a ? <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}><b style={{ color: "var(--ink)", fontWeight: 700 }}>A11y</b> · {n.anno.a}</div> : null}
+            {n.anno.ref ? <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}><b style={{ color: "var(--ink)", fontWeight: 700 }}>Ref</b> · {n.anno.ref}</div> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

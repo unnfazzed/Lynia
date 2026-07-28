@@ -2,15 +2,7 @@ import React from "react";
 
 // One timeline seen from two sides (CONCEPT §5c): customer and rider labels are paired so a step
 // reads as the same event from either screen.
-const STEP_ORDER = [
-  "assigned",
-  "confirmed",
-  "en_route_pickup",
-  "picked_up",
-  "en_route_dropoff",
-  "delivered",
-  "completed",
-];
+const STEP_ORDER = ["assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff", "delivered", "completed"];
 
 const STEP_LABELS = {
   customer: {
@@ -33,6 +25,9 @@ const STEP_LABELS = {
   },
 };
 
+/** The Food/merchant flavour of the same 7-step grammar — pass as `steps`. */
+export const RESTAURANT_STEPS = ["Order placed", "Restaurant accepted", "Rider secured", "Rider at restaurant", "Picked up", "On the way", "Delivered"];
+
 function fmtTime(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -40,70 +35,50 @@ function fmtTime(iso) {
 }
 
 /**
- * Lynia §5c journey stepper — the 7-step delivery timeline, rendered from an order's append-only
- * events + current status. Steps before the current one are done (✓ + time), the current one is
- * "now" (accent, live), later ones are muted. Pass view="customer" or view="rider" for the paired labels.
+ * Lynia §5c journey stepper — the ONE 7-step delivery timeline for every vertical. Two ways in:
+ * the event API (`events` + `currentStatus` + `view`, paired customer/rider labels) or the plain
+ * API (`steps` labels + `step` index + `times` + `failAt`) used by verticals with their own copy.
+ * Steps before the current one are done (✓ + time), the current one is "now" (accent, live), later
+ * ones muted; `failAt` marks a step as failed (danger ring + !).
  */
-export function Stepper({ events = [], currentStatus, view = "customer", style, ...rest }) {
-  const labels = STEP_LABELS[view] ?? STEP_LABELS.customer;
-  const currentIdx = STEP_ORDER.indexOf(currentStatus);
-  const times = {};
-  for (const e of events) if (!(e.status in times)) times[e.status] = e.createdAt;
-
+export function Stepper({ events = [], currentStatus, view = "customer", steps, step, times: timesIn, failAt, style, ...rest }) {
+  const plain = Array.isArray(steps);
+  const labels = plain ? steps : STEP_ORDER.map((s) => (STEP_LABELS[view] ?? STEP_LABELS.customer)[s]);
+  let currentIdx, stamps = {};
+  if (plain) {
+    currentIdx = step ?? 0;
+    stamps = timesIn || {};
+  } else {
+    currentIdx = STEP_ORDER.indexOf(currentStatus);
+    const seen = {};
+    for (const e of events) if (!(e.status in seen)) seen[e.status] = e.createdAt;
+    STEP_ORDER.forEach((s, i) => { if (seen[s]) stamps[i] = fmtTime(seen[s]); });
+  }
   return (
     <div className="lynia-stepper" style={style} {...rest}>
-      {STEP_ORDER.map((s, i) => {
-        const state = currentIdx < 0 ? "todo" : i < currentIdx ? "done" : i === currentIdx ? "now" : "todo";
-        const last = i === STEP_ORDER.length - 1;
-        const onTrack = state !== "todo";
-        const ts = times[s];
+      {labels.map((label, i) => {
+        const done = currentIdx >= 0 && i < currentIdx;
+        const now = i === currentIdx;
+        const failed = failAt === i;
+        const onTrack = done || now;
+        const last = i === labels.length - 1;
+        const ring = failed ? "var(--danger)" : onTrack ? "var(--accent)" : "var(--line)";
+        const ts = stamps[i];
         return (
-          <div key={s} style={{ display: "flex" }}>
+          <div key={label} style={{ display: "flex" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 26 }}>
-              <div
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 11,
-                  border: `2px solid ${onTrack ? "var(--accent)" : "var(--line)"}`,
-                  background: state === "done" ? "var(--accent)" : "var(--bg)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxSizing: "border-box",
-                  flexShrink: 0,
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 11,
-                    fontWeight: "var(--weight-extrabold)",
-                    color: state === "done" ? "var(--on-accent)" : state === "now" ? "var(--accent-text)" : "var(--muted)",
-                  }}
-                >
-                  {state === "done" ? "✓" : String(i + 1)}
+              <div style={{ width: 22, height: 22, borderRadius: 11, border: `2px solid ${ring}`, background: failed ? "var(--danger)" : done ? "var(--accent)" : "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", flexShrink: 0 }}>
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: "var(--weight-extrabold)", color: done || failed ? "var(--on-accent)" : now ? "var(--accent-text)" : "var(--muted)" }}>
+                  {failed ? "!" : done ? "✓" : String(i + 1)}
                 </span>
               </div>
-              {!last ? (
-                <div style={{ flex: 1, width: 2, minHeight: 16, background: i < currentIdx ? "var(--accent)" : "var(--line)" }} />
-              ) : null}
+              {!last ? <div style={{ flex: 1, width: 2, minHeight: 16, background: done ? "var(--accent)" : "var(--line)" }} /> : null}
             </div>
             <div style={{ flex: 1, paddingLeft: "var(--space-sm)", paddingBottom: last ? 0 : "var(--space-md)" }}>
-              <div
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "var(--text-body)",
-                  fontWeight: state === "todo" ? "var(--weight-semibold)" : "var(--weight-bold)",
-                  color: state === "now" ? "var(--accent-text)" : state === "todo" ? "var(--muted)" : "var(--ink)",
-                }}
-              >
-                {labels[s]}
-              </div>
-              {ts && onTrack ? (
-                <div style={{ marginTop: 1, fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted)" }}>
-                  {fmtTime(ts)}
-                  {state === "now" ? " · live" : ""}
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-body)", fontWeight: onTrack ? "var(--weight-bold)" : "var(--weight-semibold)", color: failed ? "var(--danger-ink)" : now ? "var(--accent-text)" : done ? "var(--ink)" : "var(--muted)" }}>{label}</div>
+              {ts && (onTrack || failed) ? (
+                <div style={{ marginTop: 1, fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                  {ts}{now ? " · live" : ""}
                 </div>
               ) : null}
             </div>

@@ -90,7 +90,7 @@ scope for this phase.
 | Customers directory + profile (masked phone, spend, reports) | ✅ |
 | Edge — cancel-pattern flag / clear / ban | ✅ |
 | Issues queue + investigation (OTP evidence, statements, resolve) | ✅ |
-| Commission (prepaid per-ride, 0% launch — read-only ride/commission overview) | ✅ |
+| Cash & settlements (weekly commission, overdue, record payment) | ✅ |
 | States on every page — live / empty / loading / offline | ✅ |
 
 ## Support / onboarding / edge (`ui_kits/support/`)
@@ -106,6 +106,32 @@ scope for this phase.
 | Edge — force update | ✅ |
 | Edge — location off / no GPS | ✅ |
 | Edge — generic error | ✅ |
+
+## Restaurants vertical (`explorations/restaurants/`) — 2026 design, ships with Send in one release
+| Screen / state | Status |
+|---|---|
+| **Customer** — home · service tiles (Send + Food from day one) | ✅ design |
+| Restaurant list (default / loading / nothing open / offline) · search | ✅ design |
+| Menu · item sheet · closed restaurant · closes-while-browsing | ✅ design |
+| Cart (default / sold out / price changed / empty) | ✅ design |
+| Checkout CASH · checkout WALLET with first-order cap steering · offline · placing | ✅ design |
+| Pay-after-accept: waiting · push · pay screen · prompt sent · expired · declined | ✅ design |
+| Tracking: prep countdown · rider secured · on the way (real Harare map) · live paused | ✅ design |
+| NO_RIDER · rejected → refund pending → refunded (with reference) · cancel pre-pickup | ✅ design |
+| Code + cash hand-off · delivered & rate · no-show failure · resume mid-order | ✅ design |
+| **Merchant** (new Next.js tablet dashboard) — OTP login + alarm unlock · setup · reboot resume | ✅ design |
+| Queue: empty · loading · NEW ORDER alarm · two at once · connection lost · arrived-offline | ✅ design |
+| Accept + prep time · reject reason · do-not-cook-yet · rider secured · mark ready · NO_RIDER | ✅ design |
+| Pickup confirm CASH · WALLET reference · short-payment blocked · handed over · rider no-show · refund execution | ✅ design |
+| Menu editor · edit item · out-of-stock sheet · hours · weekly statement (0%) · end of day | ✅ design |
+| **Rider** — auto offer CASH / WALLET · float-blocked · expired · headroom | ✅ design |
+| Navigate to restaurant · pay the merchant · collect · navigate to customer | ✅ design |
+| Code capture + cash collection · wrong code · delivered & earnings | ✅ design |
+| Customer unreachable (timer + call log) · return leg · hand-back confirm · resume | ✅ design |
+| Journey maps for all three actors (happy path + exceptions) | ✅ `Restaurants Journey Maps.html` |
+| Decisions, numbers, interaction notes, screen inventory | ✅ `RESTAURANTS-DECISIONS.md` |
+| Pharmacies vertical | ⛔ tab slot reserved, not designed |
+| Order batching · photo/signature POD · scheduled orders · tipping · promos | ⛔ out of scope |
 
 ## Foundations & brand
 | Item | Status |

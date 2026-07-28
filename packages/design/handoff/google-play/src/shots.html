@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Play screenshots — source (1080×1920)</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { background: #1c2226; font-family: var(--font-sans); }
+  body.export { background: #009D3B; width: 1080px; height: 1920px; overflow: hidden; }
+  a { color: var(--accent-text); } a:hover { color: var(--accent-700); }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../../assets/lynia-icons.js"></script>
+<script src="../../../_ds_bundle.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="play-shot-parts.jsx"></script>
+<script type="text/babel">
+  const { PlayShot, SHOTS } = window.PlayShotParts;
+
+  function Gallery() {
+    const [shot, setShot] = React.useState(0); // 0 = browse grid, 1..8 = single export frame
+    React.useEffect(() => { window.__setShot = setShot; }, []);
+    React.useEffect(() => {
+      document.body.classList.toggle("export", shot > 0);
+    }, [shot]);
+
+    if (shot > 0) {
+      const s = SHOTS[shot - 1];
+      const Screen = s.screen;
+      return <PlayShot caption={s.caption} sub={s.sub}><Screen /></PlayShot>;
+    }
+    return (
+      <div style={{ padding: 28 }}>
+        <div style={{ color: "#fff", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Google Play phone screenshots — source frames</div>
+        <div style={{ color: "rgba(255,255,255,.55)", fontSize: 12, marginBottom: 20 }}>Eight 1080×1920 frames, shown at 26%. Exported PNGs live in ../export/.</div>
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+          {SHOTS.map((s) => {
+            const Screen = s.screen;
+            return (
+              <div key={s.n}>
+                <div style={{ color: "rgba(255,255,255,.7)", fontSize: 11, fontWeight: 600, marginBottom: 6 }} className="lynia-tabular">{String(s.n).padStart(2, "0")} — {s.caption}</div>
+                <div style={{ width: 1080 * 0.26, height: 1920 * 0.26, overflow: "hidden", borderRadius: 8 }}>
+                  <div style={{ transform: "scale(0.26)", transformOrigin: "top left" }}>
+                    <PlayShot caption={s.caption} sub={s.sub}><Screen /></PlayShot>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+  window.showShot = (n) => window.__setShot(n);
+  /* Export tiling: the preview viewport is smaller than 1080×1920, so PNGs are captured
+     as 540×480 tiles (2 cols × 4 rows) and stitched to full size by a script. */
+  window.tileShot = (n, col, row) => {
+    window.__setShot(n);
+    setTimeout(() => {
+      const el = document.querySelector(".play-shot");
+      if (!el) return;
+      el.style.position = "fixed";
+      el.style.top = "0";
+      el.style.left = "0";
+      el.style.transform = `translate(${-col * 540}px, ${-row * 480}px)`;
+    }, 60);
+  };
+  ReactDOM.createRoot(document.getElementById("root")).render(<Gallery />);
+</script>
+</body>
+</html>

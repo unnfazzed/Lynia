@@ -72,7 +72,7 @@
     { icon: "triangle-alert", bad: true, text: "<b>Order 3b71de04 may be stuck</b> — no GPS update from Tendai M. for 22 min en route to drop-off.", href: "orders.html", act: "Review order" },
     { icon: "circle-alert", bad: true, text: "<b>Open dispute</b> — recipient says parcel c092a5f1 never arrived; delivery code was not entered.", href: "issues.html", act: "Investigate" },
     { icon: "id-card", bad: false, text: "<b>3 riders waiting on KYC</b> — oldest application has been in the queue 26 hours.", href: "kyc.html", act: "Review queue" },
-    { icon: "banknote", bad: false, text: "<b>Commission is 0%</b> — launch period; nothing is collected yet. Prepaid per-ride billing goes live with the wallet.", href: "cash.html", act: "View" },
+    { icon: "banknote", bad: false, text: "<b>1 settlement overdue</b> — Farai R. owes $12.40 commission, due 3 days ago.", href: "cash.html", act: "View" },
   ];
 
   function kpiCard(label, value, hint) {
@@ -110,7 +110,7 @@
       attn.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px">${'<span class="skel" style="display:block;height:18px">—</span>'.repeat(3)}</div>`;
       document.getElementById("attn-count").textContent = "";
     } else if (empty) {
-      attn.innerHTML = AdminShell.emptyState("check", "Nothing needs you right now", "Stuck orders, disputes and KYC reviews will surface here.");
+      attn.innerHTML = AdminShell.emptyState("check", "Nothing needs you right now", "Stuck orders, disputes and overdue settlements will surface here.");
       document.getElementById("attn-count").textContent = "";
     } else {
       document.getElementById("attn-count").textContent = ATTN.length;

@@ -7,9 +7,9 @@ const { Button, Card, Field, StatusPill, EmptyState, Icon } = S.D;
 function Onboarding() {
   const [i, setI] = React.useState(0);
   const slides = [
-    { icon: "banknote", t: "Name your price", m: "Say what you'll pay to send your parcel — no fixed tariffs, no haggling in the street." },
-    { icon: "bike", t: "A rider takes it", m: "Nearby riders offer on your route. Pick by price, rating or ETA — you're in control." },
-    { icon: "map-pin", t: "Track it live", m: "Watch your rider to the door, share a delivery code, and rate them when it's done." },
+    { icon: "utensils", t: "Food from kitchens near you", m: "Order from restaurants in your corridor — you see the arrival window before you pay." },
+    { icon: "banknote", t: "Name your price to send", m: "Say what you'll pay to send a parcel. Riders bid for it — no fixed tariff, no haggling in the street." },
+    { icon: "check", t: "One app, one code", m: "Same riders, same delivery code at the door, cash if that's how you pay. More services soon." },
   ];
   const s = slides[i];
   return (
