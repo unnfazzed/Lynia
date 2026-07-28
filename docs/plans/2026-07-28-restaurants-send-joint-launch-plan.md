@@ -265,7 +265,7 @@ Phase-0 gate: requires the matching Lane C contracts (C1 for E1/E4, C2/C5 for E2
   hours; busy mode (N-17); shop profile with live customer-view miniature, cover/logo/tags/
   price level (D-30) and the cash-rule setting (R-03, plain-words trade-off).
 
-### Cross-cutting (owned by whichever lane hits it first; named here so nobody assumes it away)
+### Cross-cutting (owned by Build loop C after C1–C5: X1 then X2, one per firing)
 
 - [ ] **X1 · Admin alignment.** Admin console: merchant list/detail, food-order visibility in
   `/orders` (type filter), debt-ledger + handshake dispute views for support, cash-ban/suspension

@@ -63,10 +63,15 @@ new one. Tick your Lane C checkbox in the plan IN THE SAME PR. Mark ready, enabl
 (squash), or merge directly once CI is green with no unresolved comments. Never merge on red; fix
 forward.
 
-TERMINATE: all Lane C boxes ticked → add a lane-completion note in plan §5, run the backend slice
-of X2 (staging golden pass) if reachable, then disable THIS trigger: list_triggers, find "Build
-loop C — restaurants backend", update_trigger {enabled:false}. If blocked on the same item two
-firings running, append the blocker to plan §10 and exit quietly.
+AFTER LANE C: once C1–C5 are all ticked, the plan §5 cross-cutting queue becomes yours — take X1
+(admin alignment) then X2 (launch-flip rehearsal), one per firing, same ship rules (X1 diffs
+touch admin money views → sensitive-lane four apply; X2's deliverable is the staging golden pass
+both flag positions plus the repeatable checklist in docs/LAUNCH-EXECUTION-RUNBOOK.md).
+
+TERMINATE: C1–C5, X1 and X2 all ticked → add a completion note in plan §5, then disable THIS
+trigger: list_triggers, find "Build loop C — restaurants backend", update_trigger
+{enabled:false}. If blocked on the same item two firings running, append the blocker to plan §10
+and exit quietly.
 ```
 
 ## Build loop A — customer home + IA (`0 12 * * *`)
