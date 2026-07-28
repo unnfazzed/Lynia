@@ -1279,6 +1279,8 @@
       }
     }
     window.addEventListener("message", (e) => {
+      /* same-origin only; file:// previews have an opaque ("null") origin */
+      if (e.origin !== window.location.origin && !(e.origin === "null" && window.location.protocol === "file:")) return;
       const type = e.data && e.data.type;
       if (type === "__dc_theme") {
         const t = e.data.theme;

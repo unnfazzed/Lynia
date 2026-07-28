@@ -22,6 +22,8 @@
 
   /* ── Tweaks host protocol (listener BEFORE announce) ── */
   window.addEventListener("message", (e) => {
+    /* same-origin only; file:// previews have an opaque ("null") origin */
+    if (e.origin !== window.location.origin && !(e.origin === "null" && window.location.protocol === "file:")) return;
     const t = e.data && e.data.type;
     if (t === "__activate_edit_mode") document.getElementById("tweaks-panel").classList.add("open");
     if (t === "__deactivate_edit_mode") document.getElementById("tweaks-panel").classList.remove("open");

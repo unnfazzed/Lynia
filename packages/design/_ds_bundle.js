@@ -34915,6 +34915,7 @@ function TweaksPanel({
   }, [open, clampToViewport]);
   React.useEffect(() => {
     const onMsg = e => {
+      if (e.origin !== window.location.origin && !(e.origin === 'null' && window.location.protocol === 'file:')) return;
       const t = e?.data?.type;
       if (t === '__activate_edit_mode') setOpen(true);else if (t === '__deactivate_edit_mode') setOpen(false);
     };
@@ -35398,6 +35399,7 @@ try { (() => {
 
   /* ── Tweaks host protocol (listener BEFORE announce) ── */
   window.addEventListener("message", e => {
+    if (e.origin !== window.location.origin && !(e.origin === "null" && window.location.protocol === "file:")) return;
     const t = e.data && e.data.type;
     if (t === "__activate_edit_mode") document.getElementById("tweaks-panel").classList.add("open");
     if (t === "__deactivate_edit_mode") document.getElementById("tweaks-panel").classList.remove("open");
