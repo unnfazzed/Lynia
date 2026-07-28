@@ -38,6 +38,15 @@ Prior: 2026-07-15 (added the wallet & data-lifecycle audit routine).
 | PR health & delivery watchdog | `0 2,8,14,20 * * *` | env_01V3Lw… | CI/merge/deploy babysitting for **all** PRs |
 | Performance watch | `0 11 * * 0` (Sundays) | env_01V3Lw… | Latency / bandwidth / battery / server-cost regressions + new perf wins (mobile + API) — see `docs/PERFORMANCE.md` |
 
+> **Temporary build loops (2026-07-28, not part of the eight):** five daily implementation loops
+> (`0 10/12/16/18/21 * * *` UTC) build the joint Restaurants + Send launch, one lane each, until
+> their lane checklists complete and they self-disable. Spec:
+> `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6; prompt mirrors:
+> `docs/routines/build-loops-restaurants-send.md`. They follow the universal policies below
+> (merge-on-green, docs-in-same-PR, never-merge-red) and the sensitive-lane doctrine. Their PRs
+> use `claude/build-*` branches; bug-finder Phase-0 sibling reads cover them like any other
+> `claude/*` PR.
+
 The three overnight bug-finding routines run 2 hours apart (23:00 → 01:00 → 03:00) **by
 design**: each one's ledger/report PR must be merged before the next routine starts, so the
 next routine inherits the previous one's findings and does not rediscover them. The wallet &

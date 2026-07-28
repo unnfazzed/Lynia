@@ -17,6 +17,12 @@ prompts can be diffed, reviewed, and reconciled against `docs/ROUTINES.md` like 
 | `pr-health-watchdog.md` | PR health & delivery watchdog | `0 2,8,14,20 * * *` |
 | *(none yet — see note)* | Performance watch | `0 11 * * 0` |
 
+> **Temporary build loops (2026-07-28):** the five Restaurants + Send build loops are mirrored in
+> `build-loops-restaurants-send.md` (one file for all five — they share their protocol). Unlike
+> the eight standing routines they were created via the session `create_trigger` tool, so their
+> prompts CAN be updated in place with `update_trigger`; they self-disable when their lane
+> completes. See `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6.
+
 > **Performance watch has no mirror file yet.** `docs/ROUTINES.md` added this 8th routine
 > 2026-07-19 (its own `## Performance watch` section), but its live trigger prompt was never
 > landed here per the "Edit the file here and land it" convention above. Not auto-authored by the
