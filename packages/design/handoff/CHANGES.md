@@ -34,6 +34,27 @@ match `packages/design/components/`:
 | `feedback/{EmptyState,OfflineBanner,Skeleton,SkeletonList}.jsx` | matching mobile primitives |
 | `typography/{Heading,Label,Sub}.jsx` | type usage in both apps |
 
+## New screens to propagate — 2026 trust, safety & recovery
+
+Eleven net-new screens were designed to close the biggest design/code drift (shipped in PR #98 with
+no mockup). Preview: **`ui_kits/mobile/safety-flows.html`**. These are **new UI to build**, not a
+visual refresh — wire against the real contracts, don't just diff tokens.
+
+| Flow | Screens | Contract to wire |
+|---|---|---|
+| SOS (both roles) | idle pill · confirm · contacts · offline | `raiseSos` · `SosContacts { emergencyNumber, safetyLine }` · best-effort `POST /orders/:id/sos` |
+| Report + block (both) | report+block · sent | `reportUser(reason, block?)` → `ReportResult { id, blocked }` |
+| Order-level help (both) | get-help · logged | `raiseIssue(type, description)` → `RaisedIssue { id, status }` |
+| OTP resilience (customer) | cooldown · re-sent · locked | resend + **attempt-counter reset** server-side |
+| Rider-dark (customer) | `track_dark` | presence staleness push (~2 min, contract C5) |
+| Go-online gates (rider) | out_of_area · cooldown · banned · kyc_locked | `gates.ts` `OnlineGateReason` — add `out_of_area` + `banned` to the union |
+| KYC ID-photo (rider) | capture · preview · uploading · failed | photo upload; **retake never wipes the last good photo** |
+
+**Numbers are hard values:** emergency **999**, Lynia safety line **+263 77 883 1938**, contact-support
+is a **`tel:` call**. Also retrofitted: the on-hold screen (both apps) now has a real `tel:` support
+row, not dead "Contact support" text. Full contracts in `../HANDOFF.md` → "2026 trust, safety &
+recovery".
+
 ## Confirm the accent split held (highest-risk regression)
 
 - White-on-green fills (buttons, earnings hero, order toggle on-state) → `cta`, never `accent`.

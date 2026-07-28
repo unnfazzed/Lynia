@@ -5,6 +5,7 @@
 
 const DS = window.LyniaDesignSystem_94c56a;
 const { Button, Card, Field, StatusPill, Stepper, EmptyState, Heading, Sub, Label, SkeletonList, Icon } = DS;
+const Money = DS.Money || (({ v, size = 14, weight = 700, color = "var(--ink)" }) => <span className="lynia-tabular" style={{ fontSize: size, fontWeight: weight, color }}>${v}</span>);
 
 /* ── Pin — percent coords ── */
 function Pin({ x, y, color, label }) {
@@ -74,7 +75,7 @@ function OfferCard({ o, recommended, onChoose }) {
       {recommended ? <div style={{ fontSize: 10, fontWeight: 700, color: "var(--highlight-ink)", letterSpacing: 0.5, marginBottom: 3 }}>★ RECOMMENDED</div> : null}
       <div style={{ fontSize: 16, fontWeight: 700, color: "var(--ink)" }}>{o.name}</div>
       <div style={{ fontSize: 13, color: "var(--muted)" }} className="lynia-tabular">★ {o.rating} · {o.trips} trips · ETA {o.eta} min</div>
-      <div style={{ fontSize: 20, fontWeight: 700, margin: "4px 0" }} className="lynia-tabular">${o.fare}</div>
+      <div style={{ margin: "4px 0" }}><Money v={o.fare} size={20} /></div>
       <Button label="Choose this rider" onClick={onChoose} />
     </Card>
   );
@@ -90,8 +91,8 @@ function SortChips({ value, onChange }) {
         return (
           <button key={k} onClick={() => onChange(k)} style={{
             minHeight: 36, padding: "0 14px", borderRadius: "var(--radius-pill)",
-            border: `1px solid ${on ? "var(--accent-text)" : "var(--line)"}`, background: on ? "var(--accent-wash)" : "var(--bg)",
-            color: on ? "var(--accent-text)" : "var(--muted)", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`, background: on ? "var(--accent)" : "var(--bg)",
+            color: on ? "var(--on-accent)" : "var(--muted)", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, cursor: "pointer",
           }}>{lbl}</button>
         );
       })}

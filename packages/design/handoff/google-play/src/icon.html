@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Play app icon — source (512×512)</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { width: 512px; height: 512px; overflow: hidden; }
+</style>
+</head>
+<body>
+<!-- Full-bleed square: Google Play applies its own corner mask to the 512×512 icon,
+     so the tile has NO rounded corners here (unlike assets/brand/lyniago-icon.svg).
+     Dove geometry is the master mark from assets/brand/, creases visible at this size. -->
+<svg width="512" height="512" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LyniaGo app icon">
+  <rect width="128" height="128" fill="#00B14F"></rect>
+  <g transform="translate(16,16)">
+    <polygon points="28,6 58,32 38,42" fill="#fff"></polygon>
+    <polygon points="90,26 14,52 48,60" fill="#fff"></polygon>
+    <polygon points="90,26 48,60 42,84" fill="#fff" opacity=".62"></polygon>
+    <path d="M90 26 L48 60" stroke="#00B14F" stroke-width="2.4" fill="none"></path>
+    <path d="M70.5 30.2 L81.5 43.8" stroke="#00B14F" stroke-width="2.4" fill="none"></path>
+  </g>
+</svg>
+</body>
+</html>

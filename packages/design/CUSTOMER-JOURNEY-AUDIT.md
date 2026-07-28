@@ -62,7 +62,7 @@
 | **F-08** | **Raise price mid-auction.** "Nudge price" only exists *after* expiry. If no one's biting at 0:40, the customer should be able to bump the price live to attract riders instead of waiting to fail first. | D | **P1** |
 | **F-09** | **All offers above your price.** If every rider counters higher, the "cheapest/best" sort and the RECOMMENDED marker need defined behaviour — is the recommended one still shown, and is the over-ask made obvious? | D | **P2** |
 | **F-10** | **Auction resumption.** App closed / backgrounded / connection dropped mid-auction — does the 90s clock keep running server-side, and does the customer return to a live auction, an expired one, or a lost order? | E | **P1** |
-| **F-11** | **Double-broadcast / double-submit.** Rapid taps or a retry-on-timeout could fire two orders. Needs idempotency + a guard state. — ✅ **Fixed** (PR #150): client-generated `idempotencyKey` (`app/home.tsx`, stable per compose attempt, `src/util.ts` `randomUuidV4`) + a partial unique index on `orders(customer_id, idempotency_key)`; `OrdersService.create` (`orders.service.ts`) returns the existing order on replay or on a concurrent-create race (`P2002` fallback). | E | **P2** |
+| **F-11** | **Double-broadcast / double-submit.** Rapid taps or a retry-on-timeout could fire two orders. Needs idempotency + a guard state. | E | **P2** |
 | **F-12** | **Accepted rider cancels the counter before you confirm.** Race between "you accept their counter" and "they withdraw it" — related to `select_race` but for the negotiated price. | E | **P2** |
 
 ### C. Safety / SOS / report

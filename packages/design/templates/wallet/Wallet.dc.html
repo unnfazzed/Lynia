@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Wallet — rider commission" description="Rider commission-wallet screen: balance hero, top-up CTA, show-the-math receipt history and honest-copy card. Every state (loaded / low / negative / grace first-open / empty / loading / offline) via the screenState prop." -->
+<helmet>
+  <script src="./ds-base.js"></script>
+  <script src="../../assets/lynia-icons.js"></script>
+  <style>@keyframes lynia-pulse{0%,100%{opacity:.5}50%{opacity:1}}</style>
+</helmet>
+<div style="min-height:100vh;background:#eceff1;display:flex;justify-content:center;align-items:flex-start;padding:24px;font-family:var(--font-sans)">
+  <div style="width:360px;min-height:740px;background:var(--surface);border-radius:34px;border:10px solid #14181b;overflow:hidden;position:relative;box-shadow:0 20px 60px rgba(20,24,27,.28)">
+    <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:110px;height:22px;background:#14181b;border-radius:0 0 14px 14px;z-index:20"></div>
+    <div style="height:740px;overflow-y:auto">
+      <sc-if value="{{ isOffline }}" hint-placeholder-val="{{ false }}">
+        <x-import component-from-global-scope="LyniaDesignSystem_94c56a.OfflineBanner" state="offline" hint-size="100%,44px"></x-import>
+      </sc-if>
+      <div style="padding:16px">
+        <div style="display:flex;align-items:center;margin:6px 0 12px">
+          <span style="display:inline-flex;align-items:center;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer"><span style="font-size:17px;line-height:1;margin-right:2px">‹</span>Earnings</span>
+          <span style="flex:1"></span>
+          <x-import component-from-global-scope="LyniaDesignSystem_94c56a.StatusPill" status="Online" tone="online" dot="{{ true }}" hint-size="80px,26px"></x-import>
+        </div>
+        <div style="font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.15;color:var(--ink)">Wallet</div>
+        <div style="font-size:14px;color:var(--muted);line-height:1.45;margin:3px 0 14px">Your prepaid commission balance.</div>
+
+        <sc-if value="{{ isLoading }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="LyniaDesignSystem_94c56a.SkeletonList" variant="summary" hint-size="100%,120px"></x-import>
+          <div style="height:12px"></div>
+          <x-import component-from-global-scope="LyniaDesignSystem_94c56a.SkeletonList" variant="row" count="{{ 4 }}" hint-size="100%,240px"></x-import>
+        </sc-if>
+
+        <sc-if value="{{ isNegative }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--danger-wash);border-radius:16px;padding:18px;box-shadow:var(--shadow-card)">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="width:44px;height:44px;border-radius:12px;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-shrink:0"><x-import component-from-global-scope="LyniaDesignSystem_94c56a.Icon" name="banknote" size="{{ 22 }}" color="var(--danger-ink)" hint-size="22px,22px"></x-import></div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600;color:var(--danger-ink)">Commission balance</div>
+                <div style="font-size:32px;font-weight:700;color:var(--ink);line-height:1.05;margin-top:1px;font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{ balanceStr }}</div>
+              </div>
+            </div>
+            <div style="height:1px;background:rgba(143,36,24,.16);margin:14px 0"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <span style="font-size:12px;color:var(--danger-ink);line-height:1.4">{{ negCaption }}</span>
+              <span style="font-size:11px;font-weight:600;color:var(--danger-ink);background:var(--bg);border-radius:999px;padding:3px 10px;white-space:nowrap">Owed</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isPositiveHero }}" hint-placeholder-val="{{ true }}">
+          <div style="background:var(--bg);border-radius:16px;padding:18px;box-shadow:var(--shadow-card)">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="width:44px;height:44px;border-radius:12px;background:var(--accent-wash);display:flex;align-items:center;justify-content:center;flex-shrink:0"><x-import component-from-global-scope="LyniaDesignSystem_94c56a.Icon" name="banknote" size="{{ 22 }}" color="var(--accent-text)" hint-size="22px,22px"></x-import></div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600;color:var(--muted)">Commission balance</div>
+                <div style="font-size:32px;font-weight:700;color:var(--ink);line-height:1.05;margin-top:1px;font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{ balanceStr }}</div>
+              </div>
+            </div>
+            <div style="height:1px;background:var(--line);margin:14px 0"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <span style="font-size:12px;color:var(--muted);line-height:1.4">{{ heroFootLeft }}</span>
+              <span style="font-size:11px;font-weight:600;color:var(--accent-text);background:var(--accent-wash);border-radius:999px;padding:3px 10px;white-space:nowrap">{{ heroFootPill }}</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isOffline }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:8px"><span style="width:6px;height:6px;border-radius:999px;background:var(--muted);display:inline-block"></span>Cached — {{ staleLabel }}</div>
+        </sc-if>
+
+        <sc-if value="{{ lowChipWarn }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--accent-wash);border-radius:12px;padding:12px 14px;margin-top:12px;font-size:13px;color:var(--accent-text);line-height:1.4">{{ lowChipText }}</div>
+        </sc-if>
+        <sc-if value="{{ lowChipDanger }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--danger-wash);border-radius:12px;padding:12px 14px;margin-top:12px;font-size:13px;color:var(--danger-ink);line-height:1.4">{{ lowChipText }}</div>
+        </sc-if>
+
+        <sc-if value="{{ showCTA }}" hint-placeholder-val="{{ true }}">
+          <div style="margin-top:16px">
+            <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Button" label="Top up" onClick="{{ onTopUp }}" hint-size="100%,52px"></x-import>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showHistory }}" hint-placeholder-val="{{ true }}">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin:22px 0 8px">Recent activity</div>
+          <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="background:var(--bg);border-radius:16px;padding:8px 16px 16px;box-shadow:var(--shadow-card)">
+              <x-import component-from-global-scope="LyniaDesignSystem_94c56a.EmptyState" icon="history" title="No activity yet" message="Your commission history starts with your next ride." hint-size="100%,180px"></x-import>
+            </div>
+          </sc-if>
+          <sc-if value="{{ hasReceipts }}" hint-placeholder-val="{{ true }}">
+            <div style="background:var(--bg);border-radius:16px;padding:2px 16px;box-shadow:var(--shadow-card)">
+              <sc-for list="{{ receipts }}" as="r" hint-placeholder-count="4">
+                <div aria-label="{{ r.a11y }}" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)">
+                  <sc-if value="{{ r.isCredit }}" hint-placeholder-val="{{ true }}"><div style="width:36px;height:36px;border-radius:10px;background:var(--accent-wash);display:flex;align-items:center;justify-content:center;flex-shrink:0"><x-import component-from-global-scope="LyniaDesignSystem_94c56a.Icon" name="banknote" size="{{ 18 }}" color="var(--accent-text)" hint-size="18px,18px"></x-import></div></sc-if>
+                  <sc-if value="{{ r.isDebit }}" hint-placeholder-val="{{ false }}"><div style="width:36px;height:36px;border-radius:10px;background:var(--surface);display:flex;align-items:center;justify-content:center;flex-shrink:0"><x-import component-from-global-scope="LyniaDesignSystem_94c56a.Icon" name="package" size="{{ 18 }}" color="var(--muted)" hint-size="18px,18px"></x-import></div></sc-if>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:14px;font-weight:600;color:var(--ink)">{{ r.title }}</div>
+                    <div style="font-size:12px;color:var(--muted);margin-top:2px">{{ r.meta }}</div>
+                  </div>
+                  <sc-if value="{{ r.isCredit }}" hint-placeholder-val="{{ true }}"><div style="font-size:15px;font-weight:700;color:var(--accent-text);font-variant-numeric:tabular-nums">{{ r.amount }}</div></sc-if>
+                  <sc-if value="{{ r.isDebit }}" hint-placeholder-val="{{ false }}"><div style="font-size:15px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums">{{ r.amount }}</div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <sc-if value="{{ showHonest }}" hint-placeholder-val="{{ true }}">
+          <div style="background:var(--highlight-wash);border:1px solid var(--highlight-border);border-radius:16px;padding:16px;margin-top:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--highlight-ink);margin-bottom:5px">How your commission works</div>
+            <div style="font-size:12px;color:var(--highlight-ink);line-height:1.55">{{ honestCopy }}</div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:408,&quot;height&quot;:788},&quot;screenState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;loaded&quot;,&quot;low&quot;,&quot;negative&quot;,&quot;first-open&quot;,&quot;empty&quot;,&quot;loading&quot;,&quot;offline&quot;],&quot;default&quot;:&quot;loaded&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;ratePct&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:10,&quot;min&quot;:0,&quot;max&quot;:15,&quot;unit&quot;:&quot;%&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Server payload&quot;}}">
+class Component extends DCLogic {
+  componentDidMount() { this._t = setInterval(() => { if (window.lucide) { this.forceUpdate(); clearInterval(this._t); } }, 120); }
+  componentWillUnmount() { clearInterval(this._t); }
+  renderVals() {
+    const rate = this.props.ratePct ?? 10;
+    const state = this.props.screenState || "loaded";
+    const floor = 2.00;
+    const m = (n) => (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
+    const words = (n) => { const c = Math.round(Math.abs(n) * 100); return c < 100 ? c + " cents" : (Math.abs(n)).toFixed(2) + " dollars"; };
+    const debit = (title, place, t, fare) => { const amt = -(fare * rate / 100); return { title, meta: t + " · " + rate + "% of $" + fare.toFixed(2), amount: m(amt), isDebit: true, isCredit: false, a11y: "Commission " + words(amt) + ", " + rate + " percent of " + fare.toFixed(0) + " dollars, delivery to " + place + ", " + t }; };
+    const credit = (title, meta, amt, a11y) => ({ title, meta, amount: "+" + m(amt), isDebit: false, isCredit: true, a11y });
+
+    const RIDES = [
+      debit("Delivery to Avondale", "Avondale", "Tue 14:02", 3.00),
+      debit("Delivery to Msasa", "Msasa", "Tue 11:40", 2.40),
+      credit("EcoCash top-up", "Tue 09:10 · ref 8821", 5.00, "EcoCash top-up, 5 dollars, reference 8821, Tuesday 9:10 a.m."),
+      debit("Delivery to Mount Pleasant", "Mount Pleasant", "Mon 16:20", 4.20),
+      debit("Delivery to Belvedere", "Belvedere", "Mon 12:05", 2.80),
+    ];
+    const GRACE = [credit("Starting credit", "From Lynia · commission starts 28 Jul", 5.00, "Starting credit, 5 dollars, from Lynia, commission starts 28 July")];
+
+    let balance = 4.85, receipts = RIDES, isEmpty = false, isFirstOpen = false;
+    if (state === "low") balance = 2.60;
+    else if (state === "negative") balance = -0.30;
+    else if (state === "first-open") { balance = 5.00; receipts = GRACE; isFirstOpen = true; }
+    else if (state === "empty") { balance = 5.00; receipts = []; isEmpty = true; }
+
+    const isLoading = state === "loading";
+    const isOffline = state === "offline";
+    const isNegative = !isLoading && balance < 0;
+    const isPositiveHero = !isLoading && !isNegative;
+    const belowFloor = balance < floor;
+    const gettingLow = !belowFloor && balance < floor + 1;
+
+    return {
+      isLoading, isOffline, isNegative, isPositiveHero, isFirstOpen, isEmpty,
+      balanceStr: m(balance),
+      showRateCaption: !isFirstOpen,
+      rateCaption: "Commission: " + rate + "% per delivery",
+      heroFootLeft: isFirstOpen ? "Commission starts 28 Jul — this is on us" : "Commission: " + rate + "% per delivery",
+      heroFootPill: isFirstOpen ? "Grace credit" : "Prepaid float",
+      negCaption: m(balance) + " owed · your next top-up covers this",
+      graceCaption: "We've added $5 to get you started — commission starts 28 Jul.",
+      lowChipWarn: !isLoading && gettingLow,
+      lowChipDanger: !isLoading && belowFloor,
+      lowChipText: belowFloor
+        ? "You're below the $2.00 balance you need to go online — top up to keep riding."
+        : "Balance is getting low. Top up soon so you can keep riding.",
+      showCTA: !isLoading,
+      showHistory: !isLoading,
+      hasReceipts: !isLoading && !isEmpty,
+      receipts,
+      showHonest: !isLoading,
+      staleLabel: "as of Tue 14:02",
+      honestCopy: "Lynia takes " + rate + "% of each delivery you complete — nothing more. It comes out of this balance, never your cash in hand. Top up when you're low; every deduction shows up here with the ride it came from.",
+      onTopUp: () => {},
+    };
+  }
+}
+</script>
+</body>
+</html>

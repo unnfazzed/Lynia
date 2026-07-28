@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Top-up flow — rider" description="Rider top-up flow: amount entry (min $5, quick chips), phone-number field (receives the payment prompt), and a rail selector (EcoCash / InnBucks / O'mari) — all three push a prompt to the number and share the same 90s wait / timeout / success flow. Drive with the step + rail props." -->
+<helmet>
+  <script src="./ds-base.js"></script>
+  <script src="../../assets/lynia-icons.js"></script>
+  <style>@keyframes lynia-pulse{0%,100%{opacity:.5}50%{opacity:1}}</style>
+</helmet>
+<div style="min-height:100vh;background:#eceff1;display:flex;justify-content:center;align-items:flex-start;padding:24px;font-family:var(--font-sans)">
+  <div style="width:360px;min-height:740px;background:var(--surface);border-radius:34px;border:10px solid #14181b;overflow:hidden;position:relative;box-shadow:0 20px 60px rgba(20,24,27,.28)">
+    <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:110px;height:22px;background:#14181b;border-radius:0 0 14px 14px;z-index:20"></div>
+    <div style="height:740px;overflow-y:auto">
+      <div style="padding:16px">
+        <div style="display:flex;align-items:center;margin:6px 0 14px">
+          <span onClick="{{ onBack }}" style="display:inline-flex;align-items:center;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer"><span style="font-size:17px;line-height:1;margin-right:2px">‹</span>Wallet</span>
+        </div>
+
+        <!-- STEP: amount + phone + rail -->
+        <sc-if value="{{ isAmount }}" hint-placeholder-val="{{ true }}">
+          <div style="font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.15;color:var(--ink);margin-bottom:4px">Top up</div>
+          <div style="font-size:14px;color:var(--muted);margin-bottom:16px">Add to your commission balance. This money can only be spent on commission.</div>
+          <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Field" label="Amount (USD)" value="{{ amount }}" input-mode="decimal" onChange="{{ onAmount }}" error="{{ amountError }}" hint="Between $5.00 and $50.00 per top-up" hint-size="100%,80px"></x-import>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <sc-for list="{{ chips }}" as="c" hint-placeholder-count="3">
+              <sc-if value="{{ c.on }}" hint-placeholder-val="{{ false }}"><button onClick="{{ c.pick }}" style="flex:1;height:44px;border-radius:999px;border:1.5px solid var(--accent);background:var(--accent-wash);color:var(--accent-text);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer">{{ c.label }}</button></sc-if>
+              <sc-if value="{{ c.off }}" hint-placeholder-val="{{ true }}"><button onClick="{{ c.pick }}" style="flex:1;height:44px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer">{{ c.label }}</button></sc-if>
+            </sc-for>
+          </div>
+          <div style="margin-top:16px">
+            <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Field" label="Phone number" value="{{ phone }}" input-mode="tel" onChange="{{ onPhone }}" error="{{ phoneError }}" hint="This number gets the payment prompt — change it if you're paying from another line." hint-size="100%,80px"></x-import>
+          </div>
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin:22px 0 8px">Pay with</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-if value="{{ railEco.on }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ railEco.pick }}" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1.5px solid var(--accent);background:var(--accent-wash);cursor:pointer">
+                <span style="width:58px;height:36px;border-radius:8px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0"><img src="../../assets/brand/rails/ecocash.png" alt="EcoCash" style="max-width:48px;max-height:28px;object-fit:contain;display:block"></span>
+                <span style="flex:1"><span style="display:block;font-size:14px;font-weight:600;color:var(--ink)">EcoCash</span><span style="display:block;font-size:12px;color:var(--accent-text);margin-top:1px">Approve on your phone</span></span>
+                <span style="width:20px;height:20px;border-radius:999px;border:6px solid var(--accent);background:var(--bg);flex-shrink:0"></span>
+              </button>
+            </sc-if>
+            <sc-if value="{{ railEco.off }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ railEco.pick }}" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);cursor:pointer">
+                <span style="width:58px;height:36px;border-radius:8px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0"><img src="../../assets/brand/rails/ecocash.png" alt="EcoCash" style="max-width:48px;max-height:28px;object-fit:contain;display:block"></span>
+                <span style="flex:1"><span style="display:block;font-size:14px;font-weight:600;color:var(--ink)">EcoCash</span><span style="display:block;font-size:12px;color:var(--muted);margin-top:1px">Approve on your phone</span></span>
+                <span style="width:20px;height:20px;border-radius:999px;border:1.5px solid var(--line);background:var(--bg);flex-shrink:0"></span>
+              </button>
+            </sc-if>
+            <sc-if value="{{ railInn.on }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ railInn.pick }}" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1.5px solid var(--accent);background:var(--accent-wash);cursor:pointer">
+                <span style="width:58px;height:36px;border-radius:8px;background:#13294B;display:flex;align-items:center;justify-content:center;flex-shrink:0"><img src="../../assets/brand/rails/innbucks.png" alt="InnBucks" style="max-width:52px;max-height:28px;object-fit:contain;display:block"></span>
+                <span style="flex:1"><span style="display:block;font-size:14px;font-weight:600;color:var(--ink)">InnBucks</span><span style="display:block;font-size:12px;color:var(--accent-text);margin-top:1px">Approve on your phone</span></span>
+                <span style="width:20px;height:20px;border-radius:999px;border:6px solid var(--accent);background:var(--bg);flex-shrink:0"></span>
+              </button>
+            </sc-if>
+            <sc-if value="{{ railInn.off }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ railInn.pick }}" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);cursor:pointer">
+                <span style="width:58px;height:36px;border-radius:8px;background:#13294B;display:flex;align-items:center;justify-content:center;flex-shrink:0"><img src="../../assets/brand/rails/innbucks.png" alt="InnBucks" style="max-width:52px;max-height:28px;object-fit:contain;display:block"></span>
+                <span style="flex:1"><span style="display:block;font-size:14px;font-weight:600;color:var(--ink)">InnBucks</span><span style="display:block;font-size:12px;color:var(--muted);margin-top:1px">Approve on your phone</span></span>
+                <span style="width:20px;height:20px;border-radius:999px;border:1.5px solid var(--line);background:var(--bg);flex-shrink:0"></span>
+              </button>
+            </sc-if>
+            <sc-if value="{{ railOmari.on }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ railOmari.pick }}" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1.5px solid var(--accent);background:var(--accent-wash);cursor:pointer">
+                <span style="width:58px;height:36px;border-radius:8px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0"><img src="../../assets/brand/rails/omari.png" alt="O'mari" style="max-width:48px;max-height:30px;object-fit:contain;display:block"></span>
+                <span style="flex:1"><span style="display:block;font-size:14px;font-weight:600;color:var(--ink)">O'mari</span><span style="display:block;font-size:12px;color:var(--accent-text);margin-top:1px">Approve on your phone</span></span>
+                <span style="width:20px;height:20px;border-radius:999px;border:6px solid var(--accent);background:var(--bg);flex-shrink:0"></span>
+              </button>
+            </sc-if>
+            <sc-if value="{{ railOmari.off }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ railOmari.pick }}" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);cursor:pointer">
+                <span style="width:58px;height:36px;border-radius:8px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0"><img src="../../assets/brand/rails/omari.png" alt="O'mari" style="max-width:48px;max-height:30px;object-fit:contain;display:block"></span>
+                <span style="flex:1"><span style="display:block;font-size:14px;font-weight:600;color:var(--ink)">O'mari</span><span style="display:block;font-size:12px;color:var(--muted);margin-top:1px">Approve on your phone</span></span>
+                <span style="width:20px;height:20px;border-radius:999px;border:1.5px solid var(--line);background:var(--bg);flex-shrink:0"></span>
+              </button>
+            </sc-if>
+          </div>
+          <div style="margin-top:20px">
+            <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Button" label="{{ continueLabel }}" onClick="{{ onContinue }}" disabled="{{ continueDisabled }}" hint-size="100%,52px"></x-import>
+          </div>
+        </sc-if>
+
+        <!-- STEP: prompt-to-phone wait (shared by every rail) -->
+        <sc-if value="{{ isWait }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:40px">
+            <div style="position:relative;width:132px;height:132px">
+              <svg width="132" height="132" viewBox="0 0 132 132" style="transform:rotate(-90deg)">
+                <circle cx="66" cy="66" r="52" fill="none" stroke="var(--line)" stroke-width="8"></circle>
+                <circle cx="66" cy="66" r="52" fill="none" stroke="{{ ringColor }}" stroke-width="8" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="{{ ringOffset }}" style="transition:stroke-dashoffset 1s linear"></circle>
+              </svg>
+              <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+                <span style="font-size:30px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums">{{ seconds }}</span>
+                <span style="font-size:11px;color:var(--muted)">seconds</span>
+              </div>
+            </div>
+            <div style="font-size:20px;font-weight:700;color:var(--ink);margin-top:24px">Check your phone</div>
+            <div style="font-size:14px;color:var(--muted);margin-top:6px;max-width:260px;line-height:1.5">Approve the {{ railName }} prompt on <span style="font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums">{{ phone }}</span>. We'll credit your balance the moment it clears.</div>
+            <div style="font-size:13px;color:var(--accent-text);font-weight:600;margin-top:16px;font-variant-numeric:tabular-nums">{{ waitAmount }} · {{ railName }}</div>
+            <div style="width:100%;margin-top:auto;padding-top:40px">
+              <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Button" label="Cancel request" variant="ghost" onClick="{{ onCancel }}" hint-size="100%,48px"></x-import>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- STEP: timeout -->
+        <sc-if value="{{ isTimeout }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--bg);border-radius:16px;padding:8px 16px 20px;box-shadow:var(--shadow-card);margin-top:8px">
+            <x-import component-from-global-scope="LyniaDesignSystem_94c56a.EmptyState" icon="clock" title="The request expired" message="No money moved. You can try the top-up again." hint-size="100%,190px">
+              <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Button" label="Try again" onClick="{{ onRetry }}" hint-size="100%,52px"></x-import>
+            </x-import>
+          </div>
+        </sc-if>
+
+        <!-- STEP: declined -->
+        <sc-if value="{{ isDeclined }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--bg);border-radius:16px;padding:8px 16px 20px;box-shadow:var(--shadow-card);margin-top:8px">
+            <x-import component-from-global-scope="LyniaDesignSystem_94c56a.EmptyState" icon="circle-alert" title="The payment was declined" message="{{ declinedMsg }}" hint-size="100%,210px">
+              <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Button" label="Try again" onClick="{{ onRetry }}" hint-size="100%,52px"></x-import>
+            </x-import>
+          </div>
+        </sc-if>
+
+        <!-- STEP: success -->
+        <sc-if value="{{ isSuccess }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:40px">
+            <div style="width:88px;height:88px;border-radius:999px;background:var(--accent-wash);display:flex;align-items:center;justify-content:center">
+              <span style="font-size:44px;color:var(--accent-text);line-height:1">✓</span>
+            </div>
+            <div style="font-size:22px;font-weight:700;color:var(--ink);margin-top:16px;font-variant-numeric:tabular-nums">{{ waitAmount }} added</div>
+            <div style="font-size:14px;color:var(--muted);margin-top:6px">New balance <span style="font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums">{{ newBalance }}</span></div>
+            <div style="width:100%;margin-top:24px;background:var(--bg);border-radius:16px;padding:2px 16px;box-shadow:var(--shadow-card)">
+              <div style="display:flex;align-items:center;gap:12px;padding:14px 0">
+                <div style="flex:1;text-align:left"><div style="font-size:14px;font-weight:600;color:var(--ink)">{{ railName }} top-up</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Just now · ref 9042</div></div>
+                <div style="font-size:15px;font-weight:700;color:var(--accent-text);font-variant-numeric:tabular-nums">+{{ waitAmount }}</div>
+              </div>
+            </div>
+            <div style="width:100%;margin-top:20px">
+              <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Button" label="Back to wallet" onClick="{{ onBack }}" hint-size="100%,52px"></x-import>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:408,&quot;height&quot;:788},&quot;step&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;amount&quot;,&quot;ussd-wait&quot;,&quot;timeout&quot;,&quot;declined&quot;,&quot;success&quot;],&quot;default&quot;:&quot;amount&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;rail&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;ecocash&quot;,&quot;innbucks&quot;,&quot;omari&quot;],&quot;default&quot;:&quot;ecocash&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;}}">
+class Component extends DCLogic {
+  state = { step: null, rail: null, amount: "10.00", phone: "077 234 5678", seconds: 90 };
+
+  componentDidMount() { this.syncTimer(); }
+  componentDidUpdate(prev) {
+    if (prev.step !== this.props.step || prev.rail !== this.props.rail) this.setState({ step: null, rail: null, seconds: 90 });
+    this.syncTimer();
+  }
+  componentWillUnmount() { clearInterval(this._iv); }
+
+  step() { return this.state.step || this.props.step || "amount"; }
+  rail() { return this.state.rail || this.props.rail || "ecocash"; }
+
+  syncTimer() {
+    const on = this.step() === "ussd-wait";
+    if (on && !this._iv) {
+      this._iv = setInterval(() => {
+        this.setState((s) => {
+          if (s.seconds <= 1) { clearInterval(this._iv); this._iv = null; return { seconds: 0, step: "timeout" }; }
+          return { seconds: s.seconds - 1 };
+        });
+      }, 1000);
+    } else if (!on && this._iv) { clearInterval(this._iv); this._iv = null; }
+  }
+
+  fmtPhone(raw) {
+    const d = (raw || "").replace(/\D/g, "").slice(0, 10);
+    const p = [d.slice(0, 3), d.slice(3, 6), d.slice(6, 10)].filter(Boolean);
+    return p.join(" ");
+  }
+  phoneDigits() { return (this.state.phone || "").replace(/\D/g, ""); }
+  phoneValid() { const d = this.phoneDigits(); return d.length === 10 && d.startsWith("07"); }
+
+  renderVals() {
+    const step = this.step(), rail = this.rail();
+    const m = (n) => "$" + n.toFixed(2);
+    const amt = parseFloat(this.state.amount) || 0;
+    let err = "";
+    if (this.state.amount !== "") { if (amt < 5) err = "Minimum top-up is $5.00"; else if (amt > 50) err = "Top-up limit is $50.00 at a time"; }
+    const RAILS = [
+      { id: "ecocash", name: "EcoCash", initial: "e", note: "Approve on your phone", brandBg: "#0072CE" },
+      { id: "innbucks", name: "InnBucks", initial: "iB", note: "Approve on your phone", brandBg: "#F5871F" },
+      { id: "omari", name: "O'mari", initial: "O", note: "Approve on your phone", brandBg: "#00A94F" },
+    ];
+    const railObj = RAILS.find((r) => r.id === rail) || RAILS[0];
+    const chipVals = [5, 10, 20];
+    const phoneOk = this.phoneValid();
+    const phoneErr = this.state.phone.trim() !== "" && !phoneOk ? "Enter a valid mobile number, e.g. 077 123 4567" : "";
+
+    return {
+      isAmount: step === "amount",
+      isWait: step === "ussd-wait",
+      isTimeout: step === "timeout",
+      isSuccess: step === "success",
+      isDeclined: step === "declined",
+      declinedMsg: "No money left your " + railObj.name + ". This usually means the " + railObj.name + " balance was too low, or the request was declined on your phone.",
+      amount: this.state.amount,
+      amountError: err,
+      onAmount: (v) => this.setState({ amount: v }),
+      phone: this.state.phone,
+      phoneError: phoneErr,
+      onPhone: (v) => this.setState({ phone: this.fmtPhone(v) }),
+      chips: chipVals.map((v) => ({ label: m(v), on: amt === v, off: amt !== v, pick: () => this.setState({ amount: v.toFixed(2) }) })),
+      railEco: { name: "EcoCash", note: "Approve on your phone", on: rail === "ecocash", off: rail !== "ecocash", pick: () => this.setState({ rail: "ecocash" }) },
+      railInn: { name: "InnBucks", note: "Approve on your phone", on: rail === "innbucks", off: rail !== "innbucks", pick: () => this.setState({ rail: "innbucks" }) },
+      railOmari: { name: "O'mari", note: "Approve on your phone", on: rail === "omari", off: rail !== "omari", pick: () => this.setState({ rail: "omari" }) },
+      continueLabel: "Request " + m(amt) + " via " + railObj.name,
+      continueDisabled: amt < 5 || amt > 50 || !phoneOk,
+      onContinue: () => this.setState({ step: "ussd-wait", seconds: 90 }),
+      seconds: this.state.seconds,
+      ringColor: this.state.seconds <= 20 ? "var(--danger)" : "var(--accent)",
+      ringOffset: 326.7 * (1 - this.state.seconds / 90),
+      waitAmount: m(amt),
+      railName: railObj.name,
+      onCancel: () => this.setState({ step: "amount" }),
+      onRetry: () => this.setState({ step: "amount" }),
+      newBalance: m(4.85 + amt),
+      onBack: () => this.setState({ step: "amount" }),
+    };
+  }
+}
+</script>
+</body>
+</html>

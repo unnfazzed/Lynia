@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Go-online gate — top up to keep riding" description="The commission low-balance online-gate refusal, in the existing gate-state family: status → reason → exact amount needed → one CTA into the Wallet top-up. Plus the cleared 'You're back online' variant. Drive with the state + balance props." -->
+<helmet>
+  <script src="./ds-base.js"></script>
+  <script src="../../assets/lynia-icons.js"></script>
+  <style>@keyframes lynia-pulse{0%,100%{opacity:.5}50%{opacity:1}}@keyframes lynia-toast{0%{opacity:0;transform:translate(-50%,12px)}100%{opacity:1;transform:translate(-50%,0)}}</style>
+</helmet>
+<div style="min-height:100vh;background:#eceff1;display:flex;justify-content:center;align-items:flex-start;padding:24px;font-family:var(--font-sans)">
+  <div style="width:360px;min-height:740px;background:var(--surface);border-radius:34px;border:10px solid #14181b;overflow:hidden;position:relative;box-shadow:0 20px 60px rgba(20,24,27,.28)">
+    <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:110px;height:22px;background:#14181b;border-radius:0 0 14px 14px;z-index:20"></div>
+    <div style="height:740px;overflow-y:auto">
+      <div style="padding:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin:6px 0 16px">
+          <svg width="24" height="24" viewBox="0 0 96 96" aria-hidden="true"><polygon points="28,6 58,32 38,42" fill="var(--accent)"></polygon><polygon points="90,26 14,52 48,60" fill="var(--accent)"></polygon><polygon points="90,26 48,60 42,84" fill="var(--accent-700)"></polygon></svg>
+          <span style="font-family:var(--font-wordmark);font-size:18px;font-weight:600;color:var(--ink)">LyniaGo</span>
+          <span style="flex:1"></span>
+          <sc-if value="{{ isGated }}" hint-placeholder-val="{{ true }}">
+            <x-import component-from-global-scope="LyniaDesignSystem_94c56a.StatusPill" status="Offline" tone="offline" dot="{{ true }}" hint-size="80px,26px"></x-import>
+          </sc-if>
+          <sc-if value="{{ isCleared }}" hint-placeholder-val="{{ false }}">
+            <x-import component-from-global-scope="LyniaDesignSystem_94c56a.StatusPill" status="Online" tone="online" dot="{{ true }}" hint-size="80px,26px"></x-import>
+          </sc-if>
+        </div>
+
+        <!-- GATED -->
+        <sc-if value="{{ isGated }}" hint-placeholder-val="{{ true }}">
+          <div aria-label="{{ a11y }}" style="background:var(--bg);border-radius:16px;padding:8px 16px 20px;box-shadow:var(--shadow-card)">
+            <x-import component-from-global-scope="LyniaDesignSystem_94c56a.EmptyState" icon="banknote" title="Top up to keep riding" message="{{ gateMsg }}" hint-size="100%,320px">
+              <div style="background:var(--accent-wash);border-radius:12px;padding:12px 16px;text-align:center">
+                <div style="font-size:12px;color:var(--accent-text)">Amount to go back online</div>
+                <div style="font-size:24px;font-weight:700;color:var(--ink);margin-top:2px;font-variant-numeric:tabular-nums">{{ neededStr }}</div>
+              </div>
+              <div style="margin-top:12px">
+                <x-import component-from-global-scope="LyniaDesignSystem_94c56a.Button" label="{{ ctaLabel }}" onClick="{{ onTopUp }}" hint-size="100%,52px"></x-import>
+              </div>
+              <div style="font-size:12px;color:var(--muted);text-align:center;margin-top:12px;line-height:1.5">This isn't a fine — it's the prepaid balance rides come out of. Nothing was taken from your cash.</div>
+            </x-import>
+          </div>
+        </sc-if>
+
+        <!-- CLEARED -->
+        <sc-if value="{{ isCleared }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--bg);border-radius:16px;padding:16px;box-shadow:var(--shadow-card);margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="flex:1"><div style="font-size:14px;font-weight:600;color:var(--ink)">You're online</div><div style="font-size:12px;color:var(--muted);margin-top:2px">New orders arrive live — you're first in line.</div></div>
+              <x-import component-from-global-scope="LyniaDesignSystem_94c56a.StatusPill" status="Online" tone="online" dot="{{ true }}" hint-size="70px,26px"></x-import>
+            </div>
+          </div>
+          <div style="background:var(--bg);border-radius:16px;padding:16px;box-shadow:var(--shadow-card)">
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--accent-text);font-weight:600"><span style="width:8px;height:8px;border-radius:999px;background:var(--accent);display:inline-block"></span>New order nearby</div>
+            <div style="font-size:15px;font-weight:600;color:var(--ink);margin-top:8px">Avondale → CBD</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">Documents envelope · 3.2 km</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px"><span style="font-size:12px;color:var(--muted)">Customer's price</span><span style="font-size:20px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums">$2.50</span></div>
+          </div>
+          <div style="position:fixed;left:50%;bottom:32px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:999px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;box-shadow:var(--shadow-menu);animation:lynia-toast .3s ease-out">
+            <span style="width:18px;height:18px;border-radius:999px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1">✓</span>You're back online
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:408,&quot;height&quot;:788},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;gated&quot;,&quot;cleared&quot;],&quot;default&quot;:&quot;gated&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;balance&quot;:{&quot;editor&quot;:&quot;float&quot;,&quot;default&quot;:0.85,&quot;min&quot;:-2,&quot;max&quot;:2,&quot;step&quot;:0.05,&quot;unit&quot;:&quot;$&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Server payload&quot;}}">
+class Component extends DCLogic {
+  componentDidMount() { this._t = setInterval(() => { if (window.lucide) { this.forceUpdate(); clearInterval(this._t); } }, 120); }
+  componentWillUnmount() { clearInterval(this._t); }
+  renderVals() {
+    const state = this.props.state || "gated";
+    const floor = 2.00;
+    const balance = this.props.balance ?? 0.85;
+    const needed = Math.max(0, floor - balance);
+    const m = (n) => "$" + n.toFixed(2);
+    return {
+      isGated: state === "gated",
+      isCleared: state === "cleared",
+      balanceStr: m(balance),
+      floorStr: m(floor),
+      neededStr: m(needed),
+      gateMsg: "You're offline. Your commission balance is " + m(balance) + " — below the " + m(floor) + " you need to accept rides.",
+      ctaLabel: "Top up " + m(needed),
+      onTopUp: () => {},
+      a11y: "You're offline. Your commission balance is " + balance.toFixed(2) + " dollars, below the " + floor.toFixed(2) + " dollars you need to accept rides. Top up " + needed.toFixed(2) + " dollars to go back online.",
+    };
+  }
+}
+</script>
+</body>
+</html>

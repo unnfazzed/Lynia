@@ -6,17 +6,30 @@ export interface StepperEvent {
 }
 
 export interface StepperProps {
-  /** Append-only order events; the first timestamp per status stamps that step. */
+  /** Event API: append-only order events (status + ISO createdAt). */
   events?: StepperEvent[];
-  /** The order's current status — drives which step is done / now / todo. */
-  currentStatus: string;
-  /** Which side's paired labels to render. */
+  /** Event API: the order's current status. */
+  currentStatus?: string;
+  /** Event API: which side's labels to show. Default "customer". */
   view?: "customer" | "rider";
+  /** Plain API: explicit step labels (e.g. RESTAURANT_STEPS). Switches off the paired labels. */
+  steps?: string[];
+  /** Plain API: 0-based index of the current step. */
+  step?: number;
+  /** Plain API: time stamp per step index, e.g. { 0: "09:41", 1: "just now" }. */
+  times?: Record<number, string>;
+  /** Mark a step index as failed — danger ring, "!" glyph, danger label. */
+  failAt?: number;
   style?: React.CSSProperties;
 }
 
+/** The Food flavour of the shared 7-step grammar. */
+export declare const RESTAURANT_STEPS: string[];
+
 /**
- * The §5c 7-step delivery journey timeline (customer or rider view).
+ * The one delivery timeline for every vertical — 7 steps, ✓ + time behind, accent "now", muted
+ * ahead. Use the event API for Send, the plain API (steps/step/times) for verticals with their own
+ * step copy.
  * @dsCard group="Components"
  */
 export declare function Stepper(props: StepperProps): React.ReactElement;

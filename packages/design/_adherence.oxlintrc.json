@@ -21,10 +21,15 @@
               "components/core/**",
               "components/feedback/**",
               "components/forms/**",
+              "components/home/**",
               "components/journey/**",
+              "components/shell/**",
               "components/typography/**",
               "explorations/journey/**",
+              "explorations/restaurants/**",
+              "explorations/store/**",
               "handoff/**",
+              "handoff/google-play/src/**",
               "ui_kits/admin/**",
               "ui_kits/mobile/**",
               "ui_kits/support/**"
@@ -47,6 +52,22 @@
       {
         "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Inter|Fredoka))/i]",
         "message": "Font not provided by the design system. Available: Inter, Fredoka."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='AppBar'] > JSXAttribute > JSXIdentifier[name!=/^(?:title|sub|back|right|onBack|transparent|style|key|ref|className|style|children)$/]",
+        "message": "<AppBar> doesn't accept that prop. Declared props: title, sub, back, right, onBack, transparent, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='LiveJob'] > JSXAttribute > JSXIdentifier[name!=/^(?:id|title|meta|step|steps|icon|onClick|key|ref|className|style|children)$/]",
+        "message": "<LiveJob> doesn't accept that prop. Declared props: id, title, meta, step, steps, icon, onClick."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='AppScreen'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|footer|tab|tabs|tabDot|banner|bg|dark|onTab|style|key|ref|className|style|children)$/]",
+        "message": "<AppScreen> doesn't accept that prop. Declared props: children, footer, tab, tabs, tabDot, banner, bg, dark, onTab, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='BrandHeader'] > JSXAttribute > JSXIdentifier[name!=/^(?:address|label|searchPlaceholder|showSearch|onAddress|onSearch|onBell|onProfile|style|key|ref|className|style|children)$/]",
+        "message": "<BrandHeader> doesn't accept that prop. Declared props: address, label, searchPlaceholder, showSearch, onAddress, onSearch, onBell, onProfile, style."
       },
       {
         "selector": "JSXOpeningElement[name.name='Button'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|children|onClick|variant|disabled|loading|block|style|key|ref|className|style|children)$/]",
@@ -85,12 +106,32 @@
         "message": "<Label> doesn't accept that prop. Declared props: children, style."
       },
       {
+        "selector": "JSXOpeningElement[name.name='LiveOrderCard'] > JSXAttribute > JSXIdentifier[name!=/^(?:title|meta|step|steps|icon|onClick|style|key|ref|className|style|children)$/]",
+        "message": "<LiveOrderCard> doesn't accept that prop. Declared props: title, meta, step, steps, icon, onClick, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Money'] > JSXAttribute > JSXIdentifier[name!=/^(?:v|size|weight|color|currency|style|key|ref|className|style|children)$/]",
+        "message": "<Money> doesn't accept that prop. Declared props: v, size, weight, color, currency, style."
+      },
+      {
         "selector": "JSXOpeningElement[name.name='OfflineBanner'] > JSXAttribute > JSXIdentifier[name!=/^(?:state|style|key|ref|className|style|children)$/]",
         "message": "<OfflineBanner> doesn't accept that prop. Declared props: state, style."
       },
       {
         "selector": "JSXOpeningElement[name.name='OfflineBanner'] > JSXAttribute[name.name='state'] > Literal[value!=/^(?:online|offline|reconnecting)$/]",
         "message": "<OfflineBanner> state must be one of 'online' | 'offline' | 'reconnecting'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='ReorderItem'] > JSXAttribute > JSXIdentifier[name!=/^(?:id|name|price|photo|key|ref|className|style|children)$/]",
+        "message": "<ReorderItem> doesn't accept that prop. Declared props: id, name, price, photo."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='RestaurantCard'] > JSXAttribute > JSXIdentifier[name!=/^(?:name|rating|ratingCount|eta|fee|photo|closed|note|width|onClick|style|key|ref|className|style|children)$/]",
+        "message": "<RestaurantCard> doesn't accept that prop. Declared props: name, rating, ratingCount, eta, fee, photo, closed, note, width, onClick, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Service'] > JSXAttribute > JSXIdentifier[name!=/^(?:id|icon|label|sub|bg|soon|key|ref|className|style|children)$/]",
+        "message": "<Service> doesn't accept that prop. Declared props: id, icon, label, sub, bg, soon."
       },
       {
         "selector": "JSXOpeningElement[name.name='Skeleton'] > JSXAttribute > JSXIdentifier[name!=/^(?:width|height|radius|style|key|ref|className|style|children)$/]",
@@ -103,6 +144,10 @@
       {
         "selector": "JSXOpeningElement[name.name='SkeletonList'] > JSXAttribute[name.name='variant'] > Literal[value!=/^(?:card|row|stepper|summary)$/]",
         "message": "<SkeletonList> variant must be one of 'card' | 'row' | 'stepper' | 'summary'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='StatusBar'] > JSXAttribute > JSXIdentifier[name!=/^(?:dark|time|network|battery|style|key|ref|className|style|children)$/]",
+        "message": "<StatusBar> doesn't accept that prop. Declared props: dark, time, network, battery, style."
       },
       {
         "selector": "JSXOpeningElement[name.name='StatusPill'] > JSXAttribute > JSXIdentifier[name!=/^(?:status|tone|dot|style|key|ref|className|style|children)$/]",
@@ -119,6 +164,18 @@
       {
         "selector": "JSXOpeningElement[name.name='Sub'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|style|key|ref|className|style|children)$/]",
         "message": "<Sub> doesn't accept that prop. Declared props: children, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='SystemState'] > JSXAttribute > JSXIdentifier[name!=/^(?:tone|icon|mark|title|message|primary|secondary|onPrimary|onSecondary|style|key|ref|className|style|children)$/]",
+        "message": "<SystemState> doesn't accept that prop. Declared props: tone, icon, mark, title, message, primary, secondary, onPrimary, onSecondary, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='SystemState'] > JSXAttribute[name.name='tone'] > Literal[value!=/^(?:white|green)$/]",
+        "message": "<SystemState> tone must be one of 'white' | 'green'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='AppTab'] > JSXAttribute > JSXIdentifier[name!=/^(?:id|icon|label|key|ref|className|style|children)$/]",
+        "message": "<AppTab> doesn't accept that prop. Declared props: id, icon, label."
       }
     ]
   },
@@ -134,6 +191,18 @@
   ],
   "x-omelette": {
     "components": {
+      "AppBar": {
+        "replaces": []
+      },
+      "LiveJob": {
+        "replaces": []
+      },
+      "AppScreen": {
+        "replaces": []
+      },
+      "BrandHeader": {
+        "replaces": []
+      },
       "Button": {
         "replaces": []
       },
@@ -155,13 +224,31 @@
       "Label": {
         "replaces": []
       },
+      "LiveOrderCard": {
+        "replaces": []
+      },
+      "Money": {
+        "replaces": []
+      },
       "OfflineBanner": {
+        "replaces": []
+      },
+      "ReorderItem": {
+        "replaces": []
+      },
+      "RestaurantCard": {
+        "replaces": []
+      },
+      "Service": {
         "replaces": []
       },
       "Skeleton": {
         "replaces": []
       },
       "SkeletonList": {
+        "replaces": []
+      },
+      "StatusBar": {
         "replaces": []
       },
       "StatusPill": {
@@ -171,6 +258,12 @@
         "replaces": []
       },
       "Sub": {
+        "replaces": []
+      },
+      "SystemState": {
+        "replaces": []
+      },
+      "AppTab": {
         "replaces": []
       }
     },
@@ -187,6 +280,8 @@
       "--cta-fill",
       "--cta-fill-pressed",
       "--danger",
+      "--danger-ink",
+      "--danger-wash",
       "--font-family",
       "--font-sans",
       "--font-wordmark",
@@ -266,6 +361,8 @@
       "--cta-fill-pressed": "color",
       "--highlight": "color",
       "--danger": "color",
+      "--danger-wash": "color",
+      "--danger-ink": "color",
       "--success": "color",
       "--on-accent": "color",
       "--highlight-wash": "color",

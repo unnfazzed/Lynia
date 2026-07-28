@@ -3,8 +3,8 @@ import * as React from "react";
 export interface StatusPillProps {
   /** The status text. Underscores render as spaces. */
   status: string;
-  /** neutral/online/success → accent · offline/reconnecting → muted. */
-  tone?: "neutral" | "online" | "offline" | "reconnecting" | "success";
+  /** neutral/online → accent · offline/reconnecting → muted. */
+  tone?: "neutral" | "online" | "offline" | "reconnecting";
   /** Show a leading tone-coloured dot (used on the rider connection chip). */
   dot?: boolean;
   style?: React.CSSProperties;

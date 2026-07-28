@@ -27,7 +27,8 @@
   --cta-fill-pressed: #006b27;
   --highlight: #f2b705;   /* 'recommended' marker only (gold, sparing) */
   --danger: #c0392b;      /* errors, destructive */
-  --danger-wash: #faedeb; /* danger tint — 'bad' status pills, warn bars, danger hover */
+  --danger-wash: #faedeb; /* soft red wash — negative-balance hero, below-floor chip (never red text on white) */
+  --danger-ink: #8f2418;  /* darker danger text on --danger-wash (≈6:1) — owed labels, gate reason */
   --success: #00b14f;     /* confirmation fills (== accent); use --accent-text for success TEXT */
   --on-accent: #ffffff;   /* text/icons on an accent (or danger) fill — the one inverse */
 

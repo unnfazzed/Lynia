@@ -1,5 +1,10 @@
 # Lynia design-system → GitHub / Claude Code handoff
 
+> **⚠ July 2026:** this file covers the original token/parity refresh, which is done. The current
+> handoff (new home, one rider app, restaurants vertical) is **`update-2026-07/README.md`** — start
+> there. The repo flow below (rsync into `packages/design/`, run Claude Code on a branch) is
+> unchanged and still applies.
+
 Your repo **unnfazzed/Lynia** already vendors this design system at `packages/design/`, and
 your apps (`apps/mobile`, `apps/admin`) consume its tokens through
 `packages/shared/src/design-tokens.ts`. So this is an **update-in-place**, not a new

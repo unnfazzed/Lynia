@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LyniaGo — Google Play asset kit</title>
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: #1c2226; }
+  body { font-family: var(--font-sans); color: #fff; }
+  a { color: #8fdcae; } a:hover { color: #b9ecce; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../assets/lynia-icons.js"></script>
+<script src="../../_ds_bundle.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="src/tweaks-panel.jsx"></script>
+<script type="text/babel" src="src/play-shot-parts.jsx"></script>
+<script type="text/babel">
+const { PlayShot, SHOTS } = window.PlayShotParts;
+const { TweaksPanel, useTweaks, TweakSection, TweakRadio, TweakToggle, TweakColor } = window;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "tone": "utility",
+  "canvas": "#009D3B",
+  "bezel": true
+}/*EDITMODE-END*/;
+
+const boardStyles = {
+  page: { maxWidth: 1560, margin: "0 auto", padding: "40px 36px 80px" },
+  h1: { fontSize: 22, fontWeight: 700, margin: 0 },
+  meta: { fontSize: 13, color: "rgba(255,255,255,.55)", marginTop: 6, lineHeight: 1.5 },
+  h2: { fontSize: 13, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "rgba(255,255,255,.65)", margin: "44px 0 6px" },
+  spec: { fontSize: 12, color: "rgba(255,255,255,.45)", marginBottom: 16 },
+  cardLabel: { fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.75)", marginBottom: 6 },
+  alt: { fontSize: 11, color: "rgba(255,255,255,.45)", marginTop: 6, lineHeight: 1.45 },
+};
+
+function ScaledFrame({ src, w, h, scale, label }) {
+  return (
+    <div>
+      <div style={boardStyles.cardLabel}>{label}</div>
+      <div style={{ width: w * scale, height: h * scale, overflow: "hidden", borderRadius: 10, boxShadow: "0 8px 30px rgba(0,0,0,.4)" }}>
+        <iframe src={src} title={label} style={{ width: w, height: h, border: "none", transform: `scale(${scale})`, transformOrigin: "top left", pointerEvents: "none" }} scrolling="no"></iframe>
+      </div>
+    </div>
+  );
+}
+
+const SHOT_SCALE = 0.235;
+
+function Board() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  return (
+    <div style={boardStyles.page}>
+      <h1 style={boardStyles.h1}>LyniaGo — Google Play asset kit</h1>
+      <div style={boardStyles.meta}>
+        Everything Play Console requires for the main store listing. Store-ready PNGs live in <a href="export/">export/</a>;
+        listing copy (name, descriptions, alt text) in <a href="LISTING-COPY.md">LISTING-COPY.md</a>.
+        Sources: <a href="src/icon.html">icon</a> · <a href="src/feature.html">feature graphic</a> · <a href="src/shots.html">screenshots</a>.
+      </div>
+
+      <h2 style={boardStyles.h2} data-screen-label="Icon + feature graphic">Icon &amp; feature graphic</h2>
+      <div style={boardStyles.spec}>Icon: 512×512 32-bit PNG, full square — Play masks the corners. Feature graphic: 1024×500 PNG (no alpha), no phone imagery, dove kept small to avoid icon duplication, centre kept clear for a video play button.</div>
+      <div style={{ display: "flex", gap: 32, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <ScaledFrame src="src/icon.html" w={512} h={512} scale={0.29} label="App icon — 512×512" />
+        <ScaledFrame src="src/feature.html" w={1024} h={500} scale={0.58} label="Feature graphic — 1024×500" />
+      </div>
+
+      <h2 style={boardStyles.h2} data-screen-label="Phone screenshots">Phone screenshots — 8 × 1080×1920</h2>
+      <div style={boardStyles.spec}>9:16 portrait at 1080×1920 — ≥4 at this size keeps the listing eligible for Play's large-format promotion surfaces. Upload order = reading order below. Caption zone stays under ~20% of the frame.</div>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+        {SHOTS.map((s) => {
+          const Screen = s.screen;
+          return (
+            <div key={s.n} style={{ width: 1080 * SHOT_SCALE }} data-screen-label={`Shot ${s.n}`}>
+              <div style={boardStyles.cardLabel} className="lynia-tabular">{String(s.n).padStart(2, "0")}</div>
+              <div style={{ width: 1080 * SHOT_SCALE, height: 1920 * SHOT_SCALE, overflow: "hidden", borderRadius: 10, boxShadow: "0 8px 30px rgba(0,0,0,.4)" }}>
+                <div style={{ transform: `scale(${SHOT_SCALE})`, transformOrigin: "top left" }}>
+                  <PlayShot caption={t.tone === "warm" ? s.warm : s.caption} sub={s.sub} canvas={t.canvas} bezel={t.bezel}>
+                    <Screen />
+                  </PlayShot>
+                </div>
+              </div>
+              <div style={boardStyles.alt}>alt: {s.alt}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <TweaksPanel>
+        <TweakSection label="Captions" />
+        <TweakRadio label="Tone" value={t.tone} options={["utility", "warm"]} onChange={(v) => setTweak("tone", v)} />
+        <TweakSection label="Canvas" />
+        <TweakColor label="Green" value={t.canvas} options={["#009D3B", "#00B14F", "#006630"]} onChange={(v) => setTweak("canvas", v)} />
+        <TweakToggle label="Phone bezel" value={t.bezel} onChange={(v) => setTweak("bezel", v)} />
+      </TweaksPanel>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Board />);
+</script>
+</body>
+</html>

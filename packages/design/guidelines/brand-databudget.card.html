@@ -1,4 +1,4 @@
-<!-- @dsCard group="Brand" viewport="700x210" name="Device & data budget" subtitle="320px-first, ~150KB per screen, instant fallback text" -->
+<!-- @dsCard group="Brand" viewport="700x230" name="Device & data budget" subtitle="320px-first, ~150KB per screen, instant fallback text, Food photos lazy + fallback" -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,9 +21,11 @@
     <div class="cell"><div class="big">3 + 5KB</div><div class="cap">Three Inter weights (swap + Roboto fallback) · 22 self-hosted icons.</div></div>
   </div>
   <div class="rules">
-    <b>No photos, no gradients, no full icon libraries.</b> Text paints instantly in the system font and upgrades to Inter.
+    <b>No decorative imagery, no gradients, no full icon libraries.</b> Text paints instantly in the system font and upgrades to Inter.
     Skeletons over spinners so layout never jumps. Throttled GPS, cached map tiles, poll fallbacks when sockets drop.
     Every screen must survive 2G: content first, decoration never.
+    <b>Food photos are the one exception:</b> lazy-loaded off the critical path, ~15–25KB each, with the tinted-initial
+    block as the first-class fallback — a photoless merchant never looks broken, and first paint never waits for an image.
   </div>
 </body>
 </html>

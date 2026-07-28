@@ -1,3 +1,7 @@
+/* file-scoped: Babel classic scripts share one global scope, so every declaration below is
+   wrapped in an IIFE — only window.LJ / window.RJ leave this file. Without it, a later-loading
+   sibling silently overwrites same-named screens (customer Profile vs rider Profile, etc.). */
+(() => {
 /* LyniaGo — RIDER journey flow-map: static screen renderers.
    Every tile is composed from the REAL design-system bundle + kit primitives (frozen state, no
    interactivity) so the map reads at production fidelity. Ported from the interactive rider flow in
@@ -119,7 +123,7 @@ function Onboard() {
 const Login = () => (
   <Pad>
     <Lockup />
-    <Heading>Sign in to get started</Heading>
+    <Heading>Sign in to ride</Heading>
     <Sub>We'll WhatsApp a one-time code to this number.</Sub>
     <Field label="Phone number" value="+263 78 202 1180" onChange={noop} inputMode="tel" />
     <Button label="Send code" onClick={noop} />
@@ -134,8 +138,8 @@ const Otp = () => (
     <Button label="Back" variant="ghost" onClick={noop} />
   </Pad>
 );
-const PermLoc = () => <SystemState icon="navigation" title="Turn on location" message="LyniaGo uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery." primary="Allow location" secondary="Not now" />;
-const PermNotif = () => <SystemState icon="phone" title="Stay in the loop" message="Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered." primary="Turn on notifications" secondary="Not now" />;
+const PermLoc = () => <SystemState icon="navigation" title="Turn on location" message="LyniaGo uses your location to show parcels near you and to match you with the closest pickups. It's only used while you're online." primary="Allow location" secondary="Not now" />;
+const PermNotif = () => <SystemState icon="phone" title="Never miss an order" message="Get a ping the moment a new parcel is posted near you, and when a customer picks your offer." primary="Turn on notifications" secondary="Not now" />;
 
 /* Role fork — initial flow is identical to the customer; this is where a signed-in user says
    they want to ride. One account, switchable later. */
@@ -157,7 +161,7 @@ function RoleSelect() {
       <Lockup />
       <Heading>How do you want to start?</Heading>
       <Sub>It's one account — pick how you'll use LyniaGo now, and switch anytime.</Sub>
-      <Opt icon="package" title="Send a parcel" desc="Post a delivery and let nearby riders bid." selected={false} />
+      <Opt icon="shopping-bag" title="Use LyniaGo" desc="Order food, send parcels, more services soon." selected={false} />
       <Opt icon="bike" title="Earn as a rider" desc="Deliver parcels near you and get paid in cash." selected={true} />
       <Button label="Continue as a rider" onClick={noop} />
     </Pad>
@@ -195,7 +199,7 @@ function KycForm() {
         <div style={{ display: "flex", gap: 8 }}>
           <Icon name="id-card" size={18} color="var(--accent-text)" style={{ marginTop: 1 }} />
           <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.5 }}>
-            Your national ID is verified — an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers.{" "}
+            Your national ID is checked by our verification partner <b style={{ color: "var(--ink)", fontWeight: 600 }}>Didit</b> — an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers.{" "}
             <span style={{ color: "var(--accent-text)", fontWeight: 600, textDecoration: "underline" }}>Privacy policy</span>
           </div>
         </div>
@@ -207,7 +211,7 @@ function KycForm() {
 const KycPending = () => (
   <Pad>
     <RiderHead />
-    <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is under way — riders go online once it's verified. This usually takes under a minute.">
+    <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute.">
       <Button label="Continue in browser" variant="ghost" onClick={noop} />
     </EmptyState>
   </Pad>
@@ -579,8 +583,9 @@ const JobBail = () => (
   </Pad>
 );
 const JobOffline = () => (
-  <div style={{ position: "relative", height: "100%" }}>
+  <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column" }}>
     <OfflineBanner state="reconnecting" />
+    <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
     <Pad>
       <JobHead status="en_route_pickup" tone="reconnecting" />
       <Card>
@@ -593,6 +598,7 @@ const JobOffline = () => (
         <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>Live paused — reconnecting. Your job is saved; keep riding to pickup and it'll sync when you're back on.</div>
       </Card>
     </Pad>
+    </div>
   </div>
 );
 
@@ -639,6 +645,17 @@ function Earnings() {
         <div style={{ color: "var(--on-accent)", fontSize: 28, fontWeight: 700, marginTop: 2 }} className="lynia-tabular">${total.toFixed(2)}</div>
         <div style={{ color: "var(--on-accent)", fontSize: 12, opacity: 0.9, marginTop: 2 }}>{EARN.length} completed trips</div>
       </Card>
+      <Card style={{ background: "var(--accent-wash)", border: "1px solid transparent", boxShadow: "var(--shadow-card)" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: "var(--accent-text)", fontSize: 12, fontWeight: 600 }}>Commission balance</div>
+            <div style={{ color: "var(--ink)", fontSize: 28, fontWeight: 700, marginTop: 2 }} className="lynia-tabular">$4.85</div>
+            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>Prepaid — top up, receipts and rate</div>
+          </div>
+          <Icon name="chevron-right" size={18} color="var(--accent-text)" />
+        </div>
+      </Card>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", margin: "20px 2px 4px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Completed trips</div>
       {EARN.map((t, i) => (
         <Card key={i}>
           <div style={{ display: "flex", alignItems: "center" }}>
@@ -651,7 +668,7 @@ function Earnings() {
         </Card>
       ))}
       <Card style={{ background: "var(--highlight-wash)", border: "1px solid var(--highlight-border)", boxShadow: "none" }}>
-        <div style={{ fontSize: 12, color: "var(--highlight-ink)", lineHeight: 1.5 }}>A record of work done — not a payout balance. You keep the full agreed fare during the launch period (0% commission for the first few months); payment is cash, outside the app. Later, a small commission — a percentage of each delivery — will be deducted per ride from a commission account you top up in advance.</div>
+        <div style={{ fontSize: 12, color: "var(--highlight-ink)", lineHeight: 1.5 }}>Lynia takes a small commission on each delivery you complete — from a prepaid balance, never your cash in hand. Open your Wallet to top up and see every deduction beside the ride it came from.</div>
       </Card>
     </Pad>
   );
@@ -715,7 +732,7 @@ function BikeDocs() {
         <Row icon="user" label="Rider photo" value="Added" />
       </Card>
       <Card style={{ background: "var(--surface)", border: "1px solid transparent", boxShadow: "none" }}>
-        <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5 }}>Your documents are verified and stored securely. To change your bike or re-verify, contact support.</div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5 }}>Your documents are checked by Didit and stored securely. To change your bike or re-verify, contact support.</div>
       </Card>
     </Pad>
   );
@@ -811,64 +828,83 @@ function Help() {
 }
 
 /* ── SYSTEM / EDGE ── */
-const OnHold = () => <SystemState icon="triangle-alert" title="Your account is on hold" message="We've paused your rider account while we review recent cancellations. This usually takes 24 hours — reach out if you think it's a mistake." primary="Contact support" secondary="Sign out" />;
+/* Retrofit (plan §2, Cluster A shared requirement): "Contact support" is a real tel: call row, not dead text. */
+const OnHold = () => (
+  <Pad style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 4, fontFamily: "var(--font-sans)" }}>
+    <div style={{ width: 84, height: 84, borderRadius: "50%", background: "var(--surface)", display: "grid", placeItems: "center", marginBottom: 14 }}>
+      <Icon name="triangle-alert" size={34} color="var(--accent-text)" />
+    </div>
+    <div style={{ fontSize: 19, fontWeight: 700, color: "var(--ink)" }}>Your account is on hold</div>
+    <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--muted)", maxWidth: 230 }}>We've paused your rider account while we review recent cancellations. This usually takes 24 hours — call us if you think it's a mistake.</div>
+    <div style={{ alignSelf: "stretch", marginTop: 18 }}>
+      <CallRow label="Support" name="Lynia support" phone="+263 77 883 1938" />
+      <Button label="Sign out" variant="ghost" onClick={noop} />
+    </div>
+  </Pad>
+);
 const ForceUpdate = () => <SystemState tone="green" brand title="Time to update" message="A new version of LyniaGo is ready with the latest fixes. Update to keep riding." primary="Update now" />;
 const NoGps = () => <SystemState icon="wifi-off" title="Can't find your location" message="Turn on GPS so we can show parcels near you and navigate to pickups. You can't go online without it." primary="Open location settings" secondary="Not now" />;
 const GenericError = () => <SystemState icon="circle-alert" title="Something went wrong" message="That didn't load. Check your connection and try again — your active job is safe." primary="Try again" secondary="Back to board" />;
 function OfflineBoard() {
   return (
-    <div style={{ position: "relative", height: "100%" }}>
+    <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column" }}>
       <OfflineBanner state="offline" />
-      <Board />
+      <div style={{ flex: 1, minHeight: 0, position: "relative" }}><Board /></div>
     </div>
   );
 }
 
+/* Same DS AppScreen shell as every other screen — status bar + body geometry. */
+const SHELL = DS.AppScreen || (({ children }) => children);
+const S = (node, o = {}) => <SHELL tab={o.tab} bg={o.bg} dark={o.dark}>{node}</SHELL>;
+
 window.RJ = {
-  splash: () => <Splash />,
-  onboard: () => <Onboard />,
-  login: () => <Login />,
-  otp: () => <Otp />,
-  perm_loc: () => <PermLoc />,
-  perm_notif: () => <PermNotif />,
-  role_select: () => <RoleSelect />,
-  kyc_intro: () => <KycIntro />,
-  kyc_form: () => <KycForm />,
-  kyc_pending: () => <KycPending />,
-  kyc_verified: () => <KycVerified />,
-  kyc_failed: () => <KycFailed />,
-  kyc_expired: () => <KycExpired />,
-  rider_offline: () => <RiderOffline />,
-  online_empty: () => <OnlineEmpty />,
-  board: () => <Board />,
-  missed_order: () => <MissedOrder />,
-  offer_compose: () => <OfferCompose />,
-  offer_sent: () => <OfferSent />,
-  picked: () => <Picked />,
-  not_chosen: () => <NotChosen />,
-  bid_expired: () => <BidExpired />,
-  job_assigned: () => <JobAssigned />,
-  job_pickup: () => <JobPickup />,
-  job_verify: () => <JobVerify />,
-  job_collect: () => <JobCollect />,
-  job_dropoff: () => <JobDropoff />,
-  job_handoff: () => <JobHandoff />,
-  job_delivered: () => <JobDelivered />,
-  handoff_wrong: () => <HandoffWrong />,
-  undelivered: () => <Undelivered />,
-  job_bail: () => <JobBail />,
-  job_offline: () => <JobOffline />,
-  job_cancelled: () => <JobCancelled />,
-  earnings: () => <Earnings />,
-  earnings_new: () => <EarningsNew />,
-  profile: () => <Profile />,
-  bike_docs: () => <BikeDocs />,
-  history: () => <History />,
-  settings: () => <Settings />,
-  help: () => <Help />,
-  offline: () => <OfflineBoard />,
-  on_hold: () => <OnHold />,
-  force_update: () => <ForceUpdate />,
-  no_gps: () => <NoGps />,
-  generic_error: () => <GenericError />,
+  splash: () => S(<Splash />, { bg: "var(--accent)", dark: true }),
+  onboard: () => S(<Onboard />),
+  login: () => S(<Login />),
+  otp: () => S(<Otp />),
+  perm_loc: () => S(<PermLoc />),
+  perm_notif: () => S(<PermNotif />),
+  role_select: () => S(<RoleSelect />),
+  kyc_intro: () => S(<KycIntro />),
+  kyc_form: () => S(<KycForm />),
+  kyc_pending: () => S(<KycPending />),
+  kyc_verified: () => S(<KycVerified />),
+  kyc_failed: () => S(<KycFailed />),
+  kyc_expired: () => S(<KycExpired />),
+  rider_offline: () => S(<RiderOffline />),
+  online_empty: () => S(<OnlineEmpty />),
+  board: () => S(<Board />),
+  missed_order: () => S(<MissedOrder />),
+  offer_compose: () => S(<OfferCompose />),
+  offer_sent: () => S(<OfferSent />),
+  picked: () => S(<Picked />),
+  not_chosen: () => S(<NotChosen />),
+  bid_expired: () => S(<BidExpired />),
+  job_assigned: () => S(<JobAssigned />),
+  job_pickup: () => S(<JobPickup />),
+  job_verify: () => S(<JobVerify />),
+  job_collect: () => S(<JobCollect />),
+  job_dropoff: () => S(<JobDropoff />),
+  job_handoff: () => S(<JobHandoff />),
+  job_delivered: () => S(<JobDelivered />),
+  handoff_wrong: () => S(<HandoffWrong />),
+  undelivered: () => S(<Undelivered />),
+  job_bail: () => S(<JobBail />),
+  job_offline: () => S(<JobOffline />),
+  job_cancelled: () => S(<JobCancelled />),
+  earnings: () => S(<Earnings />),
+  earnings_new: () => S(<EarningsNew />),
+  profile: () => S(<Profile />),
+  bike_docs: () => S(<BikeDocs />),
+  history: () => S(<History />),
+  settings: () => S(<Settings />),
+  help: () => S(<Help />),
+  offline: () => S(<OfflineBoard />),
+  on_hold: () => S(<OnHold />),
+  force_update: () => S(<ForceUpdate />, { bg: "var(--accent)", dark: true }),
+  no_gps: () => S(<NoGps />),
+  generic_error: () => S(<GenericError />),
 };
+
+})();

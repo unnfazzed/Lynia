@@ -37,19 +37,28 @@ function Phone({ label, children, bg = "var(--surface)" }) {
   );
 }
 const Pad = ({ children, style }) => <div style={{ padding: "var(--space-screen)", minHeight: "100%", boxSizing: "border-box", ...style }}>{children}</div>;
-const Top = ({ title, onBack }) => (
+/* Pushed-screen header — DS AppBar is the source of truth; the local render is the fallback for a
+   bundle compiled before AppBar existed. */
+const Top = ({ title, onBack }) => (D.AppBar ? (
+  <div style={{ marginBottom: 6, marginLeft: -12, marginRight: -12, paddingTop: 6 }}>
+    <D.AppBar title={title} back={onBack !== false} transparent />
+  </div>
+) : (
   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, paddingTop: 14 }}>
     {onBack !== false ? <Icon name="chevron-right" size={20} color="var(--ink)" style={{ transform: "rotate(180deg)" }} /> : null}
     <span style={{ fontSize: 18, fontWeight: 700, color: "var(--ink)", fontFamily: "var(--font-sans)", letterSpacing: "-0.02em" }}>{title}</span>
   </div>
-);
+));
 
-/* Full-screen system state (edge): green or white, dove/icon, message, actions */
+/* Full-screen system state — DS SystemState is the source of truth; `brand` passes the dove in as
+   the mark slot so the brand mark stays in this kit. Local render is the stale-bundle fallback. */
 function SystemState({ tone = "white", icon, title, message, primary, secondary, brand }) {
   const green = tone === "green";
+  const mark = brand ? <Dove size={56} on={green ? "green" : "white"} /> : undefined;
+  if (D.SystemState) return <D.SystemState tone={tone} icon={icon} mark={mark} title={title} message={message} primary={primary} secondary={secondary} />;
   return (
     <Pad style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 4, background: green ? "var(--accent)" : "var(--bg)" }}>
-      {brand ? <div style={{ marginBottom: 12 }}><Dove size={56} on={green ? "green" : "white"} /></div> : (
+      {brand ? <div style={{ marginBottom: 12 }}>{mark}</div> : (
         <div style={{ width: 84, height: 84, borderRadius: "50%", background: green ? "rgba(255,255,255,.16)" : "var(--surface)", display: "grid", placeItems: "center", marginBottom: 14 }}>
           <Icon name={icon} size={34} color={green ? "#fff" : "var(--accent-text)"} />
         </div>

@@ -46,7 +46,7 @@ How Lynia writes copy:
 - **Spacing.** Strict **8pt scale**: 4 / 8 / 12 / 16 / 24 / 32 / 48.
 - **Radius (Grab shape language).** Buttons are **full pills**; cards **16px**; inputs **12px**; chips/status pills full.
 - **Elevation.** Cards are white and **float on a soft ambient shadow** (`--shadow-card`) with no visible border — the Grab card look. Hairlines remain for dividers, inputs and chips. The accent-bordered card variant marks emphasis (active job, delivery code).
-- **Backgrounds.** Solid fills only — page white, sunken surface grey, mint wash for selected/highlight areas. **No gradients, no photographic heroes, no patterns.** Maps are the one full-bleed surface.
+- **Backgrounds.** Solid fills only — page white, sunken surface grey, mint wash for selected/highlight areas. **No gradients, no patterns.** Maps are one full-bleed surface; the **green brand header** (accent fill behind the status bar, white search floating over the seam) is the second — **root home only**, every other screen keeps white app bars. **Food photography is allowed** on Food surfaces (home cards, restaurant lists, menus): lazy-loaded, ~15–25KB per image, with the tinted-initial block as the first-class no-photo fallback — photos are an upgrade, never a dependency.
 - **Cards.** White fill, soft shadow, 16px radius, 16px padding, 12px bottom margin. Green border = emphasis; gold border = recommended offer.
 - **Animation.** Minimal and functional, always **reduce-motion aware**. A new bid slides+fades in once (220ms). Skeletons pulse opacity 0.5↔1. The auction timer crossfades muted→danger over the last 20s. **No bounces, no decorative loops.**
 - **Hover / press.** Primary buttons press to the darker green `#009D3B`; ghost buttons press to the grey surface; disabled is 0.5 opacity. Inputs draw the deep-green border on focus. Nothing scales on press.
@@ -58,7 +58,7 @@ How Lynia writes copy:
 Lynia runs on **cheap Android phones, small screens, expensive slow data**. These are hard rules, not preferences:
 
 - **320px-first.** Design at 320px width (entry Androids), verify at 360px. One column, `--space-screen` (16px) edge padding, no side-by-side layouts on phones. The mobile UI kit has a 320px "entry phone" toggle to prove every screen fits.
-- **Screen weight budget ~150KB** on first load, everything included. No photographic imagery, no gradients, no decorative assets.
+- **Screen weight budget ~150KB** on first load, everything included. No decorative imagery or gradients; **Food photos are the one exception** — lazy-loaded off the critical path, ~15–25KB each, tinted-initial fallback so a photoless merchant never looks broken.
 - **Fonts: 3 weights, self-hosted, instant fallback.** Only Inter 400/600/700 ship as `.woff2` in `assets/fonts/`, `font-display: swap`; text paints immediately in the system font (Roboto on Android) and upgrades. No third-party font round-trip. Never depend on Inter-only metrics; never add weights (800 is aliased to 700).
 - **Icons: self-hosted 22-icon subset** (`assets/lynia-icons.js`, ~5KB). Never load a full icon library from CDN. Need a new icon? Import that one SVG from Lucide and regenerate the subset.
 - **Skeletons over spinners** — content-shaped placeholders so the layout never jumps when data lands.
@@ -116,19 +116,25 @@ Files in `assets/brand/`: `lyniago-mark.svg` (master), `lyniago-mark-mono.svg` (
 - `DESIGN-IMPROVEMENTS.md` — the gstack design-review response: findings → shipped changes → how Lynia out-crafts inDrive/GrabBike.
 - `ALIGNMENT-REVIEW.md` — design ↔ functionality alignment vs. the repo contracts (all P0/P1 resolved).
 - `ITEM-DESIGN-REVIEW.md` — the "what are you sending?" model decision (multi line-items: description + quantity).
+- `RESTAURANTS-DECISIONS.md` — the Restaurants vertical: numbers picked, design decisions, interaction notes, screen inventory, open questions.
+- `HOME-2A-MERGE-PLAN.md` — the phased plan merging the 2a customer home across the app, journeys, rider and merchant surfaces.
+- `explorations/restaurants/` — the Restaurants vertical itself: `Restaurants Vertical.html` (80 static screens across customer / merchant tablet / rider) and `Restaurants Journey Maps.html` (three actor flows with every exception branch).
 
 **Components** (React, consumed via `window.LyniaDesignSystem_94c56a`):
-- `components/core/` — **Button**, **Card**, **StatusPill**, **Icon**
+- `components/core/` — **Button**, **Card**, **StatusPill**, **Icon**, **Money** (every price renders through Money: tabular numerals, one weight vocabulary)
 - `components/forms/` — **Field**
 - `components/typography/` — **Heading**, **Sub**, **Label**
-- `components/feedback/` — **EmptyState**, **Skeleton**, **SkeletonList** (+ `SkeletonCard`; variants card/row/stepper/summary), **OfflineBanner**
-- `components/journey/` — **Stepper**
+- `components/feedback/` — **EmptyState**, **SystemState**, **Skeleton**, **SkeletonList** (+ `SkeletonCard`; variants card/row/stepper/summary), **OfflineBanner** — **SystemState** is the full-screen blocking state (permissions, offline, suspended, force-update, hard error); **EmptyState** is for an empty list inside a working screen
+- `components/journey/` — **Stepper** — the one 7-step delivery timeline for every vertical: the event API (`events` + `currentStatus` + `view`) for Send, the plain API (`steps`/`step`/`times`/`failAt`, e.g. `RESTAURANT_STEPS`) for verticals with their own step copy
+- `components/shell/` — **AppScreen**, **AppBar**, **StatusBar**, **TabBar** — the phone scaffold every screen sits in (status bar → banner → body → sticky footer → root tab bar Home · Orders · Account), plus the pushed-screen header, so chrome never drifts between journeys.
+- `components/home/` — **AppHome**, **BrandHeader**, **ServiceTiles**, **LiveOrderCard**, **ReorderRail**, **RestaurantCard** — the customer-home language. **AppHome** is the whole root screen and the source of truth for its dimensions (brand header → service tiles → one live-order card per running job, rides and food alike → venue rail); the mocks and the running prototype all render it.
 
 These mirror `apps/mobile/src/ui/index.tsx` — the source's real primitive inventory.
 
 ### Intentional additions
 - **Icon** — added when the system moved from emoji to Lucide iconography; a thin wrapper that renders Lucide line icons from the self-hosted subset.
 - **OfflineBanner** — added per the ship review's "pre-auth loading discipline / global offline banner" follow-up (see `DESIGN-IMPROVEMENTS.md`).
+- **Home set (BrandHeader, LiveOrderCard, ReorderRail, RestaurantCard)** — promoted from the customer-home exploration (option 2a, Uber Eats/DoorDash/Glovo-informed); `HOME-2A-MERGE-PLAN.md` tracks the screen-by-screen merge.
 
 ## Caveats
 
