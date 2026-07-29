@@ -3,6 +3,8 @@ import { PII_MANIFEST } from "../privacy/pii-manifest";
 import {
   accountDeletionHtml,
   ANDROID_PACKAGE,
+  HOSTING_COUNTRY,
+  HOSTING_REGION,
   LEGAL_CONTACT_EMAIL,
   LEGAL_DATA_CATEGORIES,
   privacyPolicyHtml,
@@ -36,11 +38,24 @@ describe("legal copy ↔ PII manifest", () => {
     expect(undeclared).toEqual([]);
   });
 
-  it("gives every category a purpose and a retention window (Play requires both per category)", () => {
+  it("gives every category a purpose, a legal basis and a retention window", () => {
+    // Play requires purpose + retention per category; the Cyber and Data Protection Act additionally
+    // requires a stated lawful basis for each use, which is why `basis` is not optional.
     for (const category of LEGAL_DATA_CATEGORIES) {
       expect(category.purpose.trim().length).toBeGreaterThan(0);
+      expect(category.basis.trim().length).toBeGreaterThan(0);
       expect(category.retention.trim().length).toBeGreaterThan(0);
     }
+  });
+
+  it("treats the rider's national ID and face photo as sensitive data resting on explicit consent", () => {
+    // The Act singles out sensitive personal information (which these are) as needing the data
+    // subject's explicit consent — a contract/legitimate-interest basis would not be lawful here, so
+    // this category's basis must not silently drift to one.
+    const kyc = LEGAL_DATA_CATEGORIES.find((c) => c.manifestKeys.includes("id_number"));
+    expect(kyc).toBeDefined();
+    expect(kyc!.basis).toMatch(/consent/i);
+    expect(kyc!.basis).toMatch(/sensitive/i);
   });
 });
 
@@ -66,6 +81,34 @@ describe("privacy notice page", () => {
     expect(html).toMatch(/background/i);
     expect(html).toMatch(/persistent (Android )?notification/i);
   });
+
+  it("discloses that data leaves Zimbabwe, naming the hosting country", () => {
+    // The single claim most likely to be quietly dropped in a future edit, and the one that would
+    // turn this notice into a misrepresentation: the database runs in africa-south1, so ordinary
+    // operation is a continuous cross-border transfer under the Act.
+    expect(html).toContain(HOSTING_COUNTRY);
+    expect(html).toContain(HOSTING_REGION);
+    expect(html).toMatch(/cross-border/i);
+    expect(html).toMatch(/not in Zimbabwe/i);
+  });
+
+  it("names POTRAZ as the authority a user can complain to", () => {
+    expect(html).toMatch(/POTRAZ/);
+    expect(html).toMatch(/complain/i);
+  });
+
+  it("tells restaurant customers what the shop does and does not see", () => {
+    // The marketplace disclosure a single-sided notice has no need for: a third party (the shop) sees
+    // part of the order, and the boundary of that has to be stated, not implied.
+    expect(html).toMatch(/restaurant/i);
+    expect(html).toMatch(/never see your national ID/i);
+  });
+
+  it("does not claim to process payment for goods or food", () => {
+    // Getting this wrong would misdescribe the business AND drag the listing into Play's financial-
+    // features review (docs/PLAY-STORE-SUBMISSION.md §4.7).
+    expect(html).toMatch(/not the payment processor/i);
+  });
 });
 
 describe("account deletion page", () => {
@@ -76,6 +119,14 @@ describe("account deletion page", () => {
     expect(html).toMatch(/Account → Settings/); // 2. the in-app route
     expect(html).toContain(LEGAL_CONTACT_EMAIL); // 3. an off-app request channel
     expect(html).toMatch(/What is kept/i); // 4. deleted vs retained
+  });
+
+  it("lists the mobile-money references among what is deleted, matching what erasure now does", () => {
+    // PrivacyService.eraseAccount scrubs orders.merchantPaymentReference (the restaurant payment
+    // handle) alongside top_ups.phone. This page is the public promise of that behaviour; if the
+    // scrub is ever removed, the promise here becomes false.
+    expect(html).toMatch(/mobile-money references/i);
+    expect(html).toMatch(/transaction reference for a restaurant payment/i);
   });
 });
 
