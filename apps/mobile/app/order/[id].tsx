@@ -611,7 +611,7 @@ export default function OrderScreen(): React.ReactElement {
 
   // C5: the re-broadcast / "send another request" CTAs used to `router.replace("/home")`, dumping the
   // customer on a BLANK compose form and losing the whole order. Instead carry THIS order's route,
-  // landmarks, line-items and price into the compose flow so home.tsx prefills them (params are strings,
+  // landmarks, line-items and price into the compose flow so send.tsx prefills them (params are strings,
   // so items ride as JSON). The customer lands on a filled form and just nudges the price and re-sends.
   const [rebroadcasting, setRebroadcasting] = useState(false);
   const rebroadcast = async (): Promise<void> => {
@@ -634,7 +634,7 @@ export default function OrderScreen(): React.ReactElement {
       }
     }
     router.replace({
-      pathname: "/home",
+      pathname: "/send",
       params: buildRebroadcastParams({
         pickup: order.pickup,
         dropoff: order.dropoff,

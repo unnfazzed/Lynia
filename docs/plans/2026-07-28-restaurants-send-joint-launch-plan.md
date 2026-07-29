@@ -130,12 +130,40 @@ where it touches food paths (flags stay OFF in CI/staging until the launch flip)
 
 ### Lane A — customer home + IA (`apps/mobile`, customer surfaces)
 
-- [ ] **A1 · Tab shell + Send demotion.** Root tabs Home | Orders | Account (Expo Router tab
+- [x] **A1 · Tab shell + Send demotion.** Root tabs Home | Orders | Account (Expo Router tab
   group); `app/home.tsx` composer moves to the `send` route **unchanged in behaviour**; boot
   route lands on the launcher; Send tile/search/edit-order push the composer; complete/cancel
   returns to the launcher. Port `BrandHeader` + `ServiceTiles` + `AppScreen` shell primitives to
   RN per `components/home/home.prompt.md` (Food tile visible; gated by `restaurantsEnabled` for
-  the escape hatch). Bundle-size budget respected.
+  the escape hatch). Bundle-size budget respected. **Done 2026-07-29:** new `app/(tabs)/` Expo
+  Router group (`_layout.tsx` custom `tabBar` rendering the ported `TabBar` primitive; `home.tsx` |
+  `orders.tsx` | `account.tsx`). Its group folder is invisible to the URL, so `home.tsx`'s route is
+  `/home` — `bootDestination()` and every "return to launcher" call site (`order/[id].tsx`'s
+  terminal "Back home", `verify.tsx`/`role.tsx`/`profile/setup.tsx` post-auth routing,
+  `rider/index.tsx`'s role-switch) needed **no string change**. The four call sites that actually
+  meant "open the compose screen" (`profile/index.tsx` + `history/index.tsx`'s "Send a parcel",
+  `history/index.tsx`'s reorder prefill, `order/[id].tsx`'s rebroadcast prefill) were repointed to
+  `/send`, the composer's new route (`git mv app/home.tsx app/send.tsx`, zero logic changes — its
+  own relative imports are unaffected since it stays in `app/`). `BrandHeader`/`ServiceTiles`/
+  `AppScreen`/`TabBar` ported to `src/ui/shell/` (inline-style + `@lynia/shared` tokens, matching
+  the app's existing convention — no `StyleSheet.create` anywhere else either); `BrandHeader` is
+  the full-bleed accent exception (pads its own top safe-area inset so the green block runs behind
+  the status bar, per the routine's rule). `getServiceTiles(restaurantsEnabled)` degrades Food to
+  the same grey "Soon" tile Pharmacy already uses when the flag is off — the actual browse route
+  doesn't exist until Lane D ships, so a live tap (flag on) shows an honest "coming soon" toast
+  instead of a dead push. Added 5 new per-icon Hermes imports (`bell`, `utensils`, `plus`, `store`,
+  `receipt` — all in the self-hosted Lucide subset, no barrel import). Orders/Account tab bodies
+  are honest bridge screens (a button through to the still-live standalone `/history` and
+  `/profile` routes) — full content absorption is A3's job, not duplicated here. New
+  `useFeatureFlags`/`fetchFeatureFlags` hook (`src/net/use-feature-flags.ts`, modeled on
+  `use-server-version-gate.ts`) fetches `GET /app/feature-flags`, fail-**safe-OFF** (opposite
+  direction from the version-gate's fail-open) so an unreachable endpoint never reveals an unready
+  vertical. Bundle-size measured locally (`expo export --platform android` +
+  `scripts/check-bundle-size.mjs`): Hermes bundle grew 6,126,613 → 6,146,223 bytes (+19.6 KB) —
+  still within the existing 6,200,000-byte budget (53.5 KB / 0.9% headroom left), no budget bump
+  needed this PR. `pnpm typecheck && pnpm lint && pnpm test` green across the whole monorepo
+  (mobile: 71 suites / 538 tests, incl. 2 new suites for `getServiceTiles` and the `APP_TABS`
+  route-name contract, plus a new `use-feature-flags` fail-safe-off suite).
 - [ ] **A2 · Home content.** `LiveOrderCard` (per running job, any service), "Send again"
   `ReorderRail` from order history, "Restaurants near you" `RestaurantCard` rail (skeleton/empty
   behind flag until Lane C serves data). Photo policy: lazy-load, 15–25KB thumbs, tinted-initial

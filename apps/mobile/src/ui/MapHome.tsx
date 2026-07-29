@@ -6,7 +6,7 @@ import { Icon, type IconName } from "./index";
 
 /**
  * Presentational pieces for the map-anchored compose home (customer-journey 1·1). Stateless — all
- * state + handlers stay in app/home.tsx. `MapHomeTopBar` is the floating brand/nav chrome; `AddressRows`
+ * state + handlers stay in app/send.tsx. `MapHomeTopBar` is the floating brand/nav chrome; `AddressRows`
  * is the search-first pickup/drop selector (pickup = green dot, drop-off = red square, per the mockup's
  * AddressFields) that also chooses which pin the single map hero edits.
  */
