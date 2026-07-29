@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/unnfazzed/Lynia/compare/v0.12.1...v0.13.0) (2026-07-29)
+
+
+### Features
+
+* **mobile:** strip AD_ID permission from merged Android manifest ([c2c5c17](https://github.com/unnfazzed/Lynia/commit/c2c5c17d85967d7c9db771aa592ce565a4ebc4db))
+
 ## [0.12.1](https://github.com/unnfazzed/Lynia/compare/v0.12.0...v0.12.1) (2026-07-29)
 
 
