@@ -42,7 +42,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     prisma.order.findMany.mockResolvedValue([
       {
         id: "o1",
-        events: [
+        orderType: "parcel", events: [
           { status: "open_for_offers", createdAt: new Date("2026-07-06T09:00:00.000Z") }, // silent → skipped
           { status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") },
           { status: "delivered", createdAt: new Date("2026-07-06T11:00:00.000Z") },
@@ -65,13 +65,13 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
   it("stamps the viewer's per-order voice and the raw status on every order-status row", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "rider", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", riderId: "rider", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     const custFeed = await service.feedForUser("cust", NOW);
     expect(custFeed[0]).toMatchObject({ to: "customer", status: "assigned" });
 
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "rider", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", riderId: "rider", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     const riderFeed = await service.feedForUser("rider", NOW);
     expect(riderFeed[0]).toMatchObject({ to: "rider", status: "assigned" });
@@ -82,11 +82,11 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     prisma.order.findMany.mockResolvedValue([
       {
         id: "o1",
-        events: [{ status: "delivered", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+        orderType: "parcel", events: [{ status: "delivered", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
       },
       {
         id: "o2",
-        events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
+        orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
       },
     ]);
 
@@ -110,7 +110,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     prisma.order.findMany.mockResolvedValue([
       {
         id: "o1",
-        events: [
+        orderType: "parcel", events: [
           { status: "delivered", createdAt: new Date("2026-07-06T11:30:00.000Z") }, // 30 min ago
           { status: "cancelled", createdAt: new Date("2026-07-01T00:00:00.000Z") }, // days ago
         ],
@@ -133,7 +133,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     prisma.order.findMany.mockResolvedValue([
       {
         id: "o1",
-        events: Array.from({ length: 60 }, (_, i) => ({
+        orderType: "parcel", events: Array.from({ length: 60 }, (_, i) => ({
           status: "delivered",
           createdAt: new Date(NOW.getTime() - i * 60_000),
         })),
@@ -152,13 +152,13 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         id: "o2",
         riderId: null,
         rebroadcastOfId: "o1",
-        events: [{ status: "open_for_offers", createdAt: new Date("2026-07-06T11:05:00.000Z") }], // silent
+        orderType: "parcel", events: [{ status: "open_for_offers", createdAt: new Date("2026-07-06T11:05:00.000Z") }], // silent
       },
       {
         id: "o1",
         riderId: "r1",
         cancelledBy: "r1", // the rider cancelled — not the viewer, so not suppressed
-        events: [{ status: "cancelled", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+        orderType: "parcel", events: [{ status: "cancelled", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
       },
     ]);
     const feed = await service.feedForUser("me", NOW);
@@ -181,7 +181,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         id: "o1",
         riderId: "me",
         cancelledBy: "me",
-        events: [{ status: "cancelled", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+        orderType: "parcel", events: [{ status: "cancelled", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
       },
     ]);
     const feed = await service.feedForUser("me", NOW);
@@ -196,7 +196,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         customerId: "cust",
         riderId: "rider",
         cancelledBy: "cust", // the customer cancelled
-        events: [{ status: "cancelled", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+        orderType: "parcel", events: [{ status: "cancelled", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
       },
     ];
     // The customer (actor) gets no row…
@@ -216,7 +216,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         id: "o1",
         riderId: null,
         expiryNoSupply: true,
-        events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+        orderType: "parcel", events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
       },
     ]);
     expect((await service.feedForUser("me", NOW))[0]).toMatchObject({ title: "No riders online nearby", icon: "bike" });
@@ -227,7 +227,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         id: "o2",
         riderId: null,
         expiryNoSupply: false,
-        events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+        orderType: "parcel", events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
       },
     ]);
     expect((await service.feedForUser("me", NOW))[0]).toMatchObject({ title: "No riders yet", icon: "clock" });
@@ -240,7 +240,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         id: "o1",
         riderId: null,
         expiryNoSupply: false, // riders WERE around — not a no-supply expiry
-        events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+        orderType: "parcel", events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
       },
     ]);
     // Durable offer rows recover "a rider bid" on this cold read even though the offers are now `expired`.
@@ -263,7 +263,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       {
         id: "o1",
         riderId: null, // customer-view order
-        events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
+        orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
       },
     ]);
     // A rider bid on o1 at 10:30 — notifyNewOffer pushed the customer, but no feed row existed before.
@@ -321,7 +321,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
   it("UX26-03 sibling: the resolved-issue row carries to/status for a rider opener still in the order lookback, routing them to /rider/job", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "me", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", riderId: "me", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     prisma.issue.findMany.mockResolvedValue([
       { id: "i1", orderId: "o1", resolution: "close_no_action", resolvedAt: new Date("2026-07-06T11:30:00.000Z") },
@@ -361,7 +361,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     const { prisma, service } = makeDeps();
     // One shared order both parties are on; the RIDER raised the SOS on it.
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     // Simulate the DB-level `raisedByProfileId: { not: viewer }` filter — only events NOT raised by the
     // viewer come back, so the raiser (rider) never sees their own SOS while the counterparty (cust) does.
@@ -389,7 +389,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
 
     // The RAISER (rider) never sees an SOS row for the trip they raised it on.
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     const riderFeed = await service.feedForUser("rider", NOW);
     expect(riderFeed.some((r) => r.title === "SOS on your delivery")).toBe(false);
@@ -399,7 +399,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     const { prisma, service } = makeDeps();
     // The customer's own order (riderId != viewer → customer view).
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "rider", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", riderId: "rider", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     // The standing-notice audit is targeted at the ORDER id; the account-status query (target=userId) is
     // separate and returns nothing here. Branch the shared auditLog.findMany mock on the queried action.
@@ -423,7 +423,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     // The RIDER viewing their OWN order (riderId === viewer) is NOT a customer-view order, so the notice is
     // not shown to them — they get their own rider.suspend/ban account row via ACCOUNT_FEED_ACTIONS instead.
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "rider", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", riderId: "rider", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     const riderFeed = await service.feedForUser("rider", NOW);
     expect(riderFeed.some((r) => r.title === "An update on your delivery")).toBe(false);
@@ -470,7 +470,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     const { prisma, service } = makeDeps();
     // The customer's own order (riderId != viewer → customer view).
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "rider", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", riderId: "rider", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
       where.action === "order.rider_standing_resolved"
@@ -500,8 +500,8 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     // deadline — `IssuesService.raise` has no time-based gating); the ordinary completion keeps the
     // generic FEED_NOTICES.completed copy.
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "rider", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
-      { id: "o2", riderId: "rider", events: [{ status: "completed", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", riderId: "rider", orderType: "parcel", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
+      { id: "o2", riderId: "rider", orderType: "parcel", events: [{ status: "completed", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     const custFeed = await service.feedForUser("cust", NOW);
     expect(custFeed.find((r) => r.orderId === "o1")).toMatchObject({
@@ -519,7 +519,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     // the generic "Nice work", and (UX19-04) doesn't thank the rider for evidence that may never have been
     // submitted — proof-of-drop capture is optional and adjudicateDelivered has no evidence precondition.
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "me", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
+      { id: "o1", riderId: "me", orderType: "parcel", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
     ]);
     const riderFeed = await service.feedForUser("me", NOW);
     expect(riderFeed[0]).toMatchObject({
@@ -532,7 +532,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
   it("UX20-04: synthesizes a fare-updated row for BOTH parties from order.fare_adjust — adjustFare's push had no durable feed fallback", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "rider", agreedFare: dec("12.50"), events: [] },
+      { id: "o1", riderId: "rider", agreedFare: dec("12.50"), orderType: "parcel", events: [] },
     ]);
     prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
       where.action === "order.fare_adjust"
@@ -572,7 +572,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         id: "o1",
         riderId: "rider",
         agreedFare: dec("12.50"),
-        events: [
+        orderType: "parcel", events: [
           { status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") },
           { status: "confirmed", createdAt: new Date("2026-07-06T10:05:00.000Z") },
         ],
@@ -596,7 +596,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
 
   it("UX21-02: synthesizes a customer-voiced row from order.riders_available_notify — the live-order 'notify me' push had no durable feed fallback", async () => {
     const { prisma, service } = makeDeps();
-    prisma.order.findMany.mockResolvedValue([{ id: "o1", riderId: null, events: [] }]);
+    prisma.order.findMany.mockResolvedValue([{ id: "o1", riderId: null, orderType: "parcel", events: [] }]);
     prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
       where.action === "order.riders_available_notify"
         ? [{ id: "au1", target: "o1", createdAt: new Date("2026-07-06T11:00:00.000Z") }]

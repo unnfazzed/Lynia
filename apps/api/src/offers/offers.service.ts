@@ -25,10 +25,15 @@ export class OffersService {
     const done = this.metrics.startTimer();
     const order = await this.prisma.order.findUnique({
       where: { id: input.orderId },
-      select: { status: true, customerId: true, proposedFare: true },
+      select: { status: true, customerId: true, proposedFare: true, orderType: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.status !== "open_for_offers") {
+      throw new ConflictException("This order is not open for offers");
+    }
+    // A-2 (status-keyed-query-audit): an Express bid is a parcel-only mechanism — a merchant order's
+    // rider is C3's dispatch decision, never an offer a rider posts themselves.
+    if (order.orderType !== "parcel") {
       throw new ConflictException("This order is not open for offers");
     }
     // No self-bidding: order-create carries no role gate, so a rider-role profile can post its own
@@ -102,10 +107,13 @@ export class OffersService {
         // row-locks the order, so taking FOR UPDATE here serializes the two: either the assign commits
         // first (we then read a non-open status and reject) or it waits for us (and its decline-pending
         // sweep then includes our just-created offer).
-        const locked = await tx.$queryRaw<Array<{ status: string }>>(
-          Prisma.sql`SELECT status FROM orders WHERE id = ${input.orderId}::uuid FOR UPDATE`,
+        const locked = await tx.$queryRaw<Array<{ status: string; order_type: string }>>(
+          Prisma.sql`SELECT status, order_type FROM orders WHERE id = ${input.orderId}::uuid FOR UPDATE`,
         );
-        if (locked.length === 0 || locked[0].status !== "open_for_offers") {
+        // A-2: re-check orderType under the lock too — the pre-lock read above can't observe a
+        // concurrent write, but orderType is immutable post-create, so this is belt-and-braces
+        // consistency with the guard above, not a new race window.
+        if (locked.length === 0 || locked[0].status !== "open_for_offers" || locked[0].order_type !== "parcel") {
           throw new ConflictException("This order is not open for offers");
         }
         return tx.offer.create({

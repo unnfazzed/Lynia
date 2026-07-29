@@ -8,6 +8,7 @@ import {
   UpdateMerchantCategoryRequest,
   UpdateMerchantDishRequest,
   UpdateMerchantHoursRequest,
+  UpdateMerchantLocationRequest,
   UpdateMerchantProfileRequest,
 } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -61,6 +62,15 @@ export class MerchantController {
     @CurrentUser() profileId: string,
   ) {
     return this.merchant.updateHours(profileId, body);
+  }
+
+  @Patch("location")
+  @UseGuards(MerchantGuard)
+  updateLocation(
+    @Body(new ZodBody(UpdateMerchantLocationRequest)) body: UpdateMerchantLocationRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.merchant.updateLocation(profileId, body);
   }
 
   @Patch("cash-rule")

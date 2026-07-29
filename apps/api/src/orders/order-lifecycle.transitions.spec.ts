@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  appliesToOrderType,
   eventsFor,
+  findMerchantPhaseTransition,
   findTransition,
   INITIAL,
   isLegalTransition,
   isTerminalState,
+  MERCHANT_PHASES,
+  MERCHANT_PHASE_TRANSITIONS,
   nextState,
+  orderTypeOf,
   ORDER_STATES,
   TERMINAL_STATES,
   TRANSITIONS,
@@ -40,11 +45,15 @@ describe("order-lifecycle transition table — internal consistency", () => {
     }
   });
 
-  it("records the diagram-vs-code divergence: `requested` is defined but never entered by the code", () => {
-    // ARCHITECTURE.md §7 shows a `requested` node, but create() mints orders directly at
-    // open_for_offers — so `requested` is never a `to`. Pinned so a future writer of `requested`
-    // (or a diagram edit) is a deliberate, reviewed change.
-    expect(TRANSITIONS.some((t) => t.to === "requested")).toBe(false);
+  it("records the diagram-vs-code divergence: parcel's create() still never enters `requested`", () => {
+    // ARCHITECTURE.md §7 shows a `requested` node, but orders.service.ts:create() mints a PARCEL order
+    // directly at open_for_offers — so `requested` is never a parcel `to`. C2 closes half the
+    // divergence deliberately: a MERCHANT order IS born at `requested` (see the `place` event) — that
+    // reuse of the previously-dead status is the plan §0b.1 locked decision, not a regression of this
+    // pin. Only the parcel path is asserted dead here.
+    const parcelRows = TRANSITIONS.filter((t) => orderTypeOf(t) !== "merchant");
+    expect(parcelRows.some((t) => t.to === "requested")).toBe(false);
+    expect(findTransition(INITIAL, "place")?.to).toBe("requested"); // the merchant exception, named
     expect(ORDER_STATES).toContain("requested"); // still a valid enum value
   });
 });
@@ -115,5 +124,119 @@ describe("illegal transitions are rejected (the guards the code enforces)", () =
 
   it("nextState returns null for an illegal pair", () => {
     expect(nextState("cancelled", "rate")).toBeNull();
+  });
+});
+
+describe("C2/A-11 — orderType dimension", () => {
+  it("every row still has a unique (from,event) pair — orderType never fights that invariant", () => {
+    const seen = new Set<string>();
+    for (const t of TRANSITIONS) {
+      const key = `${t.from}::${t.event}`;
+      expect(seen.has(key), `duplicate transition ${key}`).toBe(false);
+      seen.add(key);
+    }
+  });
+
+  it("the Express-auction edges (create, rebroadcast, select_offer, expire, cancel_rider) are parcel-only", () => {
+    expect(orderTypeOf(findTransition(INITIAL, "create")!)).toBe("parcel");
+    expect(orderTypeOf(findTransition(INITIAL, "rebroadcast")!)).toBe("parcel");
+    expect(orderTypeOf(findTransition("open_for_offers", "select_offer")!)).toBe("parcel");
+    expect(orderTypeOf(findTransition("open_for_offers", "expire")!)).toBe("parcel");
+    expect(orderTypeOf(findTransition("assigned", "cancel_rider")!)).toBe("parcel");
+    expect(appliesToOrderType(findTransition(INITIAL, "create")!, "merchant")).toBe(false);
+  });
+
+  it("the class-b rider CAS / cancel / undelivered / delivery edges apply to both order types", () => {
+    for (const [from, event] of [
+      ["assigned", "confirmed"],
+      ["confirmed", "en_route_pickup"],
+      ["picked_up", "en_route_dropoff"],
+      ["en_route_dropoff", "confirm_delivery"],
+      ["delivered", "rate"],
+      ["delivered", "auto_close"],
+      ["picked_up", "mark_undelivered"],
+      ["en_route_dropoff", "mark_undelivered"],
+      ["open_for_offers", "cancel_customer"],
+      ["picked_up", "cancel_customer"],
+    ] as const) {
+      const t = findTransition(from, event)!;
+      expect(t, `${from}/${event} should exist`).toBeDefined();
+      expect(orderTypeOf(t)).toBe("both");
+      expect(appliesToOrderType(t, "parcel")).toBe(true);
+      expect(appliesToOrderType(t, "merchant")).toBe(true);
+    }
+  });
+
+  it("parcel's codeless picked_up and merchant's code-gated confirm_pickup are distinct edges, same (from,to)", () => {
+    const parcelPickup = findTransition("en_route_pickup", "picked_up")!;
+    const merchantPickup = findTransition("en_route_pickup", "confirm_pickup")!;
+    expect(parcelPickup.to).toBe("picked_up");
+    expect(merchantPickup.to).toBe("picked_up");
+    expect(orderTypeOf(parcelPickup)).toBe("parcel");
+    expect(orderTypeOf(merchantPickup)).toBe("merchant");
+  });
+
+  it("a merchant order is born at `requested`, never `open_for_offers`", () => {
+    const place = findTransition(INITIAL, "place")!;
+    expect(place.to).toBe("requested");
+    expect(orderTypeOf(place)).toBe("merchant");
+  });
+
+  it("every merchant terminal exit lands at the shared `cancelled` state — no new OrderStatus values", () => {
+    for (const event of [
+      "reject",
+      "expire_accept",
+      "decline_items",
+      "expire_item_approval",
+      "cancel_unpaid",
+      "release_unpaid",
+      "expire_end_of_day",
+    ] as const) {
+      const t = findTransition("requested", event)!;
+      expect(t, `requested/${event} should exist`).toBeDefined();
+      expect(t.to).toBe("cancelled");
+      expect(orderTypeOf(t)).toBe("merchant");
+    }
+  });
+});
+
+describe("C2 — MERCHANT_PHASE_TRANSITIONS (the parallel kitchen-side table)", () => {
+  it("every `to` phase is a real MerchantPhaseState", () => {
+    const phaseSet = new Set<string>(MERCHANT_PHASES);
+    for (const t of MERCHANT_PHASE_TRANSITIONS) {
+      for (const to of t.to) expect(phaseSet.has(to)).toBe(true);
+    }
+  });
+
+  it("every (from,event) pair is unique", () => {
+    const seen = new Set<string>();
+    for (const t of MERCHANT_PHASE_TRANSITIONS) {
+      const key = `${t.from}::${t.event}`;
+      expect(seen.has(key), `duplicate merchant-phase transition ${key}`).toBe(false);
+      seen.add(key);
+    }
+  });
+
+  it("walks the full pre-dispatch happy path for a WALLET order", () => {
+    expect(findMerchantPhaseTransition(INITIAL, "place")?.to).toEqual(["awaiting_accept"]);
+    expect(findMerchantPhaseTransition("awaiting_accept", "accept_full")?.to).toContain("awaiting_payment");
+    expect(findMerchantPhaseTransition("awaiting_payment", "confirm_payment")?.to).toEqual(["preparing"]);
+    expect(findMerchantPhaseTransition("preparing", "mark_ready")?.to).toEqual(["ready_for_pickup"]);
+  });
+
+  it("walks the full pre-dispatch happy path for a CASH order (skips awaiting_payment)", () => {
+    expect(findMerchantPhaseTransition("awaiting_accept", "accept_full")?.to).toContain("preparing");
+    expect(findMerchantPhaseTransition("preparing", "mark_ready")?.to).toEqual(["ready_for_pickup"]);
+  });
+
+  it("item-level accept routes through the 60s customer-approval phase before payment/prep", () => {
+    expect(findMerchantPhaseTransition("awaiting_accept", "accept_partial")?.to).toEqual(["awaiting_item_approval"]);
+    const approved = findMerchantPhaseTransition("awaiting_item_approval", "approve_items");
+    expect(approved?.to).toContain("preparing");
+    expect(approved?.to).toContain("awaiting_payment");
+  });
+
+  it("has no outgoing edge from ready_for_pickup — the hand-off to C3's dispatch is not this table's job", () => {
+    expect(MERCHANT_PHASE_TRANSITIONS.some((t) => t.from === "ready_for_pickup")).toBe(false);
   });
 });

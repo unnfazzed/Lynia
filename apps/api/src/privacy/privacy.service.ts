@@ -392,6 +392,16 @@ export class PrivacyService {
         },
       });
     }
+
+    // C2: same DS15-07 class as Order.note above — a per-dish note ("leg portion, not breast · no
+    // chilli") is customer-entered free text on the erasing customer's OWN placed food orders. Bulk
+    // update (unlike the read-modify-write JSON scrub above — this is a plain column, no merge needed).
+    if (placed.length > 0) {
+      await tx.merchantOrderItem.updateMany({
+        where: { orderId: { in: placed.map((o) => o.id) }, note: { not: null } },
+        data: { note: null },
+      });
+    }
   }
 
   /** Post-commit, best-effort: evict an erased rider from live supply, then purge the now-orphaned GCS objects. */

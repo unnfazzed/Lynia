@@ -140,7 +140,8 @@ describe("AdminService.overview", () => {
     const completedToday = seenCountWheres.find((w) => "completedAt" in w);
     expect(completedToday).toMatchObject({ status: "completed" });
     // Same gate on the fares-today aggregate.
-    expect(seenAggregateWheres).toEqual([{ status: "completed", completedAt: expect.anything() }]);
+    // A-9 (status-keyed-query-audit): the fares-today aggregate is now parcel-only.
+    expect(seenAggregateWheres).toEqual([{ status: "completed", completedAt: expect.anything(), orderType: "parcel" }]);
     // An adjudicated order (status flipped "undelivered" -> "completed", undeliveredAt never cleared)
     // must NOT satisfy the undelivered-today where-clause either.
     const undeliveredToday = seenCountWheres.find((w) => "undeliveredAt" in w);

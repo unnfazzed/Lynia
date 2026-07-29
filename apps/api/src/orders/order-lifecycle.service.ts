@@ -525,7 +525,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, customerId: true, riderId: true, agreedFare: true, suggestedFare: true },
+        select: { status: true, customerId: true, riderId: true, agreedFare: true, suggestedFare: true, orderType: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       if (order.customerId !== customerId) throw new ForbiddenException("Not your order");
@@ -622,7 +622,14 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // lock above. No-op at ratePct 0. Never blocks a delivered parcel from completing. Uses the
         // re-read `agreedFare` (WD-005), not the pre-CAS snapshot. `suggestedFare` feeds the WD-012
         // commission-basis floor.
-        await this.wallet.chargeCommission(tx, { orderId, riderId: order.riderId, agreedFare, suggestedFare: order.suggestedFare });
+        // A-5 (status-keyed-query-audit): a merchant order's own commission/settlement is C4's ledger,
+        // not the Express ride-commission wallet — chargeCommission assumes a parcel fare basis
+        // (suggestedFare/agreedFare mean something different for a food order's goods+delivery total).
+        // Guarded rather than left latent: a merchant order can't reach `delivered` without C3's
+        // dispatch yet, but the branch belongs here now, not deferred to when it becomes reachable.
+        if (order.orderType === "parcel") {
+          await this.wallet.chargeCommission(tx, { orderId, riderId: order.riderId, agreedFare, suggestedFare: order.suggestedFare });
+        }
       }
     });
 
@@ -915,6 +922,13 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!src) throw new NotFoundException("Order not found");
+    // A-4 (status-keyed-query-audit, Phase P2): a merchant order's rider-cancel needs C3's own
+    // reassignment handling, not an auto re-auction to Express riders. Unreachable today — a merchant
+    // order can't be `assigned` (RIDER_CANCELLABLE gate) without C3's dispatch — but fail loudly rather
+    // than silently reopening a food order as a parcel auction if that ever changes before C3 lands.
+    if (src.orderType !== "parcel") {
+      throw new ConflictException("Merchant order re-dispatch is not available yet");
+    }
 
     const clone = await tx.order.create({
       data: {
@@ -956,7 +970,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       await tx.orderEvent.create({ data: { orderId, status: "completed" } });
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { riderId: true, agreedFare: true, suggestedFare: true },
+        select: { riderId: true, agreedFare: true, suggestedFare: true, orderType: true },
       });
       if (order?.riderId) {
         // A delivered order that auto-closes with no complaint is a clean completion → slow
@@ -980,12 +994,16 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // Prepaid commission debit (design Flow 1) — the auto-close counterpart to rate()'s debit. The
         // two completion edges are mutually exclusive (both CAS on status=delivered), so it fires once
         // per order. No-op at ratePct 0; idempotent (unique (riderId, orderId, ride_commission)).
-        await this.wallet.chargeCommission(tx, {
-          orderId,
-          riderId: order.riderId,
-          agreedFare: order.agreedFare,
-          suggestedFare: order.suggestedFare,
-        });
+        // A-5: same merchant guard as rate() above — a merchant order's commission is C4's ledger, not
+        // this Express wallet debit.
+        if (order.orderType === "parcel") {
+          await this.wallet.chargeCommission(tx, {
+            orderId,
+            riderId: order.riderId,
+            agreedFare: order.agreedFare,
+            suggestedFare: order.suggestedFare,
+          });
+        }
       }
       return true;
     });

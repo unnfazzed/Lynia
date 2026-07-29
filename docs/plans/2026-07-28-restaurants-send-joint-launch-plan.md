@@ -194,14 +194,36 @@ dead-when-off rather than dead-always.
   `RestaurantsEnabledGuard`) plus real HTTP legs proving 503 off, 401/403/200 on. Dish/banner
   uploads reuse `uploads/` with D-32's own size caps. `express-no-merchant-coupling` holds (no
   import edge added). C2 (order lifecycle) is next.
-- [ ] **C2 · Food order lifecycle.** Extend the declarative transitions table for `merchant`
+- [x] **C2 · Food order lifecycle.** Extend the declarative transitions table for `merchant`
   orders: place → accept window 3:00 auto-cancel (N-03) → item-level accept w/ 60s customer
   approval (D-23/N-18) → **payment-confirm-before-cook** (R-11, call-logged R-16, no clocks
   R-17, end-of-day auto-close N-23) → prep (chips N-04, starts at payment confirm; +10 busy) →
   ready → pickup (4-digit code N-16) → delivery → doorstep. Rejection reasons write customer
   copy (D-11). Pricing: fee $0.80/km rounded $0.50 min $1.50 (N-01), min order $4.00 / $1.00
   small-order fee (N-15) — **as config, not constants**. Apply `orderType` filters to all 11
-  audited class-(a) sites (each named in the PR).
+  audited class-(a) sites (each named in the PR). **Done 2026-07-29:** `order-lifecycle.transitions.ts`
+  gained an `orderType`/`"both"` dimension on every existing row (A-11) plus a new merchant-only
+  block (place/reject/expire_accept/decline_items/expire_item_approval/cancel_unpaid/
+  release_unpaid/expire_end_of_day, all `requested`→`cancelled`) and a parallel
+  `MERCHANT_PHASE_TRANSITIONS` table for the kitchen sub-state OrderStatus has no room for
+  (plan §0b.1: merchant orders live at `requested` + a nullable `merchantPhase` the whole
+  pre-dispatch flow, never `open_for_offers`, until C3 broadcasts a `ready_for_pickup` order —
+  that hand-off is deliberately not this PR's job). New `apps/api/src/merchant/food-order.service.ts`
+  + two controllers (`restaurants` customer-facing, `merchant/orders` kitchen-facing) implement
+  placeOrder → acceptOrder (full/D-23 item-level) → approveItems → logCall/requestPayment/
+  confirmPayment (R-11/R-16) → markReady, plus a DB-reconciler sweep (20s interval) for N-03/
+  N-18/N-23 auto-exits and `confirmPickup` (N-16, mirrors confirmDelivery one hop earlier —
+  wired now, unreachable via HTTP until C3 assigns a rider). Pricing lives in
+  `packages/shared/src/restaurants-order.ts` (`RESTAURANTS_PRICING`/`RESTAURANTS_TIMING` config
+  objects + pure functions, mirrors `pricing.ts`'s `FARE` pattern). All 11 status-keyed-query-audit
+  class-(a) sites fixed: A-1 offer-expiry sweep, A-2 offers.service guards (both), A-3 orders.service
+  bid boards (both), A-4 cloneForRebroadcast guard, A-5 rate/completeOrder chargeCommission type
+  branch, A-6 notifications.service STATUS_NOTICES guard, A-7 notifications-feed synthesis guard,
+  A-8/A-9 admin funnel + fares/spend KPIs, A-10 settlements console. Added `Merchant.location` +
+  `MerchantOrderItem` (price-snapshotted basket lines, D-35) + PII-manifest/erasure coverage for its
+  `note` column (migration 0042, additive only). D3 (post-launch product question, not blocking):
+  N-18's unanswered-approval-window default (treated as decline) is a named mocked default, surfaced
+  in the PR body per §9 discipline. C3 (food dispatch) is next.
 - [ ] **C3 · Food dispatch.** Auto-offer to one rider, 60s expiry (N-08), widening radius,
   NO_RIDER cap 6:00 (N-07) with merchant hold/decision (D-34) and no-fault cancel (D-13);
   "rider secured" first-class event for all three actors (D-04); soft-lock vs parcel bids

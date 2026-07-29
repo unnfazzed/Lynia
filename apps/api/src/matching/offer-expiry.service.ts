@@ -153,8 +153,11 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
     // and fall through to the zero result, keeping the { expired } return-shape contract intact.
     try {
       const cutoff = new Date(Date.now() - RECONCILE_GRACE_MS);
+      // A-1 (status-keyed-query-audit): a merchant order never carries Express's 90s auction timing —
+      // once C3's dispatch broadcasts a food order to open_for_offers, this sweep must not force-expire
+      // it on the Express clock. orderType:"parcel" makes expireOrder's CAS unreachable for one.
       const stale = await this.prisma.order.findMany({
-        where: { status: "open_for_offers", createdAt: { lt: cutoff } },
+        where: { status: "open_for_offers", orderType: "parcel", createdAt: { lt: cutoff } },
         select: { id: true },
         take: 500,
       });

@@ -114,6 +114,13 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
   sos_lat: { column: "lat", where: "sos_events", tables: ["sos_events"], disposition: "null", note: "DS-01: exact SOS location nulled (keep the incident row)." },
   sos_lng: { column: "lng", where: "sos_events", tables: ["sos_events"], disposition: "null", note: "DS-01: exact SOS location nulled." },
   note: { column: "note", where: "orders", tables: ["orders"], disposition: "null", note: "DS15-07: free-text order note (dialable/address PII) nulled on orders the erasing customer placed." },
+  merchant_order_item_note: {
+    column: "note",
+    where: "merchant_order_items",
+    tables: ["merchant_order_items"],
+    disposition: "null",
+    note: "C2: free-text per-dish note (D-35, e.g. 'leg portion, not breast') on a food order the erasing customer placed — same DS15-07 class as orders.note, distinct table-qualified entry per this file's own false-positive lesson (DS18-02).",
+  },
   cancel_reason: {
     column: "cancel_reason",
     where: "orders",

@@ -70,7 +70,7 @@ describe("NotificationsService — token registry", () => {
 describe("NotificationsService — order-status notices", () => {
   it("notifies the RIDER on `assigned`, to all their devices in one batch, with order data", async () => {
     const { prisma, push, service } = makeDeps();
-    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "r1" }, { token: "r2" }]);
 
     await service.notifyOrderStatus("o1", "assigned");
@@ -90,7 +90,7 @@ describe("NotificationsService — order-status notices", () => {
 
   it("notifies the CUSTOMER on lifecycle steps like `delivered`", async () => {
     const { prisma, push, service } = makeDeps();
-    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
 
     await service.notifyOrderStatus("o1", "delivered");
@@ -104,7 +104,7 @@ describe("NotificationsService — order-status notices", () => {
 
   it("notifies BOTH parties on `cancelled`, each stamped with their own per-order role (Fix 3)", async () => {
     const { prisma, push, service } = makeDeps();
-    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
     prisma.deviceToken.findMany.mockImplementation(async ({ where }: { where: { profileId: { in: string[] } } }) =>
       where.profileId.in.includes("cust") ? [{ token: "c1", profileId: "cust" }] : [{ token: "r1", profileId: "rider" }],
     );
@@ -128,7 +128,7 @@ describe("NotificationsService — order-status notices", () => {
 
   it("notifies the CUSTOMER (only) on `undelivered` — a terminal failure they must learn about", async () => {
     const { prisma, push, service } = makeDeps();
-    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
 
     await service.notifyOrderStatus("o1", "undelivered");
@@ -152,7 +152,7 @@ describe("NotificationsService — order-status notices", () => {
 
   it("drops a null rider audience (e.g. `completed` on an order with no rider)", async () => {
     const { prisma, push, service } = makeDeps();
-    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: null });
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: null });
     await service.notifyOrderStatus("o1", "completed"); // → rider only, but rider is null
     expect(prisma.deviceToken.findMany).not.toHaveBeenCalled();
     expect(push.sendEach).not.toHaveBeenCalled();
@@ -160,7 +160,7 @@ describe("NotificationsService — order-status notices", () => {
 
   it("swallows a push failure — never throws into the caller's transition", async () => {
     const { prisma, push, service } = makeDeps();
-    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "r1" }]);
     (push.sendEach as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fcm down"));
     await expect(service.notifyOrderStatus("o1", "assigned")).resolves.toBeUndefined();
@@ -170,7 +170,7 @@ describe("NotificationsService — order-status notices", () => {
 describe("NotificationsService — dead-token pruning", () => {
   it("deletes tokens the provider reports as permanently invalid (and only those)", async () => {
     const { prisma, push, service } = makeDeps();
-    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "good" }, { token: "dead" }]);
     // Results align positionally with the input messages (sendEach contract).
     (push.sendEach as ReturnType<typeof vi.fn>).mockImplementation(async (msgs: PushMessage[]) =>
@@ -184,7 +184,7 @@ describe("NotificationsService — dead-token pruning", () => {
 
   it("does NOT prune on a transient throw (only on an explicit invalidToken result)", async () => {
     const { prisma, push, service } = makeDeps();
-    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", riderId: "rider" });
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "r1" }]);
     (push.sendEach as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network blip"));
     await service.notifyOrderStatus("o1", "delivered");

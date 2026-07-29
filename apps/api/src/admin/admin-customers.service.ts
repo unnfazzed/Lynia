@@ -43,9 +43,12 @@ export class AdminCustomersService {
         where: { customerId: { in: ids }, status: "cancelled" },
         select: { customerId: true, cancelledBy: true },
       }),
+      // A-9 (status-keyed-query-audit): a merchant order's `agreedFare` is its own goods+delivery
+      // total, not parcel spend — filtered out so a food customer's "spend" figure here isn't
+      // conflated with their Express spend (merchant orders get their own basis once C4/X1 land).
       this.prisma.order.groupBy({
         by: ["customerId"],
-        where: { customerId: { in: ids }, status: "completed" },
+        where: { customerId: { in: ids }, status: "completed", orderType: "parcel" },
         _sum: { agreedFare: true },
       }),
       // Real flag counts (A-05): how many times riders have reported each customer — same Report rows
@@ -90,7 +93,11 @@ export class AdminCustomersService {
       // NEW-3: only the customer's OWN cancels count toward their cancel rate — a rider bailing or ops
       // cancelling shouldn't inflate a punitive-looking signal that feeds hold decisions.
       this.prisma.order.count({ where: { customerId: id, status: "cancelled", cancelledBy: id } }),
-      this.prisma.order.aggregate({ where: { customerId: id, status: "completed" }, _sum: { agreedFare: true } }),
+      // A-9: same parcel-only spend basis as listCustomers above.
+      this.prisma.order.aggregate({
+        where: { customerId: id, status: "completed", orderType: "parcel" },
+        _sum: { agreedFare: true },
+      }),
       this.prisma.order.findMany({
         where: { customerId: id },
         orderBy: { createdAt: "desc" },

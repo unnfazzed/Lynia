@@ -175,6 +175,7 @@ export class NotificationsFeedService {
         select: {
           id: true,
           riderId: true,
+          orderType: true,
           // `rebroadcastOfId` links a rider-bail clone back to the order it replaced; `expiryNoSupply`
           // flags a genuine "nobody was online" expiry; `cancelledBy` is the canceller's profile id (used
           // for actor-suppression below — a row about your OWN action is noise, mirroring the push).
@@ -303,6 +304,11 @@ export class NotificationsFeedService {
 
     const rows: NotificationRow[] = [];
     for (const order of orders) {
+      // A-7 (status-keyed-query-audit): FEED_NOTICES/FEED_NOTICES_RIDER are parcel-voiced copy
+      // ("Your rider had to cancel", "raise your price"). Type-aware feed notices + deep links are a
+      // C5 deliverable — until then, skip a food order's events entirely rather than render wrong
+      // copy (mirrors notifications.service.ts's notifyOrderStatus guard, A-6).
+      if (order.orderType !== "parcel") continue;
       // Pick the voice matching what this viewer actually experienced on THIS order — a dual-role user
       // can be the rider on one trip and the customer on another, so the role is per-order, not per-user.
       const isCustomerView = order.riderId !== userId;

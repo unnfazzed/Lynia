@@ -51,6 +51,26 @@ enum OfferType {
   counter
 }
 
+// C2 (food order lifecycle): merchant orders travel the existing OrderStatus skeleton — `requested`
+// (never written by the parcel path, see the transitions-table docstring) is the kitchen-side phase
+// while `MerchantPhase` carries the sub-states OrderStatus has no room for. Once a food order is
+// `ready_for_pickup` it is handed to C3's dispatch, which moves it into open_for_offers/assigned/...
+// exactly like a parcel (the plan §0b.1 locked decision).
+enum MerchantPhase {
+  awaiting_accept
+  awaiting_item_approval
+  awaiting_payment
+  preparing
+  ready_for_pickup
+}
+
+/** The customer's chosen settlement rail for a food order (R-01/R-11) — orthogonal to the merchant's
+ *  own `cashRule` (how a CASH order is fronted), which stays a C3/C4 concern. */
+enum MerchantPaymentMethod {
+  cash
+  wallet
+}
+
 enum OfferStatus {
   pending
   selected
@@ -490,8 +510,47 @@ model Order {
   createdAt           DateTime    @default(now()) @map("created_at")
   updatedAt           DateTime    @updatedAt @map("updated_at")
 
+  // ── C2: food order lifecycle (orderType=merchant only; null for every parcel order) ──────────────
+  // Kitchen-side sub-state OrderStatus has no room for (plan §0b.1) — null while status is anything
+  // other than the merchant's pre-dispatch `requested` phase.
+  merchantPhase MerchantPhase? @map("merchant_phase")
+  // N-03: 3:00 accept window from order placement — the reconciler auto-cancels an order still
+  // `awaiting_accept` past this stamp.
+  acceptDeadlineAt DateTime? @map("accept_deadline_at")
+  // D-23/N-18: 60s the customer has to approve a shortened (item-level accept) order.
+  itemApprovalDeadlineAt DateTime? @map("item_approval_deadline_at")
+  // D-11: the reason a merchant declined or released the order — this string IS the customer copy
+  // (MERCHANT_REJECTION_REASONS in packages/shared), never a raw enum leaked to the client.
+  rejectionReason String? @map("rejection_reason")
+  // R-01/R-11: the customer's chosen settlement rail. Null for parcel orders.
+  merchantPaymentMethod MerchantPaymentMethod? @map("merchant_payment_method")
+  // R-16: "call before requesting payment" — the request-payment action is blocked until this is set
+  // (or the regulars/in-person override is used).
+  paymentCallLoggedAt DateTime? @map("payment_call_logged_at")
+  paymentRequestedAt  DateTime? @map("payment_requested_at")
+  // D-24 manual rail: the reference the customer (or merchant, matching their own statement) entered.
+  merchantPaymentReference String? @map("merchant_payment_reference")
+  // R-11: the merchant's own-statement match — this is what starts the prep clock, not acceptance.
+  merchantPaymentConfirmedAt DateTime? @map("merchant_payment_confirmed_at")
+  // N-04 chip minutes (10/15/20/30/45), + N-17's +10 busy-mode bump already folded in at accept time.
+  prepMinutes    Int?      @map("prep_minutes")
+  prepStartedAt  DateTime? @map("prep_started_at")
+  readyAt        DateTime? @map("ready_at")
+  // N-16: 4-digit pickup code, hashed like otpHash — proves the rider at the counter is the one
+  // assigned. Minted by C3's dispatch at assignment; verified here (mirrors confirmDelivery's shape).
+  pickupCodeHash     String? @map("pickup_code_hash")
+  pickupCodeAttempts Int     @default(0) @map("pickup_code_attempts")
+  // D-08: money and delivery money are never merged into one figure for the merchant — this is what's
+  // OWED TO THE MERCHANT (dish subtotal + N-15 small-order fee); deliveryFee is what the rider keeps.
+  // agreedFare (existing column, reused) carries the grand total the customer pays (goods + delivery).
+  merchantGoodsTotal Decimal? @map("merchant_goods_total") @db.Decimal(10, 2)
+  // N-01: computed via packages/shared/restaurants-pricing (config, not a constant), never re-derived
+  // client-side.
+  deliveryFee Decimal? @map("delivery_fee") @db.Decimal(10, 2)
+
   offers Offer[]
   events OrderEvent[]
+  merchantItems MerchantOrderItem[]
   // Two-way rating (BUG-HUNT P3): an order can now carry one rating per rater (customer + rider),
   // so this is a list — the single-row unique on ratings.order_id was widened to (order_id,
   // by_profile_id) in migration 0015. The rider's "rate the sender" (4·7) is the rider-direction row.
@@ -735,6 +794,12 @@ model Merchant {
   // per-merchant gate for the founder's named CBD pilot corridor. Defaults false: dormant until an
   // operator explicitly onboards the shop.
   pilotEnabled   Boolean          @default(false) @map("pilot_enabled")
+  // C2: the shop's own pickup point (same Waypoint shape as Order.pickup — {point:{lat,lng},
+  // landmark, contactPhone}), set by the merchant before it can take orders. Nullable: onboarding
+  // merchants have no location yet, so placeOrder 409s until it's set. Plain JSON for now — C3's
+  // dispatch adds its own generated-geography column (mirrors orders.pickup_geog) when it needs a
+  // GiST radius search; this field is read-through only until then.
+  location       Json?
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
 
@@ -791,9 +856,33 @@ model MerchantDish {
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
 
+  orderItems MerchantOrderItem[]
+
   @@index([categoryId])
   @@index([merchantId])
   @@map("merchant_dishes")
+}
+
+// C2: a food order's basket lines, price-snapshotted at placement (D-35 "a note can never alter the
+// price"). `dishId` is SetNull on dish delete so a historical order line survives a menu edit; the
+// snapshot fields are what render on the receipt/ticket regardless. `available` is D-23's item-level
+// accept: null = merchant hasn't decided, true = kept, false = "don't have it" (the removed line the
+// customer approves within N-18's 60s window).
+model MerchantOrderItem {
+  id           String        @id @default(uuid()) @db.Uuid
+  orderId      String        @map("order_id") @db.Uuid
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  dishId       String?       @map("dish_id") @db.Uuid
+  dish         MerchantDish? @relation(fields: [dishId], references: [id], onDelete: SetNull)
+  nameSnapshot String        @map("name_snapshot")
+  priceUsd     Decimal       @map("price_usd") @db.Decimal(10, 2)
+  quantity     Int
+  note         String?
+  available    Boolean?
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@map("merchant_order_items")
 }
 
 model Address {
