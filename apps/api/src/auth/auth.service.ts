@@ -15,6 +15,7 @@ import { normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
+import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { OTP_SENDER, type OtpSender } from "./otp-sender";
@@ -256,6 +257,14 @@ export class AuthService {
     // profile identity in verifyOtp) is the same string regardless of how the number was typed.
     const phone = normalizePhone(rawPhone);
     if (!phone) throw new BadRequestException("Enter a valid phone number");
+    // Play-review demo account (§7.1): the reviewer already has the fixed code from the App-access
+    // form, so there is nothing to send. Short-circuit BEFORE the rate limiters and the sender — no
+    // BSP cost, no OTP record written (verifyOtp checks the fixed code directly), and crucially no
+    // devCode ever echoed. Same `{ sent: true }` shape as a real request so the client flow is
+    // identical and the demo number is not distinguishable from a normal one by the response.
+    if (this.isDemoPhone(phone)) {
+      return { sent: true, channel: this.sender.channel() };
+    }
     const rl = rlFrom(this.env);
     await this.enforceRate(`rl:phone:${phone}`, rl.phone);
     await this.enforceRate(`rl:ip:${ip}`, rl.ip);
@@ -290,6 +299,60 @@ export class AuthService {
     return allow.includes(phone);
   }
 
+  /**
+   * Play-review demo account (docs/PLAY-STORE-SUBMISSION.md §7.1). Armed ONLY when BOTH env vars are
+   * set (enforced well-formed by the config boot-guard); either unset → the whole path is inert and
+   * `isDemoPhone` is always false, so the ordinary OTP flow is completely unaffected. `phone` is
+   * already E.164-normalized by the callers, so the configured number is normalized the same way for
+   * an apples-to-apples compare (accepts it written as "+263…", "0…", or "263…").
+   */
+  private demoPhone(): string | null {
+    const configured = (this.env.DEMO_OTP_PHONE ?? "").trim();
+    const code = (this.env.DEMO_OTP_CODE ?? "").trim();
+    if (!configured || !code) return null;
+    return normalizePhone(configured);
+  }
+
+  private isDemoPhone(phone: string): boolean {
+    const demo = this.demoPhone();
+    return demo !== null && demo === phone;
+  }
+
+  /**
+   * The demo sign-in itself. Returns a real session for the demo customer profile when `code` matches
+   * the configured fixed code, or null on any mismatch so the caller emits the same "Invalid code" as
+   * a normal wrong guess (no oracle distinguishing the demo number). The compare is constant-time —
+   * the code is a standing secret, so a timing side-channel would let it be recovered a digit at a
+   * time. We hash both sides first (equal-length hex) so neither the compare nor the code's length
+   * leaks. The demo path deliberately skips the OTP store, the per-device signup cap and the device-id
+   * requirement: a reviewer must be able to sign in cleanly with just the two credentials from the
+   * App-access form. Blast radius is a throwaway CUSTOMER account — in production it cannot self-verify
+   * as a rider (KYC needs real ID; the stub auto-pass is non-prod only), so it never reaches the rider
+   * board or payouts. The route-level verify throttle (10/5min per IP) still applies, bounding brute
+   * force of the 6-digit code.
+   */
+  private async verifyDemoOtp(
+    phone: string,
+    code: string,
+    userAgent?: string,
+    device?: string,
+  ): Promise<(SessionTokens & { profileId: string; role: string; needsProfile: boolean }) | null> {
+    const expected = (this.env.DEMO_OTP_CODE ?? "").trim();
+    if (!this.tokens.safeEqualHex(this.tokens.hash(code), this.tokens.hash(expected))) return null;
+
+    const profile = await this.prisma.profile.upsert({
+      where: { phone },
+      update: { phoneVerifiedAt: new Date() },
+      create: { phone, firstName: "", lastName: "", role: "customer", phoneVerifiedAt: new Date() },
+      select: { id: true, role: true, firstName: true },
+    });
+    const session = await this.issueSession(profile.id, profile.role, userAgent, device);
+    // Audit trail: a demo sign-in is a real production session on a privileged bypass path, so make it
+    // visible in the logs (the code is never logged). Masked phone, like the rest of this file.
+    this.logger.warn(`Play-review demo account sign-in (${maskPhone(phone)})`);
+    return { ...session, profileId: profile.id, role: profile.role, needsProfile: profile.firstName === "" };
+  }
+
   async verifyOtp(rawPhone: string, code: string, userAgent?: string, deviceId?: string): Promise<SessionTokens & {
     profileId: string;
     role: string;
@@ -306,6 +369,27 @@ export class AuthService {
     const done = this.metrics.startTimer();
     // Record duration + the mapped result on EVERY exit path, then re-throw so callers see the error.
     const record = (result: OtpVerifyResult): void => this.metrics.recordOtpVerify(done(), result);
+    // Play-review demo account (§7.1): the fixed-code path, checked BEFORE the OTP store (the demo
+    // number has no stored code — requestOtp short-circuits it). A match mints a real session; a
+    // mismatch falls through to the same "Invalid code" a normal wrong guess gets, so the demo number
+    // is not distinguishable by response. Inert unless both DEMO_OTP_* vars are set.
+    if (this.isDemoPhone(phone)) {
+      // The demo code is FIXED and never rotates, and this path skips the OTP store's 5-attempt
+      // lock, so the only other guard — the per-IP route throttle — leaves a distributed (many-IP)
+      // attacker able to brute-force the 6-digit space. Bound it with a per-PHONE fixed-window cap
+      // that holds regardless of source IP: the demo number is a single value, so this is one shared
+      // counter over all guesses at it. 10/hour makes the 1e6 space take years in expectation while
+      // leaving a reviewer (who has the code and needs one try) ample headroom; a fixed window resets,
+      // so it slows brute force without ever permanently locking the reviewer out.
+      await this.enforceRate(`rl:demo-verify:${phone}`, { max: 10, windowSec: 3600 });
+      const demo = await this.verifyDemoOtp(phone, code, userAgent, device);
+      if (demo) {
+        record("ok");
+        return demo;
+      }
+      record("invalid");
+      throw new UnauthorizedException("Invalid code");
+    }
     try {
       const rec = await this.store.get(phone);
       if (!rec) {

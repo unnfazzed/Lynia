@@ -9,6 +9,13 @@ export const INSECURE_PII_KEY_DEFAULT = "dev-insecure-pii-key-change-me-please";
 /** Minimum entropy we require of a production signing secret (bytes ≈ chars for the ASCII secrets we mint). */
 const MIN_PROD_SECRET_LEN = 32;
 
+/** Obvious 6-digit sequences rejected for the (fixed, non-rotating) Play-review demo code, on top of
+ *  the all-same-digit check. Not exhaustive — just the codes a human reaches for first. */
+const TRIVIAL_DEMO_CODES = new Set([
+  "012345", "123456", "234567", "345678", "456789", "567890",
+  "987654", "876543", "765432", "654321", "543210", "098765",
+]);
+
 /** Optional URL that treats an empty string as absent. The deploy injects some optional vars with an
  *  empty value when their repo Variable is unset (e.g. `--set-env-vars DIDIT_CALLBACK_URL=`); "" is not
  *  `undefined`, so a bare `.url().optional()` would reject it and crash boot. Coerce "" → undefined. */
@@ -134,6 +141,15 @@ export const envSchema = z.object({
   // MUST be empty (and OTP_CHANNEL not "console" or the unimplemented "sms" stub) before real launch —
   // see docs/PILOT-READINESS.md.
   OTP_TEST_PHONES: z.string().default(""),
+  // Play-review demo account (docs/PLAY-STORE-SUBMISSION.md §7.1). A single allowlisted phone whose
+  // login accepts a FIXED code, so a Google reviewer — who cannot receive a Zimbabwean OTP — can sign
+  // in with credentials supplied in the Play Console "App access" form. UNLIKE OTP_TEST_PHONES this
+  // NEVER echoes a code in any response and is deliberately ALLOWED in production (that is its whole
+  // purpose). Both vars must be set together to arm it; either unset → the feature is entirely off.
+  // The code must be exactly 6 digits — that is all POST /auth/otp/verify accepts and all the app's
+  // code field allows. Validated in the superRefine below (in every environment).
+  DEMO_OTP_PHONE: z.string().optional(),
+  DEMO_OTP_CODE: z.string().optional(),
   // WhatsApp Cloud API (Meta) — only needed when OTP_CHANNEL=whatsapp. ACCESS_TOKEN is the secret.
   WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
   WHATSAPP_ACCESS_TOKEN: z.string().optional(),
@@ -376,6 +392,35 @@ export const envSchema = z.object({
           "KYC_PROVIDER=stub auto-passes verification; production must use the real vendor (KYC_PROVIDER=didit) or manual review (KYC_MODE=manual)",
         );
       }
+    }
+  }
+
+  // Play-review demo account (docs/PLAY-STORE-SUBMISSION.md §7.1). Validated in EVERY environment, not
+  // just production: a malformed value is a dead config anywhere, and this path is meant to run in
+  // prod. The auth-service demo branch is gated on BOTH vars being present, so these checks make the
+  // "armed" state well-formed — they never force the feature on.
+  const demoPhoneSet = (env.DEMO_OTP_PHONE ?? "").trim() !== "";
+  const demoCodeSet = (env.DEMO_OTP_CODE ?? "").trim() !== "";
+  if (demoPhoneSet !== demoCodeSet) {
+    reject(
+      demoPhoneSet ? "DEMO_OTP_CODE" : "DEMO_OTP_PHONE",
+      "DEMO_OTP_PHONE and DEMO_OTP_CODE must be set together (both or neither) — one without the other cannot authenticate the reviewer demo account",
+    );
+  }
+  if (demoCodeSet) {
+    const c = (env.DEMO_OTP_CODE ?? "").trim();
+    if (!/^\d{6}$/.test(c)) {
+      reject(
+        "DEMO_OTP_CODE",
+        "DEMO_OTP_CODE must be exactly 6 digits — POST /auth/otp/verify only accepts a 6-digit code and the app's code field allows nothing else",
+      );
+    } else if (/^(\d)\1{5}$/.test(c) || TRIVIAL_DEMO_CODES.has(c)) {
+      // It never rotates, so a weak fixed code is a standing takeover vector on the demo number.
+      // Block all-same-digit and the obvious ascending/descending runs.
+      reject(
+        "DEMO_OTP_CODE",
+        "DEMO_OTP_CODE is trivially guessable — choose a non-sequential, non-repeated 6-digit code (it is a fixed, non-rotating secret)",
+      );
     }
   }
 });

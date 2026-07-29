@@ -6,8 +6,9 @@
 > `docs/DATA-RETENTION.md` (the source of truth behind every data claim here).
 >
 > **Status (2026-07-29):** the Play developer account is approved and can create apps. The repo side
-> of the submission is now complete except for the four founder-only items in §7. Nothing here has
-> been entered into Play Console yet.
+> of the submission is complete — including the reviewer-access demo account (§7.1), which was the one
+> hard blocker and is now built. What remains is founder-only: set the demo-account secrets, the
+> Play/EAS credentials, the CDPA filings (§7.3), and produce the graphics.
 
 ---
 
@@ -176,12 +177,14 @@ two-tap confirm that calls `DELETE /auth/me`. Regression-tested in
 
 **No**, the app contains no ads. There is no ads SDK, no advertising ID use, and no ad mediation.
 
-### 4.4 App access — ⛔ **BLOCKER, see §7.1**
+### 4.4 App access — declare "restricted", supply the demo account
 
-The whole app is behind a phone-number OTP sign-in. Play reviewers **cannot** receive a Zimbabwean
-WhatsApp OTP, so "All functionality is available without special access" is false and will fail
-review. Demo credentials must be supplied — and the mechanism to honour them does not exist in
-production yet. This is the single largest remaining blocker; §7.1 has the detail.
+The whole app is behind a phone-number OTP sign-in (SMS via Bird), so select **"All or some
+functionality is restricted"** and provide sign-in details. Reviewers cannot receive a Zimbabwean
+OTP, so a normal account is unusable to them — the **demo account with a fixed code (§7.1) is built**
+for exactly this. Enter the demo phone as the username and the fixed code as the password, with a
+one-line instruction to request the code and enter it. Remaining work is founder-only: set the two
+secrets and type the credentials into this form (§7.1).
 
 ### 4.5 Content rating questionnaire
 
@@ -301,30 +304,53 @@ Use `/qa` or the device checklist in `docs/QA-DEVICE-CHECKLIST.md` to drive the 
 
 These four cannot be closed from the repo.
 
-### 7.1 ⛔ Reviewer access to a login-gated app
+### 7.1 ✅ Reviewer access to a login-gated app — BUILT (founder sets two secrets)
 
-**The problem.** Sign-in is phone + OTP over WhatsApp. A Play reviewer in another country cannot
-receive that code, so they cannot open the app past the phone screen, and the submission is rejected
-under "App access". The existing QA escape hatch does **not** solve this: `OTP_TEST_PHONES` returns
-the live code in the HTTP response, and `apps/api/src/config/env.ts` **rejects it at boot in
-production** on purpose (it is an account-takeover vector). So today there is no production-safe way
-to hand a reviewer a working account.
+**The problem.** Sign-in is phone + OTP (SMS, via Bird). A Play reviewer in another country cannot
+receive a Zimbabwean OTP, so they cannot open the app past the phone screen, and the submission is
+rejected under "App access". The QA escape hatch does **not** solve it: `OTP_TEST_PHONES` returns the
+live code in the HTTP response and is boot-rejected in production (an account-takeover vector).
 
-**Options, worst to best:**
+**The mechanism (implemented).** A single allowlisted **demo account with a fixed code**, gated on two
+secrets — `DEMO_OTP_PHONE` and `DEMO_OTP_CODE` (`apps/api/src/auth/auth.service.ts`,
+`apps/api/src/config/env.ts`). Properties, all covered by tests:
 
-1. *Ship as-is and hope* — will be rejected. Not an option.
-2. *Give the reviewer a real Zimbabwean number and relay codes by email* — reviews are asynchronous
-   and re-run on every update; this fails the second time and blocks every release.
-3. **Recommended: a single allowlisted demo account with a fixed OTP.** One phone number, held in a
-   secret (not a repo variable), whose OTP verification accepts one fixed code held in a *second*
-   secret. Crucially it must NOT echo the code in the response the way `OTP_TEST_PHONES` does — the
-   reviewer is told the code out-of-band via the App access form. Scope it hard: exactly one number,
-   customer role, rate-limited like any other, excluded from payouts and from the rider board, and
-   auditable. This is what Bolt/inDrive-class apps do.
+- **Both secrets or nothing.** Either unset → the path is entirely inert and the ordinary OTP flow is
+  untouched. Boot rejects one-without-the-other, a non-6-digit code, and trivially guessable codes.
+- **Never echoes the code.** Unlike `OTP_TEST_PHONES`, no response ever carries it — the reviewer gets
+  it out-of-band from the App-access form. `requestOtp` on the demo number sends nothing (no BSP cost)
+  and stores nothing.
+- **Allowed in production** — that is the point, and what distinguishes it from `OTP_TEST_PHONES`.
+- **Constant-time code compare** (hashed both sides); a wrong guess is the same `Invalid code` as any
+  other, so the demo number isn't distinguishable by response.
+- **Low blast radius.** A throwaway **customer** account: in production it cannot self-verify as a
+  rider (KYC needs real ID; the stub auto-pass is non-prod only), so it never reaches the rider board
+  or payouts. The per-IP verify throttle (10/5min) still bounds brute force of the 6-digit code.
+- **Audited** — a demo sign-in logs a masked-phone WARN.
 
-This is a deliberate, security-sensitive change to the auth path, so it wants an explicit decision
-and a `/security-review` pass before implementation — it is not something to slip into a routine PR.
-**Decide this first: it gates the entire submission.**
+**Founder action (the whole remaining task):** set two secrets on the production API (Cloud Run /
+Secret Manager), pick a **non-obvious 6-digit code**, and enter the phone + code in Play Console →
+App access.
+
+```
+DEMO_OTP_PHONE = +2637XXXXXXXX     # a DEDICATED number — see the warning below
+DEMO_OTP_CODE  = <non-obvious 6 digits>   # e.g. not 123456 / 111111 — boot rejects those
+```
+
+> ⚠️ **The demo number must not be a real user's account.** Sign-in resolves the account by phone, so
+> if `DEMO_OTP_PHONE` is a number that already has (or later gets) a real profile, anyone holding the
+> fixed code signs in **as that person**. Use a reserved number you control that will never be a
+> genuine customer/rider. This is inherent to any phone-keyed demo account; the mitigation is
+> operational — pick a dedicated number.
+
+Brute-force of the fixed code is bounded two ways: a **per-phone cap of 10 guesses/hour** (holds
+across all source IPs, so a distributed attacker can't outrun it — years to exhaust the 6-digit space
+in expectation) on top of the existing per-IP verify throttle. The window resets, so a reviewer is
+never permanently locked out.
+
+That closes the blocker. It went through an adversarial self-review (the per-phone cap and this
+dedicated-number warning came out of it); the design notes live at the code sites for the next
+auditor.
 
 ### 7.2 Play Console + EAS credential setup
 
@@ -393,7 +419,7 @@ Once §7.1 and §7.2 are closed:
 
 ## 9. Pre-submission checklist
 
-- [ ] §7.1 reviewer access decided and implemented
+- [x] §7.1 reviewer-access demo account implemented — founder still sets `DEMO_OTP_PHONE`/`DEMO_OTP_CODE`
 - [ ] Play Console app created for `zw.co.lynia`, enrolled in Play App Signing
 - [ ] `scripts/eas-arm.sh --verify` reports everything armed
 - [ ] Store listing copy (§2) pasted; 512² icon derived

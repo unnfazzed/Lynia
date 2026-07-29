@@ -100,6 +100,68 @@ describe("AuthService.requestOtp", () => {
   });
 });
 
+describe("AuthService — Play-review demo account (§7.1)", () => {
+  const demoEnv = { ...baseEnv, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "846201" } as Env;
+  const profileRow = { id: "demo1", role: "customer", firstName: "" };
+  const demoPrisma = () => ({
+    profile: { findUnique: async () => ({ ...profileRow, sessions: [] }), upsert: async () => profileRow },
+    session: { create: async () => ({ id: "s-demo" }) },
+  });
+
+  it("requestOtp on the demo number never sends, never stores, and never echoes a code", async () => {
+    let sent = 0;
+    const sender = new ConsoleOtpSender();
+    vi.spyOn(sender, "send").mockImplementation(async () => { sent++; });
+    const store = new InMemoryOtpStore();
+    const svc = new AuthService(demoEnv, demoPrisma() as unknown as PrismaService, new TokenService(demoEnv), store, sender, fakeMetrics(), pii);
+    const res = await svc.requestOtp("+263770000777", "9.9.9.9");
+    expect(res).toEqual({ sent: true, channel: "console" }); // no devCode key, ever
+    expect(sent).toBe(0); // BSP/SMS never invoked
+    expect(await store.get("+263770000777")).toBeNull(); // no OTP record written
+  });
+
+  it("verifyOtp mints a real session for the demo number with the fixed code", async () => {
+    const { svc } = make(demoEnv, demoPrisma());
+    const res = await svc.verifyOtp("+263770000777", "846201", "ua", "dev-1");
+    expect(res).toMatchObject({ profileId: "demo1", role: "customer" });
+    expect(res.accessToken).toBeTruthy();
+    expect(res.refreshToken).toContain(".");
+  });
+
+  it("verifyOtp rejects a wrong code on the demo number as a normal invalid code (no oracle)", async () => {
+    const { svc } = make(demoEnv, demoPrisma());
+    await expect(svc.verifyOtp("+263770000777", "000000", "ua", "dev-1")).rejects.toThrow(/invalid code/i);
+  });
+
+  it("accepts the demo number typed in local/international forms (normalized both sides)", async () => {
+    const { svc } = make(demoEnv, demoPrisma());
+    await expect(svc.verifyOtp("0770000777", "846201", "ua", "dev-1")).resolves.toBeTruthy();
+  });
+
+  it("caps guesses at the demo number per-phone (10/hr) so a fixed code can't be brute-forced across IPs", async () => {
+    const { svc } = make(demoEnv, demoPrisma());
+    // 10 wrong guesses are allowed (each an 'invalid code'); the 11th is throttled regardless of the
+    // code — this cap is per-phone, so rotating source IPs (the route throttle's key) can't evade it.
+    for (let i = 0; i < 10; i++) {
+      await expect(svc.verifyOtp("+263770000777", "000000")).rejects.toThrow(/invalid code/i);
+    }
+    await expect(svc.verifyOtp("+263770000777", "846201")).rejects.toThrow(/too many/i);
+  });
+
+  it("is completely inert when the demo vars are unset — demo code is just a wrong guess", async () => {
+    const { svc, store } = make(baseEnv, demoPrisma());
+    // With no demo configured, the number is ordinary: no stored code → 'expired', not a demo login.
+    await expect(svc.verifyOtp("+263770000777", "846201")).rejects.toThrow(/expired or never/i);
+    expect(await store.get("+263770000777")).toBeNull();
+  });
+
+  it("does not treat a non-demo number as the demo account even when demo is armed", async () => {
+    const { svc } = make(demoEnv, demoPrisma());
+    // A different number with the demo code must NOT sign in — it has no stored OTP, so it 'expired'.
+    await expect(svc.verifyOtp("+263779999999", "846201")).rejects.toThrow(/expired or never/i);
+  });
+});
+
 describe("AuthService phone identity is E.164-normalized", () => {
   it("request in local form + verify in international form resolve to one account", async () => {
     let upsertWhere: { phone?: string } = {};
