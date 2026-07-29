@@ -274,3 +274,35 @@ describe("loadEnv — staging tier (APP_ENV=staging, prod-shaped with QA bypasse
     expect(() => loadEnv({ ...prodBase, APP_ENV: "qa" })).toThrow(/Invalid environment configuration/);
   });
 });
+
+describe("loadEnv — Play-review demo account (§7.1)", () => {
+  it("accepts both demo vars set with a well-formed 6-digit code, even in production", () => {
+    const env = loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "846201" });
+    expect(env.DEMO_OTP_PHONE).toBe("+263770000777");
+    expect(env.DEMO_OTP_CODE).toBe("846201");
+  });
+
+  it("is off by default (both unset) with no error", () => {
+    const env = loadEnv(prodBase);
+    expect(env.DEMO_OTP_PHONE).toBeUndefined();
+    expect(env.DEMO_OTP_CODE).toBeUndefined();
+  });
+
+  it("rejects one var without the other (phone only)", () => {
+    expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777" })).toThrow(/DEMO_OTP_CODE/);
+  });
+
+  it("rejects one var without the other (code only)", () => {
+    expect(() => loadEnv({ ...prodBase, DEMO_OTP_CODE: "846201" })).toThrow(/DEMO_OTP_PHONE/);
+  });
+
+  it("rejects a non-6-digit code", () => {
+    expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "12345" })).toThrow(/6 digits/);
+    expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "abcdef" })).toThrow(/6 digits/);
+  });
+
+  it("rejects a trivially guessable code (sequential or repeated)", () => {
+    expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "123456" })).toThrow(/guessable/);
+    expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "999999" })).toThrow(/guessable/);
+  });
+});
