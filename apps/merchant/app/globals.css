@@ -1,7 +1,61 @@
-/* Minimal reset for the P0 scaffold. The real styling arrives with the P3 design track:
- * packages/design tokens (accent/cta/accentText split — see docs/DESIGN-SYSTEM.md) via the
- * approved /design-html output. Deliberately no ad-hoc colors here so nothing has to be
- * un-invented when the design system lands. */
+/* Design tokens mirror packages/design/tokens/*.css via @lynia/shared (same convention as
+ * apps/admin/app/globals.css — kept as a manually-synced copy, not an import, since Next inlines
+ * CSS at build time and neither app currently pipes packages/design's own CSS through its bundler). */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/inter-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/inter-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/inter-700.woff2") format("woff2");
+}
+
+:root {
+  --ink: #14181b;
+  --muted: #5b6670;
+  --bg: #ffffff;
+  --surface: #f6f7f8;
+  --line: #e2e6ea;
+  --accent: #00b14f;
+  --accent-text: #006630;
+  --accent-wash: #e9f8ef;
+  --cta-fill: #00812f;
+  --cta-fill-pressed: #006b27;
+  --on-accent: #ffffff;
+  --highlight: #f2b705;
+  --highlight-wash: #fffcf2;
+  --highlight-ink: #6b5600;
+  --highlight-border: #f2b70566;
+  --danger: #c0392b;
+  --danger-wash: #faedeb;
+  --danger-ink: #8f2418;
+  --shadow-card: 0 1px 4px rgba(20, 24, 27, 0.08), 0 2px 12px rgba(20, 24, 27, 0.06);
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+  --radius-card: 16px;
+  --radius-input: 12px;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -9,10 +63,108 @@
 }
 
 body {
-  font-family:
-    Inter,
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Consistent keyboard focus ring (no ring on mouse click via :focus-visible) — a tablet kept upright
+ * on a counter is still sometimes driven with an attached keyboard/barcode-scanner-as-keyboard. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Kitchen shell layout (tablet-first 1024×680, degrades to phone). */
+.kitchen-shell {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  overflow: hidden;
+}
+.kitchen-shell-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.kitchen-nav {
+  width: 92px;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.kitchen-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  border-radius: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: default;
+}
+.kitchen-nav-item[data-active="true"] {
+  background: var(--accent-wash);
+  border-left-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+.kitchen-nav-item[data-disabled="true"] {
+  opacity: 0.5;
+}
+.kitchen-content {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+/* Degrade the left rail to a bottom bar below tablet width (design says "degrades to phone", not
+ * drawn in the gallery — this is the straightforward, standard collapse). */
+@media (max-width: 680px) {
+  .kitchen-shell-body {
+    flex-direction: column-reverse;
+  }
+  .kitchen-nav {
+    width: auto;
+    flex-direction: row;
+    border-right: none;
+    border-top: 1px solid var(--line);
+    padding: 4px 0;
+  }
+  .kitchen-nav-item {
+    flex: 1;
+  }
+}
+
+/* D-05 NEW ORDER takeover uses a solid CTA-fill background — reused here for the manual test ring so
+ * the same "unmissable" visual language previews correctly. Full screen tied via .kitchen-alarm-flash
+ * only when the wake lock was refused (§3 flashing-header fallback). */
+@keyframes kitchen-flash {
+  0%,
+  100% {
+    background: var(--bg);
+  }
+  50% {
+    background: var(--highlight-wash);
+  }
+}
+.kitchen-bar-flashing {
+  animation: kitchen-flash 1s ease-in-out infinite;
 }

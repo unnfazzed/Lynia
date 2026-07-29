@@ -21,6 +21,8 @@ import { RIDER_IDENTITY_KEY } from "../../logic/rider-identity";
 import { JOB_KEY } from "../../net/last-active-store";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../../logic/pickup-checklist-draft";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../../logic/rider-bid-draft";
+import { RESTAURANT_LIST_SNAPSHOT_KEY } from "../../net/restaurant-list-store";
+import { FOOD_CART_SNAPSHOT_KEY } from "../../net/food-cart-store";
 import { clearDeviceState, loadSession } from "../session";
 
 afterEach(() => {
@@ -76,6 +78,8 @@ describe("clearDeviceState (full key-wipe characterization, RF-10 pin)", () => {
         RIDER_BID_DRAFT_KEY,
         RIDER_SENT_OFFERS_KEY,
         PICKUP_CHECKLIST_DRAFT_KEY,
+        RESTAURANT_LIST_SNAPSHOT_KEY,
+        FOOD_CART_SNAPSHOT_KEY,
       ]),
     );
   });

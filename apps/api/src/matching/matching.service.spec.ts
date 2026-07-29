@@ -112,7 +112,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
         update: async () => ({}),
         updateMany: async () => ({ count: 0 }),
       },
-      order: { updateMany: async () => ({ count: 1 }) },
+      order: { updateMany: async () => ({ count: 1 }), findFirst: async () => null },
       orderEvent: { create: async () => ({}) },
       block: { findFirst: async () => null },
     });
@@ -144,7 +144,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
         update: async () => ({}),
         updateMany: async () => ({ count: 0 }),
       },
-      order: { updateMany: async () => ({ count: 1 }) },
+      order: { updateMany: async () => ({ count: 1 }), findFirst: async () => null },
       orderEvent: { create: async () => ({}) },
       block: { findFirst: async () => null },
     });
@@ -174,7 +174,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
         update: async () => ({}),
         updateMany: async () => ({ count: 0 }),
       },
-      order: { updateMany: async () => ({ count: 1 }) },
+      order: { updateMany: async () => ({ count: 1 }), findFirst: async () => null },
       orderEvent: { create: async () => ({}) },
       block: { findFirst: async () => null },
     });
@@ -197,7 +197,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           update: async () => ({}),
           updateMany: async () => ({ count: 0 }),
         },
-        order: { updateMany: async () => ({ count: 1 }) },
+        order: { updateMany: async () => ({ count: 1 }), findFirst: async () => null },
         orderEvent: { create: async () => ({}) },
         block: { findFirst: async () => null },
       },
@@ -206,6 +206,52 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
     await service.selectOffer(orderId, offerId, "cust");
     // Same pickup-cell distribution as bid:expired so every rider who saw the card sees it close.
     expect(emitOrderTaken).toHaveBeenCalledWith(orderId, -17.8, 31.05);
+  });
+});
+
+describe("MatchingService.selectOffer — C3 soft-lock vs a live food dispatch offer", () => {
+  /** A rider bid on this parcel BEFORE a food auto-offer arrived; the customer tries to select them
+   *  after. hasLiveFoodDispatchOffer (common/food-dispatch-lock.ts) reads through the SAME `tx` the
+   *  CAS runs against — this is the scripted race the plan's C3 line item calls for: "a rider with a
+   *  running food offer countdown can't accept elsewhere". */
+  it("rejects selection when the offer's rider currently holds a live, unexpired food dispatch offer", async () => {
+    const { service, metrics } = svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "2.50" },
+          order: { status: "open_for_offers", customerId: "cust" },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
+        }),
+      },
+      // The soft-lock's own read: a live (unexpired) food offer for this rider exists somewhere.
+      order: { findFirst: async () => ({ id: "food-order-1" }) },
+      block: { findFirst: async () => null },
+    });
+    await expect(service.selectOffer(orderId, offerId, "cust")).rejects.toThrow(/just became unavailable/i);
+    expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "unavailable" satisfies MatchSelectOutcome);
+  });
+
+  it("allows selection once that food offer has resolved (the soft-lock query finds nothing live)", async () => {
+    const { service } = svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "2.50" },
+          order: { status: "open_for_offers", customerId: "cust" },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
+        }),
+        update: async () => ({}),
+        updateMany: async () => ({ count: 0 }),
+      },
+      order: { updateMany: async () => ({ count: 1 }), findFirst: async () => null },
+      orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => null },
+    });
+    const res = await service.selectOffer(orderId, offerId, "cust");
+    expect(res).toMatchObject({ status: "assigned", riderId: "r1" });
   });
 });
 
@@ -218,7 +264,7 @@ describe("MatchingService.expireOrder — persists the no-supply verdict for lat
   function expireSvc(opts: { offerCount: number; nearby: unknown[] }) {
     const orderUpdate = vi.fn(async () => ({}));
     const tx = {
-      order: { updateMany: async () => ({ count: 1 }) },
+      order: { updateMany: async () => ({ count: 1 }), findFirst: async () => null },
       offer: { count: async () => opts.offerCount, updateMany: async () => ({ count: 0 }) },
       orderEvent: { create: async () => ({}) },
     };

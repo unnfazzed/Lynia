@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { ScrollView, View } from "react-native";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
-import { AppScreen, BrandHeader, getServiceTiles, ServiceTiles, useToast } from "../../src/ui";
+import { AppScreen, BrandHeader, getServiceTiles, ServiceTiles } from "../../src/ui";
 
 /**
  * The launcher — root home after login (plan §5 A1). Green `BrandHeader` (the one sanctioned
@@ -11,15 +11,14 @@ import { AppScreen, BrandHeader, getServiceTiles, ServiceTiles, useToast } from 
  */
 export default function LauncherHomeScreen(): React.ReactElement {
   const router = useRouter();
-  const toast = useToast();
   const { restaurantsEnabled } = useFeatureFlags();
   const services = getServiceTiles(restaurantsEnabled);
 
   const onService = (id: string): void => {
     if (id === "express") router.push("/send");
-    // Food tile only renders live when restaurantsEnabled — Lane D's browse screen doesn't exist
-    // yet, so a live tap can't push a real route. Honest placeholder rather than a dead 404.
-    else if (id === "food") toast.show("Restaurants coming soon", "info");
+    // Food tile only renders live when restaurantsEnabled (getServiceTiles), so this branch is only
+    // reachable with the flag on — D1 shipped the browse route it pushes to.
+    else if (id === "food") router.push("/food");
   };
 
   return (

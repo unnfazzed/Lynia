@@ -9,6 +9,8 @@ import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
 import { JOB_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../logic/rider-bid-draft";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../logic/pickup-checklist-draft";
+import { RESTAURANT_LIST_SNAPSHOT_KEY } from "../net/restaurant-list-store";
+import { FOOD_CART_SNAPSHOT_KEY } from "../net/food-cart-store";
 import type { UndeliveredReason } from "@lynia/shared";
 
 // The one-time delivery handover code is returned once by `select`; persist it per-order so it
@@ -512,6 +514,11 @@ export async function clearDeviceState(): Promise<void> {
       // next user on a shared device — every other per-order/per-session draft key here already is wiped;
       // this one was missed when the draft itself was added.
       SecureStore.deleteItemAsync(PICKUP_CHECKLIST_DRAFT_KEY),
+      // D1 (browse): the cached restaurant list carries no PII, but the food cart draft is the
+      // customer's own in-progress basket + notes — must not rehydrate onto the next user's account
+      // on a shared device, same reasoning as HISTORY_SNAPSHOT_KEY above.
+      SecureStore.deleteItemAsync(RESTAURANT_LIST_SNAPSHOT_KEY),
+      SecureStore.deleteItemAsync(FOOD_CART_SNAPSHOT_KEY),
       // Note: the per-order `lynia.lastActive.<orderId>` keys are keyed by order id and not enumerable
       // (no index like CODE_INDEX_KEY), so they linger but are lower-risk — the next user isn't routed to
       // them (the tracker only reads a key it already holds the id for), so nothing paints from them.

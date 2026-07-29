@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/unnfazzed/Lynia/compare/v0.11.0...v0.12.0) (2026-07-29)
+
+
+### Features
+
+* **play:** Play Store submission package + the two policy blockers it found ([a088a46](https://github.com/unnfazzed/Lynia/commit/a088a461b9700a9308be1f16072ed474414755ef))
+
 ## [0.11.0](https://github.com/unnfazzed/Lynia/compare/v0.10.5...v0.11.0) (2026-07-29)
 
 

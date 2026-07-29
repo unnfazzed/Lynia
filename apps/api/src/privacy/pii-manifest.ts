@@ -121,6 +121,14 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
     disposition: "null",
     note: "C2: free-text per-dish note (D-35, e.g. 'leg portion, not breast') on a food order the erasing customer placed — same DS15-07 class as orders.note, distinct table-qualified entry per this file's own false-positive lesson (DS18-02).",
   },
+  merchant_payment_reference: {
+    column: "merchant_payment_reference",
+    where: "orders",
+    tables: ["orders"],
+    disposition: "null",
+    note:
+      "D-24 'I paid another way': the mobile-money transaction reference the CUSTOMER types in to evidence they paid the restaurant directly. It is a handle into that person's own mobile-money history, so it is the same class as top_ups.phone (DOC-16-01) — an identifier, not a ledger amount — and is nulled on the erasing customer's orders. The order row, its totals and its status history stay as the financial/dispute record. Safe post-hoc: erasure is refused while any order is live (assertNoActiveRide), so R-11 reconciliation against the merchant's statement has necessarily already happened by the time this can run. Found while deriving the public privacy notice (apps/api/src/legal/) — the column never matched this file's PII name-pattern guard, which is exactly the DS15-07 / DOC-16-01 'scrubbed one representation, missed a sibling' shape.",
+  },
   cancel_reason: {
     column: "cancel_reason",
     where: "orders",

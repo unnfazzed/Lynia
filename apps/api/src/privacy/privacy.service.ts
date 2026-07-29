@@ -333,6 +333,15 @@ export class PrivacyService {
       where: { OR: [{ customerId: profileId }, { riderId: profileId }], NOT: { cancelReason: null } },
       data: { cancelReason: null },
     });
+    //   • orders.merchantPaymentReference — the mobile-money transaction reference the CUSTOMER typed
+    //     in to evidence they paid a restaurant directly (D-24 "I paid another way"). A handle into
+    //     that person's own mobile-money history, so it is scrubbed like top_ups.phone (DOC-16-01)
+    //     rather than kept like a ledger amount. Customer-scoped (not "either party"): the rider never
+    //     authors it. The order's totals and status history survive as the financial/dispute record.
+    await tx.order.updateMany({
+      where: { customerId: profileId, NOT: { merchantPaymentReference: null } },
+      data: { merchantPaymentReference: null },
+    });
 
     // Remove the standalone PII stores + log every device out.
     await tx.address.deleteMany({ where: { profileId } });

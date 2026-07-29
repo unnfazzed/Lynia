@@ -5,7 +5,17 @@ import { MAX_QTY } from "../../logic/order-draft";
 
 /** Compact − / count / + quantity stepper. 44px round targets (touchTargetMin) so it's tappable on
  *  a cheap phone; the count renders in tabular numerals so rows don't shimmy as digits change. */
-export function QtyStepper({ value, onChange }: { value: number; onChange: (n: number) => void }): React.ReactElement {
+export function QtyStepper({
+  value,
+  onChange,
+  max = MAX_QTY,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  /** Ceiling for the + button — defaults to the Send composer's MAX_QTY; food dishes pass their own
+   *  (server) cap so the stepper can never climb above what checkout would accept. */
+  max?: number;
+}): React.ReactElement {
   const btn = (glyph: "−" | "+", next: number, disabled: boolean, label: string): React.ReactElement => (
     <Pressable
       onPress={() => onChange(next)}
@@ -33,7 +43,7 @@ export function QtyStepper({ value, onChange }: { value: number; onChange: (n: n
       <Text style={{ minWidth: 26, textAlign: "center", fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
         {value}
       </Text>
-      {btn("+", Math.min(MAX_QTY, value + 1), value >= MAX_QTY, "Increase quantity")}
+      {btn("+", Math.min(max, value + 1), value >= max, "Increase quantity")}
     </View>
   );
 }

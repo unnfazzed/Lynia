@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { MakeOfferRequest } from "@lynia/shared";
+import { hasLiveFoodDispatchOffer } from "../common/food-dispatch-lock";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -82,6 +83,14 @@ export class OffersService {
       // Enforce the online invariant the gating comment claims (was selected but never checked) — an
       // offline rider's offer is un-selectable anyway and just pollutes the customer's list.
       throw new ForbiddenException("Go online to make offers");
+    }
+
+    // C3 soft-lock: a rider holding a live food auto-offer countdown (N-08) can't also be bidding on
+    // a parcel — the kitchen's dispatch clock assumes they're deciding on that one job. Checked here
+    // (not just at selectOffer) so the customer's board never even shows a bid it can't select.
+    if (await hasLiveFoodDispatchOffer(this.prisma, riderId)) {
+      this.metrics.incOffersMade("forbidden");
+      throw new ForbiddenException("You have a food pickup offer waiting — respond to that first");
     }
 
     // An `accept` means "I'll take the customer's proposed price" — bind the fare to `proposedFare`

@@ -102,6 +102,9 @@ jobs:
       # test has no admin task wired and the two lines above are per-filter). Gate the console-auth /
       # IAP-JWT fail-closed specs explicitly — they are the security boundary for the deployed console.
       - run: pnpm --filter @lynia/admin test
+      # Same reasoning for the merchant tablet (E1, docs/plans/2026-07-28-restaurants-send-joint-
+      # launch-plan.md Lane E): gate the fail-closed access-gate / alarm / reconnect specs explicitly.
+      - run: pnpm --filter @lynia/merchant test
 
   schema:
     name: prisma migrate · constraint proof (PostGIS)

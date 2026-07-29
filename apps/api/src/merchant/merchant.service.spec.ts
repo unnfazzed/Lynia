@@ -396,7 +396,7 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
         findMany: async ({ where }: { where: unknown }) => {
           receivedWhere = where;
           return [
-            { id: "m1", name: "Nandos", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2 },
+            { id: "m1", name: "Nandos", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2, hours: { mon: { open: "09:00", close: "21:00" } } },
           ];
         },
       },
@@ -405,6 +405,18 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(receivedWhere).toEqual({ pilotEnabled: true });
     expect(res.restaurants).toHaveLength(1);
     expect(res.restaurants[0]!.id).toBe("m1");
+    // D1 (browse): the raw weekly hours pass through untouched — open/closed is derived client-side.
+    expect(res.restaurants[0]!.hours).toEqual({ mon: { open: "09:00", close: "21:00" } });
+  });
+
+  it("listRestaurants defaults hours to null when the merchant hasn't set any", async () => {
+    const s = svc({
+      merchant: {
+        findMany: async () => [{ id: "m1", name: "Nandos", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2, hours: null }],
+      },
+    });
+    const res = await s.listRestaurants();
+    expect(res.restaurants[0]!.hours).toBeNull();
   });
 
   it("getRestaurantMenu 404s a merchant that isn't pilotEnabled (even if it exists)", async () => {

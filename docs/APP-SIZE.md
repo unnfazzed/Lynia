@@ -168,6 +168,22 @@ and read its "Size report" step for the on-disk APK size + per-category breakdow
 with the same `./gradlew assembleRelease` and `unzip -l` the APK. Remember the QA APK is *universal*
 (all ABIs) — a Play per-device download is smaller.
 
+## Budget history
+
+Every raise to `apps/mobile/size-budget.json`, with what caused it. "Growth must be intentional"
+only means something if the growth is also *traceable* — a budget number with no recorded cause is
+indistinguishable from a number someone bumped to get CI green.
+
+| Date | Export total | Hermes | Why |
+|---|---:|---:|---|
+| Initial calibration | 12,400,000 | 6,200,000 | Set from the first real `expo export` measurement |
+| 2026-07-29 | 12,480,000 | 6,230,000 | Two causes, measured separately (PR #427). **~43 KB / ~9.7 KB: dependency drift** — the production-dependency group bump (#424) pushed the bundle to 12,442,878 / 6,209,749 and was auto-merged over this same red check, so `main` was already over budget before #427 branched. **~3.1 KB: Play-compliance UI** — the in-app account-deletion confirm + privacy-notice row required for the Play listing, plus two `lucide` glyphs (`shield`, `trash-2`) imported per-file in the usual way. |
+
+> The dependency-drift half of that raise is worth a second look on its own: 43 KB arrived without a
+> deliberate decision, which is exactly what this guardrail exists to prevent. If the size job is not
+> a required status check, a red budget can be auto-merged — see `docs/ROUTINES.md` on the
+> merge-on-green policy.
+
 ## Sources / further reading
 
 - DoorDash — *Shrinking your mobile app: strategies for a leaner, faster app*:

@@ -103,6 +103,16 @@ export const ORDER_EVENTS = [
   "release_unpaid", // FoodOrderService.releaseUnpaid (R-17, no-penalty merchant release)
   "expire_end_of_day", // FoodOrderService.sweepEndOfDayClose (N-23, shop closes with payment unconfirmed)
   "confirm_pickup", // FoodOrderService.confirmPickup (N-16, 4-digit code — wired for C3 dispatch to reach)
+  // ── C3 (food dispatch) ──────────────────────────────────────────────────────────────────────────
+  "dispatch_offer", // FoodDispatchService.tick (N-08, a candidate rider found — single-rider auto-offer)
+  "dispatch_search", // FoodDispatchService.tick (self-loop: no candidate this attempt, budget remains)
+  "dispatch_no_rider", // FoodDispatchService.tick (self-loop: N-07 NO_RIDER cap exhausted — D-34 hold begins)
+  "dispatch_expire", // FoodDispatchService.sweepExpiredOffers (N-08, 60s offer window elapsed unanswered)
+  "dispatch_decline", // FoodDispatchService.declineDispatch (the candidate's own "can't take it")
+  "dispatch_accept", // FoodDispatchService.acceptDispatch (D-04 "rider secured")
+  "dispatch_resume", // FoodDispatchService.resumeSearch (self-loop: D-34 merchant "keep searching")
+  "dispatch_cancel_no_rider", // FoodDispatchService.cancelFromHold (D-34 merchant "cancel", D-13 apology)
+  "dispatch_drop", // FoodDispatchService.dropDispatch (D-33, pre-pickup only — re-dispatch in place)
 ] as const;
 export type OrderEvent = (typeof ORDER_EVENTS)[number];
 
@@ -463,6 +473,121 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     source: "merchant/food-order.service.ts:sweepEndOfDayClose",
     orderType: "merchant",
   },
+
+  // ── C3: food dispatch. `merchantPhase` stays `ready_for_pickup` for the entire dispatch lifetime
+  // (searching, offered, holding) — cleared to null only on the genuine hand-offs out (dispatch_accept
+  // below, and every terminal cancel), the same "no MERCHANT_PHASE_TRANSITIONS row for an exit" shape
+  // the C2 cancel/reject/expire rows above already use. `open_for_offers` is deliberately the SAME
+  // status value Express's own auction uses (plan §0b.1 "no new OrderStatus values") — safe because
+  // every Express read/write keyed on it already carries an orderType filter (status-keyed-query-audit
+  // A-1..A-4, C1/C2). Self-loop rows (`to` === `from`) are included rather than omitted: unlike
+  // expandBroadcast (a pure side-effect tick that never touches `status` and so was left out of this
+  // table entirely), dispatch_search/dispatch_no_rider/dispatch_resume each commit a real, guarded
+  // status=status CAS with meaningful field-level side effects — honestly an edge, just a short one.
+  {
+    from: "requested",
+    event: "dispatch_offer",
+    to: "open_for_offers",
+    actor: "system",
+    guard:
+      "merchantPhase=ready_for_pickup; noRiderHoldAt IS NULL; dispatchAttempt+1 <= RESTAURANTS_DISPATCH.maxAttempts (N-07); DispatchStrategy finds a candidate within the attempt's widening radius (N-08); guarded CAS on status=requested AND dispatchAttempt=(observed) AND noRiderHoldAt IS NULL",
+    sideEffect:
+      "set dispatchOfferedRiderId/dispatchOfferExpiresAt(+60s)/dispatchNextCheckAt(same); dispatchAttempt+=1; dispatchStartedAt stamped on the FIRST attempt only; INSERT FoodDispatchAttempt(pending); OrderEvent(open_for_offers) on attempt 1 only (retries don't re-log — the FoodDispatchAttempt row IS the per-attempt audit trail); best-effort push to the candidate rider",
+    source: "merchant/food-dispatch.service.ts:tick",
+    orderType: "merchant",
+  },
+  {
+    from: "requested",
+    event: "dispatch_search",
+    to: "requested",
+    actor: "system",
+    guard: "same as dispatch_offer, but the strategy finds NO candidate at this attempt's radius; guarded CAS on status=requested AND dispatchAttempt=(observed) AND noRiderHoldAt IS NULL",
+    sideEffect: "dispatchAttempt+=1; dispatchStartedAt stamped on the FIRST attempt only; dispatchNextCheckAt=+60s (sweepSearch's next pass retries at the next attempt's wider radius); no FoodDispatchAttempt row (nothing to log)",
+    source: "merchant/food-dispatch.service.ts:tick",
+    orderType: "merchant",
+  },
+  {
+    from: "requested",
+    event: "dispatch_no_rider",
+    to: "requested",
+    actor: "system",
+    guard: "dispatchAttempt+1 > RESTAURANTS_DISPATCH.maxAttempts (N-07, ~6:00 NO_RIDER cap); guarded CAS on status=requested AND dispatchAttempt=(observed) AND noRiderHoldAt IS NULL",
+    sideEffect: "D-34: set noRiderHoldAt=now, dispatchNextCheckAt=null — sweepSearch stops touching this order until the merchant explicitly resumes or cancels (no auto-timeout on the hold itself; a named mocked default, surfaced in the PR body per §9)",
+    source: "merchant/food-dispatch.service.ts:tick",
+    orderType: "merchant",
+  },
+  {
+    from: "open_for_offers",
+    event: "dispatch_expire",
+    to: "requested",
+    actor: "system",
+    guard: "dispatchOfferExpiresAt < now (N-08, 60s unanswered); guarded CAS on status=open_for_offers AND dispatchOfferedRiderId=(observed)",
+    sideEffect: "FoodDispatchAttempt(that rider, pending)→expired; append the rider to dispatchExcludedRiderIds (never re-offered this cycle); clear dispatchOfferedRiderId/dispatchOfferExpiresAt; dispatchNextCheckAt=now (sweepSearch's next pass tries the next candidate immediately)",
+    source: "merchant/food-dispatch.service.ts:sweepExpiredOffers → releaseCurrentOffer",
+    orderType: "merchant",
+  },
+  {
+    from: "open_for_offers",
+    event: "dispatch_decline",
+    to: "requested",
+    actor: "rider",
+    guard: "caller === dispatchOfferedRiderId; guarded CAS on status=open_for_offers AND dispatchOfferedRiderId=caller",
+    sideEffect: "same as dispatch_expire's side effect (shared releaseCurrentOffer helper) — the candidate's own \"can't take it\", freeing the offer before the 60s window elapses rather than making the kitchen wait it out",
+    source: "merchant/food-dispatch.service.ts:declineDispatch",
+    orderType: "merchant",
+  },
+  {
+    from: "open_for_offers",
+    event: "dispatch_accept",
+    to: "assigned",
+    actor: "rider",
+    guard: "caller === dispatchOfferedRiderId; dispatchOfferExpiresAt >= now; guarded CAS on status=open_for_offers AND dispatchOfferedRiderId=caller; one_active_ride partial-unique blocks a rider already on another ride (same P2002 handling as matching.service.ts:selectOffer)",
+    sideEffect:
+      "D-04 \"rider secured\": set riderId=caller, mint otpHash (delivery code, mirrors selectOffer — the food order rides the SAME assigned→…→confirm_delivery edges as a parcel from here on, orderType:\"both\"), deliveryOtpAttempts=0, deliveryCodeRotatedAt; clear merchantPhase to null (hand-off out of the merchant-phase machine — no MERCHANT_PHASE_TRANSITIONS row, same shape as every other exit) and every dispatch field; FoodDispatchAttempt(caller, pending)→accepted; OrderEvent(assigned); post-commit emitOrderStatus(assigned) to the order room (reaches customer+rider) + push to both — no merchant-side push yet (Lane C5's job; the kitchen tablet has no realtime channel until then, sees it via REST poll)",
+    compensation: "CAS count 0 / P2002 one_active_ride → ConflictException; nothing persisted, the rider stays free for their next offer",
+    source: "merchant/food-dispatch.service.ts:acceptDispatch",
+    orderType: "merchant",
+  },
+  {
+    from: "requested",
+    event: "dispatch_resume",
+    to: "requested",
+    actor: "merchant",
+    guard: "caller owns the merchant; merchantPhase=ready_for_pickup; noRiderHoldAt IS NOT NULL; guarded CAS on status=requested",
+    sideEffect: "D-34 \"keep searching\": clear noRiderHoldAt, reset dispatchAttempt=0/dispatchStartedAt=null/dispatchNextCheckAt=null — a fresh NO_RIDER budget; dispatchExcludedRiderIds is NOT reset (already-tried riders stay excluded); sweepSearch's next pass resumes",
+    source: "merchant/food-dispatch.service.ts:resumeSearch",
+    orderType: "merchant",
+  },
+  {
+    from: "requested",
+    event: "dispatch_cancel_no_rider",
+    to: "cancelled",
+    actor: "merchant",
+    guard: "caller owns the merchant; merchantPhase=ready_for_pickup; noRiderHoldAt IS NOT NULL; guarded CAS on status=requested",
+    sideEffect: "D-34 \"cancel\" / D-13 apology: set cancelledAt, rejectionReason='no_rider' (the apology copy, MERCHANT_REJECTION_REASONS); clear merchantPhase; OrderEvent(cancelled); customer notified. The cooked-food loss this represents is C4's ledger to book, not this PR's — flagged, not silently decided.",
+    source: "merchant/food-dispatch.service.ts:cancelFromHold",
+    orderType: "merchant",
+  },
+
+  // D-33: pre-pickup drop only (assigned/confirmed/en_route_pickup — RIDER_CANCELLABLE_STATUSES'
+  // own pre-pickup set); picked_up+ has no edge here, matching "no drop after pickup". Distinct from
+  // the parcel `cancel_rider` rows above: those clone-and-rebroadcast a NEW order; this re-enters
+  // dispatch IN PLACE on the SAME order (the food is already cooked and waiting — nothing to
+  // re-broadcast a fresh listing for). See food-dispatch.service.ts's class docstring for the D-33/
+  // D-04 "prep clock"/"cooking" language reconciliation against the locked R-11/R-17 ordering.
+  ...(["assigned", "confirmed", "en_route_pickup"] as const).map(
+    (from): OrderTransition => ({
+      from,
+      event: "dispatch_drop",
+      to: "requested",
+      actor: "rider",
+      guard: `caller === order.riderId; status=${from}; orderType=merchant; guarded CAS on the observed status`,
+      sideEffect:
+        "re-enter dispatch on the SAME order: merchantPhase restored to ready_for_pickup, riderId/otpHash cleared, dispatchAttempt reset to 0 (fresh NO_RIDER budget) with the dropped rider added to dispatchExcludedRiderIds; OrderEvent(requested); reliability penalty IDENTICAL to order-lifecycle.service.ts:cancel's rider branch (prePickupCancel, cancelStrikes+=1, CANCEL_STRIKE_LIMIT→cooldown+offline+evictRiderFromSupply — the SAME axis, not a second counter, so \"three drops in a week pauses offers\" (D-33) composes with a rider's parcel cancel strikes); customer notified (no charge, re-dispatching)",
+      source: "merchant/food-dispatch.service.ts:dropDispatch",
+      orderType: "merchant",
+    }),
+  ),
 ];
 
 /**

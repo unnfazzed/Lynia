@@ -274,12 +274,58 @@ dead-when-off rather than dead-always.
   `note` column (migration 0042, additive only). D3 (post-launch product question, not blocking):
   N-18's unanswered-approval-window default (treated as decline) is a named mocked default, surfaced
   in the PR body per §9 discipline. C3 (food dispatch) is next.
-- [ ] **C3 · Food dispatch.** Auto-offer to one rider, 60s expiry (N-08), widening radius,
+- [x] **C3 · Food dispatch.** Auto-offer to one rider, 60s expiry (N-08), widening radius,
   NO_RIDER cap 6:00 (N-07) with merchant hold/decision (D-34) and no-fault cancel (D-13);
   "rider secured" first-class event for all three actors (D-04); soft-lock vs parcel bids
   (a rider with a running food offer countdown can't accept elsewhere — scripted race test);
   drop-before-pickup with re-dispatch + paused prep clock, no drop after pickup (D-33).
-  `DispatchStrategy` seam per §0b; Express offer-loop untouched.
+  `DispatchStrategy` seam per §0b; Express offer-loop untouched. **Done 2026-07-29:** new
+  `apps/api/src/merchant/food-dispatch.service.ts` owns the `ready_for_pickup` → `assigned`
+  hand-off C2 left open. A merchant order sits at `requested` while dispatch searches or holds
+  and flips to `open_for_offers` — the SAME status value Express's own auction uses (plan
+  §0b.1 "no new OrderStatus values"), safe because C1/C2 already added `orderType` filters to
+  every Express read/write keyed on it — for the ~60s a single candidate is deciding.
+  `merchantPhase` stays `ready_for_pickup` for the whole dispatch lifetime, cleared to null
+  only at genuine hand-off (dispatch_accept or a cancel), the same shape every other
+  MerchantPhase exit already uses. DB-only reconciler (`sweepExpiredOffers` +
+  `sweepSearch`, 20s cadence, mirrors FoodOrderService) drives the widening-radius single-rider
+  auto-offer (`RESTAURANTS_DISPATCH` config in `packages/shared`: 60s window, 6 attempts,
+  1.5–8km widening radius) via a `DispatchStrategy` seam (`dispatch-strategy.ts`,
+  `NearestRiderDispatchStrategy` the bound default) that excludes busy/already-tried/
+  already-offered-elsewhere riders. Cap exhaustion sets `noRiderHoldAt` (D-34); the merchant's
+  two explicit hold-screen actions are `dispatch/resume` (fresh budget) and `dispatch/cancel`
+  (D-13 no-fault, `rejectionReason: "no_rider"`, new apology copy in
+  `MERCHANT_REJECTION_REASONS`) — "stop and hold" is the passive default (no endpoint needed,
+  nothing to do). `acceptDispatch` (D-04 "rider secured") mints the delivery code exactly like
+  `matching.service.ts:selectOffer` and pushes to customer + rider via the same `orderRoom`
+  WS channel parcel `assigned` uses; the kitchen tablet has no realtime channel yet (Lane C5's
+  job) so the merchant sees it via the next `GET /merchant/orders/:id` poll — flagged, not
+  silently decided. `declineDispatch` frees the offer immediately (the rider's "can't take
+  it"). `dropDispatch` (D-33) re-enters dispatch IN PLACE on the same order (not an Express-
+  style cloneForRebroadcast new order, since the food is already cooked — nothing to
+  re-broadcast a fresh listing for) and reuses `order-lifecycle.service.ts:cancel`'s exact
+  reliability-penalty shape (prePickupCancel, `CANCEL_STRIKE_LIMIT` cooldown +
+  `evictRiderFromSupply`) so a drop counts on the SAME `cancelStrikes` axis as a parcel
+  cancel, not a second counter; blocked from `picked_up` onward (no drop after pickup).
+  Soft-lock lives in `apps/api/src/common/food-dispatch-lock.ts` (a neutral file, not
+  `merchant/`) so both `offers.service.ts:makeOffer` and `matching.service.ts:selectOffer`
+  can import the same `hasLiveFoodDispatchOffer` check without tripping
+  `express-no-merchant-coupling` — a rider holding a live food offer can neither bid on nor be
+  selected for a parcel; a scripted race test in `matching.service.spec.ts` covers the
+  "bid placed before the food offer arrived" ordering. Ten new transition-table rows in
+  `order-lifecycle.transitions.ts` (`dispatch_offer`/`dispatch_search`/`dispatch_no_rider` as
+  honest self-loops alongside the real edges — the "verification artifact mirrors what the
+  code does" contract extends past expandBroadcast's precedent since these commit real,
+  guarded CAS writes even though `to === from`). **D-04/D-33 reconciliation, flagged per the
+  plan's own "code wins" instruction:** by the time dispatch starts, the kitchen has already
+  finished cooking (R-11/R-17 start prep at payment confirm, well before `markReady`), so
+  D-04's "don't start cooking before rider secured" gate and D-33/D-34's "prep clock
+  pauses"/"keep cooking" language describe a cook-after-dispatch ordering this locked
+  architecture doesn't have; what survives verbatim is D-04's "rider secured" push event and
+  D-33/D-34's re-dispatch mechanics, both implemented as written. `pnpm typecheck && pnpm lint
+  && pnpm test` green across the whole monorepo (API 1349 tests incl. 47 new across
+  `food-dispatch.service.spec.ts`/`dispatch-strategy.spec.ts`/the transitions/offers/matching
+  specs; shared 144; mobile 538). C4 (food money evidence layer) is next.
 - [ ] **C4 · Food money evidence layer.** Merchant-debt ledger (append-only, idempotent,
   derived): release-unpaid records debt (R-01) → doorstep dual-confirm handshake (R-04,
   2:00 freeze + auto-support R-05/N-19) → code unlock (masked-code rule R-09 server-side) →
@@ -301,10 +347,46 @@ dead-when-off rather than dead-always.
 Phase-0 gate: requires A1 (customer shell) for D1–D4, B1/B4 (rider shell + active-job) for D5,
 and the matching Lane C contracts (C1 for D1, C2 for D2–D3, C4 for D4–D5) merged.
 
-- [ ] **D1 · Browse.** Restaurant list (photo-led, hero + thumbs, tinted-initial fallback),
+- [x] **D1 · Browse.** Restaurant list (photo-led, hero + thumbs, tinted-initial fallback),
   search, menu (category tabs mirroring D-29), item sheet, closed/closes-while-browsing states,
   cart with per-item + order notes (D-35, price never changes), sold-out / price-changed /
-  empty states.
+  empty states. **Done 2026-07-29:** new `app/food/` route group (`_layout.tsx` wraps it in a
+  `FoodCartProvider`) — `index.tsx` restaurant list (open-now filter, offline warm-paint snapshot
+  + saved-at timestamp, five states), `search.tsx` (client-side name/cuisine-tag match over the
+  already-fetched list), `[id].tsx` menu (category tabs, closed banner via `nextOpenDescription`,
+  a 60s poll that fires the R2·b1 "just closed" interrupt on a genuine open→closed transition),
+  `cart.tsx` (qty/remove per line, order note, N-15 small-order-fee line, OOS/price-change
+  reconciliation against a fresh menu fetch). New RN components `src/ui/food/` (`FoodThumb`
+  tinted-initial photo slot reusing `logic/avatar`'s tint function, `RestaurantRow`, `MenuRow`,
+  `ItemSheet` — no portion/option picker, since `MerchantDish` (C1) carries no variant schema;
+  flagging that as an open item rather than fabricating UI over data that doesn't exist), and
+  `NoteField` (multiline sibling to the shared single-line `Field`). Cart state
+  (`src/food/cart-context.tsx` + `src/logic/food-cart.ts`) persists through SecureStore
+  (`src/net/food-cart-store.ts`) per §3 "survives an app restart" — PII-free (dish
+  ids/names/prices/qty/notes only) — and is wiped by `clearDeviceState()` on sign-out (same
+  BH-17 shared-device discipline as every other per-session draft key), alongside a new
+  restaurant-list warm-paint snapshot (`src/net/restaurant-list-store.ts`) for the D-19 offline
+  state. `QtyStepper` gained an optional `max` prop (default unchanged) so food dishes cap at the
+  C2 wire contract's 20 rather than Send's 99. Small, additive Lane C touch: `RestaurantListItem`
+  (customer read API, C1) gained a `hours: MerchantHours.nullable()` field — needed to render the
+  closed/closes-while-browsing states honestly instead of faking an open/closed flag — plus a new
+  pure `packages/shared/src/restaurant-hours.ts` (`isMerchantOpenNow`/`minutesUntilClose`/
+  `nextOpenDescription`, fail-open when a merchant hasn't set hours) computing it client-side so
+  the server never ships a staleable precomputed boolean; `merchant.service.ts`'s `toListItem`
+  passes `hours` through, additive to the existing wire shape (no existing test asserted an
+  exhaustive shape, confirmed before editing). Checkout itself (delivery fee, ETA, the "Continue"
+  CTA) is explicitly D2's — the cart totals subtotal + N-15 small-order fee only, and "Continue"
+  toasts "coming soon" rather than faking a route that doesn't exist yet. Dish-level search (the
+  gallery's cross-restaurant "DISHES" section) needs a menu index the C1 customer read API
+  doesn't have — flagged as an open item for a future Lane C increment, not silently dropped.
+  Bundle-size budget raised (`size-budget.json`: Hermes 6.23 MB → 6.30 MB, export total
+  12.48 MB → 12.56 MB) to cover this increment's new screens/components, ~0.5% headroom left on
+  each; measured locally via `expo export --platform android` + `scripts/check-bundle-size.mjs`
+  per docs/APP-SIZE.md. `pnpm typecheck && pnpm lint && pnpm test` green across the whole
+  monorepo (mobile: 73 suites / 556 tests, incl. new suites for `food-cart.ts`'s pure cart math
+  and the BH-17 device-state wipe-key characterization; shared: 9 suites / 152 tests incl. new
+  `restaurant-hours.test.ts`; api: 91 suites / 1333 tests incl. 2 new `merchant.service.spec.ts`
+  cases for the `hours` passthrough). D2 (checkout + kitchen-confirms) is next.
 - [ ] **D2 · Checkout + kitchen-confirms.** CASH / WALLET checkout (ETA promise anchored on
   payment confirm D-21/R-17), placing → waiting-for-accept → "they call to confirm" band →
   pay-the-restaurant (manual rail D-24: copyable number/amount/reference, "I paid another way")
@@ -327,12 +409,44 @@ and the matching Lane C contracts (C1 for D1, C2 for D2–D3, C4 for D4–D5) me
 
 Phase-0 gate: requires the matching Lane C contracts (C1 for E1/E4, C2/C5 for E2, C4 for E3).
 
-- [ ] **E1 · Auth + shell + alarm discipline.** Phone+OTP sign-in ("Sign in & start the alarm",
+- [x] **E1 · Auth + shell + alarm discipline.** Phone+OTP sign-in ("Sign in & start the alarm",
   D-05) with fail-closed middleware; app shell tablet-first 1024×680 degrading to phone; looping
   2-tone alarm unlocked by the login gesture, `AudioContext` re-resumed on every gesture; Screen
   Wake Lock with flashing-header fallback; visible alarm state; red CONNECTION LOST bar ≤3s,
   actions disabled, backoff counter, reconnect backfill banner; rebooted-mid-shift recovery
-  (§3 of the decisions doc, implemented as written).
+  (§3 of the decisions doc, implemented as written). **Done 2026-07-29:** replaces the P0
+  placeholder (`apps/merchant`) with the first authenticated surface — `middleware.ts` fail-closed
+  gate (mirrors `apps/admin/middleware.ts`'s shape: a pure, unit-tested `evaluateMerchantAccess`
+  policy in `app/lib/merchant-access.ts`, only checking session-cookie PRESENCE — the real
+  authorization boundary stays server-side, `RestaurantsEnabledGuard`→`JwtAuthGuard`→`MerchantGuard`
+  on every `apps/api` merchant route, since a merchant JWT carries no `merchantId` claim to verify
+  independently without duplicating the API's signing secret into this app). Login reuses the
+  existing phone+OTP flow (`/auth/otp/request`, `/auth/otp/verify`) unchanged; `GET /merchant/me`
+  on the queue landing page confirms `role: "merchant"` server-side and shows a clear
+  not-registered state (with sign-out) instead of a silent 403 loop for a customer-role token —
+  **mocked default, not self-serve**: E1 does not wire a `POST /merchant/become` + re-auth dance
+  from the tablet itself (the API mints `role` into the JWT at sign-in time and does not reissue a
+  token after `become` flips the DB row, so a stale token needs a fresh OTP verify regardless);
+  merchants reach the tablet already provisioned (founder/admin onboarding), flagged here rather
+  than silently decided. Alarm: `AlarmController`/`alarmPhaseAt` (`app/lib/alarm.ts`, pure
+  2-tone-cycle timing, unit-tested) over a synthesized Web Audio two-tone chime
+  (`WebAudioToneSink`, no shipped audio asset) — `arm()` fires on the sign-in tap (the D-05
+  gesture) and resets to unarmed on every real reload (`RearmBanner`, the §3 "one tap to re-arm"
+  reboot behaviour); mute state renders in `KitchenBar` "at all times ... never silent." Screen
+  Wake Lock (`useWakeLock`) with the §3 flashing-header fallback when refused/unsupported.
+  Reconnect: `ReachabilityStore` (`app/lib/reachability.ts`, capped-backoff `/healthz` probe,
+  identical formula to `apps/mobile/src/net/reachability.ts`) drives the CONNECTION LOST bar
+  (attempt counter, `actionsDisabled` exposed via context for E2's mutating buttons to consume)
+  and a "back online" banner; the ORDER-COUNT backfill banner itself is E2's job (needs a real
+  dark-period order source — no live queue exists yet). Design tokens: added the additive
+  `--danger-ink`/`dangerInk` token (`packages/design/tokens/colors.css`'s existing value,
+  `#8F2418`) to `packages/shared/src/design-tokens.ts` and `apps/merchant/app/globals.css` (B3's
+  job originally, pulled forward since E1 needed it first for the muted-alarm state — additive,
+  no conflict expected). CI: added `pnpm --filter @lynia/merchant test` (mirrors the admin
+  console-auth gate reasoning — turbo's `test` task has no merchant entry wired, same as admin).
+  `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages (29 new merchant unit
+  tests: access policy, session parsing, alarm timing/state machine, reachability backoff/state
+  machine). E2 (queue + cook flow) is next.
 - [ ] **E2 · Queue + cook flow.** Queue empty/loading → NEW ORDER takeover (stops only on
   Accept / Can't-take-it) → accept + prep chips → item-level "don't have it" (D-23) → reject
   reasons (D-11) → amber "do not cook yet" full-viewport (D-04) → rider-secured green cook
