@@ -102,6 +102,20 @@ Two guards now cover it:
   It opens and closes its own issue under a fixed title, so autoheal's title-substring matching
   can't adopt it or auto-close it on an unrelated green deploy.
 
+  The same watchdog also runs a third check for the other silent deploy stall — a run **held at
+  the `production` environment approval gate**. A run waiting on a required reviewer is not red, so
+  it emits no failure event and autoheal never sees it; and because `release.yml` and `rollback.yml`
+  serialize on the `release-cloud-run` concurrency group, one run parked at the gate blocks every
+  release queued behind it. That is exactly what happened on 2026-07-29: release run #298 sat
+  waiting for approval for 54 hours while ten merges to `main` shipped nothing, with no signal
+  beyond the single review-request email. The watchdog can't approve the gate (only a reviewer
+  can), so it just makes the stall loud — it opens a separate `deploy-failure` issue (its own fixed
+  title, independent of the startup-failure issue so neither can silence the other) once a waiting
+  run passes `APPROVAL_STALL_THRESHOLD_HOURS` (default 4), refreshes it hourly, and closes it once
+  nothing is waiting. To defuse the class entirely, drop the required reviewer under Settings →
+  Environments → production; the staging gate, no-traffic canary, health-gated promotion, and
+  auto-rollback all run regardless.
+
 ## Manual overrides
 
 | Situation | Action |
@@ -118,6 +132,7 @@ Two guards now cover it:
 | `STAGING_GATE_TIMEOUT_MINUTES` | `60` | How long a release waits for staging to go green |
 | `AUTOHEAL_BACKOFF_SECONDS` | `90` | Pause before the automatic re-run of failed jobs |
 | `CANARY_STEPS` / `CANARY_OBSERVE_SECONDS` / `CANARY_MIN_SAMPLE` / `CANARY_MAX_5XX_PCT` | `10 50` / `120` / `20` / `5` | Prod canary shape (pre-existing, `release.yml`) |
+| `APPROVAL_STALL_THRESHOLD_HOURS` | `4` | How long a deploy run may wait at the `production` approval gate before the watchdog files a `deploy-failure` issue |
 
 ## What still needs a human
 

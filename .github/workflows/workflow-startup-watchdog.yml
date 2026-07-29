@@ -32,6 +32,15 @@ name: Workflow Startup Watchdog
 # one queue. Titles are keyed to this watchdog and never contain a deploy workflow's `name:`, so the
 # autoheal's title-substring matching cannot mistake these for its own issues (or auto-close them
 # on an unrelated green deploy) — this workflow opens and closes its own.
+#
+# Check C covers the OTHER silent deploy stall (2026-07-29 incident): a run held at the
+# `production` environment approval gate. A run waiting for a required reviewer is not red — no
+# failure event, no autoheal, no notification beyond the one review-request email — and because
+# release.yml and rollback.yml serialize on the `release-cloud-run` concurrency group, the waiting
+# run blocks every release behind it (each newer merge cancels the previously queued run, so the
+# queue never accumulates evidence either). Release run #298 sat like that for 54 hours while ten
+# merges to main shipped nothing. The watchdog cannot approve the gate — only a reviewer can — so
+# this check's whole job is to make the stall loud until a human clicks.
 
 on:
   schedule:
@@ -47,7 +56,7 @@ concurrency:
 
 jobs:
   watch:
-    name: compile main · scan for startup failures
+    name: compile main · scan for startup failures · approval stalls
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -158,6 +167,41 @@ jobs:
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # --- Check C: is a deploy run stalled at an environment approval gate? -------------------
+      # `status=waiting` is exactly "a job is held by a deployment protection rule" (required
+      # reviewer on the `production` environment). Age is measured from the run's creation because
+      # that is the moment the release stopped moving for the operator — the staging-gate minutes
+      # before the approval was requested are part of the stall from their point of view. Threshold
+      # is generous enough (default 4h) that a same-work-session approval never pages.
+      - name: Scan for deploy runs stalled at an approval gate
+        id: stall
+        env:
+          STALL_THRESHOLD_HOURS: ${{ vars.APPROVAL_STALL_THRESHOLD_HOURS || '4' }}
+        run: |
+          set -euo pipefail
+          NOW="$(date -u +%s)"
+          : > stalled.txt
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&status=waiting&per_page=50" \
+            --jq '.workflow_runs[] | "\(.created_at)\t\(.name)\t\(.html_url)"' > waiting.txt || true
+          while IFS=$'\t' read -r created name url; do
+            [ -n "${created:-}" ] || continue
+            AGE_H="$(( (NOW - $(date -u -d "$created" +%s)) / 3600 ))"
+            if [ "$AGE_H" -ge "$STALL_THRESHOLD_HOURS" ]; then
+              printf -- '- **%s** — waiting ~%sh for a deployment approval (triggered %s): %s\n' \
+                "$name" "$AGE_H" "$created" "$url" >> stalled.txt
+            else
+              echo "$name: waiting ${AGE_H}h (< ${STALL_THRESHOLD_HOURS}h threshold) — normal approval latency, skipping."
+            fi
+          done < waiting.txt
+          if [ -s stalled.txt ]; then
+            echo "Runs stalled at an approval gate past the ${STALL_THRESHOLD_HOURS}h threshold:"
+            cat stalled.txt
+            { echo "found=true"; echo "detail<<EOF"; cat stalled.txt; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          else
+            echo "No runs stalled at an approval gate."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Escalate — open or refresh a deploy-failure issue
         if: ${{ steps.compile.outputs.broken == 'true' || steps.scan.outputs.found == 'true' }}
         env:
@@ -221,4 +265,56 @@ jobs:
           for n in $NUMS; do
             gh issue close "$n" -R "$GITHUB_REPOSITORY" \
               --comment "main's workflows compile again and no startup failures were seen in the last 24h — closing automatically."
+          done
+
+      # Approval-stall escalation is a SEPARATE issue under its own fixed title, kept independent of
+      # the startup-failure issue above so the "main compiles again" close cannot silence a stall
+      # that is still blocking the deploy queue (and vice versa).
+      - name: Escalate — open or refresh an approval-stall issue
+        if: ${{ steps.stall.outputs.found == 'true' }}
+        env:
+          STALL_DETAIL: ${{ steps.stall.outputs.detail }}
+          STALL_THRESHOLD_HOURS: ${{ vars.APPROVAL_STALL_THRESHOLD_HOURS || '4' }}
+        run: |
+          set -euo pipefail
+          gh label create deploy-failure -R "$GITHUB_REPOSITORY" \
+            --color B60205 --description "Deploy tier is red and needs a fix commit" 2>/dev/null || true
+
+          TITLE="Deploy stalled at approval gate — a release is waiting on a human click"
+          {
+            echo "A deploy run has been **waiting for a required reviewer** on the \`production\` environment for over ${STALL_THRESHOLD_HOURS}h."
+            echo
+            echo "This is not a red run — it emits no failure event, so \`deploy-autoheal.yml\` never sees it. And because \`release.yml\` and \`rollback.yml\` serialize on the \`release-cloud-run\` concurrency group, a run parked at the gate blocks every release queued behind it. Merges to \`main\` keep landing while nothing actually ships."
+            echo
+            echo "### Runs waiting on approval"
+            printf '%s\n' "$STALL_DETAIL"
+            echo
+            echo "**To unblock:** open the run above and click **Review deployments → Approve and deploy** (or, if the gate is no longer wanted, remove the required reviewer under Settings → Environments → production). The staging gate, no-traffic canary, health-gated promotion, and auto-rollback all still run regardless."
+            echo
+            echo "_Filed by [Workflow Startup Watchdog](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})._"
+          } > stall_body.md
+
+          EXISTING="$(gh issue list -R "$GITHUB_REPOSITORY" --label deploy-failure --state open --json number,title \
+            | jq -r --arg t "$TITLE" '[.[] | select(.title == $t)] | first | .number // empty')"
+          if [ -n "$EXISTING" ]; then
+            echo "Refreshing existing approval-stall issue #${EXISTING}."
+            gh issue comment "$EXISTING" -R "$GITHUB_REPOSITORY" --body-file stall_body.md
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" \
+              --title "$TITLE" \
+              --label deploy-failure \
+              --body-file stall_body.md
+          fi
+
+      - name: Close the approval-stall issue once nothing is waiting
+        if: ${{ steps.stall.outputs.found == 'false' }}
+        run: |
+          set -euo pipefail
+          TITLE="Deploy stalled at approval gate — a release is waiting on a human click"
+          NUMS="$(gh issue list -R "$GITHUB_REPOSITORY" --label deploy-failure --state open --json number,title \
+            | jq -r --arg t "$TITLE" '.[] | select(.title == $t) | .number')"
+          [ -n "$NUMS" ] || { echo "No open approval-stall issue to close."; exit 0; }
+          for n in $NUMS; do
+            gh issue close "$n" -R "$GITHUB_REPOSITORY" \
+              --comment "No deploy run is waiting at an approval gate anymore — the release queue is moving again. Closing automatically."
           done
