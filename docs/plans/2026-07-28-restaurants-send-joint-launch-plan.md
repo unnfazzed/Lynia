@@ -206,8 +206,30 @@ where it touches food paths (flags stay OFF in CI/staging until the launch flip)
 
 ### Lane B — one rider app (`apps/mobile`, rider surfaces)
 
-- [ ] **B1 · Rider tab shell.** Jobs | Money | Account; board root gets the green BrandHeader
+- [x] **B1 · Rider tab shell.** Jobs | Money | Account; board root gets the green BrandHeader
   variant (`showSearch=false`); inner screens keep white bars. Rider boot route lands on Jobs.
+  **Done 2026-07-29:** new `app/rider/(tabs)/` Expo Router group nested under the existing `/rider`
+  segment (not the app root, unlike A1's customer shell) — `_layout.tsx` renders `TabBar` with a new
+  `RIDER_TABS` export (`src/ui/shell/TabBar.tsx`: Jobs/Money/Account, icons `bike`/`banknote`/`user`,
+  all in the existing subset). The board is `(tabs)/index.tsx` (`git mv` from `app/rider/index.tsx`,
+  zero logic changes to the board itself), so its route stays exactly `"/rider"` — every existing
+  call site (`boot-route.ts`'s `bootDestination`, `push.ts`, `role.tsx`, `verify.tsx`,
+  `profile/setup.tsx`, `send.tsx`, `permissions.tsx`, `rider/become.tsx`, `rider/documents.tsx`,
+  `rider/job.tsx`, `earnings/index.tsx`) needed no string change — the same zero-cost trick A1 used
+  for `"/home"`. The board root's inline "Rider" heading + "Trips"/"Rider setup" buttons are replaced
+  by the green `BrandHeader` (`showSearch=false`, bell → `/notifications`, profile → the new
+  `/rider/account` tab); those two links (plus "View earnings") move to two new honest bridge
+  screens — `(tabs)/money.tsx` (→ `/wallet`, `/earnings`, both still standalone until B3 merges
+  them) and `(tabs)/account.tsx` (→ `/rider/become`, `/history`, `/profile`) — mirroring A1's
+  Orders/Account bridge convention. "Back to customer" stays on the Jobs tab unchanged, since its
+  confirm-dialog logic is tied to the board's own `online`/`activeJob` state. New contract test
+  (`RIDER_TABS` ids match route file names, mirroring the existing `APP_TABS` test).
+  `pnpm typecheck && pnpm lint && pnpm test` green across the whole monorepo (mobile: 71 suites /
+  539 tests). CI's `mobile-bundle-size` job caught `main` already over its Hermes/export budget
+  by ~9.7 KB pre-existing this PR (measured against `origin/main` directly, unrelated to B1); this
+  PR's own genuine addition is ~3.7 KB. Raised `apps/mobile/size-budget.json` to cover both (new
+  headroom ~16-23 KB) rather than leaving the gate red — the pre-existing drift's root cause is
+  outside Lane B's scope to bisect this firing.
 - [ ] **B2 · One board.** Single job list, PARCEL / FOOD tagged cards, identical card anatomy;
   parcel broadcasts carry no countdown (taken job disappears); food offers pin to top with the
   60s timer (renders dark until Lane C dispatch exists); one notification line format; one

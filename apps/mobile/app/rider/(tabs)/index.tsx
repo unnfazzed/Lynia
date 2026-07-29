@@ -1,22 +1,22 @@
 import { haversineKm, tokens } from "@lynia/shared";
-import { ETA_SPEED_KMH } from "../../src/logic/eta";
+import { ETA_SPEED_KMH } from "../../../src/logic/eta";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, usePathname, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
-import { ApiError } from "../../src/api/client";
-import { getMe } from "../../src/api/auth";
-import { makeOffer } from "../../src/api/offers";
-import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../src/api/orders";
-import { loadAcknowledgedHandbacks } from "../../src/auth/session";
-import { pushOnce } from "../../src/push/push";
-import { retryKyc, sendHeartbeat, setOnline } from "../../src/api/riders";
-import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
-import { useRiderBoard } from "../../src/realtime/use-rider-board";
-import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../src/logic/gates";
-import { formatMoney } from "../../src/logic/money";
+import { ApiError } from "../../../src/api/client";
+import { getMe } from "../../../src/api/auth";
+import { makeOffer } from "../../../src/api/offers";
+import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/orders";
+import { loadAcknowledgedHandbacks } from "../../../src/auth/session";
+import { pushOnce } from "../../../src/push/push";
+import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
+import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
+import { useRiderBoard } from "../../../src/realtime/use-rider-board";
+import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import { formatMoney } from "../../../src/logic/money";
 import {
   buildSentOfferEntry,
   clearRiderBidDraft,
@@ -27,11 +27,11 @@ import {
   saveRiderBidDraft,
   saveRiderSentOffers,
   type SentOffer,
-} from "../../src/logic/rider-bid-draft";
-import { Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, Screen, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../src/ui";
-import { SentOfferCard } from "../../src/ui/rider/SentOfferCard";
-import { SupportCallRow } from "../../src/ui/safety";
-import { parseNum } from "../../src/util";
+} from "../../../src/logic/rider-bid-draft";
+import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, Field, haptic, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../../src/ui";
+import { SentOfferCard } from "../../../src/ui/rider/SentOfferCard";
+import { SupportCallRow } from "../../../src/ui/safety";
+import { parseNum } from "../../../src/util";
 
 // GPS fix bound: `getCurrentPositionAsync` has no timeout of its own and a cold fix can hang forever,
 // which matters here more than cosmetically — the server records a broadcast-eligible position only
@@ -581,17 +581,26 @@ export default function RiderHome(): React.ReactElement {
   };
 
   return (
-    <Screen>
+    // Board root gets the one other sanctioned green BrandHeader surface (plan §5 B1) — the tab
+    // bar below already carries Jobs/Money/Account, so the old inline "Rider" heading + Trips/Rider
+    // setup buttons move to the Account tab bridge; inner screens (rider/job, rider/become, …) keep
+    // their plain white Screen bars, unchanged.
+    <AppScreen
+      dark
+      banner={
+        <BrandHeader
+          label="RIDER"
+          address="Jobs near you"
+          showSearch={false}
+          onBell={() => router.push("/notifications")}
+          onProfile={() => router.push("/rider/account")}
+        />
+      }
+    >
+      <View style={{ flex: 1, paddingHorizontal: tokens.space.screen }}>
       {/* A dropped board socket while online surfaces as the standard top banner. */}
       {online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-          <Heading>Rider</Heading>
-          <View style={{ flex: 1 }} />
-          <Button label="Trips" variant="ghost" onPress={() => router.push("/history")} />
-          <Button label="Rider setup" variant="ghost" onPress={() => router.push("/rider/become")} />
-        </View>
-
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: tokens.space.md }}>
         {activeJob ? (
           <Card style={{ borderColor: tokens.color.accent }}>
             {activeJob.status === "assigned" ? (
@@ -974,8 +983,6 @@ export default function RiderHome(): React.ReactElement {
             <Button label="Cancel" variant="ghost" onPress={() => setSelected(null)} disabled={offerM.isPending} />
           </Card>
         ) : null}
-
-        <Button label="View earnings" variant="ghost" onPress={() => router.push("/earnings")} />
           </>
         )}
           </>
@@ -1016,6 +1023,7 @@ export default function RiderHome(): React.ReactElement {
         {info ? <Sub>{info}</Sub> : null}
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
-    </Screen>
+      </View>
+    </AppScreen>
   );
 }
