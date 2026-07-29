@@ -64,6 +64,12 @@ describe("pushDestination", () => {
     expect(pushDestination({ kind: "broadcast" }, true)).toBe("/rider");
   });
 
+  it("routes a food-dispatch offer to the rider board — no dedicated offer screen exists yet (plan §5 B2)", () => {
+    // food-dispatch.service.ts tick() sends { orderId, kind: "food_offer" } to the one candidate rider.
+    expect(pushDestination({ orderId: "o1", kind: "food_offer" }, true)).toBe("/rider");
+    expect(pushDestination({ kind: "food_offer" }, true)).toBe("/rider");
+  });
+
   it("routes the 'a rider's online near you' push home so the customer can re-broadcast", () => {
     // notifyRidersAvailable carries no orderId — before this it dead-ended to null.
     expect(pushDestination({ kind: "riders_available" }, false)).toBe("/home");
