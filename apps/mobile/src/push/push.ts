@@ -159,7 +159,10 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
   };
   // Per-order recipient relationship when the backend stamped it; otherwise the global account role.
   const toRider = to === "rider" ? true : to === "customer" ? false : isRider;
-  if (kind === "broadcast") return "/rider";
+  // Plan §5 B2 "one board": a food-dispatch offer (`food-dispatch.service.ts` `tick()`, `data.kind ===
+  // "food_offer"`) has no dedicated screen yet — same shape as `broadcast`, land the rider on the board,
+  // where the offer will surface as a job card once Lane C ships the rider-facing feed for it.
+  if (kind === "broadcast" || kind === "food_offer") return "/rider";
   // KB-NOTIFY-ORDERID: a "rider's online near you" push now carries the still-open orderId when the
   // customer's original auction is still live — route the tap back to that running request (the
   // destination is viewer-role-aware from earlier fixes, so this is safe). Absent orderId keeps the

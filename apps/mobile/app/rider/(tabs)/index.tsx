@@ -29,6 +29,8 @@ import {
   type SentOffer,
 } from "../../../src/logic/rider-bid-draft";
 import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, Field, haptic, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../../src/ui";
+import { useFeatureFlags } from "../../../src/net/use-feature-flags";
+import { JobCard } from "../../../src/ui/rider/JobCard";
 import { SentOfferCard } from "../../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../../src/ui/safety";
 import { parseNum } from "../../../src/util";
@@ -79,6 +81,12 @@ export default function RiderHome(): React.ReactElement {
   const router = useRouter();
   const pathname = usePathname();
   const qc = useQueryClient();
+  // Plan §5 B2 "one board": food jobs land in this same list once Lane C ships a rider-facing feed
+  // for them (today `merchant/food-dispatch.service.ts` only pushes a `food_offer` notification + the
+  // merchant-facing queue reads — there's no rider GET/WS the board can consume yet). Gate on the
+  // dispatch-specific flag, not the whole-vertical one, so the board's copy doesn't promise food jobs
+  // before dispatch itself is live; this stays a no-op read until that feed exists.
+  const { merchantDispatchAutoEnabled } = useFeatureFlags();
   const [online, setOnlineState] = useState(false);
   // Set once the rider explicitly toggles this session (a successful onlineM), so the server-reconcile
   // below never overrides a deliberate go-offline by re-seeding from a stale `is_online`.
@@ -826,7 +834,9 @@ export default function RiderHome(): React.ReactElement {
           <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 4 }}>
             {online
               ? board.connected
-                ? "You're online — new orders arrive live."
+                ? merchantDispatchAutoEnabled
+                  ? "You're online — parcels and food orders arrive live, one queue."
+                  : "You're online — new orders arrive live."
                 : "You're online — reconnecting to the live board…"
               : "Go online to see and bid on nearby orders."}
           </Text>
@@ -877,13 +887,17 @@ export default function RiderHome(): React.ReactElement {
               </View>
             ) : null}
             {ranked.map(({ o, km }) => (
-              <Card key={o.id}>
-                <Text style={{ fontWeight: "700", color: tokens.color.ink }}>{o.pickup.landmark} → {o.dropoff.landmark}</Text>
-                <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                  {o.itemDesc} · {km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`} · asking {formatMoney(o.proposedFare)}
-                </Text>
-                <Button label="Make an offer" variant="ghost" onPress={() => chooseOrder(o)} />
-              </Card>
+              <JobCard
+                key={o.id}
+                jobType="parcel"
+                from={o.pickup.landmark}
+                to={o.dropoff.landmark}
+                distanceLabel={km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`}
+                fare={o.proposedFare}
+                note={o.itemDesc}
+                actionLabel="Make an offer"
+                onAction={() => chooseOrder(o)}
+              />
             ))}
             {openQ.isError ? (
               <EmptyState icon="wifi-off" title="Couldn't load nearby orders" message="Check your connection and try again.">

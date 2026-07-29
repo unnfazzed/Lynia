@@ -230,10 +230,38 @@ where it touches food paths (flags stay OFF in CI/staging until the launch flip)
   PR's own genuine addition is ~3.7 KB. Raised `apps/mobile/size-budget.json` to cover both (new
   headroom ~16-23 KB) rather than leaving the gate red — the pre-existing drift's root cause is
   outside Lane B's scope to bisect this firing.
-- [ ] **B2 · One board.** Single job list, PARCEL / FOOD tagged cards, identical card anatomy;
+- [x] **B2 · One board.** Single job list, PARCEL / FOOD tagged cards, identical card anatomy;
   parcel broadcasts carry no countdown (taken job disappears); food offers pin to top with the
   60s timer (renders dark until Lane C dispatch exists); one notification line format; one
-  inbox. One job at a time; no vertical opt-out.
+  inbox. One job at a time; no vertical opt-out. **Done 2026-07-29:** new shared `JobCard`
+  (`apps/mobile/src/ui/rider/JobCard.tsx`) — the one card anatomy for both kinds (`TypeTag`
+  pill + route line + note + one action), ported from `rider-one-app.jsx`'s `TypeTag`/`JobCard`;
+  the board (`app/rider/(tabs)/index.tsx`) now renders its existing parcel list through it,
+  zero behaviour change (same `chooseOrder`/offer flow). **Reconciliation flag (surfacing, not
+  deciding):** this bullet's "food offers pin to top with the 60s timer" is the plan's own
+  carried-over pitch language from `RIDER-ONE-APP-PLAN.md`'s pre-decision "The model" section —
+  that doc's own **Decisions taken** section (decision 2, FINAL per this build loop's brief) and
+  the gallery mock it describes (`rider-one-app.jsx`, registers `window.RJM`) both implement **no
+  visible countdown on any card**, parcel or food — a job that's gone just leaves the list, same
+  rule both verticals. Built to the FINAL decision, not this bullet's inherited draft text.
+  `JobCard` supports `jobType: "food"` today (unit-tested with a food fixture) but the board
+  doesn't yet feed it live data — Lane C3 (dispatch, shipped) has no rider-facing GET or WS event
+  for an offered food order, only the merchant-facing queue reads and a `food_offer` push
+  notification (`food-dispatch.service.ts` `tick()`); that push now routes to `/rider` (was
+  unhandled — added a `pushDestination` branch + regression test) so tapping it at least reaches
+  the board, but no food card renders until that feed exists — genuinely "dark," not merely flag-
+  gated, and out of Lane B's `apps/mobile`-only scope to add (recorded below, §10). Board's
+  online caption reads "parcels and food orders arrive live, one queue" once
+  `merchantDispatchAutoEnabled` is on (still says "new orders arrive live" while off) — the one
+  copy change gated on the flag; everything else was already dormant-safe (no food data flows
+  regardless). One inbox / one notification line format were already shipped as of A-series work
+  (`app/notifications/index.tsx`'s generic icon-tile + title + message + relative-time `Row`) —
+  no change needed. Five states / accent split / icon subset unchanged (icons `utensils`/
+  `package` were already imported). `pnpm typecheck && pnpm lint && pnpm test` green across the
+  whole monorepo (mobile: 75 suites / 574 tests, incl. 2 new `JobCard` cases + 1 new
+  `food_offer` push-routing case). Bundle-size measured locally (`expo export --platform
+  android` + `scripts/check-bundle-size.mjs`): Hermes 6,291,539 / 6,320,000 bytes, 27.79 KiB
+  headroom left — no budget bump needed this PR.
 - [ ] **B3 · Money tab.** Merge `app/wallet/*` + `app/earnings/*` into one Money tab: balance +
   commission (one `ratePct`), **cash-held split "yours" vs "owed to a kitchen"** (zero-state
   until food ships), one earnings ledger filterable Parcel / Food, top-up gate (`gate_topup`)
@@ -597,4 +625,12 @@ ship unless the founder overrides; each PR that implements a mocked default name
 
 ## 10. Open blockers (loops write here)
 
-*(empty — loops append `- [date] [lane] blocker — owner` entries)*
+- [2026-07-29] [B, cross-lane C] Not a stall — B2 shipped fully within `apps/mobile` scope — but
+  the rider board can't show a *live* food offer card until Lane C adds a rider-facing surface
+  for one: `food-dispatch.service.ts` (C3, shipped) has no `GET` a rider can call for an
+  `open_for_offers` order (the merchant queue reads are `MerchantGuard`-gated) and no board-style
+  WS event analogous to `boardNewOrder`/`orderTaken` for a food offer landing/expiring/being
+  taken — today the only rider-side signal is the `food_offer` push notification. `JobCard`
+  already renders `jobType: "food"` (unit-tested); B4 (active-job screen) will hit the same gap
+  for its own food step list. Owner: Lane C's next firing, or whichever of B/D picks this up —
+  small (one GET + one WS event, mirroring the parcel board's existing shape).
