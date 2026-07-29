@@ -164,10 +164,38 @@ where it touches food paths (flags stay OFF in CI/staging until the launch flip)
   needed this PR. `pnpm typecheck && pnpm lint && pnpm test` green across the whole monorepo
   (mobile: 71 suites / 538 tests, incl. 2 new suites for `getServiceTiles` and the `APP_TABS`
   route-name contract, plus a new `use-feature-flags` fail-safe-off suite).
-- [ ] **A2 · Home content.** `LiveOrderCard` (per running job, any service), "Send again"
+- [x] **A2 · Home content.** `LiveOrderCard` (per running job, any service), "Send again"
   `ReorderRail` from order history, "Restaurants near you" `RestaurantCard` rail (skeleton/empty
   behind flag until Lane C serves data). Photo policy: lazy-load, 15–25KB thumbs, tinted-initial
-  fallback, never block first paint.
+  fallback, never block first paint. **Done 2026-07-29:** ported `LiveOrderCard`/`ReorderRail`/
+  `RestaurantCard` to RN (`src/ui/home/`), matching `packages/design/components/home/` — the
+  composition order from `home.prompt.md` ("LiveOrderCard *or* ReorderRail → Restaurants near
+  you"). LiveOrderCard reads the existing `["activeCustomerOrder"]` query (same key/cache
+  `send.tsx`'s own restore banner already uses — no duplicate fetch), focus-gated + foreground-
+  refreshed the same way; its progress strip reuses the 7-step Express tracker grammar via a new
+  `liveOrderStepIndex` pure helper (`src/logic/home-feed.ts`). "Any service" is the design intent,
+  but only a Send/parcel order can be live today — Restaurants' customer checkout/track (Lane
+  D2/D3) hasn't shipped, so a merchant order can't yet become the signed-in customer's active
+  order; flagged as an open item rather than guessing at restaurant-name/ETA/payment-method copy
+  the wire contract doesn't carry yet. `ReorderRail` sources the customer's own sent trips from
+  the existing `useHistoryFeed()`, reusing `buildRebroadcastParams` (the same "Send again" the
+  history screen already ships) — hidden while a live order shows, per the prompt's own rule.
+  `RestaurantsRail` consumes the already-shipped Lane C1 customer read API via the existing
+  `useRestaurantListFeed` (the plan's "skeleton/empty behind flag until Lane C serves data" was
+  written before C1/D1 shipped; per this doc's own "the code wins" rule, wired to the real feed
+  instead) — rating/ETA/delivery fee are omitted (not in the wire contract yet, the same gap D1's
+  `RestaurantRow` already flagged), and the rail renders nothing (not a dead link) with the flag
+  off or with zero restaurants, since `/food` already owns that empty state. Photo policy: photos
+  render at on-screen rail size only (~84–172px), the rail is capped at 10 cards, and every photo
+  surface has a synchronous tinted-initial fallback that never blocks first paint (`FoodThumb`'s
+  per-name-tint convention, reused instead of the mockup's flat wash so an all-text-fallback "Send
+  again" shelf isn't monotone) — true server-side 15–25KB thumbnail variants are a Lane C/E
+  follow-up; today the client renders the same `coverPhotoUrl` D1 already fetches. Bundle-size
+  measured locally (`expo export --platform android` + `scripts/check-bundle-size.mjs`): Hermes
+  6,283,356 / 6,300,000 bytes, 16.25 KB headroom left — no budget bump needed this PR. `pnpm
+  typecheck && pnpm lint && pnpm test` green across the whole monorepo (mobile: 74 suites / 569
+  tests, incl. a new `home-feed.test.ts` covering the tracker-step index, the live-order copy, the
+  reorder-rail selection/cap, and open/closed status derivation).
 - [ ] **A3 · Orders + Account tabs.** Orders = one cross-service list (absorbs
   `app/history/`); live order pinned on top; Account absorbs profile/settings/help/notifications
   entry points. Retire orphaned entry points.
