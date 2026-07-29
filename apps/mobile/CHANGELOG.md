@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/unnfazzed/Lynia/compare/v0.10.5...v0.11.0) (2026-07-29)
+
+
+### Features
+
+* **mobile:** A1 — root tab shell (Home | Orders | Account) + Send demotion ([0cdb004](https://github.com/unnfazzed/Lynia/commit/0cdb004746ff18f0f1158b2d8d047f9ae0a3d9c7))
+
 ## [0.10.5](https://github.com/unnfazzed/Lynia/compare/v0.10.4...v0.10.5) (2026-07-27)
 
 
