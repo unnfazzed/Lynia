@@ -37,7 +37,7 @@ const config: ExpoConfig = {
   name: "LyniaGo",
   slug: "lynia",
   scheme: "lynia",
-  version: "0.12.1", // x-release-please-version
+  version: "0.13.0", // x-release-please-version
   // OTA compatibility key (expo-updates): `fingerprint` hashes the native layer (deps + native
   // config), so an OTA bundle can only ever land on a binary it was actually built against —
   // a JS update can't brick an older native install. Native changes shift the fingerprint and
@@ -89,11 +89,6 @@ const config: ExpoConfig = {
       },
     ],
     ["expo-notifications", { color: "#00B14F" }],
-    // Strip com.google.android.gms.permission.AD_ID from the merged manifest so it can never be pulled
-    // in transitively. LyniaGo uses no advertising ID (Play "Data safety" → "Does your app use
-    // advertising ID?" = No), and Play enforces that against the merged manifest — this keeps the "No"
-    // truthful no matter what an SDK's library manifest declares. See plugins/with-remove-ad-id.js.
-    "./plugins/with-remove-ad-id",
     // PostHog analytics needs NO config plugin — the SDK autolinks and src/telemetry/analytics.tsx
     // key-gates it. Deliberately NOT adding "posthog-react-native/expo" (the plugin the connect
     // command suggests): it exists only for error-tracking source-map upload and injects a gradle
