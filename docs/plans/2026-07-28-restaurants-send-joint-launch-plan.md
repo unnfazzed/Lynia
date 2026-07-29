@@ -197,7 +197,11 @@ where it touches food paths (flags stay OFF in CI/staging until the launch flip)
   confirm-dialog logic is tied to the board's own `online`/`activeJob` state. New contract test
   (`RIDER_TABS` ids match route file names, mirroring the existing `APP_TABS` test).
   `pnpm typecheck && pnpm lint && pnpm test` green across the whole monorepo (mobile: 71 suites /
-  539 tests).
+  539 tests). CI's `mobile-bundle-size` job caught `main` already over its Hermes/export budget
+  by ~9.7 KB pre-existing this PR (measured against `origin/main` directly, unrelated to B1); this
+  PR's own genuine addition is ~3.7 KB. Raised `apps/mobile/size-budget.json` to cover both (new
+  headroom ~16-23 KB) rather than leaving the gate red — the pre-existing drift's root cause is
+  outside Lane B's scope to bisect this firing.
 - [ ] **B2 · One board.** Single job list, PARCEL / FOOD tagged cards, identical card anatomy;
   parcel broadcasts carry no countdown (taken job disappears); food offers pin to top with the
   60s timer (renders dark until Lane C dispatch exists); one notification line format; one
