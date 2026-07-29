@@ -236,6 +236,39 @@ jobs:
   # so it runs on every PR including from a fork. It validates provider configuration and variable
   # wiring, which is exactly the class that broke; it is NOT a substitute for the nightly drift plan,
   # which is what catches state divergence.
+  workflow-lint:
+    name: actionlint · workflow syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Why this job exists (KB-CI-EXPR-EMPTY): an invalid Actions EXPRESSION does not fail a job —
+      # it fails the whole workflow to compile, so the run completes in the same second with ZERO
+      # jobs and is titled by file path instead of its `name:`. Nothing in the repo caught that:
+      # CI stayed green (it is a different workflow), and deploy-autoheal.yml could not fire because
+      # `workflow_run.workflows` matches on the `name:` GitHub was never able to parse. Result:
+      # release.yml and deploy-staging.yml silently no-op'd on every push to main for two days.
+      # actionlint compiles every expression the same way Actions does, so that class is now caught
+      # on the PR that introduces it, before it can reach main.
+      #
+      # shellcheck/pyflakes are disabled on purpose: this job gates workflow VALIDITY, and the
+      # binary auto-enables them when present on the runner (ubuntu-latest ships shellcheck), which
+      # would turn every pre-existing `run:` style nit into a merge blocker. Enabling them is a
+      # deliberate, separate cleanup — not a side effect of this gate.
+      - name: Lint GitHub Actions workflows (actionlint)
+        run: |
+          set -euo pipefail
+          VER=1.7.7
+          BASE="https://github.com/rhysd/actionlint/releases/download/v${VER}"
+          curl -sSfL -o "actionlint_${VER}_linux_amd64.tar.gz" "${BASE}/actionlint_${VER}_linux_amd64.tar.gz"
+          curl -sSfL -o actionlint_checksums.txt "${BASE}/actionlint_${VER}_checksums.txt"
+          # Verify before executing — same posture as the osv-scanner/gitleaks downloads above.
+          grep " actionlint_${VER}_linux_amd64.tar.gz\$" actionlint_checksums.txt | sha256sum -c -
+          tar -xzf "actionlint_${VER}_linux_amd64.tar.gz" actionlint
+          chmod +x actionlint
+          ./actionlint -no-color -oneline -shellcheck= -pyflakes=
+          echo "actionlint: all workflows compile."
+
   terraform-validate:
     name: terraform validate · defaults only
     runs-on: ubuntu-latest

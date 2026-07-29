@@ -147,7 +147,10 @@ jobs:
           # dark — the whole point of a staging tier. Unset yields "false" (the schema's fail-safe).
           # Values arrive via `env:` and are whitelist-validated: a `;` in a Variable value would
           # otherwise be read as the ENV_VARS delimiter and inject an extra key (here that could
-          # override APP_ENV=staging), and raw ${{ }} in a run: block is a shell-injection sink.
+          # override APP_ENV=staging), and raw expression interpolation in a run: block is a
+          # shell-injection sink. Do NOT write the literal expression token in this block, not even
+          # inside a `#` comment: Actions interpolates the whole script before bash ever sees it, so
+          # an empty one is a syntax error that fails the ENTIRE workflow to parse (KB-CI-EXPR-EMPTY).
           for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED; do
             _val="${!_flag:-false}"
             case "$_val" in

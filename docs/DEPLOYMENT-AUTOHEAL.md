@@ -75,6 +75,33 @@ issue labeled **`deploy-failure`** containing:
 The fix path is intentionally *forward*: the fix PR merges to main → new sha → staging deploys and
 smokes it → gate promotes it to prod. The old red sha is never force-pushed to prod.
 
+### 4. Startup-failure backstop (`workflow-startup-watchdog.yml`, hourly)
+
+Layers 1–3 all hang off `workflow_run`, which has one structural blind spot: **a workflow that
+fails to compile never reaches them.** If a workflow file contains an invalid Actions *expression*,
+the run does not fail a job — it fails to start. GitHub records a run that completed in the same
+second with **zero jobs**, titled by file path because the `name:` was never parsed. Autoheal's
+`workflow_run.workflows` filter matches on exactly that unparsed `name:`, so no event is ever
+routed to it: no retry, no issue, no signal. CI stays green (it is a different workflow), so `main`
+looks healthy while the deploy tier does nothing. This is not hypothetical — it silently no-op'd
+prod and staging on every push to main for two days (`KB-CI-EXPR-EMPTY`).
+
+Two guards now cover it:
+
+- **Prevention — `actionlint · workflow syntax` in `ci.yml`.** Compiles every expression the same
+  way Actions does, so a non-compiling workflow is blocked on the PR that introduces it.
+- **Detection — `workflow-startup-watchdog.yml`, hourly.** For whatever gets past CI (a direct push
+  to main, a bypassed check, or a cause actionlint cannot model such as a deleted reusable-workflow
+  ref). It compiles `main` directly *and* scans recent runs, then escalates onto the same
+  `deploy-failure` label. Two details that matter if you ever edit it:
+  - it classifies red runs by **job count**, not by `conclusion` — the real incident was reported by
+    the API as a plain `failure`, not `startup_failure`, so filtering on the latter finds nothing;
+  - it compiles `main` directly rather than only reacting to runs, because a broken workflow during
+    a quiet period produces no runs at all and therefore emits no run-based signal.
+
+  It opens and closes its own issue under a fixed title, so autoheal's title-substring matching
+  can't adopt it or auto-close it on an unrelated green deploy.
+
 ## Manual overrides
 
 | Situation | Action |
