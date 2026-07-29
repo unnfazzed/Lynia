@@ -34,9 +34,11 @@ import Phone from "lucide-react-native/dist/cjs/icons/phone";
 import Plus from "lucide-react-native/dist/cjs/icons/plus";
 import Receipt from "lucide-react-native/dist/cjs/icons/receipt";
 import Search from "lucide-react-native/dist/cjs/icons/search";
+import Shield from "lucide-react-native/dist/cjs/icons/shield";
 import ShieldAlert from "lucide-react-native/dist/cjs/icons/shield-alert";
 import Star from "lucide-react-native/dist/cjs/icons/star";
 import Store from "lucide-react-native/dist/cjs/icons/store";
+import Trash from "lucide-react-native/dist/cjs/icons/trash-2";
 import TriangleAlert from "lucide-react-native/dist/cjs/icons/triangle-alert";
 import Utensils from "lucide-react-native/dist/cjs/icons/utensils";
 import User from "lucide-react-native/dist/cjs/icons/user";
@@ -47,11 +49,11 @@ import React from "react";
 
 /**
  * The Lynia house icon set — Lucide rounded 2px line icons (the open equivalent of Grab's in-app
- * style), mirroring packages/design/assets/lynia-icons.js. Only the 25 glyphs the product actually
- * uses are imported, each from its own file (see the import note above) — that per-icon import, not
- * the import list itself, is what keeps the bundle lean (the design system's "self-hosted subset"
- * rule). Icons are always paired with a text label; green icons use `accentText`, icons on a green
- * fill are white.
+ * style), mirroring packages/design/assets/lynia-icons.js. Only the glyphs the product actually uses
+ * are imported, each from its own file (see the import note above) — that per-icon import, not the
+ * size of this map, is what keeps the bundle lean (the design system's "self-hosted subset" rule), so
+ * the set grows one deliberate glyph at a time rather than reverting to a barrel import. Icons are
+ * always paired with a text label; green icons use `accentText`, icons on a green fill are white.
  */
 const ICONS = {
   bike: Bike, // rider / no-offers
@@ -79,6 +81,8 @@ const ICONS = {
   "life-buoy": LifeBuoy, // get help with this trip
   flag: Flag, // report a problem
   "shield-alert": ShieldAlert, // SOS / emergency
+  shield: Shield, // privacy notice (settings)
+  trash: Trash, // delete account (settings)
   bell: Bell, // BrandHeader notifications
   store: Store, // root tab bar — Home
   receipt: Receipt, // root tab bar — Orders

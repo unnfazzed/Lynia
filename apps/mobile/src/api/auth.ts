@@ -74,3 +74,18 @@ export function getMe(): Promise<Me> {
 export function updateProfile(body: { firstName: string; lastName: string; idNumber?: string }): Promise<Me> {
   return apiFetch<Me>("/auth/me", { method: "PATCH", body });
 }
+
+/**
+ * Right to erasure — delete the signed-in account and its personal data (DELETE /auth/me, scoped to
+ * the JWT subject; see apps/api/src/privacy/privacy.service.ts and docs/DATA-RETENTION.md).
+ *
+ * Google Play requires an in-app deletion path for any app that lets users create an account, so this
+ * is a listing prerequisite as much as a CDPA one. The server refuses with 409 in two cases the caller
+ * must surface honestly rather than retry: a live delivery in progress ("finish or cancel first" — so
+ * erasure can't strand the other party), and an account under a standing restriction (hold, suspension,
+ * ban, cooldown, KYC lock) where self-deletion would reset a sanction. Both arrive as an ApiError whose
+ * `message` is already user-facing copy from the API.
+ */
+export function deleteAccount(): Promise<void> {
+  return apiFetch<void>("/auth/me", { method: "DELETE" });
+}

@@ -81,7 +81,7 @@ residual risk is concentrated:
 | LR17 | UI | Real-network pass: low-end Android, 3G/EDGE, offline honesty | founder (device) + agent | 🛠️ checklist authored; needs a low-end device + throttled network |
 | LR18 | UI | Journey audits ×3 (customer / rider / admin) — error-state honesty | agent | 🛠️ mobile auction + rider-job honest error+retry **shipped**; admin dead-refund-write flagged |
 | LR19 | UI | Design-system adherence + accessibility (TalkBack, scaling, AA) | agent + device | ⬜ |
-| LR20 | UI | Crash telemetry + store readiness (listing, privacy, data-safety) | agent + founder | 🛠️ Sentry wiring runbook + store/privacy checklist authored; founder executes on the dev build |
+| LR20 | UI | Crash telemetry + store readiness (listing, privacy, data-safety) | agent + founder | 🛠️ Sentry wiring runbook authored; **full submission package built** (`docs/PLAY-STORE-SUBMISSION.md`) — listing copy, data-safety answers, declarations, published privacy/deletion pages, in-app account deletion. Founder-blocked on reviewer access (§7.1), Play/EAS credentials, graphics |
 | LR21 | All | Go/no-go: QA off, vendors on, one clean end-to-end real delivery | founder | ⬜ |
 
 ---
@@ -361,6 +361,14 @@ Add Sentry (React Native) or Crashlytics behind the existing best-effort pattern
 app). Then the store package: Play listing, versioning/build-number discipline in `app.config.ts`,
 privacy policy URL (from LR8), the Play data-safety form (matches what the app actually collects:
 location, phone, KYC), and a staged-rollout plan (internal → closed track → corridor).
+
+> **Store package: built (2026-07-29).** `docs/PLAY-STORE-SUBMISSION.md` is the executable version of
+> this paragraph — listing copy, per-category data-safety answers derived from the PII manifest, the
+> content-rating and app-content declarations, the foreground-service-location justification, the
+> asset shot list, and the track plan. The two Play-policy blockers it found are fixed in code: the
+> privacy + account-deletion pages are now served publicly by the API (`apps/api/src/legal/`), and the
+> app has an in-app **Account → Settings → Delete account** path. What remains is founder-only —
+> chiefly **reviewer access to a login-gated app** (§7.1), which gates the whole submission.
 
 - **Exit test:** a forced test crash appears in the dashboard from a release build; Play internal
   track accepts the build; data-safety form drafted.
