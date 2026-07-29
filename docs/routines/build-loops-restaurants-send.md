@@ -10,11 +10,11 @@ keep this file reconciled when doing so.
 
 | Trigger name | Cron (UTC) | Lane |
 |---|---|---|
-| `Build loop C — restaurants backend` | `0 10 * * *` | Plan §5 Lane C |
-| `Build loop A — customer home + IA` | `0 12 * * *` | Plan §5 Lane A |
-| `Build loop B — one rider app` | `0 16 * * *` | Plan §5 Lane B |
-| `Build loop D — food UI` | `0 18 * * *` | Plan §5 Lane D |
-| `Build loop E — merchant tablet` | `0 21 * * *` | Plan §5 Lane E |
+| `Build loop C — restaurants backend` | `0 10,17 * * *` | Plan §5 Lane C |
+| `Build loop A — customer home + IA` | `0 12,19 * * *` | Plan §5 Lane A |
+| `Build loop B — one rider app` | `0 16,22 * * *` | Plan §5 Lane B |
+| `Build loop D — food UI` | `0 11,18 * * *` | Plan §5 Lane D |
+| `Build loop E — merchant tablet` | `0 13,21 * * *` | Plan §5 Lane E |
 
 Shared design of the prompts: Phase-0 orientation (plan on main, one in-flight PR per lane,
 dependency gates, KNOWN_BUGS read), one checklist increment per firing, merge-on-green per
@@ -23,7 +23,7 @@ self-termination. The prompt texts below are verbatim what runs.
 
 ---
 
-## Build loop C — restaurants backend (`0 10 * * *`)
+## Build loop C — restaurants backend (`0 10,17 * * *`)
 
 ```
 You are Build loop C — restaurants backend, a scheduled implementation loop for unnfazzed/Lynia.
@@ -63,13 +63,18 @@ new one. Tick your Lane C checkbox in the plan IN THE SAME PR. Mark ready, enabl
 (squash), or merge directly once CI is green with no unresolved comments. Never merge on red; fix
 forward.
 
-TERMINATE: all Lane C boxes ticked → add a lane-completion note in plan §5, run the backend slice
-of X2 (staging golden pass) if reachable, then disable THIS trigger: list_triggers, find "Build
-loop C — restaurants backend", update_trigger {enabled:false}. If blocked on the same item two
-firings running, append the blocker to plan §10 and exit quietly.
+AFTER LANE C: once C1–C5 are all ticked, the plan §5 cross-cutting queue becomes yours — take X1
+(admin alignment) then X2 (launch-flip rehearsal), one per firing, same ship rules (X1 diffs
+touch admin money views → sensitive-lane four apply; X2's deliverable is the staging golden pass
+both flag positions plus the repeatable checklist in docs/LAUNCH-EXECUTION-RUNBOOK.md).
+
+TERMINATE: C1–C5, X1 and X2 all ticked → add a completion note in plan §5, then disable THIS
+trigger: list_triggers, find "Build loop C — restaurants backend", update_trigger
+{enabled:false}. If blocked on the same item two firings running, append the blocker to plan §10
+and exit quietly.
 ```
 
-## Build loop A — customer home + IA (`0 12 * * *`)
+## Build loop A — customer home + IA (`0 12,19 * * *`)
 
 ```
 You are Build loop A — customer home + IA, a scheduled implementation loop for unnfazzed/Lynia.
@@ -112,7 +117,7 @@ trigger: list_triggers, find "Build loop A — customer home + IA", update_trigg
 If blocked on the same item two firings running, append the blocker to plan §10 and exit quietly.
 ```
 
-## Build loop B — one rider app (`0 16 * * *`)
+## Build loop B — one rider app (`0 16,22 * * *`)
 
 ```
 You are Build loop B — one rider app, a scheduled implementation loop for unnfazzed/Lynia. Each
@@ -155,7 +160,7 @@ trigger: list_triggers, find "Build loop B — one rider app", update_trigger {e
 blocked on the same item two firings running, append the blocker to plan §10 and exit quietly.
 ```
 
-## Build loop D — food UI (`0 18 * * *`)
+## Build loop D — food UI (`0 11,18 * * *`)
 
 ```
 You are Build loop D — food UI, a scheduled implementation loop for unnfazzed/Lynia. Each firing
@@ -200,7 +205,7 @@ trigger: list_triggers, find "Build loop D — food UI", update_trigger {enabled
 on the same item two firings running, append the blocker to plan §10 and exit quietly.
 ```
 
-## Build loop E — merchant tablet (`0 21 * * *`)
+## Build loop E — merchant tablet (`0 13,21 * * *`)
 
 ```
 You are Build loop E — merchant tablet, a scheduled implementation loop for unnfazzed/Lynia. Each
