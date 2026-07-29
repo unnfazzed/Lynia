@@ -6,6 +6,7 @@ export * from "./policy";
 export * from "./geo";
 export * from "./pricing";
 export * from "./restaurants-order";
+export * from "./restaurant-hours";
 export * from "./offer-ranking";
 export * from "./phone";
 export * as tokens from "./design-tokens";
