@@ -325,10 +325,46 @@ dead-when-off rather than dead-always.
 Phase-0 gate: requires A1 (customer shell) for D1–D4, B1/B4 (rider shell + active-job) for D5,
 and the matching Lane C contracts (C1 for D1, C2 for D2–D3, C4 for D4–D5) merged.
 
-- [ ] **D1 · Browse.** Restaurant list (photo-led, hero + thumbs, tinted-initial fallback),
+- [x] **D1 · Browse.** Restaurant list (photo-led, hero + thumbs, tinted-initial fallback),
   search, menu (category tabs mirroring D-29), item sheet, closed/closes-while-browsing states,
   cart with per-item + order notes (D-35, price never changes), sold-out / price-changed /
-  empty states.
+  empty states. **Done 2026-07-29:** new `app/food/` route group (`_layout.tsx` wraps it in a
+  `FoodCartProvider`) — `index.tsx` restaurant list (open-now filter, offline warm-paint snapshot
+  + saved-at timestamp, five states), `search.tsx` (client-side name/cuisine-tag match over the
+  already-fetched list), `[id].tsx` menu (category tabs, closed banner via `nextOpenDescription`,
+  a 60s poll that fires the R2·b1 "just closed" interrupt on a genuine open→closed transition),
+  `cart.tsx` (qty/remove per line, order note, N-15 small-order-fee line, OOS/price-change
+  reconciliation against a fresh menu fetch). New RN components `src/ui/food/` (`FoodThumb`
+  tinted-initial photo slot reusing `logic/avatar`'s tint function, `RestaurantRow`, `MenuRow`,
+  `ItemSheet` — no portion/option picker, since `MerchantDish` (C1) carries no variant schema;
+  flagging that as an open item rather than fabricating UI over data that doesn't exist), and
+  `NoteField` (multiline sibling to the shared single-line `Field`). Cart state
+  (`src/food/cart-context.tsx` + `src/logic/food-cart.ts`) persists through SecureStore
+  (`src/net/food-cart-store.ts`) per §3 "survives an app restart" — PII-free (dish
+  ids/names/prices/qty/notes only) — and is wiped by `clearDeviceState()` on sign-out (same
+  BH-17 shared-device discipline as every other per-session draft key), alongside a new
+  restaurant-list warm-paint snapshot (`src/net/restaurant-list-store.ts`) for the D-19 offline
+  state. `QtyStepper` gained an optional `max` prop (default unchanged) so food dishes cap at the
+  C2 wire contract's 20 rather than Send's 99. Small, additive Lane C touch: `RestaurantListItem`
+  (customer read API, C1) gained a `hours: MerchantHours.nullable()` field — needed to render the
+  closed/closes-while-browsing states honestly instead of faking an open/closed flag — plus a new
+  pure `packages/shared/src/restaurant-hours.ts` (`isMerchantOpenNow`/`minutesUntilClose`/
+  `nextOpenDescription`, fail-open when a merchant hasn't set hours) computing it client-side so
+  the server never ships a staleable precomputed boolean; `merchant.service.ts`'s `toListItem`
+  passes `hours` through, additive to the existing wire shape (no existing test asserted an
+  exhaustive shape, confirmed before editing). Checkout itself (delivery fee, ETA, the "Continue"
+  CTA) is explicitly D2's — the cart totals subtotal + N-15 small-order fee only, and "Continue"
+  toasts "coming soon" rather than faking a route that doesn't exist yet. Dish-level search (the
+  gallery's cross-restaurant "DISHES" section) needs a menu index the C1 customer read API
+  doesn't have — flagged as an open item for a future Lane C increment, not silently dropped.
+  Bundle-size budget raised (`size-budget.json`: Hermes 6.23 MB → 6.30 MB, export total
+  12.48 MB → 12.56 MB) to cover this increment's new screens/components, ~0.5% headroom left on
+  each; measured locally via `expo export --platform android` + `scripts/check-bundle-size.mjs`
+  per docs/APP-SIZE.md. `pnpm typecheck && pnpm lint && pnpm test` green across the whole
+  monorepo (mobile: 73 suites / 556 tests, incl. new suites for `food-cart.ts`'s pure cart math
+  and the BH-17 device-state wipe-key characterization; shared: 9 suites / 152 tests incl. new
+  `restaurant-hours.test.ts`; api: 91 suites / 1333 tests incl. 2 new `merchant.service.spec.ts`
+  cases for the `hours` passthrough). D2 (checkout + kitchen-confirms) is next.
 - [ ] **D2 · Checkout + kitchen-confirms.** CASH / WALLET checkout (ETA promise anchored on
   payment confirm D-21/R-17), placing → waiting-for-accept → "they call to confirm" band →
   pay-the-restaurant (manual rail D-24: copyable number/amount/reference, "I paid another way")

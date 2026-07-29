@@ -364,7 +364,9 @@ export class MerchantService {
     };
   }
 
-  private toListItem(merchant: Pick<MerchantWithOwner, "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel">): RestaurantListItem {
+  private toListItem(
+    merchant: Pick<MerchantWithOwner, "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours">,
+  ): RestaurantListItem {
     return {
       id: merchant.id,
       name: merchant.name,
@@ -372,6 +374,7 @@ export class MerchantService {
       logoUrl: merchant.logoUrl,
       cuisineTags: merchant.cuisineTags,
       priceLevel: merchant.priceLevel,
+      hours: (merchant.hours as MerchantHours | null) ?? null,
     };
   }
 

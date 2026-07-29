@@ -752,6 +752,10 @@ export const RestaurantListItem = z
     logoUrl: z.string().nullable(),
     cuisineTags: z.array(z.string()),
     priceLevel: z.number().int().nullable(),
+    // D1 (browse): open/closed + "closing soon"/"opens at" are derived client-side from this via
+    // ./restaurant-hours — the server sends the raw weekly hours only, never a stale precomputed
+    // boolean. Additive on the customer read API (C1 shipped this response without it).
+    hours: MerchantHours.nullable(),
   })
   .strict();
 export type RestaurantListItem = z.infer<typeof RestaurantListItem>;
