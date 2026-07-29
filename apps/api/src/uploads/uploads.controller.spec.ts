@@ -66,3 +66,31 @@ describe("UploadsController.pickupPhoto", () => {
     expect(res.key).toMatch(/^pickup\/u2\/[0-9a-f-]+\.png$/);
   });
 });
+
+describe("UploadsController.dishPhoto", () => {
+  it("mints a signed PUT URL under the caller's dish namespace with the D-32 300KB cap", async () => {
+    let receivedMax: number | undefined;
+    const c = ctl(async (key, contentType, _expires, maxBytes) => {
+      receivedMax = maxBytes;
+      return { url: "https://signed.example/put", key };
+    });
+    const res = await c.dishPhoto({ contentType: "image/jpeg" }, "merchant-owner-1");
+    expect(res.key).toMatch(/^dish\/merchant-owner-1\/[0-9a-f-]+\.jpg$/);
+    expect(receivedMax).toBe(300 * 1024);
+    expect(res.headers["X-Goog-Content-Length-Range"]).toBe(`0,${300 * 1024}`);
+  });
+});
+
+describe("UploadsController.bannerPhoto", () => {
+  it("mints a signed PUT URL under the caller's banner namespace with the D-32 250KB cap", async () => {
+    let receivedMax: number | undefined;
+    const c = ctl(async (key, contentType, _expires, maxBytes) => {
+      receivedMax = maxBytes;
+      return { url: "https://signed.example/put", key };
+    });
+    const res = await c.bannerPhoto({ contentType: "image/png" }, "merchant-owner-1");
+    expect(res.key).toMatch(/^banner\/merchant-owner-1\/[0-9a-f-]+\.png$/);
+    expect(receivedMax).toBe(250 * 1024);
+    expect(res.headers["X-Goog-Content-Length-Range"]).toBe(`0,${250 * 1024}`);
+  });
+});

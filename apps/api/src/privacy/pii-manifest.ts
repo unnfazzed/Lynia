@@ -212,4 +212,13 @@ export const NON_PII_COLUMNS: Readonly<Record<string, string>> = {
   // gets a real scrub via the `report_note` manifest entry.
   "audit_logs.note": "AuditLog.note is the admin's ConfirmModal justification for a destructive console action (suspend/ban/refund/…) — append-only compliance trail authored by ops, must outlive its subject; not erasable PII.",
   "commission_ledger.note": "CommissionLedger.note is an ops/system annotation on a wallet-ledger row (manual credit/adjustment rationale) — part of the immutable financial ledger, staff-authored, not personal data the rider supplied.",
+  // Restaurants vertical (C1): shop-front and menu content is business/public-listing data ABOUT the
+  // shop or a dish, not personal data about the merchant owner as a person — the owner's actual PII
+  // (name, phone) lives on their Profile row and already goes through the normal erasure path.
+  // Mirrors the audit_logs.note/resolution_note reasoning: content authored FOR a public listing,
+  // not personal data supplied to describe the account holder.
+  "merchants.description": "Merchant.description is the shop's own one-line blurb on its public storefront (D-30) — business-listing copy, not personal data about the owner.",
+  "merchants.cover_photo_url": "Merchant.coverPhotoUrl is the shop's public cover banner (D-30) — a storefront photo of the business, not of or about a person.",
+  "merchant_dishes.description": "MerchantDish.description is the menu-item description on the public menu — business content, not personal data.",
+  "merchant_dishes.photo_url": "MerchantDish.photoUrl is the dish's own menu photo (D-31/D-32) — a photo of food, not of or about a person.",
 } as const;
