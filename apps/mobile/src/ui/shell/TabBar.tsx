@@ -18,6 +18,18 @@ export const APP_TABS: AppTab[] = [
   { id: "account", icon: "user", label: "Account" },
 ];
 
+/**
+ * Rider root tab bar (plan §5 Lane B1) — `Jobs | Money | Account`, mirroring the customer shell's
+ * `APP_TABS` one tab bar down. Lives at `app/rider/(tabs)/`, nested under the existing `/rider`
+ * boot segment rather than the app root, so `id: "index"` (the board) keeps every existing
+ * `"/rider"` call site working with zero string changes — same trick A1 used for `"/home"`.
+ */
+export const RIDER_TABS: AppTab[] = [
+  { id: "index", icon: "bike", label: "Jobs" },
+  { id: "money", icon: "banknote", label: "Money" },
+  { id: "account", icon: "user", label: "Account" },
+];
+
 export function TabBar({
   active,
   tabs = APP_TABS,

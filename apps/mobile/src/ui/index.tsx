@@ -12,7 +12,7 @@ export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 export { AppScreen } from "./shell/AppScreen";
 export { BrandHeader } from "./shell/BrandHeader";
 export { getServiceTiles, ServiceTiles, SERVICES, type ServiceTile } from "./shell/ServiceTiles";
-export { APP_TABS, TabBar, type AppTab } from "./shell/TabBar";
+export { APP_TABS, RIDER_TABS, TabBar, type AppTab } from "./shell/TabBar";
 
 export { isTestBuild } from "./test-build";
 export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./haptics";
