@@ -484,12 +484,15 @@ jobs:
           # The pilot COHORT (which merchants are live) is domain data, not an env var — flipping
           # RESTAURANTS_ENABLED opens the vertical, `Merchant.pilotEnabled` decides who is in it.
           #
-          # Values arrive via `env:` (NOT ${{ }} inside this script) and are whitelist-validated to
+          # Values arrive via `env:` (never interpolated into this script) and are whitelist-validated to
           # exactly true|false. Two reasons, both real: a `;` in a Variable value would otherwise be
           # read as the ENV_VARS delimiter and silently inject an extra key — and because these lines
           # append AFTER the hardcoded APP_ENV=production above, and gcloud takes the LAST occurrence
           # of a duplicated key, such an injection could override the very guard that comment promises
-          # is un-overridable. Raw ${{ }} in a run: block is also a shell-injection sink.
+          # is un-overridable. Raw expression interpolation in a run: block is also a shell-injection
+          # sink. Do NOT write the literal expression token in this block, not even inside a `#`
+          # comment: Actions interpolates the whole script before bash ever sees it, so an empty one
+          # is a syntax error that fails the ENTIRE workflow to parse (KB-CI-EXPR-EMPTY).
           for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED; do
             _val="${!_flag:-false}"
             case "$_val" in
