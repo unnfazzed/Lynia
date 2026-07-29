@@ -123,7 +123,9 @@ functionality unless marked optional, and **none** is used for advertising or so
 | Precise location | Yes | Yes¹ | Required | App functionality |
 | Photos | Yes | Yes² | Required | App functionality, Fraud prevention |
 | User payment info (mobile-money number) | Yes | No | Required (riders only) | App functionality |
+| User payment info (restaurant payment reference) | Yes | Yes⁴ | **Optional** | App functionality, Fraud prevention |
 | Purchase history (wallet ledger) | Yes | No | Required (riders only) | App functionality |
+| Purchase history (food/shop orders) | Yes | Yes⁴ | Required (restaurant orders only) | App functionality |
 | App interactions | Yes | Yes³ | Required | Analytics |
 | Crash logs | Yes | Yes³ | Required | Analytics |
 | Diagnostics | Yes | Yes³ | Required | Analytics |
@@ -134,6 +136,10 @@ name/photo/rating/live position; the rider sees the customer's first name, the p
 delivery contact number). Not with any other user, and not with a third-party company.
 ² With the KYC verification provider (ID/selfie) and Google Cloud Storage as the storage processor.
 ³ With Sentry (crash) and PostHog (product analytics) as processors.
+⁴ With the restaurant or shop the customer ordered from — the dishes, per-dish notes, delivery point,
+and (only if the customer used "I paid another way") the mobile-money reference so the shop can match
+it to its own statement. Scoped to that order: a shop never sees the customer's ID, saved addresses,
+or any order placed with another shop.
 
 **Do NOT tick:** "Data is used for advertising or marketing", "Data is shared with a data broker",
 "App collects data for advertising ID purposes" — none is true, and each is independently verifiable
@@ -330,12 +336,34 @@ prompts (`scripts/eas-arm.sh --verify` audits what is armed). In Play Console yo
 2. Create a **Play Developer API service account** (Play Console → API access) and download its JSON
    key; `eas credentials` uploads it so `mobile-release.yml` can auto-submit.
 
-### 7.3 Corporate identity on the legal pages
+### 7.3 CDPA compliance — four duties the published notice now assumes
 
-`apps/api/src/legal/legal.content.ts` names "Lynia (LyniaGo), Zimbabwe" as the data controller. Before
-the production listing goes live, replace with the **registered company name, registration number and
-address**, and designate a CDPA data-protection contact. Counsel should also confirm the retention
-windows stated (they are accurate to the code; the question is whether they are the right *policy*).
+The privacy notice at `/legal/privacy` states Lynia's position under Zimbabwe's **Cyber and Data
+Protection Act, 2021**, enforced by POTRAZ. The engineering claims in it are accurate to the code.
+Four obligations sit on the *company* rather than the codebase, and publishing the notice is a public
+representation that they are (or will be) met:
+
+1. **Register as a data controller with POTRAZ.** The 2024 Licensing regulations require controllers
+   to register before processing. Lynia is processing already, so this is overdue rather than
+   pending — confirm status with counsel and file.
+2. **Appoint a Data Protection Officer.** Required by the same regulations, and registrable with
+   POTRAZ once appointed. When one exists, replace `LEGAL_CONTACT_EMAIL` in `legal.content.ts` with
+   their contact — the notice currently points at the support inbox, which is honest (it is
+   monitored) but is not a designated DPO.
+3. **Notify POTRAZ of the cross-border transfer.** The primary region is `africa-south1`
+   (Johannesburg), so **every row, image and backup lives in South Africa, not Zimbabwe**
+   (`infra/terraform/variables.tf`). Under the Act that is a continuous cross-border transfer needing
+   an adequacy determination or another ground plus notification. §4 of the notice discloses it
+   plainly and relies on necessity-for-the-contract; counsel should confirm that ground and make the
+   filing. *Do not "fix" this by quietly deleting the disclosure — the transfer is real, and an
+   undisclosed one is the worse violation.*
+4. **Be able to meet the 24-hour breach-notification duty.** The notice commits to notifying POTRAZ
+   within 24 hours of becoming aware of a breach. `docs/IR-RUNBOOK.md` should carry POTRAZ as a named
+   notification target with that clock, alongside the existing technical response steps.
+
+Also still outstanding: replace "Lynia (LyniaGo), Zimbabwe" in the page footer with the **registered
+company name, registration number and address**, and have counsel confirm the retention windows are
+the right *policy* (they are accurate to the code — that is a different question).
 
 ### 7.4 Financial-features answer
 
@@ -374,6 +402,7 @@ Once §7.1 and §7.2 are closed:
 - [ ] Content rating questionnaire (§4.5) completed
 - [ ] Foreground-service-location declaration (§5.1) submitted with demo video
 - [ ] Privacy policy + deletion URLs resolving in an incognito window from outside Zimbabwe
-- [ ] Corporate identity on the legal pages ratified (§7.3)
+- [ ] CDPA duties closed (§7.3): POTRAZ controller registration, DPO appointed, cross-border transfer
+      notified, IR runbook carries the 24-hour POTRAZ clock, corporate identity on the pages ratified
 - [ ] Sentry receiving crashes from a release build (LR20 exit test)
 - [ ] Internal track build installed and smoke-tested on a real device

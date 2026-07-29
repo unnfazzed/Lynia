@@ -219,6 +219,17 @@ describe("PrivacyService.eraseAccount", () => {
     expect(cancelScrub!.where).toEqual({ OR: [{ customerId: "p1" }, { riderId: "p1" }], NOT: { cancelReason: null } });
   });
 
+  it("nulls orders.merchantPaymentReference on the CUSTOMER's food orders (the mobile-money handle, not the ledger)", async () => {
+    const { svc, orderUpdateManys } = eraseHarness({ phone: "+263771234567" }, false);
+    await svc.eraseAccount("p1");
+    const refScrub = orderUpdateManys.find((u) => u.data.merchantPaymentReference === null);
+    expect(refScrub).toBeDefined();
+    // Customer-scoped, NOT an either-party OR: only the customer ever types this reference in (D-24
+    // "I paid another way"), so scoping it to the rider too would scrub a reference the erasing user
+    // never authored, on someone else's order.
+    expect(refScrub!.where).toEqual({ customerId: "p1", NOT: { merchantPaymentReference: null } });
+  });
+
   it("DOC-16-01: does NOT touch top_ups for a plain customer (no rider row — no TopUp rows can exist)", async () => {
     const { svc, tx } = eraseHarness({ phone: "+263771234567", rider: null }, false);
     await svc.eraseAccount("p1");
