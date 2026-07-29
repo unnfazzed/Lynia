@@ -23,8 +23,10 @@ name: Workflow Startup Watchdog
 # Two independent checks, because each covers the other's blind spot:
 #   A. Compile main's workflows directly. Deterministic, and it fires even during a quiet period —
 #      a broken workflow that nobody pushes to produces no runs and therefore no run-based signal.
-#   B. Scan main's recent runs for `startup_failure`. Catches causes that live in GitHub's
-#      evaluation of the file rather than in the file's own syntax.
+#   B. Scan main's recent runs for zero-job failures, then confirm the workflow is STILL broken by
+#      its newest run. Catches causes that live in GitHub's evaluation of the file rather than in
+#      the file's own syntax. The "still broken" re-check is what keeps a historical failure inside
+#      the lookback window from being re-filed every hour after its fix has already landed.
 #
 # Escalates onto the same `deploy-failure` label the autoheal uses, so all deploy breakage lands in
 # one queue. Titles are keyed to this watchdog and never contain a deploy workflow's `name:`, so the
@@ -85,7 +87,7 @@ jobs:
             echo "broken=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # --- Check B: did anything on main actually fail to start in the last 24h? ----------------
+      # --- Check B: is any workflow on main CURRENTLY failing to start? ------------------------
       - name: Scan main's recent runs for startup failures
         id: scan
         run: |
@@ -96,11 +98,11 @@ jobs:
           # that the run produced ZERO jobs (and completed in the same second it was created). So take
           # every red run in the window and classify it by job count, which is exact.
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&per_page=100" \
-            --jq '.workflow_runs[] | select(.conclusion == "startup_failure" or .conclusion == "failure") | "\(.created_at)\t\(.id)\t\(.conclusion)\t\(.name)\t\(.html_url)"' \
+            --jq '.workflow_runs[] | select(.conclusion == "startup_failure" or .conclusion == "failure") | "\(.created_at)\t\(.id)\t\(.workflow_id)\t\(.conclusion)\t\(.name)\t\(.html_url)"' \
             > raw.txt || true
           : > recent.txt
           CHECKED=0
-          while IFS=$'\t' read -r created id conclusion name url; do
+          while IFS=$'\t' read -r created id wfid conclusion name url; do
             [ -n "${created:-}" ] || continue
             TS="$(date -u -d "$created" +%s)"
             [ "$TS" -ge "$CUTOFF" ] || continue
@@ -118,6 +120,33 @@ jobs:
               # escalated — a false page every hour would train everyone to ignore this issue.
               [ "$JOBS" = "0" ] || continue
             fi
+            # Is this workflow STILL broken, or has the fix already landed? A historical startup
+            # failure inside the lookback window is not actionable once a later run of the same
+            # workflow has started normally — escalating on it would re-file the same issue every
+            # hour until the window rolls off, which is precisely the alert-fatigue failure this
+            # watchdog is supposed to prevent. (Caught in practice: the first live run filed an
+            # issue for the very incident whose fix had just merged.) So judge the workflow by its
+            # NEWEST run on main, not by the historical one.
+            [ -n "${wfid:-}" ] || continue
+            case " ${SEEN_WF:-} " in *" $wfid "*) continue ;; esac
+            SEEN_WF="${SEEN_WF:-} $wfid"
+            LATEST="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${wfid}/runs?branch=main&per_page=1" \
+              --jq '.workflow_runs[0] | "\(.id)\t\(.status)\t\(.conclusion)"' 2>/dev/null || echo "")"
+            [ -n "$LATEST" ] || continue
+            L_ID="$(printf '%s' "$LATEST" | cut -f1)"
+            L_STATUS="$(printf '%s' "$LATEST" | cut -f2)"
+            L_CONCL="$(printf '%s' "$LATEST" | cut -f3)"
+            # Anything not yet finished (queued/in_progress/pending, e.g. a run held at an
+            # environment approval gate) means the workflow compiles and is running — not broken.
+            [ "$L_STATUS" = "completed" ] || { echo "$name: latest run is $L_STATUS — compiling fine, skipping."; continue; }
+            case "$L_CONCL" in
+              startup_failure) ;;
+              failure)
+                L_JOBS="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${L_ID}/jobs?per_page=1" --jq '.total_count' 2>/dev/null || echo "unknown")"
+                [ "$L_JOBS" = "0" ] || { echo "$name: latest run failed but ran jobs — a normal red run, not a startup failure. Skipping."; continue; }
+                ;;
+              *) echo "$name: latest run on main concluded '$L_CONCL' — already recovered, skipping."; continue ;;
+            esac
             printf '%s\t%s\t%s\n' "$created" "$name" "$url" >> recent.txt
           done < raw.txt
           if [ -s recent.txt ]; then
@@ -155,7 +184,7 @@ jobs:
               echo
             fi
             if [ "$SCAN_FOUND" = "true" ]; then
-              echo "### Runs on \`main\` with conclusion \`startup_failure\` (last 24h)"
+              echo "### Workflows on \`main\` whose latest run produced zero jobs (first seen, last 24h)"
               printf '%s\n' "$SCAN_DETAIL"
               echo
             fi
