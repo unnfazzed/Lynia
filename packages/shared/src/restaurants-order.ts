@@ -60,10 +60,45 @@ export const MERCHANT_REJECTION_REASONS = {
   unreachable_customer: "We couldn't reach you to confirm your order.",
   // N-23 end-of-day auto-close.
   shop_closed: "The shop closed before your order could be confirmed.",
+  // D-13/C3: NO_RIDER is an apology, not an error — nothing charged, doesn't count against the
+  // merchant. Reached either by the reconciler (cap exhausted, never held) or the merchant's own
+  // "cancel" choice from the D-34 hold screen.
+  no_rider: "We couldn't find a rider for your order in time — nothing was charged, sorry about that.",
   other: "The restaurant couldn't take this order.",
 } as const;
 export type MerchantRejectionReason = keyof typeof MERCHANT_REJECTION_REASONS;
 
 export function rejectionCopy(reason: string): string {
   return (MERCHANT_REJECTION_REASONS as Record<string, string>)[reason] ?? MERCHANT_REJECTION_REASONS.other;
+}
+
+/**
+ * C3 — food dispatch config, as config not constants (same pattern as RESTAURANTS_PRICING/TIMING
+ * above): a single named object + pure helpers, so a tuning pass touches this file, not a sweep
+ * through food-dispatch.service.ts.
+ */
+export const RESTAURANTS_DISPATCH = {
+  /** N-08: how long a single candidate rider has to accept before the next attempt fires. */
+  offerWindowMs: 60 * 1000,
+  /** N-07: "~6 sequential 60s offers" — six ticks total (whether or not each finds a candidate) is
+   *  the NO_RIDER cap, ≈6:00 end to end. */
+  maxAttempts: 6,
+  /** Widening search radius (meters) per attempt (1-indexed via {@link dispatchRadiusForAttempt}).
+   *  Starts tighter than Express's own base broadcast radius (a food order wants the CLOSEST rider
+   *  first, not the widest audience) and widens faster than the cap is reached, so a genuinely
+   *  sparse area still gets a shot at every attempt. */
+  radiusStepsM: [1500, 2500, 3500, 4500, 6000, 8000],
+  /** How often the DB reconciler ticks pending dispatches — same cadence as RESTAURANTS_TIMING's
+   *  pre-dispatch sweep, for the same "sub-minute precision, not BullMQ infra" reasoning. */
+  sweepIntervalMs: 20 * 1000,
+} as const;
+
+/** Widening radius (meters) for the given 1-indexed dispatch attempt, clamped to the last step for
+ *  any attempt beyond the configured schedule (defensive; maxAttempts already bounds real callers). */
+export function dispatchRadiusForAttempt(attempt: number): number {
+  const steps = RESTAURANTS_DISPATCH.radiusStepsM;
+  const i = Math.min(Math.max(1, Math.trunc(attempt)), steps.length) - 1;
+  // i is clamped into [0, steps.length - 1] above, so the index is always in range —
+  // noUncheckedIndexedAccess still types it as possibly-undefined, hence the assertion.
+  return steps[i]!;
 }

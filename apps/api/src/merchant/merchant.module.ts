@@ -1,4 +1,7 @@
 import { Module } from "@nestjs/common";
+import { TrackingModule } from "../tracking/tracking.module";
+import { DISPATCH_STRATEGY, NearestRiderDispatchStrategy } from "./dispatch-strategy";
+import { FoodDispatchService } from "./food-dispatch.service";
 import { FoodOrderController } from "./food-order.controller";
 import { FoodOrderService } from "./food-order.service";
 import { MerchantController } from "./merchant.controller";
@@ -19,10 +22,23 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
  * (customer-facing, under `restaurants`) and MerchantOrderController (kitchen-facing, under
  * `merchant/orders`). TokenService/NotificationsService are both @Global (AuthModule/
  * NotificationsModule), so no extra imports are needed to inject them into FoodOrderService.
+ *
+ * C3 adds FoodDispatchService (the ready_for_pickup → assigned hand-off) + its DispatchStrategy seam
+ * — the default NearestRiderDispatchStrategy is bound here so a future ETA-ranked strategy is a
+ * one-line provider swap, no FoodDispatchService change. TrackingGateway/TrackingService are both
+ * exported from TrackingModule, already imported globally by AppModule for the Express matching path.
  */
 @Module({
+  imports: [TrackingModule],
   controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController],
-  providers: [MerchantService, MerchantGuard, RestaurantsEnabledGuard, FoodOrderService],
+  providers: [
+    MerchantService,
+    MerchantGuard,
+    RestaurantsEnabledGuard,
+    FoodOrderService,
+    FoodDispatchService,
+    { provide: DISPATCH_STRATEGY, useClass: NearestRiderDispatchStrategy },
+  ],
   // Exported so UploadsModule can gate the merchant dish/banner photo mints (D-32) behind the same
   // two guards every other merchant route uses, without duplicating them.
   exports: [MerchantGuard, RestaurantsEnabledGuard],

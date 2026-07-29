@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { BROADCAST, broadcastRadiusAtMs, OFFER_WINDOW_MS } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
+import { hasLiveFoodDispatchOffer } from "../common/food-dispatch-lock";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
 import { buildBoardNewOrderEvent, pickupPoint } from "../orders/waypoints";
@@ -113,6 +114,13 @@ export class MatchingService {
         // Same shared online-gate as makeOffer/setOnline; surfaced as the same "pick another" conflict
         // as a liveness miss, since the customer isn't at fault.
         if (onlineRefusalReason(offer.rider)) {
+          throw new ConflictException("Rider just became unavailable, pick another");
+        }
+
+        // C3 soft-lock: a rider holding a live food auto-offer countdown (N-08) can't be selected for
+        // a parcel either — mirrors the same guard at offer-creation (offers.service.ts:makeOffer);
+        // this covers a bid placed BEFORE the food offer arrived, still sitting pending on the board.
+        if (await hasLiveFoodDispatchOffer(tx, offer.riderId)) {
           throw new ConflictException("Rider just became unavailable, pick another");
         }
 

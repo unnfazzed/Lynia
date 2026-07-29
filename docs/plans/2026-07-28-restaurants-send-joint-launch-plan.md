@@ -252,12 +252,58 @@ dead-when-off rather than dead-always.
   `note` column (migration 0042, additive only). D3 (post-launch product question, not blocking):
   N-18's unanswered-approval-window default (treated as decline) is a named mocked default, surfaced
   in the PR body per §9 discipline. C3 (food dispatch) is next.
-- [ ] **C3 · Food dispatch.** Auto-offer to one rider, 60s expiry (N-08), widening radius,
+- [x] **C3 · Food dispatch.** Auto-offer to one rider, 60s expiry (N-08), widening radius,
   NO_RIDER cap 6:00 (N-07) with merchant hold/decision (D-34) and no-fault cancel (D-13);
   "rider secured" first-class event for all three actors (D-04); soft-lock vs parcel bids
   (a rider with a running food offer countdown can't accept elsewhere — scripted race test);
   drop-before-pickup with re-dispatch + paused prep clock, no drop after pickup (D-33).
-  `DispatchStrategy` seam per §0b; Express offer-loop untouched.
+  `DispatchStrategy` seam per §0b; Express offer-loop untouched. **Done 2026-07-29:** new
+  `apps/api/src/merchant/food-dispatch.service.ts` owns the `ready_for_pickup` → `assigned`
+  hand-off C2 left open. A merchant order sits at `requested` while dispatch searches or holds
+  and flips to `open_for_offers` — the SAME status value Express's own auction uses (plan
+  §0b.1 "no new OrderStatus values"), safe because C1/C2 already added `orderType` filters to
+  every Express read/write keyed on it — for the ~60s a single candidate is deciding.
+  `merchantPhase` stays `ready_for_pickup` for the whole dispatch lifetime, cleared to null
+  only at genuine hand-off (dispatch_accept or a cancel), the same shape every other
+  MerchantPhase exit already uses. DB-only reconciler (`sweepExpiredOffers` +
+  `sweepSearch`, 20s cadence, mirrors FoodOrderService) drives the widening-radius single-rider
+  auto-offer (`RESTAURANTS_DISPATCH` config in `packages/shared`: 60s window, 6 attempts,
+  1.5–8km widening radius) via a `DispatchStrategy` seam (`dispatch-strategy.ts`,
+  `NearestRiderDispatchStrategy` the bound default) that excludes busy/already-tried/
+  already-offered-elsewhere riders. Cap exhaustion sets `noRiderHoldAt` (D-34); the merchant's
+  two explicit hold-screen actions are `dispatch/resume` (fresh budget) and `dispatch/cancel`
+  (D-13 no-fault, `rejectionReason: "no_rider"`, new apology copy in
+  `MERCHANT_REJECTION_REASONS`) — "stop and hold" is the passive default (no endpoint needed,
+  nothing to do). `acceptDispatch` (D-04 "rider secured") mints the delivery code exactly like
+  `matching.service.ts:selectOffer` and pushes to customer + rider via the same `orderRoom`
+  WS channel parcel `assigned` uses; the kitchen tablet has no realtime channel yet (Lane C5's
+  job) so the merchant sees it via the next `GET /merchant/orders/:id` poll — flagged, not
+  silently decided. `declineDispatch` frees the offer immediately (the rider's "can't take
+  it"). `dropDispatch` (D-33) re-enters dispatch IN PLACE on the same order (not an Express-
+  style cloneForRebroadcast new order, since the food is already cooked — nothing to
+  re-broadcast a fresh listing for) and reuses `order-lifecycle.service.ts:cancel`'s exact
+  reliability-penalty shape (prePickupCancel, `CANCEL_STRIKE_LIMIT` cooldown +
+  `evictRiderFromSupply`) so a drop counts on the SAME `cancelStrikes` axis as a parcel
+  cancel, not a second counter; blocked from `picked_up` onward (no drop after pickup).
+  Soft-lock lives in `apps/api/src/common/food-dispatch-lock.ts` (a neutral file, not
+  `merchant/`) so both `offers.service.ts:makeOffer` and `matching.service.ts:selectOffer`
+  can import the same `hasLiveFoodDispatchOffer` check without tripping
+  `express-no-merchant-coupling` — a rider holding a live food offer can neither bid on nor be
+  selected for a parcel; a scripted race test in `matching.service.spec.ts` covers the
+  "bid placed before the food offer arrived" ordering. Ten new transition-table rows in
+  `order-lifecycle.transitions.ts` (`dispatch_offer`/`dispatch_search`/`dispatch_no_rider` as
+  honest self-loops alongside the real edges — the "verification artifact mirrors what the
+  code does" contract extends past expandBroadcast's precedent since these commit real,
+  guarded CAS writes even though `to === from`). **D-04/D-33 reconciliation, flagged per the
+  plan's own "code wins" instruction:** by the time dispatch starts, the kitchen has already
+  finished cooking (R-11/R-17 start prep at payment confirm, well before `markReady`), so
+  D-04's "don't start cooking before rider secured" gate and D-33/D-34's "prep clock
+  pauses"/"keep cooking" language describe a cook-after-dispatch ordering this locked
+  architecture doesn't have; what survives verbatim is D-04's "rider secured" push event and
+  D-33/D-34's re-dispatch mechanics, both implemented as written. `pnpm typecheck && pnpm lint
+  && pnpm test` green across the whole monorepo (API 1349 tests incl. 47 new across
+  `food-dispatch.service.spec.ts`/`dispatch-strategy.spec.ts`/the transitions/offers/matching
+  specs; shared 144; mobile 538). C4 (food money evidence layer) is next.
 - [ ] **C4 · Food money evidence layer.** Merchant-debt ledger (append-only, idempotent,
   derived): release-unpaid records debt (R-01) → doorstep dual-confirm handshake (R-04,
   2:00 freeze + auto-support R-05/N-19) → code unlock (masked-code rule R-09 server-side) →
