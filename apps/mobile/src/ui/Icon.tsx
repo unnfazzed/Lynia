@@ -11,6 +11,7 @@ import { tokens } from "@lynia/shared";
 // package's `exports` map, so `moduleResolution: "bundler"` can't type them on its own).
 import ArrowRight from "lucide-react-native/dist/cjs/icons/arrow-right";
 import Banknote from "lucide-react-native/dist/cjs/icons/banknote";
+import Bell from "lucide-react-native/dist/cjs/icons/bell";
 import Bike from "lucide-react-native/dist/cjs/icons/bike";
 import Check from "lucide-react-native/dist/cjs/icons/check";
 import ChevronDown from "lucide-react-native/dist/cjs/icons/chevron-down";
@@ -30,10 +31,14 @@ import MapPin from "lucide-react-native/dist/cjs/icons/map-pin";
 import Navigation from "lucide-react-native/dist/cjs/icons/navigation";
 import Package from "lucide-react-native/dist/cjs/icons/package";
 import Phone from "lucide-react-native/dist/cjs/icons/phone";
+import Plus from "lucide-react-native/dist/cjs/icons/plus";
+import Receipt from "lucide-react-native/dist/cjs/icons/receipt";
 import Search from "lucide-react-native/dist/cjs/icons/search";
 import ShieldAlert from "lucide-react-native/dist/cjs/icons/shield-alert";
 import Star from "lucide-react-native/dist/cjs/icons/star";
+import Store from "lucide-react-native/dist/cjs/icons/store";
 import TriangleAlert from "lucide-react-native/dist/cjs/icons/triangle-alert";
+import Utensils from "lucide-react-native/dist/cjs/icons/utensils";
 import User from "lucide-react-native/dist/cjs/icons/user";
 import WifiOff from "lucide-react-native/dist/cjs/icons/wifi-off";
 import X from "lucide-react-native/dist/cjs/icons/x";
@@ -53,7 +58,7 @@ const ICONS = {
   inbox: Inbox, // no-orders
   "id-card": IdCard, // KYC
   banknote: Banknote, // earnings
-  package: Package, // parcels
+  package: Package, // parcels / Send tile
   "wifi-off": WifiOff, // network error
   "triangle-alert": TriangleAlert, // failed / attention
   "map-pin": MapPin,
@@ -74,6 +79,11 @@ const ICONS = {
   "life-buoy": LifeBuoy, // get help with this trip
   flag: Flag, // report a problem
   "shield-alert": ShieldAlert, // SOS / emergency
+  bell: Bell, // BrandHeader notifications
+  store: Store, // root tab bar — Home
+  receipt: Receipt, // root tab bar — Orders
+  utensils: Utensils, // Food service tile
+  plus: Plus, // Pharmacy "Soon" service tile
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

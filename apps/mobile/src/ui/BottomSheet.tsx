@@ -17,7 +17,7 @@ import {
  * mandatory (same primitive-only constraint as LiveMap).
  *
  * Prop-compatible with the old static sheet — `{ children, footer, style }` are unchanged, so
- * `app/home.tsx` needs no edit. The new drag behaviour is opt-in via optional `snapPoints` /
+ * `app/send.tsx` needs no edit. The new drag behaviour is opt-in via optional `snapPoints` /
  * `initialSnap` / `onSnapChange`.
  *
  * DEFAULT is a single expanded snap (`[1]`) — i.e. static-equivalent, no drag travel. This is

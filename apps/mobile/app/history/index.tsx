@@ -79,7 +79,7 @@ export default function HistoryScreen(): React.ReactElement {
 
   const reorder = (o: OrderHistoryRow): void => {
     router.push({
-      pathname: "/home",
+      pathname: "/send",
       params: buildRebroadcastParams({ pickup: o.pickup, dropoff: o.dropoff, itemDesc: o.itemDesc, proposedFare: o.proposedFare, note: o.note }),
     });
   };
@@ -115,7 +115,7 @@ export default function HistoryScreen(): React.ReactElement {
       ) : hasLiveData ? (
         // Live data arrived and it's empty — a genuine "no trips".
         <EmptyState icon="package" title="No trips yet" message="Your sent and delivered parcels will show up here.">
-          <Button label="Send a parcel" onPress={() => router.replace("/home")} />
+          <Button label="Send a parcel" onPress={() => router.replace("/send")} />
         </EmptyState>
       ) : (
         // No data and NOT fetching — an errored fetch or the offline paused state with no cache. Offer a
