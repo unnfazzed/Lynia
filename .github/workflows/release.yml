@@ -590,6 +590,18 @@ jobs:
             SECRETS="${SECRETS},SENTRY_DSN=SENTRY_DSN:latest"
           fi
 
+          # Play-review demo account (docs/PLAY-STORE-SUBMISSION.md §7.1) is OPT-IN via
+          # DEMO_ACCOUNT_ENABLED=true — same reason as the vendor keys above: don't reference the
+          # DEMO_OTP_PHONE / DEMO_OTP_CODE secrets before they exist in Secret Manager (a missing
+          # --set-secrets target fails the whole deploy). Create BOTH secrets + grant the runtime SA
+          # secretAccessor first, THEN flip DEMO_ACCOUNT_ENABLED=true. The auth-service demo path is
+          # inert unless both vars are present (config/env.ts enforces both-or-neither + a well-formed
+          # 6-digit code), so until this flag is set the ordinary OTP flow is unchanged. This is the
+          # fixed-code sign-in a Google reviewer uses; the value of the code is the secret, never here.
+          if [ "${{ vars.DEMO_ACCOUNT_ENABLED }}" = "true" ]; then
+            SECRETS="${SECRETS},DEMO_OTP_PHONE=DEMO_OTP_PHONE:latest,DEMO_OTP_CODE=DEMO_OTP_CODE:latest"
+          fi
+
           # OTel collector sidecar (docs/OBSERVABILITY.md → Production activation): when the
           # OTEL_SIDECAR_ENABLED repo Variable is true, the release deploys BOTH containers
           # explicitly — the revision spec is fully code-driven, so a hand-edited or broken sidecar
