@@ -8,6 +8,8 @@ import {
   BUSY_MODE_EXTRA_MIN,
   MERCHANT_REJECTION_REASONS,
   rejectionCopy,
+  RESTAURANTS_DISPATCH,
+  dispatchRadiusForAttempt,
 } from "./restaurants-order";
 
 describe("RESTAURANTS_PRICING constants", () => {
@@ -97,5 +99,39 @@ describe("rejectionCopy — D-11", () => {
 
   it("falls back to the generic copy for an unknown reason", () => {
     expect(rejectionCopy("not_a_real_reason")).toBe(MERCHANT_REJECTION_REASONS.other);
+  });
+
+  it("carries a no_rider apology (D-13) distinct from the generic fallback", () => {
+    expect(rejectionCopy("no_rider")).toMatch(/couldn't find a rider/i);
+    expect(rejectionCopy("no_rider")).not.toBe(MERCHANT_REJECTION_REASONS.other);
+  });
+});
+
+describe("RESTAURANTS_DISPATCH config — C3", () => {
+  it("pins N-08's 60s offer window and N-07's 6-attempt NO_RIDER cap (~6:00)", () => {
+    expect(RESTAURANTS_DISPATCH.offerWindowMs).toBe(60 * 1000);
+    expect(RESTAURANTS_DISPATCH.maxAttempts).toBe(6);
+    expect(RESTAURANTS_DISPATCH.maxAttempts * RESTAURANTS_DISPATCH.offerWindowMs).toBe(6 * 60 * 1000);
+  });
+
+  it("radiusStepsM strictly widens across every attempt", () => {
+    const steps = RESTAURANTS_DISPATCH.radiusStepsM;
+    expect(steps.length).toBe(RESTAURANTS_DISPATCH.maxAttempts);
+    for (let i = 1; i < steps.length; i++) expect(steps[i]).toBeGreaterThan(steps[i - 1]);
+  });
+});
+
+describe("dispatchRadiusForAttempt", () => {
+  it("returns the matching step for each in-range attempt", () => {
+    RESTAURANTS_DISPATCH.radiusStepsM.forEach((radius, i) => {
+      expect(dispatchRadiusForAttempt(i + 1)).toBe(radius);
+    });
+  });
+
+  it("clamps below 1 to the first step and above maxAttempts to the last step", () => {
+    expect(dispatchRadiusForAttempt(0)).toBe(RESTAURANTS_DISPATCH.radiusStepsM[0]);
+    expect(dispatchRadiusForAttempt(-3)).toBe(RESTAURANTS_DISPATCH.radiusStepsM[0]);
+    const last = RESTAURANTS_DISPATCH.radiusStepsM.length - 1;
+    expect(dispatchRadiusForAttempt(99)).toBe(RESTAURANTS_DISPATCH.radiusStepsM[last]);
   });
 });

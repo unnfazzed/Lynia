@@ -66,7 +66,7 @@ describe("OffersService.makeOffer", () => {
 
   it("403s when the caller is not a rider", async () => {
     const { service, gateway } = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }) },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => null },
     });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/not a rider/i);
@@ -75,7 +75,7 @@ describe("OffersService.makeOffer", () => {
 
   it("403s when the rider is not verified", async () => {
     const { service, gateway } = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }) },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "pending", isOnline: true }) },
     });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/not verified/i);
@@ -84,7 +84,7 @@ describe("OffersService.makeOffer", () => {
 
   it("403s when the rider is offline", async () => {
     const { service, gateway } = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }) },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: false, accountStatus: "active", onHold: false, cooldownUntil: null }) },
     });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/go online/i);
@@ -94,7 +94,7 @@ describe("OffersService.makeOffer", () => {
   it("409s on the one-round-per-rider unique violation (P2002)", async () => {
     const dup = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
     const { service, gateway } = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }) },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: { create: async () => { throw dup; } },
     });
@@ -104,7 +104,7 @@ describe("OffersService.makeOffer", () => {
 
   it("creates the offer and serializes the fare to a string", async () => {
     const { service } = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }) },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: {
         create: async () => ({
@@ -125,7 +125,7 @@ describe("OffersService.makeOffer", () => {
     // — so the offer is never inserted and the rider gets a conflict, not a stranded pending row.
     const create = vi.fn();
     const { service, metrics } = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }) },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       $queryRaw: async () => [{ status: "assigned" }],
       offer: { create },
@@ -137,7 +137,7 @@ describe("OffersService.makeOffer", () => {
 
   it("labels the offers_made_total counter by outcome (created / forbidden / conflict)", async () => {
     const ok = {
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }) },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: { create: async () => ({ id: "o1", type: "accept", offeredFare: { toString: () => "2.50" }, etaMinutes: 10, status: "pending" }) },
     };
@@ -146,7 +146,7 @@ describe("OffersService.makeOffer", () => {
     expect(created.metrics.incOffersMade).toHaveBeenCalledWith("created");
 
     const offline = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }) },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: false, accountStatus: "active", onHold: false, cooldownUntil: null }) },
     });
     await expect(offline.service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/go online/i);
@@ -154,7 +154,7 @@ describe("OffersService.makeOffer", () => {
 
     const dup = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
     const conflict = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }) },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: { create: async () => { throw dup; } },
     });
@@ -164,7 +164,7 @@ describe("OffersService.makeOffer", () => {
 
   it("signals offers:changed for the order room on a successful offer", async () => {
     const { service, gateway } = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", customerId: "cust-1" }) },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", customerId: "cust-1" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: {
         create: async () => ({
@@ -187,7 +187,7 @@ describe("OffersService.makeOffer", () => {
     };
     const { service } = svc(
       {
-        order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", customerId: "cust-1" }) },
+        order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", customerId: "cust-1" }), findFirst: async () => null },
         rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
         offer: {
           create: async () => ({
@@ -231,13 +231,34 @@ describe("OffersService.makeOffer", () => {
   it("403s an accept whose fare doesn't match the customer's proposed price", async () => {
     const create = vi.fn();
     const { service } = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", customerId: "cust-1", proposedFare: 3 }) },
+      order: {
+        findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", customerId: "cust-1", proposedFare: 3 }),
+        findFirst: async () => null,
+      },
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: { create },
     });
     // offerInput is type "accept" with offeredFare 2.5 ≠ proposedFare 3 → rejected, no offer inserted.
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/match the customer's proposed fare/i);
     expect(create).not.toHaveBeenCalled();
+  });
+
+  // C3: a rider currently holding a live food dispatch offer can't also bid on a parcel — checked at
+  // creation (not just at selectOffer) so the customer's board never even shows a bid the rider can't
+  // take. common/food-dispatch-lock.ts's own query is exercised here via the fake `order.findFirst`.
+  it("403s a rider currently holding a live food dispatch offer (C3 soft-lock)", async () => {
+    const create = vi.fn();
+    const { service, metrics } = svc({
+      order: {
+        findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }),
+        findFirst: async () => ({ id: "food-order-1" }), // a live, unexpired food offer exists for this rider
+      },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
+      offer: { create },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/food pickup offer waiting/i);
+    expect(create).not.toHaveBeenCalled();
+    expect(metrics.incOffersMade).toHaveBeenCalledWith("forbidden");
   });
 });
 

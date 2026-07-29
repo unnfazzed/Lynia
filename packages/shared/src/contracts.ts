@@ -884,6 +884,13 @@ export const MerchantOrderResponse = z
     paymentRequestedAt: z.string().nullable(),
     merchantPaymentReference: z.string().nullable(),
     merchantPaymentConfirmedAt: z.string().nullable(),
+    // C3: dispatch view. `riderId` is null until a candidate accepts (D-04 "rider secured"), at which
+    // point `status`/`merchantPhase` have already moved on (assigned, merchantPhase cleared) — this
+    // stays the one place a poller can see WHO, without a second round-trip to the generic order read.
+    riderId: z.string().uuid().nullable(),
+    dispatchAttempt: z.number().int(),
+    dispatchOfferExpiresAt: z.string().nullable(),
+    noRiderHoldAt: z.string().nullable(),
   })
   .strict();
 export type MerchantOrderResponse = z.infer<typeof MerchantOrderResponse>;
@@ -905,6 +912,9 @@ export const MerchantRejectionReasonCode = z.enum([
   "closing_soon",
   "unreachable_customer",
   "shop_closed",
+  // C3/D-13: the NO_RIDER apology — the reconciler's own cap-exhausted exit, or the merchant's
+  // explicit "cancel" choice from the D-34 hold screen.
+  "no_rider",
   "other",
 ]);
 export type MerchantRejectionReasonCode = z.infer<typeof MerchantRejectionReasonCode>;

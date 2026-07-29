@@ -291,6 +291,8 @@ model Rider {
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   orders      Order[]      @relation("riderOrders")
+  dispatchOffers Order[]   @relation("orderDispatchOffer")
+  foodDispatchAttempts FoodDispatchAttempt[]
   offers      Offer[]
   settlements Settlement[]
 
@@ -547,6 +549,33 @@ model Order {
   // N-01: computed via packages/shared/restaurants-pricing (config, not a constant), never re-derived
   // client-side.
   deliveryFee Decimal? @map("delivery_fee") @db.Decimal(10, 2)
+
+  // ── C3: food dispatch (orderType=merchant only) ─────────────────────────────────────────────────
+  // Candidate rider currently holding a live single-rider auto-offer (N-08, 60s); null once
+  // accepted/declined/expired. Distinct from `riderId` — this rider hasn't been assigned yet, just
+  // asked, so it never touches the one_active_ride index.
+  dispatchOfferedRiderId String?   @map("dispatch_offered_rider_id") @db.Uuid
+  dispatchOfferedRider   Rider?    @relation("orderDispatchOffer", fields: [dispatchOfferedRiderId], references: [profileId])
+  dispatchOfferExpiresAt DateTime? @map("dispatch_offer_expires_at")
+  // Ticks used this dispatch lifetime (search-or-offer rounds), capped at
+  // RESTAURANTS_DISPATCH.maxAttempts (N-07 ~6:00 NO_RIDER cap) — reset to 0 on an explicit merchant
+  // "keep searching" (D-34) or a D-33 rider drop (a fresh re-dispatch budget).
+  dispatchAttempt   Int       @default(0) @map("dispatch_attempt")
+  dispatchStartedAt DateTime? @map("dispatch_started_at")
+  // When the reconciler should next act on this order — a live offer's expiry, or "poll again" after
+  // a tick found no candidate at all. Unifies both cases into the one sweep WHERE clause
+  // (food-dispatch.service.ts); null only pre-first-attempt (dispatchAttempt=0 covers that case).
+  dispatchNextCheckAt DateTime? @map("dispatch_next_check_at")
+  // Riders already offered (declined/expired) this dispatch lifetime — never re-offered the same
+  // rider twice in one cycle. Plain text[] (not uuid[] — Prisma's array modifier doesn't compose with
+  // @db.Uuid), values are still valid rider profile-id strings.
+  dispatchExcludedRiderIds String[] @default([]) @map("dispatch_excluded_rider_ids")
+  // D-34: set when the NO_RIDER cap is exhausted — the merchant's "no rider found" hold, needing an
+  // explicit keep-searching / cancel decision. Cleared on resume; the food itself is not re-cooked
+  // (prep already completed before dispatch ever starts — see food-dispatch.service.ts docstring).
+  noRiderHoldAt DateTime? @map("no_rider_hold_at")
+
+  dispatchAttempts FoodDispatchAttempt[]
 
   offers Offer[]
   events OrderEvent[]
@@ -883,6 +912,36 @@ model MerchantOrderItem {
 
   @@index([orderId])
   @@map("merchant_order_items")
+}
+
+// C3: one row per dispatch tick that produced a live offer to a candidate rider — the "DispatchDecision
+// log" (plan §0b/P4 seam), and the audit trail behind dispatchExcludedRiderIds (never re-offer the same
+// rider twice in one order's dispatch lifetime, enforced at the DB by the unique index below, not just
+// application logic). A tick that finds no candidate at all writes no row (nothing to log).
+model FoodDispatchAttempt {
+  id            String              @id @default(uuid()) @db.Uuid
+  orderId       String              @map("order_id") @db.Uuid
+  order         Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  riderId       String              @map("rider_id") @db.Uuid
+  rider         Rider               @relation(fields: [riderId], references: [profileId], onDelete: Cascade)
+  attemptNumber Int                 @map("attempt_number")
+  radiusM       Int                 @map("radius_m")
+  offeredAt     DateTime            @map("offered_at")
+  expiresAt     DateTime            @map("expires_at")
+  outcome       FoodDispatchOutcome @default(pending)
+  respondedAt   DateTime?           @map("responded_at")
+  createdAt     DateTime            @default(now()) @map("created_at")
+
+  @@unique([orderId, riderId])
+  @@index([orderId])
+  @@map("food_dispatch_attempts")
+}
+
+enum FoodDispatchOutcome {
+  pending
+  accepted
+  declined
+  expired
 }
 
 model Address {

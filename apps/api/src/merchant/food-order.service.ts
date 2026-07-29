@@ -587,6 +587,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       paymentRequestedAt: order.paymentRequestedAt?.toISOString() ?? null,
       merchantPaymentReference: order.merchantPaymentReference,
       merchantPaymentConfirmedAt: order.merchantPaymentConfirmedAt?.toISOString() ?? null,
+      // C3: dispatch view (see MerchantOrderResponse's docstring).
+      riderId: order.riderId,
+      dispatchAttempt: order.dispatchAttempt,
+      dispatchOfferExpiresAt: order.dispatchOfferExpiresAt?.toISOString() ?? null,
+      noRiderHoldAt: order.noRiderHoldAt?.toISOString() ?? null,
     };
   }
 }

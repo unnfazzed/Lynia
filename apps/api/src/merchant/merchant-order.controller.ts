@@ -10,20 +10,25 @@ import {
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
+import { FoodDispatchService } from "./food-dispatch.service";
 import { FoodOrderService } from "./food-order.service";
 import { MerchantGuard } from "./merchant.guard";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 
 /**
- * Merchant kitchen-side food order lifecycle (Lane C, C2). Every route requires a merchant JWT
- * (MerchantGuard) EXCEPT `confirm-pickup`, which is the assigned RIDER's action (N-16) — checked
- * inside FoodOrderService.confirmPickup, not by role, mirroring how order-lifecycle.service.ts's
- * confirmDelivery needs no MerchantGuard-shaped role gate either.
+ * Merchant kitchen-side food order lifecycle (Lane C, C2) + food dispatch (C3). Every route requires
+ * a merchant JWT (MerchantGuard) EXCEPT `confirm-pickup` and the `dispatch/*` rider actions, which
+ * are the assigned/candidate RIDER's own actions (N-16, N-08) — checked inside the service by
+ * caller-id comparison, not by role, mirroring how order-lifecycle.service.ts's confirmDelivery needs
+ * no MerchantGuard-shaped role gate either.
  */
 @Controller("merchant/orders")
 @UseGuards(RestaurantsEnabledGuard, JwtAuthGuard)
 export class MerchantOrderController {
-  constructor(private readonly foodOrders: FoodOrderService) {}
+  constructor(
+    private readonly foodOrders: FoodOrderService,
+    private readonly dispatch: FoodDispatchService,
+  ) {}
 
   @Get()
   @UseGuards(MerchantGuard)
@@ -107,5 +112,37 @@ export class MerchantOrderController {
     @CurrentUser() profileId: string,
   ) {
     return this.foodOrders.confirmPickup(orderId, profileId, body.code);
+  }
+
+  // ── C3: food dispatch — rider actions (the candidate/assigned rider, no MerchantGuard) ────────────
+
+  @Post(":orderId/dispatch/accept")
+  acceptDispatch(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.dispatch.acceptDispatch(orderId, profileId);
+  }
+
+  @Post(":orderId/dispatch/decline")
+  declineDispatch(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.dispatch.declineDispatch(orderId, profileId);
+  }
+
+  // D-33: pre-pickup only, enforced inside the service.
+  @Post(":orderId/dispatch/drop")
+  dropDispatch(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.dispatch.dropDispatch(orderId, profileId);
+  }
+
+  // ── C3: food dispatch — merchant D-34 hold-screen decisions ─────────────────────────────────────
+
+  @Post(":orderId/dispatch/resume")
+  @UseGuards(MerchantGuard)
+  resumeDispatch(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.dispatch.resumeSearch(profileId, orderId);
+  }
+
+  @Post(":orderId/dispatch/cancel")
+  @UseGuards(MerchantGuard)
+  cancelDispatch(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.dispatch.cancelFromHold(profileId, orderId);
   }
 }
