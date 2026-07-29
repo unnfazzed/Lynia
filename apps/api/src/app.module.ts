@@ -11,6 +11,7 @@ import { StorageModule } from "./adapters/storage/storage.module";
 import { ConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
 import { IssuesModule } from "./issues/issues.module";
+import { LegalModule } from "./legal/legal.module";
 import { MatchingModule } from "./matching/matching.module";
 import { MerchantModule } from "./merchant/merchant.module";
 import { NotificationsModule } from "./notifications/notifications.module";
@@ -51,6 +52,9 @@ import { WalletModule } from "./wallet/wallet.module";
     // Push notifications + device-token registry (consumes the PUSH seam).
     NotificationsModule,
     HealthModule,
+    // Public legal pages (/legal/privacy, /legal/account-deletion) — the two unauthenticated URLs
+    // the Google Play listing + Data safety form require. See docs/PLAY-STORE-SUBMISSION.md.
+    LegalModule,
     // Lane B — auth (OTP + JWT/refresh sessions).
     AuthModule,
     // Lane C — the offer loop.

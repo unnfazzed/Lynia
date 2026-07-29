@@ -23,6 +23,20 @@ if (!isDev && API_URL.includes("localhost")) {
 export const WS_URL: string = API_URL;
 
 /**
+ * Public legal pages, served by the API itself (apps/api/src/legal/) because Lynia ships no marketing
+ * site. Both are Google Play listing requirements: the privacy notice is the "Privacy policy" URL in
+ * Play Console → App content, and the deletion page is the "Data deletion" URL on the Data safety
+ * form. Derived from API_URL rather than hardcoded so a staging/dev build links at its OWN backend's
+ * copy instead of silently opening production's — the same reasoning as WS_URL above.
+ *
+ * `replace(/\/+$/, "")` guards the one realistic mis-configuration: a trailing slash on
+ * EXPO_PUBLIC_API_URL would otherwise produce `…//legal/privacy`.
+ */
+const apiOrigin = API_URL.replace(/\/+$/, "");
+export const PRIVACY_URL = `${apiOrigin}/legal/privacy`;
+export const ACCOUNT_DELETION_URL = `${apiOrigin}/legal/account-deletion`;
+
+/**
  * Google Places (browser/REST) API key for search-first addressing. OPTIONAL — the whole address-search
  * path is key-gated: when this is unset the search UI hides and the app falls back to the pin-on-map
  * picker (the default primary path), so the app builds and runs fully with no key. Set it via
