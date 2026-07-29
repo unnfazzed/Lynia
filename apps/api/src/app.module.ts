@@ -12,6 +12,7 @@ import { ConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
 import { IssuesModule } from "./issues/issues.module";
 import { MatchingModule } from "./matching/matching.module";
+import { MerchantModule } from "./merchant/merchant.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ClientMetricsModule } from "./observability/client-metrics.module";
 import { MetricsInterceptor } from "./observability/metrics.interceptor";
@@ -75,6 +76,9 @@ import { WalletModule } from "./wallet/wallet.module";
     PrivacyModule,
     // Lane F — admin read API for the monitor dashboard.
     AdminModule,
+    // Restaurants vertical (2026-07-28 joint launch plan, Lane C). Fail-safe OFF via
+    // RestaurantsEnabledGuard on every route (checked first, ahead of auth) — see merchant.module.ts.
+    MerchantModule,
   ],
   providers: [
     // Time every HTTP request into http_request_duration_ms (route template + status class labels).

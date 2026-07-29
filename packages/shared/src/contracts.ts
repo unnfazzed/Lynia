@@ -590,3 +590,203 @@ export const CreateTopupRequest = z
   })
   .strict();
 export type CreateTopupRequest = z.infer<typeof CreateTopupRequest>;
+
+// ---------------------------------------------------------------------------
+// Restaurants vertical — merchant domain + menu (C1,
+// docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C)
+// ---------------------------------------------------------------------------
+// Everything here is dormant until RESTAURANTS_ENABLED=true AND (for the customer read API) the
+// merchant's own `pilotEnabled` cohort flag is set — the pre-launch allowlist corridor. Money/pricing
+// (delivery fee, min order) is deliberately NOT here yet — that lands with C2's order lifecycle.
+
+/** R-03: the merchant's own cash-handling rule, shown to a rider on the offer before they accept. */
+export const MerchantCashRule = z.enum(["collect_and_return", "pay_upfront"]);
+export type MerchantCashRule = z.infer<typeof MerchantCashRule>;
+
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** One day's open/close window, "HH:MM" 24h. Both present or the day is treated as closed. */
+export const MerchantHoursWindow = z.object({ open: z.string().regex(HHMM), close: z.string().regex(HHMM) }).strict();
+export type MerchantHoursWindow = z.infer<typeof MerchantHoursWindow>;
+/** Weekly hours keyed by day; an absent day means closed that day. */
+export const MerchantHours = z.record(z.enum(DAY_KEYS), MerchantHoursWindow);
+export type MerchantHours = z.infer<typeof MerchantHours>;
+
+/** `POST /merchant/become` — upgrades the caller's existing profile to role="merchant" and creates
+ *  the Merchant row (mirrors POST /riders/become). Idempotent guard: a second call 409s
+ *  `{reason:"already_merchant"}`, the same lost-response-retry shape as becomeRider. */
+export const BecomeMerchantRequest = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    cashRule: MerchantCashRule.optional(),
+  })
+  .strict();
+export type BecomeMerchantRequest = z.infer<typeof BecomeMerchantRequest>;
+
+/** D-30 shop-front fields, editable by the merchant against a live customer-view miniature. */
+export const UpdateMerchantProfileRequest = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    description: z.string().trim().max(500).optional(),
+    coverPhotoUrl: z.string().min(1).max(256).optional(),
+    logoUrl: z.string().min(1).max(256).optional(),
+    cuisineTags: z.array(z.string().trim().min(1).max(24)).max(3).optional(),
+    priceLevel: z.number().int().min(1).max(3).optional(),
+  })
+  .strict();
+export type UpdateMerchantProfileRequest = z.infer<typeof UpdateMerchantProfileRequest>;
+
+export const UpdateMerchantHoursRequest = z.object({ hours: MerchantHours }).strict();
+export type UpdateMerchantHoursRequest = z.infer<typeof UpdateMerchantHoursRequest>;
+
+export const UpdateMerchantCashRuleRequest = z.object({ cashRule: MerchantCashRule }).strict();
+export type UpdateMerchantCashRuleRequest = z.infer<typeof UpdateMerchantCashRuleRequest>;
+
+/** N-17: busy mode is a manual on/off the merchant flips from the kitchen board's empty-queue state —
+ *  a +10min prep-time bump signal while true. No auto-expiry; the merchant flips it back off. */
+export const SetMerchantBusyModeRequest = z.object({ active: z.boolean() }).strict();
+export type SetMerchantBusyModeRequest = z.infer<typeof SetMerchantBusyModeRequest>;
+
+/** `GET/PATCH /merchant/me` response — the authenticated merchant's own view of their shop. */
+export const MerchantProfileResponse = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    ownerPhoneMasked: z.string(),
+    description: z.string().nullable(),
+    coverPhotoUrl: z.string().nullable(),
+    logoUrl: z.string().nullable(),
+    cuisineTags: z.array(z.string()),
+    priceLevel: z.number().int().nullable(),
+    hours: MerchantHours.nullable(),
+    cashRule: MerchantCashRule,
+    busy: z.boolean(),
+    pilotEnabled: z.boolean(),
+  })
+  .strict();
+export type MerchantProfileResponse = z.infer<typeof MerchantProfileResponse>;
+
+/** D-29: categories are merchant-created; name + optional time-limited availability window. */
+export const MerchantCategoryRequest = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    availableFrom: z.string().regex(HHMM).optional(),
+    availableTo: z.string().regex(HHMM).optional(),
+  })
+  .strict();
+export type MerchantCategoryRequest = z.infer<typeof MerchantCategoryRequest>;
+
+/** PATCH-only fields on an existing category — all optional (mirrors CreateOrderRequest-style partials
+ *  elsewhere), plus `hidden`/`sortOrder` which only ever change post-creation. */
+export const UpdateMerchantCategoryRequest = z
+  .object({
+    name: z.string().trim().min(1).max(60).optional(),
+    availableFrom: z.string().regex(HHMM).nullable().optional(),
+    availableTo: z.string().regex(HHMM).nullable().optional(),
+    hidden: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).optional(),
+  })
+  .strict();
+export type UpdateMerchantCategoryRequest = z.infer<typeof UpdateMerchantCategoryRequest>;
+
+export const MerchantCategoryResponse = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    sortOrder: z.number().int(),
+    availableFrom: z.string().nullable(),
+    availableTo: z.string().nullable(),
+    hidden: z.boolean(),
+    dishCount: z.number().int(),
+  })
+  .strict();
+export type MerchantCategoryResponse = z.infer<typeof MerchantCategoryResponse>;
+
+/** D-31: a dish saved with no `photoUrl` persists as a draft (server sets `isDraft`, never the
+ *  client) — visible to the kitchen, excluded from the customer read API until a photo lands. */
+export const MerchantDishRequest = z
+  .object({
+    categoryId: z.string().uuid(),
+    name: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(300).optional(),
+    priceUsd: z.number().positive().multipleOf(0.01).max(1000),
+    photoUrl: z.string().min(1).max(256).optional(),
+  })
+  .strict();
+export type MerchantDishRequest = z.infer<typeof MerchantDishRequest>;
+
+export const UpdateMerchantDishRequest = z
+  .object({
+    categoryId: z.string().uuid().optional(),
+    name: z.string().trim().min(1).max(80).optional(),
+    description: z.string().trim().max(300).nullable().optional(),
+    priceUsd: z.number().positive().multipleOf(0.01).max(1000).optional(),
+    photoUrl: z.string().min(1).max(256).optional(),
+    sortOrder: z.number().int().min(0).optional(),
+  })
+  .strict();
+export type UpdateMerchantDishRequest = z.infer<typeof UpdateMerchantDishRequest>;
+
+export const MerchantDishResponse = z
+  .object({
+    id: z.string().uuid(),
+    categoryId: z.string().uuid(),
+    name: z.string(),
+    description: z.string().nullable(),
+    priceUsd: z.number(),
+    photoUrl: z.string().nullable(),
+    isDraft: z.boolean(),
+    outOfStock: z.boolean(),
+    sortOrder: z.number().int(),
+  })
+  .strict();
+export type MerchantDishResponse = z.infer<typeof MerchantDishResponse>;
+
+// --- Customer read API (flag + per-merchant pilotEnabled allowlist gated) ---
+
+export const RestaurantListItem = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    coverPhotoUrl: z.string().nullable(),
+    logoUrl: z.string().nullable(),
+    cuisineTags: z.array(z.string()),
+    priceLevel: z.number().int().nullable(),
+  })
+  .strict();
+export type RestaurantListItem = z.infer<typeof RestaurantListItem>;
+
+export const RestaurantListResponse = z.object({ restaurants: z.array(RestaurantListItem) }).strict();
+export type RestaurantListResponse = z.infer<typeof RestaurantListResponse>;
+
+/** A single customer-facing menu item. `outOfStock` is derived server-side from `outOfStockUntil`
+ *  (N-14 daily auto-reset — a past timestamp reads as back in stock, no reset job needed). Draft
+ *  (photoless) dishes never appear here at all (D-31). */
+export const RestaurantMenuDish = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    description: z.string().nullable(),
+    priceUsd: z.number(),
+    photoUrl: z.string().nullable(),
+    outOfStock: z.boolean(),
+  })
+  .strict();
+export type RestaurantMenuDish = z.infer<typeof RestaurantMenuDish>;
+
+export const RestaurantMenuCategory = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    dishes: z.array(RestaurantMenuDish),
+  })
+  .strict();
+export type RestaurantMenuCategory = z.infer<typeof RestaurantMenuCategory>;
+
+export const RestaurantMenuResponse = z
+  .object({
+    restaurant: RestaurantListItem,
+    categories: z.array(RestaurantMenuCategory),
+  })
+  .strict();
+export type RestaurantMenuResponse = z.infer<typeof RestaurantMenuResponse>;

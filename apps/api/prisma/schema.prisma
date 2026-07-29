@@ -172,6 +172,7 @@ model Profile {
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   rider           Rider?
+  merchant        Merchant?
   customerOrders  Order[]       @relation("customerOrders")
   cancelledOrders Order[]       @relation("cancelledByOrders")
   sessions        Session[]
@@ -703,15 +704,96 @@ model AuditLog {
   @@map("audit_logs")
 }
 
-// §5b superapp seams — reserved, unused at launch.
+// Restaurants vertical (C1, docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C).
+// The owning login is a Profile with role="merchant" (mirrors Rider: `becomeMerchant` upgrades an
+// existing customer profile in-place, same shape as RiderService.becomeRider) — phone/OTP auth is
+// entirely reused, never duplicated. Masked-phone display (D-17) reads `ownerProfile.phone` through
+// the existing `maskPhone()` helper; no phone is duplicated onto this row.
 model Merchant {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  createdAt DateTime @default(now()) @map("created_at")
+  id             String           @id @default(uuid()) @db.Uuid
+  name           String
+  ownerProfileId String?          @unique @map("owner_profile_id") @db.Uuid
+  ownerProfile   Profile?         @relation(fields: [ownerProfileId], references: [id])
+  description    String?
+  // D-30 shop front: 3:1 cover banner + round logo, up to 3 cuisine tags, price level 1-3.
+  coverPhotoUrl  String?          @map("cover_photo_url")
+  logoUrl        String?          @map("logo_url")
+  cuisineTags    String[]         @map("cuisine_tags")
+  priceLevel     Int?             @map("price_level")
+  // Weekly open/close windows, e.g. {"mon": {"open": "08:00", "close": "22:00"}, ...}. Nullable —
+  // an onboarding merchant has no hours yet; absence is read as "hours not set" by the client, not
+  // "always open".
+  hours          Json?
+  // R-03: the merchant's own cash-handling rule, shown to riders on the offer before they accept.
+  cashRule       MerchantCashRule @default(collect_and_return) @map("cash_rule")
+  // N-17 busy mode: a manual on/off the merchant flips from the kitchen board (E2/E4); a plain
+  // +10min prep-time bump signal while true, no auto-expiry specified.
+  busyMode       Boolean          @default(false) @map("busy_mode")
+  // Pre-launch pilot-corridor allowlist (status-keyed-query-audit.md "P0 exit-gate status" — the
+  // seeded-cohort leg this field unblocks). A merchant is only visible on the customer-facing
+  // restaurant list/menu when this is true, even with RESTAURANTS_ENABLED=true globally — the
+  // per-merchant gate for the founder's named CBD pilot corridor. Defaults false: dormant until an
+  // operator explicitly onboards the shop.
+  pilotEnabled   Boolean          @default(false) @map("pilot_enabled")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
 
-  orders Order[]
+  orders     Order[]
+  categories MerchantCategory[]
 
   @@map("merchants")
+}
+
+enum MerchantCashRule {
+  collect_and_return
+  pay_upfront
+}
+
+// D-29: the merchant owns the menu structure — categories are created first, dishes are added into
+// one. Deletable only once empty (enforced in MerchantService, not the DB) so a dish is never
+// orphaned by a category delete.
+model MerchantCategory {
+  id            String   @id @default(uuid()) @db.Uuid
+  merchantId    String   @map("merchant_id") @db.Uuid
+  merchant      Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name          String
+  sortOrder     Int      @default(0) @map("sort_order")
+  // Time-limited availability window, e.g. Breakfast 07:00-11:00 (D-29). Both null = always available.
+  availableFrom String?  @map("available_from")
+  availableTo   String?  @map("available_to")
+  hidden        Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  dishes MerchantDish[]
+
+  @@index([merchantId])
+  @@map("merchant_categories")
+}
+
+// D-31: a dish with no photo saves as a draft (isDraft true) — visible to the kitchen, invisible to
+// the customer-facing menu. N-14: out-of-stock defaults to "for the rest of today", tracked by
+// outOfStockUntil rather than a plain boolean so the daily auto-reset needs no reset job — the
+// customer read API treats a past/null outOfStockUntil as back in stock.
+model MerchantDish {
+  id              String           @id @default(uuid()) @db.Uuid
+  categoryId      String           @map("category_id") @db.Uuid
+  category        MerchantCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  // Denormalized for merchant-scoped dish queries/counts without a join through category.
+  merchantId      String           @map("merchant_id") @db.Uuid
+  name            String
+  description     String?
+  priceUsd        Decimal          @db.Decimal(10, 2) @map("price_usd")
+  photoUrl        String?          @map("photo_url")
+  isDraft         Boolean          @default(true) @map("is_draft")
+  outOfStockUntil DateTime?        @map("out_of_stock_until")
+  sortOrder       Int              @default(0) @map("sort_order")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  @@index([categoryId])
+  @@index([merchantId])
+  @@map("merchant_dishes")
 }
 
 model Address {

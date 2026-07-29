@@ -6,6 +6,8 @@ import { CurrentUser } from "../common/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
+import { MerchantGuard } from "../merchant/merchant.guard";
+import { RestaurantsEnabledGuard } from "../merchant/restaurants-enabled.guard";
 
 // Restrict to the formats expo-image-picker yields, so a signed URL is never minted for an arbitrary
 // content type. The PUT must send this exact Content-Type or the V4 signature won't match.
@@ -17,6 +19,13 @@ const EXT: Record<z.infer<typeof PhotoUpload>["contentType"], string> = {
 // Cap an uploaded photo at 8 MiB — well above a phone-camera JPEG/PNG, far below storage-abuse/DoS
 // territory. Bound into the signed URL so the object store rejects anything larger, not just the client.
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+// D-32 "we compress on the merchant's behalf and say so": these are the target sizes named in the
+// design contract, enforced the same way as MAX_PHOTO_BYTES — bound into the signed URL's
+// X-Goog-Content-Length-Range so the object store rejects an over-budget PUT, not just the client's
+// own downscale step (apps/mobile/src/logic/image-downscale.ts, which already lands most photos in
+// this range but never guarantees it).
+const MAX_DISH_PHOTO_BYTES = 300 * 1024;
+const MAX_BANNER_PHOTO_BYTES = 250 * 1024;
 
 interface MintedUpload {
   uploadUrl: string;
@@ -75,9 +84,39 @@ export class UploadsController {
     return this.mint(`delivery-proof/${userId}/${randomUUID()}.${EXT[body.contentType]}`, body.contentType);
   }
 
-  /** One minting path for every photo upload — same TTL, size cap and signed-header contract. */
-  private async mint(key: string, contentType: z.infer<typeof PhotoUpload>["contentType"]): Promise<MintedUpload> {
-    const target = await this.storage.createUploadUrl(key, contentType, 600, MAX_PHOTO_BYTES);
+  /**
+   * Mint a signed PUT URL for a menu dish photo (D-31/D-32). Gated by RestaurantsEnabledGuard +
+   * MerchantGuard on top of the class-level JwtAuthGuard — dormant with the rest of the vertical.
+   * Key is namespaced by the caller's own profile id (one profile = at most one Merchant row via
+   * the unique ownerProfileId), mirroring kyc-photo/pickup-photo's own-namespace convention.
+   */
+  @Post("merchant-dish-photo")
+  @UseGuards(RestaurantsEnabledGuard, MerchantGuard)
+  dishPhoto(
+    @Body(new ZodBody(PhotoUpload)) body: z.infer<typeof PhotoUpload>,
+    @CurrentUser() profileId: string,
+  ): Promise<MintedUpload> {
+    return this.mint(`dish/${profileId}/${randomUUID()}.${EXT[body.contentType]}`, body.contentType, MAX_DISH_PHOTO_BYTES);
+  }
+
+  /** Mint a signed PUT URL for the shop's cover banner (D-30/D-32). Same gating as dishPhoto. */
+  @Post("merchant-banner-photo")
+  @UseGuards(RestaurantsEnabledGuard, MerchantGuard)
+  bannerPhoto(
+    @Body(new ZodBody(PhotoUpload)) body: z.infer<typeof PhotoUpload>,
+    @CurrentUser() profileId: string,
+  ): Promise<MintedUpload> {
+    return this.mint(`banner/${profileId}/${randomUUID()}.${EXT[body.contentType]}`, body.contentType, MAX_BANNER_PHOTO_BYTES);
+  }
+
+  /** One minting path for every photo upload — same TTL + signed-header contract; the size cap is
+   *  per-call so merchant photos (D-32) can carry a tighter budget than the 8 MiB default. */
+  private async mint(
+    key: string,
+    contentType: z.infer<typeof PhotoUpload>["contentType"],
+    maxBytes: number = MAX_PHOTO_BYTES,
+  ): Promise<MintedUpload> {
+    const target = await this.storage.createUploadUrl(key, contentType, 600, maxBytes);
     return {
       uploadUrl: target.url,
       key: target.key,
@@ -85,7 +124,7 @@ export class UploadsController {
       // headers or the V4 signature won't match. Returned so the client stays decoupled from the cap.
       headers: {
         "Content-Type": contentType,
-        "X-Goog-Content-Length-Range": `0,${MAX_PHOTO_BYTES}`,
+        "X-Goog-Content-Length-Range": `0,${maxBytes}`,
       },
     };
   }

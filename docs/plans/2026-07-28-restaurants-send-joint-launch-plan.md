@@ -174,12 +174,26 @@ questions (idempotency key, lifecycle edge vs the transitions table, money-seam 
 regression test). All routes/flag-gated; `merchant-routes-dead` golden matrix updated to assert
 dead-when-off rather than dead-always.
 
-- [ ] **C1 · Merchant domain + auth + menu.** Expand `Merchant` (profile D-30, hours, cash rule
+- [x] **C1 · Merchant domain + auth + menu.** Expand `Merchant` (profile D-30, hours, cash rule
   R-03, masked phone D-17); merchant auth (phone + OTP, reusing the existing auth patterns,
   fail-closed); menu schema + CRUD (categories D-29, dishes with photo-required draft state
   D-31, OOS with daily auto-reset N-14, busy mode N-17); upload/compress pipeline reusing
   `uploads/` (≤300KB dish, ≤250KB banner D-32). Customer read API: restaurant list/menu (flag +
-  allowlist gated).
+  allowlist gated). **Done 2026-07-29:** `Merchant` expanded + `MerchantCategory`/`MerchantDish`
+  added (migrations 0040/0041, unique index built CONCURRENTLY per CONTRIBUTING); merchant auth
+  is `POST /merchant/become` upgrading an existing customer profile in place (role="merchant"),
+  reusing the untouched phone+OTP flow — mirrors `becomeRider` exactly, no parallel OTP surface.
+  New `apps/api/src/merchant/` module (`MerchantController` self-service CRUD +
+  `RestaurantsController` customer read API) registered unconditionally in AppModule; every route
+  sits behind `RestaurantsEnabledGuard` (checked first, ahead of JwtAuthGuard/MerchantGuard) so the
+  vertical fails safe OFF (503) with no DB/DI change needed to re-enable. `pilotEnabled` is the
+  seeded-cohort allowlist field the 2026-07-27 status-keyed-query-audit's "P0 exit-gate status"
+  deferred to "the first P1 PR" — this is that PR; the customer read API filters on it. Golden
+  matrix (`merchant-routes-dead.e2e.spec.ts`) converted dead-always → dead-when-off: a structural
+  guard-chain tripwire (any future `/merchant`|`/restaurants` controller must carry
+  `RestaurantsEnabledGuard`) plus real HTTP legs proving 503 off, 401/403/200 on. Dish/banner
+  uploads reuse `uploads/` with D-32's own size caps. `express-no-merchant-coupling` holds (no
+  import edge added). C2 (order lifecycle) is next.
 - [ ] **C2 · Food order lifecycle.** Extend the declarative transitions table for `merchant`
   orders: place → accept window 3:00 auto-cancel (N-03) → item-level accept w/ 60s customer
   approval (D-23/N-18) → **payment-confirm-before-cook** (R-11, call-logged R-16, no clocks
