@@ -305,12 +305,44 @@ and the matching Lane C contracts (C1 for D1, C2 for D2–D3, C4 for D4–D5) me
 
 Phase-0 gate: requires the matching Lane C contracts (C1 for E1/E4, C2/C5 for E2, C4 for E3).
 
-- [ ] **E1 · Auth + shell + alarm discipline.** Phone+OTP sign-in ("Sign in & start the alarm",
+- [x] **E1 · Auth + shell + alarm discipline.** Phone+OTP sign-in ("Sign in & start the alarm",
   D-05) with fail-closed middleware; app shell tablet-first 1024×680 degrading to phone; looping
   2-tone alarm unlocked by the login gesture, `AudioContext` re-resumed on every gesture; Screen
   Wake Lock with flashing-header fallback; visible alarm state; red CONNECTION LOST bar ≤3s,
   actions disabled, backoff counter, reconnect backfill banner; rebooted-mid-shift recovery
-  (§3 of the decisions doc, implemented as written).
+  (§3 of the decisions doc, implemented as written). **Done 2026-07-29:** replaces the P0
+  placeholder (`apps/merchant`) with the first authenticated surface — `middleware.ts` fail-closed
+  gate (mirrors `apps/admin/middleware.ts`'s shape: a pure, unit-tested `evaluateMerchantAccess`
+  policy in `app/lib/merchant-access.ts`, only checking session-cookie PRESENCE — the real
+  authorization boundary stays server-side, `RestaurantsEnabledGuard`→`JwtAuthGuard`→`MerchantGuard`
+  on every `apps/api` merchant route, since a merchant JWT carries no `merchantId` claim to verify
+  independently without duplicating the API's signing secret into this app). Login reuses the
+  existing phone+OTP flow (`/auth/otp/request`, `/auth/otp/verify`) unchanged; `GET /merchant/me`
+  on the queue landing page confirms `role: "merchant"` server-side and shows a clear
+  not-registered state (with sign-out) instead of a silent 403 loop for a customer-role token —
+  **mocked default, not self-serve**: E1 does not wire a `POST /merchant/become` + re-auth dance
+  from the tablet itself (the API mints `role` into the JWT at sign-in time and does not reissue a
+  token after `become` flips the DB row, so a stale token needs a fresh OTP verify regardless);
+  merchants reach the tablet already provisioned (founder/admin onboarding), flagged here rather
+  than silently decided. Alarm: `AlarmController`/`alarmPhaseAt` (`app/lib/alarm.ts`, pure
+  2-tone-cycle timing, unit-tested) over a synthesized Web Audio two-tone chime
+  (`WebAudioToneSink`, no shipped audio asset) — `arm()` fires on the sign-in tap (the D-05
+  gesture) and resets to unarmed on every real reload (`RearmBanner`, the §3 "one tap to re-arm"
+  reboot behaviour); mute state renders in `KitchenBar` "at all times ... never silent." Screen
+  Wake Lock (`useWakeLock`) with the §3 flashing-header fallback when refused/unsupported.
+  Reconnect: `ReachabilityStore` (`app/lib/reachability.ts`, capped-backoff `/healthz` probe,
+  identical formula to `apps/mobile/src/net/reachability.ts`) drives the CONNECTION LOST bar
+  (attempt counter, `actionsDisabled` exposed via context for E2's mutating buttons to consume)
+  and a "back online" banner; the ORDER-COUNT backfill banner itself is E2's job (needs a real
+  dark-period order source — no live queue exists yet). Design tokens: added the additive
+  `--danger-ink`/`dangerInk` token (`packages/design/tokens/colors.css`'s existing value,
+  `#8F2418`) to `packages/shared/src/design-tokens.ts` and `apps/merchant/app/globals.css` (B3's
+  job originally, pulled forward since E1 needed it first for the muted-alarm state — additive,
+  no conflict expected). CI: added `pnpm --filter @lynia/merchant test` (mirrors the admin
+  console-auth gate reasoning — turbo's `test` task has no merchant entry wired, same as admin).
+  `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages (29 new merchant unit
+  tests: access policy, session parsing, alarm timing/state machine, reachability backoff/state
+  machine). E2 (queue + cook flow) is next.
 - [ ] **E2 · Queue + cook flow.** Queue empty/loading → NEW ORDER takeover (stops only on
   Accept / Can't-take-it) → accept + prep chips → item-level "don't have it" (D-23) → reject
   reasons (D-11) → amber "do not cook yet" full-viewport (D-04) → rider-secured green cook
