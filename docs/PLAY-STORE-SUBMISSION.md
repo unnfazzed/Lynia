@@ -328,14 +328,21 @@ secrets — `DEMO_OTP_PHONE` and `DEMO_OTP_CODE` (`apps/api/src/auth/auth.servic
   or payouts. The per-IP verify throttle (10/5min) still bounds brute force of the 6-digit code.
 - **Audited** — a demo sign-in logs a masked-phone WARN.
 
-**Founder action (the whole remaining task):** set two secrets on the production API (Cloud Run /
-Secret Manager), pick a **non-obvious 6-digit code**, and enter the phone + code in Play Console →
-App access.
+**Founder action (the whole remaining task):** create two Secret Manager secrets, flip one repo
+Variable to arm the deploy wiring, and enter the phone + code in Play Console → App access.
 
+```bash
+# 1. Create the secrets (values are yours; the code must be non-obvious — boot rejects 123456/111111)
+printf '%s' '+2637XXXXXXXX' | gcloud secrets create DEMO_OTP_PHONE --data-file=- --project=lynia-500911
+printf '%s' '<6 digits>'    | gcloud secrets create DEMO_OTP_CODE  --data-file=- --project=lynia-500911
+# 2. Arm the deploy wiring (release.yml references the secrets only when this is true)
+gh variable set DEMO_ACCOUNT_ENABLED --body true
+# 3. Redeploy (next merge, or re-run Release) so the secrets are injected as env.
 ```
-DEMO_OTP_PHONE = +2637XXXXXXXX     # a DEDICATED number — see the warning below
-DEMO_OTP_CODE  = <non-obvious 6 digits>   # e.g. not 123456 / 111111 — boot rejects those
-```
+
+`release.yml` injects `DEMO_OTP_PHONE`/`DEMO_OTP_CODE` from Secret Manager only when
+`DEMO_ACCOUNT_ENABLED=true` — the same opt-in pattern as Bird/WhatsApp/Sentry, so a missing secret
+can never fail an un-armed deploy. The runtime SA needs `secretAccessor` on both secrets.
 
 > ⚠️ **The demo number must not be a real user's account.** Sign-in resolves the account by phone, so
 > if `DEMO_OTP_PHONE` is a number that already has (or later gets) a real profile, anyone holding the
