@@ -54,6 +54,9 @@ export const color = {
   danger: "#C0392B",
   /** Danger tint (mirrors --danger-wash) — 'bad' status pills, warn bars, danger hover states. */
   dangerWash: "#FAEDEB",
+  /** Darker danger TEXT on `dangerWash` (≈6:1) — owed labels, gate reasons, muted-alarm state.
+   *  Mirrors packages/design/tokens/colors.css `--danger-ink`. Never use `danger` for text. */
+  dangerInk: "#8F2418",
   /** Confirmation fills (== accent); use `accentText` for success TEXT. */
   success: "#00B14F",
   /** Text/icon colour on an accent (or danger) fill. The one inverse in the palette. */
