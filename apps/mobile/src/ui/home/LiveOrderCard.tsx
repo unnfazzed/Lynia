@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
-import { Card, Icon, type IconName } from "../index";
+import { Icon, type IconName } from "../Icon";
 
 /**
  * Home LiveOrderCard (plan §5 A2, ported from `packages/design/components/home/LiveOrderCard.jsx`)
@@ -27,7 +27,19 @@ export function LiveOrderCard({
 }): React.ReactElement {
   return (
     <Pressable onPress={onPress} disabled={!onPress} accessibilityRole={onPress ? "button" : undefined} accessibilityLabel={title}>
-      <Card style={{ borderWidth: 1.5, borderColor: tokens.color.accent, padding: 12 }}>
+      {/* Mirrors `Card`'s styling inline rather than importing it from `../index` — that barrel
+          re-exports this very component, and importing it back would be a circular dependency. */}
+      <View
+        style={{
+          backgroundColor: tokens.color.bg,
+          borderWidth: 1.5,
+          borderColor: tokens.color.accent,
+          borderRadius: tokens.radius.card,
+          padding: 12,
+          marginBottom: tokens.space.md,
+          ...tokens.shadow.card,
+        }}
+      >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <View
             style={{
@@ -61,7 +73,7 @@ export function LiveOrderCard({
           </View>
           <Icon name="chevron-right" size={18} color={tokens.color.muted} />
         </View>
-      </Card>
+      </View>
     </Pressable>
   );
 }
