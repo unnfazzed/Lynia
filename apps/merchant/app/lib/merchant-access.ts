@@ -49,3 +49,17 @@ export function evaluateLoginPageAccess(input: { hasSession: boolean }): Merchan
   if (input.hasSession) return { allow: false, redirectTo: "/queue" };
   return { allow: true };
 }
+
+/**
+ * Validate the `next` param the login page reads back after sign-in (CWE-601 guard). A same-origin
+ * PATH-only check via `startsWith("/")` is NOT enough — `"//attacker.example/x"` also starts with
+ * `/` and a browser resolves that protocol-relative URL against `location.protocol`, so
+ * `router.replace(next)` would leave the app entirely. Requiring a SECOND character that isn't `/`
+ * (and isn't a backslash, which some browsers normalize to `/`) rules out every protocol-relative
+ * form while still accepting ordinary in-app paths like `/queue` or `/queue?foo=bar`.
+ */
+export function isSafeMerchantRedirectPath(next: string | null): next is string {
+  if (!next) return false;
+  if (!next.startsWith("/")) return false;
+  return next[1] !== "/" && next[1] !== "\\";
+}

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getAlarmController } from "../components/alarm-singleton";
 import { ApiError, requestOtp, verifyOtp } from "../lib/api-client";
+import { isSafeMerchantRedirectPath } from "../lib/merchant-access";
 
 type Step = { kind: "phone" } | { kind: "code"; phone: string };
 
@@ -51,7 +52,9 @@ export default function LoginPage() {
       // exactly as D-05 specifies, before navigating into the dashboard.
       getAlarmController().arm();
       const next = searchParams.get("next");
-      router.replace(next && next.startsWith("/") ? next : "/queue");
+      // CWE-601 guard: `next` is an attacker-controllable query param — only ever follow it back to
+      // a genuine in-app path, never a protocol-relative URL that would leave the app.
+      router.replace(isSafeMerchantRedirectPath(next) ? next : "/queue");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "That code didn't work — try again.");
     } finally {

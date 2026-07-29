@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { evaluateLoginPageAccess, evaluateMerchantAccess, isPublicMerchantPath } from "./merchant-access";
+import {
+  evaluateLoginPageAccess,
+  evaluateMerchantAccess,
+  isPublicMerchantPath,
+  isSafeMerchantRedirectPath,
+} from "./merchant-access";
 
 describe("isPublicMerchantPath", () => {
   it("lets the login screen, static assets, and the health probe through", () => {
@@ -47,5 +52,32 @@ describe("evaluateLoginPageAccess", () => {
 
   it("bounces an already-signed-in merchant to the dashboard", () => {
     expect(evaluateLoginPageAccess({ hasSession: true })).toEqual({ allow: false, redirectTo: "/queue" });
+  });
+});
+
+describe("isSafeMerchantRedirectPath (CWE-601 guard on the post-login `next` param)", () => {
+  it("accepts ordinary in-app paths", () => {
+    expect(isSafeMerchantRedirectPath("/queue")).toBe(true);
+    expect(isSafeMerchantRedirectPath("/queue?tab=new")).toBe(true);
+    expect(isSafeMerchantRedirectPath("/")).toBe(true);
+  });
+
+  it("rejects null/empty", () => {
+    expect(isSafeMerchantRedirectPath(null)).toBe(false);
+    expect(isSafeMerchantRedirectPath("")).toBe(false);
+  });
+
+  it("rejects a full external URL", () => {
+    expect(isSafeMerchantRedirectPath("https://attacker.example/x")).toBe(false);
+    expect(isSafeMerchantRedirectPath("attacker.example")).toBe(false);
+  });
+
+  it("rejects protocol-relative URLs that a plain startsWith('/') check would miss", () => {
+    expect(isSafeMerchantRedirectPath("//attacker.example")).toBe(false);
+    expect(isSafeMerchantRedirectPath("//attacker.example/phish")).toBe(false);
+  });
+
+  it("rejects a backslash-leading path some browsers normalize to protocol-relative", () => {
+    expect(isSafeMerchantRedirectPath("/\\attacker.example")).toBe(false);
   });
 });
