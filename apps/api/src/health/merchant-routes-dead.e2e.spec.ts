@@ -36,8 +36,11 @@ import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { bearer, TEST_ENV } from "../common/testing/authz-e2e";
+import { FoodOrderController } from "../merchant/food-order.controller";
+import { FoodOrderService } from "../merchant/food-order.service";
 import { MerchantController } from "../merchant/merchant.controller";
 import { MerchantGuard } from "../merchant/merchant.guard";
+import { MerchantOrderController } from "../merchant/merchant-order.controller";
 import { MerchantService } from "../merchant/merchant.service";
 import { RestaurantsController } from "../merchant/restaurants.controller";
 import { RestaurantsEnabledGuard } from "../merchant/restaurants-enabled.guard";
@@ -76,6 +79,9 @@ Reflect.defineMetadata("design:paramtypes", [HealthService, Object], HealthContr
 Reflect.defineMetadata("design:paramtypes", [MerchantService], MerchantController);
 Reflect.defineMetadata("design:paramtypes", [MerchantService], RestaurantsController);
 Reflect.defineMetadata("design:paramtypes", [Object], RestaurantsEnabledGuard);
+// C2: the two new food-order controllers, same reflective-DI patch shape.
+Reflect.defineMetadata("design:paramtypes", [FoodOrderService], FoodOrderController);
+Reflect.defineMetadata("design:paramtypes", [FoodOrderService], MerchantOrderController);
 
 const healthService = { check: async () => ({ status: "ok", db: true, redis: true, provider: "test" }) };
 
@@ -100,13 +106,20 @@ const merchantServiceStub = {
   listRestaurants: async () => ({ restaurants: [] }),
 };
 
-/** Boots the REAL MerchantController + RestaurantsController (+ real guards) with a chosen env —
- *  the only way to exercise flags-off vs flags-on behavior, since the flag is read once per guard
- *  instance at request time, not baked into AppModule's static import graph. */
+/** C2: never reached by the flags-off/no-auth/wrong-role legs, same shape as merchantServiceStub —
+ *  just enough for the "genuinely alive" legs to prove real controller → real service wiring. */
+const foodOrderServiceStub = {
+  listQueue: async () => [],
+  getMyOrder: async () => ({ id: "o1", merchantId: "m1", status: "requested", merchantPhase: "awaiting_accept" }),
+};
+
+/** Boots the REAL merchant/restaurant controllers (+ real guards) with a chosen env — the only way
+ *  to exercise flags-off vs flags-on behavior, since the flag is read once per guard instance at
+ *  request time, not baked into AppModule's static import graph. */
 async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplication> {
   const env = { ...TEST_ENV, ...envOverrides } as Env;
   @Module({
-    controllers: [MerchantController, RestaurantsController],
+    controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController],
     providers: [
       { provide: ENV, useValue: env },
       TokenService,
@@ -114,6 +127,7 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       MerchantGuard,
       RestaurantsEnabledGuard,
       { provide: MerchantService, useValue: merchantServiceStub },
+      { provide: FoodOrderService, useValue: foodOrderServiceStub },
     ],
   })
   class MerchantTestModule {}
@@ -162,9 +176,16 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
     expect(controllers.some((c) => c.name === "HealthController")).toBe(true);
 
     const merchantDomainControllers = controllers.filter((c) => /^\/?(merchant|restaurants)/i.test(c.path));
-    // C1 landed exactly these two — if this count changes, a NEW merchant-domain controller
-    // registered somewhere in AppModule; the guard-chain assertion below is what actually matters.
-    expect(merchantDomainControllers.map((c) => c.name).sort()).toEqual(["MerchantController", "RestaurantsController"]);
+    // C1 landed the first two; C2 added FoodOrderController (customer-facing, `restaurants` prefix)
+    // and MerchantOrderController (kitchen-facing, `merchant/orders` prefix) — if this list changes
+    // again, a NEW merchant-domain controller registered somewhere in AppModule; the guard-chain
+    // assertion below is what actually matters.
+    expect(merchantDomainControllers.map((c) => c.name).sort()).toEqual([
+      "FoodOrderController",
+      "MerchantController",
+      "MerchantOrderController",
+      "RestaurantsController",
+    ]);
 
     for (const c of merchantDomainControllers) {
       const guards = (Reflect.getMetadata("__guards__", c.cls as object) as unknown[] | undefined) ?? [];
@@ -174,7 +195,15 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
 
   it("flags-off (absent): every merchant/restaurant route 503s before auth is even checked", async () => {
     const app = await bootMerchantApp({});
-    for (const path of ["/merchant/me", "/merchant/categories", "/restaurants"]) {
+    // C2: /merchant/orders (MerchantOrderController) and /restaurants/orders/:id (FoodOrderController)
+    // join the same fail-safe-OFF proof as the C1 routes.
+    for (const path of [
+      "/merchant/me",
+      "/merchant/categories",
+      "/restaurants",
+      "/merchant/orders",
+      "/restaurants/orders/11111111-1111-1111-1111-111111111111",
+    ]) {
       const res = await request(app.getHttpServer()).get(path); // no Authorization header at all
       expect(res.status, `${path} must be dead (503) while RESTAURANTS_ENABLED is unset`).toBe(503);
     }
@@ -217,6 +246,24 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       const res = await request(app.getHttpServer()).get("/restaurants").set("Authorization", bearer("p1", "customer"));
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ restaurants: [] });
+    });
+
+    it("C2: /merchant/orders needs the merchant role — no auth 401, wrong role 403, merchant 200", async () => {
+      const noAuth = await request(app.getHttpServer()).get("/merchant/orders");
+      expect(noAuth.status).toBe(401);
+      const wrongRole = await request(app.getHttpServer()).get("/merchant/orders").set("Authorization", bearer("p1", "customer"));
+      expect(wrongRole.status).toBe(403);
+      const asMerchant = await request(app.getHttpServer()).get("/merchant/orders").set("Authorization", bearer("p1", "merchant"));
+      expect(asMerchant.status).toBe(200);
+      expect(asMerchant.body).toEqual([]);
+    });
+
+    it("C2: /restaurants/orders/:id needs no merchant role — any authenticated caller gets 200", async () => {
+      const res = await request(app.getHttpServer())
+        .get("/restaurants/orders/11111111-1111-1111-1111-111111111111")
+        .set("Authorization", bearer("p1", "customer"));
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe("o1");
     });
   });
 });

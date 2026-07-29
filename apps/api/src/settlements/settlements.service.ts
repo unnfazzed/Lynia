@@ -86,8 +86,16 @@ export class SettlementsService {
     // wallet, which debits per completed ride. Applying the rate to a rider's ROUNDED aggregate fare
     // instead diverges by rounding once the rate is non-zero, so the console would never reconcile with
     // the ledger. At the 7-day window's pilot volume this per-ride read is cheap.
+    // A-10 (status-keyed-query-audit): this console projects Express ride-commission (chargeCommission's
+    // fare basis) — a merchant order's own commission reads C4's ledger on its own basis, never this
+    // parcel bid-floor projection.
     const orders = await this.prisma.order.findMany({
-      where: { status: "completed", completedAt: { gte: periodStart, lt: periodEnd }, riderId: { not: null } },
+      where: {
+        status: "completed",
+        completedAt: { gte: periodStart, lt: periodEnd },
+        riderId: { not: null },
+        orderType: "parcel",
+      },
       select: { id: true, riderId: true, agreedFare: true, suggestedFare: true },
     });
 

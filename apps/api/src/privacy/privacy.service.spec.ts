@@ -102,6 +102,9 @@ function eraseHarness(
       // KB-POD-DISPUTE Phase A: eraseAccount nulls the rider's delivery-proof columns via updateMany.
       updateMany: vi.fn(async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => (orderUpdateManys.push(a), { count: 0 })),
     },
+    // C2: per-dish note scrub on the erasing customer's own placed food orders (same DS15-07 class as
+    // orders.note).
+    merchantOrderItem: { updateMany: vi.fn(async (a: unknown) => ((calls.merchantOrderItemUpdate = a), { count: 0 })) },
   };
   const prisma = {
     profile: { findUnique: async () => preflightProfile },

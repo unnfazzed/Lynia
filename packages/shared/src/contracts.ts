@@ -790,3 +790,158 @@ export const RestaurantMenuResponse = z
   })
   .strict();
 export type RestaurantMenuResponse = z.infer<typeof RestaurantMenuResponse>;
+
+// ---------------------------------------------------------------------------
+// Restaurants vertical — food order lifecycle (C2,
+// docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C). Dormant behind
+// RestaurantsEnabledGuard like every other merchant/restaurants route (C1). Pricing config
+// (RESTAURANTS_PRICING, N-01/N-15) and timing config (RESTAURANTS_TIMING, N-03/N-18) live in
+// ./restaurants-order — the client never computes a total or a deadline, only renders the server's.
+// ---------------------------------------------------------------------------
+
+/** Kitchen-side sub-state OrderStatus has no room for (plan §0b.1 locked decision) — mirrors the
+ *  Prisma `MerchantPhase` enum. Once `ready_for_pickup`, C3's dispatch takes over exactly like a
+ *  parcel (open_for_offers → assigned → ...). */
+export const MerchantPhase = z.enum([
+  "awaiting_accept",
+  "awaiting_item_approval",
+  "awaiting_payment",
+  "preparing",
+  "ready_for_pickup",
+]);
+export type MerchantPhase = z.infer<typeof MerchantPhase>;
+
+/** The customer's chosen settlement rail (R-01/R-11) — orthogonal to the merchant's own `cashRule`. */
+export const MerchantPaymentMethod = z.enum(["cash", "wallet"]);
+export type MerchantPaymentMethod = z.infer<typeof MerchantPaymentMethod>;
+
+/** The shop's own pickup point (same Waypoint shape as a parcel's pickup) — required before
+ *  `placeOrder` can price a trip (N-01 needs a distance). */
+export const UpdateMerchantLocationRequest = z.object({ location: Waypoint }).strict();
+export type UpdateMerchantLocationRequest = z.infer<typeof UpdateMerchantLocationRequest>;
+
+export const PlaceMerchantOrderItem = z
+  .object({
+    dishId: z.string().uuid(),
+    quantity: z.number().int().min(1).max(20),
+    // D-35: a note on a single dish line — free text, never alters the price.
+    note: z.string().trim().max(200).optional(),
+  })
+  .strict();
+export type PlaceMerchantOrderItem = z.infer<typeof PlaceMerchantOrderItem>;
+
+/** `POST /restaurants/:merchantId/orders`. Price is ALWAYS server-computed from the dish price
+ *  snapshot + N-01/N-15 config (D-35 "a note can never alter the price") — the client sends the
+ *  basket, never a total. */
+export const PlaceMerchantOrderRequest = z
+  .object({
+    items: z.array(PlaceMerchantOrderItem).min(1).max(30),
+    // D-35: the whole-order note ("pack the sadza separately from the stew").
+    note: z.string().trim().max(300).optional(),
+    dropoff: Waypoint,
+    paymentMethod: MerchantPaymentMethod,
+    idempotencyKey: z.string().uuid().optional(),
+  })
+  .strict();
+export type PlaceMerchantOrderRequest = z.infer<typeof PlaceMerchantOrderRequest>;
+
+export const MerchantOrderItemView = z
+  .object({
+    dishId: z.string().uuid().nullable(),
+    name: z.string(),
+    priceUsd: z.number(),
+    quantity: z.number().int(),
+    note: z.string().nullable(),
+    // D-23: null = merchant hasn't decided yet, true = kept, false = "don't have it".
+    available: z.boolean().nullable(),
+  })
+  .strict();
+export type MerchantOrderItemView = z.infer<typeof MerchantOrderItemView>;
+
+/** Shared shape both the customer's order view and the merchant's queue card render. Every
+ *  timestamp is an ISO-8601 string (server-authoritative; the client never computes one). */
+export const MerchantOrderResponse = z
+  .object({
+    id: z.string().uuid(),
+    merchantId: z.string().uuid(),
+    status: z.string(),
+    merchantPhase: MerchantPhase.nullable(),
+    items: z.array(MerchantOrderItemView),
+    note: z.string().nullable(),
+    paymentMethod: MerchantPaymentMethod.nullable(),
+    // D-08: never merged into one figure — goods total is what's owed to the merchant, deliveryFee
+    // is what the rider keeps. `total` is goods + delivery, the number the customer pays.
+    merchantGoodsTotal: z.number().nullable(),
+    deliveryFee: z.number().nullable(),
+    total: z.number().nullable(),
+    acceptDeadlineAt: z.string().nullable(),
+    itemApprovalDeadlineAt: z.string().nullable(),
+    prepMinutes: z.number().int().nullable(),
+    prepStartedAt: z.string().nullable(),
+    readyAt: z.string().nullable(),
+    rejectionReason: z.string().nullable(),
+    paymentCallLoggedAt: z.string().nullable(),
+    paymentRequestedAt: z.string().nullable(),
+    merchantPaymentReference: z.string().nullable(),
+    merchantPaymentConfirmedAt: z.string().nullable(),
+  })
+  .strict();
+export type MerchantOrderResponse = z.infer<typeof MerchantOrderResponse>;
+
+/** D-23: merchant's accept — full accept when `unavailableDishIds` is omitted/empty, item-level
+ *  accept otherwise (the customer then gets N-18's 60s approval window on the shortened order). */
+export const MerchantAcceptOrderRequest = z
+  .object({
+    prepMinutes: z.union([z.literal(10), z.literal(15), z.literal(20), z.literal(30), z.literal(45)]),
+    unavailableDishIds: z.array(z.string().uuid()).max(30).optional(),
+  })
+  .strict();
+export type MerchantAcceptOrderRequest = z.infer<typeof MerchantAcceptOrderRequest>;
+
+/** D-11: the reason IS the customer's copy (MERCHANT_REJECTION_REASONS in ./restaurants-order). */
+export const MerchantRejectionReasonCode = z.enum([
+  "out_of_ingredient",
+  "too_busy",
+  "closing_soon",
+  "unreachable_customer",
+  "shop_closed",
+  "other",
+]);
+export type MerchantRejectionReasonCode = z.infer<typeof MerchantRejectionReasonCode>;
+
+export const MerchantRejectOrderRequest = z.object({ reason: MerchantRejectionReasonCode }).strict();
+export type MerchantRejectOrderRequest = z.infer<typeof MerchantRejectOrderRequest>;
+
+/** R-11/D-06: the merchant matches the customer's rail reference against their own statement — a
+ *  mismatched amount blocks release and names the gap (checked server-side, not just displayed). */
+export const MerchantConfirmPaymentRequest = z
+  .object({
+    reference: z.string().trim().min(1).max(80),
+    amount: z.number().positive().max(100_000).multipleOf(0.01),
+  })
+  .strict();
+export type MerchantConfirmPaymentRequest = z.infer<typeof MerchantConfirmPaymentRequest>;
+
+/** D-23: the customer's response to a shortened (item-level accept) order. */
+export const ApproveMerchantOrderItemsRequest = z.object({ approve: z.boolean() }).strict();
+export type ApproveMerchantOrderItemsRequest = z.infer<typeof ApproveMerchantOrderItemsRequest>;
+
+/** D-24 "I paid another way" manual rail — the customer's own submitted reference, matched by the
+ *  merchant against their statement at confirm-payment. */
+export const SubmitMerchantPaymentReferenceRequest = z
+  .object({ reference: z.string().trim().min(1).max(80) })
+  .strict();
+export type SubmitMerchantPaymentReferenceRequest = z.infer<typeof SubmitMerchantPaymentReferenceRequest>;
+
+/** R-16: the request-payment button unlocks after a logged call; `overrideCallLog` is the named
+ *  escape hatch for regulars and in-person confirms. */
+export const MerchantRequestPaymentRequest = z.object({ overrideCallLog: z.boolean().optional() }).strict();
+export type MerchantRequestPaymentRequest = z.infer<typeof MerchantRequestPaymentRequest>;
+
+/** N-16: the rider's 4-digit pickup code, checked by the merchant at the counter. */
+export const ConfirmMerchantPickupRequest = z.object({ code: z.string().regex(/^\d{4}$/) }).strict();
+export type ConfirmMerchantPickupRequest = z.infer<typeof ConfirmMerchantPickupRequest>;
+
+/** D-11: a merchant's no-penalty release of an unpaid (awaiting_payment) order (R-17 zombie mitigation). */
+export const MerchantReleaseUnpaidRequest = z.object({ reason: MerchantRejectionReasonCode }).strict();
+export type MerchantReleaseUnpaidRequest = z.infer<typeof MerchantReleaseUnpaidRequest>;

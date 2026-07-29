@@ -17,7 +17,9 @@ import type {
   UpdateMerchantCategoryRequest,
   UpdateMerchantDishRequest,
   UpdateMerchantHoursRequest,
+  UpdateMerchantLocationRequest,
   UpdateMerchantProfileRequest,
+  Waypoint,
 } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
@@ -107,6 +109,24 @@ export class MerchantService {
       include: { ownerProfile: { select: { phone: true } } },
     });
     return this.toProfileResponse(updated);
+  }
+
+  /** C2: the shop's own pickup point — required before placeOrder can price a trip (N-01 needs a
+   *  distance). Same Waypoint shape as a parcel's pickup. */
+  async updateLocation(profileId: string, body: UpdateMerchantLocationRequest): Promise<MerchantProfileResponse> {
+    const merchant = await this.findOwnMerchantOrThrow(profileId);
+    const updated = await this.prisma.merchant.update({
+      where: { id: merchant.id },
+      data: { location: body.location as Prisma.InputJsonValue },
+      include: { ownerProfile: { select: { phone: true } } },
+    });
+    return this.toProfileResponse(updated);
+  }
+
+  /** For FoodOrderService.placeOrder — the merchant's pickup point, or null if not set yet. */
+  async findLocation(merchantId: string): Promise<Waypoint | null> {
+    const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { location: true } });
+    return (merchant?.location as Waypoint | null) ?? null;
   }
 
   async setBusyMode(profileId: string, body: SetMerchantBusyModeRequest): Promise<MerchantProfileResponse> {

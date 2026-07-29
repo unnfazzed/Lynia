@@ -94,9 +94,14 @@ export class NotificationsService {
       if (!notice) return;
       const order = await this.prisma.order.findUnique({
         where: { id: orderId },
-        select: { customerId: true, riderId: true },
+        select: { customerId: true, riderId: true, orderType: true },
       });
       if (!order) return;
+      // A-6 (status-keyed-query-audit): STATUS_NOTICES is parcel-voiced copy ("Your parcel was
+      // delivered"). A food order's status pushes are FoodOrderService's own job (D-11 rejection copy,
+      // etc. — full type-aware notice tables land with C5) — silently no-op here rather than send a
+      // customer misleading Express copy about their food order.
+      if (order.orderType !== "parcel") return;
       // Fix 3: stamp each recipient's PER-ORDER role (`to`) onto the push so the client routes by the
       // order relationship, not the account's global session role — a rider-role account acting as the
       // customer on THIS order must open /order/:id, not /rider/job. Sent per-audience so each carries

@@ -482,7 +482,9 @@ export class OrdersService implements OnModuleDestroy {
       return this.listOpenNearby(lat, lng, radiusM ?? baseBroadcastRadiusM());
     }
     const orders = await this.prisma.order.findMany({
-      where: { status: "open_for_offers" },
+      // A-3 (status-keyed-query-audit): the Express bid board is a parcel-only surface — a merchant
+      // order's rider comes from C3's dispatch decision, never a rider browsing this board.
+      where: { status: "open_for_offers", orderType: "parcel" },
       orderBy: { createdAt: "desc" },
       take: 50,
       select: {
@@ -547,6 +549,7 @@ export class OrdersService implements OnModuleDestroy {
              ST_Distance(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS pickup_distance_m
       FROM orders
       WHERE status = 'open_for_offers'
+        AND order_type = 'parcel'
         AND pickup_geog IS NOT NULL
         AND ST_DWithin(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${scanRadiusM})
       ORDER BY pickup_distance_m ASC

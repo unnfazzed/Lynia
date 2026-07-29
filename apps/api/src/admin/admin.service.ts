@@ -73,9 +73,12 @@ export class AdminService {
       stuckOldest,
     ] = await Promise.all([
       this.prisma.order.groupBy({ by: ["status"], _count: { _all: true } }),
-      this.prisma.order.count(),
+      // A-8 (status-keyed-query-audit): the pilot funnel (computeFunnel below) reads these as "Express
+      // auction broadcasts" — a merchant order (this PR) was never broadcast to riders, so counting it
+      // here would corrupt offersPerBroadcast/expiryRatePct the moment the first food order lands.
+      this.prisma.order.count({ where: { orderType: "parcel" } }),
       this.prisma.offer.count(),
-      this.prisma.order.count({ where: { status: "expired" } }),
+      this.prisma.order.count({ where: { status: "expired", orderType: "parcel" } }),
       this.prisma.rider.count(),
       this.prisma.rider.count({ where: { isOnline: true, lastHeartbeatAt: { gte: hbCutoff } } }),
       this.prisma.rider.count({ where: { kycStatus: "verified" } }),
@@ -106,9 +109,12 @@ export class AdminService {
       // rate — one later adjudicated back to `completed` (WD-026) must stop counting here, even though
       // its `undeliveredAt` timestamp from the original failed hand-off is never cleared.
       this.prisma.order.count({ where: { status: "undelivered", undeliveredAt: { gte: startOfDay } } }),
+      // A-9 (status-keyed-query-audit): a merchant order's `agreedFare` is its own goods+delivery
+      // total, not a parcel fare — summing it into "Fares today" would misstate the parcel KPI once a
+      // merchant order can complete (C3/C4). Merchant orders get their own settlement view later.
       this.prisma.order.aggregate({
         _sum: { agreedFare: true },
-        where: { status: "completed", completedAt: { gte: startOfDay } },
+        where: { status: "completed", completedAt: { gte: startOfDay }, orderType: "parcel" },
       }),
       // Needs-attention signals.
       this.prisma.rider.count({ where: { kycStatus: "pending" } }),

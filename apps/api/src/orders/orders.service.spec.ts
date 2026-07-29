@@ -910,7 +910,8 @@ describe("OrdersService.listOpen", () => {
     };
     const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
     const rows = await svc.listOpen();
-    expect(where).toEqual({ status: "open_for_offers" });
+    // A-3 (status-keyed-query-audit): the board is now parcel-only.
+    expect(where).toEqual({ status: "open_for_offers", orderType: "parcel" });
     expect(rows[0]).toMatchObject({ id: "o1", itemDesc: "Documents", suggestedFare: "2.40", proposedFare: "2.50", distanceKm: 1.5 });
   });
 

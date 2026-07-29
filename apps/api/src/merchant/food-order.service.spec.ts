@@ -1,0 +1,424 @@
+import { describe, expect, it } from "vitest";
+import type { Env } from "../config/env";
+import type { NotificationsService } from "../notifications/notifications.service";
+import { PrismaService } from "../prisma/prisma.service";
+import { TokenService } from "../auth/token.service";
+import { FoodOrderService } from "./food-order.service";
+
+const tokens = new TokenService({ JWT_SIGNING_SECRET: "food-order-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
+const notified: Array<{ profileIds: string[]; title: string; body: string }> = [];
+const notifications = {
+  notifyProfiles: async (profileIds: string[], msg: { title: string; body: string }) => {
+    notified.push({ profileIds, ...msg });
+  },
+} as unknown as NotificationsService;
+
+/** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma),
+ *  mirroring order-lifecycle.service.spec.ts's `build()`. */
+function build(methods: Record<string, unknown>) {
+  notified.length = 0;
+  const prisma = { ...methods } as Record<string, unknown>;
+  prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
+  const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications);
+  return { svc, prisma };
+}
+
+const HARARE_CBD = { lat: -17.8292, lng: 31.0522 };
+const AVONDALE = { lat: -17.8003, lng: 31.0335 };
+
+const dish = (over: Record<string, unknown> = {}) => ({
+  id: "d1",
+  merchantId: "m1",
+  name: "Sadza & Chicken",
+  priceUsd: 5,
+  isDraft: false,
+  outOfStockUntil: null,
+  ...over,
+});
+
+describe("FoodOrderService.placeOrder", () => {
+  it("computes goods total + N-01 delivery fee + N-15 small-order fee, all server-side (D-35)", async () => {
+    let created: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findFirst: async () => null, // no idempotency replay
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          created = data;
+          return { ...data, id: "o1", merchantItems: [] };
+        },
+      },
+      merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD, landmark: "CBD", contactPhone: "+263771234567" } }) },
+      merchantDish: { findMany: async () => [dish({ priceUsd: 3 })] }, // below the $4 minimum
+    });
+
+    const res = await svc.placeOrder("c1", "m1", {
+      items: [{ dishId: "d1", quantity: 1 }],
+      dropoff: { point: AVONDALE, landmark: "Avondale", contactPhone: "+263779999999" },
+      paymentMethod: "cash",
+    });
+
+    // 3.0 subtotal < $4 minimum -> +$1.00 small-order fee (N-15) -> $4.00 goods total.
+    expect(created!.merchantGoodsTotal).toBe(4.0);
+    expect(res.merchantGoodsTotal).toBe(4.0);
+    // ~3.77km CBD->Avondale (pinned in pricing.test.ts) -> deliveryFeeForDistance.
+    expect(res.deliveryFee).toBeGreaterThan(0);
+    expect(res.total).toBe(res.merchantGoodsTotal! + res.deliveryFee!);
+    expect(created!.status).toBe("requested");
+    expect(created!.merchantPhase).toBe("awaiting_accept");
+    expect(created!.acceptDeadlineAt).toBeInstanceOf(Date);
+  });
+
+  it("rejects a draft (photoless) dish — never orderable, mirrors the customer read API's exclusion", async () => {
+    const { svc } = build({
+      merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD } }) },
+      merchantDish: { findMany: async () => [dish({ isDraft: true })] },
+    });
+    await expect(
+      svc.placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: AVONDALE }, paymentMethod: "cash" } as never),
+    ).rejects.toThrow(/isn't available/i);
+  });
+
+  it("rejects an out-of-stock dish (N-14)", async () => {
+    const { svc } = build({
+      merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD } }) },
+      merchantDish: { findMany: async () => [dish({ outOfStockUntil: new Date(Date.now() + 3_600_000) })] },
+    });
+    await expect(
+      svc.placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: AVONDALE }, paymentMethod: "cash" } as never),
+    ).rejects.toThrow(/out of stock/i);
+  });
+
+  it("409s a merchant with no pickup point set — nothing to price the delivery fee against", async () => {
+    const { svc } = build({ merchant: { findFirst: async () => ({ id: "m1", location: null }) } });
+    await expect(
+      svc.placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: AVONDALE }, paymentMethod: "cash" } as never),
+    ).rejects.toThrow(/isn't ready to take orders/i);
+  });
+
+  it("replays the prior order on an idempotencyKey re-submit instead of creating a second one", async () => {
+    let createCalls = 0;
+    const { svc } = build({
+      order: {
+        findFirst: async () => ({ id: "o1", merchantId: "m1", status: "requested", merchantItems: [] }),
+        create: async () => {
+          createCalls++;
+          throw new Error("must not create a second order");
+        },
+      },
+    });
+    const res = await svc.placeOrder("c1", "m1", {
+      items: [{ dishId: "d1", quantity: 1 }],
+      dropoff: { point: AVONDALE },
+      paymentMethod: "cash",
+      idempotencyKey: "11111111-1111-1111-1111-111111111111",
+    } as never);
+    expect(res.id).toBe("o1");
+    expect(createCalls).toBe(0);
+  });
+});
+
+describe("FoodOrderService.acceptOrder — D-23 full vs item-level", () => {
+  const baseOrder = (over: Record<string, unknown> = {}) => ({
+    id: "o1",
+    merchantId: "m1",
+    status: "requested",
+    merchantPhase: "awaiting_accept",
+    merchantPaymentMethod: "cash",
+    deliveryFee: 2.5,
+    merchantItems: [
+      { id: "i1", dishId: "d1", priceUsd: 5, quantity: 2, available: null },
+      { id: "i2", dishId: "d2", priceUsd: 3, quantity: 1, available: null },
+    ],
+    ...over,
+  });
+
+  it("full accept on a CASH order goes straight to preparing (R-01: nothing to confirm upfront)", async () => {
+    let updateArgs: Record<string, unknown> | undefined;
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1", busyMode: false }) },
+      order: {
+        findFirst: async () => baseOrder(),
+        findUnique: async () => baseOrder({ merchantPhase: "preparing" }),
+        updateMany: async (a: Record<string, unknown>) => {
+          updateArgs = a;
+          return { count: 1 };
+        },
+      },
+      merchantOrderItem: { updateMany: async () => ({ count: 2 }) },
+    });
+    await svc.acceptOrder("p1", "o1", { prepMinutes: 15 });
+    const data = (updateArgs!.data as Record<string, unknown>);
+    expect(data.merchantPhase).toBe("preparing");
+    expect(data.prepStartedAt).toBeInstanceOf(Date);
+    expect(data.prepMinutes).toBe(15);
+  });
+
+  it("full accept on a WALLET order goes to awaiting_payment — prep does NOT start (R-17)", async () => {
+    let updateArgs: Record<string, unknown> | undefined;
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1", busyMode: false }) },
+      order: {
+        findFirst: async () => baseOrder({ merchantPaymentMethod: "wallet" }),
+        findUnique: async () => baseOrder({ merchantPhase: "awaiting_payment" }),
+        updateMany: async (a: Record<string, unknown>) => {
+          updateArgs = a;
+          return { count: 1 };
+        },
+      },
+      merchantOrderItem: { updateMany: async () => ({ count: 2 }) },
+    });
+    await svc.acceptOrder("p1", "o1", { prepMinutes: 10 });
+    const data = updateArgs!.data as Record<string, unknown>;
+    expect(data.merchantPhase).toBe("awaiting_payment");
+    expect(data.prepStartedAt).toBeUndefined();
+  });
+
+  it("N-17: busy mode adds 10 minutes to the chosen prep chip", async () => {
+    let updateArgs: Record<string, unknown> | undefined;
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1", busyMode: true }) },
+      order: {
+        findFirst: async () => baseOrder(),
+        findUnique: async () => baseOrder({ merchantPhase: "preparing" }),
+        updateMany: async (a: Record<string, unknown>) => {
+          updateArgs = a;
+          return { count: 1 };
+        },
+      },
+      merchantOrderItem: { updateMany: async () => ({ count: 2 }) },
+    });
+    await svc.acceptOrder("p1", "o1", { prepMinutes: 15 });
+    expect((updateArgs!.data as Record<string, unknown>).prepMinutes).toBe(25);
+  });
+
+  it("item-level accept (D-23) recomputes the goods total off the remaining items only", async () => {
+    let updateArgs: Record<string, unknown> | undefined;
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1", busyMode: false }) },
+      order: {
+        findFirst: async () => baseOrder(),
+        findUnique: async () => baseOrder({ merchantPhase: "awaiting_item_approval" }),
+        updateMany: async (a: Record<string, unknown>) => {
+          updateArgs = a;
+          return { count: 1 };
+        },
+      },
+      merchantOrderItem: { updateMany: async () => ({ count: 1 }) },
+    });
+    // Drop d1 (2x $5 = $10) — only d2 (1x $3) remains, below $4 -> +$1 small-order fee -> $4.00.
+    await svc.acceptOrder("p1", "o1", { prepMinutes: 20, unavailableDishIds: ["d1"] });
+    const data = updateArgs!.data as Record<string, unknown>;
+    expect(data.merchantPhase).toBe("awaiting_item_approval");
+    expect(data.merchantGoodsTotal).toBe(4.0);
+    expect(data.agreedFare).toBe(4.0 + 2.5); // + the untouched deliveryFee
+    expect(data.itemApprovalDeadlineAt).toBeInstanceOf(Date);
+  });
+
+  it("refuses to mark every item unavailable — reject the whole order instead", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1", busyMode: false }) },
+      order: { findFirst: async () => baseOrder() },
+    });
+    await expect(svc.acceptOrder("p1", "o1", { prepMinutes: 10, unavailableDishIds: ["d1", "d2"] })).rejects.toThrow(/at least one item/i);
+  });
+
+  it("409s outside the awaiting_accept phase", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1", busyMode: false }) },
+      order: { findFirst: async () => baseOrder({ merchantPhase: "preparing" }) },
+    });
+    await expect(svc.acceptOrder("p1", "o1", { prepMinutes: 10 })).rejects.toThrow(/can no longer be accepted/i);
+  });
+});
+
+describe("FoodOrderService.confirmPayment — R-11 own-statement match", () => {
+  const order = (over: Record<string, unknown> = {}) => ({
+    id: "o1",
+    merchantId: "m1",
+    status: "requested",
+    merchantPhase: "awaiting_payment",
+    merchantGoodsTotal: 12.5,
+    merchantItems: [],
+    ...over,
+  });
+
+  it("D-06: a mismatched amount blocks release and names the gap in dollars", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { findFirst: async () => order() },
+    });
+    await expect(svc.confirmPayment("p1", "o1", { reference: "REF123", amount: 10.0 })).rejects.toThrow(/expected \$12\.50, got \$10\.00/);
+  });
+
+  it("a matching amount starts the prep clock (THIS is what starts it, not acceptance)", async () => {
+    let updateArgs: Record<string, unknown> | undefined;
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findFirst: async () => order(),
+        findUnique: async () => order({ merchantPhase: "preparing" }),
+        updateMany: async (a: Record<string, unknown>) => {
+          updateArgs = a;
+          return { count: 1 };
+        },
+      },
+    });
+    await svc.confirmPayment("p1", "o1", { reference: "REF123", amount: 12.5 });
+    const data = updateArgs!.data as Record<string, unknown>;
+    expect(data.merchantPhase).toBe("preparing");
+    expect(data.prepStartedAt).toBeInstanceOf(Date);
+    expect(data.merchantPaymentReference).toBe("REF123");
+  });
+});
+
+describe("FoodOrderService.rejectOrder — D-11", () => {
+  it("the reason IS the customer copy, pushed via notifyProfiles", async () => {
+    let findUniqueCalls = 0;
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        updateMany: async () => ({ count: 1 }),
+        findUnique: async () => {
+          findUniqueCalls++;
+          // notifyCancelledCustomer's lookup (customerId only) runs before the final
+          // mustFindWithItems re-read (full row + merchantItems) — same distinguishing-by-call-order
+          // shape as merchant.service.spec.ts's becomeMerchantMock.
+          return findUniqueCalls === 1 ? { customerId: "c1" } : { id: "o1", merchantId: "m1", status: "cancelled", merchantItems: [] };
+        },
+      },
+      orderEvent: { create: async () => ({}) },
+    });
+    await svc.rejectOrder("p1", "o1", "out_of_ingredient");
+    expect(notified).toHaveLength(1);
+    expect(notified[0]!.profileIds).toEqual(["c1"]);
+    expect(notified[0]!.body).toMatch(/out of an ingredient/i);
+  });
+
+  it("409s once the order has moved past awaiting_accept (guarded CAS)", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { updateMany: async () => ({ count: 0 }) },
+    });
+    await expect(svc.rejectOrder("p1", "o1", "too_busy")).rejects.toThrow(/no longer be rejected/i);
+  });
+});
+
+describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one hop earlier", () => {
+  const row = (over: Record<string, unknown> = {}) => [
+    { status: "en_route_pickup", rider_id: "r1", pickup_code_hash: tokens.hash("4242"), pickup_code_attempts: 0, ...over },
+  ];
+
+  it("404s a missing order", async () => {
+    const { svc } = build({ $queryRaw: async () => [] });
+    await expect(svc.confirmPickup("o1", "r1", "4242")).rejects.toThrow(/not found/i);
+  });
+
+  it("403s a caller who isn't the assigned rider", async () => {
+    const { svc } = build({ $queryRaw: async () => row() });
+    await expect(svc.confirmPickup("o1", "other", "4242")).rejects.toThrow(/assigned rider/i);
+  });
+
+  it("409s outside en_route_pickup", async () => {
+    const { svc } = build({ $queryRaw: async () => row({ status: "picked_up" }) });
+    await expect(svc.confirmPickup("o1", "r1", "4242")).rejects.toThrow(/not ready for pickup/i);
+  });
+
+  it("a wrong code increments attempts and is COMMITTED (persists across calls)", async () => {
+    let attempts = 0;
+    const { svc } = build({
+      $queryRaw: async () => row({ pickup_code_attempts: attempts }),
+      order: {
+        update: async ({ data }: { data: { pickupCodeAttempts?: { increment: number } } }) => {
+          if (data.pickupCodeAttempts) attempts += data.pickupCodeAttempts.increment;
+        },
+      },
+    });
+    await expect(svc.confirmPickup("o1", "r1", "0000")).rejects.toThrow(/4 attempt/);
+    expect(attempts).toBe(1);
+  });
+
+  it("locks out after DELIVERY_OTP_MAX_ATTEMPTS (5) wrong tries", async () => {
+    const { svc } = build({ $queryRaw: async () => row({ pickup_code_attempts: 5 }) });
+    await expect(svc.confirmPickup("o1", "r1", "4242")).rejects.toThrow(/too many attempts/i);
+  });
+
+  it("the right code flips to picked_up and stamps collectedAt", async () => {
+    let updateData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      $queryRaw: async () => row(),
+      order: { update: async ({ data }: { data: Record<string, unknown> }) => (updateData = data) },
+      orderEvent: { create: async () => ({}) },
+    });
+    const res = await svc.confirmPickup("o1", "r1", "4242");
+    expect(res).toEqual({ orderId: "o1", status: "picked_up" });
+    expect(updateData).toEqual({ status: "picked_up", collectedAt: expect.any(Date) });
+  });
+});
+
+describe("FoodOrderService reconciler sweeps", () => {
+  it("N-03: auto-cancels an order past its accept deadline and notifies the customer", async () => {
+    let cancelled: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findMany: async () => [{ id: "o1" }],
+        updateMany: async (a: Record<string, unknown>) => {
+          cancelled = a;
+          return { count: 1 };
+        },
+        findUnique: async () => ({ customerId: "c1" }),
+      },
+      orderEvent: { create: async () => ({}) },
+    });
+    const res = await svc.sweepExpiredAcceptWindows();
+    expect(res).toEqual({ cancelled: 1 });
+    const data = cancelled!.data as Record<string, unknown>;
+    expect(data.status).toBe("cancelled");
+    expect(data.rejectionReason).toBe("shop_closed");
+    expect(notified).toHaveLength(1);
+  });
+
+  it("N-18: an unanswered item-approval window is treated as a decline (named mocked default)", async () => {
+    const { svc } = build({
+      order: {
+        findMany: async () => [{ id: "o1" }],
+        updateMany: async () => ({ count: 1 }),
+        findUnique: async () => ({ customerId: "c1" }),
+      },
+      orderEvent: { create: async () => ({}) },
+    });
+    const res = await svc.sweepExpiredItemApprovals();
+    expect(res).toEqual({ cancelled: 1 });
+  });
+
+  it("N-23: end-of-day close only fires once the shop's own closing time has passed", async () => {
+    const closeAtMidnightSoFarInThePast = { mon: { open: "00:00", close: "00:00" }, tue: { open: "00:00", close: "00:00" }, wed: { open: "00:00", close: "00:00" }, thu: { open: "00:00", close: "00:00" }, fri: { open: "00:00", close: "00:00" }, sat: { open: "00:00", close: "00:00" }, sun: { open: "00:00", close: "00:00" } };
+    let cancelledCount = 0;
+    const { svc } = build({
+      order: {
+        findMany: async () => [{ id: "o1", merchantId: "m1" }],
+        updateMany: async () => {
+          cancelledCount++;
+          return { count: 1 };
+        },
+        findUnique: async () => ({ customerId: "c1" }),
+      },
+      merchant: { findMany: async () => [{ id: "m1", hours: closeAtMidnightSoFarInThePast }] },
+      orderEvent: { create: async () => ({}) },
+    });
+    const res = await svc.sweepEndOfDayClose();
+    expect(res).toEqual({ cancelled: 1 });
+    expect(cancelledCount).toBe(1);
+  });
+
+  it("N-23: does nothing while the shop is still within its hours", async () => {
+    const openAllDay = Object.fromEntries(
+      ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => [d, { open: "00:00", close: "23:59" }]),
+    );
+    const { svc } = build({
+      order: { findMany: async () => [{ id: "o1", merchantId: "m1" }] },
+      merchant: { findMany: async () => [{ id: "m1", hours: openAllDay }] },
+    });
+    const res = await svc.sweepEndOfDayClose();
+    expect(res).toEqual({ cancelled: 0 });
+  });
+});

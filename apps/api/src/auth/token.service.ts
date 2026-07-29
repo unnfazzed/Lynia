@@ -70,6 +70,12 @@ export class TokenService {
     return randomInt(0, 1_000_000).toString().padStart(6, "0");
   }
 
+  /** N-16: cryptographically-random 4-digit pickup code — same grammar as the 6-digit delivery code,
+   *  shorter because it's read by the merchant across a counter, not typed by a recipient at the door. */
+  randomPickupCode(): string {
+    return randomInt(0, 10_000).toString().padStart(4, "0");
+  }
+
   safeEqualHex(a: string, b: string): boolean {
     const ab = Buffer.from(a, "hex");
     const bb = Buffer.from(b, "hex");

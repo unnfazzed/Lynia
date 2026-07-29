@@ -454,12 +454,12 @@ describe("OrderLifecycleService.confirmDelivery", () => {
 
 describe("OrderLifecycleService.rate", () => {
   it("409s when the order is not awaiting a rating", async () => {
-    const { svc } = build({ order: { findUnique: async () => ({ status: "assigned", customerId: "c1", riderId: "r1" }) } });
+    const { svc } = build({ order: { findUnique: async () => ({ status: "assigned", orderType: "parcel", customerId: "c1", riderId: "r1" }) } });
     await expect(svc.rate("o1", "c1", 5)).rejects.toThrow(/awaiting a rating/i);
   });
 
   it("403s when the caller is not the customer", async () => {
-    const { svc } = build({ order: { findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }) } });
+    const { svc } = build({ order: { findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "c1", riderId: "r1" }) } });
     await expect(svc.rate("o1", "other", 5)).rejects.toThrow(/not your order/i);
   });
 
@@ -467,7 +467,7 @@ describe("OrderLifecycleService.rate", () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc, emits } = build({
       order: {
-        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "c1", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
       },
       // P1-6: rate() counts prior ratings from this customer→rider pair before touching the aggregate.
@@ -492,7 +492,7 @@ describe("OrderLifecycleService.rate", () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
-        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "c1", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
       },
       // P1-6: rate() counts prior ratings from this customer→rider pair before touching the aggregate.
@@ -513,7 +513,7 @@ describe("OrderLifecycleService.rate", () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
-        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "c1", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
       },
       // This pair already rated once before → the aggregate must not move again.
@@ -535,7 +535,7 @@ describe("OrderLifecycleService.rate", () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
-        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "c1", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
       },
       rating: { create: async () => ({}), count: async () => 1 }, // repeat pair
@@ -556,7 +556,7 @@ describe("OrderLifecycleService.rate", () => {
     let hiData: Record<string, unknown> | undefined;
     const { svc: hiSvc } = build({
       order: {
-        findUnique: async () => ({ status: "delivered", customerId: "new-cust", riderId: "r1" }),
+        findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "new-cust", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
         count: async () => 0, // no PRIOR completed orders for this customer → untrusted
       },
@@ -576,7 +576,7 @@ describe("OrderLifecycleService.rate", () => {
     let loData: Record<string, unknown> | undefined;
     const { svc: loSvc } = build({
       order: {
-        findUnique: async () => ({ status: "delivered", customerId: "new-cust", riderId: "r1" }),
+        findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "new-cust", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
         count: async () => 0,
       },
@@ -601,7 +601,7 @@ describe("OrderLifecycleService.rate", () => {
           findCount += 1;
           // 1st call: the pre-CAS snapshot ($10, stale). 2nd call: the post-CAS re-read reflects a
           // concurrent admin fare-adjust that landed in between, now $7 — chargeCommission must see this.
-          return { status: "delivered", customerId: "c1", riderId: "r1", agreedFare: findCount === 1 ? 10 : 7 };
+          return { status: "delivered", orderType: "parcel", customerId: "c1", riderId: "r1", agreedFare: findCount === 1 ? 10 : 7 };
         },
         updateMany: async () => ({ count: 1 }),
       },
@@ -625,7 +625,7 @@ describe("OrderLifecycleService.rate", () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc, evictedFromSupply } = build({
       order: {
-        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "c1", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
         count: async () => 5, // established/trusted customer → the rating carries reliability weight
       },
@@ -649,7 +649,7 @@ describe("OrderLifecycleService.rate", () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc, evictedFromSupply } = build({
       order: {
-        findUnique: async () => ({ status: "delivered", customerId: "c1", riderId: "r1" }),
+        findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "c1", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
       },
       rating: { create: async () => ({}), count: async () => 0 },
@@ -670,7 +670,7 @@ describe("OrderLifecycleService.rate", () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc, evictedFromSupply } = build({
       order: {
-        findUnique: async () => ({ status: "delivered", customerId: "new-cust", riderId: "r1" }),
+        findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "new-cust", riderId: "r1" }),
         updateMany: async () => ({ count: 1 }),
         count: async () => 0, // untrusted customer → reliability stays {} → no penalty applied at all
       },
@@ -833,7 +833,14 @@ describe("OrderLifecycleService.rotateDeliveryCode", () => {
 });
 
 describe("OrderLifecycleService.cancel", () => {
-  const order = (over: Record<string, unknown> = {}) => ({ status: "assigned", customerId: "c1", riderId: "r1", collectedAt: null, ...over });
+  const order = (over: Record<string, unknown> = {}) => ({
+    status: "assigned",
+    orderType: "parcel",
+    customerId: "c1",
+    riderId: "r1",
+    collectedAt: null,
+    ...over,
+  });
   // A cancellable fake: findUnique serves both the guard read and cloneForRebroadcast's source read;
   // order.create clones the re-broadcast row; rider.* serves the strike path.
   const cancellable = (extra: Record<string, unknown> = {}) => ({
