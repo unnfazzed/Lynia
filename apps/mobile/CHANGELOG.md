@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/unnfazzed/Lynia/compare/v0.12.0...v0.12.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **mobile:** break LiveOrderCard's circular import with ui/index ([a7ef039](https://github.com/unnfazzed/Lynia/commit/a7ef0394f61d65bf75014952c3ab12f640e09036))
+
 ## [0.12.0](https://github.com/unnfazzed/Lynia/compare/v0.11.0...v0.12.0) (2026-07-29)
 
 
