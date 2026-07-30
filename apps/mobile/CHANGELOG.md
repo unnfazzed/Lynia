@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/unnfazzed/Lynia/compare/v0.14.0...v0.15.0) (2026-07-30)
+
+
+### Features
+
+* **mobile:** A3 — Orders + Account tabs absorb history/profile content ([70329f7](https://github.com/unnfazzed/Lynia/commit/70329f7a41e25ae61886f9fe2ee39012e98545f7))
+* **mobile:** B4 — one active-job screen: per-type Stepper + live cash-held split ([00736ef](https://github.com/unnfazzed/Lynia/commit/00736efd10dfccd4a9d79b911d5765b2c8b14bf6))
+
 ## [0.14.0](https://github.com/unnfazzed/Lynia/compare/v0.13.0...v0.14.0) (2026-07-30)
 
 
