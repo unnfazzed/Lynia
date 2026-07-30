@@ -56,7 +56,7 @@ export default function TopUpScreen(): React.ReactElement {
         </Card>
 
         <View style={{ alignSelf: "stretch", marginTop: tokens.space.xl }}>
-          <Button label="Back to wallet" variant="ghost" onPress={() => router.back()} />
+          <Button label="Back to Money" variant="ghost" onPress={() => router.back()} />
         </View>
       </View>
     </Screen>

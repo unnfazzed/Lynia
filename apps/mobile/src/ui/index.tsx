@@ -416,7 +416,11 @@ export function EmptyState(props: {
   title: string;
   message: string;
   children?: React.ReactNode;
+  /** "accent" (default, warm mint — most gates/empties) or "danger" (dangerWash/dangerInk — a real
+   *  money block like the top-up gate, distinct from the merely-inconvenient states below it). */
+  tone?: "accent" | "danger";
 }): React.ReactElement {
+  const danger = props.tone === "danger";
   return (
     <View style={{ alignItems: "center", paddingVertical: tokens.space.xl }}>
       <View
@@ -424,14 +428,15 @@ export function EmptyState(props: {
           width: 88,
           height: 88,
           borderRadius: 44,
-          // Mint-wash tile + text-green icon (DS EmptyState tone) — warm, not greyed-out.
-          backgroundColor: tokens.color.accentWash,
+          // Mint-wash tile + text-green icon (DS EmptyState tone) — warm, not greyed-out. The danger
+          // tone (dangerWash/dangerInk) is reserved for a genuine money block, e.g. the top-up gate.
+          backgroundColor: danger ? tokens.color.dangerWash : tokens.color.accentWash,
           alignItems: "center",
           justifyContent: "center",
           marginBottom: tokens.space.md,
         }}
       >
-        <Icon name={props.icon} size={34} color={tokens.color.accentText} strokeWidth={1.75} />
+        <Icon name={props.icon} size={34} color={danger ? tokens.color.dangerInk : tokens.color.accentText} strokeWidth={1.75} />
       </View>
       <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>{props.title}</Text>
       <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, textAlign: "center", lineHeight: 20, marginTop: 6, maxWidth: 260 }}>

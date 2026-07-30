@@ -262,12 +262,44 @@ where it touches food paths (flags stay OFF in CI/staging until the launch flip)
   `food_offer` push-routing case). Bundle-size measured locally (`expo export --platform
   android` + `scripts/check-bundle-size.mjs`): Hermes 6,291,539 / 6,320,000 bytes, 27.79 KiB
   headroom left — no budget bump needed this PR.
-- [ ] **B3 · Money tab.** Merge `app/wallet/*` + `app/earnings/*` into one Money tab: balance +
+- [x] **B3 · Money tab.** Merge `app/wallet/*` + `app/earnings/*` into one Money tab: balance +
   commission (one `ratePct`), **cash-held split "yours" vs "owed to a kitchen"** (zero-state
   until food ships), one earnings ledger filterable Parcel / Food, top-up gate (`gate_topup`)
   replacing `gate_commission` copy. Retire the Earnings screen and the standalone wallet entry
   points (profile ghost button, board low-balance path re-targets Money). `--danger-ink` lands in
-  `packages/shared/src/design-tokens.ts` + admin globals with its first consumer.
+  `packages/shared/src/design-tokens.ts` + admin globals with its first consumer. **Done
+  2026-07-30:** `app/rider/(tabs)/money.tsx` (B1's honest bridge) now carries the full merge —
+  balance hero + pending-topup reconciliation + top-up CTA (ported verbatim from `app/wallet/
+  index.tsx`), a new `CashHeldStrip` (`src/ui/rider/CashHeldStrip.tsx`, RIDER-ONE-APP-PLAN.md
+  decision 6 — written once so B4's active-job screen can reuse it verbatim), and one ledger with
+  All/Parcels/Food filter chips. `app/wallet/index.tsx` and `app/earnings/index.tsx` deleted
+  outright (gallery-map.js already documented both as retired); `src/logic/earnings.ts`
+  (`earningsCoverageNote`, the Earnings screen's only consumer) deleted with its test. The old
+  "record of work done" lifetime-earned total is retired with the screen, not ported — the ledger
+  is the record now (decision 1). `useEarningsSummary`/`EARNINGS_SUMMARY_KEY`/`getEarningsSummary`
+  are left in place (unused after this PR) since they still back the WD-022 invalidation funnel
+  shared with `job.tsx`/the rider job socket — a smaller, separable cleanup, not bundled in here.
+  **Ledger filter gap, surfaced not faked:** `WalletEntry` carries no `orderType` field, and
+  `chargeCommission` only ever writes a `commission` row for `orderType === "parcel"`
+  (order-lifecycle.service.ts's own A-5 guard) — so every commission row today is provably
+  parcel-sourced, making "Parcels" filter honestly, but "Food" can only ever render its empty
+  state until Lane C adds the field and starts writing food-commission rows (`src/logic/
+  wallet-ledger.ts`'s doc comment; same dark-not-blocked shape as B2's `JobCard` gap in §10).
+  Board low-balance gate (`app/rider/(tabs)/index.tsx`): CTA re-targets `/rider/money` (was a
+  direct deep-link to `/wallet/top-up`, bypassing the new Money home); `EmptyState` gained an
+  optional `tone?: "accent" | "danger"` prop (default unchanged everywhere else) so this one real
+  money block reads as dangerWash/dangerInk instead of the same warm mint every other gate reason
+  uses — the first RN consumer of `dangerInk` (already in `design-tokens.ts`/`colors.css` since
+  E1; only `apps/admin/app/globals.css` was missing it of the three hand-synced faces, added here
+  to close that drift, per DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md §A7.2 — `design-tokens.drift.
+  spec.ts` doesn't enumerate `danger-ink` so this doesn't change its assertions). Profile's
+  "Earnings" ghost button removed (Money is a rider tab now, reachable directly, mirroring the tab
+  bar not duplicating Account). Bundle-size measured locally (`expo export --platform android` +
+  `scripts/check-bundle-size.mjs`): Hermes 6,287,265 / 6,320,000 bytes — *shrank* slightly versus
+  B2 (two whole screens retired outweighs the new Money tab + `CashHeldStrip`), no budget bump
+  needed. `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages (mobile: 76
+  suites / 576 tests, incl. new `wallet-ledger.test.ts` and `CashHeldStrip.test.tsx`; api 94
+  suites / 1426 tests unaffected). B4 (active-job screen) is next.
 - [ ] **B4 · One active-job screen.** Shared Stepper with per-type step lists (parcel steps live;
   food steps land with Lane D5); exception screens (wrong code, unreachable, dropped) written
   once and reused; 6-digit delivery code closes both. Retire superseded screens named in
