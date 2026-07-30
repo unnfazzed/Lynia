@@ -41,6 +41,23 @@ const STATUS_NOTICES: Record<string, Notice> = {
 };
 
 /**
+ * C5: a food order's own curated push contract (packages/design/RESTAURANTS-DECISIONS.md §3
+ * "Customer notifications" — "No push for step changes in between, the tracker is enough"). Only
+ * `en_route_dropoff` ("rider is at your door") is generic-status-driven; the other two named pushes
+ * (accepted-pay-now, rider-secured) are sent directly by FoodOrderService/FoodDispatchService at
+ * their own call sites, since they carry richer action-button/persistence data than a plain status
+ * notice. Deliberately NOT merged into STATUS_NOTICES — that table is parcel-voiced copy and a food
+ * order rides the same `en_route_dropoff` edge with different words for a different audience.
+ */
+const MERCHANT_STATUS_NOTICES: Partial<Record<string, Notice>> = {
+  en_route_dropoff: {
+    to: ["customer"],
+    title: "Your rider is at the door",
+    body: "Head down to meet them and confirm your order.",
+  },
+};
+
+/**
  * Sends push notifications and manages device tokens. Every public `notify*` method is best-effort and
  * swallows all errors (the FCM adapter already never throws) so a caller can fire it with `void` after a
  * committed transition — a push failure can never roll back or fail the offer-loop / lifecycle write.
@@ -90,18 +107,20 @@ export class NotificationsService {
     excludeProfileId?: string,
   ): Promise<void> {
     try {
-      const notice = STATUS_NOTICES[status];
-      if (!notice) return;
+      // Cheap pre-check so a status in neither table (e.g. `open_for_offers`) skips the order lookup
+      // entirely, same as before this method knew about two tables instead of one.
+      if (!(status in STATUS_NOTICES) && !(status in MERCHANT_STATUS_NOTICES)) return;
       const order = await this.prisma.order.findUnique({
         where: { id: orderId },
         select: { customerId: true, riderId: true, orderType: true },
       });
       if (!order) return;
       // A-6 (status-keyed-query-audit): STATUS_NOTICES is parcel-voiced copy ("Your parcel was
-      // delivered"). A food order's status pushes are FoodOrderService's own job (D-11 rejection copy,
-      // etc. — full type-aware notice tables land with C5) — silently no-op here rather than send a
-      // customer misleading Express copy about their food order.
-      if (order.orderType !== "parcel") return;
+      // delivered"); a food order gets its own smaller, food-voiced table (MERCHANT_STATUS_NOTICES,
+      // C5) rather than the full parcel set — silently no-op on any status not in that curated list
+      // rather than send a customer misleading Express copy about their food order.
+      const notice = order.orderType === "merchant" ? MERCHANT_STATUS_NOTICES[status] : order.orderType === "parcel" ? STATUS_NOTICES[status] : undefined;
+      if (!notice) return;
       // Fix 3: stamp each recipient's PER-ORDER role (`to`) onto the push so the client routes by the
       // order relationship, not the account's global session role — a rider-role account acting as the
       // customer on THIS order must open /order/:id, not /rider/job. Sent per-audience so each carries

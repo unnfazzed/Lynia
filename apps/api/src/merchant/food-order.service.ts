@@ -108,6 +108,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       this.logger.error(`sweepEndOfDayClose failed: ${(err as Error).message}`);
     }
+    try {
+      await this.sweepPaymentReminders();
+    } catch (err) {
+      this.logger.error(`sweepPaymentReminders failed: ${(err as Error).message}`);
+    }
   }
 
   // ── Customer ─────────────────────────────────────────────────────────────────────────────────────
@@ -374,7 +379,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
-  /** R-16: unlocked by a logged call, or the named override for regulars/in-person confirms. */
+  /** R-16: unlocked by a logged call, or the named override for regulars/in-person confirms. C5:
+   *  "merchant accepted — pay now" (RESTAURANTS-DECISIONS.md §3) is the customer's first of three
+   *  curated food pushes — high-signal, meant to persist on the lock screen until paid or expired;
+   *  the sticky/action-button rendering is a mobile client concern (Lane D), this call site's job is
+   *  just the data contract (`kind`, `orderId`) that lets that client work hook in. */
   async requestPayment(profileId: string, orderId: string, overrideCallLog: boolean): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsMerchant(profileId, orderId);
     if (order.merchantPhase !== "awaiting_payment") throw new ConflictException("This order isn't awaiting payment");
@@ -382,6 +391,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException("Log the call before requesting payment (or use the override)");
     }
     await this.prisma.order.update({ where: { id: orderId }, data: { paymentRequestedAt: new Date() } });
+    await this.notifyPaymentRequested(orderId, order.customerId, "Confirm your payment", "The kitchen accepted your order — pay now so they can start cooking.");
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -587,6 +597,48 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     return { cancelled };
   }
 
+  /** N-22: one soft reminder push ~15 min after an unanswered payment request — no threat language,
+   *  nothing at risk (R-17 retired the payment clock; only end-of-day close, N-23, is automatic).
+   *  `paymentReminderSentAt` is the idempotency guard: a claimed row can never be reminded twice, and
+   *  a row already reminded is excluded from the next sweep's own query, so a crash between the
+   *  claim and the push (best-effort, never throws) at worst drops one reminder rather than repeating
+   *  it — the softer failure mode for a "soft, once" nudge. */
+  async sweepPaymentReminders(): Promise<{ reminded: number }> {
+    let reminded = 0;
+    const cutoff = new Date(Date.now() - RESTAURANTS_TIMING.paymentReminderWindowMs);
+    const due = await this.prisma.order.findMany({
+      where: {
+        orderType: "merchant",
+        status: "requested",
+        merchantPhase: "awaiting_payment",
+        paymentRequestedAt: { lt: cutoff },
+        paymentReminderSentAt: null,
+      },
+      select: { id: true, customerId: true },
+      take: 200,
+    });
+    for (const o of due) {
+      try {
+        const claimed = await this.prisma.order.updateMany({
+          where: { id: o.id, paymentReminderSentAt: null },
+          data: { paymentReminderSentAt: new Date() },
+        });
+        if (claimed.count > 0) {
+          await this.notifyPaymentRequested(
+            o.id,
+            o.customerId,
+            "Still waiting on your payment",
+            "Your order is on hold until payment lands — pay now, or cancel any time, free.",
+          );
+          reminded++;
+        }
+      } catch (err) {
+        this.logger.error(`sweepPaymentReminders failed for order ${o.id}: ${(err as Error).message}`);
+      }
+    }
+    return { reminded };
+  }
+
   // ── Shared lookups + mapping ─────────────────────────────────────────────────────────────────────
 
   private async ownMerchantId(profileId: string): Promise<string> {
@@ -627,6 +679,17 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       title: "Your order was cancelled",
       body: rejectionCopy(reason),
       data: { orderId, status: "cancelled" },
+    });
+  }
+
+  /** C5 "merchant accepted — pay now": shared by the initial request (requestPayment) and the N-22
+   *  reminder sweep — same `kind` (the client renders both as the same persistent pay-now push),
+   *  different copy. */
+  private async notifyPaymentRequested(orderId: string, customerId: string, title: string, body: string): Promise<void> {
+    await this.notifications.notifyProfiles([customerId], {
+      title,
+      body,
+      data: { orderId, status: "awaiting_payment", to: "customer", kind: "food_pay_now" },
     });
   }
 

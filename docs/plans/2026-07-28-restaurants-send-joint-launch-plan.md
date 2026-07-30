@@ -536,9 +536,33 @@ dead-when-off rather than dead-always.
   `FoodOfferEvent` (point + landmark only, never `contactPhone` — mirrors `BoardNewOrderEvent`),
   wired at `tick()`'s offer-created commit and `releaseCurrentOffer`'s expire/decline close-out.
   Golden matrix extended (`merchant-routes-dead.e2e.spec.ts`): the new route is dead-when-off and,
-  flagged on, needs only `JwtAuthGuard` (no `MerchantGuard` — it's the rider's own action). Kitchen
-  tablet realtime, the N-22 reminder push, the weekly statement, and the per-vertical utilization
-  metric remain open for a future C5 firing.
+  flagged on, needs only `JwtAuthGuard` (no `MerchantGuard` — it's the rider's own action). **Done
+  2026-07-30 (customer push contract slice):** the three curated food pushes named in
+  RESTAURANTS-DECISIONS.md §3 ("No push for step changes in between, the tracker is enough") —
+  "merchant accepted — pay now", "rider is at your door", and the N-22 soft reminder. Rider-secured
+  was already covered (`FoodDispatchService.acceptDispatch`, C3). `FoodOrderService.requestPayment`
+  now pushes the customer directly (`kind: "food_pay_now"`, own copy/action-button data — richer
+  than a generic status notice, so it's sent at the call site rather than through
+  `notifyOrderStatus`). New `FoodOrderService.sweepPaymentReminders` (wired into the existing 20s
+  `runSweeps`) fires N-22's once-only reminder 15 min after an unanswered request
+  (`RESTAURANTS_TIMING.paymentReminderWindowMs`), guarded by a new nullable `Order.
+  paymentReminderSentAt` idempotency column (migration 0045, additive-only) so a crash between the
+  claim and the best-effort push at worst drops one reminder rather than repeating it. "Rider is at
+  your door" reuses the *existing* generic hook instead of a new one: `order-lifecycle.service.ts`'s
+  shared `en_route_dropoff` edge already calls `notifications.notifyOrderStatus` for every order
+  type (parcel and merchant alike, since a food order rides this edge verbatim from `assigned` on)
+  — that method previously no-op'd for any non-parcel order type; it now branches on
+  `order.orderType` into a new, deliberately small `MERCHANT_STATUS_NOTICES` table (one entry,
+  `en_route_dropoff`) instead of the full parcel `STATUS_NOTICES`, so every OTHER shared edge
+  (`confirmed`, `en_route_pickup`, `picked_up`, `delivered`) stays silent for a food order exactly as
+  the design calls for. Sticky/lock-screen rendering and the Pay now/View order action buttons are a
+  mobile client concern (Lane D, not flagged as a new open question — it's a rendering detail of an
+  already-named push, not a product decision) — this slice's job was the data contract (`kind`,
+  `orderId`, persistent-until-paid semantics via no TTL) a client can hook into without another
+  backend round-trip. Kitchen tablet realtime (its own new merchant-presence/dark-clock-pause/
+  reconnect-backfill surface — no existing prior art in this codebase, confirmed by inspection) and
+  the weekly statement + per-vertical utilization metric are unstarted and remain open for a future
+  C5 firing.
 
 ### Lane D — food UI (`apps/mobile`, customer + rider food flows)
 

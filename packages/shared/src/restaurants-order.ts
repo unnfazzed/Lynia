@@ -40,6 +40,9 @@ export const RESTAURANTS_TIMING = {
    *  the Express rating-autoclose sweep (order-lifecycle.constants RECONCILE_INTERVAL_MS = 15min) —
    *  N-03's 3:00 window needs sub-minute precision to read as "auto-cancel", not "eventually". */
   sweepIntervalMs: 20 * 1000,
+  /** N-22: one soft reminder push if a payment request goes unanswered this long — not a clock (R-17
+   *  retired those), just a nudge; the order itself never expires from this. */
+  paymentReminderWindowMs: 15 * 60 * 1000,
 } as const;
 
 /** N-04: five prep-time chips, minutes. Free text is deliberately not offered (design rationale:

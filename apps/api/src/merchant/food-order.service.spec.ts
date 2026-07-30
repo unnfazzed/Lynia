@@ -277,6 +277,75 @@ describe("FoodOrderService.confirmPayment — R-11 own-statement match", () => {
   });
 });
 
+describe("FoodOrderService.requestPayment — C5 customer push contract", () => {
+  it("pushes the persistent pay-now push (kind: food_pay_now) to the customer", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findFirst: async () => ({
+          id: "o1",
+          merchantId: "m1",
+          customerId: "c1",
+          merchantPhase: "awaiting_payment",
+          paymentCallLoggedAt: new Date(),
+          merchantItems: [],
+        }),
+        update: async () => ({}),
+        findUnique: async () => ({ id: "o1", merchantId: "m1", status: "requested", merchantItems: [] }),
+      },
+    });
+    await svc.requestPayment("p1", "o1", false);
+    expect(notified).toHaveLength(1);
+    expect(notified[0]!.profileIds).toEqual(["c1"]);
+    expect(notified[0]!.title).toMatch(/confirm your payment/i);
+  });
+
+  it("409s without a logged call and no override (R-16)", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findFirst: async () => ({ id: "o1", merchantId: "m1", merchantPhase: "awaiting_payment", paymentCallLoggedAt: null, merchantItems: [] }),
+      },
+    });
+    await expect(svc.requestPayment("p1", "o1", false)).rejects.toThrow(/log the call/i);
+    expect(notified).toHaveLength(0);
+  });
+});
+
+describe("FoodOrderService.sweepPaymentReminders — N-22", () => {
+  it("reminds once, ~15 min after an unanswered payment request, and marks it sent (idempotency guard)", async () => {
+    let updateArgs: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findMany: async () => [{ id: "o1", customerId: "c1" }],
+        updateMany: async (a: Record<string, unknown>) => {
+          updateArgs = a;
+          return { count: 1 };
+        },
+      },
+    });
+    const res = await svc.sweepPaymentReminders();
+    expect(res).toEqual({ reminded: 1 });
+    expect((updateArgs!.where as Record<string, unknown>).paymentReminderSentAt).toBeNull();
+    expect((updateArgs!.data as Record<string, unknown>).paymentReminderSentAt).toBeInstanceOf(Date);
+    expect(notified).toHaveLength(1);
+    expect(notified[0]!.profileIds).toEqual(["c1"]);
+    expect(notified[0]!.title).toMatch(/still waiting/i);
+  });
+
+  it("does nothing when the CAS loses the race (already reminded by a concurrent sweep)", async () => {
+    const { svc } = build({
+      order: {
+        findMany: async () => [{ id: "o1", customerId: "c1" }],
+        updateMany: async () => ({ count: 0 }),
+      },
+    });
+    const res = await svc.sweepPaymentReminders();
+    expect(res).toEqual({ reminded: 0 });
+    expect(notified).toHaveLength(0);
+  });
+});
+
 describe("FoodOrderService.rejectOrder — D-11", () => {
   it("the reason IS the customer copy, pushed via notifyProfiles", async () => {
     let findUniqueCalls = 0;
