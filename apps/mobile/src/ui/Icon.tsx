@@ -18,7 +18,9 @@ import ChevronDown from "lucide-react-native/dist/cjs/icons/chevron-down";
 import ChevronRight from "lucide-react-native/dist/cjs/icons/chevron-right";
 import ChevronUp from "lucide-react-native/dist/cjs/icons/chevron-up";
 import CircleAlert from "lucide-react-native/dist/cjs/icons/circle-alert";
+import CircleCheck from "lucide-react-native/dist/cjs/icons/circle-check";
 import Clock from "lucide-react-native/dist/cjs/icons/clock";
+import Copy from "lucide-react-native/dist/cjs/icons/copy";
 import Flag from "lucide-react-native/dist/cjs/icons/flag";
 // lucide-react-native 1.27.0 renamed the `history` glyph to `rotate-ccw-clock` and dropped the old
 // path, which broke every suite importing this barrel (deps bump 02ef04c). Same glyph, new filename;
@@ -33,6 +35,7 @@ import Package from "lucide-react-native/dist/cjs/icons/package";
 import Phone from "lucide-react-native/dist/cjs/icons/phone";
 import Plus from "lucide-react-native/dist/cjs/icons/plus";
 import Receipt from "lucide-react-native/dist/cjs/icons/receipt";
+import RefreshCw from "lucide-react-native/dist/cjs/icons/refresh-cw";
 import Search from "lucide-react-native/dist/cjs/icons/search";
 import Shield from "lucide-react-native/dist/cjs/icons/shield";
 import ShieldAlert from "lucide-react-native/dist/cjs/icons/shield-alert";
@@ -42,6 +45,7 @@ import Trash from "lucide-react-native/dist/cjs/icons/trash-2";
 import TriangleAlert from "lucide-react-native/dist/cjs/icons/triangle-alert";
 import Utensils from "lucide-react-native/dist/cjs/icons/utensils";
 import User from "lucide-react-native/dist/cjs/icons/user";
+import Wallet from "lucide-react-native/dist/cjs/icons/wallet";
 import WifiOff from "lucide-react-native/dist/cjs/icons/wifi-off";
 import X from "lucide-react-native/dist/cjs/icons/x";
 import type { LucideIcon } from "lucide-react-native";
@@ -88,6 +92,10 @@ const ICONS = {
   receipt: Receipt, // root tab bar — Orders
   utensils: Utensils, // Food service tile
   plus: Plus, // Pharmacy "Soon" service tile
+  wallet: Wallet, // WALLET (mobile money) checkout row / pay-now screens
+  "circle-check": CircleCheck, // paid/confirmed states
+  copy: Copy, // manual-rail copyable rows (D-24)
+  "refresh-cw": RefreshCw, // offline retry countdown
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

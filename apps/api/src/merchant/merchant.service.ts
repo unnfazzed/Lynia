@@ -365,8 +365,9 @@ export class MerchantService {
   }
 
   private toListItem(
-    merchant: Pick<MerchantWithOwner, "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours">,
+    merchant: Pick<MerchantWithOwner, "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours" | "location">,
   ): RestaurantListItem {
+    const location = (merchant.location as Waypoint | null) ?? null;
     return {
       id: merchant.id,
       name: merchant.name,
@@ -375,6 +376,8 @@ export class MerchantService {
       cuisineTags: merchant.cuisineTags,
       priceLevel: merchant.priceLevel,
       hours: (merchant.hours as MerchantHours | null) ?? null,
+      // Geo-point only (D-17) — see the field's doc comment in contracts.ts.
+      location: location ? location.point : null,
     };
   }
 

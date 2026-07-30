@@ -1,0 +1,39 @@
+import { tokens } from "@lynia/shared";
+import React from "react";
+import { Text, View } from "react-native";
+import { formatMoney } from "../../logic/money";
+import { Card } from "../index";
+
+interface PriceMathRow {
+  label: string;
+  value: number;
+}
+
+/** D2 checkout/order — the shared goods/delivery/total breakdown card (r-parts.jsx's `PriceMath`).
+ *  `total` is always goods + delivery (D-08: never merged into a single opaque figure upstream —
+ *  this is the one place they combine, for the customer's own "what am I paying" view). */
+export function PriceMath({
+  rows,
+  total,
+  footnote,
+}: {
+  rows: PriceMathRow[];
+  total: number;
+  footnote?: string;
+}): React.ReactElement {
+  return (
+    <Card>
+      {rows.map((r) => (
+        <View key={r.label} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
+          <Text style={{ fontSize: 13, fontWeight: "500", color: tokens.color.muted }}>{r.label}</Text>
+          <Text style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.ink }}>{formatMoney(r.value)}</Text>
+        </View>
+      ))}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
+        <Text style={{ fontSize: 14.5, fontWeight: "700", color: tokens.color.ink }}>Total</Text>
+        <Text style={{ fontSize: 15.5, fontWeight: "700", color: tokens.color.ink }}>{formatMoney(total)}</Text>
+      </View>
+      {footnote ? <Text style={{ fontSize: 11.5, color: tokens.color.muted, marginTop: 6, lineHeight: 16 }}>{footnote}</Text> : null}
+    </Card>
+  );
+}

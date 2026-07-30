@@ -486,11 +486,54 @@ and the matching Lane C contracts (C1 for D1, C2 for D2–D3, C4 for D4–D5) me
   and the BH-17 device-state wipe-key characterization; shared: 9 suites / 152 tests incl. new
   `restaurant-hours.test.ts`; api: 91 suites / 1333 tests incl. 2 new `merchant.service.spec.ts`
   cases for the `hours` passthrough). D2 (checkout + kitchen-confirms) is next.
-- [ ] **D2 · Checkout + kitchen-confirms.** CASH / WALLET checkout (ETA promise anchored on
+- [x] **D2 · Checkout + kitchen-confirms.** CASH / WALLET checkout (ETA promise anchored on
   payment confirm D-21/R-17), placing → waiting-for-accept → "they call to confirm" band →
   pay-the-restaurant (manual rail D-24: copyable number/amount/reference, "I paid another way")
   → paid-waiting (D-25) → confirmed; still-unpaid reminder + free cancel; offline checkout
-  state.
+  state. **Done 2026-07-30:** new `app/food/checkout.tsx` (CASH/WALLET selectable rows, a
+  `MapPicker`+`AddressSearch` dropoff capture reusing Send's exact address-entry primitives, a
+  client-side delivery-fee ESTIMATE mirroring the server's own `haversineKm`→
+  `deliveryFeeForDistance` math, five states incl. R4·b1 offline/R4·b2 placing) and
+  `app/food/order/[orderId].tsx` (branches on `merchantPhase`, not `status` — a food order sits at
+  `status:"requested"` through the whole pre-dispatch window per C2 — rendering R5·1 waiting-for-
+  accept + a `CountdownRing` off the server's own `acceptDeadlineAt`, R5·b3 the D-23 item-approval
+  interrupt off `itemApprovalDeadlineAt`, R5·1b "they call to confirm", R5·3 the D-24 manual pay
+  rail (`ManualPayRail`, copy buttons via a new `expo-clipboard` dependency), R5·6 paid-waiting,
+  R5·b1 still-unpaid free-cancel (a client-derived N-22 15-min nudge, since R-17 left no server
+  clock to key off), and the cancelled terminal via `rejectionCopy()`). Cart's "Continue" CTA now
+  pushes to `/food/checkout` instead of D1's placeholder toast. C2 ships no WebSocket for any
+  pre-dispatch phase (confirmed by grep — `food-dispatch.service.ts` only emits from
+  `ready_for_pickup` on) and no server push for "merchant accepted" exists yet either — both
+  screens are pure-poll (`useFoodOrder`, interval tightened around the two real deadlines,
+  relaxed once R-17's clock-free `awaiting_payment` phase is reached), and both gaps are flagged
+  below rather than faked. Two small additive Lane C touches, same "the code wins" precedent D1
+  used for `hours`: `RestaurantListItem` gained a `location: LatLng.nullable()` field (the
+  geo-point ONLY — never the full `Merchant.location` Waypoint, since its `contactPhone`/`landmark`
+  are D-17-masked on a third party's view) so checkout can price its estimate client-side; and
+  `MerchantOrderResponse` gained `merchantPaymentPhone` (the shop's own UNMASKED payment number —
+  D-17's masking is for a rider's view of the merchant, not the customer's own active order, which
+  D-24 requires showing the real number to pay). Restart survival (§3): a new PII-free
+  `food-order-store.ts` snapshot (order id + status only) warm-paints the order screen and is wired
+  into `clearDeviceState()`'s sign-out wipe list; full "land on the live order at boot" is D4's own
+  restart-tolerance bullet, not duplicated here. Four new icons (`wallet`/`circle-check`/`copy`/
+  `refresh-cw`) added to `Icon.tsx` (self-hosted subset) and `copy` backfilled into
+  `packages/design/assets/lynia-icons.js` (the other three were already there). `StatusPill` gained
+  a `highlight` tone (gold, `highlightWash`/`highlightInk`) for R5·6's "PAID but not yet confirmed"
+  pill — deliberately not the same green as a genuine success. Bundle-size raised (`size-budget.json`:
+  Hermes 6.32 MB → 6.39 MB, export 12.58 MB → 12.62 MB, ~0.2–0.5% headroom left) to cover the new
+  screens/components plus `expo-clipboard`; measured locally via `expo export --platform android` +
+  `scripts/check-bundle-size.mjs`. `pnpm typecheck && pnpm lint && pnpm test` green across the whole
+  monorepo (mobile: 78 suites / 597 tests incl. new suites for `food-checkout.ts`'s pure delivery-fee-
+  estimate/free-cancel-eligibility/still-unpaid-reminder math, `CountdownRing.tsx`'s
+  `formatCountdown`, and the order screen's full phase-branching render suite; shared: 9 suites / 157 tests;
+  api: 94 suites / 1428 tests incl. 2 new `merchant.service.spec.ts` cases for the `location`
+  geo-point-only passthrough). **Open items — surfaced, not silently decided:** (1) no server push
+  exists for "merchant accepted — pay now" (§3's own documented push) nor any WS event for the
+  pre-dispatch phases — both screens poll only; (2) checkout's delivery fee is a client-side
+  ESTIMATE, confirmed only once `placeOrder` returns — an honest gap given `RestaurantListItem`
+  carried no merchant location before this PR; (3) D2 does not attempt D-23's "who confirms an
+  unanswered item-approval window" default (N-18) — that's C2's own already-mocked default, carried
+  forward unchanged. D3 (track) is next.
 - [ ] **D3 · Track.** Prep countdown ring over the re-labelled 7-step Express tracker (D-03),
   rider-secured moment (D-04), plate number promoted (D-27), live-paused, NO_RIDER apology
   (D-13), cancel sheet, refund-pending/refunded, safety surface reused verbatim (D-28).
