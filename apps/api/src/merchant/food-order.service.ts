@@ -49,6 +49,9 @@ function isDishOutOfStock(dish: { outOfStockUntil: Date | null }): boolean {
   return !!dish.outOfStockUntil && dish.outOfStockUntil > new Date();
 }
 
+/** E2 listQueue visibility — see the doc comment on the call site. */
+const QUEUE_VISIBLE_STATUSES = ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
+
 /** Sum of `priceUsd * quantity` across lines, exact (integer cents), never float accumulation error. */
 function lineTotal(priceUsd: Prisma.Decimal | number, quantity: number): number {
   return fromCents(toCents(Number(priceUsd)) * quantity);
@@ -265,7 +268,13 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   async listQueue(profileId: string): Promise<MerchantOrderResponse[]> {
     const merchantId = await this.ownMerchantId(profileId);
     const orders = await this.prisma.order.findMany({
-      where: { merchantId, orderType: "merchant", status: "requested" },
+      // E2 (queue board): an order must stay visible through the WHOLE pre-handoff lifecycle, not
+      // just while `status` is literally still "requested" — a flat "requested"-only filter drops an
+      // order the instant a candidate rider starts deciding (`open_for_offers`) or one accepts
+      // (`assigned`/`confirmed`/`en_route_pickup`), which is exactly the D-34 "keep cooking / hold /
+      // cancel" window the Ready column has to render. `picked_up` and every terminal status are
+      // deliberately excluded — that transition IS "handed over" for the board.
+      where: { merchantId, orderType: "merchant", status: { in: [...QUEUE_VISIBLE_STATUSES] } },
       orderBy: { createdAt: "asc" },
       include: ORDER_WITH_ITEMS_INCLUDE,
     });
@@ -428,6 +437,25 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
     return this.toResponse(await this.mustFindWithItems(orderId));
+  }
+
+  /** N-16 reveal: `markReady` hashes the code it mints and discards the plaintext, so this is the
+   *  ONLY way the tablet can learn (or re-learn, after a reload) the current code to read out to the
+   *  rider at the counter. Mints a fresh code every call — mirrors `rotateDeliveryCode`'s own
+   *  reveal-by-rotation shape — which is safe here because the code is only ever communicated live,
+   *  never queued up ahead of time, so nothing depends on a stale value surviving a re-reveal.
+   *  `merchantPhase` stays `"ready_for_pickup"` for the whole C3 dispatch lifecycle (search → hold →
+   *  rider secured → en route), so this deliberately does not also gate on `status`. */
+  async revealPickupCode(profileId: string, orderId: string): Promise<{ pickupCode: string }> {
+    const order = await this.findOwnAsMerchant(profileId, orderId);
+    if (order.merchantPhase !== "ready_for_pickup") throw new ConflictException("This order isn't ready for pickup yet");
+    const pickupCode = this.tokens.randomPickupCode();
+    const claimed = await this.prisma.order.updateMany({
+      where: { id: orderId, merchantPhase: "ready_for_pickup" },
+      data: { pickupCodeHash: this.tokens.hash(pickupCode), pickupCodeAttempts: 0 },
+    });
+    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    return { pickupCode };
   }
 
   // ── Rider (N-16 pickup — mechanic only; C3's dispatch owns getting a rider assigned) ───────────────

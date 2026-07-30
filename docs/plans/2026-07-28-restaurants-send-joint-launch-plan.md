@@ -621,12 +621,56 @@ Phase-0 gate: requires the matching Lane C contracts (C1 for E1/E4, C2/C5 for E2
   `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages (29 new merchant unit
   tests: access policy, session parsing, alarm timing/state machine, reachability backoff/state
   machine). E2 (queue + cook flow) is next.
-- [ ] **E2 · Queue + cook flow.** Queue empty/loading → NEW ORDER takeover (stops only on
+- [x] **E2 · Queue + cook flow.** Queue empty/loading → NEW ORDER takeover (stops only on
   Accept / Can't-take-it) → accept + prep chips → item-level "don't have it" (D-23) → reject
   reasons (D-11) → amber "do not cook yet" full-viewport (D-04) → rider-secured green cook
   signal → mark ready → pickup confirm (4-digit code) → handed over; two-orders-at-once; board
   at 3 orders (D-26); NO_RIDER hold with keep-cooking/stop/cancel (D-34); rider no-show;
-  awaiting-payment lane that never blocks the board (M2·7).
+  awaiting-payment lane that never blocks the board (M2·7). **Done 2026-07-30:** gated on C2
+  (done); built against the polling fallback per this box's own gate note since C5 realtime
+  hasn't merged yet (`useQueuePoll` — 5s interval + a `visibilitychange` refetch, the web
+  equivalent of apps/mobile's `useForegroundRefetch`, every round trip also feeding the shared
+  `ReachabilityStore` so a live queue poll counts as proof of life like the dedicated `/healthz`
+  probe). **Two backend gaps found and fixed in this PR, both required for the tablet to work at
+  all, not deferred:** (1) `listQueue` filtered `status: "requested"` only, so an order vanished
+  from the merchant's queue the instant a candidate rider started deciding (`open_for_offers`) or
+  one accepted (`assigned`/`confirmed`/`en_route_pickup`) — exactly the D-34 hold window the Ready
+  column has to render; broadened to the full pre-handoff status set (`QUEUE_VISIBLE_STATUSES`),
+  `picked_up` still excluded (that transition IS "handed over"). (2) `markReady` hashes the 4-digit
+  pickup code and discards the plaintext — there was no way for the tablet to ever learn it to read
+  out to the rider; added `POST /merchant/orders/:orderId/pickup-code/reveal` (throttled, mirrors
+  `rotateDeliveryCode`'s reveal-by-rotation shape, gated on `merchantPhase==="ready_for_pickup"`,
+  safe to call repeatedly since the code is only ever communicated live). New
+  `apps/merchant/app/components/queue/` (`QueueBoard`, `NewOrderTakeover`, `RejectSheet`,
+  `RiderSecuredTakeover`, `NoRiderHoldTakeover`, `OrderCard`) + pure/unit-tested logic in
+  `app/lib/` (`order-groups.ts` bucketing, `countdown.ts`, `accept-preview.ts` for D-23's live
+  recap). Takeover priority stack (only one full-viewport screen at a time): unanswered NEW ORDER
+  (D-05) → unacknowledged rider-secured (D-04, celebratory here since prep already finishes before
+  dispatch in this locked architecture — reconciling this box's own "do not cook yet" framing with
+  C3's D-04/D-33 note: the single amber full-viewport takeover this PR ships is the D-34 NO_RIDER
+  hold, not a separate pre-cook gate, since there's nothing left to gate) → an open/auto-surfaced
+  D-34 hold decision → ordinary board/list. D-26 board-vs-list toggle is `orders.length >= 3`
+  (server enforces no such cap — it's purely a client rendering rule, confirmed by reading
+  `listQueue`). Rider identity has no name field in `MerchantOrderResponse` — the rider-secured
+  takeover and Ready cards say "a rider" rather than fabricate one; flagged, not guessed.
+  Awaiting-payment (M2·7) renders as a real, non-blocking board card with no action buttons yet —
+  log-call/request-payment/confirm-against-statement (D-06 grammar) is explicitly E3's build, this
+  box only had to prove the lane exists and never blocks Cooking/Ready; said so in the card copy
+  rather than half-building E3's flow. Rider no-show has no server-side signal reachable from the
+  merchant side yet (C4's no-show/refusal endpoints are the rider's own actions at the doorstep,
+  well past pickup) — nothing for the queue board to render; not a gap this box could close.
+  Alarm wiring: `KitchenConnectionProvider`'s `alarm` gained `ring()`/`silence()` (unbounded, E1
+  only exposed the bounded `testRing()`); the queue page rings for as long as ANY `awaiting_accept`
+  order exists and silences the instant none do, with takeover accept/reject handlers calling
+  `refetch()` immediately on success so it doesn't wait a full poll interval to go quiet.
+  `ReconnectBanner` now takes an optional `backfillCount` (computed by the queue page: snapshots
+  known order ids the moment reachability drops, diffs against the first post-reconnect fetch) and
+  names the count, closing E1's own "E2 can extend this" note. `pnpm typecheck && pnpm lint &&
+  pnpm test` green across all 6 packages (api 1430 tests incl. 5 new for `listQueue` visibility +
+  `revealPickupCode`; merchant 57 tests incl. new `order-groups`/`countdown`/`accept-preview` pure-
+  logic suites; mobile 576 unaffected); `pnpm depcruise` clean (0 errors/warnings,
+  `express-no-merchant-coupling` untouched — this box only touched `apps/merchant/**` and the
+  existing `merchant/` API module). E3 (money surfaces) is next.
 - [ ] **E3 · Money surfaces.** Call-then-request-payment (button unlocked by logged call, R-16,
   regulars override) → confirm-against-own-statement (type reference + amount, mismatch blocks
   and names the gap, D-06) → release-unpaid for collect-and-return (plain-words risk statement

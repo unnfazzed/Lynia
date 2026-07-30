@@ -15,12 +15,12 @@ function formatClock(ms: number): string {
  * with the attempt count shown. On reconnect: orders that arrived while dark are backfilled with a
  * banner naming the count."
  *
- * E1 has no live queue yet, so the backfill banner's ORDER COUNT is E2's job (it needs a real
- * dark-period order source) — this renders the connection-lost bar and a content-neutral "back
- * online" banner (mirroring the gallery's `offline_order` shape) that E2 can extend with the actual
- * count once the kitchen queue exists.
+ * E2: `backfillCount` (from the queue screen's own poller — the count of orders visible in the first
+ * post-reconnect fetch that weren't there before the outage) names the count in the banner, per the
+ * gallery's `offline_order` shape. Omitted (or 0) on any screen without a live queue — the banner
+ * still reads honestly as "no orders arrived while you were dark".
  */
-export function ReconnectBanner() {
+export function ReconnectBanner({ backfillCount }: { backfillCount?: number } = {}) {
   const { reachability } = useKitchenConnection();
   const [justReconnected, setJustReconnected] = useState<{ downSinceMs: number } | null>(null);
 
@@ -75,8 +75,10 @@ export function ReconnectBanner() {
         }}
       >
         <div style={{ fontSize: 14.5, fontWeight: 700, color: "var(--highlight-ink)" }}>
-          Back online — you were offline for {downMinutes} min. Any orders that arrived while you were
-          dark will appear in the queue with their accept clocks paused during the outage.
+          Back online — you were offline for {downMinutes} min.{" "}
+          {backfillCount
+            ? `${backfillCount} order${backfillCount === 1 ? "" : "s"} arrived while you were dark — they're in the queue now.`
+            : "No orders arrived while you were dark."}
         </div>
       </div>
     );

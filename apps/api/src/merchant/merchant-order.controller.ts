@@ -12,6 +12,7 @@ import {
 } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { FoodDebtService } from "./food-debt.service";
 import { FoodDispatchService } from "./food-dispatch.service";
@@ -108,6 +109,17 @@ export class MerchantOrderController {
   @UseGuards(MerchantGuard)
   markReady(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
     return this.foodOrders.markReady(profileId, orderId);
+  }
+
+  // N-16: re-reveals the current pickup code (markReady's own mint is hashed-then-discarded) — the
+  // tablet calls this to display/redisplay the code to read out to the rider. Throttled like the
+  // customer's delivery-code rotate, same rationale (F-03: rotation can't be used to reset an OTP
+  // attempt cap for free).
+  @Post(":orderId/pickup-code/reveal")
+  @UseGuards(MerchantGuard)
+  @Throttle({ limit: 10, windowSec: 60, keyPrefix: "pickup-code-reveal" })
+  revealPickupCode(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.foodOrders.revealPickupCode(profileId, orderId);
   }
 
   // N-16: the assigned RIDER's action, not the merchant's — no MerchantGuard (see class docstring).
