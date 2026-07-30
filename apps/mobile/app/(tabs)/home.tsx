@@ -18,7 +18,18 @@ import { orderKey } from "../../src/query/client";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
-import { AppScreen, BrandHeader, getServiceTiles, LiveOrderCard, ReorderRail, RestaurantCard, ServiceTiles, statusPillLabel } from "../../src/ui";
+import {
+  ActiveOrderCheckFailedBanner,
+  AppScreen,
+  BrandHeader,
+  getServiceTiles,
+  LiveOrderCard,
+  ReorderRail,
+  RestaurantCard,
+  ServiceTiles,
+  SkeletonRows,
+  statusPillLabel,
+} from "../../src/ui";
 
 const RESTAURANT_RAIL_LIMIT = 10;
 const ACTIVE_ORDER_KEY = ["activeCustomerOrder"] as const;
@@ -158,7 +169,13 @@ export default function LauncherHomeScreen(): React.ReactElement {
         <View style={{ paddingHorizontal: 10 }}>
           <ServiceTiles services={services} onService={onService} />
         </View>
-        {activeOrder ? (
+        {activeOrderQ.isLoading || (historyFeed.rows === null && historyFeed.isFetching) ? (
+          // Genuine first load (BOTH feeds this screen paints from) — a skeleton beats a blank gap
+          // between the tiles and the restaurants rail, mirroring the Orders tab's own loading rule.
+          <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm }}>
+            <SkeletonRows count={2} />
+          </View>
+        ) : activeOrder ? (
           <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm }}>
             <LiveOrderCard
               {...liveOrderCardCopy(activeOrder, statusPillLabel(activeOrder.status))}
@@ -166,6 +183,12 @@ export default function LauncherHomeScreen(): React.ReactElement {
               steps={LIVE_ORDER_STEP_COUNT}
               onPress={() => router.push(`/order/${activeOrder.id}`)}
             />
+          </View>
+        ) : activeOrderQ.isError ? (
+          // UX20-01's rule, applied to this call site too: a customer with a genuine live order who
+          // hits an error on this exact check must see a way back to it, not a silently-empty rail.
+          <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm }}>
+            <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
           </View>
         ) : (
           <ReorderRail items={reorderRailItems(historyFeed.rows ?? [])} onItem={onReorder} />

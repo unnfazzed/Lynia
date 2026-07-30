@@ -9,7 +9,7 @@ import { formatMoney } from "../../src/logic/money";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
-import { AppScreen, Button, EmptyState, Heading, Icon, LiveOrderCard, SkeletonRows, statusPillLabel } from "../../src/ui";
+import { ActiveOrderCheckFailedBanner, AppScreen, Button, EmptyState, Heading, Icon, LiveOrderCard, SkeletonRows, statusPillLabel } from "../../src/ui";
 
 const ACTIVE_ORDER_KEY = ["activeCustomerOrder"] as const;
 
@@ -123,6 +123,12 @@ export default function OrdersTabScreen(): React.ReactElement {
               steps={LIVE_ORDER_STEP_COUNT}
               onPress={() => router.push(`/order/${activeOrder.id}`)}
             />
+          </View>
+        ) : activeOrderQ.isError ? (
+          // UX20-01's rule, applied to this call site too: a customer with a genuine live order who
+          // hits an error on this exact check must see a way back to it, not just the earlier list.
+          <View style={{ marginBottom: tokens.space.md }}>
+            <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
           </View>
         ) : null}
 

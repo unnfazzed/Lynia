@@ -28,7 +28,7 @@ import { fareBand, fareBandHint, isBelowBand, isFarAboveBand } from "../src/logi
 import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Button, EmptyState, ErrorText, Field, haptic, Icon, Label, Screen, statusPillLabel, TestBuildBanner } from "../src/ui";
+import { ActiveOrderCheckFailedBanner, Button, EmptyState, ErrorText, Field, haptic, Icon, Label, Screen, statusPillLabel, TestBuildBanner } from "../src/ui";
 import { SupportCallRow } from "../src/ui/safety";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
@@ -81,42 +81,6 @@ function ActiveOrderBanner({ order }: { order: OrderSnapshot }): React.ReactElem
       </View>
       <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.accentText }}>Track</Text>
     </Pressable>
-  );
-}
-
-/**
- * UX20-01: the active-order check failing (not just returning "none") must be visible — a customer with
- * a genuine live order who hits a query error on this check would otherwise see zero indication they may
- * have an order in flight and zero way back to it (the same dead-end class BH-13 closed for the rider
- * board, here triggered by an error rather than a missed cache invalidation).
- */
-function ActiveOrderCheckFailedBanner({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }): React.ReactElement {
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: tokens.space.sm,
-        backgroundColor: tokens.color.bg,
-        borderRadius: tokens.radius.card,
-        borderWidth: 1,
-        borderColor: tokens.color.danger,
-        padding: tokens.space.md,
-        marginBottom: tokens.space.sm,
-        ...tokens.shadow.card,
-      }}
-    >
-      <Icon name="wifi-off" size={20} color={tokens.color.danger} />
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: tokens.font.size.body, fontWeight: "700", color: tokens.color.ink }}>
-          Couldn&apos;t check for an active order
-        </Text>
-        <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted }}>
-          If you have a delivery in progress, retry to find your way back to it.
-        </Text>
-      </View>
-      <Button label="Retry" variant="ghost" onPress={onRetry} loading={retrying} />
-    </View>
   );
 }
 
