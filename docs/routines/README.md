@@ -23,6 +23,12 @@ prompts can be diffed, reviewed, and reconciled against `docs/ROUTINES.md` like 
 > prompts CAN be updated in place with `update_trigger`; they self-disable when their lane
 > completes. See `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6.
 
+> **Schedule (all crons) — `routine-chain.md`.** As of 2026-07-30 every routine and build loop is
+> placed on a single paced hourly grid (one heavy session at a time, hard daily cap, one frequency
+> dial). `routine-chain.md` is the source of truth for that schedule — the grid, the credit
+> rationale, the exact trigger IDs + old/new crons, and the apply/revert procedure. The per-routine
+> cron column below is superseded by that grid for any routine already re-timed onto it.
+
 > **Performance watch has no mirror file yet.** `docs/ROUTINES.md` added this 8th routine
 > 2026-07-19 (its own `## Performance watch` section), but its live trigger prompt was never
 > landed here per the "Edit the file here and land it" convention above. Not auto-authored by the

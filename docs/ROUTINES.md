@@ -39,13 +39,49 @@ Prior: 2026-07-15 (added the wallet & data-lifecycle audit routine).
 | Performance watch | `0 11 * * 0` (Sundays) | env_01V3Lw… | Latency / bandwidth / battery / server-cost regressions + new perf wins (mobile + API) — see `docs/PERFORMANCE.md` |
 
 > **Temporary build loops (2026-07-28, not part of the eight):** five daily implementation loops
-> (`0 10/12/16/18/21 * * *` UTC) build the joint Restaurants + Send launch, one lane each, until
-> their lane checklists complete and they self-disable. Spec:
-> `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6; prompt mirrors:
-> `docs/routines/build-loops-restaurants-send.md`. They follow the universal policies below
-> (merge-on-green, docs-in-same-PR, never-merge-red) and the sensitive-lane doctrine. Their PRs
-> use `claude/build-*` branches; bug-finder Phase-0 sibling reads cover them like any other
-> `claude/*` PR.
+> build the joint Restaurants + Send launch, one lane each, until their lane checklists complete
+> and they self-disable. **As of 2026-07-30 they run 3×/day each on the paced all-day chain grid
+> below** (was 2×/day). Spec: `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6;
+> prompt mirrors: `docs/routines/build-loops-restaurants-send.md`. They follow the universal
+> policies below (merge-on-green, docs-in-same-PR, never-merge-red) and the sensitive-lane
+> doctrine. Their PRs use `claude/build-*` branches; bug-finder Phase-0 sibling reads cover them
+> like any other `claude/*` PR.
+
+## Paced all-day chain (token-max, credit-capped) — 2026-07-30
+
+Per user instruction (2026-07-30): **fill the day with work, one heavy session at a time, to
+maximise token throughput — but with a hard structural cap on daily sessions so it does not
+deplete credits, and one knob to raise the frequency later.** The mechanism is a fixed hourly
+grid, not a live orchestrator: every slot is a pre-scheduled trigger firing, so the schedule
+*is* the cap and there is no runaway path. Full rationale, the grid, the credit math, and the
+frequency dial live in **`docs/routines/routine-chain.md`** (the reviewable source of truth for
+this schedule). Summary:
+
+- **Serial by construction.** Slots are spaced ≥1 h apart and never share an hour, so at most one
+  heavy session bills at a time — the single biggest credit-protection lever.
+- **Build loops = the token sink (15 slots/day).** The five launch build loops carry the
+  productive, token-hungry work, so they get the frequency bump (2×→3×/day each). Backend lane C
+  fires first in every cycle so its dependants (D, E) inherit a satisfied gate.
+- **Maintenance interleave (5 slots/day).** The eight standing routines rotate through the grid's
+  free hours, one lane per slot, deduping through `docs/KNOWN_BUGS.md` exactly as before — so extra
+  cadence never re-bills rediscovery of already-ledgered findings.
+- **Hard daily cap = 20 sessions** (15 build + 5 maintenance). Hours `03,04,06,07` UTC are left
+  idle on purpose as credit-relief breathing room.
+- **Frequency dial.** To turn it up: fill an idle hour, or halve the cadence (add `:30` slots).
+  To turn it down: drop a build cycle back to 2×/day. One edit per lever, all reversible.
+
+**The grid (UTC, one session per hour):**
+
+| Hour | 02 | 05 | 08 | 09 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 00 | 01 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Lane | M | M | M | C | A | B | D | E | M | C | A | B | D | E | M | C | A | B | D | E |
+
+`C/A/B/D/E` = build loops (`0 9,15,21` / `0 10,16,22` / `0 11,17,23` / `0 12,18,0` / `0 13,19,1`).
+`M` = maintenance slot (`0 2,5,8,14,20 * * *`), rotating the eight lanes so each recurs ~every
+1.6 days. The build-loop crons are applied in place via `update_trigger` (schedule-only edit —
+preserves each loop's bound `session_context`); the maintenance-lane re-timing to the `M` slots is
+a schedule-only edit of each standing trigger and is applied the same way once run from a session
+whose account owns those triggers (see `docs/routines/routine-chain.md` §"Applying / reverting").
 
 The three overnight bug-finding routines run 2 hours apart (23:00 → 01:00 → 03:00) **by
 design**: each one's ledger/report PR must be merged before the next routine starts, so the
