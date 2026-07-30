@@ -7,7 +7,7 @@ import { useFoodCart } from "../../src/food/cart-context";
 import type { FoodCartLine } from "../../src/logic/food-cart";
 import { formatMoney } from "../../src/logic/money";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
-import { Button, Card, EmptyState, Icon, Screen, useToast } from "../../src/ui";
+import { Button, Card, EmptyState, Icon, Screen } from "../../src/ui";
 import { QtyStepper } from "../../src/ui/home/QtyStepper";
 import { MAX_ITEM_QTY } from "../../src/logic/food-cart";
 import { NoteField } from "../../src/ui/food/NoteField";
@@ -45,7 +45,6 @@ function reconcile(lines: FoodCartLine[], latest: Map<string, { priceUsd: number
 
 export default function FoodCartScreen(): React.ReactElement {
   const router = useRouter();
-  const toast = useToast();
   const cart = useFoodCart();
   const { menu } = useRestaurantMenu(cart.cart.restaurantId ?? undefined, !!cart.cart.restaurantId);
 
@@ -167,7 +166,7 @@ export default function FoodCartScreen(): React.ReactElement {
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
 
-      <Button label={`Continue · ${formatMoney(cart.total)}`} onPress={() => toast.show("Checkout is coming in the next update", "info")} />
+      <Button label={`Continue · ${formatMoney(cart.total)}`} onPress={() => router.push("/food/checkout")} />
     </Screen>
   );
 }
