@@ -391,8 +391,8 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
   });
 });
 
-describe("FoodOrderService.listQueue — E2 board visibility", () => {
-  it("stays visible through the whole pre-handoff dispatch lifecycle, not just status=requested", async () => {
+describe("FoodOrderService.listQueue — E2/E3 board visibility", () => {
+  it("stays visible through the whole pre-handoff dispatch lifecycle, not just status=requested, OR while a collect-and-return debt is still open", async () => {
     let whereArg: Record<string, unknown> | undefined;
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },
@@ -407,8 +407,23 @@ describe("FoodOrderService.listQueue — E2 board visibility", () => {
     expect(whereArg).toEqual({
       merchantId: "m1",
       orderType: "merchant",
-      status: { in: ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] },
+      OR: [{ status: { in: ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] } }, { debtStatus: "open" }],
     });
+  });
+
+  it("E3: an order the debt ledger still has open stays visible even once status is delivered/undelivered", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findMany: async () => [
+          { id: "o1", status: "delivered", merchantPhase: null, debtStatus: "open", debtAmount: 13, merchantItems: [] },
+          { id: "o2", status: "undelivered", merchantPhase: null, debtStatus: "open", debtAmount: 8, merchantItems: [] },
+        ],
+      },
+    });
+    const res = await svc.listQueue("p1");
+    expect(res.map((o) => o.id)).toEqual(["o1", "o2"]);
+    expect(res.map((o) => o.debtStatus)).toEqual(["open", "open"]);
   });
 });
 

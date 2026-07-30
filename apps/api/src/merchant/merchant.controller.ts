@@ -46,6 +46,19 @@ export class MerchantController {
     return this.merchant.getMyMerchant(profileId);
   }
 
+  // E3: money surfaces — weekly statement + end-of-day summary (N-13).
+  @Get("statement/weekly")
+  @UseGuards(MerchantGuard)
+  weeklyStatement(@CurrentUser() profileId: string) {
+    return this.merchant.getWeeklyStatement(profileId);
+  }
+
+  @Get("summary/today")
+  @UseGuards(MerchantGuard)
+  todaySummary(@CurrentUser() profileId: string) {
+    return this.merchant.getTodaySummary(profileId);
+  }
+
   @Patch("profile")
   @UseGuards(MerchantGuard)
   updateProfile(

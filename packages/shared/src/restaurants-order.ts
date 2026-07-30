@@ -104,6 +104,19 @@ export function dispatchRadiusForAttempt(attempt: number): number {
 }
 
 /**
+ * E3 — merchant statement config (weekly statement + end-of-day summary). N-13: commission is 0%
+ * while the corridor grows, with a purely illustrative "would have been" comparator shown alongside
+ * it — never a committed rate, and never derived from the parcel side's {@link COMMISSION_RATE_PCT_ENV}
+ * (food and parcel commissions are separate levers; food has no env override yet).
+ */
+export const RESTAURANTS_COMMISSION = {
+  /** N-13: the rate actually charged today — nothing deducted at launch. */
+  currentRatePct: 0,
+  /** N-13: "would have been" comparator on the weekly statement — illustrative only. */
+  illustrativeRatePct: 10,
+} as const;
+
+/**
  * C4 — food money evidence layer config, as config not constants (same pattern as
  * RESTAURANTS_PRICING/TIMING/DISPATCH above). Backs the doorstep dual-confirm handshake (R-04/R-05),
  * the no-show wait (N-10), and the refund SLA (N-12).

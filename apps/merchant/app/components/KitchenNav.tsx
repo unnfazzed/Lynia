@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 
-/** Left rail (bottom bar on phone — see .kitchen-nav's media query in globals.css). Only "Orders"
- *  (E1/E2) is a real route; the rest ship as visibly-present-but-inert placeholders rather than
- *  dead links until their own lane builds the page (Menu/Shop → E4, Statement → E3). */
+/** Left rail (bottom bar on phone — see .kitchen-nav's media query in globals.css). "Orders" (E1/E2)
+ *  and "Statement" (E3) are real routes; Menu/Shop/Hours ship as visibly-present-but-inert
+ *  placeholders rather than dead links until E4 builds them. */
 const NAV_ITEMS = [
   { id: "queue", label: "Orders", href: "/queue" },
   { id: "catalog", label: "Menu", href: null },
   { id: "shop", label: "Shop", href: null },
   { id: "hours", label: "Hours", href: null },
-  { id: "money", label: "Statement", href: null },
+  { id: "money", label: "Statement", href: "/statement" },
 ] as const;
 
 export function KitchenNav({ active }: { active: string }) {

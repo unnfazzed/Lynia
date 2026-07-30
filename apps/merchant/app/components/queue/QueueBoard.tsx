@@ -6,16 +6,33 @@ import { PREP_CHIPS_MIN } from "@lynia/shared";
 import { groupQueue, isNoRiderHold, isRiderSecured, shouldUseBoard } from "../../lib/order-groups";
 import {
   acceptOrder,
+  confirmGoodsReturned,
+  confirmPayment,
+  confirmReturnedCash,
   dispatchCancel,
   dispatchResume,
+  logCall,
   markReady,
+  refundOrder,
   rejectOrder,
+  releaseUnpaid,
+  reportNonReturn,
+  requestPayment,
   revealPickupCode,
 } from "../../lib/orders-api";
 import { NewOrderTakeover } from "./NewOrderTakeover";
 import { NoRiderHoldTakeover } from "./NoRiderHoldTakeover";
 import { OrderCard, type OrderCardBucket } from "./OrderCard";
+import { ReturnsSection } from "./ReturnsSection";
 import { RiderSecuredTakeover } from "./RiderSecuredTakeover";
+
+interface MoneyActions {
+  onLogCall: (orderId: string) => Promise<void>;
+  onRequestPayment: (orderId: string, overrideCallLog: boolean) => Promise<void>;
+  onConfirmPayment: (orderId: string, body: { reference: string; amount: number }) => Promise<void>;
+  onReleaseUnpaid: (orderId: string) => Promise<void>;
+  onRefund: (orderId: string, body: { reference: string; amount: number }) => Promise<void>;
+}
 
 function Column({
   title,
@@ -27,6 +44,7 @@ function Column({
   onMarkReady,
   onRevealPickupCode,
   onOpenHold,
+  moneyActions,
 }: {
   title: string;
   tint: string;
@@ -37,6 +55,7 @@ function Column({
   onMarkReady: (orderId: string) => void;
   onRevealPickupCode: (orderId: string) => void;
   onOpenHold: (order: MerchantOrderResponse) => void;
+  moneyActions: MoneyActions;
 }) {
   return (
     <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -58,6 +77,7 @@ function Column({
             onMarkReady={onMarkReady}
             onRevealPickupCode={onRevealPickupCode}
             onOpenHold={onOpenHold}
+            {...moneyActions}
           />
         ))}
       </div>
@@ -137,6 +157,53 @@ export function QueueBoard({
     refetch();
   }
 
+  // E3 (R-16/R-17): the awaiting-payment lane's real flow.
+  async function handleLogCall(orderId: string) {
+    await logCall(orderId);
+    refetch();
+  }
+  async function handleRequestPayment(orderId: string, overrideCallLog: boolean) {
+    await requestPayment(orderId, overrideCallLog);
+    refetch();
+  }
+  async function handleConfirmPayment(orderId: string, body: { reference: string; amount: number }) {
+    await confirmPayment(orderId, body);
+    refetch();
+  }
+  // No reason picker here (the gallery's M2·7 ships a single release button with no reason UI) —
+  // "other" is the honest default rather than guessing a more specific one (flagged, not decided).
+  async function handleReleaseUnpaid(orderId: string) {
+    await releaseUnpaid(orderId, "other");
+    refetch();
+  }
+  // D-12: refund-then-cancel an already-confirmed WALLET order.
+  async function handleRefund(orderId: string, body: { reference: string; amount: number }) {
+    await refundOrder(orderId, body.reference, body.amount);
+    refetch();
+  }
+
+  // E3/R-01: the collect-and-return debt ledger's merchant-side settlement actions.
+  async function handleConfirmReturnedCash(orderId: string, amount: number) {
+    await confirmReturnedCash(orderId, amount);
+    refetch();
+  }
+  async function handleConfirmGoodsReturned(orderId: string) {
+    await confirmGoodsReturned(orderId);
+    refetch();
+  }
+  async function handleReportNonReturn(orderId: string, note?: string) {
+    await reportNonReturn(orderId, note);
+    refetch();
+  }
+
+  const moneyActions = {
+    onLogCall: handleLogCall,
+    onRequestPayment: handleRequestPayment,
+    onConfirmPayment: handleConfirmPayment,
+    onReleaseUnpaid: handleReleaseUnpaid,
+    onRefund: handleRefund,
+  };
+
   if (active) {
     return <NewOrderTakeover active={active} queued={queued} disabled={disabled} onAccept={handleAccept} onReject={handleReject} />;
   }
@@ -158,6 +225,16 @@ export function QueueBoard({
   const cookingColumnItems = groups.preparing.map((order) => ({ order, bucket: "preparing" as const }));
   const readyColumnItems = groups.ready.map((order) => ({ order, bucket: "ready" as const }));
 
+  const returnsSection = (
+    <ReturnsSection
+      orders={groups.awaitingReturn}
+      disabled={disabled}
+      onConfirmReturnedCash={handleConfirmReturnedCash}
+      onConfirmGoodsReturned={handleConfirmGoodsReturned}
+      onReportNonReturn={handleReportNonReturn}
+    />
+  );
+
   if (orders.length === 0) {
     return (
       <div style={{ background: "var(--bg)", borderRadius: 16, boxShadow: "var(--shadow-card)", padding: "16px 20px 26px", textAlign: "center", maxWidth: 420 }}>
@@ -167,11 +244,12 @@ export function QueueBoard({
     );
   }
 
-  const columnProps = { disabled, pickupCodes, revealingId, onMarkReady: handleMarkReady, onRevealPickupCode: handleRevealPickupCode, onOpenHold: handleOpenHold };
+  const columnProps = { disabled, pickupCodes, revealingId, onMarkReady: handleMarkReady, onRevealPickupCode: handleRevealPickupCode, onOpenHold: handleOpenHold, moneyActions };
 
   if (!board) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        {returnsSection}
         <Column title="New" tint="var(--accent)" items={newColumnItems} {...columnProps} />
         <Column title="Cooking" tint="var(--highlight)" items={cookingColumnItems} {...columnProps} />
         <Column title="Ready · waiting for rider" tint="var(--ink)" items={readyColumnItems} {...columnProps} />
@@ -180,10 +258,13 @@ export function QueueBoard({
   }
 
   return (
-    <div style={{ display: "flex", gap: 22, height: "100%", minHeight: 0 }}>
-      <Column title="New" tint="var(--accent)" items={newColumnItems} {...columnProps} />
-      <Column title="Cooking" tint="var(--highlight)" items={cookingColumnItems} {...columnProps} />
-      <Column title="Ready · waiting for rider" tint="var(--ink)" items={readyColumnItems} {...columnProps} />
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, height: "100%", minHeight: 0 }}>
+      {returnsSection}
+      <div style={{ display: "flex", gap: 22, flex: 1, minHeight: 0 }}>
+        <Column title="New" tint="var(--accent)" items={newColumnItems} {...columnProps} />
+        <Column title="Cooking" tint="var(--highlight)" items={cookingColumnItems} {...columnProps} />
+        <Column title="Ready · waiting for rider" tint="var(--ink)" items={readyColumnItems} {...columnProps} />
+      </div>
     </div>
   );
 }

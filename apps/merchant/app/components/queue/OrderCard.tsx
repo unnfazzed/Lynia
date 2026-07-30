@@ -1,16 +1,216 @@
 "use client";
 
+import { useState } from "react";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { formatCountdown, msUntil } from "../../lib/countdown";
+import { formatMoney } from "../../lib/money-input";
 import { isNoRiderHold, isRiderSecured, isSearchingForRider } from "../../lib/order-groups";
 import { useNow } from "../../lib/use-now";
-import { cardStyle, disabledStyle, primaryButtonStyle } from "./styles";
+import { PaymentConfirmSheet, RefundSheet } from "./PaymentConfirmSheet";
+import { cardStyle, dangerGhostButtonStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "./styles";
 
 function orderLabel(o: MerchantOrderResponse): string {
   return `#${o.id.slice(0, 8).toUpperCase()}`;
 }
 
 export type OrderCardBucket = "waiting" | "payment" | "preparing" | "ready";
+
+/**
+ * E3 (R-16/R-17): the awaiting-payment lane's real flow — log the call, request payment, confirm it
+ * landed against the merchant's own statement (D-06), or release with no penalty. No clock (M2·7
+ * never blocks the board) — this only ever renders as an ordinary card, never a takeover.
+ */
+function PaymentBucketActions({
+  order,
+  disabled,
+  onLogCall,
+  onRequestPayment,
+  onConfirmPayment,
+  onReleaseUnpaid,
+}: {
+  order: MerchantOrderResponse;
+  disabled: boolean;
+  onLogCall: (orderId: string) => Promise<void>;
+  onRequestPayment: (orderId: string, overrideCallLog: boolean) => Promise<void>;
+  onConfirmPayment: (orderId: string, body: { reference: string; amount: number }) => Promise<void>;
+  onReleaseUnpaid: (orderId: string) => Promise<void>;
+}) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitConfirm(body: { reference: string; amount: number }) {
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirmPayment(order.id, body);
+      setShowConfirm(false);
+    } catch (err) {
+      // D-06/mismatch: keep the sheet open so the server's "expected $X, got $Y" message is visible.
+      setError(err instanceof Error ? err.message : "Something went wrong — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const expected = Number(order.merchantGoodsTotal ?? 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {error && <div style={{ fontSize: 12, color: "var(--danger-ink)", fontWeight: 700 }}>{error}</div>}
+
+      {!order.paymentRequestedAt && (
+        <>
+          {!order.paymentCallLoggedAt ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void run(() => onLogCall(order.id))}
+                disabled={disabled || busy}
+                style={{ ...primaryButtonStyle, padding: "9px 14px", fontSize: 13, ...disabledStyle(disabled || busy) }}
+              >
+                Log the call
+              </button>
+              <button
+                type="button"
+                onClick={() => void run(() => onRequestPayment(order.id, true))}
+                disabled={disabled || busy}
+                style={{ ...ghostButtonStyle, padding: "7px 12px", fontSize: 12, ...disabledStyle(disabled || busy) }}
+              >
+                They confirmed another way
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void run(() => onRequestPayment(order.id, false))}
+              disabled={disabled || busy}
+              style={{ ...primaryButtonStyle, padding: "9px 14px", fontSize: 13, ...disabledStyle(disabled || busy) }}
+            >
+              Request payment · ${formatMoney(expected)}
+            </button>
+          )}
+        </>
+      )}
+
+      {order.paymentRequestedAt && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowConfirm(true)}
+            disabled={disabled || busy}
+            style={{ ...primaryButtonStyle, padding: "9px 14px", fontSize: 13, ...disabledStyle(disabled || busy) }}
+          >
+            It landed — enter the reference
+          </button>
+          <button
+            type="button"
+            onClick={() => void run(() => onReleaseUnpaid(order.id))}
+            disabled={disabled || busy}
+            style={{ ...dangerGhostButtonStyle, padding: "7px 12px", fontSize: 12, ...disabledStyle(disabled || busy) }}
+          >
+            Release — they never paid
+          </button>
+        </>
+      )}
+
+      {showConfirm && (
+        <PaymentConfirmSheet
+          orderLabel={orderLabel(order)}
+          expectedAmount={expected}
+          disabled={disabled}
+          submitting={busy}
+          error={error}
+          onCancel={() => {
+            setShowConfirm(false);
+            setError(null);
+          }}
+          onConfirm={(body) => void submitConfirm(body)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** D-12: the merchant cannot cancel an already-confirmed WALLET order without a refund reference and
+ *  the exact amount first — offered alongside "Mark ready" while the order is still in prep. */
+function RefundAction({
+  order,
+  disabled,
+  onRefund,
+}: {
+  order: MerchantOrderResponse;
+  disabled: boolean;
+  onRefund: (orderId: string, body: { reference: string; amount: number }) => Promise<void>;
+}) {
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const expected = Number(order.merchantGoodsTotal ?? 0);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setShow(true)}
+        disabled={disabled}
+        style={{ ...dangerGhostButtonStyle, padding: "7px 12px", fontSize: 12, ...disabledStyle(disabled) }}
+      >
+        Can&apos;t fulfill — refund &amp; cancel
+      </button>
+      {show && (
+        <RefundSheet
+          orderLabel={orderLabel(order)}
+          expectedAmount={expected}
+          disabled={disabled}
+          submitting={busy}
+          error={error}
+          onCancel={() => {
+            setShow(false);
+            setError(null);
+          }}
+          onConfirm={(body) => {
+            setBusy(true);
+            setError(null);
+            onRefund(order.id, body)
+              .then(() => setShow(false))
+              .catch((err: unknown) => setError(err instanceof Error ? err.message : "Something went wrong"))
+              .finally(() => setBusy(false));
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/** D-06/D-08: what to expect when the rider is at the counter — informational only. The actual
+ *  hand-off mechanic is the rider entering the pickup code (N-16); CASH money never needs a merchant
+ *  button here because collect-and-return opens the debt automatically at that moment (R-01) and
+ *  pay-me-upfront settles in the rider's hand with nothing left to confirm digitally (C4 scope cut). */
+function CashRuleNote({ order }: { order: MerchantOrderResponse }) {
+  if (order.paymentMethod !== "cash") return null;
+  const amount = Number(order.merchantGoodsTotal ?? 0);
+  const upfront = order.merchantCashRule === "pay_upfront";
+  return (
+    <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--surface)", borderRadius: 10, padding: "8px 10px" }}>
+      {upfront
+        ? `Rider pays you $${formatMoney(amount)} cash before you hand over the food.`
+        : `Release unpaid — the rider owes you $${formatMoney(amount)} back after the drop.`}
+    </div>
+  );
+}
 
 export function OrderCard({
   order,
@@ -21,6 +221,11 @@ export function OrderCard({
   onMarkReady,
   onRevealPickupCode,
   onOpenHold,
+  onLogCall,
+  onRequestPayment,
+  onConfirmPayment,
+  onReleaseUnpaid,
+  onRefund,
 }: {
   order: MerchantOrderResponse;
   bucket: OrderCardBucket;
@@ -30,9 +235,15 @@ export function OrderCard({
   onMarkReady: (orderId: string) => void;
   onRevealPickupCode: (orderId: string) => void;
   onOpenHold: (order: MerchantOrderResponse) => void;
+  onLogCall: (orderId: string) => Promise<void>;
+  onRequestPayment: (orderId: string, overrideCallLog: boolean) => Promise<void>;
+  onConfirmPayment: (orderId: string, body: { reference: string; amount: number }) => Promise<void>;
+  onReleaseUnpaid: (orderId: string) => Promise<void>;
+  onRefund: (orderId: string, body: { reference: string; amount: number }) => Promise<void>;
 }) {
   const now = useNow();
   const items = order.items.map((i) => `${i.quantity}x ${i.name}`).join(" · ");
+  const canRefund = order.paymentMethod === "wallet" && !!order.merchantPaymentConfirmedAt;
 
   return (
     <div style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -49,9 +260,14 @@ export function OrderCard({
       )}
 
       {bucket === "payment" && (
-        <div style={{ fontSize: 12.5, color: "var(--muted)", background: "var(--surface)", borderRadius: 10, padding: "8px 10px" }}>
-          Waiting for payment — no clock, doesn&apos;t hold up your board. Confirming it lands with the money-surfaces build.
-        </div>
+        <PaymentBucketActions
+          order={order}
+          disabled={disabled}
+          onLogCall={onLogCall}
+          onRequestPayment={onRequestPayment}
+          onConfirmPayment={onConfirmPayment}
+          onReleaseUnpaid={onReleaseUnpaid}
+        />
       )}
 
       {bucket === "preparing" && (
@@ -69,11 +285,13 @@ export function OrderCard({
           >
             Mark ready
           </button>
+          {canRefund && <RefundAction order={order} disabled={disabled} onRefund={onRefund} />}
         </>
       )}
 
       {bucket === "ready" && (
         <>
+          <CashRuleNote order={order} />
           {isSearchingForRider(order) && (
             <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Searching for a rider…</div>
           )}

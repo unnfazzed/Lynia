@@ -787,12 +787,46 @@ Phase-0 gate: requires the matching Lane C contracts (C1 for E1/E4, C2/C5 for E2
   logic suites; mobile 576 unaffected); `pnpm depcruise` clean (0 errors/warnings,
   `express-no-merchant-coupling` untouched — this box only touched `apps/merchant/**` and the
   existing `merchant/` API module). E3 (money surfaces) is next.
-- [ ] **E3 · Money surfaces.** Call-then-request-payment (button unlocked by logged call, R-16,
+- [x] **E3 · Money surfaces.** Call-then-request-payment (button unlocked by logged call, R-16,
   regulars override) → confirm-against-own-statement (type reference + amount, mismatch blocks
   and names the gap, D-06) → release-unpaid for collect-and-return (plain-words risk statement
   R-07) → returned-cash count (N-21, return trail visible) → pickup confirms CASH/WALLET →
   short-payment block → refund-after-payment with reference (D-12) → end of day → weekly
-  statement (N-13 accrual comparator, cooked-food loss line D-34).
+  statement (N-13 accrual comparator, cooked-food loss line D-34). **Done 2026-07-30:** the
+  awaiting-payment lane's E2 placeholder is now real — `OrderCard`'s "payment" bucket wires
+  `logCall`/`requestPayment`/`confirmPayment`/`releaseUnpaid` (all already existed server-side from
+  C2, unused until now) behind a new `PaymentConfirmSheet` (typed reference + amount, a mismatch
+  409s naming the gap in dollars — surfaced verbatim, D-06/M3·b1). D-12 refund-after-payment
+  (`RefundSheet`, wired to the "preparing" bucket's WALLET orders) and the C4 debt ledger's merchant
+  actions (`ReturnCashSheet`/`NonReturnSheet`, R-06/R-07/N-21) are new UI over C4's already-built
+  `confirmReturnedCash`/`confirmGoodsReturned`/`reportNonReturn`/`refundOrder` endpoints, which had
+  no client at all before this box. CASH pickup (M3·1/M3·1b) is informational-only by design, not a
+  fake button: the actual state transition is the rider entering the pickup code
+  (`confirmPickup`), which is where C4 already opens the collect-and-return debt automatically
+  (R-01) and where pay-me-upfront cash settles by hand with nothing left to confirm digitally (C4's
+  own scope cut) — `CashRuleNote` just tells the merchant what to expect. **One backend gap found
+  and fixed in this PR:** `listQueue`'s status filter (E2) dropped an order the instant it was
+  `picked_up`, which is also the exact moment a collect-and-return debt opens (R-01) — a merchant had
+  no way to ever see, let alone settle, a debt once the food left the counter. Fixed by widening the
+  filter to `status IN (...) OR debtStatus = "open"`; the frontend gained a matching `awaitingReturn`
+  bucket (`order-groups.ts`) rendered as its own non-blocking `ReturnsSection` strip (mirrors M2·7's
+  "never blocks the board" rule, applied to the return leg). **New backend surface, since neither
+  existed even as a stub:** `GET /merchant/statement/weekly` and `GET /merchant/summary/today`
+  (`MerchantService.getWeeklyStatement`/`getTodaySummary`, `MerchantController`), backing a new
+  `/statement` page wired to the E1 nav's "Statement" placeholder. N-13's commission split into its
+  own `RESTAURANTS_COMMISSION` config (0% current / 10% illustrative comparator, never a committed
+  rate). **Scope choices, flagged rather than silently decided:** the statement's date range is a
+  rolling 7 days (no calendar-week cut was specified anywhere in the design); `cashTaken` on the
+  end-of-day summary only counts collect-and-return debts the merchant actually confirmed that day
+  (`confirmReturnedCash`) — pay-me-upfront cash has no ledger (the same C4 scope cut, not a new one),
+  so it's honestly omitted rather than estimated; no reason picker on "release — they never paid"
+  (the gallery's M2·7 ships one button with no reason UI) — defaults to `"other"`. `pnpm typecheck
+  && pnpm lint && pnpm test` green across all 6 packages (api 1444 tests incl. new
+  `getWeeklyStatement`/`getTodaySummary` coverage in `merchant.service.spec.ts` + the widened
+  `listQueue` filter in `food-order.service.spec.ts`; merchant 62 incl. new `money-input`/
+  `order-groups` awaitingReturn suites; mobile 611; shared 157); `pnpm depcruise` clean (0
+  errors/warnings, `express-no-merchant-coupling` untouched — every change stayed inside
+  `apps/merchant/**` and the existing `merchant/` API module). E4 (menu + shop management) is next.
 - [ ] **E4 · Menu + shop management.** Categories (create/rename/reorder/time-limit/hide/
   delete-when-empty, first-run four starters, D-29); dish editor with photo-required drafts
   (D-31) + crop/compress with offline queue (D-32); OOS sheet (rest-of-today default, N-14);

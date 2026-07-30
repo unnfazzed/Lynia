@@ -6,8 +6,12 @@ import type {
   MerchantCategoryResponse,
   MerchantDishRequest,
   MerchantDishResponse,
+  MerchantEndOfDaySummaryResponse,
   MerchantHours,
+  MerchantPaymentMethod,
   MerchantProfileResponse,
+  MerchantStatementLineItem,
+  MerchantWeeklyStatementResponse,
   RestaurantListItem,
   RestaurantListResponse,
   RestaurantMenuDish,
@@ -21,6 +25,7 @@ import type {
   UpdateMerchantProfileRequest,
   Waypoint,
 } from "@lynia/shared";
+import { RESTAURANTS_COMMISSION, roundToCents } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -303,6 +308,115 @@ export class MerchantService {
         name: c.name,
         dishes: c.dishes.map((d) => this.toCustomerDish(d)),
       })),
+    };
+  }
+
+  // ── E3: money surfaces — weekly statement + end-of-day summary (N-13) ─────────────────────────────
+
+  /** N-13: last-7-days rolling window (server-local clock, same boundary style as {@link endOfToday})
+   *  — a calendar-week cut wasn't specified anywhere in the design, so a rolling window is the
+   *  defensible default; flagged for product to confirm, not silently assumed to be "correct". Only
+   *  `delivered` orders count as sales (an order the merchant never handed over earned nothing);
+   *  `cookedFoodLossTotal` sums NO_RIDER cancellations in the same window as the D-34 "logged as a
+   *  loss LyniaGo covers" line — visibility only, no ledger transfer exists yet (open item). */
+  async getWeeklyStatement(profileId: string): Promise<MerchantWeeklyStatementResponse> {
+    const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
+    const rangeEnd = new Date();
+    const rangeStart = new Date(rangeEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const delivered = await this.prisma.order.findMany({
+      where: { merchantId, orderType: "merchant", status: "delivered", deliveredAt: { gte: rangeStart, lte: rangeEnd } },
+      select: { id: true, deliveredAt: true, merchantPaymentMethod: true, merchantGoodsTotal: true },
+      orderBy: { deliveredAt: "desc" },
+      take: 200,
+    });
+    const noRiderLoss = await this.prisma.order.aggregate({
+      where: {
+        merchantId,
+        orderType: "merchant",
+        status: "cancelled",
+        rejectionReason: "no_rider",
+        cancelledAt: { gte: rangeStart, lte: rangeEnd },
+      },
+      _sum: { merchantGoodsTotal: true },
+    });
+
+    const ratePct = RESTAURANTS_COMMISSION.currentRatePct;
+    const lineItems: MerchantStatementLineItem[] = delivered.map((o) => {
+      const amount = roundToCents(Number(o.merchantGoodsTotal ?? 0));
+      return {
+        orderId: o.id,
+        deliveredAt: (o.deliveredAt ?? new Date()).toISOString(),
+        paymentMethod: (o.merchantPaymentMethod ?? "cash") as MerchantPaymentMethod,
+        amount,
+        commission: roundToCents(amount * (ratePct / 100)),
+      };
+    });
+    const foodSalesTotal = roundToCents(lineItems.reduce((sum, li) => sum + li.amount, 0));
+
+    return {
+      rangeStart: rangeStart.toISOString(),
+      rangeEnd: rangeEnd.toISOString(),
+      ordersDelivered: lineItems.length,
+      foodSalesTotal,
+      commissionRatePct: ratePct,
+      commissionCharged: roundToCents(foodSalesTotal * (ratePct / 100)),
+      illustrativeRatePct: RESTAURANTS_COMMISSION.illustrativeRatePct,
+      illustrativeCommission: roundToCents(foodSalesTotal * (RESTAURANTS_COMMISSION.illustrativeRatePct / 100)),
+      cookedFoodLossTotal: roundToCents(Number(noRiderLoss._sum.merchantGoodsTotal ?? 0)),
+      lineItems,
+    };
+  }
+
+  /** M4·6 "what the owner actually asks at closing time" — read-only, today's calendar day (server
+   *  local, same boundary as {@link endOfToday}). `cashTaken` only counts collect-and-return debts the
+   *  merchant actually confirmed today (`confirmReturnedCash`) — pay-me-upfront cash has no ledger
+   *  (C4's own scope cut), so it's honestly omitted rather than estimated (flagged, not guessed). */
+  async getTodaySummary(profileId: string): Promise<MerchantEndOfDaySummaryResponse> {
+    const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = endOfToday();
+
+    const [delivered, rejected, walletTaken, cashTaken, prepped] = await Promise.all([
+      this.prisma.order.count({
+        where: { merchantId, orderType: "merchant", status: "delivered", deliveredAt: { gte: start, lte: end } },
+      }),
+      this.prisma.order.count({
+        where: { merchantId, orderType: "merchant", status: "cancelled", cancelledAt: { gte: start, lte: end } },
+      }),
+      this.prisma.order.aggregate({
+        where: {
+          merchantId,
+          orderType: "merchant",
+          merchantPaymentMethod: "wallet",
+          merchantPaymentConfirmedAt: { gte: start, lte: end },
+        },
+        _sum: { merchantGoodsTotal: true },
+      }),
+      this.prisma.order.aggregate({
+        where: { merchantId, orderType: "merchant", debtStatus: "settled_cash", debtSettledAt: { gte: start, lte: end } },
+        _sum: { debtAmount: true },
+      }),
+      this.prisma.order.findMany({
+        where: { merchantId, orderType: "merchant", readyAt: { gte: start, lte: end }, prepStartedAt: { not: null } },
+        select: { readyAt: true, prepStartedAt: true },
+        take: 500,
+      }),
+    ]);
+
+    const prepMinutes = prepped
+      .filter((o): o is { readyAt: Date; prepStartedAt: Date } => o.readyAt != null && o.prepStartedAt != null)
+      .map((o) => (o.readyAt.getTime() - o.prepStartedAt.getTime()) / 60_000);
+    const averagePrepMinutes = prepMinutes.length > 0 ? roundToCents(prepMinutes.reduce((a, b) => a + b, 0) / prepMinutes.length) : null;
+
+    return {
+      date: start.toISOString(),
+      delivered,
+      rejected,
+      cashTaken: roundToCents(Number(cashTaken._sum.debtAmount ?? 0)),
+      walletTaken: roundToCents(Number(walletTaken._sum.merchantGoodsTotal ?? 0)),
+      averagePrepMinutes,
     };
   }
 
