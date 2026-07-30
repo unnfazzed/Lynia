@@ -53,6 +53,11 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   "issue.resolve",
   "sos.acknowledge",
   "wallet.credit",
+  // C4: `FoodDebtService.reportNonReturn` writes this (actor = the merchant profile id) in the SAME
+  // transaction as the rider.accountStatus=suspended write-off — a real, domain-owned suspension the
+  // free-text path must not be able to forge (it would read identically to a genuine R-07 non-return
+  // finding with no underlying account-standing change).
+  "rider.suspend_food_debt",
 ]);
 
 @Injectable()

@@ -450,6 +450,41 @@ describe("OrderLifecycleService.confirmDelivery", () => {
     expect(await svc.confirmDelivery("o1", "r1", "123456")).toEqual({ orderId: "o1", status: "delivered" });
     expect(emits).toEqual([["o1", "delivered"]]);
   });
+
+  // C4/R-09 defense in depth: rotateDeliveryCode already refuses to reveal a CASH merchant order's
+  // plaintext code before the handshake, so this re-checks server-side rather than trusting that alone.
+  it("blocks a CASH merchant order's confirm before the R-04 handshake completes, even with a correct-looking code", async () => {
+    const { svc } = build({
+      $queryRaw: async () =>
+        row({ order_type: "merchant", merchant_payment_method: "cash", customer_cash_confirmed_at: null, rider_cash_confirmed_at: null }),
+    });
+    await expect(svc.confirmDelivery("o1", "r1", "123456")).rejects.toThrow(/confirm the cash exchange/i);
+  });
+
+  it("allows a CASH merchant order's confirm once both handshake confirms have landed", async () => {
+    const { svc, emits } = build({
+      $queryRaw: async () =>
+        row({
+          order_type: "merchant",
+          merchant_payment_method: "cash",
+          customer_cash_confirmed_at: new Date(),
+          rider_cash_confirmed_at: new Date(),
+        }),
+      order: { update: async () => ({}) },
+      orderEvent: { create: async () => ({}) },
+    });
+    expect(await svc.confirmDelivery("o1", "r1", "123456")).toEqual({ orderId: "o1", status: "delivered" });
+    expect(emits).toEqual([["o1", "delivered"]]);
+  });
+
+  it("a parcel order is unaffected (order_type isn't merchant, the gate is vacuously false)", async () => {
+    const { svc } = build({
+      $queryRaw: async () => row({ order_type: "parcel" }),
+      order: { update: async () => ({}) },
+      orderEvent: { create: async () => ({}) },
+    });
+    expect(await svc.confirmDelivery("o1", "r1", "123456")).toEqual({ orderId: "o1", status: "delivered" });
+  });
 });
 
 describe("OrderLifecycleService.rate", () => {
@@ -829,6 +864,77 @@ describe("OrderLifecycleService.rotateDeliveryCode", () => {
       },
     });
     await expect(svc.rotateDeliveryCode("o1", "c1")).rejects.toThrow(/order changed, retry/i);
+  });
+
+  // C4/R-09: a CASH merchant order's code stays masked until the R-04 doorstep handshake completes.
+  it("blocks reveal for a CASH merchant order before both handshake confirms land", async () => {
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({
+          customerId: "c1",
+          status: "en_route_dropoff",
+          orderType: "merchant",
+          merchantPaymentMethod: "cash",
+          customerCashConfirmedAt: null,
+          riderCashConfirmedAt: null,
+        }),
+      },
+    });
+    await expect(svc.rotateDeliveryCode("o1", "c1")).rejects.toThrow(/confirm the cash exchange/i);
+  });
+
+  it("still blocks reveal when only the customer has confirmed (rider hasn't yet)", async () => {
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({
+          customerId: "c1",
+          status: "en_route_dropoff",
+          orderType: "merchant",
+          merchantPaymentMethod: "cash",
+          customerCashConfirmedAt: new Date(),
+          riderCashConfirmedAt: null,
+        }),
+      },
+    });
+    await expect(svc.rotateDeliveryCode("o1", "c1")).rejects.toThrow(/confirm the cash exchange/i);
+  });
+
+  it("reveals once BOTH handshake confirms have landed", async () => {
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({
+          customerId: "c1",
+          status: "en_route_dropoff",
+          orderType: "merchant",
+          merchantPaymentMethod: "cash",
+          customerCashConfirmedAt: new Date(),
+          riderCashConfirmedAt: new Date(),
+        }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      $executeRaw: async () => 1,
+    });
+    const res = await svc.rotateDeliveryCode("o1", "c1");
+    expect(res.deliveryCode).toMatch(/^\d{6}$/);
+  });
+
+  it("a WALLET merchant order (already paid) reveals as normal, no handshake gate", async () => {
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({
+          customerId: "c1",
+          status: "en_route_dropoff",
+          orderType: "merchant",
+          merchantPaymentMethod: "wallet",
+          customerCashConfirmedAt: null,
+          riderCashConfirmedAt: null,
+        }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      $executeRaw: async () => 1,
+    });
+    const res = await svc.rotateDeliveryCode("o1", "c1");
+    expect(res.deliveryCode).toMatch(/^\d{6}$/);
   });
 });
 

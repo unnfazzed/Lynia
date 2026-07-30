@@ -227,6 +227,13 @@ export const NON_PII_COLUMNS: Readonly<Record<string, string>> = {
   // gets a real scrub via the `report_note` manifest entry.
   "audit_logs.note": "AuditLog.note is the admin's ConfirmModal justification for a destructive console action (suspend/ban/refund/…) — append-only compliance trail authored by ops, must outlive its subject; not erasable PII.",
   "commission_ledger.note": "CommissionLedger.note is an ops/system annotation on a wallet-ledger row (manual credit/adjustment rationale) — part of the immutable financial ledger, staff-authored, not personal data the rider supplied.",
+  // C4: MerchantDebtLedger.note carries a merchant's R-07 non-return write-off rationale (or is null
+  // for the system-authored opened/settled_cash/settled_goods rows) — same class as
+  // commission_ledger.note: an append-only financial-ledger annotation authored by the merchant/system
+  // ABOUT an incident, never personal data the erasing account itself supplied. Must outlive its
+  // subject for the same reason the ledger itself is append-only (the evidence-bearing contract this
+  // whole feature is built on).
+  "merchant_debt_ledger.note": "MerchantDebtLedger.note is the merchant's (or system's) rationale on a debt-ledger row — part of the immutable collect-and-return financial ledger, staff-authored, not personal data the rider/customer supplied.",
   // Restaurants vertical (C1): shop-front and menu content is business/public-listing data ABOUT the
   // shop or a dish, not personal data about the merchant owner as a person — the owner's actual PII
   // (name, phone) lives on their Profile row and already goes through the normal erasure path.

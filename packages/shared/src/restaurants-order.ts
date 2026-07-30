@@ -102,3 +102,25 @@ export function dispatchRadiusForAttempt(attempt: number): number {
   // noUncheckedIndexedAccess still types it as possibly-undefined, hence the assertion.
   return steps[i]!;
 }
+
+/**
+ * C4 — food money evidence layer config, as config not constants (same pattern as
+ * RESTAURANTS_PRICING/TIMING/DISPATCH above). Backs the doorstep dual-confirm handshake (R-04/R-05),
+ * the no-show wait (N-10), and the refund SLA (N-12).
+ */
+export const RESTAURANTS_DEBT = {
+  /** N-19: the doorstep handshake window — long enough to count notes twice, short enough that a
+   *  stalling rider is caught at the door, not down the road. Past this (or an explicit rider
+   *  dispute) the trip freezes (R-05) and support is notified. */
+  handshakeWindowMs: 2 * 60 * 1000,
+  /** N-10: minimum wait before a rider may report a customer no-show. */
+  noShowWindowMs: 8 * 60 * 1000,
+  /** N-10: minimum logged calls before a no-show report is accepted. */
+  noShowMinCalls: 2,
+  /** N-12: refund SLA before escalating to support (visibility only — LyniaGo never holds the
+   *  money, D-12/N-12). */
+  refundSlaMs: 2 * 60 * 60 * 1000,
+  /** How often the DB reconciler sweeps for a handshake past its N-19 deadline — same cadence as
+   *  RESTAURANTS_TIMING/RESTAURANTS_DISPATCH's sweeps, for the same sub-minute-precision reasoning. */
+  sweepIntervalMs: 20 * 1000,
+} as const;

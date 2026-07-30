@@ -3,12 +3,20 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingService } from "../tracking/tracking.service";
 import { NearestRiderDispatchStrategy } from "./dispatch-strategy";
 
-function build(nearby: Array<{ profileId: string; distanceM: number }>, busyIds: string[] = [], offeredElsewhereIds: string[] = []) {
+function build(
+  nearby: Array<{ profileId: string; distanceM: number }>,
+  busyIds: string[] = [],
+  offeredElsewhereIds: string[] = [],
+  owingDebtIds: string[] = [],
+) {
   const tracking = { nearbyRiders: async () => nearby } as unknown as TrackingService;
   const prisma = {
     order: {
       findMany: async (args: { where: Record<string, unknown> }) => {
-        // Distinguish the two lookups by their WHERE shape (riderId vs dispatchOfferedRiderId).
+        // Distinguish the three lookups by their WHERE shape: the C4 debt/handshake query is the only
+        // one that filters on orderType; of the remaining two, dispatchOfferedRiderId is the "offered
+        // elsewhere" lookup and plain riderId is the "busy" (active-ride) lookup.
+        if ("orderType" in args.where) return owingDebtIds.map((riderId) => ({ riderId }));
         if ("riderId" in args.where) return busyIds.map((riderId) => ({ riderId }));
         return offeredElsewhereIds.map((dispatchOfferedRiderId) => ({ dispatchOfferedRiderId }));
       },
@@ -56,5 +64,13 @@ describe("NearestRiderDispatchStrategy.pickCandidate", () => {
   it("returns null when every nearby rider is excluded/busy/already-offered", async () => {
     const strategy = build([{ profileId: "r1", distanceM: 400 }], ["r1"]);
     expect(await strategy.pickCandidate({ lat: 0, lng: 0, radiusM: 1000, excludeRiderIds: [] })).toBeNull();
+  });
+
+  // C4: a rider owing a merchant a collect-and-return debt, or mid-doorstep handshake, isn't offered a
+  // SECOND food job until it settles (N-20/R-05) — same soft-lock shape as the offered-elsewhere check.
+  it("skips a rider owing an open merchant debt / mid-handshake", async () => {
+    const strategy = build([{ profileId: "r1", distanceM: 400 }, { profileId: "r2", distanceM: 900 }], [], [], ["r1"]);
+    const res = await strategy.pickCandidate({ lat: 0, lng: 0, radiusM: 1000, excludeRiderIds: [] });
+    expect(res).toEqual({ riderId: "r2", distanceM: 900 });
   });
 });

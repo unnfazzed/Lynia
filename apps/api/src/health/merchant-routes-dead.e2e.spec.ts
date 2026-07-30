@@ -36,6 +36,8 @@ import { TokenService } from "../auth/token.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { bearer, TEST_ENV } from "../common/testing/authz-e2e";
+import { FoodDebtService } from "../merchant/food-debt.service";
+import { FoodDispatchService } from "../merchant/food-dispatch.service";
 import { FoodOrderController } from "../merchant/food-order.controller";
 import { FoodOrderService } from "../merchant/food-order.service";
 import { MerchantController } from "../merchant/merchant.controller";
@@ -80,8 +82,12 @@ Reflect.defineMetadata("design:paramtypes", [MerchantService], MerchantControlle
 Reflect.defineMetadata("design:paramtypes", [MerchantService], RestaurantsController);
 Reflect.defineMetadata("design:paramtypes", [Object], RestaurantsEnabledGuard);
 // C2: the two new food-order controllers, same reflective-DI patch shape.
-Reflect.defineMetadata("design:paramtypes", [FoodOrderService], FoodOrderController);
-Reflect.defineMetadata("design:paramtypes", [FoodOrderService], MerchantOrderController);
+// C4: both controllers also take FoodDebtService now (the doorstep handshake + debt-ledger routes);
+// MerchantOrderController's real constructor also always took FoodDispatchService (C3) — listed here
+// in full now (with a stub provider below) rather than relying on Nest's undefined-slot leniency for
+// an unexercised param, since a 3-arg constructor with a 1-entry paramtypes array is fragile.
+Reflect.defineMetadata("design:paramtypes", [FoodOrderService, FoodDebtService], FoodOrderController);
+Reflect.defineMetadata("design:paramtypes", [FoodOrderService, FoodDispatchService, FoodDebtService], MerchantOrderController);
 
 const healthService = { check: async () => ({ status: "ok", db: true, redis: true, provider: "test" }) };
 
@@ -113,6 +119,13 @@ const foodOrderServiceStub = {
   getMyOrder: async () => ({ id: "o1", merchantId: "m1", status: "requested", merchantPhase: "awaiting_accept" }),
 };
 
+// C3/C4: FoodDispatchService and FoodDebtService are real constructor dependencies of
+// MerchantOrderController/FoodOrderController now, but none of the golden-matrix routes below call
+// any of their methods — empty stubs are enough to satisfy DI without pulling in TrackingGateway/
+// NotificationsService/etc.
+const foodDispatchServiceStub = {};
+const foodDebtServiceStub = {};
+
 /** Boots the REAL merchant/restaurant controllers (+ real guards) with a chosen env — the only way
  *  to exercise flags-off vs flags-on behavior, since the flag is read once per guard instance at
  *  request time, not baked into AppModule's static import graph. */
@@ -128,6 +141,8 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       RestaurantsEnabledGuard,
       { provide: MerchantService, useValue: merchantServiceStub },
       { provide: FoodOrderService, useValue: foodOrderServiceStub },
+      { provide: FoodDispatchService, useValue: foodDispatchServiceStub },
+      { provide: FoodDebtService, useValue: foodDebtServiceStub },
     ],
   })
   class MerchantTestModule {}

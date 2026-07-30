@@ -15,6 +15,10 @@ import { OrdersService } from "./orders.service";
   providers: [OrdersService, OrderLifecycleService],
   // AppBootstrapModule aggregates the cold-start reads (wave-2 W1) — it needs the same activeFor*
   // reads the /orders/mine endpoints serve. Acyclic: this module imports nothing from it.
-  exports: [OrdersService],
+  // OrderLifecycleService is also exported so merchant/food-debt.service.ts (C4) can reuse
+  // markUndelivered verbatim for the N-10/R-08 doorstep-failure paths instead of re-deriving the
+  // reliability-penalty/hold logic — the sanctioned merchant→shared import direction (the
+  // `express-no-merchant-coupling` depcruise rule only forbids the reverse).
+  exports: [OrdersService, OrderLifecycleService],
 })
 export class OrdersModule {}

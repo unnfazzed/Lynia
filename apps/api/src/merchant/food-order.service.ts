@@ -32,6 +32,7 @@ import {
 import { TokenService } from "../auth/token.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { FoodDebtService } from "./food-debt.service";
 
 type OrderWithItems = Prisma.OrderGetPayload<{ include: { merchantItems: true } }>;
 
@@ -62,6 +63,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
     private readonly notifications: NotificationsService,
+    private readonly debt: FoodDebtService,
   ) {}
 
   onModuleInit(): void {
@@ -107,7 +109,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 
     const merchant = await this.prisma.merchant.findFirst({
       where: { id: merchantId, pilotEnabled: true },
-      select: { id: true, location: true },
+      select: { id: true, location: true, cashRule: true },
     });
     if (!merchant) throw new NotFoundException("Restaurant not found");
     const location = merchant.location as Waypoint | null;
@@ -151,6 +153,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           merchantPhase: "awaiting_accept",
           acceptDeadlineAt: new Date(Date.now() + RESTAURANTS_TIMING.acceptWindowMs),
           merchantPaymentMethod: body.paymentMethod,
+          // R-03 snapshot: the merchant's cash rule AT PLACEMENT (C4), so a mid-order shop-setting
+          // change never retroactively changes an in-flight order's debt obligations. Null when the
+          // customer chose WALLET — the rule never applies.
+          merchantCashRule: body.paymentMethod === "cash" ? merchant.cashRule : null,
           merchantGoodsTotal,
           deliveryFee,
           idempotencyKey: body.idempotencyKey ?? null,
@@ -259,6 +265,18 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 
   async getQueueOrder(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsMerchant(profileId, orderId);
+    return this.toResponse(order);
+  }
+
+  /** C4: the assigned rider's own read view — no MerchantGuard (party-checked below), mirrors
+   *  getMyOrder/getQueueOrder. Needed so a rider can see the C4 handshake/debt/PAID fields the
+   *  doorstep flow depends on (R-12 "the rider sees PAID at pickup and hand-off"). */
+  async getAsRider(orderId: string, riderId: string): Promise<MerchantOrderResponse> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, riderId, orderType: "merchant" },
+      include: { merchantItems: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
     return this.toResponse(order);
   }
 
@@ -411,8 +429,17 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const expectedHash = this.tokens.hash(code);
     const outcome = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<
-        Array<{ status: string; rider_id: string | null; pickup_code_hash: string | null; pickup_code_attempts: number }>
-      >`SELECT status, rider_id, pickup_code_hash, pickup_code_attempts FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+        Array<{
+          status: string;
+          rider_id: string | null;
+          pickup_code_hash: string | null;
+          pickup_code_attempts: number;
+          merchant_id: string | null;
+          merchant_payment_method: string | null;
+          merchant_cash_rule: string | null;
+          merchant_goods_total: Prisma.Decimal | null;
+        }>
+      >`SELECT status, rider_id, pickup_code_hash, pickup_code_attempts, merchant_id, merchant_payment_method, merchant_cash_rule, merchant_goods_total FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
       if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
@@ -427,6 +454,17 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       }
       await tx.order.update({ where: { id: orderId }, data: { status: "picked_up", collectedAt: new Date() } });
       await tx.orderEvent.create({ data: { orderId, status: "picked_up" } });
+      // C4/R-01: the debt opens the moment the food leaves the counter unpaid — same transaction, same
+      // row lock, so it commits atomically with the pickup itself. No-ops for anything other than a
+      // collect-and-return CASH order.
+      await this.debt.openDebtIfNeeded(tx, {
+        id: orderId,
+        merchantId: o.merchant_id,
+        riderId,
+        merchantPaymentMethod: o.merchant_payment_method,
+        merchantCashRule: o.merchant_cash_rule,
+        merchantGoodsTotal: o.merchant_goods_total,
+      });
       return { ok: true as const };
     });
     if (!outcome.ok) {
@@ -592,6 +630,22 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       dispatchAttempt: order.dispatchAttempt,
       dispatchOfferExpiresAt: order.dispatchOfferExpiresAt?.toISOString() ?? null,
       noRiderHoldAt: order.noRiderHoldAt?.toISOString() ?? null,
+      // C4: doorstep handshake (R-04/R-05/N-19).
+      cashHandshakeAmount: order.cashHandshakeAmount != null ? Number(order.cashHandshakeAmount) : null,
+      customerCashConfirmedAt: order.customerCashConfirmedAt?.toISOString() ?? null,
+      riderCashConfirmedAt: order.riderCashConfirmedAt?.toISOString() ?? null,
+      cashHandshakeDeadlineAt: order.cashHandshakeDeadlineAt?.toISOString() ?? null,
+      cashHandshakeFrozenAt: order.cashHandshakeFrozenAt?.toISOString() ?? null,
+      // C4: the collect-and-return merchant-debt ledger's derived state.
+      merchantCashRule: order.merchantCashRule,
+      debtStatus: order.debtStatus,
+      debtAmount: order.debtAmount != null ? Number(order.debtAmount) : null,
+      debtOpenedAt: order.debtOpenedAt?.toISOString() ?? null,
+      debtSettledAt: order.debtSettledAt?.toISOString() ?? null,
+      // C4/D-12: merchant-issued refund.
+      refundReference: order.refundReference,
+      refundAmount: order.refundAmount != null ? Number(order.refundAmount) : null,
+      refundedAt: order.refundedAt?.toISOString() ?? null,
     };
   }
 }

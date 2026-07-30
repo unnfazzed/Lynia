@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundExce
 import { Prisma } from "@prisma/client";
 import type { MakeOfferRequest } from "@lynia/shared";
 import { hasLiveFoodDispatchOffer } from "../common/food-dispatch-lock";
+import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -91,6 +92,12 @@ export class OffersService {
     if (await hasLiveFoodDispatchOffer(this.prisma, riderId)) {
       this.metrics.incOffersMade("forbidden");
       throw new ForbiddenException("You have a food pickup offer waiting — respond to that first");
+    }
+    // C4 soft-lock: a rider owing a merchant collect-and-return cash debt, or mid-doorstep handshake,
+    // takes no new jobs until it's settled (N-20/R-05).
+    if (await hasOpenMerchantObligation(this.prisma, riderId)) {
+      this.metrics.incOffersMade("forbidden");
+      throw new ForbiddenException("You have a food order still settling with a restaurant — finish that first");
     }
 
     // An `accept` means "I'll take the customer's proposed price" — bind the fare to `proposedFare`

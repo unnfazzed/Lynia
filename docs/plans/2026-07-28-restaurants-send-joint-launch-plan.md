@@ -382,7 +382,7 @@ dead-when-off rather than dead-always.
   && pnpm test` green across the whole monorepo (API 1349 tests incl. 47 new across
   `food-dispatch.service.spec.ts`/`dispatch-strategy.spec.ts`/the transitions/offers/matching
   specs; shared 144; mobile 538). C4 (food money evidence layer) is next.
-- [ ] **C4 · Food money evidence layer.** Merchant-debt ledger (append-only, idempotent,
+- [x] **C4 · Food money evidence layer.** Merchant-debt ledger (append-only, idempotent,
   derived): release-unpaid records debt (R-01) → doorstep dual-confirm handshake (R-04,
   2:00 freeze + auto-support R-05/N-19) → code unlock (masked-code rule R-09 server-side) →
   return leg as a real job (N-20) → returned-cash count-confirm (N-21, D-06 grammar) → rider
@@ -390,7 +390,50 @@ dead-when-off rather than dead-always.
   confirm, PAID visibility R-12); refunds with reference (D-12, 2h SLA escalation N-12);
   customer cash-ban flag on refusal (R-08); rider suspension on non-return (R-07); no-show
   window N-10. **No path strands the debt ledger** — every terminal state nets to zero or books
-  one explicit loss entry (incl. the D-34 LyniaGo-covers-cooked-food case).
+  one explicit loss entry (incl. the D-34 LyniaGo-covers-cooked-food case). **Done 2026-07-30:**
+  new `MerchantDebtLedger` table (append-only, `@@unique([orderId, type])` idempotency, mirrors
+  `CommissionLedger`'s shape) + `Order.debtStatus`/`debtAmount`/`debtOpenedAt`/`debtSettledAt` +
+  a THIRD declarative table (`MERCHANT_DEBT_TRANSITIONS` in `order-lifecycle.transitions.ts`,
+  alongside `TRANSITIONS`/`MERCHANT_PHASE_TRANSITIONS`) covering open→settled_cash/settled_goods/
+  written_off. New `apps/api/src/merchant/food-debt.service.ts` owns three things: (1) the R-04
+  doorstep dual-confirm handshake (`confirmCustomerCash`→`confirmRiderCash`, N-19 2:00 window,
+  `disputeCash`/`sweepFrozenHandshakes` for R-05's freeze+support-notify); (2) the debt ledger
+  itself — `openDebtIfNeeded` runs INSIDE `FoodOrderService.confirmPickup`'s existing row-locked
+  transaction (the moment food leaves the counter unpaid, R-01), `confirmReturnedCash`/
+  `confirmGoodsReturned` settle it (R-06/N-21/D-06 exact-match grammar), `reportNonReturn`
+  writes it off AND suspends+names the rider in one transaction (R-07, mirrors
+  `admin-riders.service.ts:suspendRider`'s shape: CAS, force offline, revoke sessions, audit
+  row — new reserved action `rider.suspend_food_debt`); (3) N-10 no-show / R-08 refusal at the
+  door, both thin wrappers around `OrderLifecycleService.markUndelivered` reused **verbatim**
+  (never a parallel state machine) — refusal additionally cash-bans the customer
+  (`Profile.cashBanned`, food orders only, WALLET still available). R-09's masked-code rule is
+  enforced server-side in `order-lifecycle.service.ts`'s `rotateDeliveryCode` (the customer's
+  only reveal path, since a food order's assignment is rider- not customer-initiated) AND
+  `confirmDelivery` (defense in depth) — both gate on `customerCashConfirmedAt &&
+  riderCashConfirmedAt` for a CASH merchant order, a no-op for every parcel/WALLET order (the
+  fields are always null). New soft-lock `common/merchant-debt-lock.ts:hasOpenMerchantObligation`
+  (mirrors C3's `hasLiveFoodDispatchOffer`) wired into the same three call sites (`matching.
+  service.ts:selectOffer`, `offers.service.ts:makeOffer`, `dispatch-strategy.ts:pickCandidate`)
+  so a rider owing a debt or mid-handshake takes no new job, food or parcel (N-20). D-12 refund
+  (`refundOrder`, wallet-paid orders only, scoped to the payment-confirm→mark-ready window,
+  reference+amount required synchronously — the hard requirement D-12 actually states). **Scope
+  cut, flagged per §9 discipline:** only `merchantCashRule="collect_and_return"` (the default,
+  recommended rule) opens a debt — `pay_upfront` kitchens still get the handshake but no ledger;
+  that direction is the OLD float model's mirror image (merchant owes the rider), explicitly
+  named in the design doc as surviving only for upfront kitchens, left for a future increment
+  rather than half-built here. N-12's 2h SLA escalation sweep is likewise not implemented — no
+  concrete trigger is specified beyond D-12's synchronous reference requirement (which this PR
+  does enforce); Q6 stays open, owned by X1. R-09's offline press-and-hold reveal is Lane D4's
+  client mechanic, not this PR's. A frozen handshake (R-05) has no resolve endpoint yet —
+  deliberate: X1 owns the admin dispute-resolution surface; the freeze itself (server-enforced
+  block) is real and tested. `pnpm typecheck && pnpm lint && pnpm test` green across the whole
+  monorepo (api 1426 tests incl. 28 new in `food-debt.service.spec.ts` + new coverage in
+  `order-lifecycle.service.spec.ts`/`order-lifecycle.transitions.spec.ts`/`matching.service.
+  spec.ts`/`offers.service.spec.ts`/`dispatch-strategy.spec.ts`; mobile 574; shared 157;
+  depcruise 0 errors — `express-no-merchant-coupling` holds, `merchant/food-debt.service.ts`
+  reuses `OrderLifecycleService` via the sanctioned merchant→shared direction). Migration 0044,
+  additive only (every new column nullable, one new table). C5 (realtime/notifications/
+  statements) is next.
 - [ ] **C5 · Realtime + notifications + statements.** Kitchen socket queue reusing
   TrackingModule (server-paused accept clocks while dark, reconnect backfill with count);
   customer push contract (accepted-pay-now persistent, rider-secured, at-door; soft reminder

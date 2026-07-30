@@ -4,6 +4,7 @@ import { BROADCAST, broadcastRadiusAtMs, OFFER_WINDOW_MS } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { hasLiveFoodDispatchOffer } from "../common/food-dispatch-lock";
+import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
 import { buildBoardNewOrderEvent, pickupPoint } from "../orders/waypoints";
@@ -121,6 +122,11 @@ export class MatchingService {
         // a parcel either — mirrors the same guard at offer-creation (offers.service.ts:makeOffer);
         // this covers a bid placed BEFORE the food offer arrived, still sitting pending on the board.
         if (await hasLiveFoodDispatchOffer(tx, offer.riderId)) {
+          throw new ConflictException("Rider just became unavailable, pick another");
+        }
+        // C4 soft-lock: a rider owing a merchant collect-and-return cash debt, or mid-doorstep
+        // handshake, takes no new jobs until it's settled (N-20/R-05) — same "pick another" shape.
+        if (await hasOpenMerchantObligation(tx, offer.riderId)) {
           throw new ConflictException("Rider just became unavailable, pick another");
         }
 

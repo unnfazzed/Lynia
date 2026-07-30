@@ -1,24 +1,29 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import {
   ConfirmMerchantPickupRequest,
+  ConfirmMerchantReturnedCashRequest,
   MerchantAcceptOrderRequest,
   MerchantConfirmPaymentRequest,
   MerchantRejectOrderRequest,
   MerchantReleaseUnpaidRequest,
   MerchantRequestPaymentRequest,
+  RefundMerchantOrderRequest,
+  ReportMerchantNonReturnRequest,
 } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
+import { FoodDebtService } from "./food-debt.service";
 import { FoodDispatchService } from "./food-dispatch.service";
 import { FoodOrderService } from "./food-order.service";
 import { MerchantGuard } from "./merchant.guard";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 
 /**
- * Merchant kitchen-side food order lifecycle (Lane C, C2) + food dispatch (C3). Every route requires
- * a merchant JWT (MerchantGuard) EXCEPT `confirm-pickup` and the `dispatch/*` rider actions, which
- * are the assigned/candidate RIDER's own actions (N-16, N-08) — checked inside the service by
+ * Merchant kitchen-side food order lifecycle (Lane C, C2) + food dispatch (C3) + the money evidence
+ * layer (C4). Every route requires a merchant JWT (MerchantGuard) EXCEPT `confirm-pickup`, the
+ * `dispatch/*` rider actions, and the C4 rider-side doorstep/handshake actions, which are the
+ * assigned/candidate RIDER's own actions (N-16, N-08, R-04/N-10) — checked inside the service by
  * caller-id comparison, not by role, mirroring how order-lifecycle.service.ts's confirmDelivery needs
  * no MerchantGuard-shaped role gate either.
  */
@@ -28,6 +33,7 @@ export class MerchantOrderController {
   constructor(
     private readonly foodOrders: FoodOrderService,
     private readonly dispatch: FoodDispatchService,
+    private readonly debt: FoodDebtService,
   ) {}
 
   @Get()
@@ -144,5 +150,75 @@ export class MerchantOrderController {
   @UseGuards(MerchantGuard)
   cancelDispatch(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
     return this.dispatch.cancelFromHold(profileId, orderId);
+  }
+
+  // ── C4: doorstep handshake + failure paths — the assigned RIDER's own actions, no MerchantGuard ───
+
+  @Get(":orderId/mine")
+  getAsRider(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.foodOrders.getAsRider(orderId, profileId);
+  }
+
+  @Post(":orderId/cash/rider-confirm")
+  confirmRiderCash(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.debt.confirmRiderCash(orderId, profileId);
+  }
+
+  @Post(":orderId/cash/dispute")
+  disputeCash(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.debt.disputeCash(orderId, profileId);
+  }
+
+  @Post(":orderId/doorstep/log-call")
+  logDoorstepCall(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.debt.logDoorstepCall(orderId, profileId);
+  }
+
+  @Post(":orderId/doorstep/no-show")
+  reportNoShow(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.debt.reportNoShow(orderId, profileId);
+  }
+
+  @Post(":orderId/doorstep/refused")
+  reportCustomerRefused(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.debt.reportCustomerRefused(orderId, profileId);
+  }
+
+  // ── C4: merchant debt settlement + refund ───────────────────────────────────────────────────────
+
+  @Post(":orderId/debt/confirm-cash")
+  @UseGuards(MerchantGuard)
+  confirmReturnedCash(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(ConfirmMerchantReturnedCashRequest)) body: ConfirmMerchantReturnedCashRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.debt.confirmReturnedCash(profileId, orderId, body.amount);
+  }
+
+  @Post(":orderId/debt/confirm-goods")
+  @UseGuards(MerchantGuard)
+  confirmGoodsReturned(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.debt.confirmGoodsReturned(profileId, orderId);
+  }
+
+  @Post(":orderId/debt/report-non-return")
+  @UseGuards(MerchantGuard)
+  reportNonReturn(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(ReportMerchantNonReturnRequest)) body: ReportMerchantNonReturnRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.debt.reportNonReturn(profileId, orderId, body.note);
+  }
+
+  @Post(":orderId/refund")
+  @UseGuards(MerchantGuard)
+  refundOrder(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(RefundMerchantOrderRequest)) body: RefundMerchantOrderRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.debt.refundOrder(profileId, orderId, body.reference, body.amount);
   }
 }

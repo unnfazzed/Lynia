@@ -260,6 +260,25 @@ describe("OffersService.makeOffer", () => {
     expect(create).not.toHaveBeenCalled();
     expect(metrics.incOffersMade).toHaveBeenCalledWith("forbidden");
   });
+
+  // C4: a rider owing a merchant a collect-and-return debt (or mid-handshake) can't bid on a parcel
+  // either, same shape as the C3 soft-lock above — distinguished from hasLiveFoodDispatchOffer's own
+  // query by its distinct `where` shape (riderId+OR vs dispatchOfferedRiderId).
+  it("403s a rider with an open merchant debt / pending handshake (C4 soft-lock)", async () => {
+    const create = vi.fn();
+    const { service, metrics } = svc({
+      order: {
+        findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }),
+        findFirst: async (args: { where: Record<string, unknown> }) =>
+          "dispatchOfferedRiderId" in args.where ? null : { id: "food-order-1" },
+      },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
+      offer: { create },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/still settling with a restaurant/i);
+    expect(create).not.toHaveBeenCalled();
+    expect(metrics.incOffersMade).toHaveBeenCalledWith("forbidden");
+  });
 });
 
 describe("OffersService.listForOrder", () => {

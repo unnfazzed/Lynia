@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   appliesToOrderType,
   eventsFor,
+  findMerchantDebtTransition,
   findMerchantPhaseTransition,
   findTransition,
   INITIAL,
   isLegalTransition,
   isTerminalState,
+  MERCHANT_DEBT_STATES,
+  MERCHANT_DEBT_TRANSITIONS,
   MERCHANT_PHASES,
   MERCHANT_PHASE_TRANSITIONS,
   nextState,
@@ -238,5 +241,37 @@ describe("C2 — MERCHANT_PHASE_TRANSITIONS (the parallel kitchen-side table)", 
 
   it("has no outgoing edge from ready_for_pickup — the hand-off to C3's dispatch is not this table's job", () => {
     expect(MERCHANT_PHASE_TRANSITIONS.some((t) => t.from === "ready_for_pickup")).toBe(false);
+  });
+});
+
+describe("C4 — MERCHANT_DEBT_TRANSITIONS (the collect-and-return debt ledger's own small machine)", () => {
+  it("every `to` is a real MerchantDebtState", () => {
+    const stateSet = new Set<string>(MERCHANT_DEBT_STATES);
+    for (const t of MERCHANT_DEBT_TRANSITIONS) expect(stateSet.has(t.to)).toBe(true);
+  });
+
+  it("every (from,event) pair is unique", () => {
+    const seen = new Set<string>();
+    for (const t of MERCHANT_DEBT_TRANSITIONS) {
+      const key = `${t.from}::${t.event}`;
+      expect(seen.has(key), `duplicate merchant-debt transition ${key}`).toBe(false);
+      seen.add(key);
+    }
+  });
+
+  it("the debt opens once, then settles exactly one of three ways — no path strands it", () => {
+    expect(findMerchantDebtTransition(INITIAL, "open_debt")?.to).toBe("open");
+    const settlingEvents = ["confirm_returned_cash", "confirm_goods_returned", "report_non_return"] as const;
+    for (const event of settlingEvents) {
+      const t = findMerchantDebtTransition("open", event);
+      expect(t, `open/${event} should exist`).toBeDefined();
+      expect(t!.to).not.toBe("open");
+    }
+  });
+
+  it("every non-open settled/written-off state has no outgoing edge — each is terminal for the debt", () => {
+    for (const state of ["settled_cash", "settled_goods", "written_off"] as const) {
+      expect(MERCHANT_DEBT_TRANSITIONS.some((t) => t.from === state)).toBe(false);
+    }
   });
 });
