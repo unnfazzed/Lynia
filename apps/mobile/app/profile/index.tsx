@@ -73,7 +73,8 @@ export default function ProfileScreen(): React.ReactElement {
       <Card>
         <Button label="Trip history" onPress={() => router.push("/history")} />
         <Button label="Notifications" variant="ghost" onPress={() => router.push("/notifications")} />
-        {isRider ? <Button label="Earnings" variant="ghost" onPress={() => router.push("/earnings")} /> : null}
+        {/* B3: retired — Money is now a rider tab (Jobs · Money · Account), reachable directly from
+            the tab bar without this shortcut (mirrors the tab bar itself not duplicating Account). */}
         {isRider ? <Button label="Bike & documents" variant="ghost" onPress={() => router.push("/rider/documents")} /> : null}
         <Button label="Send a parcel" variant="ghost" onPress={() => router.replace("/send")} />
         <Button

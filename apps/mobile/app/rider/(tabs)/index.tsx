@@ -767,10 +767,15 @@ export default function RiderHome(): React.ReactElement {
                   ? "clock"
                   : gate === "kyc"
                     ? "id-card"
-                    : "circle-alert"
+                    : gate === "commission_low_balance"
+                      ? "banknote"
+                      : "circle-alert"
             }
             title={ONLINE_GATE_COPY[gate].title}
             message={ONLINE_GATE_COPY[gate].message}
+            // B3/gate_topup: a real money block reads as danger (dangerWash/dangerInk), distinct from
+            // the merely-inconvenient states (cooldown, out-of-area) that share this same EmptyState.
+            tone={gate === "commission_low_balance" ? "danger" : "accent"}
           >
             {/* Recoverable-by-retry states re-DRIVE the online toggle (the server re-checks and either
                 lets them through or re-gates) — cooldown elapses and out-of-area clears once they ride
@@ -785,10 +790,12 @@ export default function RiderHome(): React.ReactElement {
             {/* UX-2026-07-16: ONLINE_GATE_COPY.commission_low_balance's own copy promises "top up your
                 prepaid balance and you're straight back on" and its doc comment claims this screen
                 "deep-links the CTA into the wallet's top-up flow" — but no such branch existed, so the
-                rider's only button was "Refresh status" re-showing the identical wall. Route straight to
-                the top-up screen instead of leaving the rider to discover Profile → Earnings → Wallet. */}
+                rider's only button was "Refresh status" re-showing the identical wall. B3: the wallet
+                is now the Money tab (RJM gate_topup) rather than a standalone screen, so this re-targets
+                there — the rider sees their real balance + the Top up button in one place, instead of
+                being deep-linked past it straight into the top-up form. */}
             {gate === "commission_low_balance" ? (
-              <Button label="Top up" onPress={() => router.push("/wallet/top-up")} />
+              <Button label="Go to Money" onPress={() => router.push("/rider/money")} />
             ) : null}
             {/* R4: suspended / on hold / banned all say "contact support" — a real `tel:` call row, not
                 a dead mailto button. */}

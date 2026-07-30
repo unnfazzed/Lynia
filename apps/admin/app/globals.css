@@ -43,6 +43,7 @@
   --highlight-border: #f2b70566;
   --danger: #c0392b;
   --danger-wash: #faedeb;
+  --danger-ink: #8f2418; /* darker danger text on --danger-wash (≈6:1) — owed labels, gate reasons */
   --success: #00b14f; /* confirmation fills (== accent); use --accent-text for success TEXT */
   --shadow-card: 0 1px 4px rgba(20, 24, 27, 0.08), 0 2px 12px rgba(20, 24, 27, 0.06);
   --shadow-sheet: 0 -2px 16px rgba(20, 24, 27, 0.08); /* bottom-sheet lift */
