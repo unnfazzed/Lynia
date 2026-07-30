@@ -13,6 +13,8 @@ const mockGetFoodOrder = jest.fn();
 const mockRespondToItems = jest.fn(async (..._args: unknown[]) => undefined);
 const mockCancelUnpaid = jest.fn(async (..._args: unknown[]) => undefined);
 const mockSubmitReference = jest.fn(async (..._args: unknown[]) => undefined);
+const mockGetOrder = jest.fn();
+const mockCancelOrder = jest.fn(async (..._args: unknown[]) => ({ orderId: "order-1", status: "cancelled" as const, cancelledBy: "customer" as const, cooldownUntil: null }));
 const mockReplace = jest.fn();
 
 jest.mock("expo-router", () => ({
@@ -31,6 +33,22 @@ jest.mock("../../../../src/api/restaurants", () => ({
     categories: [],
   }),
   getRestaurants: async () => ({ restaurants: [] }),
+}));
+// D3: the post-dispatch tracker fetches the generic order snapshot (rider GPS/pickup/dropoff/events) —
+// mocked here to a resolved value the live-tracker tests below override per case.
+jest.mock("../../../../src/api/orders", () => ({
+  getOrder: (...args: unknown[]) => mockGetOrder(...args),
+  cancelOrder: (...args: unknown[]) => mockCancelOrder(...args),
+}));
+// D3: the real LiveTrackingCard mounts react-native-maps, which the other order-screen tracking test
+// (live-tracking-isolation.test.tsx) also avoids mounting for the same reason — stub it so these tests
+// exercise this SCREEN's own branching (rider-secured banner, status pill, cancel flow), not the map.
+jest.mock("../../../../src/ui/order/LiveTrackingCard", () => ({
+  LiveTrackingCard: (props: { status: string }) => {
+    const React_ = require("react");
+    const { Text } = require("react-native");
+    return React_.createElement(Text, null, `LiveTrackingCard:${props.status}`);
+  },
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
@@ -144,11 +162,25 @@ const BASE_ORDER = {
   refundedAt: null,
 };
 
+const BASE_SNAPSHOT = {
+  id: "order-1",
+  status: "assigned",
+  agreedFare: "15.50",
+  proposedFare: "15.50",
+  pickup: { point: { lat: -17.82, lng: 31.05 }, landmark: "Sadza Republic" },
+  dropoff: { point: { lat: -17.83, lng: 31.06 }, landmark: "Home" },
+  events: [{ status: "assigned", createdAt: new Date().toISOString() }],
+  rider: null,
+  counterpartyPhone: null,
+};
+
 beforeEach(() => {
   mockGetFoodOrder.mockReset();
   mockRespondToItems.mockClear().mockResolvedValue(undefined);
   mockCancelUnpaid.mockClear().mockResolvedValue(undefined);
   mockSubmitReference.mockClear().mockResolvedValue(undefined);
+  mockGetOrder.mockReset().mockResolvedValue(BASE_SNAPSHOT);
+  mockCancelOrder.mockClear().mockResolvedValue({ orderId: "order-1", status: "cancelled", cancelledBy: "customer", cooldownUntil: null });
   mockReplace.mockClear();
 });
 
@@ -270,5 +302,65 @@ describe("food order screen — phase branching", () => {
     mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "preparing" });
     const tree = await render();
     expect(has(tree, /is cooking your order/)).toBe(true);
+  });
+
+  // ── D3 (track) ────────────────────────────────────────────────────────────────────────────────
+  it("shows the dispatch-searching card once the kitchen has marked the order ready", async () => {
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "ready_for_pickup", readyAt: new Date().toISOString() });
+    const tree = await render();
+    expect(has(tree, "Finding a rider nearby")).toBe(true);
+  });
+
+  it("shows the muted, non-terminal NO_RIDER hold once the dispatch cap is exhausted", async () => {
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "ready_for_pickup", noRiderHoldAt: new Date().toISOString() });
+    const tree = await render();
+    expect(has(tree, "This is taking longer than usual")).toBe(true);
+  });
+
+  it("shows the D-13 apology (not the generic cancelled card) when NO_RIDER cancels the order", async () => {
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, status: "cancelled", merchantPhase: null, rejectionReason: "no_rider" });
+    const tree = await render();
+    expect(has(tree, "We couldn't find a rider")).toBe(true);
+    expect(has(tree, /nothing was charged/)).toBe(true);
+  });
+
+  it("shows the refunded card, not the generic cancelled card, once a merchant refund lands", async () => {
+    mockGetFoodOrder.mockResolvedValue({
+      ...BASE_ORDER,
+      status: "cancelled",
+      merchantPhase: null,
+      rejectionReason: "other",
+      refundReference: "EC-4471-RF9920",
+      refundAmount: 15.5,
+      refundedAt: new Date().toISOString(),
+    });
+    const tree = await render();
+    expect(has(tree, "Refunded in full")).toBe(true);
+    expect(has(tree, "EC-4471-RF9920")).toBe(true);
+  });
+
+  it("shows the rider-secured banner and re-labelled food tracker once a rider is assigned", async () => {
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: null, status: "assigned", riderId: "rider-1" });
+    const tree = await render();
+    await settle();
+    expect(has(tree, /Rider secured/)).toBe(true);
+    expect(has(tree, "LiveTrackingCard:assigned")).toBe(true);
+  });
+
+  it("post-dispatch cancel goes through the generic cancelOrder, with a confirm step", async () => {
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: null, status: "en_route_pickup", riderId: "rider-1" });
+    const tree = await render();
+    await settle();
+    press(tree, "Cancel order");
+    press(tree, "Yes, cancel this order");
+    await settle();
+    expect(mockCancelOrder).toHaveBeenCalledWith("order-1");
+    expect(mockReplace).toHaveBeenCalledWith("/food");
+  });
+
+  it("shows a minimal delivered terminal — D4 owns the doorstep handshake + rating", async () => {
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: null, status: "delivered", riderId: "rider-1" });
+    const tree = await render();
+    expect(has(tree, "Delivered")).toBe(true);
   });
 });

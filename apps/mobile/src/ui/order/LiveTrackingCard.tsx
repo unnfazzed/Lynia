@@ -43,14 +43,21 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
   riderIdentity: RiderIdentity | null;
   /** The order socket's health — mutes the map pin while reconnecting on a live trip. */
   connectionState: "live" | "reconnecting";
-  /** Re-issue the delivery code (the parent's rotate mutation) — only rendered while active. */
-  onReissueCode: () => void;
-  reissuing: boolean;
+  /** Re-issue the delivery code (the parent's rotate mutation) — only rendered while active. Unused
+   *  for a food job (jobType="food"): D4 owns the doorstep code (masked-until-handshake, R-09), this
+   *  card never offers a reissue for one. Optional so a food caller doesn't need to pass a no-op. */
+  onReissueCode?: () => void;
+  reissuing?: boolean;
   /** Fix 2: bumped by the parent when a rider-presence-stale WS event fires. Its only job is to change
    *  a prop so this memoized card re-renders and re-runs the render-time staleness check the instant
    *  GPS ticks stop — otherwise nothing re-evaluates `isRiderTrackingStale` once the ticks that drive
    *  this card's re-renders are exactly what have gone silent. */
   staleTick?: number;
+  /** D3 (Lane D, food tracking): re-labels the Stepper to the food step set and swaps the money row's
+   *  label ("Agreed fare" doesn't fit a food order's goods+delivery total, D-08). Default "parcel" —
+   *  every existing call site is unaffected. */
+  jobType?: "parcel" | "food";
+  feeLabel?: string;
 }): React.ReactElement {
   const { orderId, status, isActive, connectionState } = props;
   const isRiderViewer = props.viewerRole === "rider";
@@ -123,7 +130,9 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{etaHeadline(eta)}</Text>
         </View>
       ) : null}
-      <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm, fontVariant: ["tabular-nums"] }}>Agreed fare {formatMoney(props.fare)}</Text>
+      <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm, fontVariant: ["tabular-nums"] }}>
+        {props.feeLabel ?? "Agreed fare"} {formatMoney(props.fare)}
+      </Text>
       <LiveMap
         pickup={{ lat: props.pickup.lat, lng: props.pickup.lng }}
         dropoff={{ lat: props.dropoff.lat, lng: props.dropoff.lng }}
@@ -175,8 +184,8 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           separate reissue button and the stepper's copy were a second, missed instance of the same gap.
           A rider viewing their own job must never see customer-voiced milestone copy or a control that
           403s ("Not your order") against their own delivery. */}
-      <Stepper events={props.events} currentStatus={status} view={isRiderViewer ? "rider" : "customer"} />
-      {isActive && !isRiderViewer ? (
+      <Stepper events={props.events} currentStatus={status} view={isRiderViewer ? "rider" : "customer"} jobType={props.jobType} />
+      {isActive && !isRiderViewer && props.jobType !== "food" && props.onReissueCode ? (
         <Button label="Re-issue delivery code" variant="ghost" onPress={props.onReissueCode} loading={props.reissuing} />
       ) : null}
     </Card>

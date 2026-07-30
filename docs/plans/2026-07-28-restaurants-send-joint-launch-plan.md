@@ -633,9 +633,58 @@ and the matching Lane C contracts (C1 for D1, C2 for D2–D3, C4 for D4–D5) me
   carried no merchant location before this PR; (3) D2 does not attempt D-23's "who confirms an
   unanswered item-approval window" default (N-18) — that's C2's own already-mocked default, carried
   forward unchanged. D3 (track) is next.
-- [ ] **D3 · Track.** Prep countdown ring over the re-labelled 7-step Express tracker (D-03),
+- [x] **D3 · Track.** Prep countdown ring over the re-labelled 7-step Express tracker (D-03),
   rider-secured moment (D-04), plate number promoted (D-27), live-paused, NO_RIDER apology
-  (D-13), cancel sheet, refund-pending/refunded, safety surface reused verbatim (D-28).
+  (D-13), cancel sheet, refund-pending/refunded, safety surface reused verbatim (D-28). **Done
+  2026-07-30:** extends D2's `app/food/order/[orderId].tsx` fallthrough ("we'll show live progress
+  here soon") into the full post-payment lifecycle. D-03: `Stepper` (`src/ui/index.tsx`) gains
+  `STEP_LABELS.customer.food` (re-labelled, same seven dots/✓/live grammar — B4 already ported the
+  rider-side sibling); the prep/dispatch cards render this Stepper too, so the ring sits ABOVE the
+  same persistent tracker rather than a new timeline component. `merchantPhase="preparing"` shows a
+  `CountdownRing` off `prepStartedAt`/`prepMinutes` — honest copy diverges from the gallery mock's
+  "cooking + searching in parallel," since this locked architecture (C3's own D-04/D-33 note)
+  dispatches only once the merchant marks the order ready, not during prep.
+  `merchantPhase="ready_for_pickup"` covers both the N-08 60s-per-candidate search and the N-07
+  6-attempt hold (`noRiderHoldAt`) with one muted, non-alarming card — the hold window has no
+  design-doc state and no auto-timeout (a named mocked default, flagged here). D-04: once `riderId`
+  is set (`dispatch_accept` clears `merchantPhase` to null), a green "Rider secured" banner shows on
+  the `assigned` transition. **D-27 (plate number) and any rider name/photo/rating: flagged as a
+  real gap, not built.** Neither `MerchantOrderResponse` nor the generic `OrderSnapshot` carries a
+  rider identity/plate field for a food job — a parcel's tracking card gets its face/name/rating
+  from a client-side cache captured at `chooseOffer` time, a moment that doesn't exist for food
+  (dispatch is fully server-automatic). `LiveTrackingCard` (`src/ui/order/LiveTrackingCard.tsx`)
+  gains an optional `jobType`/`feeLabel` prop pair (re-label, don't fork — same instruction B4 used
+  on `Stepper`) so D3 reuses it verbatim for the map/ETA/phone/Stepper composition once dispatched,
+  fed by the GENERIC order snapshot (`getOrder`, same `orderKey` cache LiveTrackingCard's own
+  telemetry observer subscribes to) — `getSnapshot` carries no `orderType` filter, only a
+  party-on-the-order check, so this works today with zero backend change; `riderIdentity` is passed
+  `null` (degrades gracefully, per its existing `? … : null` guard) rather than fabricated. No
+  WebSocket wired for the post-dispatch tracker (10s poll instead, unlike the parcel screen's
+  `useOrderSocket`) — an open item, mirrors D2's own poll-only PR-body note. Cancel: pre-dispatch
+  stays D2's free `cancelUnpaidFoodOrder`; post-dispatch (a rider already committed) reuses the
+  generic, already-proven `cancelOrder` behind a confirm-first inline `Card` (mirrors
+  `app/order/[id].tsx`'s `MATCHED_CANCEL` pattern, not the gallery's radio-reason sheet, since that
+  reason-picker was never actually shipped for Express either). **Open item, PR body:** whether a
+  post-dispatch cancel auto-refunds an already-paid WALLET order isn't specified anywhere in the
+  transitions table — reusing the proven path rather than inventing new money behaviour. D-13: the
+  cancelled branch special-cases `rejectionReason==="no_rider"` into the richer apology (reusing
+  `rejectionCopy("no_rider")`, already-shipped copy) instead of the generic cancelled card.
+  Refund-pending/refunded: `refundOrder` (C4) sets `refundedAt` atomically WITH the cancel, so
+  there's no separate "pending" window server-side today — the cancelled branch renders only the
+  terminal "Refunded in full" card (reference + amount), flagged as a scope note rather than
+  inventing a pending state that can't occur. D-28: `GetHelpControl`/`SosControl`
+  (`src/ui/safety.tsx`) imported and dropped in unchanged on the live-tracker card — genuinely
+  verbatim, zero fork; `ReportControl` deliberately withheld here (matches the parcel screen's own
+  convention of only offering it once a trip is terminal, not mid-delivery). Delivered/completed:
+  explicitly NOT this box's job (D4 owns "delivered + rate") — a minimal, honest terminal card so
+  the screen never dead-ends on a WALLET order that reaches `delivered` before D4 ships (no CASH
+  handshake gate blocks it). `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages
+  (mobile: 80 suites / 611 tests, incl. 7 new D3 phase-branching cases in
+  `app/food/order/__tests__/order-screen.test.tsx` and 2 new `Stepper` food-customer-label cases
+  replacing the now-stale B4 "ignores jobType on the customer view" assertion; api: 94 suites / 1439
+  tests unaffected). `pnpm depcruise` clean. Bundle-size budget is still report-only (0/0 in
+  `size-budget.json`, unchanged since D1) — no measurement gate to run this increment. D4 (doorstep)
+  is next.
 - [ ] **D4 · Doorstep.** Dual-confirm handshake ("I gave $X" → "I received $X" → code reveals,
   R-04), masked code during CASH transit with offline press-and-hold reveal (R-09), rider-didn't-
   confirm support state, delivered + rate, no-show failure timeline (N-10), resumed-mid-order
