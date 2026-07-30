@@ -419,6 +419,39 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(res.restaurants[0]!.hours).toBeNull();
   });
 
+  it("listRestaurants exposes only the merchant's geo-point (D-17: never the raw contactPhone/landmark on Merchant.location)", async () => {
+    const s = svc({
+      merchant: {
+        findMany: async () => [
+          {
+            id: "m1",
+            name: "Nandos",
+            coverPhotoUrl: null,
+            logoUrl: null,
+            cuisineTags: [],
+            priceLevel: 2,
+            hours: null,
+            location: { point: { lat: -17.82, lng: 31.05 }, landmark: "Corner of X and Y", contactPhone: "+263771234567" },
+          },
+        ],
+      },
+    });
+    const res = await s.listRestaurants();
+    expect(res.restaurants[0]!.location).toEqual({ lat: -17.82, lng: 31.05 });
+    expect(JSON.stringify(res.restaurants[0])).not.toContain("771234567");
+    expect(JSON.stringify(res.restaurants[0])).not.toContain("Corner of X and Y");
+  });
+
+  it("listRestaurants defaults location to null when the merchant hasn't set one", async () => {
+    const s = svc({
+      merchant: {
+        findMany: async () => [{ id: "m1", name: "Nandos", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2, hours: null, location: null }],
+      },
+    });
+    const res = await s.listRestaurants();
+    expect(res.restaurants[0]!.location).toBeNull();
+  });
+
   it("getRestaurantMenu 404s a merchant that isn't pilotEnabled (even if it exists)", async () => {
     const s = svc({ merchant: { findFirst: async () => null } });
     await expect(s.getRestaurantMenu("m1")).rejects.toThrow(/not found/i);

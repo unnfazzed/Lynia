@@ -192,7 +192,7 @@ export function Card({ children, style }: { children: React.ReactNode; style?: V
  * the rider terminal screens (terminals.tsx), which already render those as a calm muted pill and
  * put any red accent on the surrounding icon/headline instead.
  */
-export type PillTone = "neutral" | "online" | "offline" | "reconnecting" | "success";
+export type PillTone = "neutral" | "online" | "offline" | "reconnecting" | "success" | "highlight";
 // Mirrors packages/design/components/core/StatusPill.jsx: text is the legible text-green (never the
 // bright fill green), the dot is the fill green, and only the online/success tones sit on the mint wash.
 const PILL_TONE: Record<PillTone, { text: string; bg: string; dot: string }> = {
@@ -201,6 +201,9 @@ const PILL_TONE: Record<PillTone, { text: string; bg: string; dot: string }> = {
   offline: { text: tokens.color.muted, bg: tokens.color.surface, dot: tokens.color.muted },
   // A dropped/paused connection is a transient state, not an error — muted, never danger-red.
   reconnecting: { text: tokens.color.muted, bg: tokens.color.surface, dot: tokens.color.muted },
+  // D2/R5·6: "money moved but not yet confirmed" (PAID, waiting for the restaurant) is deliberately
+  // NOT the same "good" green as success — a distinct gold/highlight tone, first consumer here.
+  highlight: { text: tokens.color.highlightInk, bg: tokens.color.highlightWash, dot: tokens.color.highlight },
   // A delivered/completed order is a clear win — the same calm "good" mint-wash treatment as online.
   success: { text: tokens.color.accentText, bg: tokens.color.accentWash, dot: tokens.color.success },
 };

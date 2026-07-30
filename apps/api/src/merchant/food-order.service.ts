@@ -34,7 +34,16 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { FoodDebtService } from "./food-debt.service";
 
-type OrderWithItems = Prisma.OrderGetPayload<{ include: { merchantItems: true } }>;
+// D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
+// money to (never masked — D-17's masking is for a THIRD PARTY's view of the merchant, e.g. a
+// rider's navigation card; the customer paying their own order needs the real number, exactly as
+// the design source shows it — packages/design/RESTAURANTS-DECISIONS.md D-24). Falls back to the
+// merchant account's own registered phone when no pickup-point contactPhone is set yet (toResponse).
+const ORDER_WITH_ITEMS_INCLUDE = {
+  merchantItems: true,
+  merchant: { select: { location: true, ownerProfile: { select: { phone: true } } } },
+} satisfies Prisma.OrderInclude;
+type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof ORDER_WITH_ITEMS_INCLUDE }>;
 
 function isDishOutOfStock(dish: { outOfStockUntil: Date | null }): boolean {
   return !!dish.outOfStockUntil && dish.outOfStockUntil > new Date();
@@ -171,7 +180,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
             }),
           },
         },
-        include: { merchantItems: true },
+        include: ORDER_WITH_ITEMS_INCLUDE,
       });
       return this.toResponse(created);
     } catch (err) {
@@ -189,7 +198,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   private async findByIdempotencyKey(customerId: string, idempotencyKey: string): Promise<OrderWithItems | null> {
     return this.prisma.order.findFirst({
       where: { customerId, orderType: "merchant", idempotencyKey },
-      include: { merchantItems: true },
+      include: ORDER_WITH_ITEMS_INCLUDE,
     });
   }
 
@@ -267,7 +276,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       // deliberately excluded — that transition IS "handed over" for the board.
       where: { merchantId, orderType: "merchant", status: { in: [...QUEUE_VISIBLE_STATUSES] } },
       orderBy: { createdAt: "asc" },
-      include: { merchantItems: true },
+      include: ORDER_WITH_ITEMS_INCLUDE,
     });
     return orders.map((o) => this.toResponse(o));
   }
@@ -283,7 +292,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   async getAsRider(orderId: string, riderId: string): Promise<MerchantOrderResponse> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, riderId, orderType: "merchant" },
-      include: { merchantItems: true },
+      include: ORDER_WITH_ITEMS_INCLUDE,
     });
     if (!order) throw new NotFoundException("Order not found");
     return this.toResponse(order);
@@ -590,7 +599,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const merchantId = await this.ownMerchantId(profileId);
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, merchantId, orderType: "merchant" },
-      include: { merchantItems: true },
+      include: ORDER_WITH_ITEMS_INCLUDE,
     });
     if (!order) throw new NotFoundException("Order not found");
     return order;
@@ -599,14 +608,14 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   private async findOwnAsCustomer(orderId: string, customerId: string): Promise<OrderWithItems> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, customerId, orderType: "merchant" },
-      include: { merchantItems: true },
+      include: ORDER_WITH_ITEMS_INCLUDE,
     });
     if (!order) throw new NotFoundException("Order not found");
     return order;
   }
 
   private async mustFindWithItems(orderId: string): Promise<OrderWithItems> {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { merchantItems: true } });
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: ORDER_WITH_ITEMS_INCLUDE });
     if (!order) throw new NotFoundException("Order not found");
     return order;
   }
@@ -632,6 +641,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     }));
     const merchantGoodsTotal = order.merchantGoodsTotal != null ? Number(order.merchantGoodsTotal) : null;
     const deliveryFee = order.deliveryFee != null ? Number(order.deliveryFee) : null;
+    const merchantLocation = order.merchant?.location as Waypoint | null;
+    const merchantPaymentPhone = merchantLocation?.contactPhone ?? order.merchant?.ownerProfile?.phone ?? null;
     return {
       id: order.id,
       merchantId: order.merchantId!,
@@ -640,6 +651,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       items,
       note: order.note,
       paymentMethod: order.merchantPaymentMethod,
+      merchantPaymentPhone,
       merchantGoodsTotal,
       deliveryFee,
       total: merchantGoodsTotal != null && deliveryFee != null ? addMoney(merchantGoodsTotal, deliveryFee) : null,

@@ -11,6 +11,7 @@ import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../logic/rider-bid-d
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../logic/pickup-checklist-draft";
 import { RESTAURANT_LIST_SNAPSHOT_KEY } from "../net/restaurant-list-store";
 import { FOOD_CART_SNAPSHOT_KEY } from "../net/food-cart-store";
+import { FOOD_ORDER_SNAPSHOT_KEY } from "../net/food-order-store";
 import type { UndeliveredReason } from "@lynia/shared";
 
 // The one-time delivery handover code is returned once by `select`; persist it per-order so it
@@ -519,6 +520,9 @@ export async function clearDeviceState(): Promise<void> {
       // on a shared device, same reasoning as HISTORY_SNAPSHOT_KEY above.
       SecureStore.deleteItemAsync(RESTAURANT_LIST_SNAPSHOT_KEY),
       SecureStore.deleteItemAsync(FOOD_CART_SNAPSHOT_KEY),
+      // D2 (checkout): the last-placed food order's id/status snapshot (PII-free) must not rehydrate
+      // onto the next user's account on a shared device, same reasoning as FOOD_CART_SNAPSHOT_KEY.
+      SecureStore.deleteItemAsync(FOOD_ORDER_SNAPSHOT_KEY),
       // Note: the per-order `lynia.lastActive.<orderId>` keys are keyed by order id and not enumerable
       // (no index like CODE_INDEX_KEY), so they linger but are lower-risk — the next user isn't routed to
       // them (the tracker only reads a key it already holds the id for), so nothing paints from them.

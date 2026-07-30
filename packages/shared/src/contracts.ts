@@ -756,6 +756,13 @@ export const RestaurantListItem = z
     // ./restaurant-hours — the server sends the raw weekly hours only, never a stale precomputed
     // boolean. Additive on the customer read API (C1 shipped this response without it).
     hours: MerchantHours.nullable(),
+    // D2 (checkout): the geo-point ONLY, never the full Merchant.location Waypoint — that object's
+    // `landmark`/`contactPhone` are the shop's own address label + raw contact number, and D-17
+    // ("merchant phone numbers are masked everywhere") forbids shipping the latter to a customer
+    // client. This lets checkout compute an honest delivery-fee ESTIMATE the same way the server
+    // will (haversineKm + deliveryFeeForDistance, ./restaurants-order + ./pricing) before placing
+    // the order — null until the merchant has set a location (placeOrder itself requires one).
+    location: LatLng.nullable(),
   })
   .strict();
 export type RestaurantListItem = z.infer<typeof RestaurantListItem>;
@@ -878,6 +885,10 @@ export const MerchantOrderResponse = z
     items: z.array(MerchantOrderItemView),
     note: z.string().nullable(),
     paymentMethod: MerchantPaymentMethod.nullable(),
+    // D-24 manual rail: the shop's own payment-receiving number, UNMASKED — this is the customer's
+    // own active order, not a third party's view of the merchant (D-17 masking doesn't apply here;
+    // see the doc comment on the API side, food-order.service.ts's ORDER_WITH_ITEMS_INCLUDE).
+    merchantPaymentPhone: z.string().nullable(),
     // D-08: never merged into one figure — goods total is what's owed to the merchant, deliveryFee
     // is what the rider keeps. `total` is goods + delivery, the number the customer pays.
     merchantGoodsTotal: z.number().nullable(),
