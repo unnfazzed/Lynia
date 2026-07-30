@@ -18,6 +18,11 @@ export interface KitchenConnectionValue {
     arm: () => void;
     toggleMuted: () => void;
     testRing: () => void;
+    /** Unbounded ring — a real NEW ORDER. Idempotent (no-ops if already ringing/muted); the caller
+     *  (the queue screen) calls this whenever an unanswered `awaiting_accept` order exists and
+     *  `silence()` the instant it no longer does — D-05: "stops only on Accept/Can't-take-it." */
+    ring: () => void;
+    silence: () => void;
   };
   reachability: ReachabilityState;
   /** True whenever the connection is down — every mutating action the queue/menu/shop screens add
@@ -87,6 +92,16 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
     setAlarmTick((t) => t + 1);
   }, []);
 
+  const ring = useCallback(() => {
+    getAlarmController().start();
+    setAlarmTick((t) => t + 1);
+  }, []);
+
+  const silence = useCallback(() => {
+    getAlarmController().stop();
+    setAlarmTick((t) => t + 1);
+  }, []);
+
   const signOut = useCallback(() => {
     clearMerchantSession();
     setSession(null);
@@ -104,6 +119,8 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
       arm,
       toggleMuted,
       testRing,
+      ring,
+      silence,
     },
     reachability: reachState,
     actionsDisabled: !reachState.reachable,

@@ -391,6 +391,68 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
   });
 });
 
+describe("FoodOrderService.listQueue — E2 board visibility", () => {
+  it("stays visible through the whole pre-handoff dispatch lifecycle, not just status=requested", async () => {
+    let whereArg: Record<string, unknown> | undefined;
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findMany: async (args: { where: Record<string, unknown> }) => {
+          whereArg = args.where;
+          return [];
+        },
+      },
+    });
+    await svc.listQueue("p1");
+    expect(whereArg).toEqual({
+      merchantId: "m1",
+      orderType: "merchant",
+      status: { in: ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] },
+    });
+  });
+});
+
+describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => {
+  it("409s outside ready_for_pickup", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { findFirst: async () => ({ id: "o1", merchantId: "m1", merchantPhase: "preparing", merchantItems: [] }) },
+    });
+    await expect(svc.revealPickupCode("p1", "o1")).rejects.toThrow(/isn't ready for pickup/);
+  });
+
+  it("mints a fresh code, stores its hash, resets attempts, and returns the raw code", async () => {
+    let updateArgs: Record<string, unknown> | undefined;
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findFirst: async () => ({ id: "o1", merchantId: "m1", merchantPhase: "ready_for_pickup", merchantItems: [] }),
+        updateMany: async (a: Record<string, unknown>) => {
+          updateArgs = a;
+          return { count: 1 };
+        },
+      },
+    });
+    const res = await svc.revealPickupCode("p1", "o1");
+    expect(res.pickupCode).toMatch(/^\d{4}$/);
+    expect(updateArgs).toEqual({
+      where: { id: "o1", merchantPhase: "ready_for_pickup" },
+      data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeAttempts: 0 },
+    });
+  });
+
+  it("409s on a lost CAS race (order changed between the read and the update)", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findFirst: async () => ({ id: "o1", merchantId: "m1", merchantPhase: "ready_for_pickup", merchantItems: [] }),
+        updateMany: async () => ({ count: 0 }),
+      },
+    });
+    await expect(svc.revealPickupCode("p1", "o1")).rejects.toThrow(/Order changed, retry/);
+  });
+});
+
 describe("FoodOrderService reconciler sweeps", () => {
   it("N-03: auto-cancels an order past its accept deadline and notifies the customer", async () => {
     let cancelled: Record<string, unknown> | undefined;
