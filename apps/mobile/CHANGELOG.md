@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/unnfazzed/Lynia/compare/v0.13.0...v0.14.0) (2026-07-30)
+
+
+### Features
+
+* **mobile:** B3 — merge Wallet + Earnings into one rider Money tab ([6087c27](https://github.com/unnfazzed/Lynia/commit/6087c2722640513b115d9b5344b858f441a90c7d))
+
 ## [0.13.0](https://github.com/unnfazzed/Lynia/compare/v0.12.1...v0.13.0) (2026-07-29)
 
 
