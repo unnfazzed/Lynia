@@ -56,6 +56,8 @@ describe("liveOrderCardCopy", () => {
 function historyRow(overrides: Partial<OrderHistoryRow>): OrderHistoryRow {
   return {
     id: "o1",
+    orderType: "parcel",
+    merchantName: null,
     role: "customer",
     pickup: { point: { lat: 0, lng: 0 }, landmark: "Eastgate" },
     dropoff: { point: { lat: 0, lng: 0 }, landmark: "Avenues" },
