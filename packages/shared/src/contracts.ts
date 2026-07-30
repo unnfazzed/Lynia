@@ -287,6 +287,16 @@ export const WS_EVENTS = {
    *  the new order id so the customer app moves to the fresh auction instead of a dead "cancelled"
    *  terminal — the customer never restarts the order themselves. */
   orderRebroadcast: "order:rebroadcast",
+  /** server→client: a live food-dispatch offer landed for you (C5 "rider offer alarm channel vs
+   *  parcel ping"). Food dispatch offers exactly ONE candidate at a time (food-dispatch.service.ts),
+   *  so unlike `board:new-order` this is pushed to the single offered rider, not a geo-scoped room —
+   *  the mirror of the parcel board's new-order card for the single-candidate flow. */
+  foodOffer: "food:offer",
+  /** server→client: the recipient's live food-dispatch offer is no longer live — it expired, they
+   *  declined it (self-triggered, so mostly a no-op for that client), or the order left dispatch some
+   *  other way. Mirrors `bid:expired`/`order:taken` closing the parcel board card; the client clears
+   *  or refetches its offer state. */
+  foodOfferClosed: "food:offer-closed",
 } as const;
 export type WsEvent = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];
 
@@ -357,6 +367,38 @@ export type BidExpiredEvent = z.infer<typeof BidExpiredEvent>;
  *  — distinct from `bid:expired`, where nobody was). */
 export const OrderTakenEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
 export type OrderTakenEvent = z.infer<typeof OrderTakenEvent>;
+
+/** `food:offer` payload (C5) — a live food-dispatch offer, REDACTED like `board:new-order` (point +
+ *  landmark only, never contactPhone — the rider hasn't accepted yet). Also the response shape of
+ *  `GET /merchant/orders/dispatch/offer` (poll fallback / reconnect source of truth for the same
+ *  offer this event announces), so REST and WS never drift. `.strict()` enforces the no-PII
+ *  guarantee on the wire, mirroring `BoardNewOrderEvent`. */
+export const FoodOfferEvent = z
+  .object({
+    orderId: z.string().uuid(),
+    merchantId: z.string().uuid(),
+    pickup: PublicWaypoint,
+    dropoff: PublicWaypoint,
+    itemDesc: z.string(),
+    merchantGoodsTotal: z.number().nullable(),
+    deliveryFee: z.number().nullable(),
+    distanceKm: z.number().nullable(),
+    expiresAt: z.string(),
+  })
+  .strict();
+export type FoodOfferEvent = z.infer<typeof FoodOfferEvent>;
+
+/** `GET /merchant/orders/dispatch/offer` response (C5) — wrapped in an object so "no live offer"
+ *  round-trips as the well-formed JSON `{ offer: null }`, not an ambiguous empty response body (Nest
+ *  sends NO body at all for a bare `null`/`undefined` controller return — `isNil` short-circuits
+ *  straight to `response.send()`). */
+export const FoodOfferResponse = z.object({ offer: FoodOfferEvent.nullable() }).strict();
+export type FoodOfferResponse = z.infer<typeof FoodOfferResponse>;
+
+/** `food:offer-closed` payload (C5) — the recipient's live food-dispatch offer stopped being live
+ *  (expiry, decline, or otherwise). Signal only, mirrors `bid:expired`'s shape. */
+export const FoodOfferClosedEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
+export type FoodOfferClosedEvent = z.infer<typeof FoodOfferClosedEvent>;
 
 /** `job:cancelled` payload — an assigned job was cancelled out from under the rider, either by the
  *  customer (INTERFACE-AUDIT C3) or by ops (admin console). `collected` distinguishes the pre-pickup

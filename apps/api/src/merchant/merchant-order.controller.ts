@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@n
 import {
   ConfirmMerchantPickupRequest,
   ConfirmMerchantReturnedCashRequest,
+  type FoodOfferResponse,
   MerchantAcceptOrderRequest,
   MerchantConfirmPaymentRequest,
   MerchantRejectOrderRequest,
@@ -132,7 +133,16 @@ export class MerchantOrderController {
     return this.foodOrders.confirmPickup(orderId, profileId, body.code);
   }
 
-  // ── C3: food dispatch — rider actions (the candidate/assigned rider, no MerchantGuard) ────────────
+  // ── C3/C5: food dispatch — rider actions (the candidate/assigned rider, no MerchantGuard) ─────────
+
+  // C5 rider offer alarm channel (plan §10 blocker): the poll/reconnect fallback for `food:offer` —
+  // static two-segment path, so it can never collide with the single-segment `:orderId` route above.
+  // Wrapped in `{ offer }` (FoodOfferResponse) so "no live offer" round-trips as a real `{"offer":
+  // null}` JSON body — a bare `null` return sends NO body at all (Nest's isNil short-circuit).
+  @Get("dispatch/offer")
+  async getMyDispatchOffer(@CurrentUser() profileId: string): Promise<FoodOfferResponse> {
+    return { offer: await this.dispatch.getOfferForRider(profileId) };
+  }
 
   @Post(":orderId/dispatch/accept")
   acceptDispatch(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {

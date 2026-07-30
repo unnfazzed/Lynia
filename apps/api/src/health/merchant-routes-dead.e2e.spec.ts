@@ -119,11 +119,11 @@ const foodOrderServiceStub = {
   getMyOrder: async () => ({ id: "o1", merchantId: "m1", status: "requested", merchantPhase: "awaiting_accept" }),
 };
 
-// C3/C4: FoodDispatchService and FoodDebtService are real constructor dependencies of
-// MerchantOrderController/FoodOrderController now, but none of the golden-matrix routes below call
-// any of their methods — empty stubs are enough to satisfy DI without pulling in TrackingGateway/
-// NotificationsService/etc.
-const foodDispatchServiceStub = {};
+// C3/C4/C5: FoodDispatchService and FoodDebtService are real constructor dependencies of
+// MerchantOrderController/FoodOrderController now — empty stubs are enough to satisfy DI without
+// pulling in TrackingGateway/NotificationsService/etc, except getOfferForRider (C5 rider offer
+// alarm channel poll fallback), which one golden-matrix leg below DOES call through.
+const foodDispatchServiceStub = { getOfferForRider: async () => null };
 const foodDebtServiceStub = {};
 
 /** Boots the REAL merchant/restaurant controllers (+ real guards) with a chosen env — the only way
@@ -211,13 +211,15 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
   it("flags-off (absent): every merchant/restaurant route 503s before auth is even checked", async () => {
     const app = await bootMerchantApp({});
     // C2: /merchant/orders (MerchantOrderController) and /restaurants/orders/:id (FoodOrderController)
-    // join the same fail-safe-OFF proof as the C1 routes.
+    // join the same fail-safe-OFF proof as the C1 routes. C5: /merchant/orders/dispatch/offer (the
+    // rider offer alarm channel's poll fallback) is the newest flagged surface.
     for (const path of [
       "/merchant/me",
       "/merchant/categories",
       "/restaurants",
       "/merchant/orders",
       "/restaurants/orders/11111111-1111-1111-1111-111111111111",
+      "/merchant/orders/dispatch/offer",
     ]) {
       const res = await request(app.getHttpServer()).get(path); // no Authorization header at all
       expect(res.status, `${path} must be dead (503) while RESTAURANTS_ENABLED is unset`).toBe(503);
@@ -279,6 +281,14 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
         .set("Authorization", bearer("p1", "customer"));
       expect(res.status).toBe(200);
       expect(res.body.id).toBe("o1");
+    });
+
+    it("C5: /merchant/orders/dispatch/offer is a rider action — no MerchantGuard, any authenticated caller gets 200", async () => {
+      const noAuth = await request(app.getHttpServer()).get("/merchant/orders/dispatch/offer");
+      expect(noAuth.status).toBe(401);
+      const res = await request(app.getHttpServer()).get("/merchant/orders/dispatch/offer").set("Authorization", bearer("p1", "customer"));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ offer: null });
     });
   });
 });

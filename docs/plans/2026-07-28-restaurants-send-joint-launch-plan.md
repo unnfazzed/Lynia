@@ -471,7 +471,21 @@ dead-when-off rather than dead-always.
   customer push contract (accepted-pay-now persistent, rider-secured, at-door; soft reminder
   N-22); rider offer alarm channel vs parcel ping; weekly merchant statement + commission
   accrual display (0% + illustrative 10% comparator N-13) + end-of-day close job (N-23);
-  utilization metric extended per-vertical.
+  utilization metric extended per-vertical. N-23 end-of-day close was already shipped inside C2
+  (`FoodOrderService.sweepEndOfDayClose`) — nothing left to do there. **Done 2026-07-30 (rider offer
+  alarm channel slice, closing the §10 blocker):** `GET /merchant/orders/dispatch/offer`
+  (`FoodDispatchService.getOfferForRider`, wrapped as `{ offer }` so "none live" round-trips as
+  real JSON rather than an empty body) plus two new WS events, `food:offer`/`food:offer-closed`
+  (`TrackingGateway.emitFoodOffer`/`emitFoodOfferClosed`, direct-to-rider via the same cluster-wide
+  `fetchSockets`-and-filter lookup `kickRiderFromBoard`/`evictRiderFromSupply` already use — food
+  dispatch offers exactly one candidate at a time, so there's no board room to address). Both the
+  REST poll and the WS push are built from one shared, `.strict()`-parsed, PII-redacted
+  `FoodOfferEvent` (point + landmark only, never `contactPhone` — mirrors `BoardNewOrderEvent`),
+  wired at `tick()`'s offer-created commit and `releaseCurrentOffer`'s expire/decline close-out.
+  Golden matrix extended (`merchant-routes-dead.e2e.spec.ts`): the new route is dead-when-off and,
+  flagged on, needs only `JwtAuthGuard` (no `MerchantGuard` — it's the rider's own action). Kitchen
+  tablet realtime, the N-22 reminder push, the weekly statement, and the per-vertical utilization
+  metric remain open for a future C5 firing.
 
 ### Lane D — food UI (`apps/mobile`, customer + rider food flows)
 
@@ -787,12 +801,13 @@ ship unless the founder overrides; each PR that implements a mocked default name
 
 ## 10. Open blockers (loops write here)
 
-- [2026-07-29] [B, cross-lane C] Not a stall — B2 shipped fully within `apps/mobile` scope — but
-  the rider board can't show a *live* food offer card until Lane C adds a rider-facing surface
-  for one: `food-dispatch.service.ts` (C3, shipped) has no `GET` a rider can call for an
-  `open_for_offers` order (the merchant queue reads are `MerchantGuard`-gated) and no board-style
-  WS event analogous to `boardNewOrder`/`orderTaken` for a food offer landing/expiring/being
-  taken — today the only rider-side signal is the `food_offer` push notification. `JobCard`
-  already renders `jobType: "food"` (unit-tested); B4 (active-job screen) will hit the same gap
-  for its own food step list. Owner: Lane C's next firing, or whichever of B/D picks this up —
-  small (one GET + one WS event, mirroring the parcel board's existing shape).
+- [2026-07-29] [B, cross-lane C] **RESOLVED 2026-07-30 (C5).** Not a stall — B2 shipped fully
+  within `apps/mobile` scope — but the rider board couldn't show a *live* food offer card until
+  Lane C added a rider-facing surface for one: `food-dispatch.service.ts` (C3, shipped) had no
+  `GET` a rider could call for an `open_for_offers` order (the merchant queue reads are
+  `MerchantGuard`-gated) and no board-style WS event analogous to `boardNewOrder`/`orderTaken` for
+  a food offer landing/expiring/being taken — the only rider-side signal was the `food_offer` push
+  notification. `JobCard` already renders `jobType: "food"` (unit-tested); B4 (active-job screen)
+  would have hit the same gap for its own food step list. Closed by C5's first slice: `GET
+  /merchant/orders/dispatch/offer` + the `food:offer`/`food:offer-closed` WS events (see §5 Lane C
+  C5 for the shipped shape). B4/D can now build against a real surface instead of push-only.

@@ -1,9 +1,18 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { dispatchRadiusForAttempt, type HeldReason, RELIABILITY, RESTAURANTS_DISPATCH, RIDER_STRIKE_COOLDOWN_MS, type Waypoint } from "@lynia/shared";
+import {
+  dispatchRadiusForAttempt,
+  FoodOfferEvent,
+  type HeldReason,
+  RELIABILITY,
+  RESTAURANTS_DISPATCH,
+  RIDER_STRIKE_COOLDOWN_MS,
+  type Waypoint,
+} from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { CANCEL_STRIKE_LIMIT } from "../orders/order-lifecycle.constants";
 import { NotificationsService } from "../notifications/notifications.service";
+import { publicWaypoint } from "../orders/waypoints";
 import { PrismaService } from "../prisma/prisma.service";
 import { applyReliabilityDelta } from "../riders/reliability";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -138,6 +147,12 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         dispatchAttempt: true,
         dispatchExcludedRiderIds: true,
         dispatchStartedAt: true,
+        pickup: true,
+        dropoff: true,
+        itemDesc: true,
+        merchantGoodsTotal: true,
+        deliveryFee: true,
+        distanceKm: true,
       },
     });
     if (!order || order.status !== "requested" || order.merchantPhase !== "ready_for_pickup" || order.noRiderHoldAt) {
@@ -215,7 +230,47 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       body: "A kitchen order is ready nearby — tap to accept before it's offered to someone else.",
       data: { orderId, kind: "food_offer" },
     });
+    // C5 rider offer alarm channel: the live-app signal alongside the push above — GET
+    // /merchant/orders/dispatch/offer is the reconnect/poll fallback for the SAME offer this builds.
+    // Best-effort: emitFoodOffer never throws, and a build failure here must never undo the offer
+    // that just committed above.
+    try {
+      const event = this.buildFoodOfferEvent(orderId, order.merchantId!, order, expiresAt);
+      void this.gateway.emitFoodOffer(candidate.riderId, event);
+    } catch (err) {
+      this.logger.warn(`food:offer build failed for order ${orderId}: ${(err as Error).message}`);
+    }
     return "offered";
+  }
+
+  /** REDACTED (point + landmark, never contactPhone — mirrors `buildBoardNewOrderEvent`) offer
+   *  payload shared by the WS push (`emitFoodOffer`) and the rider's poll-fallback GET
+   *  (`getOfferForRider`), so the two channels can never drift. Throws on a schema mismatch — callers
+   *  treat this as best-effort. */
+  private buildFoodOfferEvent(
+    orderId: string,
+    merchantId: string,
+    order: {
+      pickup: Prisma.JsonValue;
+      dropoff: Prisma.JsonValue;
+      itemDesc: string;
+      merchantGoodsTotal: Prisma.Decimal | null;
+      deliveryFee: Prisma.Decimal | null;
+      distanceKm: Prisma.Decimal | number | null;
+    },
+    expiresAt: Date,
+  ): FoodOfferEvent {
+    return FoodOfferEvent.parse({
+      orderId,
+      merchantId,
+      pickup: publicWaypoint(order.pickup),
+      dropoff: publicWaypoint(order.dropoff),
+      itemDesc: order.itemDesc,
+      merchantGoodsTotal: order.merchantGoodsTotal != null ? Number(order.merchantGoodsTotal) : null,
+      deliveryFee: order.deliveryFee != null ? Number(order.deliveryFee) : null,
+      distanceKm: order.distanceKm != null ? Number(order.distanceKm) : null,
+      expiresAt: expiresAt.toISOString(),
+    });
   }
 
   /** Shared close-out for a live offer that ends WITHOUT acceptance (sweep expiry or rider decline):
@@ -246,10 +301,37 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       where: { orderId, riderId, outcome: "pending" },
       data: { outcome, respondedAt: new Date() },
     });
+    // C5: close the rider offer alarm channel — a no-op UI-wise for the "declined" caller (they
+    // already know), but the only signal the OTHER path (sweep-driven "expired") has.
+    void this.gateway.emitFoodOfferClosed(riderId, orderId);
     return true;
   }
 
   // ── Rider actions ────────────────────────────────────────────────────────────────────────────────
+
+  /** C5 rider offer alarm channel — the poll/reconnect fallback GET (plan §10 blocker) for the SAME
+   *  offer `food:offer` announces: a rider whose socket was down when the offer landed, or who just
+   *  opened the app cold, can ask "do I have a live offer right now?" without knowing an orderId up
+   *  front (unlike every other dispatch action here, which is `:orderId`-scoped). Null when this
+   *  rider holds no live offer — not an error, since "nothing right now" is the normal state. */
+  async getOfferForRider(riderId: string): Promise<FoodOfferEvent | null> {
+    const order = await this.prisma.order.findFirst({
+      where: { orderType: "merchant", status: "open_for_offers", dispatchOfferedRiderId: riderId, dispatchOfferExpiresAt: { gt: new Date() } },
+      select: {
+        id: true,
+        merchantId: true,
+        pickup: true,
+        dropoff: true,
+        itemDesc: true,
+        merchantGoodsTotal: true,
+        deliveryFee: true,
+        distanceKm: true,
+        dispatchOfferExpiresAt: true,
+      },
+    });
+    if (!order || !order.merchantId || !order.dispatchOfferExpiresAt) return null;
+    return this.buildFoodOfferEvent(order.id, order.merchantId, order, order.dispatchOfferExpiresAt);
+  }
 
   /** D-04 "rider secured" — the candidate holding the live offer accepts. Mirrors matching.service.ts:
    *  selectOffer's shape (mint a fresh delivery code, one_active_ride race handled the same way) one
