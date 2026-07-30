@@ -349,12 +349,27 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     const expectedHash = this.tokens.hash(code);
     const outcome = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<
-        Array<{ status: string; rider_id: string | null; otp_hash: string | null; delivery_otp_attempts: number }>
-      >`SELECT status, rider_id, otp_hash, delivery_otp_attempts FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+        Array<{
+          status: string;
+          rider_id: string | null;
+          otp_hash: string | null;
+          delivery_otp_attempts: number;
+          order_type: string;
+          merchant_payment_method: string | null;
+          customer_cash_confirmed_at: Date | null;
+          rider_cash_confirmed_at: Date | null;
+        }>
+      >`SELECT status, rider_id, otp_hash, delivery_otp_attempts, order_type, merchant_payment_method, customer_cash_confirmed_at, rider_cash_confirmed_at FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
       if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
       if (o.status !== "en_route_dropoff") throw new ConflictException("Order is not ready for delivery");
+      // R-09/R-04 defense in depth: rotateDeliveryCode already refuses to reveal a CASH merchant
+      // order's plaintext code before the handshake, so a normal client can never reach this call
+      // with a valid code first — this re-checks server-side rather than trusting that alone.
+      if (o.order_type === "merchant" && o.merchant_payment_method === "cash" && !(o.customer_cash_confirmed_at && o.rider_cash_confirmed_at)) {
+        throw new ConflictException("Confirm the cash exchange with the customer before entering the code");
+      }
       if (o.delivery_otp_attempts >= DELIVERY_OTP_MAX_ATTEMPTS) {
         throw new ForbiddenException("Too many attempts — ask the customer to re-issue the code");
       }
@@ -1021,11 +1036,24 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   async rotateDeliveryCode(orderId: string, customerId: string): Promise<{ deliveryCode: string }> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { customerId: true, status: true },
+      select: {
+        customerId: true,
+        status: true,
+        orderType: true,
+        merchantPaymentMethod: true,
+        customerCashConfirmedAt: true,
+        riderCashConfirmedAt: true,
+      },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.customerId !== customerId) throw new ForbiddenException("Not your order");
     if (!ACTIVE_FOR_CODE.includes(order.status)) throw new ConflictException("No active delivery for this order");
+    // R-09: a CASH merchant order's code stays masked until BOTH doorstep handshake confirms land
+    // (R-04) — WALLET orders are already paid and reveal as normal (unaffected: merchantPaymentMethod
+    // !== "cash" short-circuits below).
+    if (order.orderType === "merchant" && order.merchantPaymentMethod === "cash" && !(order.customerCashConfirmedAt && order.riderCashConfirmedAt)) {
+      throw new ConflictException("The code appears once you both confirm the cash exchange");
+    }
 
     const deliveryCode = this.tokens.randomOtp();
     // KB-DELIVERY-CODE-ROTATION-SIGNAL: rotate the hash, zero the attempt counter, and stamp

@@ -71,6 +71,29 @@ enum MerchantPaymentMethod {
   wallet
 }
 
+// C4 (food money evidence layer): the collect-and-return merchant-debt ledger's derived state per
+// order. `open` from pickup (R-01) until one of the three settling entries lands — see
+// MerchantDebtEntryType below and MERCHANT_DEBT_TRANSITIONS in order-lifecycle.transitions.ts. Null
+// on every order the debt model doesn't apply to (parcels, WALLET food orders, pay_upfront kitchens
+// — deliberately out of scope this PR, see the FoodDebtService docstring).
+enum MerchantDebtStatus {
+  open
+  settled_cash
+  settled_goods
+  written_off
+}
+
+// Append-only audit trail for the debt ledger (mirrors CommissionLedger's shape: one immutable row
+// per money-relevant event, never updated/deleted). `@@unique([orderId, type])` makes each write
+// idempotent under a retry — at most one `opened` row and one settling row (whichever type) per
+// order, ever.
+enum MerchantDebtEntryType {
+  opened
+  settled_cash
+  settled_goods
+  written_off
+}
+
 enum OfferStatus {
   pending
   selected
@@ -188,6 +211,13 @@ model Profile {
   // broadcasting a new order (OrdersService.create); `holdReason` backs the audit row + admin console.
   onHold          Boolean   @default(false) @map("on_hold")
   holdReason      String?   @map("hold_reason")
+  // R-08 (C4): a customer who refuses/can't pay a collect-and-return CASH food order costs them
+  // nothing in money — the merchant logs the loss and the goods return — but from then on they're
+  // restricted to WALLET for food orders. Deliberately separate from `onHold` (which blocks placing
+  // ANY order); this only narrows the payment method on future food orders.
+  cashBanned      Boolean   @default(false) @map("cash_banned")
+  cashBanReason   String?   @map("cash_ban_reason")
+  cashBannedAt    DateTime? @map("cash_banned_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -299,6 +329,7 @@ model Rider {
   commissionAccount CommissionAccount?
   commissionLedger  CommissionLedger[]
   topUps            TopUp[]
+  merchantDebtLedger MerchantDebtLedger[]
 
   @@map("riders")
 }
@@ -577,6 +608,45 @@ model Order {
 
   dispatchAttempts FoodDispatchAttempt[]
 
+  // ── C4: food money evidence layer (orderType=merchant only) ────────────────────────────────────
+  // R-03 snapshot: the merchant's cash rule AT PLACEMENT, so a mid-order shop-setting change never
+  // retroactively changes an in-flight order's obligations. Null for WALLET orders (the rule never
+  // applies) and for every parcel order.
+  merchantCashRule MerchantCashRule? @map("merchant_cash_rule")
+  // R-04 doorstep dual-confirm handshake (CASH food orders only, both cashRules — money changes
+  // hands at the door either way, independent of who fronted the goods). "Food first" ordering:
+  // customer confirms, THEN the rider confirms; only then does the delivery code unlock (R-09).
+  cashHandshakeAmount     Decimal?  @map("cash_handshake_amount") @db.Decimal(10, 2)
+  customerCashConfirmedAt DateTime? @map("customer_cash_confirmed_at")
+  riderCashConfirmedAt    DateTime? @map("rider_cash_confirmed_at")
+  // N-19: 2:00 from the customer's confirm. R-05: unresolved past this (or an explicit rider
+  // dispute) freezes the trip — cashHandshakeFrozenAt stamps that, the rider takes no new jobs
+  // until support (X1) resolves it.
+  cashHandshakeDeadlineAt DateTime? @map("cash_handshake_deadline_at")
+  cashHandshakeFrozenAt   DateTime? @map("cash_handshake_frozen_at")
+  // R-01/R-06/N-20/N-21: the collect-and-return merchant-debt ledger's derived state — opened at
+  // pickup (goods leave the counter unpaid), settled by the merchant's returned-cash count-confirm,
+  // a goods-only return (refusal/no-show, no cash ever collected), or written off on non-return
+  // (R-07, pairs with the rider's accountStatus=suspended). debtAmount is the merchantGoodsTotal
+  // snapshot at the moment the debt opened (R-06: the GOODS value only, delivery fee excluded — the
+  // rider keeps that).
+  debtStatus    MerchantDebtStatus? @map("debt_status")
+  debtAmount    Decimal?            @map("debt_amount") @db.Decimal(10, 2)
+  debtOpenedAt  DateTime?           @map("debt_opened_at")
+  debtSettledAt DateTime?           @map("debt_settled_at")
+  // N-10 customer no-show at the door: call log (mirrors paymentCallLoggedAt's shape) a rider builds
+  // up before `reportNoShow` is allowed (>= RESTAURANTS_DEBT.noShowMinCalls entries, the earliest at
+  // least RESTAURANTS_DEBT.noShowWindowMs ago).
+  noShowCallTimestamps DateTime[] @default([]) @map("no_show_call_timestamps")
+  // D-12: a merchant can't reject/cancel an already-WALLET-paid order without entering their own
+  // refund reference first — the customer's order keeps it forever as their evidence (never a
+  // screenshot). N-12's 2h SLA escalation sweep is an open item, see the PR notes / plan §9 Q6.
+  refundReference String?   @map("refund_reference")
+  refundAmount    Decimal?  @map("refund_amount") @db.Decimal(10, 2)
+  refundedAt      DateTime? @map("refunded_at")
+
+  merchantDebtLedger MerchantDebtLedger[]
+
   offers Offer[]
   events OrderEvent[]
   merchantItems MerchantOrderItem[]
@@ -834,6 +904,7 @@ model Merchant {
 
   orders     Order[]
   categories MerchantCategory[]
+  debtLedger MerchantDebtLedger[]
 
   @@map("merchants")
 }
@@ -942,6 +1013,33 @@ enum FoodDispatchOutcome {
   accepted
   declined
   expired
+}
+
+// C4 (food money evidence layer): append-only ledger backing Order.debtStatus — one immutable row
+// per money-relevant event on a collect-and-return CASH order's debt (opened at pickup, settled by
+// cash/goods return, or written off on non-return). `amount` is always positive (the goods value);
+// `type` carries the direction, mirroring CommissionLedger's "one row per event, never mutated"
+// contract. `@@unique([orderId, type])` is the idempotency guard — a retried settle call can never
+// double-write, and there is at most one `opened` + one settling row per order, ever.
+model MerchantDebtLedger {
+  id         String                @id @default(uuid()) @db.Uuid
+  orderId    String                @map("order_id") @db.Uuid
+  order      Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  merchantId String                @map("merchant_id") @db.Uuid
+  merchant   Merchant              @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  riderId    String                @map("rider_id") @db.Uuid
+  rider      Rider                 @relation(fields: [riderId], references: [profileId], onDelete: Cascade)
+  type       MerchantDebtEntryType
+  amount     Decimal               @db.Decimal(10, 2)
+  note       String?
+  // system | an admin/merchant profile id — who wrote the row (audit trail, mirrors CommissionLedger).
+  actor      String?
+  createdAt  DateTime              @default(now()) @map("created_at")
+
+  @@unique([orderId, type])
+  @@index([riderId, merchantId])
+  @@index([merchantId, createdAt])
+  @@map("merchant_debt_ledger")
 }
 
 model Address {

@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
+import { OrdersModule } from "../orders/orders.module";
 import { TrackingModule } from "../tracking/tracking.module";
 import { DISPATCH_STRATEGY, NearestRiderDispatchStrategy } from "./dispatch-strategy";
+import { FoodDebtService } from "./food-debt.service";
 import { FoodDispatchService } from "./food-dispatch.service";
 import { FoodOrderController } from "./food-order.controller";
 import { FoodOrderService } from "./food-order.service";
@@ -27,9 +29,15 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
  * — the default NearestRiderDispatchStrategy is bound here so a future ETA-ranked strategy is a
  * one-line provider swap, no FoodDispatchService change. TrackingGateway/TrackingService are both
  * exported from TrackingModule, already imported globally by AppModule for the Express matching path.
+ *
+ * C4 adds FoodDebtService (the doorstep handshake + collect-and-return debt ledger). It reuses
+ * OrderLifecycleService.markUndelivered verbatim for the N-10/R-08 doorstep-failure paths, so
+ * OrdersModule joins the imports — the sanctioned merchant→shared direction (express-no-merchant-
+ * coupling only forbids the reverse). FoodOrderService also depends on FoodDebtService directly
+ * (confirmPickup opens the debt inside its own transaction), so no import-order concern either way.
  */
 @Module({
-  imports: [TrackingModule],
+  imports: [TrackingModule, OrdersModule],
   controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController],
   providers: [
     MerchantService,
@@ -37,6 +45,7 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
     RestaurantsEnabledGuard,
     FoodOrderService,
     FoodDispatchService,
+    FoodDebtService,
     { provide: DISPATCH_STRATEGY, useClass: NearestRiderDispatchStrategy },
   ],
   // Exported so UploadsModule can gate the merchant dish/banner photo mints (D-32) behind the same

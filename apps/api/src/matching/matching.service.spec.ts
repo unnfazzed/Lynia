@@ -255,6 +255,57 @@ describe("MatchingService.selectOffer — C3 soft-lock vs a live food dispatch o
   });
 });
 
+describe("MatchingService.selectOffer — C4 soft-lock vs an open merchant debt / pending handshake", () => {
+  /** Distinguishes the two soft-lock reads by their distinct `where` shape: hasLiveFoodDispatchOffer
+   *  keys on dispatchOfferedRiderId, hasOpenMerchantObligation keys on riderId+OR. */
+  function orderFindFirst(hasOpenObligation: boolean) {
+    return async (args: { where: Record<string, unknown> }) => {
+      if ("dispatchOfferedRiderId" in args.where) return null; // no live food offer
+      if ("riderId" in args.where) return hasOpenObligation ? { id: "food-order-1" } : null;
+      return null;
+    };
+  }
+
+  it("rejects selection when the offer's rider owes a merchant a collect-and-return debt (N-20)", async () => {
+    const { service, metrics } = svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "2.50" },
+          order: { status: "open_for_offers", customerId: "cust" },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
+        }),
+      },
+      order: { findFirst: orderFindFirst(true) },
+      block: { findFirst: async () => null },
+    });
+    await expect(service.selectOffer(orderId, offerId, "cust")).rejects.toThrow(/just became unavailable/i);
+    expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "unavailable" satisfies MatchSelectOutcome);
+  });
+
+  it("allows selection once the rider's debt/handshake is settled (the soft-lock query finds nothing open)", async () => {
+    const { service } = svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "2.50" },
+          order: { status: "open_for_offers", customerId: "cust" },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
+        }),
+        update: async () => ({}),
+        updateMany: async () => ({ count: 0 }),
+      },
+      order: { updateMany: async () => ({ count: 1 }), findFirst: orderFindFirst(false) },
+      orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => null },
+    });
+    const res = await service.selectOffer(orderId, offerId, "cust");
+    expect(res).toMatchObject({ status: "assigned", riderId: "r1" });
+  });
+});
+
 describe("MatchingService.expireOrder — persists the no-supply verdict for later reads", () => {
   const pickupPt = { point: { lat: -17.8, lng: 31.05 } };
 

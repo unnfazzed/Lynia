@@ -73,8 +73,22 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
     });
     const offeredIds = new Set(holdingOtherOffer.map((o) => o.dispatchOfferedRiderId));
 
+    // C4 soft-lock: a rider owing a merchant collect-and-return cash debt, or mid-doorstep handshake
+    // (including frozen), isn't offered a SECOND food job until it settles (N-20/R-05) — same
+    // condition as common/merchant-debt-lock.ts's hasOpenMerchantObligation, batched here for the
+    // whole candidate list rather than one query per candidate.
+    const owingDebt = await this.prisma.order.findMany({
+      where: {
+        riderId: { in: candidateIds },
+        orderType: "merchant",
+        OR: [{ debtStatus: "open" }, { customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null }],
+      },
+      select: { riderId: true },
+    });
+    const owingIds = new Set(owingDebt.map((o) => o.riderId));
+
     for (const r of nearby) {
-      if (exclude.has(r.profileId) || busyIds.has(r.profileId) || offeredIds.has(r.profileId)) continue;
+      if (exclude.has(r.profileId) || busyIds.has(r.profileId) || offeredIds.has(r.profileId) || owingIds.has(r.profileId)) continue;
       return { riderId: r.profileId, distanceM: r.distanceM };
     }
     return null;

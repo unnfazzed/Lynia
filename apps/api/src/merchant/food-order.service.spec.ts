@@ -3,6 +3,7 @@ import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TokenService } from "../auth/token.service";
+import type { FoodDebtService } from "./food-debt.service";
 import { FoodOrderService } from "./food-order.service";
 
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "food-order-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
@@ -12,6 +13,11 @@ const notifications = {
     notified.push({ profileIds, ...msg });
   },
 } as unknown as NotificationsService;
+// C4: confirmPickup calls FoodDebtService.openDebtIfNeeded inside its own transaction — a no-op
+// stub here since this file's fixtures never set merchant_payment_method="cash"/merchant_cash_rule=
+// "collect_and_return" (the real method's own guard would no-op too); openDebtIfNeeded's actual
+// behaviour is covered by food-debt.service.spec.ts.
+const debt = { openDebtIfNeeded: async () => {} } as unknown as FoodDebtService;
 
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma),
  *  mirroring order-lifecycle.service.spec.ts's `build()`. */
@@ -19,7 +25,7 @@ function build(methods: Record<string, unknown>) {
   notified.length = 0;
   const prisma = { ...methods } as Record<string, unknown>;
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
-  const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications);
+  const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, debt);
   return { svc, prisma };
 }
 
@@ -352,6 +358,36 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
     const res = await svc.confirmPickup("o1", "r1", "4242");
     expect(res).toEqual({ orderId: "o1", status: "picked_up" });
     expect(updateData).toEqual({ status: "picked_up", collectedAt: expect.any(Date) });
+  });
+
+  // C4: R-01 wiring — confirmPickup must hand the row's merchant/payment/cashRule/goodsTotal snapshot
+  // to FoodDebtService.openDebtIfNeeded, in the SAME transaction, for the debt to ever open. This
+  // fails without the change (openDebtIfNeeded wasn't called at all before C4).
+  it("hands the merchant/payment/cashRule/goodsTotal snapshot to FoodDebtService.openDebtIfNeeded", async () => {
+    let opened: Record<string, unknown> | undefined;
+    const prisma = {} as Record<string, unknown>;
+    prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
+    prisma.$queryRaw = async () =>
+      row({
+        merchant_id: "m1",
+        merchant_payment_method: "cash",
+        merchant_cash_rule: "collect_and_return",
+        merchant_goods_total: 13,
+      });
+    prisma.order = { update: async () => ({}) };
+    prisma.orderEvent = { create: async () => ({}) };
+    const spyDebt = { openDebtIfNeeded: async (_tx: unknown, order: Record<string, unknown>) => (opened = order) } as unknown as FoodDebtService;
+    const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, spyDebt);
+
+    await svc.confirmPickup("o1", "r1", "4242");
+    expect(opened).toEqual({
+      id: "o1",
+      merchantId: "m1",
+      riderId: "r1",
+      merchantPaymentMethod: "cash",
+      merchantCashRule: "collect_and_return",
+      merchantGoodsTotal: 13,
+    });
   });
 });
 

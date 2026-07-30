@@ -7,19 +7,23 @@ import {
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
+import { FoodDebtService } from "./food-debt.service";
 import { FoodOrderService } from "./food-order.service";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 
 /**
- * Customer-facing food order lifecycle (Lane C, C2). Sits alongside RestaurantsController under the
- * same `restaurants` prefix — same guard chain (RestaurantsEnabledGuard first, fail-safe OFF). No
+ * Customer-facing food order lifecycle (Lane C, C2/C4). Sits alongside RestaurantsController under
+ * the same `restaurants` prefix — same guard chain (RestaurantsEnabledGuard first, fail-safe OFF). No
  * MerchantGuard: every route here is driven by the CUSTOMER who placed the order, checked inside
- * FoodOrderService (findOwnAsCustomer), not by role.
+ * FoodOrderService (findOwnAsCustomer) / FoodDebtService, not by role.
  */
 @Controller("restaurants")
 @UseGuards(RestaurantsEnabledGuard, JwtAuthGuard)
 export class FoodOrderController {
-  constructor(private readonly foodOrders: FoodOrderService) {}
+  constructor(
+    private readonly foodOrders: FoodOrderService,
+    private readonly debt: FoodDebtService,
+  ) {}
 
   @Post(":merchantId/orders")
   placeOrder(
@@ -58,5 +62,12 @@ export class FoodOrderController {
     @CurrentUser() profileId: string,
   ) {
     return this.foodOrders.submitPaymentReference(orderId, profileId, body.reference);
+  }
+
+  // ── C4: doorstep handshake, customer side (R-04 "food first" — always first) ───────────────────────
+
+  @Post("orders/:orderId/cash/customer-confirm")
+  confirmCustomerCash(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.debt.confirmCustomerCash(orderId, profileId);
   }
 }

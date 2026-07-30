@@ -862,6 +862,11 @@ export const MerchantOrderItemView = z
   .strict();
 export type MerchantOrderItemView = z.infer<typeof MerchantOrderItemView>;
 
+/** C4: the collect-and-return merchant-debt ledger's derived state (R-01/R-06/N-20/N-21). Null on
+ *  any order the debt model doesn't apply to (parcels, WALLET food orders, pay_upfront kitchens). */
+export const MerchantDebtStatus = z.enum(["open", "settled_cash", "settled_goods", "written_off"]);
+export type MerchantDebtStatus = z.infer<typeof MerchantDebtStatus>;
+
 /** Shared shape both the customer's order view and the merchant's queue card render. Every
  *  timestamp is an ISO-8601 string (server-authoritative; the client never computes one). */
 export const MerchantOrderResponse = z
@@ -895,6 +900,23 @@ export const MerchantOrderResponse = z
     dispatchAttempt: z.number().int(),
     dispatchOfferExpiresAt: z.string().nullable(),
     noRiderHoldAt: z.string().nullable(),
+    // C4: doorstep handshake (R-04/R-05/N-19) — CASH orders only, null otherwise. R-12: WALLET orders
+    // show PAID via merchantPaymentConfirmedAt/merchantPaymentReference above; this is CASH's mirror.
+    cashHandshakeAmount: z.number().nullable(),
+    customerCashConfirmedAt: z.string().nullable(),
+    riderCashConfirmedAt: z.string().nullable(),
+    cashHandshakeDeadlineAt: z.string().nullable(),
+    cashHandshakeFrozenAt: z.string().nullable(),
+    // C4: the collect-and-return merchant-debt ledger's derived state (R-01/R-06/N-20/N-21).
+    merchantCashRule: MerchantCashRule.nullable(),
+    debtStatus: MerchantDebtStatus.nullable(),
+    debtAmount: z.number().nullable(),
+    debtOpenedAt: z.string().nullable(),
+    debtSettledAt: z.string().nullable(),
+    // C4/D-12: a merchant-issued refund on an already-paid order the merchant can't fulfil.
+    refundReference: z.string().nullable(),
+    refundAmount: z.number().nullable(),
+    refundedAt: z.string().nullable(),
   })
   .strict();
 export type MerchantOrderResponse = z.infer<typeof MerchantOrderResponse>;
@@ -959,3 +981,26 @@ export type ConfirmMerchantPickupRequest = z.infer<typeof ConfirmMerchantPickupR
 /** D-11: a merchant's no-penalty release of an unpaid (awaiting_payment) order (R-17 zombie mitigation). */
 export const MerchantReleaseUnpaidRequest = z.object({ reason: MerchantRejectionReasonCode }).strict();
 export type MerchantReleaseUnpaidRequest = z.infer<typeof MerchantReleaseUnpaidRequest>;
+
+// ── C4: food money evidence layer ────────────────────────────────────────────────────────────────
+
+/** R-06/N-21/D-06: the merchant's counted amount — must match the recorded debt exactly, a mismatch
+ *  blocks release and names the gap in dollars (checked server-side, never just displayed). */
+export const ConfirmMerchantReturnedCashRequest = z
+  .object({ amount: z.number().positive().max(100_000).multipleOf(0.01) })
+  .strict();
+export type ConfirmMerchantReturnedCashRequest = z.infer<typeof ConfirmMerchantReturnedCashRequest>;
+
+/** R-07: the merchant's plain-words declaration that a rider never returned the cash. */
+export const ReportMerchantNonReturnRequest = z.object({ note: z.string().trim().min(1).max(500).optional() }).strict();
+export type ReportMerchantNonReturnRequest = z.infer<typeof ReportMerchantNonReturnRequest>;
+
+/** D-12: a merchant cannot cancel an already-WALLET-paid order without entering their own refund
+ *  reference AND the exact amount first — the customer's order keeps the reference forever. */
+export const RefundMerchantOrderRequest = z
+  .object({
+    reference: z.string().trim().min(1).max(80),
+    amount: z.number().positive().max(100_000).multipleOf(0.01),
+  })
+  .strict();
+export type RefundMerchantOrderRequest = z.infer<typeof RefundMerchantOrderRequest>;

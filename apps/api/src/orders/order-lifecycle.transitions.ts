@@ -285,12 +285,13 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "delivered",
     actor: "rider",
     guard:
-      "SELECT ... FOR UPDATE row lock; caller === order.riderId; status=en_route_dropoff; delivery_otp_attempts < DELIVERY_OTP_MAX_ATTEMPTS (5); constant-time hash compare of the recipient's delivery code === stored otpHash",
+      "SELECT ... FOR UPDATE row lock; caller === order.riderId; status=en_route_dropoff; R-09 (C4): for a CASH merchant order, both customerCashConfirmedAt AND riderCashConfirmedAt must be set (the R-04 doorstep handshake) — checked inside the SAME locked read, before the attempts/OTP checks; delivery_otp_attempts < DELIVERY_OTP_MAX_ATTEMPTS (5); constant-time hash compare of the recipient's delivery code === stored otpHash",
     sideEffect:
       "set deliveredAt; OrderEvent(delivered); best-effort WS + FCM push; schedule the rating auto-close job (BullMQ delayed, reconciler backstops)",
     // status-keyed-query-audit P0 unknown #1, closed: no orderType assumption — reusable for merchant
-    // orders unmodified. The doorstep dual-confirm handshake (R-04) that GATES this call for a CASH
-    // merchant order is C4's job; this edge itself needs no change.
+    // orders unmodified except the C4 handshake guard added above (no orderType branch needed to ADD
+    // it — a parcel order's customerCashConfirmedAt/riderCashConfirmedAt are always both null, so the
+    // condition is vacuously false and this edge behaves exactly as before for every parcel).
     orderType: "both",
     compensation:
       "a wrong code is COMMITTED as deliveryOtpAttempts += 1 (persists, the 401 tells the rider how many tries remain); the code re-issue path is rotateDeliveryCode, which is a status-preserving action (not an edge)",
@@ -696,6 +697,81 @@ export function findMerchantPhaseTransition(
   event: MerchantPhaseEvent,
 ): MerchantPhaseTransition | undefined {
   return MERCHANT_PHASE_TRANSITIONS.find((t) => t.from === from && t.event === event);
+}
+
+/**
+ * C4 (food money evidence layer) — a THIRD declarative table, alongside {@link TRANSITIONS} (OrderStatus)
+ * and {@link MERCHANT_PHASE_TRANSITIONS} (MerchantPhase): `Order.debtStatus`, the collect-and-return
+ * merchant-debt ledger's derived state (R-01/R-06/N-20/N-21). Deliberately decoupled from OrderStatus —
+ * the debt opens at pickup (still mid-trip) and settles well AFTER the order reaches a terminal status
+ * (`delivered`/`completed`/`undelivered`), so it is not another dimension on the same edges; it is its
+ * own small machine over its own field, same verification-artifact contract (mirrors, never drives,
+ * merchant/food-debt.service.ts). Scoped to `merchantCashRule === "collect_and_return"` CASH orders only
+ * — `pay_upfront` kitchens are explicitly out of scope this PR (see the service's class docstring).
+ */
+export const MERCHANT_DEBT_STATES = ["open", "settled_cash", "settled_goods", "written_off"] as const;
+export type MerchantDebtState = (typeof MERCHANT_DEBT_STATES)[number];
+export type MerchantDebtFrom = MerchantDebtState | InitialState;
+
+export const MERCHANT_DEBT_EVENTS = ["open_debt", "confirm_returned_cash", "confirm_goods_returned", "report_non_return"] as const;
+export type MerchantDebtEvent = (typeof MERCHANT_DEBT_EVENTS)[number];
+
+export interface MerchantDebtTransition {
+  readonly from: MerchantDebtFrom;
+  readonly event: MerchantDebtEvent;
+  readonly to: MerchantDebtState;
+  readonly actor: TransitionActor;
+  readonly guard: string;
+  readonly sideEffect: string;
+  readonly source: string;
+}
+
+export const MERCHANT_DEBT_TRANSITIONS: readonly MerchantDebtTransition[] = [
+  {
+    from: INITIAL,
+    event: "open_debt",
+    to: "open",
+    actor: "system",
+    guard:
+      "runs INSIDE FoodOrderService.confirmPickup's own row-locked transaction (the N-16 pickup-code CAS), immediately after it commits status=picked_up; merchantPaymentMethod=cash AND merchantCashRule=collect_and_return (snapshotted at placement — R-03); guarded CAS on debtStatus=null so a retried confirmPickup can never double-open",
+    sideEffect: "debtStatus=open, debtAmount=merchantGoodsTotal snapshot (goods value only — R-06, the rider keeps the delivery fee), debtOpenedAt=now; MerchantDebtLedger(type=opened, amount=+debtAmount)",
+    source: "merchant/food-debt.service.ts:openDebtIfNeeded",
+  },
+  {
+    from: "open",
+    event: "confirm_returned_cash",
+    to: "settled_cash",
+    actor: "merchant",
+    guard:
+      "caller owns the merchant; debtStatus=open; the merchant's counted amount === debtAmount exactly (R-06/D-06 — a mismatch blocks and names the gap in dollars, never just displays it); guarded CAS on debtStatus=open",
+    sideEffect: "debtStatus=settled_cash, debtSettledAt=now; MerchantDebtLedger(type=settled_cash, amount=-debtAmount) — nets the `opened` row to zero",
+    source: "merchant/food-debt.service.ts:confirmReturnedCash",
+  },
+  {
+    from: "open",
+    event: "confirm_goods_returned",
+    to: "settled_goods",
+    actor: "merchant",
+    guard:
+      "caller owns the merchant; debtStatus=open; order.status=undelivered (the food itself came back — no cash was ever collected, refusal R-08 or no-show N-10); guarded CAS on debtStatus=open",
+    sideEffect: "debtStatus=settled_goods, debtSettledAt=now; MerchantDebtLedger(type=settled_goods, amount=-debtAmount) — nets to zero via a physical return, not cash",
+    source: "merchant/food-debt.service.ts:confirmGoodsReturned",
+  },
+  {
+    from: "open",
+    event: "report_non_return",
+    to: "written_off",
+    actor: "merchant",
+    guard: "caller owns the merchant; debtStatus=open; a rider is assigned; guarded CAS on debtStatus=open",
+    sideEffect:
+      "R-07: debtStatus=written_off, debtSettledAt=now; MerchantDebtLedger(type=written_off, amount=-debtAmount) — the merchant eats the loss, by their own cashRule choice; SAME transaction: rider.accountStatus=suspended (unless already banned), suspendReason=food_debt_non_return, isOnline=false, live sessions revoked (mirrors admin-riders.service.ts:suspendRider's shape), AuditLog(rider.suspend_food_debt)",
+    source: "merchant/food-debt.service.ts:reportNonReturn",
+  },
+];
+
+/** The single merchant-debt transition for a `from`+`event` pair, or undefined if illegal. */
+export function findMerchantDebtTransition(from: MerchantDebtFrom, event: MerchantDebtEvent): MerchantDebtTransition | undefined {
+  return MERCHANT_DEBT_TRANSITIONS.find((t) => t.from === from && t.event === event);
 }
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────────────────────────
