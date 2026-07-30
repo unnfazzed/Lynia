@@ -11,6 +11,7 @@ function order(over: Partial<MerchantOrderResponse> = {}): MerchantOrderResponse
     items: [],
     note: null,
     paymentMethod: "cash",
+    merchantPaymentPhone: null,
     merchantGoodsTotal: 10,
     deliveryFee: 2,
     total: 12,
