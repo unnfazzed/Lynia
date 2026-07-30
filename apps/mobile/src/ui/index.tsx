@@ -332,6 +332,17 @@ const STEP_LABELS: Record<"customer" | "rider", Partial<Record<JobType, Record<s
       // the "Delivered & completed. Thank you!" card right below it on the same screen.
       completed: "Trip complete",
     },
+    // D-03: "the tracker grammar is Express's, re-labelled" — same seven dots, food-voiced copy.
+    // Positional sibling to STEP_LABELS.rider.food below (D3, Lane D's own customer tracker).
+    food: {
+      assigned: "Rider secured",
+      confirmed: "Rider at the restaurant",
+      en_route_pickup: "Picking up your order",
+      picked_up: "Picked up",
+      en_route_dropoff: "On the way",
+      delivered: "Delivered",
+      completed: "Trip complete",
+    },
   },
   rider: {
     parcel: {

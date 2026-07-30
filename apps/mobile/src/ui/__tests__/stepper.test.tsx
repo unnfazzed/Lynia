@@ -35,8 +35,16 @@ describe("Stepper (plan §5 B4 — shared Stepper, per-type step lists)", () => 
     expect(text).not.toContain("Parcel collected");
   });
 
-  it("ignores jobType on the customer view — a customer's food order never renders through this Stepper", () => {
-    const tree = renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" jobType="food" />);
+  it("defaults to the parcel customer labels when jobType is omitted", () => {
+    const tree = renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" />);
     expect(textOf(tree)).toContain("Items & note confirmed");
+  });
+
+  it("renders distinct food customer labels (D3 — the tracker grammar re-labelled, D-03)", () => {
+    const tree = renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" jobType="food" />);
+    const text = textOf(tree);
+    expect(text).toContain("Rider secured");
+    expect(text).toContain("Rider at the restaurant");
+    expect(text).not.toContain("Items & note confirmed");
   });
 });
