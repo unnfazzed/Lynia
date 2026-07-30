@@ -196,9 +196,29 @@ where it touches food paths (flags stay OFF in CI/staging until the launch flip)
   typecheck && pnpm lint && pnpm test` green across the whole monorepo (mobile: 74 suites / 569
   tests, incl. a new `home-feed.test.ts` covering the tracker-step index, the live-order copy, the
   reorder-rail selection/cap, and open/closed status derivation).
-- [ ] **A3 · Orders + Account tabs.** Orders = one cross-service list (absorbs
+- [x] **A3 · Orders + Account tabs.** Orders = one cross-service list (absorbs
   `app/history/`); live order pinned on top; Account absorbs profile/settings/help/notifications
-  entry points. Retire orphaned entry points.
+  entry points. Retire orphaned entry points. **Done 2026-07-30:** `(tabs)/orders.tsx` and
+  `(tabs)/account.tsx` now carry the real content instead of bridging out — matching
+  `packages/design/explorations/restaurants/r-customer-a.jsx`'s `RC.orders` (icon avatar per row,
+  restaurant name as the title for a food order, "EARLIER" section under the pinned live order) and
+  the existing (unchanged) `app/profile/`'s own content for Account, minus the "Trip history"
+  button the Orders tab now supersedes. `app/history/` and `app/profile/` are left running exactly
+  as they were — `app/rider/(tabs)/account.tsx` (Lane B, out of this lane's scope) still bridges to
+  both — so this PR adds its own copy of the row/details rendering rather than reaching into those
+  routes' internals; `send.tsx`'s account icon is repointed `/profile` → `/account` (the tab), for
+  the same reason `(tabs)/home.tsx`'s BrandHeader `onProfile` already did in A1. **API change:**
+  `historyForUser` now selects+returns `orderType` and the merchant's `name` (as `merchantName`) —
+  the row shape a cross-service list needs to tell a food order from a parcel one and title it by
+  restaurant rather than by pickup/dropoff landmarks (the kitchen/customer address, not a name a
+  customer recognizes); covered by a new spec case, `historyForUser`'s existing tests otherwise
+  unaffected (a mock-driven unit spec, no migration). Reused the existing `["activeCustomerOrder"]`
+  query (same key `(tabs)/home.tsx` and `send.tsx`'s restore banner already read) for the pinned
+  live card — no new fetch. `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages
+  (mobile: 79 suites / 599 tests; api: 94 suites / 1433 tests). Bundle-size measured locally
+  (`expo export --platform android` + `scripts/check-bundle-size.mjs`): Hermes 6,357,879 /
+  6,390,000 bytes, ~31 KiB headroom left — no budget bump needed this PR. A4 (five-states +
+  retirement sweep) is next.
 - [ ] **A4 · Five-states + retirement sweep.** Every new customer surface ships default /
   loading / empty / error / offline per the gallery; remove the retired `home_launcher`
   intermediate and any dead nav; accent-split spot-check; jest coverage for boot-route + nav

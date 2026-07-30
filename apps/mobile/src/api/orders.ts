@@ -149,6 +149,10 @@ export function getActiveCustomerOrder(): Promise<OrderSnapshot | null> {
 // A past/present order as it appears in the trip-history list — summary only, no phones (§5d).
 export interface OrderHistoryRow {
   id: string;
+  // plan §5 A3: the Orders tab is one cross-service list; a `merchant` row's own display name is
+  // `merchantName` (the restaurant), not its pickup/dropoff landmarks (kitchen/customer address).
+  orderType: "parcel" | "merchant";
+  merchantName: string | null;
   role: "customer" | "rider";
   pickup: { point: LatLng; landmark: string };
   dropoff: { point: LatLng; landmark: string };

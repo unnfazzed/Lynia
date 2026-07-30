@@ -1030,6 +1030,7 @@ describe("OrdersService.historyForUser", () => {
 
   const row = (over: Record<string, unknown> = {}) => ({
     id: "o1",
+    orderType: "parcel",
     customerId: "cust-1",
     riderId: "rider-1",
     pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" },
@@ -1048,6 +1049,7 @@ describe("OrdersService.historyForUser", () => {
     ],
     customer: { firstName: "Tatenda", lastName: "M" },
     rider: { profile: { firstName: "Rugare", lastName: "C" } },
+    merchant: null,
     ...over,
   });
 
@@ -1091,6 +1093,14 @@ describe("OrdersService.historyForUser", () => {
     expect(rows[0]!.note).toBe("Ask for Rita at reception");
     const noNote = await svc([row({ note: null })]).historyForUser("cust-1");
     expect(noNote[0]!.note).toBeNull();
+  });
+
+  it("plan §5 A3: carries orderType + the restaurant name so the Orders tab can render a cross-service list", async () => {
+    const parcel = await svc([row()]).historyForUser("cust-1");
+    expect(parcel[0]).toMatchObject({ orderType: "parcel", merchantName: null });
+
+    const food = await svc([row({ orderType: "merchant", merchant: { name: "Sadza Republic" } })]).historyForUser("cust-1");
+    expect(food[0]).toMatchObject({ orderType: "merchant", merchantName: "Sadza Republic" });
   });
 });
 

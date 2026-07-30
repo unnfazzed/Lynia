@@ -630,6 +630,7 @@ export class OrdersService implements OnModuleDestroy {
       take: 50,
       select: {
         id: true,
+        orderType: true,
         customerId: true,
         riderId: true,
         pickup: true,
@@ -643,6 +644,9 @@ export class OrdersService implements OnModuleDestroy {
         rating: { select: { score: true, comment: true, byProfileId: true } },
         customer: { select: { firstName: true, lastName: true } },
         rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
+        // plan §5 A3: the Orders tab is one cross-service list — a `merchant` row's own title is the
+        // restaurant name, not its pickup/dropoff landmarks (those are the kitchen/customer address).
+        merchant: { select: { name: true } },
       },
     });
     return orders.map((o) => {
@@ -651,6 +655,8 @@ export class OrdersService implements OnModuleDestroy {
       const counterpartyName = counterparty ? `${counterparty.firstName} ${counterparty.lastName}`.trim() || null : null;
       return {
         id: o.id,
+        orderType: o.orderType,
+        merchantName: o.merchant?.name ?? null,
         role: isCustomer ? "customer" : "rider",
         pickup: publicWaypoint(o.pickup),
         dropoff: publicWaypoint(o.dropoff),

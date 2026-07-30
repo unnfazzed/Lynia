@@ -635,7 +635,10 @@ export default function HomeScreen(): React.ReactElement {
           pointerEvents="box-none"
           style={{ position: "absolute", top: insets.top + tokens.space.sm, left: tokens.space.screen, right: tokens.space.screen }}
         >
-          <MapHomeTopBar onNotifications={() => router.push("/notifications")} onAccount={() => router.push("/profile")} />
+          {/* plan §5 A3: /profile is still a live route (the rider Account bridge still reaches it),
+              but every customer-surface entry point now targets the richer Account tab instead —
+              matches `(tabs)/home.tsx`'s BrandHeader `onProfile` already doing the same. */}
+          <MapHomeTopBar onNotifications={() => router.push("/notifications")} onAccount={() => router.push("/account")} />
 
           {meQ.data?.rider?.isOnline ? (
             // A rider who switches to the customer view stayed online server-side with no reminder here
