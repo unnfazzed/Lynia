@@ -18,6 +18,8 @@ import {
   boardCell,
   boardCellNeighborhood,
   boardCellsCoveringRadius,
+  type FoodOfferClosedEvent,
+  type FoodOfferEvent,
   type JobCancelledEvent,
   type OrderRebroadcastEvent,
   type OrderTakenEvent,
@@ -407,6 +409,44 @@ export class TrackingGateway
       status,
       at: new Date().toISOString(),
     });
+  }
+
+  /**
+   * C5 rider offer alarm channel: push a live food-dispatch offer to the ONE candidate rider it was
+   * made to. Unlike the parcel board (many bidders on a shared geo-cell room), food dispatch offers
+   * exactly one rider at a time (food-dispatch.service.ts), so there is no standing room to address —
+   * this reuses `kickRiderFromBoard`'s cluster-wide socket lookup (fetchSockets + filter by
+   * `user.sub`) rather than introducing a new per-rider room/subscribe flow for a single-recipient
+   * push. GET /merchant/orders/dispatch/offer is the reconnect/poll-fallback source of truth for the
+   * same offer this announces (a socket down at emit time isn't stuck — the next poll picks it up).
+   * Best-effort; never throws.
+   */
+  async emitFoodOffer(riderId: string, payload: FoodOfferEvent): Promise<void> {
+    await this.emitToRider(riderId, WS_EVENTS.foodOffer, payload);
+  }
+
+  /** The mirror close-out for {@link emitFoodOffer} — the recipient's offer stopped being live
+   *  (expired or declined). Best-effort; never throws. */
+  async emitFoodOfferClosed(riderId: string, orderId: string): Promise<void> {
+    const payload: FoodOfferClosedEvent = { orderId, at: new Date().toISOString() };
+    await this.emitToRider(riderId, WS_EVENTS.foodOfferClosed, payload);
+  }
+
+  /** Cluster-wide direct-to-rider emit (same socket lookup as `kickRiderFromBoard`/
+   *  `evictRiderFromSupply`): find every socket authenticated as `riderId` on ANY instance via the
+   *  Redis-backed `fetchSockets`, and emit straight to each — no room, since these are single-
+   *  recipient signals. Swallows its own errors so a gateway hiccup never surfaces to the caller. */
+  private async emitToRider(riderId: string, event: string, payload: unknown): Promise<void> {
+    if (!this.server) return;
+    try {
+      const sockets = await this.server.fetchSockets();
+      for (const s of sockets) {
+        const sub = (s.data as { user?: SocketUser } | undefined)?.user?.sub;
+        if (sub === riderId) s.emit(event, payload);
+      }
+    } catch (err) {
+      this.logger.warn(`emitToRider(${event}) failed for rider ${riderId}: ${(err as Error).message}`);
+    }
   }
 
   /**

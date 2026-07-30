@@ -18,9 +18,16 @@ const notifications = {
 } as unknown as NotificationsService;
 
 function fakeGateway() {
-  return { emitOrderStatus: vi.fn(), evictRiderFromSupply: vi.fn(async () => {}) } as unknown as TrackingGateway & {
+  return {
+    emitOrderStatus: vi.fn(),
+    evictRiderFromSupply: vi.fn(async () => {}),
+    emitFoodOffer: vi.fn(async () => {}),
+    emitFoodOfferClosed: vi.fn(async () => {}),
+  } as unknown as TrackingGateway & {
     emitOrderStatus: ReturnType<typeof vi.fn>;
     evictRiderFromSupply: ReturnType<typeof vi.fn>;
+    emitFoodOffer: ReturnType<typeof vi.fn>;
+    emitFoodOfferClosed: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -35,16 +42,30 @@ function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gat
 }
 
 const HARARE_CBD = { lat: -17.8292, lng: 31.0522 };
-const orderId = "11111111-1111-1111-1111-111111111111";
+// C5: FoodOfferEvent.parse() requires real (version/variant-nibble-valid) UUIDs — matches the strict
+// pattern every other WS event schema (BoardNewOrderEvent etc.) already enforces.
+const orderId = "11111111-1111-4111-8111-111111111111";
+const MERCHANT_ID = "33333333-3333-4333-8333-333333333333";
+
+// D-17/board-redaction fixtures: contactPhone is PII a browsing/offered rider must never see — kept
+// on the stored Waypoint (mirrors a real order row) so tests can assert it's stripped on the wire.
+const PICKUP = { point: HARARE_CBD, landmark: "Mama's Kitchen", contactPhone: "+263771111111" };
+const DROPOFF = { point: { lat: -17.8016, lng: 31.0431 }, landmark: "Avondale Shops", contactPhone: "+263772222222" };
 
 const baseOrder = (over: Record<string, unknown> = {}) => ({
   status: "requested",
   merchantPhase: "ready_for_pickup",
-  merchantId: "m1",
+  merchantId: MERCHANT_ID,
   noRiderHoldAt: null,
   dispatchAttempt: 0,
   dispatchExcludedRiderIds: [] as string[],
   dispatchStartedAt: null,
+  pickup: PICKUP,
+  dropoff: DROPOFF,
+  itemDesc: "2x Sadza & stew",
+  merchantGoodsTotal: 12.5,
+  deliveryFee: 2.5,
+  distanceKm: 3.1,
   ...over,
 });
 
@@ -80,6 +101,24 @@ describe("FoodDispatchService.sweepSearch — N-08 auto-offer", () => {
     );
     expect(notified).toEqual([expect.objectContaining({ profileIds: ["r1"] })]);
     expect(gateway.emitOrderStatus).not.toHaveBeenCalled(); // no realtime push on an offer, only on rider-secured
+    // C5 rider offer alarm channel: the WS twin of the push above, redacted like the parcel board
+    // (point + landmark only — contactPhone must never cross the wire to an un-accepted rider).
+    expect(gateway.emitFoodOffer).toHaveBeenCalledWith(
+      "r1",
+      expect.objectContaining({
+        orderId,
+        merchantId: MERCHANT_ID,
+        pickup: { point: HARARE_CBD, landmark: "Mama's Kitchen" },
+        dropoff: { point: DROPOFF.point, landmark: "Avondale Shops" },
+        itemDesc: "2x Sadza & stew",
+        merchantGoodsTotal: 12.5,
+        deliveryFee: 2.5,
+        distanceKm: 3.1,
+      }),
+    );
+    const offerPayload = gateway.emitFoodOffer.mock.calls[0][1];
+    expect(offerPayload.pickup.contactPhone).toBeUndefined();
+    expect(offerPayload.dropoff.contactPhone).toBeUndefined();
   });
 
   it("parks for the next poll (dispatch_search self-loop) when no candidate is found, without touching the cap", async () => {
@@ -152,7 +191,7 @@ describe("FoodDispatchService.sweepExpiredOffers — N-08 60s window", () => {
   it("releases a stale offer back to requested, excludes the rider, marks the attempt expired", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const attemptUpdateMany = vi.fn(async () => ({ count: 1 }));
-    const { svc } = build(
+    const { svc, gateway } = build(
       {
         order: {
           findMany: async () => [{ id: orderId, dispatchOfferedRiderId: "r1" }],
@@ -165,6 +204,9 @@ describe("FoodDispatchService.sweepExpiredOffers — N-08 60s window", () => {
     );
     const result = await svc.sweepExpiredOffers();
     expect(result).toEqual({ expired: 1 });
+    // C5: the ONLY signal an expired offer's rider gets besides their next poll — the sweep-driven
+    // path (unlike a self-triggered decline), so this is the case this channel exists for.
+    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
     expect(orderUpdateMany).toHaveBeenCalledWith({
       where: { id: orderId, status: "open_for_offers", dispatchOfferedRiderId: "r1" },
       data: expect.objectContaining({
@@ -253,7 +295,7 @@ describe("FoodDispatchService.acceptDispatch — D-04 rider secured", () => {
 describe("FoodDispatchService.declineDispatch", () => {
   it("frees the offer immediately (the rider's own \"can't take it\")", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
-    const { svc } = build(
+    const { svc, gateway } = build(
       {
         order: {
           findFirst: async () => ({ status: "open_for_offers", dispatchOfferedRiderId: "r1" }),
@@ -267,6 +309,7 @@ describe("FoodDispatchService.declineDispatch", () => {
     const res = await svc.declineDispatch(orderId, "r1");
     expect(res).toEqual({ orderId, declined: true });
     expect(orderUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "requested" }) }));
+    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
   });
 
   it("403s a caller who doesn't hold the offer", async () => {
@@ -339,6 +382,51 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
   it("rejects a drop after pickup (D-33 no drop after pickup)", async () => {
     const { svc } = build({ order: { findFirst: async () => ({ status: "picked_up" } as never) } }, { pickCandidate: async () => null });
     await expect(svc.dropDispatch(orderId, "r1")).rejects.toThrow(/already with you/i);
+  });
+});
+
+describe("FoodDispatchService.getOfferForRider — C5 rider offer alarm channel (poll/reconnect fallback)", () => {
+  const liveOfferRow = {
+    id: orderId,
+    merchantId: MERCHANT_ID,
+    pickup: PICKUP,
+    dropoff: DROPOFF,
+    itemDesc: "2x Sadza & stew",
+    merchantGoodsTotal: 12.5,
+    deliveryFee: 2.5,
+    distanceKm: 3.1,
+    dispatchOfferExpiresAt: new Date(Date.now() + 30_000),
+  };
+
+  it("returns the redacted live offer for the rider holding it", async () => {
+    const findFirst = vi.fn(async () => liveOfferRow);
+    const { svc } = build({ order: { findFirst } }, { pickCandidate: async () => null });
+    const offer = await svc.getOfferForRider("r1");
+    expect(offer).toEqual(
+      expect.objectContaining({
+        orderId,
+        merchantId: MERCHANT_ID,
+        pickup: { point: HARARE_CBD, landmark: "Mama's Kitchen" },
+        dropoff: { point: DROPOFF.point, landmark: "Avondale Shops" },
+        itemDesc: "2x Sadza & stew",
+        merchantGoodsTotal: 12.5,
+        deliveryFee: 2.5,
+        distanceKm: 3.1,
+      }),
+    );
+    // Never contactPhone on the wire — same guarantee as the WS push (D-17/board redaction).
+    expect((offer as { pickup: Record<string, unknown> }).pickup.contactPhone).toBeUndefined();
+    expect((offer as { dropoff: Record<string, unknown> }).dropoff.contactPhone).toBeUndefined();
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ orderType: "merchant", status: "open_for_offers", dispatchOfferedRiderId: "r1" }),
+      }),
+    );
+  });
+
+  it("returns null when this rider holds no live offer", async () => {
+    const { svc } = build({ order: { findFirst: async () => null } }, { pickCandidate: async () => null });
+    await expect(svc.getOfferForRider("r1")).resolves.toBeNull();
   });
 });
 

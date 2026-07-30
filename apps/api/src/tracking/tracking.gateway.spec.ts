@@ -53,7 +53,9 @@ function fakeServer(remoteSockets: Array<{ data?: unknown }> = []) {
 }
 
 /** A RemoteSocket-like fake for kickRiderFromBoard: a live `rooms` Set + a `leave` spy that mutates it,
- *  plus the authenticated user in `data` (matched by `sub`). */
+ *  plus the authenticated user in `data` (matched by `sub`). Also carries an `emit` spy (unused by
+ *  kickRiderFromBoard, but shared with emitFoodOffer/emitFoodOfferClosed's identical fetchSockets +
+ *  filter-by-sub lookup, C5). */
 function remoteSocket(sub: string, rooms: string[]) {
   const roomSet = new Set(rooms);
   return {
@@ -62,6 +64,7 @@ function remoteSocket(sub: string, rooms: string[]) {
     leave: vi.fn(async (room: string) => {
       roomSet.delete(room);
     }),
+    emit: vi.fn(),
   };
 }
 
@@ -281,6 +284,45 @@ describe("TrackingGateway.kickRiderFromBoard (KB-BOARD-REVOKE)", () => {
     const server = { fetchSockets: vi.fn(async () => { throw new Error("adapter down"); }) } as unknown;
     g.server = server as never;
     await expect(g.kickRiderFromBoard("rider-1")).resolves.toBeUndefined();
+  });
+});
+
+describe("TrackingGateway.emitFoodOffer / emitFoodOfferClosed (C5 rider offer alarm channel)", () => {
+  it("emitFoodOffer pushes food:offer straight to the candidate rider's socket(s), no room", async () => {
+    const target = remoteSocket("rider-1", []);
+    const other = remoteSocket("rider-2", []);
+    const { server } = fakeServer([target, other]);
+    const g = gateway();
+    g.server = server as never;
+
+    const payload = { orderId: "ord-1" } as unknown as Parameters<typeof g.emitFoodOffer>[1];
+    await g.emitFoodOffer("rider-1", payload);
+
+    expect(target.emit).toHaveBeenCalledWith(WS_EVENTS.foodOffer, payload);
+    // Only the matched rider — a candidate never sees another rider's offer.
+    expect(other.emit).not.toHaveBeenCalled();
+  });
+
+  it("emitFoodOfferClosed pushes food:offer-closed with orderId + at, to the matched rider only", async () => {
+    const target = remoteSocket("rider-1", []);
+    const { server } = fakeServer([target]);
+    const g = gateway();
+    g.server = server as never;
+
+    await g.emitFoodOfferClosed("rider-1", "ord-1");
+
+    expect(target.emit).toHaveBeenCalledWith(WS_EVENTS.foodOfferClosed, expect.objectContaining({ orderId: "ord-1", at: expect.any(String) }));
+  });
+
+  it("both are best-effort: never throw when the server is undefined or fetchSockets fails", async () => {
+    const g = gateway();
+    await expect(g.emitFoodOffer("rider-1", {} as never)).resolves.toBeUndefined();
+    await expect(g.emitFoodOfferClosed("rider-1", "ord-1")).resolves.toBeUndefined();
+
+    const server = { fetchSockets: vi.fn(async () => { throw new Error("adapter down"); }) } as unknown;
+    g.server = server as never;
+    await expect(g.emitFoodOffer("rider-1", {} as never)).resolves.toBeUndefined();
+    await expect(g.emitFoodOfferClosed("rider-1", "ord-1")).resolves.toBeUndefined();
   });
 });
 
