@@ -110,7 +110,10 @@ export function JobDetailsCard({
           </Text>
         </>
       ) : null}
-      <Stepper events={order.events} currentStatus={order.status} view="rider" />
+      {/* Plan §5 B4: the Stepper supports a food-flavoured step list, but `OrderSnapshot` carries
+          no `orderType` yet — Lane D5 wires the live food active-job screen and the signal it
+          needs. Hardcoded here, same dark-not-blocked shape as B2's `JobCard` `jobType` prop. */}
+      <Stepper events={order.events} currentStatus={order.status} view="rider" jobType="parcel" />
     </Card>
   );
 }

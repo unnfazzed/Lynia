@@ -320,10 +320,43 @@ where it touches food paths (flags stay OFF in CI/staging until the launch flip)
   needed. `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages (mobile: 76
   suites / 576 tests, incl. new `wallet-ledger.test.ts` and `CashHeldStrip.test.tsx`; api 94
   suites / 1426 tests unaffected). B4 (active-job screen) is next.
-- [ ] **B4 · One active-job screen.** Shared Stepper with per-type step lists (parcel steps live;
+- [x] **B4 · One active-job screen.** Shared Stepper with per-type step lists (parcel steps live;
   food steps land with Lane D5); exception screens (wrong code, unreachable, dropped) written
   once and reused; 6-digit delivery code closes both. Retire superseded screens named in
-  `gallery-map.js` header; jest regression on rider boot + gates.
+  `gallery-map.js` header; jest regression on rider boot + gates. **Done 2026-07-30:** the
+  active-job screen (`app/rider/job.tsx`) was already the one shared screen for any job that
+  reaches `assigned` — a food order rides the identical `assigned→…→completed` status edges as a
+  parcel from that point (`order-lifecycle.service.ts`'s own comment: "the food order rides the
+  same edges as a parcel from here on, orderType: both"), and `UndeliveredSheet`/`DeliveryOtp`
+  were already the one written-once exception surface (wrong code = `DeliveryOtp`'s attempt
+  lockout, unreachable/dropped = `UndeliveredReason.UNREACHABLE`/`BREAKDOWN`), so this PR's real
+  increment is the two pieces that weren't done yet. **Stepper per-type step lists:** `Stepper`
+  (`src/ui/index.tsx`) gained an optional `jobType: "parcel" | "food"` prop (default `"parcel"`) —
+  the rider label set now branches per type, food labels ported verbatim by position from
+  `rider-one-app.jsx`'s `FOOD_STEPS`. `JobDetailsCard` passes `jobType="parcel"` explicitly with a
+  flag comment: `OrderSnapshot` carries no `orderType` field yet, so the food branch is real code,
+  unit-tested (`src/ui/__tests__/stepper.test.tsx`), but unwired — Lane D5 is what gives the
+  active-job screen a live food signal, the same dark-not-blocked shape B2 used for `JobCard`'s
+  `jobType` prop. The customer view is untouched (still parcel-only) — a customer's food order
+  tracks through its own D3 tracker, never this Stepper. **Cash-held split, now live:**
+  `CashHeldStrip` (B3) render its first real, non-zero figure — `app/rider/job.tsx`'s active
+  branch now shows `yours={agreedFare ?? proposedFare}` (parcel cash is always all the rider's)
+  and `owed={0}` (a food job's collect-and-return money isn't wired to the rider screen until
+  Lane D5); the Money tab still renders `0/0` (unchanged, no feed for "cash owed across any open
+  job" yet). **Gallery retirement check:** every `gallery-map.js`-header-listed RJ screen
+  (`rider_offline`/`online_empty`/`board`, `offer_compose`, `earnings`/`earnings_new`, `wallet`,
+  `profile`, `gate_commission`) was already retired by B1–B3 — confirmed nothing new to retire this
+  PR (`apps/mobile/app/wallet/` holds only `top-up.tsx`, still linked from Money; no `earnings/`
+  directory). `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages (mobile: 80
+  suites / 603 tests, incl. 4 new `stepper.test.tsx` cases; api: 94 suites / 1432 tests
+  unaffected). **Lane B complete** — B1–B4 all shipped; see the lane-completion note below.
+
+**Lane B complete (2026-07-30):** all four boxes above (B1 tab shell, B2 one board, B3 Money tab,
+B4 active-job screen) are shipped and merged. The rider app is now genuinely one app for both
+verticals at every layer this lane owns — tab bar, board, money, and the active-job screen — with
+every food-specific surface built dark-not-blocked (flagged, unit-tested, structurally ready) since
+Lane C's dispatch/assignment backend and Lane D5's live food rider flow haven't landed yet. Nothing
+left in this lane's queue; this build loop's trigger is disabled after this PR merges.
 
 ### Lane C — restaurants backend (`apps/api` + `packages/shared`)
 

@@ -37,6 +37,7 @@ import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch"
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
+import { CashHeldStrip } from "../../src/ui/rider/CashHeldStrip";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
 import { LeaveJobButton } from "../../src/ui/rider/LeaveJobButton";
@@ -808,6 +809,17 @@ export default function RiderJob(): React.ReactElement {
           <View style={{ flex: 1 }} />
           <StatusPill status={order.status} tone={jobReconnecting ? "reconnecting" : orderStatusTone(order.status)} />
         </View>
+
+        {/* Plan §5 B4 / RIDER-ONE-APP-PLAN.md decision 6: cash-held split, live for the one job a
+            rider can carry at a time — the first real (non-zero) figure this component renders
+            (the Money tab still shows 0/0 — no feed exists yet for "cash owed across any open
+            job"). Parcel cash is always all "yours"; "owed to a kitchen" stays 0 here too — a food
+            job's collect-and-return money isn't wired to the rider screen until Lane D5. */}
+        {isActive ? (
+          <View style={{ marginBottom: tokens.space.md }}>
+            <CashHeldStrip yours={Number(order.agreedFare ?? order.proposedFare)} owed={0} />
+          </View>
+        ) : null}
 
         {jobReconnecting ? (
           <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>

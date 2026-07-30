@@ -4,16 +4,18 @@ import { Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
 
 /**
- * Cash-held split (plan §5 B3; RIDER-ONE-APP-PLAN.md decision 6; `rider-one-app.jsx`'s `CashStrip`):
+ * Cash-held split (plan §5 B3/B4; RIDER-ONE-APP-PLAN.md decision 6; `rider-one-app.jsx`'s `CashStrip`):
  * "yours" (kept fare/commission-in-hand) vs "owed to a kitchen" (collect-and-return food money still
  * riding back to the merchant) — never one blended figure, so a rider can never mistake kitchen money
- * for their own. Written once here so both the Money tab (this PR, always zero — see below) and B4's
- * active-job screen (a real per-trip value, once that ships) render the identical component.
+ * for their own. Written once here so both the Money tab and B4's active-job screen (`app/rider/
+ * job.tsx`) render the identical component.
  *
- * The Money tab always renders `owed={0}` today: there is no rider-facing feed for "cash currently
- * owed across any open job" yet — B4 (the active-job screen) is what will first carry a real number,
- * for the one job a rider can hold at a time. Flagged as dark-not-blocked, mirroring B2's JobCard
- * `jobType: "food"` precedent, rather than fabricating a figure with nothing behind it.
+ * B4 renders the first real (non-zero) `yours` figure — the active job's agreed fare, all cash, all
+ * the rider's, for the one job a rider can hold at a time. Both call sites still render `owed={0}`:
+ * there is no rider-facing feed for "cash currently owed to a kitchen" yet — a food job's collect-
+ * and-return money isn't wired to the rider screen until Lane D5. Flagged as dark-not-blocked,
+ * mirroring B2's JobCard `jobType: "food"` precedent, rather than fabricating a figure with nothing
+ * behind it.
  */
 export function CashHeldStrip({ yours, owed }: { yours: number; owed: number }): React.ReactElement {
   const owing = owed > 0;

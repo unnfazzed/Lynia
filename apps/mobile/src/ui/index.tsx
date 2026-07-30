@@ -308,27 +308,50 @@ const STEP_ORDER = [
   "completed",
 ] as const;
 
-const STEP_LABELS: Record<"customer" | "rider", Record<string, string>> = {
+// Plan §5 B4 / RIDER-ONE-APP-PLAN.md "2 · One active job": one shared Stepper, per-type step
+// lists. A food order rides the SAME assigned→…→completed status edges as a parcel once it
+// reaches the rider (order-lifecycle.service.ts: "the food order rides the same edges as a
+// parcel from here on, orderType: both") — only the rider-facing copy differs, ported verbatim
+// from the design mock's `FOOD_STEPS` (explorations/journey/rider-one-app.jsx). The customer side
+// stays parcel-only here: a customer's food order tracks through its own D3 tracker, never this
+// component. Unwired today — `OrderSnapshot` carries no `orderType` yet (Lane D5's job, alongside
+// the rest of the live food active-job screen), so `JobDetailsCard` always passes `jobType:
+// "parcel"` — the same dark-not-blocked shape as B2's `JobCard` `jobType` prop.
+type JobType = "parcel" | "food";
+const STEP_LABELS: Record<"customer" | "rider", Partial<Record<JobType, Record<string, string>>>> = {
   customer: {
-    assigned: "Ride accepted",
-    confirmed: "Items & note confirmed",
-    en_route_pickup: "Rider on the way to pickup",
-    picked_up: "Items collected",
-    en_route_dropoff: "On the way to drop-off",
-    delivered: "Delivered",
-    // A `completed` order has already been rated (or the rating window lapsed) — the RatingCard
-    // itself lives on the `delivered` card. Telling a finished trip to "Rate your rider" contradicts
-    // the "Delivered & completed. Thank you!" card right below it on the same screen.
-    completed: "Trip complete",
+    parcel: {
+      assigned: "Ride accepted",
+      confirmed: "Items & note confirmed",
+      en_route_pickup: "Rider on the way to pickup",
+      picked_up: "Items collected",
+      en_route_dropoff: "On the way to drop-off",
+      delivered: "Delivered",
+      // A `completed` order has already been rated (or the rating window lapsed) — the RatingCard
+      // itself lives on the `delivered` card. Telling a finished trip to "Rate your rider" contradicts
+      // the "Delivered & completed. Thank you!" card right below it on the same screen.
+      completed: "Trip complete",
+    },
   },
   rider: {
-    assigned: "You're assigned",
-    confirmed: "Details confirmed",
-    en_route_pickup: "Heading to pickup",
-    picked_up: "Parcel collected",
-    en_route_dropoff: "Heading to drop-off",
-    delivered: "Delivered",
-    completed: "Completed — you're free",
+    parcel: {
+      assigned: "You're assigned",
+      confirmed: "Details confirmed",
+      en_route_pickup: "Heading to pickup",
+      picked_up: "Parcel collected",
+      en_route_dropoff: "Heading to drop-off",
+      delivered: "Delivered",
+      completed: "Completed — you're free",
+    },
+    food: {
+      assigned: "Job accepted",
+      confirmed: "At the restaurant",
+      en_route_pickup: "Food collected",
+      picked_up: "On the way",
+      en_route_dropoff: "Delivered",
+      delivered: "Cash returned",
+      completed: "Job closed",
+    },
   },
 };
 
@@ -342,8 +365,9 @@ export function Stepper(props: {
   events: { status: string; createdAt: string }[];
   currentStatus: string;
   view: "customer" | "rider";
+  jobType?: JobType;
 }): React.ReactElement {
-  const labels = STEP_LABELS[props.view];
+  const labels = STEP_LABELS[props.view][props.jobType ?? "parcel"] ?? STEP_LABELS[props.view].parcel!;
   const currentIdx = STEP_ORDER.indexOf(props.currentStatus as (typeof STEP_ORDER)[number]);
   // First timestamp seen per status (events are append-only, ascending).
   const times: Record<string, string> = {};
