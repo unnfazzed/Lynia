@@ -25,3 +25,9 @@ export function cancelUnpaidFoodOrder(orderId: string): Promise<MerchantOrderRes
 export function submitFoodPaymentReference(orderId: string, reference: string): Promise<MerchantOrderResponse> {
   return apiFetch(`/restaurants/orders/${orderId}/payment-reference`, { method: "POST", body: { reference } });
 }
+
+/** D4/C4: the customer's half of the doorstep dual-confirm handshake (R-04 "food first" — always
+ *  first). The rider's own confirm/dispute are the RIDER app's job (D5), not this screen's. */
+export function confirmFoodCustomerCash(orderId: string): Promise<{ orderId: string; customerCashConfirmedAt: string }> {
+  return apiFetch(`/restaurants/orders/${orderId}/cash/customer-confirm`, { method: "POST" });
+}

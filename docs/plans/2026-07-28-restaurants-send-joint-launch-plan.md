@@ -685,10 +685,62 @@ and the matching Lane C contracts (C1 for D1, C2 for D2–D3, C4 for D4–D5) me
   tests unaffected). `pnpm depcruise` clean. Bundle-size budget is still report-only (0/0 in
   `size-budget.json`, unchanged since D1) — no measurement gate to run this increment. D4 (doorstep)
   is next.
-- [ ] **D4 · Doorstep.** Dual-confirm handshake ("I gave $X" → "I received $X" → code reveals,
+- [x] **D4 · Doorstep.** Dual-confirm handshake ("I gave $X" → "I received $X" → code reveals,
   R-04), masked code during CASH transit with offline press-and-hold reveal (R-09), rider-didn't-
   confirm support state, delivered + rate, no-show failure timeline (N-10), resumed-mid-order
-  restart tolerance (§3 of the decisions doc).
+  restart tolerance (§3 of the decisions doc). **Done 2026-07-31:** the CUSTOMER half only — the
+  rider's own confirm/dispute/collect/return pipeline is D5's build, gate-satisfied and next. All new
+  UI lives on D3's `app/food/order/[orderId].tsx`, no new routes. New pure `src/logic/food-doorstep.ts`
+  (`handshakeState`/`codeEligible`/`handshakeCountdown`) derives the four-state machine
+  (pending/waiting_rider/frozen/confirmed) purely off the C4 backend's own four timestamps — R-05's
+  2:00 freeze window is read off the server's `cashHandshakeDeadlineAt`, never a client timer. Two new
+  `src/ui/food/` components, both re-labelled off existing grammar rather than forked:
+  `CashHandshakeCard` (the four states — R7·1/R7·1b/R7·1c/R7·b3 in the gallery) and `DeliveryCodeCard`
+  (R-09's masked `••• •••` with a genuine `onLongPress` press-and-hold reveal — disabled with no code
+  yet, plain unmasked for WALLET, masked-until-deliberate-gesture for CASH). New customer-side API call
+  `confirmFoodCustomerCash` (`POST .../cash/customer-confirm`); the rider's mirror endpoints
+  (`cash/rider-confirm`, `cash/dispute`, `doorstep/*`) are already live server-side (C4) and stay unused
+  from the customer app by design — D5's job. Delivery code: unlike a parcel (issued at `select`), a
+  food order has no client-side "choose a rider" moment to fetch one from, so a new effect calls the
+  already-generic `rotateDeliveryCode` itself the instant the order is eligible (WALLET: immediately;
+  CASH: only once both handshake confirms land, matching the server's own R-09 gate) — and the existing
+  `reconcileDeliveryCode`/KB-DELIVERY-CODE-ROTATION-SIGNAL machinery from `app/order/[id].tsx` is reused
+  verbatim (not forked) so a stale local code from an app-killed rotation can't be relayed to the rider.
+  R-09's "logged" reveal: a new best-effort local-only marker (`saveCodeRevealedAt`, `device-state.ts`,
+  same per-order index/sign-out sweep as the code itself) — **no server sync endpoint exists yet for
+  it**, flagged rather than fabricated; "synced later" per the design doc is aspirational until a future
+  Lane C increment adds one. Delivered/rate: `RatingCard` reused verbatim (same component `app/order/
+  [id].tsx` uses) with the SAME `PendingRating`/`reconcilePendingRating` offline-retry marker — a cold
+  start after an app-kill mid-undo-window self-heals on the next poll, same as Express. The gallery's
+  R7·2 shows a SECOND "how was the food?" rating alongside the rider one; only the existing rider-rating
+  `rateOrder` endpoint exists server-side, so a separate food-quality score is flagged as an open item,
+  not invented. No-show/refused: a new `order.status === "undelivered"` branch (previously unhandled —
+  the generic fallback silently caught it) reuses `UNDELIVERED_REASON_LABEL` verbatim from the parcel
+  screen (already covers "unreachable"/"refused") and additionally names R-08's real, undisclosed-until-
+  now consequence ("cash is no longer available… mobile money only from here on") rather than silently
+  omitting it. Money-safety, conservative: Cancel is now hidden once `customerCashConfirmedAt` is set on
+  a CASH order (the money already left the customer's hands — a "cancel" at that point means nothing the
+  server can undo); no new server behaviour invented, just an existing action hidden past the point it
+  makes sense. **Sensitive-lane four** (docs/ROUTINES.md, this touches the handshake/cash path): (1)
+  *Idempotency* — every write goes through the ALREADY-idempotent C4 endpoints
+  (`confirmFoodCustomerCash` CAS-guards on `customerCashConfirmedAt: null` server-side); this PR adds no
+  new server mutation. (2) *State transition* — no new order-lifecycle edge; the client only renders
+  the existing `MERCHANT_DEBT_TRANSITIONS`/`en_route_dropoff → delivered` edges C4 already ships and
+  tests. (3) *Money arithmetic* — none added; `cashHandshakeAmount`/`total`/`merchantGoodsTotal` are
+  displayed as the server returns them (`formatMoney`), no client-side math. (4) *Regression test* —
+  `food-doorstep.test.ts` (state derivation + countdown), `CashHandshakeCard.test.tsx`/
+  `DeliveryCodeCard.test.tsx` (the four states + the mask/reveal gesture), and the `session.test.ts`
+  wipe-list characterization extended for the new reveal-log key. **Open items, PR body:** (1) no
+  server sync endpoint for the offline press-and-hold reveal log (local-only for now); (2) no separate
+  food-quality rating endpoint (only the rider rating exists); (3) no auto-refund path for a WALLET
+  order that reaches `undelivered` (`refundOrder` only covers the pre-dispatch window, unchanged from
+  D3's own flagged gap); (4) still poll-only post-dispatch (no WebSocket), unchanged from D2/D3.
+  `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages (mobile: 83 suites / 632 tests,
+  incl. 3 new suites for the doorstep state machine + the two new components; api/shared/admin/merchant
+  unaffected — 94 suites / 1439 api tests unchanged). `pnpm depcruise` clean. Bundle-size budget raised
+  (`size-budget.json`: export total 12.62 MB → 12.63 MB, ~0.1% headroom; Hermes unchanged, still under
+  its own budget) to cover the two new components; measured locally via `expo export --platform android`
+  + `scripts/check-bundle-size.mjs`. D5 (rider food jobs) is next — same C4 gate, already satisfied.
 - [ ] **D5 · Rider food jobs.** Offer variants (collect-and-return default / upfront-kitchen
   self-declare R-10 / PAID R-12), accept → navigate → pickup code (N-16) → collect → navigate →
   doorstep handshake → collect cash → return-the-cash leg → hand-back confirm; drop rules

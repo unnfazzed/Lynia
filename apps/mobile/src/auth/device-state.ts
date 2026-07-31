@@ -127,7 +127,22 @@ export async function clearDeliveryCode(orderId: string): Promise<void> {
       SecureStore.deleteItemAsync(codeKey(orderId)),
       SecureStore.deleteItemAsync(codeAttemptsKey(orderId)),
       SecureStore.deleteItemAsync(codeRotatedAtKey(orderId)),
+      SecureStore.deleteItemAsync(codeRevealedKey(orderId)),
     ]);
+  } catch {
+    /* best-effort */
+  }
+}
+
+// D4/R-09: a food CASH order's delivery code stays masked in the UI until a deliberate press-and-hold
+// — "a deliberate act, logged and synced later." No sync endpoint exists yet (flagged in the D4 PR
+// body); this is the durable local half, keyed alongside the code itself so it rides the same
+// per-order index and sign-out sweep below.
+const codeRevealedKey = (orderId: string): string => `lynia.deliveryCodeRevealed.${orderId}`;
+
+export async function saveCodeRevealedAt(orderId: string, at: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(codeRevealedKey(orderId), at);
   } catch {
     /* best-effort */
   }
@@ -531,6 +546,8 @@ export async function clearDeviceState(): Promise<void> {
       ...codes.map((id) => SecureStore.deleteItemAsync(codeAttemptsKey(id))),
       // ...and each code's companion rotation-timestamp baseline (same order ids in the index).
       ...codes.map((id) => SecureStore.deleteItemAsync(codeRotatedAtKey(id))),
+      // D4: ...and each code's companion press-and-hold reveal log (same order ids in the index).
+      ...codes.map((id) => SecureStore.deleteItemAsync(codeRevealedKey(id))),
     ]);
   } catch {
     /* best-effort */

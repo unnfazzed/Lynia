@@ -86,7 +86,7 @@ describe("clearDeviceState (full key-wipe characterization, RF-10 pin)", () => {
     );
   });
 
-  it("wipes each indexed per-order delivery-code key (code + attempts high-water + rotation baseline)", async () => {
+  it("wipes each indexed per-order delivery-code key (code + attempts high-water + rotation baseline + D4 reveal log)", async () => {
     mockGetItemAsync.mockImplementation(async (key: string) =>
       key === "lynia.deliveryCode.index" ? JSON.stringify(["order-1", "order-2"]) : null,
     );
@@ -96,6 +96,7 @@ describe("clearDeviceState (full key-wipe characterization, RF-10 pin)", () => {
       expect(deletedKeys).toContain(`lynia.deliveryCode.${orderId}`);
       expect(deletedKeys).toContain(`lynia.deliveryCodeAttempts.${orderId}`);
       expect(deletedKeys).toContain(`lynia.deliveryCodeRotatedAt.${orderId}`);
+      expect(deletedKeys).toContain(`lynia.deliveryCodeRevealed.${orderId}`);
     }
   });
 
