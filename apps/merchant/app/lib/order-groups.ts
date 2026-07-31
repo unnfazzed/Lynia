@@ -10,6 +10,11 @@ export interface QueueGroups {
   preparing: MerchantOrderResponse[];
   /** Ready-for-pickup through hand-off: searching → candidate deciding → rider secured → en route. */
   ready: MerchantOrderResponse[];
+  /** E3/R-01: a collect-and-return debt is open — the food already left unpaid and the rider owes the
+   *  cash back (M3·4). Outlives every status the `ready` bucket cares about (picked_up through
+   *  delivered/undelivered), so it's checked independently of `merchantPhase`/`status` — never blocks
+   *  the board, mirrors M2·7's own "never blocks" rule. */
+  awaitingReturn: MerchantOrderResponse[];
 }
 
 /** Once a rider accepts (D-04 "rider secured"), `merchantPhase` clears to null and `status` carries
@@ -29,9 +34,11 @@ export function groupQueue(orders: readonly MerchantOrderResponse[]): QueueGroup
     awaitingPayment: [],
     preparing: [],
     ready: [],
+    awaitingReturn: [],
   };
   for (const o of orders) {
-    if (o.merchantPhase === "awaiting_accept") groups.awaitingAccept.push(o);
+    if (o.debtStatus === "open") groups.awaitingReturn.push(o);
+    else if (o.merchantPhase === "awaiting_accept") groups.awaitingAccept.push(o);
     else if (o.merchantPhase === "awaiting_item_approval") groups.awaitingItemApproval.push(o);
     else if (o.merchantPhase === "awaiting_payment") groups.awaitingPayment.push(o);
     else if (o.merchantPhase === "preparing") groups.preparing.push(o);

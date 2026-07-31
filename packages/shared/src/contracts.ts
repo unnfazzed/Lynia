@@ -1057,3 +1057,54 @@ export const RefundMerchantOrderRequest = z
   })
   .strict();
 export type RefundMerchantOrderRequest = z.infer<typeof RefundMerchantOrderRequest>;
+
+// ── E3: merchant money surfaces — weekly statement + end-of-day summary (N-13) ──────────────────────
+
+/** One delivered order's row on the weekly statement. */
+export const MerchantStatementLineItem = z
+  .object({
+    orderId: z.string().uuid(),
+    deliveredAt: z.string(),
+    paymentMethod: MerchantPaymentMethod,
+    amount: z.number(),
+    commission: z.number(),
+  })
+  .strict();
+export type MerchantStatementLineItem = z.infer<typeof MerchantStatementLineItem>;
+
+/** N-13: 0% commission today, with the "would have been" comparator shown for transparency — never a
+ *  committed rate. `cookedFoodLossTotal` is D-34's NO_RIDER-cancelled-after-cooking loss, logged here
+ *  as the amount LyniaGo covers (visibility only; no ledger transfer is built yet — flagged, not
+ *  silently decided). */
+export const MerchantWeeklyStatementResponse = z
+  .object({
+    rangeStart: z.string(),
+    rangeEnd: z.string(),
+    ordersDelivered: z.number().int(),
+    foodSalesTotal: z.number(),
+    commissionRatePct: z.number(),
+    commissionCharged: z.number(),
+    illustrativeRatePct: z.number(),
+    illustrativeCommission: z.number(),
+    cookedFoodLossTotal: z.number(),
+    lineItems: z.array(MerchantStatementLineItem),
+  })
+  .strict();
+export type MerchantWeeklyStatementResponse = z.infer<typeof MerchantWeeklyStatementResponse>;
+
+/** M4·6: "what the owner actually asks at closing time" — a read-only summary, not a close action
+ *  (N-23's end-of-day close already runs automatically; see food-order.service.ts:sweepEndOfDayClose).
+ *  `cashTaken` is scoped to what the merchant actually confirmed today (collect-and-return returns) —
+ *  pay-me-upfront cash has no ledger yet (same C4 scope cut RESTAURANTS-DECISIONS.md §7 names), so it
+ *  is honestly left out rather than estimated. */
+export const MerchantEndOfDaySummaryResponse = z
+  .object({
+    date: z.string(),
+    delivered: z.number().int(),
+    rejected: z.number().int(),
+    cashTaken: z.number(),
+    walletTaken: z.number(),
+    averagePrepMinutes: z.number().nullable(),
+  })
+  .strict();
+export type MerchantEndOfDaySummaryResponse = z.infer<typeof MerchantEndOfDaySummaryResponse>;

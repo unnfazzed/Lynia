@@ -274,7 +274,19 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       // (`assigned`/`confirmed`/`en_route_pickup`), which is exactly the D-34 "keep cooking / hold /
       // cancel" window the Ready column has to render. `picked_up` and every terminal status are
       // deliberately excluded — that transition IS "handed over" for the board.
-      where: { merchantId, orderType: "merchant", status: { in: [...QUEUE_VISIBLE_STATUSES] } },
+      //
+      // E3 gap found and fixed: a collect-and-return debt (R-01) opens at `picked_up` — the exact
+      // status this filter drops — and can stay open through `en_route_dropoff`/`delivered`/
+      // `undelivered` until the merchant counts the returned cash (confirmReturnedCash) or writes it
+      // off. Without the OR below, an order the rider is still carrying cash for simply vanished from
+      // the tablet the moment it was handed over, with no way to ever confirm the return. `debtStatus:
+      // "open"` is included regardless of `status` so this lane never depends on guessing which
+      // terminal statuses a debt can outlive.
+      where: {
+        merchantId,
+        orderType: "merchant",
+        OR: [{ status: { in: [...QUEUE_VISIBLE_STATUSES] } }, { debtStatus: "open" }],
+      },
       orderBy: { createdAt: "asc" },
       include: ORDER_WITH_ITEMS_INCLUDE,
     });

@@ -76,6 +76,17 @@ describe("groupQueue", () => {
     const groups = groupQueue([pickedUp]);
     expect(Object.values(groups).flat()).toEqual([]);
   });
+
+  it("E3/R-01: an open debt lands in awaitingReturn regardless of status, and outranks every other bucket", () => {
+    const pickedUpDebt = order({ id: "p", merchantPhase: null, status: "picked_up", riderId: "r1", debtStatus: "open", debtAmount: 13 });
+    const deliveredDebt = order({ id: "q", merchantPhase: null, status: "delivered", riderId: "r1", debtStatus: "open", debtAmount: 13 });
+    const undeliveredDebt = order({ id: "r", merchantPhase: null, status: "undelivered", riderId: "r1", debtStatus: "open", debtAmount: 13 });
+    const settled = order({ id: "s", merchantPhase: null, status: "delivered", riderId: "r1", debtStatus: "settled_cash", debtAmount: 13 });
+    const groups = groupQueue([pickedUpDebt, deliveredDebt, undeliveredDebt, settled]);
+    expect(groups.awaitingReturn.map((o) => o.id)).toEqual(["p", "q", "r"]);
+    expect(groups.ready).toEqual([]);
+    expect(Object.values(groups).flat()).toEqual(groups.awaitingReturn);
+  });
 });
 
 describe("isReadyBucket", () => {

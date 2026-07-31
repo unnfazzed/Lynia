@@ -1,8 +1,10 @@
 import type {
   MerchantAcceptOrderRequest,
   MerchantConfirmPaymentRequest,
+  MerchantEndOfDaySummaryResponse,
   MerchantOrderResponse,
   MerchantRejectionReasonCode,
+  MerchantWeeklyStatementResponse,
 } from "@lynia/shared";
 import { authedFetch } from "./api-client";
 
@@ -67,4 +69,36 @@ export function dispatchResume(orderId: string): Promise<{ orderId: string; resu
 /** D-34 hold-screen "cancel the order" (D-13 no-fault). */
 export function dispatchCancel(orderId: string): Promise<{ orderId: string; status: "cancelled" }> {
   return authedFetch(`/merchant/orders/${orderId}/dispatch/cancel`, { method: "POST" });
+}
+
+// ── C4/E3: the collect-and-return debt ledger + merchant refund ────────────────────────────────────
+
+/** R-06/N-21/D-06: a mismatched amount 409s naming the gap in dollars — surface it verbatim, same as confirmPayment. */
+export function confirmReturnedCash(orderId: string, amount: number): Promise<{ orderId: string; debtStatus: "settled_cash" }> {
+  return authedFetch(`/merchant/orders/${orderId}/debt/confirm-cash`, { method: "POST", body: { amount } });
+}
+
+/** The goods-only return (refusal/no-show) — only valid once the order is `undelivered`. */
+export function confirmGoodsReturned(orderId: string): Promise<{ orderId: string; debtStatus: "settled_goods" }> {
+  return authedFetch(`/merchant/orders/${orderId}/debt/confirm-goods`, { method: "POST" });
+}
+
+/** R-07: writes off the debt and suspends + names the rider — the merchant's last-resort action. */
+export function reportNonReturn(orderId: string, note?: string): Promise<{ orderId: string; debtStatus: "written_off" }> {
+  return authedFetch(`/merchant/orders/${orderId}/debt/report-non-return`, { method: "POST", body: { note } });
+}
+
+/** D-12: the merchant cannot cancel an already-WALLET-paid order without a refund reference + the exact amount first. */
+export function refundOrder(orderId: string, reference: string, amount: number): Promise<{ orderId: string; status: "cancelled" }> {
+  return authedFetch(`/merchant/orders/${orderId}/refund`, { method: "POST", body: { reference, amount } });
+}
+
+// ── E3: weekly statement + end-of-day summary (N-13) ────────────────────────────────────────────────
+
+export function getWeeklyStatement(): Promise<MerchantWeeklyStatementResponse> {
+  return authedFetch<MerchantWeeklyStatementResponse>("/merchant/statement/weekly");
+}
+
+export function getTodaySummary(): Promise<MerchantEndOfDaySummaryResponse> {
+  return authedFetch<MerchantEndOfDaySummaryResponse>("/merchant/summary/today");
 }

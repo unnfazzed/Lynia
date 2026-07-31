@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { RESTAURANTS_COMMISSION } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
 import { MerchantService } from "./merchant.service";
@@ -491,5 +492,80 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(res.categories[0]!.dishes).toHaveLength(1);
     expect(res.categories[0]!.dishes[0]!.outOfStock).toBe(false);
     expect(res.categories[0]!.dishes[0]!.priceUsd).toBe(8);
+  });
+});
+
+describe("MerchantService.getWeeklyStatement (E3, N-13)", () => {
+  it("aggregates delivered orders into sales + line items, and sums NO_RIDER cancellations as the cooked-food loss", async () => {
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findMany: async () => [
+          { id: "o1", deliveredAt: new Date("2026-07-29T10:00:00.000Z"), merchantPaymentMethod: "cash", merchantGoodsTotal: 13 },
+          { id: "o2", deliveredAt: new Date("2026-07-29T11:00:00.000Z"), merchantPaymentMethod: "wallet", merchantGoodsTotal: 6 },
+        ],
+        aggregate: async () => ({ _sum: { merchantGoodsTotal: 8 } }),
+      },
+    });
+    const res = await s.getWeeklyStatement("p1");
+    expect(res.ordersDelivered).toBe(2);
+    expect(res.foodSalesTotal).toBe(19);
+    expect(res.commissionRatePct).toBe(RESTAURANTS_COMMISSION.currentRatePct);
+    expect(res.commissionCharged).toBe(0);
+    expect(res.illustrativeRatePct).toBe(RESTAURANTS_COMMISSION.illustrativeRatePct);
+    expect(res.illustrativeCommission).toBeCloseTo(19 * (RESTAURANTS_COMMISSION.illustrativeRatePct / 100), 2);
+    expect(res.cookedFoodLossTotal).toBe(8);
+    expect(res.lineItems).toHaveLength(2);
+    expect(res.lineItems[0]).toMatchObject({ orderId: "o1", paymentMethod: "cash", amount: 13, commission: 0 });
+  });
+
+  it("returns zeros with no delivered orders", async () => {
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { findMany: async () => [], aggregate: async () => ({ _sum: { merchantGoodsTotal: null } }) },
+    });
+    const res = await s.getWeeklyStatement("p1");
+    expect(res.ordersDelivered).toBe(0);
+    expect(res.foodSalesTotal).toBe(0);
+    expect(res.cookedFoodLossTotal).toBe(0);
+    expect(res.lineItems).toEqual([]);
+  });
+});
+
+describe("MerchantService.getTodaySummary (E3, M4·6)", () => {
+  it("aggregates today's delivered/rejected counts, wallet + confirmed-cash-return totals, and average prep time", async () => {
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        count: async ({ where }: { where: { status: string } }) => (where.status === "delivered" ? 5 : 1),
+        aggregate: async ({ where }: { where: Record<string, unknown> }) =>
+          where.merchantPaymentMethod === "wallet" ? { _sum: { merchantGoodsTotal: 20 } } : { _sum: { debtAmount: 13 } },
+        findMany: async () => [
+          { readyAt: new Date("2026-07-30T10:20:00.000Z"), prepStartedAt: new Date("2026-07-30T10:00:00.000Z") },
+          { readyAt: new Date("2026-07-30T11:10:00.000Z"), prepStartedAt: new Date("2026-07-30T11:00:00.000Z") },
+        ],
+      },
+    });
+    const res = await s.getTodaySummary("p1");
+    expect(res.delivered).toBe(5);
+    expect(res.rejected).toBe(1);
+    expect(res.walletTaken).toBe(20);
+    expect(res.cashTaken).toBe(13);
+    expect(res.averagePrepMinutes).toBe(15);
+  });
+
+  it("averagePrepMinutes is null and totals are zero with no activity today", async () => {
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        count: async () => 0,
+        aggregate: async () => ({ _sum: { merchantGoodsTotal: null, debtAmount: null } }),
+        findMany: async () => [],
+      },
+    });
+    const res = await s.getTodaySummary("p1");
+    expect(res.averagePrepMinutes).toBeNull();
+    expect(res.cashTaken).toBe(0);
+    expect(res.walletTaken).toBe(0);
   });
 });
