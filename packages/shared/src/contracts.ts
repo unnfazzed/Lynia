@@ -394,6 +394,15 @@ export const FoodOfferEvent = z
     deliveryFee: z.number().nullable(),
     distanceKm: z.number().nullable(),
     expiresAt: z.string(),
+    // D5: R-01/R-03/R-10/R-12 — the offer variant (collect-and-return CASH / pay-upfront CASH /
+    // WALLET) is decided BEFORE accept, so the rider's offer card can render the right money copy
+    // ("YOU EARN $X" vs "THIS KITCHEN ASKS YOU TO PAY FIRST $X") instead of learning it only after
+    // committing. Additive — a pre-D5 client (or an offer built before this field existed) reads both
+    // as null and falls back to a neutral "confirm at the counter" copy. Inlined (not
+    // MerchantPaymentMethod/MerchantCashRule, both declared further down this file) to avoid a
+    // module-init temporal-dead-zone reference — same two literal enums either way.
+    merchantPaymentMethod: z.enum(["cash", "wallet"]).nullable(),
+    merchantCashRule: z.enum(["collect_and_return", "pay_upfront"]).nullable(),
   })
   .strict();
 export type FoodOfferEvent = z.infer<typeof FoodOfferEvent>;
@@ -968,6 +977,10 @@ export const MerchantOrderResponse = z
     dispatchAttempt: z.number().int(),
     dispatchOfferExpiresAt: z.string().nullable(),
     noRiderHoldAt: z.string().nullable(),
+    // N-16: the server-committed pickup-code attempt count, mirroring `deliveryOtpAttempts` on the
+    // generic OrderSnapshot — lets the rider's pickup screen resync its lockout state from the server
+    // (a merchant re-reveal resets this to 0) instead of trusting a purely local counter.
+    pickupCodeAttempts: z.number().int(),
     // C4: doorstep handshake (R-04/R-05/N-19) — CASH orders only, null otherwise. R-12: WALLET orders
     // show PAID via merchantPaymentConfirmedAt/merchantPaymentReference above; this is CASH's mirror.
     cashHandshakeAmount: z.number().nullable(),
@@ -975,6 +988,10 @@ export const MerchantOrderResponse = z
     riderCashConfirmedAt: z.string().nullable(),
     cashHandshakeDeadlineAt: z.string().nullable(),
     cashHandshakeFrozenAt: z.string().nullable(),
+    // N-10: the rider's logged pre-no-show call attempts (D5) — server-timestamped, never a
+    // client-side timer, so the 8:00 wait + 2-call minimum reads off the same clock the
+    // reportNoShow guard itself enforces.
+    noShowCallTimestamps: z.array(z.string()),
     // C4: the collect-and-return merchant-debt ledger's derived state (R-01/R-06/N-20/N-21).
     merchantCashRule: MerchantCashRule.nullable(),
     debtStatus: MerchantDebtStatus.nullable(),

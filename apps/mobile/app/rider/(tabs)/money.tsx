@@ -1,8 +1,10 @@
 import { tokens, type WalletEntry } from "@lynia/shared";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";
 import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { getFoodOrderAsRider } from "../../../src/api/food-rider";
+import { getActiveOrder } from "../../../src/api/orders";
 import { getTopup } from "../../../src/api/wallet";
 import { clearPendingTopup, loadPendingTopup } from "../../../src/auth/session";
 import { fmtDateTime } from "../../../src/logic/format-time";
@@ -142,6 +144,18 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const pendingTopupBanner = usePendingTopupReconciliation();
   const [filter, setFilter] = React.useState<LedgerFilter>("all");
 
+  // D5: "owed to a kitchen" — one job at a time (§7 open Q1), so this is just the single active food
+  // job's own open debt, not a separate aggregate endpoint. Shares the ["activeJob"] cache key with the
+  // board/job screens (no extra round-trip if either already warmed it).
+  const activeJobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder });
+  const activeJob = activeJobQ.data ?? null;
+  const foodDebtQ = useQuery({
+    queryKey: ["foodOrderAsRider", activeJob?.id],
+    queryFn: () => getFoodOrderAsRider(activeJob!.id),
+    enabled: activeJob?.orderType === "merchant",
+  });
+  const owed = activeJob?.orderType === "merchant" && foodDebtQ.data?.debtStatus === "open" ? (foodDebtQ.data.debtAmount ?? 0) : 0;
+
   // Same reasoning the old wallet screen used: a support-credit is the rider's only working top-up
   // path at launch, so refetch on every focus rather than trusting the global refetchOnWindowFocus:false.
   useFocusEffect(
@@ -240,9 +254,12 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
             </Card>
             <Button label="Top up" onPress={() => router.push("/wallet/top-up")} />
 
-            {/* Cash held — RIDER-ONE-APP-PLAN.md decision 6. Always zero today (see CashHeldStrip). */}
+            {/* Cash held — RIDER-ONE-APP-PLAN.md decision 6. "owed" is now live (D5) — the single
+                active food job's own open debt. "yours" stays 0 here: the active-job screen is where a
+                specific job's kept fare shows; this tab's "yours" has no single job to point at once
+                more than a parcel and a food job could theoretically both contribute (not modeled). */}
             <View style={{ marginTop: tokens.space.md }}>
-              <CashHeldStrip yours={0} owed={0} />
+              <CashHeldStrip yours={0} owed={owed} />
             </View>
 
             {/* Ledger */}

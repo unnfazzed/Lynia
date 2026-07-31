@@ -1,4 +1,4 @@
-import { BidExpiredEvent, BoardNewOrderEvent, OrderTakenEvent, WS_EVENTS } from "@lynia/shared";
+import { BidExpiredEvent, BoardNewOrderEvent, FoodOfferEvent, OrderTakenEvent, WS_EVENTS } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
@@ -19,6 +19,11 @@ export function useRiderBoard(
   online: boolean,
   loc: { lat: number; lng: number } | null,
   bidIds?: Set<string>,
+  // D5/C5: fires the moment a `food:offer` lands on this same board socket — the caller (the board
+  // screen) navigates to the offer intake screen. No local offer state lives here: that screen's own
+  // source of truth is the poll-fallback GET (dispatch/offer), so this is purely a "go look" signal,
+  // mirroring how a `bid:expired`/`order:taken` push is a signal, not a value the caller trusts as-is.
+  onFoodOffer?: (orderId: string) => void,
 ): { connected: boolean; expiredOrderIds: Set<string>; takenOrderIds: Set<string>; boardTakenNudge: number } {
   const { session } = useAuth();
   const token = session?.accessToken;
@@ -45,6 +50,8 @@ export function useRiderBoard(
   // 'not chosen') from "an order I never bid on" (the board notice) without re-running the socket effect.
   const bidIdsRef = useRef(bidIds);
   bidIdsRef.current = bidIds;
+  const onFoodOfferRef = useRef(onFoodOffer);
+  onFoodOfferRef.current = onFoodOffer;
 
   useEffect(() => {
     if (!online || !token) {
@@ -128,6 +135,15 @@ export function useRiderBoard(
           setBoardTakenNudge((n) => n + 1);
         }
       });
+    });
+
+    // D5/C5: a live food-dispatch offer for this rider — no room subscription needed (emitToRider
+    // targets this authenticated socket directly, see tracking.gateway.ts). `food:offer-closed` needs
+    // no handler here: the offer screen's own poll (dispatch/offer) is what notices it's gone.
+    socket.on(WS_EVENTS.foodOffer, (raw: unknown) => {
+      const parsed = FoodOfferEvent.safeParse(raw);
+      if (!parsed.success) return;
+      onFoodOfferRef.current?.(parsed.data.orderId);
     });
 
     return () => {

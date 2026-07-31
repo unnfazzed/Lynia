@@ -851,11 +851,72 @@ and the matching Lane C contracts (C1 for D1, C2 for D2–D3, C4 for D4–D5) me
   (`size-budget.json`: export total 12.62 MB → 12.63 MB, ~0.1% headroom; Hermes unchanged, still under
   its own budget) to cover the two new components; measured locally via `expo export --platform android`
   + `scripts/check-bundle-size.mjs`. D5 (rider food jobs) is next — same C4 gate, already satisfied.
-- [ ] **D5 · Rider food jobs.** Offer variants (collect-and-return default / upfront-kitchen
+- [x] **D5 · Rider food jobs.** Offer variants (collect-and-return default / upfront-kitchen
   self-declare R-10 / PAID R-12), accept → navigate → pickup code (N-16) → collect → navigate →
   doorstep handshake → collect cash → return-the-cash leg → hand-back confirm; drop rules
   (D-33), unreachable-customer wait + call log, wrong code, resumed-mid-delivery; cash-held
-  split live on the Money tab.
+  split live on the Money tab. **Done 2026-07-31 — Lane D complete.** New `app/rider/food-job.tsx`
+  (the food sibling of `job.tsx`, not a fork of it — `job.tsx` gained a one-line early redirect
+  `orderType==="merchant" → router.replace("/rider/food-job")`, and the mirror redirect back guards
+  the reverse case) plus `app/rider/food-offer.tsx` (N-08 offer intake: accept/decline, three
+  variants — cash-collect / cash-upfront / wallet — derived from two new additive `FoodOfferEvent`
+  fields, `merchantPaymentMethod`/`merchantCashRule`, wired into both the WS payload and the
+  `dispatch/offer` poll-fallback builder). Reuse over fork throughout: `JobDetailsCard` gained the
+  `jobType` prop B4's own comment had already flagged as missing (closes that gap, wires the food
+  Stepper labels); `DeliveryOtp`, `rateSender`, `GetHelpControl`/`SosControl`, `BailSheet` (its
+  reason field is UI-only for a food drop — `dropDispatch` takes no body), and the generic
+  `advanceStatus`/`confirmDelivery` all ride verbatim — the pickup leg (N-16, 4-digit,
+  `PickupCodeCard`) and the doorstep handshake (`RiderCashHandshakeCard`, mirrors `CashHandshakeCard`
+  off the SAME `handshakeState`/`codeEligible` from `food-doorstep.ts`) are the only genuinely new
+  gated steps. New `src/api/food-rider.ts` (the rider-side `/merchant/orders/*` routes C4 already
+  shipped server-side but no client had called: `dispatch/accept|decline|drop`, `confirm-pickup`,
+  `cash/rider-confirm`, `cash/dispute`, `doorstep/log-call|no-show|refused`, `mine`) and
+  `src/logic/food-rider-job.ts` (pure: `RIDER_FOOD_NEXT`, `FOOD_DROPPABLE` mirroring
+  `dropDispatch`'s own droppable set, `foodOfferVariant`, `foodCashBreakdown` off R-06's worked
+  example, `noShowStatus` for N-10's 2-call/8:00 gate — all off server timestamps, never a client
+  timer). Small additive Lane C/shared touches, same "the code wins" precedent D1/D2 used: generic
+  `OrderSnapshot` gained `orderType` (lets the board/job screens tell a food job apart from a parcel
+  one without a second fetch); `MerchantOrderResponse` gained `pickupCodeAttempts` (mirrors
+  `deliveryOtpAttempts`'s resync purpose for the 4-digit code) and `noShowCallTimestamps` (so N-10's
+  wait gate reads off the server's own call log, not a client-only counter). Board wiring:
+  `useRiderBoard` gained an `onFoodOffer` callback fired straight off the same authenticated socket
+  `food:offer` already reaches (`emitToRider` needs no room subscribe) — the board navigates to the
+  offer screen, which treats the push as a "go look" signal and re-fetches `dispatch/offer` as its
+  own source of truth (a stale/lost push can never show a dead offer); the `food_offer` notification
+  tap now routes there too (was `/rider`). Money tab's `CashHeldStrip` `owed` is live (the single
+  active food job's own open debt — one job at a time per §7 open Q1, so no aggregate endpoint
+  needed); `yours` stays 0 there (no single job to point it at) but is live on the food job screen
+  itself (the delivery fee kept). Restart tolerance (§3): every screen derives its state from server
+  fields on a fresh fetch (`getActiveOrder`/`getFoodOrderAsRider`), never a client-only step machine
+  — a killed app resumes at the correct step with zero bespoke recovery code. **Money-safety,
+  sensitive-lane four** (this touches the handshake/cash and dispatch-drop paths): (1) *Idempotency*
+  — every new client call hits an ALREADY-idempotent C4/C3 endpoint (guarded CAS server-side); no new
+  server mutation in this PR. (2) *State transition* — no new order-lifecycle edge; N-16's
+  `confirmPickup` and R-04's handshake confirms are C2/C4's own already-tested transitions, only
+  newly reachable from the rider app. (3) *Money arithmetic* — none added client-side;
+  `foodCashBreakdown`/`CashHeldStrip` render server-supplied `merchantGoodsTotal`/`deliveryFee`/
+  `debtAmount` verbatim via `formatMoney`, no client math feeds a mutation. (4) *Regression test* —
+  new suites for `food-rider-job.ts` (offer variant, cash breakdown against R-06's own worked
+  example, no-show gate), `PickupCodeCard`/`RiderCashHandshakeCard` component states, and
+  `useRiderBoard`'s `food:offer` wiring (valid + malformed-payload cases). **Open items, PR body:**
+  (1) no durable app-kill-survives terminal marker on `food-job.tsx` like `job.tsx`'s own
+  `saveRiderJobTerminal` — a kill in the narrow window between `confirmDelivery` landing and the
+  screen freezing its acknowledgement loses that screen on relaunch; `debtStatus` stays
+  server-enforced regardless (a rider can't take a new job either way), so this is a UX-recall gap,
+  not a money-safety one; (2) no live WS wired for a mid-job customer cancel or the post-delivery
+  return-leg settlement — both poll-only, the same precedent D2/D3 already used for the customer-side
+  food screens; (3) a pre-existing gap noticed, not fixed here (out of Lane D's `apps/mobile` scope):
+  the generic `POST /orders/:orderId/status` `picked_up` edge has no `orderType` guard, so it could in
+  principle bypass N-16's pickup-code gate if called directly — the new rider client never calls it
+  that way, but the server-side restriction itself is a Lane C follow-up, not invented here.
+  `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages (mobile: 88 suites / 668
+  tests; api: 94 suites / 1464 tests incl. `food-order.service.spec.ts` fixture updates for the two
+  new `MerchantOrderResponse` fields; shared: 9/157; admin: 5/45; merchant: 8/62, incl. its own
+  `order-groups.test.ts` fixture update). `pnpm depcruise` clean (0 errors/warnings). Bundle-size
+  budget raised (`size-budget.json`: Hermes 6.39 MB → 6.16 MiB cap (6,455,000 B), export total
+  12.62 MB → 12.10 MiB cap (12,690,000 B), ~0.1–0.2% headroom left) to cover the two new screens plus
+  three new `src/ui/food/` components; measured locally via `expo export --platform android` +
+  `scripts/check-bundle-size.mjs`. **Lane D is now complete (D1–D5 all shipped).**
 
 ### Lane E — merchant kitchen tablet (`apps/merchant`)
 

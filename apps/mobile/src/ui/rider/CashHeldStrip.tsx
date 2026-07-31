@@ -10,12 +10,11 @@ import { formatMoney } from "../../logic/money";
  * for their own. Written once here so both the Money tab and B4's active-job screen (`app/rider/
  * job.tsx`) render the identical component.
  *
- * B4 renders the first real (non-zero) `yours` figure — the active job's agreed fare, all cash, all
- * the rider's, for the one job a rider can hold at a time. Both call sites still render `owed={0}`:
- * there is no rider-facing feed for "cash currently owed to a kitchen" yet — a food job's collect-
- * and-return money isn't wired to the rider screen until Lane D5. Flagged as dark-not-blocked,
- * mirroring B2's JobCard `jobType: "food"` precedent, rather than fabricating a figure with nothing
- * behind it.
+ * B4 (`app/rider/job.tsx`) renders `yours` off the active parcel job's agreed fare; D5's own active-job
+ * screen (`app/rider/food-job.tsx`) renders it off the delivery fee the rider keeps. `owed` is D5's
+ * own single active food job's open debt (one job at a time — §7 open Q1 — so there's no separate
+ * aggregate to sum). The Money tab wires `owed` the same way but keeps `yours={0}`: it has no single
+ * job to point that figure at (see money.tsx's own comment).
  */
 export function CashHeldStrip({ yours, owed }: { yours: number; owed: number }): React.ReactElement {
   const owing = owed > 0;

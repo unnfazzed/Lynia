@@ -31,6 +31,10 @@ export interface OrderEvent {
 export interface OrderSnapshot {
   id: string;
   status: OrderStatus;
+  // D5: distinguishes a food (merchant) job from a parcel one on the generic snapshot (activeForRider/
+  // getOrder) — absent on an older API, in which case the caller should treat it as "parcel" (the
+  // historical-only shape this endpoint ever served before food orders shared it).
+  orderType?: "parcel" | "merchant";
   // Which party is viewing this order — the server derives it from the same party check that gates the
   // snapshot. Lets the tracking screen flip customer-voiced/customer-gated UI (rating card, cancel-blame
   // copy, counterparty-phone label) for a rider viewing their own trip. Optional for older APIs that

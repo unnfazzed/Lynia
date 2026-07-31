@@ -166,6 +166,15 @@ export default function RiderJob(): React.ReactElement {
   const orderId = order?.id ?? null;
   const items = order?.items ?? [];
 
+  // D5: this screen owns the PARCEL flow only — a food (merchant) job redirects to its own active-job
+  // screen, which reuses the Express tracker/Stepper/safety surfaces but drives the food-specific
+  // pickup-code/doorstep-handshake/return-leg machinery this file doesn't have. Fires before any
+  // terminal/mutation branch below ever sees a food order, so none of this file's parcel-only actions
+  // (advanceStatus's NEXT labels, cancelOrder-based bail, the sender-rating terminal) can run against one.
+  useEffect(() => {
+    if (order && order.orderType === "merchant") router.replace("/rider/food-job");
+  }, [order, router]);
+
   // Load the last-known job summary (persisted below) so an OFFLINE COLD START shows it instead of a
   // bare "couldn't load your job" — only ever rendered in the fetch-error branch, never over live data.
   const [lastKnownJob, setLastKnownJob] = useState<LastActive | null>(null);
@@ -600,6 +609,16 @@ export default function RiderJob(): React.ReactElement {
         confirmRetryInFlight.current = false;
       });
   }, [order, pendingConfirm]);
+
+  // D5 redirect (see the effect above) — render nothing of this parcel screen for a food order; the
+  // brief frame before the effect's router.replace() lands just shows the skeleton.
+  if (order && order.orderType === "merchant") {
+    return (
+      <Screen>
+        <SkeletonList />
+      </Screen>
+    );
+  }
 
   // Terminal: the customer (or ops) cancelled. Rendered from the frozen WS snapshot (keeps the sender
   // contact after the order leaves the active feed), OR — R8 — from a fetched cancelled order when the

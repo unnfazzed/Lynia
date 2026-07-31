@@ -706,6 +706,7 @@ export class OrdersService implements OnModuleDestroy {
       select: {
         id: true,
         status: true,
+        orderType: true,
         agreedFare: true,
         proposedFare: true,
         customerId: true,
@@ -833,6 +834,10 @@ export class OrdersService implements OnModuleDestroy {
     return {
       id: order.id,
       status: order.status,
+      // D5: lets a generic snapshot (activeForRider / getOrder) tell a food job apart from a parcel
+      // one — e.g. so the board/rider job screen can route to the food-specific active-job UI instead
+      // of rendering the parcel flow against merchant-order fields that don't exist on this shape.
+      orderType: order.orderType,
       // Which party is looking — derived from the same customer/rider check that gates this snapshot
       // above (never a new auth path). Lets the tracking screen voice customer-only copy correctly for
       // a rider viewing their own trip (rating card, cancel-blame line, counterparty-phone label).
