@@ -557,7 +557,7 @@ dead-when-off rather than dead-always.
   reuses `OrderLifecycleService` via the sanctioned merchant→shared direction). Migration 0044,
   additive only (every new column nullable, one new table). C5 (realtime/notifications/
   statements) is next.
-- [ ] **C5 · Realtime + notifications + statements.** Kitchen socket queue reusing
+- [x] **C5 · Realtime + notifications + statements.** Kitchen socket queue reusing
   TrackingModule (server-paused accept clocks while dark, reconnect backfill with count);
   customer push contract (accepted-pay-now persistent, rider-secured, at-door; soft reminder
   N-22); rider offer alarm channel vs parcel ping; weekly merchant statement + commission
@@ -645,10 +645,28 @@ dead-when-off rather than dead-always.
   only touched `tracking/` + `merchant/`, and `tracking` was never on that rule's `from` list). The
   weekly statement (N-13's 0%/illustrative-10% comparator) was already shipped by Lane E's E3 box
   (`GET /merchant/statement/weekly`/`GET /merchant/summary/today`) under a different PR than this
-  plan's own C5 numbering implied — cross-referenced here rather than re-built. Only the
-  **per-vertical utilization metric** (an ops/admin-facing rides-per-active-rider split by
-  Express vs. Restaurants, not a merchant-facing surface) remains unstarted; left open for a future
-  C5 firing or folded into X1 (admin alignment), whichever lands first.
+  plan's own C5 numbering implied — cross-referenced here rather than re-built. **Done 2026-07-31
+  (per-vertical utilization metric, closing out C5):** new `GET /admin/utilization?days=` (`AdminService.
+  utilization`, `apps/api/src/admin/admin.service.ts`) — ops-only, NOT merchant-facing, no
+  `RestaurantsEnabledGuard` needed (same reasoning as A-8/A-9: it's an aggregate read behind the
+  existing `AdminGuard`, and a merchant-vertical-off deployment simply has zero `order_type='merchant'`
+  assignment events to aggregate, so it's dead-when-off by construction, not by a flag check). One raw
+  `$queryRaw` per call, mirroring `scripts/utilization-metric.sql`'s manual tripwire CTEs exactly
+  (assignment-day demand bucketed by `order_events.status='assigned'`, fleet-wide active-rider supply
+  with today-only heartbeat arm) so the two can never silently diverge, plus the new bit: `express`/
+  `merchant` demand counts each divided by the SAME `activeRiders` denominator into
+  `expressRidesPerActiveRider`/`merchantRidesPerActiveRider` — deliberately the same fleet-wide
+  denominator for both verticals (a rider isn't dedicated to one vertical, so splitting the denominator
+  too would double-count a rider who worked both in a day). `days` clamped to [1, 90], default 14. A
+  zero-active-rider day reports null ratios (SQL `NULLIF`), never a divide-by-zero. Proven two ways:
+  `admin.service.spec.ts` unit-tests the service's own responsibility (days clamp/default, Date→
+  "YYYY-MM-DD" formatting) against a mocked `$queryRaw`; the actual SQL — orderType split, NULLIF
+  ratios, the today-only heartbeat arm — is proven against a REAL Postgres in new
+  `admin.service.int.spec.ts` (`pnpm test:int`, mirrors `tracking.int.spec.ts`'s pattern), since a
+  mocked raw query can't reach that logic. `pnpm typecheck && pnpm lint && pnpm test` green across all
+  6 packages (api 1469 unit + 42 int incl. 2 new; mobile 668; admin 45; merchant 85; shared 157);
+  `pnpm depcruise` clean (0 new violations — this PR only touched `apps/api/src/admin/`). **Lane C
+  (C1–C5) is now fully shipped.**
 
 ### Lane D — food UI (`apps/mobile`, customer + rider food flows)
 
