@@ -219,10 +219,48 @@ where it touches food paths (flags stay OFF in CI/staging until the launch flip)
   (`expo export --platform android` + `scripts/check-bundle-size.mjs`): Hermes 6,357,879 /
   6,390,000 bytes, ~31 KiB headroom left — no budget bump needed this PR. A4 (five-states +
   retirement sweep) is next.
-- [ ] **A4 · Five-states + retirement sweep.** Every new customer surface ships default /
+- [x] **A4 · Five-states + retirement sweep.** Every new customer surface ships default /
   loading / empty / error / offline per the gallery; remove the retired `home_launcher`
   intermediate and any dead nav; accent-split spot-check; jest coverage for boot-route + nav
-  guards.
+  guards. **Done 2026-07-30:** offline is already global (`app/_layout.tsx`'s `ConnectivityBanner`,
+  shipped pre-Lane-A, sits above every screen including the tabs) — the real per-screen gaps were
+  loading and error on the Home tab, and error on the Orders tab, both reading the same
+  `["activeCustomerOrder"]` query send.tsx's compose screen already hardened under UX20-01 ("the
+  active-order check failing must be visible, not a silent dead end") — a gap this lane's own two
+  newest call sites had simply never inherited. Extracted send.tsx's local `ActiveOrderCheckFailedBanner`
+  into a shared `src/ui/ActiveOrderCheckFailedBanner.tsx` (send.tsx now imports it, zero behaviour
+  change there) and wired it into `(tabs)/home.tsx` and `(tabs)/orders.tsx` for `activeOrderQ.isError`;
+  `(tabs)/home.tsx` also gained a `SkeletonRows` loading state for the genuine first-load window
+  (`activeOrderQ.isLoading || (historyFeed.rows === null && historyFeed.isFetching)`), matching the
+  Orders tab's own pre-existing loading rule instead of a blank gap between the tiles and the
+  restaurants rail. **Retirement sweep:** grepped the whole repo for `home_launcher` and dead nav —
+  zero hits; A1 already completed this retirement in full (the composer's `git mv` to `/send`, the
+  tabs restructure) and there was nothing left to remove. **Accent-split spot-check:** grepped every
+  Lane A file (`app/(tabs)/*`, `src/ui/home/*`, `src/ui/shell/*`) for `color: tokens.color.accent`
+  used as TEXT color (the banned pattern — green text must be `accentText`) — zero violations; every
+  raw `accent` usage in this lane is a background/border fill, the sanctioned use. (One unrelated
+  violation found in `app/rider/job.tsx:861`, Lane B's file, out of this lane's customer-surfaces-only
+  scope — flagged here rather than fixed, since Lane B is already marked complete above.) **Jest
+  coverage for boot-route + nav guards:** already comprehensive from A1's own work
+  (`boot-route.test.ts` covers every `bootDestination` branch, `session-gate.test.ts` covers the
+  `isLogoutTransition` guard, `tab-bar.test.ts` covers the `APP_TABS`/`RIDER_TABS` route-name
+  contracts) — re-verified green, no gap found, nothing new needed there. Added
+  `app/(tabs)/__tests__/home.test.tsx` and `app/(tabs)/__tests__/orders.test.tsx` (new render-level
+  coverage for both tabs' loading/default/empty/error states, mocking the API/hook layer only so the
+  real react-query loading/error transitions are exercised). `pnpm typecheck && pnpm lint && pnpm test`
+  green across all 6 packages (mobile: 82 suites / 619 tests, incl. 8 new cases across the two new
+  test files; api 94 suites / 1439 tests unaffected). Bundle-size measured locally
+  (`expo export --platform android` + `scripts/check-bundle-size.mjs`): Android export 12,603,433 /
+  12,620,000 bytes (16.18 KiB headroom), Hermes 6,370,304 / 6,390,000 bytes (19.23 KiB headroom) — no
+  budget bump needed. **Lane A complete** — A1–A4 all shipped; see the lane-completion note below.
+
+**Lane A complete (2026-07-30):** all four boxes above (A1 tab shell + Send demotion, A2 home
+content, A3 Orders/Account tabs, A4 five-states + retirement sweep) are shipped and merged. The
+customer app now has its full new IA — launcher home, one cross-service Orders list, Account, and a
+consistent loading/default/empty/error/offline contract on every Lane A surface (offline global,
+the rest per-screen) — with the Food tile/rail gated behind `restaurantsEnabled` throughout for the
+escape hatch. Nothing left in this lane's queue; this build loop's trigger is disabled after this PR
+merges.
 
 ### Lane B — one rider app (`apps/mobile`, rider surfaces)
 
