@@ -65,7 +65,7 @@ describe("FoodOrderService.placeOrder", () => {
         findFirst: async () => null, // no idempotency replay
         create: async ({ data }: { data: Record<string, unknown> }) => {
           created = data;
-          return { ...data, id: "o1", merchantItems: [] };
+          return { ...data, id: "o1", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] };
         },
       },
       merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD, landmark: "CBD", contactPhone: "+263771234567" } }) },
@@ -120,7 +120,7 @@ describe("FoodOrderService.placeOrder", () => {
     let createCalls = 0;
     const { svc } = build({
       order: {
-        findFirst: async () => ({ id: "o1", merchantId: "m1", status: "requested", merchantItems: [] }),
+        findFirst: async () => ({ id: "o1", merchantId: "m1", status: "requested", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }),
         create: async () => {
           createCalls++;
           throw new Error("must not create a second order");
@@ -150,6 +150,8 @@ describe("FoodOrderService.acceptOrder — D-23 full vs item-level", () => {
       { id: "i1", dishId: "d1", priceUsd: 5, quantity: 2, available: null },
       { id: "i2", dishId: "d2", priceUsd: 3, quantity: 1, available: null },
     ],
+    pickupCodeAttempts: 0,
+    noShowCallTimestamps: [],
     ...over,
   });
 
@@ -260,6 +262,8 @@ describe("FoodOrderService.confirmPayment — R-11 own-statement match", () => {
     merchantPhase: "awaiting_payment",
     merchantGoodsTotal: 12.5,
     merchantItems: [],
+    pickupCodeAttempts: 0,
+    noShowCallTimestamps: [],
     ...over,
   });
 
@@ -306,7 +310,7 @@ describe("FoodOrderService.requestPayment — C5 customer push contract", () => 
           merchantItems: [],
         }),
         update: async () => ({}),
-        findUnique: async () => ({ id: "o1", merchantId: "m1", status: "requested", merchantItems: [] }),
+        findUnique: async () => ({ id: "o1", merchantId: "m1", status: "requested", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }),
       },
     });
     await svc.requestPayment("p1", "o1", false);
@@ -373,7 +377,9 @@ describe("FoodOrderService.rejectOrder — D-11", () => {
           // notifyCancelledCustomer's lookup (customerId only) runs before the final
           // mustFindWithItems re-read (full row + merchantItems) — same distinguishing-by-call-order
           // shape as merchant.service.spec.ts's becomeMerchantMock.
-          return findUniqueCalls === 1 ? { customerId: "c1" } : { id: "o1", merchantId: "m1", status: "cancelled", merchantItems: [] };
+          return findUniqueCalls === 1
+            ? { customerId: "c1" }
+            : { id: "o1", merchantId: "m1", status: "cancelled", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] };
         },
       },
       orderEvent: { create: async () => ({}) },
@@ -501,8 +507,8 @@ describe("FoodOrderService.listQueue — E2/E3 board visibility", () => {
       merchant: { findUnique: async () => ({ id: "m1" }) },
       order: {
         findMany: async () => [
-          { id: "o1", status: "delivered", merchantPhase: null, debtStatus: "open", debtAmount: 13, merchantItems: [] },
-          { id: "o2", status: "undelivered", merchantPhase: null, debtStatus: "open", debtAmount: 8, merchantItems: [] },
+          { id: "o1", status: "delivered", merchantPhase: null, debtStatus: "open", debtAmount: 13, merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] },
+          { id: "o2", status: "undelivered", merchantPhase: null, debtStatus: "open", debtAmount: 8, merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] },
         ],
       },
     });

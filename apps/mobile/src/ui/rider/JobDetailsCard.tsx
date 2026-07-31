@@ -13,10 +13,14 @@ export function JobDetailsCard({
   order,
   riderPoint,
   isActive,
+  jobType = "parcel",
 }: {
   order: OrderSnapshot;
   riderPoint: { lat: number; lng: number } | null;
   isActive: boolean;
+  /** D5: the food active-job screen passes "food" so the Stepper renders its food-flavoured step
+   *  labels instead of the parcel default — the signal B4's own comment (below) flagged as missing. */
+  jobType?: "parcel" | "food";
 }): React.ReactElement {
   return (
     <Card>
@@ -110,10 +114,7 @@ export function JobDetailsCard({
           </Text>
         </>
       ) : null}
-      {/* Plan §5 B4: the Stepper supports a food-flavoured step list, but `OrderSnapshot` carries
-          no `orderType` yet — Lane D5 wires the live food active-job screen and the signal it
-          needs. Hardcoded here, same dark-not-blocked shape as B2's `JobCard` `jobType` prop. */}
-      <Stepper events={order.events} currentStatus={order.status} view="rider" jobType="parcel" />
+      <Stepper events={order.events} currentStatus={order.status} view="rider" jobType={jobType} />
     </Card>
   );
 }

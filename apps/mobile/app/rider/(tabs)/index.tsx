@@ -241,7 +241,9 @@ export default function RiderHome(): React.ReactElement {
   // Board push (declared here, ahead of its other uses below) already invalidates ["activeJob"] live
   // on every `orderTaken` event — so the REST poll only needs to run as a self-heal fallback while the
   // board socket is down, the same pattern job.tsx already uses for its own active-job query.
-  const board = useRiderBoard(online, loc, bidIds);
+  // D5: a live food-dispatch offer takes the rider straight to the intake screen — gated on the same
+  // dispatch-specific flag as the (still dormant) food-job-card board read above, dormant-off.
+  const board = useRiderBoard(online, loc, bidIds, merchantDispatchAutoEnabled ? () => router.push("/rider/food-offer") : undefined);
   const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: board.connected ? false : 8000 });
   // R8 follow-up: hide the "active job" card for a cancelled order the rider has already handed back.
   // activeForRider keeps surfacing a collected-then-cancelled order for 24h (so a backgrounded rider

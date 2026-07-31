@@ -160,6 +160,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         merchantGoodsTotal: true,
         deliveryFee: true,
         distanceKm: true,
+        merchantPaymentMethod: true,
+        merchantCashRule: true,
       },
     });
     if (!order || order.status !== "requested" || order.merchantPhase !== "ready_for_pickup" || order.noRiderHoldAt) {
@@ -265,6 +267,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       merchantGoodsTotal: Prisma.Decimal | null;
       deliveryFee: Prisma.Decimal | null;
       distanceKm: Prisma.Decimal | number | null;
+      merchantPaymentMethod?: string | null;
+      merchantCashRule?: string | null;
     },
     expiresAt: Date,
   ): FoodOfferEvent {
@@ -278,6 +282,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       deliveryFee: order.deliveryFee != null ? Number(order.deliveryFee) : null,
       distanceKm: order.distanceKm != null ? Number(order.distanceKm) : null,
       expiresAt: expiresAt.toISOString(),
+      // D5: the offer variant the rider decides accept/decline against (R-01/R-03/R-10/R-12).
+      merchantPaymentMethod: order.merchantPaymentMethod ?? null,
+      merchantCashRule: order.merchantCashRule ?? null,
     });
   }
 
@@ -335,6 +342,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         deliveryFee: true,
         distanceKm: true,
         dispatchOfferExpiresAt: true,
+        merchantPaymentMethod: true,
+        merchantCashRule: true,
       },
     });
     if (!order || !order.merchantId || !order.dispatchOfferExpiresAt) return null;

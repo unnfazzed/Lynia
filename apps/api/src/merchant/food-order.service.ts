@@ -815,12 +815,16 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       dispatchAttempt: order.dispatchAttempt,
       dispatchOfferExpiresAt: order.dispatchOfferExpiresAt?.toISOString() ?? null,
       noRiderHoldAt: order.noRiderHoldAt?.toISOString() ?? null,
+      // N-16: mirrors deliveryOtpAttempts's resync purpose for the 4-digit pickup code (D5).
+      pickupCodeAttempts: order.pickupCodeAttempts,
       // C4: doorstep handshake (R-04/R-05/N-19).
       cashHandshakeAmount: order.cashHandshakeAmount != null ? Number(order.cashHandshakeAmount) : null,
       customerCashConfirmedAt: order.customerCashConfirmedAt?.toISOString() ?? null,
       riderCashConfirmedAt: order.riderCashConfirmedAt?.toISOString() ?? null,
       cashHandshakeDeadlineAt: order.cashHandshakeDeadlineAt?.toISOString() ?? null,
       cashHandshakeFrozenAt: order.cashHandshakeFrozenAt?.toISOString() ?? null,
+      // N-10: the rider's logged pre-no-show call attempts (D5).
+      noShowCallTimestamps: order.noShowCallTimestamps.map((t) => t.toISOString()),
       // C4: the collect-and-return merchant-debt ledger's derived state.
       merchantCashRule: order.merchantCashRule,
       debtStatus: order.debtStatus,
