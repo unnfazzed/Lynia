@@ -67,4 +67,12 @@ export const REASONS = {
 
   // cash.html — settlement method (not a "reason" but the same required-radio pattern)
   cashSettle: ["Cash at agent", "EcoCash transfer", "Netted against refund owed to their customer"],
+
+  // X1 — merchant vertical admin alignment
+  handshakeResolve: [
+    "Called both parties — the amount matches, rider was just slow to confirm",
+    "Called both parties — resolved the mismatch, releasing the rider",
+    "Rider unreachable — releasing on the customer's confirm alone after follow-up",
+  ],
+  cashBanLift: ["Customer contacted and cleared", "Payment issue resolved", "Ban applied in error"],
 } as const;

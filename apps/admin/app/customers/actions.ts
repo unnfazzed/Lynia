@@ -30,3 +30,16 @@ export async function mutateCustomer(
   revalidatePath(`/customers/${profileId}`);
   revalidatePath("/customers");
 }
+
+/** X1/R-08: lift a food cash-ban — `POST /admin/customers/:id/cash-ban-lift`. Same shape as
+ *  mutateCustomer's lift; kept separate since it's a distinct endpoint/audit action, not a hold/lift
+ *  standing change. */
+export async function liftCashBan(profileId: string, reasonCode: string | null, note: string): Promise<void> {
+  const res = await adminPostResult(`/admin/customers/${profileId}/cash-ban-lift`, {
+    reason: reasonCode ?? "",
+    note: note || null,
+  });
+  if (!res.ok) throw new Error(`Failed to lift cash-ban for customer ${profileId}: ${describeAdminPostFailure(res)}`);
+  revalidatePath(`/customers/${profileId}`);
+  revalidatePath("/customers");
+}

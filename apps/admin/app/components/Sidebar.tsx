@@ -3,7 +3,7 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import type { NavCounts } from "../lib/adminTypes";
-import { IconAlert, IconBanknote, IconBike, IconIdCard, IconNavigation, IconPackage, IconPhone, IconUser } from "./icons";
+import { IconAlert, IconBanknote, IconBike, IconIdCard, IconNavigation, IconPackage, IconPhone, IconStore, IconUser } from "./icons";
 
 /**
  * 216px ops-console sidebar (kit `shell.js` NAV). Client component so it can mark the active route
@@ -27,6 +27,14 @@ const NAV: NavEntry[] = [
   { label: "Riders", href: "/riders", icon: <IconBike />, match: "/riders" },
   { label: "KYC review", href: "/riders?kyc=pending", icon: <IconIdCard />, match: "/kyc", badge: "kycPending" },
   { label: "Customers", href: "/customers", icon: <IconUser />, match: "/customers" },
+  { label: "Merchants", href: "/merchants", icon: <IconStore />, match: "/merchants" },
+  {
+    label: "Food disputes",
+    href: "/merchants/disputes",
+    icon: <IconAlert />,
+    match: "/merchants/disputes",
+    badge: "foodDisputes",
+  },
   { label: "Issues", href: "/issues", icon: <IconAlert />, match: "/issues", badge: "openIssues" },
   { label: "SOS", href: "/sos", icon: <IconPhone />, match: "/sos", badge: "sosPending" },
   { label: "Commission", href: "/cash", icon: <IconBanknote />, match: "/cash" },
@@ -41,6 +49,11 @@ const NAV: NavEntry[] = [
 function isActive(entry: NavEntry, pathname: string, kycMode: boolean): boolean {
   if (entry.match === "/kyc") return kycMode;
   if (entry.match === "/riders") return pathname.startsWith("/riders") && !kycMode;
+  // Same "queue shares a route prefix with its parent directory" shape as /riders vs /kyc above: the
+  // disputes queue lives at /merchants/disputes, so a plain prefix match would light BOTH "Merchants"
+  // and "Food disputes" on that one page. Disambiguate the same way.
+  if (entry.match === "/merchants/disputes") return pathname.startsWith("/merchants/disputes");
+  if (entry.match === "/merchants") return pathname.startsWith("/merchants") && !pathname.startsWith("/merchants/disputes");
   if (entry.match === "/") return pathname === "/";
   return pathname === entry.match || pathname.startsWith(`${entry.match}/`);
 }

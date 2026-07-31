@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { resolveCommissionRatePct } from "@lynia/shared";
+import { resolveCommissionRatePct, RESTAURANTS_DEBT } from "@lynia/shared";
 import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -45,12 +45,32 @@ export class AdminService {
   /** Cheap counts for the sidebar attention badges (KYC backlog, open disputes, un-acked SOS). Kept
    *  separate from `overview()` so the shell can render badges on every page without its heavy query set. */
   async navCounts() {
-    const [kycPending, openIssues, sosPending] = await Promise.all([
+    // X1: foodDisputes = R-05 frozen doorstep handshakes (need admin resolveHandshake) + N-12
+    // refund-overdue orders past the 2h SLA. Approximates "past SLA" off `updatedAt` (the same cheap
+    // single-column-index style STUCK_AFTER_MS uses for the overview dashboard — see admin.shared.ts's
+    // comment on why the badge and the detail queue are allowed to use different clocks) rather than
+    // admin-merchants.service.ts's precise per-row cancelledAt/undeliveredAt computation — a nav badge
+    // only needs to be a cheap, roughly-right attention signal, not the authoritative queue itself.
+    const refundOverdueCutoff = new Date(Date.now() - RESTAURANTS_DEBT.refundSlaMs);
+    const [kycPending, openIssues, sosPending, frozenHandshakes, refundsOverdue] = await Promise.all([
       this.prisma.rider.count({ where: { kycStatus: "pending" } }),
       this.prisma.issue.count({ where: { status: { in: ["open", "investigating"] } } }),
       this.prisma.sosEvent.count({ where: { acknowledgedAt: null } }),
+      this.prisma.order.count({
+        where: { orderType: "merchant", cashHandshakeFrozenAt: { not: null }, riderCashConfirmedAt: null },
+      }),
+      this.prisma.order.count({
+        where: {
+          orderType: "merchant",
+          merchantPaymentMethod: "wallet",
+          merchantPaymentConfirmedAt: { not: null },
+          status: { in: ["cancelled", "undelivered"] },
+          refundedAt: null,
+          updatedAt: { lt: refundOverdueCutoff },
+        },
+      }),
     ]);
-    return { kycPending, openIssues, sosPending };
+    return { kycPending, openIssues, sosPending, foodDisputes: frozenHandshakes + refundsOverdue };
   }
 
   /** Single read for the monitor dashboard: status counts, rider stats, pilot funnel, recent orders. */

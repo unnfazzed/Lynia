@@ -7,6 +7,14 @@ import { StatusPill, Pill } from "../../components/StatusPill";
 import { FareAdjust, CancelOrder, AdjudicateDelivered } from "./OrderActions";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconPackage, IconPhone } from "../../components/icons";
+import { ResolveHandshakeButton } from "../../merchants/ResolveHandshakeButton";
+
+const DEBT_STATUS_LABEL: Record<string, string> = {
+  open: "Open — awaiting settlement",
+  settled_cash: "Settled — cash returned",
+  settled_goods: "Settled — goods returned",
+  written_off: "Written off — rider suspended",
+};
 
 /** Order detail (kit `orders.html` detail): 8-step delivery timeline, parcel line items, people
  *  (masked customer phone), proposed→agreed fare, and the stuck-order edge case with
@@ -304,6 +312,82 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               ]}
             />
           </section>
+
+          {/* X1: food-order evidence panel — merchant/payment rail/debt/handshake/refund. Null for
+              every parcel order, so this card is simply absent there. */}
+          {o.food ? (
+            <section className="card">
+              <div className="block-title">Food order</div>
+              <KeyValue
+                rows={[
+                  { label: "Merchant", value: o.food.merchant ?? "—" },
+                  {
+                    label: "Payment",
+                    value: `${o.food.paymentMethod ?? "—"}${o.food.paymentConfirmedAt ? ` · confirmed ${new Date(o.food.paymentConfirmedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}`,
+                  },
+                  { label: "Goods total", value: o.food.goodsTotal ? `$${o.food.goodsTotal}` : "—" },
+                  { label: "Delivery fee", value: o.food.deliveryFee ? `$${o.food.deliveryFee}` : "—" },
+                ]}
+              />
+
+              {o.food.debt ? (
+                <div style={{ marginTop: 10 }}>
+                  <div className="block-title" style={{ fontSize: 12 }}>
+                    Merchant debt (collect &amp; return)
+                  </div>
+                  <KeyValue
+                    rows={[
+                      { label: "Status", value: DEBT_STATUS_LABEL[o.food.debt.status] ?? o.food.debt.status },
+                      { label: "Amount", value: o.food.debt.amount ? `$${o.food.debt.amount}` : "—" },
+                    ]}
+                  />
+                </div>
+              ) : null}
+
+              {o.food.handshake ? (
+                <div style={{ marginTop: 10 }}>
+                  <div className="block-title" style={{ fontSize: 12 }}>
+                    Doorstep handshake
+                  </div>
+                  {o.food.handshake.frozenAt && !o.food.handshake.riderConfirmedAt ? (
+                    <div className="warnbar" style={{ marginBottom: 8 }}>
+                      <IconAlert />
+                      <span className="t">
+                        <b>Frozen — the rider didn&apos;t confirm.</b> Locked out of new jobs since{" "}
+                        {new Date(o.food.handshake.frozenAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.
+                      </span>
+                    </div>
+                  ) : null}
+                  <KeyValue
+                    rows={[
+                      { label: "Amount", value: o.food.handshake.amount ? `$${o.food.handshake.amount}` : "—" },
+                      { label: "Customer confirmed", value: o.food.handshake.customerConfirmedAt ? "Yes" : "Not yet" },
+                      { label: "Rider confirmed", value: o.food.handshake.riderConfirmedAt ? "Yes" : "Not yet" },
+                    ]}
+                  />
+                  {o.food.handshake.frozenAt && !o.food.handshake.riderConfirmedAt ? (
+                    <div style={{ marginTop: 8 }}>
+                      <ResolveHandshakeButton orderId={o.id} connected={connected} />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {o.food.refund ? (
+                <div style={{ marginTop: 10 }}>
+                  <div className="block-title" style={{ fontSize: 12 }}>
+                    Refund
+                  </div>
+                  <KeyValue
+                    rows={[
+                      { label: "Reference", value: <span className="mono">{o.food.refund.reference ?? "—"}</span> },
+                      { label: "Amount", value: o.food.refund.amount ? `$${o.food.refund.amount}` : "—" },
+                    ]}
+                  />
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <section className="card">
             <div className="block-title">Fare — cash</div>

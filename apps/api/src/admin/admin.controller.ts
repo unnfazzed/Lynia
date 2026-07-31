@@ -1,5 +1,5 @@
 import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { KycStatus, OrderStatus } from "@lynia/shared";
+import { KycStatus, OrderStatus, OrderType } from "@lynia/shared";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -11,12 +11,14 @@ import { WalletService } from "../wallet/wallet.service";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
+import { AdminMerchantsService } from "./admin-merchants.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminService } from "./admin.service";
 
 const KYC_VALUES = Object.values(KycStatus) as string[];
 const ORDER_STATUS_VALUES = Object.values(OrderStatus) as string[];
+const ORDER_TYPE_VALUES = Object.values(OrderType) as string[];
 const CUSTOMER_FILTERS = ["active", "flagged", "banned", "on_hold"] as const;
 
 // A-01 audit-action payload (mirrors submitAdminAction in apps/admin). action + target are required;
@@ -67,6 +69,7 @@ export class AdminController {
     private readonly ridersService: AdminRidersService,
     private readonly kycReviewService: AdminKycReviewService,
     private readonly customersService: AdminCustomersService,
+    private readonly merchantsService: AdminMerchantsService,
     private readonly audit: AdminAuditService,
     private readonly settlements: SettlementsService,
     private readonly sos: SosService,
@@ -129,11 +132,13 @@ export class AdminController {
     return review;
   }
 
-  /** Order monitor. `?status=<OrderStatus>` filters; unknown values are ignored. */
+  /** Order monitor. `?status=<OrderStatus>` and/or `?type=parcel|merchant` filter; unknown values are
+   *  ignored (X1: food-order visibility). */
   @Get("orders")
-  orders(@Query("status") status?: string) {
-    const filter = status && ORDER_STATUS_VALUES.includes(status) ? (status as OrderStatus) : undefined;
-    return this.ordersService.listOrders(filter);
+  orders(@Query("status") status?: string, @Query("type") type?: string) {
+    const statusFilter = status && ORDER_STATUS_VALUES.includes(status) ? (status as OrderStatus) : undefined;
+    const typeFilter = type && ORDER_TYPE_VALUES.includes(type) ? (type as OrderType) : undefined;
+    return this.ordersService.listOrders(statusFilter, typeFilter);
   }
 
   /** Order detail (D-2): 8-step timeline, parcel, fares, masked people. 404s when not found. */
@@ -194,6 +199,17 @@ export class AdminController {
     @AdminActor() actor: string,
   ) {
     return this.customersService.liftCustomerHold(actor, id, body);
+  }
+
+  /** X1/R-08: lift a food cash-ban → the customer can pay cash for food orders again. Reason optional
+   *  (mirrors the hold/lift pair — a lift reverses a flag, it doesn't apply one). */
+  @Post("customers/:id/cash-ban-lift")
+  liftCashBan(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonOptional)) body: z.infer<typeof ReasonOptional>,
+    @AdminActor() actor: string,
+  ) {
+    return this.customersService.liftCashBan(actor, id, body);
   }
 
   /**
@@ -285,6 +301,41 @@ export class AdminController {
     @AdminActor() actor: string,
   ) {
     return this.ordersService.adjudicateDelivered(actor, id, body);
+  }
+
+  /* ── X1: merchant directory + support dispute queue ──────────────────────────────────────── */
+
+  /** Merchant directory (X1): order volume + open collect-and-return debt per merchant. */
+  @Get("merchants")
+  merchants() {
+    return this.merchantsService.listMerchants();
+  }
+
+  /** Merchant detail (X1): profile + recent orders + the merchant's own debt-ledger trail. 404s when
+   *  the id isn't a merchant. */
+  @Get("merchants/:id")
+  async merchantDetail(@Param("id", ParseUUIDPipe) id: string) {
+    const merchant = await this.merchantsService.getMerchantDetail(id);
+    if (!merchant) throw new NotFoundException("Merchant not found");
+    return merchant;
+  }
+
+  /** Support dispute queue (X1): R-05 frozen doorstep handshakes needing `resolve-handshake`, plus
+   *  N-12 refund-overdue visibility (Q6 mocked default — escalation is visibility only, no penalty). */
+  @Get("merchant-disputes")
+  merchantDisputes() {
+    return this.merchantsService.listDisputes();
+  }
+
+  /** R-05 admin dispute resolution — the only lever out of a frozen doorstep handshake. Reason
+   *  required (an override of a money mismatch is always justified in the audit trail). */
+  @Post("orders/:id/resolve-handshake")
+  resolveHandshake(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.merchantsService.resolveHandshake(actor, id, body);
   }
 
   /* ── Commission (prepaid per-ride, delegated to SettlementsService) ──────────────────────── */

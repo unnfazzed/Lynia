@@ -38,6 +38,57 @@ describe("AdminOrdersService.listOrders", () => {
     expect(where).toEqual({ status: "cancelled" });
     expect(rows[0]).toMatchObject({ id: "o1", status: "cancelled", proposedFare: "2.50", agreedFare: null, cancelledByRole: "rider", cancelReason: "cannot make it" });
   });
+
+  // X1: food-order visibility — orderType filter composes with status, and a merchant order carries
+  // its type + merchant name in the monitor row.
+  it("X1: filters by orderType and surfaces the merchant name on a food order row", async () => {
+    let where: unknown;
+    const prisma = {
+      order: {
+        findMany: async (args: { where: unknown }) => {
+          where = args.where;
+          return [
+            {
+              id: "o2",
+              orderType: "merchant",
+              status: "requested",
+              proposedFare: { toString: () => "8.00" },
+              agreedFare: { toString: () => "8.00" },
+              distanceKm: 1.1,
+              customerId: "c1",
+              riderId: null,
+              cancelledBy: null,
+              cancelReason: null,
+              createdAt: new Date("2026-07-30T00:00:00Z"),
+              pickup: { landmark: "Mama's Kitchen" },
+              dropoff: { landmark: "Borrowdale" },
+              rider: null,
+              merchant: { name: "Mama's Kitchen" },
+            },
+          ];
+        },
+      },
+    };
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService);
+    const rows = await svc.listOrders(undefined, "merchant");
+    expect(where).toEqual({ orderType: "merchant" });
+    expect(rows[0]).toMatchObject({ id: "o2", orderType: "merchant", merchant: "Mama's Kitchen" });
+  });
+
+  it("X1: composes status AND orderType filters together", async () => {
+    let where: unknown;
+    const prisma = {
+      order: {
+        findMany: async (args: { where: unknown }) => {
+          where = args.where;
+          return [];
+        },
+      },
+    };
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService);
+    await svc.listOrders("requested", "merchant");
+    expect(where).toEqual({ status: "requested", orderType: "merchant" });
+  });
 });
 
 describe("AdminOrdersService.getOrderDetail (D-2)", () => {
@@ -241,6 +292,94 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
       const svc = new AdminOrdersService(detailPrisma(baseOrder()) as unknown as PrismaService);
       const d = (await svc.getOrderDetail("o1"))!;
       expect(d.deliveryProof).toBeNull();
+    });
+  });
+
+  // X1: food-order evidence panel — orderType===merchant only, null for every parcel order.
+  describe("food panel (X1)", () => {
+    it("is null for a parcel order", async () => {
+      const svc = new AdminOrdersService(detailPrisma(baseOrder({ orderType: "parcel" })) as unknown as PrismaService);
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.food).toBeNull();
+    });
+
+    it("surfaces merchant/payment/debt/refund for a merchant order, and null-out fields the order type doesn't apply to", async () => {
+      const order = baseOrder({
+        orderType: "merchant",
+        merchant: { name: "Mama's Kitchen", cashRule: "collect_and_return" },
+        merchantPhase: "preparing",
+        rejectionReason: null,
+        merchantPaymentMethod: "wallet",
+        merchantPaymentConfirmedAt: new Date("2026-07-30T10:00:00Z"),
+        merchantCashRule: "collect_and_return",
+        merchantGoodsTotal: dec("8.00"),
+        deliveryFee: dec("1.50"),
+        debtStatus: "open",
+        debtAmount: dec("8.00"),
+        debtOpenedAt: new Date("2026-07-30T10:05:00Z"),
+        debtSettledAt: null,
+        // WALLET order — the handshake fields only apply to CASH, so `handshake` must be null even
+        // though these raw columns happen to be non-null on this row.
+        cashHandshakeAmount: null,
+        customerCashConfirmedAt: null,
+        riderCashConfirmedAt: null,
+        cashHandshakeDeadlineAt: null,
+        cashHandshakeFrozenAt: null,
+        refundReference: null,
+        refundAmount: null,
+        refundedAt: null,
+      });
+      const svc = new AdminOrdersService(detailPrisma(order) as unknown as PrismaService);
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.food).toMatchObject({
+        merchant: "Mama's Kitchen",
+        merchantPhase: "preparing",
+        paymentMethod: "wallet",
+        paymentConfirmedAt: "2026-07-30T10:00:00.000Z",
+        cashRule: "collect_and_return",
+        goodsTotal: "8.00",
+        deliveryFee: "1.50",
+        debt: { status: "open", amount: "8.00", openedAt: "2026-07-30T10:05:00.000Z", settledAt: null },
+        // WALLET order — no doorstep cash handshake applies.
+        handshake: null,
+        refund: null,
+      });
+    });
+
+    it("surfaces a live R-05 dispute — frozenAt set with riderConfirmedAt still null", async () => {
+      const order = baseOrder({
+        orderType: "merchant",
+        merchant: { name: "Mama's Kitchen", cashRule: "collect_and_return" },
+        merchantPaymentMethod: "cash",
+        merchantCashRule: "collect_and_return",
+        cashHandshakeAmount: dec("9.50"),
+        customerCashConfirmedAt: new Date("2026-07-30T11:00:00Z"),
+        riderCashConfirmedAt: null,
+        cashHandshakeDeadlineAt: new Date("2026-07-30T11:02:00Z"),
+        cashHandshakeFrozenAt: new Date("2026-07-30T11:02:01Z"),
+      });
+      const svc = new AdminOrdersService(detailPrisma(order) as unknown as PrismaService);
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.food!.handshake).toMatchObject({
+        amount: "9.50",
+        customerConfirmedAt: "2026-07-30T11:00:00.000Z",
+        riderConfirmedAt: null,
+        frozenAt: "2026-07-30T11:02:01.000Z",
+      });
+    });
+
+    it("surfaces D-12 refund evidence once refunded", async () => {
+      const order = baseOrder({
+        orderType: "merchant",
+        merchant: { name: "Mama's Kitchen", cashRule: "collect_and_return" },
+        merchantPaymentMethod: "wallet",
+        refundReference: "REF-42",
+        refundAmount: dec("8.00"),
+        refundedAt: new Date("2026-07-30T12:00:00Z"),
+      });
+      const svc = new AdminOrdersService(detailPrisma(order) as unknown as PrismaService);
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.food!.refund).toEqual({ reference: "REF-42", amount: "8.00", refundedAt: "2026-07-30T12:00:00.000Z" });
     });
   });
 });

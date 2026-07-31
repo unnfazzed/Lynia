@@ -6,6 +6,7 @@ import {
   DELIVERY_OTP_MAX_ATTEMPTS,
   HeldReason,
   type OrderStatus,
+  type OrderType,
   perRideCommission,
   RELIABILITY,
   subMoney,
@@ -71,14 +72,16 @@ export class AdminOrdersService {
     @Optional() @Inject(STORAGE) private readonly storage?: StorageAdapter,
   ) {}
 
-  /** Order monitor for ops — filter by status to watch live orders, cancellations, etc. */
-  async listOrders(status?: OrderStatus) {
+  /** Order monitor for ops — filter by status and/or orderType (X1: food-order visibility) to watch
+   *  live orders, cancellations, etc. */
+  async listOrders(status?: OrderStatus, type?: OrderType) {
     const orders = await this.prisma.order.findMany({
-      where: status ? { status } : {},
+      where: { ...(status ? { status } : {}), ...(type ? { orderType: type } : {}) },
       orderBy: { createdAt: "desc" },
       take: 100,
       select: {
         id: true,
+        orderType: true,
         status: true,
         proposedFare: true,
         agreedFare: true,
@@ -91,13 +94,18 @@ export class AdminOrdersService {
         pickup: true,
         dropoff: true,
         rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
+        merchant: { select: { name: true } },
       },
     });
     return orders.map((o) => ({
       id: o.id,
+      orderType: o.orderType,
       status: o.status,
       // Pickup → dropoff route + rider name so the monitor table matches the kit (no PII in the label).
+      // For a merchant order the merchant name stands in for "pickup" — routeOf's landmark-only label
+      // still reads sensibly since MerchantOrderController stores the merchant's own address as pickup.
       route: routeOf(o.pickup, o.dropoff),
+      merchant: o.merchant?.name ?? null,
       rider: o.rider ? `${o.rider.profile.firstName} ${o.rider.profile.lastName}`.trim() : null,
       proposedFare: o.proposedFare.toString(),
       agreedFare: o.agreedFare?.toString() ?? null,
@@ -450,6 +458,7 @@ export class AdminOrdersService {
       where: { id },
       select: {
         id: true,
+        orderType: true,
         status: true,
         proposedFare: true,
         agreedFare: true,
@@ -473,6 +482,29 @@ export class AdminOrdersService {
         customer: { select: { firstName: true, lastName: true, phone: true } },
         rider: { select: { bikeReg: true, profile: { select: { firstName: true, lastName: true, phone: true } } } },
         events: { select: { status: true, createdAt: true }, orderBy: { createdAt: "asc" } },
+        // X1: food-order visibility (orderType===merchant only; every field below is null on a parcel
+        // order). merchantPhase covers the pre-dispatch kitchen sub-state the base OrderStatus has no
+        // room for (plan §0b.1) — see FoodOrderService's class docstring.
+        merchant: { select: { name: true, cashRule: true } },
+        merchantPhase: true,
+        merchantPaymentMethod: true,
+        merchantPaymentConfirmedAt: true,
+        merchantCashRule: true,
+        merchantGoodsTotal: true,
+        deliveryFee: true,
+        rejectionReason: true,
+        debtStatus: true,
+        debtAmount: true,
+        debtOpenedAt: true,
+        debtSettledAt: true,
+        cashHandshakeAmount: true,
+        customerCashConfirmedAt: true,
+        riderCashConfirmedAt: true,
+        cashHandshakeDeadlineAt: true,
+        cashHandshakeFrozenAt: true,
+        refundReference: true,
+        refundAmount: true,
+        refundedAt: true,
       },
     });
     if (!order) return null;
@@ -589,8 +621,53 @@ export class AdminOrdersService {
           }
         : null;
 
+    // X1: food-order evidence panel — merchant name/cashRule, payment rail, the R-01 debt ledger's
+    // derived state, the R-04/R-05 doorstep handshake timestamps (a live dispute shows `frozenAt` with
+    // no `riderConfirmedAt` — the /merchants/disputes queue is where support acts on it), and the D-12
+    // refund evidence. Null for every parcel order.
+    const food =
+      order.orderType === "merchant"
+        ? {
+            merchant: order.merchant?.name ?? null,
+            merchantPhase: order.merchantPhase,
+            rejectionReason: order.rejectionReason,
+            paymentMethod: order.merchantPaymentMethod,
+            paymentConfirmedAt: order.merchantPaymentConfirmedAt?.toISOString() ?? null,
+            cashRule: order.merchantCashRule,
+            goodsTotal: order.merchantGoodsTotal?.toString() ?? null,
+            deliveryFee: order.deliveryFee?.toString() ?? null,
+            debt: order.debtStatus
+              ? {
+                  status: order.debtStatus,
+                  amount: order.debtAmount?.toString() ?? null,
+                  openedAt: order.debtOpenedAt?.toISOString() ?? null,
+                  settledAt: order.debtSettledAt?.toISOString() ?? null,
+                }
+              : null,
+            handshake:
+              order.merchantPaymentMethod === "cash"
+                ? {
+                    amount: order.cashHandshakeAmount?.toString() ?? null,
+                    customerConfirmedAt: order.customerCashConfirmedAt?.toISOString() ?? null,
+                    riderConfirmedAt: order.riderCashConfirmedAt?.toISOString() ?? null,
+                    deadlineAt: order.cashHandshakeDeadlineAt?.toISOString() ?? null,
+                    frozenAt: order.cashHandshakeFrozenAt?.toISOString() ?? null,
+                  }
+                : null,
+            refund: order.refundedAt
+              ? {
+                  reference: order.refundReference,
+                  amount: order.refundAmount?.toString() ?? null,
+                  refundedAt: order.refundedAt.toISOString(),
+                }
+              : null,
+          }
+        : null;
+
     return {
       id: order.id,
+      orderType: order.orderType,
+      food,
       route: routeOf(order.pickup, order.dropoff),
       status: order.status,
       stuck,

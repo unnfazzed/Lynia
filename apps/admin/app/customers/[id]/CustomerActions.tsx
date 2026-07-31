@@ -2,7 +2,7 @@
 
 import { REASONS } from "../../lib/reasons";
 import { ConfirmModal } from "../../components/ConfirmModal";
-import { mutateCustomer } from "../actions";
+import { liftCashBan, mutateCustomer } from "../actions";
 
 /**
  * S·2 customer account-hold actions. A held customer gets Lift; everyone else gets Hold. Each is
@@ -61,6 +61,28 @@ export function CustomerActions({
       notePlaceholder="What prompted the hold? The customer sees this context when they contact support."
       confirmLabel="Hold account"
       onConfirm={(r) => mutateCustomer(id, "hold", r.reasonCode, r.note)}
+    />
+  );
+}
+
+/** X1/R-08: lift a food cash-ban (R-08's only lift path — the ban itself is written by
+ *  FoodDebtService.reportCustomerRefused, C4, with no console-side "apply" counterpart to pair it
+ *  with). Shown only when the customer is actually cash-banned. */
+export function LiftCashBanAction({ id, name, connected }: { id: string; name: string; connected: boolean }) {
+  return (
+    <ConfirmModal
+      action="customer.cash_ban_lift"
+      auditInEndpoint
+      target={name}
+      path={`/customers/${id}`}
+      triggerLabel="Lift cash-ban…"
+      triggerVariant="solid"
+      disabled={!connected}
+      title={`Lift ${name}'s cash-ban?`}
+      consequence="They can pay cash for food orders again immediately. The ban history stays on record."
+      reasons={REASONS.cashBanLift}
+      confirmLabel="Lift cash-ban"
+      onConfirm={(r) => liftCashBan(id, r.reasonCode, r.note)}
     />
   );
 }

@@ -108,6 +108,16 @@ export function IconInbox(p: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+export function IconStore(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <path d="M2 7h20l-1.4 4.2a2 2 0 0 1-1.9 1.3H5.3a2 2 0 0 1-1.9-1.3L2 7Z" />
+      <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+      <path d="M9 20v-5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v5" />
+      <path d="M6 7V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v3" />
+    </svg>
+  );
+}
 export function IconPhone(p: SVGProps<SVGSVGElement>) {
   return (
     <svg {...base(p)}>

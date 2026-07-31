@@ -3,13 +3,15 @@ import { adminFetchResult } from "../lib/api";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { DataTable, type Column } from "../components/DataTable";
 import { FilterNav } from "../components/FilterNav";
-import { StatusPill } from "../components/StatusPill";
+import { StatusPill, Pill } from "../components/StatusPill";
 import { IconPackage } from "../components/icons";
 
 interface Order {
   id: string;
+  orderType: "parcel" | "merchant";
   status: string;
   route: string;
+  merchant: string | null;
   rider: string | null;
   proposedFare: string;
   agreedFare: string | null;
@@ -21,6 +23,11 @@ interface Order {
 }
 
 const STATUSES = Object.values(OrderStatus);
+const TYPES: Array<{ value: string; label: string }> = [
+  { value: "", label: "all" },
+  { value: "parcel", label: "parcel" },
+  { value: "merchant", label: "food" },
+];
 
 /** Compact "N min/hr ago" for the Created column (server-rendered once; no hydration risk). */
 function timeAgo(iso: string): string {
@@ -38,16 +45,32 @@ export default async function OrdersPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const raw = (await searchParams).status;
-  const active = typeof raw === "string" && (STATUSES as string[]).includes(raw) ? raw : "";
-  const res = await adminFetchResult<Order[]>(`/admin/orders${active ? `?status=${active}` : ""}`);
+  const sp = await searchParams;
+  const rawStatus = sp.status;
+  const rawType = sp.type;
+  const active = typeof rawStatus === "string" && (STATUSES as string[]).includes(rawStatus) ? rawStatus : "";
+  const activeType = typeof rawType === "string" && TYPES.some((t) => t.value === rawType) ? rawType : "";
+  const query = [active && `status=${active}`, activeType && `type=${activeType}`].filter(Boolean).join("&");
+  const res = await adminFetchResult<Order[]>(`/admin/orders${query ? `?${query}` : ""}`);
   const orders = "data" in res ? res.data : null;
   const reason = "data" in res ? undefined : res.reason;
   const connected = orders !== null;
 
+  // X1: type filter carries the status filter forward (and vice versa) so the two compose instead of
+  // one silently resetting the other.
+  const hrefForStatus = (v: string) => {
+    const q = [v && `status=${v}`, activeType && `type=${activeType}`].filter(Boolean).join("&");
+    return q ? `/orders?${q}` : "/orders";
+  };
+  const hrefForType = (v: string) => {
+    const q = [active && `status=${active}`, v && `type=${v}`].filter(Boolean).join("&");
+    return q ? `/orders?${q}` : "/orders";
+  };
+
   const columns: Column<Order>[] = [
     { key: "id", header: "Order", className: "mono", cell: (o) => o.id.slice(0, 8) },
-    { key: "route", header: "Route", cell: (o) => o.route },
+    { key: "type", header: "Type", cell: (o) => (o.orderType === "merchant" ? <Pill kind="mut">food</Pill> : <Pill kind="mut">parcel</Pill>) },
+    { key: "route", header: "Route / merchant", cell: (o) => (o.orderType === "merchant" ? o.merchant ?? o.route : o.route) },
     { key: "status", header: "Status", cell: (o) => <StatusPill status={o.status} /> },
     { key: "rider", header: "Rider", className: "mut", cell: (o) => o.rider ?? "—" },
     { key: "fare", header: "Fare", className: "num", cell: (o) => `$${o.agreedFare ?? o.proposedFare}` },
@@ -64,7 +87,8 @@ export default async function OrdersPage({
 
       {!connected ? <OfflineBanner reason={reason} /> : null}
 
-      <FilterNav items={FILTERS} active={active} hrefFor={(v) => (v ? `/orders?status=${v}` : "/orders")} />
+      <FilterNav items={TYPES} active={activeType} hrefFor={hrefForType} />
+      <FilterNav items={FILTERS} active={active} hrefFor={hrefForStatus} />
 
       <section className="card">
         <DataTable
