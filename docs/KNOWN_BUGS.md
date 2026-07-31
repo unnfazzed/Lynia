@@ -1984,3 +1984,36 @@ Fable/Opus split rather than assume this run's clean result was a lighter-weight
 
 No code changes this run (docs-only: this ledger entry + `docs/DEEP-SWEEP-2026-07-26.md`, which also
 supersedes and replaces `docs/DEEP-SWEEP-2026-07-21.md` per the report-retention policy).
+
+## Build loop C / X2 launch-flip rehearsal 2026-07-31 — incidental findings (OPEN, not force-fixed)
+
+Surfaced while writing `apps/api/src/merchant/launch-flip.int.spec.ts` (the executable X2 golden pass,
+plan §5 cross-cutting X2). Neither is a live defect — both are asymmetries a future change could turn
+into one — and neither is in X2's own scope, so they are ledgered rather than force-fixed inside a
+rehearsal PR that deliberately touches no production code. Both are in the C4 money lane, so a fix
+carries the sensitive-lane four.
+
+- **X2-OBS-1 (LOW, OPEN) — `confirmReturnedCash` has no order-status guard, unlike its sibling.**
+  `FoodDebtService.confirmGoodsReturned` requires `status === "undelivered"` (the goods are physically
+  back) before settling, but `confirmReturnedCash` guards only on `debtStatus === "open"` + an exact
+  amount match. A merchant can therefore settle a cash debt while the rider is still `en_route_dropoff`
+  — i.e. before the cash could physically have come back. **Plausibly intentional:** the merchant is
+  the party counting the notes and the party carrying the loss (R-07), so an early confirm harms only
+  them, and R-06/N-21's grammar is about the count matching, not about timing. Worth a founder call
+  before adding a guard that could block a legitimate "rider paid me at the counter on the way past"
+  settle. Not user-visible today.
+- **X2-OBS-2 (LOW, OPEN) — two implementations of "is this rider holding another live food offer" use
+  different predicates.** The neutral `common/food-dispatch-lock.ts:hasLiveFoodDispatchOffer` scopes its
+  query with `orderType: "merchant"`; `NearestRiderDispatchStrategy.pickCandidate`'s inline
+  `holdingOtherOffer` check does not. Harmless today by construction (only merchant orders ever populate
+  `dispatchOfferedRiderId`, so the predicate is redundant, not wrong), but it is exactly the
+  un-propagated-sibling drift shape WD-023/DS21-02 have each fixed once elsewhere: if a future order
+  type ever writes that column, the two "same condition" call sites diverge silently. A one-line
+  defensive tightening, deliberately not bundled into the X2 diff.
+
+Also corrected in the same PR (not a code defect — a docs one): `docs/LAUNCH-EXECUTION-RUNBOOK.md` §11.1
+originally described the CASH golden pass as "place → accept → call → request/confirm payment → ready".
+The code disagrees and the code is right per R-11/R-17: `acceptOrder` sends a CASH order straight to
+`preparing` (cash changes hands at the door, so there is no pay-before-cook step), while
+`logCall`/`requestPayment`/`confirmPayment` all 409 outside `awaiting_payment`, which only a WALLET
+order ever reaches. The runbook now describes each rail correctly.

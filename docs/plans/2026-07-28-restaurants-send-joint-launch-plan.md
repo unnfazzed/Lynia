@@ -1154,11 +1154,53 @@ loop's trigger is disabled after this PR merges.
   incl. 6 new server-action tests; mobile 668; merchant 85; shared 157); `pnpm depcruise` clean (0 new
   violations — this PR only touched `apps/api/src/admin/` + `apps/admin/`, neither on
   `express-no-merchant-coupling`'s `from`/`to` lists). X2 (launch-flip rehearsal) is next.
-- [ ] **X2 · Launch-flip rehearsal.** Staging run: flags ON end-to-end golden pass (cash and
+- [x] **X2 · Launch-flip rehearsal.** Staging run: flags ON end-to-end golden pass (cash and
   wallet food order complete with correct ledger entries; NO_RIDER inside cap; race test
   parcel-bid vs food-offer), then flags OFF regression (Express golden matrix still green,
   merchant routes dead). Documented as a repeatable checklist in
-  `docs/LAUNCH-EXECUTION-RUNBOOK.md`.
+  `docs/LAUNCH-EXECUTION-RUNBOOK.md`. **Done 2026-07-31:** the checklist is
+  `docs/LAUNCH-EXECUTION-RUNBOOK.md` §11 (pre-flight → staging flags-ON → hands-on device legs →
+  staging flags-OFF → the prod flip and its rollback), and the golden pass itself is **executable**
+  rather than a one-shot ritual: new `apps/api/src/merchant/launch-flip.int.spec.ts` (7 tests) drives
+  every automatable leg against a real Postgres/PostGIS on every CI run. **The deliberate design call
+  here:** a staging run proves the corridor on the day it is performed and proves nothing the next
+  morning, so the rehearsal was built as a REGRESSION — it re-fires whenever anyone touches C2/C3/C4
+  or the Express seams they share a table with. What each leg proves: (1) a CASH order end-to-end with
+  the `merchant_debt_ledger` rows asserted `opened +$12.50` / `settled_cash −$12.50` **summing to
+  exactly 0 in integer cents** (the §7 launch-gate money invariant), plus R-09's code-reveal gate, the
+  debt still being open *after* delivery, and D-06's exact-match refusal copy on a short count; (2) a
+  WALLET order proving pickup opens **nothing** (null debt, zero ledger rows, rider never soft-locked)
+  — C4's documented collect-and-return-only scope; (3) NO_RIDER holding only after
+  `RESTAURANTS_DISPATCH.maxAttempts` is exhausted, never early, and `resumeSearch` restoring the budget;
+  (4) the parcel-bid vs food-offer race through BOTH real call sites — `OffersService.makeOffer`
+  refusing a new bid and `MatchingService.selectOffer` refusing an already-pending one inside its real
+  bid-acceptance transaction (the leg a unit spec can only simulate) — plus the C4 half where an open
+  debt both blocks bidding and hides the rider from `NearestRiderDispatchStrategy`; (5) flags-OFF data
+  non-interference: a merchant order parked in `open_for_offers` (the exact status Express keys its
+  auction on) is invisible to `listOpen()`, to the raw PostGIS geo board query no mocked `$queryRaw`
+  can reach, to `makeOffer`, and to `reconcileStaleOffers` (which expires the parcel and leaves the food
+  order untouched). HTTP-level dead-when-off is deliberately NOT duplicated — `merchant-routes-dead.
+  e2e.spec.ts` already owns it. **What is NOT automated, and honestly so:** the actual staging
+  execution (§11.2/11.4 — needs GCP credentials and a deployed staging service, founder-gated like
+  every other runbook section) and the real-device legs (§11.3 — wake locks, offline radios, audio
+  focus, real mobile money). The runbook is the procedure for those; this PR could not and did not run
+  them. **Docs correction shipped with it:** §11.1's first draft described the CASH journey as
+  "accept → call → request/confirm payment → ready"; the code disagrees and is right per R-11/R-17 —
+  `acceptOrder` sends a CASH order straight to `preparing` (money changes hands at the door), while
+  `logCall`/`requestPayment`/`confirmPayment` 409 outside `awaiting_payment`, which only a WALLET order
+  reaches. Two incidental code asymmetries found while writing the spec are ledgered OPEN in
+  `docs/KNOWN_BUGS.md` (X2-OBS-1/X2-OBS-2) rather than force-fixed inside a rehearsal PR that otherwise
+  touches no production code — both are latent drift risks, neither is a live defect. `pnpm typecheck
+  && pnpm lint && pnpm test` green across all 6 packages (api 1497 unit + **49 int** incl. 7 new;
+  admin 51; mobile 668; merchant 85; shared 157); `pnpm depcruise` 0 errors.
+
+**Cross-cutting queue complete (2026-07-31).** C1–C5, X1 and X2 are all shipped, so Lane C and its
+follow-on queue are done and **Build loop C's trigger is disabled** as of this PR (§6 step 4). What
+remains before the flip is founder-gated, not agent work: execute runbook §11 against a real staging
+stack in both flag positions, run the §11.3 device legs, and satisfy the §7 launch gate (Play approval,
+≥5 committed pilot merchants, rider fleet milestones). The §9 open questions this lane surfaced and
+shipped mocked defaults for — Q6 (refund SLA, X1) and Q9 (frozen-handshake adjudication, X1) — are
+still open founder calls, not blockers.
 
 ## 6. Build loops — the execution engine
 
