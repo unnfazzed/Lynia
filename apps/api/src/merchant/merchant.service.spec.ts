@@ -8,13 +8,18 @@ import { MerchantService } from "./merchant.service";
  *  rider.service.spec.ts): a plain object standing in for PrismaService, with a default
  *  $transaction that runs a callback against itself or no-ops an array (side-effect-only, matching
  *  how becomeMerchant/becomeRider actually use the array form — never destructuring its result). */
-function svc(prisma: Partial<Record<string, unknown>>) {
+/** Default storage stub mints a deterministic, obviously-fake signed URL from the key — real enough
+ *  that a test asserting "a photo key produces SOME url" can check it, without any test needing to
+ *  hardcode GCS's actual signed-URL shape. */
+const defaultStorageStub = { createReadUrl: async (key: string) => `https://signed.example/${key}` };
+
+function svc(prisma: Partial<Record<string, unknown>>, storage: Partial<Record<string, unknown>> = defaultStorageStub) {
   const p = prisma as Record<string, unknown>;
   if (!p.$transaction) {
     p.$transaction = async (arg: unknown) =>
       typeof arg === "function" ? (arg as (tx: unknown) => unknown)(p) : arg;
   }
-  return new MerchantService(p as unknown as PrismaService);
+  return new MerchantService(p as unknown as PrismaService, storage as never);
 }
 
 const p2002 = () =>
@@ -386,6 +391,74 @@ describe("MerchantService dishes (D-31 draft state, N-14 OOS)", () => {
     });
     const res = await s.setDishOutOfStock("p1", "d1");
     expect(res.outOfStock).toBe(false);
+  });
+
+  it("hydrates a stored photo key into a signed read URL (bucket has no public objects)", async () => {
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      merchantDish: {
+        findFirst: async () => ({ id: "d1", merchantId: "m1" }),
+        update: async () => ({
+          id: "d1",
+          categoryId: "c1",
+          name: "Sadza",
+          description: null,
+          priceUsd: 5,
+          photoUrl: "dish/m1/x.jpg",
+          isDraft: false,
+          outOfStockUntil: null,
+          sortOrder: 0,
+        }),
+      },
+    });
+    const res = await s.clearDishOutOfStock("p1", "d1");
+    expect(res.photoUrl).toBe("https://signed.example/dish/m1/x.jpg");
+  });
+
+  it("a signing failure is swallowed — photoUrl comes back null rather than the request failing", async () => {
+    const s = svc(
+      {
+        merchant: { findUnique: async () => ({ id: "m1" }) },
+        merchantDish: {
+          findFirst: async () => ({ id: "d1", merchantId: "m1" }),
+          update: async () => ({
+            id: "d1",
+            categoryId: "c1",
+            name: "Sadza",
+            description: null,
+            priceUsd: 5,
+            photoUrl: "dish/m1/x.jpg",
+            isDraft: false,
+            outOfStockUntil: null,
+            sortOrder: 0,
+          }),
+        },
+      },
+      { createReadUrl: async () => { throw new Error("GCS unavailable"); } },
+    );
+    const res = await s.clearDishOutOfStock("p1", "d1");
+    expect(res.photoUrl).toBeNull();
+  });
+
+  it("listDishes returns every dish for the merchant, ordered, with photo keys hydrated", async () => {
+    let receivedWhere: unknown;
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      merchantDish: {
+        findMany: async ({ where }: { where: unknown }) => {
+          receivedWhere = where;
+          return [
+            { id: "d1", categoryId: "c1", name: "Sadza", description: null, priceUsd: 5, photoUrl: "dish/m1/a.jpg", isDraft: false, outOfStockUntil: null, sortOrder: 0 },
+            { id: "d2", categoryId: "c1", name: "Chicken", description: null, priceUsd: 6, photoUrl: null, isDraft: true, outOfStockUntil: null, sortOrder: 1 },
+          ];
+        },
+      },
+    });
+    const res = await s.listDishes("p1");
+    expect(receivedWhere).toEqual({ merchantId: "m1" });
+    expect(res).toHaveLength(2);
+    expect(res[0]).toMatchObject({ id: "d1", photoUrl: "https://signed.example/dish/m1/a.jpg" });
+    expect(res[1]).toMatchObject({ id: "d2", photoUrl: null, isDraft: true });
   });
 });
 

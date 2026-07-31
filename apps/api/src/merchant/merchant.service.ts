@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type {
   BecomeMerchantRequest,
@@ -26,12 +26,21 @@ import type {
   Waypoint,
 } from "@lynia/shared";
 import { RESTAURANTS_COMMISSION, roundToCents } from "@lynia/shared";
+import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
 
 type MerchantWithOwner = Prisma.MerchantGetPayload<{ include: { ownerProfile: { select: { phone: true } } } }>;
 type DishRow = Prisma.MerchantDishGetPayload<Record<string, never>>;
 type CategoryRow = Prisma.MerchantCategoryGetPayload<{ include: { _count: { select: { dishes: true } } } }>;
+
+// E4/D-32: `coverPhotoUrl`/`logoUrl`/dish `photoUrl` persist the raw GCS object KEY (the bucket has
+// no public objects — infra/terraform/storage.tf enforces `public_access_prevention = "enforced"`,
+// every read goes through a V4 signed URL), the same shape rider KYC photos already use
+// (admin-kyc-review.service.ts). Long enough that a merchant editing their menu for a while doesn't
+// see photos expire mid-session; short enough that a leaked/cached tablet response can't be replayed
+// indefinitely.
+const PHOTO_READ_URL_TTL_SECONDS = 60 * 60;
 
 /** N-14: "for the rest of today" — end of the server's local calendar day. A past timestamp reads as
  *  back-in-stock, so no reset job is needed; this is the only place that boundary is computed. */
@@ -47,7 +56,10 @@ function isOutOfStock(dish: Pick<DishRow, "outOfStockUntil">): boolean {
 
 @Injectable()
 export class MerchantService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(STORAGE) private readonly storage: StorageAdapter,
+  ) {}
 
   /** Upgrade a customer profile to a merchant owner + create the Merchant row — mirrors
    *  RiderService.becomeRider exactly (same conflict shape, same atomic role+row transaction). */
@@ -64,7 +76,7 @@ export class MerchantService {
           data: { name: body.name, ownerProfileId: profileId, cashRule: body.cashRule ?? "collect_and_return" },
         }),
       ]);
-      return this.toProfileResponse(await this.findOwnMerchantOrThrow(profileId));
+      return await this.toProfileResponse(await this.findOwnMerchantOrThrow(profileId));
     } catch (err) {
       // The unique index on ownerProfileId is the real guard against a concurrent duplicate become
       // (the pre-check above races it) — map its P2002 to the same conflict shape.
@@ -76,7 +88,7 @@ export class MerchantService {
   }
 
   async getMyMerchant(profileId: string): Promise<MerchantProfileResponse> {
-    return this.toProfileResponse(await this.findOwnMerchantOrThrow(profileId));
+    return await this.toProfileResponse(await this.findOwnMerchantOrThrow(profileId));
   }
 
   async updateProfile(profileId: string, body: UpdateMerchantProfileRequest): Promise<MerchantProfileResponse> {
@@ -93,7 +105,7 @@ export class MerchantService {
       data,
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return this.toProfileResponse(updated);
+    return await this.toProfileResponse(updated);
   }
 
   async updateHours(profileId: string, body: UpdateMerchantHoursRequest): Promise<MerchantProfileResponse> {
@@ -103,7 +115,7 @@ export class MerchantService {
       data: { hours: body.hours as Prisma.InputJsonValue },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return this.toProfileResponse(updated);
+    return await this.toProfileResponse(updated);
   }
 
   async updateCashRule(profileId: string, body: UpdateMerchantCashRuleRequest): Promise<MerchantProfileResponse> {
@@ -113,7 +125,7 @@ export class MerchantService {
       data: { cashRule: body.cashRule },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return this.toProfileResponse(updated);
+    return await this.toProfileResponse(updated);
   }
 
   /** C2: the shop's own pickup point — required before placeOrder can price a trip (N-01 needs a
@@ -125,7 +137,7 @@ export class MerchantService {
       data: { location: body.location as Prisma.InputJsonValue },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return this.toProfileResponse(updated);
+    return await this.toProfileResponse(updated);
   }
 
   /** For FoodOrderService.placeOrder — the merchant's pickup point, or null if not set yet. */
@@ -141,7 +153,7 @@ export class MerchantService {
       data: { busyMode: body.active },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return this.toProfileResponse(updated);
+    return await this.toProfileResponse(updated);
   }
 
   // --- Categories (D-29) ---
@@ -216,6 +228,20 @@ export class MerchantService {
 
   // --- Dishes (D-31 draft state, N-14 OOS) ---
 
+  /** E4: the menu manager's own read — `listCategories` only ever returned counts, never the dishes
+   *  themselves (nothing consumed it before the tablet's own menu-management UI existed). Flat list,
+   *  within-category sort order only — the client already holds categories ordered by their own
+   *  `sortOrder` from `listCategories` and groups this list by `categoryId` against that, rather than
+   *  the server nesting a second near-identical shape. */
+  async listDishes(profileId: string): Promise<MerchantDishResponse[]> {
+    const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
+    const dishes = await this.prisma.merchantDish.findMany({
+      where: { merchantId },
+      orderBy: { sortOrder: "asc" },
+    });
+    return Promise.all(dishes.map((d) => this.toDishResponse(d)));
+  }
+
   async createDish(profileId: string, body: MerchantDishRequest): Promise<MerchantDishResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
     const category = await this.prisma.merchantCategory.findFirst({ where: { id: body.categoryId, merchantId } });
@@ -232,7 +258,7 @@ export class MerchantService {
         isDraft: !body.photoUrl,
       },
     });
-    return this.toDishResponse(created);
+    return await this.toDishResponse(created);
   }
 
   async updateDish(profileId: string, dishId: string, body: UpdateMerchantDishRequest): Promise<MerchantDishResponse> {
@@ -258,7 +284,7 @@ export class MerchantService {
     }
 
     const updated = await this.prisma.merchantDish.update({ where: { id: dishId }, data });
-    return this.toDishResponse(updated);
+    return await this.toDishResponse(updated);
   }
 
   async deleteDish(profileId: string, dishId: string): Promise<{ ok: true }> {
@@ -282,7 +308,7 @@ export class MerchantService {
     const existing = await this.prisma.merchantDish.findFirst({ where: { id: dishId, merchantId } });
     if (!existing) throw new NotFoundException("Dish not found");
     const updated = await this.prisma.merchantDish.update({ where: { id: dishId }, data: { outOfStockUntil: until } });
-    return this.toDishResponse(updated);
+    return await this.toDishResponse(updated);
   }
 
   // --- Customer read API (RESTAURANTS_ENABLED + per-merchant pilotEnabled allowlist) ---
@@ -435,14 +461,23 @@ export class MerchantService {
     return merchant.id;
   }
 
-  private toProfileResponse(merchant: MerchantWithOwner): MerchantProfileResponse {
+  /** Best-effort read-URL mint (mirrors admin-kyc-review.service.ts's photoUrl handling): a signing
+   *  hiccup shouldn't block the rest of the response from loading, it just means the photo doesn't
+   *  render this once. `null`/missing key never calls storage at all. */
+  private async signPhoto(key: string | null | undefined): Promise<string | null> {
+    if (!key) return null;
+    return this.storage.createReadUrl(key, PHOTO_READ_URL_TTL_SECONDS).catch(() => null);
+  }
+
+  private async toProfileResponse(merchant: MerchantWithOwner): Promise<MerchantProfileResponse> {
+    const [coverPhotoUrl, logoUrl] = await Promise.all([this.signPhoto(merchant.coverPhotoUrl), this.signPhoto(merchant.logoUrl)]);
     return {
       id: merchant.id,
       name: merchant.name,
       ownerPhoneMasked: maskPhone(merchant.ownerProfile?.phone),
       description: merchant.description,
-      coverPhotoUrl: merchant.coverPhotoUrl,
-      logoUrl: merchant.logoUrl,
+      coverPhotoUrl,
+      logoUrl,
       cuisineTags: merchant.cuisineTags,
       priceLevel: merchant.priceLevel,
       hours: (merchant.hours as MerchantHours | null) ?? null,
@@ -464,14 +499,14 @@ export class MerchantService {
     };
   }
 
-  private toDishResponse(dish: DishRow): MerchantDishResponse {
+  private async toDishResponse(dish: DishRow): Promise<MerchantDishResponse> {
     return {
       id: dish.id,
       categoryId: dish.categoryId,
       name: dish.name,
       description: dish.description,
       priceUsd: Number(dish.priceUsd),
-      photoUrl: dish.photoUrl,
+      photoUrl: await this.signPhoto(dish.photoUrl),
       isDraft: dish.isDraft,
       outOfStock: isOutOfStock(dish),
       sortOrder: dish.sortOrder,

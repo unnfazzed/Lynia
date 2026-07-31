@@ -136,6 +136,12 @@ export class MerchantController {
     return this.merchant.deleteCategory(profileId, id);
   }
 
+  @Get("dishes")
+  @UseGuards(MerchantGuard)
+  listDishes(@CurrentUser() profileId: string) {
+    return this.merchant.listDishes(profileId);
+  }
+
   @Post("dishes")
   @UseGuards(MerchantGuard)
   createDish(@Body(new ZodBody(MerchantDishRequest)) body: MerchantDishRequest, @CurrentUser() profileId: string) {
