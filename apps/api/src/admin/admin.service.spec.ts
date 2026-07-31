@@ -191,3 +191,54 @@ describe("AdminService.overview", () => {
     expect(STUCK_AFTER_MS).toBe(STUCK_AFTER_MINUTES * 60 * 1000);
   });
 });
+
+// Plan §5 C5: rides-per-active-rider, Express vs Restaurants. The raw SQL itself (the actual demand/
+// supply/ratio math) is proven against a real Postgres in admin.service.int.spec.ts — $queryRaw can't
+// be meaningfully faked here, so this unit layer only proves the service's own responsibilities: the
+// `days` clamp/default and the Date→"YYYY-MM-DD" formatting of whatever the query returns.
+describe("AdminService.utilization", () => {
+  function prismaStub(capture: { days?: unknown }, rows: unknown[]) {
+    return {
+      $queryRaw: async (_strings: TemplateStringsArray, ...values: unknown[]) => {
+        capture.days = values[0];
+        return rows;
+      },
+    } as unknown as PrismaService;
+  }
+
+  it("defaults to a 14-day span and formats the query's Date column", async () => {
+    const capture: { days?: unknown } = {};
+    const row = {
+      day: new Date("2026-07-31T00:00:00.000Z"),
+      assignments: 3,
+      express: 2,
+      merchant: 1,
+      activeRiders: 2,
+      ridesPerActiveRider: 1.5,
+      expressRidesPerActiveRider: 1,
+      merchantRidesPerActiveRider: 0.5,
+      heartbeatArmIncluded: true,
+    };
+    const out = await new AdminService(prismaStub(capture, [row]), envStub()).utilization();
+
+    expect(capture.days).toBe(14);
+    expect(out).toEqual([{ ...row, day: "2026-07-31" }]);
+  });
+
+  it("clamps an out-of-range or non-finite days value into [1, 90]", async () => {
+    const capture: { days?: unknown } = {};
+    const svc = new AdminService(prismaStub(capture, []), envStub());
+
+    await svc.utilization(500);
+    expect(capture.days).toBe(90);
+
+    await svc.utilization(0);
+    expect(capture.days).toBe(14);
+
+    await svc.utilization(Number.NaN);
+    expect(capture.days).toBe(14);
+
+    await svc.utilization(7);
+    expect(capture.days).toBe(7);
+  });
+});

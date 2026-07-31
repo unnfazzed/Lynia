@@ -78,6 +78,14 @@ export class AdminController {
     return this.admin.overview();
   }
 
+  /** Plan §5 C5: ops-only rides-per-active-rider, Express vs Restaurants, over the trailing `?days=`
+   *  window (default 14, clamped [1, 90] in the service). NOT a merchant-facing surface. */
+  @Get("utilization")
+  utilization(@Query("days") days?: string) {
+    const parsed = days != null ? Number.parseInt(days, 10) : Number.NaN;
+    return this.admin.utilization(Number.isFinite(parsed) ? parsed : undefined);
+  }
+
   /** Cheap sidebar attention badges (KYC backlog / open disputes / un-acked SOS) — rendered shell-wide. */
   @Get("nav-counts")
   navCounts() {

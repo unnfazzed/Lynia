@@ -4,7 +4,22 @@ import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
-import { computeFunnel, routeOf, STUCK_AFTER_MS } from "./admin.shared";
+import { computeFunnel, fmtDate, routeOf, STUCK_AFTER_MS } from "./admin.shared";
+
+/** One day's row from the utilization() raw query, before day formatting. */
+type RawUtilizationRow = {
+  day: Date;
+  assignments: number;
+  express: number;
+  merchant: number;
+  activeRiders: number;
+  ridesPerActiveRider: number | null;
+  expressRidesPerActiveRider: number | null;
+  merchantRidesPerActiveRider: number | null;
+  heartbeatArmIncluded: boolean;
+};
+
+export type UtilizationRow = Omit<RawUtilizationRow, "day"> & { day: string };
 
 /** In-flight (assigned…drop-off) statuses — an order here that hasn't changed in a while is "stuck". */
 const IN_FLIGHT_STATUSES = [
@@ -167,5 +182,76 @@ export class AdminService {
         createdAt: o.createdAt.toISOString(),
       })),
     };
+  }
+
+  /**
+   * Plan §5 C5, the last open Lane C box: ops-facing rides-per-active-rider, split Express (parcel)
+   * vs Restaurants (merchant), over the trailing `days` window (default 14, clamped [1, 90]).
+   * NOT merchant-facing — a fleet-ops read only, exactly like scripts/utilization-metric.sql's manual
+   * tripwire (§0a of the 2026-07-26 plan), whose demand-side CTEs this mirrors exactly so the two can
+   * never silently diverge. `activeRiders` is the SAME fleet-wide denominator for both verticals: a
+   * rider isn't dedicated to Express or Restaurants, so splitting the denominator too would double-
+   * count a rider who did both in a day rather than show how each vertical draws on the shared pool.
+   * Today's row (only) folds in the heartbeat arm (an online-but-unassigned rider still counts as
+   * active) since `Rider.lastHeartbeatAt` is a single overwritten column — it cannot be reconstructed
+   * for past days, so historical rows are assignment-only and slightly overstate utilization on an
+   * idle-rider day (documented in the script; `heartbeatArmIncluded` flags which row it applied to).
+   * A day with zero active riders reports null ratios (SQL NULLIF), never a divide-by-zero throw.
+   */
+  async utilization(days?: number): Promise<UtilizationRow[]> {
+    const span = Math.trunc(days ?? 14);
+    const clamped = Number.isFinite(span) && span > 0 ? Math.min(90, span) : 14;
+    const rows = await this.prisma.$queryRaw<RawUtilizationRow[]>`
+      WITH days AS (
+        SELECT d::date AS day
+        FROM generate_series(
+          current_date - (${clamped}::int - 1) * interval '1 day', current_date, interval '1 day'
+        ) AS d
+      ),
+      assignment_events AS (
+        SELECT date(e.created_at) AS day, e.order_id, o.rider_id, o.order_type
+        FROM order_events e
+        JOIN orders o ON o.id = e.order_id
+        WHERE e.status = 'assigned'
+          AND e.created_at >= current_date - (${clamped}::int - 1) * interval '1 day'
+      ),
+      supply AS (
+        SELECT day, count(DISTINCT rider_id) AS active_riders
+        FROM (
+          SELECT day, rider_id FROM assignment_events WHERE rider_id IS NOT NULL
+          UNION
+          SELECT current_date AS day, r.profile_id AS rider_id
+          FROM riders r
+          WHERE date(r.last_heartbeat_at) = current_date
+        ) s
+        GROUP BY day
+      ),
+      demand AS (
+        SELECT day,
+               count(*) AS assignments,
+               count(*) FILTER (WHERE order_type = 'parcel') AS express,
+               count(*) FILTER (WHERE order_type = 'merchant') AS merchant
+        FROM assignment_events
+        GROUP BY day
+      )
+      SELECT
+        days.day,
+        COALESCE(d.assignments, 0)::int AS "assignments",
+        COALESCE(d.express, 0)::int AS "express",
+        COALESCE(d.merchant, 0)::int AS "merchant",
+        COALESCE(s.active_riders, 0)::int AS "activeRiders",
+        ROUND(COALESCE(d.assignments, 0)::numeric / NULLIF(s.active_riders, 0), 2)::float8
+          AS "ridesPerActiveRider",
+        ROUND(COALESCE(d.express, 0)::numeric / NULLIF(s.active_riders, 0), 2)::float8
+          AS "expressRidesPerActiveRider",
+        ROUND(COALESCE(d.merchant, 0)::numeric / NULLIF(s.active_riders, 0), 2)::float8
+          AS "merchantRidesPerActiveRider",
+        (days.day = current_date) AS "heartbeatArmIncluded"
+      FROM days
+      LEFT JOIN demand d ON d.day = days.day
+      LEFT JOIN supply s ON s.day = days.day
+      ORDER BY days.day`;
+
+    return rows.map((r) => ({ ...r, day: fmtDate(r.day) }));
   }
 }
