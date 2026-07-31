@@ -561,6 +561,9 @@ model Order {
   // (or the regulars/in-person override is used).
   paymentCallLoggedAt DateTime? @map("payment_call_logged_at")
   paymentRequestedAt  DateTime? @map("payment_requested_at")
+  // N-22: set the first (and only) time the reminder sweep pushes for this order — the idempotency
+  // guard so a merchant's still-unpaid order gets nudged once, never a repeating nag.
+  paymentReminderSentAt DateTime? @map("payment_reminder_sent_at")
   // D-24 manual rail: the reference the customer (or merchant, matching their own statement) entered.
   merchantPaymentReference String? @map("merchant_payment_reference")
   // R-11: the merchant's own-statement match — this is what starts the prep clock, not acceptance.

@@ -158,6 +158,40 @@ describe("NotificationsService — order-status notices", () => {
     expect(push.sendEach).not.toHaveBeenCalled();
   });
 
+  it("C5: notifies the CUSTOMER on a food order's `en_route_dropoff` with the door-arrival copy, not the parcel copy", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "merchant", riderId: "rider" });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+
+    await service.notifyOrderStatus("o1", "en_route_dropoff");
+
+    expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
+      where: { profileId: { in: ["cust"] } },
+      select: { token: true, profileId: true },
+    });
+    expect(push.sendEach).toHaveBeenCalledWith([
+      expect.objectContaining({ token: "c1", title: "Your rider is at the door", data: { orderId: "o1", status: "en_route_dropoff", to: "customer" } }),
+    ]);
+  });
+
+  it("C5: stays silent for a food order on a status with no curated food notice (e.g. `assigned` — sent directly by FoodDispatchService instead)", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "merchant", riderId: "rider" });
+
+    await service.notifyOrderStatus("o1", "assigned");
+
+    expect(push.sendEach).not.toHaveBeenCalled();
+  });
+
+  it("stays silent for a food order on a parcel-only status (e.g. `delivered` — no MERCHANT_STATUS_NOTICES entry)", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "merchant", riderId: "rider" });
+
+    await service.notifyOrderStatus("o1", "delivered");
+
+    expect(push.sendEach).not.toHaveBeenCalled();
+  });
+
   it("swallows a push failure — never throws into the caller's transition", async () => {
     const { prisma, push, service } = makeDeps();
     prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
