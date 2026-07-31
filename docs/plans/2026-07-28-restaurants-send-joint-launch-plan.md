@@ -989,11 +989,54 @@ Phase-0 gate: requires the matching Lane C contracts (C1 for E1/E4, C2/C5 for E2
   `order-groups` awaitingReturn suites; mobile 611; shared 157); `pnpm depcruise` clean (0
   errors/warnings, `express-no-merchant-coupling` untouched — every change stayed inside
   `apps/merchant/**` and the existing `merchant/` API module). E4 (menu + shop management) is next.
-- [ ] **E4 · Menu + shop management.** Categories (create/rename/reorder/time-limit/hide/
+- [x] **E4 · Menu + shop management.** Categories (create/rename/reorder/time-limit/hide/
   delete-when-empty, first-run four starters, D-29); dish editor with photo-required drafts
   (D-31) + crop/compress with offline queue (D-32); OOS sheet (rest-of-today default, N-14);
   hours; busy mode (N-17); shop profile with live customer-view miniature, cover/logo/tags/
-  price level (D-30) and the cash-rule setting (R-03, plain-words trade-off).
+  price level (D-30) and the cash-rule setting (R-03, plain-words trade-off). **Done 2026-07-31:**
+  wired the three inert `KitchenNav` placeholders (Menu/Shop/Hours) E1 left behind into real
+  `apps/merchant` routes consuming C1's already-shipped menu CRUD. **Two backend gaps found and
+  fixed in this PR, both required for the tablet to work at all:** (1) no `GET /merchant/dishes`
+  existed — `listCategories` only ever returned dish *counts*, so the menu manager had no way to
+  read the dishes themselves; added, flat list ordered by `sortOrder`, the client groups it by the
+  categories it already holds. (2) `coverPhotoUrl`/`logoUrl`/dish `photoUrl` were persisted and
+  returned as the raw GCS object key — the bucket enforces `public_access_prevention = "enforced"`
+  (infra/terraform/storage.tf, no public objects), so a stored key can never load as an `<img>` src;
+  every merchant-facing read (`toProfileResponse`/`toDishResponse`) now mints a 1h signed read URL
+  server-side (mirrors `admin-kyc-review.service.ts`'s KYC-photo handling exactly), best-effort
+  (a signing hiccup returns `null`, never fails the request). **The same gap is still open on the
+  customer-facing read API** (`toListItem`/`toCustomerDish` in `restaurants.controller`'s path,
+  shipped by C1/A2) — out of this box's `apps/merchant`-only scope to fix, flagged in §10 rather
+  than silently patched. New `apps/merchant` surfaces: `/menu` (category CRUD via
+  `CategoryEditorSheet`, dish CRUD via `DishEditorSheet`, N-14 out-of-stock via `OosSheet`, D-29's
+  four one-tap starter categories on a zero-category shop), `/shop` (cover banner + logo upload,
+  name/blurb/cuisine-tags/price-level, live customer-view miniature, R-03 cash-rule picker with the
+  plain-words trade-off copy), `/hours` (weekly open/close grid, a "right now" status derived
+  client-side, N-17 busy-mode toggle — placed here rather than on the already-shipped E2 queue
+  board, to avoid touching frozen/tested E2 code for a setting that fits Hours just as well).
+  `PhotoPicker` (dish/banner/logo) does client-side canvas compress-to-budget
+  (`app/lib/image-compress.ts`, the browser analog of `apps/mobile/src/logic/image-downscale.ts`)
+  before minting the signed PUT and uploading. **Two scope cuts, flagged rather than silently
+  decided:** no interactive drag-and-zoom crop (the gallery's `RM.shop_crop`/`RM.dish_photo`) — the
+  source photo is auto center-cropped to the target aspect instead; and D-32's "offline upload is
+  queued... and retried" only holds within one tablet session (an in-memory Retry button on
+  failure), not across a full reload/restart — a persistent IndexedDB-backed queue is a real
+  follow-up, not built here. The OOS sheet ships only N-14's actual "rest of today" duration (the
+  only one the server implements — `endOfToday()` never took a param) rather than building UI for
+  the gallery mock's other two radio options with no backing endpoint. Categories reorder via
+  up/down groups rather than drag — no reorder control shipped this box (`sortOrder` PATCH exists
+  server-side; wiring a control is a small follow-up, not blocking). `pnpm typecheck && pnpm lint
+  && pnpm test` green across all 6 packages (api 1467 tests incl. new `listDishes` +
+  signed-photo-URL coverage in `merchant.service.spec.ts`; merchant 85 tests incl. new
+  `hours`/`menu-groups`/`image-compress` pure-logic suites); `pnpm depcruise` clean (0
+  errors/warnings). **Lane E complete** — E1–E4 all shipped; see the lane-completion note below.
+
+**Lane E complete (2026-07-31):** all four boxes above (E1 auth + shell + alarm discipline, E2
+queue + cook flow, E3 money surfaces, E4 menu + shop management) are shipped and merged. The
+merchant kitchen tablet now has its full E1–E4 surface — sign-in/alarm/reconnect discipline, the
+live order queue and cook flow, the money-confirm surfaces, and menu/shop/hours management — all
+flag-gated dormant-off behind `RESTAURANTS_ENABLED`. Nothing left in this lane's queue; this build
+loop's trigger is disabled after this PR merges.
 
 ### Cross-cutting (owned by Build loop C after C1–C5: X1 then X2, one per firing)
 
@@ -1109,3 +1152,17 @@ ship unless the founder overrides; each PR that implements a mocked default name
   would have hit the same gap for its own food step list. Closed by C5's first slice: `GET
   /merchant/orders/dispatch/offer` + the `food:offer`/`food:offer-closed` WS events (see §5 Lane C
   C5 for the shipped shape). B4/D can now build against a real surface instead of push-only.
+
+- [2026-07-31] [E, cross-lane A/C] **OPEN.** The customer-facing restaurant read API
+  (`RestaurantsController` → `MerchantService.toListItem`/`toCustomerDish`, shipped by C1/A2) returns
+  `coverPhotoUrl`/`logoUrl`/dish `photoUrl` as the raw GCS object key, not a usable URL — the media
+  bucket enforces `public_access_prevention = "enforced"` (infra/terraform/storage.tf, no public
+  objects; every read is meant to go through a V4 signed URL, same as rider KYC photos). E4 hit the
+  identical symptom on the merchant-facing side (the menu manager couldn't preview its own dish/
+  banner photos) and fixed it there — `toProfileResponse`/`toDishResponse` now mint a signed read
+  URL server-side — but that fix is scoped to `apps/merchant`'s own reads; the customer-facing path
+  (`apps/mobile`'s restaurant list/menu, Lane A2/D) still renders an unusable key today, so restaurant
+  photos silently never load for a customer (falls back to the tinted-initial placeholder, not a
+  crash — but never the real photo). Needs the same signed-URL treatment applied to
+  `toListItem`/`toCustomerDish` — a Lane C/A follow-up, not force-fixed here since it's outside E4's
+  own box.
