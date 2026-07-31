@@ -332,8 +332,118 @@ gh secret set TF_PROD_TFVARS < infra/terraform/terraform.tfvars
 # Keep it in sync whenever you change tfvars. Without it, only the provisioning-verify probe runs.
 ```
 
+## 11. X2 — Restaurants launch-flip rehearsal (run before the go-live flip)
+
+The repeatable checklist for **X2** in `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5.
+Rehearse the flip on staging in **both** flag positions before touching prod, because the flip's whole
+safety story is "flags-off is byte-for-byte the Express product we already run". This section proves
+that claim rather than assuming it.
+
+Three of the four legs are **automated** — the golden pass is an executable integration test
+(`apps/api/src/merchant/launch-flip.int.spec.ts`), not a manual click-through, so it re-runs on every
+CI push and again here against staging's own database. Only §11.3 (real devices) needs hands.
+
+### 11.1 Pre-flight — the golden pass runs green locally/CI
+
+```bash
+# Needs a PostGIS database. CI runs exactly this in the "prisma migrate · constraint proof" job.
+export DATABASE_URL="postgresql://lynia:lynia@localhost:5432/lynia?schema=public"
+pnpm --filter @lynia/api migrate:deploy
+pnpm --filter @lynia/api test:int          # includes launch-flip.int.spec.ts
+```
+
+What the golden pass proves, in the order the plan asks for it:
+
+- **Cash food order, end to end, ledger nets to zero.** place → accept (a CASH order starts cooking
+  immediately — there is no pay-first step, R-11/R-17: the money changes hands at the door) → ready →
+  dispatch → rider accepts → pickup on the N-16 code → doorstep dual-confirm (R-04) → delivery code
+  unlocks (R-09) → delivered → merchant's returned-cash count-confirm. Asserts the
+  `merchant_debt_ledger` rows: `opened` (+goods total) at pickup, `settled_cash` (−goods total) at the
+  return — **summing to exactly 0.00**. This is the §7 launch-gate money invariant. Also asserts the
+  debt is still open *after* delivery (money settles on its own clock, not the parcel's) and that a
+  short count is refused with D-06's "expected $X, got $Y" copy.
+- **Wallet food order, no debt at all.** The WALLET rail is the one with the pay-before-cook steps:
+  accept parks at `awaiting_payment`, `requestPayment` stays locked until the call is logged (R-16),
+  and a mismatched `confirmPayment` amount is refused. Asserts pickup opens **nothing** — `debt_status`
+  null, zero ledger rows, both handshake timestamps null through `completed`, rider never soft-locked
+  (only `collect_and_return` CASH opens a debt — C4's documented scope).
+- **NO_RIDER inside the cap (N-07/D-34).** The dispatch reconciler holds (`no_rider_hold_at` set) only
+  after `RESTAURANTS_DISPATCH.maxAttempts` is exhausted — never early, never never.
+- **Race: parcel bid vs live food offer (Q7/C3).** A rider holding a live food dispatch offer is
+  refused both a parcel bid and parcel selection, through the real soft-lock call sites.
+- **Flags-off data non-interference.** A merchant order sitting in the same tables never leaks into an
+  Express query result (the `orderType` filters from the status-keyed-query audit). HTTP-level
+  dead-when-off is separately and exhaustively proven by `merchant-routes-dead.e2e.spec.ts`.
+
+### 11.2 Staging, flags ON — the vertical is genuinely alive
+
+```bash
+# Staging has its own STAGING_*-prefixed flag Variables so prod stays dark while you exercise this.
+gh variable set STAGING_RESTAURANTS_ENABLED --body "true"
+gh variable set STAGING_MERCHANT_DISPATCH_AUTO_ENABLED --body "true"
+gh variable set STAGING_MERCHANT_WALLET_ENABLED --body "true"
+gh workflow run "Deploy Staging (Cloud Run)" && gh run watch
+
+# The flag is public config — this is the same read the mobile app makes for its remote config.
+curl -s https://staging.lyniafinance.com/app/feature-flags
+# expect: {"restaurantsEnabled":true,"merchantDispatchAutoEnabled":true,"merchantWalletEnabled":true}
+
+# Re-run the golden pass against STAGING's own database (not the local one), so the proof covers the
+# real migration state, not just a freshly-migrated scratch DB. Pull the URL from Secret Manager and
+# tunnel via cloud-sql-proxy exactly as deploy-staging.yml's migrate step does.
+gcloud secrets versions access latest --secret=DATABASE_URL_STAGING --project "$PROJECT"
+DATABASE_URL="<the proxied staging URL>" pnpm --filter @lynia/api test:int
+```
+
+Seed at least one `pilot_enabled` merchant with a photo'd menu first — `RESTAURANTS_ENABLED` opens the
+vertical, **`Merchant.pilotEnabled` decides who is in it**, so an "on" flag with an empty pilot cohort
+correctly shows an empty restaurant list. That is a pass, not a failure.
+
+### 11.3 Staging, flags ON — the hands-on legs a test can't cover
+
+Run `docs/QA-DEVICE-CHECKLIST.md`'s restaurants additions on real hardware pointed at staging: doorstep
+handshake (including the offline press-and-hold code reveal), merchant tablet alarm / wake-lock /
+reboot, the return-cash leg, and kitchen reconnect backfill. These are physical-device behaviours
+(wake locks, offline radios, audio focus) that no integration test can stand in for.
+
+### 11.4 Staging, flags OFF — the Express regression
+
+```bash
+gh variable set STAGING_RESTAURANTS_ENABLED --body "false"
+gh variable set STAGING_MERCHANT_DISPATCH_AUTO_ENABLED --body "false"
+gh variable set STAGING_MERCHANT_WALLET_ENABLED --body "false"
+gh workflow run "Deploy Staging (Cloud Run)" && gh run watch
+
+curl -s https://staging.lyniafinance.com/app/feature-flags     # all three false
+curl -s -o /dev/null -w '%{http_code}\n' https://staging.lyniafinance.com/merchant/me    # expect 503
+curl -s -o /dev/null -w '%{http_code}\n' https://staging.lyniafinance.com/restaurants    # expect 503
+```
+
+Then walk one **parcel** order end-to-end on a device (compose → auction → bid → assign → pickup →
+delivery code → complete). Flags-off Express behaviour must be indistinguishable from the pre-restaurants
+build — that is the entire escape-hatch premise in plan §1.
+
+### 11.5 The production flip (and its rollback)
+
+Only after 11.1–11.4 all pass:
+
+```bash
+gh variable set RESTAURANTS_ENABLED --body "true"
+# Dispatch auto + wallet are independently flippable — turn them on deliberately, not reflexively.
+gh workflow run "Release (Cloud Run)" && gh run watch
+curl -s https://lyniago.lyniafinance.com/app/feature-flags
+```
+
+**Rollback is the same flip back** (`--body "false"` + redeploy, or an immediate
+`gcloud run services update lynia-api --region "$REGION" --update-env-vars RESTAURANTS_ENABLED=false`
+for a sub-minute revert without waiting on a build). No code change, no migration to unwind, no app
+resubmission: the mobile binary reads the flag remotely, which is why the joint launch could ship one
+binary ahead of the flip. Cohort-level rollback is finer still — clearing `Merchant.pilotEnabled` on a
+single kitchen removes it without darkening the vertical for everyone.
+
 ---
 **Where each of these came from:** `docs/DATA-RETENTION.md` (§1–2), `docs/OBSERVABILITY.md` (§3),
 `docs/LOAD-MODEL.md` + `apps/api/load/` (§4), `docs/QA-DEVICE-CHECKLIST.md` (§5), `docs/LAUNCH-READINESS.md`
-scorecard (all), `docs/LAUNCH-DEPLOYMENT-STRATEGY.md` (§8). Nothing here changes app code — it's the
-founder-gated execution the agent work prepared.
+scorecard (all), `docs/LAUNCH-DEPLOYMENT-STRATEGY.md` (§8),
+`docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5 X2 (§11). Nothing here changes app
+code — it's the founder-gated execution the agent work prepared.
