@@ -58,6 +58,18 @@ describe("TrackingService.canAccessOrder", () => {
   });
 });
 
+describe("TrackingService.ownMerchantId (C5 kitchen socket queue subscribe gate)", () => {
+  function merchantSvc(merchant: unknown) {
+    return new TrackingService(noRedisEnv, { merchant: { findUnique: async () => merchant } } as unknown as PrismaService, fakeMetrics());
+  }
+  it("returns the Merchant.id owned by the profile", async () => {
+    expect(await merchantSvc({ id: "m1" }).ownMerchantId("owner-1")).toBe("m1");
+  });
+  it("returns null when the profile owns no Merchant row", async () => {
+    expect(await merchantSvc(null).ownMerchantId("owner-1")).toBeNull();
+  });
+});
+
 describe("TrackingService.isAssignedRider", () => {
   it("denies a missing order", async () => {
     expect(await svc(async () => null).isAssignedRider("u1", "o1")).toBe(false);

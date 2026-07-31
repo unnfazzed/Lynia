@@ -297,6 +297,16 @@ export const WS_EVENTS = {
    *  other way. Mirrors `bid:expired`/`order:taken` closing the parcel board card; the client clears
    *  or refetches its offer state. */
   foodOfferClosed: "food:offer-closed",
+  /** client→server: a merchant's kitchen tablet joins its own queue's live channel (C5 "kitchen
+   *  socket queue"). Self-driven and carries no body — mirrors `board:subscribe`'s shape, but the
+   *  merchant's own JWT (role="merchant") is enough for the server to resolve which merchantId to
+   *  join, so there's nothing for the client to supply. */
+  merchantQueueSubscribe: "merchant:queue-subscribe",
+  /** server→client: something on the merchant's queue changed (a new order landed, the customer or
+   *  kitchen advanced a lifecycle step, dispatch secured/held/lost a rider) — SIGNAL ONLY, mirrors
+   *  `offers:changed`; the tablet refetches `GET /merchant/orders`. `orderId` names the order that
+   *  triggered the push (informational only — the client still refetches the whole queue). */
+  foodQueueChanged: "food:queue-changed",
 } as const;
 export type WsEvent = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];
 
@@ -399,6 +409,11 @@ export type FoodOfferResponse = z.infer<typeof FoodOfferResponse>;
  *  (expiry, decline, or otherwise). Signal only, mirrors `bid:expired`'s shape. */
 export const FoodOfferClosedEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
 export type FoodOfferClosedEvent = z.infer<typeof FoodOfferClosedEvent>;
+
+/** `food:queue-changed` payload (C5 kitchen socket queue) — signal only, mirrors `offers:changed`'s
+ *  shape: the tablet never trusts the socket for order contents, only that it's time to refetch. */
+export const FoodQueueChangedEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
+export type FoodQueueChangedEvent = z.infer<typeof FoodQueueChangedEvent>;
 
 /** `job:cancelled` payload — an assigned job was cancelled out from under the rider, either by the
  *  customer (INTERFACE-AUDIT C3) or by ops (admin console). `collected` distinguishes the pre-pickup

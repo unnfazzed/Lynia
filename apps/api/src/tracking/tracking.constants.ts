@@ -13,6 +13,13 @@ export function boardGeoRoom(cell: string): string {
   return `board:geo:${cell}`;
 }
 
+/** C5 kitchen socket queue — the room a merchant's tablet(s) join to receive `food:queue-changed`
+ *  pushes for their own queue. Keyed by `Merchant.id` (not the owner profile id) so every call site
+ *  that already resolves an order's merchantId can address it directly, with no extra owner lookup. */
+export function merchantQueueRoom(merchantId: string): string {
+  return `merchant:queue:${merchantId}`;
+}
+
 /** Accept either a raw access token or an "Authorization: Bearer <token>" header value. */
 export function parseBearer(header?: string): string | undefined {
   if (!header) return undefined;

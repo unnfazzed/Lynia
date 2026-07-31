@@ -23,11 +23,13 @@ function fakeGateway() {
     evictRiderFromSupply: vi.fn(async () => {}),
     emitFoodOffer: vi.fn(async () => {}),
     emitFoodOfferClosed: vi.fn(async () => {}),
+    emitFoodQueueChanged: vi.fn(),
   } as unknown as TrackingGateway & {
     emitOrderStatus: ReturnType<typeof vi.fn>;
     evictRiderFromSupply: ReturnType<typeof vi.fn>;
     emitFoodOffer: ReturnType<typeof vi.fn>;
     emitFoodOfferClosed: ReturnType<typeof vi.fn>;
+    emitFoodQueueChanged: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -160,10 +162,10 @@ describe("FoodDispatchService.sweepSearch — N-08 auto-offer", () => {
     expect(attemptCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ attemptNumber: 3, radiusM: 3500 }) }));
   });
 
-  it("N-07: enters the D-34 merchant hold once the NO_RIDER cap (6 attempts) is exhausted", async () => {
+  it("N-07: enters the D-34 merchant hold once the NO_RIDER cap (6 attempts) is exhausted, and pushes a C5 queue-changed signal", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const strategy: DispatchStrategy = { pickCandidate: vi.fn(async () => null) };
-    const { svc } = build(
+    const { svc, gateway } = build(
       { order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 6 }), updateMany: orderUpdateMany } },
       strategy,
     );
@@ -173,6 +175,7 @@ describe("FoodDispatchService.sweepSearch — N-08 auto-offer", () => {
     expect(orderUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ noRiderHoldAt: expect.any(Date), dispatchNextCheckAt: null }) }),
     );
+    expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith(MERCHANT_ID, orderId);
   });
 
   it("skips an order that raced to hold/assigned since the sweep's own read (defensive re-check)", async () => {
@@ -241,9 +244,14 @@ describe("FoodDispatchService.sweepExpiredOffers — N-08 60s window", () => {
 });
 
 describe("FoodDispatchService.acceptDispatch — D-04 rider secured", () => {
-  const liveOffer = { status: "open_for_offers", dispatchOfferedRiderId: "r1", dispatchOfferExpiresAt: new Date(Date.now() + 30_000) };
+  const liveOffer = {
+    status: "open_for_offers",
+    dispatchOfferedRiderId: "r1",
+    dispatchOfferExpiresAt: new Date(Date.now() + 30_000),
+    merchantId: MERCHANT_ID,
+  };
 
-  it("assigns the candidate, mints a delivery code, clears merchantPhase + dispatch fields, pushes rider-secured", async () => {
+  it("assigns the candidate, mints a delivery code, clears merchantPhase + dispatch fields, pushes rider-secured (order room + C5 merchant queue)", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const { svc, gateway } = build(
       {
@@ -266,6 +274,7 @@ describe("FoodDispatchService.acceptDispatch — D-04 rider secured", () => {
       }),
     );
     expect(gateway.emitOrderStatus).toHaveBeenCalledWith(orderId, "assigned");
+    expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith(MERCHANT_ID, orderId);
     expect(notified.map((n) => n.profileIds)).toEqual([["r1"], ["cust-1"]]);
   });
 
@@ -328,7 +337,7 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
     const { svc, gateway } = build(
       {
         order: {
-          findFirst: async () => ({ status: "assigned", dispatchExcludedRiderIds: [] }),
+          findFirst: async () => ({ status: "assigned", dispatchExcludedRiderIds: [], merchantId: MERCHANT_ID }),
           updateMany: orderUpdateMany,
           findUnique: async () => ({ customerId: "cust-1" }),
         },
@@ -355,6 +364,7 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
     );
     expect(riderUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ cancelStrikes: 1 }) }));
     expect(gateway.evictRiderFromSupply).not.toHaveBeenCalled(); // strike 1 of 3 — no cooldown yet
+    expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith(MERCHANT_ID, orderId); // C5: merchant sees the drop without waiting for the poll
   });
 
   it("forces the rider offline + cooldown on the CANCEL_STRIKE_LIMIT-th drop (mirrors order-lifecycle cancel)", async () => {
