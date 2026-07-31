@@ -61,6 +61,24 @@ describe("AdminAuditService.recordAuditAction (A-01)", () => {
     expect(createCalls).toBe(0);
   });
 
+  // X1: AdminMerchantsService.resolveHandshake and AdminCustomersService.liftCashBan each write their
+  // audit row in the SAME transaction as their mutation (the R-05 dispute release / R-08 cash-ban lift) —
+  // the free-text path must not be able to forge either (it would read identically to a genuine support
+  // resolution / cash-ban lift with no underlying handshake release or Profile.cashBanned write).
+  it("rejects the X1 merchant-vertical actions handshake_resolve / cash_ban_lift", async () => {
+    let createCalls = 0;
+    const prisma = {
+      auditLog: { create: async () => { createCalls++; return { id: "should-not-happen" }; } },
+    };
+    const svc = new AdminAuditService(prisma as unknown as PrismaService);
+    for (const action of ["order.handshake_resolve", "customer.cash_ban_lift"]) {
+      await expect(svc.recordAuditAction("admin-42", { action, target: "victim-profile-id" })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    }
+    expect(createCalls).toBe(0);
+  });
+
   // WD-023: RiderService.adminSetKyc writes "rider.kyc_expire"/"rider.kyc_reset" (alongside the already-
   // reserved kyc_approve/kyc_decline) from the SAME transactional endpoint, and applyKycResult's automated
   // webhook path writes "rider.kyc_review_required" — all three were missing from RESERVED_AUDIT_ACTIONS,

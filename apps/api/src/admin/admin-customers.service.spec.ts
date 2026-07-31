@@ -154,6 +154,36 @@ describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => 
     expect(c.status).toBe("on_hold");
     expect(c.holdReason).toBe("Payment dispute open");
   });
+
+  // X1/R-08: a cash-banned customer stays `status: "active"` (the ban only narrows food payment method,
+  // never blocks ordering — distinct from onHold) but surfaces a `warn` banner + cashBanned/cashBanReason
+  // on the detail so ops sees it immediately, not buried in a KeyValue row.
+  it("X1/R-08: surfaces a cash-banned customer's warn banner and reason (status unaffected)", async () => {
+    const banned = { ...profile, cashBanned: true, cashBanReason: "Refused or couldn't pay a cash food order" };
+    const prisma = {
+      profile: { findFirst: async () => banned },
+      report: { count: async () => 0, findMany: async () => [] },
+      order: customerOrders,
+    };
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    const c = (await svc.getCustomerDetail("c1"))!;
+    expect(c.status).toBe("active");
+    expect(c.cashBanned).toBe(true);
+    expect(c.cashBanReason).toBe("Refused or couldn't pay a cash food order");
+    expect(c.warn).toContain("Refused or couldn't pay a cash food order");
+  });
+
+  it("X1/R-08: a non-cash-banned customer has no warn banner and cashBanned defaults false", async () => {
+    const prisma = {
+      profile: { findFirst: async () => profile },
+      report: { count: async () => 0, findMany: async () => [] },
+      order: customerOrders,
+    };
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    const c = (await svc.getCustomerDetail("c1"))!;
+    expect(c.cashBanned).toBe(false);
+    expect(c.warn).toBeUndefined();
+  });
 });
 
 describe("AdminCustomersService hold/lift (S·2 — mutation + audit in ONE $transaction, A-01)", () => {
@@ -258,5 +288,66 @@ describe("AdminCustomersService hold/lift (S·2 — mutation + audit in ONE $tra
     const svc = new AdminCustomersService(prisma as unknown as PrismaService, notifications);
     await svc.liftCustomerHold("admin-1", "c1", {});
     expect(notified[0]!.msg).toMatchObject({ data: { kind: "account", to: "customer" } });
+  });
+});
+
+describe("AdminCustomersService.liftCashBan (X1/R-08 — mutation + audit in ONE $transaction)", () => {
+  interface Calls {
+    update: { where: unknown; data: Record<string, unknown> } | null;
+    audit: { data: Record<string, unknown> } | null;
+  }
+  function makeTx(customer: unknown = { id: "c1", cashBanned: true }, updateCount = 1) {
+    const calls: Calls = { update: null, audit: null };
+    const tx = {
+      profile: {
+        findFirst: async () => customer,
+        updateMany: async (args: Calls["update"]) => { calls.update = args; return { count: updateCount }; },
+      },
+      auditLog: { create: async (args: Calls["audit"]) => { calls.audit = args; return { id: "audit-9" }; } },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    return { prisma, calls };
+  }
+
+  it("clears cashBanned/cashBanReason/cashBannedAt and audits atomically", async () => {
+    const { prisma, calls } = makeTx();
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    const res = await svc.liftCashBan("admin-1", "c1", { reason: "Customer contacted and cleared" });
+    expect(calls.update!.data).toEqual({ cashBanned: false, cashBanReason: null, cashBannedAt: null });
+    expect(calls.audit!.data).toMatchObject({ actor: "admin-1", action: "customer.cash_ban_lift", target: "c1", reasonCode: "Customer contacted and cleared" });
+    expect(res).toEqual({ id: "c1", cashBanned: false, auditId: "audit-9" });
+  });
+
+  it("404s when the id isn't a customer", async () => {
+    const { prisma } = makeTx(null);
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    await expect(svc.liftCashBan("admin-1", "c1", {})).rejects.toThrow(/customer not found/i);
+  });
+
+  it("409s when the customer isn't actually cash-banned — no audit committed", async () => {
+    const { prisma, calls } = makeTx({ id: "c1", cashBanned: false });
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    await expect(svc.liftCashBan("admin-1", "c1", {})).rejects.toThrow(/isn't cash-banned/i);
+    expect(calls.audit).toBeNull();
+  });
+
+  it("CAS conflict (0 rows) → 409, no audit committed", async () => {
+    const { prisma, calls } = makeTx({ id: "c1", cashBanned: true }, 0);
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    await expect(svc.liftCashBan("admin-1", "c1", {})).rejects.toThrow(/refresh and try again/i);
+    expect(calls.audit).toBeNull();
+  });
+
+  it("pushes the customer a best-effort 'cash orders re-enabled' notice, post-commit", async () => {
+    const { prisma } = makeTx();
+    const notified: Array<{ profileIds: string[]; msg: { title: string } }> = [];
+    const notifications = {
+      notifyProfiles: async (profileIds: string[], msg: { title: string }) => { notified.push({ profileIds, msg }); },
+    } as unknown as import("../notifications/notifications.service").NotificationsService;
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService, notifications);
+    await svc.liftCashBan("admin-1", "c1", {});
+    expect(notified).toHaveLength(1);
+    expect(notified[0]!.profileIds).toEqual(["c1"]);
+    expect(notified[0]!.msg).toMatchObject({ title: "Cash orders re-enabled" });
   });
 });

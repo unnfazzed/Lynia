@@ -15,6 +15,7 @@ import { AdminAuditService } from "./admin-audit.service";
 import { AdminController } from "./admin.controller";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
+import { AdminMerchantsService } from "./admin-merchants.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminService } from "./admin.service";
@@ -27,6 +28,7 @@ Reflect.defineMetadata(
     AdminRidersService,
     AdminKycReviewService,
     AdminCustomersService,
+    AdminMerchantsService,
     AdminAuditService,
     SettlementsService,
     SosService,
@@ -52,6 +54,7 @@ describe("GET /admin/overview — HTTP authz (AdminGuard net)", () => {
       { provide: AdminRidersService, useValue: {} },
       { provide: AdminKycReviewService, useValue: {} },
       { provide: AdminCustomersService, useValue: {} },
+      { provide: AdminMerchantsService, useValue: {} },
       { provide: AdminAuditService, useValue: {} },
       { provide: SettlementsService, useValue: settlements },
       { provide: SosService, useValue: sos },
@@ -94,6 +97,7 @@ describe("POST /admin/sos/:id/ack — HTTP authz (DS13-06 acknowledge is AdminGu
       { provide: AdminRidersService, useValue: {} },
       { provide: AdminKycReviewService, useValue: {} },
       { provide: AdminCustomersService, useValue: {} },
+      { provide: AdminMerchantsService, useValue: {} },
       { provide: AdminAuditService, useValue: {} },
       { provide: SettlementsService, useValue: settlements },
       { provide: SosService, useValue: sos },

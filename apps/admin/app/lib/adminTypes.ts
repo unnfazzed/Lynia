@@ -41,6 +41,10 @@ export interface Customer {
   status: "active" | "flagged" | "banned" | "on_hold";
   /** The recorded reason for a hold (S·2), null otherwise. */
   holdReason?: string | null;
+  /** X1/R-08: narrows food orders to WALLET only — deliberately independent of `status`/`onHold`
+   *  (which blocks ALL ordering). Written only by a rider's refusal report (FoodDebtService). */
+  cashBanned: boolean;
+  cashBanReason: string | null;
 }
 
 export interface CustomerFlag {
@@ -233,6 +237,8 @@ export interface DuplicateIdAccount {
 /* ── Order detail (kit orders.html) ────────────────────────── */
 export interface OrderDetail {
   id: string;
+  /** X1: "parcel" | "merchant" — drives whether `food` below is populated. */
+  orderType?: "parcel" | "merchant";
   route: string;
   status: string;
   stuck?: boolean;
@@ -258,6 +264,95 @@ export interface OrderDetail {
     lng: number | null;
     at: string | null;
   } | null;
+  /** X1: the food money-evidence panel — merchant, payment rail, R-01 debt, R-04/R-05 handshake, D-12
+   *  refund. Null for a parcel order. */
+  food?: FoodOrderPanel | null;
+}
+
+/** X1: food-order evidence surfaced on the order detail page (`GET /admin/orders/:id`, orderType
+ *  ===merchant only — see admin-orders.service.ts getOrderDetail). */
+export interface FoodOrderPanel {
+  merchant: string | null;
+  merchantPhase: string | null;
+  rejectionReason: string | null;
+  paymentMethod: "cash" | "wallet" | null;
+  paymentConfirmedAt: string | null;
+  cashRule: "collect_and_return" | "pay_upfront" | null;
+  goodsTotal: string | null;
+  deliveryFee: string | null;
+  debt: {
+    status: "open" | "settled_cash" | "settled_goods" | "written_off";
+    amount: string | null;
+    openedAt: string | null;
+    settledAt: string | null;
+  } | null;
+  /** Present only for a CASH order. A live R-05 dispute is `frozenAt` set with `riderConfirmedAt` null. */
+  handshake: {
+    amount: string | null;
+    customerConfirmedAt: string | null;
+    riderConfirmedAt: string | null;
+    deadlineAt: string | null;
+    frozenAt: string | null;
+  } | null;
+  refund: { reference: string | null; amount: string | null; refundedAt: string } | null;
+}
+
+/* ── Merchants (X1) ─────────────────────────────────────────── */
+export interface Merchant {
+  id: string;
+  name: string;
+  cashRule: "collect_and_return" | "pay_upfront";
+  pilotEnabled: boolean;
+  busyMode: boolean;
+  cuisineTags: string[];
+  orders: number;
+  openDebtAmount: string;
+  openDebtCount: number;
+  joined: string;
+}
+
+export interface MerchantDebtLedgerRow {
+  id: string;
+  orderId: string;
+  riderId: string;
+  type: "opened" | "settled_cash" | "settled_goods" | "written_off";
+  amount: string;
+  note: string | null;
+  actor: string | null;
+  at: string;
+}
+
+export interface MerchantDetail extends Merchant {
+  description: string | null;
+  priceLevel: number | null;
+  trail: TripRow[];
+  debtLedger: MerchantDebtLedgerRow[];
+}
+
+/* ── Support dispute queue (X1: GET /admin/merchant-disputes) ── */
+export interface HandshakeDisputeRow {
+  orderId: string;
+  merchant: string;
+  customer: string;
+  rider: string | null;
+  amount: string | null;
+  customerConfirmedAt: string | null;
+  frozenAt: string;
+}
+
+export interface RefundOverdueRow {
+  orderId: string;
+  merchant: string;
+  customer: string;
+  amount: string | null;
+  terminalAt: string;
+  overdue: boolean;
+  overdueMinutes: number;
+}
+
+export interface FoodDisputes {
+  handshakeDisputes: HandshakeDisputeRow[];
+  refundsOverdue: RefundOverdueRow[];
 }
 
 /* ── Rider detail (kit riders.html) ────────────────────────── */
@@ -296,6 +391,8 @@ export interface NavCounts {
   kycPending: number;
   openIssues: number;
   sosPending: number;
+  /** X1: R-05 frozen handshakes + N-12 refund-overdue orders — the /merchants/disputes queue count. */
+  foodDisputes: number;
 }
 
 /* ── Rider prepaid wallet (DOC-16-03 — GET /admin/riders/:id/wallet) ── */

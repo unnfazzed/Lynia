@@ -28,7 +28,17 @@ export class AdminCustomersService {
       where: { role: "customer" },
       orderBy: { createdAt: "desc" },
       take: 100,
-      select: { id: true, firstName: true, lastName: true, phone: true, createdAt: true, onHold: true, holdReason: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        createdAt: true,
+        onHold: true,
+        holdReason: true,
+        cashBanned: true,
+        cashBanReason: true,
+      },
     });
     const ids = profiles.map((p) => p.id);
 
@@ -84,7 +94,17 @@ export class AdminCustomersService {
   async getCustomerDetail(id: string) {
     const profile = await this.prisma.profile.findFirst({
       where: { id, role: "customer" },
-      select: { id: true, firstName: true, lastName: true, phone: true, createdAt: true, onHold: true, holdReason: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        createdAt: true,
+        onHold: true,
+        holdReason: true,
+        cashBanned: true,
+        cashBanReason: true,
+      },
     });
     if (!profile) return null;
 
@@ -119,7 +139,10 @@ export class AdminCustomersService {
     return {
       ...base,
       publicName: profile.firstName, // what riders see — first name only (§5d contact minimization)
-      warn: undefined,
+      // X1/R-08: a cash-banned customer is still "active" (cash-ban only narrows food payment method,
+      // never blocks ordering — see the Customer.cashBanned comment below), but ops needs this flagged
+      // the moment they open the profile, not buried in a KeyValue row.
+      warn: base.cashBanned ? `Cash-banned for food orders — ${base.cashBanReason ?? "reason not recorded"}.` : undefined,
       flagLog: reports.recent,
       trail: recent.map((o) => toTripRow(o)),
     };
@@ -127,7 +150,17 @@ export class AdminCustomersService {
 
   /** Shared Customer projection for the directory + detail — aggregates in, masked row out. */
   private toCustomer(
-    p: { id: string; firstName: string; lastName: string; phone: string; createdAt: Date; onHold?: boolean; holdReason?: string | null },
+    p: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      phone: string;
+      createdAt: Date;
+      onHold?: boolean;
+      holdReason?: string | null;
+      cashBanned?: boolean;
+      cashBanReason?: string | null;
+    },
     total: number,
     cancelled: number,
     spend: { toFixed: (n: number) => string } | null,
@@ -145,6 +178,10 @@ export class AdminCustomersService {
       // S·2: real standing now — `on_hold` blocks the customer from broadcasting (OrdersService.create).
       status: p.onHold ? ("on_hold" as const) : ("active" as const),
       holdReason: p.holdReason ?? null,
+      // R-08: narrows food orders to WALLET only — deliberately separate from `status`/`onHold` (which
+      // blocks ALL ordering). Default false for the pre-C4 `onHold`-only call sites that never selected it.
+      cashBanned: p.cashBanned ?? false,
+      cashBanReason: p.cashBanReason ?? null,
     };
   }
 
@@ -212,6 +249,38 @@ export class AdminCustomersService {
       title: "Account restored",
       body: "Your account is back in good standing — you can place orders again.",
       // BH-18: see the matching comment in holdCustomer above.
+      data: { kind: "account", to: "customer" },
+    });
+    return result;
+  }
+
+  /**
+   * X1/R-08: lift a cash-ban (`FoodDebtService.reportCustomerRefused` is the only writer — a customer
+   * who refused/couldn't pay a collect-and-return CASH food order). This is the only path back to
+   * cash-eligibility; the ban itself is written outside this service (C4), so there is no matching
+   * "ban" mutation here to pair it with. CAS on the observed `cashBanned`, mutation + audit in one
+   * transaction (mirrors holdCustomer/liftCustomerHold). Reason optional (a lift is reversing a flag,
+   * not applying one). 404s when the id isn't a customer; 409s when they aren't actually cash-banned.
+   */
+  async liftCashBan(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { cashBanned: true } });
+      if (!customer) throw new NotFoundException("Customer not found");
+      if (!customer.cashBanned) throw new ConflictException("This customer isn't cash-banned");
+      const changed = await tx.profile.updateMany({
+        where: { id: profileId, role: "customer", cashBanned: true },
+        data: { cashBanned: false, cashBanReason: null, cashBannedAt: null },
+      });
+      if (changed.count === 0) throw new ConflictException("Customer changed — refresh and try again");
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, "customer.cash_ban_lift", profileId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: profileId, cashBanned: false as const, auditId: audit.id };
+    });
+    void this.notifications?.notifyProfiles([profileId], {
+      title: "Cash orders re-enabled",
+      body: "You can pay cash for food orders again.",
       data: { kind: "account", to: "customer" },
     });
     return result;

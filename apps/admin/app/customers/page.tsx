@@ -64,6 +64,11 @@ export default async function CustomersPage({
           <span className="mut">—</span>
         ),
     },
+    {
+      key: "cashBan",
+      header: "Food payment",
+      cell: (c) => (c.cashBanned ? <Pill kind="bad">cash-banned</Pill> : <span className="mut">—</span>),
+    },
     { key: "joined", header: "Joined", className: "mut", cell: (c) => c.joined },
   ];
 

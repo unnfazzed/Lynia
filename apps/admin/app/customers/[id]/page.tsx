@@ -7,7 +7,7 @@ import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { ConfirmModal } from "../../components/ConfirmModal";
-import { CustomerActions } from "./CustomerActions";
+import { CustomerActions, LiftCashBanAction } from "./CustomerActions";
 import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconUser } from "../../components/icons";
@@ -172,6 +172,9 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
               {/* S·2: the real, blocking hold/lift (mutates Profile.onHold + audit in one tx). The
                   flag/ban controls below remain audit-only placeholders (no backing model yet). */}
               <CustomerActions id={c.id} name={c.name} onHold={onHold} connected={connected} />
+              {/* X1/R-08: only shown once actually cash-banned — the ban itself has no console "apply"
+                  counterpart (see LiftCashBanAction's docstring). */}
+              {c.cashBanned ? <LiftCashBanAction id={c.id} name={c.name} connected={connected} /> : null}
               {flagged ? (
                 <ConfirmModal
                   action="customer.clear_flag"

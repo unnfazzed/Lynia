@@ -58,6 +58,14 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   // free-text path must not be able to forge (it would read identically to a genuine R-07 non-return
   // finding with no underlying account-standing change).
   "rider.suspend_food_debt",
+  // X1: `AdminMerchantsService.resolveHandshake` writes this in the same transaction as the
+  // riderCashConfirmedAt release write (the sole valve out of an R-05 frozen doorstep handshake) — a
+  // real, domain-owned dispute resolution the free-text path must not be able to forge (it would read
+  // identically to a genuine support resolution with no underlying handshake/rider-lock release).
+  "order.handshake_resolve",
+  // X1: `AdminCustomersService.liftCashBan` writes this in the same transaction as the
+  // cashBanned=false write — the R-08 cash-ban's only lift path, same forgery risk as customer.lift.
+  "customer.cash_ban_lift",
 ]);
 
 @Injectable()

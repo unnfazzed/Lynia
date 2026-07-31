@@ -1119,10 +1119,41 @@ loop's trigger is disabled after this PR merges.
 
 ### Cross-cutting (owned by Build loop C after C1–C5: X1 then X2, one per firing)
 
-- [ ] **X1 · Admin alignment.** Admin console: merchant list/detail, food-order visibility in
+- [x] **X1 · Admin alignment.** Admin console: merchant list/detail, food-order visibility in
   `/orders` (type filter), debt-ledger + handshake dispute views for support, cash-ban/suspension
   actions with audit trail. (The stale weekly-15% admin `cash.html` in the design kit is already
-  superseded by the shipped prepaid `/cash` page — no work, verified.)
+  superseded by the shipped prepaid `/cash` page — no work, verified.) **Done 2026-07-31:** new
+  `AdminMerchantsService` (`apps/api/src/admin/admin-merchants.service.ts`) + `/merchants` (list/detail)
+  and `/merchants/disputes` console routes (mirrors `riders`/`customers` directory+detail shape).
+  `admin-orders.service.ts`'s `listOrders`/`getOrderDetail` gained `orderType`/`?type=parcel|merchant`
+  and a `food` evidence panel (merchant/payment rail/R-01 debt/R-04-R-05 handshake/D-12 refund) — the
+  `/orders` console page got a type filter + a "Food order" detail card. R-05's frozen-handshake
+  dispute-resolution surface (explicitly named as X1-owned in C4's PR notes and the Order schema
+  comment) is `resolveHandshake`: sets `riderCashConfirmedAt` — the SAME release valve the rider's own
+  confirm uses, so it clears `common/merchant-debt-lock.ts`'s job-lock and unlocks the delivery-code
+  reveal with no second, parallel unlock path — CAS-guarded, mutation + audit (`order.handshake_resolve`,
+  reserved) in one transaction, reason required. Q6/N-12's 2h refund-SLA escalation (deferred from C4) is
+  now visibility-only per its own mocked default: any wallet-paid merchant order that ended in
+  cancelled/undelivered with `merchantPaymentConfirmedAt` set and no `refundedAt` flags into the same
+  `/merchants/disputes` queue once past `RESTAURANTS_DEBT.refundSlaMs`; no money moves automatically
+  (LyniaGo never held it). Cash-ban (R-08) surfaces on the customer directory + detail (`warn` banner)
+  with a new `liftCashBan` action (`POST /admin/customers/:id/cash-ban-lift`, mirrors the hold/lift CAS
+  shape) — the only lift path, since the ban itself has no console-side "apply" counterpart (written
+  only by `FoodDebtService.reportCustomerRefused`). **Scope cut, flagged per §9 discipline:** Merchant
+  has no `accountStatus` in the schema (unlike Rider) — "cash-ban/suspension actions" is satisfied by
+  the customer cash-ban lift above and the rider suspension C4's `reportNonReturn` already writes
+  (`rider.suspend_food_debt`, reused verbatim via the existing Riders console actions, surfaced via the
+  new debt-ledger view's rider links), not a new merchant-standing state machine — nothing in the design
+  doc calls for one. **New open question surfaced (Q9, §9):** what should an admin dispute resolution
+  actually settle when the rider's claimed amount genuinely doesn't match — the mocked default shipped
+  here always resolves in the rider's favor (releases the lock/code, same as a self-reported confirm)
+  since LyniaGo never held the disputed cash and no design doc addresses adjudicating a customer/rider
+  dollar mismatch. `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages (api 1497
+  tests incl. 34 new across `admin-merchants.service.spec.ts`/`admin-orders.service.spec.ts`/
+  `admin-customers.service.spec.ts`/`admin-audit.service.spec.ts`/`admin.service.spec.ts`; admin 51
+  incl. 6 new server-action tests; mobile 668; merchant 85; shared 157); `pnpm depcruise` clean (0 new
+  violations — this PR only touched `apps/api/src/admin/` + `apps/admin/`, neither on
+  `express-no-merchant-coupling`'s `from`/`to` lists). X2 (launch-flip rehearsal) is next.
 - [ ] **X2 · Launch-flip rehearsal.** Staging run: flags ON end-to-end golden pass (cash and
   wallet food order complete with correct ledger entries; NO_RIDER inside cap; race test
   parcel-bid vs food-offer), then flags OFF regression (Express golden matrix still green,
@@ -1216,6 +1247,7 @@ ship unless the founder overrides; each PR that implements a mocked default name
 | Q6 | Refund past 2h SLA — who chases, any merchant penalty? | Escalate to support, no penalty (N-12) | C4/X1 |
 | Q7 | Bidding while a food offer counts down — allowed? | Blocked (soft-lock, C3) | C3/B2 |
 | Q8 | Rider Q: batching parcels+food? | No — one job at a time (decision 3, rider plan) | C3 |
+| Q9 | Admin resolving a frozen R-05 handshake when the dollar amounts genuinely don't match — who eats the gap? | Always resolves in the rider's favor (releases the job-lock + delivery code, same effect as a self-reported confirm) — LyniaGo never held the disputed cash, so there's no company-side ledger entry to net either way | X1 |
 
 `RIDER-ONE-APP-PLAN.md` decisions 1–7 are **taken** (founder, Jul 2026) and are not reopened.
 
