@@ -32,6 +32,7 @@ import {
 import { TokenService } from "../auth/token.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 import { FoodDebtService } from "./food-debt.service";
 
 // D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
@@ -76,7 +77,16 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     private readonly tokens: TokenService,
     private readonly notifications: NotificationsService,
     private readonly debt: FoodDebtService,
+    private readonly gateway: TrackingGateway,
   ) {}
+
+  /** C5 kitchen socket queue: best-effort push telling the merchant's tablet(s) something on their
+   *  queue changed, so a connected tablet doesn't wait out E2's 5s poll fallback. `merchantId` is
+   *  nullable only defensively — every real merchant order carries one — so a miss is a silent no-op,
+   *  never load-bearing for the mutation that already committed. */
+  private notifyQueue(merchantId: string | null | undefined, orderId: string): void {
+    if (merchantId) this.gateway.emitFoodQueueChanged(merchantId, orderId);
+  }
 
   onModuleInit(): void {
     // DB-only reconciler (no BullMQ per-order scheduling, unlike order-lifecycle.service's rating
@@ -187,6 +197,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         },
         include: ORDER_WITH_ITEMS_INCLUDE,
       });
+      this.notifyQueue(merchantId, created.id);
       return this.toResponse(created);
     } catch (err) {
       // The idempotencyKey pre-check above races a concurrent duplicate submit; the
@@ -229,6 +240,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
+      this.notifyQueue(order.merchantId, orderId);
       return this.toResponse(await this.mustFindWithItems(orderId));
     }
 
@@ -241,6 +253,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           : { merchantPhase: "awaiting_payment", itemApprovalDeadlineAt: null },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    this.notifyQueue(order.merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -257,6 +270,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
+    this.notifyQueue(order.merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -265,6 +279,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const order = await this.findOwnAsCustomer(orderId, customerId);
     if (order.merchantPhase !== "awaiting_payment") throw new ConflictException("This order isn't awaiting payment");
     await this.prisma.order.update({ where: { id: orderId }, data: { merchantPaymentReference: reference } });
+    this.notifyQueue(order.merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -367,6 +382,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await this.prisma.merchantOrderItem.updateMany({ where: { orderId }, data: { available: true } });
     }
+    this.notifyQueue(merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -380,6 +396,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     if (claimed.count === 0) throw new ConflictException("This order can no longer be rejected");
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
     await this.notifyCancelledCustomer(orderId, reason);
+    this.notifyQueue(merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -388,6 +405,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const order = await this.findOwnAsMerchant(profileId, orderId);
     if (order.merchantPhase !== "awaiting_payment") throw new ConflictException("This order isn't awaiting payment");
     await this.prisma.order.update({ where: { id: orderId }, data: { paymentCallLoggedAt: new Date() } });
+    this.notifyQueue(order.merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -404,6 +422,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     }
     await this.prisma.order.update({ where: { id: orderId }, data: { paymentRequestedAt: new Date() } });
     await this.notifyPaymentRequested(orderId, order.customerId, "Confirm your payment", "The kitchen accepted your order — pay now so they can start cooking.");
+    this.notifyQueue(order.merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -426,6 +445,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    this.notifyQueue(order.merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -439,6 +459,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     if (claimed.count === 0) throw new ConflictException("This order can't be released");
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
     await this.notifyCancelledCustomer(orderId, reason);
+    this.notifyQueue(merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -458,6 +479,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    this.notifyQueue(order.merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -524,7 +546,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         merchantCashRule: o.merchant_cash_rule,
         merchantGoodsTotal: o.merchant_goods_total,
       });
-      return { ok: true as const };
+      return { ok: true as const, merchantId: o.merchant_id };
     });
     if (!outcome.ok) {
       const remaining = Math.max(0, DELIVERY_OTP_MAX_ATTEMPTS - outcome.attemptsUsed);
@@ -532,14 +554,60 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         remaining > 0 ? `That code doesn't match. ${remaining} attempt${remaining === 1 ? "" : "s"} left.` : "That code doesn't match — no attempts left.",
       );
     }
+    this.notifyQueue(outcome.merchantId, orderId);
     return { orderId, status: "picked_up" };
   }
 
   // ── Reconciler sweeps (DB-only, RESTAURANTS_TIMING.sweepIntervalMs) ─────────────────────────────────
 
-  /** N-03: unanswered merchant accept auto-cancels — never a silent hang (D-13). */
-  async sweepExpiredAcceptWindows(): Promise<{ cancelled: number }> {
-    return this.sweepExpiredPhase("awaiting_accept", "acceptDeadlineAt", "shop_closed");
+  /**
+   * N-03: unanswered merchant accept auto-cancels — never a silent hang (D-13). C5 addition
+   * ("server-paused accept clocks while dark", D-16): the merchant is the ONLY actor who can answer
+   * this window, so before treating a past-deadline order as a genuine no-answer, ask the kitchen
+   * socket queue (TrackingGateway.isMerchantOnline) whether that merchant's tablet is actually
+   * connected. Offline ⇒ the deadline is pushed one sweep tick forward instead of the order being
+   * cancelled — not a new lifecycle state (status/merchantPhase are untouched, so this needs no new
+   * `order-lifecycle.transitions.ts` row, only a metadata field), just a clock that stops advancing
+   * toward cancellation while nobody could have answered it. The very next sweep after the tablet
+   * reconnects sees a real online merchant and lets N-03 run out for real if they still don't
+   * answer — D-13's guarantee holds for a CONNECTED merchant, which is the only merchant it can
+   * meaningfully apply to. The item-approval sweep (N-18) has no equivalent: that window waits on
+   * the CUSTOMER, whose connectivity this channel says nothing about, so it stays on the plain
+   * {@link sweepExpiredPhase} path unchanged.
+   */
+  async sweepExpiredAcceptWindows(): Promise<{ cancelled: number; paused: number }> {
+    let cancelled = 0;
+    let paused = 0;
+    const stale = await this.prisma.order.findMany({
+      where: { orderType: "merchant", status: "requested", merchantPhase: "awaiting_accept", acceptDeadlineAt: { lt: new Date() } },
+      select: { id: true, merchantId: true, acceptDeadlineAt: true },
+      take: 200,
+    });
+    for (const o of stale) {
+      try {
+        if (o.merchantId && !(await this.gateway.isMerchantOnline(o.merchantId))) {
+          const pauseResult = await this.prisma.order.updateMany({
+            where: { id: o.id, status: "requested", merchantPhase: "awaiting_accept", acceptDeadlineAt: o.acceptDeadlineAt },
+            data: { acceptDeadlineAt: new Date(Date.now() + RESTAURANTS_TIMING.sweepIntervalMs) },
+          });
+          if (pauseResult.count > 0) paused++;
+          continue;
+        }
+        const claimed = await this.prisma.order.updateMany({
+          where: { id: o.id, status: "requested", merchantPhase: "awaiting_accept", acceptDeadlineAt: o.acceptDeadlineAt },
+          data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: "shop_closed", merchantPhase: null },
+        });
+        if (claimed.count > 0) {
+          await this.prisma.orderEvent.create({ data: { orderId: o.id, status: "cancelled" } });
+          await this.notifyCancelledCustomer(o.id, "shop_closed");
+          this.notifyQueue(o.merchantId, o.id);
+          cancelled++;
+        }
+      } catch (err) {
+        this.logger.error(`sweepExpiredAcceptWindows failed for order ${o.id}: ${(err as Error).message}`);
+      }
+    }
+    return { cancelled, paused };
   }
 
   /** N-18: unanswered 60s item-approval window — mocked default (surfaced in the PR): treated as a
@@ -556,7 +624,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     let cancelled = 0;
     const stale = await this.prisma.order.findMany({
       where: { orderType: "merchant", status: "requested", merchantPhase: phase, [deadlineField]: { lt: new Date() } },
-      select: { id: true },
+      select: { id: true, merchantId: true },
       take: 200,
     });
     for (const o of stale) {
@@ -568,6 +636,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         if (claimed.count > 0) {
           await this.prisma.orderEvent.create({ data: { orderId: o.id, status: "cancelled" } });
           await this.notifyCancelledCustomer(o.id, reason);
+          this.notifyQueue(o.merchantId, o.id);
           cancelled++;
         }
       } catch (err) {
@@ -600,6 +669,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         if (claimed.count > 0) {
           await this.prisma.orderEvent.create({ data: { orderId: o.id, status: "cancelled" } });
           await this.notifyCancelledCustomer(o.id, "shop_closed");
+          this.notifyQueue(o.merchantId, o.id);
           cancelled++;
         }
       } catch (err) {

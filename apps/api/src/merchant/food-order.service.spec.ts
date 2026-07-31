@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TokenService } from "../auth/token.service";
+import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { FoodDebtService } from "./food-debt.service";
 import { FoodOrderService } from "./food-order.service";
 
@@ -19,13 +20,27 @@ const notifications = {
 // behaviour is covered by food-debt.service.spec.ts.
 const debt = { openDebtIfNeeded: async () => {} } as unknown as FoodDebtService;
 
+// C5 kitchen socket queue: every mutating method now best-effort pushes emitFoodQueueChanged, and
+// the N-03 accept-window sweep gates on isMerchantOnline. `queueChanges` records every push so tests
+// can assert it fired (or didn't); defaults to "always online" so every pre-existing sweep test keeps
+// its original always-auto-cancel behaviour unless a test overrides `isMerchantOnline` itself.
+const queueChanges: Array<{ merchantId: string; orderId: string }> = [];
+function fakeGateway(overrides: Record<string, unknown> = {}) {
+  return {
+    emitFoodQueueChanged: (merchantId: string, orderId: string) => queueChanges.push({ merchantId, orderId }),
+    isMerchantOnline: async () => true,
+    ...overrides,
+  } as unknown as TrackingGateway;
+}
+
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma),
  *  mirroring order-lifecycle.service.spec.ts's `build()`. */
-function build(methods: Record<string, unknown>) {
+function build(methods: Record<string, unknown>, gateway: TrackingGateway = fakeGateway()) {
   notified.length = 0;
+  queueChanges.length = 0;
   const prisma = { ...methods } as Record<string, unknown>;
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
-  const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, debt);
+  const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, debt, gateway);
   return { svc, prisma };
 }
 
@@ -446,7 +461,7 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
     prisma.order = { update: async () => ({}) };
     prisma.orderEvent = { create: async () => ({}) };
     const spyDebt = { openDebtIfNeeded: async (_tx: unknown, order: Record<string, unknown>) => (opened = order) } as unknown as FoodDebtService;
-    const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, spyDebt);
+    const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, spyDebt, fakeGateway());
 
     await svc.confirmPickup("o1", "r1", "4242");
     expect(opened).toEqual({
@@ -457,6 +472,7 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
       merchantCashRule: "collect_and_return",
       merchantGoodsTotal: 13,
     });
+    expect(queueChanges).toEqual([{ merchantId: "m1", orderId: "o1" }]);
   });
 });
 
@@ -538,11 +554,11 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
 });
 
 describe("FoodOrderService reconciler sweeps", () => {
-  it("N-03: auto-cancels an order past its accept deadline and notifies the customer", async () => {
+  it("N-03: auto-cancels an order past its accept deadline and notifies the customer (merchant online)", async () => {
     let cancelled: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
-        findMany: async () => [{ id: "o1" }],
+        findMany: async () => [{ id: "o1", merchantId: "m1", acceptDeadlineAt: new Date(0) }],
         updateMany: async (a: Record<string, unknown>) => {
           cancelled = a;
           return { count: 1 };
@@ -552,17 +568,61 @@ describe("FoodOrderService reconciler sweeps", () => {
       orderEvent: { create: async () => ({}) },
     });
     const res = await svc.sweepExpiredAcceptWindows();
-    expect(res).toEqual({ cancelled: 1 });
+    expect(res).toEqual({ cancelled: 1, paused: 0 });
     const data = cancelled!.data as Record<string, unknown>;
     expect(data.status).toBe("cancelled");
     expect(data.rejectionReason).toBe("shop_closed");
     expect(notified).toHaveLength(1);
+    expect(queueChanges).toEqual([{ merchantId: "m1", orderId: "o1" }]);
+  });
+
+  it("C5/D-16: pauses (extends the deadline) instead of cancelling when the kitchen tablet is dark, and pushes no cancellation notice", async () => {
+    let updateArgs: Record<string, unknown> | undefined;
+    const isMerchantOnline = vi.fn(async () => false);
+    const { svc } = build(
+      {
+        order: {
+          findMany: async () => [{ id: "o1", merchantId: "m1", acceptDeadlineAt: new Date(0) }],
+          updateMany: async (a: Record<string, unknown>) => {
+            updateArgs = a;
+            return { count: 1 };
+          },
+        },
+      },
+      fakeGateway({ isMerchantOnline }),
+    );
+    const res = await svc.sweepExpiredAcceptWindows();
+    expect(res).toEqual({ cancelled: 0, paused: 1 });
+    expect(isMerchantOnline).toHaveBeenCalledWith("m1");
+    const data = updateArgs!.data as Record<string, unknown>;
+    // Only the deadline moves — no status/merchantPhase change, so this is a metadata write, not a
+    // lifecycle transition (nothing for order-lifecycle.transitions.ts to declare).
+    expect(Object.keys(data)).toEqual(["acceptDeadlineAt"]);
+    expect((data.acceptDeadlineAt as Date).getTime()).toBeGreaterThan(Date.now());
+    expect(notified).toHaveLength(0);
+    expect(queueChanges).toHaveLength(0);
+  });
+
+  it("C5: a reconnected merchant's next sweep cancels for real if they still haven't answered", async () => {
+    const { svc } = build(
+      {
+        order: {
+          findMany: async () => [{ id: "o1", merchantId: "m1", acceptDeadlineAt: new Date(0) }],
+          updateMany: async () => ({ count: 1 }),
+          findUnique: async () => ({ customerId: "c1" }),
+        },
+        orderEvent: { create: async () => ({}) },
+      },
+      fakeGateway({ isMerchantOnline: async () => true }),
+    );
+    const res = await svc.sweepExpiredAcceptWindows();
+    expect(res).toEqual({ cancelled: 1, paused: 0 });
   });
 
   it("N-18: an unanswered item-approval window is treated as a decline (named mocked default)", async () => {
     const { svc } = build({
       order: {
-        findMany: async () => [{ id: "o1" }],
+        findMany: async () => [{ id: "o1", merchantId: "m1" }],
         updateMany: async () => ({ count: 1 }),
         findUnique: async () => ({ customerId: "c1" }),
       },
@@ -570,6 +630,7 @@ describe("FoodOrderService reconciler sweeps", () => {
     });
     const res = await svc.sweepExpiredItemApprovals();
     expect(res).toEqual({ cancelled: 1 });
+    expect(queueChanges).toEqual([{ merchantId: "m1", orderId: "o1" }]);
   });
 
   it("N-23: end-of-day close only fires once the shop's own closing time has passed", async () => {

@@ -20,6 +20,7 @@ import {
   boardCellsCoveringRadius,
   type FoodOfferClosedEvent,
   type FoodOfferEvent,
+  type FoodQueueChangedEvent,
   type JobCancelledEvent,
   type OrderRebroadcastEvent,
   type OrderTakenEvent,
@@ -36,7 +37,7 @@ import { createRedisClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
-import { BOARD_ROOM, boardGeoRoom, orderRoom, parseBearer } from "./tracking.constants";
+import { BOARD_ROOM, boardGeoRoom, merchantQueueRoom, orderRoom, parseBearer } from "./tracking.constants";
 import { PositionCoalescer, POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, type PositionPayload } from "./position-coalescer";
 import { TrackingService } from "./tracking.service";
 
@@ -339,6 +340,25 @@ export class TrackingGateway
     });
   }
 
+  /**
+   * C5 kitchen socket queue: a merchant's tablet joins its own queue's live channel. Self-driven —
+   * the socket carries no body; the merchant's own JWT (`role==="merchant"`) resolves which
+   * `Merchant.id` to join via `TrackingService.ownMerchantId`, mirroring `boardSubscribe`'s "the
+   * server decides the room, not the client" shape. A profile that has upgraded to `role:"merchant"`
+   * but never completed shop setup (no `Merchant` row yet, or a race with `POST /merchant/become`)
+   * gets `{error: "forbidden"}` rather than a room nobody will ever push to.
+   */
+  @SubscribeMessage(WS_EVENTS.merchantQueueSubscribe)
+  async subscribeMerchantQueue(@ConnectedSocket() client: Socket): Promise<{ joined: string } | { error: string }> {
+    const user = client.data.user as SocketUser | undefined;
+    if (!user) return { error: "unauthenticated" };
+    if (user.role !== "merchant") return { error: "forbidden" };
+    const merchantId = await this.tracking.ownMerchantId(user.sub);
+    if (!merchantId) return { error: "forbidden" };
+    await client.join(merchantQueueRoom(merchantId));
+    return { joined: merchantId };
+  }
+
   @SubscribeMessage(WS_EVENTS.riderLocation)
   async riderLocation(
     @ConnectedSocket() client: Socket,
@@ -430,6 +450,38 @@ export class TrackingGateway
   async emitFoodOfferClosed(riderId: string, orderId: string): Promise<void> {
     const payload: FoodOfferClosedEvent = { orderId, at: new Date().toISOString() };
     await this.emitToRider(riderId, WS_EVENTS.foodOfferClosed, payload);
+  }
+
+  /**
+   * C5 kitchen socket queue: push a queue-changed signal to a merchant's tablet(s). Best-effort;
+   * never throws. Replaces (for a connected tablet) the 5s polling fallback E2 shipped ahead of this
+   * channel existing — the poll stays as the reconnect/offline fallback, unaffected by this addition.
+   */
+  emitFoodQueueChanged(merchantId: string, orderId: string): void {
+    const payload: FoodQueueChangedEvent = { orderId, at: new Date().toISOString() };
+    this.server?.to(merchantQueueRoom(merchantId)).emit(WS_EVENTS.foodQueueChanged, payload);
+  }
+
+  /**
+   * C5 "server-paused accept clocks while dark" (D-16): is ANY socket currently sitting in this
+   * merchant's queue room, anywhere in the cluster? The N-03 accept-window sweep calls this before
+   * treating an unanswered order as a real "the kitchen never answered" — a merchant with no live
+   * tablet on the channel gets the deadline pushed out instead of the order auto-cancelled out from
+   * under them for a connectivity blip they had no chance to act on. Best-effort: a missing server or
+   * a fetch error reads as "online" — i.e. falls back to N-03's original always-auto-cancel behaviour
+   * (D-13 "never a silent hang") rather than the new pause, since a pause that can never be lifted by
+   * a gateway outage would trade one failure mode (a lost order) for a worse one (an order stuck
+   * forever, never yielding a customer response either way).
+   */
+  async isMerchantOnline(merchantId: string): Promise<boolean> {
+    if (!this.server) return true;
+    try {
+      const sockets = await this.server.in(merchantQueueRoom(merchantId)).fetchSockets();
+      return sockets.length > 0;
+    } catch (err) {
+      this.logger.warn(`isMerchantOnline check failed for merchant ${merchantId}: ${(err as Error).message}`);
+      return true;
+    }
   }
 
   /** Cluster-wide direct-to-rider emit (same socket lookup as `kickRiderFromBoard`/

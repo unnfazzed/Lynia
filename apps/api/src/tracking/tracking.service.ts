@@ -244,6 +244,22 @@ export class TrackingService implements OnModuleDestroy {
   }
 
   /**
+   * C5 kitchen socket queue: the `Merchant.id` owned by this profile, or null if the profile isn't a
+   * merchant owner. Used ONLY to resolve which room a `merchant:queue-subscribe` socket should join —
+   * deliberately self-driven from the JWT (mirrors `isBoardEligible`'s role/standing gate), so the
+   * subscribe message carries no client-supplied merchantId to validate against. A duplicate of
+   * `food-order.service.ts`'s private `ownMerchantId` helper: kept separate on purpose, since the
+   * tracking module must stay usable without importing anything from `merchant/` (the boundary this
+   * mirrors is documentation, not a depcruise rule — `tracking` isn't on the `express-no-merchant-
+   * coupling` from-list — but a plain field lookup here is simpler than exporting a merchant-owned
+   * service into a module every Express path also imports).
+   */
+  async ownMerchantId(profileId: string): Promise<string | null> {
+    const merchant = await this.prisma.merchant.findUnique({ where: { ownerProfileId: profileId }, select: { id: true } });
+    return merchant?.id ?? null;
+  }
+
+  /**
    * Only a rider in good standing AND online may join the open-order board — the SAME gate offers use
    * (offers.service §5d). Board-eligibility must not be looser than the offer gate: a rider who can't
    * make an offer must not receive new-order board broadcasts. `onlineRefusalReason` is the shared

@@ -69,6 +69,13 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     if (this.sweep) clearInterval(this.sweep);
   }
 
+  /** C5 kitchen socket queue: best-effort push for a dispatch-driven change the merchant's OWN client
+   *  didn't just cause locally (rider secured, NO_RIDER hold, a rider dropping) — mirrors
+   *  food-order.service.ts's identical helper. */
+  private notifyQueue(merchantId: string | null | undefined, orderId: string): void {
+    if (merchantId) this.gateway.emitFoodQueueChanged(merchantId, orderId);
+  }
+
   private async runSweeps(): Promise<void> {
     try {
       await this.sweepExpiredOffers();
@@ -167,6 +174,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) return "skipped";
       this.logger.log(`order ${orderId}: NO_RIDER cap reached — merchant hold (D-34)`);
+      this.notifyQueue(order.merchantId, orderId);
       return "held";
     }
 
@@ -339,7 +347,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   async acceptDispatch(orderId: string, riderId: string): Promise<{ orderId: string; status: "assigned" }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant" },
-      select: { status: true, dispatchOfferedRiderId: true, dispatchOfferExpiresAt: true },
+      select: { status: true, dispatchOfferedRiderId: true, dispatchOfferExpiresAt: true, merchantId: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.dispatchOfferedRiderId !== riderId) throw new ForbiddenException("This offer isn't yours");
@@ -378,14 +386,15 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.orderEvent.create({ data: { orderId, status: "assigned" } });
 
     // D-04: "rider secured" is a first-class, pushed event for all three actors. Customer + rider both
-    // reach the order's WS room the same way a parcel `assigned` push does; the kitchen tablet has no
-    // realtime channel yet (C5's job — "Kitchen socket queue reusing TrackingModule") so the merchant
-    // sees it via the next `GET /merchant/orders/:id` poll (riderId now set, merchantPhase cleared).
+    // reach the order's WS room the same way a parcel `assigned` push does; the kitchen tablet now has
+    // its own channel too (C5 "kitchen socket queue" — see notifyQueue below), closing the gap this
+    // comment used to name.
     try {
       this.gateway.emitOrderStatus(orderId, "assigned");
     } catch (err) {
       this.logger.warn(`rider-secured emit failed for order ${orderId}: ${(err as Error).message}`);
     }
+    this.notifyQueue(order.merchantId, orderId);
     void this.notifications.notifyProfiles([riderId], {
       title: "You got the job",
       body: "Head to the kitchen — you're the confirmed rider for this order.",
@@ -434,7 +443,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   async dropDispatch(orderId: string, riderId: string): Promise<{ orderId: string; status: "requested" }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant", riderId },
-      select: { status: true, dispatchExcludedRiderIds: true },
+      select: { status: true, dispatchExcludedRiderIds: true, merchantId: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     const droppable = new Set(["assigned", "confirmed", "en_route_pickup"]);
@@ -501,6 +510,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       this.logger.warn(`drop emit failed for order ${orderId}: ${(err as Error).message}`);
     }
+    this.notifyQueue(order.merchantId, orderId);
     const fresh = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true } });
     if (fresh) {
       void this.notifications.notifyProfiles([fresh.customerId], {

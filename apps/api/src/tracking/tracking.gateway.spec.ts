@@ -6,7 +6,7 @@ import type { TokenService } from "../auth/token.service";
 import type { MetricsService } from "../observability/metrics.service";
 import type { TrackingService } from "./tracking.service";
 import { boardCell, boardCellNeighborhood } from "@lynia/shared";
-import { BOARD_ROOM, boardGeoRoom, orderRoom } from "./tracking.constants";
+import { BOARD_ROOM, boardGeoRoom, merchantQueueRoom, orderRoom } from "./tracking.constants";
 import { POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, TrackingGateway } from "./tracking.gateway";
 
 /** DS20-02: riderLocation now validates orderId as a uuid, so its tests need a real one. */
@@ -323,6 +323,79 @@ describe("TrackingGateway.emitFoodOffer / emitFoodOfferClosed (C5 rider offer al
     g.server = server as never;
     await expect(g.emitFoodOffer("rider-1", {} as never)).resolves.toBeUndefined();
     await expect(g.emitFoodOfferClosed("rider-1", "ord-1")).resolves.toBeUndefined();
+  });
+});
+
+describe("TrackingGateway.subscribeMerchantQueue (C5 kitchen socket queue)", () => {
+  it("joins the merchant's own queue room, resolved server-side from the JWT — the socket carries no body", async () => {
+    const g = gateway({ ownMerchantId: vi.fn(async () => "m1") });
+    const client = fakeSocket({ sub: "owner-1", role: "merchant" });
+    const res = await g.subscribeMerchantQueue(client as never);
+    expect(res).toEqual({ joined: "m1" });
+    expect(client.join).toHaveBeenCalledWith(merchantQueueRoom("m1"));
+  });
+
+  it("rejects an unauthenticated socket", async () => {
+    const g = gateway();
+    const client = fakeSocket(undefined);
+    expect(await g.subscribeMerchantQueue(client as never)).toEqual({ error: "unauthenticated" });
+    expect(client.join).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-merchant role", async () => {
+    const g = gateway({ ownMerchantId: vi.fn(async () => "m1") });
+    const client = fakeSocket({ sub: "c1", role: "customer" });
+    expect(await g.subscribeMerchantQueue(client as never)).toEqual({ error: "forbidden" });
+    expect(client.join).not.toHaveBeenCalled();
+  });
+
+  it("rejects a merchant-role profile with no Merchant row yet (e.g. a become/setup race)", async () => {
+    const g = gateway({ ownMerchantId: vi.fn(async () => null) });
+    const client = fakeSocket({ sub: "owner-1", role: "merchant" });
+    expect(await g.subscribeMerchantQueue(client as never)).toEqual({ error: "forbidden" });
+    expect(client.join).not.toHaveBeenCalled();
+  });
+});
+
+describe("TrackingGateway.emitFoodQueueChanged (C5)", () => {
+  it("signals food:queue-changed to the merchant's queue room (no order contents)", () => {
+    const { server, to, emit } = fakeServer();
+    const g = gateway();
+    g.server = server as never;
+    g.emitFoodQueueChanged("m1", "ord-1");
+    expect(to).toHaveBeenCalledWith(merchantQueueRoom("m1"));
+    expect(emit).toHaveBeenCalledWith(WS_EVENTS.foodQueueChanged, expect.objectContaining({ orderId: "ord-1", at: expect.any(String) }));
+  });
+
+  it("never throws when the server is undefined (best-effort)", () => {
+    const g = gateway();
+    expect(() => g.emitFoodQueueChanged("m1", "ord-1")).not.toThrow();
+  });
+});
+
+describe("TrackingGateway.isMerchantOnline (C5 accept-window pause)", () => {
+  it("true when at least one socket sits in the merchant's queue room, anywhere in the cluster", async () => {
+    const { server, in: inFn } = fakeServer([remoteSocket("owner-1", [])]);
+    const g = gateway();
+    g.server = server as never;
+    expect(await g.isMerchantOnline("m1")).toBe(true);
+    expect(inFn).toHaveBeenCalledWith(merchantQueueRoom("m1"));
+  });
+
+  it("false when nobody is in the room", async () => {
+    const { server } = fakeServer([]);
+    const g = gateway();
+    g.server = server as never;
+    expect(await g.isMerchantOnline("m1")).toBe(false);
+  });
+
+  it("fails OPEN to true (falls back to N-03's original always-auto-cancel behaviour) when there's no server or the fetch errors", async () => {
+    const g = gateway();
+    expect(await g.isMerchantOnline("m1")).toBe(true);
+
+    const server = { in: vi.fn(() => ({ fetchSockets: vi.fn(async () => { throw new Error("adapter down"); }) })) } as unknown;
+    g.server = server as never;
+    expect(await g.isMerchantOnline("m1")).toBe(true);
   });
 });
 

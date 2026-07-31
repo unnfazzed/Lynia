@@ -597,10 +597,58 @@ dead-when-off rather than dead-always.
   mobile client concern (Lane D, not flagged as a new open question — it's a rendering detail of an
   already-named push, not a product decision) — this slice's job was the data contract (`kind`,
   `orderId`, persistent-until-paid semantics via no TTL) a client can hook into without another
-  backend round-trip. Kitchen tablet realtime (its own new merchant-presence/dark-clock-pause/
-  reconnect-backfill surface — no existing prior art in this codebase, confirmed by inspection) and
-  the weekly statement + per-vertical utilization metric are unstarted and remain open for a future
-  C5 firing.
+  backend round-trip. **Done 2026-07-31 (kitchen tablet realtime slice):** the "Kitchen socket queue
+  reusing TrackingModule" backend half named at the top of this box. New `WS_EVENTS.
+  merchantQueueSubscribe`/`foodQueueChanged` (`merchant:queue-subscribe` client→server, `food:queue-
+  changed` server→client, signal-only like `offers:changed` — the tablet still refetches `GET
+  /merchant/orders` over the authenticated REST path, this only tells it when). `TrackingGateway.
+  subscribeMerchantQueue` is self-driven exactly like `boardSubscribe`: the socket carries no body,
+  `TrackingService.ownMerchantId` resolves the room from the merchant's own JWT so there's nothing
+  for a malicious client to spoof. `TrackingGateway.emitFoodQueueChanged`/`merchantQueueRoom` join
+  the same push pattern as `emitOffersChanged`/`emitFoodOffer`. Wired into every FoodOrderService
+  mutation that changes a queue-visible order (placeOrder, accept/reject, item approval, cancel,
+  logCall/requestPayment/confirmPayment/releaseUnpaid, markReady, confirmPickup, and all three
+  reconciler sweeps) plus FoodDispatchService's three merchant-facing dispatch transitions (rider
+  secured, NO_RIDER hold onset, a rider dropping) — a connected tablet no longer waits out E2's 5s
+  poll fallback, which stays as the reconnect/offline degrade path unchanged. **"Server-paused
+  accept clocks while dark" (D-16), also shipped this slice:** `TrackingGateway.isMerchantOnline`
+  (cluster-wide `fetchSockets` on the merchant's queue room, mirrors `customerLiveInRoom`/
+  `riderLiveInRoom`) gates `FoodOrderService.sweepExpiredAcceptWindows` — N-03's 3:00 window is the
+  only sweep this applies to (the other reconciled window, N-18's item-approval, waits on the
+  CUSTOMER, whose connectivity this channel says nothing about, so it's untouched). A merchant with
+  no live tablet on the channel gets `acceptDeadlineAt` pushed one sweep tick forward instead of the
+  order auto-cancelled out from under them for a connectivity blip they had no chance to answer; the
+  very next sweep after they reconnect lets N-03 run out for real if they still don't answer, so
+  D-13's "never a silent hang" holds for a merchant who IS connected. Not a new lifecycle state —
+  only the deadline field moves, status/merchantPhase are untouched, so nothing for `order-lifecycle.
+  transitions.ts` to declare. Fails open toward the ORIGINAL always-auto-cancel behaviour (never
+  toward an unliftable pause) on a missing server or a `fetchSockets` error, the safer direction for
+  a channel a gateway outage could otherwise wedge shut forever. Reconnect backfill WITH COUNT (the
+  third D-16 clause) was already client-side-complete from E2/E1 (`ReconnectBanner`'s `backfillCount`,
+  computed by diffing known order ids across the reachability-drop boundary) and needed no backend
+  change — this slice's WS channel is now available for a future Lane E firing to layer on top of
+  that polling fallback, but E2's own poll-and-diff mechanic keeps working unmodified either way.
+  Not flag-gated at the WS layer itself (mirrors every other `TrackingGateway` handler —
+  `boardSubscribe`/`riderLocation`/etc. carry no flag check either; `RestaurantsEnabledGuard` is an
+  HTTP-only boundary): a `role:"merchant"` JWT can only exist from a `POST /merchant/become` that
+  itself required the flag ON, and the room only ever receives a push from a flag-gated HTTP
+  mutation or from the reconciler sweeps' own pre-existing unconditional background execution (which
+  already ran, wrote to the DB, and notified the customer regardless of the flag, before this PR) —
+  so this adds no new dead-when-off exposure, flagged here rather than silently assumed. Kitchen
+  tablet PRESENCE rendering (merchant-side connection-loss UI, dark-clock visualisation) is Lane E's
+  own `ReachabilityStore`/`KitchenConnectionProvider` (already shipped, E1) — this slice is the
+  channel it and a future WS-driven queue can subscribe to, not a client change itself.
+  `pnpm typecheck && pnpm lint && pnpm test` green across all 6 packages (api 1464 tests incl. new
+  `TrackingGateway`/`TrackingService`/`FoodOrderService`/`FoodDispatchService` coverage for the
+  subscribe gate, the queue-changed pushes, and the pause-vs-cancel sweep branch; shared 157; mobile
+  640); `pnpm depcruise` clean (0 new violations — `express-no-merchant-coupling` untouched, this PR
+  only touched `tracking/` + `merchant/`, and `tracking` was never on that rule's `from` list). The
+  weekly statement (N-13's 0%/illustrative-10% comparator) was already shipped by Lane E's E3 box
+  (`GET /merchant/statement/weekly`/`GET /merchant/summary/today`) under a different PR than this
+  plan's own C5 numbering implied — cross-referenced here rather than re-built. Only the
+  **per-vertical utilization metric** (an ops/admin-facing rides-per-active-rider split by
+  Express vs. Restaurants, not a merchant-facing surface) remains unstarted; left open for a future
+  C5 firing or folded into X1 (admin alignment), whichever lands first.
 
 ### Lane D — food UI (`apps/mobile`, customer + rider food flows)
 
