@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.16.0](https://github.com/unnfazzed/Lynia/compare/v0.15.0...v0.16.0) (2026-07-31)
+
+
+### Features
+
+* **mobile:** A4 — customer home/orders five-states + retirement sweep ([150b91a](https://github.com/unnfazzed/Lynia/commit/150b91a8a31bf6e9463a26d5e5342e099b82d0f3))
+* **mobile:** D3 — food order track: prep ring, rider-secured, cancel, NO_RIDER apology, refunded ([3155071](https://github.com/unnfazzed/Lynia/commit/3155071ae8080c3e75aaa49e932e77457e09f16f))
+* **mobile:** D4 — food doorstep handshake, delivery code reveal, delivered+rate, no-show ([2d4bf4f](https://github.com/unnfazzed/Lynia/commit/2d4bf4fb6e0d12738ee7aa14f235ac4585c74177))
+
 ## [0.15.0](https://github.com/unnfazzed/Lynia/compare/v0.14.0...v0.15.0) (2026-07-30)
 
 
