@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/unnfazzed/Lynia/compare/v0.16.0...v0.17.0) (2026-07-31)
+
+
+### Features
+
+* **mobile,api:** D5 — rider food jobs (Lane D complete) ([90aa349](https://github.com/unnfazzed/Lynia/commit/90aa34922026b133a9a7b0c5a060f857a403a50f))
+
 ## [0.16.0](https://github.com/unnfazzed/Lynia/compare/v0.15.0...v0.16.0) (2026-07-31)
 
 
