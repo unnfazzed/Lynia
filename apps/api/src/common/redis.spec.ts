@@ -1,6 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
-import { createRedisClient } from "./redis";
+import { createRedisClient, REDIS_FAIL_FAST } from "./redis";
 
 /**
  * DS15-01 regression. An ioredis client is a plain Node EventEmitter: an `error` event emitted with NO
@@ -64,5 +64,43 @@ describe("createRedisClient — DS15-01 baseline error listener", () => {
     expect(log).toHaveBeenCalledTimes(2);
 
     warn.mockRestore();
+  });
+});
+
+/**
+ * LC-C01 regression. Request-path clients must FAIL FAST on a Redis outage: with the factory's
+ * `maxRetriesPerRequest: null` and the default offline queue, an awaited command issued while
+ * Memorystore is unreachable is queued and never rejected, so the request hangs until reconnect
+ * (pinning a Cloud Run slot up to the 3600s timeout → instance saturation on a single-node restart).
+ * `REDIS_FAIL_FAST` sets `enableOfflineQueue: false` (reject while disconnected) + a `commandTimeout`
+ * (catch the connected-but-hung case). The default profile is left byte-identical so the Socket.IO
+ * pub/sub adapter's cross-instance offline-queuing is unchanged.
+ */
+describe("createRedisClient — LC-C01 request-path fail-fast", () => {
+  it("REDIS_FAIL_FAST sets commandTimeout + disables the offline queue", () => {
+    const client = createRedisClient("redis://127.0.0.1:6379", REDIS_FAIL_FAST);
+    client.disconnect(); // stop the retry loop — we assert config, not a live server
+
+    expect(client.options.commandTimeout).toBe(2_000);
+    expect(client.options.enableOfflineQueue).toBe(false);
+  });
+
+  it("the DEFAULT profile keeps the offline queue and no command timeout (adapter path unchanged)", () => {
+    const client = createRedisClient("redis://127.0.0.1:6379");
+    client.disconnect();
+
+    // ioredis default is enableOfflineQueue: true and no commandTimeout — the exact pre-fix behavior
+    // the Socket.IO pub/sub adapter still relies on.
+    expect(client.options.enableOfflineQueue).not.toBe(false);
+    expect(client.options.commandTimeout).toBeUndefined();
+  });
+
+  it("a disconnected fail-fast client REJECTS a command instead of hanging (the outage-hang fix)", async () => {
+    const client = createRedisClient("redis://127.0.0.1:6379", REDIS_FAIL_FAST);
+    client.disconnect();
+
+    // With the offline queue disabled a command on a non-connected client rejects promptly, so the
+    // caller's try/catch fallback runs — rather than the promise pending until reconnect.
+    await expect(client.get("lc-c01")).rejects.toThrow();
   });
 });

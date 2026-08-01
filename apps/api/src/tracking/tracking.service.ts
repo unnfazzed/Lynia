@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, type OnModuleDestroy } from "@nestjs/common
 import type IORedis from "ioredis";
 import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
 import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
-import { createRedisClient } from "../common/redis";
+import { createRedisClient, REDIS_FAIL_FAST } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
@@ -93,7 +93,10 @@ export class TrackingService implements OnModuleDestroy {
     if (this.redisInit) return this.redis;
     this.redisInit = true;
     if (this.env.REDIS_URL) {
-      this.redis = createRedisClient(this.env.REDIS_URL);
+      // LC-C01: request-path client (live-position GEO/SET, nearbyRiders, notify-me waitlist) fails
+      // fast so a Redis outage reaches the existing per-command fallbacks (e.g. the PG ST_DWithin
+      // path) instead of hanging createOrder's nearby-count await until reconnect.
+      this.redis = createRedisClient(this.env.REDIS_URL, REDIS_FAIL_FAST);
       // DS15-01: this client backs live-position GEO/SET writes, nearbyRiders, and the notify-me
       // waitlist. createRedisClient already attaches a baseline `error` listener (so a Redis blip can't
       // crash the instance); this contextual one aids attribution. Log, never rethrow — every command

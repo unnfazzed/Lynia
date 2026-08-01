@@ -22,8 +22,34 @@ const logger = new Logger("Redis");
  * multiple listeners, so a caller can still layer its own contextual `.on("error")` on top; this is
  * only the safety net that guarantees the event is never unhandled.
  */
-export function createRedisClient(url: string): IORedis {
+export interface RedisClientOptions {
+  /** Reject a command that gets no reply within this many ms (ioredis `commandTimeout`). Catches the
+   *  connected-but-hung case. Unset = ioredis default (no per-command timeout). */
+  commandTimeoutMs?: number;
+  /** When `false`, reject a command issued while DISCONNECTED instead of queuing it (ioredis
+   *  `enableOfflineQueue`). Unset/true = ioredis default (queue until reconnect). */
+  enableOfflineQueue?: boolean;
+}
+
+/**
+ * LC-C01 — the fail-fast profile for REQUEST-PATH clients. With the factory's `maxRetriesPerRequest:
+ * null` (mirrored from BullMQ) and the default `enableOfflineQueue: true`, a command issued while
+ * Memorystore is unreachable is queued and NEVER rejected, so an awaited Redis call on the request
+ * path hangs until reconnect — pinning a Cloud Run concurrency slot up to the 3600s request timeout,
+ * so a single-node (BASIC-tier) Memorystore restart cascades into instance saturation and the
+ * callers' own "best-effort / falls back" try/catch never runs. `enableOfflineQueue: false` makes a
+ * command rejected fast while disconnected (the fallback fires); `commandTimeout` catches the
+ * connected-but-hung case. 2 s matches the health probe's existing `REDIS_PING_TIMEOUT_MS` and is far
+ * above any healthy command. Apply ONLY to request-path clients (OTP/rate-limit, MicroCache L2,
+ * tracking geo/position) — the Socket.IO pub/sub adapter keeps the default offline-queuing because its
+ * cross-instance semantics differ. Not used by BullMQ (it builds its own connections).
+ */
+export const REDIS_FAIL_FAST: RedisClientOptions = { commandTimeoutMs: 2_000, enableOfflineQueue: false };
+
+export function createRedisClient(url: string, opts?: RedisClientOptions): IORedis {
   const options: RedisOptions = { maxRetriesPerRequest: null };
+  if (opts?.commandTimeoutMs != null) options.commandTimeout = opts.commandTimeoutMs;
+  if (opts?.enableOfflineQueue === false) options.enableOfflineQueue = false;
   if (url.startsWith("rediss://")) {
     const ca = process.env.REDIS_CA_CERT;
     options.tls = ca ? { ca: [ca] } : {};

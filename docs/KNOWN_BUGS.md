@@ -421,7 +421,7 @@ AD_ID plugin regression).
 
 | ID | Description | Area | Sev | Status |
 |---|---|---|---|---|
-| LC-C01 | Memorystore outage HANGS the live API (no `commandTimeout`, default `enableOfflineQueue:true` → awaited Redis commands queue forever; every "best-effort fallback" catch unreachable; hung requests saturate Cloud Run slots). Latent since DS15-01. | `apps/api/src/common/redis.ts:26` | **CRITICAL** | OPEN → LC-C (sensitive: auth path; 4-question + spec) |
+| LC-C01 | Memorystore outage HANGS the live API (no `commandTimeout`, default `enableOfflineQueue:true` → awaited Redis commands queue forever; every "best-effort fallback" catch unreachable; hung requests saturate Cloud Run slots). Latent since DS15-01. | `apps/api/src/common/redis.ts:26` | **CRITICAL** | **FIXED** (opt-in `REDIS_FAIL_FAST` = `enableOfflineQueue:false` + 2s `commandTimeout`, applied to the OTP/rate-limit, MicroCache-L2, and tracking geo/position request-path clients; the Socket.IO pub/sub adapter keeps the default offline-queue. Regression spec in `redis.spec.ts`. docs/LC-C-REPORT-2026-08-01.md) |
 | LC-C02 | No request timeout in the merchant API client — one stalled 2G request freezes the kitchen board, header still "Connected". | `apps/merchant/app/lib/api-client.ts:76` | HIGH | OPEN → LC-C |
 | LC-C03 | Transient blip/5xx on `/auth/refresh` signs the merchant out mid-shift. | `apps/merchant/app/lib/api-client.ts:166` | HIGH | OPEN → LC-C |
 | LC-C04 | Hung request permanently freezes the kitchen board — in-flight latch cleared only in `finally`, no fetch timeout; alarm never rings for the 3-min accept window. | `apps/merchant/app/lib/use-queue-poll.ts:31` | CRITICAL | OPEN → LC-C |
