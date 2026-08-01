@@ -28,7 +28,11 @@ tokens into launch progress, and the maintenance lanes stay at a steady interlea
 | Hour | Lane | Trigger |
 |---|---|---|
 | 02 | **M** — maintenance rotation | (standing routine, re-timed) |
+| 03 | **LC-A** — size & data diet (Mon-Sat) / **LC steer** (Sun, Fable) | `0 3 * * 1-6` / `0 3 * * 0` |
+| 04 | **LC-B** — Go-class runtime perf | `0 4 * * *` |
 | 05 | **M** — maintenance rotation | (standing routine, re-timed) |
+| 06 | **LC-C** — offline & 2G resilience | `0 6 * * *` |
+| 07 | **LC-D** — journey & soundness sweep | `0 7 * * *` |
 | 08 | **M** — maintenance rotation | (standing routine, re-timed) |
 | 09 | Build **C** — restaurants backend | `0 9,15,21 * * *` |
 | 10 | Build **A** — customer home + IA | `0 10,16,22 * * *` |
@@ -48,8 +52,12 @@ tokens into launch progress, and the maintenance lanes stay at a steady interlea
 | 00 | Build **D** | ″ |
 | 01 | Build **E** | ″ |
 
-Idle by design: **03, 04, 06, 07 UTC** — breathing room, and the margin that absorbs a session
-that overruns its hour without colliding with the next.
+Formerly idle by design (**03, 04, 06, 07 UTC** — breathing room): since 2026-08-01 these hours
+carry the four temporary **LC loops** of the Harare low-connectivity program
+(`docs/plans/2026-08-01-low-connectivity-program.md`, mirrors `docs/routines/harare-loops.md`).
+The hours revert to idle — and the cap steps back down — as each LC lane completes and
+self-disables. Overrun margin now comes from the grid's spacing alone, so LC sessions are scoped
+to ONE increment per firing, same as build loops.
 
 - **15 build sessions/day** (each of the 5 loops 3×/day, up from 2×). Backend lane **C** leads
   every cycle so its dependants **D** and **E** find their gate (`C1`/`C2`/`C4`) satisfied — a D/E
@@ -58,21 +66,27 @@ that overruns its hour without colliding with the next.
   (bug-hunting → ux → deep-sweep → wallet → refactoring → documentation → pr-health → performance),
   so each lane recurs roughly every 1.6 days. Each `M` firing follows its lane's mirror
   (`docs/routines/<lane>.md`) and the universal policies unchanged.
-- **Hard daily cap = 20 sessions.** Serial, so never more than one billing at once.
+- **4 LC sessions/day** on `0 3/4/6/7` (hour 03 splits weekday LC-A vs Sunday LC steer — never
+  double-booked). Audit-first then optimize, one increment per firing, self-disabling; model split
+  Opus 5 (A/B) / Opus 4.8 (C/D) / Fable (steer) per user directive 2026-08-01.
+- **Hard daily cap = 24 sessions** (was 20). Serial, so never more than one billing at once.
 
 ## The frequency dial (how to "increase the frequency" safely)
 
 One lever at a time, each reversible:
 
-1. **Fill an idle hour** — move a maintenance slot into `03/04/06/07`, or add a sixth build cycle.
+1. ~~**Fill an idle hour**~~ — **consumed 2026-08-01**: the LC loops took `03/04/06/07`. The lever
+   returns as LC lanes complete and self-disable.
 2. **Halve the cadence** — add `:30` build slots (e.g. `30 9,15,21`), turning 15 build slots into
    30. Only do this once you've confirmed a typical build session finishes inside 30 min, or slots
    will overlap and two heavy sessions will bill at once — which defeats the serial guarantee.
 3. **Widen the maintenance rotation** — add hours to `0 2,5,8,14,20` for more quality cadence
-   (diminishing returns per the note above; prefer lever 1 or 2 first).
+   (diminishing returns per the note above; prefer lever 2 first).
 
-To **turn it down** (credits tightening): drop a build cycle back to 2×/day (`0 9,15` etc.), or
-thin the maintenance slots. The grid degrades gracefully — no single edit breaks another lane.
+To **turn it down** (credits tightening): disable one or more LC-loop triggers (they resume where
+they left off when re-enabled — state lives in the program doc's checklists, not the trigger),
+drop a build cycle back to 2×/day (`0 9,15` etc.), or thin the maintenance slots. The grid
+degrades gracefully — no single edit breaks another lane.
 
 ## Applying / reverting
 
@@ -90,6 +104,30 @@ loop's bound `session_context`: repo source + subagent tools):
 
 Revert = `update_trigger` each back to its Old cron. The loops still self-disable when their lane
 checklist completes, unchanged.
+
+LC loops (created 2026-08-01 via the session `create_trigger` path, fresh session per firing, this
+repo's environment — same pattern as the build loops, so schedule/prompt/model are editable in
+place with `update_trigger`):
+
+| Loop | trigger_id | Cron | Intended model |
+|---|---|---|---|
+| LC-A — size & data diet | `trig_0162YfHfSRVt6pwdt2f9b6C7` | `0 3 * * 1-6` | `claude-opus-5` |
+| LC-B — Go-class runtime perf | `trig_015XeLQaP76oxec1uLvrHBno` | `0 4 * * *` | `claude-opus-5` |
+| LC-C — offline & 2G resilience | `trig_019iywx2Jg44wWTvhjR8YiVx` | `0 6 * * *` | `claude-opus-4-8` |
+| LC-D — journey & soundness sweep | `trig_01QTyPeoNaV4kk8rFMWBXTNR` | `0 7 * * *` | `claude-opus-4-8` |
+| LC steer — weekly Fable replan | `trig_015tKgeoWM6b5RWQcLF6PbA4` | `0 3 * * 0` | `claude-fable-5` |
+
+> **Model caveat (2026-08-01):** programmatic model pinning returned `model_update_disabled`, so
+> firings use the account/environment default until the founder assigns each Routine's model in
+> the claude.ai Routines UI per the Intended-model column. The loops function correctly on the
+> default model; the split is a cost/quality optimization, not a correctness requirement.
+> **Connector caveat:** these triggers store no MCP connectors, so fired sessions may lack the
+> GitHub MCP tools — the documented fallback applies (`docs/ROUTINES.md` §known constraints:
+> push the branch, session auto-PR opens it, the PR-health watchdog merges on green).
+
+Turning an LC loop off (pause) = `update_trigger enabled:false`; back on = `enabled:true` — its
+place in the work is the program doc's checklists, so pausing loses nothing. Full stop = the
+loop's own self-disable when its checklist completes.
 
 **Maintenance lanes:** the eight standing routines re-time to the `M` slots the same way — a
 schedule-only `update_trigger` of each standing trigger's `cron_expression` to a slice of

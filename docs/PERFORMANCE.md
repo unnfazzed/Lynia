@@ -141,6 +141,18 @@ completed the verification pass):
 
 ## Ranked backlog (next wins)
 
+> **2026-08-01 — LC program takeover:** several items below are now scheduled checklist items of
+> the Harare low-connectivity program (`docs/plans/2026-08-01-low-connectivity-program.md` §5,
+> loops `docs/routines/harare-loops.md`) — items 3/4/5/6 and the ALR/PW device-side tails map to
+> lanes A/B/C there. This backlog keeps the ranking; the LC loops burn it down; the weekly
+> performance watch stays the standing owner of server-side latency/cost. Two forward-looking
+> notes from the 2026-08-01 DoorDash research pass: (a) if/when the MicroCache Redis L2 carries
+> large blobs, compress them at the cache layer choosing the codec by *decompression* cost
+> (DoorDash used LZ4 for cached menus — <https://careersatdoordash.com/blog/speeding-up-redis-with-compression/>);
+> (b) if real travel-time ETAs ever replace straight-line distance, precompute a coarse geo-grid
+> offline rather than calling a routing engine per request
+> (<https://careersatdoordash.com/blog/doordash-fast-travel-estimates/>).
+
 1. ~~**Lightweight rider heartbeat endpoint.**~~ **SHIPPED in wave 2** (`POST /riders/heartbeat`,
    see the wave-2 table above). Remaining tail: `recordFix`'s two sequential Redis RTTs could
    pipeline (PW candidate queue).
