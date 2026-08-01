@@ -7,8 +7,9 @@ founder-side arming checklist — an account, a key, and three repo Variables, n
 
 Bird is the **priority launch OTP channel** (product decision 2026-07-19): it delivers the code as a
 plain SMS while WhatsApp Business verification is still pending, and reverting is a one-line
-`OTP_CHANNEL` flip. See `docs/WHATSAPP-SETUP.md` for the WhatsApp path and `docs/PILOT-READINESS.md`
-for how vendor config reaches the running service.
+`OTP_CHANNEL` flip. The WhatsApp path is documented in
+[§WhatsApp fallback channel](#whatsapp-fallback-channel-cloud-api--status--runbook) below; see
+`docs/PILOT-READINESS.md` for how vendor config reaches the running service.
 
 For driving the Bird **dashboard/API from a Claude Code session** (inspecting channels, chasing a
 message that never arrived), see [Agent tooling](#agent-tooling--mcp-server--skills) at the end of
@@ -305,3 +306,65 @@ prose.
 - Agent skills: <https://bird.com/docs/ai/agent-skills>
 - MCP server: <https://bird.com/docs/ai/mcp-server>
 - CLI for agents: <https://bird.com/docs/ai/cli-for-agents>
+
+---
+
+## WhatsApp fallback channel (Cloud API) — status & runbook
+
+_Absorbed from the retired `docs/WHATSAPP-SETUP.md`. Status snapshot **2026-07-13** — Meta-side
+state may have moved since; the backend integration (`WhatsAppOtpSender`) is complete and
+`whatsapp` is still the code default (`env.ts`), so this path stays armable if Bird ever fails._
+
+### Status (2026-07-13)
+
+| Item | Value / state |
+|---|---|
+| Meta app | `LyniaGo` (app ID `985062384039697`), linked to the Lynia business portfolio |
+| WABA | `1641732010249447` — "Test WhatsApp Business Account", status ACTIVE |
+| Test sender number | `+1 555-187-5076`, phone number ID `1190877637449470` (Meta test number) |
+| Access token | Temporary 24-hour token only — **permanent system-user token not yet created** |
+| OTP template (`lynia_otp`, AUTHENTICATION) | **Blocked** on business verification (below) |
+| Business verification | **In progress** (submitted 2026-07-13 via Security Center) |
+
+Verified working (2026-07-13, live Graph API): token authenticates with both `whatsapp_business_*`
+scopes; the test number is registered on Cloud API; template creation works for non-auth categories.
+
+**The blocker:** AUTHENTICATION-category templates (required for OTP) fail with error 10 / subcode
+2388185 until **business verification** clears (`business_verification_status: not_verified`). This
+is a Meta policy gate — do **not** work around it by putting OTP text in a UTILITY/MARKETING
+template; Meta auto-rejects or recategorizes those and it can hurt account standing.
+
+### Arming checklist (in order)
+
+1. ☐ **Business verification clears** (Security Center → in review). Also lifts the 250
+   business-initiated conversations/24h cap to the 1K auto-scaling tier.
+2. ☐ **Create the OTP template**: category **Authentication**, name `lynia_otp`, language `en`
+   (must match `WHATSAPP_TEMPLATE_LANG` default); Copy-code delivery (matches
+   `WHATSAPP_OTP_COPY_CODE_BUTTON=true`; one-tap needs the release signing-key hash — defer);
+   security recommendation on; code expiration **5 minutes** (matches `OTP_TTL_SECONDS=300`).
+3. ☐ **Create a system user + permanent token** (Business Settings → System users → Admin →
+   assign app + WABA → token with both `whatsapp_business_*` scopes, expiry never). The API-Setup
+   token expires after 24h and must never ship.
+4. ☐ **Store the permanent token** in GCP Secret Manager as `WHATSAPP_ACCESS_TOKEN`
+   (already in the Terraform secret list — `docs/LAUNCH-EXECUTION-RUNBOOK.md`).
+5. ☐ **Register the real production sender number** (a +263 number not actively registered on the
+   consumer/Business WhatsApp app). Swap its ID into `WHATSAPP_PHONE_NUMBER_ID`.
+6. ☐ **Smoke-test and flip config**: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`,
+   `WHATSAPP_TEMPLATE_NAME=lynia_otp`, `OTP_CHANNEL=whatsapp`.
+7. ☐ **Register the delivery-status webhook** (bug-hunt WA-01 follow-up — without it an async send
+   failure is invisible): callback `https://<api host>/webhooks/whatsapp`; verify token set both in
+   the dashboard and as `WHATSAPP_WEBHOOK_VERIFY_TOKEN`; subscribe to the `messages` field; store
+   the App Secret as `WHATSAPP_APP_SECRET` (signs `X-Hub-Signature-256`, verified server-side).
+   Failures land in the API logs and the `whatsapp_otp_delivery_failed_total` counter.
+
+Until then, dev/QA use `OTP_CHANNEL=console` (+ `OTP_TEST_PHONES`); both must be off before real
+launch (`docs/PILOT-READINESS.md`).
+
+Credential sanity-check (mirrors what `WhatsAppOtpSender` sends; recipient must be a verified test
+recipient while on the test number):
+
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/<PHONE_NUMBER_ID>/messages" \
+  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
+  -d '{"messaging_product":"whatsapp","to":"<recipient digits, no +>","type":"template","template":{"name":"lynia_otp","language":{"code":"en"},"components":[{"type":"body","parameters":[{"type":"text","text":"123456"}]},{"type":"button","sub_type":"url","index":"0","parameters":[{"type":"text","text":"123456"}]}]}}'
+```

@@ -34,7 +34,7 @@ export const Waypoint = z.object({
 export type Waypoint = z.infer<typeof Waypoint>;
 
 /** One "what are you sending?" line — description + quantity, nothing more for the pilot
- *  (ITEM-DESIGN-REVIEW decision 2026-07-02; size/category/photo stay deferred seams). */
+ *  (order item-model decision 2026-07-02, recorded in packages/design/HANDOFF.md; size/category/photo stay deferred seams). */
 export const OrderItem = z.object({
   description: z.string().min(1).max(140),
   quantity: z.number().int().min(1).max(99),

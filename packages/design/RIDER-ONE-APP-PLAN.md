@@ -53,15 +53,5 @@ Built as mocks in `explorations/journey/rider-one-app.jsx` (gallery section "Rid
 one board (+ empty, offline, inbox), food-accept vs parcel-name-your-fare, active parcel / active
 food on the same tracker, the shared delivery code, Money tab, top-up gate, Account.
 
-## Inconsistencies that need a decision (see questions)
-
-1. **Two commission models.** Send: 15% owed, settled weekly. Food: prepaid wallet, deducted per job.
-   One app cannot hold both — one model, one balance, one go-online gate.
-2. **Bidding while an offer counts down** — allowed, or does the countdown block the board?
-3. **Batching** — can a rider hold a parcel and a food order at once?
-4. **Opt-out** — can a rider refuse a whole vertical (food-only / parcels-only)?
-5. **Earnings vs Wallet** — merge into one Money tab, or keep Earnings as history inside Wallet?
-6. **Cash held** — food cash must go back to the kitchen; parcel cash is the rider's. Does the app
-   show a running "cash you owe / cash you've earned" split?
-7. **Rider tab bar** — the customer app has Home · Orders · Account. Does the rider get
-   Jobs · Money · Account, or stay single-screen with a drawer?
+Concrete wallet numbers (commission rate flip 0%→10%, balance floor, grace credits) live in
+`docs/plans/2026-rider-wallet-design.md` — decision 1 above sets the model, that plan sets the values.

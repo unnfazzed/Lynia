@@ -95,9 +95,9 @@ THE WORK: take the FIRST unchecked box in Lane A of plan §5 (A1 tab shell + Sen
 home content → A3 Orders/Account tabs → A4 five-states + retirement sweep) and implement it
 fully, in apps/mobile customer surfaces only. Authoritative sources: packages/design/
 explorations/journey/All Screens Gallery.html (screen truth — a screen absent from the gallery is
-retired), packages/design/components/home/home.prompt.md + the components/home reference
-implementations, packages/design/HOME-2A-MERGE-PLAN.md, packages/design/handoff/update-2026-07/
-CLAUDE-CODE-PROMPT.md Workstream 1. Rules: the map composer (app/home.tsx) moves to the Send
+retired), packages/design/components/home/home.prompt.md (usage rules + the home regression
+checklist) + the components/home reference implementations. (The one-time HOME-2A merge plan and
+Workstream 1 work-order are retired to git history.) Rules: the map composer (app/home.tsx) moves to the Send
 route BEHAVIOUR-UNCHANGED — restructure navigation, do not rewrite the composer; port home
 primitives to RN matching the design bundle (BrandHeader full-bleed brand green is the sanctioned
 exception, white on it); Food tile/rail render behind the restaurantsEnabled remote flag with
@@ -137,9 +137,9 @@ PHASE 0 — orient, before any code:
 THE WORK: take the FIRST unchecked box in Lane B of plan §5 (B1 rider tab shell → B2 one board →
 B3 Money tab → B4 one active-job screen) and implement it fully, in apps/mobile rider surfaces
 only. Authoritative sources: packages/design/RIDER-ONE-APP-PLAN.md (decisions 1-7 are FINAL),
-the gallery's Rider category (rider-one-app.jsx renderers, window.RJM), packages/design/handoff/
-update-2026-07/CLAUDE-CODE-PROMPT.md Workstream 2, and the retired-screen list in packages/
-design/explorations/journey/gallery-map.js header. Rules: the prepaid commission wallet already
+the gallery's Rider category (rider-one-app.jsx renderers, window.RJM), and the retired-screen
+list in packages/design/explorations/journey/gallery-map.js header. (The one-time Workstream 2
+work-order is retired to git history.) Rules: the prepaid commission wallet already
 shipped (apps/api wallet module, apps/mobile app/wallet/*) — RE-HOME its logic and top-up flow as
 the Money tab, do not rebuild it; retire the Earnings screen, the standalone wallet entry points
 and the other superseded screens named in gallery-map.js; cash-held split renders "yours" vs
@@ -186,8 +186,8 @@ checkout + kitchen-confirms → D3 track → D4 doorstep → D5 rider food jobs)
 fully in apps/mobile. Authoritative sources: the gallery's food acts (r-customer-a.jsx,
 r-customer-b.jsx, r-rider.jsx renderers), packages/design/RESTAURANTS-DECISIONS.md (revisions
 R-01..R-17 override older decisions: collect-and-return default, no payment clocks, kitchen
-confirms before cooking, masked code until handshake on CASH, PAID/NOT-PAID visibility),
-packages/design/handoff/update-2026-07/CLAUDE-CODE-PROMPT.md Workstream 3. Rules: all food UI
+confirms before cooking, masked code until handshake on CASH, PAID/NOT-PAID visibility). (The
+one-time Workstream 3 work-order is retired to git history.) Rules: all food UI
 behind the restaurantsEnabled remote flag, dormant-off; reuse the Express tracker/Stepper/safety
 surfaces (D-03, D-28) — re-label, don't fork; restart/offline tolerance per RESTAURANTS-
 DECISIONS.md §3 (live order survives app restart, code readable offline, press-and-hold reveal
@@ -234,8 +234,7 @@ renderer), packages/design/RESTAURANTS-DECISIONS.md — especially §3 interacti
 (alarm unlocked by the login gesture, AudioContext re-resume, Screen Wake Lock with flashing
 fallback, reconnect discipline with server-paused clocks and backfill banners, tablet reboot
 recovery) which are implemented AS WRITTEN — plus D-05, D-06, D-26, D-29..D-32, D-34, R-03,
-R-16, N-13..N-23, and packages/design/handoff/update-2026-07/CLAUDE-CODE-PROMPT.md Workstream 3
-build-order item 3. Rules: auth is fail-closed middleware from E1 (the scaffold deliberately has
+R-16, N-13..N-23. Rules: auth is fail-closed middleware from E1 (the scaffold deliberately has
 none today); merchant phone numbers masked everywhere (D-17); money confirms are
 count-and-acknowledge with typed reference+amount, mismatch blocks and names the gap in dollars
 (D-06); all surfaces flag-gated dormant-off; keep the express-no-merchant-coupling boundary;
