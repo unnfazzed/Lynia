@@ -1,5 +1,5 @@
 # Read-only production diagnosis for the post-2026-07-08 deploy crash-loop
-# (docs/GCP-PROVISIONING-REVIEW.md §3) AND admin-console IAP sign-in failures
+# (docs/GCP-PENDING-REVIEW-2026-07-13.md; the 07-10 provisioning review is in git history) AND admin-console IAP sign-in failures
 # (e.g. IAP "Error code 11" — incorrectly configured OAuth client). Dispatch-only;
 # makes NO changes. Auths with the same keyless WIF deployer identity as release.yml.
 # Every probe is best-effort: where the deployer SA lacks a role, the step records

@@ -455,8 +455,9 @@ concurrency change. **Current status → `docs/PILOT-READINESS.md`.**
 
 > Pre-launch (31 July) engineering audit of `apps/mobile`, run as a parallel gstack multi-agent campaign:
 > 11 staff-engineer finder lanes over the mobile codebase, each with an **adversarial verify pass** that
-> reads the actual code and tries to *refute* every P0/P1 before it counts. Full synthesis + go/no-go:
-> **`docs/ANDROID-LAUNCH-REVIEW-2026-07-18.md`**. Branch: `claude/g-stacks-android-deploy-4krxpb`.
+> reads the actual code and tries to *refute* every P0/P1 before it counts. The full synthesis
+> (`ANDROID-LAUNCH-REVIEW-2026-07-18.md`) is retired to git history; the campaign's findings live as
+> **ALR-01…ALR-10 in `docs/KNOWN_BUGS.md`**. Branch: `claude/g-stacks-android-deploy-4krxpb`.
 
 **Result:** the mobile client is mature — most lanes scored well and finders repeatedly called the surfaces
 "unusually well-hardened for a pre-launch codebase." The campaign confirmed **1 P0 + 6 P1** real defects.
@@ -493,8 +494,7 @@ measurement on hardware (current behavior is functionally correct).
   last known" cue.
 
 **Deferred (device-QA / asset-gated), with safe-fix specs:** GPS double-emit, the notification-icon asset,
-offline-mutation spinner, and the selected P2/P3 tail — see `docs/ANDROID-LAUNCH-REVIEW-2026-07-18.md` §4
-and `docs/KNOWN_BUGS.md`.
+offline-mutation spinner, and the selected P2/P3 tail — tracked as ALR-07…ALR-10 in `docs/KNOWN_BUGS.md`.
 
 **Tested:** mobile typecheck clean; **441 tests pass** (56→59 suites, +15 regression tests); oxlint clean.
 

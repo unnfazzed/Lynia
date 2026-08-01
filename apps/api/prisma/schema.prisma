@@ -468,7 +468,7 @@ model Order {
   pickupGeog      Unsupported("geography(Point, 4326)")? @map("pickup_geog")
   dropoff         Json
   itemDesc        String      @map("item_desc")
-  // Line-items [{description, quantity}] — the §5b seam made real (ITEM-DESIGN-REVIEW). Nullable:
+  // Line-items [{description, quantity}] — the §5b seam made real (item-model decision, packages/design/HANDOFF.md). Nullable:
   // rows created before migration 0008 (old clients via old API) stay null; itemDesc is always the
   // derived compact summary, so every itemDesc consumer keeps working unchanged.
   items           Json?

@@ -1,11 +1,11 @@
 # LyniaGo Design System — Engineering Handoff
 
 > **⚠ July 2026 update:** the customer home, rider IA and a new Restaurants vertical changed after
-> this guide's flows were built. The delta handoff (what to keep, what's retired, what's net-new)
-> is **`handoff/update-2026-07/`** — README for the flow, CLAUDE-CODE-PROMPT.md as the work order.
-> Screen source of truth: `explorations/journey/All Screens Gallery.html`. Everything below remains
-> valid except where that update says otherwise (notably: rider Earnings/weekly settlement retired;
-> map home is now the Send destination, not the root).
+> this guide's flows were built; that update has shipped (`apps/merchant`, the rider Money tab, the
+> food flow). Screen source of truth: `explorations/journey/All Screens Gallery.html` (see "The one
+> index to trust" below). Everything here remains valid except where the decision docs say otherwise
+> (notably: rider Earnings/weekly settlement retired; map home is now the Send destination, not the
+> root).
 
 This folder is the **LyniaGo design system**: the brand, design tokens, reusable UI components, and
 high-fidelity UI kits for the LyniaGo motorbike-courier product (customer + rider mobile app, admin
@@ -43,12 +43,13 @@ packages/design/                 ← this folder (suggested location in the Lyni
 ├─ guidelines/                    ← Design-System-tab specimen cards (tokens, brand, splash)
 ├─ explorations/                  ← logo/wordmark design record (not shipped to users)
 ├─ readme.md                      ← the full design guide (READ THIS FIRST)
-├─ DESIGN-IMPROVEMENTS.md         ← gstack design-review response
-├─ ALIGNMENT-REVIEW.md            ← design ↔ contract alignment (all P0/P1 resolved)
-├─ ITEM-DESIGN-REVIEW.md          ← the "what are you sending?" model decision
+├─ RESTAURANTS-DECISIONS.md       ← the restaurants contract (N-/D-/R- numbers)
+├─ RIDER-ONE-APP-PLAN.md          ← one rider app (Send + Food), the seven decisions
+├─ RIDER-JOURNEY-AUDIT.md         ← rider gap audit (R- IDs; status in BACKLOG-PLAN.md)
+├─ CUSTOMER-JOURNEY-AUDIT.md      ← customer gap audit (F-/A- IDs; status in BACKLOG-PLAN.md)
 ├─ COVERAGE.md                    ← screen-by-screen: what's designed vs. out of scope
 ├─ INTERFACE-AUDIT.md             ← customer ⇄ rider seam audit + resolution log (D1–D12)
-├─ BACKLOG-PLAN.md                ← remaining backlog sequenced into 7 execution waves
+├─ BACKLOG-PLAN.md                ← remaining backlog sequenced into execution waves
 └─ SKILL.md                       ← one-paragraph brand cheat-sheet
 ```
 
@@ -69,6 +70,27 @@ the bundle only to render their previews). Ship `styles.css` + `components/` + `
   all UI text; **Fredoka 600** for the LyniaGo wordmark only (via `--font-wordmark`).
 - **Icons** come only from `assets/lynia-icons.js` (a ~5KB self-hosted Lucide subset) — never pull the
   full CDN library. Add a new icon by importing that one SVG and regenerating the subset.
+
+## The one index to trust
+
+`explorations/journey/All Screens Gallery.html` — every current screen for customer, rider and
+merchant, in journey order, exceptions included, each tile rendered live from the design system.
+**If a screen is in the gallery it is current; if a screen you coded is not in the gallery, it was
+retired.** The gallery header in `gallery-map.js` names the retired rider screens explicitly.
+
+Known-stale corners — don't follow them blindly:
+
+- `ui_kits/admin/cash.html` shows the old weekly 15% settlement; the live model is prepaid,
+  per-delivery, 0%→10% (`RIDER-ONE-APP-PLAN.md` decision 1, values in
+  `docs/plans/2026-rider-wallet-design.md`).
+- Anything showing the map as the customer root, a rider "Earnings" screen, or a rider
+  float/headroom check (`RESTAURANTS-DECISIONS.md` §7 R-10 deleted the float concept).
+
+**Order item model (founder decision, 2026-07-02):** an order captures **multiple line-items, each
+`{ description, quantity }`** — nothing more descriptive for the pilot. Size, category and item-photo
+are deferred as data-model seams; the optional note carries handling (fragile / upright / keep cold).
+Shipped: repeatable item list on the customer home, per-row quantity stepper, rider job/board render
+the line-items.
 
 ## Running the kits locally
 
@@ -100,31 +122,15 @@ use the design system in production.)
 
 ## Repo-side engineering tickets (design can't fix these — app code must)
 
-Carried from `ALIGNMENT-REVIEW.md`. The design shows the intended UX; these wire it to the backend.
-
-**P0**
-1. **Enforce both contact phones on submit.** `apps/mobile/app/home.tsx` must block "Broadcast" while
-   either pickup or drop-off `contactPhone` is empty (contract requires `min(6)`). The design already
-   requires both on the required path — the app currently can send `contactPhone: ""`.
-
-**P1**
-2. **Bounded request timeout + error state on every async action** (send code, broadcast, select,
-   submit KYC, confirm delivery). 15s AbortController → a friendly retry (the `Field.error` slot and
-   `OfflineBanner` exist for this). No screen should hang on a spinner.
-3. **Select-offer race (409).** Optimistic assign → on 409 roll back with the muted "That rider was
-   just taken — choose another." (never error-red). Kit shows the UX; wire the real mutation.
-4. **Delivery-OTP: 401 retry + 403 lockout + re-issue.** 5 wrong attempts → lockout copy on the rider
-   side; customer "Re-issue delivery code" calls `rotateDeliveryCode`. Kit shows both.
-5. **One round per rider on the board.** After an offer, hide that order (`bidIds`); a job starts only
-   when the customer selects. Kit shows this.
-6. **Bidirectional phone reveal** gated to `assigned`→`completed` (`PHONE_REVEAL_STATUSES`); hide
-   after. Kit shows both sides.
-7. **Rider heartbeat + cooldown-403** → auto-flip to offline with a reason; connection chip supports
-   the "Reconnecting" state.
+The original P0/P1 ticket list here (contact-phone enforcement, request timeouts, 409 race, OTP
+lockout, phone reveal, heartbeat) predates the current code and is historical — the durable copy
+lives in `docs/DESIGN-SYSTEM.md` §"Repo-side product tickets", and
+`docs/plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md` tracks what actually shipped. Only the
+device-gated checks below remain open.
 
 **On-device checks (can't judge from a screen)**
-8. CTA green (#00812F) contrast in real sunlight — re-tune `--cta-fill` if needed (one line).
-9. Skeleton→content reflow on a real device; bottom-sheet drag physics on the map home.
+1. CTA green (#00812F) contrast in real sunlight — re-tune `--cta-fill` if needed (one line).
+2. Skeleton→content reflow on a real device; bottom-sheet drag physics on the map home.
 
 ## 2026 journey review — new customer flows to wire
 

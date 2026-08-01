@@ -755,7 +755,7 @@ export default function HomeScreen(): React.ReactElement {
               the bottom, and the map behind stays visible above the sheet. Hidden when collapsed. */}
           {composeCollapsed ? null : (
           <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {/* Line items — repeatable description + quantity rows (ITEM-DESIGN-REVIEW: multiple
+          {/* Line items — repeatable description + quantity rows (item-model decision, packages/design/HANDOFF.md: multiple
               {description, quantity}, nothing more for the pilot). Description stacks above the
               qty stepper so a row still works at 320px. */}
           <Label>What are you sending?</Label>

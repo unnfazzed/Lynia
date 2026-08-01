@@ -254,8 +254,9 @@ stepper, and the earnings screens is the remaining design gate. **Current build 
 
 > Pre-launch (31 July) design audit of `apps/mobile`, run as a parallel gstack multi-agent campaign: 8
 > design lanes scored **0–10** with "what would make it a 10" framing, reading the RN source (styles,
-> tokens, components, copy) — no live device. Full synthesis + go/no-go:
-> **`docs/ANDROID-LAUNCH-REVIEW-2026-07-18.md`** §2. Branch: `claude/g-stacks-android-deploy-4krxpb`.
+> tokens, components, copy) — no live device. The full synthesis (`ANDROID-LAUNCH-REVIEW-2026-07-18.md`)
+> is retired to git history; findings live as **ALR-01…ALR-10 in `docs/KNOWN_BUGS.md`**.
+> Branch: `claude/g-stacks-android-deploy-4krxpb`.
 
 **Result: average 7.5/10, no design P0.** The token/color discipline is world-class (zero hardcoded hex
 across `app/`; three documented green roles with stated contrast). The gaps are consistent and device-pass-shaped:
@@ -275,7 +276,7 @@ across `app/`; three documented green roles with stated contrast). The gaps are 
   degraded rationale and should be re-run in the device pass.)
 
 These are **polish, not blockers**, and pair naturally with the on-device `/qa` pass (they're best judged on
-real hardware) — folded into the deferred backlog in `docs/ANDROID-LAUNCH-REVIEW-2026-07-18.md` §D5.
+real hardware) — tracked as ALR-10 (design polish tail) in `docs/KNOWN_BUGS.md`.
 
 **Verdict:** design CLEARED for 31 July; the P1 polish above rides with the on-device `/qa` gate.
 **Current build status → `docs/PILOT-READINESS.md`.**

@@ -12,7 +12,8 @@ both tiles from first run, no "new service" moment).
 (July 2026 design update). Screen truth = `packages/design/explorations/journey/All Screens
 Gallery.html`; product contract = `packages/design/RESTAURANTS-DECISIONS.md` (N-01…N-23,
 D-01…D-35, R-01…R-17); rider IA = `packages/design/RIDER-ONE-APP-PLAN.md`; home IA =
-`packages/design/HOME-2A-MERGE-PLAN.md`; standing engineering guide = `packages/design/HANDOFF.md`.
+`packages/design/components/home/home.prompt.md` (the one-time HOME-2A merge plan is retired to
+git history); standing engineering guide = `packages/design/HANDOFF.md`.
 **Still binding from the 2026-07-26 plan:** §0b locked architecture decisions, §2 repo strategy
 (trunk + dormant-on-merge PRs, monorepo isolation, dependency-cruiser boundary), §4 test gates,
 §7 money-safety non-negotiables (as amended by §4 below), the status-keyed-query audit

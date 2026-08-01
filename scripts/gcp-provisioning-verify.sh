@@ -2,7 +2,7 @@
 # gcp-provisioning-verify.sh — read-only audit of the Lynia GCP project against
 # everything the code, Terraform, and CI workflows expect to exist.
 #
-# Companion to docs/GCP-PROVISIONING-REVIEW.md. Prints PASS/FAIL/WARN per check and
+# Companion to docs/GCP-PENDING-REVIEW-2026-07-13.md §Appendix (provisioned inventory). Prints PASS/FAIL/WARN per check and
 # a fix hint for every failure; exits non-zero if anything required is missing.
 # Needs: gcloud authenticated with at least roles/viewer on the project (plus
 # secretmanager.viewer to list secret versions). Makes NO changes.
@@ -92,7 +92,7 @@ for s in DATABASE_URL REDIS_URL JWT_SIGNING_SECRET PII_ENCRYPTION_KEY DIDIT_API_
   CT="$(awk '{print $2}' <<<"$LATEST")"
   if [[ "$CT" > "$LAST_GREEN" ]]; then
     warn "secret $s :latest was created AFTER the last green prod deploy" \
-         "prime suspect for the boot crash-loop — see docs/GCP-PROVISIONING-REVIEW.md §3"
+         "prime suspect for the boot crash-loop — see docs/GCP-PENDING-REVIEW-2026-07-13.md"
   fi
 done
 for s in WHATSAPP_ACCESS_TOKEN; do

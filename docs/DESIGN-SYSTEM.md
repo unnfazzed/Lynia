@@ -142,12 +142,14 @@ inconsistency register and phased execution plan live in
 2. **Physical QA.** Card shadow → content reflow and the rendered Inter faces on a real build — the
    font patch is unit-proven, but pixels on glass still deserve one look.
 
-## Repo-side product tickets carried by the design (from `packages/design/ALIGNMENT-REVIEW.md`)
+## Repo-side product tickets carried by the design (historical)
 
-The design shows the intended UX; these are **app-logic** changes it can't make. See
-`packages/design/HANDOFF.md` for the full P0/P1 list — highlights: enforce both contact phones on submit (P0),
-bounded request timeouts + error states on every async action, select-offer 409 rollback copy, delivery-OTP
-401/403 lockout + re-issue, one-round-per-rider board hiding, and phone-reveal gated to the active window.
+The design's original alignment review carried a P0/P1 app-logic ticket list — highlights: enforce
+both contact phones on submit (P0), bounded request timeouts + error states on every async action,
+select-offer 409 rollback copy, delivery-OTP 401/403 lockout + re-issue, one-round-per-rider board
+hiding, and phone-reveal gated to the active window. These predate the current code — see
+`docs/plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md` for what shipped; the review itself is retired
+to git history.
 
 ## Keeping tokens in sync
 

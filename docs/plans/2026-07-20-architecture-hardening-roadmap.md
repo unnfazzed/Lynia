@@ -530,3 +530,28 @@ additive: if execution stops early, what shipped was the safest, highest-yield s
   parts 1 & 4 (schema-first, fixtures, breaking-change detection); ts-migrate;
   Rearchitecting the Frontend; GraphQL/Apollo; Safeguarding Changes in Production;
   Continuous Delivery; Himeji (authorization); Building a Visual Language (DLS).
+
+---
+
+## Appendix — post-pilot competitive gaps (absorbed from the retired COMPETITOR-REVIEW, 2026-07-01)
+
+The 2026-07-01 architecture benchmark vs inDrive/Gojek/Grab/Chowdeck graded the system A− and left
+five post-pilot gaps that are tracked nowhere else. None block launch; sequence them against growth.
+
+1. **WebSocket on Cloud Run.** Long-lived Socket.IO on a serverless runtime that recycles instances:
+   scale-in kills sockets. Lynia self-heals (REST source-of-truth + resubscribe + polling), but at
+   volume the reconnect churn is costly and adds DB load. The big players run gateways on persistent
+   pods for exactly this reason.
+2. **No data/analytics spine.** No analytics store, no event stream — `OrderEvent` rows are an audit
+   trail, not a pipeline (inDrive → ClickHouse, Gojek → BigQuery, Grab → Presto). Chowdeck's edge is
+   analytics-driven rider pre-positioning; funnel/GMV/match-rate can't be measured without a data
+   pipe. On GCP this is nearly free to start (Pub/Sub → BigQuery).
+3. **No pricing intelligence.** `suggestedFare` is a static heuristic; in a reverse-auction the
+   suggestion anchors the whole negotiation. A demand-aware suggestion (surge-lite) materially
+   improves fill rate. Blocked on the data spine (item 2).
+4. **Fraud/anti-abuse primitives.** GPS spoofing, offer spam, self-dealing, collusion — Grab built
+   GrabDefence here. Lynia needs only primitives now; the live threat-model narrative is
+   `docs/FRAUD-REVIEW.md` and open items are ledgered in `docs/KNOWN_BUGS.md` (KB-IDENTITY-BINDING).
+5. **Matching assist.** Customer-selects is correct (the inDrive model), but there's no ranking
+   assist beyond static `rankOffers` and no optional auto-accept. Acceptance-likelihood and
+   ETA-reliability signals improve matches without abandoning customer choice.

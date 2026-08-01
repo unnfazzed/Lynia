@@ -1,6 +1,7 @@
 # GCP Pending Review — 2026-07-13
 
-Follow-up to `docs/GCP-PROVISIONING-REVIEW.md` (2026-07-10). Scope: everything currently
+Follow-up to the 2026-07-10 provisioning review (retired to git history; its verified-inventory
+table is in the Appendix below). Scope: everything currently
 pending, failing, or drifted between the codebase/requirements and the live GCP project
 (`lynia-500911`, `africa-south1`). Evidence: Actions run history of `release.yml` /
 `deploy-staging.yml` / `deploy-autoheal.yml` (including the rendered deploy script of
@@ -161,8 +162,8 @@ Unchanged, all coded behind flags per `docs/INFRA-HARDENING-ROLLOUT.md`; live po
    `variables.tf` — the applied tfvars differ from repo defaults. Don't "fix" LR11;
    do note in the terraform README that live tfvars ≠ committed defaults, and that
    `scripts/gcp-provisioning-verify.sh` is the source of truth for live state.
-4. `docs/GCP-PROVISIONING-REVIEW.md` §3 (deploy breakage) and §2 staging-drift notes are
-   now historical — superseded by this doc.
+4. The 2026-07-10 provisioning review's §3 (deploy breakage) and §2 staging-drift notes are
+   now historical — superseded by this doc (the review itself is retired to git history).
 
 ## 8a. Execution update (same day, this branch)
 
@@ -200,3 +201,26 @@ sequence below.
    wiring already land, §5) → dashboard import → `slo_alerts_enabled=true` +
    notification channel — removes the monitoring blind spot.
 6. Hardening flips per `INFRA-HARDENING-ROLLOUT.md` sequencing; docs pass for §7.
+
+---
+
+## Appendix — provisioned-and-verified inventory (absorbed from the retired GCP-PROVISIONING-REVIEW, 2026-07-10)
+
+The component checklist `scripts/gcp-provisioning-verify.sh` runs against. Verified live as of
+2026-07-10; re-verify with the script rather than trusting this table.
+
+| Component | Terraform | Live evidence (2026-07-10) |
+|---|---|---|
+| Project / 16 APIs / region | `project.tf` | deploys + migrations succeed against `lynia-500911` / `africa-south1` |
+| VPC, peering, `lynia-connector` | `network.tf` | prod + staging deploys pass `--vpc-connector lynia-connector` |
+| Cloud SQL `lynia-pg` (PG16, PostGIS, public+private IP) | `sql.tf` | CI migrations via Auth Proxy green in every run (21 migrations, up to date) |
+| Memorystore `lynia-redis` (BASIC, AUTH) | `redis.tf` | `/healthz` returned `redis:true` through run #103's canary window |
+| GCS `lynia-media` | `storage.tf` | injected as `STORAGE_BUCKET` on the serving revision |
+| Artifact Registry `lynia` | `artifact-registry.tf` | image pushes green in all runs |
+| Runtime SA `lynia-run@…` (SQL client, bucket objectAdmin, self signBlob, FCM admin, metric/trace writer, per-secret accessor) | `iam.tf`, `secrets.tf` | revision `00101` boots and serves with it |
+| Deployer SA + WIF `github-pool/github-provider` (keyless CI) | `iam.tf`, `wif.tf` | every workflow authenticates keylessly |
+| Secrets `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET`, `PII_ENCRYPTION_KEY` (+ `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET` added by hand) | `secrets.tf` (Didit: manual) | run #103 resolved all six `--set-secrets` refs and booted |
+| Global HTTPS ALB + managed cert + Cloud Armor (`lyniago.lyniafinance.com`) | `lb.tf`, `armor.tf` | canary health gate polled `/healthz` green for 2×120s |
+| Remote TF state (`gs://lynia-tfstate`) | `versions.tf` | active backend block, migrated 2026-07-08 |
+| Staging stack: `lynia-pg-staging`, `lynia-redis-staging`, `lynia-media-staging`, `lynia-run-staging`, `*_STAGING` secrets, `staging.lyniafinance.com` cert | `staging.tf` (`staging_enabled`) | `deploy-staging.yml` runs #3–#12 green (first success 2026-07-08) |
+| KYC vendor (Didit) armed | manual | `DIDIT_ENABLED=true`, `DIDIT_WORKFLOW_ID` set; both Didit secrets resolve at deploy |

@@ -8,7 +8,7 @@ Keep the split clean: Fable does the finding and analysis, Opus does the code ch
 
 ## Phase 0 — Inherit history (do this FIRST, before reading any product code)
 1. Read `docs/KNOWN_BUGS.md` — the consolidated, deduplicated ledger of every finding from every prior sweep, with statuses and a coverage map. This is your source of truth for what is already known.
-2. Skim the dated reports it references (e.g. `docs/DEEP-SWEEP-*.md`, `BUGHUNT_FINDINGS.md`, `docs/BUG-HUNT*.md`, `docs/FRAUD-REVIEW.md`, `docs/UX-USABILITY-REVIEW-*.md`) only as needed for context.
+2. Skim the dated reports it references (e.g. `docs/DEEP-SWEEP-*.md`, `docs/BUG-HUNT*.md`, `docs/FRAUD-REVIEW.md`, `docs/UX-USABILITY-REVIEW-*.md`) only as needed for context.
 3. **Inherit tonight's not-yet-merged sibling PRs, not just `main`.** The bug-hunt (23:00) and UX (01:00) routines ran earlier tonight; their ledger updates SHOULD be on main, but the 2h gaps do not guarantee their PRs merged. List OPEN Claude PRs (`mcp__github__list_pull_requests` state=open, head prefix `claude/`) and read their KNOWN_BUGS.md + report diffs. A finding already claimed on an open sibling branch is NOT new — do not re-derive it.
 4. Verify status against code for a small sample of findings the ledger marks FIXED — confirm the fix still exists. If any regressed, that's a finding.
 
