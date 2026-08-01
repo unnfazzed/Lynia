@@ -47,6 +47,21 @@ Prior: 2026-07-15 (added the wallet & data-lifecycle audit routine).
 > doctrine. Their PRs use `claude/build-*` branches; bug-finder Phase-0 sibling reads cover them
 > like any other `claude/*` PR.
 
+> **Temporary LC loops (2026-08-01, not part of the eight):** four daily audit→optimize loops +
+> one weekly Fable steer run the **Harare low-connectivity program** (low-end Android Go-class
+> devices, metered prepaid 2G/3G) until their lane checklists complete and they self-disable.
+> Spec: `docs/plans/2026-08-01-low-connectivity-program.md`; prompt mirrors:
+> `docs/routines/harare-loops.md`. They fill the previously idle grid hours (03/04/06/07 UTC),
+> raising the chain's hard cap from 20 to **24 sessions/day**, and follow the universal policies
+> below (merge-on-green, docs-in-same-PR, never-merge-red), the sensitive-lane doctrine, and the
+> bug-dedup protocol (ledger prefixes `LC-A`/`LC-B`/`LC-C`/`LC-D`). Their PRs use `claude/lc-*`
+> branches; bug-finder Phase-0 sibling reads cover them like any other `claude/*` PR. Infra
+> findings from LC loop D are **report-only** (read-only doctrine — never terraform edits).
+> Model split (user directive 2026-08-01): lanes A/B on Opus 5, lanes C/D on Opus 4.8, the
+> weekly steer on Fable (planning only) — intended assignment, applied by the founder in the
+> claude.ai Routines UI (programmatic pinning is `model_update_disabled`; see
+> `docs/routines/routine-chain.md`).
+
 ## Paced all-day chain (token-max, credit-capped) — 2026-07-30
 
 Per user instruction (2026-07-30): **fill the day with work, one heavy session at a time, to
@@ -65,17 +80,21 @@ this schedule). Summary:
 - **Maintenance interleave (5 slots/day).** The eight standing routines rotate through the grid's
   free hours, one lane per slot, deduping through `docs/KNOWN_BUGS.md` exactly as before — so extra
   cadence never re-bills rediscovery of already-ledgered findings.
-- **Hard daily cap = 20 sessions** (15 build + 5 maintenance). Hours `03,04,06,07` UTC are left
-  idle on purpose as credit-relief breathing room.
-- **Frequency dial.** To turn it up: fill an idle hour, or halve the cadence (add `:30` slots).
-  To turn it down: drop a build cycle back to 2×/day. One edit per lever, all reversible.
+- **Hard daily cap = 24 sessions** (15 build + 5 maintenance + 4 LC). Hours `03,04,06,07` UTC —
+  formerly idle breathing room — carry the temporary **LC loops** (Harare low-connectivity
+  program, 2026-08-01) until those lanes complete and self-disable, at which point the hours
+  return to idle and the cap steps back down automatically.
+- **Frequency dial.** To turn it up: halve the cadence (add `:30` slots). To turn it down: drop a
+  build cycle back to 2×/day, or disable LC loops early. One edit per lever, all reversible.
 
 **The grid (UTC, one session per hour):**
 
-| Hour | 02 | 05 | 08 | 09 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 00 | 01 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Lane | M | M | M | C | A | B | D | E | M | C | A | B | D | E | M | C | A | B | D | E |
+| Hour | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 00 | 01 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Lane | M | LA† | LB | M | LC | LD | M | C | A | B | D | E | M | C | A | B | D | E | M | C | A | B | D | E |
 
+`LA/LB/LC/LD` = LC loops (`0 3 * * 1-6` / `0 4` / `0 6` / `0 7`); † on Sundays hour 03 is the
+weekly **LC steer** (Fable) instead of LC loop A — the hour is never double-booked.
 `C/A/B/D/E` = build loops (`0 9,15,21` / `0 10,16,22` / `0 11,17,23` / `0 12,18,0` / `0 13,19,1`).
 `M` = maintenance slot (`0 2,5,8,14,20 * * *`), rotating the eight lanes so each recurs ~every
 1.6 days. The build-loop crons are applied in place via `update_trigger` (schedule-only edit —
@@ -249,10 +268,13 @@ process failure; the ledger is how the routines stay disjoint.
   prefix: `BH-` (bug hunting), `UX-` (user experience), `DS-` (deep sweep), `WD-` (wallet &
   data-lifecycle), `DOC-` (documentation-reconciliation CODE_BUG rows, filed OPEN with an owning
   lane), `RF-` (refactoring debt register — lives in `docs/REFACTOR-LEDGER.md`, but defects found
-  while refactoring are filed here under the owning lane's prefix). Row carries: file:line,
-  severity, status, fixing PR.
+  while refactoring are filed here under the owning lane's prefix), `LC-A`/`LC-B`/`LC-C`/`LC-D`
+  (the temporary Harare low-connectivity loops — see `docs/plans/2026-08-01-low-connectivity-program.md`;
+  they participate in the dedup protocol like the standing bug-finders while they run). Row
+  carries: file:line, severity, status, fixing PR.
 - **Dated report files** (same PR): `docs/BUG-HUNT-<date>.md`, `docs/UX-USABILITY-REVIEW-<date>.md`,
-  `docs/DEEP-SWEEP-<date>.md`, `docs/WALLET-DATA-AUDIT-<date>.md` — mirroring the existing formats.
+  `docs/DEEP-SWEEP-<date>.md`, `docs/WALLET-DATA-AUDIT-<date>.md`, `docs/LC-<A|B|C|D>-REPORT-<date>.md`
+  — mirroring the existing formats.
 - **Report retention (2026-07-19 docs cleanup): only the most recent report per lane stays on `main`.**
   When a routine lands a new dated report (including `PR-HEALTH-REPORT-*` and `REFACTOR-<date>`), it
   deletes the lane's previous one in the same PR — git history is the archive, `KNOWN_BUGS.md` (and
