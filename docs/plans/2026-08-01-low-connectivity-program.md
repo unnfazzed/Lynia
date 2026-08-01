@@ -119,11 +119,13 @@ resilience seams ([resilience]).
 ### Lane A — size & data diet (Opus 5, `0 3 * * 1-6`)
 
 **Audit territory:**
-- [ ] A-T1 Fresh size baseline: run `expo export` + `apps/mobile/scripts/check-bundle-size.mjs`,
-      record current bytes in `docs/APP-SIZE.md`, ratchet `apps/mobile/size-budget.json` to
-      measured+5% (down only).
+- [x] A-T1 Fresh size baseline **(Day-0)**: `expo export` measured Android total **7.13 MiB**
+      (was 12.51 MiB — the LC-A01 font fix cut −5.4 MB), Hermes 6.43 MiB; `size-budget.json`
+      ratcheted 12,690,000 → 7,850,000 and `docs/APP-SIZE.md` history reconciled (commit `9affb36`).
 - [ ] A-T2 Dependency/import-graph audit of `apps/mobile` (heavy libs, duplicate capabilities,
-      unused deps, remaining barrel imports).
+      unused deps, remaining barrel imports). **Day-0 seeded two unverified candidates to confirm
+      first:** `packages/shared/src/contracts.ts:5` (zod v4 i18n locale tables ~392 KB?) and
+      `packages/shared/src/index.ts:3` (CJS barrel shipping test fixtures / server-only constants).
 - [ ] A-T3 Bundled-asset inventory (fonts/images): format, compression, necessity,
       dynamic-load candidates.
 - [ ] A-T4 Wire-bytes profile: trace every request+response of (a) the customer order journey,
@@ -141,14 +143,22 @@ resilience seams ([resilience]).
       prompting the format/necessity check (DoorDash lesson 1). (S)
 - [ ] A-O4 Review rider-offline 8s activeJob poll cadence — KNOWN backlog. (S)
 - [ ] A-O5 Cap/paginate `getSnapshot.events[]` (client+API seam) — KNOWN backlog. (M)
-- [ ] A-O6 RUM/telemetry upload batching + cadence review on metered data. (S)
+- [ ] A-O6 RUM/telemetry upload batching + cadence review on metered data — **Day-0 candidate:**
+      `apps/mobile/src/telemetry/rum.ts:87` ships a ~0.9 KB POST every 10s with no sampling. (S)
+- [ ] A-O9 **Day-0 candidate:** food journeys run ungated full-order polls — customer
+      `app/food/order/[orderId].tsx:96` (2 polls, live GPS defeats 304) and rider
+      `app/rider/food-job.tsx:60` (3 polls 8s+5s+5s), unlike their socket-gated parcel siblings. (M)
+- [ ] A-O10 **Day-0 candidate:** cold start pays 3 redundant config round trips —
+      `apps/mobile/src/net/use-feature-flags.ts:45` (`/app/version-gate` duplicates a `/app/bootstrap`
+      field; `/app/feature-flags` refetched per hook, no dedup). (S)
 - [ ] A-O7 ALR-07: double GPS stream while foregrounded (~2× location upload) — KNOWN ledger. (M)
 - [ ] A-O8 `expo-image` migration (disk/mem cache, downsampling) — KNOWN backlog; **needs native
       build train**. (L)
 
 ### Lane B — Go-class runtime perf (Opus 5, `0 4 * * *`)
 
-**Audit territory:**
+**Audit territory (confirmed Day-0 defects FIRST — fix each this run with a regression test, then the sweeps):**
+- [ ] B-D0 **CONFIRMED CRITICAL** — `apps/merchant/app/components/KitchenConnectionProvider.tsx:112` unbounded render loop (unmemoized context value + tick-bumping alarm effect); `useMemo` the value/alarm, depend on stable callbacks, add a bounded-render-count regression test. See `docs/LC-DAY0-AUDIT-2026-08-01.md`.
 - [ ] B-T1 Boot-path trace: everything from process start → first interactive frame
       (`app/_layout.tsx` chain), classify each init as first-frame-critical vs deferrable
       (DoorDash lesson 2); includes KNOWN keystore-read overlap + push-registration timing.
@@ -168,6 +178,13 @@ resilience seams ([resilience]).
 - [ ] B-O6 Native font embedding (config plugin) — KNOWN backlog; **needs native build train**. (L)
 
 ### Lane C — offline & 2G resilience (Opus 4.8, `0 6 * * *`)
+
+**Confirmed Day-0 defects — FIX FIRST (one per firing, before the territories below; regression test each; C01 is sensitive-auth → 4-question treatment). See `docs/LC-DAY0-AUDIT-2026-08-01.md`.**
+- [ ] C-D0a **CONFIRMED CRITICAL** — `apps/api/src/common/redis.ts:26`: a Memorystore outage hangs the live API. Add `commandTimeout` (evaluate `enableOfflineQueue:false`) so the existing fallbacks fire; spec asserting a command rejects rather than pends when disconnected.
+- [ ] C-D0b **CONFIRMED CRITICAL** — `apps/merchant/app/lib/use-queue-poll.ts:31`: hung request freezes the kitchen board (latch stuck, no timeout). Pairs with C-D0c: bounded fetch timeout + self-healing latch + independent healthz probe.
+- [ ] C-D0c **CONFIRMED HIGH** — `apps/merchant/app/lib/api-client.ts:76`: no request timeout anywhere → one stalled 2G request freezes the board with "Connected" still showing.
+- [ ] C-D0d **CONFIRMED HIGH** — `apps/merchant/app/lib/api-client.ts:166`: a blip/5xx on `/auth/refresh` signs the merchant out mid-shift.
+- [ ] C-D0e **CONFIRMED MEDIUM** — `apps/merchant/app/lib/use-queue-poll.ts:33`: dropped post-mutation refetch + out-of-order responses resurrect an answered takeover; add request-generation sequencing + coalesced trailing refetch.
 
 **Audit territory** (per territory: trace under (a) 2–5 s per request, (b) connection death at
 every step boundary, (c) process kill+relaunch at every step boundary; audit bar = DoorDash
@@ -191,6 +208,14 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
       nearby-count, bootstrap; NEVER money/assignment/auth) (DoorDash lesson 8). (M)
 
 ### Lane D — journey & soundness sweep (Opus 4.8, `0 7 * * *`)
+
+**Confirmed Day-0 defects — FIX FIRST (one per firing, before the territories below; regression test each; D06 is sensitive-money → 4-question treatment). See `docs/LC-DAY0-AUDIT-2026-08-01.md`.**
+- [ ] D-D0a **CONFIRMED CRITICAL** — `apps/merchant/app/components/queue/NewOrderTakeover.tsx:52`: second of two simultaneous orders unanswerable (`submitting` not reset on success + no `key`); reset on success + `key={active.id}` + apply the same to `NoRiderHoldTakeover`.
+- [ ] D-D0b **CONFIRMED HIGH** — `apps/merchant/app/components/queue/QueueBoard.tsx:128`: mark-ready / pickup-code / debt-settle fired as bare `void promise` — route through a `run()` helper with per-order busy+error state.
+- [ ] D-D0c **CONFIRMED HIGH** — `apps/admin/app/components/ConfirmModal.tsx:118`: dismissal paths not `pending`-guarded + `formKey` re-minted per open → wallet-credit double-apply. Guard Escape/backdrop/Cancel on `pending`; mint `formKey` deterministically.
+- [ ] D-D0d **CONFIRMED MEDIUM** — `apps/merchant/app/lib/reachability.ts:98`: offline discipline dead on Menu/Shop/Hours/Statement; give `ReachabilityStore` an independent healthz producer + catch the two swallowing mutations.
+- [ ] D-D0e **CONFIRMED MEDIUM** — `apps/merchant/app/(app)/hours/page.tsx:408` + `menu/page.tsx`: busy-mode / back-in-stock / starter-category taps have no `catch`; write the `ApiError` into the existing rendered error state (mirror the sibling handlers).
+- [ ] D-D0f **CONFIRMED MEDIUM** — `apps/admin/app/riders/[id]/page.tsx:269`: money ledgers silently truncate at the server cap; disclose the cap + add paging.
 
 **Audit territory:**
 - [ ] D-T1 Admin console journey sweep (actions, cash, customers, issues, merchants, orders,
@@ -222,9 +247,36 @@ completion calls.
 
 ## §7 Day-0 sweep (2026-08-01) — summary
 
-_This section is completed by the Day-0 session from the sweep workflow's verified output; the
-full dated report is `docs/LC-DAY0-AUDIT-2026-08-01.md` and the ledger rows carry the durable
-findings._
+Full report + verification-status honesty note: `docs/LC-DAY0-AUDIT-2026-08-01.md`. Ledger rows:
+`docs/KNOWN_BUGS.md` "Day-0 LC sweep (2026-08-01)".
+
+**How it ran:** a multi-agent loop-until-dry engine per surface (diverse Go-class/2G finder lenses
+→ 3-skeptic adversarial verify → sibling-sweep), Opus finders/verifiers, Fable synthesis. The
+account hit its usage limit twice; each surface resumed from cache. Round-1 finders completed for
+all four surfaces; **infra, API, and web candidates were adversarially verified; mobile
+verification did not complete** (its verifier agents died on the second limit). Mobile's 40
+candidates are therefore recorded as CANDIDATES, not CONFIRMED — the LC lanes re-run verify. This
+is logged loudly rather than papered over as a "dry" result.
+
+**Shipped in the bootstrap PR (trivial, self-verified):** LC-A01 per-weight Inter imports
+(**−5.4 MB / −43%** Android export, budget ratcheted down), LC-A02 dead `expo-localization`
+removed, LC-D01 restored the dropped `with-remove-ad-id` manifest-strip plugin (a real regression).
+
+**Confirmed (verified) findings — ledgered OPEN, first on lane checklists (not fixed unattended;
+several are sensitive-path):**
+
+| Sev | Count | Where they went |
+|---|---|---|
+| CRITICAL | 4 | `redis.ts` API-hang (LC-C), kitchen render loop (LC-B), kitchen board freeze (LC-C), 2nd-order-unanswerable (LC-D) + CGNAT rate-limit `armor.tf` (founder) |
+| HIGH | 6 | merchant no-timeout / auth-refresh-logout (LC-C), fire-and-forget mutations + admin wallet-credit double-apply (LC-D), `audit_logs` index (PW), Cloud SQL IOPS / release.yml scaling / no-uptime-check (founder) |
+| MEDIUM | 6 | queue race, reachability-dead, settings swallow-fail, ledger-cap (LC-D/LC-C), `orders.merchant_id` index (PW) |
+
+Why not fixed here: this bootstrap session's deliverable is the program itself, and the confirmed
+defects include sensitive-path changes (the shared auth/OTP Redis client; the admin
+wallet-credit idempotency key) that the repo's sensitive-lane doctrine says must not ship as
+unverified behavior changes — exactly the care the LC lanes exist to apply. The lanes fire within
+a day (LC-C 06:00, LC-B 04:00, LC-D 07:00 UTC) and take these first. Infra items stay OPEN for the
+founder (read-only doctrine); the two additive-index findings are the performance-watch lane's.
 
 ## §8 Exit criteria
 
