@@ -178,6 +178,8 @@ indistinguishable from a number someone bumped to get CI green.
 |---|---:|---:|---|
 | Initial calibration | 12,400,000 | 6,200,000 | Set from the first real `expo export` measurement |
 | 2026-07-29 | 12,480,000 | 6,230,000 | Two causes, measured separately (PR #427). **~43 KB / ~9.7 KB: dependency drift** — the production-dependency group bump (#424) pushed the bundle to 12,442,878 / 6,209,749 and was auto-merged over this same red check, so `main` was already over budget before #427 branched. **~3.1 KB: Play-compliance UI** — the in-app account-deletion confirm + privacy-notice row required for the Play listing, plus two `lucide` glyphs (`shield`, `trash-2`) imported per-file in the usual way. |
+| (untracked) | 12,690,000 | 6,455,000 | **Reconciliation note (found by the 2026-08-01 Day-0 LC sweep):** the live `size-budget.json` reached these values with NO history rows — raises landed between 2026-07-29 and 2026-08-01 without the traceability this table exists for. Causes unrecovered; recorded here so the gap is visible. Lane LC-A's A-T1 owns keeping this table honest going forward. |
+| 2026-08-01 | 7,850,000 | 6,455,000 | **Ratchet DOWN (Harare LC program, Day-0):** per-weight Inter subpath imports removed ~4.5 MB of never-registered font TTFs from the export (barrel import bundled all 36 weights for the 3 used) — measured 7,476,013 B post-fix, budget set to measured+5%. Hermes budget left unchanged (bundle is at 6,431,313 B — 0.4% headroom; LC-A's A-T1 diets the JS before ratcheting it). |
 
 > The dependency-drift half of that raise is worth a second look on its own: 43 KB arrived without a
 > deliberate decision, which is exactly what this guardrail exists to prevent. If the size job is not
