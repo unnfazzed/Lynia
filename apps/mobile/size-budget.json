@@ -1,5 +1,5 @@
 {
-  "androidExportTotalBytes": 12690000,
+  "androidExportTotalBytes": 7850000,
   "androidHermesBundleBytes": 6455000,
   "note": "Per-PR JS bundle-size budget for the Android Metro export, in BYTES. Enforced by scripts/check-bundle-size.mjs in the ci.yml 'mobile-bundle-size' job. A value of 0 (or an absent key) means REPORT-ONLY: the guardrail measures and prints but never fails, so the machinery is safe before it is calibrated. The orchestrator sets these two numbers from a real `expo export` measurement (see docs/APP-SIZE.md 'How to measure locally'). DoorDash app-size discipline: growth must be INTENTIONAL. If a PR legitimately pushes a bundle past budget, RAISE the offending number here IN THE SAME PR and justify it in one sentence in the PR description — never bump it in a follow-up. See docs/APP-SIZE.md."
 }
