@@ -51,8 +51,12 @@ variable "db_tier" {
 }
 
 variable "db_disk_size_gb" {
+  # 20 GB (LC-INF2, 2026-08-01): raised from 10 to lift the PD_SSD IOPS ceiling (~30 IOPS/GB →
+  # ~600) for the write-heavy GPS workload. disk_autoresize only grows on SPACE pressure, never for
+  # IOPS, so it is set explicitly. The 1-vCPU db_tier can still cap effective IOPS — revisit the
+  # tier at launch load. See docs/LC-DAY0-AUDIT-2026-08-01.md (LC-INF2).
   type    = number
-  default = 10
+  default = 20
 }
 
 variable "db_name" {
@@ -123,9 +127,14 @@ variable "redis_tls_enabled" {
 
 # --- Cloud Armor (armor.tf) ---
 variable "armor_rate_limit_count" {
-  description = "Cloud Armor per-IP request budget per interval before edge throttling (429)."
+  # 3000/60s (LC-INF1, 2026-08-01): raised from 600. Zimbabwe carriers run carrier-grade NAT, so
+  # thousands of subscribers egress via a few public IPs and share one per-IP bucket; 600/min
+  # false-positived legitimate users on flaky 2G. This coarse edge budget is a DoS backstop only —
+  # per-user abuse is enforced in-app by the JWT-keyed @Throttle. The full fix (per-device edge key)
+  # needs a stable app-emitted header and stays OPEN. See docs/LC-DAY0-AUDIT-2026-08-01.md (LC-INF1).
+  description = "Cloud Armor per-IP request budget per interval before edge throttling (429). Coarse DoS backstop; per-user limits live in the app's @Throttle."
   type        = number
-  default     = 600
+  default     = 3000
 }
 
 variable "armor_rate_limit_interval_sec" {

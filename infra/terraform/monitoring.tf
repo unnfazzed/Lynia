@@ -235,3 +235,77 @@ resource "google_monitoring_alert_policy" "whatsapp_otp_delivery" {
 
   depends_on = [google_project_service.apis]
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Whole-service outage detection (LC-INF4, 2026-08-01). Every policy above is a PromQL ratio over
+# APP-EMITTED series — when the API is down those series stop, so the ratios go silent and page no
+# one. A black-box uptime check closes that blind spot: Cloud Monitoring probes the public /healthz
+# from outside GCP and the built-in uptime_check/check_passed metric exists independently of the
+# app, so it fires precisely when the service is unreachable. NOT gated on slo_alerts_enabled (that
+# gate is only for PromQL metric-name validation, which this doesn't use). Pages via
+# var.alert_notification_channels like everything else — empty by default fires in the console but
+# pages no one, so wiring a channel is the founder half. See docs/LC-DAY0-AUDIT-2026-08-01.md.
+resource "google_monitoring_uptime_check_config" "api_healthz" {
+  display_name = "Lynia API /healthz uptime"
+  project      = local.project_id
+  timeout      = "10s"
+  period       = "60s"
+
+  http_check {
+    path         = "/healthz"
+    port         = 443
+    use_ssl      = true
+    validate_ssl = true
+  }
+
+  monitored_resource {
+    type = "uptime_url"
+    labels = {
+      project_id = local.project_id
+      host       = var.api_domain
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_monitoring_alert_policy" "api_uptime_failed" {
+  display_name = "Lynia — API /healthz uptime check failing (whole-service outage)"
+  project      = local.project_id
+  combiner     = "OR"
+
+  conditions {
+    display_name = "/healthz uptime check failing for 5m"
+
+    condition_threshold {
+      filter = join(" AND ", [
+        "resource.type = \"uptime_url\"",
+        "metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\"",
+        "metric.label.check_id = \"${google_monitoring_uptime_check_config.api_healthz.uptime_check_id}\"",
+      ])
+      comparison      = "COMPARISON_GT"
+      threshold_value = 1
+      duration        = "300s"
+
+      trigger {
+        count = 1
+      }
+
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_NEXT_OLDER"
+        cross_series_reducer = "REDUCE_COUNT_FALSE"
+        group_by_fields      = ["resource.label.host"]
+      }
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+
+  documentation {
+    content   = "The black-box uptime check on https://${var.api_domain}/healthz has been failing — a whole-service outage the app-emitted PromQL alerts cannot see (they go silent when the app is down). First response: check the Cloud Run service + most recent deploy; rollback.yml re-points traffic to the previous revision. See docs/OBSERVABILITY.md and docs/LC-DAY0-AUDIT-2026-08-01.md."
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_project_service.apis]
+}
