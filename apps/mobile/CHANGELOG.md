@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/unnfazzed/Lynia/compare/v0.17.0...v0.17.1) (2026-08-01)
+
+
+### Bug Fixes
+
+* **mobile:** per-weight Inter imports, restore AD_ID strip, drop dead expo-localization ([2f269de](https://github.com/unnfazzed/Lynia/commit/2f269de92665cb48295588f692da56a84fd616db))
+
 ## [0.17.0](https://github.com/unnfazzed/Lynia/compare/v0.16.0...v0.17.0) (2026-07-31)
 
 
