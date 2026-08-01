@@ -625,6 +625,7 @@ jobs:
               --region "${{ vars.GCP_REGION }}" \
               --platform managed \
               --timeout 3600 \
+              --max-instances 10 \
               --service-account "${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}" \
               --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
               --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
@@ -652,6 +653,7 @@ jobs:
               --platform managed \
               --port 3000 \
               --timeout 3600 \
+              --max-instances 10 \
               --service-account "${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}" \
               --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
               --vpc-connector "${{ vars.VPC_CONNECTOR }}" \

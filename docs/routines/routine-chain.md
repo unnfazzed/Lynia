@@ -117,10 +117,12 @@ place with `update_trigger`):
 | LC-D — journey & soundness sweep | `trig_01QTyPeoNaV4kk8rFMWBXTNR` | `0 7 * * *` | `claude-opus-4-8` |
 | LC steer — weekly Fable replan | `trig_015tKgeoWM6b5RWQcLF6PbA4` | `0 3 * * 0` | `claude-fable-5` |
 
-> **Model caveat (2026-08-01):** programmatic model pinning returned `model_update_disabled`, so
-> firings use the account/environment default until the founder assigns each Routine's model in
-> the claude.ai Routines UI per the Intended-model column. The loops function correctly on the
-> default model; the split is a cost/quality optimization, not a correctness requirement.
+> **Model caveat (2026-08-01):** programmatic model pinning returns `model_update_disabled`
+> (re-confirmed), so firings use the account/environment default (currently Opus 4.8) until the
+> founder assigns each Routine's model in the claude.ai Routines UI per the Intended-model column.
+> The loops function correctly on the default model; the split is a cost/quality optimization, not
+> a correctness requirement. **Token-saving directive: keep the steer on `claude-opus-4-8` until
+> Monday 2026-08-03, then switch it to `claude-fable-5`.**
 > **Connector caveat:** these triggers store no MCP connectors, so fired sessions may lack the
 > GitHub MCP tools — the documented fallback applies (`docs/ROUTINES.md` §known constraints:
 > push the branch, session auto-PR opens it, the PR-health watchdog merges on green).

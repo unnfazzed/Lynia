@@ -21,9 +21,17 @@ Hour 03 is shared by weekday/Sunday split, never by simultaneous firings.
 | `LC steer — weekly Fable replan` | `0 3 * * 0` | `claude-fable-5` | Weekly re-rank, budget trend, loop health, completion calls |
 
 Model status (2026-08-01): programmatic pinning is unavailable on this account
-(`model_update_disabled`) — the table's Model column is the **intended** assignment, applied by
-the founder in the claude.ai Routines UI. Until then firings run the account/environment default.
-If `claude-opus-4-8` is unavailable there, use `claude-opus-5` and note the substitution here.
+(`model_update_disabled`, re-confirmed) — the table's Model column is the **intended** assignment,
+applied by the founder in the **claude.ai Routines UI** (each Routine → model). Until then **all
+five fire on the account/environment default** (currently Opus 4.8), which is already the
+token-cheap state.
+
+**Token-saving directive (2026-08-01): the weekly steer runs `claude-opus-4-8`, NOT Fable, until
+Monday.** So the intended UI settings *right now* are: LC-A/LC-B → `claude-opus-5`,
+LC-C/LC-D/steer → `claude-opus-4-8`. **After Monday (2026-08-03)** switch the steer to
+`claude-fable-5` for its planning runs (leaving it on Opus 4.8 also works — Fable is the quality
+upgrade for the weekly replan, not a correctness requirement). If `claude-opus-4-8` is unavailable
+in the UI, use `claude-opus-5` and note the substitution here.
 
 Shared design: Phase-0 orientation (program doc on main, one in-flight PR per lane, KNOWN_BUGS
 read + sibling-PR dedup), **audit-mode** while the lane's Audit-territory list has unchecked boxes
