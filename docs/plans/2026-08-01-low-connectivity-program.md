@@ -137,8 +137,26 @@ resilience seams ([resilience]).
       `posthog-react-native`, or build-time config plugins) and add no avoidable bytes; `lucide-
       react-native` and `@expo-google-fonts/inter` already use the correct per-icon/per-weight
       import discipline (A-T1). See `docs/LC-A-REPORT-2026-08-02.md`.
-- [ ] A-T3 Bundled-asset inventory (fonts/images): format, compression, necessity,
-      dynamic-load candidates.
+- [x] A-T3 Bundled-asset inventory **(2026-08-02)**: real `expo export --platform android` run is
+      the authoritative asset list (26 assets) — 3 self-hosted Inter TTFs (400/600/700, ~1.03 MB,
+      already correctly per-weight-scoped by A-T1, and confirmed the subpath `require()`s do NOT
+      pull in the sibling `.ttf.png` glyph-specimen images the package also ships) plus ~7.5 KB of
+      tiny default icons from `expo-router`/`@react-navigation/elements` (framework defaults, not
+      app content, not actionable). The launcher `icon.png`/`adaptive-icon.png`/`splash-icon.png`
+      in `apps/mobile/assets/` are native-build-only (config-plugin-baked into Android resources at
+      `expo prebuild`/EAS build time) — confirmed absent from the `expo export` asset list, so they
+      cost zero OTA/export bytes; their native-binary cost is A-T5's territory, unmeasured while
+      EAS is dormant. Confirmed `apps/mobile` has **zero** dependency on `@lynia/design` (not in
+      `package.json`, zero imports) — the brand SVGs/rail payment-method PNGs/handoff screenshots
+      living there never enter the mobile bundle at all; no dynamic-load candidate exists for the
+      fonts either (first paint is font-gated per B-T1, so lazy-loading them off-device would add a
+      network round-trip to the zero-RTT cold-boot path). One new finding: the 3 Inter TTFs ship
+      full Unicode coverage (Latin+Cyrillic+Greek+Vietnamese, ~342-344 KB each) though the app's
+      source only ever renders Basic Latin + a handful of symbols/punctuation (verified: 23 distinct
+      non-ASCII codepoints across all of `apps/mobile/src`+`app`, all common punctuation/symbols,
+      zero non-Latin script). A real `pyftsubset` test subsetting to a generous Latin+symbols+emoji
+      range still cut each file **65.3%** (342,408→118,960 / 343,632→119,168 / 344,072→119,260
+      bytes) — ledgered `LC-A05`, appended as `A-O13`. See `docs/LC-A-REPORT-2026-08-02b.md`.
 - [ ] A-T4 Wire-bytes profile: trace every request+response of (a) the customer order journey,
       (b) one rider steady-state hour, byte-estimate each from the serialized shapes, set the §2
       session-data budgets from evidence.
@@ -168,6 +186,27 @@ resilience seams ([resilience]).
       into a runtime bundle. Zero behavior change, pure dead-weight removal — promoted alongside
       A-O12 for the same reason (only bundle-shrinking items on this list, and the razor-thin 0.4%
       Hermes headroom makes both urgent). (S)
+- [ ] A-O13 **(new, ranked #3)** **A-T3 finding (LC-A05):** subset the 3 self-hosted Inter TTFs
+      (`src/ui/fonts.ts`) to the glyph ranges the app actually renders instead of shipping each
+      weight's full Google-Fonts charset (Latin+Cyrillic+Greek+Vietnamese). A real `pyftsubset`
+      test against a generous Basic Latin + Latin-1/Extended-A + general punctuation/symbols/math/
+      box-drawing/misc-symbols/dingbats/emoji range (covering every one of the 23 distinct
+      non-ASCII codepoints found anywhere in `apps/mobile/src`+`app`, with headroom for names/notes
+      users type) cut each file 65.3% (342,408→118,960 / 343,632→119,168 / 344,072→119,260 bytes),
+      ~669 KB total off the ~7.13 MiB export. Ranked below A-O11/A-O12 (not above) because it's a
+      different budget line: fonts don't change often, and `expo-updates` skips re-downloading an
+      asset whose content hash is already cached on-device from install or a prior update, so this
+      is primarily an **install-size / first-OTA** win, not a **recurring-every-OTA** win the way
+      shrinking the Hermes bundle is. Effort M, not S, despite being mechanical: needs a
+      subsetting step wired into the build (e.g. a `pyftsubset`/`fonttools`-based prebuild script,
+      since RN/Hermes loads native `.ttf`/`.otf` directly — WOFF2 isn't a viable format swap here),
+      a codified "safe range" that gets re-validated as UI copy changes (a grep-based regression
+      check pinning the non-ASCII codepoint set is the natural guard), and explicit sign-off that
+      dropping non-Latin scripts is acceptable for user-generated free text (names, order notes,
+      KYC fields) — a user who types e.g. a Cyrillic or CJK character would see a tofu box for that
+      one glyph. Emoji were included in the tested range defensively but are very likely moot:
+      Inter carries no color-emoji glyphs, so RN/Android already renders emoji via the system
+      font-fallback chain regardless of what's in the app's own font file. (M)
 - [ ] A-O1 Socket-gate the offers-list 15s poll (keep a slow safety net) — KNOWN backlog. (S)
 - [ ] A-O2 Merge-time size diff: extend the `mobile-bundle-size` job to post the measured bytes
       + delta vs base as a PR comment / job summary line, so growth is visible even under budget
