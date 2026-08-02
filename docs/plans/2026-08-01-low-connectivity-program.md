@@ -122,10 +122,21 @@ resilience seams ([resilience]).
 - [x] A-T1 Fresh size baseline **(Day-0)**: `expo export` measured Android total **7.13 MiB**
       (was 12.51 MiB — the LC-A01 font fix cut −5.4 MB), Hermes 6.43 MiB; `size-budget.json`
       ratcheted 12,690,000 → 7,850,000 and `docs/APP-SIZE.md` history reconciled (commit `9affb36`).
-- [ ] A-T2 Dependency/import-graph audit of `apps/mobile` (heavy libs, duplicate capabilities,
-      unused deps, remaining barrel imports). **Day-0 seeded two unverified candidates to confirm
-      first:** `packages/shared/src/contracts.ts:5` (zod v4 i18n locale tables ~392 KB?) and
-      `packages/shared/src/index.ts:3` (CJS barrel shipping test fixtures / server-only constants).
+- [x] A-T2 Dependency/import-graph audit of `apps/mobile` **(2026-08-02)**: both Day-0 candidates
+      CONFIRMED — `packages/shared/src/index.ts:3`'s `export * from "./fixtures"` ships a 299-line
+      test-only fixture module into every `@lynia/shared` consumer despite having zero production
+      consumers anywhere in the repo (its only user is its own sibling self-test, which already
+      imports it via a relative path, not the barrel); and `contracts.ts:5`'s `import { z } from
+      "zod"` transitively pulls zod v4's `export * as locales from "../locales/index.js"` — ~872 KB
+      raw source of 50-language error-message tables, confirmed unused anywhere in the app, and not
+      tree-shakeable by Metro's default (non-package-exports) resolution. Ledgered `LC-A03`/`LC-A04`,
+      appended as `A-O11`/`A-O12`. Full dependency sweep of `apps/mobile/package.json` (30 deps)
+      found no other dead weight — the handful of 0-direct-import packages (`expo-linking`,
+      `expo-application`, `react-native-screens`, `expo-build-properties`) are all genuinely needed
+      transitively (autolinked native modules required by `expo-router`/`expo-notifications`/
+      `posthog-react-native`, or build-time config plugins) and add no avoidable bytes; `lucide-
+      react-native` and `@expo-google-fonts/inter` already use the correct per-icon/per-weight
+      import discipline (A-T1). See `docs/LC-A-REPORT-2026-08-02.md`.
 - [ ] A-T3 Bundled-asset inventory (fonts/images): format, compression, necessity,
       dynamic-load candidates.
 - [ ] A-T4 Wire-bytes profile: trace every request+response of (a) the customer order journey,
@@ -154,6 +165,22 @@ resilience seams ([resilience]).
 - [ ] A-O7 ALR-07: double GPS stream while foregrounded (~2× location upload) — KNOWN ledger. (M)
 - [ ] A-O8 `expo-image` migration (disk/mem cache, downsampling) — KNOWN backlog; **needs native
       build train**. (L)
+- [ ] A-O11 **A-T2 finding (LC-A03):** drop `export * from "./fixtures"` from
+      `packages/shared/src/index.ts` — the 299-line test-fixture module has zero production
+      consumers (only its own self-test, which already imports it via a relative path); repoint
+      `fixtures.test.ts`'s import if needed and give the module a separate, non-barrel entry point
+      (or leave it un-exported from the package root) so it never rides into a runtime bundle. Zero
+      behavior change, pure dead-weight removal. (S)
+- [ ] A-O12 **A-T2 finding (LC-A04):** stop zod v4's ~872 KB locale-tables barrel
+      (`zod/v4/classic/external.js`'s `export * as locales from "../locales/index.js"`, 50
+      languages, confirmed unused) from riding into the Android bundle via `contracts.ts`'s `import
+      { z } from "zod"`. Likely needs a Metro `resolveRequest` redirect (the same pattern already
+      used for the `@posthog/core` subpath in `apps/mobile/metro.config.js`) to substitute a
+      locale-free zod entry point, or a narrower official zod import path if one preserves the
+      "classic" `z.object`/`z.string()` API contracts.ts relies on — verify the substitute still
+      passes `packages/shared`'s zod-parse self-tests before landing. Current Hermes budget
+      headroom is 0.4% (23.7 KB), so this is likely the highest-leverage single item on this
+      checklist. (S/M)
 
 ### Lane B — Go-class runtime perf (Opus 5, `0 4 * * *`)
 
