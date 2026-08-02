@@ -116,6 +116,7 @@ place with `update_trigger`):
 | LC-C — offline & 2G resilience | `trig_019iywx2Jg44wWTvhjR8YiVx` | `30 */3 * * *` | `claude-opus-4-8` |
 | LC-D — journey & soundness sweep | `trig_01QTyPeoNaV4kk8rFMWBXTNR` | `45 */3 * * *` | `claude-opus-4-8` |
 | LC steer — weekly Fable replan | `trig_015tKgeoWM6b5RWQcLF6PbA4` | `30 5,17 * * *` | `claude-fable-5` |
+| LC-R — refactoring sprint (temporary, sprint-only) | `trig_015cSL8dCPaZdociia4mqAjB` | `55 */3 * * *` | (default) |
 
 > **Sprint cadence (2026-08-02 → 2026-08-04, user directive "the week's work by Tuesday"):** the four
 > LC lanes were bumped from once/day to **every 3 hours (8×/day)**, staggered at `:15/:30/:40/:45`
@@ -128,6 +129,12 @@ place with `update_trigger`):
 > lane to its original daily cron (LC-A `0 3 * * 1-6`, LC-B `0 4`, LC-C `0 6`, LC-D `0 7`, steer
 > `0 3 * * 0`). The original crons are the post-sprint target; the grid table above (§"The grid")
 > shows the steady-state hours, not the sprint burst.
+>
+> **LC-R (added 2026-08-02, user directive "include code refactoring"):** the standing refactoring
+> routine's trigger is not editable from the LC sessions (meta_mcp ownership), so the sprint adds a
+> TEMPORARY `LC loop R` running the same doctrine at `55 */3` — deduping with the standing routine
+> through `docs/REFACTOR-LEDGER.md`. The Tuesday revert DISABLES LC-R outright (it does not get a
+> daily cadence); the standing refactoring routine keeps the lane afterward.
 
 > **Model caveat (2026-08-01):** programmatic model pinning returns `model_update_disabled`
 > (re-confirmed), so firings use the account/environment default (currently Opus 4.8) until the

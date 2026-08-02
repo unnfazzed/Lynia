@@ -19,6 +19,7 @@ Hour 03 is shared by weekday/Sunday split, never by simultaneous firings.
 | `LC loop C — offline & 2G resilience` | `30 */3 * * *` | `claude-opus-4-8` | Journeys surviving dead zones and drops |
 | `LC loop D — journey & soundness sweep` | `45 */3 * * *` | `claude-opus-4-8` | Journey blockers (mobile+admin+merchant) + read-only infra soundness |
 | `LC steer — replan` | `30 5,17 * * *` | `claude-fable-5` | Re-rank, budget trend, loop health, completion calls |
+| `LC loop R — refactoring sprint` | `55 */3 * * *` | (default) | **Sprint-only (added 2026-08-02, user directive):** runs the standing refactoring routine's doctrine (behavior-preserving, hotspot/`REFACTOR-LEDGER.md`-driven, characterization-first, ≤400-line single-concern PRs, strict typecheck+build+test gate) at sprint cadence; dedups with the standing routine through the same ledger; disabled by the Tuesday revert (the standing routine keeps the lane long-term) |
 
 > **Sprint cadence (2026-08-02 → 2026-08-04):** per the user directive "the week's work by Tuesday,"
 > the four lanes run **every 3 hours (8×/day)**, staggered `:15/:30/:40/:45`, and the steer **2×/day**
