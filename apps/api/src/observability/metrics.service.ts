@@ -14,6 +14,7 @@ import { Global, Injectable, Module } from "@nestjs/common";
 import type { ClientMetricEvent } from "@lynia/shared";
 import { type Attributes, type Counter, type Histogram, type Meter, metrics } from "@opentelemetry/api";
 import type { MicroCacheOutcome } from "../common/micro-cache";
+import { QUEUE_JOB_STATES, type QueueDepthSample } from "../common/queue-metrics";
 
 const METER_NAME = "lynia-api";
 
@@ -30,7 +31,10 @@ type HistogramName =
   | "client_position_glass_latency_ms"
   | "client_offer_glass_latency_ms"
   | "client_board_glass_latency_ms"
-  | "client_apifetch_latency_ms";
+  | "client_apifetch_latency_ms"
+  // Top-up rail confirmation lag (initiatedAt → confirmed). MUCH wider buckets than the request
+  // metrics — a mobile-money confirm is minutes, and a late confirm on an expired intent is hours.
+  | "topup_confirm_lag_ms";
 
 /** Counter instruments. */
 type CounterName =
@@ -69,6 +73,38 @@ export type WalletIntegrityDrift =
   | "missing_topup_credit" // a confirmed TopUp with no matching ledger credit
   | "missing_receipt" // a ride_commission row missing its ratePct/fare show-the-math fields
   | "orphan_topup_credit"; // a ledger credit whose topUp is missing or not confirmed
+
+/** The two BullMQ queues — CLOSED vocabulary for the `queue` label (a new queue adds its literal
+ *  name here, never a dynamic string). The `state` label vocabulary is QUEUE_JOB_STATES
+ *  (common/queue-metrics.ts), also closed. */
+export type QueueMetricName = "offer-expiry" | "rating-autoclose";
+
+/** Top-up rails (`TopupRail` in @lynia/shared) — mirrored as a local closed set so the DB value is
+ *  bounded at the meter (an unexpected rail collapses to "other", never a new label value). */
+const TOPUP_RAILS: ReadonlySet<string> = new Set(["ecocash", "innbucks", "omari", "manual"]);
+
+/** Ceiling on one queue sampler's Redis round-trips per collection. BullMQ (maxRetriesPerRequest:
+ *  null) queues commands FOREVER while Redis is down, so an un-raced await here would wedge every
+ *  metric export cycle — resolve undefined instead and skip the observation. */
+const QUEUE_SAMPLE_TIMEOUT_MS = 5_000;
+
+/** Race a sampler against the timeout: undefined on timeout, rejection passed through. */
+function withSampleTimeout<T>(p: Promise<T>): Promise<T | undefined> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => resolve(undefined), QUEUE_SAMPLE_TIMEOUT_MS);
+    t.unref?.();
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(t);
+        reject(e as Error);
+      },
+    );
+  });
+}
 
 /** Client latency ceiling (ms). Zod already caps `ms` at 60s; we re-clamp so a bug/tamper can't leak. */
 const CLIENT_MS_MAX = 60_000;
@@ -110,6 +146,12 @@ export class MetricsService {
 
   /** Distinct client `version` buckets admitted as labels so far (see {@link MAX_CLIENT_VERSIONS}). */
   private readonly seenVersions = new Set<string>();
+
+  /** Live queue samplers, observed into the queue gauges on each collection (see registerQueueDepthObserver). */
+  private readonly queueSamplers = new Map<QueueMetricName, () => Promise<QueueDepthSample>>();
+
+  /** True once the queue gauges + their batch callback are bound to the meter (created at most once). */
+  private queueGaugesBound = false;
 
   /**
    * Runtime cardinality cap on the client `version` label. `"other"` is always allowed; a known bucket
@@ -247,6 +289,60 @@ export class MetricsService {
     this.counter("identity_new_device_verify_total").add(1, {
       dormant: dormant ? "true" : "false",
       device,
+    });
+  }
+
+  /**
+   * Register the depth/age sampler for one BullMQ queue. On every metric collection (15s export
+   * cadence) the sampler is raced against {@link QUEUE_SAMPLE_TIMEOUT_MS} and observed into two
+   * gauges: `queue_jobs{queue,state}` and `queue_oldest_overdue_ms{queue}`. A sampler error or
+   * timeout skips that cycle's observation — an absent point is honest where a fabricated 0 would
+   * read "healthy" during the exact Redis outage the alert exists for.
+   *
+   * NoopMeter note: the gauges bind to whatever provider is registered at FIRST registration.
+   * Call sites live in onModuleInit (after main.ts initObservability), the same ordering guarantee
+   * every lazily-created instrument above relies on; under the Noop (dev/test) the batch callback
+   * is never invoked and the sampler never runs.
+   */
+  registerQueueDepthObserver(queue: QueueMetricName, sample: () => Promise<QueueDepthSample>): void {
+    this.queueSamplers.set(queue, sample);
+    if (this.queueGaugesBound) return;
+    this.queueGaugesBound = true;
+    const meter = this.meter();
+    const jobs = meter.createObservableGauge("queue_jobs");
+    const overdue = meter.createObservableGauge("queue_oldest_overdue_ms", { unit: "ms" });
+    meter.addBatchObservableCallback(
+      async (result) => {
+        for (const [name, sampler] of this.queueSamplers) {
+          let s: QueueDepthSample | undefined;
+          try {
+            s = await withSampleTimeout(sampler());
+          } catch {
+            // Redis blip — the queue services already log their own connection errors; skip the point.
+          }
+          if (!s) continue;
+          for (const state of QUEUE_JOB_STATES) result.observe(jobs, s[state], { queue: name, state });
+          result.observe(overdue, s.oldestOverdueMs, { queue: name });
+        }
+      },
+      [jobs, overdue],
+    );
+  }
+
+  /** Drop a queue's sampler (module shutdown) so a collection can't race a closed BullMQ queue. */
+  unregisterQueueDepthObserver(queue: QueueMetricName): void {
+    this.queueSamplers.delete(queue);
+  }
+
+  /**
+   * Rail-confirmation lag for one top-up: initiatedAt → the confirm that credited the balance
+   * (`creditFromTopup`), in ms. Records only on the transition (exactly once per top-up); a replayed
+   * confirmation records nothing. `rail` is bounded against {@link TOPUP_RAILS} — an unexpected DB
+   * value collapses to "other" rather than minting a label.
+   */
+  recordTopupConfirmLag(ms: number, rail: string): void {
+    this.histogram("topup_confirm_lag_ms").record(Math.max(ms, 0), {
+      rail: TOPUP_RAILS.has(rail) ? rail : "other",
     });
   }
 

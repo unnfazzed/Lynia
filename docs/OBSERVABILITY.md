@@ -44,6 +44,9 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `bird_otp_delivery_failed_total` | counter | 1 | `status`, `code`                  | —          |
 | `identity_new_device_verify_total` | counter | 1 | `dormant`, `device`             | —          |
 | `micro_cache_requests_total`    | counter   | 1    | `cache`, `outcome`               | —          |
+| `queue_jobs`                    | gauge     | 1    | `queue`, `state`                 | —          |
+| `queue_oldest_overdue_ms`       | gauge     | ms   | `queue`                          | —          |
+| `topup_confirm_lag_ms`          | histogram | ms   | `rail`                           | —          |
 
 > **Client RUM (present, not future).** The four `client_*_latency_ms` histograms and the
 > `client_samples_dropped_total` counter are the **glass-to-glass** signal — the mobile app measures
@@ -76,6 +79,20 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
   catalog, not by Lynia.
 - `micro_cache_requests_total` `cache` ∈ `nearby_count | pickup_photo_url`; `outcome` ∈
   `hit | l2_hit | miss | coalesced | error` (both closed vocabularies, see `docs/PERFORMANCE.md`).
+- `queue_jobs` / `queue_oldest_overdue_ms` `queue` ∈ `offer-expiry | rating-autoclose` (the two BullMQ
+  queues); `state` ∈ `waiting | active | delayed | failed | paused` (`completed` is omitted — jobs are
+  removed on completion, so the series would always read ~0). Both are **observable gauges** sampled at
+  each 15 s export by `sampleQueueDepth` (`common/queue-metrics.ts`), registered per queue via
+  `MetricsService.registerQueueDepthObserver`. **"Overdue" is measured against each job's scheduled
+  fire time** (`enqueue + delay`), not its enqueue time — the expiry jobs are delayed ~90 s by design,
+  so a healthy queue reads ~0 and any sustained positive value means the workers stopped processing.
+  A Redis error or a >5 s sample skips that cycle's observation (an absent point is honest; a
+  fabricated 0 would read "healthy" during the exact outage the alert exists for).
+- `topup_confirm_lag_ms` `rail` ∈ `ecocash | innbucks | omari | manual` (the `TopupRail` enum),
+  bounded at the meter — an unexpected DB value collapses to `other`. Recorded exactly once per
+  top-up, by the `creditFromTopup` call that wins the confirm CAS, measuring
+  `TopUp.initiatedAt → resolvedAt`. The admin manual-credit path never records (it creates the intent
+  already-confirmed; there is no rail wait to measure).
 - `identity_new_device_verify_total` `dormant` ∈ `true | false` — `true` means the account had no
   session newer than 90 days when the unrecognised device verified. Deliberately a *label*, not two
   metrics: the ratio is the signal, and it's only readable if both arms share a series. `device` ∈
@@ -102,6 +119,7 @@ around each metric's p95 SLO:
 | `client_offer_glass_latency_ms`    | 100, 250, 500, 1000, 2000, 3000, 5000, 10000 |
 | `client_board_glass_latency_ms`    | 100, 250, 500, 1000, 2000, 3000, 5000, 10000 |
 | `client_apifetch_latency_ms`       | 50, 100, 250, 500, 1000, 2000, 5000, 10000   |
+| `topup_confirm_lag_ms`             | 5s, 15s, 30s, 60s, 2m, 5m, 10m, 30m, 1h (in ms) |
 
 ## PromQL — p95 per histogram
 
@@ -160,12 +178,15 @@ courier operator actually cares about. All live in `infra/terraform/monitoring.t
 | **Bird OTP delivery failures** | `sum(rate(bird_otp_delivery_failed_total[5m])) > 0.2` | Users can't receive login codes on the SMS channel. The send returned 202, so this is the ONLY signal. Split by `status`: `rejected` is usually account-level (wallet balance, no eligible sender → `code=E12003`), `undelivered`/`expired` point at the carrier (Econet) rather than at us. `bird sms get <sms_id>` shows the per-message timeline. |
 
 | **Dormant-account device rebind spike** | `sum(increase(identity_new_device_verify_total{dormant="true",device="new"}[24h])) > 5` | Phone is the account key, so an account dormant >90d re-verifying from an unseen device is the exact shape a **carrier number recycle** takes — the person who passed the OTP may not be the person who owns the account (P2-8). One a week is normal (reinstall, new handset). A cluster is not: pull the `identity: account … POSSIBLE SIM RECYCLE` WARN lines, check whether the accounts carry a wallet balance or KYC record, and freeze payouts on any that do before deciding to rebind. Scoped to `device="new"` on purpose: the `absent` arm is a *client* defect (someone stopped sending `x-device-id`) and would otherwise drown this signal — watch it separately, and fix the client rather than the threshold. Threshold is a pilot-volume guess — re-baseline once a month of data exists. |
+| **Queue stalled (jobs overdue)** | `max by (queue) (queue_oldest_overdue_ms) > 120000` for 10m | Expiry/auto-close jobs are sitting past their **scheduled** fire time — the workers stopped processing (Redis wedged, worker dead) and only the DB reconciler sweeps (2 min offers / 15 min deliveries) are advancing orders. Customers see countdowns freeze at 0:00 until a sweep lands. Check Memorystore and the API logs for `queue error` / `worker error` lines. |
+| **Queue backlog** | `max by (queue) (queue_jobs{state="waiting"}) > 100` for 10m | Jobs are consumed slower than they arrive (slow handler, retry storm, partial worker outage) — distinct from the stall alert, where nothing moves at all. Split by `queue` to find the lane; check that worker's `failed` jobs. Threshold is a pilot-volume guess — re-baseline with real load. |
+| **Top-up confirm lag p95 > 10 min** | `histogram_quantile(0.95, sum(rate(topup_confirm_lag_ms_bucket[30m])) by (le)) > 600000` | Riders have paid but their balance still shows pending — trust in the float erodes fast. Split by `rail`; check the rail provider's status and the confirmation webhook/poller path before support tickets arrive. |
 
-**Not yet alertable — needs instrumentation first.** BullMQ **queue age/depth** and **top-up-confirm
-lag** have no metric series emitted today, so no policy can be written against them (a PromQL policy on a
-non-existent metric 400s at apply, same as the LR9 SLO gate). Emitting these (a queue-depth gauge on the
-offer/lifecycle workers; a confirm-latency histogram on the top-up path) is the prerequisite follow-up
-before their alerts can be added.
+> **Gate note:** the three queue/top-up policies above live behind **`queue_alerts_enabled`**
+> (`monitoring.tf`), a separate Terraform gate from `slo_alerts_enabled`, because their series ship
+> with the 2026-08-02 API release: a stack that already flipped `slo_alerts_enabled` must keep
+> applying cleanly until the new series exist in GMP (metric-name validation 400s otherwise). Flip it
+> using the same verify-then-apply choreography as step 6 below.
 
 ## Caveat — these are SERVER-side latencies
 
@@ -230,6 +251,10 @@ Artifacts in this repo:
    and `terraform apply` again. The metric names now resolve, so the policies in `monitoring.tf` create
    cleanly. This is the step the `slo_alerts_enabled` gate (`variables.tf`, default `false`) exists for —
    flipping it before the series exist re-triggers the `400 PromQL metric(s) are invalid` from step 1.
+   The queue/top-up policies have their **own** gate, `queue_alerts_enabled`, with the same
+   choreography: verify `queue_jobs` / `queue_oldest_overdue_ms` (present on any boot with Redis) and
+   `topup_confirm_lag_ms` (needs at least one confirmed top-up) in Metrics Explorer first, then flip
+   and re-apply.
 
 > **Operational drift (corrected 2026-07-10; resolved 2026-07-13):** the original design deployed the
 > sidecar with a hand-applied `services replace` manifest that every subsequent `gcloud run deploy

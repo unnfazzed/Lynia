@@ -91,9 +91,10 @@ resource "google_monitoring_alert_policy" "match_select_error_rate" {
 # must be configured (var.alert_notification_channels defaults to [], which creates policies that fire
 # in the console but PAGE NO ONE). Wiring a real channel is the founder half of LR9.
 #
-# NOTE — deferred for lack of a series: BullMQ queue age/depth and top-up-confirm lag have NO metric
-# emitted today, so no alert can be written against them without first instrumenting the workers/rail.
-# Tracked in docs/OBSERVABILITY.md; do not add a policy here until the series exists (it would 400 on apply).
+# NOTE — BullMQ queue age/depth and top-up-confirm lag ARE now instrumented (2026-08-02:
+# queue_jobs, queue_oldest_overdue_ms, topup_confirm_lag_ms) and their policies live at the bottom
+# of this file behind var.queue_alerts_enabled — a separate gate because the series ship later than
+# the LR9 set, and an slo_alerts_enabled=true stack must keep applying cleanly until they exist.
 
 # Ledger integrity drift — the single highest-value money monitor (roadmap 1.3 emits the series). ANY
 # nonzero drift over a day means the nightly sweep found a completeness violation (balance≠ledger, a
@@ -304,6 +305,101 @@ resource "google_monitoring_alert_policy" "api_uptime_failed" {
 
   documentation {
     content   = "The black-box uptime check on https://${var.api_domain}/healthz has been failing — a whole-service outage the app-emitted PromQL alerts cannot see (they go silent when the app is down). First response: check the Cloud Run service + most recent deploy; rollback.yml re-points traffic to the previous revision. See docs/OBSERVABILITY.md and docs/LC-DAY0-AUDIT-2026-08-01.md."
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Queue health + top-up-confirm lag (2026-08-02 — closes the "not yet alertable" gap). The offer-expiry
+# and rating-autoclose BullMQ workers now emit queue_jobs{queue,state} + queue_oldest_overdue_ms{queue}
+# gauges, and creditFromTopup emits the topup_confirm_lag_ms histogram (docs/OBSERVABILITY.md). Gated on
+# var.queue_alerts_enabled — its own gate, NOT slo_alerts_enabled, because these series ship with a later
+# API release: an already-flipped slo_alerts_enabled stack must keep applying cleanly (metric-name
+# validation would 400) until Metrics Explorer confirms the new series, then this gate flips too.
+
+# Queue stalled — the marketplace's silent failure mode: expiry/auto-close jobs sit past their scheduled
+# fire time because the workers stopped processing (Redis wedged, worker dead). "Overdue" is measured
+# against each job's SCHEDULED time (enqueue + delay), so a healthy queue reads ~0 despite the expiry
+# jobs' intentional ~90s delay. The DB reconcilers (2m/15m sweeps) are the functional backstop, so >2m
+# overdue sustained for 10m means we're running on backstops alone — investigate, don't wait.
+resource "google_monitoring_alert_policy" "queue_stalled" {
+  count = var.queue_alerts_enabled ? 1 : 0
+
+  display_name = "Lynia — background queue stalled (jobs overdue)"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "queue_oldest_overdue_ms over 2m for 10m"
+
+    condition_prometheus_query_language {
+      query               = "max by (queue) (queue_oldest_overdue_ms) > 120000"
+      duration            = "600s"
+      evaluation_interval = "60s"
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+
+  documentation {
+    content   = "A BullMQ queue (`offer-expiry` or `rating-autoclose`) has jobs more than 2 minutes past their scheduled fire time for 10+ minutes — the workers stopped promoting/processing (Redis wedged or worker dead) and only the DB reconciler sweeps are advancing orders. Check Memorystore health and the API instance logs for `queue error` / `worker error` lines. See docs/OBSERVABILITY.md."
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Queue backlog — depth building up while workers ARE running (slow processing, retry storm). Distinct
+# from the stall alert: waiting jobs are being consumed but slower than they arrive.
+resource "google_monitoring_alert_policy" "queue_backlog" {
+  count = var.queue_alerts_enabled ? 1 : 0
+
+  display_name = "Lynia — background queue backlog"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "queue_jobs{state=waiting} over 100 for 10m"
+
+    condition_prometheus_query_language {
+      query               = "max by (queue) (queue_jobs{state=\"waiting\"}) > 100"
+      duration            = "600s"
+      evaluation_interval = "60s"
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+
+  documentation {
+    content   = "A BullMQ queue has held 100+ waiting jobs for 10+ minutes — jobs are being consumed slower than they arrive (slow handler, retry storm, or partial worker outage). At pilot volume this is far above normal. Split by the `queue` label to find the lane; check job failure logs on that worker. See docs/OBSERVABILITY.md."
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Top-up confirm lag — money UX. p95 of initiatedAt→confirmed over 10 minutes (30m window) means riders
+# are paying and then staring at a pending balance; the rail (or our webhook/poller) is degraded.
+resource "google_monitoring_alert_policy" "topup_confirm_lag" {
+  count = var.queue_alerts_enabled ? 1 : 0
+
+  display_name = "Lynia money — top-up confirm lag p95 > 10m"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "topup_confirm_lag_ms p95 over 10m for 30m window"
+
+    condition_prometheus_query_language {
+      query               = "histogram_quantile(0.95, sum(rate(topup_confirm_lag_ms_bucket[30m])) by (le)) > 600000"
+      duration            = "600s"
+      evaluation_interval = "300s"
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+
+  documentation {
+    content   = "p95 of top-up rail-confirmation lag (TopUp.initiatedAt → creditFromTopup) exceeded 10 minutes — riders have paid but their wallet balance still shows pending, which erodes trust in the float fast. Check the rail provider's status and the confirmation webhook/poller path; `bird`/EcoCash side issues show here before support tickets do. See docs/OBSERVABILITY.md."
     mime_type = "text/markdown"
   }
 

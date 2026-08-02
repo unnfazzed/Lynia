@@ -293,6 +293,12 @@ variable "slo_alerts_enabled" {
   default     = false
 }
 
+variable "queue_alerts_enabled" {
+  description = "Create the queue-health + top-up-lag PromQL alert policies (monitoring.tf: queue_jobs, queue_oldest_overdue_ms, topup_confirm_lag_ms). Same metric-name-validation constraint as slo_alerts_enabled, but a SEPARATE gate because these series ship later (2026-08-02 instrumentation): flipping slo_alerts_enabled alone must keep applying cleanly on stacks whose API predates them. Flip to true only after Metrics Explorer shows the series (docs/OBSERVABILITY.md §Production activation)."
+  type        = bool
+  default     = false
+}
+
 # --- Cloud Scheduler cron jobs (scheduler.tf) ---
 variable "scheduler_jobs_enabled" {
   description = "Create the daily retention-purge Cloud Scheduler job (LR8, docs/LAUNCH-EXECUTION-RUNBOOK.md §2). ON by default: the API side (AdminOrSchedulerGuard + SCHEDULER_SERVICE_ACCOUNT injection) has been live since 2026-07-08 while the job itself was never created, so the purge has never run — the next apply closes that gap. Requires DNS for api_domain to be live (the OIDC audience is pinned to the public URL)."

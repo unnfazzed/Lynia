@@ -1,8 +1,10 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
 import { BROADCAST, OFFER_WINDOW_MS } from "@lynia/shared";
 import { Queue, Worker } from "bullmq";
+import { sampleQueueDepth } from "../common/queue-metrics";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { MatchingService } from "./matching.service";
 
@@ -59,6 +61,9 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
     @Inject(ENV) private readonly env: Env,
     private readonly matching: MatchingService,
     private readonly prisma: PrismaService,
+    // @Optional so the unit harness can construct without the (@Global) ObservabilityModule wired;
+    // a missing service just skips the queue depth/age gauges.
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -87,6 +92,9 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
       // reconciler below is the functional backstop while Redis is down).
       this.queue.on("error", (err) => this.logger.error(`offer-expiry queue error: ${err.message}`));
       this.worker.on("error", (err) => this.logger.error(`offer-expiry worker error: ${err.message}`));
+      // Depth/age gauges (queue_jobs, queue_oldest_overdue_ms) — the "queue stalled" alert's series.
+      const queue = this.queue;
+      this.metrics?.registerQueueDepthObserver(QUEUE_NAME, () => sampleQueueDepth(queue));
       this.logger.log("Offer-expiry worker started");
     } else {
       this.logger.warn("REDIS_URL not set — relying on the DB reconciler to auto-expire open_for_offers orders");
@@ -177,6 +185,7 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     if (this.sweep) clearInterval(this.sweep);
+    this.metrics?.unregisterQueueDepthObserver(QUEUE_NAME);
     await this.worker?.close();
     await this.queue?.close();
   }
