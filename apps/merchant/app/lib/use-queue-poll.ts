@@ -35,28 +35,48 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
   const latch = useRef(new InflightLatch(INFLIGHT_STALE_MS)).current;
+  // LC-C05: the latest generation to have started a request. Only that generation's response is
+  // applied to state — a response from an older, out-of-order round trip (only reachable via the
+  // latch's stale-override backstop, since the latch otherwise serializes requests) is discarded
+  // instead of clobbering fresher state with stale data.
+  const generationRef = useRef(0);
+  // LC-C05: a refetch requested while one is already in flight (e.g. a post-mutation refetch
+  // landing mid-poll) must not be silently dropped — an answered NEW ORDER takeover would keep
+  // showing the pre-mutation order until the next interval tick. Coalesce it into one more round
+  // right after the in-flight request settles.
+  const pendingRef = useRef(false);
 
   const fetchOnce = useCallback(async () => {
-    if (!latch.tryAcquire()) return;
+    if (!latch.tryAcquire()) {
+      pendingRef.current = true;
+      return;
+    }
+    const generation = ++generationRef.current;
     const reachability = getReachabilityStore(API_BASE_URL);
     try {
       const result = await listQueue();
-      setOrders(result);
-      setError(null);
       reachability.reportReachable();
+      if (generation === generationRef.current) {
+        setOrders(result);
+        setError(null);
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         // status 0 is api-client's own marker for a network-level failure (fetch threw); any real
         // HTTP response — even a 4xx/5xx domain rejection — is still proof the server is reachable.
         if (err.status === 0) reachability.reportUnreachable();
         else reachability.reportReachable();
-        setError(err);
-      } else {
+        if (generation === generationRef.current) setError(err);
+      } else if (generation === generationRef.current) {
         setError(new ApiError(0, "Something went wrong loading the queue."));
       }
     } finally {
       setLoading(false);
       latch.release();
+      if (pendingRef.current) {
+        pendingRef.current = false;
+        void fetchOnce();
+      }
     }
   }, [latch]);
 
