@@ -155,9 +155,14 @@ export default function HomeScreen(): React.ReactElement {
     invalidateCustomerOrderHistory(qc);
   });
   const activeOrder = activeOrderQ.data ?? null;
+  // Only seed orderKey(id) while THIS screen is the visible route — mirrors home.tsx's identical
+  // guard. When send.tsx is blurred beneath /order/[id], use-order-socket.ts owns that cache entry and
+  // merges live position/status pushes with an anti-rollback guard; an unrelated foreground/focus
+  // refetch of activeOrderQ must not trigger a raw full-object replace that could roll the rider's pin
+  // backward on the live tracking map.
   useEffect(() => {
-    if (activeOrder) qc.setQueryData<OrderSnapshot>(orderKey(activeOrder.id), activeOrder);
-  }, [activeOrder, qc]);
+    if (homeFocused && activeOrder) qc.setQueryData<OrderSnapshot>(orderKey(activeOrder.id), activeOrder);
+  }, [homeFocused, activeOrder, qc]);
 
   // Pre-broadcast liability disclaimer (A1-8). Gate the first broadcast behind an accept-to-continue
   // sheet; once accepted for the current policy version we don't re-show it. Kept in a ref (read at

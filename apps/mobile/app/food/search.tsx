@@ -1,7 +1,8 @@
 import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { EmptyState, Icon, Screen } from "../../src/ui";
@@ -16,7 +17,9 @@ export default function RestaurantSearchScreen(): React.ReactElement {
   const { restaurantsEnabled } = useFeatureFlags();
   const feed = useRestaurantListFeed(restaurantsEnabled);
   const [query, setQuery] = useState("");
-  const now = useMemo(() => new Date(), []);
+  // LC-B06: was `useMemo(() => new Date(), [])` — froze at first render, so the open/closed badge
+  // and "closing in N min" countdown never advanced for the life of this screen.
+  const now = useNow();
 
   const trimmed = query.trim().toLowerCase();
   const results = trimmed

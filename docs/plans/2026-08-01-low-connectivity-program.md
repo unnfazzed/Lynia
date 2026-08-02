@@ -255,8 +255,39 @@ resilience seams ([resilience]).
       cross-call-site cache) still reproduces — this is exactly A-O10's already-seeded finding, left
       to Lane A. Refined B-O3/B-O4 below with concrete evidence; appended B-O7 (new, speculative,
       needs on-device confirmation). See `docs/LC-B-REPORT-2026-08-02.md`.
-- [ ] B-T2 Re-render audit of the heaviest screens (home, `order/[id]`, rider board, food
-      browse) incl. the KNOWN ComposeMap/JobDetailsCard/board-card memo boundaries.
+- [x] B-T2 **AUDITED (2026-08-02)** — Re-render audit of home/`order/[id]`/`food/order/[orderId]`/
+      rider-board/food-browse + the ComposeMap/JobDetailsCard/board-card memo boundaries (agentic
+      lane-bug-hunt: 5 lenses → adversarial verify → sibling-sweep). **2 CONFIRMED correctness
+      defects, fixed this run:** `LC-B05` — `home.tsx`'s (and sibling `send.tsx`'s) active-order
+      cache write-back (`qc.setQueryData(orderKey(id), activeOrder)`) fired even while blurred
+      beneath `/order/[id]`, unguarded by the `homeFocused` state that already gates its own poll;
+      an unrelated foreground-refetch of `activeOrderQ` (real trigger: `useForegroundRefetch`'s
+      AppState listener, which doesn't know or care which route is visible) could then blindly
+      replace the SAME `orderKey(id)` cache entry `use-order-socket.ts` streams live GPS
+      position/status into — bypassing that hook's own `lastPositionRef`/`reconcileAfterRefetch`
+      anti-rollback guard and rolling the rider's pin backward on the live tracking map for one
+      tick. Fixed by gating both write-back effects on `homeFocused` (mirrors the existing poll
+      gate) — a write only ever seeds the cache ahead of navigating TO the order screen, never
+      clobbers it while already there. Render-count-agnostic regression test in
+      `app/(tabs)/__tests__/home.test.tsx` (confirmed it fails against the pre-fix code: cached
+      rider position regresses to the stale HTTP value instead of the fresher socket-applied one).
+      `LC-B06` — three sites derive `now` via `useMemo(() => new Date(), deps)` intending a "recompute
+      on data change" clock (`food/search.tsx:19` with `[]`, `food/index.tsx:17` and
+      `(tabs)/home.tsx`'s `RestaurantsRail` with `[feed.restaurants]`) but `useRestaurantListFeed`'s
+      default TanStack Query structural sharing keeps the SAME object reference across a no-change
+      refetch, so `now` stayed pinned at first render in practice — a restaurant open at screen-open
+      kept showing "Open now" / "Closing in N min" (and stayed included in the "Open now" filter on
+      `food/index.tsx`) after it had actually closed, for as long as the screen stayed mounted.
+      Fixed with a new shared `useNow(intervalMs=60_000)` hook (`src/logic/use-now.ts`) — a real
+      60s-interval clock, minute-granularity being all `isMerchantOpenNow`/`minutesUntilClose` need
+      — wired into all three sites. Regression test `src/logic/__tests__/use-now.test.tsx` (fake
+      timers; confirms the clock actually advances rather than freezing after first render).
+      **2 pure-optimization findings (no wrong output) appended to the checklist below, not fixed
+      this run** — the rider-board keystroke cascade (`B-O9`, refining `B-O2`) and the food-order /
+      rider-food-job unconditional 1s ticker (`B-O8`). **1 candidate refuted** — ComposeMap's
+      inline Marker `coordinate` object was confirmed real by the finder but 2-of-3 verifiers ruled
+      it a duplicate of the already-tracked `B-O2` (no fresh correctness defect beyond the known
+      missing-memo backlog). See `docs/LC-B-REPORT-2026-08-02.md`.
 - [ ] B-T3 List + memory audit: every list without virtualization, every unbounded in-memory
       accumulation, image memory behavior on 1–2 GB devices.
 - [ ] B-T4 Animation/JS-thread audit: native-driver coverage, tickers, work in render bodies.
@@ -266,6 +297,30 @@ resilience seams ([resilience]).
 - [ ] B-O1 History/board/notifications lists → FlatList + cursor pagination — KNOWN backlog. (M)
 - [ ] B-O2 Memo boundaries for ComposeMap / JobDetailsCard / board-card (with render-isolation
       tests, the AuctionClock pattern) — KNOWN backlog. (M)
+- [ ] B-O8 **(new, B-T2 finding)** `food/order/[orderId].tsx`'s countdown ticker
+      (`setInterval(() => setNow(Date.now()), 1000)`, empty deps, no phase gating) keeps re-rendering
+      the whole ~900-line screen once/sec for the entire order lifetime even once none of the three
+      countdown-ring branches that actually read `now` can render — the exact anti-pattern
+      `PERF20-02` already fixed by extracting `AuctionClock` in the sibling `order/[id].tsx`, but
+      that sibling-sweep never reached this food-order screen. Sibling-sweep also found
+      `rider/food-job.tsx:177-181` with the identical unconditional ticker shape. Fix: gate the
+      interval on the phases that actually consume `now` (or extract a small self-ticking
+      countdown component per the `AuctionClock` pattern) in both files. No wrong output today —
+      pure sustained 1Hz JS-thread churn on Go-class hardware for most of an order's real duration,
+      which is why it's an optimization item, not a same-run defect fix. (S)
+- [ ] B-O9 **(new, B-T2 finding, refines B-O2)** `B-O2`'s planned `React.memo` on `JobCard` alone
+      won't stop the rider board's worst re-render: `apps/mobile/app/rider/(tabs)/index.tsx`'s
+      `ranked` (haversine-distance-sort over the whole open-orders list, line ~491) is computed
+      inline in the render body with no `useMemo` — unlike its sibling `bidIds`, which is memoized —
+      so every keystroke in the compose card's fare/ETA field (plain top-level `useState`) re-runs
+      the O(n log n) sort and re-renders every `JobCard` row, unrelated to what the keystroke
+      actually changed; separately, `onAction={() => chooseOrder(o)}` allocates a fresh closure per
+      row per render, which would defeat a shallow-prop-comparison `React.memo` even after B-O2
+      lands. When implementing B-O2, also wrap `ranked` in `useMemo` (deps: the open-orders list +
+      `bidIds`) and `chooseOrder`/the row's `onAction` in `useCallback`, or `JobCard`'s memo
+      boundary won't actually hold. Weaker sibling noted in `food/search.tsx` (unmemoized filter +
+      fresh per-row closures) — same shape, lower priority since that filter's keystroke-recompute
+      is semantically necessary, not wasted. (S, bundle with B-O2)
 - [ ] B-O7 **(re-ranked to #3, was #7)** Cold-boot request prioritization — defer the push-token
       register POST (`use-push-registration.ts`) and, where feasible, `/app/version-gate` /
       `/app/feature-flags` a beat behind `/app/bootstrap` (e.g. a short delay/idle-callback, or firing

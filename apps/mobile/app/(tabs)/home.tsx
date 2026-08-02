@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { getActiveCustomerOrder, type OrderSnapshot } from "../../src/api/orders";
 import {
@@ -13,6 +13,7 @@ import {
   restaurantCardStatus,
 } from "../../src/logic/home-feed";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
+import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { orderKey } from "../../src/query/client";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
@@ -45,8 +46,11 @@ function RestaurantsRail(): React.ReactElement | null {
   const router = useRouter();
   const { restaurantsEnabled } = useFeatureFlags();
   const feed = useRestaurantListFeed(restaurantsEnabled);
-  // Recompute only when the restaurant list itself changes, mirroring D1's food/index.tsx.
-  const now = useMemo(() => new Date(), [feed.restaurants]);
+  // LC-B06: was `useMemo(() => new Date(), [feed.restaurants])`, mirroring D1's food/index.tsx — but
+  // that mirrored the same bug: structural sharing on a no-change refetch keeps `feed.restaurants`'
+  // reference stable, so `now` stayed pinned at first render and the rail's open/closing-soon status
+  // never advanced for the life of the screen.
+  const now = useNow();
 
   if (!restaurantsEnabled) return null;
 
@@ -132,9 +136,16 @@ export default function LauncherHomeScreen(): React.ReactElement {
     invalidateCustomerOrderHistory(qc);
   });
   const activeOrder = activeOrderQ.data ?? null;
+  // Only seed orderKey(id) while THIS screen is the visible route. When home is blurred beneath
+  // /order/[id] (the customer is looking at the live tracking screen), use-order-socket.ts owns that
+  // same cache entry and merges live position/status pushes into it with an anti-rollback guard
+  // (lastPositionRef/reconcileAfterRefetch) — a raw full-object setQueryData from here, triggered by
+  // an unrelated foreground/focus refetch of activeOrderQ, would blindly replace that entry and could
+  // roll the rider's pin backward on the map. Gating on homeFocused means this write only ever seeds
+  // the cache for a subsequent navigation TO /order/[id], never clobbers it while already there.
   useEffect(() => {
-    if (activeOrder) qc.setQueryData<OrderSnapshot>(orderKey(activeOrder.id), activeOrder);
-  }, [activeOrder, qc]);
+    if (homeFocused && activeOrder) qc.setQueryData<OrderSnapshot>(orderKey(activeOrder.id), activeOrder);
+  }, [homeFocused, activeOrder, qc]);
 
   const onService = (id: string): void => {
     if (id === "express") router.push("/send");
