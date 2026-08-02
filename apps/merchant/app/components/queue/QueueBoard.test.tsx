@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { useState } from "react";
 import { QueueBoard } from "./QueueBoard";
+import { confirmGoodsReturned, markReady, revealPickupCode } from "../../lib/orders-api";
 
 vi.mock("../../lib/orders-api", () => ({
   acceptOrder: vi.fn().mockResolvedValue({}),
@@ -104,5 +105,51 @@ describe("QueueBoard NEW ORDER takeover — D-D0a (LC-D02)", () => {
 
     const acceptButtonForSecond = screen.getByRole("button", { name: /^Accept/ }) as HTMLButtonElement;
     expect(acceptButtonForSecond.disabled).toBe(false);
+  });
+});
+
+describe("QueueBoard order actions surface failures instead of failing silently — D-D0b (LC-D03)", () => {
+  it("shows an error and re-enables the button after markReady rejects", async () => {
+    vi.mocked(markReady).mockRejectedValueOnce(new Error("Network error"));
+    const orders = [order({ id: "o1", merchantPhase: "preparing", prepMinutes: 10, prepStartedAt: new Date().toISOString() })];
+    render(<Harness initial={orders} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark ready" }));
+
+    await screen.findByText("Network error");
+    const button = screen.getByRole("button", { name: "Mark ready" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+  });
+
+  it("shows an error and re-enables the button after revealPickupCode rejects", async () => {
+    // The RiderSecuredTakeover fires its own reveal on mount — consume that call first so the
+    // rejection under test lands on the OrderCard's own "Show pickup code" click.
+    vi.mocked(revealPickupCode)
+      .mockRejectedValueOnce(new Error("takeover mount reveal"))
+      .mockRejectedValueOnce(new Error("Reveal failed"));
+    const orders = [order({ id: "o1", merchantPhase: "ready_for_pickup", riderId: "r1" })];
+    render(<Harness initial={orders} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Got it" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Show pickup code" }));
+
+    await screen.findByText("Reveal failed");
+    const button = screen.getByRole("button", { name: "Show pickup code" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+  });
+
+  it("shows an error and keeps the return card usable after confirmGoodsReturned rejects", async () => {
+    vi.mocked(confirmGoodsReturned).mockRejectedValueOnce(new Error("Confirm failed"));
+    const orders = [order({ id: "o1", debtStatus: "open", debtAmount: 5, status: "undelivered" })];
+    render(<Harness initial={orders} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm the food is back" }));
+
+    await screen.findByText("Confirm failed");
+    await waitFor(() => {
+      const button = screen.getByRole("button", { name: "Confirm the food is back" }) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+    });
   });
 });

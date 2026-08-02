@@ -26,6 +26,11 @@ import { OrderCard, type OrderCardBucket } from "./OrderCard";
 import { ReturnsSection } from "./ReturnsSection";
 import { RiderSecuredTakeover } from "./RiderSecuredTakeover";
 
+interface OrderActions {
+  onMarkReady: (orderId: string) => Promise<void>;
+  onRevealPickupCode: (orderId: string) => Promise<string>;
+}
+
 interface MoneyActions {
   onLogCall: (orderId: string) => Promise<void>;
   onRequestPayment: (orderId: string, overrideCallLog: boolean) => Promise<void>;
@@ -39,22 +44,16 @@ function Column({
   tint,
   items,
   disabled,
-  pickupCodes,
-  revealingId,
-  onMarkReady,
-  onRevealPickupCode,
   onOpenHold,
+  orderActions,
   moneyActions,
 }: {
   title: string;
   tint: string;
   items: { order: MerchantOrderResponse; bucket: OrderCardBucket }[];
   disabled: boolean;
-  pickupCodes: Record<string, string>;
-  revealingId: string | null;
-  onMarkReady: (orderId: string) => void;
-  onRevealPickupCode: (orderId: string) => void;
   onOpenHold: (order: MerchantOrderResponse) => void;
+  orderActions: OrderActions;
   moneyActions: MoneyActions;
 }) {
   return (
@@ -72,11 +71,8 @@ function Column({
             order={order}
             bucket={bucket}
             disabled={disabled}
-            pickupCode={pickupCodes[order.id]}
-            revealingCode={revealingId === order.id}
-            onMarkReady={onMarkReady}
-            onRevealPickupCode={onRevealPickupCode}
             onOpenHold={onOpenHold}
+            {...orderActions}
             {...moneyActions}
           />
         ))}
@@ -103,8 +99,6 @@ export function QueueBoard({
   const [ackSecuredIds, setAckSecuredIds] = useState<Set<string>>(new Set());
   const [ackHoldIds, setAckHoldIds] = useState<Set<string>>(new Set());
   const [openHoldId, setOpenHoldId] = useState<string | null>(null);
-  const [pickupCodes, setPickupCodes] = useState<Record<string, string>>({});
-  const [revealingId, setRevealingId] = useState<string | null>(null);
 
   const groups = groupQueue(orders);
   const board = shouldUseBoard(orders);
@@ -125,15 +119,16 @@ export function QueueBoard({
     refetch();
   }
 
-  function handleMarkReady(orderId: string) {
-    void markReady(orderId).then(refetch);
+  // LC-D03: callers (OrderCard) own the busy/error state per order — this just propagates
+  // the rejection instead of swallowing it in a bare `void` fire-and-forget.
+  async function handleMarkReady(orderId: string) {
+    await markReady(orderId);
+    refetch();
   }
 
-  function handleRevealPickupCode(orderId: string) {
-    setRevealingId(orderId);
-    void revealPickupCode(orderId)
-      .then((res) => setPickupCodes((prev) => ({ ...prev, [orderId]: res.pickupCode })))
-      .finally(() => setRevealingId(null));
+  async function handleRevealPickupCode(orderId: string): Promise<string> {
+    const res = await revealPickupCode(orderId);
+    return res.pickupCode;
   }
 
   function handleOpenHold(order: MerchantOrderResponse) {
@@ -251,7 +246,8 @@ export function QueueBoard({
     );
   }
 
-  const columnProps = { disabled, pickupCodes, revealingId, onMarkReady: handleMarkReady, onRevealPickupCode: handleRevealPickupCode, onOpenHold: handleOpenHold, moneyActions };
+  const orderActions: OrderActions = { onMarkReady: handleMarkReady, onRevealPickupCode: handleRevealPickupCode };
+  const columnProps = { disabled, onOpenHold: handleOpenHold, orderActions, moneyActions };
 
   if (!board) {
     return (
