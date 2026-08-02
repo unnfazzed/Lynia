@@ -1,5 +1,5 @@
 import { Global, Logger, Module } from "@nestjs/common";
-import { createRedisClient } from "../common/redis";
+import { createRedisClient, REDIS_FAIL_FAST } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { AdminGuard } from "./admin.guard";
@@ -28,7 +28,9 @@ import { WhatsappWebhookController } from "./whatsapp-webhook.controller";
       inject: [ENV],
       useFactory: (env: Env): OtpStore => {
         if (!env.REDIS_URL) return new InMemoryOtpStore();
-        const client = createRedisClient(env.REDIS_URL);
+        // LC-C01: request-path client (OTP send/verify + rate-limit counters) fails fast on a Redis
+        // outage instead of hanging the request until reconnect.
+        const client = createRedisClient(env.REDIS_URL, REDIS_FAIL_FAST);
         // DS15-01: the OTP + rate-limit client backs OTP send/verify and the fixed-window counters.
         // createRedisClient already attaches a baseline `error` listener so a Redis blip can't crash the
         // instance; this contextual one aids attribution (which client blipped). Log, never rethrow.

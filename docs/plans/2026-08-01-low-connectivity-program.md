@@ -180,7 +180,7 @@ resilience seams ([resilience]).
 ### Lane C — offline & 2G resilience (Opus 4.8, `0 6 * * *`)
 
 **Confirmed Day-0 defects — FIX FIRST (one per firing, before the territories below; regression test each; C01 is sensitive-auth → 4-question treatment). See `docs/LC-DAY0-AUDIT-2026-08-01.md`.**
-- [ ] C-D0a **CONFIRMED CRITICAL** — `apps/api/src/common/redis.ts:26`: a Memorystore outage hangs the live API. Add `commandTimeout` (evaluate `enableOfflineQueue:false`) so the existing fallbacks fire; spec asserting a command rejects rather than pends when disconnected.
+- [x] C-D0a **CONFIRMED CRITICAL — FIXED (interactive, 2026-08-01)** — `apps/api/src/common/redis.ts`: opt-in `REDIS_FAIL_FAST` (`enableOfflineQueue:false` + 2s `commandTimeout`) applied to the OTP/rate-limit, MicroCache-L2 and tracking geo/position request-path clients; the Socket.IO pub/sub adapter keeps the default. Regression spec in `redis.spec.ts` (asserts the fail-fast config + that a disconnected client rejects rather than pends). Residual: full per-caller rollout is done for the hot paths; the health probe keeps its existing 2s race. See docs/LC-C-REPORT-2026-08-01.md.
 - [ ] C-D0b **CONFIRMED CRITICAL** — `apps/merchant/app/lib/use-queue-poll.ts:31`: hung request freezes the kitchen board (latch stuck, no timeout). Pairs with C-D0c: bounded fetch timeout + self-healing latch + independent healthz probe.
 - [ ] C-D0c **CONFIRMED HIGH** — `apps/merchant/app/lib/api-client.ts:76`: no request timeout anywhere → one stalled 2G request freezes the board with "Connected" still showing.
 - [ ] C-D0d **CONFIRMED HIGH** — `apps/merchant/app/lib/api-client.ts:166`: a blip/5xx on `/auth/refresh` signs the merchant out mid-shift.

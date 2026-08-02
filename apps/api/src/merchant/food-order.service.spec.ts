@@ -640,23 +640,32 @@ describe("FoodOrderService reconciler sweeps", () => {
   });
 
   it("N-23: end-of-day close only fires once the shop's own closing time has passed", async () => {
-    const closeAtMidnightSoFarInThePast = { mon: { open: "00:00", close: "00:00" }, tue: { open: "00:00", close: "00:00" }, wed: { open: "00:00", close: "00:00" }, thu: { open: "00:00", close: "00:00" }, fri: { open: "00:00", close: "00:00" }, sat: { open: "00:00", close: "00:00" }, sun: { open: "00:00", close: "00:00" } };
-    let cancelledCount = 0;
-    const { svc } = build({
-      order: {
-        findMany: async () => [{ id: "o1", merchantId: "m1" }],
-        updateMany: async () => {
-          cancelledCount++;
-          return { count: 1 };
+    // Pin the clock to midday: isPastClosingTime uses the server wall clock, and a "00:00" close is
+    // only in the past once now >= 00:00:59.999 local — so at ~00:00 UTC (a midnight CI run) this
+    // flaked to cancelled:0. Midday is unambiguously past 00:00 in every timezone. Restore in finally.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-15T12:00:00Z"));
+    try {
+      const closeAtMidnightSoFarInThePast = { mon: { open: "00:00", close: "00:00" }, tue: { open: "00:00", close: "00:00" }, wed: { open: "00:00", close: "00:00" }, thu: { open: "00:00", close: "00:00" }, fri: { open: "00:00", close: "00:00" }, sat: { open: "00:00", close: "00:00" }, sun: { open: "00:00", close: "00:00" } };
+      let cancelledCount = 0;
+      const { svc } = build({
+        order: {
+          findMany: async () => [{ id: "o1", merchantId: "m1" }],
+          updateMany: async () => {
+            cancelledCount++;
+            return { count: 1 };
+          },
+          findUnique: async () => ({ customerId: "c1" }),
         },
-        findUnique: async () => ({ customerId: "c1" }),
-      },
-      merchant: { findMany: async () => [{ id: "m1", hours: closeAtMidnightSoFarInThePast }] },
-      orderEvent: { create: async () => ({}) },
-    });
-    const res = await svc.sweepEndOfDayClose();
-    expect(res).toEqual({ cancelled: 1 });
-    expect(cancelledCount).toBe(1);
+        merchant: { findMany: async () => [{ id: "m1", hours: closeAtMidnightSoFarInThePast }] },
+        orderEvent: { create: async () => ({}) },
+      });
+      const res = await svc.sweepEndOfDayClose();
+      expect(res).toEqual({ cancelled: 1 });
+      expect(cancelledCount).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("N-23: does nothing while the shop is still within its hours", async () => {

@@ -5,7 +5,7 @@ import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, type CreateOrderRequest,
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache, type MicroCacheL2 } from "../common/micro-cache";
-import { createRedisClient } from "../common/redis";
+import { createRedisClient, REDIS_FAIL_FAST } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
@@ -140,7 +140,9 @@ export class OrdersService implements OnModuleDestroy {
     if (this.env?.MICRO_CACHE_REDIS_L2 !== "true" || !this.env.REDIS_URL) return null;
     if (!this.microCacheL2Started) {
       this.microCacheL2Started = true;
-      this.microCacheL2Client = createRedisClient(this.env.REDIS_URL);
+      // LC-C01: request-path client (MicroCache L2) fails fast so a Redis blip degrades to L1-only
+      // immediately instead of hanging the coalesced snapshot flight until reconnect.
+      this.microCacheL2Client = createRedisClient(this.env.REDIS_URL, REDIS_FAIL_FAST);
       this.microCacheL2Client.on("error", (err: Error) =>
         this.logger.warn(`micro-cache L2 redis error: ${err.message}`),
       );
