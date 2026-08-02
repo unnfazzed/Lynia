@@ -1,8 +1,9 @@
 import { tokens } from "@lynia/shared";
 import { isMerchantOpenNow } from "@lynia/shared";
 import { useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { Button, EmptyState, Icon, Screen, SkeletonList } from "../../src/ui";
@@ -14,7 +15,11 @@ export default function RestaurantListScreen(): React.ReactElement {
   const { restaurantsEnabled } = useFeatureFlags();
   const feed = useRestaurantListFeed(restaurantsEnabled);
   const [openOnly, setOpenOnly] = useState(false);
-  const now = useMemo(() => new Date(), [feed.restaurants]);
+  // LC-B06: was `useMemo(() => new Date(), [feed.restaurants])` — useRestaurantListFeed's default
+  // structural sharing keeps the same `restaurants` reference across a no-change refetch, so `now`
+  // stayed pinned at first render for practical purposes; a stale-open restaurant kept passing the
+  // "Open now" filter after it actually closed.
+  const now = useNow();
 
   if (!restaurantsEnabled) {
     return (
