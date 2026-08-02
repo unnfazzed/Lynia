@@ -145,7 +145,29 @@ resilience seams ([resilience]).
 - [ ] A-T5 Native binary levers inventory (report-only while EAS dormant): ABI/AAB delivery
       config, resource shrinking, per-device download measurement path.
 
-**Optimization checklist (seeded; audit rounds append):**
+**Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-02 steer #2 — see
+`docs/LC-STEER-2026-08-02b.md` §4 for rationale):**
+- [ ] A-O12 **(re-ranked to #1, was #12)** **A-T2 finding (LC-A04):** stop zod v4's ~872 KB
+      locale-tables barrel (`zod/v4/classic/external.js`'s `export * as locales from
+      "../locales/index.js"`, 50 languages, confirmed unused) from riding into the Android bundle
+      via `contracts.ts`'s `import { z } from "zod"`. Likely needs a Metro `resolveRequest`
+      redirect (the same pattern already used for the `@posthog/core` subpath in
+      `apps/mobile/metro.config.js`) to substitute a locale-free zod entry point, or a narrower
+      official zod import path if one preserves the "classic" `z.object`/`z.string()` API
+      contracts.ts relies on — verify the substitute still passes `packages/shared`'s zod-parse
+      self-tests before landing. Current Hermes budget headroom is 0.4% (23.7 KB), so this is
+      likely the highest-leverage single item on this checklist — promoted ahead of the queue
+      because it is the *only* item on this list that shrinks the Hermes bundle itself (A-O1/4/5/
+      6/7/9/10 are [data]/round-trip diet, not [size]; A-O2/3 are CI-guardrail meta; A-O8 needs a
+      native build train). (S/M)
+- [ ] A-O11 **(re-ranked to #2, was #11)** **A-T2 finding (LC-A03):** drop `export * from
+      "./fixtures"` from `packages/shared/src/index.ts` — the 299-line test-fixture module has
+      zero production consumers (only its own self-test, which already imports it via a relative
+      path); repoint `fixtures.test.ts`'s import if needed and give the module a separate,
+      non-barrel entry point (or leave it un-exported from the package root) so it never rides
+      into a runtime bundle. Zero behavior change, pure dead-weight removal — promoted alongside
+      A-O12 for the same reason (only bundle-shrinking items on this list, and the razor-thin 0.4%
+      Hermes headroom makes both urgent). (S)
 - [ ] A-O1 Socket-gate the offers-list 15s poll (keep a slow safety net) — KNOWN backlog. (S)
 - [ ] A-O2 Merge-time size diff: extend the `mobile-bundle-size` job to post the measured bytes
       + delta vs base as a PR comment / job summary line, so growth is visible even under budget
@@ -165,22 +187,6 @@ resilience seams ([resilience]).
 - [ ] A-O7 ALR-07: double GPS stream while foregrounded (~2× location upload) — KNOWN ledger. (M)
 - [ ] A-O8 `expo-image` migration (disk/mem cache, downsampling) — KNOWN backlog; **needs native
       build train**. (L)
-- [ ] A-O11 **A-T2 finding (LC-A03):** drop `export * from "./fixtures"` from
-      `packages/shared/src/index.ts` — the 299-line test-fixture module has zero production
-      consumers (only its own self-test, which already imports it via a relative path); repoint
-      `fixtures.test.ts`'s import if needed and give the module a separate, non-barrel entry point
-      (or leave it un-exported from the package root) so it never rides into a runtime bundle. Zero
-      behavior change, pure dead-weight removal. (S)
-- [ ] A-O12 **A-T2 finding (LC-A04):** stop zod v4's ~872 KB locale-tables barrel
-      (`zod/v4/classic/external.js`'s `export * as locales from "../locales/index.js"`, 50
-      languages, confirmed unused) from riding into the Android bundle via `contracts.ts`'s `import
-      { z } from "zod"`. Likely needs a Metro `resolveRequest` redirect (the same pattern already
-      used for the `@posthog/core` subpath in `apps/mobile/metro.config.js`) to substitute a
-      locale-free zod entry point, or a narrower official zod import path if one preserves the
-      "classic" `z.object`/`z.string()` API contracts.ts relies on — verify the substitute still
-      passes `packages/shared`'s zod-parse self-tests before landing. Current Hermes budget
-      headroom is 0.4% (23.7 KB), so this is likely the highest-leverage single item on this
-      checklist. (S/M)
 
 ### Lane B — Go-class runtime perf (Opus 5, `0 4 * * *`)
 
@@ -216,10 +222,20 @@ resilience seams ([resilience]).
       accumulation, image memory behavior on 1–2 GB devices.
 - [ ] B-T4 Animation/JS-thread audit: native-driver coverage, tickers, work in render bodies.
 
-**Optimization checklist (seeded; audit rounds append):**
+**Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-02 steer #2 — see
+`docs/LC-STEER-2026-08-02b.md` §4 for rationale):**
 - [ ] B-O1 History/board/notifications lists → FlatList + cursor pagination — KNOWN backlog. (M)
 - [ ] B-O2 Memo boundaries for ComposeMap / JobDetailsCard / board-card (with render-isolation
       tests, the AuctionClock pattern) — KNOWN backlog. (M)
+- [ ] B-O7 **(re-ranked to #3, was #7)** Cold-boot request prioritization — defer the push-token
+      register POST (`use-push-registration.ts`) and, where feasible, `/app/version-gate` /
+      `/app/feature-flags` a beat behind `/app/bootstrap` (e.g. a short delay/idle-callback, or firing
+      off `BootstrapSync`'s settle instead of mount) so they don't contend for bandwidth with the
+      first-paint-critical aggregate on a constrained 2G/3G link. Impact unconfirmed without an
+      on-device 2G trace — audit-only finding from B-T1, not implemented that run. Promoted ahead
+      of B-O5/B-O3/B-O6 because it's concrete and S-effort with evidence behind it, unlike O3/O6
+      below which are blocked on hardware/native-build access this environment doesn't have. (S)
+- [ ] B-O5 Socket self-heal refetch cadence on reconnect attempts — KNOWN backlog. (S)
 - [ ] B-O3 Overlap/defer boot keystore reads — KNOWN backlog. **B-T1 evidence:** `loadSession()`
       (`src/auth/session.ts`) and `loadOnboardingSeen()`/`loadRolePreference()`
       (`src/auth/device-state.ts`, read from `app/index.tsx`) already fire concurrently at the
@@ -227,22 +243,14 @@ resilience seams ([resilience]).
       native-side: Android Keystore/StrongBox decrypt calls can serialize inside the OS on Go-class
       hardware, which a code trace can't observe. Needs an on-device profile (systrace/logcat
       timestamps across the 3 native calls on an A53-class device) before further JS-side change is
-      worth making. (S)
-- [ ] B-O4 Push-registration off the first-paint path — KNOWN backlog. **B-T1 evidence:**
-      `usePushRegistration` (`src/push/use-push-registration.ts`) already runs check-don't-request and
-      never blocks render (mounted as a null-returning sibling, fires from a `useEffect`) — ALR-04
-      already fixed the blocking-dialog half of this. What's left is bandwidth, not render-blocking: on
-      a cold boot the token-register POST, `/app/version-gate`, and (customer) `/app/feature-flags`
-      fire in the same window as the first-paint-critical `/app/bootstrap` fetch, competing for the
-      same 2G/3G pipe. Rescoped into B-O7. (S)
-- [ ] B-O5 Socket self-heal refetch cadence on reconnect attempts — KNOWN backlog. (S)
+      worth making — **deprioritized below O7/O5 (2026-08-02 steer #2): blocked on hardware access
+      this environment doesn't have, not on anything a firing can act on today.** (S)
 - [ ] B-O6 Native font embedding (config plugin) — KNOWN backlog; **needs native build train**. (L)
-- [ ] B-O7 **NEW (B-T1, 2026-08-02):** Cold-boot request prioritization — defer the push-token
-      register POST (`use-push-registration.ts`) and, where feasible, `/app/version-gate` /
-      `/app/feature-flags` a beat behind `/app/bootstrap` (e.g. a short delay/idle-callback, or firing
-      off `BootstrapSync`'s settle instead of mount) so they don't contend for bandwidth with the
-      first-paint-critical aggregate on a constrained 2G/3G link. Impact unconfirmed without an
-      on-device 2G trace — audit-only finding, not implemented this run. (S)
+- [ ] ~~B-O4 Push-registration off the first-paint path~~ — **struck through (2026-08-02 steer #2):
+      superseded by B-O7.** B-T1's evidence showed the render-blocking half was already fixed
+      (ALR-04); the only remaining scope — bandwidth contention on cold boot — was rescoped into
+      B-O7 verbatim by the same report. Keeping both as separate unchecked items would double-count
+      one piece of work.
 
 ### Lane C — offline & 2G resilience (Opus 4.8, `0 6 * * *`)
 
@@ -350,6 +358,16 @@ findings are the performance-watch lane's.
 reviewed interactively, not auto-merged) — Cloud Armor rate budget, Cloud SQL disk/IOPS, prod
 `--max-instances`, and a black-box `/healthz` uptime check. See `docs/KNOWN_BUGS.md`
 "Day-0 LC sweep" for current status per item.
+
+**Update (2026-08-02 steer #2):** since the first steer run, the sprint cadence (8×/day per lane,
+`docs/routines/harare-loops.md`) drove all four lanes through their remaining Day-0 defects in one
+day: LC-B04 (PR #473), LC-C02/C03/C04 (PR #474), LC-D02/LC-D03/LC-D06 (PRs #476/#478/#481), and
+LC-C05 (PR #479) are now all FIXED — every Day-0-confirmed defect across all four lanes is closed
+except D-D0d/D-D0e/D-D0f (MEDIUM, still OPEN → LC-D). LC-A completed its first audit territory
+(A-T2, PR #480) and LC-B its second (B-T1, PR #483), both clean audits that seeded new optimization
+items (A-O11/A-O12, B-O7) rather than finding fresh defects. All 11 LC-branded PRs today merged
+clean — no stalled lane, no trigger repair needed. See `docs/LC-STEER-2026-08-02b.md` for the full
+re-rank and budget-risk detail.
 
 ## §8 Exit criteria
 
