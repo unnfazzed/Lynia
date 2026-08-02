@@ -31,10 +31,19 @@ export function nextProbeDelayMs(attempt: number): number {
 
 const HEALTHZ_TIMEOUT_MS = 5_000;
 
+/** LC-C04: independent liveness check while believed-reachable. The backoff probe below only ever
+ *  runs once something ELSE has already called `reportUnreachable()` — before this existed, an outage
+ *  where no in-flight app request happened to fail (a stuck poll latch, a screen with no live poller,
+ *  a backgrounded tab whose `setInterval` got throttled) went undetected: the CONNECTION LOST bar never
+ *  showed, the pill stayed green. This timer fires on its own clock, independent of app traffic, and
+ *  treats a failed check exactly like a failed app request. */
+export const ACTIVE_PROBE_INTERVAL_MS = 20_000;
+
 export class ReachabilityStore {
   private state: ReachabilityState = { reachable: true, attempt: 0, unreachableSinceMs: null };
   private listeners = new Set<ReachabilityListener>();
   private probeTimer: ReturnType<typeof setTimeout> | null = null;
+  private activeProbeTimer: ReturnType<typeof setTimeout> | null = null;
   private probing = false;
   private stopped = true;
 
@@ -70,10 +79,12 @@ export class ReachabilityStore {
       this.state = { reachable: true, attempt: 0, unreachableSinceMs: null };
       this.emit();
     }
+    this.scheduleActiveProbe();
   }
 
   /** A network-level failure: DNS, connection refused, or a timed-out request. */
   reportUnreachable(): void {
+    this.clearActiveProbe();
     if (this.state.reachable) {
       this.state = { reachable: false, attempt: 0, unreachableSinceMs: this.now() };
       this.emit();
@@ -84,6 +95,7 @@ export class ReachabilityStore {
   start(): void {
     this.stopped = false;
     if (!this.state.reachable) this.scheduleProbe();
+    else this.scheduleActiveProbe();
   }
 
   stop(): void {
@@ -92,6 +104,7 @@ export class ReachabilityStore {
       clearTimeout(this.probeTimer);
       this.probeTimer = null;
     }
+    this.clearActiveProbe();
   }
 
   private scheduleProbe(): void {
@@ -109,6 +122,28 @@ export class ReachabilityStore {
         else this.scheduleProbe();
       });
     }, delay);
+  }
+
+  private clearActiveProbe(): void {
+    if (this.activeProbeTimer) {
+      clearTimeout(this.activeProbeTimer);
+      this.activeProbeTimer = null;
+    }
+  }
+
+  /** Runs only while `start()`-ed and believed-reachable. Failure hands off to the same recovery path
+   *  a failed app request would trigger; success just reschedules itself. */
+  private scheduleActiveProbe(): void {
+    if (this.stopped || !this.state.reachable || this.activeProbeTimer || this.probing) return;
+    this.activeProbeTimer = setTimeout(() => {
+      this.activeProbeTimer = null;
+      this.probing = true;
+      void this.probeFetch(`${this.baseUrl}/healthz`).then((ok) => {
+        this.probing = false;
+        if (ok) this.scheduleActiveProbe();
+        else this.reportUnreachable();
+      });
+    }, ACTIVE_PROBE_INTERVAL_MS);
   }
 }
 

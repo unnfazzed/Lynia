@@ -6,6 +6,12 @@ import {
   type MerchantSession,
 } from "./session";
 
+/** Ceiling on every outbound call. Without it a stalled 2G request never resolves — the kitchen board
+ *  latches on "loading" forever with the header still showing "Connected" (LC-C02/LC-C04). Matches
+ *  apps/admin's ADMIN_FETCH_TIMEOUT_MS; comfortably above the 2-5s degraded-link window the lane audits
+ *  under, so a slow-but-alive request still completes. */
+const MERCHANT_FETCH_TIMEOUT_MS = 10_000;
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -78,6 +84,7 @@ async function rawFetch<T>(path: string, opts: { method?: string; body?: unknown
       headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       cache: "no-store",
+      signal: AbortSignal.timeout(MERCHANT_FETCH_TIMEOUT_MS),
     });
   } catch {
     throw new ApiError(0, "Couldn't reach the server — check the connection and try again.");
@@ -93,11 +100,18 @@ async function rawFetch<T>(path: string, opts: { method?: string; body?: unknown
   return (await res.json()) as T;
 }
 
+/** LC-C03: `doRefresh` distinguishes a DEAD refresh token (401/403 — sign out, correctly) from a
+ *  TRANSIENT failure (network error, timeout, 5xx — a blip on a 2G link, not a revoked token). Before
+ *  this type existed both collapsed to the same `null`, and the caller cleared the session on either —
+ *  a stalled/slow `/auth/refresh` request signed the merchant out mid-shift over nothing worse than a
+ *  dead zone. Only `dead` may clear the session. */
+type RefreshOutcome = { kind: "refreshed"; session: MerchantSession } | { kind: "dead" } | { kind: "transient" };
+
 // Single-flight refresh: several near-simultaneous authed calls hitting a just-expired token must
 // share one /auth/refresh round trip, not each mint their own (mirrors apps/mobile/src/api/client.ts).
-let inflightRefresh: Promise<MerchantSession | null> | null = null;
+let inflightRefresh: Promise<RefreshOutcome> | null = null;
 
-async function refreshSession(refreshToken: string): Promise<MerchantSession | null> {
+async function refreshSession(refreshToken: string): Promise<RefreshOutcome> {
   if (!inflightRefresh) {
     inflightRefresh = doRefresh(refreshToken).finally(() => {
       inflightRefresh = null;
@@ -106,7 +120,7 @@ async function refreshSession(refreshToken: string): Promise<MerchantSession | n
   return inflightRefresh;
 }
 
-async function doRefresh(refreshToken: string): Promise<MerchantSession | null> {
+async function doRefresh(refreshToken: string): Promise<RefreshOutcome> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/auth/refresh`, {
@@ -114,14 +128,16 @@ async function doRefresh(refreshToken: string): Promise<MerchantSession | null> 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),
       cache: "no-store",
+      signal: AbortSignal.timeout(MERCHANT_FETCH_TIMEOUT_MS),
     });
   } catch {
-    // Transient (network) failure — leave the session intact, the caller's own request just fails
-    // this once; a later call gets another chance rather than being signed out over a blip.
-    return null;
+    // Transient (network error, or the timeout above firing) — leave the session intact, the
+    // caller's own request just fails this once; a later call gets another chance rather than being
+    // signed out over a blip.
+    return { kind: "transient" };
   }
-  if (res.status === 401 || res.status === 403) return null; // definitive: the refresh token is dead
-  if (!res.ok) return null; // transient server error — keep the session, retry later
+  if (res.status === 401 || res.status === 403) return { kind: "dead" }; // definitive: the refresh token is dead
+  if (!res.ok) return { kind: "transient" }; // transient server error — keep the session, retry later
   const data = (await res.json()) as { accessToken: string; refreshToken: string; expiresIn: number };
   const prior = loadMerchantSession();
   const next: MerchantSession = {
@@ -133,7 +149,7 @@ async function doRefresh(refreshToken: string): Promise<MerchantSession | null> 
     role: prior?.role ?? "merchant",
   };
   saveMerchantSession(next);
-  return next;
+  return { kind: "refreshed", session: next };
 }
 
 /** Authenticated fetch with refresh-on-401 (single-flight) and sign-out on a definitively dead
@@ -149,6 +165,7 @@ export async function authedFetch<T>(path: string, opts: { method?: string; body
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       cache: "no-store",
+      signal: AbortSignal.timeout(MERCHANT_FETCH_TIMEOUT_MS),
     });
 
   let res: Response;
@@ -163,13 +180,18 @@ export async function authedFetch<T>(path: string, opts: { method?: string; body
     if (!isAuthGuard401(body)) {
       throw new ApiError(401, (body as { message?: string } | null)?.message ?? "Rejected (401).");
     }
-    const refreshed = await refreshSession(session.refreshToken);
-    if (!refreshed) {
+    const outcome = await refreshSession(session.refreshToken);
+    if (outcome.kind === "dead") {
       clearMerchantSession();
       throw new ApiError(401, "Your session expired — sign in again.");
     }
+    if (outcome.kind === "transient") {
+      // Keep the session — a blip on /auth/refresh is not a revoked token (LC-C03). This one
+      // request fails; the merchant stays signed in for the next poll/action to try again.
+      throw new ApiError(0, "Couldn't reach the server — check the connection and try again.");
+    }
     try {
-      res = await attempt(refreshed.accessToken);
+      res = await attempt(outcome.session.accessToken);
     } catch {
       throw new ApiError(0, "Couldn't reach the server — check the connection and try again.");
     }
