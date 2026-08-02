@@ -205,7 +205,7 @@ export function QueueBoard({
   };
 
   if (active) {
-    return <NewOrderTakeover active={active} queued={queued} disabled={disabled} onAccept={handleAccept} onReject={handleReject} />;
+    return <NewOrderTakeover key={active.id} active={active} queued={queued} disabled={disabled} onAccept={handleAccept} onReject={handleReject} />;
   }
 
   if (securedToShow) {
@@ -214,7 +214,14 @@ export function QueueBoard({
 
   if (holdToShow) {
     return (
-      <NoRiderHoldTakeover order={holdToShow} disabled={disabled} onResume={handleHoldResume} onCancel={handleHoldCancel} onHold={handleHoldDismiss} />
+      <NoRiderHoldTakeover
+        key={holdToShow.id}
+        order={holdToShow}
+        disabled={disabled}
+        onResume={handleHoldResume}
+        onCancel={handleHoldCancel}
+        onHold={handleHoldDismiss}
+      />
     );
   }
 
