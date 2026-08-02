@@ -38,6 +38,7 @@ export function NoRiderHoldTakeover({
     setError(null);
     try {
       await action(order.id);
+      setSubmitting(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong — try again.");
       setSubmitting(false);

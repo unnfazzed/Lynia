@@ -54,6 +54,7 @@ export function NewOrderTakeover({
     setError(null);
     try {
       await onAccept(active.id, prepMinutes, [...unavailable]);
+      setSubmitting(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't accept the order — try again.");
       setSubmitting(false);
@@ -65,6 +66,7 @@ export function NewOrderTakeover({
     setError(null);
     try {
       await onReject(active.id, reason);
+      setSubmitting(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't reject the order — try again.");
       setSubmitting(false);
