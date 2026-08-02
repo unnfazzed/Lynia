@@ -158,7 +158,7 @@ resilience seams ([resilience]).
 ### Lane B — Go-class runtime perf (Opus 5, `0 4 * * *`)
 
 **Audit territory (confirmed Day-0 defects FIRST — fix each this run with a regression test, then the sweeps):**
-- [ ] B-D0 **CONFIRMED CRITICAL** — `apps/merchant/app/components/KitchenConnectionProvider.tsx:112` unbounded render loop (unmemoized context value + tick-bumping alarm effect); `useMemo` the value/alarm, depend on stable callbacks, add a bounded-render-count regression test. See `docs/LC-DAY0-AUDIT-2026-08-01.md`.
+- [x] B-D0 **CONFIRMED CRITICAL — FIXED (2026-08-02)** — `apps/merchant/app/components/KitchenConnectionProvider.tsx:112` unbounded render loop (unmemoized context value + tick-bumping alarm effect); `value`/`alarm` now memoized with `useMemo`, and `ring()`/`silence()`/`testRing()`/`arm()` only bump the `alarmTick` re-render trigger on an actual controller-state transition instead of unconditionally (the real trigger — the queue screen's `[unansweredCount, alarm]` alarm-sync effect re-fired itself forever). Render-count regression pin in `KitchenConnectionProvider.test.tsx` (confirmed it hangs against the pre-fix code). Ledger: LC-B04. See `docs/LC-DAY0-AUDIT-2026-08-01.md`, `docs/LC-B-REPORT-2026-08-02.md`.
 - [ ] B-T1 Boot-path trace: everything from process start → first interactive frame
       (`app/_layout.tsx` chain), classify each init as first-frame-critical vs deferrable
       (DoorDash lesson 2); includes KNOWN keystore-read overlap + push-registration timing.
