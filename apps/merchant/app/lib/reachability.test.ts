@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { nextProbeDelayMs, ReachabilityStore, type ReachabilityState } from "./reachability";
+import { ACTIVE_PROBE_INTERVAL_MS, nextProbeDelayMs, ReachabilityStore, type ReachabilityState } from "./reachability";
 
 describe("nextProbeDelayMs", () => {
   it("doubles from 2s and caps at 30s", () => {
@@ -68,5 +68,60 @@ describe("ReachabilityStore", () => {
     store.stop();
     await vi.advanceTimersByTimeAsync(10_000);
     expect(probe).not.toHaveBeenCalled();
+  });
+
+  // LC-C04: before the active probe existed, an outage with no in-flight app request (a stuck poll
+  // latch, a screen with no live poller, a throttled background tab) went undetected forever — nothing
+  // ever called reportUnreachable(). These assert the store notices on its own clock.
+  describe("active probe (LC-C04 — self-detects an outage independent of app traffic)", () => {
+    it("does nothing until start()", async () => {
+      const probe = vi.fn(async () => true);
+      const store = new ReachabilityStore(probe, "http://api", () => 0);
+      void store; // constructed but never start()-ed — no probe should ever fire
+      await vi.advanceTimersByTimeAsync(ACTIVE_PROBE_INTERVAL_MS * 2);
+      expect(probe).not.toHaveBeenCalled();
+    });
+
+    it("flips to unreachable on its own when a periodic check fails, with no external report", async () => {
+      let ok = true;
+      const probe = vi.fn(async () => ok);
+      const store = new ReachabilityStore(probe, "http://api", () => 99);
+      store.start();
+      expect(probe).not.toHaveBeenCalled();
+
+      ok = false;
+      await vi.advanceTimersByTimeAsync(ACTIVE_PROBE_INTERVAL_MS);
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(store.getState()).toMatchObject({ reachable: false, unreachableSinceMs: 99 });
+    });
+
+    it("reschedules itself on a successful check and keeps polling", async () => {
+      const probe = vi.fn(async () => true);
+      const store = new ReachabilityStore(probe, "http://api", () => 0);
+      store.start();
+      await vi.advanceTimersByTimeAsync(ACTIVE_PROBE_INTERVAL_MS);
+      expect(probe).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(ACTIVE_PROBE_INTERVAL_MS);
+      expect(probe).toHaveBeenCalledTimes(2);
+      expect(store.getState().reachable).toBe(true);
+    });
+
+    it("stop() cancels the active probe too", async () => {
+      const probe = vi.fn(async () => true);
+      const store = new ReachabilityStore(probe, "http://api", () => 0);
+      store.start();
+      store.stop();
+      await vi.advanceTimersByTimeAsync(ACTIVE_PROBE_INTERVAL_MS * 2);
+      expect(probe).not.toHaveBeenCalled();
+    });
+
+    it("a reachable app request (reportReachable) does not stack a second active-probe timer", async () => {
+      const probe = vi.fn(async () => true);
+      const store = new ReachabilityStore(probe, "http://api", () => 0);
+      store.start();
+      store.reportReachable(); // e.g. a queue-poll success firing right after start()
+      await vi.advanceTimersByTimeAsync(ACTIVE_PROBE_INTERVAL_MS);
+      expect(probe).toHaveBeenCalledTimes(1);
+    });
   });
 });

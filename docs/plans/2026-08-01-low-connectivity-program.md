@@ -181,9 +181,9 @@ resilience seams ([resilience]).
 
 **Confirmed Day-0 defects — FIX FIRST (one per firing, before the territories below; regression test each; C01 is sensitive-auth → 4-question treatment). See `docs/LC-DAY0-AUDIT-2026-08-01.md`.**
 - [x] C-D0a **CONFIRMED CRITICAL — FIXED (interactive, 2026-08-01)** — `apps/api/src/common/redis.ts`: opt-in `REDIS_FAIL_FAST` (`enableOfflineQueue:false` + 2s `commandTimeout`) applied to the OTP/rate-limit, MicroCache-L2 and tracking geo/position request-path clients; the Socket.IO pub/sub adapter keeps the default. Regression spec in `redis.spec.ts` (asserts the fail-fast config + that a disconnected client rejects rather than pends). Residual: full per-caller rollout is done for the hot paths; the health probe keeps its existing 2s race. See docs/LC-C-REPORT-2026-08-01.md.
-- [ ] C-D0b **CONFIRMED CRITICAL** — `apps/merchant/app/lib/use-queue-poll.ts:31`: hung request freezes the kitchen board (latch stuck, no timeout). Pairs with C-D0c: bounded fetch timeout + self-healing latch + independent healthz probe.
-- [ ] C-D0c **CONFIRMED HIGH** — `apps/merchant/app/lib/api-client.ts:76`: no request timeout anywhere → one stalled 2G request freezes the board with "Connected" still showing.
-- [ ] C-D0d **CONFIRMED HIGH** — `apps/merchant/app/lib/api-client.ts:166`: a blip/5xx on `/auth/refresh` signs the merchant out mid-shift.
+- [x] C-D0b **CONFIRMED CRITICAL — FIXED (2026-08-02)** — `apps/merchant/app/lib/use-queue-poll.ts:31`: hung request freezes the kitchen board (latch stuck, no timeout). Fixed together with C-D0c: bounded fetch timeout + self-healing `InflightLatch` + independent `/healthz` active-probe in `reachability.ts`. See docs/LC-C-REPORT-2026-08-02.md.
+- [x] C-D0c **CONFIRMED HIGH — FIXED (2026-08-02)** — `apps/merchant/app/lib/api-client.ts:76`: no request timeout anywhere → one stalled 2G request froze the board with "Connected" still showing. `MERCHANT_FETCH_TIMEOUT_MS = 10_000` (`AbortSignal.timeout`) added to every fetch call site.
+- [x] C-D0d **CONFIRMED HIGH — FIXED (2026-08-02)** — `apps/merchant/app/lib/api-client.ts:166`: a blip/5xx on `/auth/refresh` signed the merchant out mid-shift. Fixed opportunistically alongside C-D0c since adding the fetch timeout there would otherwise have made this bug's transient-failure path newly reachable via a timeout in addition to its existing network-throw/5xx triggers — `doRefresh` now distinguishes `dead` (401/403, sign out) from `transient` (network/timeout/5xx, keep session).
 - [ ] C-D0e **CONFIRMED MEDIUM** — `apps/merchant/app/lib/use-queue-poll.ts:33`: dropped post-mutation refetch + out-of-order responses resurrect an answered takeover; add request-generation sequencing + coalesced trailing refetch.
 
 **Audit territory** (per territory: trace under (a) 2–5 s per request, (b) connection death at
@@ -210,8 +210,8 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
 ### Lane D — journey & soundness sweep (Opus 4.8, `0 7 * * *`)
 
 **Confirmed Day-0 defects — FIX FIRST (one per firing, before the territories below; regression test each; D06 is sensitive-money → 4-question treatment). See `docs/LC-DAY0-AUDIT-2026-08-01.md`.**
-- [ ] D-D0a **CONFIRMED CRITICAL** — `apps/merchant/app/components/queue/NewOrderTakeover.tsx:52`: second of two simultaneous orders unanswerable (`submitting` not reset on success + no `key`); reset on success + `key={active.id}` + apply the same to `NoRiderHoldTakeover`.
-- [ ] D-D0b **CONFIRMED HIGH** — `apps/merchant/app/components/queue/QueueBoard.tsx:128`: mark-ready / pickup-code / debt-settle fired as bare `void promise` — route through a `run()` helper with per-order busy+error state.
+- [x] D-D0a **CONFIRMED CRITICAL — FIXED (LC loop D, 2026-08-02)** — `apps/merchant/app/components/queue/NewOrderTakeover.tsx`: `submitAccept`/`submitReject` now reset `submitting` on the success path (previously only on error), and `QueueBoard` renders both `NewOrderTakeover` and `NoRiderHoldTakeover` with `key={order.id}` so the takeover fully remounts at the order boundary instead of reusing the same instance across orders — closing the leak for `unavailable`/`showReject` too. Regression test in the new `QueueBoard.test.tsx` (jsdom + Testing Library, newly wired for the merchant app — verified it fails on the pre-fix code and passes after). See docs/LC-D-REPORT-2026-08-02.md.
+- [x] D-D0b **CONFIRMED HIGH — FIXED (LC loop D, 2026-08-02)** — `apps/merchant/app/components/queue/QueueBoard.tsx:128`: mark-ready / pickup-code reveal now propagate rejections instead of firing as bare `void`; `OrderCard` owns per-order busy+error state (mirrors `PaymentBucketActions.run()`) for both, and `ReturnsSection`'s previously-bare "Confirm the food is back" goods-return button gets the same per-order busy+error treatment. Regression tests in `QueueBoard.test.tsx`. See docs/LC-D-REPORT-2026-08-02.md.
 - [ ] D-D0c **CONFIRMED HIGH** — `apps/admin/app/components/ConfirmModal.tsx:118`: dismissal paths not `pending`-guarded + `formKey` re-minted per open → wallet-credit double-apply. Guard Escape/backdrop/Cancel on `pending`; mint `formKey` deterministically.
 - [ ] D-D0d **CONFIRMED MEDIUM** — `apps/merchant/app/lib/reachability.ts:98`: offline discipline dead on Menu/Shop/Hours/Statement; give `ReachabilityStore` an independent healthz producer + catch the two swallowing mutations.
 - [ ] D-D0e **CONFIRMED MEDIUM** — `apps/merchant/app/(app)/hours/page.tsx:408` + `menu/page.tsx`: busy-mode / back-in-stock / starter-category taps have no `catch`; write the `ApiError` into the existing rendered error state (mirror the sibling handlers).
@@ -275,8 +275,14 @@ Why not fixed here: this bootstrap session's deliverable is the program itself, 
 defects include sensitive-path changes (the shared auth/OTP Redis client; the admin
 wallet-credit idempotency key) that the repo's sensitive-lane doctrine says must not ship as
 unverified behavior changes — exactly the care the LC lanes exist to apply. The lanes fire within
-a day (LC-C 06:00, LC-B 04:00, LC-D 07:00 UTC) and take these first. Infra items stay OPEN for the
-founder (read-only doctrine); the two additive-index findings are the performance-watch lane's.
+a day (LC-C 06:00, LC-B 04:00, LC-D 07:00 UTC) and take these first. The two additive-index
+findings are the performance-watch lane's.
+
+**Update (2026-08-02 steer):** LC-C01 was fixed same-day, ahead of the scheduled 06:00 UTC firing
+(PR #471). All four `LC-INF*` founder-gated infra items were also applied same-day (PR #470,
+reviewed interactively, not auto-merged) — Cloud Armor rate budget, Cloud SQL disk/IOPS, prod
+`--max-instances`, and a black-box `/healthz` uptime check. See `docs/KNOWN_BUGS.md`
+"Day-0 LC sweep" for current status per item.
 
 ## §8 Exit criteria
 

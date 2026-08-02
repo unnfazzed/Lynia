@@ -1,3 +1,4 @@
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 
 // Unit tests for the merchant tablet's auth/alarm/reconnect pure logic (E1). Node environment —
@@ -10,6 +11,13 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   esbuild: {
     jsx: "automatic",
+  },
+  resolve: {
+    // Mirrors Next's `transpilePackages` — @lynia/shared has no built `dist/`, so resolve to
+    // its TS source the same way the app itself does.
+    alias: {
+      "@lynia/shared": path.resolve(__dirname, "../../packages/shared/src"),
+    },
   },
   test: {
     include: ["app/**/*.test.ts", "app/**/*.test.tsx"],

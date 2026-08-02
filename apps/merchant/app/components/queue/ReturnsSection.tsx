@@ -32,6 +32,10 @@ export function ReturnsSection({
   const [openSheet, setOpenSheet] = useState<{ orderId: string; kind: "cash" | "non-return" } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // LC-D03: "Confirm the food is back" has no sheet, so it needs its own per-order busy+error
+  // state rather than firing as a bare `void` promise that swallows a network failure silently.
+  const [goodsBackBusyId, setGoodsBackBusyId] = useState<string | null>(null);
+  const [goodsBackErrors, setGoodsBackErrors] = useState<Record<string, string>>({});
 
   if (orders.length === 0) return null;
   const active = openSheet ? orders.find((o) => o.id === openSheet.orderId) : null;
@@ -39,6 +43,22 @@ export function ReturnsSection({
   function close() {
     setOpenSheet(null);
     setError(null);
+  }
+
+  async function handleGoodsBack(orderId: string) {
+    setGoodsBackBusyId(orderId);
+    setGoodsBackErrors((prev) => {
+      const rest = { ...prev };
+      delete rest[orderId];
+      return rest;
+    });
+    try {
+      await onConfirmGoodsReturned(orderId);
+    } catch (err) {
+      setGoodsBackErrors((prev) => ({ ...prev, [orderId]: err instanceof Error ? err.message : "Something went wrong — try again." }));
+    } finally {
+      setGoodsBackBusyId(null);
+    }
   }
 
   return (
@@ -61,12 +81,15 @@ export function ReturnsSection({
               </div>
               <button
                 type="button"
-                onClick={() => (goodsBack ? void onConfirmGoodsReturned(o.id) : setOpenSheet({ orderId: o.id, kind: "cash" }))}
-                disabled={disabled}
-                style={{ ...primaryButtonStyle, padding: "10px 16px", fontSize: 13.5, ...disabledStyle(disabled) }}
+                onClick={() => (goodsBack ? void handleGoodsBack(o.id) : setOpenSheet({ orderId: o.id, kind: "cash" }))}
+                disabled={disabled || goodsBackBusyId === o.id}
+                style={{ ...primaryButtonStyle, padding: "10px 16px", fontSize: 13.5, ...disabledStyle(disabled || goodsBackBusyId === o.id) }}
               >
-                {goodsBack ? "Confirm the food is back" : "Count the returned cash"}
+                {goodsBack ? (goodsBackBusyId === o.id ? "Confirming…" : "Confirm the food is back") : "Count the returned cash"}
               </button>
+              {goodsBackErrors[o.id] && (
+                <div style={{ fontSize: 12, color: "var(--danger-ink)", fontWeight: 700 }}>{goodsBackErrors[o.id]}</div>
+              )}
               <button
                 type="button"
                 onClick={() => setOpenSheet({ orderId: o.id, kind: "non-return" })}
