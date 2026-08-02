@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
 import MenuPage from "./page";
 import { ApiError } from "../../lib/api-client";
-import { clearDishOutOfStock, listCategories, listDishes } from "../../lib/menu-api";
+import { clearDishOutOfStock, createCategory, listCategories, listDishes } from "../../lib/menu-api";
 
 vi.mock("../../lib/menu-api", () => ({
   listCategories: vi.fn(),
@@ -91,5 +91,24 @@ describe("MenuPage 'back in stock' tap (LC-D04)", () => {
       expect(clearDishOutOfStock).toHaveBeenCalledWith("d1");
     });
     expect(screen.queryByText(/Couldn't reach the server/i)).toBeNull();
+  });
+});
+
+describe("MenuPage starter-category quick-create (D-D0e)", () => {
+  // Before this fix, `onCreateStarterCategory` had a bare try/catch that swallowed the error
+  // entirely — a dropped connection mid-tap left the chip tappable again with zero indication
+  // the create actually failed.
+  it("shows a retryable error when createCategory fails", async () => {
+    vi.mocked(listCategories).mockResolvedValue([]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+    vi.mocked(createCategory).mockRejectedValue(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+
+    render(<MenuPage />);
+    const chip = await screen.findByText("+ Mains");
+    fireEvent.click(chip);
+
+    await waitFor(() => {
+      expect(screen.getByText("Couldn't reach the server — check the connection and try again.")).toBeTruthy();
+    });
   });
 });
