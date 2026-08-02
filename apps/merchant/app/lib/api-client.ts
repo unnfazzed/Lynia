@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "./config";
+import { getReachabilityStore } from "./reachability";
 import {
   clearMerchantSession,
   loadMerchantSession,
@@ -154,10 +155,20 @@ async function doRefresh(refreshToken: string): Promise<RefreshOutcome> {
 
 /** Authenticated fetch with refresh-on-401 (single-flight) and sign-out on a definitively dead
  *  session. Callers should treat a thrown ApiError(401, "Your session expired...") as "send the
- *  merchant back to /login" — the alarm/queue shell does this at its top level. */
+ *  merchant back to /login" — the alarm/queue shell does this at its top level.
+ *
+ *  LC-D04: every call reports into the shared `ReachabilityStore` (a network-level throw is
+ *  `reportUnreachable()`, any completed response is `reportReachable()` — an HTTP error status is
+ *  still proof the server was reached). Before this, only `use-queue-poll.ts` fed the store
+ *  directly, so the CONNECTION LOST bar was structurally blind to a drop that happened while the
+ *  merchant was on Menu/Shop/Hours/Statement (every one of which calls through here) — it would
+ *  only surface once the next queue poll or 20s active probe (LC-C04) happened to catch it. Since
+ *  every authenticated mutation routes through this one function, wiring it here closes the gap
+ *  for the whole surface instead of at each call site. */
 export async function authedFetch<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const session = loadMerchantSession();
   if (!session) throw new ApiError(401, "Not signed in.");
+  const reachability = getReachabilityStore(API_BASE_URL);
 
   const attempt = async (token: string) =>
     fetch(`${API_BASE_URL}${path}`, {
@@ -172,8 +183,10 @@ export async function authedFetch<T>(path: string, opts: { method?: string; body
   try {
     res = await attempt(session.accessToken);
   } catch {
+    reachability.reportUnreachable();
     throw new ApiError(0, "Couldn't reach the server — check the connection and try again.");
   }
+  reachability.reportReachable();
 
   if (res.status === 401) {
     const body = await res.json().catch(() => null);
@@ -188,11 +201,16 @@ export async function authedFetch<T>(path: string, opts: { method?: string; body
     if (outcome.kind === "transient") {
       // Keep the session — a blip on /auth/refresh is not a revoked token (LC-C03). This one
       // request fails; the merchant stays signed in for the next poll/action to try again.
+      // Not reported into reachability: "transient" also covers a live 5xx response from
+      // /auth/refresh, which is proof the server IS reachable — only this function's own
+      // request attempts above/below distinguish a genuine network-level failure.
       throw new ApiError(0, "Couldn't reach the server — check the connection and try again.");
     }
     try {
       res = await attempt(outcome.session.accessToken);
+      reachability.reportReachable();
     } catch {
+      reachability.reportUnreachable();
       throw new ApiError(0, "Couldn't reach the server — check the connection and try again.");
     }
   }

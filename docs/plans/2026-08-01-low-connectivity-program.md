@@ -137,8 +137,26 @@ resilience seams ([resilience]).
       `posthog-react-native`, or build-time config plugins) and add no avoidable bytes; `lucide-
       react-native` and `@expo-google-fonts/inter` already use the correct per-icon/per-weight
       import discipline (A-T1). See `docs/LC-A-REPORT-2026-08-02.md`.
-- [ ] A-T3 Bundled-asset inventory (fonts/images): format, compression, necessity,
-      dynamic-load candidates.
+- [x] A-T3 Bundled-asset inventory **(2026-08-02)**: real `expo export --platform android` run is
+      the authoritative asset list (26 assets) — 3 self-hosted Inter TTFs (400/600/700, ~1.03 MB,
+      already correctly per-weight-scoped by A-T1, and confirmed the subpath `require()`s do NOT
+      pull in the sibling `.ttf.png` glyph-specimen images the package also ships) plus ~7.5 KB of
+      tiny default icons from `expo-router`/`@react-navigation/elements` (framework defaults, not
+      app content, not actionable). The launcher `icon.png`/`adaptive-icon.png`/`splash-icon.png`
+      in `apps/mobile/assets/` are native-build-only (config-plugin-baked into Android resources at
+      `expo prebuild`/EAS build time) — confirmed absent from the `expo export` asset list, so they
+      cost zero OTA/export bytes; their native-binary cost is A-T5's territory, unmeasured while
+      EAS is dormant. Confirmed `apps/mobile` has **zero** dependency on `@lynia/design` (not in
+      `package.json`, zero imports) — the brand SVGs/rail payment-method PNGs/handoff screenshots
+      living there never enter the mobile bundle at all; no dynamic-load candidate exists for the
+      fonts either (first paint is font-gated per B-T1, so lazy-loading them off-device would add a
+      network round-trip to the zero-RTT cold-boot path). One new finding: the 3 Inter TTFs ship
+      full Unicode coverage (Latin+Cyrillic+Greek+Vietnamese, ~342-344 KB each) though the app's
+      source only ever renders Basic Latin + a handful of symbols/punctuation (verified: 23 distinct
+      non-ASCII codepoints across all of `apps/mobile/src`+`app`, all common punctuation/symbols,
+      zero non-Latin script). A real `pyftsubset` test subsetting to a generous Latin+symbols+emoji
+      range still cut each file **65.3%** (342,408→118,960 / 343,632→119,168 / 344,072→119,260
+      bytes) — ledgered `LC-A05`, appended as `A-O13`. See `docs/LC-A-REPORT-2026-08-02b.md`.
 - [ ] A-T4 Wire-bytes profile: trace every request+response of (a) the customer order journey,
       (b) one rider steady-state hour, byte-estimate each from the serialized shapes, set the §2
       session-data budgets from evidence.
@@ -168,6 +186,27 @@ resilience seams ([resilience]).
       into a runtime bundle. Zero behavior change, pure dead-weight removal — promoted alongside
       A-O12 for the same reason (only bundle-shrinking items on this list, and the razor-thin 0.4%
       Hermes headroom makes both urgent). (S)
+- [ ] A-O13 **(new, ranked #3)** **A-T3 finding (LC-A05):** subset the 3 self-hosted Inter TTFs
+      (`src/ui/fonts.ts`) to the glyph ranges the app actually renders instead of shipping each
+      weight's full Google-Fonts charset (Latin+Cyrillic+Greek+Vietnamese). A real `pyftsubset`
+      test against a generous Basic Latin + Latin-1/Extended-A + general punctuation/symbols/math/
+      box-drawing/misc-symbols/dingbats/emoji range (covering every one of the 23 distinct
+      non-ASCII codepoints found anywhere in `apps/mobile/src`+`app`, with headroom for names/notes
+      users type) cut each file 65.3% (342,408→118,960 / 343,632→119,168 / 344,072→119,260 bytes),
+      ~669 KB total off the ~7.13 MiB export. Ranked below A-O11/A-O12 (not above) because it's a
+      different budget line: fonts don't change often, and `expo-updates` skips re-downloading an
+      asset whose content hash is already cached on-device from install or a prior update, so this
+      is primarily an **install-size / first-OTA** win, not a **recurring-every-OTA** win the way
+      shrinking the Hermes bundle is. Effort M, not S, despite being mechanical: needs a
+      subsetting step wired into the build (e.g. a `pyftsubset`/`fonttools`-based prebuild script,
+      since RN/Hermes loads native `.ttf`/`.otf` directly — WOFF2 isn't a viable format swap here),
+      a codified "safe range" that gets re-validated as UI copy changes (a grep-based regression
+      check pinning the non-ASCII codepoint set is the natural guard), and explicit sign-off that
+      dropping non-Latin scripts is acceptable for user-generated free text (names, order notes,
+      KYC fields) — a user who types e.g. a Cyrillic or CJK character would see a tofu box for that
+      one glyph. Emoji were included in the tested range defensively but are very likely moot:
+      Inter carries no color-emoji glyphs, so RN/Android already renders emoji via the system
+      font-fallback chain regardless of what's in the app's own font file. (M)
 - [ ] A-O1 Socket-gate the offers-list 15s poll (keep a slow safety net) — KNOWN backlog. (S)
 - [ ] A-O2 Merge-time size diff: extend the `mobile-bundle-size` job to post the measured bytes
       + delta vs base as a PR comment / job summary line, so growth is visible even under budget
@@ -324,8 +363,8 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
 - [x] D-D0a **CONFIRMED CRITICAL — FIXED (LC loop D, 2026-08-02)** — `apps/merchant/app/components/queue/NewOrderTakeover.tsx`: `submitAccept`/`submitReject` now reset `submitting` on the success path (previously only on error), and `QueueBoard` renders both `NewOrderTakeover` and `NoRiderHoldTakeover` with `key={order.id}` so the takeover fully remounts at the order boundary instead of reusing the same instance across orders — closing the leak for `unavailable`/`showReject` too. Regression test in the new `QueueBoard.test.tsx` (jsdom + Testing Library, newly wired for the merchant app — verified it fails on the pre-fix code and passes after). See docs/LC-D-REPORT-2026-08-02.md.
 - [x] D-D0b **CONFIRMED HIGH — FIXED (LC loop D, 2026-08-02)** — `apps/merchant/app/components/queue/QueueBoard.tsx:128`: mark-ready / pickup-code reveal now propagate rejections instead of firing as bare `void`; `OrderCard` owns per-order busy+error state (mirrors `PaymentBucketActions.run()`) for both, and `ReturnsSection`'s previously-bare "Confirm the food is back" goods-return button gets the same per-order busy+error treatment. Regression tests in `QueueBoard.test.tsx`. See docs/LC-D-REPORT-2026-08-02.md.
 - [x] D-D0c **CONFIRMED HIGH — FIXED (LC loop D, 2026-08-02)** — `apps/admin/app/components/ConfirmModal.tsx:118`: dismissal paths not guarded + `formKey` re-minted per open → wallet-credit double-apply. All three dismiss paths (Escape/backdrop/Cancel) now guard on a new explicit `submitting` state — not `useTransition`'s `pending`, which turned out not to track an async callback's real duration in React 18 (empirically confirmed: it flips back to `false` right after the callback's first `await`, before guarding would ever matter). Regression tests in the new `ConfirmModal.test.tsx`. Ledger: LC-D06. See docs/LC-D-REPORT-2026-08-02.md.
-- [ ] D-D0d **CONFIRMED MEDIUM** — `apps/merchant/app/lib/reachability.ts:98`: offline discipline dead on Menu/Shop/Hours/Statement; give `ReachabilityStore` an independent healthz producer + catch the two swallowing mutations.
-- [ ] D-D0e **CONFIRMED MEDIUM** — `apps/merchant/app/(app)/hours/page.tsx:408` + `menu/page.tsx`: busy-mode / back-in-stock / starter-category taps have no `catch`; write the `ApiError` into the existing rendered error state (mirror the sibling handlers).
+- [x] D-D0d **CONFIRMED MEDIUM — FIXED (LC loop D, 2026-08-02)** — `apps/merchant/app/lib/reachability.ts:98`: offline discipline dead on Menu/Shop/Hours/Statement. The independent healthz producer half of this was already shipped incidentally by LC-C04 (`ACTIVE_PROBE_INTERVAL_MS`); the remaining gap was that only `use-queue-poll.ts` fed the shared `ReachabilityStore`, so a drop while the merchant was on Menu/Shop/Hours/Statement went unnoticed until the next queue poll or 20s active probe. `authedFetch` (`apps/merchant/app/lib/api-client.ts`) — the one choke point every authenticated call on those screens routes through — now reports into the store itself (`reportUnreachable()` on a network-level throw, `reportReachable()` on any completed response), closing the gap for the whole surface by construction. Also caught the two swallowing mutations this finding named: `HoursPage.onToggleBusy` and `MenuPage.onClearOos` ("back in stock"), both previously a bare `try/finally` with no `catch`, now surface a retryable inline error. Regression tests in `api-client.test.ts` + new `hours/page.test.tsx` / `menu/page.test.tsx`. Ledger: LC-D04. See docs/LC-D-REPORT-2026-08-02.md.
+- [ ] D-D0e **CONFIRMED MEDIUM** — `apps/merchant/app/(app)/menu/page.tsx` `onCreateStarterCategory`: the starter-category quick-create tap already has a `catch`, but it's a deliberate silent swallow ("a failure here just leaves the starter chip tappable again") — write the `ApiError` into a rendered error state instead (mirror the sibling handlers). The busy-mode and back-in-stock taps this finding originally also named were fixed by D-D0d.
 - [ ] D-D0f **CONFIRMED MEDIUM** — `apps/admin/app/riders/[id]/page.tsx:269`: money ledgers silently truncate at the server cap; disclose the cap + add paging.
 
 **Audit territory:**

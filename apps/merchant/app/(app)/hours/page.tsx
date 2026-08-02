@@ -22,6 +22,7 @@ export default function HoursPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busySaving, setBusySaving] = useState(false);
+  const [busyError, setBusyError] = useState<string | null>(null);
 
   useEffect(() => {
     getMerchantProfile()
@@ -72,9 +73,15 @@ export default function HoursPage() {
   async function onToggleBusy() {
     if (state.status !== "ready") return;
     setBusySaving(true);
+    setBusyError(null);
     try {
       const profile = await setBusyMode({ active: !state.profile.busy });
       setState({ status: "ready", profile });
+    } catch (err) {
+      // LC-D04: this used to have no catch at all — a dropped connection mid-tap left the button
+      // re-enabled with zero indication anything failed, so busy mode silently stayed off during
+      // exactly the slammed-kitchen moment it exists for.
+      setBusyError(err instanceof ApiError ? err.message : "Couldn't update busy mode — try again.");
     } finally {
       setBusySaving(false);
     }
@@ -188,6 +195,7 @@ export default function HoursPage() {
                   >
                     {state.profile.busy ? "Busy mode is ON · turn off" : "Turn on busy mode · +10 min"}
                   </button>
+                  {busyError && <div style={{ fontSize: 12.5, color: "var(--danger-ink)", marginTop: 10, fontWeight: 700 }}>{busyError}</div>}
                 </div>
               </div>
             </div>

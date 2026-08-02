@@ -1,9 +1,10 @@
 # LC-D report — 2026-08-02 (journey & soundness sweep)
 
-Three LC-D increments landed 2026-08-02. Per §5 Lane D's priority order, the Confirmed Day-0
+Four LC-D increments landed 2026-08-02. Per §5 Lane D's priority order, the Confirmed Day-0
 defects list (fix first, one per firing, before the audit territories) had six unchecked boxes.
-Firing 1 fixed D-D0a / LC-D02; firing 2 fixed D-D0b / LC-D03; firing 3 (this section) fixes
-D-D0c / LC-D06 (sensitive: money), leaving D-D0d..f for subsequent firings.
+Firing 1 fixed D-D0a / LC-D02; firing 2 fixed D-D0b / LC-D03; firing 3 fixed D-D0c / LC-D06
+(sensitive: money); firing 4 (this section) fixes D-D0d / LC-D04, leaving D-D0e..f for
+subsequent firings.
 
 ## Fixed — D-D0a / LC-D02 (CRITICAL): the second of two simultaneous orders was unanswerable
 
@@ -180,9 +181,79 @@ cases) all green.
 4. **Regression test** — `ConfirmModal.test.tsx`, described above; fails without the fix, passes with
    it.
 
+## Fixed — D-D0d / LC-D04 (MEDIUM): offline discipline was structurally dead on Menu/Shop/Hours/Statement
+
+**Defect.** `ReachabilityStore` (`apps/merchant/app/lib/reachability.ts`) is the single source of
+truth the CONNECTION LOST bar (`ReconnectBanner`) and `actionsDisabled` (`KitchenConnectionProvider`)
+read from. Before this fix, only `use-queue-poll.ts` — the kitchen queue's polling hook — ever called
+`reportReachable()`/`reportUnreachable()` on it, driven by its own `listQueue()` round trips. Every
+other authenticated screen (Menu, Shop, Hours, Statement) calls through `authedFetch`
+(`apps/merchant/app/lib/api-client.ts`) via `menu-api.ts`/`orders-api.ts`, but `authedFetch` itself
+never touched the reachability store. A connection drop while the merchant was on any of those four
+screens went completely undetected by the CONNECTION LOST bar until either (a) the merchant navigated
+back to the queue screen and its poll happened to fail, or (b) LC-C04's independent 20s active-probe
+timer (`ACTIVE_PROBE_INTERVAL_MS`) happened to catch it — both a real user-visible lag between "the
+connection is actually down" and "the app admits it." (LC-C04, landed earlier in the program, already
+gave the store its own healthz-producer timer — the half of this finding's prescribed fix that's
+already done; the remaining gap was purely that the other screens never fed the store on their own
+request outcomes.)
+
+The finding also named two specific swallowing mutations on those screens:
+`HoursPage.onToggleBusy` and `MenuPage.onClearOos` ("Back in stock") were both a bare
+`try { … } finally { … }` with **no `catch`** — a failed request left the button re-enabled with
+zero indication anything went wrong, unlike every sibling mutation on the same two pages (`onSave`,
+`withSheet`, `onSaveDish`, etc.), all of which already surface `err.message` into a rendered error
+state.
+
+**Fix.**
+- `authedFetch` now calls `getReachabilityStore(API_BASE_URL)` once per invocation and reports:
+  `reportUnreachable()` in each network-level `catch` (the initial attempt and the post-refresh
+  retry), `reportReachable()` after any completed response — including a non-2xx one, since an HTTP
+  error status is still proof the server was reached (mirrors the exact convention `use-queue-poll.ts`
+  already used for its own calls: "status 0 is api-client's own marker for a network-level failure;
+  any real HTTP response is still proof the server is reachable"). The `/auth/refresh` sub-call's own
+  "transient" outcome (which conflates a network error and a live 5xx response) is deliberately left
+  unreported to avoid a false-positive CONNECTION LOST flip on what might be a genuine 5xx. Since every
+  authenticated mutation across the whole app — not just Menu/Shop/Hours/Statement — routes through
+  this one function, wiring it here closes the class by construction instead of patching each of the
+  four screens' call sites individually. `use-queue-poll.ts`'s own explicit calls are left in place
+  (now redundant but harmless — `ReachabilityStore`'s `reportReachable`/`reportUnreachable` are
+  no-ops when already in that state) to avoid touching its existing, separately-tested behavior.
+- `HoursPage.onToggleBusy` gained a `catch` writing into a new `busyError` state, rendered directly
+  under the Busy mode button (its own error slot, distinct from the existing hours-save `error`
+  state, since the two actions are in visually separate cards).
+- `MenuPage.onClearOos` gained a `catch` writing into a new `listError` state, rendered as a banner
+  at the top of the ready-state menu list (mirrors the existing sheet-scoped `sheetError` pattern,
+  just for an action with no open sheet to attach the error to).
+
+**Regression test.**
+- `api-client.test.ts`: a new describe block mocks `./reachability` (`getReachabilityStore` returns
+  jest-mock `reportReachable`/`reportUnreachable`) and asserts `authedFetch` reports reachable on a
+  200, reachable on a 409 domain rejection (proof a real response is reachability, not just success),
+  unreachable on a `TypeError` thrown by `fetch`, and unreachable when the post-refresh retry itself
+  hits a network-level failure.
+- New `apps/merchant/app/(app)/hours/page.test.tsx` and `apps/merchant/app/(app)/menu/page.test.tsx`
+  (jsdom + Testing Library, first component-rendering tests for either page — reused the `jsdom`/
+  Testing Library setup D-D0a wired for `QueueBoard.test.tsx`) render each page with `menu-api`
+  mocked, force `setBusyMode`/`clearDishOutOfStock` to reject once, and assert the inline error
+  renders and the request is retryable; a second case per page asserts a successful retry clears the
+  prior error. Caught and fixed a real bug in the tests themselves while writing them: mocking
+  `useKitchenConnection` with an inline `() => ({ …, signOut: vi.fn() })` mints a fresh `signOut`
+  function reference every render, and both pages' data-loading `useEffect` depends on `[signOut]` —
+  an infinite render loop (burned CPU for minutes with zero test output before being traced and
+  killed). Fixed by hoisting `signOut` to a stable `vi.fn()` outside the mock factory.
+
+**Verification:** `pnpm --filter @lynia/merchant typecheck` clean; `pnpm --filter @lynia/merchant
+lint` 0 warnings/errors; `pnpm --filter @lynia/merchant test` 119/119 (102 pre-existing + 17 new)
+green. Full workspace `pnpm typecheck` (6/6 packages, after a clean `pnpm install` +
+`prisma generate` matching CI's install step), `pnpm lint` (5/5, the same one pre-existing unrelated
+`apps/api/src/admin/admin-orders.service.spec.ts` warning noted in every prior report this run), and
+`pnpm test` (6/6 packages — 1500 API + 668 mobile + merchant/admin/design/shared) all green.
+
 ## Not done this run (Lane D's remaining Day-0 defects + audit territories)
 
-D-D0d (`reachability.ts:98` dead offline discipline), D-D0e (`hours/page.tsx:408` swallowed
-errors), D-D0f (admin ledger silent truncation), and the D-T1..T5 audit territories + D-O1/D-O2
-optimization checklist all remain on the Lane D checklist
+D-D0e (`menu/page.tsx` `onCreateStarterCategory`'s deliberately-silent catch — narrowed from its
+original scope now that D-D0d fixed the busy-mode/back-in-stock siblings it also named), D-D0f
+(admin ledger silent truncation), and the D-T1..T5 audit territories + D-O1/D-O2 optimization
+checklist all remain on the Lane D checklist
 (`docs/plans/2026-08-01-low-connectivity-program.md` §5 Lane D) for the next firing.
