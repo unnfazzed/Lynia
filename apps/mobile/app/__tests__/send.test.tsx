@@ -1,0 +1,216 @@
+/**
+ * LC-C06 (customer order journey audit — create step): the compose screen persists a PII-free draft
+ * (debounced 500ms after the last field edit) whose `idempotencyNonce`, combined with the live field
+ * values, derives the create-order idempotency key the server dedupes on. Before this fix, `submit()`
+ * fired the request straight off in-memory state WITHOUT flushing that debounced write first — so an
+ * edit made just before tapping "Send to riders" could still be sitting in the pending debounce timer
+ * when the request went out. If the app was then killed before the timer fired (well within the 15s
+ * request timeout), the on-disk draft reflected the PRE-edit content. A manual resubmit after relaunch
+ * would recompute a DIFFERENT idempotencyKey than the one actually sent (same nonce, different content
+ * hash), missing the server's dedup and opening a second live auction for what the customer intended as
+ * one order.
+ *
+ * This test drives the real `send.tsx` screen (mocking only the native-map/API/storage edges, per the
+ * pattern in `food/order/__tests__/order-screen.test.tsx` and `(tabs)/__tests__/home.test.tsx`) and
+ * asserts that by the time `createOrder` fires, the mocked SecureStore has ALREADY been written with a
+ * draft matching the exact price in the request — i.e. the flush happens synchronously as part of
+ * submit(), not on some later debounce tick that a kill right after send would never see.
+ */
+import React from "react";
+import renderer, { act } from "react-test-renderer";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import type { PickedPoint } from "../../src/ui/MapPicker";
+
+const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 320, height: 640 } };
+
+// Inside the launch corridor (SERVICE_CORRIDOR, packages/shared/src/policy.ts): pickup at the exact
+// center, drop-off a short distance away, both well within the 25km radius.
+const PICKUP: PickedPoint = { lat: -17.8292, lng: 31.0522 };
+const DROPOFF: PickedPoint = { lat: -17.82, lng: 31.06 };
+
+const mockCreateOrder = jest.fn();
+const mockGetActiveCustomerOrder = jest.fn();
+const mockGetMe = jest.fn();
+
+let secureStore: Record<string, string> = {};
+const mockSetItemAsync = jest.fn(async (key: string, value: string) => {
+  secureStore[key] = value;
+});
+const mockGetItemAsync = jest.fn(async (key: string) => secureStore[key] ?? null);
+const mockDeleteItemAsync = jest.fn(async (key: string) => {
+  delete secureStore[key];
+});
+
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useLocalSearchParams: () => ({}),
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const React_ = require("react");
+    React_.useEffect(cb, []);
+  },
+}));
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: (...args: [string]) => mockGetItemAsync(...args),
+  setItemAsync: (...args: [string, string]) => mockSetItemAsync(...args),
+  deleteItemAsync: (...args: [string]) => mockDeleteItemAsync(...args),
+}));
+jest.mock("../../src/api/auth", () => ({
+  getMe: (...args: unknown[]) => mockGetMe(...args),
+}));
+jest.mock("../../src/api/orders", () => ({
+  createOrder: (...args: unknown[]) => mockCreateOrder(...args),
+  getActiveCustomerOrder: (...args: unknown[]) => mockGetActiveCustomerOrder(...args),
+}));
+jest.mock("../../src/auth/session", () => ({
+  loadDisclaimerAccepted: async () => "2026-07-01",
+  saveDisclaimerAccepted: async () => undefined,
+}));
+jest.mock("../../src/logic/saved-recipients", () => ({
+  loadRecipients: async () => [],
+  loadMyPickupPhone: async () => "",
+  rememberRecipient: async () => undefined,
+  saveMyPickupPhone: async () => undefined,
+}));
+// ComposeMap/AddressSearch mount react-native-maps/expo-location — stubbed the same way the other
+// order-screen tests stub LiveTrackingCard, so this test exercises the SCREEN's submit logic, not the
+// map widget. The stub exposes the real onChangePickup/onChangeDrop/onReverseGeocode* callbacks behind
+// plain testID Pressables so the test can "drop a pin" without a real map.
+jest.mock("../../src/ui/ComposeMap", () => {
+  const React_ = require("react");
+  const { Pressable } = require("react-native");
+  return {
+    ComposeMap: (props: {
+      onChangePickup: (p: PickedPoint) => void;
+      onChangeDrop: (p: PickedPoint) => void;
+      onReverseGeocodePickup?: (l: string) => void;
+      onReverseGeocodeDrop?: (l: string) => void;
+    }) =>
+      React_.createElement(
+        React_.Fragment,
+        null,
+        React_.createElement(Pressable, {
+          testID: "test-set-pickup",
+          onPress: () => {
+            props.onChangePickup(PICKUP);
+            props.onReverseGeocodePickup?.("Test Pickup Landmark");
+          },
+        }),
+        React_.createElement(Pressable, {
+          testID: "test-set-drop",
+          onPress: () => {
+            props.onChangeDrop(DROPOFF);
+            props.onReverseGeocodeDrop?.("Test Drop Landmark");
+          },
+        }),
+      ),
+  };
+});
+jest.mock("../../src/ui/AddressSearch", () => ({
+  AddressSearch: () => {
+    const React_ = require("react");
+    const { Text } = require("react-native");
+    return React_.createElement(Text, null, "AddressSearch");
+  },
+}));
+
+import HomeScreen from "../send";
+
+function pressTestId(tree: renderer.ReactTestRenderer, testID: string): void {
+  const node = tree.root.findByProps({ testID });
+  act(() => node.props.onPress());
+}
+
+/** Find a Pressable ancestor of a Text node whose children match `label`, and press it — the pattern
+ *  `food/order/__tests__/order-screen.test.tsx` uses, since Button/plain Pressables here don't set an
+ *  accessibilityLabel of their own. */
+function pressByText(tree: renderer.ReactTestRenderer, label: string): void {
+  const match = (v: unknown): boolean => v === label;
+  const node = tree.root.findAll((n) => match(n.props.children))[0];
+  if (!node) throw new Error(`no node labelled ${label}`);
+  let p: typeof node | null = node;
+  while (p && typeof p.props.onPress !== "function") p = p.parent;
+  if (!p) throw new Error(`no pressable ancestor for ${label}`);
+  act(() => p!.props.onPress());
+}
+
+/** Fields are located by the accessibilityLabel `Field` derives from `label` (or `placeholder` when
+ *  there's no label) — see src/ui/index.tsx's Field component. */
+function setFieldByAccessibilityLabel(tree: renderer.ReactTestRenderer, accessibilityLabel: string, value: string): void {
+  const node = tree.root.findAll((n) => n.props.accessibilityLabel === accessibilityLabel && typeof n.props.onChangeText === "function")[0];
+  if (!node) throw new Error(`no field found for ${accessibilityLabel}`);
+  act(() => node.props.onChangeText(value));
+}
+
+async function settle(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+function renderSend(): renderer.ReactTestRenderer {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  let tree!: renderer.ReactTestRenderer;
+  act(() => {
+    tree = renderer.create(
+      <SafeAreaProvider initialMetrics={TEST_METRICS}>
+        <QueryClientProvider client={qc}>
+          <HomeScreen />
+        </QueryClientProvider>
+      </SafeAreaProvider>,
+    );
+  });
+  return tree;
+}
+
+let activeTree: renderer.ReactTestRenderer | null = null;
+afterEach(() => {
+  if (activeTree) act(() => activeTree!.unmount());
+  activeTree = null;
+  secureStore = {};
+  jest.clearAllMocks();
+});
+
+describe("send.tsx — draft flush before submit (LC-C06)", () => {
+  it("persists the on-disk draft with the submitted price BEFORE the create-order request fires, even mid-debounce", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+    // createOrder never resolves in this test — standing in for "the app could be killed at any moment
+    // after this, before any response is processed," the exact adversarial window the fix targets.
+    mockCreateOrder.mockReturnValue(new Promise(() => {}));
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    pressTestId(tree, "test-set-pickup");
+    pressTestId(tree, "test-set-drop");
+    setFieldByAccessibilityLabel(tree, "Pickup contact phone", "0771234567");
+    setFieldByAccessibilityLabel(tree, "Recipient phone", "0779876543");
+    setFieldByAccessibilityLabel(tree, "Documents", "A parcel");
+    // The price edit that lands INSIDE the 500ms debounce window — the draft on disk at this point
+    // still reflects whatever (or nothing) was there before this keystroke.
+    setFieldByAccessibilityLabel(tree, "Your price (USD)", "7.50");
+
+    // Confirm the pre-fix assumption: the debounced write has NOT landed yet (it's still pending on
+    // its 500ms timer) at the moment we're about to tap Send — this is what makes the window real.
+    expect(secureStore["lynia.orderDraft"]).toBeUndefined();
+
+    pressByText(tree, "Send to riders");
+    await settle();
+
+    // createOrder was actually called (canSubmit gated it correctly) …
+    expect(mockCreateOrder).toHaveBeenCalledTimes(1);
+    const submittedPrice = mockCreateOrder.mock.calls[0]?.[0]?.proposedFare;
+    expect(submittedPrice).toBe(7.5);
+
+    // … and by now (before createOrder's never-resolving promise has settled) the on-disk draft has
+    // ALREADY been flushed with that same price — not left at whatever the 500ms debounce last wrote,
+    // and not still pending in the timer for an app-kill to lose.
+    expect(mockSetItemAsync).toHaveBeenCalled();
+    const persisted = JSON.parse(secureStore["lynia.orderDraft"] ?? "null");
+    expect(persisted).not.toBeNull();
+    expect(persisted.proposedFare).toBe("7.50");
+  });
+});

@@ -478,6 +478,30 @@ export default function HomeScreen(): React.ReactElement {
       pickup: pickupPoint.placeId ? { ...parsed.data.pickup, placeId: pickupPoint.placeId } : parsed.data.pickup,
       dropoff: dropPoint.placeId ? { ...parsed.data.dropoff, placeId: dropPoint.placeId } : parsed.data.dropoff,
     };
+    // Flush the debounced draft save synchronously BEFORE firing the request (LC-C06). The persisted
+    // draft's `idempotencyNonce` is what a killed-and-relaunched app recomputes its dedup key from — if a
+    // field was edited within the trailing 500ms debounce window and the request goes out (and the app is
+    // then killed before the 15s request timeout even elapses), the on-disk draft still reflects the
+    // PRE-edit content. A manual resubmit after relaunch would then derive a DIFFERENT idempotencyKey than
+    // the one actually sent, missing the server's dedup and opening a second live auction for the same
+    // parcel. Cancelling the pending timer and writing the exact content about to be submitted closes the
+    // window instead of merely narrowing it.
+    if (draftTimer.current) {
+      clearTimeout(draftTimer.current);
+      draftTimer.current = null;
+    }
+    pendingDraft.current = null;
+    await saveDraft({
+      pickupPoint,
+      pickupLandmark,
+      dropPoint,
+      dropLandmark,
+      items,
+      note,
+      declaredValue,
+      proposedFare,
+      idempotencyNonce,
+    });
     setBusy(true);
     try {
       const order = await createOrder(payload);

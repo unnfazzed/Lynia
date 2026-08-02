@@ -303,7 +303,25 @@ resilience seams ([resilience]).
 **Audit territory** (per territory: trace under (a) 2–5 s per request, (b) connection death at
 every step boundary, (c) process kill+relaunch at every step boundary; audit bar = DoorDash
 lesson 4 — every step retryable or explicitly unwound, no limbo states):
-- [ ] C-T1 Customer order journey: create → auction → accept → tracking → delivery code.
+- [x] C-T1 **AUDITED (2026-08-02)** — Customer order journey: create → auction → accept →
+      tracking → delivery code, traced end to end under all 3 adversarial conditions. **Result:
+      the journey is largely reference-quality already** — create has a durable idempotency
+      nonce + server-side unique-index CAS + dedicated recovery banner; the ~90s auction window
+      is driven server-side (BullMQ + a DB reconciler sweep) so it resolves correctly regardless
+      of the customer's connectivity, with socket+15s-poll+foreground-refetch redundancy and a
+      durable `hadOffers` counter so a cold-start-after-expiry never shows a false "no riders
+      took this price"; accept is a transactional CAS (`updateMany` on `status`) immune to
+      double-accept, with a one-time-delivery-code re-issue fallback for a lost response; live
+      tracking has an explicit staleness threshold (`PRESENCE_ESCALATION_MS`) that visibly dims
+      the pin and suppresses ETA rather than ever painting a stale position as live, plus an
+      out-of-order-write guard (`lastPositionRef`) against a REST refetch rolling a WS-pushed
+      position backward; delivery-code confirm is `SELECT … FOR UPDATE` + CAS-guarded, so a lost-
+      response retry can never double-apply/double-charge, and the rider side explicitly
+      reconciles a 409 against the order's true state instead of treating it as a bare failure.
+      **One genuine defect found and FIXED this run** (LC-C06, below — a lost-work/double-apply
+      risk in order creation, not the CAS-protected steps). Two narrower gaps found are UX-only
+      (no data loss, no double-apply) and appended to the optimization checklist as C-O5/C-O6
+      rather than force-fixed under time pressure. Full trace: `docs/LC-C-REPORT-2026-08-02c.md`.
 - [ ] C-T2 Rider shift journey: go online → board → bid → job → proof/OTP → earnings.
 - [ ] C-T3 Onboarding + OTP + KYC capture (incl. photo upload resumability on slow uplink).
 - [ ] C-T4 Merchant order-intake on a tablet over mobile data (miss-an-order risk when dropped).
@@ -320,6 +338,24 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
       radio) — KNOWN backlog. (M)
 - [ ] C-O4 MicroCache serve-stale-on-upstream-failure mode (soft/hard dual TTL; candidates:
       nearby-count, bootstrap; NEVER money/assignment/auth) (DoorDash lesson 8). (M)
+- [ ] C-O5 **(C-T1 finding, LC-C07)** Rider delivery-confirm terminal marker
+      (`saveRiderJobTerminal`) is written only after a response (success or 409-reconciled)
+      arrives — an app kill strictly between sending `confirmDelivery` and processing any
+      response drops the delivered-acknowledgement/rate-the-sender screen on relaunch (the order
+      itself is correctly `delivered` server-side; only the terminal UX is lost). Write a
+      provisional local marker BEFORE the request fires (promoted to final on success, rolled
+      back only on a definitive non-409 rejection) so `reconcileRiderJobTerminal()` can recover
+      the acknowledgement screen purely from "marker exists + order no longer active," without
+      needing the response to have been seen. `apps/mobile/app/rider/job.tsx:305`,
+      `apps/api/src/orders/order-lifecycle.service.ts:343`. (S)
+- [ ] C-O6 **(C-T1 finding, LC-C08)** `order/[id].tsx`'s `selectM` (accept-an-offer) mutation's `onError`
+      shows the same muted "that rider was just taken" notice for BOTH a genuine race-loss AND a
+      lost-response case where the customer's OWN pick actually landed — self-heals within one
+      render via `onSettled`'s unconditional invalidate, but a slow reconnect could make the
+      misleading flash user-perceptible. Align with the rider-side `deliverM`/`advanceM` pattern
+      (`apps/mobile/app/rider/job.tsx:283`) that reconciles a 409 by re-fetching and checking
+      whether the requested transition already landed before deciding it's a real conflict.
+      `apps/mobile/app/order/[id].tsx:365`. (S)
 
 ### Lane D — journey & soundness sweep (Opus 4.8, `0 7 * * *`)
 
