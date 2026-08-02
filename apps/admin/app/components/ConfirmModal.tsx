@@ -88,7 +88,15 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const [note, setNote] = useState("");
   const [amountVal, setAmountVal] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  // Tracks the actual async lifetime of a confirm submit (set synchronously before the request starts,
+  // cleared in `finally` once it settles). This is NOT `useTransition`'s `isPending`: React 18's
+  // `startTransition` only keeps `isPending` true for the *synchronous* portion of the passed callback —
+  // for an `async` callback it flips back to `false` right after the first `await`, well before
+  // `onConfirm`'s network request actually resolves. Gating dismissal/re-submit on that would leave the
+  // exact race LC-D06 flags: the button re-enables and the dialog becomes dismissable while a wallet
+  // credit is still in flight.
+  const [submitting, setSubmitting] = useState(false);
   // Form-open idempotency key: minted fresh each time the dialog OPENS and held stable while it stays
   // open. A failed confirm keeps the dialog open, so re-clicking Confirm reuses this key and the endpoint
   // dedups instead of double-applying — critical for the money-moving wallet-credit path. A brand-new
@@ -102,6 +110,12 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   // Where focus was before the dialog opened — restored on close (WCAG 2.4.3).
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  // Read inside the keydown listener (attached once per `open`, not per `submitting` change) so Escape
+  // always sees the current in-flight state instead of a stale closure over the mount-time value.
+  const submittingRef = useRef(submitting);
+  useEffect(() => {
+    submittingRef.current = submitting;
+  }, [submitting]);
 
   useEffect(() => {
     if (!open) return;
@@ -117,6 +131,10 @@ export function ConfirmModal(props: ConfirmModalProps) {
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // A submit in flight must not be dismissable — closing here would let the operator reopen
+        // and re-mint `formKey`, so a lost-response retry lands as a SECOND wallet credit instead of
+        // deduping against the first (LC-D06).
+        if (submittingRef.current) return;
         setOpen(false);
         return;
       }
@@ -156,7 +174,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const reasonOk = reasons.length === 0 || reason !== null;
   const noteOk = !noteRequired || note.trim().length > 0;
   const amountOk = !amount?.required || amountVal.trim().length > 0;
-  const canConfirm = reasonOk && noteOk && amountOk && !pending;
+  const canConfirm = reasonOk && noteOk && amountOk && !submitting;
 
   function confirm() {
     if (!canConfirm) return;
@@ -167,6 +185,10 @@ export function ConfirmModal(props: ConfirmModalProps) {
     if (reason) fd.set("reasonCode", reason);
     fd.set("note", note);
     setError(null);
+    // Set synchronously, before the transition/await chain starts, so canConfirm/the dismiss guards/the
+    // "Working…" label all see the in-flight state for the FULL duration of the request (see the
+    // `submitting` declaration above for why `useTransition`'s `isPending` can't be used for this).
+    setSubmitting(true);
     startTransition(async () => {
       try {
         // Skip the standalone audit POST when the domain endpoint records the audit row in its own
@@ -181,6 +203,8 @@ export function ConfirmModal(props: ConfirmModalProps) {
         // Keep the dialog open and tell the operator the action was NOT recorded, so a failed audit
         // or domain write is never mistaken for success.
         setError(e instanceof Error ? e.message : "The action could not be recorded. Please try again.");
+      } finally {
+        setSubmitting(false);
       }
     });
   }
@@ -207,6 +231,9 @@ export function ConfirmModal(props: ConfirmModalProps) {
           className="modal-wrap"
           role="presentation"
           onClick={(e) => {
+            // Same in-flight guard as Escape/Cancel (LC-D06) — a backdrop click must not dismiss a
+            // pending submit.
+            if (submitting) return;
             if (e.target === e.currentTarget) setOpen(false);
           }}
         >
@@ -294,7 +321,16 @@ export function ConfirmModal(props: ConfirmModalProps) {
             ) : null}
 
             <div className="actions">
-              <button type="button" className="btn quiet" onClick={() => setOpen(false)}>
+              <button
+                type="button"
+                className="btn quiet"
+                disabled={submitting}
+                onClick={() => {
+                  // Same in-flight guard as Escape/backdrop (LC-D06).
+                  if (submitting) return;
+                  setOpen(false);
+                }}
+              >
                 Cancel
               </button>
               <button
@@ -303,7 +339,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
                 disabled={!canConfirm}
                 onClick={confirm}
               >
-                {pending ? "Working…" : confirmLabel}
+                {submitting ? "Working…" : confirmLabel}
               </button>
             </div>
 
