@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { MerchantOrderResponse, MerchantRejectionReasonCode } from "@lynia/shared";
+import type { MerchantOrderResponse } from "@lynia/shared";
 import { PREP_CHIPS_MIN } from "@lynia/shared";
 import { groupQueue, isNoRiderHold, isRiderSecured, shouldUseBoard } from "../../lib/order-groups";
 import {
@@ -37,6 +37,15 @@ interface MoneyActions {
   onConfirmPayment: (orderId: string, body: { reference: string; amount: number }) => Promise<void>;
   onReleaseUnpaid: (orderId: string) => Promise<void>;
   onRefund: (orderId: string, body: { reference: string; amount: number }) => Promise<void>;
+}
+
+// RF-13: ~15 handlers all shared the shape `await apiCall(...args); refetch();` — one generic
+// wrapper replaces the repeated bodies while keeping each call site's own argument list.
+function withRefetch<Args extends unknown[]>(action: (...args: Args) => Promise<unknown>, refetch: () => void) {
+  return async (...args: Args): Promise<void> => {
+    await action(...args);
+    refetch();
+  };
 }
 
 function Column({
@@ -109,22 +118,17 @@ export function QueueBoard({
   const holdCandidates = groups.ready.filter(isNoRiderHold);
   const holdToShow = openHoldId ? (holdCandidates.find((o) => o.id === openHoldId) ?? null) : (holdCandidates.find((o) => !ackHoldIds.has(o.id)) ?? null);
 
-  async function handleAccept(orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) {
-    await acceptOrder(orderId, { prepMinutes, unavailableDishIds: unavailableDishIds.length > 0 ? unavailableDishIds : undefined });
-    refetch();
-  }
+  const handleAccept = withRefetch(
+    (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) =>
+      acceptOrder(orderId, { prepMinutes, unavailableDishIds: unavailableDishIds.length > 0 ? unavailableDishIds : undefined }),
+    refetch,
+  );
 
-  async function handleReject(orderId: string, reason: MerchantRejectionReasonCode) {
-    await rejectOrder(orderId, reason);
-    refetch();
-  }
+  const handleReject = withRefetch(rejectOrder, refetch);
 
   // LC-D03: callers (OrderCard) own the busy/error state per order — this just propagates
   // the rejection instead of swallowing it in a bare `void` fire-and-forget.
-  async function handleMarkReady(orderId: string) {
-    await markReady(orderId);
-    refetch();
-  }
+  const handleMarkReady = withRefetch(markReady, refetch);
 
   async function handleRevealPickupCode(orderId: string): Promise<string> {
     const res = await revealPickupCode(orderId);
@@ -140,56 +144,33 @@ export function QueueBoard({
     setOpenHoldId(null);
   }
 
-  async function handleHoldResume(orderId: string) {
+  const handleHoldResume = withRefetch(async (orderId: string) => {
     await dispatchResume(orderId);
     setOpenHoldId(null);
-    refetch();
-  }
+  }, refetch);
 
-  async function handleHoldCancel(orderId: string) {
+  const handleHoldCancel = withRefetch(async (orderId: string) => {
     await dispatchCancel(orderId);
     setOpenHoldId(null);
-    refetch();
-  }
+  }, refetch);
 
   // E3 (R-16/R-17): the awaiting-payment lane's real flow.
-  async function handleLogCall(orderId: string) {
-    await logCall(orderId);
-    refetch();
-  }
-  async function handleRequestPayment(orderId: string, overrideCallLog: boolean) {
-    await requestPayment(orderId, overrideCallLog);
-    refetch();
-  }
-  async function handleConfirmPayment(orderId: string, body: { reference: string; amount: number }) {
-    await confirmPayment(orderId, body);
-    refetch();
-  }
+  const handleLogCall = withRefetch(logCall, refetch);
+  const handleRequestPayment = withRefetch(requestPayment, refetch);
+  const handleConfirmPayment = withRefetch(confirmPayment, refetch);
   // No reason picker here (the gallery's M2·7 ships a single release button with no reason UI) —
   // "other" is the honest default rather than guessing a more specific one (flagged, not decided).
-  async function handleReleaseUnpaid(orderId: string) {
-    await releaseUnpaid(orderId, "other");
-    refetch();
-  }
+  const handleReleaseUnpaid = withRefetch((orderId: string) => releaseUnpaid(orderId, "other"), refetch);
   // D-12: refund-then-cancel an already-confirmed WALLET order.
-  async function handleRefund(orderId: string, body: { reference: string; amount: number }) {
-    await refundOrder(orderId, body.reference, body.amount);
-    refetch();
-  }
+  const handleRefund = withRefetch(
+    (orderId: string, body: { reference: string; amount: number }) => refundOrder(orderId, body.reference, body.amount),
+    refetch,
+  );
 
   // E3/R-01: the collect-and-return debt ledger's merchant-side settlement actions.
-  async function handleConfirmReturnedCash(orderId: string, amount: number) {
-    await confirmReturnedCash(orderId, amount);
-    refetch();
-  }
-  async function handleConfirmGoodsReturned(orderId: string) {
-    await confirmGoodsReturned(orderId);
-    refetch();
-  }
-  async function handleReportNonReturn(orderId: string, note?: string) {
-    await reportNonReturn(orderId, note);
-    refetch();
-  }
+  const handleConfirmReturnedCash = withRefetch(confirmReturnedCash, refetch);
+  const handleConfirmGoodsReturned = withRefetch(confirmGoodsReturned, refetch);
+  const handleReportNonReturn = withRefetch(reportNonReturn, refetch);
 
   const moneyActions = {
     onLogCall: handleLogCall,
