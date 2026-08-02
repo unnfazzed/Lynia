@@ -42,6 +42,11 @@ describe("MetricsService — NoopMeter safety (no provider registered)", () => {
       m.recordClientSample("board_glass", 500, "rider", "1.4");
       m.recordClientSample("apifetch", 500, "rider", "1.4");
       m.incClientDropped(3, "rider");
+      m.recordTopupConfirmLag(60_000, "ecocash");
+      m.registerQueueDepthObserver("offer-expiry", async () => {
+        throw new Error("sampler must never run under the Noop");
+      });
+      m.unregisterQueueDepthObserver("offer-expiry");
     }).not.toThrow();
   });
 
@@ -205,6 +210,124 @@ describe("MetricsService — with a real in-memory MeterProvider", () => {
     // ≤ 16 admitted buckets + the "other" sink — never 100. Cardinality is bounded regardless of input.
     expect(versions.size).toBeLessThanOrEqual(17);
     expect(versions.has("other")).toBe(true);
+
+    await provider.shutdown();
+  });
+});
+
+describe("MetricsService — queue depth/age gauges (registerQueueDepthObserver)", () => {
+  function withProvider() {
+    const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+    const reader = new PeriodicExportingMetricReader({ exporter, exportIntervalMillis: 60_000 });
+    const provider = new MeterProvider({ readers: [reader] });
+    metrics.setGlobalMeterProvider(provider);
+    return { exporter, reader, provider };
+  }
+
+  function metricsByName(exporter: InMemoryMetricExporter) {
+    return new Map(
+      exporter
+        .getMetrics()
+        .flatMap((rm) => rm.scopeMetrics)
+        .flatMap((sm) => sm.metrics)
+        .map((md) => [md.descriptor.name, md] as const),
+    );
+  }
+
+  const SAMPLE = { waiting: 4, active: 1, delayed: 9, failed: 2, paused: 0, oldestOverdueMs: 30_000 };
+
+  it("observes queue_jobs{queue,state} and queue_oldest_overdue_ms{queue} from the registered sampler", async () => {
+    const { exporter, reader, provider } = withProvider();
+    const m = new MetricsService();
+    m.registerQueueDepthObserver("offer-expiry", async () => SAMPLE);
+
+    await reader.forceFlush();
+    const byName = metricsByName(exporter);
+
+    const jobs = byName.get("queue_jobs")!;
+    expect(jobs).toBeDefined();
+    const byState = new Map(jobs.dataPoints.map((dp) => [dp.attributes.state, dp] as const));
+    expect(byState.get("waiting")!.value).toBe(4);
+    expect(byState.get("active")!.value).toBe(1);
+    expect(byState.get("delayed")!.value).toBe(9);
+    expect(byState.get("failed")!.value).toBe(2);
+    expect(byState.get("paused")!.value).toBe(0);
+    // Every point carries the fixed {queue, state} label pair — never a job id.
+    expect(byState.get("waiting")!.attributes).toEqual({ queue: "offer-expiry", state: "waiting" });
+
+    const overdue = byName.get("queue_oldest_overdue_ms")!;
+    expect(overdue.dataPoints[0]!.value).toBe(30_000);
+    expect(overdue.dataPoints[0]!.attributes).toEqual({ queue: "offer-expiry" });
+
+    await provider.shutdown();
+  });
+
+  it("a throwing sampler skips its observation for the cycle (no point, no crash) while others still report", async () => {
+    const { exporter, reader, provider } = withProvider();
+    const m = new MetricsService();
+    m.registerQueueDepthObserver("offer-expiry", async () => {
+      throw new Error("redis down");
+    });
+    m.registerQueueDepthObserver("rating-autoclose", async () => SAMPLE);
+
+    await reader.forceFlush();
+    const byName = metricsByName(exporter);
+    const queues = new Set(byName.get("queue_jobs")!.dataPoints.map((dp) => dp.attributes.queue));
+    // The healthy queue reported; the broken one is ABSENT — never a fabricated 0.
+    expect(queues).toEqual(new Set(["rating-autoclose"]));
+
+    await provider.shutdown();
+  });
+
+  it("unregister stops the sampler being called on later collections (shutdown-safe)", async () => {
+    const { reader, provider } = withProvider();
+    const m = new MetricsService();
+    let calls = 0;
+    m.registerQueueDepthObserver("offer-expiry", async () => {
+      calls++;
+      return SAMPLE;
+    });
+
+    await reader.forceFlush();
+    expect(calls).toBe(1);
+
+    m.unregisterQueueDepthObserver("offer-expiry");
+    await reader.forceFlush();
+    expect(calls).toBe(1); // not called again — a collection can't race a closed queue
+
+    await provider.shutdown();
+  });
+});
+
+describe("MetricsService — topup_confirm_lag_ms", () => {
+  function withProvider() {
+    const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+    const reader = new PeriodicExportingMetricReader({ exporter, exportIntervalMillis: 60_000 });
+    const provider = new MeterProvider({ readers: [reader] });
+    metrics.setGlobalMeterProvider(provider);
+    return { exporter, reader, provider };
+  }
+
+  it("records with the bounded rail label; an unexpected rail collapses to 'other'; negatives clamp to 0", async () => {
+    const { exporter, reader, provider } = withProvider();
+    const m = new MetricsService();
+
+    m.recordTopupConfirmLag(90_000, "ecocash");
+    m.recordTopupConfirmLag(5_000, "not-a-rail"); // must NOT mint a label value
+    m.recordTopupConfirmLag(-100, "innbucks"); // clock skew — clamps to 0
+
+    await reader.forceFlush();
+    const hist = exporter
+      .getMetrics()
+      .flatMap((rm) => rm.scopeMetrics)
+      .flatMap((sm) => sm.metrics)
+      .find((md) => md.descriptor.name === "topup_confirm_lag_ms")!;
+    expect(hist).toBeDefined();
+
+    const byRail = new Map(hist.dataPoints.map((dp) => [dp.attributes.rail, dp] as const));
+    expect(new Set(byRail.keys())).toEqual(new Set(["ecocash", "other", "innbucks"]));
+    expect((byRail.get("ecocash")!.value as { sum: number }).sum).toBe(90_000);
+    expect((byRail.get("innbucks")!.value as { min: number }).min).toBe(0); // clamped, never negative
 
     await provider.shutdown();
   });

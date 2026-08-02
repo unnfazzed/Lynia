@@ -47,6 +47,9 @@ export async function buildOtelSdk(serviceName: string, endpoint?: string): Prom
     client_offer_glass_latency_ms: [100, 250, 500, 1000, 2000, 3000, 5000, 10000],
     client_board_glass_latency_ms: [100, 250, 500, 1000, 2000, 3000, 5000, 10000],
     client_apifetch_latency_ms: [50, 100, 250, 500, 1000, 2000, 5000, 10000],
+    // Rail-confirmation lag (money, not request latency): a mobile-money confirm is seconds→minutes,
+    // and a late confirm on an already-expired intent is legitimately hours — 5s out to 1h.
+    topup_confirm_lag_ms: [5000, 15000, 30000, 60000, 120000, 300000, 600000, 1800000, 3600000],
   };
 
   return new NodeSDK({

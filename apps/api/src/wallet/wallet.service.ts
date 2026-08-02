@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import {
   addMoney,
   COMMISSION,
@@ -22,6 +22,7 @@ import { Prisma } from "@prisma/client";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { NotificationsService } from "../notifications/notifications.service";
+import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 /** Page size for the ledger history feed. */
@@ -66,6 +67,9 @@ export class WalletService {
     // (mirrors admin-orders.service's optional NotificationsService — its module is @Global in the app,
     // so no import wiring is needed to inject this).
     private readonly notifications?: NotificationsService,
+    // @Optional for the same reason (ObservabilityModule is @Global): a missing service just skips
+    // the topup_confirm_lag_ms record in creditFromTopup.
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   /** The resolved live commission rate (%) — the env "flip" value, clamped, or the launch default (0). */
@@ -435,7 +439,9 @@ export class WalletService {
    * and the sandbox/rehearsal harness both drive.
    */
   async creditFromTopup(topUpId: string, providerRef?: string): Promise<{ balance: number } | null> {
-    return this.prisma.$transaction(async (tx) => {
+    // Captured inside the tx, recorded only AFTER it commits — a rollback/retry must never record.
+    let confirmed: { rail?: string; initiatedAt?: Date; resolvedAt?: Date | null } | undefined;
+    const result = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.topUp.updateMany({
         where: { id: topUpId, status: { in: ["pending", "expired"] } },
         data: { status: "confirmed", resolvedAt: new Date(), ...(providerRef ? { providerRef } : {}) },
@@ -443,6 +449,7 @@ export class WalletService {
       if (claimed.count === 0) return null; // already confirmed/declined — exactly-once, nothing to do.
       const topUp = await tx.topUp.findUnique({ where: { id: topUpId } });
       if (!topUp) return null;
+      confirmed = { rail: topUp.rail, initiatedAt: topUp.initiatedAt, resolvedAt: topUp.resolvedAt };
       const amount = round2(Number(topUp.amount));
       await tx.$executeRaw`INSERT INTO commission_accounts (rider_id) VALUES (${topUp.riderId}::uuid) ON CONFLICT (rider_id) DO NOTHING`;
       const locked = await tx.$queryRaw<Array<{ balance: string }>>`
@@ -454,6 +461,15 @@ export class WalletService {
       await tx.commissionAccount.update({ where: { riderId: topUp.riderId }, data: { balance: balanceAfter } });
       return { balance: balanceAfter };
     });
+    // Rail-confirmation lag (initiatedAt → confirmed), recorded exactly once per top-up: only the
+    // call that won the CAS gets here with `confirmed` set. Guarded field access because unit
+    // harnesses model the TopUp row minimally — a missing timestamp skips the record, never throws.
+    const initiated = confirmed?.initiatedAt?.getTime();
+    if (result && this.metrics && confirmed?.rail && typeof initiated === "number") {
+      const resolved = confirmed.resolvedAt?.getTime() ?? Date.now();
+      this.metrics.recordTopupConfirmLag(resolved - initiated, confirmed.rail);
+    }
+    return result;
   }
 
   /**

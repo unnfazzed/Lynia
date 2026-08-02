@@ -16,9 +16,11 @@ import { type OrderStatus, Prisma } from "@prisma/client";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
+import { sampleQueueDepth } from "../common/queue-metrics";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { NotificationsService } from "../notifications/notifications.service";
+import { MetricsService } from "../observability/metrics.service";
 import {
   CANCEL_STRIKE_LIMIT,
   type CancelResult,
@@ -69,6 +71,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // any trimmed module) can construct the service without wiring StorageModule; a missing adapter just
     // no-ops the best-effort cleanup. StorageModule is @Global in the app, so it's injected in production.
     @Optional() @Inject(STORAGE) private readonly storage?: StorageAdapter,
+    // @Optional for the same reason as storage: unit harnesses construct without the (@Global)
+    // ObservabilityModule; a missing service just skips the queue depth/age gauges.
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   private sweep?: ReturnType<typeof setInterval>;
@@ -101,6 +106,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // serving; the reconcileStaleDeliveries backstop closes orders while Redis is unavailable.
       this.queue.on("error", (err) => this.logger.error(`auto-close queue error: ${err.message}`));
       this.worker.on("error", (err) => this.logger.error(`auto-close worker error: ${err.message}`));
+      // Depth/age gauges (queue_jobs, queue_oldest_overdue_ms) — the "queue stalled" alert's series.
+      const queue = this.queue;
+      this.metrics?.registerQueueDepthObserver(QUEUE_NAME, () => sampleQueueDepth(queue));
       this.logger.log("Rating auto-close worker started");
     } else {
       this.logger.warn("REDIS_URL not set — relying on the DB reconciler to auto-close delivered orders");
@@ -116,6 +124,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     if (this.sweep) clearInterval(this.sweep);
+    this.metrics?.unregisterQueueDepthObserver(QUEUE_NAME);
     await this.worker?.close();
     await this.queue?.close();
   }

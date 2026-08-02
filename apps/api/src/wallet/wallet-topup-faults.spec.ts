@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
+import type { MetricsService } from "../observability/metrics.service";
 import type { PrismaService } from "../prisma/prisma.service";
 import { WalletService } from "./wallet.service";
 
@@ -17,9 +18,18 @@ import { WalletService } from "./wallet.service";
  * the reason the money path is safe to retry.
  */
 type Row = { riderId: string; amount: number; balanceAfter: number; type: string; topUpId?: string };
-type TopUp = { id: string; riderId: string; amount: number; status: "pending" | "expired" | "confirmed" | "declined" };
+type TopUp = {
+  id: string;
+  riderId: string;
+  amount: number;
+  status: "pending" | "expired" | "confirmed" | "declined";
+  // Optional lag-metric fields (topup_confirm_lag_ms): tests that assert the metric model them;
+  // every other test omits them and creditFromTopup's guarded record skips silently.
+  rail?: string;
+  initiatedAt?: Date;
+};
 
-function harness(topUp: TopUp, startBalance = 0) {
+function harness(topUp: TopUp, startBalance = 0, metrics?: MetricsService) {
   // Seed the opening balance as a prior credit row so the balance == sum(ledger) invariant holds from
   // the start (a real account's balance is always reconstructable from its ledger).
   const seed: Row[] = startBalance === 0 ? [] : [{ riderId: topUp.riderId, amount: startBalance, balanceAfter: startBalance, type: "topup" }];
@@ -67,7 +77,7 @@ function harness(topUp: TopUp, startBalance = 0) {
     },
   } as unknown as PrismaService;
 
-  const svc = new WalletService({ COMMISSION_SHADOW_RATE_PCT: 10, WALLET_REVEAL: "false" } as unknown as Env, prisma);
+  const svc = new WalletService({ COMMISSION_SHADOW_RATE_PCT: 10, WALLET_REVEAL: "false" } as unknown as Env, prisma, undefined, metrics);
   return { svc, state, setFailLedgerCreate: (v: boolean) => { failLedgerCreate = v; } };
 }
 
@@ -130,5 +140,36 @@ describe("top-up confirmation faults (creditFromTopup — the rail seam)", () =>
     await svc.creditFromTopup("t5");
     expect(state.balance).toBe(0.3); // 0.2 + 0.1 exactly, not 0.30000000000000004
     assertInvariants(state);
+  });
+
+  it("records topup_confirm_lag_ms exactly once — the confirming call, never the replay", async () => {
+    const metrics = { recordTopupConfirmLag: vi.fn() };
+    const { svc } = harness(
+      { id: "t6", riderId: "r1", amount: 10, status: "pending", rail: "ecocash", initiatedAt: new Date(Date.now() - 60_000) },
+      0,
+      metrics as unknown as MetricsService,
+    );
+
+    await svc.creditFromTopup("t6");
+    expect(metrics.recordTopupConfirmLag).toHaveBeenCalledTimes(1);
+    const [ms, rail] = metrics.recordTopupConfirmLag.mock.calls[0] as [number, string];
+    expect(rail).toBe("ecocash");
+    expect(ms).toBeGreaterThanOrEqual(60_000); // initiated 60s ago; resolvedAt falls back to now
+
+    // The duplicate webhook loses the CAS → no credit AND no second lag sample.
+    await svc.creditFromTopup("t6");
+    expect(metrics.recordTopupConfirmLag).toHaveBeenCalledTimes(1);
+  });
+
+  it("a ROLLED-BACK credit records no lag sample (metric only on commit)", async () => {
+    const metrics = { recordTopupConfirmLag: vi.fn() };
+    const { svc, setFailLedgerCreate } = harness(
+      { id: "t7", riderId: "r1", amount: 5, status: "pending", rail: "ecocash", initiatedAt: new Date() },
+      0,
+      metrics as unknown as MetricsService,
+    );
+    setFailLedgerCreate(true);
+    await expect(svc.creditFromTopup("t7")).rejects.toThrow(/process died mid-credit/);
+    expect(metrics.recordTopupConfirmLag).not.toHaveBeenCalled();
   });
 });
