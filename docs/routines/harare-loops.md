@@ -14,11 +14,18 @@ Hour 03 is shared by weekday/Sunday split, never by simultaneous firings.
 
 | Trigger name | Cron (UTC) | Model | Lane |
 |---|---|---|---|
-| `LC loop A — size & data diet` | `0 3 * * 1-6` | `claude-opus-5` | Install/download size + OTA & per-session bytes |
-| `LC loop B — Go-class runtime perf` | `0 4 * * *` | `claude-opus-5` | Cold start, jank, memory on 1–2 GB devices |
-| `LC loop C — offline & 2G resilience` | `0 6 * * *` | `claude-opus-4-8` | Journeys surviving dead zones and drops |
-| `LC loop D — journey & soundness sweep` | `0 7 * * *` | `claude-opus-4-8` | Journey blockers (mobile+admin+merchant) + read-only infra soundness |
-| `LC steer — weekly Fable replan` | `0 3 * * 0` | `claude-fable-5` | Weekly re-rank, budget trend, loop health, completion calls |
+| `LC loop A — size & data diet` | `40 */3 * * *` | `claude-opus-5` | Install/download size + OTA & per-session bytes |
+| `LC loop B — Go-class runtime perf` | `15 */3 * * *` | `claude-opus-5` | Cold start, jank, memory on 1–2 GB devices |
+| `LC loop C — offline & 2G resilience` | `30 */3 * * *` | `claude-opus-4-8` | Journeys surviving dead zones and drops |
+| `LC loop D — journey & soundness sweep` | `45 */3 * * *` | `claude-opus-4-8` | Journey blockers (mobile+admin+merchant) + read-only infra soundness |
+| `LC steer — replan` | `30 5,17 * * *` | `claude-fable-5` | Re-rank, budget trend, loop health, completion calls |
+
+> **Sprint cadence (2026-08-02 → 2026-08-04):** per the user directive "the week's work by Tuesday,"
+> the four lanes run **every 3 hours (8×/day)**, staggered `:15/:30/:40/:45`, and the steer **2×/day**
+> (was weekly). One increment + one in-flight PR per lane still holds, so extra firings babysit rather
+> than fork. Reverts to the original daily crons (below, in each lane's section header) on Tue
+> 2026-08-04 23:00 UTC for any lane not already self-disabled. Rationale + revert IDs:
+> `docs/routines/routine-chain.md`.
 
 Model status (2026-08-01): programmatic pinning is unavailable on this account
 (`model_update_disabled`, re-confirmed) — the table's Model column is the **intended** assignment,
