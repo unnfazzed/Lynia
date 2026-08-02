@@ -83,11 +83,14 @@ export default function MenuPage() {
 
   async function onCreateStarterCategory(name: string) {
     setSubmitting(true);
+    setListError(null);
     try {
       await createCategory({ name });
       refresh();
-    } catch {
-      // Best-effort quick-create — a failure here just leaves the starter chip tappable again.
+    } catch (err) {
+      // D-D0e: this used to swallow the error entirely — a dropped connection mid-tap left the
+      // starter chip tappable again with no indication the create actually failed.
+      setListError(err instanceof ApiError ? err.message : "Couldn't create the category — try again.");
     } finally {
       setSubmitting(false);
     }
@@ -142,6 +145,12 @@ export default function MenuPage() {
           </div>
         )}
 
+        {state.status === "ready" && listError && (
+          <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 12, padding: "12px 16px", fontSize: 13, fontWeight: 700 }}>
+            {listError}
+          </div>
+        )}
+
         {state.status === "ready" && state.categories.length === 0 && (
           <div style={{ ...cardStyle, maxWidth: 520, textAlign: "center", padding: 32 }}>
             <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 6 }}>Start with a category</div>
@@ -167,12 +176,6 @@ export default function MenuPage() {
 
         {state.status === "ready" && state.categories.length > 0 && (
           <>
-            {listError && (
-              <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 12, padding: "12px 16px", fontSize: 13, fontWeight: 700 }}>
-                {listError}
-              </div>
-            )}
-
             <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 21, fontWeight: 800 }}>Menu</div>
