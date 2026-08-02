@@ -216,8 +216,6 @@ export function OrderCard({
   order,
   bucket,
   disabled,
-  pickupCode,
-  revealingCode,
   onMarkReady,
   onRevealPickupCode,
   onOpenHold,
@@ -230,10 +228,8 @@ export function OrderCard({
   order: MerchantOrderResponse;
   bucket: OrderCardBucket;
   disabled: boolean;
-  pickupCode?: string;
-  revealingCode?: boolean;
-  onMarkReady: (orderId: string) => void;
-  onRevealPickupCode: (orderId: string) => void;
+  onMarkReady: (orderId: string) => Promise<void>;
+  onRevealPickupCode: (orderId: string) => Promise<string>;
   onOpenHold: (order: MerchantOrderResponse) => void;
   onLogCall: (orderId: string) => Promise<void>;
   onRequestPayment: (orderId: string, overrideCallLog: boolean) => Promise<void>;
@@ -244,6 +240,37 @@ export function OrderCard({
   const now = useNow();
   const items = order.items.map((i) => `${i.quantity}x ${i.name}`).join(" · ");
   const canRefund = order.paymentMethod === "wallet" && !!order.merchantPaymentConfirmedAt;
+
+  // LC-D03: mark-ready and pickup-code reveal each own per-order busy+error state instead of
+  // firing as a bare `void` promise that swallows a network failure silently.
+  const [markReadyBusy, setMarkReadyBusy] = useState(false);
+  const [markReadyError, setMarkReadyError] = useState<string | null>(null);
+  async function handleMarkReadyClick() {
+    setMarkReadyBusy(true);
+    setMarkReadyError(null);
+    try {
+      await onMarkReady(order.id);
+    } catch (err) {
+      setMarkReadyError(err instanceof Error ? err.message : "Something went wrong — try again.");
+    } finally {
+      setMarkReadyBusy(false);
+    }
+  }
+
+  const [pickupCode, setPickupCode] = useState<string | undefined>(undefined);
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
+  async function handleRevealClick() {
+    setRevealBusy(true);
+    setRevealError(null);
+    try {
+      setPickupCode(await onRevealPickupCode(order.id));
+    } catch (err) {
+      setRevealError(err instanceof Error ? err.message : "Something went wrong — try again.");
+    } finally {
+      setRevealBusy(false);
+    }
+  }
 
   return (
     <div style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -279,12 +306,13 @@ export function OrderCard({
           </div>
           <button
             type="button"
-            onClick={() => onMarkReady(order.id)}
-            disabled={disabled}
-            style={{ ...primaryButtonStyle, padding: "10px 16px", fontSize: 14, ...disabledStyle(disabled) }}
+            onClick={() => void handleMarkReadyClick()}
+            disabled={disabled || markReadyBusy}
+            style={{ ...primaryButtonStyle, padding: "10px 16px", fontSize: 14, ...disabledStyle(disabled || markReadyBusy) }}
           >
-            Mark ready
+            {markReadyBusy ? "Marking ready…" : "Mark ready"}
           </button>
+          {markReadyError && <div style={{ fontSize: 12, color: "var(--danger-ink)", fontWeight: 700 }}>{markReadyError}</div>}
           {canRefund && <RefundAction order={order} disabled={disabled} onRefund={onRefund} />}
         </>
       )}
@@ -313,14 +341,17 @@ export function OrderCard({
                   <span style={{ fontSize: 18, fontWeight: 900, fontVariantNumeric: "tabular-nums", letterSpacing: ".06em" }}>{pickupCode}</span>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => onRevealPickupCode(order.id)}
-                  disabled={disabled || revealingCode}
-                  style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-text)", background: "var(--accent-wash)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", cursor: "pointer", ...disabledStyle(disabled || !!revealingCode) }}
-                >
-                  {revealingCode ? "Loading…" : "Show pickup code"}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void handleRevealClick()}
+                    disabled={disabled || revealBusy}
+                    style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-text)", background: "var(--accent-wash)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", cursor: "pointer", ...disabledStyle(disabled || revealBusy) }}
+                  >
+                    {revealBusy ? "Loading…" : "Show pickup code"}
+                  </button>
+                  {revealError && <div style={{ fontSize: 12, color: "var(--danger-ink)", fontWeight: 700 }}>{revealError}</div>}
+                </>
               )}
             </>
           )}
