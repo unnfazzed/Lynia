@@ -111,11 +111,30 @@ place with `update_trigger`):
 
 | Loop | trigger_id | Cron | Intended model |
 |---|---|---|---|
-| LC-A — size & data diet | `trig_0162YfHfSRVt6pwdt2f9b6C7` | `0 3 * * 1-6` | `claude-opus-5` |
-| LC-B — Go-class runtime perf | `trig_015XeLQaP76oxec1uLvrHBno` | `0 4 * * *` | `claude-opus-5` |
-| LC-C — offline & 2G resilience | `trig_019iywx2Jg44wWTvhjR8YiVx` | `0 6 * * *` | `claude-opus-4-8` |
-| LC-D — journey & soundness sweep | `trig_01QTyPeoNaV4kk8rFMWBXTNR` | `0 7 * * *` | `claude-opus-4-8` |
-| LC steer — weekly Fable replan | `trig_015tKgeoWM6b5RWQcLF6PbA4` | `0 3 * * 0` | `claude-fable-5` |
+| LC-A — size & data diet | `trig_0162YfHfSRVt6pwdt2f9b6C7` | `40 */3 * * *` | `claude-opus-5` |
+| LC-B — Go-class runtime perf | `trig_015XeLQaP76oxec1uLvrHBno` | `15 */3 * * *` | `claude-opus-5` |
+| LC-C — offline & 2G resilience | `trig_019iywx2Jg44wWTvhjR8YiVx` | `30 */3 * * *` | `claude-opus-4-8` |
+| LC-D — journey & soundness sweep | `trig_01QTyPeoNaV4kk8rFMWBXTNR` | `45 */3 * * *` | `claude-opus-4-8` |
+| LC steer — weekly Fable replan | `trig_015tKgeoWM6b5RWQcLF6PbA4` | `30 5,17 * * *` | `claude-fable-5` |
+| LC-R — refactoring sprint (temporary, sprint-only) | `trig_015cSL8dCPaZdociia4mqAjB` | `55 */3 * * *` | (default) |
+
+> **Sprint cadence (2026-08-02 → 2026-08-04, user directive "the week's work by Tuesday"):** the four
+> LC lanes were bumped from once/day to **every 3 hours (8×/day)**, staggered at `:15/:30/:40/:45`
+> so no two share a minute, 7 days; the steer went from weekly to **2×/day** (`05:30`, `17:30`) so it
+> re-ranks and disables finished lanes promptly. Each firing still does ONE increment and one
+> in-flight PR per lane (a firing whose lane PR is still open just babysits it), so the extra cadence
+> converts to throughput, not chaos — bounded by CI/merge time. Burn roughly doubles for the window;
+> it self-limits because (a) lanes self-disable when their checklist completes and the 2×/day steer
+> catches that, and (b) a scheduled revert on **Tue 2026-08-04 23:00 UTC** returns any still-enabled
+> lane to its original daily cron (LC-A `0 3 * * 1-6`, LC-B `0 4`, LC-C `0 6`, LC-D `0 7`, steer
+> `0 3 * * 0`). The original crons are the post-sprint target; the grid table above (§"The grid")
+> shows the steady-state hours, not the sprint burst.
+>
+> **LC-R (added 2026-08-02, user directive "include code refactoring"):** the standing refactoring
+> routine's trigger is not editable from the LC sessions (meta_mcp ownership), so the sprint adds a
+> TEMPORARY `LC loop R` running the same doctrine at `55 */3` — deduping with the standing routine
+> through `docs/REFACTOR-LEDGER.md`. The Tuesday revert DISABLES LC-R outright (it does not get a
+> daily cadence); the standing refactoring routine keeps the lane afterward.
 
 > **Model caveat (2026-08-01):** programmatic model pinning returns `model_update_disabled`
 > (re-confirmed), so firings use the account/environment default (currently Opus 4.8) until the
