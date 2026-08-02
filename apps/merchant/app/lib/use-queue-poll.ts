@@ -4,10 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { ApiError } from "./api-client";
 import { API_BASE_URL } from "./config";
+import { InflightLatch } from "./inflight-latch";
 import { listQueue } from "./orders-api";
 import { getReachabilityStore } from "./reachability";
 
 const POLL_INTERVAL_MS = 5_000;
+
+// LC-C04: comfortably above api-client's own MERCHANT_FETCH_TIMEOUT_MS (10s) — a normally-timed-out
+// request always clears the latch itself first via `finally`; this is only the backstop for a request
+// that somehow doesn't (a hang the transport's own timeout didn't catch, or a bug).
+const INFLIGHT_STALE_MS = 25_000;
 
 export interface QueuePollState {
   orders: MerchantOrderResponse[];
@@ -28,11 +34,10 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
   const [orders, setOrders] = useState<MerchantOrderResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
-  const inflight = useRef(false);
+  const latch = useRef(new InflightLatch(INFLIGHT_STALE_MS)).current;
 
   const fetchOnce = useCallback(async () => {
-    if (inflight.current) return;
-    inflight.current = true;
+    if (!latch.tryAcquire()) return;
     const reachability = getReachabilityStore(API_BASE_URL);
     try {
       const result = await listQueue();
@@ -51,9 +56,9 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
       }
     } finally {
       setLoading(false);
-      inflight.current = false;
+      latch.release();
     }
-  }, []);
+  }, [latch]);
 
   useEffect(() => {
     if (!enabled) return;
