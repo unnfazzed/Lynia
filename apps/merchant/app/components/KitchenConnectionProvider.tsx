@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAlarmController } from "./alarm-singleton";
 import { useWakeLock } from "./use-wake-lock";
@@ -75,9 +75,17 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
 
   const wakeLock = useWakeLock(getAlarmController().isArmed());
 
+  // Each of these only bumps `alarmTick` when the controller's state actually transitioned — NOT
+  // unconditionally. B-D0: the queue screen's alarm-sync effect depends on `alarm` (KitchenBar and
+  // friends read it too), so an unconditional bump here made `ring()` (called every render while an
+  // order is unanswered, a no-op after the first) re-trigger that effect forever: bump → new `alarm`
+  // identity → effect re-fires → `ring()` again → bump. Gating on a real transition breaks the cycle
+  // at the source, independent of memoization below.
   const arm = useCallback(() => {
-    getAlarmController().arm();
-    setAlarmTick((t) => t + 1);
+    const controller = getAlarmController();
+    const wasArmed = controller.isArmed();
+    controller.arm();
+    if (!wasArmed) setAlarmTick((t) => t + 1);
   }, []);
 
   const toggleMuted = useCallback(() => {
@@ -88,18 +96,23 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
 
   const testRing = useCallback(() => {
     const controller = getAlarmController();
+    const wasRinging = controller.isRinging();
     controller.start(TEST_RING_DURATION_MS);
-    setAlarmTick((t) => t + 1);
+    if (controller.isRinging() !== wasRinging) setAlarmTick((t) => t + 1);
   }, []);
 
   const ring = useCallback(() => {
-    getAlarmController().start();
-    setAlarmTick((t) => t + 1);
+    const controller = getAlarmController();
+    const wasRinging = controller.isRinging();
+    controller.start();
+    if (controller.isRinging() !== wasRinging) setAlarmTick((t) => t + 1);
   }, []);
 
   const silence = useCallback(() => {
-    getAlarmController().stop();
-    setAlarmTick((t) => t + 1);
+    const controller = getAlarmController();
+    const wasRinging = controller.isRinging();
+    controller.stop();
+    if (wasRinging) setAlarmTick((t) => t + 1);
   }, []);
 
   const signOut = useCallback(() => {
@@ -108,11 +121,13 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
     router.replace("/login");
   }, [router]);
 
-  const controller = getAlarmController();
-  const value: KitchenConnectionValue = {
-    session,
-    signOut,
-    alarm: {
+  // Memoized so a re-render that doesn't touch alarm/session/reachability/wakeLock state (e.g. a
+  // parent re-render) doesn't hand every context consumer — KitchenBar, RearmBanner,
+  // ReconnectBanner, the queue screen — a brand-new object identity, which would defeat their own
+  // memoization and any effect keyed on this value (B-D0).
+  const alarm = useMemo(() => {
+    const controller = getAlarmController();
+    return {
       armed: controller.isArmed(),
       muted: controller.isMuted(),
       ringing: controller.isRinging(),
@@ -121,14 +136,23 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
       testRing,
       ring,
       silence,
-    },
-    reachability: reachState,
-    actionsDisabled: !reachState.reachable,
-    wakeLock,
-  };
-  // alarmTick is read only to satisfy the linter's "unused" check on the setter dependency — the
-  // controller itself is the source of truth, this state exists purely to force a re-render.
-  void alarmTick;
+    };
+    // alarmTick is the trigger for re-reading the controller's (otherwise untracked) mutable state;
+    // the callbacks are stable across renders (useCallback, no deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alarmTick, arm, toggleMuted, testRing, ring, silence]);
+
+  const value = useMemo<KitchenConnectionValue>(
+    () => ({
+      session,
+      signOut,
+      alarm,
+      reachability: reachState,
+      actionsDisabled: !reachState.reachable,
+      wakeLock,
+    }),
+    [session, signOut, alarm, reachState, wakeLock],
+  );
 
   return <KitchenConnectionContext.Provider value={value}>{children}</KitchenConnectionContext.Provider>;
 }
