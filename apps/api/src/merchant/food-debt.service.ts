@@ -4,6 +4,7 @@ import { RESTAURANTS_DEBT, RiderAccountStatus, roundToCents } from "@lynia/share
 import { NotificationsService } from "../notifications/notifications.service";
 import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { resolveOwnMerchantId } from "./merchant-lookup.util";
 
 /**
  * C4 — food money evidence layer (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane
@@ -432,8 +433,6 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
   // ── Shared lookup ─────────────────────────────────────────────────────────────────────────────────
 
   private async ownMerchantId(profileId: string): Promise<string> {
-    const merchant = await this.prisma.merchant.findUnique({ where: { ownerProfileId: profileId }, select: { id: true } });
-    if (!merchant) throw new NotFoundException("Merchant not found");
-    return merchant.id;
+    return resolveOwnMerchantId(this.prisma, profileId);
   }
 }

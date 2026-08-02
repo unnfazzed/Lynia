@@ -29,6 +29,7 @@ import { RESTAURANTS_COMMISSION, roundToCents } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { maskPhone } from "../common/phone-mask";
 import { PrismaService } from "../prisma/prisma.service";
+import { isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
 
 type MerchantWithOwner = Prisma.MerchantGetPayload<{ include: { ownerProfile: { select: { phone: true } } } }>;
 type DishRow = Prisma.MerchantDishGetPayload<Record<string, never>>;
@@ -48,10 +49,6 @@ function endOfToday(): Date {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
   return d;
-}
-
-function isOutOfStock(dish: Pick<DishRow, "outOfStockUntil">): boolean {
-  return !!dish.outOfStockUntil && dish.outOfStockUntil > new Date();
 }
 
 @Injectable()
@@ -456,9 +453,7 @@ export class MerchantService {
   }
 
   private async findOwnMerchantIdOrThrow(profileId: string): Promise<string> {
-    const merchant = await this.prisma.merchant.findUnique({ where: { ownerProfileId: profileId }, select: { id: true } });
-    if (!merchant) throw new NotFoundException("Merchant not found");
-    return merchant.id;
+    return resolveOwnMerchantId(this.prisma, profileId);
   }
 
   /** Best-effort read-URL mint (mirrors admin-kyc-review.service.ts's photoUrl handling): a signing

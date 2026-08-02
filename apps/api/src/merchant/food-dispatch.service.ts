@@ -17,6 +17,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { applyReliabilityDelta } from "../riders/reliability";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { DISPATCH_STRATEGY, type DispatchStrategy } from "./dispatch-strategy";
+import { notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
 
 /**
  * C3 — food dispatch. Owns the hand-off `ready_for_pickup` → assigned a merchant order's kitchen
@@ -73,7 +74,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
    *  didn't just cause locally (rider secured, NO_RIDER hold, a rider dropping) — mirrors
    *  food-order.service.ts's identical helper. */
   private notifyQueue(merchantId: string | null | undefined, orderId: string): void {
-    if (merchantId) this.gateway.emitFoodQueueChanged(merchantId, orderId);
+    notifyFoodQueueChanged(this.gateway, merchantId, orderId);
   }
 
   private async runSweeps(): Promise<void> {
@@ -567,8 +568,6 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async ownMerchantId(profileId: string): Promise<string> {
-    const merchant = await this.prisma.merchant.findUnique({ where: { ownerProfileId: profileId }, select: { id: true } });
-    if (!merchant) throw new NotFoundException("Merchant not found");
-    return merchant.id;
+    return resolveOwnMerchantId(this.prisma, profileId);
   }
 }
