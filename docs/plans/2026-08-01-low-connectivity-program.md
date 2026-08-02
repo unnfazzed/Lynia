@@ -159,9 +159,30 @@ resilience seams ([resilience]).
 
 **Audit territory (confirmed Day-0 defects FIRST — fix each this run with a regression test, then the sweeps):**
 - [x] B-D0 **CONFIRMED CRITICAL — FIXED (2026-08-02)** — `apps/merchant/app/components/KitchenConnectionProvider.tsx:112` unbounded render loop (unmemoized context value + tick-bumping alarm effect); `value`/`alarm` now memoized with `useMemo`, and `ring()`/`silence()`/`testRing()`/`arm()` only bump the `alarmTick` re-render trigger on an actual controller-state transition instead of unconditionally (the real trigger — the queue screen's `[unansweredCount, alarm]` alarm-sync effect re-fired itself forever). Render-count regression pin in `KitchenConnectionProvider.test.tsx` (confirmed it hangs against the pre-fix code). Ledger: LC-B04. See `docs/LC-DAY0-AUDIT-2026-08-01.md`, `docs/LC-B-REPORT-2026-08-02.md`.
-- [ ] B-T1 Boot-path trace: everything from process start → first interactive frame
-      (`app/_layout.tsx` chain), classify each init as first-frame-critical vs deferrable
-      (DoorDash lesson 2); includes KNOWN keystore-read overlap + push-registration timing.
+- [x] B-T1 **AUDITED (2026-08-02)** — Boot-path trace: `app/_layout.tsx` chain traced module-load →
+      first-paint. Classification: **first-frame-critical** = `useAppFonts()` (bundled, no network;
+      gates the native splash), `AuthProvider`'s `loadSession()` + `index.tsx`'s
+      `loadOnboardingSeen()`/`loadRolePreference()` (all local SecureStore reads, no network — these
+      three already fire concurrently, not chained, since they're separate effects mounted in the same
+      commit); **deferrable / already deferred** = `PersistQueryClientProvider`'s disk-cache restore
+      (renders children immediately, hydrates in the background per TanStack's `isRestoring` gate),
+      `usePushRegistration`/`PushSync` (check-don't-request, mounts as a null sibling, never blocks
+      render — ALR-04), `useServerMinVersion`/`AppNavigator` (fail-open null while pending, renders the
+      `Stack` immediately), `useBootstrap`/`BootstrapSync` (fire-and-forget seed, screens self-serve on
+      failure), RUM/Sentry/PostHog init (all inert-until-configured or fire-and-forget). **Zero network
+      round-trips gate first paint** — the DoveMark splash → `bootDestination()` redirect chain is
+      100% local reads. The signed-in boot's network calls (`/app/bootstrap`, `/app/version-gate`, the
+      push-token register POST) fire concurrently (not sequentially chained), so the §2 "≤3 sequential
+      round-trips" target holds as coded. **Zero new defects** — the chain already reflects
+      ALR-01/02/04 + the warm-boot/bootstrap-aggregate work; single-flight token refresh
+      (`api/client.ts`) and the query-cache hydrate-only-if-newer semantics rule out the two race
+      hypotheses checked (concurrent-401 refresh storm at boot, bootstrap-vs-persisted-cache
+      overwrite). **Confirmed via trace, not re-ledgered (Lane A's territory):** the customer home
+      screen's `useFeatureFlags()` double-fire (`app/(tabs)/home.tsx:46` + `:109`'s nested
+      `RestaurantsRail`, both hitting `/app/feature-flags` independently since the hook has no
+      cross-call-site cache) still reproduces — this is exactly A-O10's already-seeded finding, left
+      to Lane A. Refined B-O3/B-O4 below with concrete evidence; appended B-O7 (new, speculative,
+      needs on-device confirmation). See `docs/LC-B-REPORT-2026-08-02.md`.
 - [ ] B-T2 Re-render audit of the heaviest screens (home, `order/[id]`, rider board, food
       browse) incl. the KNOWN ComposeMap/JobDetailsCard/board-card memo boundaries.
 - [ ] B-T3 List + memory audit: every list without virtualization, every unbounded in-memory
@@ -172,10 +193,29 @@ resilience seams ([resilience]).
 - [ ] B-O1 History/board/notifications lists → FlatList + cursor pagination — KNOWN backlog. (M)
 - [ ] B-O2 Memo boundaries for ComposeMap / JobDetailsCard / board-card (with render-isolation
       tests, the AuctionClock pattern) — KNOWN backlog. (M)
-- [ ] B-O3 Overlap/defer boot keystore reads — KNOWN backlog. (S)
-- [ ] B-O4 Push-registration off the first-paint path — KNOWN backlog. (S)
+- [ ] B-O3 Overlap/defer boot keystore reads — KNOWN backlog. **B-T1 evidence:** `loadSession()`
+      (`src/auth/session.ts`) and `loadOnboardingSeen()`/`loadRolePreference()`
+      (`src/auth/device-state.ts`, read from `app/index.tsx`) already fire concurrently at the
+      JS-effect level — same commit, no artificial await-chain between them. The remaining risk is
+      native-side: Android Keystore/StrongBox decrypt calls can serialize inside the OS on Go-class
+      hardware, which a code trace can't observe. Needs an on-device profile (systrace/logcat
+      timestamps across the 3 native calls on an A53-class device) before further JS-side change is
+      worth making. (S)
+- [ ] B-O4 Push-registration off the first-paint path — KNOWN backlog. **B-T1 evidence:**
+      `usePushRegistration` (`src/push/use-push-registration.ts`) already runs check-don't-request and
+      never blocks render (mounted as a null-returning sibling, fires from a `useEffect`) — ALR-04
+      already fixed the blocking-dialog half of this. What's left is bandwidth, not render-blocking: on
+      a cold boot the token-register POST, `/app/version-gate`, and (customer) `/app/feature-flags`
+      fire in the same window as the first-paint-critical `/app/bootstrap` fetch, competing for the
+      same 2G/3G pipe. Rescoped into B-O7. (S)
 - [ ] B-O5 Socket self-heal refetch cadence on reconnect attempts — KNOWN backlog. (S)
 - [ ] B-O6 Native font embedding (config plugin) — KNOWN backlog; **needs native build train**. (L)
+- [ ] B-O7 **NEW (B-T1, 2026-08-02):** Cold-boot request prioritization — defer the push-token
+      register POST (`use-push-registration.ts`) and, where feasible, `/app/version-gate` /
+      `/app/feature-flags` a beat behind `/app/bootstrap` (e.g. a short delay/idle-callback, or firing
+      off `BootstrapSync`'s settle instead of mount) so they don't contend for bandwidth with the
+      first-paint-critical aggregate on a constrained 2G/3G link. Impact unconfirmed without an
+      on-device 2G trace — audit-only finding, not implemented this run. (S)
 
 ### Lane C — offline & 2G resilience (Opus 4.8, `0 6 * * *`)
 
