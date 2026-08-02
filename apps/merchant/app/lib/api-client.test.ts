@@ -24,6 +24,12 @@ vi.mock("./session", () => ({
   clearMerchantSession: () => clearMerchantSession(),
 }));
 
+const reportReachable = vi.fn();
+const reportUnreachable = vi.fn();
+vi.mock("./reachability", () => ({
+  getReachabilityStore: () => ({ reportReachable, reportUnreachable }),
+}));
+
 function baseSession(): MerchantSession {
   return {
     accessToken: "old-access",
@@ -52,6 +58,8 @@ beforeEach(async () => {
   session = baseSession();
   saveMerchantSession.mockClear();
   clearMerchantSession.mockClear();
+  reportReachable.mockClear();
+  reportUnreachable.mockClear();
   fetchMock = vi.fn();
   global.fetch = fetchMock as unknown as typeof fetch;
 });
@@ -152,5 +160,53 @@ describe("every outbound request carries a bounded timeout signal (LC-C02)", () 
       throw err;
     });
     await expect(authedFetch("/merchant/orders")).rejects.toMatchObject({ status: 0 });
+  });
+});
+
+describe("authedFetch feeds the shared ReachabilityStore (LC-D04)", () => {
+  // Before this fix, only use-queue-poll.ts fed the store — a network drop hit while the merchant
+  // was on Menu/Shop/Hours/Statement (every one of which calls through authedFetch, never
+  // listQueue) never flipped the CONNECTION LOST bar until the next queue poll or 20s active
+  // probe happened to notice. Wiring it in authedFetch itself covers the whole authenticated
+  // surface by construction.
+  it("reports reachable on a successful response", async () => {
+    const { authedFetch } = await import("./api-client");
+    fetchMock.mockResolvedValue(makeResponse(200, { ok: true }));
+    await authedFetch("/merchant/dishes/d1/out-of-stock");
+    expect(reportReachable).toHaveBeenCalled();
+    expect(reportUnreachable).not.toHaveBeenCalled();
+  });
+
+  it("reports reachable even on a non-2xx domain rejection — a real response is proof of life", async () => {
+    const { authedFetch } = await import("./api-client");
+    fetchMock.mockResolvedValue(makeResponse(409, { message: "conflict" }));
+    await expect(authedFetch("/merchant/dishes/d1/out-of-stock")).rejects.toMatchObject({ status: 409 });
+    expect(reportReachable).toHaveBeenCalled();
+    expect(reportUnreachable).not.toHaveBeenCalled();
+  });
+
+  it("reports unreachable on a network-level failure", async () => {
+    const { authedFetch } = await import("./api-client");
+    fetchMock.mockImplementation(async () => {
+      throw new TypeError("Network request failed");
+    });
+    await expect(authedFetch("/merchant/dishes/d1/out-of-stock")).rejects.toMatchObject({ status: 0 });
+    expect(reportUnreachable).toHaveBeenCalled();
+    expect(reportReachable).not.toHaveBeenCalled();
+  });
+
+  it("reports unreachable when the post-refresh retry hits a network-level failure", async () => {
+    const { authedFetch } = await import("./api-client");
+    let calls = 0;
+    fetchMock.mockImplementation(async (url: string) => {
+      calls++;
+      if (url.endsWith("/auth/refresh")) {
+        return makeResponse(200, { accessToken: "new-access", refreshToken: "new-refresh", expiresIn: 3600 });
+      }
+      if (calls === 1) return AUTH_GUARD_401; // first attempt: expired token
+      throw new TypeError("Network request failed"); // retry with fresh token: drops mid-flight
+    });
+    await expect(authedFetch("/merchant/orders")).rejects.toMatchObject({ status: 0 });
+    expect(reportUnreachable).toHaveBeenCalled();
   });
 });

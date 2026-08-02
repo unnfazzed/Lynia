@@ -41,6 +41,7 @@ export default function MenuPage() {
   const [sheet, setSheet] = useState<Sheet>({ kind: "none" });
   const [submitting, setSubmitting] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     Promise.all([listCategories(), listDishes()])
@@ -117,9 +118,14 @@ export default function MenuPage() {
 
   async function onClearOos(dishId: string) {
     setSubmitting(true);
+    setListError(null);
     try {
       await clearDishOutOfStock(dishId);
       refresh();
+    } catch (err) {
+      // LC-D04: this used to have no catch at all — a dropped connection mid-tap silently left the
+      // dish marked out of stock with no indication the "back in stock" tap failed.
+      setListError(err instanceof ApiError ? err.message : "Couldn't update stock — try again.");
     } finally {
       setSubmitting(false);
     }
@@ -161,6 +167,12 @@ export default function MenuPage() {
 
         {state.status === "ready" && state.categories.length > 0 && (
           <>
+            {listError && (
+              <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 12, padding: "12px 16px", fontSize: 13, fontWeight: 700 }}>
+                {listError}
+              </div>
+            )}
+
             <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 21, fontWeight: 800 }}>Menu</div>
