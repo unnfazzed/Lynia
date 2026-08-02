@@ -590,14 +590,14 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           if (pauseResult.count > 0) paused++;
           continue;
         }
-        const claimed = await this.prisma.order.updateMany({
-          where: { id: o.id, status: "requested", merchantPhase: "awaiting_accept", acceptDeadlineAt: o.acceptDeadlineAt },
-          data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: "shop_closed", merchantPhase: null },
-        });
-        if (claimed.count > 0) {
-          await this.prisma.orderEvent.create({ data: { orderId: o.id, status: "cancelled" } });
-          await this.notifyCancelledCustomer(o.id, "shop_closed");
-          this.notifyQueue(o.merchantId, o.id);
+        if (
+          await this.commitStaleCancellation(
+            o.id,
+            o.merchantId,
+            { merchantPhase: "awaiting_accept", acceptDeadlineAt: o.acceptDeadlineAt },
+            "shop_closed",
+          )
+        ) {
           cancelled++;
         }
       } catch (err) {
@@ -626,14 +626,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     });
     for (const o of stale) {
       try {
-        const claimed = await this.prisma.order.updateMany({
-          where: { id: o.id, status: "requested", merchantPhase: phase },
-          data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: reason, merchantPhase: null },
-        });
-        if (claimed.count > 0) {
-          await this.prisma.orderEvent.create({ data: { orderId: o.id, status: "cancelled" } });
-          await this.notifyCancelledCustomer(o.id, reason);
-          this.notifyQueue(o.merchantId, o.id);
+        if (await this.commitStaleCancellation(o.id, o.merchantId, { merchantPhase: phase }, reason)) {
           cancelled++;
         }
       } catch (err) {
@@ -641,6 +634,28 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       }
     }
     return { cancelled };
+  }
+
+  /** Shared CAS-cancel + notify commit for the reconciler sweeps above and below: claim the order via
+   *  a compare-and-swap `updateMany` scoped to `whereExtra` (each caller's own stale-read guard on top
+   *  of the common `status: "requested"` check), then on success write the cancellation event, the
+   *  customer notification, and the kitchen-queue push. Returns whether this call won the claim (false
+   *  = another sweep tick already claimed the row first, a normal race under concurrent ticks). */
+  private async commitStaleCancellation(
+    orderId: string,
+    merchantId: string | null | undefined,
+    whereExtra: Prisma.OrderWhereInput,
+    reason: MerchantRejectionReasonCode,
+  ): Promise<boolean> {
+    const claimed = await this.prisma.order.updateMany({
+      where: { id: orderId, status: "requested", ...whereExtra },
+      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: reason, merchantPhase: null },
+    });
+    if (claimed.count === 0) return false;
+    await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
+    await this.notifyCancelledCustomer(orderId, reason);
+    this.notifyQueue(merchantId, orderId);
+    return true;
   }
 
   /** N-23: end-of-day close is the only automatic exit for an unpaid WALLET order (R-17 — no payment
@@ -659,14 +674,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     for (const o of stale) {
       if (!o.merchantId || !isPastClosingTime(hoursById.get(o.merchantId) ?? null)) continue;
       try {
-        const claimed = await this.prisma.order.updateMany({
-          where: { id: o.id, status: "requested", merchantPhase: "awaiting_payment" },
-          data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: "shop_closed", merchantPhase: null },
-        });
-        if (claimed.count > 0) {
-          await this.prisma.orderEvent.create({ data: { orderId: o.id, status: "cancelled" } });
-          await this.notifyCancelledCustomer(o.id, "shop_closed");
-          this.notifyQueue(o.merchantId, o.id);
+        if (await this.commitStaleCancellation(o.id, o.merchantId, { merchantPhase: "awaiting_payment" }, "shop_closed")) {
           cancelled++;
         }
       } catch (err) {
