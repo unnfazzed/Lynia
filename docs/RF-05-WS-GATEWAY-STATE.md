@@ -1,13 +1,19 @@
 # RF-05 — WebSocket gateway shared mutable state: design pass
 
-**Status:** design decision (roadmap 3.6). Scopes the RF-05 refactor-ledger item — "extract the
-per-process maps in `tracking.gateway.ts`; too large for one PR, needs a design pass first" — into
-executable, ledger-sized PRs. No code changes here; this is the classification the extraction follows.
+**Status:** design decision (roadmap 3.6), **revised 2026-08-02** after RF-05a landed and the
+2026-07-26 run found this doc's original step 1 undersold the entanglement of the remaining four
+structures. This revision replaces the "Sequenced PRs" section below with a code-verified
+classification and closes the open questions rather than deferring them again — see "What changed
+in this revision."
+
+Scopes the RF-05 refactor-ledger item — "extract the per-process maps in `tracking.gateway.ts`;
+too large for one PR, needs a design pass first" — into executable, ledger-sized work items.
 
 ## The state
 
-`tracking.gateway.ts` (828 lines) holds five in-memory, per-process structures this design pass
-classifies for Redis-vs-process placement:
+`tracking.gateway.ts` (870 lines) holds five in-memory, per-process structures this design pass
+classifies for Redis-vs-process placement, plus a sixth (`boardOpChain`) added later by BH-25 that
+is out of RF-05's scope (a same-process synchronization primitive, not routing/presence data):
 
 | Structure | Shape | Purpose |
 |---|---|---|
@@ -17,66 +23,111 @@ classifies for Redis-vs-process placement:
 | `customerPresence` | `Map<orderId, {live, darkSince}>` | is the customer watching? drives the "customer went dark" signal |
 | `customerSocketOrders` | `Map<socketId, Set<orderId>>` | which orders a socket subscribed to (cleanup on disconnect) |
 
-A sixth structure, `boardOpChain` (`Map<socketId, Promise<unknown>>`, added by BH-25 to serialize a
-socket's concurrent `board:subscribe`/`board:leave` calls so their `client.rooms` mutations can't
-interleave), landed after this design pass. It's outside this classification's scope — it's a
-same-process synchronization primitive, not routing/presence data, so the Redis-vs-process question
-this doc asks doesn't apply to it.
-
 The gateway runs behind the `@socket.io/redis-adapter`, which fans **events** across API instances —
 but these **maps live in one process's heap**. The question RF-05 asks: for each, does correctness
 depend on all instances agreeing, or is per-process state fine?
 
 ## Classification
 
-**Per-process is CORRECT — leave as-is, document the reasoning (no Redis):**
+**Per-process is CORRECT — leave as-is, documented in code:**
 
 - **`positionEmit`** — coalescing is a decision made *where the rider's location update arrives*. A
   rider's socket is pinned to one instance (sticky sessions), so every update for a given order lands
   on the same process; that process's coalesce window is the whole truth. Sharing it via Redis would
   add a network round-trip to the hottest path (per-fix) to solve a problem that can't occur.
+  **RF-05a (2026-07-26) extracted this to `position-coalescer.ts`** — it was the one genuinely
+  isolated structure (see "What changed" below for why the other four weren't).
 - **`customerSocketOrders`** — pure per-socket bookkeeping for disconnect cleanup. A socket only ever
   exists on one instance; the map is meaningless anywhere else.
 
-**Per-process is ACCEPTABLE but has a bounded edge — document the edge, no Redis:**
+**Per-process is ACCEPTABLE but has a bounded edge — documented in code (RF-05c, this revision):**
 
 - **`staleNotified` / `customerStaleNotified`** — dedup for a low-frequency, best-effort "tracking
   went stale" nudge. If a socket reconnects to a *different* instance mid-ride, the new process's set
   is empty, so the nudge could fire a second time. One duplicate best-effort notification on the rare
-  instance-migration path is acceptable; making it exactly-once is not worth a Redis round-trip.
-  Action: a one-line comment recording that the at-most-once guarantee is per-process by design.
+  instance-migration path is acceptable; making it exactly-once is not worth a Redis round-trip. The
+  gateway's doc-comments on both fields now say this explicitly (2026-08-02), closing the "Action: a
+  one-line comment" item this doc's original revision left open.
 
-**Needs verification — the one real multi-instance question:**
+**Resolved — `customerPresence` is a cache, not an authority (2026-08-02):**
 
-- **`customerPresence`** — drives a rider-facing signal ("the customer stopped watching"). If this map
-  were the *authority* on presence, a customer connected to instance A would be invisible to a rider's
-  gateway on instance B, producing false "customer went dark" signals under multi-instance load. The
-  code already reaches for the cluster-wide socket registry (`fetchSockets`, the same Redis adapter)
-  elsewhere in the presence path — so the map appears to be a **local cache/optimization**, not the
-  authority. **The extraction must confirm this**: if presence is ultimately derived from
-  `fetchSockets` (cluster-wide), the map stays as a per-process cache and is safe. If any decision
-  reads `customerPresence` *without* a `fetchSockets` cross-check, that read is the bug — route it
-  through the cluster-wide registry (or a short-TTL Redis presence key), which is the only genuinely
-  multi-instance-relevant change RF-05 contains.
+The original doc flagged this as "needs verification": if `customerPresence` were the sole basis for
+a "customer went dark" decision, a customer connected to instance A would be invisible to a rider's
+gateway on instance B, producing false escalations under multi-instance load. Traced every read site
+in the current code:
 
-## Sequenced PRs (for the refactoring routine)
+- `scanCustomerPresence` builds its escalation `candidates` from `customerPresence`'s local
+  `darkSince`, but **before actually escalating** it calls `customerLiveInRoom(orderId)` — a
+  cluster-wide `server.in(room).fetchSockets()` check via the Redis adapter — and only proceeds to
+  `emitPresenceStale` if that check also comes back dark (`tracking.gateway.ts:807-813`). A customer
+  connected to a *different* instance is caught here: the local map says dark, the cluster-wide check
+  says live, and the local state is corrected (`p.darkSince = null`, the stale-notified entry is
+  cleared, the escalation claim released) instead of a false `presence:stale` going out.
+- `syncCustomerPresenceToRider` (`tracking.gateway.ts:228-242`) reads `customerStaleNotified` /
+  `customerPresence.darkSince` to sync a *reconnecting rider's own socket* — that socket, by
+  definition, just called `subscribeOrder` on **this** instance, so there's no cross-instance read
+  to get wrong here.
 
-1. **Extract, behaviour-preserving** — move the five structures + their helpers into a
-   `tracking-presence.ts` module with a narrow typed interface (`recordEmit`, `shouldEmit`,
-   `markStale`, `presenceFor`, …), gateway calls unchanged. Characterization tests on the coalesce
-   window + stale-dedup first (the gateway's existing integration tests are the net). No behaviour
-   change; shrinks the 828-line gateway.
-2. **Verify `customerPresence` authority** — trace every read; assert (with a test) that the
-   "customer went dark" decision is backed by `fetchSockets`, not the bare map. Fix only if a bare
-   read drives a signal.
-3. **Document the per-process guarantees** — the comments above (`positionEmit` sticky-correct;
-   `staleNotified` at-most-once-per-process-by-design), so a future reader doesn't "fix" a non-bug.
+So `customerPresence` only ever narrows *which orders get the expensive cluster-wide check*, never
+which orders get escalated — the map is a per-process candidate filter, exactly the same shape as
+`staleNotified`'s "don't spam every scan" role, and the multi-instance case it exists to guard
+against is provably handled by the `fetchSockets` cross-check that already sits between it and every
+`emitPresenceStale` call. **No code change needed; this closes the design doc's last open question.**
 
-Only step 2 can change behaviour, and only if the verification finds a bare-map read. Steps 1 and 3
-are pure hygiene. This keeps RF-05 within the sensitive-lane rules (the gateway carries a live
-heartbeat) — one small, tested PR at a time.
+## What changed in this revision (RF-05b re-scoped, not merely re-attempted)
+
+The 2026-07-26 run found the four remaining structures materially more entangled than this doc's
+original step 1 ("move the five structures + their helpers into a `tracking-presence.ts` module,
+gateway calls unchanged") assumed, and left RF-05b open pending "a narrower interface, or accept the
+gateway keeps this half." This revision does that follow-up design pass and picks the latter,
+verified against the current code:
+
+**Cross-boundary calls the four structures' six owning methods make**, traced line-by-line
+(`handleDisconnect`, `subscribeOrder`'s presence hook + `markCustomerPresent`,
+`syncCustomerPresenceToRider`, `scanPresence`, `scanCustomerPresence`, `customerLiveInRoom`,
+`riderLiveInRoom`):
+
+- **Two Socket.IO server queries** made *directly* against `this.server` (not through
+  `TrackingService`): `customerLiveInRoom`/`riderLiveInRoom` both call
+  `this.server.in(orderRoom(...)).fetchSockets()`. This is a live, cluster-aware transport dependency,
+  not a data structure.
+- **Two gateway emit methods**: `emitPresenceStale`/`emitPresenceRecovered`, called from three
+  different sites (`markCustomerPresent`, `scanPresence`, `scanCustomerPresence`) at points chosen by
+  the surrounding logic, not at a single well-defined "flush" boundary the way `positionCoalescer`
+  had exactly one (`flushPositionEmit`).
+- **Six distinct `TrackingService` calls**: `findStaleRiderPresence`, `releasePresenceEscalation`,
+  `claimPresenceEscalation`, `touchRiderHeartbeat`, `filterActiveOrders`, `assignedRiderId` — each
+  interleaved *inside* the same loop bodies that read/write the maps (e.g. `scanPresence`'s per-order
+  loop: check `riderLiveInRoom` → maybe `touchRiderHeartbeat` + `continue` → else check
+  `staleNotified` → add → `claimPresenceEscalation` → `emitPresenceStale`).
+
+This is the actual reason a mechanical move isn't safe: RF-05a's `positionCoalescer` only ever
+crossed back into gateway territory at one point (the flush callback), so extraction was "move the
+map + helpers, wire one callback." Here there are ~10 distinct cross-boundary calls interleaved with
+map reads/writes inside conditional branches, across two different subsystems (the Socket.IO
+transport and `TrackingService`'s escalation-claim state machine) whose call *order* relative to the
+map mutations is the actual logic — not incidental plumbing around it.
+
+**Decision: the gateway keeps this half.** A narrow-interface extraction (a port with ~10 methods —
+2 socket queries, 2 emits, 6 service calls) would produce an extracted "presence" module whose
+constructor dependency surface is nearly as wide as the gateway's own, on the single most
+bug-history-dense file in the repo (most `BH-`/`DS-` `KNOWN_BUGS.md` entries trace back to this
+gateway). That's relocation-behind-an-interface, not a complexity reduction, and it carries genuine
+behavior-preservation risk (subtly reordering when an escalation claim is released relative to an
+emit, for instance) for a file whose correctness is presence/liveness-signal-sensitive. It fails the
+routine's own bar: refactor hotspots because the change *reduces* complexity or duplication, not
+because a debt-register row says "extraction" and the code has since made that expensive.
+
+**RF-05b is downgraded from "IN-PROGRESS, needs extraction" to WONT-DO (extraction).** The four
+structures + their six methods are correctly classified as gateway-resident presence-watchdog logic,
+not misplaced logic waiting to move. If a future run wants to revisit this, the trigger should be a
+structural one — e.g. `TrackingService` growing a proper "presence" sub-service that owns the
+Redis-backed escalation-claim state machine, at which point the gateway's role narrows to
+"socket-registry + emit" and the extraction boundary falls out naturally — not calendar time.
 
 ## Ledger update
 
-RF-05 moves from **OPEN (needs design pass)** to **SCOPED — ready for the refactoring routine**, with
-the three PRs above as its work items.
+RF-05 is **DONE** as of this revision: RF-05a (position-coalescing extraction, 2026-07-26), RF-05b
+(re-scoped and resolved WONT-DO for extraction, 2026-08-02 — reasoned above, not a deferral), RF-05c
+(per-process guarantee comments, 2026-08-02) all have a terminal disposition. No further RF-05 work
+items remain open.

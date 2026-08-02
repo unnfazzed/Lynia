@@ -83,7 +83,11 @@ export class TrackingGateway
 
   /** Order ids we've already escalated a `presence:stale` for — so a continuously-dark rider is
    *  escalated ONCE, not on every scan (no escalation spam). An id is dropped once its rider is fresh
-   *  again (reset on reconnect) or the ride ends, re-arming a future escalation. */
+   *  again (reset on reconnect) or the ride ends, re-arming a future escalation.
+   *  RF-05: per-process by design, not Redis-backed — if the rider's socket migrates to a different
+   *  instance mid-ride, the new process's set is empty and could re-escalate once. One duplicate
+   *  best-effort nudge on the rare instance-migration path is an accepted tradeoff, not a bug; making
+   *  it exactly-once cluster-wide isn't worth a Redis round-trip on this path. */
   private readonly staleNotified = new Set<string>();
 
   /**
@@ -103,7 +107,9 @@ export class TrackingGateway
   private readonly customerSocketOrders = new Map<string, Set<string>>();
 
   /** Customer-side twin of `staleNotified` — the orders whose customer we've already escalated, so a
-   *  continuously-dark customer is escalated once. Re-armed on the customer's re-subscribe. */
+   *  continuously-dark customer is escalated once. Re-armed on the customer's re-subscribe.
+   *  RF-05: same per-process-by-design tradeoff as `staleNotified` — a customer socket migrating
+   *  instances mid-ride could see one duplicate escalation; not worth a Redis round-trip to close. */
   private readonly customerStaleNotified = new Set<string>();
 
   /** BH-25: serializes concurrent board:subscribe/board:leave invocations for the SAME socket so their
