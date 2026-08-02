@@ -275,8 +275,14 @@ Why not fixed here: this bootstrap session's deliverable is the program itself, 
 defects include sensitive-path changes (the shared auth/OTP Redis client; the admin
 wallet-credit idempotency key) that the repo's sensitive-lane doctrine says must not ship as
 unverified behavior changes — exactly the care the LC lanes exist to apply. The lanes fire within
-a day (LC-C 06:00, LC-B 04:00, LC-D 07:00 UTC) and take these first. Infra items stay OPEN for the
-founder (read-only doctrine); the two additive-index findings are the performance-watch lane's.
+a day (LC-C 06:00, LC-B 04:00, LC-D 07:00 UTC) and take these first. The two additive-index
+findings are the performance-watch lane's.
+
+**Update (2026-08-02 steer):** LC-C01 was fixed same-day, ahead of the scheduled 06:00 UTC firing
+(PR #471). All four `LC-INF*` founder-gated infra items were also applied same-day (PR #470,
+reviewed interactively, not auto-merged) — Cloud Armor rate budget, Cloud SQL disk/IOPS, prod
+`--max-instances`, and a black-box `/healthz` uptime check. See `docs/KNOWN_BUGS.md`
+"Day-0 LC sweep" for current status per item.
 
 ## §8 Exit criteria
 

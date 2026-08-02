@@ -415,9 +415,10 @@ KB-CONFIRMITEMS-RETRY, KB-PUSH-TOKEN-RACE, KB-DELIVERY-CODE-ROTATION-SIGNAL) wer
 Bootstrap audit for `docs/plans/2026-08-01-low-connectivity-program.md`. Full report +
 verification-status honesty note: `docs/LC-DAY0-AUDIT-2026-08-01.md`. Confirmed defects are OPEN
 and stand **first** on their owning LC lane's checklist (fixed next firing with a regression test;
-sensitive paths get the 4-question treatment). Infra items are READ-ONLY (founder applies). Three
-trivial fixes shipped in the bootstrap PR (LC-A01 font barrel −5.4 MB, LC-A02 dead dep, LC-D01
-AD_ID plugin regression).
+sensitive paths get the 4-question treatment). Infra items are READ-ONLY for the LC lanes (founder
+applies) — all four `LC-INF*` items were applied by the founder in PR #470 (2026-08-01, reviewed
+interactively) the same day they were found. Three trivial fixes shipped in the bootstrap PR
+(LC-A01 font barrel −5.4 MB, LC-A02 dead dep, LC-D01 AD_ID plugin regression).
 
 | ID | Description | Area | Sev | Status |
 |---|---|---|---|---|
@@ -435,10 +436,10 @@ AD_ID plugin regression).
 | LC-D07 | Admin money ledgers silently stop at the server cap — no disclosure, no way to page back. | `apps/admin/app/riders/[id]/page.tsx:269` | MEDIUM | OPEN → LC-D |
 | PW-LC1 | `audit_logs` has no `(target,action)` index — the notifications feed runs 6 scans of an ever-growing table per open. Additive-index fix. | `apps/api/src/notifications/notifications-feed.service.ts:196` | HIGH | OPEN → PW (perf-watch) |
 | PW-LC2 | `orders.merchant_id` unindexed (FK 0042, no index) — 5s kitchen poll seq-scans the parcel-dominated orders table; `listQueue` uncapped. Additive-index + `take`. | `apps/api/src/merchant/food-order.service.ts:290` | MEDIUM | OPEN → PW (perf-watch) |
-| LC-INF1 | Cloud Armor rate limit keys on raw IP (600/60s); Zim CGNAT → a whole carrier shares one bucket, indiscriminate 429s on flaky 2G. | `infra/terraform/armor.tf:41` | CRITICAL | OPEN → founder (read-only infra) |
-| LC-INF2 | Cloud SQL 10 GB PD_SSD ≈ 300 IOPS ceiling; `disk_autoresize` won't lift it for a write-heavy GPS workload. | `infra/terraform/sql.tf:22` | HIGH | OPEN → founder (read-only infra) |
-| LC-INF3 | Prod Cloud Run deploys with no `--max-instances`/`--concurrency` vs a 10-conn pool on 1-vCPU Cloud SQL; PERFORMANCE.md documents the opposite (`max_instances=3`). | `.github/workflows/release.yml:648` | HIGH | OPEN → founder (read-only infra) |
-| LC-INF4 | No uptime checks; every alert is an app-emitted PromQL ratio that goes silent when the app is down — a whole-service outage pages nobody. | `infra/terraform/monitoring.tf:29` | HIGH | OPEN → founder (read-only infra) |
+| LC-INF1 | Cloud Armor rate limit keys on raw IP (600/60s); Zim CGNAT → a whole carrier shares one bucket, indiscriminate 429s on flaky 2G. | `infra/terraform/armor.tf:41` | CRITICAL | **FIXED** (`armor_rate_limit_count` default 600 → 3000/60s, coarse DoS backstop; full per-device edge keying stays OPEN pending an app-emitted device header. PR #470) |
+| LC-INF2 | Cloud SQL 10 GB PD_SSD ≈ 300 IOPS ceiling; `disk_autoresize` won't lift it for a write-heavy GPS workload. | `infra/terraform/sql.tf:22` | HIGH | **FIXED** (`db_disk_size_gb` default 10 → 20, lifts the PD_SSD IOPS ceiling to ~600; the 1-vCPU `db_tier` can still cap effective IOPS — revisit at launch load. PR #470) |
+| LC-INF3 | Prod Cloud Run deploys with no `--max-instances`/`--concurrency` vs a 10-conn pool on 1-vCPU Cloud SQL; PERFORMANCE.md documents the opposite (`max_instances=3`). | `.github/workflows/release.yml:648` | HIGH | **FIXED** (`release.yml` prod deploy now sets `--max-instances 10` on both sidecar + plain branches, caps at ~100 DB connections vs the 10-conn/instance pool. PR #470) |
+| LC-INF4 | No uptime checks; every alert is an app-emitted PromQL ratio that goes silent when the app is down — a whole-service outage pages nobody. | `infra/terraform/monitoring.tf:29` | HIGH | **FIXED** (`google_monitoring_uptime_check_config` black-box `/healthz` probe + `api_uptime_failed` alert policy added, wired to the same `var.alert_notification_channels` every other alert uses. PR #470) |
 
 ### Recently closed (this session's remediation PRs)
 
