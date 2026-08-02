@@ -34,6 +34,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { FoodDebtService } from "./food-debt.service";
+import { isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
 
 // D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
 // money to (never masked — D-17's masking is for a THIRD PARTY's view of the merchant, e.g. a
@@ -45,10 +46,6 @@ const ORDER_WITH_ITEMS_INCLUDE = {
   merchant: { select: { location: true, ownerProfile: { select: { phone: true } } } },
 } satisfies Prisma.OrderInclude;
 type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof ORDER_WITH_ITEMS_INCLUDE }>;
-
-function isDishOutOfStock(dish: { outOfStockUntil: Date | null }): boolean {
-  return !!dish.outOfStockUntil && dish.outOfStockUntil > new Date();
-}
 
 /** E2 listQueue visibility — see the doc comment on the call site. */
 const QUEUE_VISIBLE_STATUSES = ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
@@ -85,7 +82,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
    *  nullable only defensively — every real merchant order carries one — so a miss is a silent no-op,
    *  never load-bearing for the mutation that already committed. */
   private notifyQueue(merchantId: string | null | undefined, orderId: string): void {
-    if (merchantId) this.gateway.emitFoodQueueChanged(merchantId, orderId);
+    notifyFoodQueueChanged(this.gateway, merchantId, orderId);
   }
 
   onModuleInit(): void {
@@ -724,9 +721,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   // ── Shared lookups + mapping ─────────────────────────────────────────────────────────────────────
 
   private async ownMerchantId(profileId: string): Promise<string> {
-    const merchant = await this.prisma.merchant.findUnique({ where: { ownerProfileId: profileId }, select: { id: true } });
-    if (!merchant) throw new NotFoundException("Merchant not found");
-    return merchant.id;
+    return resolveOwnMerchantId(this.prisma, profileId);
   }
 
   private async findOwnAsMerchant(profileId: string, orderId: string): Promise<OrderWithItems> {
