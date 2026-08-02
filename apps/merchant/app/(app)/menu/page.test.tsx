@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
 import MenuPage from "./page";
 import { ApiError } from "../../lib/api-client";
-import { clearDishOutOfStock, listCategories, listDishes } from "../../lib/menu-api";
+import { clearDishOutOfStock, createCategory, listCategories, listDishes } from "../../lib/menu-api";
 
 vi.mock("../../lib/menu-api", () => ({
   listCategories: vi.fn(),
@@ -89,6 +89,44 @@ describe("MenuPage 'back in stock' tap (LC-D04)", () => {
 
     await waitFor(() => {
       expect(clearDishOutOfStock).toHaveBeenCalledWith("d1");
+    });
+    expect(screen.queryByText(/Couldn't reach the server/i)).toBeNull();
+  });
+});
+
+describe("MenuPage starter-category quick-create (LC-D05)", () => {
+  // Before this fix, `onCreateStarterCategory` had a bare try/catch that swallowed the error —
+  // a dropped connection mid-tap just left the chip tappable again with no indication anything
+  // failed.
+  it("shows a retryable error when createCategory fails", async () => {
+    vi.mocked(listCategories).mockResolvedValue([]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+    vi.mocked(createCategory).mockRejectedValue(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+
+    render(<MenuPage />);
+    const mainsChip = await screen.findByText("+ Mains");
+    fireEvent.click(mainsChip);
+
+    await waitFor(() => {
+      expect(screen.getByText("Couldn't reach the server — check the connection and try again.")).toBeTruthy();
+    });
+    expect((mainsChip as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("clears any prior error on a successful retry and refreshes the menu", async () => {
+    vi.mocked(listCategories).mockResolvedValueOnce([]).mockResolvedValueOnce([category()]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+    vi.mocked(createCategory).mockResolvedValueOnce(category());
+
+    render(<MenuPage />);
+    const mainsChip = await screen.findByText("+ Mains");
+    fireEvent.click(mainsChip);
+
+    await waitFor(() => {
+      expect(createCategory).toHaveBeenCalledWith({ name: "Mains" });
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("+ Mains")).toBeNull();
     });
     expect(screen.queryByText(/Couldn't reach the server/i)).toBeNull();
   });

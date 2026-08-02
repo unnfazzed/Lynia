@@ -83,11 +83,14 @@ export default function MenuPage() {
 
   async function onCreateStarterCategory(name: string) {
     setSubmitting(true);
+    setListError(null);
     try {
       await createCategory({ name });
       refresh();
-    } catch {
-      // Best-effort quick-create — a failure here just leaves the starter chip tappable again.
+    } catch (err) {
+      // LC-D05: this used to swallow the failure silently — a dropped connection mid-tap left the
+      // starter chip tappable again with no indication the create failed.
+      setListError(err instanceof ApiError ? err.message : "Couldn't create category — try again.");
     } finally {
       setSubmitting(false);
     }
@@ -144,6 +147,22 @@ export default function MenuPage() {
 
         {state.status === "ready" && state.categories.length === 0 && (
           <div style={{ ...cardStyle, maxWidth: 520, textAlign: "center", padding: 32 }}>
+            {listError && (
+              <div
+                style={{
+                  background: "var(--danger-wash)",
+                  color: "var(--danger-ink)",
+                  borderRadius: 12,
+                  padding: "12px 16px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  marginBottom: 16,
+                  textAlign: "left",
+                }}
+              >
+                {listError}
+              </div>
+            )}
             <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 6 }}>Start with a category</div>
             <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 20 }}>
               Dishes live inside categories — Mains, Sides, Drinks, whatever fits your kitchen. Create one and you can
