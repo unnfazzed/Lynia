@@ -17,6 +17,7 @@ import { HISTORY_SNAPSHOT_KEY } from "../../net/history-store";
 import { RECENTS_KEY as SAVED_PLACES_RECENTS_KEY, SAVED_KEY as SAVED_PLACES_SAVED_KEY } from "../../logic/saved-places";
 import { MY_PICKUP_PHONE_KEY, RECIPIENTS_KEY } from "../../logic/saved-recipients";
 import { KYC_DRAFT_KEY } from "../../logic/kyc-draft";
+import { PROFILE_DRAFT_KEY } from "../../logic/profile-draft";
 import { RIDER_IDENTITY_KEY } from "../../logic/rider-identity";
 import { JOB_KEY } from "../../net/last-active-store";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../../logic/pickup-checklist-draft";
@@ -46,6 +47,14 @@ describe("clearDeviceState (sign-out wipe, BH-17)", () => {
     const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
     expect(deletedKeys).toContain(RIDER_SENT_OFFERS_KEY);
   });
+
+  // LC-C10: the profile-setup draft (added alongside kyc-draft.ts) holds a national ID — the same
+  // shared-device hazard KYC_DRAFT_KEY already guards against.
+  it("deletes the profile-setup draft key", async () => {
+    await clearDeviceState();
+    const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
+    expect(deletedKeys).toContain(PROFILE_DRAFT_KEY);
+  });
 });
 
 // RF-10 characterization (pin current behavior before extracting the non-auth SecureStore groups into
@@ -73,6 +82,7 @@ describe("clearDeviceState (full key-wipe characterization, RF-10 pin)", () => {
         RECIPIENTS_KEY,
         MY_PICKUP_PHONE_KEY,
         KYC_DRAFT_KEY,
+        PROFILE_DRAFT_KEY,
         HISTORY_SNAPSHOT_KEY,
         RIDER_IDENTITY_KEY,
         JOB_KEY,

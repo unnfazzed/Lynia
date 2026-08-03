@@ -5,6 +5,7 @@ import { HISTORY_SNAPSHOT_KEY } from "../net/history-store";
 import { RECENTS_KEY as SAVED_PLACES_RECENTS_KEY, SAVED_KEY as SAVED_PLACES_SAVED_KEY } from "../logic/saved-places";
 import { MY_PICKUP_PHONE_KEY, RECIPIENTS_KEY } from "../logic/saved-recipients";
 import { KYC_DRAFT_KEY } from "../logic/kyc-draft";
+import { PROFILE_DRAFT_KEY } from "../logic/profile-draft";
 import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
 import { JOB_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../logic/rider-bid-draft";
@@ -513,6 +514,8 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(MY_PICKUP_PHONE_KEY),
       // The KYC draft holds the rider's national ID — must never survive to the next user on a shared device.
       SecureStore.deleteItemAsync(KYC_DRAFT_KEY),
+      // LC-C10: the profile-setup draft holds a national ID too — same shared-device hazard as the KYC draft.
+      SecureStore.deleteItemAsync(PROFILE_DRAFT_KEY),
       // The cached trips list (holds this user's route landmarks) must not paint for the next user.
       SecureStore.deleteItemAsync(HISTORY_SNAPSHOT_KEY),
       // The cached chosen-rider identity (a third party's name + photo) must not survive to the next user.
