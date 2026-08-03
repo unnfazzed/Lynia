@@ -673,7 +673,24 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
       mid-upload forces a fresh camera capture instead of a resumed retry) is UX-only — appended
       to the optimization checklist as C-O8/LC-C11 rather than force-fixed, consistent with how
       C-O5/C-O6/C-O7 were triaged. Full trace: `docs/LC-C-REPORT-2026-08-03b.md`.
-- [ ] C-T4 Merchant order-intake on a tablet over mobile data (miss-an-order risk when dropped).
+- [x] C-T4 **AUDITED (2026-08-03)** — Merchant order-intake on a tablet over mobile data, traced end
+      to end under all 3 adversarial conditions. **Result: new-order delivery itself is
+      reference-quality already** — the 5s poll (`use-queue-poll.ts`) is the sole, working delivery
+      channel (no socket ever consumed it, so no socket-disconnect risk exists for delivery
+      specifically); the alarm is purely derived every render from `unansweredCount` (never
+      edge-triggered), so it correctly re-arms on two orders landing back-to-back, an out-of-order
+      poll response (guarded by the existing generation counter), or a background/foreground cycle
+      (the `visibilitychange` refetch); the 3-min accept countdown is rendered straight from the
+      server's own `acceptDeadlineAt` ISO timestamp every poll, never invented client-side, so it
+      can't drift out of sync; and a full app/tab kill+relaunch while an order is `awaiting_accept`
+      correctly re-surfaces it with the right remaining time with no manual navigation trick, no
+      double-counting. **One genuine defect found and FIXED this run** (LC-C12, below — the server's
+      merchant-presence check that gates the N-03 auto-cancel safety net was structurally unable to
+      ever see a connected tablet, since no client code joined the socket room it checks). One
+      narrower gap (accept/reject's error path doesn't proactively refetch, relying on the ambient
+      ≤5s poll to clear stale buttons — self-heals, CAS-protected, no double-apply) is appended to the
+      optimization checklist as C-O9/LC-C13 rather than force-fixed, consistent with how
+      C-O5/C-O6/C-O7/C-O8 were triaged. Full trace: `docs/LC-C-REPORT-2026-08-03c.md`.
 - [ ] C-T5 Reconnect semantics across ALL realtime hooks + the server catch-up seam (what a
       client that was gone 90 s actually recovers, and at what byte cost).
 
@@ -740,6 +757,16 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       this photo" instead of a full re-shoot. Never blocks submission and no data is lost (the GCS
       object was never completed either way), so this is a resume-convenience optimization, not a
       defect. `apps/mobile/app/rider/become.tsx:86-114`, `apps/mobile/src/logic/kyc-draft.ts`. (S)
+- [ ] C-O9 **(new, ranked #8 — C-T4 finding, LC-C13)** `NewOrderTakeover.submitAccept`/`submitReject`'s
+      catch block sets a local error string and re-enables the buttons on a 409 (or any rejection) but
+      never calls `refetch()` — unlike the success path (`withRefetch`, LC-D17), which awaits a refetch
+      end-to-end before the caller sees it settle. The stale, already-resolved order's Accept/Reject
+      buttons stay tappable until the next ambient queue poll (≤5s) or a `visibilitychange` refetch
+      removes it from `awaitingAccept`. Self-heals within that window and the server's per-order CAS
+      turns a mistaken retry into a harmless 409 — no double-apply — but it's a real, reproducible
+      confusion window on a slow reconnect. Align the error path with the rider-side reconcile pattern
+      (`apps/mobile/app/rider/job.tsx:283`): call `refetch()` in the catch, not just on success.
+      `apps/merchant/app/components/queue/NewOrderTakeover.tsx` (`submitAccept`/`submitReject`). (S)
 
 ### Lane D — journey & soundness sweep (Opus 4.8, `0 7 * * *`)
 
