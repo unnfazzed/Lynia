@@ -1,4 +1,4 @@
-import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, RESTAURANTS_TIMING, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, tokens } from "@lynia/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -30,15 +30,17 @@ import { useReachability } from "../../../src/net/use-reachability";
 import { orderKey } from "../../../src/query/client";
 import { useFoodOrder } from "../../../src/query/use-food-order";
 import { useRestaurantMenu } from "../../../src/query/use-restaurants";
-import { Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, Stepper, useToast } from "../../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, useToast } from "../../../src/ui";
 import { CashHandshakeCard } from "../../../src/ui/food/CashHandshakeCard";
-import { CountdownRing, formatCountdown } from "../../../src/ui/food/CountdownRing";
 import { DeliveryCodeCard } from "../../../src/ui/food/DeliveryCodeCard";
+import { FoodOrderAwaitingAcceptView } from "../../../src/ui/food/FoodOrderAwaitingAcceptView";
 import { FoodOrderCancelledView } from "../../../src/ui/food/FoodOrderCancelledView";
 import { OrderHeader, Row } from "../../../src/ui/food/FoodOrderHelpers";
+import { FoodOrderItemApprovalView } from "../../../src/ui/food/FoodOrderItemApprovalView";
+import { FoodOrderPreparingView } from "../../../src/ui/food/FoodOrderPreparingView";
+import { FoodOrderReadyForPickupView } from "../../../src/ui/food/FoodOrderReadyForPickupView";
 import { FoodOrderUndeliveredView } from "../../../src/ui/food/FoodOrderUndeliveredView";
 import { ManualPayRail } from "../../../src/ui/food/ManualPayRail";
-import { PriceMath } from "../../../src/ui/food/PriceMath";
 import { LiveTrackingCard } from "../../../src/ui/order/LiveTrackingCard";
 import { RatingCard } from "../../../src/ui/order/RatingCard";
 import { GetHelpControl, SosControl } from "../../../src/ui/safety";
@@ -372,65 +374,32 @@ export default function FoodOrderScreen(): React.ReactElement {
     );
   }
 
-  // ── awaiting_accept: waiting for the kitchen to answer (N-03's 3:00 window) ─────────────────────
+  // ── awaiting_accept: extracted to FoodOrderAwaitingAcceptView (RF-18) ───────────────────────────
   if (order.merchantPhase === "awaiting_accept") {
-    const deadline = order.acceptDeadlineAt ? new Date(order.acceptDeadlineAt).getTime() : null;
-    const total = RESTAURANTS_TIMING.acceptWindowMs;
-    const elapsed = deadline ? Math.max(0, total - (deadline - now)) : 0;
-    const remaining = deadline ? Math.max(0, deadline - now) : total;
     return (
-      <Screen>
-        <OfflineBanner state={reachable ? "online" : "offline"} />
-        <OrderHeader restaurantName={restaurantName} pillLabel="Waiting for accept" pillTone="neutral" />
-        <View style={{ alignItems: "center", paddingVertical: tokens.space.lg }}>
-          <CountdownRing elapsedMs={elapsed} totalMs={total} label={formatCountdown(remaining)} sub="to accept" />
-          <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink, marginTop: tokens.space.md, textAlign: "center" }}>
-            Waiting for {restaurantName}
-          </Text>
-          <Text style={{ fontSize: 13.5, color: tokens.color.muted, textAlign: "center", marginTop: 6, maxWidth: 280 }}>
-            They have 3 minutes to accept. You&apos;ll pay only after they do — nothing has left your wallet.
-          </Text>
-        </View>
-        <ErrorText message={error} />
-        {CancelFooter}
-      </Screen>
+      <FoodOrderAwaitingAcceptView
+        order={order}
+        restaurantName={restaurantName}
+        reachable={reachable}
+        now={now}
+        error={error}
+        cancelFooter={CancelFooter}
+      />
     );
   }
 
-  // ── awaiting_item_approval: D-23 item-level accept, N-18's 60s customer approval window ─────────
+  // ── awaiting_item_approval: extracted to FoodOrderItemApprovalView (RF-18) ──────────────────────
   if (order.merchantPhase === "awaiting_item_approval") {
-    const deadline = order.itemApprovalDeadlineAt ? new Date(order.itemApprovalDeadlineAt).getTime() : null;
-    const total = RESTAURANTS_TIMING.itemApprovalWindowMs;
-    const remaining = deadline ? Math.max(0, deadline - now) : total;
-    const unavailable = order.items.filter((it) => it.available === false);
-    const kept = order.items.filter((it) => it.available !== false);
-    const revisedGoodsTotal = kept.reduce((sum, it) => sum + it.priceUsd * it.quantity, 0);
     return (
-      <Screen>
-        <OfflineBanner state={reachable ? "online" : "offline"} />
-        <OrderHeader restaurantName={restaurantName} pillLabel="One item unavailable" pillTone="neutral" />
-        <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginBottom: 8 }}>
-          Answer within {formatCountdown(remaining)} — no answer cancels it, free.
-        </Text>
-        <Card>
-          <View style={{ flexDirection: "row", gap: 9 }}>
-            <Icon name="circle-alert" size={17} color={tokens.color.highlightInk} />
-            <Text style={{ flex: 1, fontSize: 13.5, color: tokens.color.ink, lineHeight: 18 }}>
-              {restaurantName} has everything except{" "}
-              <Text style={{ fontWeight: "700" }}>{unavailable.map((it) => it.name).join(", ")}</Text>. They can cook the rest now.
-            </Text>
-          </View>
-        </Card>
-        <PriceMath rows={kept.map((it) => ({ label: `${it.quantity}× ${it.name}`, value: it.priceUsd * it.quantity }))} total={revisedGoodsTotal} />
-        <ErrorText message={error} />
-        <Button
-          label={`Yes — send it without ${unavailable[0]?.name ?? "it"}`}
-          onPress={() => void approveItems(true)}
-          disabled={busy}
-          loading={busy}
-        />
-        <Button variant="ghost" label="Cancel the whole order" onPress={() => void approveItems(false)} disabled={busy} />
-      </Screen>
+      <FoodOrderItemApprovalView
+        order={order}
+        restaurantName={restaurantName}
+        reachable={reachable}
+        now={now}
+        error={error}
+        busy={busy}
+        onApprove={(approve) => void approveItems(approve)}
+      />
     );
   }
 
@@ -534,60 +503,14 @@ export default function FoodOrderScreen(): React.ReactElement {
     );
   }
 
-  // ── preparing: payment landed (or CASH needs none) — the kitchen has started. Unlike the design
-  // mock's "cooking + searching in parallel," this locked architecture dispatches only once the
-  // merchant marks the order ready (see C3's own D-04/D-33 note) — so the honest copy here is
-  // "we'll look once it's ready," not "we're finding a rider now." D-03: the ring sits ABOVE the same
-  // seven-step tracker, not a new timeline component. ──────────────────────────────────────────────
+  // ── preparing: extracted to FoodOrderPreparingView (RF-18) ──────────────────────────────────────
   if (order.merchantPhase === "preparing") {
-    const totalMs = (order.prepMinutes ?? 0) * 60_000;
-    const startedAt = order.prepStartedAt ? new Date(order.prepStartedAt).getTime() : null;
-    const elapsedMs = startedAt ? Math.max(0, now - startedAt) : 0;
-    const remainingMin = totalMs > 0 ? Math.max(0, Math.ceil((totalMs - elapsedMs) / 60_000)) : 0;
-    return (
-      <Screen>
-        <OfflineBanner state={reachable ? "online" : "offline"} />
-        <OrderHeader restaurantName={restaurantName} pillLabel="Cooking" pillTone="success" />
-        <View style={{ alignItems: "center", paddingVertical: tokens.space.lg }}>
-          <CountdownRing elapsedMs={elapsedMs} totalMs={totalMs} label={String(remainingMin)} sub="min left" />
-          <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink, marginTop: tokens.space.md, textAlign: "center" }}>
-            {restaurantName} is cooking your order
-          </Text>
-          <Text style={{ fontSize: 13.5, color: tokens.color.muted, textAlign: "center", marginTop: 6, maxWidth: 280 }}>
-            We&apos;ll start looking for a rider once it&apos;s ready.
-          </Text>
-        </View>
-        <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" />
-      </Screen>
-    );
+    return <FoodOrderPreparingView order={order} restaurantName={restaurantName} reachable={reachable} now={now} />;
   }
 
-  // ── ready_for_pickup: dispatch is searching (N-08 60s single-candidate offers, widening radius) or
-  // held after the N-07 6-attempt cap (D-34) — non-terminal, waiting on the merchant's resume/cancel,
-  // no auto-timeout (a mocked default; flagged in the PR body). ───────────────────────────────────
+  // ── ready_for_pickup: extracted to FoodOrderReadyForPickupView (RF-18) ──────────────────────────
   if (order.merchantPhase === "ready_for_pickup") {
-    const onHold = order.noRiderHoldAt != null;
-    return (
-      <Screen>
-        <OfflineBanner state={reachable ? "online" : "offline"} />
-        <OrderHeader restaurantName={restaurantName} pillLabel={onHold ? "Still searching" : "Finding a rider"} pillTone="neutral" />
-        <View style={{ alignItems: "center", paddingVertical: tokens.space.lg }}>
-          <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center", marginBottom: tokens.space.md }}>
-            <Icon name="bike" size={34} color={tokens.color.accentText} strokeWidth={1.75} />
-          </View>
-          <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink, textAlign: "center" }}>
-            {onHold ? "This is taking longer than usual" : "Finding a rider nearby"}
-          </Text>
-          <Text style={{ fontSize: 13.5, color: tokens.color.muted, textAlign: "center", marginTop: 6, maxWidth: 280 }}>
-            {onHold
-              ? `Your order from ${restaurantName} is ready and on hold — nothing further happens until a rider is found. You won't be charged extra either way.`
-              : `Your order from ${restaurantName} is ready. We're offering it to the nearest riders first — this usually takes a minute or two.`}
-          </Text>
-        </View>
-        <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" />
-        <ErrorText message={error} />
-      </Screen>
-    );
+    return <FoodOrderReadyForPickupView order={order} restaurantName={restaurantName} reachable={reachable} error={error} />;
   }
 
   // ── live tracker: a rider is secured (D-04) — the order rides the generic assigned→…→en_route_dropoff
