@@ -1,7 +1,7 @@
 import { DELIVERY_OTP_MAX_ATTEMPTS, tokens, type AdvanceStatusRequest, type MerchantOrderResponse } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import {
@@ -87,7 +87,16 @@ export default function RiderFoodJob(): React.ReactElement {
   };
   useForegroundRefetch(refresh);
 
-  const riderPoint = order?.rider != null && order.rider.currentLat != null && order.rider.currentLng != null ? { lat: order.rider.currentLat, lng: order.rider.currentLng } : null;
+  // B-O2: memoized off the primitive lat/lng — a fresh `{lat,lng}` object literal every render (even
+  // with identical values) would defeat JobDetailsCard's memo boundary for every OTHER re-render this
+  // screen goes through that has nothing to do with the rider's actual position.
+  const riderPoint = useMemo(
+    () =>
+      order?.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
+        ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
+        : null,
+    [order?.rider?.currentLat, order?.rider?.currentLng],
+  );
   const { permissionDenied: locationDenied } = useRiderLocationStream(order && ACTIVE.includes(order.status) ? orderId : null);
 
   const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Couldn't update this delivery. Check your connection and try again.");

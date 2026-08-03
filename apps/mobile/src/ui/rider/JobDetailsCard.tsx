@@ -9,7 +9,14 @@ import { LiveMap } from "../LiveMap";
 
 // The job overview card — fare, contacts, line-items, sender's note, live map, route hand-off and
 // the status stepper (extracted verbatim from app/rider/job.tsx).
-export function JobDetailsCard({
+//
+// B-O2: `React.memo` so the ~950-line job screen's own unrelated re-renders (a sheet opening, a
+// checkbox tick, a banner dismissal) don't repaint this card's LiveMap + Stepper. The memo only
+// actually holds if the CALLER keeps `order`/`riderPoint` referentially stable across those unrelated
+// renders — `riderPoint` in particular used to be rebuilt as a fresh `{lat,lng}` object literal on
+// every render regardless of whether the rider's position had moved, which defeats the default
+// shallow-prop comparison; job.tsx/food-job.tsx now `useMemo` it off the primitive lat/lng fields.
+export const JobDetailsCard = React.memo(function JobDetailsCard({
   order,
   riderPoint,
   isActive,
@@ -117,4 +124,4 @@ export function JobDetailsCard({
       <Stepper events={order.events} currentStatus={order.status} view="rider" jobType={jobType} />
     </Card>
   );
-}
+});

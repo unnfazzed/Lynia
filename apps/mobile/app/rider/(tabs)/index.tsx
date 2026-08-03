@@ -508,10 +508,19 @@ export default function RiderHome(): React.ReactElement {
   // Client-side haversine sort. Now largely a no-op when the server already distance-sorted, but it's
   // kept as the sort for the loc-absent (city-wide) fallback and to visually reconcile live WS pushes
   // (which are still global) against the geo-scoped REST results.
-  const ranked = (openQ.data ?? [])
-    .filter((o) => !bidIds.has(o.id)) // hide orders we've already bid on (one round per rider)
-    .map((o) => ({ o, km: loc ? haversineKm(loc, o.pickup.point) : null }))
-    .sort((a, b) => (a.km ?? Number.MAX_SAFE_INTEGER) - (b.km ?? Number.MAX_SAFE_INTEGER));
+  // B-O9: this used to run inline in the render body, so a keystroke in the compose card's fare/ETA
+  // field (plain top-level useState, unrelated to any of this) re-ran the O(n log n) sort and hand out
+  // a brand-new array + row objects every board render — defeating JobCard's B-O2 memo boundary even
+  // though the underlying orders hadn't changed. useMemo keeps the array (and each row) referentially
+  // stable across renders that don't actually touch openQ.data/bidIds/loc.
+  const ranked = useMemo(
+    () =>
+      (openQ.data ?? [])
+        .filter((o) => !bidIds.has(o.id)) // hide orders we've already bid on (one round per rider)
+        .map((o) => ({ o, km: loc ? haversineKm(loc, o.pickup.point) : null }))
+        .sort((a, b) => (a.km ?? Number.MAX_SAFE_INTEGER) - (b.km ?? Number.MAX_SAFE_INTEGER)),
+    [openQ.data, bidIds, loc],
+  );
 
   // A new nearby order opened while online — a single attention buzz so the rider doesn't have to
   // stare at the board. We seed the baseline on the FIRST SUCCESSFUL board load (not merely on going
@@ -599,16 +608,43 @@ export default function RiderHome(): React.ReactElement {
     return () => clearTimeout(t);
   }, [offerM.isPending]);
 
-  const chooseOrder = (o: OpenOrder): void => {
-    setSelected(o);
-    // One-tap accept is the default (3·1); countering opens the fare field.
-    setOfferMode("accept");
-    setFare(o.proposedFare);
-    // Seed the ETA from the real distance to pickup instead of a constant "10", so the customer's
-    // "Fastest" sort ranks on something real. Rider can still edit before sending.
-    const km = loc ? haversineKm(loc, o.pickup.point) : null;
-    setEta(km != null ? String(Math.max(3, Math.round((km / ETA_SPEED_KMH) * 60))) : "10");
-  };
+  // B-O9: stable across renders (useCallback) — both so `renderItem` below (which closes over it) can
+  // itself stay stable, and as the FlatList fallback ScrollView's `.map()` onAction, unchanged.
+  const chooseOrder = useCallback(
+    (o: OpenOrder): void => {
+      setSelected(o);
+      // One-tap accept is the default (3·1); countering opens the fare field.
+      setOfferMode("accept");
+      setFare(o.proposedFare);
+      // Seed the ETA from the real distance to pickup instead of a constant "10", so the customer's
+      // "Fastest" sort ranks on something real. Rider can still edit before sending.
+      const km = loc ? haversineKm(loc, o.pickup.point) : null;
+      setEta(km != null ? String(Math.max(3, Math.round((km / ETA_SPEED_KMH) * 60))) : "10");
+    },
+    [loc],
+  );
+  // B-O9: the FlatList `renderItem` prop, memoized. `VirtualizedList`'s `CellRenderer` is a
+  // `React.PureComponent` keyed on (among other props) `item` and `renderItem` — with `ranked` (data)
+  // and this both referentially stable across an unrelated re-render (a keystroke in the compose
+  // card's fare/ETA field), `CellRenderer` bails on its OWN shallow-prop check and never calls
+  // `renderItem` again for a row whose order didn't change, so JobCard's B-O2 memo boundary never even
+  // needs to run — the row simply isn't re-created. (An inline arrow prop here, recreated every board
+  // render, would have defeated that bail-out regardless of how stable `ranked`/`chooseOrder` were.)
+  const renderJobCard = useCallback(
+    ({ item: { o, km } }: { item: { o: OpenOrder; km: number | null } }) => (
+      <JobCard
+        jobType="parcel"
+        from={o.pickup.landmark}
+        to={o.dropoff.landmark}
+        distanceLabel={km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`}
+        fare={o.proposedFare}
+        note={o.itemDesc}
+        actionLabel="Make an offer"
+        onAction={() => chooseOrder(o)}
+      />
+    ),
+    [chooseOrder],
+  );
 
   // B-O1b: the ScrollView + `.map()` board screen (same shape B-O1 fixed for history/notifications
   // and B-T3 fixed for the restaurant catalog) mounted every JobCard concurrently regardless of how
@@ -859,18 +895,7 @@ export default function RiderHome(): React.ReactElement {
             contentContainerStyle={{ paddingTop: tokens.space.md }}
             data={ranked}
             keyExtractor={({ o }) => o.id}
-            renderItem={({ item: { o, km } }) => (
-              <JobCard
-                jobType="parcel"
-                from={o.pickup.landmark}
-                to={o.dropoff.landmark}
-                distanceLabel={km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`}
-                fare={o.proposedFare}
-                note={o.itemDesc}
-                actionLabel="Make an offer"
-                onAction={() => chooseOrder(o)}
-              />
-            )}
+            renderItem={renderJobCard}
             ListHeaderComponent={
               <>
                 {activeJobBanner}

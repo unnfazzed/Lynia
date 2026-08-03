@@ -81,8 +81,13 @@ export interface JobCardProps {
  * taken simply leaves the list (the existing `takenNotice`/`expiredOrderIds` board behaviour), and a
  * food offer follows the same "just disappears" rule per the RIDER-ONE-APP-PLAN.md decision-2 final
  * call (superseding that doc's own earlier "pin to top with a running timer" pitch language).
+ *
+ * B-O2: `React.memo` so an unrelated board re-render (a keystroke in the compose card, a gate/state
+ * flip elsewhere on the screen) doesn't repaint every row — every prop here is a primitive except
+ * `onAction`, so the memo only actually holds where the caller also keeps that callback referentially
+ * stable across renders (see rider/index.tsx's `chooseOrder`/`renderItem`, B-O9).
  */
-export function JobCard(props: JobCardProps): React.ReactElement {
+export const JobCard = React.memo(function JobCard(props: JobCardProps): React.ReactElement {
   return (
     <Card>
       <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
@@ -96,4 +101,4 @@ export function JobCard(props: JobCardProps): React.ReactElement {
       <Button label={props.actionLabel} variant="ghost" onPress={props.onAction} />
     </Card>
   );
-}
+});

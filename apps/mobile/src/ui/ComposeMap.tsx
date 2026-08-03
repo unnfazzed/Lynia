@@ -24,6 +24,12 @@ import { Icon } from "./index";
  *
  * Split from MapPicker (the compact single-pin picker still used elsewhere) so this can go edge-to-edge
  * behind the floating chrome without the picker's bordered box + caption.
+ *
+ * B-O2: `React.memo` — this mounts a native MapView, the single most expensive thing on the compose
+ * screen, so re-rendering it for every unrelated keystroke elsewhere in the form (item rows, note,
+ * declared value) is real waste on Go-class hardware. Holds as long as the caller keeps
+ * `pickup`/`drop`/the callback props referentially stable across those unrelated renders (send.tsx's
+ * `pickupPoint`/`dropPoint` state and its already-`useCallback`'d reverse-geocode handlers do).
  */
 const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
 const LOCATE_TIMEOUT_MS = 9_000;
@@ -43,7 +49,7 @@ function landmarkFrom(r: Location.LocationGeocodedAddress): string {
 
 export type ActiveSlot = "pickup" | "drop";
 
-export function ComposeMap(props: {
+export const ComposeMap = React.memo(function ComposeMap(props: {
   pickup: PickedPoint | null;
   drop: PickedPoint | null;
   active: ActiveSlot;
@@ -251,4 +257,4 @@ export function ComposeMap(props: {
       ) : null}
     </View>
   );
-}
+});

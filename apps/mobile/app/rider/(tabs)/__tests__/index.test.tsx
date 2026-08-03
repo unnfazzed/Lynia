@@ -193,3 +193,50 @@ describe("rider board (B-O1b: open-orders list must be virtualized, and only whe
     expect(activeTree.root.findAllByType(FlatList)).toHaveLength(0);
   });
 });
+
+/**
+ * B-O9 (bundled into B-O2's memo pass): `ranked` used to be recomputed inline in the render body, and
+ * the compose card's per-row `onAction={() => chooseOrder(o)}` was a fresh closure per row per render
+ * — either alone hands FlatList a new `data`/`renderItem` reference on every board render, which
+ * defeats VirtualizedList's own `CellRenderer` PureComponent bail-out (and, in turn, JobCard's B-O2
+ * memo boundary) regardless of how stable the actual order data is. A keystroke in the compose card's
+ * ETA field is a plain top-level useState, unrelated to the open-orders list — it must not hand
+ * FlatList new `data`/`renderItem` props.
+ */
+describe("rider board (B-O9: ranked/renderItem must stay referentially stable across unrelated board churn)", () => {
+  it("typing in the compose card's ETA field does not change FlatList's data or renderItem identity", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    const orders = Array.from({ length: 3 }, (_, i) => openOrderFixture(`order-${i}`));
+    mockGetOpenOrders.mockResolvedValue(orders);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    // Open the compose card via the first row's "Make an offer" action.
+    const actionButtons = activeTree.root.findAll(
+      (n) => n.props.label === "Make an offer" && typeof n.props.onPress === "function",
+    );
+    expect(actionButtons.length).toBeGreaterThan(0);
+    act(() => {
+      (actionButtons[0]!.props as { onPress: () => void }).onPress();
+    });
+
+    const listBefore = activeTree.root.findAllByType(FlatList)[0]!;
+    const dataBefore = listBefore.props.data;
+    const renderItemBefore = listBefore.props.renderItem;
+
+    const etaField = activeTree.root.findAll(
+      (n) => typeof n.props.onChangeText === "function" && n.props.keyboardType === "number-pad",
+    )[0];
+    expect(etaField).toBeDefined();
+    act(() => {
+      (etaField!.props as { onChangeText: (t: string) => void }).onChangeText("12");
+    });
+
+    const listAfter = activeTree.root.findAllByType(FlatList)[0]!;
+    expect(listAfter.props.data).toBe(dataBefore);
+    expect(listAfter.props.renderItem).toBe(renderItemBefore);
+  });
+});

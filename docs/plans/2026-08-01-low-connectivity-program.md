@@ -512,8 +512,60 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       alone — already ranked lowest-priority/optional in this same checklist, unrelated to this pass's
       scope. `pnpm typecheck && pnpm lint && pnpm test` all green (6/6 packages; 1516 API + 705
       mobile tests, including the two new regression tests above).
-- [ ] B-O2 Memo boundaries for ComposeMap / JobDetailsCard / board-card (with render-isolation
-      tests, the AuctionClock pattern) — KNOWN backlog. (M)
+- [x] B-O2 Memo boundaries for ComposeMap / JobDetailsCard / board-card **(2026-08-03d, bundled with
+      B-O9 per that item's own note)**. All three wrapped in `React.memo`. Verified empirically
+      first (throwaway scratch test, deleted before landing) that `React.Profiler`'s `onRender`
+      fires on every commit that reaches a Profiler boundary EVEN WHEN the memoized child below it
+      bails on unchanged props — it cannot distinguish "ran" from "bailed" in this React
+      18.3.1/react-test-renderer combination, so it's the wrong tool for a render-isolation
+      regression pin here (unlike the AuctionClock pattern's own Probe-counts-its-own-renders
+      technique, which works because AuctionClock's PARENT is the thing being counted, not the
+      memoized boundary itself). Instead added `src/testing/render-count.ts` (`countMemoRenders`),
+      which patches the `React.memo` wrapper's mutable `.type` field with a call-counting
+      passthrough — verified both directions (bails on unchanged props, fires on changed props) and
+      verified each new test actually FAILS against the pre-memo code before landing the fix,
+      matching this lane's regression-pin convention. `board-card` = `JobCard`
+      (`src/ui/rider/JobCard.tsx`) — every prop primitive except `onAction`, which B-O9 (below)
+      makes stable. `JobDetailsCard` (`src/ui/rider/JobDetailsCard.tsx`) — its `riderPoint` prop was
+      the real pitfall: `job.tsx`/`food-job.tsx` built it as a fresh `{lat,lng}` object literal
+      inline on every render, which a default shallow-prop memo comparison can't tell apart from a
+      real change; both screens now `useMemo` it off the primitive `currentLat`/`currentLng` fields
+      (placed ahead of `job.tsx`'s several early-return branches — the rules of hooks forbid a hook
+      call after a conditional return, which the original non-hook inline computation had been
+      sitting after). `ComposeMap` (`src/ui/ComposeMap.tsx`) — the customer compose screen already
+      passed it referentially-stable props (`pickupPoint`/`dropPoint` state,
+      already-`useCallback`'d reverse-geocode handlers), so the memo holds with no caller-side
+      changes needed there. Render-isolation regression tests: `JobCard.test.tsx` (does-not-re-render
+      + still-re-renders-on-real-prop-change), new `JobDetailsCard.test.tsx` (same two, plus a third
+      pinning the exact "same values, new object" pitfall the caller-side `riderPoint` `useMemo`
+      fixes — mocks `LiveMap` since react-native-maps can't mount in this test environment, matching
+      the `live-tracking-isolation.test.tsx` precedent), new `ComposeMap.test.tsx` (same two,
+      mocking `react-native-maps` itself with a trivial `MapView`/`Marker`/`Polyline` stand-in so
+      the REAL `ComposeMap` — not a probe — is under test). `pnpm typecheck && pnpm lint && pnpm
+      test` all green (101/101 suites, 713 mobile tests).
+- [x] B-O9 **(2026-08-03d, bundled into B-O2 above per this item's own note)** `ranked` is now
+      `useMemo`'d (deps: `openQ.data`, `bidIds`, `loc`) instead of recomputed inline in the render
+      body, and the FlatList `renderItem` prop is now a `useCallback` (`renderJobCard`, deps:
+      `chooseOrder`) instead of an inline arrow — `chooseOrder` itself was already made a
+      `useCallback` (deps: `loc`) as part of the same pass. Deliberately did NOT give each row a
+      per-order-id cached `onAction` closure (an earlier draft of this fix did, via a `Map<string,
+      () => void>` keyed by order id) — that traded one re-render inefficiency for a real one: an
+      unbounded-growth cache with no eviction path, exactly the kind of thing this lane's own B-T3
+      audit flags elsewhere (`LC-B08`/`B-O13`'s sentOffers/expiredOrderIds shapes). Verified
+      instead (`@react-native/virtualized-lists`' `VirtualizedListCellRenderer.js`) that
+      `CellRenderer` is a `React.PureComponent`, so a referentially-stable `data` + `renderItem`
+      alone is sufficient: `PureComponent`'s own shallow-prop check skips re-invoking `renderItem`
+      for a row whose `item` didn't change, so `JobCard`'s B-O2 memo boundary doesn't even need to
+      run for the common case — the row is never re-created in the first place. The `onAction={() =>
+      chooseOrder(o)}` closure inside `renderJobCard` is still freshly allocated whenever `renderItem`
+      IS invoked (initial mount, or the data actually changing) — correct and unavoidable there,
+      since the list genuinely changed. Regression test: new describe block in
+      `app/rider/(tabs)/__tests__/index.test.tsx` opens the compose card via a row's "Make an offer"
+      action, types into the ETA field (a plain top-level `useState`, unrelated to the open-orders
+      list), and asserts the mounted `FlatList`'s `data`/`renderItem` props are the exact same
+      references before and after. `food/search.tsx`'s weaker sibling (unmemoized filter + fresh
+      per-row closures) stays out of scope per this item's own note — that filter's
+      keystroke-recompute is semantically necessary, not wasted.
 - [ ] B-O8 **(new, B-T2 finding)** `food/order/[orderId].tsx`'s countdown ticker
       (`setInterval(() => setNow(Date.now()), 1000)`, empty deps, no phase gating) keeps re-rendering
       the whole ~900-line screen once/sec for the entire order lifetime even once none of the three
