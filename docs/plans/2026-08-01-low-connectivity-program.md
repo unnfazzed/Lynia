@@ -453,7 +453,34 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
       risk in order creation, not the CAS-protected steps). Two narrower gaps found are UX-only
       (no data loss, no double-apply) and appended to the optimization checklist as C-O5/C-O6
       rather than force-fixed under time pressure. Full trace: `docs/LC-C-REPORT-2026-08-02c.md`.
-- [ ] C-T2 Rider shift journey: go online → board → bid → job → proof/OTP → earnings.
+- [x] C-T2 **AUDITED (2026-08-03)** — Rider shift journey: go online → board → bid → job →
+      proof/OTP → earnings, traced end to end under all 3 adversarial conditions. **Result: also
+      reference-quality, same bar as C-T1** — going online/heartbeat is a guarded CAS that re-
+      derives the precise refusal reason on a lost race (KYC/on-hold/cooldown/suspended), with
+      the 20s liveness beat treating a transient failure as "reconnecting" (never a false
+      offline) and only a genuine 403 flipping the switch; the board self-heals on every
+      socket connect/connect_error by invalidating both `openOrders` and `activeJob` (so a push
+      missed while dark is recovered immediately, not just on the next 15s poll), with a per-
+      socket serialized `boardSubscribe`/`boardLeave` (BH-25b) and a race-correct `orderTaken`
+      handler that never tells the WINNING rider "someone else was picked"; a bid draft
+      (`RIDER_BID_DRAFT_KEY`) survives an app kill and drops itself on restore if its 90s auction
+      window already closed, and a lost-response retry lands on the server's own
+      `(order_id, rider_id)` unique constraint, reconciled client-side into the same "your offer
+      is in" state as a live success; every job-lifecycle mutation (advance, confirm-delivery,
+      undeliver, rate-the-sender) reconciles its own 409 by re-fetching and checking whether the
+      requested transition already landed, so a lost-response retry is never mistaken for a real
+      failure; the pickup-item confirmation and rate-the-sender taps both persist a durable
+      pending marker before firing, self-healing a full app-kill via a reconciliation effect; the
+      delivery-OTP attempt counter converges to the server's value in both directions
+      (KB-OTP-COUNT-SYNC); and the earnings/wallet screen already shows an explicit "showing your
+      last known balance" banner on a refresh failure rather than silently painting stale data as
+      fresh. **No defect met the DEFECT bar this run** (lost work / dead end / double-apply /
+      stale-as-fresh) — one narrow new gap was found (the optional proof-of-pickup photo's
+      capture/upload state lives only in local component state and is silently dropped by an app
+      kill mid-upload) and appended to the optimization checklist as C-O7/LC-C09 rather than
+      force-fixed, consistent with how C-O5/C-O6 were triaged: it never gates "Confirm collected"
+      and no order data or money is at risk, only an easily-retaken optional photo. Full trace:
+      `docs/LC-C-REPORT-2026-08-03.md`.
 - [ ] C-T3 Onboarding + OTP + KYC capture (incl. photo upload resumability on slow uplink).
 - [ ] C-T4 Merchant order-intake on a tablet over mobile data (miss-an-order risk when dropped).
 - [ ] C-T5 Reconnect semantics across ALL realtime hooks + the server catch-up seam (what a
@@ -487,6 +514,16 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
       (`apps/mobile/app/rider/job.tsx:283`) that reconciles a 409 by re-fetching and checking
       whether the requested transition already landed before deciding it's a real conflict.
       `apps/mobile/app/order/[id].tsx:365`. (S)
+- [ ] C-O7 **(C-T2 finding, LC-C09)** `PickupChecklist`'s optional proof-of-pickup photo
+      capture/upload state (`photoUri`/`photoBusy`/`failedPhoto`) lives only in local component
+      state — an app kill between capture and the attach POST completing silently drops the
+      in-progress/failed photo with no retry affordance surviving relaunch, unlike the item ticks
+      themselves (which persist via `savePickupChecklistDraft`). Never gates "Confirm collected"
+      and no order data or money is at risk — purely a lost "nice to have" evidence photo. Mirror
+      the durable-marker pattern C-O5 proposes for the delivery terminal: persist the chosen
+      asset uri + upload stage to SecureStore before firing so a relaunch mid-upload can offer
+      "finish adding this photo" instead of silently starting over.
+      `apps/mobile/src/ui/rider/PickupChecklist.tsx:44`. (S)
 
 ### Lane D — journey & soundness sweep (Opus 4.8, `0 7 * * *`)
 
