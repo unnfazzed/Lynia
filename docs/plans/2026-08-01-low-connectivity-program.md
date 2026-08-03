@@ -200,19 +200,17 @@ evidence: A-O9 and A-O6 promoted to #4/#5 since A-T4 quantified them as the two 
 [data] byte levers by a wide margin — A-O9's food dual-poll alone costs ≈94-271 KB/session and
 A-O6's RUM telemetry ≈68-324 KB/h, dwarfing A-O1/4/5/10 — while A-O11/A-O12 stay ahead of everything
 since they gate the razor-thin Hermes CI budget, a harder constraint than [data] bytes):**
-- [ ] A-O12 **(re-ranked to #1, was #12)** **A-T2 finding (LC-A04):** stop zod v4's ~872 KB
-      locale-tables barrel (`zod/v4/classic/external.js`'s `export * as locales from
-      "../locales/index.js"`, 50 languages, confirmed unused) from riding into the Android bundle
-      via `contracts.ts`'s `import { z } from "zod"`. Likely needs a Metro `resolveRequest`
-      redirect (the same pattern already used for the `@posthog/core` subpath in
-      `apps/mobile/metro.config.js`) to substitute a locale-free zod entry point, or a narrower
-      official zod import path if one preserves the "classic" `z.object`/`z.string()` API
-      contracts.ts relies on — verify the substitute still passes `packages/shared`'s zod-parse
-      self-tests before landing. Current Hermes budget headroom is 0.4% (23.7 KB), so this is
-      likely the highest-leverage single item on this checklist — promoted ahead of the queue
-      because it is the *only* item on this list that shrinks the Hermes bundle itself (A-O1/4/5/
-      6/7/9/10 are [data]/round-trip diet, not [size]; A-O2/3 are CI-guardrail meta; A-O8 needs a
-      native build train). (S/M)
+- [x] A-O12 **DONE (2026-08-03c)** **(re-ranked to #1, was #12)** **A-T2 finding (LC-A04):** stop
+      zod v4's ~872 KB locale-tables barrel (`zod/v4/classic/external.js`'s `export * as locales
+      from "../locales/index.js"`, 50 languages, confirmed unused) from riding into the Android
+      bundle via `contracts.ts`'s `import { z } from "zod"`. Shipped as a Metro `resolveRequest`
+      redirect in `apps/mobile/metro.config.js` (the same pattern already used for the
+      `@posthog/core` subpath) — scoped by importer path to zod's own `v4/classic/external.{js,cjs}`
+      **and** `v4/core/index.{js,cjs}` (a second, independent re-export of the same barrel found
+      only once the first cut's narrower pattern measured zero improvement) to an empty stub;
+      `packages/shared`'s zod-parse tests (157 tests, contracts.ts schemas) all still pass.
+      Measured via `expo export --platform android`: Hermes bundle 6,439,957 → 6,189,900 bytes
+      (−250,057 B / −3.9%), headroom 0.2% → 4.1%. See `docs/LC-A-REPORT-2026-08-03c.md`.
 - [ ] A-O11 **(re-ranked to #2, was #11)** **A-T2 finding (LC-A03):** drop `export * from
       "./fixtures"` from `packages/shared/src/index.ts` — the 299-line test-fixture module has
       zero production consumers (only its own self-test, which already imports it via a relative

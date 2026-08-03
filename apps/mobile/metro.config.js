@@ -5,6 +5,16 @@
  * map. Map @posthog/core subpaths to their dist targets explicitly — scoped to
  * that one package rather than enabling exports resolution globally, which
  * changes resolution for the whole dependency tree.
+ *
+ * Separately, zod v4's classic entry point (`zod/v4/classic/external.{js,cjs}` AND
+ * `zod/v4/core/index.{js,cjs}` — both reached via `packages/shared/src/contracts.ts`'s
+ * `import { z } from "zod"`) each do `export * as locales from "../locales/index.js"`
+ * unconditionally — ~872 KB raw source of 50-language error-message tables that Metro's
+ * non-package-exports resolution can't tree-shake, and that the app has zero production
+ * consumers for (`z.locales` is never read anywhere; the default English messages come from a
+ * separate direct `en.js` import, left untouched). Redirect just that one deep relative import to
+ * an empty stub, scoped to zod's own `classic/external.{js,cjs}`/`core/index.{js,cjs}` as the
+ * importer so no other package's identically-shaped relative import is affected.
  */
 // getSentryExpoConfig is a drop-in for expo's getDefaultConfig that also wires the Sentry Metro
 // serializer (debug-id → source-map upload during EAS build). It returns the same config object, so
@@ -20,6 +30,8 @@ const posthogRNEntry = require.resolve("posthog-react-native", { paths: [__dirna
 const posthogCoreEntry = require.resolve("@posthog/core", { paths: [path.dirname(posthogRNEntry)] });
 const posthogCoreDir = path.dirname(path.dirname(posthogCoreEntry));
 
+const zodLocalesRedirect = require("./metro-shims/zod-locales-redirect");
+
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const subpath = moduleName.match(/^@posthog\/core\/(.+)$/)?.[1];
@@ -29,6 +41,9 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       ? path.join(posthogCoreDir, "dist", `${subpath}.js`)
       : path.join(posthogCoreDir, "dist", subpath, "index.js");
     return { type: "sourceFile", filePath: target };
+  }
+  if (zodLocalesRedirect.shouldRedirect(moduleName, context.originModulePath)) {
+    return { type: "sourceFile", filePath: zodLocalesRedirect.stubPath };
   }
   return defaultResolveRequest
     ? defaultResolveRequest(context, moduleName, platform)
