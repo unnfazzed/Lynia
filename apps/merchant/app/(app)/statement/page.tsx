@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { MerchantEndOfDaySummaryResponse, MerchantWeeklyStatementResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
-import { cardStyle } from "../../components/queue/styles";
-import { ApiError } from "../../lib/api-client";
+import { cardStyle, ghostButtonStyle } from "../../components/queue/styles";
+import { ApiError, isSessionExpiredError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money-input";
 import { getTodaySummary, getWeeklyStatement } from "../../lib/orders-api";
 
@@ -32,15 +32,16 @@ export default function StatementPage() {
   const { signOut } = useKitchenConnection();
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     let cancelled = false;
+    setState({ status: "loading" });
     Promise.all([getTodaySummary(), getWeeklyStatement()])
       .then(([today, statement]) => {
         if (!cancelled) setState({ status: "ready", today, statement });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if (err instanceof ApiError && err.status === 401) {
+        if (isSessionExpiredError(err)) {
           signOut();
           return;
         }
@@ -51,6 +52,8 @@ export default function StatementPage() {
     };
   }, [signOut]);
 
+  useEffect(() => refresh(), [refresh]);
+
   return (
     <Kitchen active="money">
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 24, overflow: "auto", height: "100%" }}>
@@ -58,7 +61,10 @@ export default function StatementPage() {
 
         {state.status === "error" && (
           <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 16, padding: 20, maxWidth: 480 }}>
-            {state.message}
+            <div>{state.message}</div>
+            <button type="button" onClick={refresh} style={{ ...ghostButtonStyle, marginTop: 12 }}>
+              Retry
+            </button>
           </div>
         )}
 

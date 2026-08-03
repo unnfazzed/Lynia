@@ -12,6 +12,8 @@ import type {
   UpdateMerchantProfileRequest,
 } from "@lynia/shared";
 import { authedFetch } from "./api-client";
+import { API_BASE_URL } from "./config";
+import { getReachabilityStore } from "./reachability";
 
 export type {
   MerchantCategoryResponse,
@@ -112,13 +114,21 @@ export function mintBannerPhotoUpload(): Promise<UploadTarget> {
 }
 
 /** PUT the compressed bytes straight to GCS — NOT via authedFetch: this is a raw binary upload with no
- *  bearer token, the signed URL is its own auth. Mirrors apps/mobile/src/api/uploads.ts's uploadImage. */
+ *  bearer token, the signed URL is its own auth. Mirrors apps/mobile/src/api/uploads.ts's uploadImage.
+ *
+ *  LC-D##: still reports network-level failures into the shared ReachabilityStore even though this
+ *  call bypasses authedFetch entirely — otherwise a drop that first manifests as a failed photo
+ *  upload (PhotoPicker's own error+retry UI handles the upload itself fine) left the header's
+ *  connectivity pill showing "Connected" for up to the 20s active-probe interval, a blind spot in
+ *  the one signal `actionsDisabled` reads app-wide. */
 export async function uploadPhotoBlob(uploadUrl: string, blob: Blob, headers: Record<string, string>): Promise<void> {
   let res: Response;
   try {
     res = await fetch(uploadUrl, { method: "PUT", headers, body: blob });
   } catch (err) {
+    getReachabilityStore(API_BASE_URL).reportUnreachable();
     throw new Error("The upload timed out — check your connection and try again.", { cause: err });
   }
+  getReachabilityStore(API_BASE_URL).reportReachable();
   if (!res.ok) throw new Error(`Photo upload failed (${res.status}).`);
 }

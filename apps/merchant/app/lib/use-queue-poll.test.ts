@@ -121,4 +121,47 @@ describe("useQueuePoll", () => {
       await Promise.resolve();
     });
   });
+
+  // LC-D##: before this fix, a caller unable to acquire the latch (the common case: QueueBoard's
+  // post-accept/reject refetch() landing mid-poll) resolved immediately — well before the
+  // coalesced follow-up fetch it folds into ever completed. That let NewOrderTakeover's
+  // submitAccept re-enable the Accept button on a screen that still showed the just-accepted
+  // order, inviting a same-order double-tap. refetch() must not settle until its own coalesced
+  // round actually lands.
+  it("an awaited refetch() issued while a poll is in flight does not settle until the coalesced follow-up fetch completes", async () => {
+    const first = deferred<MerchantOrderResponse[]>();
+    const second = deferred<MerchantOrderResponse[]>();
+    listQueueMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    const { result } = renderHook(() => useQueuePoll(true));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(listQueueMock).toHaveBeenCalledTimes(1);
+
+    let refetchSettled = false;
+    const refetchPromise = result.current.refetch().then(() => {
+      refetchSettled = true;
+    });
+    expect(listQueueMock).toHaveBeenCalledTimes(1); // coalesced — no second call started yet
+
+    await act(async () => {
+      first.resolve(orders("stale"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // The coalesced follow-up fetch has started (LC-C05's existing behavior)...
+    expect(listQueueMock).toHaveBeenCalledTimes(2);
+    // ...but hasn't resolved yet, so the awaited refetch() must not have settled either.
+    expect(refetchSettled).toBe(false);
+
+    await act(async () => {
+      second.resolve(orders("fresh"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await refetchPromise;
+    expect(refetchSettled).toBe(true);
+    expect(result.current.orders).toEqual(orders("fresh"));
+  });
 });

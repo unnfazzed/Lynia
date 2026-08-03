@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Kitchen } from "../../components/Kitchen";
 import { QueueBoard } from "../../components/queue/QueueBoard";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
@@ -22,8 +22,9 @@ export default function QueuePage() {
   const { alarm, actionsDisabled, reachability, signOut } = useKitchenConnection();
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
-  useEffect(() => {
+  const loadMerchant = useCallback(() => {
     let cancelled = false;
+    setState({ status: "loading" });
     getMyMerchant()
       .then((merchant) => {
         if (!cancelled) setState({ status: "ready", merchant });
@@ -42,6 +43,21 @@ export default function QueuePage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => loadMerchant(), [loadMerchant]);
+
+  // LC-D##: before this, a single dropped /merchant/me call at mount left the merchant permanently
+  // stuck on the error screen below — useQueuePoll(state.status === "ready") never starts, so the
+  // whole order poll + alarm loop never armed, even once the network fully recovered, since nothing
+  // re-triggered this load on reconnect. This is the highest-severity page for that gap (it's the
+  // alarm loop itself), so it gets an automatic retry the instant reachability flips back to true
+  // on top of the manual Retry button below; the other four merchant pages get the manual button
+  // only. Deliberately keyed on reachability.reachable alone (not state.status) — this exists only
+  // to catch "recovered from an outage while stuck," not to loop on every render.
+  useEffect(() => {
+    if (state.status === "error" && reachability.reachable) loadMerchant();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reachability.reachable]);
 
   const { orders, error: queueError, refetch } = useQueuePoll(state.status === "ready");
 
@@ -116,7 +132,10 @@ export default function QueuePage() {
               maxWidth: 480,
             }}
           >
-            {state.message}
+            <div>{state.message}</div>
+            <button type="button" onClick={loadMerchant} style={{ ...ghostButtonStyle, marginTop: 12 }}>
+              Retry
+            </button>
           </div>
         )}
 

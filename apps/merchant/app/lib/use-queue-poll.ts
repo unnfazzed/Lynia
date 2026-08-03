@@ -19,7 +19,7 @@ export interface QueuePollState {
   orders: MerchantOrderResponse[];
   loading: boolean;
   error: ApiError | null;
-  refetch: () => void;
+  refetch: () => Promise<void>;
 }
 
 /**
@@ -45,10 +45,18 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
   // showing the pre-mutation order until the next interval tick. Coalesce it into one more round
   // right after the in-flight request settles.
   const pendingRef = useRef(false);
+  // LC-D##: callers unable to acquire the latch (a coalesced refetch) used to resolve immediately —
+  // fine for the interval/visibility pollers, which are fire-and-forget, but wrong for a caller that
+  // needs to know the fresh data actually landed (QueueBoard's post-accept/reject refetch, awaited
+  // so an order's Accept/Reject buttons don't re-enable before the queue reflects the mutation —
+  // see NewOrderTakeover's submitAccept/submitReject). These resolvers are queued instead, and fire
+  // only once the one coalesced follow-up fetch this call folds into has itself completed.
+  const waitersRef = useRef<Array<() => void>>([]);
 
-  const fetchOnce = useCallback(async () => {
+  const fetchOnce = useCallback(async (): Promise<void> => {
     if (!latch.tryAcquire()) {
       pendingRef.current = true;
+      await new Promise<void>((resolve) => waitersRef.current.push(resolve));
       return;
     }
     const generation = ++generationRef.current;
@@ -75,7 +83,11 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
       latch.release();
       if (pendingRef.current) {
         pendingRef.current = false;
-        void fetchOnce();
+        const waiters = waitersRef.current;
+        waitersRef.current = [];
+        void fetchOnce().then(() => {
+          for (const resolve of waiters) resolve();
+        });
       }
     }
   }, [latch]);
@@ -94,5 +106,5 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
     };
   }, [enabled, fetchOnce]);
 
-  return { orders, loading, error, refetch: () => void fetchOnce() };
+  return { orders, loading, error, refetch: fetchOnce };
 }

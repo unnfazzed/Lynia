@@ -22,6 +22,15 @@ export class ApiError extends Error {
   }
 }
 
+/** Any 401 from an authenticated call — a definitively-dead session or a domain-level rejection —
+ *  should send the merchant back to /login, mirroring the pattern every page's initial-load effect
+ *  already applies (LC-D##: mutation catches on Hours/Shop/Menu were missing this, unlike their own
+ *  initial loads and the queue screen's dedicated listener, stranding the merchant on a screen with
+ *  no way back to /login). Shared here so a mutation-catch call site can't independently forget it. */
+export function isSessionExpiredError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401;
+}
+
 interface OtpRequestResult {
   sent: true;
   channel: string;
@@ -106,7 +115,16 @@ async function rawFetch<T>(path: string, opts: { method?: string; body?: unknown
  *  this type existed both collapsed to the same `null`, and the caller cleared the session on either —
  *  a stalled/slow `/auth/refresh` request signed the merchant out mid-shift over nothing worse than a
  *  dead zone. Only `dead` may clear the session. */
-type RefreshOutcome = { kind: "refreshed"; session: MerchantSession } | { kind: "dead" } | { kind: "transient" };
+type RefreshOutcome =
+  | { kind: "refreshed"; session: MerchantSession }
+  | { kind: "dead" }
+  // LC-D##: `networkError` distinguishes a genuine network-level throw (the server was NOT reached)
+  // from a live 5xx/non-ok response (the server WAS reached, just erroring) — both used to collapse
+  // into one "transient" value with no way for the caller to tell them apart, so authedFetch never
+  // reported the network-throw case into ReachabilityStore (the comment at its call site claimed
+  // "this function's own request attempts... distinguish a genuine network-level failure," which is
+  // false for a throw inside doRefresh's own fetch — nothing else observes it).
+  | { kind: "transient"; networkError: boolean };
 
 // Single-flight refresh: several near-simultaneous authed calls hitting a just-expired token must
 // share one /auth/refresh round trip, not each mint their own (mirrors apps/mobile/src/api/client.ts).
@@ -134,11 +152,11 @@ async function doRefresh(refreshToken: string): Promise<RefreshOutcome> {
   } catch {
     // Transient (network error, or the timeout above firing) — leave the session intact, the
     // caller's own request just fails this once; a later call gets another chance rather than being
-    // signed out over a blip.
-    return { kind: "transient" };
+    // signed out over a blip. Genuinely network-level: the server was not reached.
+    return { kind: "transient", networkError: true };
   }
   if (res.status === 401 || res.status === 403) return { kind: "dead" }; // definitive: the refresh token is dead
-  if (!res.ok) return { kind: "transient" }; // transient server error — keep the session, retry later
+  if (!res.ok) return { kind: "transient", networkError: false }; // transient server error — a real response is proof of life
   const data = (await res.json()) as { accessToken: string; refreshToken: string; expiresIn: number };
   const prior = loadMerchantSession();
   const next: MerchantSession = {
@@ -201,9 +219,12 @@ export async function authedFetch<T>(path: string, opts: { method?: string; body
     if (outcome.kind === "transient") {
       // Keep the session — a blip on /auth/refresh is not a revoked token (LC-C03). This one
       // request fails; the merchant stays signed in for the next poll/action to try again.
-      // Not reported into reachability: "transient" also covers a live 5xx response from
-      // /auth/refresh, which is proof the server IS reachable — only this function's own
-      // request attempts above/below distinguish a genuine network-level failure.
+      // LC-D##: report into reachability using doRefresh's own network-vs-response distinction —
+      // a network-level throw inside doRefresh's fetch is nothing else's to catch, so without this
+      // the header could keep showing "Connected" for up to the 20s active-probe interval on a page
+      // with no poller (Hours/Shop/Menu/Statement) while the link was actually down.
+      if (outcome.networkError) reachability.reportUnreachable();
+      else reachability.reportReachable();
       throw new ApiError(0, "Couldn't reach the server — check the connection and try again.");
     }
     try {
