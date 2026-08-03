@@ -585,17 +585,29 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       references before and after. `food/search.tsx`'s weaker sibling (unmemoized filter + fresh
       per-row closures) stays out of scope per this item's own note — that filter's
       keystroke-recompute is semantically necessary, not wasted.
-- [ ] B-O8 **(new, B-T2 finding)** `food/order/[orderId].tsx`'s countdown ticker
-      (`setInterval(() => setNow(Date.now()), 1000)`, empty deps, no phase gating) keeps re-rendering
-      the whole ~900-line screen once/sec for the entire order lifetime even once none of the three
-      countdown-ring branches that actually read `now` can render — the exact anti-pattern
-      `PERF20-02` already fixed by extracting `AuctionClock` in the sibling `order/[id].tsx`, but
-      that sibling-sweep never reached this food-order screen. Sibling-sweep also found
-      `rider/food-job.tsx:177-181` with the identical unconditional ticker shape. Fix: gate the
-      interval on the phases that actually consume `now` (or extract a small self-ticking
-      countdown component per the `AuctionClock` pattern) in both files. No wrong output today —
-      pure sustained 1Hz JS-thread churn on Go-class hardware for most of an order's real duration,
-      which is why it's an optimization item, not a same-run defect fix. (S)
+- [x] B-O8 **(2026-08-03e)** `food/order/[orderId].tsx`'s countdown ticker
+      (`setInterval(() => setNow(Date.now()), 1000)`, empty deps, no phase gating) used to keep
+      re-rendering the whole screen once/sec for the entire order lifetime even once none of the
+      rendered branches read `now` — the exact anti-pattern `PERF20-02` already fixed by extracting
+      `AuctionClock` in the sibling `order/[id].tsx`, but that sibling-sweep never reached this
+      food-order screen (since RF-18 this screen is a thin phase-dispatcher over extracted view
+      components, so a self-ticking-component extraction per phase would mean threading `now` through
+      5 separate files for no behavioural gain — gating the ONE interval was the lower-risk, equally
+      effective fix). Fixed with a `needsClock` boolean (`!!order &&` one of
+      `awaiting_accept`/`awaiting_item_approval`/`awaiting_payment`/`preparing`/the post-dispatch live
+      tracker — exactly the branches that receive the `now` prop below it) gating the effect, so
+      `ready_for_pickup`/`undelivered`/`delivered`/`completed`/`cancelled` never start the interval.
+      `rider/food-job.tsx`'s identical unconditional ticker (`nowMs`, feeding only the no-show
+      wait-countdown and the cash-handshake card, both reachable only from the main active-job
+      render) got the same treatment: the interval effect moved below the `deliveredFood`/
+      `undeliveredFoodReason`/`ackedHandbacks` state it now gates on (`needsClock = order != null &&
+      !deliveredFood && !undeliveredFoodReason && !(status === "cancelled" && not yet acked)`), so the
+      delivered/undelivered/cancelled-handback terminal screens — where a rider can sit for the rest
+      of their shift between jobs — stop ticking too. Regression tests spy on `global.setInterval` and
+      assert the 1000ms interval is/isn't created per phase (new describe block in
+      `app/food/order/__tests__/order-screen.test.tsx`; new `app/rider/__tests__/food-job.test.tsx`,
+      this screen's first test coverage) — confirmed both fail against the pre-fix code (interval
+      fires unconditionally) before landing. `pnpm typecheck && pnpm lint && pnpm test` all green.
 - [x] B-O9 **(duplicate ID — steer dedup, 2026-08-03b)** This entry and the `[x] B-O9` entry above
       (right after `B-O2`) are the SAME finding: `B-T2`'s original audit text (this entry, appended
       2026-08-02) and PR #525's fix-summary (the entry above, appended 2026-08-03d) both landed under
