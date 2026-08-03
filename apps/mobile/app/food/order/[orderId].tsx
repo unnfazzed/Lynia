@@ -29,6 +29,7 @@ import { useReachability } from "../../../src/net/use-reachability";
 import { orderKey } from "../../../src/query/client";
 import { useFoodOrder } from "../../../src/query/use-food-order";
 import { useRestaurantMenu } from "../../../src/query/use-restaurants";
+import { useOrderSocket } from "../../../src/realtime/use-order-socket";
 import { Button, Card, EmptyState, OfflineBanner, Screen, SkeletonList, useToast } from "../../../src/ui";
 import { FoodOrderAwaitingAcceptView } from "../../../src/ui/food/FoodOrderAwaitingAcceptView";
 import { FoodOrderAwaitingPaymentView } from "../../../src/ui/food/FoodOrderAwaitingPaymentView";
@@ -92,14 +93,26 @@ export default function FoodOrderScreen(): React.ReactElement {
   // on the GENERIC order record — the same one a parcel tracks (this order's `orderType` is "merchant",
   // but `getSnapshot` carries no orderType filter, only a party-on-the-order check). Sharing the query
   // key with LiveTrackingCard's own internal telemetry observer is what lets that card repaint on GPS
-  // ticks without this ~250-line screen re-rendering. No WebSocket wired here (unlike the parcel
-  // screen's useOrderSocket) — plain poll while a rider is on the job; open item, see the PR body.
+  // ticks without this ~250-line screen re-rendering.
+  //
+  // A-O9: the order room this tracker joins is the SAME generic `orderRoom(orderId)` a parcel tracks —
+  // `canAccessOrder`/`emitOrderStatus`/the `position` GPS push all key off the shared `Order` row with
+  // no `orderType` filter (dispatch already pushes `assigned`/`requested` into this exact room via
+  // `FoodDispatchService`; `order-lifecycle.service.ts`'s cancel/advance path is shared verbatim too).
+  // So `useOrderSocket` — unmodified — subscribes correctly here; the 10s poll below only runs as the
+  // reconnect/offline fallback, mirroring the already-audited A-O1 gating on the parcel/rider board.
   const trackingEnabled = order?.riderId != null;
+  const { connected: trackerConnected } = useOrderSocket(trackingEnabled ? orderId : null);
   const trackQ = useQuery({
     queryKey: orderKey(orderId),
     queryFn: () => getOrder(orderId),
     enabled: trackingEnabled,
-    refetchInterval: trackingEnabled && order?.status !== "cancelled" && order?.status !== "completed" ? 10_000 : false,
+    refetchInterval:
+      trackingEnabled && order?.status !== "cancelled" && order?.status !== "completed"
+        ? trackerConnected
+          ? false
+          : 10_000
+        : false,
   });
 
   // D4 (doorstep): the delivery code, loaded/persisted exactly like the parcel screen's own copy

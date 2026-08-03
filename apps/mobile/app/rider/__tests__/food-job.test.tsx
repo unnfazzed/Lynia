@@ -48,6 +48,12 @@ jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
 jest.mock("../../../src/realtime/use-rider-location", () => ({
   useRiderLocationStream: () => ({ permissionDenied: false }),
 }));
+// A-O9 wired a job socket into this screen; `connected: false` keeps the REST poll fallback
+// active so these ticker-gating assertions see the same cadence as before the socket existed.
+// The gating contract itself is covered by food-job-socket-gate.test.tsx.
+jest.mock("../../../src/realtime/use-rider-job-socket", () => ({
+  useRiderJobSocket: () => ({ connected: false }),
+}));
 // LiveMap (react-native-maps) can't mount in this test environment — same precedent as
 // JobDetailsCard.test.tsx / ComposeMap.test.tsx.
 jest.mock("../../../src/ui/rider/JobDetailsCard", () => ({

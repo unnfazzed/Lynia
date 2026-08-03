@@ -16,6 +16,7 @@ const mockSubmitReference = jest.fn(async (..._args: unknown[]) => undefined);
 const mockGetOrder = jest.fn();
 const mockCancelOrder = jest.fn(async (..._args: unknown[]) => ({ orderId: "order-1", status: "cancelled" as const, cancelledBy: "customer" as const, cooldownUntil: null }));
 const mockReplace = jest.fn();
+const mockUseOrderSocket = jest.fn((_orderId: string | null) => ({ connected: false }));
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ orderId: "order-1" }),
@@ -39,6 +40,13 @@ jest.mock("../../../../src/api/restaurants", () => ({
 jest.mock("../../../../src/api/orders", () => ({
   getOrder: (...args: unknown[]) => mockGetOrder(...args),
   cancelOrder: (...args: unknown[]) => mockCancelOrder(...args),
+}));
+// A-O9: the tracker now joins the order's WS room the same way the parcel screen does — stub the hook
+// itself (like use-order-socket.test.tsx already covers its internals) so these tests can assert on the
+// GATING contract (which orderId it's called with, and that a connected socket suppresses the poll)
+// without standing up a real socket.io-client connection.
+jest.mock("../../../../src/realtime/use-order-socket", () => ({
+  useOrderSocket: (...args: [string | null]) => mockUseOrderSocket(...args),
 }));
 // D3: the real LiveTrackingCard mounts react-native-maps, which the other order-screen tracking test
 // (live-tracking-isolation.test.tsx) also avoids mounting for the same reason — stub it so these tests
@@ -182,6 +190,7 @@ beforeEach(() => {
   mockGetOrder.mockReset().mockResolvedValue(BASE_SNAPSHOT);
   mockCancelOrder.mockClear().mockResolvedValue({ orderId: "order-1", status: "cancelled", cancelledBy: "customer", cooldownUntil: null });
   mockReplace.mockClear();
+  mockUseOrderSocket.mockClear().mockReturnValue({ connected: false });
 });
 
 afterEach(() => {
@@ -362,6 +371,40 @@ describe("food order screen — phase branching", () => {
     mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: null, status: "delivered", riderId: "rider-1" });
     const tree = await render();
     expect(has(tree, "Delivered")).toBe(true);
+  });
+
+  // ── A-O9: the tracking poll is now socket-gated, mirroring the already-audited parcel/rider-board
+  // pattern (A-O1) — no socket exists here before a rider is secured (nothing to track yet), and once
+  // one is, the 10s REST poll only runs as the reconnect/offline fallback, not the steady-state path.
+  describe("A-O9: order-room socket gates the live-tracker poll", () => {
+    it("does not open the order socket before a rider is secured", async () => {
+      mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "preparing" });
+      await render();
+      expect(mockUseOrderSocket).toHaveBeenLastCalledWith(null);
+    });
+
+    it("subscribes to the order's own room, keyed on the order id, once a rider is secured", async () => {
+      mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: null, status: "assigned", riderId: "rider-1" });
+      await render();
+      expect(mockUseOrderSocket).toHaveBeenLastCalledWith("order-1");
+    });
+
+    it("drops the subscription again once the order reaches a terminal state", async () => {
+      mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: null, status: "delivered", riderId: "rider-1" });
+      await render();
+      // `trackingEnabled` only requires a riderId (mirrors trackQ's own `enabled` condition) — the
+      // socket key follows it, not the terminal status; the query key's OWN refetchInterval gate is
+      // what stops the poll on a terminal order, same as before this fix.
+      expect(mockUseOrderSocket).toHaveBeenLastCalledWith("order-1");
+    });
+
+    it("still renders the live tracker correctly with the order socket already connected", async () => {
+      mockUseOrderSocket.mockReturnValue({ connected: true });
+      mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: null, status: "assigned", riderId: "rider-1" });
+      const tree = await render();
+      expect(has(tree, /Rider secured/)).toBe(true);
+      expect(has(tree, "LiveTrackingCard:assigned")).toBe(true);
+    });
   });
 });
 
