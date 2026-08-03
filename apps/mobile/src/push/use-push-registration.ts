@@ -153,29 +153,17 @@ export function usePushRegistration(session: Session | null): void {
   // promises exactly that. Independent of the token effect above — the listener lives for the app's
   // lifetime and is a no-op for any notification that carries no navigable orderId (pushDestination
   // returns null).
+  //
+  // This covers only a WARM tap (app already running, foreground or background) via
+  // addNotificationResponseReceivedListener. A COLD-START tap (app fully killed, launched by the tap)
+  // is deliberately NOT handled here — it used to be, via a `getLastNotificationResponseAsync()` read
+  // on mount, but that raced app/index.tsx's own cold-boot `<Redirect>`: both fire a navigation
+  // independently on first mount, and whichever resolved second silently won, so a slow-resolving boot
+  // redirect could clobber a tap that had already opened the order. app/index.tsx now consumes the
+  // cold-start response itself (via `consumeColdStartResponse` in push.ts) as ONE input to its single
+  // boot-navigation decision, closing that race by construction (LC-D-T3).
   const isRider = session?.role === "rider";
-  // JOURNEY-BUGS: getLastNotificationResponseAsync() returns the SAME cached response every time it's
-  // called until explicitly cleared — it isn't consumed on read. This effect re-runs on every isRider
-  // change (session hydrating, or a sign-out → different-account sign-in on this device, since this
-  // hook is mounted once for the app's lifetime at the root layout), so without a clear it replayed the
-  // same stale cold-start deep link on every one of those transitions — including navigating a freshly
-  // signed-in DIFFERENT account straight to an order from the previous session's push. Consume it (and
-  // clear it) at most once per app lifetime; the ref is set synchronously so a rapid second isRider
-  // change before the read resolves can't fire a second read.
-  const coldStartConsumed = useRef(false);
   useEffect(() => {
-    if (!coldStartConsumed.current) {
-      coldStartConsumed.current = true;
-      // Cold start: the response that LAUNCHED the app (fully killed, not just backgrounded) never
-      // fires addNotificationResponseReceivedListener — it has to be read back explicitly on mount.
-      void Notifications.getLastNotificationResponseAsync().then((response) => {
-        void Notifications.clearLastNotificationResponseAsync();
-        if (!response) return;
-        const to = pushDestination(response.notification.request.content.data, isRider);
-        if (to) pushOnce(router, pathnameRef.current, to);
-      });
-    }
-
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const to = pushDestination(response.notification.request.content.data, isRider);
       if (to) pushOnce(router, pathnameRef.current, to);
