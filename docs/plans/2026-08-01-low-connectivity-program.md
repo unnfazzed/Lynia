@@ -849,16 +849,24 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
 promoted ahead of C-O1/C-O2/C-O4: they're concrete, S-effort, evidenced-this-week fixes from
 completed C-T1/C-T2 traces, vs. C-O1/C-O2/C-O4's broader M-effort backlog scope with no fresh
 measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
-- [ ] C-O5 **(C-T1 finding, LC-C07)** Rider delivery-confirm terminal marker
-      (`saveRiderJobTerminal`) is written only after a response (success or 409-reconciled)
-      arrives — an app kill strictly between sending `confirmDelivery` and processing any
-      response drops the delivered-acknowledgement/rate-the-sender screen on relaunch (the order
-      itself is correctly `delivered` server-side; only the terminal UX is lost). Write a
-      provisional local marker BEFORE the request fires (promoted to final on success, rolled
-      back only on a definitive non-409 rejection) so `reconcileRiderJobTerminal()` can recover
-      the acknowledgement screen purely from "marker exists + order no longer active," without
-      needing the response to have been seen. `apps/mobile/app/rider/job.tsx:305`,
-      `apps/api/src/orders/order-lifecycle.service.ts:343`. (S)
+- [x] C-O5 **DONE (2026-08-03f)** **(C-T1 finding, LC-C07)** Rider delivery-confirm terminal marker
+      (`saveRiderJobTerminal`) was written only after a response (success or 409-reconciled)
+      arrived — an app kill strictly between sending `confirmDelivery` and processing any
+      response dropped the delivered-acknowledgement/rate-the-sender screen on relaunch (the order
+      itself was correctly `delivered` server-side; only the terminal UX was lost). Fixed by
+      writing a provisional marker in `deliverM`'s new `onMutate` — BEFORE the request fires —
+      promoted to final on success (no extra write needed, it's already durable) and rolled back
+      only on a definitive non-409 rejection (401 wrong code, 403 lockout) or a 409 reconciled via
+      a direct `getOrder` check to "still not delivered"; left in place on a genuinely ambiguous
+      failure (network error/timeout/5xx, or the reconciliation check itself failing), which stays
+      safe because `reconcileRiderJobTerminal()` only ever promotes a marker once the order has
+      actually left the active feed — an inert leftover marker for a request that truly failed
+      just sits unused while the order stays active. `apps/mobile/app/rider/job.tsx:305`,
+      `apps/api/src/orders/order-lifecycle.service.ts:343`. Regression tests in the new
+      `app/rider/__tests__/job.test.tsx` (confirmed the kill-mid-request case fails pre-fix — no
+      marker meant a dead-end "No active job" screen instead of the acknowledgement terminal — plus
+      a second case pinning the 401 rollback). `pnpm typecheck && pnpm lint && pnpm test` green.
+      See `docs/LC-C-REPORT-2026-08-03f.md`. (S)
 - [ ] C-O6 **(C-T1 finding, LC-C08)** `order/[id].tsx`'s `selectM` (accept-an-offer) mutation's `onError`
       shows the same muted "that rider was just taken" notice for BOTH a genuine race-loss AND a
       lost-response case where the customer's OWN pick actually landed — self-heals within one
