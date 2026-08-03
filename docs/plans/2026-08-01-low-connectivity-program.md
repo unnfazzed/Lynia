@@ -442,14 +442,29 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       boundary won't actually hold. Weaker sibling noted in `food/search.tsx` (unmemoized filter +
       fresh per-row closures) — same shape, lower priority since that filter's keystroke-recompute
       is semantically necessary, not wasted. (S, bundle with B-O2)
-- [ ] B-O7 **(re-ranked to #3, was #7)** Cold-boot request prioritization — defer the push-token
-      register POST (`use-push-registration.ts`) and, where feasible, `/app/version-gate` /
-      `/app/feature-flags` a beat behind `/app/bootstrap` (e.g. a short delay/idle-callback, or firing
-      off `BootstrapSync`'s settle instead of mount) so they don't contend for bandwidth with the
-      first-paint-critical aggregate on a constrained 2G/3G link. Impact unconfirmed without an
-      on-device 2G trace — audit-only finding from B-T1, not implemented that run. Promoted ahead
-      of B-O5/B-O3/B-O6 because it's concrete and S-effort with evidence behind it, unlike O3/O6
-      below which are blocked on hardware/native-build access this environment doesn't have. (S)
+- [ ] B-O11 **(re-ranked to #5, was #11 — 2026-08-03 steer)** KYC/pickup-photo preview `Image`s
+      render the ORIGINAL (undownscaled, ~3000-4000px) camera capture instead of the
+      already-downscaled upload asset sitting right there — `apps/mobile/app/rider/become.tsx:
+      98-104,232-235` and `src/ui/rider/PickupChecklist.tsx:60-64,145-149` both call
+      `downscaleForUpload` (1280px/0.7 JPEG) for the UPLOAD but set the on-screen preview from the
+      pre-downscale `asset.uri`, not the already-produced `prepared.uri`. One-line swap per site;
+      this preview stays mounted for the rest of a multi-field KYC/pickup form, and
+      `become.tsx:45`'s own comment already flags camera capture as an OOM-kill risk on low-end
+      phones — real avoidable peak-memory pressure in the single most OOM-sensitive flow in the
+      app. Promoted ahead of B-O7 this steer: same S-effort as B-O7, but B-O11 has a confirmed root
+      cause and trivial fix serving Lane B's core "stay alive on 1-2GB RAM" mandate directly, while
+      B-O7's impact is still unconfirmed without an on-device 2G trace. Not fixed this run because
+      nothing is visibly broken today (Android's own view-bound downsampling absorbs some of the
+      cost). (S)
+- [ ] B-O7 **(re-ranked to #6, was #3 then #7)** Cold-boot request prioritization — defer the
+      push-token register POST (`use-push-registration.ts`) and, where feasible,
+      `/app/version-gate` / `/app/feature-flags` a beat behind `/app/bootstrap` (e.g. a short
+      delay/idle-callback, or firing off `BootstrapSync`'s settle instead of mount) so they don't
+      contend for bandwidth with the first-paint-critical aggregate on a constrained 2G/3G link.
+      Impact unconfirmed without an on-device 2G trace — audit-only finding from B-T1, not
+      implemented that run. Still ahead of B-O5/B-O3/B-O6 because it's concrete and S-effort with
+      evidence behind it, unlike O3/O6 below which are blocked on hardware/native-build access this
+      environment doesn't have — but behind B-O11 as of this steer (see above). (S)
 - [ ] B-O5 Socket self-heal refetch cadence on reconnect attempts — KNOWN backlog. (S)
 - [ ] B-O3 Overlap/defer boot keystore reads — KNOWN backlog. **B-T1 evidence:** `loadSession()`
       (`src/auth/session.ts`) and `loadOnboardingSeen()`/`loadRolePreference()`
@@ -473,16 +488,6 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       restaurant data itself stay unbounded — worth a cursor-paginated `useInfiniteQuery` (mirroring
       `useHistoryFeed`'s shape once it exists) as the corridor's merchant catalog grows past a page.
       Extends `B-O1`'s remit rather than duplicating it. (M)
-- [ ] B-O11 **(new, B-T3 finding)** KYC/pickup-photo preview `Image`s render the ORIGINAL
-      (undownscaled, ~3000-4000px) camera capture instead of the already-downscaled upload asset
-      sitting right there — `apps/mobile/app/rider/become.tsx:98-104,232-235` and
-      `src/ui/rider/PickupChecklist.tsx:60-64,145-149` both call `downscaleForUpload` (1280px/0.7
-      JPEG) for the UPLOAD but set the on-screen preview from the pre-downscale `asset.uri`, not the
-      already-produced `prepared.uri`. One-line swap per site; this preview stays mounted for the
-      rest of a multi-field KYC/pickup form, and `become.tsx:45`'s own comment already flags camera
-      capture as an OOM-kill risk on low-end phones — real avoidable peak-memory pressure in the
-      single most OOM-sensitive flow in the app. Easy/high-value; not fixed this run because nothing
-      is visibly broken today (Android's own view-bound downsampling absorbs some of the cost). (S)
 - [ ] B-O12 **(new, B-T3 finding)** Rider board's `openOrders` TanStack Query cache can grow
       unboundedly across a very long, unbroken online socket session —
       `apps/mobile/src/realtime/use-rider-board.ts:87-103`'s `boardNewOrder` handler prepends
@@ -577,16 +582,10 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
 - [ ] C-T5 Reconnect semantics across ALL realtime hooks + the server catch-up seam (what a
       client that was gone 90 s actually recovers, and at what byte cost).
 
-**Optimization checklist (seeded; audit rounds append):**
-- [ ] C-O1 ALR-09: offline mutation UX (explicit queued/failed/retry states — never a silent
-      drop) — KNOWN ledger. (M)
-- [ ] C-O2 Central client network policy: one module defining timeout/retry/backoff-with-jitter
-      tuned for 600 ms RTT, replacing per-call-site defaults (DoorDash lessons 6+7); every
-      retriable mutation must name its server-side idempotency guarantee. (M)
-- [ ] C-O3 Share one Socket.IO connection across realtime hooks (fewer handshakes on lossy
-      radio) — KNOWN backlog. (M)
-- [ ] C-O4 MicroCache serve-stale-on-upstream-failure mode (soft/hard dual TTL; candidates:
-      nearby-count, bootstrap; NEVER money/assignment/auth) (DoorDash lesson 8). (M)
+**Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-03 steer — C-O5/C-O6/C-O7
+promoted ahead of C-O1/C-O2/C-O4: they're concrete, S-effort, evidenced-this-week fixes from
+completed C-T1/C-T2 traces, vs. C-O1/C-O2/C-O4's broader M-effort backlog scope with no fresh
+measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
 - [ ] C-O5 **(C-T1 finding, LC-C07)** Rider delivery-confirm terminal marker
       (`saveRiderJobTerminal`) is written only after a response (success or 409-reconciled)
       arrives — an app kill strictly between sending `confirmDelivery` and processing any
@@ -615,6 +614,25 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
       asset uri + upload stage to SecureStore before firing so a relaunch mid-upload can offer
       "finish adding this photo" instead of silently starting over.
       `apps/mobile/src/ui/rider/PickupChecklist.tsx:44`. (S)
+- [ ] C-O1 **(re-ranked to #4, was #1)** ALR-09: offline mutation UX (explicit queued/failed/retry
+      states — never a silent drop) — KNOWN ledger. (M)
+- [ ] C-O2 **(re-ranked to #5, was #2)** Central client network policy: one module defining
+      timeout/retry/backoff-with-jitter tuned for 600 ms RTT, replacing per-call-site defaults
+      (DoorDash lessons 6+7); every retriable mutation must name its server-side idempotency
+      guarantee. (M)
+- [ ] ~~C-O3 Share one Socket.IO connection across realtime hooks (fewer handshakes on lossy
+      radio) — KNOWN backlog.~~ — **struck through (2026-08-03 steer): superseded by Lane A's
+      `A-O17` (LC-A07).** Both items are the identical fix — one multiplexed Socket.IO connection
+      across the board/job/location realtime hooks instead of three independent `io(...)` calls
+      (`apps/mobile/src/realtime/socket.ts:12-13`) — found from two angles (C-O3's resilience
+      framing: fewer handshakes to re-establish after a drop; A-O17's [data]/battery framing: one
+      keepalive stream instead of three). A-O17 carries the concrete file:line evidence from
+      A-T4's 2026-08-03 trace, so Lane A owns the implementation; keeping both unchecked would
+      double-count one piece of work across two lanes. The resilience benefit ships automatically
+      when A-O17 lands — no separate C-side work needed.
+- [ ] C-O4 **(re-ranked to #6, was #4)** MicroCache serve-stale-on-upstream-failure mode (soft/hard
+      dual TTL; candidates: nearby-count, bootstrap; NEVER money/assignment/auth) (DoorDash
+      lesson 8). (M)
 
 ### Lane D — journey & soundness sweep (Opus 4.8, `0 7 * * *`)
 
