@@ -171,9 +171,11 @@ wiring, not code:
       The **build now consumes `google-services.json`** (2026-07-01): `app.config.ts` wires
       `android.googleServicesFile` from a `GOOGLE_SERVICES_JSON` EAS file secret (or a local drop, gitignored),
       attached only when present so unprovisioned builds still succeed.
-      _Remaining:_ a **Firebase project** (founder — register the `zw.co.lynia` Android app and supply that
-      `google-services.json`) + a **dev build** — Expo Go can't mint a device token, so live delivery is only
-      testable on the dev build.
+      _Update 2026-08-03:_ the **Firebase Android app for `zw.co.lynia` is registered** (project
+      `lynia-500911`) and its `google-services.json` is an **EAS file variable in `preview` +
+      `production`** (verified), so store/dev builds now bake FCM in. _Remaining:_ flip the server
+      (`PUSH_PROVIDER` still defaults to `noop`) and verify delivery on hardware — Expo Go can't
+      mint a device token, so live delivery is only testable on a real build.
 - [ ] **Production OTP** — WhatsApp BSP onboarding + SMS gateway behind the `otp-sender.ts` seam (console
       is dev-only today). **Founder action** — set up a WhatsApp BSP account, then `OTP_CHANNEL=whatsapp`.
 - [x] **HTTPS for device builds** — external HTTPS load balancer + managed cert at `lyniago.lyniafinance.com`;

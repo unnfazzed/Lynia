@@ -192,6 +192,16 @@ to route 100% back. **Exercise it once** (LR21).
 > service-account key** on EAS (blocks auto-submit), `GOOGLE_SERVICES_JSON` (push inert without it),
 > and the GitHub side (`EXPO_TOKEN` secret, `EAS_RELEASE_ENABLED` — off as of the 2026-07-23
 > skipped dispatch). See `docs/PLAY-STORE-SUBMISSION.md` §7.2/§9 for the same audit in checklist form.
+>
+> **Update (2026-08-03, late): armed end-to-end.** All three gaps closed the same evening — the
+> Play service-account key registered on EAS (`id-play-publisher@lynia-500911…`, least-privilege
+> testing-track permissions), `GOOGLE_SERVICES_JSON` in both EAS environments, and the GitHub
+> switches set (**robot** `EXPO_TOKEN`, `EAS_PROJECT_ID`, `production-mobile` environment,
+> `EAS_RELEASE_ENABLED=true`). The first dispatch (run 30852221217) executed — proving the arming
+> switch — then failed fast on a robot-token requirement: `app.config.ts` must declare
+> `owner: "lyniago"` explicitly (a personal token implies its account; a robot has none). The field
+> is now committed. Outstanding: no required reviewer on `production-mobile` yet — add before first
+> OTA publish (that environment gates `mobile-ota.yml`, the one lane with no external review).
 
 ```bash
 npm i -g eas-cli && eas login                       # or use npx eas-cli
