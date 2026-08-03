@@ -100,7 +100,11 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // Send the exact headers the signature was minted over (Content-Type + size range); fall back to
       // just the content type for an older API that didn't return them.
       await uploadImage(uploadUrl, prepared.uri, headers ?? { "Content-Type": prepared.contentType });
-      setPhotoUri(asset.uri);
+      // B-O11: preview the already-downscaled upload asset, not the original 3000-4000px camera
+      // capture — this preview stays mounted for the rest of the multi-field KYC form, and the
+      // original is real avoidable peak-memory pressure on a 1-2GB device (become.tsx's own OOM
+      // comment above flags exactly this flow).
+      setPhotoUri(prepared.uri);
       setPhotoKey(key);
       setFailedAsset(null);
     } catch (e) {

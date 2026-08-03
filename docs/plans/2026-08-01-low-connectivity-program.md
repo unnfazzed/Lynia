@@ -645,20 +645,30 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       too, pointing at the entry above for the real fix detail. **Doc-hygiene note for future lane
       firings:** append new checklist findings with a fresh, never-reused id even when they refine an
       item already in flight (e.g. this should have been `B-O9b` or similar).
-- [ ] B-O11 **(re-ranked to #5, was #11 — 2026-08-03 steer)** KYC/pickup-photo preview `Image`s
-      render the ORIGINAL (undownscaled, ~3000-4000px) camera capture instead of the
-      already-downscaled upload asset sitting right there — `apps/mobile/app/rider/become.tsx:
-      98-104,232-235` and `src/ui/rider/PickupChecklist.tsx:60-64,145-149` both call
-      `downscaleForUpload` (1280px/0.7 JPEG) for the UPLOAD but set the on-screen preview from the
-      pre-downscale `asset.uri`, not the already-produced `prepared.uri`. One-line swap per site;
-      this preview stays mounted for the rest of a multi-field KYC/pickup form, and
-      `become.tsx:45`'s own comment already flags camera capture as an OOM-kill risk on low-end
-      phones — real avoidable peak-memory pressure in the single most OOM-sensitive flow in the
-      app. Promoted ahead of B-O7 this steer: same S-effort as B-O7, but B-O11 has a confirmed root
-      cause and trivial fix serving Lane B's core "stay alive on 1-2GB RAM" mandate directly, while
-      B-O7's impact is still unconfirmed without an on-device 2G trace. Not fixed this run because
-      nothing is visibly broken today (Android's own view-bound downsampling absorbs some of the
-      cost). (S)
+- [x] B-O11 **DONE (2026-08-03h)** KYC/pickup-photo preview `Image`s rendered the ORIGINAL
+      (undownscaled, ~3000-4000px) camera capture instead of the already-downscaled upload asset
+      sitting right there — `apps/mobile/app/rider/become.tsx:103` and
+      `src/ui/rider/PickupChecklist.tsx:64` both called `downscaleForUpload` (1280px/0.7 JPEG) for
+      the UPLOAD but set the on-screen preview from the pre-downscale `asset.uri`, not the
+      already-produced `prepared.uri`, in the branch where the upload had just succeeded. Fixed
+      with the one-line swap at both sites (`setPhotoUri(prepared.uri)` instead of
+      `setPhotoUri(asset.uri)`); the `catch` branches' rollback-to-previous-uri behavior is
+      untouched. This preview stays mounted for the rest of a multi-field KYC/pickup form, and
+      `become.tsx`'s own comment already flags camera capture as an OOM-kill risk on low-end
+      phones — this closes real avoidable peak-memory pressure (holding a ~342-344px-sibling-scale
+      full-res bitmap decoded for `Image` alongside everything else on-screen, for the rest of the
+      form) in the single most OOM-sensitive flow in the app, purely by swapping which
+      already-computed uri two `setState` calls reference — no new state, no new native work.
+      **Evidence:** new regression tests pin the wiring rather than asserting on bytes (a
+      render-isolation-style test for a data-flow bug, mirroring this lane's `AuctionClock`
+      convention of a test that fails against the pre-fix code) —
+      `app/rider/__tests__/become-photo-preview.test.tsx` and
+      `src/ui/rider/__tests__/pickup-checklist-photo-preview.test.tsx` each mock
+      `downscaleForUpload` to return a uri distinct from the picker's mocked capture uri, drive a
+      full capture→upload flow, and assert the rendered preview `Image`'s `source.uri` is the
+      downscaled one; both confirmed to FAIL against the pre-fix code (asserting the original
+      capture uri instead) before landing. `pnpm typecheck && pnpm lint && pnpm test` all green
+      (732 mobile + 1516 API tests, 6/6 packages).
 - [ ] B-O7 **(re-ranked to #6, was #3 then #7)** Cold-boot request prioritization — defer the
       push-token register POST (`use-push-registration.ts`) and, where feasible,
       `/app/version-gate` / `/app/feature-flags` a beat behind `/app/bootstrap` (e.g. a short
