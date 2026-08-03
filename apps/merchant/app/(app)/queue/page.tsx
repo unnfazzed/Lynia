@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Kitchen } from "../../components/Kitchen";
 import { QueueBoard } from "../../components/queue/QueueBoard";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
+import { RetryableError } from "../../components/RetryableError";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
 import { useQueuePoll } from "../../lib/use-queue-poll";
 
@@ -122,22 +123,7 @@ export default function QueuePage() {
           </div>
         )}
 
-        {state.status === "error" && (
-          <div
-            style={{
-              background: "var(--danger-wash)",
-              color: "var(--danger-ink)",
-              borderRadius: 16,
-              padding: 20,
-              maxWidth: 480,
-            }}
-          >
-            <div>{state.message}</div>
-            <button type="button" onClick={loadMerchant} style={{ ...ghostButtonStyle, marginTop: 12 }}>
-              Retry
-            </button>
-          </div>
-        )}
+        {state.status === "error" && <RetryableError message={state.message} onRetry={loadMerchant} />}
 
         {state.status === "ready" && (
           <>
