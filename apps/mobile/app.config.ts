@@ -36,6 +36,11 @@ const easProjectId = process.env.EAS_PROJECT_ID ?? "25b2785d-94e0-4ecc-9940-bd9f
 const config: ExpoConfig = {
   name: "LyniaGo",
   slug: "lynia",
+  // EAS account that owns the project. Required whenever a robot access token (EXPO_TOKEN in
+  // mobile-release.yml / mobile-ota.yml) drives eas-cli: a robot token can act for several
+  // accounts, so eas refuses to infer the owner from `extra.eas.projectId` and aborts the build
+  // ("Owner of project … must be specified in "owner" field when using a robot access token").
+  owner: "lyniago",
   scheme: "lynia",
   version: "0.17.6", // x-release-please-version
   // OTA compatibility key (expo-updates): `fingerprint` hashes the native layer (deps + native
