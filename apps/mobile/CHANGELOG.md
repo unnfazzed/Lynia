@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.3](https://github.com/unnfazzed/Lynia/compare/v0.17.2...v0.17.3) (2026-08-03)
+
+
+### Bug Fixes
+
+* **mobile:** persist profile-setup draft so an app kill can't lose the typed name/ID (LC-C10) ([0a2672b](https://github.com/unnfazzed/Lynia/commit/0a2672b88c846ee2ebd223c6c63878e40d0ba182))
+
 ## [0.17.2](https://github.com/unnfazzed/Lynia/compare/v0.17.1...v0.17.2) (2026-08-03)
 
 
