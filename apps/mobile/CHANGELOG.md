@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.7](https://github.com/unnfazzed/Lynia/compare/v0.17.6...v0.17.7) (2026-08-03)
+
+
+### Bug Fixes
+
+* **mobile:** declare Expo owner for robot-token CI; docs: record pipeline armed end-to-end ([1938c5b](https://github.com/unnfazzed/Lynia/commit/1938c5bbf1b08b5feb92f3b68c5854f6ecdadc9c))
+
 ## [0.17.6](https://github.com/unnfazzed/Lynia/compare/v0.17.5...v0.17.6) (2026-08-03)
 
 
