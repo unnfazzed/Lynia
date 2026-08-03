@@ -23,6 +23,7 @@ import { formatMoney } from "../../src/logic/money";
 import { mapsPlaceUrl } from "../../src/logic/maps";
 import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
+import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { Button, Card, Celebrate, ErrorText, haptic, Heading, Icon, Screen, SkeletonList, StatusPill, Sub, orderStatusTone, useToast } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
@@ -48,8 +49,11 @@ import { GetHelpControl, SosControl } from "../../src/ui/safety";
  * Open items (surfaced, not silently decided): no durable app-kill-survives terminal marker like
  * job.tsx's saveRiderJobTerminal (a kill in the narrow window between confirmDelivery landing and this
  * screen freezing its acknowledgement loses that screen on relaunch — debtStatus stays server-enforced
- * either way, so this is a UX-recall gap, not a money-safety one); no live WS wired for a mid-job
- * customer cancel (poll-only, same precedent D2/D3 already used for the customer-side food screens).
+ * either way, so this is a UX-recall gap, not a money-safety one). A-O9: `activeJob` now resyncs on a
+ * `useRiderJobSocket` push (a mid-job customer cancel included) instead of a bare 8s poll; `foodQ`
+ * (kitchen/cash-handshake fields) and the cash-return-leg poll stay poll-only — deliberately left alone
+ * this run since they carry the cash-handshake/debt-ledger state and the lane rules bar trading
+ * correctness for bytes on a money-adjacent path.
  */
 export default function RiderFoodJob(): React.ReactElement {
   const router = useRouter();
@@ -57,7 +61,12 @@ export default function RiderFoodJob(): React.ReactElement {
   const toast = useToast();
   const [error, setError] = useState<string | null>(null);
 
-  const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: 8000 });
+  // A-O9: the job socket (below) resyncs `activeJob` on connect/connect_error/order:status already —
+  // same fallback discipline as job.tsx's `jobPollFallback` (the parcel sibling) — so only fall back to
+  // the plain 8s REST poll while it isn't connected, instead of a redundant round-trip every 8s for the
+  // whole active leg.
+  const [jobPollFallback, setJobPollFallback] = useState(true);
+  const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: jobPollFallback ? 8000 : false });
   const order = jobQ.data ?? null;
   const orderId = order?.id ?? null;
 
@@ -98,6 +107,21 @@ export default function RiderFoodJob(): React.ReactElement {
     [order?.rider?.currentLat, order?.rider?.currentLng],
   );
   const { permissionDenied: locationDenied } = useRiderLocationStream(order && ACTIVE.includes(order.status) ? orderId : null);
+
+  // A-O9: mirrors job.tsx's `useRiderJobSocket` wiring verbatim — the room this joins
+  // (`orderRoom(orderId)`) and the events it listens for (`order:status`, `job:cancelled`) are keyed off
+  // the shared, orderType-agnostic `Order` row, so the SAME hook subscribes correctly for a food job.
+  // Unlike the parcel screen, this screen doesn't freeze a separate `cancelledJob` snapshot on
+  // `job:cancelled` — it already reads `order.status === "cancelled"` straight off `activeJob` (see the
+  // render branch below), which the generic `order:status` handler's `refetchJob()` keeps current, so
+  // the callback here has nothing extra to do.
+  const { connected: jobSocketConnected } = useRiderJobSocket(
+    order && order.orderType === "merchant" && ACTIVE.includes(order.status) ? orderId : null,
+    () => {},
+  );
+  useEffect(() => {
+    setJobPollFallback(!jobSocketConnected);
+  }, [jobSocketConnected]);
 
   const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Couldn't update this delivery. Check your connection and try again.");
 

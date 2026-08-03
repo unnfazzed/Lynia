@@ -264,16 +264,31 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       `size-budget.json` left untouched this run per the A-O11/A-O12 precedent (ratcheting is the
       weekly steer's job). All 705 mobile tests + full monorepo `pnpm typecheck && pnpm lint && pnpm
       test` green. See `docs/LC-A-REPORT-2026-08-03e.md`.
-- [ ] A-O9 **(re-ranked to #4, was #10 — 2026-08-03 A-T4 evidence)** food journeys run ungated
-      full-order polls — customer `app/food/order/[orderId].tsx:96` (2 polls, live GPS defeats 304)
-      and rider `app/rider/food-job.tsx:60` (3 polls 8s+5s+5s), unlike their socket-gated parcel
-      siblings. A-T4 quantified this: the customer food-tracking phase alone costs ≈167 KB over a
-      22-min window (vs ≈13.2 KB for the parcel WS equivalent, ~13×) and the rider food-job leg costs
-      ≈271 KB over 20 min — by a wide margin the single largest [data] lever on this checklist,
-      promoted above A-O1/4/5/10. No socket exists for food orders at all (confirmed via
-      `food/order/[orderId].tsx:93-94`'s own comment and `food-job.tsx:51-52`'s), so this needs a WS
-      channel wired for food orders mirroring the parcel `use-order-socket`/`use-rider-job-socket`
-      pattern, not just a cadence tweak. (M→L, given the socket work)
+- [x] A-O9 **DONE (2026-08-03f)** **(re-ranked to #4, was #10 — 2026-08-03 A-T4 evidence)** food
+      journeys ran ungated full-order polls — customer `app/food/order/[orderId].tsx` (the
+      post-dispatch `trackQ`, live GPS defeats 304) and rider `app/rider/food-job.tsx` (the
+      `activeJob` poll shared with the parcel screen), unlike their socket-gated parcel siblings. The
+      key finding that shrank this from the estimated L effort: the WS room/gateway plumbing was
+      **already fully generic** — `canAccessOrder`/`isAssignedRider`/`assignedRiderId`
+      (`tracking.service.ts`) and `emitOrderStatus`/`subscribeOrder` (`tracking.gateway.ts`) key off
+      the shared `Order` row with no `orderType` filter, and `FoodDispatchService` already calls
+      `gateway.emitOrderStatus(orderId, "assigned"|"requested")` into that exact room — so
+      `useOrderSocket`/`useRiderJobSocket` (unmodified) subscribe correctly for a food order today;
+      zero server changes were needed. Wired both hooks in, gated `trackQ`'s 10s poll and the rider's
+      `activeJob` 8s poll on the returned `connected` flag (mirroring the already-audited A-O1
+      pattern: the poll survives only as the reconnect/offline fallback). Deliberately left
+      poll-only: `useFoodOrder` (customer's pre-dispatch/kitchen-phase poll — no WS event exists for
+      those transitions yet) and the rider's `foodQ`/`returnLegQ` (cash-handshake/debt-ledger
+      fields) — both carry money-adjacent state the lane rules bar trading for bytes; see the report
+      for the reasoning and the two follow-on items this left on the table.
+      **Evidence** (field-by-field trace, `Buffer.byteLength(JSON.stringify(...))` on a realistic
+      payload per the real response-builder code, mirroring A-T4's methodology): customer `trackQ`
+      over a 22-min tracking window drops from ~132×1,079 B ≈ 139.1 KB to ~13.8 KB while the socket
+      stays connected (−125.3 KB, −90%); rider `activeJob` over a 20-min job leg drops from
+      ~150×1,138 B ≈ 166.7 KB to ~12.6 KB (−154.1 KB, −92%). `useFoodOrder`/`foodQ`'s unchanged
+      polls are unaffected. All 4 new wiring-regression tests pass (2 files); full monorepo
+      `pnpm typecheck && pnpm lint && pnpm test` green (721 mobile / 1516 API tests, unchanged
+      elsewhere). See `docs/LC-A-REPORT-2026-08-03f.md`.
 - [ ] A-O6 **(re-ranked to #5, was #9 — 2026-08-03 A-T4 evidence)** RUM/telemetry upload batching +
       cadence review on metered data — **Day-0 candidate:** `apps/mobile/src/telemetry/rum.ts:87`
       ships a POST every 10s whenever the buffer is non-empty (not sampled). A-T4 measured real
@@ -349,6 +364,17 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       prompting the format/necessity check (DoorDash lesson 1). (S)
 - [ ] A-O8 `expo-image` migration (disk/mem cache, downsampling) — KNOWN backlog; **needs native
       build train**. (L)
+- [ ] A-O18 **(new, ranked #13 — A-O9 follow-on, 2026-08-03f)** the two food polls A-O9 deliberately
+      left alone: customer `useFoodOrder` (`use-food-order.ts`, 4s/15s poll for the pre-dispatch/
+      kitchen-confirm phase) and rider `foodQ`/`returnLegQ` (`food-job.tsx`, kitchen/cash-handshake
+      fields, 5s). Unlike A-O9's target, these carry data no WS event currently exists for —
+      `food-order.service.ts` never calls `gateway.emitOrderStatus`/any gateway method for its own
+      kitchen-phase transitions (accept, markReady, item-approval, payment-confirm), only
+      `FoodDispatchService` does (dispatch-phase only). Closing this needs NEW server-side emits from
+      `food-order.service.ts`'s own transitions — a bigger, `apps/api/src/orders/`-adjacent-but-not
+      change than A-O9's pure client-side reuse — and, for the cash-handshake/debt-ledger fields
+      specifically, care that a missed push can't silently understate what's owed (money-adjacent;
+      sensitive-lane doctrine questions apply once a server diff is on the table). (M/L)
 
 ### Lane B — Go-class runtime perf (Opus 5, `0 4 * * *`)
 
