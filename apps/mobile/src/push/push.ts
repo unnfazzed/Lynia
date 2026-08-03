@@ -230,6 +230,29 @@ export function pushOnce(router: { push: (href: string) => void }, currentPathna
   if (currentPathname !== target) router.push(target);
 }
 
+// Memoized so every caller (currently just app/index.tsx's boot gate) awaits the SAME resolution
+// instead of each independently calling the native API — `getLastNotificationResponseAsync()` returns
+// the same cached value on every call until explicitly cleared, so a second independent call racing the
+// first's `clearLastNotificationResponseAsync()` could read a value that's about to vanish, or (with two
+// callers each clearing) silently drop a second consumer's read entirely.
+let coldStartResponsePromise: Promise<Notifications.NotificationResponse | null> | null = null;
+
+/**
+ * The notification response (if any) whose tap launched this app process, consumed and cleared exactly
+ * once for the process's lifetime no matter how many times this is called. `getLastNotificationResponseAsync`
+ * isn't consumed on read — without the explicit clear it replays the same response forever, including
+ * into a later signed-out→different-account switch on a shared device.
+ */
+export function consumeColdStartResponse(): Promise<Notifications.NotificationResponse | null> {
+  if (!coldStartResponsePromise) {
+    coldStartResponsePromise = Notifications.getLastNotificationResponseAsync().then((response) => {
+      void Notifications.clearLastNotificationResponseAsync();
+      return response;
+    });
+  }
+  return coldStartResponsePromise;
+}
+
 /** Best-effort: drop this device's token server-side on sign-out. */
 export async function unregisterForPushNotificationsAsync(token: string): Promise<void> {
   try {

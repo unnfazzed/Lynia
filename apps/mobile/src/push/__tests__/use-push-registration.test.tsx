@@ -1,11 +1,3 @@
-/**
- * JOURNEY-BUGS: getLastNotificationResponseAsync() returns the SAME cached response on every call
- * until explicitly cleared. This hook is mounted once for the app's whole lifetime (root layout) and
- * re-runs its cold-start effect on every `isRider` change — session hydrating, or a sign-out →
- * different-account sign-in on the same device — so without a clear it replayed the same stale
- * cold-start deep link on every one of those transitions, including into a freshly signed-in
- * DIFFERENT account's session.
- */
 import React from "react";
 import { act, create } from "react-test-renderer";
 import { usePushRegistration } from "../use-push-registration";
@@ -17,18 +9,21 @@ jest.mock("expo-router", () => ({
   usePathname: () => mockPathname,
 }));
 
-const mockGetLastResponse = jest.fn();
-const mockClearLastResponse = jest.fn(async () => {});
-const mockAddListener = jest.fn(() => ({ remove: jest.fn() }));
+// Capture the warm-tap response listener so tests can fire a notification response at it directly.
+type ResponseListener = (r: { notification: { request: { content: { data: unknown } } } }) => void;
+let responseListener: ResponseListener | null = null;
+const mockResponseListenerRemove = jest.fn();
+const mockAddListener = jest.fn((fn: ResponseListener) => {
+  responseListener = fn;
+  return { remove: mockResponseListenerRemove };
+});
 
 // Capture the OS/FCM token-rotation listener so tests can fire a rotated token at it.
 type TokenListener = (t: { data: unknown }) => void;
 let tokenRotationListener: TokenListener | null = null;
 const mockPushTokenRemove = jest.fn();
 jest.mock("expo-notifications", () => ({
-  getLastNotificationResponseAsync: () => mockGetLastResponse(),
-  clearLastNotificationResponseAsync: () => mockClearLastResponse(),
-  addNotificationResponseReceivedListener: () => mockAddListener(),
+  addNotificationResponseReceivedListener: (fn: ResponseListener) => mockAddListener(fn),
   addPushTokenListener: (fn: TokenListener) => {
     tokenRotationListener = fn;
     return { remove: mockPushTokenRemove };
@@ -85,71 +80,39 @@ async function flush(): Promise<void> {
   });
 }
 
-describe("usePushRegistration cold-start consume-once", () => {
+describe("usePushRegistration warm-tap listener", () => {
   beforeEach(() => {
     mockPush.mockClear();
-    mockClearLastResponse.mockClear();
-    mockGetLastResponse.mockClear();
+    mockResponseListenerRemove.mockClear();
+    responseListener = null;
     mockPathname = "/home";
-    mockGetLastResponse.mockResolvedValue({ notification: { request: { content: { data: { orderId: "o1" } } } } });
   });
 
-  it("routes from the cold-start response once, and clears it so it can't replay", async () => {
+  it("routes a warm tap (app already running) to the pushDestination target", async () => {
     let tree!: ReturnType<typeof create>;
     act(() => {
       tree = create(<Harness role="customer" />);
+    });
+    await flush();
+    expect(responseListener).not.toBeNull();
+
+    act(() => {
+      responseListener?.({ notification: { request: { content: { data: { orderId: "o1" } } } } });
     });
     await flush();
 
     expect(mockPush).toHaveBeenCalledTimes(1);
     expect(mockPush).toHaveBeenCalledWith("/order/o1");
-    expect(mockClearLastResponse).toHaveBeenCalledTimes(1);
-    tree.unmount();
+    act(() => {
+      tree.unmount();
+    });
+    // Teardown removes the listener so a later-firing native callback can't touch an unmounted tree.
+    expect(mockResponseListenerRemove).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT replay the stale cold-start response when isRider flips (session hydrating)", async () => {
-    let tree!: ReturnType<typeof create>;
-    act(() => {
-      tree = create(<Harness role="customer" />);
-    });
-    await flush();
-    expect(mockPush).toHaveBeenCalledTimes(1);
-
-    // Simulate the session hydrating into a rider role — the effect's `isRider` dependency changes,
-    // re-running the cold-start branch. Before the fix this replayed the same cached response.
-    act(() => {
-      tree.update(<Harness role="rider" />);
-    });
-    await flush();
-
-    expect(mockPush).toHaveBeenCalledTimes(1); // still just the one, real navigation
-    expect(mockGetLastResponse).toHaveBeenCalledTimes(1); // never read a second time
-    tree.unmount();
-  });
-
-  it("does NOT replay across a sign-out → different-account sign-in on the same device", async () => {
-    let tree!: ReturnType<typeof create>;
-    act(() => {
-      tree = create(<Harness role="customer" />);
-    });
-    await flush();
-    expect(mockPush).toHaveBeenCalledTimes(1);
-    mockPush.mockClear();
-
-    // A different account signs in with a different role — same mounted hook, `isRider` flips again.
-    // The new account must never be silently deep-linked into the OLD session's order.
-    act(() => {
-      tree.update(<Harness role="rider" />);
-    });
-    await flush();
-
-    expect(mockPush).not.toHaveBeenCalled();
-    tree.unmount();
-  });
-
-  it("does NOT push when the cold-start destination is already the active route", async () => {
-    // Regression guard: a duplicate/replayed push tap (or the cold-start deep link) while already
-    // sitting on its own destination screen previously stacked a redundant back-stack entry.
+  it("does NOT push when the tap's destination is already the active route", async () => {
+    // Regression guard: a duplicate/replayed push tap while already sitting on its own destination
+    // screen previously stacked a redundant back-stack entry.
     mockPathname = "/order/o1";
     let tree!: ReturnType<typeof create>;
     act(() => {
@@ -157,7 +120,36 @@ describe("usePushRegistration cold-start consume-once", () => {
     });
     await flush();
 
+    act(() => {
+      responseListener?.({ notification: { request: { content: { data: { orderId: "o1" } } } } });
+    });
+    await flush();
+
     expect(mockPush).not.toHaveBeenCalled();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("re-subscribes on an isRider change without duplicating navigation", async () => {
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="customer" />);
+    });
+    await flush();
+
+    act(() => {
+      tree.update(<Harness role="rider" />);
+    });
+    await flush();
+    expect(mockResponseListenerRemove).toHaveBeenCalledTimes(1); // old listener torn down
+    expect(responseListener).not.toBeNull(); // a fresh one is armed
+
+    act(() => {
+      responseListener?.({ notification: { request: { content: { data: { orderId: "o1" } } } } });
+    });
+    await flush();
+    expect(mockPush).toHaveBeenCalledTimes(1);
     tree.unmount();
   });
 });
@@ -175,8 +167,6 @@ describe("usePushRegistration resilience", () => {
     appStateListener = null;
     reachListener = null;
     mockPathname = "/home";
-    mockGetLastResponse.mockReset();
-    mockGetLastResponse.mockResolvedValue(null);
   });
 
   it("retries registration when the API becomes reachable again after a transient failure", async () => {

@@ -812,8 +812,25 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       flaky link). Zero optimizations appended — every gap found was a genuine wrong-behavior
       defect, not a friction/polish item (D-O1's reusable low-connectivity state components remain
       the standardization follow-up, as already scoped). See docs/LC-D-REPORT-2026-08-03c.md.
-- [ ] D-T3 Notification/deep-link coherence under low connectivity (push arrives late/duplicated/
-      out of order — where does it strand the user?).
+- [x] D-T3 **SWEPT (LC loop D, 2026-08-03)** — notification/deep-link coherence under low
+      connectivity: two Explore agents mapped push-notification handling and deep-link routing in
+      parallel (no `Linking` config exists — the only deep-link entry point is a push-notification
+      tap, `apps/mobile/src/push/`). Both independently converged on the same finding: a cold-start
+      tap (app fully killed, launched by the tap) was routed by `usePushRegistration`'s own
+      `getLastNotificationResponseAsync()` read, racing `app/index.tsx`'s own cold-boot `<Redirect>`
+      with no coordination — whichever resolved second silently won, so a boot redirect resolving
+      after the tap's navigation could clobber it and strand the user back on the default board/home
+      screen. Confirmed real by tracing `AuthProvider`'s async `loadSession()` against the effect
+      dependency graph — no queueing/ordering mechanism reconciled the two. 1 CONFIRMED HIGH defect
+      (LC-D18), fixed same-run with a regression test: the cold-start read moved into `index.tsx`'s
+      own boot sequence and folded into ONE decision (`bootRedirectTarget`) so the deep link can only
+      ever be considered together with, never raced against, the default destination — closing the
+      race by construction. Duplicate-tap idempotency (`pushOnce`'s same-route guard), notification
+      de-duplication (no collapse-key — noted as an optimization candidate, not a defect: no current
+      server call site produces duplicate sends), and stale-target handling (a tapped order that's
+      since completed/cancelled/reassigned — already handled generically via the 404/403/transient
+      error-kind branching on the order screen) were all found already sound. See
+      docs/LC-D-REPORT-2026-08-03d.md.
 - [ ] D-T4 Infra soundness I (READ-ONLY → report + ledger): failure domains + scaling — the
       Redis-down/degraded behavior seam, DB connection math, health checks, alert coverage.
 - [ ] D-T5 Infra soundness II (READ-ONLY → report + ledger): backup/PITR/restore-drill parity,
@@ -824,6 +841,12 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       components where D-T1/T2 find gaps. (M)
 - [ ] D-O2 OTP delivery + verify success telemetry by carrier (Econet/NetOne/Telecel) so
       deliverability regressions are visible (DoorDash lesson 11). (M)
+- [ ] D-O3 **(new, D-T3 finding)** Server-side push sends carry no collapse-key/tag
+      (`notifications.service.ts`'s `send()`, FCM `sendEach`), so a retried/duplicated
+      `notifyOrderStatus` call (there's no idempotency key on the caller side) stacks a second tray
+      entry instead of replacing the first. Not exploitable today (every current call site sends
+      each status transition at most once), but worth closing before a future retry-on-failure path
+      is added to any `notify*` caller. (S)
 
 ## §6 The loops
 
