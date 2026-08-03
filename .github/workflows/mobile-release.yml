@@ -16,6 +16,16 @@ name: Mobile Release (Play)
 # versionCode is EAS-managed (autoIncrement + appVersionSource=remote in eas.json) — monotonic,
 # no human bookkeeping. `version` (versionName) in app.config.ts is bumped per release; tag the
 # release commit v<version> to trigger this workflow.
+#
+# TAG TRIGGER IS SEPARATELY GATED (EAS_TAG_RELEASES_ENABLED, added 2026-08-03). A tag push runs
+# with NO inputs, so it defaults to profile `production` + auto-submit — and release-please mints
+# a `v*` tag roughly daily. Today those bot tags don't fire workflows (GITHUB_TOKEN events never
+# trigger other workflows), but that protection is accidental: hand-pushed tags DO fire, and the
+# standard fix for release-please's CI-trigger gap (a PAT) would make every release tag burn an
+# EAS build on a production submit. Until the production release train is deliberately armed
+# (docs/PLAY-STORE-SUBMISSION.md §8 step 3), tag pushes skip unless
+# EAS_TAG_RELEASES_ENABLED == 'true'. Manual dispatch is unaffected — it only needs
+# EAS_RELEASE_ENABLED.
 
 on:
   push:
@@ -44,7 +54,7 @@ jobs:
   build:
     name: eas build (+ staged submit)
     runs-on: ubuntu-latest
-    if: ${{ vars.EAS_RELEASE_ENABLED == 'true' }}
+    if: ${{ vars.EAS_RELEASE_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || vars.EAS_TAG_RELEASES_ENABLED == 'true') }}
     environment: production-mobile
     env:
       # app.config.ts reads this to attach updates.url + extra.eas.projectId (attached only when
