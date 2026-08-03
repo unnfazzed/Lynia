@@ -5,7 +5,7 @@ import type { MerchantEndOfDaySummaryResponse, MerchantWeeklyStatementResponse }
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { cardStyle, ghostButtonStyle } from "../../components/queue/styles";
-import { ApiError, isSessionExpiredError } from "../../lib/api-client";
+import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money-input";
 import { getTodaySummary, getWeeklyStatement } from "../../lib/orders-api";
 
@@ -41,10 +41,7 @@ export default function StatementPage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if (isSessionExpiredError(err)) {
-          signOut();
-          return;
-        }
+        if (redirectIfSessionExpired(err, signOut)) return;
         setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your statement." });
       });
     return () => {
