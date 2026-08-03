@@ -10,7 +10,7 @@
  * The end-to-end render behaviour is covered in src/ui/order/__tests__/live-tracking-isolation.test.tsx.
  */
 import type { OrderSnapshot } from "../../api/orders";
-import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, selectRiderTelemetry, shouldCancelBeforeRebroadcast } from "../order-tracking";
+import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, selectRiderTelemetry, shouldCancelBeforeRebroadcast } from "../order-tracking";
 
 const base: OrderSnapshot = {
   id: "order-1",
@@ -297,5 +297,35 @@ describe("shouldCancelBeforeRebroadcast", () => {
     expect(shouldCancelBeforeRebroadcast("expired")).toBe(false);
     expect(shouldCancelBeforeRebroadcast("cancelled")).toBe(false);
     expect(shouldCancelBeforeRebroadcast("undelivered")).toBe(false);
+  });
+});
+
+// LC-C08: a selectOffer 409 can mean either a genuine race-loss (a different rider's offer won first)
+// or a lost-response retry landing after the customer's OWN pick already committed server-side — the
+// two are indistinguishable from the bare error, so a fresh getOrder() after the 409 has to settle it.
+describe("selectOfferReconciled", () => {
+  it("reconciles true when the fresh order is assigned to the SAME rider whose offer was tapped", () => {
+    expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: "r1", selectedRiderId: "r1" })).toBe(true);
+  });
+
+  it("reconciles true even past `assigned` — a slow reconnect's getOrder can land after the trip has moved on", () => {
+    expect(selectOfferReconciled({ freshStatus: "en_route_pickup", freshRiderId: "r1", selectedRiderId: "r1" })).toBe(true);
+  });
+
+  it("stays unreconciled when a DIFFERENT rider ended up assigned — the genuine race-loss case", () => {
+    expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: "r2", selectedRiderId: "r1" })).toBe(false);
+  });
+
+  it("stays unreconciled while the order is still open_for_offers — no one has been assigned yet", () => {
+    expect(selectOfferReconciled({ freshStatus: "open_for_offers", freshRiderId: null, selectedRiderId: "r1" })).toBe(false);
+  });
+
+  it("stays unreconciled when the fresh order has no rider attached at all", () => {
+    expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: undefined, selectedRiderId: "r1" })).toBe(false);
+  });
+
+  it("stays unreconciled when the tapped offer's rider couldn't be resolved locally — nothing to compare against", () => {
+    expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: "r1", selectedRiderId: null })).toBe(false);
+    expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: "r1", selectedRiderId: undefined })).toBe(false);
   });
 });

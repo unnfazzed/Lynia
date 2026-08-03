@@ -9,7 +9,7 @@ import { formatMoney } from "../../src/logic/money";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { SORT_MODES, type SortMode, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { orderOffers } from "../../src/logic/order-offers";
-import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, shouldCancelBeforeRebroadcast } from "../../src/logic/order-tracking";
+import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, shouldCancelBeforeRebroadcast } from "../../src/logic/order-tracking";
 import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { clearDeliveryCode, clearPendingRating, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, loadPendingRating, savePendingRating, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt, type PendingRating } from "../../src/auth/session";
@@ -92,6 +92,18 @@ export default function OrderScreen(): React.ReactElement {
   // the memoized card to re-render and re-run isRiderTrackingStale the moment the "rider went dark"
   // event lands.
   const [staleTick, setStaleTick] = useState(0);
+  // LC-C08b (found while regression-testing C-O6): this used to be declared below, AFTER the
+  // orderQ.isLoading / !orderQ.data early returns — a genuine Rules-of-Hooks violation, not just a
+  // lint nit. The FIRST render of a genuinely cold mount (no pre-seeded orderKey(id) cache entry —
+  // real paths: a Trip History tap, a push-notification deep link, the rider-bail auto-redirect at
+  // :250, the rebroadcastedToId "follow your re-sent request" button at :1029, the Orders tab list)
+  // returns early from the loading-skeleton branch BEFORE this hook was ever reached; the very next
+  // render, once the fetch resolves, proceeds past both guards and calls it — a hook COUNT that
+  // grows between two renders of the SAME component instance, which React treats as a hard error
+  // ("Rendered more hooks than during the previous render"), not a soft warning, crashing the order
+  // screen on that transition. Hoisted here so it's called unconditionally on every render, matching
+  // every other top-level useState in this component.
+  const [rebroadcasting, setRebroadcasting] = useState(false);
 
   // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash), along
   // with its attempt high-water mark so a rotation that happened while the app was killed can be detected.
@@ -362,17 +374,24 @@ export default function OrderScreen(): React.ReactElement {
   // (unit-tested there); the screen just memoizes it over the current offers + sort mode.
   const orderedOffers = useMemo(() => orderOffers(offersQ.data ?? [], sortMode), [offersQ.data, sortMode]);
 
+  const showSelectRaceNotice = (): void => {
+    setSelectNotice("That rider was just taken — choose another.");
+    AccessibilityInfo.announceForAccessibility("That rider was just taken — choose another.");
+  };
   const selectM = useMutation({
     mutationFn: (offerId: string) => selectOffer(orderId, offerId),
     // Partial optimism: flip to `assigned` so the offer list collapses the instant they tap — the
     // delivery code paints in onSuccess (it isn't in the cache). cancelQueries first so the poll
     // can't clobber the optimistic write; rollback + a muted notice if the rider was just taken.
-    onMutate: async () => {
+    onMutate: async (offerId) => {
       setSelectNotice(null);
       await qc.cancelQueries({ queryKey: orderKey(orderId) });
       const prev = qc.getQueryData<OrderSnapshot>(orderKey(orderId));
       qc.setQueryData<OrderSnapshot>(orderKey(orderId), (o) => (o ? { ...o, status: "assigned" } : o));
-      return { prev };
+      // LC-C08: captured here (mutate-time), not re-derived in onError — by the time a 409 comes back
+      // the offers list may already have been invalidated/cleared out from under the tapped offer.
+      const selectedRiderId = offersQ.data?.find((o) => o.id === offerId)?.rider.profileId ?? null;
+      return { prev, selectedRiderId };
     },
     onSuccess: (res) => {
       setDeliveryCode(res.deliveryCode);
@@ -382,12 +401,24 @@ export default function OrderScreen(): React.ReactElement {
     },
     onError: (e, _v, ctx) => {
       if (ctx?.prev !== undefined) qc.setQueryData(orderKey(orderId), ctx.prev);
-      // Only a 409 means the rider was raced away (a muted notice); any other failure is a real
-      // error and flows to the red mutationError slot below instead.
-      if (e instanceof ApiError && e.status === 409) {
-        setSelectNotice("That rider was just taken — choose another.");
-        AccessibilityInfo.announceForAccessibility("That rider was just taken — choose another.");
+      if (!(e instanceof ApiError) || e.status !== 409) return;
+      // LC-C08: a 409 here can mean a genuine race-loss OR a lost-response retry landing after the
+      // customer's OWN pick already committed server-side (onSettled's invalidate below self-heals the
+      // STATE either way, but showing "that rider was just taken" on a pick that actually succeeded is a
+      // misleading flash on a slow reconnect). Reconcile via a direct getOrder, mirroring the rider-side
+      // advanceM/deliverM 409-reconciliation pattern — only surface the notice once the fresh snapshot
+      // confirms this WASN'T our own pick landing.
+      if (ctx?.selectedRiderId == null) {
+        showSelectRaceNotice();
+        return;
       }
+      void getOrder(orderId)
+        .then((fresh) => {
+          if (!selectOfferReconciled({ freshStatus: fresh.status, freshRiderId: fresh.rider?.profileId, selectedRiderId: ctx.selectedRiderId })) {
+            showSelectRaceNotice();
+          }
+        })
+        .catch(showSelectRaceNotice);
     },
     onSettled: () => {
       setSelectingId(null);
@@ -613,7 +644,7 @@ export default function OrderScreen(): React.ReactElement {
   // customer on a BLANK compose form and losing the whole order. Instead carry THIS order's route,
   // landmarks, line-items and price into the compose flow so send.tsx prefills them (params are strings,
   // so items ride as JSON). The customer lands on a filled form and just nudges the price and re-sends.
-  const [rebroadcasting, setRebroadcasting] = useState(false);
+  // (rebroadcasting/setRebroadcasting hoisted above the orderQ.isLoading/!orderQ.data early returns — LC-C08b.)
   const rebroadcast = async (): Promise<void> => {
     // BH-10: two of this callback's call sites ("Raise price & send again", offered while the auction
     // is still `open_for_offers` — the last-20s urgent nudge and the "no riders online" empty state)

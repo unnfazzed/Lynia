@@ -931,14 +931,30 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       marker meant a dead-end "No active job" screen instead of the acknowledgement terminal — plus
       a second case pinning the 401 rollback). `pnpm typecheck && pnpm lint && pnpm test` green.
       See `docs/LC-C-REPORT-2026-08-03f.md`. (S)
-- [ ] C-O6 **(C-T1 finding, LC-C08)** `order/[id].tsx`'s `selectM` (accept-an-offer) mutation's `onError`
-      shows the same muted "that rider was just taken" notice for BOTH a genuine race-loss AND a
-      lost-response case where the customer's OWN pick actually landed — self-heals within one
-      render via `onSettled`'s unconditional invalidate, but a slow reconnect could make the
-      misleading flash user-perceptible. Align with the rider-side `deliverM`/`advanceM` pattern
-      (`apps/mobile/app/rider/job.tsx:283`) that reconciles a 409 by re-fetching and checking
-      whether the requested transition already landed before deciding it's a real conflict.
-      `apps/mobile/app/order/[id].tsx:365`. (S)
+- [x] C-O6 **DONE (2026-08-03g)** **(C-T1 finding, LC-C08)** `order/[id].tsx`'s `selectM`
+      (accept-an-offer) mutation's `onError` showed the same muted "that rider was just taken"
+      notice for BOTH a genuine race-loss AND a lost-response case where the customer's OWN pick
+      actually landed — self-healed within one render via `onSettled`'s unconditional invalidate
+      (never a stuck/incorrect end state), but a slow reconnect could make the misleading flash
+      user-perceptible. Fixed by aligning with the rider-side `deliverM`/`advanceM` pattern
+      (`apps/mobile/app/rider/job.tsx:283`): `onMutate` now captures the tapped offer's rider
+      profileId, and a 409 in `onError` reconciles via a direct `getOrder(orderId)` — the notice
+      only shows once the fresh snapshot confirms the order did NOT land on that rider. New pure
+      `selectOfferReconciled` (`apps/mobile/src/logic/order-tracking.ts`) covers both branches (a
+      different rider assigned; the auction still open) plus the "can't resolve locally" fallback,
+      with 6 unit tests. **Incidental HIGH-severity find while building this ticket's regression
+      test** (ledgered `LC-C08b`): `order/[id].tsx` declared a `useState` hook (`rebroadcasting`)
+      AFTER the screen's `orderQ.isLoading`/`!orderQ.data` early returns — a genuine Rules-of-Hooks
+      violation that crashes the screen on any COLD mount (no pre-seeded `orderKey(id)` cache),
+      reachable via a Trip History tap, a push-notification deep link, the rider-bail
+      auto-redirect, the `rebroadcastedToId` "follow your re-sent request" button, and the Orders
+      tab list. This was Lane C's first-ever full-screen-mount test for this file, which is why it
+      had gone uncaught (the common Home/send.tsx-after-create paths happen to pre-seed the
+      cache). Fixed the same run — hoisted the hook above both early returns. Regression: the new
+      `apps/mobile/app/order/__tests__/select-offer-reconcile.test.tsx` mounts cold exactly like
+      the affected real paths (confirmed it throws the hook-mismatch error against the pre-fix
+      code). `pnpm --filter mobile typecheck && pnpm --filter mobile lint && pnpm --filter mobile
+      test` all green (740 mobile tests). See `docs/LC-C-REPORT-2026-08-03g.md`.
 - [ ] C-O7 **(C-T2 finding, LC-C09)** `PickupChecklist`'s optional proof-of-pickup photo
       capture/upload state (`photoUri`/`photoBusy`/`failedPhoto`) lives only in local component
       state — an app kill between capture and the attach POST completing silently drops the
