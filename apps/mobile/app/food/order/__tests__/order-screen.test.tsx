@@ -364,3 +364,48 @@ describe("food order screen — phase branching", () => {
     expect(has(tree, "Delivered")).toBe(true);
   });
 });
+
+// B-O8: the countdown ticker used to run unconditionally for the order's whole lifetime, re-rendering
+// this screen once/sec even in phases with no countdown ring to redraw — pure JS-thread churn on
+// Go-class hardware. It should now only start while a rendered branch actually reads `now`.
+describe("food order screen — B-O8 countdown ticker gating", () => {
+  it("does not start the 1s countdown interval once the order is delivered (no branch reads `now`)", async () => {
+    const intervalSpy = jest.spyOn(global, "setInterval");
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: null, status: "delivered", riderId: "rider-1" });
+    await render();
+    expect(intervalSpy.mock.calls.some(([, delay]) => delay === 1000)).toBe(false);
+    intervalSpy.mockRestore();
+  });
+
+  it("does not start the 1s countdown interval while ready_for_pickup (dispatch searching, no ring yet)", async () => {
+    const intervalSpy = jest.spyOn(global, "setInterval");
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "ready_for_pickup", readyAt: new Date().toISOString() });
+    await render();
+    expect(intervalSpy.mock.calls.some(([, delay]) => delay === 1000)).toBe(false);
+    intervalSpy.mockRestore();
+  });
+
+  it("does not start the 1s countdown interval on the cancelled terminal", async () => {
+    const intervalSpy = jest.spyOn(global, "setInterval");
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, status: "cancelled", merchantPhase: null, rejectionReason: "out_of_ingredient" });
+    await render();
+    expect(intervalSpy.mock.calls.some(([, delay]) => delay === 1000)).toBe(false);
+    intervalSpy.mockRestore();
+  });
+
+  it("still starts the 1s countdown interval while awaiting_accept (the accept-deadline ring reads `now`)", async () => {
+    const intervalSpy = jest.spyOn(global, "setInterval");
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "awaiting_accept" });
+    await render();
+    expect(intervalSpy.mock.calls.some(([, delay]) => delay === 1000)).toBe(true);
+    intervalSpy.mockRestore();
+  });
+
+  it("still starts the 1s countdown interval once a rider is secured (the live tracker reads `now`)", async () => {
+    const intervalSpy = jest.spyOn(global, "setInterval");
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: null, status: "assigned", riderId: "rider-1" });
+    await render();
+    expect(intervalSpy.mock.calls.some(([, delay]) => delay === 1000)).toBe(true);
+    intervalSpy.mockRestore();
+  });
+});

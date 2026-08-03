@@ -184,10 +184,6 @@ export default function RiderFoodJob(): React.ReactElement {
     },
   });
   const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
 
   // ── Delivery code (6-digit, generic — reused verbatim) ─────────────────────────────────────────
   const [deliveryCode, setDeliveryCode] = useState("");
@@ -298,6 +294,18 @@ export default function RiderFoodJob(): React.ReactElement {
       alive = false;
     };
   }, []);
+
+  // B-O8: `nowMs` only feeds the no-show wait-countdown and the cash-handshake card, both reachable
+  // only from the main active-job render below — the delivered/undelivered/cancelled-handback terminal
+  // screens (and the loading/redirect states above) never read it. Gating the interval on reaching that
+  // branch (rather than ticking for the order's whole lifetime) stops the once/sec re-render once the
+  // job has nothing left for a clock to drive.
+  const needsClock = order != null && !deliveredFood && !undeliveredFoodReason && !(order.status === "cancelled" && !ackedHandbacks.has(order.id));
+  useEffect(() => {
+    if (!needsClock) return;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [needsClock]);
 
   // ── Render ──────────────────────────────────────────────────────────────────────────────────────
 

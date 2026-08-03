@@ -5,7 +5,8 @@ import type { MerchantCashRule, MerchantProfileResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { PhotoPicker } from "../../components/menu/PhotoPicker";
-import { cardStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
+import { RetryableError } from "../../components/RetryableError";
+import { cardStyle, primaryButtonStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { getMerchantProfile, updateCashRule, updateProfile } from "../../lib/menu-api";
 
@@ -115,14 +116,7 @@ export default function ShopPage() {
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your shop profile…</div>}
 
-        {state.status === "error" && (
-          <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 16, padding: 20, maxWidth: 480 }}>
-            <div>{state.message}</div>
-            <button type="button" onClick={refresh} style={{ ...ghostButtonStyle, marginTop: 12 }}>
-              Retry
-            </button>
-          </div>
-        )}
+        {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
 
         {state.status === "ready" && (
           <>

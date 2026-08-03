@@ -7,6 +7,7 @@ import { useKitchenConnection } from "../../components/KitchenConnectionProvider
 import { CategoryEditorSheet, type CategorySave } from "../../components/menu/CategoryEditorSheet";
 import { DishEditorSheet, type DishSave } from "../../components/menu/DishEditorSheet";
 import { OosSheet } from "../../components/menu/OosSheet";
+import { RetryableError } from "../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money-input";
 import { groupDishesByCategory, menuSummary, STARTER_CATEGORY_NAMES } from "../../lib/menu-groups";
@@ -139,14 +140,7 @@ export default function MenuPage() {
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your menu…</div>}
 
-        {state.status === "error" && (
-          <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 16, padding: 20, maxWidth: 480 }}>
-            <div>{state.message}</div>
-            <button type="button" onClick={refresh} style={{ ...ghostButtonStyle, marginTop: 12 }}>
-              Retry
-            </button>
-          </div>
-        )}
+        {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
 
         {state.status === "ready" && listError && (
           <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 12, padding: "12px 16px", fontSize: 13, fontWeight: 700 }}>
