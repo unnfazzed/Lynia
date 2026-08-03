@@ -20,12 +20,16 @@ function req(raw: string, headers: Record<string, string> = {}): RawBodyRequest<
   return { rawBody: Buffer.from(raw, "utf8"), headers } as unknown as RawBodyRequest<Request>;
 }
 function fakeMetrics() {
-  const failed: Array<{ status: string; code: string }> = [];
+  const failed: Array<{ status: string; code: string; carrier: string }> = [];
+  const delivered: Array<{ carrier: string }> = [];
   return {
     metrics: {
-      incBirdOtpDeliveryFailed: (status: string, code: string) => failed.push({ status, code }),
+      incBirdOtpDeliveryFailed: (status: string, code: string, carrier: string) =>
+        failed.push({ status, code, carrier }),
+      incBirdOtpDelivered: (carrier: string) => delivered.push({ carrier }),
     } as unknown as MetricsService,
     failed,
+    delivered,
   };
 }
 const ctl = (env: Partial<Env>, metrics: MetricsService) => new BirdWebhookController(env as Env, metrics);
@@ -33,24 +37,25 @@ const armed = { BIRD_WEBHOOK_SECRET: SECRET, OTP_CHANNEL: "bird" } as Partial<En
 
 const failureBody = JSON.stringify({
   type: "sms.failed",
-  data: { sms_id: "sms_01kyd", error: { code: "E12003" }, to: "+263771234567" },
+  data: { sms_id: "sms_01kyd", error: { code: "E12003" }, mcc_mnc: "64804", to: "+263771234567" },
 });
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("BirdWebhookController.receive", () => {
-  it("counts a signed non-delivery so a dropped OTP is visible", () => {
+  it("counts a signed non-delivery so a dropped OTP is visible, tagged with its (ground-truth) carrier", () => {
     const { metrics, failed } = fakeMetrics();
     const res = ctl(armed, metrics).receive(req(failureBody, signed(failureBody)));
     expect(res).toEqual({ received: true });
-    expect(failed).toEqual([{ status: "failed", code: "E12003" }]);
+    expect(failed).toEqual([{ status: "failed", code: "E12003", carrier: "econet" }]);
   });
 
-  it("does not count a successful delivery", () => {
-    const body = JSON.stringify({ type: "sms.delivered", data: { sms_id: "sms_01kyd" } });
-    const { metrics, failed } = fakeMetrics();
+  it("counts a successful delivery by carrier instead of as a failure", () => {
+    const body = JSON.stringify({ type: "sms.delivered", data: { sms_id: "sms_01kyd", mcc_mnc: "64803" } });
+    const { metrics, failed, delivered } = fakeMetrics();
     ctl(armed, metrics).receive(req(body, signed(body)));
     expect(failed).toEqual([]);
+    expect(delivered).toEqual([{ carrier: "telecel" }]);
   });
 
   it("rejects an unsigned or forged delivery", () => {

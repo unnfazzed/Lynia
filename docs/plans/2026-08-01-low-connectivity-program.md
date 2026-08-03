@@ -1116,8 +1116,22 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       `RetryableError.test.tsx` (both apps), `apps/admin/app/error.test.tsx` (previously
       uncovered); all five merchant pages' existing Retry-button tests pass unchanged, confirming
       the extraction preserved behavior exactly. See docs/LC-D-REPORT-2026-08-03g.md.
-- [ ] D-O2 OTP delivery + verify success telemetry by carrier (Econet/NetOne/Telecel) so
-      deliverability regressions are visible (DoorDash lesson 11). (M)
+- [x] D-O2 **DONE (2026-08-03h)** OTP delivery + verify success telemetry by carrier
+      (Econet/NetOne/Telecel). New `apps/api/src/auth/otp-carrier.ts`: `carrierFromMccMnc`
+      (ground truth, from Bird's delivery-webhook `mcc_mnc`) + `carrierFromPhone` (best-effort
+      MSISDN-prefix guess for send/verify time, ambiguous ported `071`/`073` prefixes collapse to
+      `other` rather than guessing wrong). New closed `OtpCarrier` vocabulary in
+      `metrics.service.ts`. `bird-webhook.ts` gained `extractDeliverySuccess` (the `sms.delivered`
+      event was previously discarded with no positive signal) and `carrier` on
+      `extractDeliveryFailure`; two new instruments — `otp_requested_total` (send-attempt,
+      best-effort carrier) and `bird_otp_delivered_total` (confirmed delivery, ground-truth
+      carrier) — the latter being the missing "delivered" half needed to compute a true
+      `delivered / (delivered + failed)` rate per carrier, previously only an absolute failure
+      count existed. `docs/OBSERVABILITY.md` updated with the new metrics + a documented (not
+      Terraform-wired — read-only infra doctrine) candidate per-carrier alert. New
+      `otp-carrier.spec.ts`; extended `bird-webhook.spec.ts` /
+      `bird-webhook.controller.spec.ts` / `auth.service.spec.ts` / `metrics.service.spec.ts`. See
+      docs/LC-D-REPORT-2026-08-03h.md.
 - [ ] D-O3 **(new, D-T3 finding)** Server-side push sends carry no collapse-key/tag
       (`notifications.service.ts`'s `send()`, FCM `sendEach`), so a retried/duplicated
       `notifyOrderStatus` call (there's no idempotency key on the caller side) stacks a second tray

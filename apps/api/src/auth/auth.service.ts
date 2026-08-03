@@ -18,6 +18,7 @@ import { MetricsService, type OtpVerifyResult } from "../observability/metrics.s
 import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { carrierFromPhone } from "./otp-carrier";
 import { OTP_SENDER, type OtpSender } from "./otp-sender";
 import { OTP_STORE, type OtpStore } from "./otp-store";
 import { TokenService } from "./token.service";
@@ -273,6 +274,9 @@ export class AuthService {
     const code = this.tokens.randomOtp();
     await this.store.put(phone, this.tokens.hash(code), this.env.OTP_TTL_SECONDS);
     await this.sender.send(phone, code);
+    // D-O2: send-attempt count, labeled by a best-effort carrier guess (real delivery outcome by
+    // carrier arrives later via the Bird webhook — see bird-webhook.controller.ts).
+    this.metrics.incOtpRequested(carrierFromPhone(phone));
 
     // Return the code in the response ONLY when it can't be a takeover vector:
     //  - dev/test: any phone on the console channel (local signup convenience), OR
@@ -366,9 +370,10 @@ export class AuthService {
     // string" — otherwise every such caller shares one identity, which would both collide in the
     // per-device signup cap and let them match each other's stored sessions.
     const device = deviceId?.trim() || undefined;
+    const carrier = carrierFromPhone(phone);
     const done = this.metrics.startTimer();
     // Record duration + the mapped result on EVERY exit path, then re-throw so callers see the error.
-    const record = (result: OtpVerifyResult): void => this.metrics.recordOtpVerify(done(), result);
+    const record = (result: OtpVerifyResult): void => this.metrics.recordOtpVerify(done(), result, carrier);
     // Play-review demo account (§7.1): the fixed-code path, checked BEFORE the OTP store (the demo
     // number has no stored code — requestOtp short-circuits it). A match mints a real session; a
     // mismatch falls through to the same "Invalid code" a normal wrong guess gets, so the demo number

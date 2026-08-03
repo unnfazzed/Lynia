@@ -31,8 +31,11 @@ describe("MetricsService — NoopMeter safety (no provider registered)", () => {
       m.recordMatchSelect(150, "taken");
       m.recordBroadcastNearby(90, "redis");
       m.recordBroadcastNearby(90, "pg");
-      m.recordOtpVerify(300, "ok");
-      m.recordOtpVerify(300, "invalid");
+      m.recordOtpVerify(300, "ok", "econet");
+      m.recordOtpVerify(300, "invalid", "other");
+      m.incOtpRequested("netone");
+      m.incBirdOtpDeliveryFailed("failed", "E12003", "telecel");
+      m.incBirdOtpDelivered("econet");
       m.recordHttp("/orders", "POST", "2xx", 42);
       m.incOffersMade("created");
       m.incOffersMade("conflict");
@@ -76,7 +79,7 @@ describe("MetricsService — with a real in-memory MeterProvider", () => {
     m.recordPositionEmit(80);
     m.recordMatchSelect(150, "assigned");
     m.recordBroadcastNearby(90, "redis");
-    m.recordOtpVerify(300, "ok");
+    m.recordOtpVerify(300, "ok", "econet");
     m.recordHttp("/orders", "POST", "2xx", 42);
     m.incOffersMade("created");
 
