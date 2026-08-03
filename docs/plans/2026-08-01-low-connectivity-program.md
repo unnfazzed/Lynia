@@ -211,14 +211,19 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       `packages/shared`'s zod-parse tests (157 tests, contracts.ts schemas) all still pass.
       Measured via `expo export --platform android`: Hermes bundle 6,439,957 → 6,189,900 bytes
       (−250,057 B / −3.9%), headroom 0.2% → 4.1%. See `docs/LC-A-REPORT-2026-08-03c.md`.
-- [ ] A-O11 **(re-ranked to #2, was #11)** **A-T2 finding (LC-A03):** drop `export * from
-      "./fixtures"` from `packages/shared/src/index.ts` — the 299-line test-fixture module has
-      zero production consumers (only its own self-test, which already imports it via a relative
-      path); repoint `fixtures.test.ts`'s import if needed and give the module a separate,
-      non-barrel entry point (or leave it un-exported from the package root) so it never rides
-      into a runtime bundle. Zero behavior change, pure dead-weight removal — promoted alongside
-      A-O12 for the same reason (only bundle-shrinking items on this list, and the razor-thin 0.4%
-      Hermes headroom makes both urgent). (S)
+- [x] A-O11 **DONE (2026-08-03d)** **(re-ranked to #2, was #11)** **A-T2 finding (LC-A03):**
+      dropped `export * from "./fixtures"` from `packages/shared/src/index.ts`. A repo-wide
+      re-check this run found one real barrel consumer the original A-T2 sweep missed —
+      `apps/api/src/offers/offers.service.spec.ts` imported `makeOffer` via `@lynia/shared` (not
+      `apps/mobile`/`apps/admin`/`apps/merchant`, so never a mobile-bundle cost either way, but it
+      would have broken on removal) — so instead of leaving the module fully unexported, gave
+      `fixtures.ts` a proper non-barrel entry point: a new `"./fixtures"` subpath in
+      `packages/shared/package.json`'s `exports` map, and repointed that one import to
+      `@lynia/shared/fixtures`. `fixtures.test.ts` needed no change (already used the relative
+      import). Measured via `expo export --platform android`: Hermes bundle 6,194,115 → 6,189,316
+      bytes (−4,799 B / −0.08%), Android export total 7,238,815 → 7,234,016 bytes (−4,799 B).
+      `packages/shared`'s 157 tests + `offers.service.spec.ts`'s 19 tests pass; full monorepo
+      `pnpm typecheck && pnpm lint && pnpm test` green. See `docs/LC-A-REPORT-2026-08-03d.md`.
 - [ ] A-O13 **(new, ranked #3)** **A-T3 finding (LC-A05):** subset the 3 self-hosted Inter TTFs
       (`src/ui/fonts.ts`) to the glyph ranges the app actually renders instead of shipping each
       weight's full Google-Fonts charset (Latin+Cyrillic+Greek+Vietnamese). A real `pyftsubset`
@@ -469,23 +474,44 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       of that tree rather than a drop-in swap; riskier to do blind in the same pass as two clean
       conversions, on a screen with zero existing test coverage as a safety net. `pnpm typecheck &&
       pnpm lint && pnpm test` all green (688 mobile + 1516 API tests).
-- [ ] B-O1b **(new, split from B-O1)** Rider board's "Open orders" list
-      (`apps/mobile/app/rider/(tabs)/index.tsx`) is still ScrollView + `.map()` over up to 50
-      `JobCard`s (plus the smaller `sentOffers` list just above it) — same render-cost shape B-O1
-      just fixed for history/notifications, but the surrounding screen is one monolithic ScrollView
-      carrying the KYC/location/online-gate ternary tree, which only ends well past the list (past
-      the `selected`-order compose card, the confirmSwitch/"back to customer" row, error/info text).
-      A safe conversion needs: (a) hoist a `showOpenOrdersList` boolean (`online && !meQ.isLoading &&
-      !meQ.isError && !knownUnverified && !locDenied && gate == null`) so the FlatList's `data`/
-      `ListEmptyComponent` can't leak stale `ranked` entries into a gated/offline render — the
-      current nested-ternary structure already prevents this implicitly by never reaching the list
-      JSX in that case, so a naive `data={ranked}` would be a regression, not a refactor; (b) move
-      everything from the top of the screen through the `sentOffers` list into
-      `ListHeaderComponent`; (c) move the `selected` compose card and the confirmSwitch/back-to-
-      customer/error/info footer into `ListFooterComponent` — those are siblings of the list within
-      the same gate branch, not trailing content, so they must move together rather than stay behind
-      in the old ScrollView. Bundle with `B-O12` (cap/resync the `openOrders` WS-merged cache) — same
-      file, same pass. (M)
+- [x] B-O1b / B-O12 **(2026-08-03c, split from B-O1, bundled with B-O12)** Rider board's "Open
+      orders" list (`apps/mobile/app/rider/(tabs)/index.tsx`) was ScrollView + `.map()` over up to
+      50 `JobCard`s (plus the smaller `sentOffers` list above it) — same render-cost shape B-O1 fixed
+      for history/notifications — inside a screen that's one monolithic KYC/location/online-gate
+      ternary tree. Implemented as an early return rather than weaving a ternary through the existing
+      JSX: a new `showOpenOrdersList` boolean (`online && !meQ.isLoading && !meQ.isError &&
+      !knownUnverified && !locDenied && gate == null`) — exactly the condition the old inline
+      `ranked.map()` rendered under — gates a `return` to a FlatList-based render (`ListHeaderComponent`
+      = active-job banner + online toggle + sent-offers, `data`/`renderItem` = the open-orders list,
+      `ListEmptyComponent` = the error/loading/empty three-way, `ListFooterComponent` = the `selected`
+      compose card + the confirm-switch/back-to-customer/error/info block); every other state (loading,
+      getMe error, KYC, no-GPS, gate refusal, offline) falls through unchanged to the ORIGINAL
+      ScrollView return below it, so a gated screen can never see a stale `ranked` leak through a
+      FlatList `data` prop — the original return is untouched code, not a re-derived copy, so there's
+      no risk of the two branches drifting on what a gated state should show. The pieces the two
+      returns share (active-job banner, online-toggle card, sent-offers section, `selected` compose
+      card, the confirm-switch/back-to-customer/error/info footer) are hoisted into local consts used
+      by both, so a future edit to one can't silently miss the other. The confirm-switch/back-to-
+      customer/error/info footer specifically stays UNCONDITIONAL in both branches (rendered inside
+      `ListFooterComponent` in the FlatList branch, and in its original untouched position in the
+      ScrollView branch) rather than moving only into the footer as originally scoped — the original
+      code renders it regardless of KYC/location/gate state (a rider stuck on any gated screen still
+      needs a way back to the customer view), and folding it only into `ListFooterComponent` would
+      have silently dropped that escape hatch from every gated screen. Regression test
+      `app/rider/(tabs)/__tests__/index.test.tsx` (new — this screen had zero prior coverage): the
+      online/verified/no-gate state renders exactly one FlatList carrying the full open-orders
+      dataset; the not-yet-a-rider and KYC-pending gated states render no FlatList and don't leak the
+      mocked open-order fixture into the tree. `B-O12` (nothing bounded the `openOrders` TanStack Query
+      cache across a long connected shift — `boardNewOrder`'s prepend in `use-rider-board.ts` had no
+      cap, and the 15s REST poll that would otherwise reset it to the server's own capped snapshot is
+      disabled the whole time the board socket stays connected) bundled into the same pass per plan:
+      capped the prepend at `OPEN_ORDERS_CACHE_CAP = 50`, mirroring the server's own `take: 50` in
+      `orders.service.ts`'s `listOpen`. Regression test in `use-rider-board.test.tsx` (80 pushes never
+      grow the cache past 50, and confirms the cap keeps the MOST RECENT orders, not an arbitrary
+      truncation). `B-O13` (the `expiredOrderIds`/`takenOrderIds` Sets in the same hook) was left
+      alone — already ranked lowest-priority/optional in this same checklist, unrelated to this pass's
+      scope. `pnpm typecheck && pnpm lint && pnpm test` all green (6/6 packages; 1516 API + 705
+      mobile tests, including the two new regression tests above).
 - [ ] B-O2 Memo boundaries for ComposeMap / JobDetailsCard / board-card (with render-isolation
       tests, the AuctionClock pattern) — KNOWN backlog. (M)
 - [ ] B-O8 **(new, B-T2 finding)** `food/order/[orderId].tsx`'s countdown ticker
@@ -560,17 +586,10 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       The one list in this lane that's actually uncapped, unlike `B-O1`/`B-O1b`'s already-server-
       capped lists — the cursor-pagination half of `B-O1`'s original title turned out to belong here
       instead, once `B-O1`'s own audit found history/board/notifications all already bounded. (M)
-- [ ] B-O12 **(new, B-T3 finding)** Rider board's `openOrders` TanStack Query cache can grow
-      unboundedly across a very long, unbroken online socket session —
-      `apps/mobile/src/realtime/use-rider-board.ts:87-103`'s `boardNewOrder` handler prepends
-      (`[order, ...prev]`, no cap) and relies entirely on paired `bidExpired`/`orderTaken` removal
-      events to shrink it; the 15s REST poll that would otherwise reset it to the server's capped
-      snapshot is disabled the whole time `board.connected` stays true. No reproducible drop path
-      found (Socket.IO delivery over a live connection is reliable in-order) so this is edge-case,
-      not a confirmed defect — but nothing bounds it by design, unlike the capped REST endpoint.
-      Whoever implements `B-O1b`'s `FlatList` conversion for the board should also cap or
-      periodically re-sync this cache rather than trusting the event-pair bookkeeping alone for an
-      all-day shift. (S, bundle with B-O1b)
+- [x] B-O12 **(2026-08-03c — see the B-O1b entry above, fixed in the same pass)** Capped the
+      `boardNewOrder` prepend at `OPEN_ORDERS_CACHE_CAP = 50` (mirrors the server's own `take: 50`)
+      instead of adding a periodic resync — simpler and sufficient to bound the cache regardless of
+      shift length. Regression test in `use-rider-board.test.tsx`.
 - [ ] B-O13 **(new, B-T3 finding)** `expiredOrderIds`/`takenOrderIds` `Set`s in
       `apps/mobile/src/realtime/use-rider-board.ts:35,38` grow for the rider's whole online session
       with no eviction (every `bid:expired`/`order:taken` push adds an id, nothing ever removes
@@ -907,8 +926,24 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       since completed/cancelled/reassigned — already handled generically via the 404/403/transient
       error-kind branching on the order screen) were all found already sound. See
       docs/LC-D-REPORT-2026-08-03d.md.
-- [ ] D-T4 Infra soundness I (READ-ONLY → report + ledger): failure domains + scaling — the
-      Redis-down/degraded behavior seam, DB connection math, health checks, alert coverage.
+- [x] D-T4 **SWEPT (LC loop D, 2026-08-03)** — Infra soundness I (READ-ONLY → report + ledger):
+      three parallel read-only research passes covered the Redis-down/degraded behavior seam, DB
+      connection math, health checks, and alert coverage. Confirmed the prior `LC-C01` Redis-hang
+      CRITICAL and all four `LC-INF1..4` founder-gated Day-0 items are still fixed (not
+      re-reported). **9 new findings ledgered `LC-D19`–`LC-D27`, all OPEN (owner: founder), zero
+      code or `infra/terraform/**` changes** per this territory's explicit read-only doctrine:
+      `LC-D19`/`LC-D20` (Redis: the shared OTP/rate-limiter client fails closed across every
+      `@Throttle` route including `sos-raise` instead of failing open like every other Redis
+      consumer in the codebase; the Socket.IO adapter's `fetchSockets()` timeout behavior is
+      unverified under a real outage), `LC-D21`/`LC-D22` (DB: the `LC-INF3`-fixed 10×10=100
+      connection math has likely-zero headroom against Cloud SQL's own ~100-connection ceiling,
+      unconfirmed live; pool exhaustion surfaces as an opaque 500 with no 503/Retry-After),
+      `LC-D23` (no Terraform-managed Cloud Run liveness/startup probe — deploy is imperative
+      `gcloud`, recovery depends solely on the 60s external uptime check), `LC-D24`–`LC-D27`
+      (alerting: no Cloud SQL system-metric alert, no Redis/Memorystore alert, every
+      SLO/queue alert is default-gated off AND `alert_notification_channels` defaults to `[]` so
+      even the always-on uptime alert pages nobody, and 2 of 3 scheduled jobs have no
+      failure alert). See `docs/LC-D-REPORT-2026-08-03e.md`.
 - [ ] D-T5 Infra soundness II (READ-ONLY → report + ledger): backup/PITR/restore-drill parity,
       CI/deploy gaps beyond KNOWN items, mobile release/OTA pipeline fitness.
 

@@ -8,6 +8,15 @@ import { useAuth } from "../auth/auth-context";
 import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
 import { createSocket } from "./socket";
 
+// B-O12: mirrors the server's own `take: 50` cap on `listOpen`/`GET /orders/open`
+// (orders.service.ts) — the 15s REST poll that would otherwise reset this cache to that capped
+// snapshot is disabled the whole time the board socket stays connected, so `boardNewOrder`'s
+// unbounded prepend was the one write path with nothing bounding it "by design" for a rider who
+// stays online, connected, and un-refetched for a very long shift. Capping the prepend here keeps
+// the client cache bounded the same way the server's own response already is, without needing a
+// periodic resync.
+const OPEN_ORDERS_CACHE_CAP = 50;
+
 /**
  * While the rider is online, hold a board socket so a newly-broadcast order appears the instant it
  * opens (WS push) instead of waiting on the poll. The pushed order is the redacted `BoardNewOrderEvent`
@@ -98,7 +107,7 @@ export function useRiderBoard(
       qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => {
         if (!prev) return [order];
         if (prev.some((o) => o.id === order.id)) return prev; // dedupe: poll may have it already
-        return [order, ...prev];
+        return [order, ...prev].slice(0, OPEN_ORDERS_CACHE_CAP);
       });
     });
 

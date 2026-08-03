@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
-import { type MakeOfferRequest, makeOffer } from "@lynia/shared";
+import type { MakeOfferRequest } from "@lynia/shared";
+import { makeOffer } from "@lynia/shared/fixtures";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { MetricsService } from "../observability/metrics.service";

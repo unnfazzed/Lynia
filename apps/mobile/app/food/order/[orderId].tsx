@@ -1,8 +1,8 @@
-import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Text } from "react-native";
 import { ApiError } from "../../../src/api/client";
 import { cancelUnpaidFoodOrder, confirmFoodCustomerCash, respondToFoodOrderItems, submitFoodPaymentReference } from "../../../src/api/food-orders";
 import { cancelOrder, getOrder, rateOrder, rotateDeliveryCode } from "../../../src/api/orders";
@@ -20,9 +20,8 @@ import {
   savePendingRating,
   type PendingRating,
 } from "../../../src/auth/session";
-import { canCancelFreely, isStillUnpaidReminderDue } from "../../../src/logic/food-checkout";
-import { codeEligible, handshakeState } from "../../../src/logic/food-doorstep";
-import { fmtClock } from "../../../src/logic/format-time";
+import { canCancelFreely } from "../../../src/logic/food-checkout";
+import { codeEligible } from "../../../src/logic/food-doorstep";
 import { formatMoney } from "../../../src/logic/money";
 import { reconcileDeliveryCode, reconcilePendingRating } from "../../../src/logic/order-tracking";
 import { clearFoodOrderSnapshot, saveFoodOrderSnapshot } from "../../../src/net/food-order-store";
@@ -30,36 +29,23 @@ import { useReachability } from "../../../src/net/use-reachability";
 import { orderKey } from "../../../src/query/client";
 import { useFoodOrder } from "../../../src/query/use-food-order";
 import { useRestaurantMenu } from "../../../src/query/use-restaurants";
-import { Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, useToast } from "../../../src/ui";
-import { CashHandshakeCard } from "../../../src/ui/food/CashHandshakeCard";
-import { DeliveryCodeCard } from "../../../src/ui/food/DeliveryCodeCard";
+import { Button, Card, EmptyState, OfflineBanner, Screen, SkeletonList, useToast } from "../../../src/ui";
 import { FoodOrderAwaitingAcceptView } from "../../../src/ui/food/FoodOrderAwaitingAcceptView";
+import { FoodOrderAwaitingPaymentView } from "../../../src/ui/food/FoodOrderAwaitingPaymentView";
 import { FoodOrderCancelledView } from "../../../src/ui/food/FoodOrderCancelledView";
+import { FoodOrderDeliveredView } from "../../../src/ui/food/FoodOrderDeliveredView";
 import { OrderHeader, Row } from "../../../src/ui/food/FoodOrderHelpers";
 import { FoodOrderItemApprovalView } from "../../../src/ui/food/FoodOrderItemApprovalView";
+import { FoodOrderLiveTrackerView } from "../../../src/ui/food/FoodOrderLiveTrackerView";
 import { FoodOrderPreparingView } from "../../../src/ui/food/FoodOrderPreparingView";
 import { FoodOrderReadyForPickupView } from "../../../src/ui/food/FoodOrderReadyForPickupView";
 import { FoodOrderUndeliveredView } from "../../../src/ui/food/FoodOrderUndeliveredView";
-import { ManualPayRail } from "../../../src/ui/food/ManualPayRail";
-import { LiveTrackingCard } from "../../../src/ui/order/LiveTrackingCard";
-import { RatingCard } from "../../../src/ui/order/RatingCard";
-import { GetHelpControl, SosControl } from "../../../src/ui/safety";
 
 // D3 (track): once dispatched a food order rides the SAME assigned→…→en_route_dropoff edges as a
 // parcel (order-lifecycle.service.ts: "the food order rides the same edges as a parcel from here on,
-// orderType: both") — these are the shared, status-keyed sets B4/the parcel tracker already use.
+// orderType: both") — the status-keyed set B4/the parcel tracker already use, gating which branch
+// below renders (the branch body itself, incl. the other status-keyed sets, is FoodOrderLiveTrackerView).
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
-const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
-// Post-pickup cancels get the harsher "it's already on the bike" warning, mirroring app/order/[id].tsx.
-const POST_PICKUP_CANCEL = new Set<string>(["picked_up", "en_route_dropoff"]);
-
-const TRACK_STATUS_LABEL: Record<string, string> = {
-  assigned: "Rider secured",
-  confirmed: "At the restaurant",
-  en_route_pickup: "Picking up",
-  picked_up: "Picked up",
-  en_route_dropoff: "On the way",
-};
 
 export default function FoodOrderScreen(): React.ReactElement {
   const { orderId: param } = useLocalSearchParams<{ orderId: string }>();
@@ -403,103 +389,24 @@ export default function FoodOrderScreen(): React.ReactElement {
     );
   }
 
-  // ── awaiting_payment: R-16/R-17 kitchen-confirms band (call → pay → confirmed), no clocks ───────
+  // ── awaiting_payment: extracted to FoodOrderAwaitingPaymentView (RF-18) ─────────────────────────
   if (order.merchantPhase === "awaiting_payment") {
-    const amount = order.total ?? order.merchantGoodsTotal ?? 0;
-
-    // R5·6: paid, waiting for the restaurant's own confirm.
-    if (order.merchantPaymentReference && !order.merchantPaymentConfirmedAt) {
-      return (
-        <Screen>
-          <OfflineBanner state={reachable ? "online" : "offline"} />
-          <OrderHeader restaurantName={restaurantName} pillLabel="Paid" pillTone="highlight" />
-          <View style={{ alignItems: "center", paddingVertical: tokens.space.lg }}>
-            <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: tokens.color.highlightWash, alignItems: "center", justifyContent: "center", marginBottom: tokens.space.md }}>
-              <Icon name="clock" size={34} color={tokens.color.highlightInk} strokeWidth={1.75} />
-            </View>
-            <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink, textAlign: "center" }}>Payment sent — waiting for the restaurant</Text>
-            <Text style={{ fontSize: 13.5, color: tokens.color.muted, textAlign: "center", marginTop: 6, maxWidth: 280 }}>
-              {restaurantName} is checking their statement. Nothing is cooked until they confirm, and if they can&apos;t find it we refund and cancel.
-            </Text>
-          </View>
-          <Card>
-            <Row label="Amount sent" value={formatMoney(amount)} />
-            <Row label="Your reference" value={order.merchantPaymentReference} />
-          </Card>
-          <ErrorText message={error} />
-          {CancelFooter}
-        </Screen>
-      );
-    }
-
-    // R5·b1: still unpaid after the soft N-22 reminder window — free cancel offered front and center.
-    if (!forcePayScreen && isStillUnpaidReminderDue(order.paymentRequestedAt, now)) {
-      return (
-        <Screen>
-          <OfflineBanner state={reachable ? "online" : "offline"} />
-          <OrderHeader restaurantName={restaurantName} pillLabel="Still waiting" pillTone="neutral" />
-          <EmptyState icon="clock" title={`${restaurantName} is still waiting`} message="Nothing is cooking and nothing was charged — they start the moment your payment arrives.">
-            <Button label={`Pay now · ${formatMoney(amount)}`} onPress={() => setForcePayScreen(true)} />
-            <Button variant="ghost" label="Cancel the order — free" onPress={() => void cancelUnpaid()} disabled={busy} />
-          </EmptyState>
-          <ErrorText message={error} />
-        </Screen>
-      );
-    }
-
-    // R5·1b: the kitchen calls first (logged), before any payment is requested.
-    if (!order.paymentRequestedAt) {
-      return (
-        <Screen>
-          <OfflineBanner state={reachable ? "online" : "offline"} />
-          <OrderHeader restaurantName={restaurantName} pillLabel="Confirming" pillTone="neutral" />
-          <View style={{ alignItems: "center", paddingVertical: tokens.space.lg }}>
-            <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center", marginBottom: tokens.space.md }}>
-              <Icon name="phone" size={34} color={tokens.color.accentText} strokeWidth={1.75} />
-            </View>
-            <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink, textAlign: "center" }}>{restaurantName} is calling you</Text>
-            <Text style={{ fontSize: 13.5, color: tokens.color.muted, textAlign: "center", marginTop: 6, maxWidth: 280 }}>
-              They confirm every order by phone before asking for payment — answer, agree the total, and the request arrives right after.
-            </Text>
-          </View>
-          <ErrorText message={error} />
-          {CancelFooter}
-        </Screen>
-      );
-    }
-
-    // R5·3/R5·4/R5·5: pay the restaurant — manual rail (D-24), plus "I paid another way".
     return (
-      <Screen>
-        <OfflineBanner state={reachable ? "online" : "offline"} />
-        <OrderHeader restaurantName={restaurantName} pillLabel="Payment requested" pillTone="neutral" />
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <Card>
-            <Text style={{ fontSize: 11.5, fontWeight: "700", color: tokens.color.muted, letterSpacing: 0.4 }}>PAY EXACTLY</Text>
-            <Text style={{ fontSize: 30, fontWeight: "700", color: tokens.color.ink, marginTop: 4 }}>{formatMoney(amount)}</Text>
-            <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 6 }}>No deadline — the kitchen starts the moment the money lands.</Text>
-          </Card>
-          {order.merchantPaymentPhone ? (
-            <ManualPayRail
-              rows={[
-                { label: "Merchant number", value: order.merchantPaymentPhone },
-                { label: "Exact amount", value: formatMoney(amount) },
-                { label: "Reference", value: order.id.slice(0, 8).toUpperCase() },
-              ]}
-            />
-          ) : null}
-          <Field
-            label="Your transaction reference"
-            value={referenceInput}
-            onChangeText={setReferenceInput}
-            placeholder="e.g. EC240727.1132.A81043"
-            hint="Copy it from the confirmation SMS — not a screenshot."
-          />
-          <ErrorText message={error} />
-          <Button label="Submit my reference" onPress={() => void submitReference()} disabled={busy || !referenceInput.trim()} loading={busy} />
-          {CancelFooter}
-        </ScrollView>
-      </Screen>
+      <FoodOrderAwaitingPaymentView
+        order={order}
+        restaurantName={restaurantName}
+        reachable={reachable}
+        now={now}
+        error={error}
+        busy={busy}
+        forcePayScreen={forcePayScreen}
+        onForcePay={() => setForcePayScreen(true)}
+        referenceInput={referenceInput}
+        onReferenceChange={setReferenceInput}
+        onSubmitReference={() => void submitReference()}
+        onCancelFree={() => void cancelUnpaid()}
+        cancelFooter={CancelFooter}
+      />
     );
   }
 
@@ -519,115 +426,24 @@ export default function FoodOrderScreen(): React.ReactElement {
   // rider identity fields for a food job (dispatch is fully automatic — there's no client-side "choose an
   // offer" moment to cache one from, unlike a parcel). Flagged in the PR body rather than faked. ───────
   if (order.riderId != null && ACTIVE.includes(order.status)) {
-    // D4/money-safety: once the customer has confirmed handing over cash (R-04), a "cancel" no longer
-    // means anything sane — the money already left their hands and there's no undo path for it. Kept
-    // conservative (hide the action) rather than guessing at a new cancel-after-cash-confirm behaviour.
-    const cancellable = CUSTOMER_CANCELLABLE.has(order.status) && !(order.paymentMethod === "cash" && order.customerCashConfirmedAt != null);
-    const postPickup = POST_PICKUP_CANCEL.has(order.status);
-    const justSecured = order.status === "assigned";
-    const atDoor = order.status === "en_route_dropoff";
-    const cash = handshakeState({
-      paymentMethod: order.paymentMethod,
-      customerCashConfirmedAt: order.customerCashConfirmedAt,
-      riderCashConfirmedAt: order.riderCashConfirmedAt,
-      cashHandshakeFrozenAt: order.cashHandshakeFrozenAt,
-    });
     return (
-      <Screen>
-        <OfflineBanner state={reachable ? "online" : "offline"} />
-        {justSecured ? (
-          <Card style={{ borderColor: tokens.color.accent, marginBottom: tokens.space.sm }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
-              <Icon name="circle-check" size={18} color={tokens.color.accentText} />
-              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>
-                Rider secured — {restaurantName} is cooking your order
-              </Text>
-            </View>
-          </Card>
-        ) : null}
-        <OrderHeader restaurantName={restaurantName} pillLabel={TRACK_STATUS_LABEL[order.status] ?? "On the way"} pillTone="success" />
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {trackQ.data ? (
-            <LiveTrackingCard
-              orderId={orderId}
-              status={order.status}
-              isActive
-              jobType="food"
-              feeLabel="Order total"
-              fare={trackQ.data.agreedFare ?? trackQ.data.proposedFare}
-              pickup={trackQ.data.pickup.point}
-              dropoff={trackQ.data.dropoff.point}
-              events={trackQ.data.events}
-              counterpartyPhone={trackQ.data.counterpartyPhone}
-              riderIdentity={null}
-              connectionState={reachable ? "live" : "reconnecting"}
-            />
-          ) : (
-            <SkeletonCard />
-          )}
-          {/* D4/R-04/R-09: the CASH doorstep handshake + the (masked, CASH; plain, WALLET) delivery
-              code — only relevant once the rider is genuinely at the door. */}
-          {atDoor && order.paymentMethod === "cash" ? (
-            <>
-              <CashHandshakeCard
-                state={cash}
-                amount={order.cashHandshakeAmount ?? order.total ?? order.merchantGoodsTotal ?? 0}
-                confirmedAt={order.customerCashConfirmedAt}
-                nowMs={now}
-                onConfirm={() => void confirmCash()}
-                busy={confirmCashBusy}
-              />
-              {cash === "confirmed" ? (
-                <Card style={{ borderColor: tokens.color.accent, marginBottom: tokens.space.sm }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
-                    <Icon name="circle-check" size={18} color={tokens.color.accentText} />
-                    <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Cash confirmed by both of you</Text>
-                  </View>
-                </Card>
-              ) : null}
-              <DeliveryCodeCard
-                code={deliveryCode}
-                masked
-                unavailableHint={
-                  cash === "frozen" ? "This order is on hold — support is looking into it." : "Appears once you and your rider both confirm the cash."
-                }
-                onReveal={() => void saveCodeRevealedAt(orderId, new Date().toISOString())}
-              />
-            </>
-          ) : atDoor ? (
-            <DeliveryCodeCard code={deliveryCode} masked={false} unavailableHint="Fetching your code…" />
-          ) : null}
-          {/* D-28: Express's safety surface, reused verbatim — same riders, same risk, same controls. */}
-          <GetHelpControl orderId={orderId} />
-          <SosControl orderId={orderId} />
-          <ErrorText message={error} />
-          {cancellable ? (
-            cancelConfirm ? (
-              <Card style={{ borderColor: tokens.color.danger }}>
-                <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>
-                  {postPickup ? "Cancel after pickup?" : "Cancel this order?"}
-                </Text>
-                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
-                  {postPickup
-                    ? `Your rider already has your order from ${restaurantName}. If you cancel now, you'll arrange getting it back directly with them.`
-                    : `Your rider is on the way to ${restaurantName}. Cancelling now lets them go — you can order again any time.`}
-                </Text>
-                <Button
-                  label="Yes, cancel this order"
-                  onPress={() => {
-                    setCancelConfirm(false);
-                    void cancelActive();
-                  }}
-                  loading={busy}
-                />
-                <Button label="Keep my order" variant="ghost" onPress={() => setCancelConfirm(false)} />
-              </Card>
-            ) : (
-              <Button label="Cancel order" variant="ghost" onPress={() => setCancelConfirm(true)} disabled={busy} />
-            )
-          ) : null}
-        </ScrollView>
-      </Screen>
+      <FoodOrderLiveTrackerView
+        orderId={orderId}
+        order={order}
+        restaurantName={restaurantName}
+        reachable={reachable}
+        now={now}
+        error={error}
+        busy={busy}
+        trackData={trackQ.data}
+        deliveryCode={deliveryCode}
+        confirmCashBusy={confirmCashBusy}
+        onConfirmCash={() => void confirmCash()}
+        onRevealCode={() => void saveCodeRevealedAt(orderId, new Date().toISOString())}
+        cancelConfirm={cancelConfirm}
+        onCancelConfirmChange={setCancelConfirm}
+        onCancelActive={() => void cancelActive()}
+      />
     );
   }
 
@@ -653,49 +469,28 @@ export default function FoodOrderScreen(): React.ReactElement {
   // semantics) — re-labelled amount/context only, never forked. `completed` (post-rating) drops the
   // card and just leaves the summary + a way back to browsing. ─────────────────────────────────────
   if (order.status === "delivered" || order.status === "completed") {
-    const deliveredEvent = trackQ.data?.events.find((e) => e.status === "delivered");
-    const deliveredAt = deliveredEvent ? fmtClock(deliveredEvent.createdAt) : null;
-    const amount = order.total ?? order.merchantGoodsTotal ?? 0;
     return (
-      <Screen>
-        <OfflineBanner state={reachable ? "online" : "offline"} />
-        <OrderHeader restaurantName={restaurantName} pillLabel="Delivered" pillTone="success" />
-        <Card>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <View
-              style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}
-            >
-              <Icon name="circle-check" size={22} color={tokens.color.accentText} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>{deliveredAt ? `Delivered at ${deliveredAt}` : "Delivered"}</Text>
-              <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 2 }}>
-                {formatMoney(amount)} {order.paymentMethod === "cash" ? "paid in cash" : "paid"} · {restaurantName}
-              </Text>
-            </View>
-          </View>
-        </Card>
-        {order.status === "delivered" ? (
-          <RatingCard
-            saving={rateBusy}
-            onRate={(n) => void rateFood(n)}
-            onArm={(n) => {
-              // Armed live this session — RatingCard's own timer/unmount flush is the sole committer;
-              // keep the reconcile effect from firing it immediately and skipping the undo window.
-              ratingFromStorage.current = false;
-              setPendingRating({ orderId, score: n });
-              void savePendingRating(orderId, n);
-            }}
-            onUndo={() => {
-              setPendingRating(null);
-              void clearPendingRating();
-            }}
-          />
-        ) : (
-          <Button label="Order from somewhere else" onPress={() => router.replace("/food")} />
-        )}
-        <ErrorText message={error} />
-      </Screen>
+      <FoodOrderDeliveredView
+        order={order}
+        restaurantName={restaurantName}
+        reachable={reachable}
+        error={error}
+        events={trackQ.data?.events}
+        rateBusy={rateBusy}
+        onRate={(n) => void rateFood(n)}
+        onArmRating={(n) => {
+          // Armed live this session — RatingCard's own timer/unmount flush is the sole committer;
+          // keep the reconcile effect from firing it immediately and skipping the undo window.
+          ratingFromStorage.current = false;
+          setPendingRating({ orderId, score: n });
+          void savePendingRating(orderId, n);
+        }}
+        onUndoRating={() => {
+          setPendingRating(null);
+          void clearPendingRating();
+        }}
+        onOrderElsewhere={() => router.replace("/food")}
+      />
     );
   }
 
