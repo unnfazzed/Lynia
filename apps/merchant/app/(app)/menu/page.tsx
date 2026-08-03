@@ -8,7 +8,7 @@ import { CategoryEditorSheet, type CategorySave } from "../../components/menu/Ca
 import { DishEditorSheet, type DishSave } from "../../components/menu/DishEditorSheet";
 import { OosSheet } from "../../components/menu/OosSheet";
 import { RetryableError } from "../../components/RetryableError";
-import { ApiError, isSessionExpiredError } from "../../lib/api-client";
+import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money-input";
 import { groupDishesByCategory, menuSummary, STARTER_CATEGORY_NAMES } from "../../lib/menu-groups";
 import {
@@ -48,10 +48,7 @@ export default function MenuPage() {
     Promise.all([listCategories(), listDishes()])
       .then(([categories, dishes]) => setState({ status: "ready", categories, dishes }))
       .catch((err: unknown) => {
-        if (isSessionExpiredError(err)) {
-          signOut();
-          return;
-        }
+        if (redirectIfSessionExpired(err, signOut)) return;
         setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your menu." });
       });
   }, [signOut]);
@@ -68,10 +65,7 @@ export default function MenuPage() {
       setSheet({ kind: "none" });
       refresh();
     } catch (err) {
-      if (isSessionExpiredError(err)) {
-        signOut();
-        return;
-      }
+      if (redirectIfSessionExpired(err, signOut)) return;
       setSheetError(err instanceof ApiError ? err.message : "Something went wrong — try again.");
     } finally {
       setSubmitting(false);
@@ -95,10 +89,7 @@ export default function MenuPage() {
     } catch (err) {
       // D-D0e: this used to swallow the error entirely — a dropped connection mid-tap left the
       // starter chip tappable again with no indication the create actually failed.
-      if (isSessionExpiredError(err)) {
-        signOut();
-        return;
-      }
+      if (redirectIfSessionExpired(err, signOut)) return;
       setListError(err instanceof ApiError ? err.message : "Couldn't create the category — try again.");
     } finally {
       setSubmitting(false);
@@ -137,10 +128,7 @@ export default function MenuPage() {
     } catch (err) {
       // LC-D04: this used to have no catch at all — a dropped connection mid-tap silently left the
       // dish marked out of stock with no indication the "back in stock" tap failed.
-      if (isSessionExpiredError(err)) {
-        signOut();
-        return;
-      }
+      if (redirectIfSessionExpired(err, signOut)) return;
       setListError(err instanceof ApiError ? err.message : "Couldn't update stock — try again.");
     } finally {
       setSubmitting(false);

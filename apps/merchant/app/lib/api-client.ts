@@ -31,6 +31,14 @@ export function isSessionExpiredError(err: unknown): boolean {
   return err instanceof ApiError && err.status === 401;
 }
 
+/** Signs out and reports `true` on a session-expiry error, so a catch block can early-return with
+ *  `if (redirectIfSessionExpired(err, signOut)) return;` instead of repeating the check + call. */
+export function redirectIfSessionExpired(err: unknown, signOut: () => void): boolean {
+  if (!isSessionExpiredError(err)) return false;
+  signOut();
+  return true;
+}
+
 interface OtpRequestResult {
   sent: true;
   channel: string;

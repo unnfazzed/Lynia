@@ -6,7 +6,7 @@ import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { RetryableError } from "../../components/RetryableError";
 import { cardStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
-import { ApiError, isSessionExpiredError } from "../../lib/api-client";
+import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { DAY_KEYS, DAY_LABELS, isValidWindow, rightNowStatus, type DayKey, type PartialMerchantHours } from "../../lib/hours";
 import { getMerchantProfile, setBusyMode, updateHours } from "../../lib/menu-api";
 import { useNow } from "../../lib/use-now";
@@ -33,10 +33,7 @@ export default function HoursPage() {
         setDraft(profile.hours ?? {});
       })
       .catch((err: unknown) => {
-        if (isSessionExpiredError(err)) {
-          signOut();
-          return;
-        }
+        if (redirectIfSessionExpired(err, signOut)) return;
         setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your hours." });
       });
   }, [signOut]);
@@ -70,10 +67,7 @@ export default function HoursPage() {
       const profile = await updateHours({ hours: draft as MerchantHours });
       setState({ status: "ready", profile });
     } catch (err) {
-      if (isSessionExpiredError(err)) {
-        signOut();
-        return;
-      }
+      if (redirectIfSessionExpired(err, signOut)) return;
       setError(err instanceof ApiError ? err.message : "Couldn't save — try again.");
     } finally {
       setSaving(false);
@@ -91,10 +85,7 @@ export default function HoursPage() {
       // LC-D04: this used to have no catch at all — a dropped connection mid-tap left the button
       // re-enabled with zero indication anything failed, so busy mode silently stayed off during
       // exactly the slammed-kitchen moment it exists for.
-      if (isSessionExpiredError(err)) {
-        signOut();
-        return;
-      }
+      if (redirectIfSessionExpired(err, signOut)) return;
       setBusyError(err instanceof ApiError ? err.message : "Couldn't update busy mode — try again.");
     } finally {
       setBusySaving(false);

@@ -7,7 +7,7 @@ import { useKitchenConnection } from "../../components/KitchenConnectionProvider
 import { PhotoPicker } from "../../components/menu/PhotoPicker";
 import { RetryableError } from "../../components/RetryableError";
 import { cardStyle, primaryButtonStyle } from "../../components/queue/styles";
-import { ApiError, isSessionExpiredError } from "../../lib/api-client";
+import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { getMerchantProfile, updateCashRule, updateProfile } from "../../lib/menu-api";
 
 // D-32's own budget for the shop's cover banner/logo (mirrors MAX_BANNER_PHOTO_BYTES in
@@ -55,10 +55,7 @@ export default function ShopPage() {
         setPriceLevel(profile.priceLevel);
       })
       .catch((err: unknown) => {
-        if (isSessionExpiredError(err)) {
-          signOut();
-          return;
-        }
+        if (redirectIfSessionExpired(err, signOut)) return;
         setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your shop profile." });
       });
   }, [signOut]);
@@ -91,10 +88,7 @@ export default function ShopPage() {
       setLogoKey(undefined);
       setSavedTick((t) => t + 1);
     } catch (err) {
-      if (isSessionExpiredError(err)) {
-        signOut();
-        return;
-      }
+      if (redirectIfSessionExpired(err, signOut)) return;
       setSaveError(err instanceof ApiError ? err.message : "Couldn't save — try again.");
     } finally {
       setSaving(false);
@@ -108,10 +102,7 @@ export default function ShopPage() {
       const profile = await updateCashRule({ cashRule: value });
       setState({ status: "ready", profile });
     } catch (err) {
-      if (isSessionExpiredError(err)) {
-        signOut();
-        return;
-      }
+      if (redirectIfSessionExpired(err, signOut)) return;
       setSaveError(err instanceof ApiError ? err.message : "Couldn't save — try again.");
     } finally {
       setSaving(false);
