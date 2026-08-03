@@ -6,34 +6,15 @@
 #
 # Every entry MUST carry an `ignoreUntil` so the exception expires and CI forces a re-review.
 # Prefer a `pnpm.overrides` bump in package.json; only ignore when upstream has no compatible fix.
-
-[[IgnoredVulns]]
-id = "GHSA-mh99-v99m-4gvg"
-ignoreUntil = 2026-10-31
-reason = """
-brace-expansion: DoS via unbounded expansion length causing an out-of-memory crash (CVSS 7.5).
-
-Not exploitable here, and upstream has no compatible fix:
-
-1. Build-time only. Two legacy copies remain in the tree, both behind dev/build tooling that never
-   ships into the API server or the mobile/admin runtime bundle:
-     - brace-expansion@1.1.16 <- minimatch@3 <- glob@7, @expo/cli, @expo/metro-config,
-       @expo/fingerprint, @react-native/codegen, jest-config/runtime/reporters, rimraf@2/@3
-     - brace-expansion@2.1.2  <- minimatch@9 <- glob@10 <- @expo/cli, @expo/config-plugins,
-       cacache, rimraf@5, sucrase
-   The brace patterns fed to these come from developer-authored glob config, not from user or
-   attacker input, so the OOM path is not reachable by a remote party.
-
-2. No backport exists. 1.1.16 and 2.1.2 are the final releases of their lines; the advisory covers
-   everything from 0 to the single fixed release, 5.0.8.
-
-3. Forcing 5.0.8 would break the build. v1/v2 export the expander as a bare function
-   (`module.exports = expandTop`); v5 exports it as a named property (`exports.expand`). Overriding
-   minimatch@3/@9 onto v5 makes `require('brace-expansion')` return an object, so every consumer
-   above crashes with "expand is not a function".
-
-The still-maintained 5.x line IS patched: package.json pins `brace-expansion@>=5.0.0 <5.0.8` to
->=5.0.8 via pnpm.overrides, so this exception covers only the two legacy lines. Both should
-disappear when the Expo SDK 52 toolchain is upgraded (it owns both minimatch@3 and minimatch@9);
-re-check then, or when this entry expires.
-"""
+#
+# 2026-08-03: the brace-expansion exception that used to live here (GHSA-mh99-v99m-4gvg) is REMOVED,
+# not renewed.
+# Its premise ("no backport exists" for the 1.x/2.x lines) stopped being true: upstream has since
+# published `maintenance-v1`/`maintenance-v2` dist-tags (1.1.18, 2.1.4) as purpose-built backports
+# for exactly these legacy majors, preserving the same CommonJS `module.exports = expandTop` shape
+# the old 1.1.16/2.1.2 copies used (confirmed via `npm view brace-expansion@1.1.18 main` /
+# `@2.1.4 main` — both still `index.js`, unlike v5's `exports` map). A second advisory
+# (GHSA-rgw5-rvv9-x895) additionally flagged the already-overridden 5.0.8 as needing 5.0.9. All
+# three are now real `pnpm.overrides` bumps in `package.json` (`brace-expansion@1.1.16`: `1.1.18`,
+# `brace-expansion@2.1.2`: `2.1.4`, `brace-expansion@>=5.0.0 <5.0.9`: `>=5.0.9`) — no vulnerable
+# version remains in `pnpm-lock.yaml`, so no exception entry is needed for either advisory.
