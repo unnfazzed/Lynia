@@ -17,6 +17,18 @@
 > account (§8 step 2 — a ~14-day clock that must be counted into the mid-August approval tripwire).
 > What remains: verify the EAS pipeline is armed (§7.2, `scripts/eas-arm.sh --verify`), upload the
 > first internal-track build (§8 step 1), run the closed test, then apply for production access.
+>
+> **Verification (2026-08-03, live against the EAS API/CLI):** the Expo side is further along than
+> §7.2 assumed. Already done: project linked (`@lyniago/lynia`, id matches the committed fallback),
+> **Android upload keystore exists** (EAS-managed JKS, created 2026-06-30, default for
+> `zw.co.lynia`), **`GOOGLE_MAPS_API_KEY` set** as an EAS secret in both `preview` and `production`
+> environments, and PostHog analytics vars synced (both environments). Confirmed still missing:
+> the **Play service-account key for submissions** (`googleServiceAccountKeyForSubmissions: null` —
+> blocks auto-submit, the one hard gap), the **`GOOGLE_SERVICES_JSON`** file variable (build
+> succeeds without it but push is inert — set it before the first store build), and the GitHub-side
+> switches (`EXPO_TOKEN` secret, `EAS_RELEASE_ENABLED` — the sole `mobile-release.yml` dispatch,
+> 2026-07-23, skipped, proving the gate was off; GitHub secrets are not readable remotely, so
+> re-verify with `scripts/eas-arm.sh --verify`).
 
 ---
 
@@ -382,7 +394,11 @@ prompts (`scripts/eas-arm.sh --verify` audits what is armed). In Play Console yo
    Signing** enrolment completes automatically when the first AAB is uploaded (it is mandatory for
    new apps).
 2. Create a **Play Developer API service account** (Play Console → API access) and download its JSON
-   key; `eas credentials` uploads it so `mobile-release.yml` can auto-submit.
+   key; `eas credentials` uploads it so `mobile-release.yml` can auto-submit. *(2026-08-03: verified
+   still missing on EAS — `googleServiceAccountKeyForSubmissions` is null. The upload keystore, by
+   contrast, already exists — EAS-managed since 2026-06-30 — so this key is the only credential gap.
+   Upload path without a terminal: expo.dev → project `lynia` → Credentials → `zw.co.lynia` →
+   Google Service Account Keys.)*
 
 ### 7.3 CDPA compliance — four duties the published notice now assumes
 
@@ -455,7 +471,10 @@ Once §7.1 and §7.2 are closed:
 - [x] §7.1 reviewer-access demo account implemented — founder still sets `DEMO_OTP_PHONE`/`DEMO_OTP_CODE`
 - [x] Play Console app created for `zw.co.lynia` (2026-08-03; Play App Signing enrols automatically
       with the first AAB upload)
-- [ ] `scripts/eas-arm.sh --verify` reports everything armed
+- [ ] `scripts/eas-arm.sh --verify` reports everything armed — *partially verified 2026-08-03 via
+      the EAS API: keystore ✅, `GOOGLE_MAPS_API_KEY` ✅ (both envs), PostHog vars ✅; still missing:
+      Play service-account key, `GOOGLE_SERVICES_JSON`, and the GitHub `EXPO_TOKEN`/
+      `EAS_RELEASE_ENABLED` switches*
 - [x] Store listing copy (§2) pasted; 512² icon uploaded (founder, 2026-08-03 — console setup tasks
       complete, dashboard at Internal testing)
 - [x] Feature graphic + six screenshots (phone, 7" and 10" tablet) produced and validated —
