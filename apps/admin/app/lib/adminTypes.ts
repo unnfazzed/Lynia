@@ -413,4 +413,6 @@ export interface WalletView {
   /** Prepaid commission balance (negative ⇒ owed). API-owned string. */
   balance: string;
   ledger: WalletLedgerEntry[];
+  /** LC-D07: last entry id of this page, for `?cursor=` — present only when older entries exist. */
+  nextCursor: string | null;
 }

@@ -623,25 +623,30 @@ describe("AdminRidersService standing-change customer notification", () => {
 });
 
 describe("AdminRidersService.walletView", () => {
+  /** One ledger row builder, newest-first ids (l1 = newest). */
+  function row(id: string, at: string) {
+    return {
+      id,
+      type: "topup" as const,
+      amount: dec("10.00"),
+      balanceAfter: dec("12.50"),
+      note: "launch grace",
+      actor: "admin-1",
+      orderId: null,
+      createdAt: new Date(at),
+    };
+  }
+
   it("returns the prepaid balance + recent ledger, newest-first (DOC-16-03)", async () => {
     const prisma = {
       commissionAccount: { findUnique: async () => ({ balance: dec("12.50") }) },
       commissionLedger: {
-        findMany: async (args: { orderBy: unknown; take: number }) => {
-          expect(args.orderBy).toEqual({ createdAt: "desc" });
-          expect(args.take).toBe(20);
-          return [
-            {
-              id: "l1",
-              type: "topup",
-              amount: dec("10.00"),
-              balanceAfter: dec("12.50"),
-              note: "launch grace",
-              actor: "admin-1",
-              orderId: null,
-              createdAt: new Date("2026-07-18T10:00:00Z"),
-            },
-          ];
+        findMany: async (args: { orderBy: unknown; take: number; cursor?: unknown }) => {
+          expect(args.orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
+          // LC-D07: fetches PAGE_SIZE+1 to detect `hasMore` without a separate count query.
+          expect(args.take).toBe(21);
+          expect(args.cursor).toBeUndefined();
+          return [row("l1", "2026-07-18T10:00:00Z")];
         },
       },
     };
@@ -651,6 +656,7 @@ describe("AdminRidersService.walletView", () => {
     expect(out.ledger).toHaveLength(1);
     expect(out.ledger[0]).toMatchObject({ type: "topup", amount: "10.00", balanceAfter: "12.50", actor: "admin-1" });
     expect(out.ledger[0]!.at).toBe("2026-07-18T10:00:00.000Z");
+    expect(out.nextCursor).toBeNull();
   });
 
   it("degrades to a zero balance + empty ledger when the rider has no wallet row yet", async () => {
@@ -662,5 +668,41 @@ describe("AdminRidersService.walletView", () => {
     const out = await svc.walletView("r1");
     expect(out.balance).toBe("0.00");
     expect(out.ledger).toEqual([]);
+    expect(out.nextCursor).toBeNull();
+  });
+
+  it("LC-D07: a rider with more than 20 entries gets a nextCursor instead of silently truncating", async () => {
+    const rows = Array.from({ length: 21 }, (_, i) =>
+      row(`l${i + 1}`, new Date(new Date("2026-07-18T10:00:00Z").getTime() - i * 86_400_000).toISOString()),
+    );
+    const prisma = {
+      commissionAccount: { findUnique: async () => ({ balance: dec("12.50") }) },
+      commissionLedger: { findMany: async () => rows },
+    };
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
+    const out = await svc.walletView("r1");
+    // Only the first 20 of the 21 fetched rows are returned — the 21st was fetched purely to detect
+    // hasMore and must not leak into the page.
+    expect(out.ledger).toHaveLength(20);
+    expect(out.ledger[19]!.id).toBe("l20");
+    expect(out.nextCursor).toBe("l20");
+  });
+
+  it("LC-D07: a cursor pages past the first 20 entries instead of always returning the newest page", async () => {
+    const prisma = {
+      commissionAccount: { findUnique: async () => ({ balance: dec("12.50") }) },
+      commissionLedger: {
+        findMany: async (args: { cursor?: { id: string }; skip?: number }) => {
+          expect(args.cursor).toEqual({ id: "l20" });
+          expect(args.skip).toBe(1);
+          return [row("l21", "2026-06-28T10:00:00Z")];
+        },
+      },
+    };
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
+    const out = await svc.walletView("r1", "l20");
+    expect(out.ledger).toHaveLength(1);
+    expect(out.ledger[0]!.id).toBe("l21");
+    expect(out.nextCursor).toBeNull();
   });
 });

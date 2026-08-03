@@ -157,11 +157,12 @@ export class AdminController {
     return rider;
   }
 
-  /** Rider prepaid-wallet view (DOC-16-03): balance + recent ledger for the admin wallet UI. Read-only;
-   *  the credit action is `POST riders/:id/wallet-credit`. */
+  /** Rider prepaid-wallet view (DOC-16-03): balance + a page of the ledger for the admin wallet UI.
+   *  Read-only; the credit action is `POST riders/:id/wallet-credit`. `cursor` (LC-D07) is the last
+   *  ledger row id from the previous page — pass it to page further back past the first 20 entries. */
   @Get("riders/:profileId/wallet")
-  riderWallet(@Param("profileId", ParseUUIDPipe) profileId: string) {
-    return this.ridersService.walletView(profileId);
+  riderWallet(@Param("profileId", ParseUUIDPipe) profileId: string, @Query("cursor") cursor?: string) {
+    return this.ridersService.walletView(profileId, cursor);
   }
 
   /** Customers directory (D-2). `?filter=active|flagged|banned`; unknown values fall back to all. */
