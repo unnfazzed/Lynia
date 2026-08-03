@@ -596,19 +596,17 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       countdown component per the `AuctionClock` pattern) in both files. No wrong output today —
       pure sustained 1Hz JS-thread churn on Go-class hardware for most of an order's real duration,
       which is why it's an optimization item, not a same-run defect fix. (S)
-- [ ] B-O9 **(new, B-T2 finding, refines B-O2)** `B-O2`'s planned `React.memo` on `JobCard` alone
-      won't stop the rider board's worst re-render: `apps/mobile/app/rider/(tabs)/index.tsx`'s
-      `ranked` (haversine-distance-sort over the whole open-orders list, line ~491) is computed
-      inline in the render body with no `useMemo` — unlike its sibling `bidIds`, which is memoized —
-      so every keystroke in the compose card's fare/ETA field (plain top-level `useState`) re-runs
-      the O(n log n) sort and re-renders every `JobCard` row, unrelated to what the keystroke
-      actually changed; separately, `onAction={() => chooseOrder(o)}` allocates a fresh closure per
-      row per render, which would defeat a shallow-prop-comparison `React.memo` even after B-O2
-      lands. When implementing B-O2, also wrap `ranked` in `useMemo` (deps: the open-orders list +
-      `bidIds`) and `chooseOrder`/the row's `onAction` in `useCallback`, or `JobCard`'s memo
-      boundary won't actually hold. Weaker sibling noted in `food/search.tsx` (unmemoized filter +
-      fresh per-row closures) — same shape, lower priority since that filter's keystroke-recompute
-      is semantically necessary, not wasted. (S, bundle with B-O2)
+- [x] B-O9 **(duplicate ID — steer dedup, 2026-08-03b)** This entry and the `[x] B-O9` entry above
+      (right after `B-O2`) are the SAME finding: `B-T2`'s original audit text (this entry, appended
+      2026-08-02) and PR #525's fix-summary (the entry above, appended 2026-08-03d) both landed under
+      the id `B-O9` — a numbering collision, not two separate items. PR #525 (2026-08-03) fixed
+      exactly what this entry describes (`ranked` now `useMemo`'d, `chooseOrder`/`onAction` now
+      `useCallback`'d, bundled with `B-O2`'s memo boundaries) and ticked the OTHER `B-O9` entry, but
+      never marked this older duplicate resolved — leaving a stale unchecked item that could have
+      cost a future firing a wasted increment re-implementing already-shipped work. Ticking done here
+      too, pointing at the entry above for the real fix detail. **Doc-hygiene note for future lane
+      firings:** append new checklist findings with a fresh, never-reused id even when they refine an
+      item already in flight (e.g. this should have been `B-O9b` or similar).
 - [ ] B-O11 **(re-ranked to #5, was #11 — 2026-08-03 steer)** KYC/pickup-photo preview `Image`s
       render the ORIGINAL (undownscaled, ~3000-4000px) camera capture instead of the
       already-downscaled upload asset sitting right there — `apps/mobile/app/rider/become.tsx:
