@@ -211,14 +211,19 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       `packages/shared`'s zod-parse tests (157 tests, contracts.ts schemas) all still pass.
       Measured via `expo export --platform android`: Hermes bundle 6,439,957 → 6,189,900 bytes
       (−250,057 B / −3.9%), headroom 0.2% → 4.1%. See `docs/LC-A-REPORT-2026-08-03c.md`.
-- [ ] A-O11 **(re-ranked to #2, was #11)** **A-T2 finding (LC-A03):** drop `export * from
-      "./fixtures"` from `packages/shared/src/index.ts` — the 299-line test-fixture module has
-      zero production consumers (only its own self-test, which already imports it via a relative
-      path); repoint `fixtures.test.ts`'s import if needed and give the module a separate,
-      non-barrel entry point (or leave it un-exported from the package root) so it never rides
-      into a runtime bundle. Zero behavior change, pure dead-weight removal — promoted alongside
-      A-O12 for the same reason (only bundle-shrinking items on this list, and the razor-thin 0.4%
-      Hermes headroom makes both urgent). (S)
+- [x] A-O11 **DONE (2026-08-03d)** **(re-ranked to #2, was #11)** **A-T2 finding (LC-A03):**
+      dropped `export * from "./fixtures"` from `packages/shared/src/index.ts`. A repo-wide
+      re-check this run found one real barrel consumer the original A-T2 sweep missed —
+      `apps/api/src/offers/offers.service.spec.ts` imported `makeOffer` via `@lynia/shared` (not
+      `apps/mobile`/`apps/admin`/`apps/merchant`, so never a mobile-bundle cost either way, but it
+      would have broken on removal) — so instead of leaving the module fully unexported, gave
+      `fixtures.ts` a proper non-barrel entry point: a new `"./fixtures"` subpath in
+      `packages/shared/package.json`'s `exports` map, and repointed that one import to
+      `@lynia/shared/fixtures`. `fixtures.test.ts` needed no change (already used the relative
+      import). Measured via `expo export --platform android`: Hermes bundle 6,194,115 → 6,189,316
+      bytes (−4,799 B / −0.08%), Android export total 7,238,815 → 7,234,016 bytes (−4,799 B).
+      `packages/shared`'s 157 tests + `offers.service.spec.ts`'s 19 tests pass; full monorepo
+      `pnpm typecheck && pnpm lint && pnpm test` green. See `docs/LC-A-REPORT-2026-08-03d.md`.
 - [ ] A-O13 **(new, ranked #3)** **A-T3 finding (LC-A05):** subset the 3 self-hosted Inter TTFs
       (`src/ui/fonts.ts`) to the glyph ranges the app actually renders instead of shipping each
       weight's full Google-Fonts charset (Latin+Cyrillic+Greek+Vietnamese). A real `pyftsubset`
