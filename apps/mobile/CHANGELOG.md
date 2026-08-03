@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.4](https://github.com/unnfazzed/Lynia/compare/v0.17.3...v0.17.4) (2026-08-03)
+
+
+### Performance Improvements
+
+* **mobile:** A-O12 — redirect zod v4 locales barrel out of the Hermes bundle ([b64efa6](https://github.com/unnfazzed/Lynia/commit/b64efa6f980dab1aa7cb131b7dfdc91be13d8464))
+* **mobile:** B-O1 — virtualize history and notifications lists with FlatList ([e1648c3](https://github.com/unnfazzed/Lynia/commit/e1648c372ca008861858f00b29e2ba8ecf3b63bf))
+
 ## [0.17.3](https://github.com/unnfazzed/Lynia/compare/v0.17.2...v0.17.3) (2026-08-03)
 
 
