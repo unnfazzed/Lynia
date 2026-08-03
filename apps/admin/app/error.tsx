@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { IconAlert } from "./components/icons";
+import { RetryableError } from "./components/states";
 
 /**
  * UX21-01: this console had zero `error.tsx`/`global-error.tsx` anywhere — any render/action error not
@@ -20,16 +20,14 @@ export default function AdminError({ error, reset }: { error: Error & { digest?:
 
   return (
     <main className="content">
-      <div className="offline-banner" role="alert">
-        <IconAlert />
-        <span>
-          <b>Something went wrong.</b> {error.message || "This page hit an unexpected error."} Try again, or use the
-          sidebar to go elsewhere.
-        </span>
-      </div>
-      <button type="button" className="btn solid" style={{ marginTop: 12 }} onClick={reset}>
-        Try again
-      </button>
+      <RetryableError
+        message={
+          <>
+            {error.message || "This page hit an unexpected error."} Try again, or use the sidebar to go elsewhere.
+          </>
+        }
+        onRetry={reset}
+      />
     </main>
   );
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { MerchantHours, MerchantProfileResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
+import { RetryableError } from "../../components/RetryableError";
 import { cardStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
 import { ApiError, isSessionExpiredError } from "../../lib/api-client";
 import { DAY_KEYS, DAY_LABELS, isValidWindow, rightNowStatus, type DayKey, type PartialMerchantHours } from "../../lib/hours";
@@ -107,14 +108,7 @@ export default function HoursPage() {
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your hours…</div>}
 
-        {state.status === "error" && (
-          <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 16, padding: 20, maxWidth: 480 }}>
-            <div>{state.message}</div>
-            <button type="button" onClick={refresh} style={{ ...ghostButtonStyle, marginTop: 12 }}>
-              Retry
-            </button>
-          </div>
-        )}
+        {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
 
         {state.status === "ready" && (
           <>

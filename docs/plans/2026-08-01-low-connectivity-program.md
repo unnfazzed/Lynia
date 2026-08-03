@@ -1047,8 +1047,19 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       `docs/LC-D-REPORT-2026-08-03f.md`.
 
 **Optimization checklist (seeded; audit rounds append):**
-- [ ] D-O1 Low-connectivity state pattern for both web apps: standard error/retry/stale
-      components where D-T1/T2 find gaps. (M)
+- [x] D-O1 **DONE (2026-08-03g)** Low-connectivity state pattern for both web apps: standard
+      error/retry/stale components where D-T1/T2 find gaps. Merchant: extracted the 5×-duplicated
+      "failed load + Retry" block (queue/statement/shop/menu/hours) into
+      `apps/merchant/app/components/RetryableError.tsx`, fixing queue's drifted local button style
+      for free. Admin: added `RetryableError`/`SubsectionUnavailable` to `components/states.tsx`
+      — `app/error.tsx` now composes the former instead of hand-rolling it, and the rider-detail
+      wallet-ledger sub-widget (previously unstyled inline text) now uses the latter for its
+      best-effort-fetch-failed case, the one partial-widget-failure state that had no shared
+      component before. No new cross-app package — neither app shared any UI components going in,
+      so each got its own minimal addition rather than new shared-package plumbing. New tests:
+      `RetryableError.test.tsx` (both apps), `apps/admin/app/error.test.tsx` (previously
+      uncovered); all five merchant pages' existing Retry-button tests pass unchanged, confirming
+      the extraction preserved behavior exactly. See docs/LC-D-REPORT-2026-08-03g.md.
 - [ ] D-O2 OTP delivery + verify success telemetry by carrier (Econet/NetOne/Telecel) so
       deliverability regressions are visible (DoorDash lesson 11). (M)
 - [ ] D-O3 **(new, D-T3 finding)** Server-side push sends carry no collapse-key/tag

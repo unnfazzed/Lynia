@@ -8,7 +8,7 @@ import { StatusPill, Pill } from "../../components/StatusPill";
 import { RiderActions } from "./RiderActions";
 import { WalletCreditButton } from "./WalletActions";
 import { ReportsCallout } from "../../components/ReportsCallout";
-import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle, SubsectionUnavailable } from "../../components/states";
 import { IconAlert, IconBike } from "../../components/icons";
 
 /** Format a wallet balance, rendering a negative (owed) balance as "−$X.XX" to match the ledger's
@@ -268,15 +268,16 @@ export default async function RiderProfilePage({
             </b>
           </span>
         </div>
+        {!wallet && <SubsectionUnavailable noun="wallet view" />}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: tokens.space.md, flexWrap: "wrap" }}>
           {/* Only offer a credit once the balance loaded — crediting blind (wallet view failed) would let
               ops act without seeing the current balance. */}
           <WalletCreditButton id={r.id} name={r.name} connected={connected && wallet !== null} />
-          <span style={{ fontSize: 12, color: tokens.color.muted }}>
-            {wallet
-              ? "Manual credits are the launch top-up rail — each is reason-coded and lands on the ledger below."
-              : "Wallet view unavailable — the credit action is disabled until it loads."}
-          </span>
+          {wallet && (
+            <span style={{ fontSize: 12, color: tokens.color.muted }}>
+              Manual credits are the launch top-up rail — each is reason-coded and lands on the ledger below.
+            </span>
+          )}
         </div>
         <DataTable
           columns={ledgerCols}
