@@ -21,7 +21,7 @@
     "db:seed": "pnpm --filter @lynia/api seed"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "dependency-cruiser": "^18.1.0",
     "turbo": "^2.10.7",
     "typescript": "^6.0.3"
