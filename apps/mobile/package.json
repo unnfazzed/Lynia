@@ -41,7 +41,7 @@
     "expo-task-manager": "~12.0.6",
     "expo-updates": "~0.27.5",
     "expo-web-browser": "~14.0.2",
-    "lucide-react-native": "^1.27.0",
+    "lucide-react-native": "^1.28.0",
     "posthog-react-native": "^4.61.1",
     "react": "18.3.1",
     "react-native": "0.76.9",
