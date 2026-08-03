@@ -36,8 +36,13 @@ const easProjectId = process.env.EAS_PROJECT_ID ?? "25b2785d-94e0-4ecc-9940-bd9f
 const config: ExpoConfig = {
   name: "LyniaGo",
   slug: "lynia",
+  // Expo account that owns the EAS project. Required explicitly because CI authenticates with a
+  // ROBOT access token (EXPO_TOKEN, 2026-08-03): a personal token implies its own account, but a
+  // robot belongs to no account, so `eas build` refuses to resolve the project without this field
+  // (first Mobile Release dispatch failed exactly here — run 30852221217).
+  owner: "lyniago",
   scheme: "lynia",
-  version: "0.17.6", // x-release-please-version
+  version: "0.17.7", // x-release-please-version
   // OTA compatibility key (expo-updates): `fingerprint` hashes the native layer (deps + native
   // config), so an OTA bundle can only ever land on a binary it was actually built against —
   // a JS update can't brick an older native install. Native changes shift the fingerprint and
