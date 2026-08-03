@@ -42,8 +42,17 @@ function riderPill(r: RiderDetail) {
   return <Pill kind="mut">offline</Pill>;
 }
 
-export default async function RiderProfilePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function RiderProfilePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const { id } = await params;
+  const sp = await searchParams;
+  const rawWalletCursor = sp.walletCursor;
+  const walletCursor = typeof rawWalletCursor === "string" ? rawWalletCursor : undefined;
   const res = await adminFetchResult<RiderDetail>(`/admin/riders/${id}`);
 
   if (!("data" in res)) {
@@ -72,9 +81,12 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
   const r = res.data;
   // Past the guard `r` is live data → connected; suspend/lift/ban actions are enabled.
   const connected = true;
-  // DOC-16-03: the prepaid-wallet view (balance + ledger). Best-effort — null if the endpoint is absent
-  // (older API) or unreachable, in which case the wallet card degrades to a "not available" note.
-  const wallet = await adminFetch<WalletView>(`/admin/riders/${id}/wallet`);
+  // DOC-16-03: the prepaid-wallet view (balance + a ledger page). Best-effort — null if the endpoint is
+  // absent (older API) or unreachable, in which case the wallet card degrades to a "not available" note.
+  // LC-D07: `walletCursor` pages further back past the first 20 entries via the "Load older" link below.
+  const wallet = await adminFetch<WalletView>(
+    `/admin/riders/${id}/wallet${walletCursor ? `?cursor=${encodeURIComponent(walletCursor)}` : ""}`,
+  );
 
   const ledgerCols: Column<WalletLedgerEntry>[] = [
     { key: "at", header: "When", className: "mut", cell: (l) => new Date(l.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) },
@@ -276,6 +288,25 @@ export default async function RiderProfilePage({ params }: { params: Promise<{ i
             </div>
           }
         />
+        {/* LC-D07: the ledger is paged server-side (20/page) — disclose it and link further back instead
+            of silently truncating. `walletCursor` clears to reset to the newest page. */}
+        {wallet && (wallet.nextCursor || walletCursor) ? (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
+            <span>Showing 20 entries per page.</span>
+            <span style={{ display: "flex", gap: 12 }}>
+              {walletCursor ? (
+                <a href={`/riders/${id}`} style={{ color: tokens.color.accentText }}>
+                  ↺ Back to latest
+                </a>
+              ) : null}
+              {wallet.nextCursor ? (
+                <a href={`/riders/${id}?walletCursor=${encodeURIComponent(wallet.nextCursor)}`} style={{ color: tokens.color.accentText }}>
+                  Load older →
+                </a>
+              ) : null}
+            </span>
+          </div>
+        ) : null}
       </section>
     </main>
   );
