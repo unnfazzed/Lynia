@@ -55,8 +55,14 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # STRICT frozen install (deliberate divergence from the repo's --frozen-lockfile=false
+      # convention): `eas update` computes the expo-updates `fingerprint` runtimeVersion from this
+      # runner's node_modules to decide which installed binaries receive the OTA bundle. A
+      # non-reproducible install can compute a fingerprint no binary has (update silently reaches
+      # nobody) — same failure class as the mobile-release.yml runtime-version mismatch
+      # (build 5906d2f0, 2026-08-03).
       - name: Install
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
 
       # The JS bundle is exported locally, so workspace deps the app imports must be built.
       - name: Build shared package

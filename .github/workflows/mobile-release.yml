@@ -73,8 +73,16 @@ jobs:
       # eas-cli evaluates app.config.ts locally before uploading, so workspace deps must exist.
       # The build itself (install → prebuild → gradle) runs on EAS servers; the
       # eas-build-post-install hook in apps/mobile/package.json builds @lynia/shared there.
+      #
+      # STRICT frozen install — deliberately diverging from the repo's --frozen-lockfile=false
+      # convention. The CLI computes the expo-updates `fingerprint` runtimeVersion from THIS
+      # runner's node_modules, and the EAS builder recomputes it from its own frozen install; any
+      # resolution drift between the two (e.g. a dep patch release between lockfile commit and
+      # dispatch) fails the build with "Runtime version mismatch" in CONFIGURE_EXPO_UPDATES —
+      # exactly how build 5906d2f0 died (2026-08-03, @babel 7.29.7 vs 7.29.8). Frozen on both
+      # sides = identical trees = identical fingerprints.
       - name: Install
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
 
       - name: Set up EAS CLI
         uses: expo/expo-github-action@v9
