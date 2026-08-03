@@ -217,7 +217,10 @@ eas credentials                                     # Android → production: le
 # Build-time secrets live in EAS (not GitHub): GOOGLE_MAPS_API_KEY, GOOGLE_SERVICES_JSON (file).
 
 gh secret set EXPO_TOKEN --body "<token from expo.dev/settings/access-tokens>"
-gh variable set EAS_RELEASE_ENABLED --body "true"   # the arming switch
+gh variable set EAS_RELEASE_ENABLED --body "true"   # the arming switch (manual dispatch)
+# Set ONLY when opening the production release train (PLAY-STORE-SUBMISSION §8 step 3) — gates the
+# v* TAG trigger so release-please's near-daily tags can't burn EAS builds on production submits:
+gh variable set EAS_TAG_RELEASES_ENABLED --body "true"
 ```
 
 First release: **Actions → "Mobile Release (Play)"** with profile `preview` (internal track) →

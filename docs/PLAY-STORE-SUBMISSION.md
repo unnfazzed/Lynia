@@ -477,10 +477,14 @@ Once §7.1 and §7.2 are closed:
    target network. This is also where the sensitive-permission review usually surfaces questions.
    When the window completes, **apply for production access** and answer the questionnaire about
    the test.
-3. **Production, staged.** Tag `v<version>` on `main` → `mobile-release.yml` builds and submits to the
-   production track with `releaseStatus: inProgress` and `rollout: 0.1` (10%). Advance or halt in
-   Play Console → Releases as crash-free rate holds. Sentry must be live before this step so a bad
-   rollout is visible (LR20).
+3. **Production, staged.** First set the repo variable **`EAS_TAG_RELEASES_ENABLED=true`** — the
+   tag trigger is separately gated (2026-08-03) so that release-please's near-daily `v*` tags can
+   never burn EAS build quota on premature production submits; arming it is the deliberate act of
+   opening the release train. Also grant the Play service account the **Release to production**
+   permission (deferred at §7.2 setup). Then: tag `v<version>` on `main` → `mobile-release.yml`
+   builds and submits to the production track with `releaseStatus: inProgress` and `rollout: 0.1`
+   (10%). Advance or halt in Play Console → Releases as crash-free rate holds. Sentry must be live
+   before this step so a bad rollout is visible (LR20).
 4. **JS-only hotfixes** go out via Actions → *Mobile OTA Update* (no review). Anything touching the
    native layer shifts the `fingerprint` runtime version and **must** go through a store release.
 
