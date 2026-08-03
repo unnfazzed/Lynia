@@ -9,6 +9,14 @@
 > of the submission is complete — including the reviewer-access demo account (§7.1), which was the one
 > hard blocker and is now built. What remains is founder-only: set the demo-account secrets, the
 > Play/EAS credentials, the CDPA filings (§7.3), and produce the graphics.
+>
+> **Status (2026-08-03):** the Play Console app exists for `zw.co.lynia` and the console's setup
+> tasks are done — the dashboard now sits at **Internal testing** (founder, via console dashboard).
+> The graphics are produced and validated in `store-assets/google-play/` (supersedes the "missing"
+> rows in §6). The console also confirms a **closed test is mandatory before production** for this
+> account (§8 step 2 — a ~14-day clock that must be counted into the mid-August approval tripwire).
+> What remains: verify the EAS pipeline is armed (§7.2, `scripts/eas-arm.sh --verify`), upload the
+> first internal-track build (§8 step 1), run the closed test, then apply for production access.
 
 ---
 
@@ -25,7 +33,7 @@
 | Tags | Delivery, Courier, Navigation | |
 | Contact email | `support@lyniafinance.com` | Matches `SUPPORT_URL` in `apps/mobile/src/config.ts` |
 | Website | *(none — see §7.3)* | |
-| Version name at first submission | `0.11.0` | `app.config.ts` → `version` (release-please-managed) |
+| Version name at first submission | Whatever `main` holds at build time (`0.17.4` as of 2026-08-03) | `app.config.ts` → `version` (release-please-managed; was `0.11.0` when this doc was first written) |
 | Version code | EAS-managed, auto-incrementing | `eas.json` → `appVersionSource: "remote"` + `autoIncrement` |
 
 ---
@@ -278,14 +286,19 @@ unless Play asks about broad photo/video access — the app uses the picker, not
 
 | Asset | Spec | Status |
 |---|---|---|
-| App icon | 512 × 512 PNG, ≤1 MB | ⚠️ **Derive** from `apps/mobile/assets/icon.png` (1024²) |
-| Feature graphic | 1024 × 500 PNG/JPG, no alpha | ❌ **Missing — must be created** |
-| Phone screenshots | 2–8 images, 16:9 or 9:16, each side 320–3840 px | ❌ **Missing — must be captured** |
-| 7" / 10" tablet screenshots | Optional | Skip — phone-only product |
+| App icon | 512 × 512 PNG, ≤1 MB | ✅ `store-assets/google-play/app-icon/icon-512.png` |
+| Feature graphic | 1024 × 500 PNG/JPG, no alpha | ✅ `store-assets/google-play/feature-graphic/feature-graphic-1024x500.png` |
+| Phone screenshots | 2–8 images, 16:9 or 9:16, each side 320–3840 px | ✅ Six shots in `store-assets/google-play/phone-screenshots/` |
+| 7" / 10" tablet screenshots | Optional | ✅ Produced anyway — `store-assets/google-play/tablet-7in/`, `tablet-10in/` |
 | Promo video | Optional (YouTube URL) | Skip for v1 |
 
-**Screenshot shot list** (capture from a real release build, not the test APK — the TEST BUILD banner
-must not appear). Eight screens, in the order that tells the product story:
+The produced set (2026-08) is **six design-kit renders of the real designed screens** — frameless,
+opaque, dimension-validated (see `store-assets/google-play/README.md` for the validation table and
+the console upload map). No TEST BUILD banner can appear because they are not device captures.
+
+**Original shot list** (kept as the optional post-launch upgrade: re-capture from a real release
+build — the TEST BUILD banner must not appear). Eight screens, in the order that tells the product
+story:
 
 1. Home — set a pickup and drop-off
 2. Price entry — the suggested price with the adjust control visible
@@ -365,7 +378,9 @@ One-time, human-only, already scripted where possible — run `scripts/eas-arm.s
 prompts (`scripts/eas-arm.sh --verify` audits what is armed). In Play Console you must, for
 `zw.co.lynia`:
 
-1. Create the app and enrol it in **Play App Signing**.
+1. ✅ Create the app — **done 2026-08-03** (console dashboard live for `zw.co.lynia`). **Play App
+   Signing** enrolment completes automatically when the first AAB is uploaded (it is mandatory for
+   new apps).
 2. Create a **Play Developer API service account** (Play Console → API access) and download its JSON
    key; `eas credentials` uploads it so `mobile-release.yml` can auto-submit.
 
@@ -413,8 +428,19 @@ Once §7.1 and §7.2 are closed:
 1. **Internal testing track.** Actions → *Mobile Release (Play)* with profile `preview`
    (`eas.json` → `submit.preview.android.track: "internal"`). Verifies the whole pipeline —
    EAS build, Play App Signing, auto-submit — with no public exposure.
-2. **Closed testing.** Promote in Play Console; run `docs/QA-DEVICE-CHECKLIST.md` on real handsets
-   on the target network. This is where the sensitive-permission review usually surfaces questions.
+2. **Closed testing — mandatory, not optional.** The console states it outright: *"you'll still
+   need to run a closed test before publishing to everyone in production"* (dashboard, 2026-08-03,
+   with the "apply for production access" banner). For personal developer accounts Play requires a
+   closed test with a minimum number of opted-in testers running for **14 consecutive days** before
+   production access can even be requested — the exact tester threshold is shown on the console's
+   production-access card (Google has adjusted the figure before; ~20 at the time the policy
+   shipped). Recruit the internal riders/testers early, keep them opted in for the full window, and
+   **count this 14-day clock into the mid-August Play-approval tripwire**
+   (`docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §8). While the clock runs:
+   promote the internal build here and run `docs/QA-DEVICE-CHECKLIST.md` on real handsets on the
+   target network. This is also where the sensitive-permission review usually surfaces questions.
+   When the window completes, **apply for production access** and answer the questionnaire about
+   the test.
 3. **Production, staged.** Tag `v<version>` on `main` → `mobile-release.yml` builds and submits to the
    production track with `releaseStatus: inProgress` and `rollout: 0.1` (10%). Advance or halt in
    Play Console → Releases as crash-free rate holds. Sentry must be live before this step so a bad
@@ -427,15 +453,20 @@ Once §7.1 and §7.2 are closed:
 ## 9. Pre-submission checklist
 
 - [x] §7.1 reviewer-access demo account implemented — founder still sets `DEMO_OTP_PHONE`/`DEMO_OTP_CODE`
-- [ ] Play Console app created for `zw.co.lynia`, enrolled in Play App Signing
+- [x] Play Console app created for `zw.co.lynia` (2026-08-03; Play App Signing enrols automatically
+      with the first AAB upload)
 - [ ] `scripts/eas-arm.sh --verify` reports everything armed
-- [ ] Store listing copy (§2) pasted; 512² icon derived
-- [ ] Feature graphic created; 8 screenshots captured from a release build
-- [ ] Data safety form (§3) submitted and matching `legal.content.ts`
-- [ ] Content rating questionnaire (§4.5) completed
+- [x] Store listing copy (§2) pasted; 512² icon uploaded (founder, 2026-08-03 — console setup tasks
+      complete, dashboard at Internal testing)
+- [x] Feature graphic + six screenshots (phone, 7" and 10" tablet) produced and validated —
+      `store-assets/google-play/` (§6; device-captured shots remain an optional upgrade)
+- [x] Data safety form (§3) submitted and matching `legal.content.ts` (founder, 2026-08-03)
+- [x] Content rating questionnaire (§4.5) completed (founder, 2026-08-03)
 - [ ] Foreground-service-location declaration (§5.1) submitted with demo video
 - [ ] Privacy policy + deletion URLs resolving in an incognito window from outside Zimbabwe
 - [ ] CDPA duties closed (§7.3): POTRAZ controller registration, DPO appointed, cross-border transfer
       notified, IR runbook carries the 24-hour POTRAZ clock, corporate identity on the pages ratified
 - [ ] Sentry receiving crashes from a release build (LR20 exit test)
 - [ ] Internal track build installed and smoke-tested on a real device
+- [ ] Closed test run per Play's requirement (§8 step 2: opted-in testers, 14 consecutive days) and
+      **production access granted** — before any production rollout
