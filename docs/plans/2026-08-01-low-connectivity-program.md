@@ -944,8 +944,38 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       SLO/queue alert is default-gated off AND `alert_notification_channels` defaults to `[]` so
       even the always-on uptime alert pages nobody, and 2 of 3 scheduled jobs have no
       failure alert). See `docs/LC-D-REPORT-2026-08-03e.md`.
-- [ ] D-T5 Infra soundness II (READ-ONLY → report + ledger): backup/PITR/restore-drill parity,
-      CI/deploy gaps beyond KNOWN items, mobile release/OTA pipeline fitness.
+- [x] D-T5 **SWEPT (LC loop D, 2026-08-03f)** — Infra soundness II (READ-ONLY → report + ledger):
+      three parallel read-only research passes covered backup/PITR/restore-drill parity, CI/deploy
+      gaps beyond KNOWN items, and mobile release/OTA pipeline fitness. **11 new findings ledgered
+      `LC-D28`–`LC-D38`, all OPEN (owner: founder), zero code or `infra/terraform/**` changes** per
+      this territory's read-only doctrine: `LC-D28`–`LC-D32` (backup/DR: the repo already has a
+      fully-written `docs/RESTORE-DRILL.md` runbook but the drill has never actually been run — LR7
+      is still unticked, so PITR/backup restorability is configured but unproven; prod
+      `deletion_protection` defaults false; backup storage location isn't pinned to `africa-south1`
+      — data-residency; backup/PITR retention relies on undocumented Cloud SQL platform defaults;
+      the KYC/photo GCS bucket is single-region with no cross-region replication), `LC-D33`/`LC-D34`
+      (CI/deploy: the migration-safety spec release.yml cites as enforcing "expand-only/online-safe
+      migrations" actually only scans for lock hazards, not backward-incompatible schema changes
+      like a dropped/renamed column the still-serving old revision reads; the canary's 5xx-rate gate
+      needs `CANARY_MIN_SAMPLE` candidate requests to judge at all, which the pilot's low traffic
+      volume can plausibly never reach, silently degrading the strongest promotion gate to
+      inconclusive-pass), `LC-D35`–`LC-D38` (mobile OTA: updates publish all-or-nothing with no
+      staged rollout, unlike the native track's `rollout:0.1`; there is no CI/workflow rollback path
+      for a bad OTA push, only an ad-hoc CLI/console recipe; no automated crash/error-rate gate ties
+      to OTA rollout — detection depends on someone noticing; OTA downloads aren't gated to
+      WiFi/unmetered connections despite the app's own docs framing OTA bytes as "money out of a
+      real person's pocket" on prepaid 2G/3G). Confirmed no overlap with `LC-D19`–`LC-D27` (D-T4) or
+      the Day-0 `LC-INF1`–`4`/`LC-C01` items. Also confirmed FINE and not re-flagged: Cloud SQL
+      backups+PITR are correctly enabled with a sensible off-peak window; Redis/Memorystore
+      correctly has no persistence (nothing durable lives only in Redis); the GCS bucket has
+      versioning + `force_destroy=false` + CMEK-capable; deploy rollback (automatic on canary
+      failure, manual via `rollback.yml`), migration-before-traffic-shift ordering, canary gate
+      logic (no masked/`continue-on-error` failures), secrets handling, and concurrency protection
+      all re-verified sound; mobile's `runtimeVersion: fingerprint` policy and fail-open
+      server-version gate are correctly built; the native app has never actually been released
+      (`EAS_RELEASE_ENABLED` unset, zero real installs today), which lowers current stakes on the
+      OTA findings without changing that they're pre-existing-by-design. See
+      `docs/LC-D-REPORT-2026-08-03f.md`.
 
 **Optimization checklist (seeded; audit rounds append):**
 - [ ] D-O1 Low-connectivity state pattern for both web apps: standard error/retry/stale
