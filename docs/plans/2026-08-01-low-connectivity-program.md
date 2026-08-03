@@ -627,8 +627,16 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
 - [x] D-D0f **CONFIRMED MEDIUM — FIXED (LC loop D, 2026-08-03)** — `apps/admin/app/riders/[id]/page.tsx:269`: money ledgers silently truncate at the server cap; disclose the cap + add paging. `AdminRidersService.walletView` now cursor-paginates (mirrors `WalletService.getLedger`'s mobile pattern) and the rider-detail page renders "Load older →" / "↺ Back to latest" links. Regression tests in `admin-riders.service.spec.ts`. Ledger: LC-D07. See docs/LC-D-REPORT-2026-08-03.md.
 
 **Audit territory:**
-- [ ] D-T1 Admin console journey sweep (actions, cash, customers, issues, merchants, orders,
-      riders, sos): silent failures, missing states, unpaginated tables, stale-after-mutation.
+- [x] D-T1 **SWEPT (LC loop D, 2026-08-03)** — admin console journey sweep (actions, cash,
+      customers, issues, merchants, orders, riders, sos): silent failures, missing states,
+      unpaginated tables, stale-after-mutation. `lane-bug-hunt` over 4 lenses → 3 candidates → 3
+      confirmed (3/3 REAL-high each). All 3 fixed same-run with regression tests: LC-D08 (missing
+      `loading.tsx` on the `/merchants` subtree + `riders/[id]/kyc`, plus a new structural test so
+      the class can't recur), LC-D09 (merchant debt ledger + disputes queue hard-cap, mirroring
+      LC-D07's cursor fix for the ledger and a disclosure banner for the disputes queue), LC-D10
+      (admin Overview funnel metric's unbounded `offer.findMany` replaced with a bounded
+      `COUNT(DISTINCT)`). Zero silent-failures/stale-after-mutation findings this pass. See
+      docs/LC-D-REPORT-2026-08-03b.md.
 - [ ] D-T2 Merchant app journey sweep (login → shift → intake loop) through the tablet lens.
 - [ ] D-T3 Notification/deep-link coherence under low connectivity (push arrives late/duplicated/
       out of order — where does it strand the user?).

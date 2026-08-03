@@ -20,11 +20,14 @@ describe("AdminService.overview", () => {
         // Distinguish the several count() calls by their where clause.
         count: async (args?: { where?: Record<string, unknown> }) => {
           const w = args?.where ?? {};
-          if (Object.keys(w).length === 0) return 100; // totalOrders
           if (w.status === "expired") return 10; // expired
           if (w.status === "completed" && w.completedAt) return 9; // completedToday
           if (w.status === "undelivered" && w.undeliveredAt) return 1; // undeliveredToday
           if (w.status && typeof w.status === "object" && w.updatedAt) return 2; // stuck (in-flight + stale)
+          // LC-D-T1: this used to be `if (Object.keys(w).length === 0) return 100`, which never
+          // matches the real `{ orderType: "parcel" }` where clause below — totalBroadcasts silently
+          // evaluated to 0 and nothing caught it because nothing asserted on `metrics` before.
+          if (w.orderType === "parcel") return 100; // totalOrders / totalBroadcasts
           return 0;
         },
         aggregate: async (args?: { where?: Record<string, unknown> }) => {
@@ -48,7 +51,6 @@ describe("AdminService.overview", () => {
       },
       offer: {
         count: async () => 24,
-        findMany: async () => [{ orderId: "ord_1" }],
       },
       rider: {
         count: async (args?: { where?: Record<string, unknown> }) => {
@@ -61,6 +63,8 @@ describe("AdminService.overview", () => {
         },
       },
       issue: { count: async () => 2 }, // open + investigating disputes
+      // LC-D-T1: ordersWithOffer is now a bounded COUNT(DISTINCT order_id), not an unbounded findMany.
+      $queryRaw: async () => [{ count: 1 }],
     };
 
     const out = await new AdminService(prisma as unknown as PrismaService, envStub("10")).overview();
@@ -82,6 +86,39 @@ describe("AdminService.overview", () => {
     // Existing shape preserved (back-compat).
     expect(out.riders).toEqual({ total: 46, online: 12, verified: 38 });
     expect(out.ordersByStatus).toMatchObject({ open_for_offers: 3, assigned: 5 });
+    // LC-D-T1: pctBroadcastsWithOffer now comes from the bounded $queryRaw count (stubbed to 1) divided
+    // by totalBroadcasts (100), not from counting rows returned by an unbounded findMany.
+    expect(out.metrics).toMatchObject({ totalBroadcasts: 100, pctBroadcastsWithOffer: 1, expiryRatePct: 10 });
+  });
+
+  // LC-D-T1: `ordersWithOffer` used to be `this.prisma.offer.findMany({ distinct: ["orderId"] })` — no
+  // `where`, no `take` — a full-table scan whose only purpose was `.length`. Every other query feeding
+  // this same Promise.all is a bounded count()/aggregate() or a capped take:20 findMany; this one grew
+  // unboundedly with the pilot's lifetime offer volume. Fixed with a single DB-side
+  // `COUNT(DISTINCT order_id)`. Proves the correct count still flows into the funnel math AND that the
+  // old unbounded path is gone — the mock's `offer.findMany` would throw if the code called it, since
+  // production code no longer does.
+  it("LC-D-T1: derives ordersWithOffer from a bounded COUNT(DISTINCT order_id) query, not an unbounded findMany", async () => {
+    const prisma = {
+      order: {
+        groupBy: async () => [],
+        count: async (args?: { where?: Record<string, unknown> }) => {
+          const w = args?.where ?? {};
+          if (w.orderType === "parcel") return 10; // totalOrders / totalBroadcasts
+          return 0;
+        },
+        aggregate: async () => ({ _sum: { agreedFare: null } }),
+        findFirst: async () => null,
+        findMany: async () => [],
+      },
+      offer: { count: async () => 0 },
+      rider: { count: async () => 0 },
+      issue: { count: async () => 0 },
+      $queryRaw: async () => [{ count: 7 }],
+    };
+
+    const out = await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
+    expect(out.metrics.pctBroadcastsWithOffer).toBe(70); // round(7 / 10 * 100)
   });
 
   it("reports a null completion rate when no trip reached a terminal today", async () => {
@@ -93,9 +130,10 @@ describe("AdminService.overview", () => {
         findFirst: async () => null,
         findMany: async () => [],
       },
-      offer: { count: async () => 0, findMany: async () => [] },
+      offer: { count: async () => 0 },
       rider: { count: async () => 0 },
       issue: { count: async () => 0 },
+      $queryRaw: async () => [{ count: 0 }],
     };
     const out = await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
     expect(out.today.completionRatePct).toBeNull();
@@ -128,9 +166,10 @@ describe("AdminService.overview", () => {
         findFirst: async () => null,
         findMany: async () => [],
       },
-      offer: { count: async () => 0, findMany: async () => [] },
+      offer: { count: async () => 0 },
       rider: { count: async () => 0 },
       issue: { count: async () => 0 },
+      $queryRaw: async () => [{ count: 0 }],
     };
 
     await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
@@ -166,9 +205,10 @@ describe("AdminService.overview", () => {
         findFirst: async () => null,
         findMany: async () => [],
       },
-      offer: { count: async () => 0, findMany: async () => [] },
+      offer: { count: async () => 0 },
       rider: { count: async () => 0 },
       issue: { count: async () => 0 },
+      $queryRaw: async () => [{ count: 0 }],
     };
 
     const before = Date.now();

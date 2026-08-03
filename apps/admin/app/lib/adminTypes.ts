@@ -327,6 +327,9 @@ export interface MerchantDetail extends Merchant {
   priceLevel: number | null;
   trail: TripRow[];
   debtLedger: MerchantDebtLedgerRow[];
+  /** LC-D-T1: last entry id of this debt-ledger page, for `?debtCursor=` — present only when older
+   *  entries exist. */
+  debtLedgerNextCursor: string | null;
 }
 
 /* ── Support dispute queue (X1: GET /admin/merchant-disputes) ── */

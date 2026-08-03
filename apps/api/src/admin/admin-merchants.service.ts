@@ -60,10 +60,16 @@ export class AdminMerchantsService {
     return merchants.map((m) => this.toMerchant(m, ordersBy.get(m.id) ?? 0, debtBy.get(m.id)));
   }
 
-  /** Single merchant detail: directory fields + recent orders + the merchant's own debt-ledger trail
-   *  (append-only, so this is the full audit history of every debt this merchant has opened/settled).
-   *  Returns null when the id isn't a merchant. */
-  async getMerchantDetail(id: string) {
+  /** Single merchant detail: directory fields + recent orders + a page of the merchant's own
+   *  debt-ledger trail (append-only, so this is the full audit history of every debt this merchant
+   *  has opened/settled). Returns null when the id isn't a merchant.
+   *
+   *  LC-D-T1: this used to hard-cap the ledger at `take: 30` with no `nextCursor` and no disclosure —
+   *  the same "money ledger silently stops, no way to page back" shape D-D0f/LC-D07 fixed for the
+   *  rider wallet ledger, just on the merchant debt ledger the fix hadn't reached. Mirrors
+   *  `AdminRidersService.walletView`'s cursor pattern exactly: fetch PAGE_SIZE+1 to detect `hasMore`
+   *  without a separate count query, cursor-paginate by id (stable under concurrent inserts). */
+  async getMerchantDetail(id: string, debtCursor?: string) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id },
       select: {
@@ -80,7 +86,8 @@ export class AdminMerchantsService {
     });
     if (!merchant) return null;
 
-    const [orderCount, openDebt, recentOrders, ledger] = await Promise.all([
+    const DEBT_LEDGER_PAGE_SIZE = 30;
+    const [orderCount, openDebt, recentOrders, ledgerRows] = await Promise.all([
       this.prisma.order.count({ where: { merchantId: id } }),
       this.prisma.order.aggregate({ where: { merchantId: id, debtStatus: "open" }, _sum: { debtAmount: true }, _count: { _all: true } }),
       this.prisma.order.findMany({
@@ -91,11 +98,15 @@ export class AdminMerchantsService {
       }),
       this.prisma.merchantDebtLedger.findMany({
         where: { merchantId: id },
-        orderBy: { createdAt: "desc" },
-        take: 30,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: DEBT_LEDGER_PAGE_SIZE + 1,
+        ...(debtCursor ? { cursor: { id: debtCursor }, skip: 1 } : {}),
         select: { id: true, orderId: true, riderId: true, type: true, amount: true, note: true, actor: true, createdAt: true },
       }),
     ]);
+
+    const debtLedgerHasMore = ledgerRows.length > DEBT_LEDGER_PAGE_SIZE;
+    const ledger = debtLedgerHasMore ? ledgerRows.slice(0, DEBT_LEDGER_PAGE_SIZE) : ledgerRows;
 
     const base = this.toMerchant(merchant, orderCount, { amount: openDebt._sum.debtAmount, count: openDebt._count._all });
     return {
@@ -119,6 +130,7 @@ export class AdminMerchantsService {
         actor: l.actor,
         at: l.createdAt.toISOString(),
       })),
+      debtLedgerNextCursor: debtLedgerHasMore ? ledger[ledger.length - 1]!.id : null,
     };
   }
 
