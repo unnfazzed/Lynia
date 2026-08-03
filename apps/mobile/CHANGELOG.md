@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/unnfazzed/Lynia/compare/v0.17.1...v0.17.2) (2026-08-03)
+
+
+### Bug Fixes
+
+* **mobile:** B-T3 list/memory audit — unbounded restaurant list + rider sentOffers growth ([#495](https://github.com/unnfazzed/Lynia/issues/495)) ([3eea99a](https://github.com/unnfazzed/Lynia/commit/3eea99a7cccf5e7fd21333bfac78ed850aa1e8e8))
+
 ## [0.17.1](https://github.com/unnfazzed/Lynia/compare/v0.17.0...v0.17.1) (2026-08-01)
 
 
