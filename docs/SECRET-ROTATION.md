@@ -20,6 +20,8 @@ one means adding a new secret **version** and redeploying.
 | `DATABASE_URL` password | 180 days | DB credential exposure |
 | Redis `AUTH` string | 180 days | Redis credential exposure |
 | Vendor keys (WhatsApp, Bird, local SMS gateway, Didit, FCM) | Per vendor policy / 180 days | Vendor breach, key in logs |
+| Robot `EXPO_TOKEN` (GitHub secret → EAS builds/submits/OTA; minted 2026-08-03) | 180 days | Token in logs, Expo account breach — revoke at expo.dev → Robots, paste replacement into the GitHub secret |
+| Play Developer API service-account JSON key (`id-play-publisher@lynia-500911`, EAS custody; minted 2026-08-03) | 180 days | Key exposure — delete the key in GCP IAM, mint a new one (temporarily lift the org's `iam.disableServiceAccountKeyCreation` policy project-scoped, re-enforce after) and re-upload to EAS |
 
 ---
 

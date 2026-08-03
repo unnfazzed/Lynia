@@ -171,11 +171,14 @@ updates: { url: "https://u.expo.dev/<project-id>", fallbackToCacheTimeout: 0 },
 // keep `version` (versionName) bumped per release; versionCode is EAS-managed via autoIncrement
 ```
 
-Secrets/accounts to provision (founder — accounts, not code). *Status 2026-08-03: Play Console app
-created (dashboard at Internal testing); Expo account live with the EAS-managed upload keystore
-(since 2026-06-30) and `GOOGLE_MAPS_API_KEY`/PostHog vars set; still to provision: the Play
-service-account key on EAS, `GOOGLE_SERVICES_JSON`, and the GitHub `EXPO_TOKEN`/arming switch —
-see `docs/PLAY-STORE-SUBMISSION.md` §7.2/§9 for the audited checklist.*
+Secrets/accounts to provision (founder — accounts, not code). *Status 2026-08-03 evening: **fully
+provisioned** — Play Console app live (dashboard at Internal testing); EAS-managed upload keystore;
+`GOOGLE_MAPS_API_KEY`, `GOOGLE_SERVICES_JSON` and PostHog vars in both EAS environments; Play
+service-account key registered on EAS for submissions (least-privilege testing-track permissions);
+robot `EXPO_TOKEN` + `EAS_PROJECT_ID` + `production-mobile` environment + `EAS_RELEASE_ENABLED=true`
+on GitHub; `owner: "lyniago"` in `app.config.ts` (robot tokens require it). See
+`docs/PLAY-STORE-SUBMISSION.md` §7.2/§9 for the audited checklist. Only remaining nit: a required
+reviewer on `production-mobile` (add before first OTA publish).*
 - **Google Play Console** app + a **Play Developer API service account** JSON (Play Console → API access)
   → store as EAS secret / GitHub secret `PLAY_SERVICE_ACCOUNT_JSON`.
 - **Expo/EAS account** + `EXPO_TOKEN` (GitHub secret) for CI builds/submits/updates.
