@@ -1,0 +1,48 @@
+import { RESTAURANTS_TIMING, tokens, type MerchantOrderResponse } from "@lynia/shared";
+import React from "react";
+import { Text, View } from "react-native";
+import { ErrorText, OfflineBanner, Screen } from "../index";
+import { CountdownRing, formatCountdown } from "./CountdownRing";
+import { OrderHeader } from "./FoodOrderHelpers";
+
+type AwaitingAcceptOrder = Pick<MerchantOrderResponse, "acceptDeadlineAt">;
+
+/** RF-18: the `merchantPhase === "awaiting_accept"` branch of app/food/order/[orderId].tsx,
+ *  extracted verbatim — N-03's 3:00 kitchen-accept window, no state of its own. */
+export function FoodOrderAwaitingAcceptView({
+  order,
+  restaurantName,
+  reachable,
+  now,
+  error,
+  cancelFooter,
+}: {
+  order: AwaitingAcceptOrder;
+  restaurantName: string;
+  reachable: boolean;
+  now: number;
+  error: string | null;
+  cancelFooter: React.ReactNode;
+}): React.ReactElement {
+  const deadline = order.acceptDeadlineAt ? new Date(order.acceptDeadlineAt).getTime() : null;
+  const total = RESTAURANTS_TIMING.acceptWindowMs;
+  const elapsed = deadline ? Math.max(0, total - (deadline - now)) : 0;
+  const remaining = deadline ? Math.max(0, deadline - now) : total;
+  return (
+    <Screen>
+      <OfflineBanner state={reachable ? "online" : "offline"} />
+      <OrderHeader restaurantName={restaurantName} pillLabel="Waiting for accept" pillTone="neutral" />
+      <View style={{ alignItems: "center", paddingVertical: tokens.space.lg }}>
+        <CountdownRing elapsedMs={elapsed} totalMs={total} label={formatCountdown(remaining)} sub="to accept" />
+        <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink, marginTop: tokens.space.md, textAlign: "center" }}>
+          Waiting for {restaurantName}
+        </Text>
+        <Text style={{ fontSize: 13.5, color: tokens.color.muted, textAlign: "center", marginTop: 6, maxWidth: 280 }}>
+          They have 3 minutes to accept. You&apos;ll pay only after they do — nothing has left your wallet.
+        </Text>
+      </View>
+      <ErrorText message={error} />
+      {cancelFooter}
+    </Screen>
+  );
+}
