@@ -29,6 +29,24 @@
 > switches (`EXPO_TOKEN` secret, `EAS_RELEASE_ENABLED` — the sole `mobile-release.yml` dispatch,
 > 2026-07-23, skipped, proving the gate was off; GitHub secrets are not readable remotely, so
 > re-verify with `scripts/eas-arm.sh --verify`).
+>
+> **Status (2026-08-03, late — pipeline armed end-to-end):** every gap in the verification block
+> above is now closed. The Play Developer API service account exists
+> (`id-play-publisher@lynia-500911.iam.gserviceaccount.com`, least-privilege: view + release to
+> testing tracks + manage testing tracks; production-release permission deliberately deferred until
+> the staged rollout). Minting its key required a temporary **project-scoped lift of the org's
+> `iam.disableServiceAccountKeyCreation` policy**, re-enforced immediately after (existing keys
+> keep working). The key is registered on EAS for submissions (API-verified 20:08 UTC).
+> `GOOGLE_SERVICES_JSON` is an EAS **file** variable in `preview` + `production` (verified), fed by
+> the Firebase Android app for `zw.co.lynia` in project `lynia-500911`. GitHub is armed: **robot**
+> `EXPO_TOKEN` secret (revoke the old personal token once a run is green), `EAS_PROJECT_ID`,
+> `production-mobile` environment, `EAS_RELEASE_ENABLED=true`. The first dispatch (run #2,
+> 30852221217) *executed* rather than skipping — proving the arming switch — then failed fast on a
+> robot-token quirk: `eas build` requires an explicit **`owner: "lyniago"`** in `app.config.ts`
+> when authenticated as a robot (a personal token implies its account; a robot has none). The field
+> is now set; re-dispatch after it lands. Remaining nit: `production-mobile` has **no required
+> reviewer** yet (the picker wouldn't match the owner account) — add before first OTA use, since
+> that environment also gates `mobile-ota.yml`.
 
 ---
 
@@ -45,7 +63,7 @@
 | Tags | Delivery, Courier, Navigation | |
 | Contact email | `support@lyniafinance.com` | Matches `SUPPORT_URL` in `apps/mobile/src/config.ts` |
 | Website | *(none — see §7.3)* | |
-| Version name at first submission | Whatever `main` holds at build time (`0.17.4` as of 2026-08-03) | `app.config.ts` → `version` (release-please-managed; was `0.11.0` when this doc was first written) |
+| Version name at first submission | Whatever `main` holds at build time (`0.17.6` as of 2026-08-03 evening) | `app.config.ts` → `version` (release-please-managed; was `0.11.0` when this doc was first written) |
 | Version code | EAS-managed, auto-incrementing | `eas.json` → `appVersionSource: "remote"` + `autoIncrement` |
 
 ---
@@ -393,12 +411,14 @@ prompts (`scripts/eas-arm.sh --verify` audits what is armed). In Play Console yo
 1. ✅ Create the app — **done 2026-08-03** (console dashboard live for `zw.co.lynia`). **Play App
    Signing** enrolment completes automatically when the first AAB is uploaded (it is mandatory for
    new apps).
-2. Create a **Play Developer API service account** (Play Console → API access) and download its JSON
-   key; `eas credentials` uploads it so `mobile-release.yml` can auto-submit. *(2026-08-03: verified
-   still missing on EAS — `googleServiceAccountKeyForSubmissions` is null. The upload keystore, by
-   contrast, already exists — EAS-managed since 2026-06-30 — so this key is the only credential gap.
-   Upload path without a terminal: expo.dev → project `lynia` → Credentials → `zw.co.lynia` →
-   Google Service Account Keys.)*
+2. ✅ Create a **Play Developer API service account** (Play Console → API access) and download its
+   JSON key; `eas credentials` uploads it so `mobile-release.yml` can auto-submit. **Done
+   2026-08-03 evening:** `id-play-publisher@lynia-500911.iam.gserviceaccount.com` created (the
+   org's key-creation policy was lifted project-scoped for the minting, then re-enforced), granted
+   least-privilege app-level Play access (view + release to testing tracks + manage testing
+   tracks — the production-release permission is deliberately deferred until the staged rollout),
+   and its key registered on EAS for submissions (API-verified). The upload keystore already
+   existed (EAS-managed since 2026-06-30), so §7.2 is fully closed.
 
 ### 7.3 CDPA compliance — four duties the published notice now assumes
 
@@ -471,10 +491,17 @@ Once §7.1 and §7.2 are closed:
 - [x] §7.1 reviewer-access demo account implemented — founder still sets `DEMO_OTP_PHONE`/`DEMO_OTP_CODE`
 - [x] Play Console app created for `zw.co.lynia` (2026-08-03; Play App Signing enrols automatically
       with the first AAB upload)
-- [ ] `scripts/eas-arm.sh --verify` reports everything armed — *partially verified 2026-08-03 via
-      the EAS API: keystore ✅, `GOOGLE_MAPS_API_KEY` ✅ (both envs), PostHog vars ✅; still missing:
-      Play service-account key, `GOOGLE_SERVICES_JSON`, and the GitHub `EXPO_TOKEN`/
-      `EAS_RELEASE_ENABLED` switches*
+- [x] Pipeline armed end-to-end (2026-08-03 evening): keystore ✅ · `GOOGLE_MAPS_API_KEY` ✅ ·
+      PostHog ✅ · Play service-account key ✅ (API-verified) · `GOOGLE_SERVICES_JSON` ✅ (both
+      envs) · robot `EXPO_TOKEN` + `EAS_PROJECT_ID` + `production-mobile` env +
+      `EAS_RELEASE_ENABLED=true` ✅ (proven by run #2 executing instead of skipping) ·
+      `owner: "lyniago"` in `app.config.ts` (robot tokens require it).
+      `scripts/eas-arm.sh --verify` from a founder machine remains the belt-and-braces re-check.
+- [ ] `production-mobile` required reviewer set — the OTA human gate (`mobile-ota.yml` bypasses
+      Play review). The reviewer picker wouldn't match the owner account on first attempt; retry
+      from a desktop browser. Must be closed before first OTA publish.
+- [ ] Old personal Expo access token revoked (expo.dev → Access tokens) once the robot-token run
+      is green
 - [x] Store listing copy (§2) pasted; 512² icon uploaded (founder, 2026-08-03 — console setup tasks
       complete, dashboard at Internal testing)
 - [x] Feature graphic + six screenshots (phone, 7" and 10" tablet) produced and validated —

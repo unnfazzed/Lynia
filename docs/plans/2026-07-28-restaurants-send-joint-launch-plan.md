@@ -1249,11 +1249,12 @@ routines inherit merged build work through their normal Phase-0 ledger reads.
 
 - [ ] Lanes A–E complete; X1, X2 done (staging golden pass both flag positions).
 - [ ] Play approval for the joint binary (submission owner: founder; the binary ships with
-  flags remote-read so a post-approval flip needs no resubmission). *Status 2026-08-03: Play
-  Console app created, console setup tasks done, dashboard at **Internal testing**; Expo-side
-  credentials mostly armed (keystore + maps key verified; Play service-account key +
-  `GOOGLE_SERVICES_JSON` + GitHub arming switch still pending — `docs/PLAY-STORE-SUBMISSION.md`
-  §7.2/§9). **New constraint feeding the §8 tripwire:** the console requires a closed test
+  flags remote-read so a post-approval flip needs no resubmission). *Status 2026-08-03 evening:
+  Play Console app created, console setup tasks done, dashboard at **Internal testing**; release
+  pipeline **fully armed** — keystore, maps key, Play service-account key, `GOOGLE_SERVICES_JSON`,
+  robot `EXPO_TOKEN`, `EAS_RELEASE_ENABLED` (`docs/PLAY-STORE-SUBMISSION.md` §7.2/§9) — and the
+  first internal-track build dispatched the same night (after a one-line robot-token `owner` fix
+  in `app.config.ts`). **Constraint feeding the §8 tripwire:** the console requires a closed test
   (opted-in testers, 14 consecutive days) before production access can be requested — start the
   closed-test clock as soon as the internal build lands.*
 - [ ] ≥5 named, committed CBD pilot merchants onboarded with seeded menus + photos (founder
