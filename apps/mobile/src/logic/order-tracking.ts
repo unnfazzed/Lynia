@@ -177,6 +177,29 @@ export function reconcilePendingRating(input: {
 }
 
 /**
+ * LC-C08: decide whether a `selectOffer` 409 actually means the customer's OWN pick landed — a
+ * lost-response retry (the request succeeded server-side but the client never saw the 200, e.g. a
+ * timeout on a slow reconnect) can hit the exact same `open_for_offers`/`pending`-offer CAS guard a
+ * genuine race-loss (a DIFFERENT rider's offer won first) does, and the two are indistinguishable from
+ * the bare error alone. Mirrors `advanceReconciled`/`deliverM`'s 409-reconciliation shape: a fresh
+ * `getOrder()` after the 409 settles it — if the order is no longer open AND is now attached to the SAME
+ * rider whose offer was tapped, this attempt's selection landed; anything else (still open, or assigned
+ * to a different rider) is a genuine conflict. `selectedRiderId` is null when the tapped offer can't be
+ * resolved locally (e.g. the offers list was already cleared) — always unreconciled in that case, the
+ * same "show the notice" behavior as before this fix, since there's nothing to compare against.
+ */
+export function selectOfferReconciled(input: {
+  freshStatus: string;
+  freshRiderId: string | null | undefined;
+  selectedRiderId: string | null | undefined;
+}): boolean {
+  const { freshStatus, freshRiderId, selectedRiderId } = input;
+  if (selectedRiderId == null) return false;
+  if (freshStatus === "open_for_offers") return false;
+  return freshRiderId === selectedRiderId;
+}
+
+/**
  * BH-10: should the "raise price & send again" / "send another request" CTA cancel the CURRENT order
  * before navigating to compose a fresh one? Every terminal status (expired/cancelled/undelivered) has
  * nothing left to cancel — the order already left the live auction. `open_for_offers` is the one status
