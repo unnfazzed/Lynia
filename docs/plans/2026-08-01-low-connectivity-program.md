@@ -577,7 +577,29 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
       force-fixed, consistent with how C-O5/C-O6 were triaged: it never gates "Confirm collected"
       and no order data or money is at risk, only an easily-retaken optional photo. Full trace:
       `docs/LC-C-REPORT-2026-08-03.md`.
-- [ ] C-T3 Onboarding + OTP + KYC capture (incl. photo upload resumability on slow uplink).
+- [x] C-T3 **AUDITED (2026-08-03)** — Onboarding + OTP + KYC capture traced end to end under all 3
+      adversarial conditions: phone entry → send-OTP → verify → post-OTP profile setup →
+      becomeRider → KYC document/selfie capture+upload → KYC status polling. **Result: mostly
+      reference-quality, matching C-T1/C-T2's bar** — every mutation on this journey (OTP verify,
+      refresh rotation, `completeProfile`, `becomeRider`, the KYC webhook) is guarded by a
+      server-side CAS/unique-constraint/monotonic-resolution check, so a lost-response retry is
+      never a double-apply; the KYC webhook is idempotent via row-lock + `kycResolvedAt` monotonic
+      CAS; `becomeRider`'s `already_rider` 409 is explicitly reconciled client-side into success
+      rather than a dead-end error; the become-a-rider form already persists its own draft
+      (`kyc-draft.ts`) so an app kill mid-capture doesn't lose the typed ID, and a failed photo
+      upload retains the same captured asset for one-tap retry instead of forcing a re-shoot; the
+      rider KYC-status gate distinguishes a network failure from "not verified" and offers an
+      explicit refresh rather than trusting a stale cache forever. **One genuine defect found and
+      FIXED this run** (LC-C10, below — the post-OTP profile-setup screen, the FIRST screen a
+      brand-new account of either role lands on, had none of the KYC form's draft persistence for
+      the identical class of fields). No further gaps rose to the DEFECT bar (the OTP-verify
+      screen's un-persisted 6-digit code and the un-persisted typed phone number on the send-OTP
+      screen are both cheap-to-retype, non-load-bearing inputs — consistent with what the rest of
+      the app already treats as fine not to persist, e.g. the OTP code itself). One narrower gap
+      (KYC-photo upload doesn't persist the captured asset ahead of the PUT, so an app-kill
+      mid-upload forces a fresh camera capture instead of a resumed retry) is UX-only — appended
+      to the optimization checklist as C-O8/LC-C11 rather than force-fixed, consistent with how
+      C-O5/C-O6/C-O7 were triaged. Full trace: `docs/LC-C-REPORT-2026-08-03b.md`.
 - [ ] C-T4 Merchant order-intake on a tablet over mobile data (miss-an-order risk when dropped).
 - [ ] C-T5 Reconnect semantics across ALL realtime hooks + the server catch-up seam (what a
       client that was gone 90 s actually recovers, and at what byte cost).
@@ -633,6 +655,18 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
 - [ ] C-O4 **(re-ranked to #6, was #4)** MicroCache serve-stale-on-upstream-failure mode (soft/hard
       dual TTL; candidates: nearby-count, bootstrap; NEVER money/assignment/auth) (DoorDash
       lesson 8). (M)
+- [ ] C-O8 **(new, ranked #7 — C-T3 finding, LC-C11)** The become-a-rider KYC form's photo capture
+      (`apps/mobile/app/rider/become.tsx`'s `doUpload`) only commits `photoUri`/`photoKey` to the
+      durable `kyc-draft.ts` draft on a SUCCESSFUL upload — an app kill strictly between firing the
+      presigned-URL PUT and it resolving leaves the draft exactly as it was before the attempt (no
+      corruption, but also no memory that an upload was ever tried), so the rider must relaunch the
+      camera and re-capture from scratch instead of getting the same one-tap "Try again" resume a
+      network-only failure already gets via `failedAsset`. Persisting the captured asset's local uri
+      (and an "upload in flight" marker) to the draft BEFORE firing the PUT — mirroring C-O5's
+      "write the marker before the request" pattern — would let a relaunch offer "finish uploading
+      this photo" instead of a full re-shoot. Never blocks submission and no data is lost (the GCS
+      object was never completed either way), so this is a resume-convenience optimization, not a
+      defect. `apps/mobile/app/rider/become.tsx:86-114`, `apps/mobile/src/logic/kyc-draft.ts`. (S)
 
 ### Lane D — journey & soundness sweep (Opus 4.8, `0 7 * * *`)
 
