@@ -78,6 +78,26 @@ Two levers are applied in this program (in `apps/mobile`, via the sibling change
    landing in the bundle. Replacing the barrel with per-icon deep imports guarantees only the ~two
    dozen glyphs the product actually uses are bundled. This shrinks the **JS bundle**, so it helps
    both the binary *and* every OTA — and it is a cross-platform win (helps iOS too, when it ships).
+3. **Subsetted self-hosted Inter (A-O13 / LC-A05, 2026-08-03).** The 3 self-hosted Inter TTFs
+   (`src/ui/fonts.ts`) shipped each weight's full Google-Fonts charset (Latin + Cyrillic + Greek +
+   Vietnamese extensions, ~342-344 KB each) though a repo-wide scan of every literal character in
+   `apps/mobile/src`+`app` found only 23 distinct non-ASCII codepoints ever rendered, all common
+   Latin-1 punctuation/symbols/one emoji, zero non-Latin script. `apps/mobile/scripts/subset-fonts.mjs`
+   (pyftsubset via the `fonttools` Python package, dev-time only — never runs in CI) regenerates
+   committed, glyph-subsetted assets in `apps/mobile/assets/fonts/` from the Unicode ranges pinned in
+   `scripts/font-safe-ranges.mjs` (Latin script + common symbols/punctuation/math/arrows/box-drawing/
+   dingbats/emoji — deliberately excluding Cyrillic/Greek/Vietnamese-extensions/CJK). `fonts.ts`
+   `require()`s these local assets instead of importing `@expo-google-fonts/inter` (moved to a
+   devDependency — it's now only the subsetting script's source material, not a runtime import).
+   Measured via `expo export --platform android`: **Android export total 7,240,457 → 6,546,466 bytes
+   (−693,991 B / −9.6%)**; each font file 342-344 KB → 112-113 KB (−67.3%). Hermes bundle unchanged
+   (fonts are export assets, not JS). `scripts/check-font-charset.mjs` (wired into `pnpm lint`) fails
+   CI if a future UI string introduces a character outside the safe ranges — the regression guard
+   against a silent tofu-box on-device. **Trade-off, recorded explicitly:** a user who types a
+   Cyrillic/Greek/CJK character into a free-text field (name, order note, KYC) sees a tofu box for
+   that one glyph — same as today for any character outside Inter's original charset, and neither of
+   Zimbabwe's other official languages (Shona, Ndebele) needs a script beyond the retained Latin
+   Extended-A/B range.
 
 ## Guardrails
 
@@ -125,7 +145,7 @@ Audit of `apps/mobile/package.json` runtime dependencies:
 | `socket.io-client` | JS (moderate) | Hermes bundle | The one realtime transport. Sizeable but core to the offer loop / live tracking. One realtime SDK only. |
 | `posthog-react-native` | JS | Hermes bundle | The one analytics SDK, and it's **key-gated** (only initializes when a key is present, `src/telemetry/analytics.tsx`) — but its code still ships regardless. Justify keeping it at each review; never add a second analytics/telemetry SDK alongside it. |
 | `lucide-react-native` | JS | Hermes bundle (SVG path data per glyph) | Icons. Subject to the **barrel-import** trap (see Levers) — must be imported per-icon so only used glyphs bundle. |
-| `@expo-google-fonts/inter` | JS + font assets | Bundle + `assets/` (TTF) | Ship **only the weights actually used**; each Inter weight is a real TTF. Candidate for native font embedding on a future EAS build (`PERFORMANCE.md` backlog). |
+| Self-hosted Inter (subsetted, `assets/fonts/*.ttf`) | Font assets (no longer a runtime JS dep) | `assets/` (TTF) | Ship **only the weights actually used** (2026-08-01) **and only the glyph ranges actually rendered** (A-O13, 2026-08-03: 65-67% per-file cut). `@expo-google-fonts/inter` is a devDependency now — the subsetting script's source material, not something the app imports. Candidate for native font embedding on a future EAS build (`PERFORMANCE.md` backlog). |
 
 **New-dependency checklist (apply in review):** Does an existing dep already cover this use case? Is
 it an Expo module (shared core) or a parallel native runtime? What does it add to the binary *and*
