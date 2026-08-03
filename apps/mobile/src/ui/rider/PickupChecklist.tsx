@@ -61,7 +61,9 @@ export function PickupChecklist({
       const { uploadUrl, key, headers } = await requestPickupPhotoUpload(prepared.contentType);
       await uploadImage(uploadUrl, prepared.uri, headers ?? { "Content-Type": prepared.contentType });
       await attachPickupPhoto(orderId, key);
-      setPhotoUri(asset.uri);
+      // B-O11: preview the already-downscaled upload asset, not the original 3000-4000px camera
+      // capture — this preview stays mounted for the rest of the pickup flow on a 1-2GB device.
+      setPhotoUri(prepared.uri);
       setFailedPhoto(null);
     } catch {
       setFailedPhoto(asset);
