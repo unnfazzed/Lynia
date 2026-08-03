@@ -1,4 +1,4 @@
-import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, RESTAURANTS_TIMING, rejectionCopy, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, RESTAURANTS_TIMING, tokens } from "@lynia/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -24,17 +24,19 @@ import { canCancelFreely, isStillUnpaidReminderDue } from "../../../src/logic/fo
 import { codeEligible, handshakeState } from "../../../src/logic/food-doorstep";
 import { fmtClock } from "../../../src/logic/format-time";
 import { formatMoney } from "../../../src/logic/money";
-import { UNDELIVERED_REASON_LABEL } from "../../../src/logic/order-labels";
 import { reconcileDeliveryCode, reconcilePendingRating } from "../../../src/logic/order-tracking";
 import { clearFoodOrderSnapshot, saveFoodOrderSnapshot } from "../../../src/net/food-order-store";
 import { useReachability } from "../../../src/net/use-reachability";
 import { orderKey } from "../../../src/query/client";
 import { useFoodOrder } from "../../../src/query/use-food-order";
 import { useRestaurantMenu } from "../../../src/query/use-restaurants";
-import { Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, StatusPill, Stepper, useToast } from "../../../src/ui";
+import { Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, SkeletonCard, SkeletonList, Stepper, useToast } from "../../../src/ui";
 import { CashHandshakeCard } from "../../../src/ui/food/CashHandshakeCard";
 import { CountdownRing, formatCountdown } from "../../../src/ui/food/CountdownRing";
 import { DeliveryCodeCard } from "../../../src/ui/food/DeliveryCodeCard";
+import { FoodOrderCancelledView } from "../../../src/ui/food/FoodOrderCancelledView";
+import { OrderHeader, Row } from "../../../src/ui/food/FoodOrderHelpers";
+import { FoodOrderUndeliveredView } from "../../../src/ui/food/FoodOrderUndeliveredView";
 import { ManualPayRail } from "../../../src/ui/food/ManualPayRail";
 import { PriceMath } from "../../../src/ui/food/PriceMath";
 import { LiveTrackingCard } from "../../../src/ui/order/LiveTrackingCard";
@@ -357,60 +359,16 @@ export default function FoodOrderScreen(): React.ReactElement {
     <Button variant="ghost" label="Cancel the order — free" onPress={() => void cancelUnpaid()} disabled={busy} />
   ) : null;
 
-  // ── Terminal: cancelled/rejected ─────────────────────────────────────────────────────────────────
+  // ── Terminal: cancelled/rejected — extracted to FoodOrderCancelledView (RF-18) ──────────────────
   if (order.status === "cancelled") {
-    // D-13: NO_RIDER is designed as an apology, not an error — what we tried, for how long, nothing
-    // charged, two ways forward.
-    if (order.rejectionReason === "no_rider") {
-      return (
-        <Screen>
-          <OfflineBanner state={reachable ? "online" : "offline"} />
-          <EmptyState icon="bike" title="We couldn't find a rider" message={rejectionCopy("no_rider")}>
-            <Button label="Try again" onPress={() => router.replace(`/food/${order.merchantId}`)} />
-            <Button label="See other restaurants nearby" variant="ghost" onPress={() => router.replace("/food")} />
-          </EmptyState>
-        </Screen>
-      );
-    }
-    // D-12/R-12: a merchant-issued refund on an already-paid order it couldn't fulfil — the reference
-    // stays in the order forever, the customer's evidence against the merchant's own statement.
-    // `refundOrder` sets `refundedAt` atomically WITH the cancel (food-debt.service.ts), so there is no
-    // separate "pending" window to render server-side — open item noted in the PR body.
-    if (order.refundedAt) {
-      return (
-        <Screen>
-          <OfflineBanner state={reachable ? "online" : "offline"} />
-          <Card style={{ borderColor: tokens.color.accent }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 }}>
-              <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
-                <Icon name="circle-check" size={19} color={tokens.color.accentText} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: "700", color: tokens.color.ink }}>Refunded in full</Text>
-                <Text style={{ fontSize: 12, color: tokens.color.muted }}>{restaurantName} sent it back</Text>
-              </View>
-            </View>
-            <Row label="Amount" value={formatMoney(order.refundAmount ?? 0)} />
-            <Row label="Their reference" value={order.refundReference ?? "—"} />
-            <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 8, lineHeight: 17 }}>
-              Keep this reference — it&apos;s your proof against the restaurant&apos;s own statement, not a screenshot.
-            </Text>
-          </Card>
-          <Button label="Order from somewhere else" onPress={() => router.replace("/food")} />
-        </Screen>
-      );
-    }
     return (
-      <Screen>
-        <OfflineBanner state={reachable ? "online" : "offline"} />
-        <EmptyState
-          icon="circle-alert"
-          title="This order was cancelled"
-          message={order.rejectionReason ? rejectionCopy(order.rejectionReason) : "Nothing was charged."}
-        >
-          <Button label="Back to browsing" onPress={() => router.replace("/food")} />
-        </EmptyState>
-      </Screen>
+      <FoodOrderCancelledView
+        order={order}
+        restaurantName={restaurantName}
+        reachable={reachable}
+        onRetry={() => router.replace(`/food/${order.merchantId}`)}
+        onBrowse={() => router.replace("/food")}
+      />
     );
   }
 
@@ -755,44 +713,15 @@ export default function FoodOrderScreen(): React.ReactElement {
   // reused verbatim rather than forked (UNDELIVERED_REASON_LABEL covers both "unreachable"/"refused"
   // already). R-08's cash-ban is a real, undisclosed-until-now consequence — named here, not buried. ──
   if (order.status === "undelivered") {
-    const reason = trackQ.data?.undeliveredReason ?? null;
-    const attempts = trackQ.data?.undeliveredAttempts ?? null;
     return (
-      <Screen>
-        <OfflineBanner state={reachable ? "online" : "offline"} />
-        <OrderHeader restaurantName={restaurantName} pillLabel="Not delivered" pillTone="neutral" />
-        <Card>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 9, marginBottom: 10 }}>
-            <View
-              style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}
-            >
-              <Icon name="circle-alert" size={18} color={tokens.color.danger} />
-            </View>
-            <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: tokens.color.danger }}>We couldn&apos;t hand your order over</Text>
-          </View>
-          <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 19, marginBottom: 10 }}>
-            Your rider tried at your delivery address. The food is going back to {restaurantName} — you weren&apos;t charged for it.
-          </Text>
-          <View
-            style={{ flexDirection: "row", alignItems: "center", gap: 9, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface }}
-          >
-            <Icon name="circle-alert" size={15} color={tokens.color.muted} />
-            <Text style={{ flex: 1, fontSize: 12.5, color: tokens.color.ink, lineHeight: 18 }}>
-              <Text style={{ fontWeight: "700" }}>Reason recorded by your rider: </Text>
-              {UNDELIVERED_REASON_LABEL[reason ?? ""] ?? "delivery not completed"}
-              {attempts != null ? ` · ${attempts} attempt${attempts === 1 ? "" : "s"}` : ""}
-            </Text>
-          </View>
-          {reason === "refused" ? (
-            <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 8, lineHeight: 17 }}>
-              Since this order wasn&apos;t paid for, cash is no longer available as a payment method on your account — mobile money only
-              from here on.
-            </Text>
-          ) : null}
-        </Card>
-        <GetHelpControl orderId={orderId} />
-        <Button label="Back to browsing" variant="ghost" onPress={() => router.replace("/food")} />
-      </Screen>
+      <FoodOrderUndeliveredView
+        orderId={orderId}
+        restaurantName={restaurantName}
+        reachable={reachable}
+        reason={trackQ.data?.undeliveredReason}
+        attempts={trackQ.data?.undeliveredAttempts}
+        onBackToBrowsing={() => router.replace("/food")}
+      />
     );
   }
 
@@ -858,31 +787,5 @@ export default function FoodOrderScreen(): React.ReactElement {
         <Row label="Total" value={formatMoney(order.total ?? order.merchantGoodsTotal ?? 0)} />
       </Card>
     </Screen>
-  );
-}
-
-function OrderHeader({
-  restaurantName,
-  pillLabel,
-  pillTone,
-}: {
-  restaurantName: string;
-  pillLabel: string;
-  pillTone: "neutral" | "highlight" | "success";
-}): React.ReactElement {
-  return (
-    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-      <Text style={{ fontSize: 19, fontWeight: "700" }}>{restaurantName}</Text>
-      <StatusPill status={pillLabel} tone={pillTone} />
-    </View>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }): React.ReactElement {
-  return (
-    <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
-      <Text style={{ fontSize: 13, fontWeight: "500", color: tokens.color.muted }}>{label}</Text>
-      <Text style={{ fontSize: 14.5, fontWeight: "700", color: tokens.color.ink }}>{value}</Text>
-    </View>
   );
 }
