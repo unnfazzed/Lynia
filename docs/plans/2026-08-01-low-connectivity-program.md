@@ -32,7 +32,7 @@ permanent standing routines.
 |---|---|---|---|
 | Hermes JS bundle (OTA cost) | 6,455,000 B budget vs ~5.0 MB measured 2026-07-20 | `apps/mobile/size-budget.json` + `ci.yml mobile-bundle-size` (fails PRs over budget) | A-T1 ratchets to measured+5%; budgets only move DOWN in LC PRs; a legitimate raise needs same-PR justification |
 | Android export total (JS+assets) | 12,690,000 B budget | same | same |
-| Native per-device download | unmeasured (EAS/`mobile-release.yml` dormant) | A-T5 inventories levers + baseline path; report-only until EAS armed | no new native dep without stated size cost |
+| Native per-device download | unmeasured (EAS/`mobile-release.yml` dormant) | A-T5 (2026-08-03) confirmed the delivery config (AAB split) + shrink levers (R8/resources) are already optimal and the measurement path already exists in `mobile-release.yml`; the number itself stays blocked on a founder arming `EAS_RELEASE_ENABLED` | no new native dep without stated size cost |
 | Session data (core journeys) | baselined 2026-08-03 (A-T4, field-by-field trace, not live capture): customer parcel journey ≈181 KB/26min (172 KB resp + 9.3 KB req; WS-primary tracking); customer food journey ≈360-405 KB/26min (poll-only, no socket exists for food orders); rider steady-state hour ≈173-422 KB (parcel job leg) or ≈422-653 KB (food job leg), range driven by RUM sampling assumption | report-only, no CI gate yet; A-T4 traced every request+response against the real service/response-builder code, accounting for `apps/api/src/main.ts:92-99`'s gzip/brotli compression (≥1 KB bodies only) and the client's ETag conditional-GET layer (`apps/mobile/src/api/client.ts:91-118`) | provisional ≤150 KB / ≤300 KB/h targets retired as unrealistic pre-fix; new evidence-based near-term targets: customer parcel journey ≤120 KB, customer food journey ≤150 KB, rider steady-state hour ≤200 KB/h — achievable once A-O6 (RUM sampling, single largest lever at ≈140 KB/session) + A-O9 (food dual-poll, second largest at ≈94-271 KB) land; A-O14/A-O7 add further headroom |
 | Cold start | warm-paint shipped for home/profile/history/wallet | B-T1 baselines the boot path | targets: warm boot paints with ZERO network round-trips before first frame; cold boot interactive in ≤3 sequential round-trips |
 
@@ -181,8 +181,18 @@ resilience seams ([resilience]).
       Zero fixed-this-run defects — every finding is a byte-diet optimization on already-correct
       functionality (matches the A-T2/A-T3 precedent). §2's session-data budget row updated from
       "provisional" to evidence-baselined near-term targets. See `docs/LC-A-REPORT-2026-08-03.md`.
-- [ ] A-T5 Native binary levers inventory (report-only while EAS dormant): ABI/AAB delivery
-      config, resource shrinking, per-device download measurement path.
+- [x] A-T5 **AUDITED (2026-08-03)** — Native binary levers inventory (report-only while EAS
+      dormant): confirmed **already optimal** — `eas.json`'s `production` profile builds an AAB
+      (`android.buildType: "app-bundle"`), so Play's automatic per-device split already covers ABI
+      + density + language without any manual `splits`/`resConfigs` Gradle config (the QA sideload
+      APK is intentionally universal-ABI per `docs/APP-SIZE.md`, not a real delivery shape); R8 +
+      resource shrinking are already enabled via `expo-build-properties` in `app.config.ts` and
+      measured effective (`docs/APP-SIZE.md`: dex −75%); the per-device measurement path exists
+      (`mobile-release.yml`'s AAB-size step) and deliberately avoids vendoring `bundletool`
+      (documented supply-chain rationale), but stays numerically unmeasured until a founder arms
+      `EAS_RELEASE_ENABLED` — not something a JS/config-only firing can close. **Zero defects, zero
+      new optimization items** — closes Lane A's audit-territory phase; Lane A moves permanently
+      into OPTIMIZE MODE. See `docs/LC-A-REPORT-2026-08-03b.md`.
 
 **Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-02 steer #2 — see
 `docs/LC-STEER-2026-08-02b.md` §4 for rationale — and again 2026-08-03 by the A-T4 wire-bytes
