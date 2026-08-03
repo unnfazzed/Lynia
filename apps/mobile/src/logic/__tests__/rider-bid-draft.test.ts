@@ -1,4 +1,12 @@
-import { buildSentOfferEntry, isRiderBidDraftExpired, isSentOfferExpired, parseRiderBidDraft, parseRiderSentOffers } from "../rider-bid-draft";
+import {
+  buildSentOfferEntry,
+  isRiderBidDraftExpired,
+  isSentOfferExpired,
+  isSentOfferStale,
+  parseRiderBidDraft,
+  parseRiderSentOffers,
+  SENT_OFFER_RETENTION_MS,
+} from "../rider-bid-draft";
 
 const validSelected = {
   id: "order-1",
@@ -146,5 +154,41 @@ describe("isSentOfferExpired (BH-21: a restored sent-offer whose window already 
   it("treats an unparseable expiresAt as expired rather than trusting it", () => {
     const bad = { ...offer, expiresAt: "not-a-date" };
     expect(isSentOfferExpired(bad, Date.now())).toBe(true);
+  });
+});
+
+// B-T3: `sentOffers` used to have exactly one removal path (a full wipe on going offline) — a
+// taken/expired resolution only flipped the card's own display state, so a busy-market rider who
+// stayed online for a long shift accumulated one permanent "Your offers" card per bid, forever, plus
+// a growing per-write SecureStore payload (saveRiderSentOffers persists the whole list on every
+// change). isSentOfferStale is the pure gate the periodic sweep in rider/(tabs)/index.tsx uses to
+// evict resolved offers instead — this pins the bound so the eviction rule can't silently regress
+// back to "never".
+describe("isSentOfferStale (B-T3: resolved sent-offers must not accumulate for the whole online shift)", () => {
+  const closesAt = new Date(validSelected.createdAt).getTime() + 90_000; // OFFER_WINDOW_MS
+  const offer = buildSentOfferEntry(validSelected, "2.50", 8);
+
+  it("is not stale while the auction is still open", () => {
+    expect(isSentOfferStale(offer, closesAt - 1)).toBe(false);
+  });
+
+  it("is not stale immediately after the auction closes — the resolution message must still be visible", () => {
+    expect(isSentOfferStale(offer, closesAt)).toBe(false);
+    expect(isSentOfferStale(offer, closesAt + SENT_OFFER_RETENTION_MS - 1)).toBe(false);
+  });
+
+  it("is stale once the retention window has fully elapsed", () => {
+    expect(isSentOfferStale(offer, closesAt + SENT_OFFER_RETENTION_MS)).toBe(true);
+  });
+
+  it("is stale well after the retention window — the unbounded-growth repro this run fixed", () => {
+    // Before this fix, an offer resolved hours into a shift stayed in `sentOffers` for the rest of
+    // the online session; the sweep must be able to evict something that's been stale a long time.
+    expect(isSentOfferStale(offer, closesAt + 6 * 60 * 60 * 1000)).toBe(true);
+  });
+
+  it("treats an unparseable expiresAt as stale rather than trusting it", () => {
+    const bad = { ...offer, expiresAt: "not-a-date" };
+    expect(isSentOfferStale(bad, Date.now())).toBe(true);
   });
 });

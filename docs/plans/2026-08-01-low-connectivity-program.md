@@ -288,8 +288,38 @@ resilience seams ([resilience]).
       inline Marker `coordinate` object was confirmed real by the finder but 2-of-3 verifiers ruled
       it a duplicate of the already-tracked `B-O2` (no fresh correctness defect beyond the known
       missing-memo backlog). See `docs/LC-B-REPORT-2026-08-02.md`.
-- [ ] B-T3 List + memory audit: every list without virtualization, every unbounded in-memory
-      accumulation, image memory behavior on 1–2 GB devices.
+- [x] B-T3 **AUDITED (2026-08-03)** — List + memory audit: every list without virtualization, every
+      unbounded in-memory accumulation, image memory behavior on 1–2 GB devices (3 lenses, read-only
+      Explore agents — the lane-bug-hunt workflow's custom-lane arg silently fell back to the
+      hardcoded wallet lane again, the same tooling misconfiguration as `LC-B-SIB-1/2`; see the note
+      below and the new `LC-B-SIB-3/4` ledger rows it produced off-lane). **2 CONFIRMED defects,
+      fixed this run:** `LC-B07` — the customer restaurant browse/search screens
+      (`apps/mobile/app/food/index.tsx`, `food/search.tsx`) rendered `GET /restaurants` (which,
+      unlike every other list endpoint — history capped 50, board capped 50, notifications capped
+      30 — has **zero server-side cap**) through a plain `ScrollView` + `.map()`, mounting every
+      matching restaurant's cover-photo `Image` concurrently regardless of catalog size — a real
+      OOM trajectory on a 1-2GB device as merchant onboarding grows the corridor's catalog, not yet
+      triggered at today's pilot scale but the one list in the app that gets strictly worse as the
+      business grows rather than staying flat. Fixed by converting both screens to `FlatList` (this
+      codebase's first — a template for `B-O1`), which windows the concurrently-mounted/decoded
+      images to what's on-screen independent of catalog size; the query itself staying uncapped is
+      left as `B-O10` below. Regression tests in `app/food/__tests__/index.test.tsx` /
+      `search.test.tsx` (assert a single `FlatList` receives the full dataset, pinning the
+      virtualization so a future "just add a row" edit can't quietly revert to `ScrollView`).
+      `LC-B08` — the rider board's "Your offers" list (`sentOffers`,
+      `apps/mobile/app/rider/(tabs)/index.tsx`) had exactly one removal path (a full wipe on going
+      offline) — a taken/expired resolution only flipped the card's own display state
+      (`board.takenOrderIds`/`expiredOrderIds`), never dropped the entry, so a busy-market rider who
+      stayed online for a long shift accumulated one permanent "not chosen"/"window closed" card per
+      bid for the rest of the session, plus a growing per-write SecureStore payload
+      (`saveRiderSentOffers` persists the whole list on every change). Fixed with a periodic sweep
+      (15s interval while online) that evicts offers `SENT_OFFER_RETENTION_MS` (60s) past their
+      auction close — long enough the resolution message has been seen, short enough the list stays
+      bounded regardless of shift length. New `isSentOfferStale` pure gate + regression tests in
+      `src/logic/__tests__/rider-bid-draft.test.ts`. **6 pure-optimization findings appended to the
+      checklist below** (`B-O10`..`B-O15`), not fixed this run — none breaks anything today, all are
+      real waste at scale. `pnpm typecheck && pnpm lint && pnpm test` all green (679 mobile + 1511
+      API tests). See `docs/LC-B-REPORT-2026-08-03.md`.
 - [ ] B-T4 Animation/JS-thread audit: native-driver coverage, tickers, work in render bodies.
 
 **Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-02 steer #2 — see
@@ -345,6 +375,52 @@ resilience seams ([resilience]).
       (ALR-04); the only remaining scope — bandwidth contention on cold boot — was rescoped into
       B-O7 verbatim by the same report. Keeping both as separate unchecked items would double-count
       one piece of work.
+- [ ] B-O10 **(new, B-T3 finding)** `GET /restaurants` (`apps/api/src/merchant/merchant.service.ts:313`
+      `listRestaurants`) has zero server-side cap — no `take`, no cursor, unlike every other list
+      endpoint (history 50, board 50, notifications 30). `LC-B07` (fixed this run) bounded the
+      client-side memory cost with a `FlatList`, but the query and the in-memory JS array of
+      restaurant data itself stay unbounded — worth a cursor-paginated `useInfiniteQuery` (mirroring
+      `useHistoryFeed`'s shape once it exists) as the corridor's merchant catalog grows past a page.
+      Extends `B-O1`'s remit rather than duplicating it. (M)
+- [ ] B-O11 **(new, B-T3 finding)** KYC/pickup-photo preview `Image`s render the ORIGINAL
+      (undownscaled, ~3000-4000px) camera capture instead of the already-downscaled upload asset
+      sitting right there — `apps/mobile/app/rider/become.tsx:98-104,232-235` and
+      `src/ui/rider/PickupChecklist.tsx:60-64,145-149` both call `downscaleForUpload` (1280px/0.7
+      JPEG) for the UPLOAD but set the on-screen preview from the pre-downscale `asset.uri`, not the
+      already-produced `prepared.uri`. One-line swap per site; this preview stays mounted for the
+      rest of a multi-field KYC/pickup form, and `become.tsx:45`'s own comment already flags camera
+      capture as an OOM-kill risk on low-end phones — real avoidable peak-memory pressure in the
+      single most OOM-sensitive flow in the app. Easy/high-value; not fixed this run because nothing
+      is visibly broken today (Android's own view-bound downsampling absorbs some of the cost). (S)
+- [ ] B-O12 **(new, B-T3 finding)** Rider board's `openOrders` TanStack Query cache can grow
+      unboundedly across a very long, unbroken online socket session —
+      `apps/mobile/src/realtime/use-rider-board.ts:87-103`'s `boardNewOrder` handler prepends
+      (`[order, ...prev]`, no cap) and relies entirely on paired `bidExpired`/`orderTaken` removal
+      events to shrink it; the 15s REST poll that would otherwise reset it to the server's capped
+      snapshot is disabled the whole time `board.connected` stays true. No reproducible drop path
+      found (Socket.IO delivery over a live connection is reliable in-order) so this is edge-case,
+      not a confirmed defect — but nothing bounds it by design, unlike the capped REST endpoint.
+      Whoever implements `B-O1`'s `FlatList` conversion for the board should also cap or
+      periodically re-sync this cache rather than trusting the event-pair bookkeeping alone for an
+      all-day shift. (S, bundle with B-O1)
+- [ ] B-O13 **(new, B-T3 finding)** `expiredOrderIds`/`takenOrderIds` `Set`s in
+      `apps/mobile/src/realtime/use-rider-board.ts:35,38` grow for the rider's whole online session
+      with no eviction (every `bid:expired`/`order:taken` push adds an id, nothing ever removes
+      one) — geo-scoped so realistic growth over a shift is tens-to-low-hundreds of short strings;
+      real but the absolute footprint is unlikely to matter on its own. Same shape as the now-fixed
+      `LC-B08` (`sentOffers`); low priority on its own, worth revisiting if bundled with `B-O12`. (S)
+- [ ] B-O14 **(new, B-T3 finding)** Merchant kitchen board's `ackSecuredIds`/`ackHoldIds` `Set`s
+      (`apps/merchant/app/components/queue/QueueBoard.tsx:108-109,143,188`) never shrink for the
+      always-mounted kitchen tablet's whole shift — bounded in practice by one restaurant's daily
+      order volume (tens to a few hundred), so low real-world impact; noted for completeness, not
+      worth a dedicated fix on its own. (S)
+- [ ] B-O15 **(new, B-T3 finding)** Delivery-code device index (`CODE_INDEX_KEY`,
+      `apps/mobile/src/auth/device-state.ts:38,73-74`) appends one order id per completed order for
+      the life of the install with no cap, cleared only on sign-out — disk growth (SecureStore), not
+      JS-heap, driven by ordinary order volume over weeks/months rather than a session/socket loop.
+      Trivial `.slice(-N)` fix matching the same file's own `HANDBACK_ACK_MAX = 20` pattern. Lowest
+      priority of this batch — not a memory-pressure risk, just inconsistent with the rest of the
+      file's discipline. (S)
 
 ### Lane C — offline & 2G resilience (Opus 4.8, `0 6 * * *`)
 

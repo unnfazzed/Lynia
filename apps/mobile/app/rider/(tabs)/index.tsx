@@ -22,6 +22,7 @@ import {
   clearRiderBidDraft,
   isRiderBidDraftExpired,
   isSentOfferExpired,
+  isSentOfferStale,
   loadRiderBidDraft,
   loadRiderSentOffers,
   saveRiderBidDraft,
@@ -440,6 +441,25 @@ export default function RiderHome(): React.ReactElement {
   // gone and the countdowns are meaningless).
   useEffect(() => {
     if (!online) setSentOffers([]);
+  }, [online]);
+
+  // B-T3: the wipe-on-offline above was the ONLY removal path — a taken/expired resolution just
+  // flipped the card's own display state (board.takenOrderIds/expiredOrderIds) but never dropped the
+  // entry, so a busy-market rider who stayed online for a long shift accumulated one permanent card
+  // per bid. Periodically sweep offers whose auction closed more than SENT_OFFER_RETENTION_MS ago —
+  // long enough to have shown the resolution message, short enough the list (and its SecureStore
+  // mirror, saved below) stays bounded regardless of shift length or how many orders were bid on.
+  useEffect(() => {
+    if (!online) return;
+    const iv = setInterval(() => {
+      setSentOffers((prev) => {
+        if (prev.length === 0) return prev;
+        const now = Date.now();
+        const next = prev.filter((o) => !isSentOfferStale(o, now));
+        return next.length === prev.length ? prev : next;
+      });
+    }, 15_000);
+    return () => clearInterval(iv);
   }, [online]);
 
   // JOURNEY-BUGS: the compose card stayed open for an order that expired or was taken by another rider
