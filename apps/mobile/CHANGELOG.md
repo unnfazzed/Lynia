@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.6](https://github.com/unnfazzed/Lynia/compare/v0.17.5...v0.17.6) (2026-08-03)
+
+
+### Bug Fixes
+
+* **mobile:** LC-B B-O2/B-O9 — memo boundaries for JobCard/JobDetailsCard/ComposeMap ([#525](https://github.com/unnfazzed/Lynia/issues/525)) ([0c01896](https://github.com/unnfazzed/Lynia/commit/0c018969c2be14950154542b7af4afb2e0585bc2))
+
 ## [0.17.5](https://github.com/unnfazzed/Lynia/compare/v0.17.4...v0.17.5) (2026-08-03)
 
 
