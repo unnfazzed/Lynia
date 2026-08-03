@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.5](https://github.com/unnfazzed/Lynia/compare/v0.17.4...v0.17.5) (2026-08-03)
+
+
+### Performance Improvements
+
+* **mobile:** virtualize rider board open-orders list, cap board cache (LC-B B-O1b/B-O12) ([74e55df](https://github.com/unnfazzed/Lynia/commit/74e55dfcfe11e05ad17b7aafabe323bbd7ad7fac))
+
 ## [0.17.4](https://github.com/unnfazzed/Lynia/compare/v0.17.3...v0.17.4) (2026-08-03)
 
 
