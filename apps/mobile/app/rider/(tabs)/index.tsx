@@ -5,7 +5,7 @@ import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, usePathname, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { FlatList, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../../src/api/client";
 import { getMe } from "../../../src/api/auth";
 import { makeOffer } from "../../../src/api/offers";
@@ -610,49 +610,333 @@ export default function RiderHome(): React.ReactElement {
     setEta(km != null ? String(Math.max(3, Math.round((km / ETA_SPEED_KMH) * 60))) : "10");
   };
 
+  // B-O1b: the ScrollView + `.map()` board screen (same shape B-O1 fixed for history/notifications
+  // and B-T3 fixed for the restaurant catalog) mounted every JobCard concurrently regardless of how
+  // many open orders were nearby. `showOpenOrdersList` is exactly the condition the inline
+  // `ranked.map()` below used to render under: meQ resolved, not knownUnverified, not locDenied, no
+  // online-gate refusal, and online. Every OTHER state (loading / getMe error / KYC / no-GPS / gate
+  // refusal / offline) still renders through the untouched ScrollView return further down — this
+  // early return only ever fires for the one state that actually has a `ranked` list to virtualize,
+  // so a gated screen can never see a stale `ranked` leak through a FlatList `data` prop.
+  const showOpenOrdersList = online && !meQ.isLoading && !meQ.isError && !knownUnverified && !locDenied && gate == null;
+
+  // Shared JSX, hoisted out of both returns below so the FlatList branch and the untouched ScrollView
+  // branch render byte-identical markup for the pieces they have in common — a change to one can't
+  // silently drift from the other.
+  const activeJobBanner = activeJob ? (
+    <Card style={{ borderColor: tokens.color.accent }}>
+      {activeJob.status === "assigned" ? (
+        // The win state (3·3): a customer just picked this rider — say so, don't mumble.
+        <>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: 2 }}>
+            <Icon name="check" size={18} color={tokens.color.accentText} />
+            <Text style={{ fontWeight: "700", color: tokens.color.ink }}>A customer picked you!</Text>
+          </View>
+          <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+            {activeJob.pickup.landmark} → {activeJob.dropoff.landmark} · {formatMoney(activeJob.agreedFare ?? activeJob.proposedFare)}
+          </Text>
+        </>
+      ) : (
+        <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({statusPillLabel(activeJob.status)})</Text>
+      )}
+      {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
+      <Button label="Open job" variant="ghost" onPress={() => pushOnce(router, pathname, "/rider/job")} />
+    </Card>
+  ) : activeQ.isError ? (
+    <ActiveJobCheckFailedBanner onRetry={() => void activeQ.refetch()} retrying={activeQ.isFetching} />
+  ) : null;
+
+  const onlineToggleCard = (
+    <Card>
+      {/* Persistent connection chip so a silent heartbeat-drop is glanceable, not a surprise
+          at offer time. Tap it while offline to go back online. */}
+      <Pressable
+        onPress={() => {
+          if (!online) onlineM.mutate(true);
+        }}
+        disabled={online || onlineM.isPending}
+        accessibilityRole="button"
+        accessibilityLabel={online ? "You are online" : "You are offline — tap to go online"}
+        style={{ minHeight: tokens.touchTargetMin, justifyContent: "center", marginBottom: 4 }}
+      >
+        <StatusPill
+          status={online ? (board.connected && !beatStale ? "Online" : "Reconnecting") : "Offline"}
+          tone={online ? (board.connected && !beatStale ? "online" : "reconnecting") : "offline"}
+          dot
+        />
+      </Pressable>
+      <Button
+        label={online ? "Go offline" : "Go online"}
+        // Ghost while the compose card is open so "Send offer" is the screen's one primary.
+        variant={online || selected != null ? "ghost" : "primary"}
+        onPress={() => onlineM.mutate(!online)}
+        loading={onlineM.isPending}
+      />
+      <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 4 }}>
+        {online
+          ? board.connected
+            ? merchantDispatchAutoEnabled
+              ? "You're online — parcels and food orders arrive live, one queue."
+              : "You're online — new orders arrive live."
+            : "You're online — reconnecting to the live board…"
+          : "Go online to see and bid on nearby orders."}
+      </Text>
+      {locHint ? (
+        <Text style={{ fontSize: 12, color: tokens.color.danger, marginTop: 4 }}>{locHint}</Text>
+      ) : null}
+    </Card>
+  );
+
+  const sentOffersSection =
+    online && sentOffers.some((s) => s.order.id !== activeJob?.id) ? (
+      <View>
+        <Sub>Your offers</Sub>
+        {sentOffers
+          .filter((s) => s.order.id !== activeJob?.id)
+          .map((s) => (
+            // Primitive props only, so the memo holds and each card's internal 1s ticker is the
+            // only thing that repaints while its countdown runs. The taken/expired resolutions
+            // stay driven by the same board pushes as before (expiredOrderIds/takenOrderIds).
+            <SentOfferCard
+              key={s.order.id}
+              pickupLandmark={s.order.pickup.landmark}
+              dropoffLandmark={s.order.dropoff.landmark}
+              fare={s.fare}
+              etaMinutes={s.etaMinutes}
+              expiresAt={s.expiresAt}
+              taken={board.takenOrderIds.has(s.order.id)}
+              expired={board.expiredOrderIds.has(s.order.id)}
+            />
+          ))}
+      </View>
+    ) : null;
+
+  const selectedCard = selected ? (
+    <Card style={{ borderColor: tokens.color.accent }}>
+      <Text style={{ fontWeight: "700", marginBottom: 2 }}>
+        {selected.pickup.landmark} → {selected.dropoff.landmark}
+      </Text>
+      <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: tokens.space.md, fontVariant: ["tabular-nums"] }}>
+        {selected.itemDesc} · asking ${selected.proposedFare}
+      </Text>
+      {/* Segmented accept-or-counter (3·1): take the asking price in one tap, OR counter with
+          your own fare. One offer per order either way. */}
+      <View
+        accessibilityRole="tablist"
+        style={{
+          flexDirection: "row",
+          gap: 4,
+          padding: 4,
+          backgroundColor: tokens.color.surface,
+          borderRadius: tokens.radius.pill,
+          marginBottom: tokens.space.md,
+        }}
+      >
+        {(
+          [
+            { key: "accept" as const, label: `Accept $${selected.proposedFare}` },
+            { key: "counter" as const, label: "Offer a different price" },
+          ]
+        ).map((seg) => {
+          const on = offerMode === seg.key;
+          return (
+            <Pressable
+              key={seg.key}
+              onPress={() => {
+                setOfferMode(seg.key);
+                // Accept = the customer's price, exactly; switching back re-seeds it.
+                if (seg.key === "accept") setFare(selected.proposedFare);
+              }}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+              style={{
+                flex: 1,
+                minHeight: tokens.touchTargetMin,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: tokens.radius.pill,
+                backgroundColor: on ? tokens.color.bg : "transparent",
+                ...(on ? tokens.shadow.card : null),
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: "700", color: on ? tokens.color.accentText : tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+                {seg.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {offerMode === "counter" ? (
+        <Field
+          label="Your fare (USD)"
+          value={fare}
+          onChangeText={setFare}
+          keyboardType="decimal-pad"
+          hint="Ask for more if the trip's worth it — the customer accepts or declines."
+        />
+      ) : null}
+      <Field label="ETA to pickup (min)" value={eta} onChangeText={setEta} keyboardType="number-pad" maxLength={3} />
+      <Button
+        label={offerSlow ? "Still sending — hang on" : offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send my price"}
+        onPress={() => canOffer && offerM.mutate({ fare, fareNum: fareNum!, etaNum: etaNum! })}
+        loading={offerM.isPending}
+        disabled={!canOffer}
+      />
+      {/* BH-12: disabled while the offer send is in flight — mirrors BailSheet/UndeliveredSheet's
+          dismiss guard. Without this, a tap here didn't abort the in-flight makeOffer call: on
+          success the offer still landed and later reappeared unannounced as a "Your offers" card
+          for a bid the rider believed they'd cancelled; on failure the resulting ErrorText rendered
+          on an already-dismissed screen with no visible context. */}
+      <Button label="Cancel" variant="ghost" onPress={() => setSelected(null)} disabled={offerM.isPending} />
+    </Card>
+  ) : null;
+
+  // Unconditional trailing content — must render regardless of meQ/knownUnverified/locDenied/gate
+  // state (a rider stuck on ANY gated screen still needs a way back to the customer view), so it's
+  // shared between both returns below rather than living only in the FlatList's footer.
+  const trailingFooterContent = (
+    <>
+      {confirmSwitch ? (
+        <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
+          <Text style={{ fontWeight: "700", marginBottom: 6, color: tokens.color.ink }}>
+            {activeJob ? "You have a job in progress" : "You're online for deliveries"}
+          </Text>
+          <Sub>
+            {activeJob
+              ? "Switching to the customer view won't cancel your job, but you'll stop seeing job updates here until you come back."
+              : "Switching to the customer view takes you offline, so you'll stop receiving nearby deliveries."}
+          </Sub>
+          <Button
+            label="Go to customer view"
+            onPress={() => {
+              // No-active-job path: the copy promises this takes you offline, so make it true —
+              // fire the offline toggle best-effort (don't block leaving on it; the component
+              // unmounts on navigate and the request still lands server-side). The active-job path
+              // deliberately stays online (its copy says the job isn't cancelled), so only toggle
+              // when there's no active job.
+              if (!activeJob) onlineM.mutate(false);
+              router.replace("/home");
+            }}
+          />
+          <Button label="Stay online as a rider" variant="ghost" onPress={() => setConfirmSwitch(false)} />
+        </Card>
+      ) : (
+        <Button
+          label="Back to customer"
+          variant="ghost"
+          onPress={() => (online || activeJob ? setConfirmSwitch(true) : router.replace("/home"))}
+        />
+      )}
+      <ErrorText message={error} />
+      {info ? <Sub>{info}</Sub> : null}
+      <View style={{ height: tokens.space.xxl }} />
+    </>
+  );
+
+  const boardBanner = (
+    <BrandHeader
+      label="RIDER"
+      address="Jobs near you"
+      showSearch={false}
+      onBell={() => router.push("/notifications")}
+      onProfile={() => router.push("/rider/account")}
+    />
+  );
+
+  if (showOpenOrdersList) {
+    return (
+      // Board root gets the one other sanctioned green BrandHeader surface (plan §5 B1) — the tab
+      // bar below already carries Jobs/Money/Account, so the old inline "Rider" heading + Trips/Rider
+      // setup buttons move to the Account tab bridge; inner screens (rider/job, rider/become, …) keep
+      // their plain white Screen bars, unchanged.
+      <AppScreen dark banner={boardBanner}>
+        <View style={{ flex: 1, paddingHorizontal: tokens.space.screen }}>
+          {/* A dropped board socket while online surfaces as the standard top banner. */}
+          {online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
+          <FlatList
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingTop: tokens.space.md }}
+            data={ranked}
+            keyExtractor={({ o }) => o.id}
+            renderItem={({ item: { o, km } }) => (
+              <JobCard
+                jobType="parcel"
+                from={o.pickup.landmark}
+                to={o.dropoff.landmark}
+                distanceLabel={km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`}
+                fare={o.proposedFare}
+                note={o.itemDesc}
+                actionLabel="Make an offer"
+                onAction={() => chooseOrder(o)}
+              />
+            )}
+            ListHeaderComponent={
+              <>
+                {activeJobBanner}
+                {onlineToggleCard}
+                {sentOffersSection}
+                <View>
+                  <Sub>Open orders{openQ.isFetching ? " …" : ""}</Sub>
+                  {/* 2·b1: muted, self-clearing notice when a nearby order the rider hadn't bid on is
+                      taken by someone else — so a card vanishing off the board reads as "someone was
+                      faster", not a glitch. Never an alarm; one line regardless of how many go at once. */}
+                  {takenNotice ? (
+                    <View
+                      accessibilityRole="text"
+                      accessibilityLiveRegion="polite"
+                      style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.sm }}
+                    >
+                      <Icon name="bike" size={15} color={tokens.color.muted} />
+                      <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+                        A nearby order was just taken by another rider. Stay online — more come through fast.
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              </>
+            }
+            ListEmptyComponent={
+              openQ.isError ? (
+                <EmptyState icon="wifi-off" title="Couldn't load nearby orders" message="Check your connection and try again.">
+                  <Button label="Retry" onPress={() => void openQ.refetch()} />
+                </EmptyState>
+              ) : openQ.isLoading ? (
+                // The initial geo-scoped fetch can take up to the client's ~15s timeout on a slow link.
+                // Show the skeleton while it's in flight (matching rider/job.tsx's convention) instead of
+                // asserting the definitive "No open orders near you" conclusion before the first fetch returns.
+                <SkeletonList />
+              ) : (
+                <EmptyState
+                  icon="inbox"
+                  title="No open orders near you right now"
+                  message="You're online and first in line — stay put, requests come through fast. Busiest 7–9am & 5–7pm."
+                />
+              )
+            }
+            ListFooterComponent={
+              <>
+                {selectedCard}
+                {trailingFooterContent}
+              </>
+            }
+          />
+        </View>
+      </AppScreen>
+    );
+  }
+
   return (
     // Board root gets the one other sanctioned green BrandHeader surface (plan §5 B1) — the tab
     // bar below already carries Jobs/Money/Account, so the old inline "Rider" heading + Trips/Rider
     // setup buttons move to the Account tab bridge; inner screens (rider/job, rider/become, …) keep
     // their plain white Screen bars, unchanged.
-    <AppScreen
-      dark
-      banner={
-        <BrandHeader
-          label="RIDER"
-          address="Jobs near you"
-          showSearch={false}
-          onBell={() => router.push("/notifications")}
-          onProfile={() => router.push("/rider/account")}
-        />
-      }
-    >
+    <AppScreen dark banner={boardBanner}>
       <View style={{ flex: 1, paddingHorizontal: tokens.space.screen }}>
       {/* A dropped board socket while online surfaces as the standard top banner. */}
       {online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: tokens.space.md }}>
-        {activeJob ? (
-          <Card style={{ borderColor: tokens.color.accent }}>
-            {activeJob.status === "assigned" ? (
-              // The win state (3·3): a customer just picked this rider — say so, don't mumble.
-              <>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: 2 }}>
-                  <Icon name="check" size={18} color={tokens.color.accentText} />
-                  <Text style={{ fontWeight: "700", color: tokens.color.ink }}>A customer picked you!</Text>
-                </View>
-                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                  {activeJob.pickup.landmark} → {activeJob.dropoff.landmark} · {formatMoney(activeJob.agreedFare ?? activeJob.proposedFare)}
-                </Text>
-              </>
-            ) : (
-              <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({statusPillLabel(activeJob.status)})</Text>
-            )}
-            {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
-            <Button label="Open job" variant="ghost" onPress={() => pushOnce(router, pathname, "/rider/job")} />
-          </Card>
-        ) : activeQ.isError ? (
-          <ActiveJobCheckFailedBanner onRetry={() => void activeQ.refetch()} retrying={activeQ.isFetching} />
-        ) : null}
+        {activeJobBanner}
 
         {meQ.isLoading ? (
           <View style={{ marginTop: tokens.space.lg }}>
@@ -835,67 +1119,9 @@ export default function RiderHome(): React.ReactElement {
           </EmptyState>
         ) : (
           <>
-        <Card>
-          {/* Persistent connection chip so a silent heartbeat-drop is glanceable, not a surprise
-              at offer time. Tap it while offline to go back online. */}
-          <Pressable
-            onPress={() => {
-              if (!online) onlineM.mutate(true);
-            }}
-            disabled={online || onlineM.isPending}
-            accessibilityRole="button"
-            accessibilityLabel={online ? "You are online" : "You are offline — tap to go online"}
-            style={{ minHeight: tokens.touchTargetMin, justifyContent: "center", marginBottom: 4 }}
-          >
-            <StatusPill
-              status={online ? (board.connected && !beatStale ? "Online" : "Reconnecting") : "Offline"}
-              tone={online ? (board.connected && !beatStale ? "online" : "reconnecting") : "offline"}
-              dot
-            />
-          </Pressable>
-          <Button
-            label={online ? "Go offline" : "Go online"}
-            // Ghost while the compose card is open so "Send offer" is the screen's one primary.
-            variant={online || selected != null ? "ghost" : "primary"}
-            onPress={() => onlineM.mutate(!online)}
-            loading={onlineM.isPending}
-          />
-          <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 4 }}>
-            {online
-              ? board.connected
-                ? merchantDispatchAutoEnabled
-                  ? "You're online — parcels and food orders arrive live, one queue."
-                  : "You're online — new orders arrive live."
-                : "You're online — reconnecting to the live board…"
-              : "Go online to see and bid on nearby orders."}
-          </Text>
-          {locHint ? (
-            <Text style={{ fontSize: 12, color: tokens.color.danger, marginTop: 4 }}>{locHint}</Text>
-          ) : null}
-        </Card>
+        {onlineToggleCard}
 
-        {online && sentOffers.some((s) => s.order.id !== activeJob?.id) ? (
-          <View>
-            <Sub>Your offers</Sub>
-            {sentOffers
-              .filter((s) => s.order.id !== activeJob?.id)
-              .map((s) => (
-                // Primitive props only, so the memo holds and each card's internal 1s ticker is the
-                // only thing that repaints while its countdown runs. The taken/expired resolutions
-                // stay driven by the same board pushes as before (expiredOrderIds/takenOrderIds).
-                <SentOfferCard
-                  key={s.order.id}
-                  pickupLandmark={s.order.pickup.landmark}
-                  dropoffLandmark={s.order.dropoff.landmark}
-                  fare={s.fare}
-                  etaMinutes={s.etaMinutes}
-                  expiresAt={s.expiresAt}
-                  taken={board.takenOrderIds.has(s.order.id)}
-                  expired={board.expiredOrderIds.has(s.order.id)}
-                />
-              ))}
-          </View>
-        ) : null}
+        {sentOffersSection}
 
         {online ? (
           <View>
@@ -947,124 +1173,13 @@ export default function RiderHome(): React.ReactElement {
           </View>
         ) : null}
 
-        {selected ? (
-          <Card style={{ borderColor: tokens.color.accent }}>
-            <Text style={{ fontWeight: "700", marginBottom: 2 }}>
-              {selected.pickup.landmark} → {selected.dropoff.landmark}
-            </Text>
-            <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: tokens.space.md, fontVariant: ["tabular-nums"] }}>
-              {selected.itemDesc} · asking ${selected.proposedFare}
-            </Text>
-            {/* Segmented accept-or-counter (3·1): take the asking price in one tap, OR counter with
-                your own fare. One offer per order either way. */}
-            <View
-              accessibilityRole="tablist"
-              style={{
-                flexDirection: "row",
-                gap: 4,
-                padding: 4,
-                backgroundColor: tokens.color.surface,
-                borderRadius: tokens.radius.pill,
-                marginBottom: tokens.space.md,
-              }}
-            >
-              {(
-                [
-                  { key: "accept" as const, label: `Accept $${selected.proposedFare}` },
-                  { key: "counter" as const, label: "Offer a different price" },
-                ]
-              ).map((seg) => {
-                const on = offerMode === seg.key;
-                return (
-                  <Pressable
-                    key={seg.key}
-                    onPress={() => {
-                      setOfferMode(seg.key);
-                      // Accept = the customer's price, exactly; switching back re-seeds it.
-                      if (seg.key === "accept") setFare(selected.proposedFare);
-                    }}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: on }}
-                    style={{
-                      flex: 1,
-                      minHeight: tokens.touchTargetMin,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: tokens.radius.pill,
-                      backgroundColor: on ? tokens.color.bg : "transparent",
-                      ...(on ? tokens.shadow.card : null),
-                    }}
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: on ? tokens.color.accentText : tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                      {seg.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {offerMode === "counter" ? (
-              <Field
-                label="Your fare (USD)"
-                value={fare}
-                onChangeText={setFare}
-                keyboardType="decimal-pad"
-                hint="Ask for more if the trip's worth it — the customer accepts or declines."
-              />
-            ) : null}
-            <Field label="ETA to pickup (min)" value={eta} onChangeText={setEta} keyboardType="number-pad" maxLength={3} />
-            <Button
-              label={offerSlow ? "Still sending — hang on" : offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send my price"}
-              onPress={() => canOffer && offerM.mutate({ fare, fareNum: fareNum!, etaNum: etaNum! })}
-              loading={offerM.isPending}
-              disabled={!canOffer}
-            />
-            {/* BH-12: disabled while the offer send is in flight — mirrors BailSheet/UndeliveredSheet's
-                dismiss guard. Without this, a tap here didn't abort the in-flight makeOffer call: on
-                success the offer still landed and later reappeared unannounced as a "Your offers" card
-                for a bid the rider believed they'd cancelled; on failure the resulting ErrorText rendered
-                on an already-dismissed screen with no visible context. */}
-            <Button label="Cancel" variant="ghost" onPress={() => setSelected(null)} disabled={offerM.isPending} />
-          </Card>
-        ) : null}
+        {selectedCard}
           </>
         )}
           </>
         )}
 
-        {confirmSwitch ? (
-          <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
-            <Text style={{ fontWeight: "700", marginBottom: 6, color: tokens.color.ink }}>
-              {activeJob ? "You have a job in progress" : "You're online for deliveries"}
-            </Text>
-            <Sub>
-              {activeJob
-                ? "Switching to the customer view won't cancel your job, but you'll stop seeing job updates here until you come back."
-                : "Switching to the customer view takes you offline, so you'll stop receiving nearby deliveries."}
-            </Sub>
-            <Button
-              label="Go to customer view"
-              onPress={() => {
-                // No-active-job path: the copy promises this takes you offline, so make it true —
-                // fire the offline toggle best-effort (don't block leaving on it; the component
-                // unmounts on navigate and the request still lands server-side). The active-job path
-                // deliberately stays online (its copy says the job isn't cancelled), so only toggle
-                // when there's no active job.
-                if (!activeJob) onlineM.mutate(false);
-                router.replace("/home");
-              }}
-            />
-            <Button label="Stay online as a rider" variant="ghost" onPress={() => setConfirmSwitch(false)} />
-          </Card>
-        ) : (
-          <Button
-            label="Back to customer"
-            variant="ghost"
-            onPress={() => (online || activeJob ? setConfirmSwitch(true) : router.replace("/home"))}
-          />
-        )}
-        <ErrorText message={error} />
-        {info ? <Sub>{info}</Sub> : null}
-        <View style={{ height: tokens.space.xxl }} />
+        {trailingFooterContent}
       </ScrollView>
       </View>
     </AppScreen>
