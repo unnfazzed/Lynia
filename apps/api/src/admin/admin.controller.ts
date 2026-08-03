@@ -312,11 +312,12 @@ export class AdminController {
     return this.merchantsService.listMerchants();
   }
 
-  /** Merchant detail (X1): profile + recent orders + the merchant's own debt-ledger trail. 404s when
-   *  the id isn't a merchant. */
+  /** Merchant detail (X1): profile + recent orders + a page of the merchant's own debt-ledger trail.
+   *  404s when the id isn't a merchant. `debtCursor` (LC-D-T1) is the last debt-ledger row id from the
+   *  previous page — pass it to page further back past the first 30 entries. */
   @Get("merchants/:id")
-  async merchantDetail(@Param("id", ParseUUIDPipe) id: string) {
-    const merchant = await this.merchantsService.getMerchantDetail(id);
+  async merchantDetail(@Param("id", ParseUUIDPipe) id: string, @Query("debtCursor") debtCursor?: string) {
+    const merchant = await this.merchantsService.getMerchantDetail(id, debtCursor);
     if (!merchant) throw new NotFoundException("Merchant not found");
     return merchant;
   }

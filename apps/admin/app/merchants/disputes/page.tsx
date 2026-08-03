@@ -94,6 +94,14 @@ export default async function FoodDisputesPage() {
             )
           }
         />
+        {/* LC-D-T1: this queue hard-caps server-side at 100 rows (oldest-frozen-first) with no cursor —
+            disclose it like every sibling directory (customers/orders/riders/merchants/issues) instead
+            of silently reading as complete. */}
+        {disputes && disputes.handshakeDisputes.length >= 100 ? (
+          <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
+            Showing the oldest 100 frozen handshakes — newer ones aren&apos;t listed until these are resolved.
+          </div>
+        ) : null}
       </section>
 
       <section className="card">
@@ -115,6 +123,14 @@ export default async function FoodDisputesPage() {
             )
           }
         />
+        {/* LC-D-T1: this half hard-caps server-side at 100 rows (newest-updated-first) with no cursor —
+            the rows dropped once >100 accumulate are the OLDEST/most-SLA-overdue ones, so disclose it
+            rather than let it silently read as complete. */}
+        {disputes && disputes.refundsOverdue.length >= 100 ? (
+          <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
+            Showing the 100 most recently updated refunds — older overdue refunds aren&apos;t listed.
+          </div>
+        ) : null}
       </section>
     </main>
   );

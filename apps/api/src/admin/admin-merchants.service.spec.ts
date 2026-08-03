@@ -87,6 +87,71 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
       { id: "l1", orderId: "o2", riderId: "r1", type: "opened", amount: "8.00", note: null, actor: "system", at: "2026-07-29T00:00:00.000Z" },
       { id: "l2", orderId: "o2", riderId: "r1", type: "written_off", amount: "-8.00", note: "non-return", actor: "m1", at: "2026-07-30T00:00:00.000Z" },
     ]);
+    expect(d.debtLedgerNextCursor).toBeNull();
+  });
+
+  /** One debt-ledger row builder, newest-first ids (l1 = newest). */
+  function debtRow(id: string, at: string) {
+    return {
+      id,
+      orderId: "o2",
+      riderId: "r1",
+      type: "opened" as const,
+      amount: dec("8.00"),
+      note: null,
+      actor: "system",
+      createdAt: new Date(at),
+    };
+  }
+
+  // LC-D-T1: the debt ledger used to hard-cap at `take: 30` with no `nextCursor` and no way to page
+  // back — the same shape D-D0f/LC-D07 fixed for the rider wallet ledger, just missed here. Mirrors
+  // AdminRidersService.walletView's cursor tests exactly.
+  it("LC-D-T1: a merchant with more than 30 debt-ledger entries gets a nextCursor instead of silently truncating", async () => {
+    const rows = Array.from({ length: 31 }, (_, i) =>
+      debtRow(`l${i + 1}`, new Date(new Date("2026-07-30T00:00:00Z").getTime() - i * 86_400_000).toISOString()),
+    );
+    const prisma = {
+      merchant: { findUnique: async () => merchant },
+      order: {
+        count: async () => 12,
+        aggregate: async () => ({ _sum: { debtAmount: dec("8.00") }, _count: { _all: 1 } }),
+        findMany: async () => [],
+      },
+      merchantDebtLedger: { findMany: async () => rows },
+    };
+    const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
+    const d = (await svc.getMerchantDetail("m1"))!;
+    // Only the first 30 of the 31 fetched rows are returned — the 31st was fetched purely to detect
+    // hasMore and must not leak into the page.
+    expect(d.debtLedger).toHaveLength(30);
+    expect(d.debtLedger[29]!.id).toBe("l30");
+    expect(d.debtLedgerNextCursor).toBe("l30");
+  });
+
+  it("LC-D-T1: debtCursor pages past the first 30 entries instead of always returning the newest page", async () => {
+    const prisma = {
+      merchant: { findUnique: async () => merchant },
+      order: {
+        count: async () => 12,
+        aggregate: async () => ({ _sum: { debtAmount: dec("8.00") }, _count: { _all: 1 } }),
+        findMany: async () => [],
+      },
+      merchantDebtLedger: {
+        findMany: async (args: { orderBy: unknown; take: number; cursor?: { id: string }; skip?: number }) => {
+          expect(args.orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
+          expect(args.take).toBe(31);
+          expect(args.cursor).toEqual({ id: "l30" });
+          expect(args.skip).toBe(1);
+          return [debtRow("l31", "2026-06-30T00:00:00Z")];
+        },
+      },
+    };
+    const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
+    const d = (await svc.getMerchantDetail("m1", "l30"))!;
+    expect(d.debtLedger).toHaveLength(1);
+    expect(d.debtLedger[0]!.id).toBe("l31");
+    expect(d.debtLedgerNextCursor).toBeNull();
   });
 });
 

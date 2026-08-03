@@ -98,7 +98,7 @@ export class AdminService {
       ridersOnline,
       ridersVerified,
       recent,
-      withOffer,
+      ordersWithOfferRows,
       deliveredToday,
       undeliveredToday,
       faresTodayAgg,
@@ -131,7 +131,12 @@ export class AdminService {
           rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
         },
       }),
-      this.prisma.offer.findMany({ distinct: ["orderId"], select: { orderId: true } }),
+      // LC-D-T1: was `offer.findMany({ distinct: ["orderId"] })`, an unbounded (no `where`, no
+      // `take`) full-table scan feeding just a count — every other query in this Promise.all is
+      // either a bounded `count()`/`aggregate()` or capped at `take: 20`. A single DB-side
+      // `COUNT(DISTINCT ...)` gets the same exact number without pulling one row per distinct
+      // orderId over the wire on every Overview load.
+      this.prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(DISTINCT order_id)::int AS count FROM offers`,
       // Today's throughput: orders CURRENTLY `completed` (not merely `deliveredAt`-stamped, which stays
       // set forever even if the order is later admin-cancelled post-delivery — WD-024) whose completion
       // landed today. `completedAt` is only ever written in the same update as `status:"completed"`
@@ -173,7 +178,7 @@ export class AdminService {
       metrics: computeFunnel({
         totalBroadcasts: totalOrders,
         totalOffers,
-        ordersWithOffer: withOffer.length,
+        ordersWithOffer: ordersWithOfferRows[0]?.count ?? 0,
         expired,
       }),
       // Today's throughput (drives the "Completed today" + "Fares today" headline KPIs).
