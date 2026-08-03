@@ -185,6 +185,13 @@ to route 100% back. **Exercise it once** (LR21).
 > EAS secrets, the `production-mobile` environment, the arming switch) and pauses only for the
 > human-only ones (Expo login, Play Console, token paste). `scripts/eas-arm.sh --verify` is a
 > read-only audit of what's armed. The commands below remain the manual reference.
+>
+> **Partial audit, 2026-08-03 (live against the EAS API — GitHub secrets aren't remotely readable):**
+> already armed on the Expo side: project link, the EAS-managed upload keystore (since 2026-06-30),
+> `GOOGLE_MAPS_API_KEY` (preview + production) and the PostHog vars. Still missing: the **Play
+> service-account key** on EAS (blocks auto-submit), `GOOGLE_SERVICES_JSON` (push inert without it),
+> and the GitHub side (`EXPO_TOKEN` secret, `EAS_RELEASE_ENABLED` — off as of the 2026-07-23
+> skipped dispatch). See `docs/PLAY-STORE-SUBMISSION.md` §7.2/§9 for the same audit in checklist form.
 
 ```bash
 npm i -g eas-cli && eas login                       # or use npx eas-cli

@@ -611,17 +611,29 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       references before and after. `food/search.tsx`'s weaker sibling (unmemoized filter + fresh
       per-row closures) stays out of scope per this item's own note — that filter's
       keystroke-recompute is semantically necessary, not wasted.
-- [ ] B-O8 **(new, B-T2 finding)** `food/order/[orderId].tsx`'s countdown ticker
-      (`setInterval(() => setNow(Date.now()), 1000)`, empty deps, no phase gating) keeps re-rendering
-      the whole ~900-line screen once/sec for the entire order lifetime even once none of the three
-      countdown-ring branches that actually read `now` can render — the exact anti-pattern
-      `PERF20-02` already fixed by extracting `AuctionClock` in the sibling `order/[id].tsx`, but
-      that sibling-sweep never reached this food-order screen. Sibling-sweep also found
-      `rider/food-job.tsx:177-181` with the identical unconditional ticker shape. Fix: gate the
-      interval on the phases that actually consume `now` (or extract a small self-ticking
-      countdown component per the `AuctionClock` pattern) in both files. No wrong output today —
-      pure sustained 1Hz JS-thread churn on Go-class hardware for most of an order's real duration,
-      which is why it's an optimization item, not a same-run defect fix. (S)
+- [x] B-O8 **(2026-08-03e)** `food/order/[orderId].tsx`'s countdown ticker
+      (`setInterval(() => setNow(Date.now()), 1000)`, empty deps, no phase gating) used to keep
+      re-rendering the whole screen once/sec for the entire order lifetime even once none of the
+      rendered branches read `now` — the exact anti-pattern `PERF20-02` already fixed by extracting
+      `AuctionClock` in the sibling `order/[id].tsx`, but that sibling-sweep never reached this
+      food-order screen (since RF-18 this screen is a thin phase-dispatcher over extracted view
+      components, so a self-ticking-component extraction per phase would mean threading `now` through
+      5 separate files for no behavioural gain — gating the ONE interval was the lower-risk, equally
+      effective fix). Fixed with a `needsClock` boolean (`!!order &&` one of
+      `awaiting_accept`/`awaiting_item_approval`/`awaiting_payment`/`preparing`/the post-dispatch live
+      tracker — exactly the branches that receive the `now` prop below it) gating the effect, so
+      `ready_for_pickup`/`undelivered`/`delivered`/`completed`/`cancelled` never start the interval.
+      `rider/food-job.tsx`'s identical unconditional ticker (`nowMs`, feeding only the no-show
+      wait-countdown and the cash-handshake card, both reachable only from the main active-job
+      render) got the same treatment: the interval effect moved below the `deliveredFood`/
+      `undeliveredFoodReason`/`ackedHandbacks` state it now gates on (`needsClock = order != null &&
+      !deliveredFood && !undeliveredFoodReason && !(status === "cancelled" && not yet acked)`), so the
+      delivered/undelivered/cancelled-handback terminal screens — where a rider can sit for the rest
+      of their shift between jobs — stop ticking too. Regression tests spy on `global.setInterval` and
+      assert the 1000ms interval is/isn't created per phase (new describe block in
+      `app/food/order/__tests__/order-screen.test.tsx`; new `app/rider/__tests__/food-job-socket-gate.test.tsx`,
+      this screen's first test coverage) — confirmed both fail against the pre-fix code (interval
+      fires unconditionally) before landing. `pnpm typecheck && pnpm lint && pnpm test` all green.
 - [x] B-O9 **(duplicate ID — steer dedup, 2026-08-03b)** This entry and the `[x] B-O9` entry above
       (right after `B-O2`) are the SAME finding: `B-T2`'s original audit text (this entry, appended
       2026-08-02) and PR #525's fix-summary (the entry above, appended 2026-08-03d) both landed under
@@ -875,16 +887,24 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
 promoted ahead of C-O1/C-O2/C-O4: they're concrete, S-effort, evidenced-this-week fixes from
 completed C-T1/C-T2 traces, vs. C-O1/C-O2/C-O4's broader M-effort backlog scope with no fresh
 measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
-- [ ] C-O5 **(C-T1 finding, LC-C07)** Rider delivery-confirm terminal marker
-      (`saveRiderJobTerminal`) is written only after a response (success or 409-reconciled)
-      arrives — an app kill strictly between sending `confirmDelivery` and processing any
-      response drops the delivered-acknowledgement/rate-the-sender screen on relaunch (the order
-      itself is correctly `delivered` server-side; only the terminal UX is lost). Write a
-      provisional local marker BEFORE the request fires (promoted to final on success, rolled
-      back only on a definitive non-409 rejection) so `reconcileRiderJobTerminal()` can recover
-      the acknowledgement screen purely from "marker exists + order no longer active," without
-      needing the response to have been seen. `apps/mobile/app/rider/job.tsx:305`,
-      `apps/api/src/orders/order-lifecycle.service.ts:343`. (S)
+- [x] C-O5 **DONE (2026-08-03f)** **(C-T1 finding, LC-C07)** Rider delivery-confirm terminal marker
+      (`saveRiderJobTerminal`) was written only after a response (success or 409-reconciled)
+      arrived — an app kill strictly between sending `confirmDelivery` and processing any
+      response dropped the delivered-acknowledgement/rate-the-sender screen on relaunch (the order
+      itself was correctly `delivered` server-side; only the terminal UX was lost). Fixed by
+      writing a provisional marker in `deliverM`'s new `onMutate` — BEFORE the request fires —
+      promoted to final on success (no extra write needed, it's already durable) and rolled back
+      only on a definitive non-409 rejection (401 wrong code, 403 lockout) or a 409 reconciled via
+      a direct `getOrder` check to "still not delivered"; left in place on a genuinely ambiguous
+      failure (network error/timeout/5xx, or the reconciliation check itself failing), which stays
+      safe because `reconcileRiderJobTerminal()` only ever promotes a marker once the order has
+      actually left the active feed — an inert leftover marker for a request that truly failed
+      just sits unused while the order stays active. `apps/mobile/app/rider/job.tsx:305`,
+      `apps/api/src/orders/order-lifecycle.service.ts:343`. Regression tests in the new
+      `app/rider/__tests__/job.test.tsx` (confirmed the kill-mid-request case fails pre-fix — no
+      marker meant a dead-end "No active job" screen instead of the acknowledgement terminal — plus
+      a second case pinning the 401 rollback). `pnpm typecheck && pnpm lint && pnpm test` green.
+      See `docs/LC-C-REPORT-2026-08-03f.md`. (S)
 - [ ] C-O6 **(C-T1 finding, LC-C08)** `order/[id].tsx`'s `selectM` (accept-an-offer) mutation's `onError`
       shows the same muted "that rider was just taken" notice for BOTH a genuine race-loss AND a
       lost-response case where the customer's OWN pick actually landed — self-heals within one
@@ -1073,8 +1093,19 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       `docs/LC-D-REPORT-2026-08-03f.md`.
 
 **Optimization checklist (seeded; audit rounds append):**
-- [ ] D-O1 Low-connectivity state pattern for both web apps: standard error/retry/stale
-      components where D-T1/T2 find gaps. (M)
+- [x] D-O1 **DONE (2026-08-03g)** Low-connectivity state pattern for both web apps: standard
+      error/retry/stale components where D-T1/T2 find gaps. Merchant: extracted the 5×-duplicated
+      "failed load + Retry" block (queue/statement/shop/menu/hours) into
+      `apps/merchant/app/components/RetryableError.tsx`, fixing queue's drifted local button style
+      for free. Admin: added `RetryableError`/`SubsectionUnavailable` to `components/states.tsx`
+      — `app/error.tsx` now composes the former instead of hand-rolling it, and the rider-detail
+      wallet-ledger sub-widget (previously unstyled inline text) now uses the latter for its
+      best-effort-fetch-failed case, the one partial-widget-failure state that had no shared
+      component before. No new cross-app package — neither app shared any UI components going in,
+      so each got its own minimal addition rather than new shared-package plumbing. New tests:
+      `RetryableError.test.tsx` (both apps), `apps/admin/app/error.test.tsx` (previously
+      uncovered); all five merchant pages' existing Retry-button tests pass unchanged, confirming
+      the extraction preserved behavior exactly. See docs/LC-D-REPORT-2026-08-03g.md.
 - [ ] D-O2 OTP delivery + verify success telemetry by carrier (Econet/NetOne/Telecel) so
       deliverability regressions are visible (DoorDash lesson 11). (M)
 - [ ] D-O3 **(new, D-T3 finding)** Server-side push sends carry no collapse-key/tag

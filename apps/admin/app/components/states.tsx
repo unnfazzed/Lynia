@@ -120,3 +120,43 @@ export function reasonLine(reason: AdminReason, noun: string): string {
       return `Set API_BASE_URL (and ADMIN_API_TOKEN) to load ${noun}.`;
   }
 }
+
+/**
+ * D-O1: a small banner for a SUB-resource (one widget on an otherwise-loaded page — e.g. a
+ * best-effort side query like the rider wallet view) that failed while the rest of the page
+ * rendered fine. `OfflineBanner` covers the whole-page case; nothing filled this narrower gap
+ * before, so failures like this rendered as unstyled inline text. No retry button — every admin
+ * route is a server component, so a page reload/re-navigation is the only retry available.
+ */
+export function SubsectionUnavailable({ noun }: { noun: string }) {
+  const capped = noun.charAt(0).toUpperCase() + noun.slice(1);
+  return (
+    <div className="offline-banner" style={{ padding: "10px 14px", fontSize: 12.5 }}>
+      <IconWifiOff />
+      <span>
+        <b>{capped} unavailable.</b> Reload the page to try again.
+      </span>
+    </div>
+  );
+}
+
+/**
+ * D-O1: a retryable error banner for CLIENT components (the one spot in admin with an actual
+ * in-place retry today, `error.tsx`, hand-rolled its own version of this). `onRetry` is typically
+ * a Next `reset()` callback or a client-side refetch.
+ */
+export function RetryableError({ message, onRetry }: { message: ReactNode; onRetry: () => void }) {
+  return (
+    <>
+      <div className="offline-banner" role="alert">
+        <IconAlert />
+        <span>
+          <b>Something went wrong.</b> {message}
+        </span>
+      </div>
+      <button type="button" className="btn solid" style={{ marginTop: 12 }} onClick={onRetry}>
+        Try again
+      </button>
+    </>
+  );
+}

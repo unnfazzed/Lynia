@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { MerchantEndOfDaySummaryResponse, MerchantWeeklyStatementResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
-import { cardStyle, ghostButtonStyle } from "../../components/queue/styles";
+import { RetryableError } from "../../components/RetryableError";
+import { cardStyle } from "../../components/queue/styles";
 import { ApiError, isSessionExpiredError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money-input";
 import { getTodaySummary, getWeeklyStatement } from "../../lib/orders-api";
@@ -59,14 +60,7 @@ export default function StatementPage() {
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 24, overflow: "auto", height: "100%" }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your statement…</div>}
 
-        {state.status === "error" && (
-          <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 16, padding: 20, maxWidth: 480 }}>
-            <div>{state.message}</div>
-            <button type="button" onClick={refresh} style={{ ...ghostButtonStyle, marginTop: 12 }}>
-              Retry
-            </button>
-          </div>
-        )}
+        {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
 
         {state.status === "ready" && (
           <>

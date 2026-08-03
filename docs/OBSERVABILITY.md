@@ -274,11 +274,13 @@ Everything above measures **how the system behaves**; PostHog measures **what pe
 (`apps/mobile/src/telemetry/analytics.tsx`): with no key configured it mounts nothing — no SDK init,
 no network — so dev, CI, the QA APK, and unprovisioned builds are untouched.
 
-**Activation (founder, one-time):** run `npx eas-cli integrations:posthog:connect` from
-`apps/mobile/` (interactive; needs `eas login`). It links the EAS project to a PostHog org/project
-and syncs `EXPO_PUBLIC_POSTHOG_API_KEY` + `EXPO_PUBLIC_POSTHOG_HOST` into the EAS
-production/preview/development environments (and `.env.local` for local dev). The next EAS build
-lights analytics up with no code change. When prompted for features pick **Analytics only** for now:
+**Activation — ✅ done (verified 2026-08-03):** the connect flow described below has been run —
+`EXPO_PUBLIC_POSTHOG_API_KEY` + `EXPO_PUBLIC_POSTHOG_HOST` (EU cloud) are present in the EAS
+`preview` and `production` environments, so the next EAS build lights analytics up with no code
+change. For reference, the original one-time step was: run `npx eas-cli
+integrations:posthog:connect` from `apps/mobile/` (interactive; needs `eas login`); it links the
+EAS project to a PostHog org/project and syncs the two vars (plus `.env.local` for local dev).
+When prompted for features pick **Analytics only** for now:
 
 - **Session replay** needs the extra native `posthog-react-native-session-replay` package (not
   installed) — decide deliberately; replay of KYC/phone screens is a privacy call, not a default.

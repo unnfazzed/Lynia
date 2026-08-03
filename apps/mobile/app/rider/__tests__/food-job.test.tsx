@@ -1,32 +1,31 @@
 /**
- * A-O9: wiring regression for the rider food-job screen. Mirrors the customer order screen's own
- * A-O9 tests (order-screen.test.tsx) — mocks the socket hook rather than standing up a real
- * socket.io-client connection, and asserts the GATING contract: `useRiderJobSocket` is only keyed on
- * a real order id while an ACTIVE merchant job exists, and the plain `activeJob` REST poll (`jobQ`)
- * only runs as the reconnect/offline fallback once a socket connection exists — the food-job mirror
- * of job.tsx's already-shipped `jobPollFallback` pattern. `LiveMap` is stubbed the same way
- * `JobDetailsCard.test.tsx` already does (it mounts react-native-maps, a native module this test
- * environment can't render).
+ * B-O8: `nowMs` used to tick once a second for the entire job lifetime, even once the order reached a
+ * terminal screen (delivered/undelivered/cancelled-handback) that never reads it — pure JS-thread churn
+ * on the always-open rider app for however long the rider sat on that terminal screen. Pins that the
+ * interval only starts while the main active-job render (the only place `nowMs` feeds the no-show
+ * countdown / cash-handshake card) is actually reached.
  */
 import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SafeAreaProvider } from "react-native-safe-area-context";
 import type { OrderSnapshot } from "../../../src/api/orders";
 import type { MerchantOrderResponse } from "@lynia/shared";
 
-const mockGetActiveOrder = jest.fn();
-const mockGetFoodOrderAsRider = jest.fn();
-const mockUseRiderJobSocket = jest.fn((_orderId: string | null, ..._rest: unknown[]) => ({ connected: false }));
-const mockReplace = jest.fn();
+const mockGetActiveOrder = jest.fn<Promise<OrderSnapshot | null>, []>();
+const mockGetFoodOrderAsRider = jest.fn<Promise<MerchantOrderResponse>, unknown[]>();
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: mockReplace }),
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+}));
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: async () => null,
+  setItemAsync: async () => undefined,
+  deleteItemAsync: async () => undefined,
 }));
 jest.mock("../../../src/api/orders", () => ({
-  getActiveOrder: (...args: unknown[]) => mockGetActiveOrder(...args),
-  advanceStatus: jest.fn(),
+  getActiveOrder: () => mockGetActiveOrder(),
   confirmDelivery: jest.fn(),
+  advanceStatus: jest.fn(),
   rateSender: jest.fn(),
 }));
 jest.mock("../../../src/api/food-rider", () => ({
@@ -40,7 +39,7 @@ jest.mock("../../../src/api/food-rider", () => ({
   reportFoodNoShow: jest.fn(),
 }));
 jest.mock("../../../src/auth/session", () => ({
-  acknowledgeHandback: jest.fn(async () => undefined),
+  acknowledgeHandback: jest.fn(),
   loadAcknowledgedHandbacks: async () => [],
 }));
 jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
@@ -49,25 +48,54 @@ jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
 jest.mock("../../../src/realtime/use-rider-location", () => ({
   useRiderLocationStream: () => ({ permissionDenied: false }),
 }));
-// A-O9: stub the socket the same way the customer screen's test does — assert on the GATING contract
-// (which orderId it's called with) without a real connection.
+// A-O9 wired a job socket into this screen; `connected: false` keeps the REST poll fallback
+// active so these ticker-gating assertions see the same cadence as before the socket existed.
+// The gating contract itself is covered by food-job-socket-gate.test.tsx.
 jest.mock("../../../src/realtime/use-rider-job-socket", () => ({
-  useRiderJobSocket: (...args: [string | null, ...unknown[]]) => mockUseRiderJobSocket(...args),
+  useRiderJobSocket: () => ({ connected: false }),
 }));
-jest.mock("../../../src/ui/LiveMap", () => ({
-  LiveMap: () => null,
+// LiveMap (react-native-maps) can't mount in this test environment — same precedent as
+// JobDetailsCard.test.tsx / ComposeMap.test.tsx.
+jest.mock("../../../src/ui/rider/JobDetailsCard", () => ({
+  JobDetailsCard: () => null,
+}));
+jest.mock("../../../src/ui/safety", () => ({
+  GetHelpControl: () => null,
+  SosControl: () => null,
 }));
 
 import RiderFoodJob from "../food-job";
 
-const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 320, height: 640 } };
+async function settle(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
 
-const ACTIVE_ORDER: OrderSnapshot = {
+let activeTree: renderer.ReactTestRenderer | null = null;
+
+async function render(): Promise<renderer.ReactTestRenderer> {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
+  let tree!: renderer.ReactTestRenderer;
+  await act(async () => {
+    tree = renderer.create(
+      <QueryClientProvider client={client}>
+        <RiderFoodJob />
+      </QueryClientProvider>,
+    );
+  });
+  await settle();
+  await settle();
+  activeTree = tree;
+  return tree;
+}
+
+const BASE_ORDER: OrderSnapshot = {
   id: "order-1",
-  status: "en_route_pickup",
+  status: "en_route_dropoff",
   orderType: "merchant",
-  agreedFare: "8.50",
-  proposedFare: "8.50",
+  agreedFare: "15.50",
+  proposedFare: "15.50",
   pickup: { point: { lat: -17.82, lng: 31.05 }, landmark: "Sadza Republic" },
   dropoff: { point: { lat: -17.83, lng: 31.06 }, landmark: "Home" },
   rider: null,
@@ -76,18 +104,18 @@ const ACTIVE_ORDER: OrderSnapshot = {
   expiresAt: null,
 };
 
-const FOOD_ORDER: MerchantOrderResponse = {
+const BASE_FOOD_ORDER: MerchantOrderResponse = {
   id: "order-1",
   merchantId: "m1",
-  status: "en_route_pickup",
+  status: "en_route_dropoff",
   merchantPhase: null,
   items: [{ dishId: "d1", name: "Sadza & beef", priceUsd: 5, quantity: 1, note: null, available: true }],
   note: null,
-  paymentMethod: "cash",
+  paymentMethod: "wallet",
   merchantPaymentPhone: null,
-  merchantGoodsTotal: 5,
-  deliveryFee: 3.5,
-  total: 8.5,
+  merchantGoodsTotal: 15.5,
+  deliveryFee: 2,
+  total: 17.5,
   acceptDeadlineAt: null,
   itemApprovalDeadlineAt: null,
   prepMinutes: null,
@@ -97,16 +125,18 @@ const FOOD_ORDER: MerchantOrderResponse = {
   paymentCallLoggedAt: null,
   paymentRequestedAt: null,
   merchantPaymentReference: null,
-  merchantPaymentConfirmedAt: null,
+  merchantPaymentConfirmedAt: new Date().toISOString(),
   riderId: "rider-1",
   dispatchAttempt: 1,
   dispatchOfferExpiresAt: null,
   noRiderHoldAt: null,
+  pickupCodeAttempts: 0,
   cashHandshakeAmount: null,
   customerCashConfirmedAt: null,
   riderCashConfirmedAt: null,
   cashHandshakeDeadlineAt: null,
   cashHandshakeFrozenAt: null,
+  noShowCallTimestamps: [],
   merchantCashRule: null,
   debtStatus: null,
   debtAmount: null,
@@ -115,42 +145,11 @@ const FOOD_ORDER: MerchantOrderResponse = {
   refundReference: null,
   refundAmount: null,
   refundedAt: null,
-  pickupCodeAttempts: 0,
-  noShowCallTimestamps: [],
 };
 
-let activeTree: renderer.ReactTestRenderer | null = null;
-
-async function settle(): Promise<void> {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
-
-async function render(): Promise<renderer.ReactTestRenderer> {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
-  let tree!: renderer.ReactTestRenderer;
-  await act(async () => {
-    tree = renderer.create(
-      <SafeAreaProvider initialMetrics={TEST_METRICS}>
-        <QueryClientProvider client={client}>
-          <RiderFoodJob />
-        </QueryClientProvider>
-      </SafeAreaProvider>,
-    );
-  });
-  await settle();
-  await settle();
-  activeTree = tree;
-  return tree;
-}
-
 beforeEach(() => {
-  mockGetActiveOrder.mockReset().mockResolvedValue(ACTIVE_ORDER);
-  mockGetFoodOrderAsRider.mockReset().mockResolvedValue(FOOD_ORDER);
-  mockUseRiderJobSocket.mockClear().mockReturnValue({ connected: false });
-  mockReplace.mockClear();
+  mockGetActiveOrder.mockReset();
+  mockGetFoodOrderAsRider.mockReset();
 });
 
 afterEach(() => {
@@ -160,29 +159,21 @@ afterEach(() => {
   activeTree = null;
 });
 
-describe("rider food-job screen — A-O9 order-room socket gates the activeJob poll", () => {
-  it("does not open the job socket while there is no active job", async () => {
+describe("rider food job — B-O8 countdown ticker gating", () => {
+  it("starts the 1s clock while the main active-job screen is reached (en_route_dropoff)", async () => {
+    mockGetActiveOrder.mockResolvedValue(BASE_ORDER);
+    mockGetFoodOrderAsRider.mockResolvedValue(BASE_FOOD_ORDER);
+    const intervalSpy = jest.spyOn(global, "setInterval");
+    await render();
+    expect(intervalSpy.mock.calls.some(([, delay]) => delay === 1000)).toBe(true);
+    intervalSpy.mockRestore();
+  });
+
+  it("does not start the 1s clock once the job has no active order (nothing to render a clock for)", async () => {
     mockGetActiveOrder.mockResolvedValue(null);
+    const intervalSpy = jest.spyOn(global, "setInterval");
     await render();
-    expect(mockUseRiderJobSocket).toHaveBeenLastCalledWith(null, expect.any(Function));
-  });
-
-  it("subscribes to the job's own order room once an active merchant job exists", async () => {
-    await render();
-    expect(mockUseRiderJobSocket).toHaveBeenLastCalledWith("order-1", expect.any(Function));
-  });
-
-  it("does not open the job socket for a terminal (delivered) job", async () => {
-    mockGetActiveOrder.mockResolvedValue({ ...ACTIVE_ORDER, status: "delivered" });
-    mockGetFoodOrderAsRider.mockResolvedValue({ ...FOOD_ORDER, status: "delivered" });
-    await render();
-    expect(mockUseRiderJobSocket).toHaveBeenLastCalledWith(null, expect.any(Function));
-  });
-
-  it("still renders the active job correctly with the job socket already connected", async () => {
-    mockUseRiderJobSocket.mockReturnValue({ connected: true });
-    const tree = await render();
-    const statusPill = tree.root.findAll((n) => n.props.status === "en_route_pickup");
-    expect(statusPill.length).toBeGreaterThan(0);
+    expect(intervalSpy.mock.calls.some(([, delay]) => delay === 1000)).toBe(false);
+    intervalSpy.mockRestore();
   });
 });

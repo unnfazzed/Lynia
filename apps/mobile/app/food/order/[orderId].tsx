@@ -70,11 +70,23 @@ export default function FoodOrderScreen(): React.ReactElement {
   const [cancelConfirm, setCancelConfirm] = useState(false);
   // Ticks once a second so the two server-deadline countdown rings move — the deadlines themselves
   // are server timestamps (acceptDeadlineAt/itemApprovalDeadlineAt), this only drives the redraw.
+  // B-O8: only the awaiting_accept/awaiting_item_approval/awaiting_payment/preparing phases and the
+  // post-dispatch live tracker actually read `now` (see the branches below) — ready_for_pickup,
+  // undelivered, delivered/completed and cancelled never do, so the interval stays off there instead
+  // of re-rendering this screen once/sec for the rest of the order's lifetime.
   const [now, setNow] = useState(() => Date.now());
+  const needsClock =
+    !!order &&
+    (order.merchantPhase === "awaiting_accept" ||
+      order.merchantPhase === "awaiting_item_approval" ||
+      order.merchantPhase === "awaiting_payment" ||
+      order.merchantPhase === "preparing" ||
+      (order.riderId != null && ACTIVE.includes(order.status)));
   useEffect(() => {
+    if (!needsClock) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [needsClock]);
 
   // D3: once a rider is secured (dispatch_accept clears merchantPhase to null and sets riderId), the
   // customer's pickup/dropoff geometry, GPS telemetry, event timeline and counterparty phone all live

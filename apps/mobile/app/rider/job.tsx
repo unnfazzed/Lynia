@@ -318,18 +318,25 @@ export default function RiderJob(): React.ReactElement {
   });
   const deliverM = useMutation({
     mutationFn: () => confirmDelivery(orderId!, code.trim()),
+    // LC-C07: write the terminal marker BEFORE the request fires, not just on success/409-reconcile —
+    // an app kill strictly between sending confirmDelivery and processing any response previously left
+    // no marker at all, so reconcileRiderJobTerminal (which only PROMOTES an existing marker once the
+    // order leaves the active feed) had nothing to recover the acknowledgement/rate-the-sender screen
+    // from on relaunch, even though the delivery had actually landed server-side. Safe to write eagerly:
+    // reconcileRiderJobTerminal still gates on `hasActiveOrder`, so a marker written for a request that
+    // in fact failed (order still active) just sits inert until a definitive rejection below clears it.
+    onMutate: () => {
+      if (orderRef.current) void saveRiderJobTerminal({ orderId: orderRef.current.id, kind: "delivered" });
+    },
     onSuccess: () => {
       // The hand-off landed — the warm success cue at the moment the delivery completes.
       haptic("success");
       setCode("");
       setOtpTries(0);
       // Freeze the just-delivered order id so the acknowledgement + rate-the-sender terminal survives
-      // the refresh() below (which returns null once the order leaves the active feed) — and persist it
-      // so the terminal also survives an app kill before the rider dismisses it.
-      if (orderRef.current) {
-        setDeliveredDone(orderRef.current.id);
-        void saveRiderJobTerminal({ orderId: orderRef.current.id, kind: "delivered" });
-      }
+      // the refresh() below (which returns null once the order leaves the active feed) — the durable
+      // marker was already written in onMutate above, ahead of this response.
+      if (orderRef.current) setDeliveredDone(orderRef.current.id);
       refresh();
     },
     onError: (e) => {
@@ -350,15 +357,22 @@ export default function RiderJob(): React.ReactElement {
               setError(null);
               // Same frozen terminal as the happy path — the reconciled snapshot IS a delivered order,
               // so land the rider on the acknowledgement screen, not just a toast that a refresh wipes.
+              // The durable marker was already written in onMutate; no need to rewrite it here.
               setDeliveredDone(fresh.id);
-              void saveRiderJobTerminal({ orderId: fresh.id, kind: "delivered" });
               toast.show("Looks like that delivery already went through.", "success");
             } else {
+              // Definitive: the reconciliation check confirms this attempt did NOT deliver — roll back
+              // the provisional marker onMutate wrote so it can't later mislead reconcileRiderJobTerminal
+              // if the order goes inactive for some unrelated reason (e.g. cancelled).
               fail(e);
+              void clearRiderJobTerminal();
             }
             refresh();
           })
           .catch(() => {
+            // The reconciliation check ITSELF failed (still offline/timed out) — genuinely ambiguous, so
+            // leave the provisional marker in place rather than guessing; it stays inert while the order
+            // remains active and self-heals on the next successful reconciliation or foreground refetch.
             fail(e);
             refresh();
           });
@@ -366,17 +380,24 @@ export default function RiderJob(): React.ReactElement {
       }
       // 403 = the 5-attempt lockout; the customer must re-issue the code. 401 = a wrong code — count it
       // so the rider sees how many tries remain and the field locks at the cap instead of hammering a
-      // dead endpoint. Anything else is an unexpected failure.
+      // dead endpoint. Anything else is an unexpected failure. 403/401 are both definitive non-409
+      // rejections — this attempt did not deliver — so roll back the provisional onMutate marker.
       if (e instanceof ApiError && e.status === 403) {
         haptic("warning");
         setOtpTries(DELIVERY_OTP_MAX_ATTEMPTS);
         setError("Too many attempts — ask the customer to re-issue the delivery code.");
+        void clearRiderJobTerminal();
       } else if (e instanceof ApiError && e.status === 401) {
         // A firmer double so a wrong code is felt, not just read — useful at a noisy hand-off.
         haptic("warning");
         setOtpTries((n) => n + 1);
         setError(null);
+        void clearRiderJobTerminal();
       } else {
+        // Ambiguous (network error/timeout/5xx) — the request may or may not have reached the server.
+        // Leave the provisional marker in place: if it silently succeeded, reconcileRiderJobTerminal
+        // recovers the acknowledgement screen once the order leaves the active feed; if it didn't, the
+        // order stays active and the marker never promotes.
         fail(e);
       }
       refresh();

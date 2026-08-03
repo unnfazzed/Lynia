@@ -52,7 +52,8 @@
       "brace-expansion@1.1.16": "1.1.18",
       "brace-expansion@2.1.2": "2.1.4",
       "brace-expansion@>=5.0.0 <5.0.9": ">=5.0.9",
-      "find-my-way@<9.7.0": ">=9.7.0"
+      "find-my-way@<9.7.0": ">=9.7.0",
+      "socket.io-parser@<4.2.7": ">=4.2.7"
     },
     "patchedDependencies": {
       "@expo/cli@0.22.28": "patches/@expo__cli@0.22.28.patch"

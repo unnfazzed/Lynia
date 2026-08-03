@@ -100,7 +100,7 @@ net, exactly like the parcel screens and the already-audited A-O1 pattern.
     before a rider is secured, opens keyed on the real order id once one is, stays keyed through a
     terminal status (the query's own `refetchInterval` gate is what stops the poll there, unchanged
     from before), and the screen still renders correctly with the socket already connected.
-  - `apps/mobile/app/rider/__tests__/food-job.test.tsx` — **new file** (no screen-level test existed
+  - `apps/mobile/app/rider/__tests__/food-job-socket-gate.test.tsx` — **new file** (no screen-level test existed
     for this ~650-line screen before; scoped to the wiring contract, not full UI coverage, matching
     this repo's existing bar for `job.tsx`'s own, also-untested-at-screen-level `useRiderJobSocket`
     wiring): no active job → socket closed; active merchant job → keyed on the real order id;
