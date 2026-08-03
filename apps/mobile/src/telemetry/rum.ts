@@ -12,9 +12,9 @@ import { apiFetch } from "../api/client";
  *  - **`apifetch`** samples measured start+end on-client → skew-free, the PRIMARY signal.
  *
  * Everything that isn't React Native glue is a PURE, exported function (`clampGlassSample`,
- * `buildBatches`) — the mobile app has NO test runner, so this keeps the logic under `typecheck` and
- * trivially unit-testable later without a device. The buffer never blocks the UI, never retries, and
- * drops on any failure. If `start()` was never called, `enqueue` is a cheap no-op (dormant-safe).
+ * `buildBatches`) so the logic is unit-tested directly (see `__tests__/rum.test.ts`) without a
+ * device. The buffer never blocks the UI, never retries, and drops on any failure. If `start()`
+ * was never called, `enqueue` is a cheap no-op (dormant-safe).
  */
 
 /** Latency cap shared with the contract (samples above this are garbage → dropped). */
@@ -83,14 +83,30 @@ export function buildBatches(samples: RoleSample[], dropped: number, appVersion?
 const MAX_BUFFER = 50;
 /** Flush when the buffer reaches this many samples. */
 const FLUSH_AT = 10;
-/** Also flush on this cadence so a quiet buffer still ships. */
-const FLUSH_INTERVAL_MS = 10_000;
+/** Also flush on this cadence so a quiet buffer still ships. `AppState` background/inactive still
+ *  flushes immediately (`onAppStateChange`), so this only bounds server-side data staleness for an
+ *  app that stays foregrounded — RUM has no live consumer, so 30s costs nothing there. Widened from
+ *  10s (A-O6, A-T4 evidence): at the old 10s cadence a metered-data session with a mostly-quiet
+ *  buffer still paid one POST's fixed per-request overhead (headers, auth, TLS) every 10s for as
+ *  little as 1-2 samples; 30s lets more samples accumulate per flush without materially delaying the
+ *  data (RUM is fire-and-forget monitoring, not a live signal). */
+const FLUSH_INTERVAL_MS = 30_000;
 /** The endpoint we POST to — excluded from `apifetch` timing to avoid a feedback loop. */
 export const CLIENT_METRICS_PATH = "/client-metrics";
+/** Keep 1 of every N `apifetch` samples (A-O6, A-T4 evidence): during any active-tracking or
+ *  food-polling window, an `apiFetch` sample enqueues on essentially every request, so the buffer is
+ *  almost never empty and the app pays for a REST latency histogram with far more resolution than a
+ *  p50/p95 dashboard needs. Glass samples (`position_glass`/`offer_glass`/`board_glass`) are NOT
+ *  sampled — they're already bounded by real WS push frequency (much rarer than a REST call) and
+ *  each one is independently informative rather than fungible with its neighbors. A deterministic
+ *  modulo counter (not `Math.random()`) gives an exact 1-in-N cadence that's simple to reason about
+ *  and unit-test, rather than a probabilistic rate that could streak. */
+const APIFETCH_SAMPLE_RATE = 4;
 
 let started = false;
 let buffer: RoleSample[] = [];
 let dropped = 0;
+let apifetchCounter = 0;
 let appVersion: string | undefined;
 let intervalTimer: ReturnType<typeof setInterval> | null = null;
 let appStateSub: NativeEventSubscription | null = null;
@@ -104,8 +120,13 @@ export function setActiveRole(role: Role): void {
   activeRole = role;
 }
 
-/** Enqueue a skew-free `apifetch` round-trip under whatever role the app is currently acting as. */
+/** Enqueue a skew-free `apifetch` round-trip under whatever role the app is currently acting as.
+ *  Sampled 1-in-`APIFETCH_SAMPLE_RATE` (a no-op before `start()`, matching `enqueue`'s dormant-safe
+ *  contract — the counter only advances once armed, so cadence is stable app-launch to app-launch). */
 export function enqueueApiFetch(ms: number): void {
+  if (!started) return;
+  apifetchCounter += 1;
+  if (apifetchCounter % APIFETCH_SAMPLE_RATE !== 0) return;
   enqueue("apifetch", ms, activeRole);
 }
 
@@ -167,6 +188,7 @@ export function start(version?: string): void {
   if (started) return;
   started = true;
   appVersion = version;
+  apifetchCounter = 0;
   intervalTimer = setInterval(() => void flush(), FLUSH_INTERVAL_MS);
   appStateSub = AppState.addEventListener("change", onAppStateChange);
 }
@@ -181,4 +203,5 @@ export function stop(): void {
   appStateSub = null;
   buffer = [];
   dropped = 0;
+  apifetchCounter = 0;
 }
