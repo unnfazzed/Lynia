@@ -33,7 +33,7 @@ permanent standing routines.
 | Hermes JS bundle (OTA cost) | 6,455,000 B budget vs ~5.0 MB measured 2026-07-20 | `apps/mobile/size-budget.json` + `ci.yml mobile-bundle-size` (fails PRs over budget) | A-T1 ratchets to measured+5%; budgets only move DOWN in LC PRs; a legitimate raise needs same-PR justification |
 | Android export total (JS+assets) | 12,690,000 B budget | same | same |
 | Native per-device download | unmeasured (EAS/`mobile-release.yml` dormant) | A-T5 inventories levers + baseline path; report-only until EAS armed | no new native dep without stated size cost |
-| Session data (core journeys) | unbaselined | A-T4 traces every request in the core journeys and sets byte budgets from evidence | provisional targets: customer order journey ≤150 KB; rider steady-state ≤300 KB/h — **provisional until A-T4** |
+| Session data (core journeys) | baselined 2026-08-03 (A-T4, field-by-field trace, not live capture): customer parcel journey ≈181 KB/26min (172 KB resp + 9.3 KB req; WS-primary tracking); customer food journey ≈360-405 KB/26min (poll-only, no socket exists for food orders); rider steady-state hour ≈173-422 KB (parcel job leg) or ≈422-653 KB (food job leg), range driven by RUM sampling assumption | report-only, no CI gate yet; A-T4 traced every request+response against the real service/response-builder code, accounting for `apps/api/src/main.ts:92-99`'s gzip/brotli compression (≥1 KB bodies only) and the client's ETag conditional-GET layer (`apps/mobile/src/api/client.ts:91-118`) | provisional ≤150 KB / ≤300 KB/h targets retired as unrealistic pre-fix; new evidence-based near-term targets: customer parcel journey ≤120 KB, customer food journey ≤150 KB, rider steady-state hour ≤200 KB/h — achievable once A-O6 (RUM sampling, single largest lever at ≈140 KB/session) + A-O9 (food dual-poll, second largest at ≈94-271 KB) land; A-O14/A-O7 add further headroom |
 | Cold start | warm-paint shipped for home/profile/history/wallet | B-T1 baselines the boot path | targets: warm boot paints with ZERO network round-trips before first frame; cold boot interactive in ≤3 sequential round-trips |
 
 Budget regressions found by any routine are defects (owning lane files + fixes per universal
@@ -157,14 +157,39 @@ resilience seams ([resilience]).
       zero non-Latin script). A real `pyftsubset` test subsetting to a generous Latin+symbols+emoji
       range still cut each file **65.3%** (342,408→118,960 / 343,632→119,168 / 344,072→119,260
       bytes) — ledgered `LC-A05`, appended as `A-O13`. See `docs/LC-A-REPORT-2026-08-02b.md`.
-- [ ] A-T4 Wire-bytes profile: trace every request+response of (a) the customer order journey,
-      (b) one rider steady-state hour, byte-estimate each from the serialized shapes, set the §2
-      session-data budgets from evidence.
+- [x] A-T4 Wire-bytes profile **(2026-08-03)**: field-by-field trace (not live capture) of every
+      request+response in the customer order journey — parcel (WS-primary tracking) and food
+      (poll-only, no socket wired: confirmed via `food/order/[orderId].tsx:93-94`'s own comment) —
+      and one rider steady-state hour (idle board + one job leg, run separately for parcel vs food),
+      arithmetic checked field-by-field against the real service/response-builder code
+      (`orders.service.ts`, `food-order.service.ts`, `contracts.ts` schemas), accounting for the
+      API's gzip/brotli compression (`apps/api/src/main.ts:92-99`, ≥1 KB bodies only, WS traffic
+      exempt) and the client's ETag conditional-GET layer (`apps/mobile/src/api/client.ts:91-118`).
+      Findings: **customer parcel journey ≈181 KB** (26-min session: 172 KB response + 9.3 KB
+      request; RUM telemetry — already-ledgered A-O6 — alone accounts for ≈140 KB of that);
+      **customer food journey ≈360-405 KB** for the same envelope, 7-8× the parcel cost, entirely
+      attributable to the poll-only tracking phase plus the already-known A-O9 dual-poll finding;
+      **rider steady-state hour ≈173-422 KB** (parcel job leg) or **≈422-653 KB** (food job leg) — a
+      single 20-minute food job alone can exceed the old 300 KB/h provisional target. Re-confirmed
+      A-O7 (GPS double-stream, still live at both cited call sites) and A-O9 (food dual-poll,
+      ETag-defeated because the embedded rider GPS busts the weak ETag on nearly every poll) with
+      fresh per-tick byte figures. Found **A-O1 (offers-list socket-gating) already implemented** in
+      current code — both `openOrders`(15s, `apps/mobile/app/rider/(tabs)/index.tsx:467`) and
+      `activeJob`(8s, `:247`) only poll when `board.connected` is false — ticked below with citation
+      as a confirmed-complete finding, not counted as an optimize-mode increment. Four NEW findings
+      ledgered `LC-A06`…`LC-A09`, appended as `A-O14`…`A-O17` below and re-ranked by [data] impact.
+      Zero fixed-this-run defects — every finding is a byte-diet optimization on already-correct
+      functionality (matches the A-T2/A-T3 precedent). §2's session-data budget row updated from
+      "provisional" to evidence-baselined near-term targets. See `docs/LC-A-REPORT-2026-08-03.md`.
 - [ ] A-T5 Native binary levers inventory (report-only while EAS dormant): ABI/AAB delivery
       config, resource shrinking, per-device download measurement path.
 
 **Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-02 steer #2 — see
-`docs/LC-STEER-2026-08-02b.md` §4 for rationale):**
+`docs/LC-STEER-2026-08-02b.md` §4 for rationale — and again 2026-08-03 by the A-T4 wire-bytes
+evidence: A-O9 and A-O6 promoted to #4/#5 since A-T4 quantified them as the two largest per-session
+[data] byte levers by a wide margin — A-O9's food dual-poll alone costs ≈94-271 KB/session and
+A-O6's RUM telemetry ≈68-324 KB/h, dwarfing A-O1/4/5/10 — while A-O11/A-O12 stay ahead of everything
+since they gate the razor-thin Hermes CI budget, a harder constraint than [data] bytes):**
 - [ ] A-O12 **(re-ranked to #1, was #12)** **A-T2 finding (LC-A04):** stop zod v4's ~872 KB
       locale-tables barrel (`zod/v4/classic/external.js`'s `export * as locales from
       "../locales/index.js"`, 50 languages, confirmed unused) from riding into the Android bundle
@@ -207,23 +232,89 @@ resilience seams ([resilience]).
       one glyph. Emoji were included in the tested range defensively but are very likely moot:
       Inter carries no color-emoji glyphs, so RN/Android already renders emoji via the system
       font-fallback chain regardless of what's in the app's own font file. (M)
-- [ ] A-O1 Socket-gate the offers-list 15s poll (keep a slow safety net) — KNOWN backlog. (S)
+- [ ] A-O9 **(re-ranked to #4, was #10 — 2026-08-03 A-T4 evidence)** food journeys run ungated
+      full-order polls — customer `app/food/order/[orderId].tsx:96` (2 polls, live GPS defeats 304)
+      and rider `app/rider/food-job.tsx:60` (3 polls 8s+5s+5s), unlike their socket-gated parcel
+      siblings. A-T4 quantified this: the customer food-tracking phase alone costs ≈167 KB over a
+      22-min window (vs ≈13.2 KB for the parcel WS equivalent, ~13×) and the rider food-job leg costs
+      ≈271 KB over 20 min — by a wide margin the single largest [data] lever on this checklist,
+      promoted above A-O1/4/5/10. No socket exists for food orders at all (confirmed via
+      `food/order/[orderId].tsx:93-94`'s own comment and `food-job.tsx:51-52`'s), so this needs a WS
+      channel wired for food orders mirroring the parcel `use-order-socket`/`use-rider-job-socket`
+      pattern, not just a cadence tweak. (M→L, given the socket work)
+- [ ] A-O6 **(re-ranked to #5, was #9 — 2026-08-03 A-T4 evidence)** RUM/telemetry upload batching +
+      cadence review on metered data — **Day-0 candidate:** `apps/mobile/src/telemetry/rum.ts:87`
+      ships a POST every 10s whenever the buffer is non-empty (not sampled). A-T4 measured real
+      batch sizes by sample count (1 sample ≈79B, 10 ≈349B, 20-cap ≈649B) — smaller than the
+      ledger's original ~0.9KB/flush estimate in the common case, but during any active-tracking or
+      food-polling window the buffer is essentially always non-empty (an `apiFetch` sample enqueues
+      on every request), so the realistic cost is ≈68-324 KB/hour depending on request volume —
+      still the #2 [data] lever after A-O9. Needs real sampling (e.g. 1-in-N or time-boxed), not
+      just batching. (S)
+- [ ] A-O14 **(new, ranked #6 — A-T4 finding, LC-A06)** `MerchantOrderResponse`
+      (`packages/shared/src/contracts.ts:945-1007`, 39 fields) is serialized unconditionally by
+      `food-order.service.ts`'s `toResponse()` (`:781-842`) regardless of order phase — unlike the
+      parcel `OrderSnapshot`'s `getSnapshot()`, which deliberately nulls out phase-irrelevant fields
+      (`orders.service.ts:887-905`). Debt-ledger/refund/cash-handshake fields (11 fields) ride every
+      poll even mid-delivery on a wallet-paid order that will never touch them — ≈500B of guaranteed
+      null padding per poll. Compounds directly with A-O9: since A-O9's fix will keep polling (or a
+      lighter poll) alive as a fallback even after a food WS lands, trimming this response by
+      phase/status (mirroring `getSnapshot`'s pattern) removes real bytes from every future poll too.
+      (S/M)
+- [x] A-O1 **(confirmed already implemented — 2026-08-03 A-T4 evidence)** Socket-gate the
+      offers-list 15s poll (keep a slow safety net). Current code already does this: both
+      `openOrders`(15s, `apps/mobile/app/rider/(tabs)/index.tsx:467`) and `activeJob`(8s, `:247`)
+      set `refetchInterval` to `false` whenever `board.connected` is true, falling back to the
+      timed poll only when the board socket is down (the self-heal safety net) — confirmed by
+      reading the current hook wiring, not just the interval literal. No code change needed; item
+      closed as already-satisfied rather than re-implemented.
+- [ ] A-O17 **(new, ranked #7 — A-T4 finding, LC-A07)** Three independent Socket.IO connections
+      (`apps/mobile/src/realtime/socket.ts:12-13`'s `createSocket()` opens a fresh `io(...)` per
+      call, no sharing/singleton) run concurrently during an active rider job — the board socket
+      (`use-rider-board.ts:56`, stays mounted since the `(tabs)` screen isn't unmounted when
+      `/rider/job` is pushed on top), the job socket (`use-rider-job-socket.ts:48`), and the
+      location-stream socket (`use-rider-location.ts:64`) — each with its own transport handshake
+      and its own ~25s engine.io ping/pong keepalive (no `pingInterval`/`pingTimeout` override found
+      server-side), tripling background keepalive chatter and tripling reconnect-driven self-heal
+      REST refetches on any blip. A multiplexed single connection (Socket.IO namespaces on one
+      transport) would collapse this to one handshake + one keepalive stream. (M)
+- [ ] A-O15 **(new, ranked #8 — A-T4 finding, LC-A08)** `apps/mobile/app/(tabs)/home.tsx:121-132`
+      runs its own 30s `refetchInterval` poll of `/orders/mine/active-order` for as long as the
+      customer sits on the Home tab, plus force-invalidates it on every focus (`:121-126`) and
+      foreground (`:134-137`) event — duplicating the same logical data `useBootstrap` already seeds
+      from `/app/bootstrap` (`use-bootstrap.ts:17`) at cold start. A customer who lingers on Home
+      before ordering (the common case — it's the launcher screen) pays 2+ extra round trips/minute
+      for data that's usually unchanged. Same redundant-polling shape as A-O10, just for
+      order-state instead of config; a shared cache key / longer stale-time would close it. (S)
+- [ ] A-O4 Review rider-offline 8s activeJob poll cadence — KNOWN backlog; re-confirmed still live
+      2026-08-03 (A-T4): `activeJob` (`apps/mobile/app/rider/(tabs)/index.tsx:247`) has no
+      `enabled: online` gate (unlike its sibling `openOrders` at `:461`), so it polls every 8s
+      indefinitely even while the rider is fully offline with the board tab open. (S)
+- [ ] A-O5 Cap/paginate `getSnapshot.events[]` (client+API seam) — KNOWN backlog; re-confirmed
+      2026-08-03 (A-T4): `orders.service.ts:907` ships `events: order.events` with no `.slice()`/cap,
+      inflating every parcel job-detail poll ~55B/event as a job progresses. (M)
+- [ ] A-O16 **(new, ranked #12 — A-T4 finding, LC-A09)** Google Places autocomplete/details calls
+      (`apps/mobile/src/api/places.ts:62-75`, wired from `AddressSearch.tsx:173`'s 300ms debounce)
+      are uncapped and have no prefix-level response memoization — typing a full address fires a
+      fresh ~1-2KB Google response per settled keystroke pause with heavy content overlap between
+      calls (e.g. "12", "12 Josiah", "12 Josiah Tongogara" each a full independent fetch). Estimated
+      ≈9.4 KB/order in address entry alone (Phase 2a of the A-T4 trace). Outside Lynia's own
+      ETag/caching infrastructure (a direct Google REST call), so this needs its own prefix-cache
+      layer, not a server-side fix. Ranked below the in-house items since it's real but
+      third-party-bounded cost, not a defect in Lynia's own response shaping. (S/M)
+- [ ] A-O10 **Day-0 candidate:** cold start pays 3 redundant config round trips —
+      `apps/mobile/src/net/use-feature-flags.ts:45` (`/app/version-gate` duplicates a `/app/bootstrap`
+      field; `/app/feature-flags` refetched per hook, no dedup). (S)
+- [ ] A-O7 ALR-07: double GPS stream while foregrounded (~2× location upload) — KNOWN ledger;
+      re-confirmed still live 2026-08-03 (A-T4): both `use-rider-location.ts:88-91` (foreground
+      stream) and `background-location-task.ts:85-103` (background-task stream) emit the same
+      `rider:location` event in parallel at matching 10s/25m intervals — measured ≈13.2 KB of pure
+      duplicate GPS bytes per 20-minute active job window. (M)
 - [ ] A-O2 Merge-time size diff: extend the `mobile-bundle-size` job to post the measured bytes
       + delta vs base as a PR comment / job summary line, so growth is visible even under budget
       (DoorDash lesson 1). (S)
 - [ ] A-O3 Asset-PR guardrail: CI notice when a PR adds files under `apps/mobile/assets/`
       prompting the format/necessity check (DoorDash lesson 1). (S)
-- [ ] A-O4 Review rider-offline 8s activeJob poll cadence — KNOWN backlog. (S)
-- [ ] A-O5 Cap/paginate `getSnapshot.events[]` (client+API seam) — KNOWN backlog. (M)
-- [ ] A-O6 RUM/telemetry upload batching + cadence review on metered data — **Day-0 candidate:**
-      `apps/mobile/src/telemetry/rum.ts:87` ships a ~0.9 KB POST every 10s with no sampling. (S)
-- [ ] A-O9 **Day-0 candidate:** food journeys run ungated full-order polls — customer
-      `app/food/order/[orderId].tsx:96` (2 polls, live GPS defeats 304) and rider
-      `app/rider/food-job.tsx:60` (3 polls 8s+5s+5s), unlike their socket-gated parcel siblings. (M)
-- [ ] A-O10 **Day-0 candidate:** cold start pays 3 redundant config round trips —
-      `apps/mobile/src/net/use-feature-flags.ts:45` (`/app/version-gate` duplicates a `/app/bootstrap`
-      field; `/app/feature-flags` refetched per hook, no dedup). (S)
-- [ ] A-O7 ALR-07: double GPS stream while foregrounded (~2× location upload) — KNOWN ledger. (M)
 - [ ] A-O8 `expo-image` migration (disk/mem cache, downsampling) — KNOWN backlog; **needs native
       build train**. (L)
 
