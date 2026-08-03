@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { OtpCarrier } from "../observability/metrics.service";
+import { carrierFromMccMnc } from "./otp-carrier";
 
 /**
  * Bird SMS delivery-status webhook. `POST /v1/sms/messages` returns 202 Accepted, which means Bird
@@ -15,6 +17,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  *  off/unreachable); the rest are permanent. `sms.sent` and `sms.delivered` are not failures, and
  *  `sms.accepted` merely echoes what the send call already told us. */
 const FAILURE_EVENT_TYPES = new Set(["sms.undelivered", "sms.failed", "sms.rejected", "sms.expired"]);
+
+/** The one success terminal state — confirms the handset actually received the code. */
+const DELIVERED_EVENT_TYPE = "sms.delivered";
 
 /** Bird's event envelope — narrowed to exactly the fields this receiver reads (Bird sends more). */
 export interface BirdSmsEvent {
@@ -37,6 +42,15 @@ export interface BirdDeliveryFailure {
    *  `carrier_error_code` is deliberately NOT used — it is carrier-defined and unbounded. */
   code: string;
   smsId: string;
+  /** D-O2: the recipient's MNO, derived from Bird's own `data.mcc_mnc` — ground truth, never guessed. */
+  carrier: OtpCarrier;
+}
+
+/** A confirmed delivery (D-O2) — the "delivered" half needed to compute a per-carrier success rate;
+ *  see {@link BirdDeliveryFailure} for the "failed" half. Carries no phone number, same as failures. */
+export interface BirdDeliverySuccess {
+  smsId: string;
+  carrier: OtpCarrier;
 }
 
 function constantTimeEquals(a: string, b: string): boolean {
@@ -119,5 +133,18 @@ export function extractDeliveryFailure(event: BirdSmsEvent): BirdDeliveryFailure
     status: type.slice("sms.".length),
     code: code && code.length > 0 ? code : "unknown",
     smsId: event.data?.sms_id ?? "unknown",
+    carrier: carrierFromMccMnc(event.data?.mcc_mnc),
+  };
+}
+
+/**
+ * Map a `sms.delivered` event to a confirmed delivery, or null for anything else (failure, progress,
+ * or malformed — same best-effort-degrade posture as {@link extractDeliveryFailure}).
+ */
+export function extractDeliverySuccess(event: BirdSmsEvent): BirdDeliverySuccess | null {
+  if (event?.type !== DELIVERED_EVENT_TYPE) return null;
+  return {
+    smsId: event.data?.sms_id ?? "unknown",
+    carrier: carrierFromMccMnc(event.data?.mcc_mnc),
   };
 }

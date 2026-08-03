@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   type BirdSmsEvent,
   extractDeliveryFailure,
+  extractDeliverySuccess,
   isWebhookTimestampFresh,
   verifyBirdSignature,
   WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS,
@@ -102,8 +103,16 @@ describe("extractDeliveryFailure", () => {
     ["sms.rejected", "rejected"],
     ["sms.expired", "expired"],
   ])("reports %s as a delivery failure", (type, status) => {
-    const event: BirdSmsEvent = { type, data: { sms_id: "sms_01", error: { code: "E12003" } } };
-    expect(extractDeliveryFailure(event)).toEqual({ status, code: "E12003", smsId: "sms_01" });
+    const event: BirdSmsEvent = {
+      type,
+      data: { sms_id: "sms_01", error: { code: "E12003" }, mcc_mnc: "64804" },
+    };
+    expect(extractDeliveryFailure(event)).toEqual({
+      status,
+      code: "E12003",
+      smsId: "sms_01",
+      carrier: "econet",
+    });
   });
 
   // `accepted`/`sent` are progress, and `delivered` is the happy path — counting any of them as a
@@ -117,6 +126,7 @@ describe("extractDeliveryFailure", () => {
       status: "failed",
       code: "unknown",
       smsId: "sms_01",
+      carrier: "other",
     });
   });
 
@@ -128,6 +138,7 @@ describe("extractDeliveryFailure", () => {
       status: "failed",
       code: "unknown",
       smsId: "unknown",
+      carrier: "other",
     });
   });
 
@@ -135,5 +146,33 @@ describe("extractDeliveryFailure", () => {
   it("never surfaces the recipient's phone number", () => {
     const event = { type: "sms.failed", data: { sms_id: "sms_01", to: "+263771234567" } } as BirdSmsEvent;
     expect(JSON.stringify(extractDeliveryFailure(event))).not.toContain("263771234567");
+  });
+
+  // No mcc_mnc on the event yet must never guess from the (unavailable-here) phone number.
+  it("collapses a missing mcc_mnc to carrier 'other' rather than guessing", () => {
+    expect(extractDeliveryFailure({ type: "sms.failed", data: { sms_id: "sms_01" } })?.carrier).toBe("other");
+  });
+});
+
+describe("extractDeliverySuccess", () => {
+  it("reports sms.delivered as a confirmed delivery with its carrier", () => {
+    const event: BirdSmsEvent = { type: "sms.delivered", data: { sms_id: "sms_01", mcc_mnc: "64801" } };
+    expect(extractDeliverySuccess(event)).toEqual({ smsId: "sms_01", carrier: "netone" });
+  });
+
+  it.each(["sms.accepted", "sms.sent", "sms.failed", "sms.undelivered"])(
+    "does not treat %s as a confirmed delivery",
+    (type) => {
+      expect(extractDeliverySuccess({ type, data: { sms_id: "sms_01" } })).toBeNull();
+    },
+  );
+
+  it("degrades to null on malformed events instead of throwing", () => {
+    expect(extractDeliverySuccess({} as BirdSmsEvent)).toBeNull();
+  });
+
+  it("never surfaces the recipient's phone number", () => {
+    const event = { type: "sms.delivered", data: { sms_id: "sms_01", to: "+263771234567" } } as BirdSmsEvent;
+    expect(JSON.stringify(extractDeliverySuccess(event))).not.toContain("263771234567");
   });
 });

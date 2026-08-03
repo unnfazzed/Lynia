@@ -31,7 +31,7 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `position_emit_latency_ms`      | histogram | ms   | (none)                          | < 500 ms   |
 | `match_select_duration_ms`      | histogram | ms   | `outcome`                       | < 300 ms   |
 | `broadcast_nearby_duration_ms`  | histogram | ms   | `source`                        | < 400 ms   |
-| `otp_verify_duration_ms`        | histogram | ms   | `result`                        | < 800 ms   |
+| `otp_verify_duration_ms`        | histogram | ms   | `result`, `carrier`             | < 800 ms   |
 | `http_request_duration_ms`      | histogram | ms   | `route`, `method`, `status_class` | < 1000 ms |
 | `client_position_glass_latency_ms` | histogram | ms | `role`, `version`             | (glass-to-glass) |
 | `client_offer_glass_latency_ms` | histogram | ms   | `role`, `version`               | (glass-to-glass) |
@@ -41,7 +41,9 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 | `offers_made_total`             | counter   | 1    | `outcome`                       | —          |
 | `client_samples_dropped_total`  | counter   | 1    | `role`                          | —          |
 | `whatsapp_otp_delivery_failed_total` | counter | 1 | `reason`                     | —          |
-| `bird_otp_delivery_failed_total` | counter | 1 | `status`, `code`                  | —          |
+| `bird_otp_delivery_failed_total` | counter | 1 | `status`, `code`, `carrier`        | —          |
+| `bird_otp_delivered_total`      | counter   | 1    | `carrier`                        | —          |
+| `otp_requested_total`           | counter   | 1    | `carrier`                        | —          |
 | `identity_new_device_verify_total` | counter | 1 | `dormant`, `device`             | —          |
 | `micro_cache_requests_total`    | counter   | 1    | `cache`, `outcome`               | —          |
 | `queue_jobs`                    | gauge     | 1    | `queue`, `state`                 | —          |
@@ -67,7 +69,8 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
 
 - `match_select` `outcome` ∈ `assigned | taken | unavailable | not_open | forbidden | error`
 - `broadcast_nearby` `source` ∈ `redis | pg` (GEOSEARCH prefilter vs the PG `ST_DWithin` fallback)
-- `otp_verify` `result` ∈ `ok | invalid | expired | locked | error`
+- `otp_verify` `result` ∈ `ok | invalid | expired | locked | error`; `carrier` ∈
+  `econet | netone | telecel | other` (D-O2 — see below).
 - `offers_made` `outcome` ∈ `created | conflict | forbidden | error`
 - `http` `status_class` ∈ `2xx | 3xx | 4xx | 5xx`; `route` is the **route template** (e.g. `/orders/:id`),
   **never** the raw URL — that keeps the histogram's cardinality bounded.
@@ -93,6 +96,16 @@ All histograms are in **milliseconds** (`unit: "ms"`). p95 targets are **server-
   top-up, by the `creditFromTopup` call that wins the confirm CAS, measuring
   `TopUp.initiatedAt → resolvedAt`. The admin manual-credit path never records (it creates the intent
   already-confirmed; there is no rail wait to measure).
+- **`carrier` (D-O2, `otp_verify_duration_ms` / `otp_requested_total` / `bird_otp_delivered_total` /
+  `bird_otp_delivery_failed_total`)** ∈ `econet | netone | telecel | other` — a CLOSED 4-value set
+  (`apps/api/src/auth/otp-carrier.ts`), but the two label sources differ in trustworthiness:
+  `otp_requested_total` and the verify histogram are labeled at SEND/VERIFY time from a best-effort
+  MSISDN-prefix guess (`carrierFromPhone`) — Zimbabwean number-portability leaves `071`/`073` shared
+  across carriers, so those collapse to `other` rather than guessing wrong. The two Bird delivery
+  counters are labeled from Bird's own `data.mcc_mnc` on the delivery-status webhook
+  (`carrierFromMccMnc`) — GROUND TRUTH, confirmed against a live send in `docs/BIRD-SETUP.md`. Prefer
+  the Bird-sourced delivered/failed ratio for a true per-carrier deliverability rate; the
+  request/verify counters are attempt-side context, not a substitute.
 - `identity_new_device_verify_total` `dormant` ∈ `true | false` — `true` means the account had no
   session newer than 90 days when the unrecognised device verified. Deliberately a *label*, not two
   metrics: the ratio is the signal, and it's only readable if both arms share a series. `device` ∈
@@ -176,6 +189,15 @@ courier operator actually cares about. All live in `infra/terraform/monitoring.t
 | **Offer-make error rate > 5%** | `offers_made_total{outcome="error"}` ratio | Riders can't bid. Distinct from `conflict`/`forbidden` (normal race/permission outcomes). Check the offers module + DB. |
 | **WhatsApp OTP delivery failures** | `sum(rate(whatsapp_otp_delivery_failed_total[5m])) > 0.2` | Users can't receive login codes. Check Meta Cloud API status + `WHATSAPP_*` config. |
 | **Bird OTP delivery failures** | `sum(rate(bird_otp_delivery_failed_total[5m])) > 0.2` | Users can't receive login codes on the SMS channel. The send returned 202, so this is the ONLY signal. Split by `status`: `rejected` is usually account-level (wallet balance, no eligible sender → `code=E12003`), `undelivered`/`expired` point at the carrier (Econet) rather than at us. `bird sms get <sms_id>` shows the per-message timeline. |
+
+> **Per-carrier deliverability (D-O2, not yet wired into `monitoring.tf`)** — a NEW alert on
+> `bird_otp_delivered_total`/`bird_otp_delivery_failed_total`'s `carrier` label would surface a
+> single-MNO regression (e.g. one carrier's routing degrading) that a repo-wide failure-rate alert
+> can hide inside a healthy aggregate. Candidate:
+> `sum by (carrier) (rate(bird_otp_delivery_failed_total[15m])) / sum by (carrier) (rate(bird_otp_delivered_total[15m]) + rate(bird_otp_delivery_failed_total[15m])) > 0.3`
+> (per-carrier volume is low at pilot scale, so a wider window + generous threshold avoid noise).
+> Left as a Terraform change for the founder to apply per the LC-D read-only infra doctrine
+> (`docs/ROUTINES.md`) — this lane ships the app-side metrics only.
 
 | **Dormant-account device rebind spike** | `sum(increase(identity_new_device_verify_total{dormant="true",device="new"}[24h])) > 5` | Phone is the account key, so an account dormant >90d re-verifying from an unseen device is the exact shape a **carrier number recycle** takes — the person who passed the OTP may not be the person who owns the account (P2-8). One a week is normal (reinstall, new handset). A cluster is not: pull the `identity: account … POSSIBLE SIM RECYCLE` WARN lines, check whether the accounts carry a wallet balance or KYC record, and freeze payouts on any that do before deciding to rebind. Scoped to `device="new"` on purpose: the `absent` arm is a *client* defect (someone stopped sending `x-device-id`) and would otherwise drown this signal — watch it separately, and fix the client rather than the threshold. Threshold is a pilot-volume guess — re-baseline once a month of data exists. |
 | **Queue stalled (jobs overdue)** | `max by (queue) (queue_oldest_overdue_ms) > 120000` for 10m | Expiry/auto-close jobs are sitting past their **scheduled** fire time — the workers stopped processing (Redis wedged, worker dead) and only the DB reconciler sweeps (2 min offers / 15 min deliveries) are advancing orders. Customers see countdowns freeze at 0:00 until a sweep lands. Check Memorystore and the API logs for `queue error` / `worker error` lines. |

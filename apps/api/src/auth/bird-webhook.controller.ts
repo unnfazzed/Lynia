@@ -3,7 +3,13 @@ import type { Request } from "express";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
-import { type BirdSmsEvent, extractDeliveryFailure, isWebhookTimestampFresh, verifyBirdSignature } from "./bird-webhook";
+import {
+  type BirdSmsEvent,
+  extractDeliveryFailure,
+  extractDeliverySuccess,
+  isWebhookTimestampFresh,
+  verifyBirdSignature,
+} from "./bird-webhook";
 
 /**
  * Bird SMS delivery-status webhook — the asynchronous half of the OTP send path. The send itself
@@ -60,12 +66,17 @@ export class BirdWebhookController {
     }
 
     try {
-      const failure = extractDeliveryFailure(JSON.parse(raw || "{}") as BirdSmsEvent);
+      const event = JSON.parse(raw || "{}") as BirdSmsEvent;
+      const failure = extractDeliveryFailure(event);
       if (failure) {
         this.logger.warn(
           `Bird OTP delivery ${failure.status} (code=${failure.code}, sms_id=${failure.smsId}) — the recipient never got the code.`,
         );
-        this.metrics.incBirdOtpDeliveryFailed(failure.status, failure.code);
+        this.metrics.incBirdOtpDeliveryFailed(failure.status, failure.code, failure.carrier);
+      }
+      const success = extractDeliverySuccess(event);
+      if (success) {
+        this.metrics.incBirdOtpDelivered(success.carrier);
       }
     } catch (err) {
       // Malformed body on an otherwise-authentic (signature-valid) delivery — log and move on.

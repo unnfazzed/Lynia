@@ -39,6 +39,7 @@ const fakeMetrics = () =>
   ({
     startTimer: () => () => 0,
     recordOtpVerify: vi.fn(),
+    incOtpRequested: vi.fn(),
     incIdentityNewDeviceVerify: vi.fn(),
   }) as unknown as MetricsService;
 
@@ -556,23 +557,23 @@ describe("AuthService.verifyOtp", () => {
   it("records otp_verify_duration with the mapped result label on every exit path", async () => {
     const expired = make(baseEnv, fakePrisma());
     await expect(expired.svc.verifyOtp("+263770000020", "123456")).rejects.toThrow();
-    expect(expired.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "expired");
+    expect(expired.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "expired", "econet");
 
     const locked = make(baseEnv, fakePrisma());
     await locked.store.put("+263770000021", tokens.hash("123456"), 300);
     for (let i = 0; i < 5; i++) await locked.store.incrAttempts("+263770000021");
     await expect(locked.svc.verifyOtp("+263770000021", "123456")).rejects.toThrow();
-    expect(locked.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "locked");
+    expect(locked.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "locked", "econet");
 
     const invalid = make(baseEnv, fakePrisma());
     await invalid.store.put("+263770000022", tokens.hash("111111"), 300);
     await expect(invalid.svc.verifyOtp("+263770000022", "222222")).rejects.toThrow();
-    expect(invalid.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "invalid");
+    expect(invalid.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "invalid", "econet");
 
     const ok = make(baseEnv, fakePrisma());
     await ok.store.put("+263770000023", tokens.hash("654321"), 300);
     await ok.svc.verifyOtp("+263770000023", "654321");
-    expect(ok.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "ok");
+    expect(ok.metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "ok", "econet");
   });
 
   it("clears needsProfile once the profile has a name", async () => {
@@ -665,9 +666,9 @@ describe("AuthService.verifyOtp — post-verify retry grace (§6)", () => {
     const { svc, store, metrics } = make(baseEnv, gracePrisma());
     await store.put("+263770000044", tokens.hash("654321"), 300);
     await svc.verifyOtp("+263770000044", "654321");
-    expect(metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "ok");
+    expect(metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "ok", "econet");
     await svc.verifyOtp("+263770000044", "654321");
-    expect(metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "grace_ok");
+    expect(metrics.recordOtpVerify).toHaveBeenLastCalledWith(expect.any(Number), "grace_ok", "econet");
   });
 
   it("lockout leaves NO grace record — the correct code after a lockout is still 'expired', never a session", async () => {

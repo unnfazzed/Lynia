@@ -43,6 +43,8 @@ type CounterName =
   | "client_samples_dropped_total"
   | "whatsapp_otp_delivery_failed_total"
   | "bird_otp_delivery_failed_total"
+  | "bird_otp_delivered_total"
+  | "otp_requested_total"
   | "identity_new_device_verify_total"
   | "micro_cache_requests_total"
   | "wallet_integrity_runs_total"
@@ -55,6 +57,11 @@ export type BroadcastSource = "redis" | "pg";
 // server committed, then retried the same correct code) — kept distinct from "ok" so a spike in
 // grace mints is visible as a link-quality signal.
 export type OtpVerifyResult = "ok" | "grace_ok" | "invalid" | "expired" | "locked" | "error";
+/** Zimbabwean MNO the OTP's phone number belongs to (D-O2, DoorDash lesson 11 — carrier-level
+ *  deliverability monitoring). "other" covers unmapped/ported prefixes and non-Zimbabwe numbers —
+ *  see auth/otp-carrier.ts for how send-time (best-effort, from MSISDN) and delivery-time
+ *  (ground-truth, from Bird's MCC/MNC) values are derived. Closed 4-value set. */
+export type OtpCarrier = "econet" | "netone" | "telecel" | "other";
 export type OffersMadeOutcome = "created" | "conflict" | "forbidden" | "error";
 export type StatusClass = "2xx" | "3xx" | "4xx" | "5xx";
 /** Client-supplied role. Bounded → safe as a label; the appVersion is bucketed separately (see below). */
@@ -213,8 +220,17 @@ export class MetricsService {
     this.histogram("broadcast_nearby_duration_ms").record(ms, { source });
   }
 
-  recordOtpVerify(ms: number, result: OtpVerifyResult): void {
-    this.histogram("otp_verify_duration_ms").record(ms, { result });
+  recordOtpVerify(ms: number, result: OtpVerifyResult, carrier: OtpCarrier): void {
+    this.histogram("otp_verify_duration_ms").record(ms, { result, carrier });
+  }
+
+  /** One OTP send attempt handed to the sender (D-O2). `carrier` is the send-time best-effort
+   *  MSISDN-prefix guess (auth/otp-carrier.ts `carrierFromPhone`) — Bird hasn't reported delivery
+   *  yet at this point, so this is an ATTEMPT count, paired with `bird_otp_delivered_total` /
+   *  `bird_otp_delivery_failed_total` (ground-truth carrier) to make a carrier-specific
+   *  deliverability regression visible instead of buried in an aggregate rate. */
+  incOtpRequested(carrier: OtpCarrier): void {
+    this.counter("otp_requested_total").add(1, { carrier });
   }
 
   recordHttp(route: string, method: string, statusClass: StatusClass, ms: number): void {
@@ -268,10 +284,20 @@ export class MetricsService {
    * terminal event minus the `sms.` prefix (`undelivered` | `failed` | `rejected` | `expired`) and
    * `code` its error code (e.g. `E12003`); both are closed vocabularies. The carrier's own
    * `carrier_error_code` is deliberately excluded — it is carrier-defined and unbounded. Never the
-   * phone number.
+   * phone number. `carrier` (D-O2) is derived from Bird's own `mcc_mnc` on the event — ground truth,
+   * not a guess — so paired with `bird_otp_delivered_total` it makes a per-carrier deliverability
+   * regression (e.g. one MNO's routing degrading) visible instead of hiding inside an aggregate rate.
    */
-  incBirdOtpDeliveryFailed(status: string, code: string): void {
-    this.counter("bird_otp_delivery_failed_total").add(1, { status, code });
+  incBirdOtpDeliveryFailed(status: string, code: string, carrier: OtpCarrier): void {
+    this.counter("bird_otp_delivery_failed_total").add(1, { status, code, carrier });
+  }
+
+  /** One OTP SMS that Bird's delivery-status webhook confirmed reached the handset (`sms.delivered`),
+   *  labeled by the same ground-truth `carrier` as {@link incBirdOtpDeliveryFailed} (D-O2). Before
+   *  this, only failures were counted — with no "delivered" denominator a per-carrier success RATE
+   *  couldn't be computed at all, only an absolute failure count. */
+  incBirdOtpDelivered(carrier: OtpCarrier): void {
+    this.counter("bird_otp_delivered_total").add(1, { carrier });
   }
 
   /**
