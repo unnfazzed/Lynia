@@ -862,8 +862,24 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       since completed/cancelled/reassigned — already handled generically via the 404/403/transient
       error-kind branching on the order screen) were all found already sound. See
       docs/LC-D-REPORT-2026-08-03d.md.
-- [ ] D-T4 Infra soundness I (READ-ONLY → report + ledger): failure domains + scaling — the
-      Redis-down/degraded behavior seam, DB connection math, health checks, alert coverage.
+- [x] D-T4 **SWEPT (LC loop D, 2026-08-03)** — Infra soundness I (READ-ONLY → report + ledger):
+      three parallel read-only research passes covered the Redis-down/degraded behavior seam, DB
+      connection math, health checks, and alert coverage. Confirmed the prior `LC-C01` Redis-hang
+      CRITICAL and all four `LC-INF1..4` founder-gated Day-0 items are still fixed (not
+      re-reported). **9 new findings ledgered `LC-D19`–`LC-D27`, all OPEN (owner: founder), zero
+      code or `infra/terraform/**` changes** per this territory's explicit read-only doctrine:
+      `LC-D19`/`LC-D20` (Redis: the shared OTP/rate-limiter client fails closed across every
+      `@Throttle` route including `sos-raise` instead of failing open like every other Redis
+      consumer in the codebase; the Socket.IO adapter's `fetchSockets()` timeout behavior is
+      unverified under a real outage), `LC-D21`/`LC-D22` (DB: the `LC-INF3`-fixed 10×10=100
+      connection math has likely-zero headroom against Cloud SQL's own ~100-connection ceiling,
+      unconfirmed live; pool exhaustion surfaces as an opaque 500 with no 503/Retry-After),
+      `LC-D23` (no Terraform-managed Cloud Run liveness/startup probe — deploy is imperative
+      `gcloud`, recovery depends solely on the 60s external uptime check), `LC-D24`–`LC-D27`
+      (alerting: no Cloud SQL system-metric alert, no Redis/Memorystore alert, every
+      SLO/queue alert is default-gated off AND `alert_notification_channels` defaults to `[]` so
+      even the always-on uptime alert pages nobody, and 2 of 3 scheduled jobs have no
+      failure alert). See `docs/LC-D-REPORT-2026-08-03e.md`.
 - [ ] D-T5 Infra soundness II (READ-ONLY → report + ledger): backup/PITR/restore-drill parity,
       CI/deploy gaps beyond KNOWN items, mobile release/OTA pipeline fitness.
 
