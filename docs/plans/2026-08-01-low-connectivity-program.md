@@ -33,7 +33,7 @@ permanent standing routines.
 | Hermes JS bundle (OTA cost) | 6,455,000 B budget vs ~5.0 MB measured 2026-07-20 | `apps/mobile/size-budget.json` + `ci.yml mobile-bundle-size` (fails PRs over budget) | A-T1 ratchets to measured+5%; budgets only move DOWN in LC PRs; a legitimate raise needs same-PR justification |
 | Android export total (JS+assets) | 12,690,000 B budget | same | same |
 | Native per-device download | unmeasured (EAS/`mobile-release.yml` dormant) | A-T5 (2026-08-03) confirmed the delivery config (AAB split) + shrink levers (R8/resources) are already optimal and the measurement path already exists in `mobile-release.yml`; the number itself stays blocked on a founder arming `EAS_RELEASE_ENABLED` | no new native dep without stated size cost |
-| Session data (core journeys) | baselined 2026-08-03 (A-T4, field-by-field trace, not live capture): customer parcel journey ≈181 KB/26min (172 KB resp + 9.3 KB req; WS-primary tracking); customer food journey ≈360-405 KB/26min (poll-only, no socket exists for food orders); rider steady-state hour ≈173-422 KB (parcel job leg) or ≈422-653 KB (food job leg), range driven by RUM sampling assumption | report-only, no CI gate yet; A-T4 traced every request+response against the real service/response-builder code, accounting for `apps/api/src/main.ts:92-99`'s gzip/brotli compression (≥1 KB bodies only) and the client's ETag conditional-GET layer (`apps/mobile/src/api/client.ts:91-118`) | provisional ≤150 KB / ≤300 KB/h targets retired as unrealistic pre-fix; new evidence-based near-term targets: customer parcel journey ≤120 KB, customer food journey ≤150 KB, rider steady-state hour ≤200 KB/h — achievable once A-O6 (RUM sampling, single largest lever at ≈140 KB/session) + A-O9 (food dual-poll, second largest at ≈94-271 KB) land; A-O14/A-O7 add further headroom |
+| Session data (core journeys) | baselined 2026-08-03 (A-T4, field-by-field trace, not live capture): customer parcel journey ≈181 KB/26min (172 KB resp + 9.3 KB req; WS-primary tracking); customer food journey ≈360-405 KB/26min (poll-only, no socket exists for food orders); rider steady-state hour ≈173-422 KB (parcel job leg) or ≈422-653 KB (food job leg), range driven by RUM sampling assumption | report-only, no CI gate yet; A-T4 traced every request+response against the real service/response-builder code, accounting for `apps/api/src/main.ts:92-99`'s gzip/brotli compression (≥1 KB bodies only) and the client's ETag conditional-GET layer (`apps/mobile/src/api/client.ts:91-118`) | provisional ≤150 KB / ≤300 KB/h targets retired as unrealistic pre-fix; new evidence-based near-term targets: customer parcel journey ≤120 KB, customer food journey ≤150 KB, rider steady-state hour ≤200 KB/h — A-O9 (food dual-poll, 2026-08-03f) and A-O6 (RUM sampling, 2026-08-03g) have both now landed; re-baselining against these targets in practice is the weekly steer's job; A-O14/A-O7 add further headroom |
 | Cold start | warm-paint shipped for home/profile/history/wallet | B-T1 baselines the boot path | targets: warm boot paints with ZERO network round-trips before first frame; cold boot interactive in ≤3 sequential round-trips |
 
 Budget regressions found by any routine are defects (owning lane files + fixes per universal
@@ -289,15 +289,31 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       polls are unaffected. All 4 new wiring-regression tests pass (2 files); full monorepo
       `pnpm typecheck && pnpm lint && pnpm test` green (721 mobile / 1516 API tests, unchanged
       elsewhere). See `docs/LC-A-REPORT-2026-08-03f.md`.
-- [ ] A-O6 **(re-ranked to #5, was #9 — 2026-08-03 A-T4 evidence)** RUM/telemetry upload batching +
-      cadence review on metered data — **Day-0 candidate:** `apps/mobile/src/telemetry/rum.ts:87`
-      ships a POST every 10s whenever the buffer is non-empty (not sampled). A-T4 measured real
-      batch sizes by sample count (1 sample ≈79B, 10 ≈349B, 20-cap ≈649B) — smaller than the
-      ledger's original ~0.9KB/flush estimate in the common case, but during any active-tracking or
-      food-polling window the buffer is essentially always non-empty (an `apiFetch` sample enqueues
-      on every request), so the realistic cost is ≈68-324 KB/hour depending on request volume —
-      still the #2 [data] lever after A-O9. Needs real sampling (e.g. 1-in-N or time-boxed), not
-      just batching. (S)
+- [x] A-O6 **DONE (2026-08-03g)** **(ranked #5, was #9 — 2026-08-03 A-T4 evidence)** RUM/telemetry
+      upload batching + cadence review on metered data — **Day-0 candidate:**
+      `apps/mobile/src/telemetry/rum.ts:87` shipped a POST every 10s whenever the
+      buffer was non-empty (not sampled). A-T4 measured real batch sizes by sample count (1 sample
+      ≈79B, 10 ≈349B, 20-cap ≈649B) — smaller than the ledger's original ~0.9KB/flush estimate in
+      the common case, but during any active-tracking or food-polling window the buffer was
+      essentially always non-empty (an `apiFetch` sample enqueues on every request), so the realistic
+      cost was ≈68-324 KB/hour depending on request volume — the #2 [data] lever after A-O9. Needed
+      real sampling (e.g. 1-in-N or time-boxed), not just batching.
+      **Shipped:** `enqueueApiFetch` now keeps 1-in-4 `apifetch` samples via a deterministic modulo
+      counter (glass samples — `position_glass`/`offer_glass`/`board_glass` — stay unsampled: they're
+      already bounded by real WS push frequency and each is independently informative); the
+      `dropped` skew-counter is untouched by sampled-out calls (kept semantically separate from
+      clock-skew discards). `FLUSH_INTERVAL_MS` widened 10s → 30s (AppState background/inactive
+      still flushes immediately, so nothing is lost on backgrounding — only the foreground
+      quiet-buffer cadence widened) so a mostly-quiet buffer stops paying a POST's fixed per-request
+      overhead every 10s for 1-2 samples. Measured via a synthetic driver over the real
+      `buildBatches()` logic against A-T4's traced request rates: active customer tracking
+      (~3s/apifetch) 54,000 B/h → 15,000 B/h (**−72.2%**), 360 → 120 req/h (**−66.7%**); rider
+      steady-state food job leg (~1.5s/apifetch) 90,000 B/h → 24,000 B/h (**−73.3%**), 360 → 120
+      req/h (**−66.7%**). 11 new regression tests in the module's first dedicated test file
+      (`__tests__/rum.test.ts`) cover the pure functions, the exact 1-in-4 sampling cadence, the
+      widened flush interval, and the still-immediate background flush. No bundle-size impact
+      (JS-logic-only, no new deps/assets); full monorepo `pnpm typecheck && pnpm lint && pnpm test`
+      green. See `docs/LC-A-REPORT-2026-08-03g.md`.
 - [ ] A-O14 **(new, ranked #6 — A-T4 finding, LC-A06)** `MerchantOrderResponse`
       (`packages/shared/src/contracts.ts:945-1007`, 39 fields) is serialized unconditionally by
       `food-order.service.ts`'s `toResponse()` (`:781-842`) regardless of order phase — unlike the
