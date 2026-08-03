@@ -2,9 +2,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { WS_EVENTS } from "@lynia/shared";
 import { getAlarmController } from "./alarm-singleton";
 import { useWakeLock } from "./use-wake-lock";
 import { API_BASE_URL } from "../lib/config";
+import { createMerchantQueueSocket } from "../lib/queue-socket";
 import { getReachabilityStore, type ReachabilityState } from "../lib/reachability";
 import { clearMerchantSession, loadMerchantSession, type MerchantSession } from "../lib/session";
 
@@ -59,6 +61,23 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
       store.stop();
     };
   }, []);
+
+  // C5 kitchen queue presence: join the merchant's own queue room on every connect AND every
+  // reconnect (Socket.IO doesn't persist room membership across a reconnect) so the server's
+  // `isMerchantOnline` check reflects this tablet for as long as it's signed in — restoring N-03's
+  // auto-cancel guarantee, which was previously unenforceable for any merchant (see queue-socket.ts).
+  // Gated on `session` (not just mount) so a signed-out tablet leaves the room instead of reporting a
+  // phantom "online" merchant nobody is actually watching.
+  useEffect(() => {
+    if (!session) return undefined;
+    const socket = createMerchantQueueSocket();
+    socket.on("connect", () => {
+      socket.emit(WS_EVENTS.merchantQueueSubscribe);
+    });
+    return () => {
+      socket.disconnect();
+    };
+  }, [session]);
 
   // Resume the AudioContext on every gesture in the tab (§3: "AudioContext resumed on every user
   // gesture in case Chrome suspends it") — cheap no-op once already running.
