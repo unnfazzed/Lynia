@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { FlatList, Pressable, Text, View } from "react-native";
 import { getNotificationsFeed, type NotificationRow } from "../../src/api/notifications";
 import { notificationRowDestination } from "../../src/push/push";
 import { Button, EmptyState, Heading, Icon, Screen, SkeletonList } from "../../src/ui";
@@ -78,14 +78,20 @@ export default function NotificationsScreen(): React.ReactElement {
       ) : (feedQ.data ?? []).length === 0 ? (
         <EmptyState icon="inbox" title="No notifications yet" message="Offers, delivery updates and account news will show up here." />
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {(feedQ.data ?? []).map((n) => (
+        // B-O1: was a ScrollView + `.map()` over the full (server-capped 30-row) feed — FlatList
+        // windows the concurrently-mounted rows to what's on-screen, matching the food-catalog
+        // precedent (B-T3/LC-B07), for the Go-class scroll-smoothness win rather than a memory one.
+        <FlatList
+          data={feedQ.data ?? []}
+          keyExtractor={(n) => n.id}
+          renderItem={({ item }) => (
             // KB-FEED-SYNTH / BH-18: see notificationRowDestination for the destination rules — an
             // account-status row (no orderId) routes by `to` (customer.hold/lift → home, else rider).
-            <Row key={n.id} n={n} onPress={() => router.push(notificationRowDestination(n))} />
-          ))}
-          <View style={{ height: tokens.space.xxl }} />
-        </ScrollView>
+            <Row n={item} onPress={() => router.push(notificationRowDestination(item))} />
+          )}
+          showsVerticalScrollIndicator={false}
+          ListFooterComponent={<View style={{ height: tokens.space.xxl }} />}
+        />
       )}
       <Button label="Back" variant="ghost" onPress={() => router.back()} />
     </Screen>
