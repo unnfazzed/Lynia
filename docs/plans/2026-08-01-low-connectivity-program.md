@@ -456,7 +456,38 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
 
 **Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-02 steer #2 — see
 `docs/LC-STEER-2026-08-02b.md` §4 for rationale):**
-- [ ] B-O1 History/board/notifications lists → FlatList + cursor pagination — KNOWN backlog. (M)
+- [x] B-O1 History/notifications lists → FlatList **(2026-08-03b)**. Converted both to FlatList
+      (this lane's third and fourth FlatList adoptions after B-T3's restaurant catalog), windowing
+      the concurrently-mounted rows to what's on-screen — a real scroll-smoothness win on Go-class
+      hardware even though both lists are already server-capped (history 50, notifications 30; the
+      "cursor pagination" half of this item's original title is therefore not applicable — pagination
+      exists to bound an otherwise-unbounded list, and these already are, unlike food's `B-O10`).
+      Regression tests in `app/history/__tests__/index.test.tsx` / `app/notifications/__tests__/
+      index.test.tsx` (assert a single FlatList receives the full dataset, pinning virtualization
+      against a future "just add a row" ScrollView regression, matching B-T3's precedent). **Split
+      off the rider board's own list as `B-O1b` below** (also server-capped at 50, same rationale) —
+      that screen is one monolithic ScrollView carrying the entire KYC/location/online-gate state
+      tree with no existing header/list seam, so a FlatList conversion needs a real structural split
+      of that tree rather than a drop-in swap; riskier to do blind in the same pass as two clean
+      conversions, on a screen with zero existing test coverage as a safety net. `pnpm typecheck &&
+      pnpm lint && pnpm test` all green (688 mobile + 1516 API tests).
+- [ ] B-O1b **(new, split from B-O1)** Rider board's "Open orders" list
+      (`apps/mobile/app/rider/(tabs)/index.tsx`) is still ScrollView + `.map()` over up to 50
+      `JobCard`s (plus the smaller `sentOffers` list just above it) — same render-cost shape B-O1
+      just fixed for history/notifications, but the surrounding screen is one monolithic ScrollView
+      carrying the KYC/location/online-gate ternary tree, which only ends well past the list (past
+      the `selected`-order compose card, the confirmSwitch/"back to customer" row, error/info text).
+      A safe conversion needs: (a) hoist a `showOpenOrdersList` boolean (`online && !meQ.isLoading &&
+      !meQ.isError && !knownUnverified && !locDenied && gate == null`) so the FlatList's `data`/
+      `ListEmptyComponent` can't leak stale `ranked` entries into a gated/offline render — the
+      current nested-ternary structure already prevents this implicitly by never reaching the list
+      JSX in that case, so a naive `data={ranked}` would be a regression, not a refactor; (b) move
+      everything from the top of the screen through the `sentOffers` list into
+      `ListHeaderComponent`; (c) move the `selected` compose card and the confirmSwitch/back-to-
+      customer/error/info footer into `ListFooterComponent` — those are siblings of the list within
+      the same gate branch, not trailing content, so they must move together rather than stay behind
+      in the old ScrollView. Bundle with `B-O12` (cap/resync the `openOrders` WS-merged cache) — same
+      file, same pass. (M)
 - [ ] B-O2 Memo boundaries for ComposeMap / JobDetailsCard / board-card (with render-isolation
       tests, the AuctionClock pattern) — KNOWN backlog. (M)
 - [ ] B-O8 **(new, B-T2 finding)** `food/order/[orderId].tsx`'s countdown ticker
@@ -528,7 +559,9 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       client-side memory cost with a `FlatList`, but the query and the in-memory JS array of
       restaurant data itself stay unbounded — worth a cursor-paginated `useInfiniteQuery` (mirroring
       `useHistoryFeed`'s shape once it exists) as the corridor's merchant catalog grows past a page.
-      Extends `B-O1`'s remit rather than duplicating it. (M)
+      The one list in this lane that's actually uncapped, unlike `B-O1`/`B-O1b`'s already-server-
+      capped lists — the cursor-pagination half of `B-O1`'s original title turned out to belong here
+      instead, once `B-O1`'s own audit found history/board/notifications all already bounded. (M)
 - [ ] B-O12 **(new, B-T3 finding)** Rider board's `openOrders` TanStack Query cache can grow
       unboundedly across a very long, unbroken online socket session —
       `apps/mobile/src/realtime/use-rider-board.ts:87-103`'s `boardNewOrder` handler prepends
@@ -537,9 +570,9 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       snapshot is disabled the whole time `board.connected` stays true. No reproducible drop path
       found (Socket.IO delivery over a live connection is reliable in-order) so this is edge-case,
       not a confirmed defect — but nothing bounds it by design, unlike the capped REST endpoint.
-      Whoever implements `B-O1`'s `FlatList` conversion for the board should also cap or
+      Whoever implements `B-O1b`'s `FlatList` conversion for the board should also cap or
       periodically re-sync this cache rather than trusting the event-pair bookkeeping alone for an
-      all-day shift. (S, bundle with B-O1)
+      all-day shift. (S, bundle with B-O1b)
 - [ ] B-O13 **(new, B-T3 finding)** `expiredOrderIds`/`takenOrderIds` `Set`s in
       `apps/mobile/src/realtime/use-rider-board.ts:35,38` grow for the rider's whole online session
       with no eviction (every `bid:expired`/`order:taken` push adds an id, nothing ever removes

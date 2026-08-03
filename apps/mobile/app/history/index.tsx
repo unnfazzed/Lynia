@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { FlatList, Pressable, Text, View } from "react-native";
 import type { OrderHistoryRow } from "../../src/api/orders";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatMoney } from "../../src/logic/money";
@@ -92,23 +92,31 @@ export default function HistoryScreen(): React.ReactElement {
       <Heading>Your trips</Heading>
       <Sub>Every parcel you&apos;ve sent or delivered.</Sub>
       {rows && rows.length > 0 ? (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Painting the cached list because live data is absent — set the "may be stale" expectation,
-              and keep a Retry when the live fetch actually errored (it won't self-heal without a
-              reconnect event, so the manual retry must survive even while we show cached rows). */}
-          {showingStale ? (
-            <View style={{ marginBottom: tokens.space.sm }}>
-              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
-                Showing your last saved trips — we&apos;ll refresh when you&apos;re back online.
-              </Text>
-              {isError ? <Button label="Retry" variant="ghost" onPress={refetch} loading={isFetching} /> : null}
-            </View>
-          ) : null}
-          {rows.map((o) => (
-            <Row key={o.id} o={o} onPress={() => router.push(`/order/${o.id}`)} onReorder={canReorder(o) ? () => reorder(o) : undefined} />
-          ))}
-          <View style={{ height: tokens.space.xxl }} />
-        </ScrollView>
+        // B-O1: was a ScrollView + `.map()` over the full (server-capped 50-row) history — FlatList
+        // windows the concurrently-mounted rows to what's on-screen, matching the food-catalog
+        // precedent (B-T3/LC-B07), for the Go-class scroll-smoothness win rather than a memory one.
+        <FlatList
+          data={rows}
+          keyExtractor={(o) => o.id}
+          renderItem={({ item }) => (
+            <Row o={item} onPress={() => router.push(`/order/${item.id}`)} onReorder={canReorder(item) ? () => reorder(item) : undefined} />
+          )}
+          showsVerticalScrollIndicator={false}
+          // Painting the cached list because live data is absent — set the "may be stale" expectation,
+          // and keep a Retry when the live fetch actually errored (it won't self-heal without a
+          // reconnect event, so the manual retry must survive even while we show cached rows).
+          ListHeaderComponent={
+            showingStale ? (
+              <View style={{ marginBottom: tokens.space.sm }}>
+                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
+                  Showing your last saved trips — we&apos;ll refresh when you&apos;re back online.
+                </Text>
+                {isError ? <Button label="Retry" variant="ghost" onPress={refetch} loading={isFetching} /> : null}
+              </View>
+            ) : null
+          }
+          ListFooterComponent={<View style={{ height: tokens.space.xxl }} />}
+        />
       ) : isFetching ? (
         // A genuine first load is in flight — skeleton (NOT shown for the offline paused state below).
         <SkeletonRows />
