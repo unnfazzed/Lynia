@@ -411,7 +411,38 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       checklist below** (`B-O10`..`B-O15`), not fixed this run — none breaks anything today, all are
       real waste at scale. `pnpm typecheck && pnpm lint && pnpm test` all green (679 mobile + 1511
       API tests). See `docs/LC-B-REPORT-2026-08-03.md`.
-- [ ] B-T4 Animation/JS-thread audit: native-driver coverage, tickers, work in render bodies.
+- [x] B-T4 **AUDITED (2026-08-03)** — Animation/JS-thread audit: every `Animated`/`LayoutAnimation`
+      call site for native-driver coverage, every `setInterval`/self-rescheduling ticker for correct
+      gating, and render-body work in frequently-re-rendering screens (3 lenses, read-only Explore
+      agents — the `lane-bug-hunt` custom-lane tooling misconfiguration, already root-caused at
+      `LC-B-SIB-1..4`, reproduced again on a first attempt, so this ran as the same linear-audit
+      fallback B-T3 used). **Zero DEFECTS** — every candidate is correctness-intact, pure JS-thread
+      waste. **3 CONFIRMED, adversarially-verified optimization findings appended to the checklist**
+      (`B-O16`..`B-O18`): merchant `OrderCard`'s shared `useNow()` 1s ticker (`apps/merchant/app/
+      components/queue/OrderCard.tsx:244`) fires even for the `payment`/`ready` buckets that never
+      read `now` — `PaymentBucketActions`'s own doc comment already states "No clock (M2·7 never
+      blocks the board)"; `AuctionClock`'s 20s urgency-color crossfade
+      (`apps/mobile/src/ui/order/AuctionClock.tsx:105`) runs `useNativeDriver: false` with no
+      documented blocker, unlike the neighboring, deliberately-`false` `LiveMap` region animation,
+      despite this app's RN 0.76 supporting native-driven color interpolation; and merchant
+      `QueueBoard`/`OrderCard` has no `React.memo` boundary, so every 5s queue poll rebuilds and
+      re-renders every order card regardless of whether that order's own data changed — the
+      merchant-app sibling of the mobile rider-board gap `B-O2` already tracks. **2 candidates
+      confirmed as already-tracked duplicates, not re-ledgered**: the render-body finder
+      independently re-derived both `B-O8` sites (`food/order/[orderId].tsx` and `rider/
+      food-job.tsx`'s unconditional 1s tickers) and additionally found that `food/order/
+      [orderId].tsx`'s `awaiting_item_approval` branch recomputes an unmemoized `.filter()`/
+      `.filter()`/`.reduce()` over `order.items` on every one of those ticks — folded into `B-O8`'s
+      existing scope since fixing the ticker's gating removes this cost too, not a separate item.
+      **2 marginal notes considered and left unticketed**: `send.tsx`'s `LayoutAnimation.
+      configureNext` is reduce-motion-gated but not device-tier-gated (no precedent anywhere in this
+      codebase for the latter, so not actionable without inventing a new pattern); unmemoized
+      `.filter()` calls in `(tabs)/orders.tsx` (already-capped ~30-50-row list) and `food/index.tsx`
+      (ties into the already-tracked, uncapped-catalog `B-O10`) are real but rated too low-impact by
+      the finder itself to warrant a dedicated item. No KNOWN_BUGS.md ledger rows added — matching
+      the B-T3 precedent of keeping pure-waste, correctness-intact findings in this checklist only
+      (LC-B## rows are reserved for fixed defects or confirmed-but-deferred bugs). `pnpm typecheck
+      && pnpm lint && pnpm test` all green. See `docs/LC-B-REPORT-2026-08-03b.md`.
 
 **Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-02 steer #2 — see
 `docs/LC-STEER-2026-08-02b.md` §4 for rationale):**
@@ -517,6 +548,38 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       Trivial `.slice(-N)` fix matching the same file's own `HANDBACK_ACK_MAX = 20` pattern. Lowest
       priority of this batch — not a memory-pressure risk, just inconsistent with the rest of the
       file's discipline. (S)
+- [ ] B-O16 **(new, B-T4 finding)** Merchant `OrderCard`'s shared `useNow()` hook
+      (`apps/merchant/app/lib/use-now.ts`, default 1000ms interval) is called unconditionally at
+      `apps/merchant/app/components/queue/OrderCard.tsx:244`, ticking every mounted card once/sec
+      regardless of `bucket` — but `now` is only read by the `waiting` (line 272) and `preparing`
+      (line 291) branches. A `payment`-bucket card (`PaymentBucketActions`'s own comment: "No clock
+      (M2·7 never blocks the board)... only ever renders as an ordinary card") or a `ready`-bucket
+      card (fully static/callback-driven JSX, lines 307-346) re-renders once/sec for however long it
+      sits in that bucket — potentially minutes on an awaiting-payment order — for zero visible
+      benefit, on the always-mounted kitchen tablet the whole Go-class mandate targets. Fix: extract
+      the two clock-consuming branches into small self-ticking sub-components (mirroring the
+      `SentOfferCard`/`AuctionClock` extraction pattern already used elsewhere in this codebase) so
+      `payment`/`ready` cards mount with zero interval, or gate `useNow()`'s call behind `bucket ===
+      "waiting" || bucket === "preparing"`. (S)
+- [ ] B-O17 **(new, B-T4 finding)** Merchant `QueueBoard`/`OrderCard` has no `React.memo` boundary
+      (confirmed via grep — zero `memo(` usage in either file) — the merchant-app sibling of the
+      mobile rider-board gap `B-O2` already tracks for `JobCard`/`ComposeMap`. `use-queue-poll.ts`'s
+      5s poll and `QueueBoard.tsx`'s `groupQueue()`/bucket-array derivation (lines ~204-209) build
+      fresh arrays every poll tick regardless of whether the underlying order data changed, and with
+      no memo boundary every `OrderCard` re-renders in lockstep even when its own order object is
+      referentially unchanged (TanStack Query's structural sharing would otherwise let an unchanged
+      order skip re-render if the card were memoized). Bundle with `B-O16` — fixing `OrderCard`'s
+      ticker scope is the natural point to also add the memo boundary in the same pass. (M)
+- [ ] B-O18 **(new, B-T4 finding)** `AuctionClock`'s 20s urgency-color crossfade
+      (`apps/mobile/src/ui/order/AuctionClock.tsx:105`, `Animated.timing(urgencyAnim, { toValue: to,
+      duration: 200, useNativeDriver: false })`, driving an `Animated.Text`'s `color` interpolation)
+      runs on the JS thread with no documented blocker — unlike the neighboring `LiveMap.tsx`
+      `AnimatedRegion.timing(..., useNativeDriver: false)`, which carries an explicit doc-comment
+      explaining `AnimatedRegion` can't use the native driver. This app's RN 0.76.9 has supported
+      native-driven color-style interpolation for several years, so `color` here is very likely
+      switchable to `useNativeDriver: true`. Lowest priority of this batch — a single 200ms
+      transition fired at most twice per ~90s auction (entering/leaving the last 20s window), not a
+      sustained cost — but a trivial one-line fix once confirmed safe on-device. (S)
 
 ### Lane C — offline & 2G resilience (Opus 4.8, `0 6 * * *`)
 
