@@ -162,3 +162,19 @@ export function isSentOfferExpired(offer: SentOffer, now: number): boolean {
   if (Number.isNaN(closesAt)) return true;
   return closesAt <= now;
 }
+
+/** B-T3: how long a resolved offer (taken / expired / locally stale-closed) stays visible in "Your
+ *  offers" after its auction closes before being swept out — long enough the rider sees the
+ *  resolution message, short enough the list doesn't grow for a whole online shift. Before this, the
+ *  only removal path was a full wipe on going offline, so `sentOffers` (and its SecureStore mirror)
+ *  accumulated one entry per bid for the entire time a busy-market rider stayed online. */
+export const SENT_OFFER_RETENTION_MS = 60_000;
+
+/** True once an offer's auction has been closed longer than the retention window — ready to be swept
+ *  from the on-screen list. Reuses `expiresAt` (no separate "resolvedAt" needed): a taken/expired push
+ *  and the staleClosed self-heal in SentOfferCard both key off the same auction-close timestamp. */
+export function isSentOfferStale(offer: SentOffer, now: number): boolean {
+  const closesAt = new Date(offer.expiresAt).getTime();
+  if (Number.isNaN(closesAt)) return true;
+  return closesAt + SENT_OFFER_RETENTION_MS <= now;
+}

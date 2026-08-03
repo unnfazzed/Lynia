@@ -1,7 +1,8 @@
+import type { RestaurantListItem } from "@lynia/shared";
 import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
@@ -63,11 +64,16 @@ export default function RestaurantSearchScreen(): React.ReactElement {
           Search by restaurant name or cuisine, like &quot;sadza&quot; or &quot;braai&quot;.
         </Text>
       ) : results.length > 0 ? (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {results.map((r) => (
-            <RestaurantRow key={r.id} r={r} now={now} onPress={() => router.push(`/food/${r.id}`)} />
-          ))}
-        </ScrollView>
+        // B-T3: same unbounded-catalog risk as food/index.tsx — FlatList windows the concurrently
+        // rendered/decoded RestaurantRow images regardless of how many restaurants match.
+        <FlatList
+          data={results}
+          keyExtractor={(r) => r.id}
+          renderItem={({ item }: { item: RestaurantListItem }) => (
+            <RestaurantRow r={item} now={now} onPress={() => router.push(`/food/${item.id}`)} />
+          )}
+          showsVerticalScrollIndicator={false}
+        />
       ) : (
         <EmptyState icon="search" title="No matches" message={`Nothing found for "${query.trim()}".`} />
       )}

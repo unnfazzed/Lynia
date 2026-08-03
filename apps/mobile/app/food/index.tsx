@@ -1,8 +1,9 @@
+import type { RestaurantListItem } from "@lynia/shared";
 import { tokens } from "@lynia/shared";
 import { isMerchantOpenNow } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { FlatList, Pressable, Text, View } from "react-native";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
@@ -88,12 +89,20 @@ export default function RestaurantListScreen(): React.ReactElement {
 
       {feed.restaurants && feed.restaurants.length > 0 ? (
         visible.length > 0 ? (
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {visible.map((r) => (
-              <RestaurantRow key={r.id} r={r} now={now} onPress={() => router.push(`/food/${r.id}`)} />
-            ))}
-            <View style={{ height: tokens.space.xxl }} />
-          </ScrollView>
+          // B-T3: was ScrollView + .map over the whole list — GET /restaurants has no server-side cap
+          // (unlike history/board/notifications, all server-capped at 30-50), so this is the one list in
+          // the app whose backing collection grows unbounded with merchant onboarding. FlatList windows
+          // the concurrently-mounted/decoded RestaurantRow images to what's on-screen regardless of catalog
+          // size, bounding the memory cost independent of the still-uncapped query.
+          <FlatList
+            data={visible}
+            keyExtractor={(r) => r.id}
+            renderItem={({ item }: { item: RestaurantListItem }) => (
+              <RestaurantRow r={item} now={now} onPress={() => router.push(`/food/${item.id}`)} />
+            )}
+            showsVerticalScrollIndicator={false}
+            ListFooterComponent={<View style={{ height: tokens.space.xxl }} />}
+          />
         ) : (
           <EmptyState icon="utensils" title="No kitchens are open right now" message="Try again later, or see everything including closed kitchens.">
             <Button label="Show closed kitchens too" onPress={() => setOpenOnly(false)} />
