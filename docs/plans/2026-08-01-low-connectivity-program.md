@@ -741,8 +741,40 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
       ≤5s poll to clear stale buttons — self-heals, CAS-protected, no double-apply) is appended to the
       optimization checklist as C-O9/LC-C13 rather than force-fixed, consistent with how
       C-O5/C-O6/C-O7/C-O8 were triaged. Full trace: `docs/LC-C-REPORT-2026-08-03c.md`.
-- [ ] C-T5 Reconnect semantics across ALL realtime hooks + the server catch-up seam (what a
-      client that was gone 90 s actually recovers, and at what byte cost).
+- [x] C-T5 **AUDITED (2026-08-03)** — Reconnect semantics across all 5 realtime hooks (customer
+      `use-order-socket`, rider `use-rider-board`/`use-rider-job-socket`/`use-rider-location`,
+      merchant `queue-socket`/`KitchenConnectionProvider`) + the server catch-up seam
+      (`tracking.gateway.ts`'s `handleConnection`/`handleDisconnect`/`scanPresence`/
+      `subscribeOrder`/`boardSubscribe`), traced for what a client gone 90s actually recovers and
+      at what byte cost. **Result: reference-quality, matching C-T1-C-T4's bar** — every hook
+      re-syncs via a REST invalidate/refetch on both `connect` and `connect_error` (not just a
+      clean reconnect), so a push missed while dark is always caught up by the next successful
+      round trip, never left stuck; room membership (order/board/merchant-queue) is rejoined on
+      every reconnect since Socket.IO doesn't persist it; the trickiest cross-hook case — a
+      rider-bail auto-rebroadcast (F-01), which hands the customer to a BRAND NEW order id purely
+      via a live push — turns out to be triple-covered: a dedicated push notification carries the
+      new id, `getSnapshot` on a `cancelled` order does an on-demand reverse lookup
+      (`rebroadcastOfId`) and exposes `rebroadcastedToId` on the plain REST snapshot so a bare
+      reconnect-refetch recovers the link with no live event needed, and `order/[id].tsx:1001`
+      already reads that field as a client-side fallback with its own "follow your re-sent
+      request" button; the rider board's locally-only `expiredOrderIds`/`takenOrderIds` (built
+      purely from live pushes) has a documented self-heal (`SentOfferCard`'s `staleClosed`, a
+      10s-grace local fallback) for the case a resolution push is missed entirely; GPS catch-up
+      coalesces to the single freshest fix on reconnect (no stale-trail flood) and durably
+      persists to PG on disconnect so a pruned coalesce buffer never loses the last-known position;
+      and the server's presence watchdog (`scanPresence`) is already hardened against the
+      multi-instance/false-positive edge cases (cluster-wide `fetchSockets` liveness checks before
+      escalating, one-shot dedup with an explicit recovery re-arm). **Zero DEFECTS** — every
+      candidate gap (a rider job silently returning to "No active job" on a missed
+      `job:cancelled` before pickup; a captured-not-refreshed socket auth token) turned out to
+      either already self-heal via an existing mechanism (the OS push notification + R8's
+      hand-back lookback for the collected-parcel case) or converge within a bounded number of
+      retries with no data loss. **1 CONFIRMED, evidenced optimization finding** (`LC-C14`,
+      appended as `C-O10` below): the mobile realtime sockets' shared `createSocket` uses a
+      captured `auth` object instead of the refresh-safe `auth` CALLBACK pattern the merchant's
+      `queue-socket.ts` already adopted for the identical reason — real, but needs an outage past
+      the 900s access-token TTL to matter, so it doesn't meet the same-run DEFECT bar (self-heals,
+      no lost work). No code changes this run. Full trace: `docs/LC-C-REPORT-2026-08-03d.md`.
 
 **Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-03 steer — C-O5/C-O6/C-O7
 promoted ahead of C-O1/C-O2/C-O4: they're concrete, S-effort, evidenced-this-week fixes from
@@ -817,6 +849,19 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       confusion window on a slow reconnect. Align the error path with the rider-side reconcile pattern
       (`apps/mobile/app/rider/job.tsx:283`): call `refetch()` in the catch, not just on success.
       `apps/merchant/app/components/queue/NewOrderTakeover.tsx` (`submitAccept`/`submitReject`). (S)
+- [ ] C-O10 **(new, ranked #9 — C-T5 finding, LC-C14)** `apps/mobile/src/realtime/socket.ts`'s
+      `createSocket` passes a captured `auth: { token }` OBJECT to `io()` — Socket.IO's own
+      internal auto-reconnect (a bare network drop, no React involved) replays that same object on
+      every retry, so a dead zone outlasting the 900s access-token TTL leaves the socket retrying
+      with a now-expired token until an unrelated REST call (any hook's own `connect_error`
+      handler, or a poll fallback) happens to 401 and rotates the session, which only then tears
+      down and rebuilds the socket via the hook's `token` dependency. Self-heals (every hook's
+      `connect_error` handler already fires a REST call on each retry) and needs a >15min outage
+      to matter, so this is a hardening item, not a same-run defect. Fix: switch `createSocket` to
+      the `auth` CALLBACK pattern `apps/merchant/app/lib/queue-socket.ts`'s
+      `createMerchantQueueSocket` already uses (`(cb) => cb({ token: <freshest token> })`),
+      pulling the current token from `AuthContext`/session storage on each (re)connection attempt
+      instead of the value captured at `createSocket(token)` call time. (S)
 
 ### Lane D — journey & soundness sweep (Opus 4.8, `0 7 * * *`)
 
