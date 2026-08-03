@@ -140,7 +140,15 @@ export class ReachabilityStore {
       this.probing = true;
       void this.probeFetch(`${this.baseUrl}/healthz`).then((ok) => {
         this.probing = false;
-        if (ok) this.scheduleActiveProbe();
+        // LC-D##: must go through the full reportReachable() path, not a bare scheduleActiveProbe().
+        // A concurrent reportUnreachable() (a failed app request) can flip state.reachable to false
+        // while this probe is still in flight; scheduleActiveProbe()'s own !this.state.reachable guard
+        // would then reject the bare rescheduling call, and scheduleProbe() (called by that
+        // reportUnreachable()) had already bailed out on this.probing still being true — leaving
+        // no timer of any kind armed, permanently. reportReachable() always reschedules from
+        // whatever the current state actually is, which closes that gap; a probe that just
+        // succeeded is proof of life right now regardless of what raced it.
+        if (ok) this.reportReachable();
         else this.reportUnreachable();
       });
     }, ACTIVE_PROBE_INTERVAL_MS);

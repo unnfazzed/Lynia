@@ -195,6 +195,34 @@ describe("authedFetch feeds the shared ReachabilityStore (LC-D04)", () => {
     expect(reportReachable).not.toHaveBeenCalled();
   });
 
+  // LC-D##: before this fix, doRefresh's "transient" outcome collapsed a genuine network-level
+  // throw (the server was NOT reached) and a live 5xx response (the server WAS reached) into one
+  // value, and authedFetch never reported the network-throw case into reachability at all — the
+  // comment at that call site claimed "this function's own request attempts... distinguish a
+  // genuine network-level failure," which is false for a throw inside doRefresh's own fetch call.
+  it("reports unreachable when /auth/refresh itself throws a network-level error", async () => {
+    const { authedFetch } = await import("./api-client");
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/auth/refresh")) throw new TypeError("Network request failed");
+      return AUTH_GUARD_401;
+    });
+
+    await expect(authedFetch("/merchant/orders")).rejects.toMatchObject({ status: 0 });
+    expect(reportUnreachable).toHaveBeenCalled();
+  });
+
+  it("reports reachable (not unreachable) when /auth/refresh returns a live 5xx — the server was reached", async () => {
+    const { authedFetch } = await import("./api-client");
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/auth/refresh")) return makeResponse(500, { message: "upstream" });
+      return AUTH_GUARD_401;
+    });
+
+    await expect(authedFetch("/merchant/orders")).rejects.toMatchObject({ status: 0 });
+    expect(reportReachable).toHaveBeenCalled();
+    expect(reportUnreachable).not.toHaveBeenCalled();
+  });
+
   it("reports unreachable when the post-refresh retry hits a network-level failure", async () => {
     const { authedFetch } = await import("./api-client");
     let calls = 0;

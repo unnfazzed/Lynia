@@ -762,7 +762,29 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       (admin Overview funnel metric's unbounded `offer.findMany` replaced with a bounded
       `COUNT(DISTINCT)`). Zero silent-failures/stale-after-mutation findings this pass. See
       docs/LC-D-REPORT-2026-08-03b.md.
-- [ ] D-T2 Merchant app journey sweep (login → shift → intake loop) through the tablet lens.
+- [x] D-T2 **SWEPT (LC loop D, 2026-08-03)** — merchant app journey sweep (login → shift → intake
+      loop) through the tablet lens: 4 lenses (login-auth, shift-reachability, order-intake,
+      recovery-resilience) via direct Explore agents, since the `lane-bug-hunt` workflow's
+      custom-lane arg again silently fell back to the hardcoded wallet lane (same tooling
+      misconfiguration as `LC-B-SIB-1..4` — see the new `LC-D-SIB-1..4` ledger rows it produced
+      off-lane, ledgered but not fixed here since they're sensitive money-path findings outside
+      this territory's mandate). **7 CONFIRMED defects, all fixed this run:** LC-D11 (Hours/Shop/
+      Menu mutation catches never signed out on a dead-session 401, unlike their own initial loads
+      — shared `isSessionExpiredError()` helper closes the drift class), LC-D12 (no retry
+      affordance anywhere on Queue/Menu/Shop/Hours/Statement's initial load, worst on Queue where
+      it permanently killed the order-poll + alarm loop after one dropped `/merchant/me` call —
+      manual Retry everywhere, auto-retry-on-reconnect on Queue specifically), LC-D13 (a
+      `ReachabilityStore` active-probe/`reportUnreachable()` race could permanently strand the
+      store unreachable with zero scheduled recovery — the exact "stuck state with no recovery"
+      this territory was scoped to find), LC-D14 (a network-throw during `/auth/refresh` was never
+      reported into reachability, so the header could lie "Connected" for up to 20s), LC-D15
+      (the photo-upload PUT's own network failures were a reachability blind spot), LC-D16
+      (`RiderSecuredTakeover` missing a `key` could leak one order's real pickup code onto a
+      second, different order — security-relevant), LC-D17 (Accept/Reject buttons re-enabled
+      before the post-mutation refetch landed, reopening a same-order double-submit window on a
+      flaky link). Zero optimizations appended — every gap found was a genuine wrong-behavior
+      defect, not a friction/polish item (D-O1's reusable low-connectivity state components remain
+      the standardization follow-up, as already scoped). See docs/LC-D-REPORT-2026-08-03c.md.
 - [ ] D-T3 Notification/deep-link coherence under low connectivity (push arrives late/duplicated/
       out of order — where does it strand the user?).
 - [ ] D-T4 Infra soundness I (READ-ONLY → report + ledger): failure domains + scaling — the

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { MerchantCashRule, MerchantProfileResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { PhotoPicker } from "../../components/menu/PhotoPicker";
-import { cardStyle, primaryButtonStyle } from "../../components/queue/styles";
-import { ApiError } from "../../lib/api-client";
+import { cardStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
+import { ApiError, isSessionExpiredError } from "../../lib/api-client";
 import { getMerchantProfile, updateCashRule, updateProfile } from "../../lib/menu-api";
 
 // D-32's own budget for the shop's cover banner/logo (mirrors MAX_BANNER_PHOTO_BYTES in
@@ -43,7 +43,8 @@ export default function ShopPage() {
   const [coverKey, setCoverKey] = useState<string | undefined>(undefined);
   const [logoKey, setLogoKey] = useState<string | undefined>(undefined);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
+    setState({ status: "loading" });
     getMerchantProfile()
       .then((profile) => {
         setState({ status: "ready", profile });
@@ -53,13 +54,17 @@ export default function ShopPage() {
         setPriceLevel(profile.priceLevel);
       })
       .catch((err: unknown) => {
-        if (err instanceof ApiError && err.status === 401) {
+        if (isSessionExpiredError(err)) {
           signOut();
           return;
         }
         setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your shop profile." });
       });
   }, [signOut]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   function addTag() {
     const t = tagDraft.trim();
@@ -85,6 +90,10 @@ export default function ShopPage() {
       setLogoKey(undefined);
       setSavedTick((t) => t + 1);
     } catch (err) {
+      if (isSessionExpiredError(err)) {
+        signOut();
+        return;
+      }
       setSaveError(err instanceof ApiError ? err.message : "Couldn't save — try again.");
     } finally {
       setSaving(false);
@@ -98,6 +107,10 @@ export default function ShopPage() {
       const profile = await updateCashRule({ cashRule: value });
       setState({ status: "ready", profile });
     } catch (err) {
+      if (isSessionExpiredError(err)) {
+        signOut();
+        return;
+      }
       setSaveError(err instanceof ApiError ? err.message : "Couldn't save — try again.");
     } finally {
       setSaving(false);
@@ -113,7 +126,10 @@ export default function ShopPage() {
 
         {state.status === "error" && (
           <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 16, padding: 20, maxWidth: 480 }}>
-            {state.message}
+            <div>{state.message}</div>
+            <button type="button" onClick={refresh} style={{ ...ghostButtonStyle, marginTop: 12 }}>
+              Retry
+            </button>
           </div>
         )}
 

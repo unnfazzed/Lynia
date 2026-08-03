@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantProfileResponse } from "@lynia/shared";
 import HoursPage from "./page";
 import { ApiError } from "../../lib/api-client";
-import { getMerchantProfile, setBusyMode } from "../../lib/menu-api";
+import { getMerchantProfile, setBusyMode, updateHours } from "../../lib/menu-api";
 
 vi.mock("../../lib/menu-api", () => ({
   getMerchantProfile: vi.fn(),
@@ -69,5 +69,56 @@ describe("HoursPage busy-mode toggle (LC-D04)", () => {
       expect(screen.getByText(/Busy mode is ON/i)).toBeTruthy();
     });
     expect(screen.queryByText(/Couldn't reach the server/i)).toBeNull();
+  });
+});
+
+describe("HoursPage session-expiry on a mutation (LC-D##)", () => {
+  // Before this fix, only the initial-load effect checked for a dead-session 401 and called
+  // signOut() — the mutation catches (onSave/onToggleBusy) just showed an inline error message,
+  // stranding the merchant on this screen with no way back to /login.
+  it("signs out instead of showing an inline error when saving hours hits a dead session", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile());
+    vi.mocked(updateHours).mockRejectedValue(new ApiError(401, "Your session expired — sign in again."));
+
+    render(<HoursPage />);
+    await screen.findByText("Opening hours");
+    fireEvent.click(screen.getByText("Save hours"));
+
+    await waitFor(() => {
+      expect(signOut).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByText("Your session expired — sign in again.")).toBeNull();
+  });
+
+  it("signs out instead of showing an inline error when toggling busy mode hits a dead session", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile());
+    vi.mocked(setBusyMode).mockRejectedValue(new ApiError(401, "Your session expired — sign in again."));
+
+    render(<HoursPage />);
+    const busyButton = await screen.findByText(/Turn on busy mode/i);
+    fireEvent.click(busyButton);
+
+    await waitFor(() => {
+      expect(signOut).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByText("Your session expired — sign in again.")).toBeNull();
+  });
+});
+
+describe("HoursPage initial-load failure has a way out (LC-D##)", () => {
+  // Before this fix, a failed load rendered a static error box with no button — the only escape
+  // was navigating to a different tab and back, remounting the page.
+  it("shows a Retry button on a failed load, and retrying recovers to the ready state", async () => {
+    vi.mocked(getMerchantProfile)
+      .mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."))
+      .mockResolvedValueOnce(profile());
+
+    render(<HoursPage />);
+    await screen.findByText("Couldn't reach the server — check the connection and try again.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await screen.findByText("Opening hours");
+    expect(getMerchantProfile).toHaveBeenCalledTimes(2);
   });
 });

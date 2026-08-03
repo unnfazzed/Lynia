@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
 import MenuPage from "./page";
 import { ApiError } from "../../lib/api-client";
-import { clearDishOutOfStock, createCategory, listCategories, listDishes } from "../../lib/menu-api";
+import { clearDishOutOfStock, createCategory, deleteCategory, listCategories, listDishes } from "../../lib/menu-api";
 
 vi.mock("../../lib/menu-api", () => ({
   listCategories: vi.fn(),
@@ -110,5 +110,72 @@ describe("MenuPage starter-category quick-create (D-D0e)", () => {
     await waitFor(() => {
       expect(screen.getByText("Couldn't reach the server — check the connection and try again.")).toBeTruthy();
     });
+  });
+});
+
+describe("MenuPage session-expiry on a mutation (LC-D##)", () => {
+  // Before this fix, none of withSheet/onCreateStarterCategory/onClearOos checked for a
+  // dead-session 401 — unlike this page's own initial-load `refresh()`, which already did — so a
+  // mutation hitting a dead session stranded the merchant here with no way back to /login.
+  it("signs out instead of showing an inline error when the starter-category create hits a dead session", async () => {
+    vi.mocked(listCategories).mockResolvedValue([]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+    vi.mocked(createCategory).mockRejectedValue(new ApiError(401, "Your session expired — sign in again."));
+
+    render(<MenuPage />);
+    const chip = await screen.findByText("+ Mains");
+    fireEvent.click(chip);
+
+    await waitFor(() => {
+      expect(signOut).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByText("Your session expired — sign in again.")).toBeNull();
+  });
+
+  it("signs out instead of showing an inline error when 'back in stock' hits a dead session", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish()]);
+    vi.mocked(clearDishOutOfStock).mockRejectedValue(new ApiError(401, "Your session expired — sign in again."));
+
+    render(<MenuPage />);
+    const backInStock = await screen.findByText("Back in stock");
+    fireEvent.click(backInStock);
+
+    await waitFor(() => {
+      expect(signOut).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByText("Your session expired — sign in again.")).toBeNull();
+  });
+
+  it("signs out instead of showing a sheet error when deleting a category (withSheet) hits a dead session", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category({ dishCount: 0 })]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+    vi.mocked(deleteCategory).mockRejectedValue(new ApiError(401, "Your session expired — sign in again."));
+
+    render(<MenuPage />);
+    fireEvent.click(await screen.findByText("Edit category"));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(signOut).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByText("Your session expired — sign in again.")).toBeNull();
+  });
+});
+
+describe("MenuPage initial-load failure has a way out (LC-D##)", () => {
+  it("shows a Retry button on a failed load, and retrying recovers to the ready state", async () => {
+    vi.mocked(listCategories)
+      .mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."))
+      .mockResolvedValueOnce([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish()]);
+
+    render(<MenuPage />);
+    await screen.findByText("Couldn't reach the server — check the connection and try again.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await screen.findByText("Menu");
+    expect(listCategories).toHaveBeenCalledTimes(2);
   });
 });

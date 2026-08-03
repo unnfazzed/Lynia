@@ -41,10 +41,19 @@ interface MoneyActions {
 
 // RF-13: ~15 handlers all shared the shape `await apiCall(...args); refetch();` — one generic
 // wrapper replaces the repeated bodies while keeping each call site's own argument list.
-function withRefetch<Args extends unknown[]>(action: (...args: Args) => Promise<unknown>, refetch: () => void) {
+//
+// LC-D##: `refetch()` is now awaited, not fired-and-forgotten. Before this, the returned promise
+// resolved as soon as the mutation's own HTTP round trip finished — well before the follow-up
+// GET actually landed — so a caller like NewOrderTakeover's submitAccept reset its `submitting`
+// flag and re-enabled the Accept/Reject buttons while the takeover was still showing the SAME,
+// just-accepted order (the refetch that would swap/remove it hadn't resolved yet). On this
+// program's 300-600ms-RTT/dead-zone links that window was easily 1-2s of a fully interactive,
+// visually-unchanged screen — inviting a "nothing happened, tap again" retry that the server's
+// atomic per-order CAS turns into a scary but harmless 409 on an order that was in fact handled.
+function withRefetch<Args extends unknown[]>(action: (...args: Args) => Promise<unknown>, refetch: () => Promise<void>) {
   return async (...args: Args): Promise<void> => {
     await action(...args);
-    refetch();
+    await refetch();
   };
 }
 
@@ -103,7 +112,7 @@ export function QueueBoard({
 }: {
   orders: readonly MerchantOrderResponse[];
   disabled: boolean;
-  refetch: () => void;
+  refetch: () => Promise<void>;
 }) {
   const [ackSecuredIds, setAckSecuredIds] = useState<Set<string>>(new Set());
   const [ackHoldIds, setAckHoldIds] = useState<Set<string>>(new Set());
@@ -185,7 +194,13 @@ export function QueueBoard({
   }
 
   if (securedToShow) {
-    return <RiderSecuredTakeover order={securedToShow} onDismiss={() => setAckSecuredIds((prev) => new Set(prev).add(securedToShow.id))} />;
+    // LC-D##: without a key, React reused the same component instance across two orders secured
+    // back-to-back (a rider-secured order B superseding order A before A's "Got it" dismiss even
+    // fires the next render) — the local pickupCode state stayed A's real code while the label
+    // switched to B, and stayed wrong indefinitely if B's own revealPickupCode() call errored. A
+    // per-order key forces a full remount at the order boundary, mirroring NewOrderTakeover's own
+    // key={active.id} and NoRiderHoldTakeover's key={holdToShow.id} three lines below.
+    return <RiderSecuredTakeover key={securedToShow.id} order={securedToShow} onDismiss={() => setAckSecuredIds((prev) => new Set(prev).add(securedToShow.id))} />;
   }
 
   if (holdToShow) {

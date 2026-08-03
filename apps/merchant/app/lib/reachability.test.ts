@@ -123,5 +123,35 @@ describe("ReachabilityStore", () => {
       await vi.advanceTimersByTimeAsync(ACTIVE_PROBE_INTERVAL_MS);
       expect(probe).toHaveBeenCalledTimes(1);
     });
+
+    // LC-D##: before this fix, the active probe's success branch called a bare
+    // scheduleActiveProbe() instead of reportReachable(). If a concurrent reportUnreachable() (a
+    // failed app request) flipped state.reachable to false while the active probe was already in
+    // flight, scheduleProbe() (called by that reportUnreachable()) bailed out because `probing` was
+    // still true — and when the in-flight probe then resolved ok, the bare scheduleActiveProbe()
+    // call's own `!this.state.reachable` guard rejected it too. Net result: no timer of any kind
+    // ever got armed again — the store stayed permanently stuck reporting unreachable.
+    it("does not permanently strand the store when a concurrent reportUnreachable() races an in-flight successful active probe", async () => {
+      const probe = vi.fn(async () => true);
+      const store = new ReachabilityStore(probe, "http://api", () => 7);
+      store.start();
+
+      // The active probe timer fires and starts its (still-pending) fetch.
+      await vi.advanceTimersByTimeAsync(ACTIVE_PROBE_INTERVAL_MS);
+      expect(probe).toHaveBeenCalledTimes(1);
+
+      // Before that probe resolves, a real app request fails at the network level.
+      store.reportUnreachable();
+      expect(store.getState().reachable).toBe(false);
+
+      // The in-flight probe (started while still reachable) now resolves ok=true.
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Without the fix, no timer is armed here and the store never recovers on its own.
+      // Advancing time and observing a fresh probe call proves recovery is still possible.
+      probe.mockClear();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(probe.mock.calls.length).toBeGreaterThan(0);
+    });
   });
 });

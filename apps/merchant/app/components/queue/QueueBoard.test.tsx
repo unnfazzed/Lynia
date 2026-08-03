@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { useState } from "react";
 import { QueueBoard } from "./QueueBoard";
-import { confirmGoodsReturned, markReady, revealPickupCode } from "../../lib/orders-api";
+import { acceptOrder, confirmGoodsReturned, markReady, revealPickupCode } from "../../lib/orders-api";
 
 vi.mock("../../lib/orders-api", () => ({
   acceptOrder: vi.fn().mockResolvedValue({}),
@@ -82,7 +82,7 @@ function Harness({ initial }: { initial: MerchantOrderResponse[] }) {
     <QueueBoard
       orders={orders}
       disabled={false}
-      refetch={() => setOrders((prev) => prev.filter((o) => o.merchantPhase !== "awaiting_accept" || o.id !== prev[0]?.id))}
+      refetch={async () => setOrders((prev) => prev.filter((o) => o.merchantPhase !== "awaiting_accept" || o.id !== prev[0]?.id))}
     />
   );
 }
@@ -105,6 +105,76 @@ describe("QueueBoard NEW ORDER takeover — D-D0a (LC-D02)", () => {
 
     const acceptButtonForSecond = screen.getByRole("button", { name: /^Accept/ }) as HTMLButtonElement;
     expect(acceptButtonForSecond.disabled).toBe(false);
+  });
+});
+
+describe("QueueBoard NEW ORDER takeover — Accept doesn't re-enable before the refetch lands (LC-D##)", () => {
+  // Before this fix, withRefetch's `refetch()` call was fire-and-forget — submitAccept's
+  // `await onAccept(...)` resolved as soon as the mutation's own HTTP round trip finished, well
+  // before the follow-up queue GET (the thing that actually removes the accepted order from
+  // awaitingAccept) landed. The button re-enabled on a visually-unchanged screen, inviting a
+  // same-order double-tap the server's atomic CAS turns into a false-alarm 409.
+  it("keeps the Accept button disabled until the post-accept refetch resolves", async () => {
+    let resolveRefetch!: () => void;
+    const refetchPromise = new Promise<void>((resolve) => {
+      resolveRefetch = resolve;
+    });
+    const refetch = vi.fn(() => refetchPromise);
+
+    const orders = [order({ id: "first" })];
+    render(<QueueBoard orders={orders} disabled={false} refetch={refetch} />);
+
+    const acceptButton = screen.getByRole("button", { name: /^Accept/ }) as HTMLButtonElement;
+    fireEvent.click(acceptButton);
+
+    await waitFor(() => {
+      expect(acceptOrder).toHaveBeenCalled();
+    });
+    // The mutation itself has resolved, but the refetch it's chained to hasn't — the button must
+    // stay disabled rather than re-enabling on a screen that still shows the same order.
+    expect(acceptButton.disabled).toBe(true);
+
+    resolveRefetch();
+    await waitFor(() => {
+      expect(acceptButton.disabled).toBe(false);
+    });
+  });
+});
+
+describe("QueueBoard RiderSecuredTakeover across two simultaneously-secured orders (LC-D##)", () => {
+  // Before this fix, RiderSecuredTakeover had no `key` — when a second order was already
+  // rider-secured at the moment the first was dismissed (no intervening render where
+  // securedToShow was null), React reused the SAME component instance instead of remounting it,
+  // so the second order's card kept showing the first order's real, stale pickup code until (or
+  // unless) the second order's own revealPickupCode() call resolved.
+  it("remounts (resets pickupCode) instead of showing the previous order's stale code", async () => {
+    let resolveB!: (v: { pickupCode: string }) => void;
+    const bPending = new Promise<{ pickupCode: string }>((resolve) => {
+      resolveB = resolve;
+    });
+    vi.mocked(revealPickupCode).mockImplementation(async (orderId: string) => {
+      if (orderId === "a") return { pickupCode: "1111" };
+      return bPending;
+    });
+
+    const orders = [
+      order({ id: "a", merchantPhase: "ready_for_pickup", riderId: "r1" }),
+      order({ id: "b", merchantPhase: "ready_for_pickup", riderId: "r2" }),
+    ];
+    render(<Harness initial={orders} />);
+
+    await screen.findByText("1111");
+    await screen.findByText(/Order #A/);
+
+    fireEvent.click(screen.getByText("Got it"));
+
+    // B is picked up immediately (both were already secured) — B's own reveal is still pending;
+    // the fix must show B's loading placeholder, never A's stale real code.
+    await screen.findByText(/Order #B/);
+    expect(screen.queryByText("1111")).toBeNull();
+
+    resolveB({ pickupCode: "2222" });
+    await screen.findByText("2222");
   });
 });
 
