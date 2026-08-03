@@ -224,7 +224,7 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       bytes (−4,799 B / −0.08%), Android export total 7,238,815 → 7,234,016 bytes (−4,799 B).
       `packages/shared`'s 157 tests + `offers.service.spec.ts`'s 19 tests pass; full monorepo
       `pnpm typecheck && pnpm lint && pnpm test` green. See `docs/LC-A-REPORT-2026-08-03d.md`.
-- [ ] A-O13 **(new, ranked #3)** **A-T3 finding (LC-A05):** subset the 3 self-hosted Inter TTFs
+- [x] A-O13 **DONE (2026-08-03e)** **A-T3 finding (LC-A05):** subset the 3 self-hosted Inter TTFs
       (`src/ui/fonts.ts`) to the glyph ranges the app actually renders instead of shipping each
       weight's full Google-Fonts charset (Latin+Cyrillic+Greek+Vietnamese). A real `pyftsubset`
       test against a generous Basic Latin + Latin-1/Extended-A + general punctuation/symbols/math/
@@ -245,6 +245,25 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       one glyph. Emoji were included in the tested range defensively but are very likely moot:
       Inter carries no color-emoji glyphs, so RN/Android already renders emoji via the system
       font-fallback chain regardless of what's in the app's own font file. (M)
+      **Shipped 2026-08-03e:** all three prerequisites delivered — `apps/mobile/scripts/
+      subset-fonts.mjs` (pyftsubset via the `fonttools` Python package, dev-time only, never runs in
+      CI) regenerates the committed assets in `apps/mobile/assets/fonts/` from the Unicode ranges
+      pinned in the new `scripts/font-safe-ranges.mjs` (shared with the checker so the two can't
+      drift); `scripts/check-font-charset.mjs` (wired into `pnpm lint`, zero dependencies like
+      `check-bundle-size.mjs`) scans every `.ts`/`.tsx` under `app/`+`src/` and fails CI if a future
+      string introduces a codepoint outside the safe ranges; the sign-off on dropping non-Latin
+      scripts is recorded explicitly in `docs/APP-SIZE.md` and `docs/KNOWN_BUGS.md` (LC-A05) — a
+      free-text character outside the range shows a tofu box, unchanged from today's behavior for
+      any character already outside Inter's charset, and neither Shona nor Ndebele (Zimbabwe's other
+      official languages, both Latin-script) needs anything beyond the retained Latin Extended-A/B
+      block. `fonts.ts` now `require()`s the local subset assets; `@expo-google-fonts/inter` moved
+      from a runtime dependency to a devDependency (only the subsetting script's source material).
+      Measured via `expo export --platform android`: **Android export total 7,240,457 → 6,546,466
+      bytes (−693,991 B / −9.6%)**; each font file 342-344 KB → 112-113 KB (−67.3%, exceeding the
+      65.3% test estimate). Hermes bundle unchanged (fonts are export assets, not JS) —
+      `size-budget.json` left untouched this run per the A-O11/A-O12 precedent (ratcheting is the
+      weekly steer's job). All 705 mobile tests + full monorepo `pnpm typecheck && pnpm lint && pnpm
+      test` green. See `docs/LC-A-REPORT-2026-08-03e.md`.
 - [ ] A-O9 **(re-ranked to #4, was #10 — 2026-08-03 A-T4 evidence)** food journeys run ungated
       full-order polls — customer `app/food/order/[orderId].tsx:96` (2 polls, live GPS defeats 304)
       and rider `app/rider/food-job.tsx:60` (3 polls 8s+5s+5s), unlike their socket-gated parcel

@@ -1,8 +1,8 @@
-// Per-weight subpath imports — the package's root barrel `require`s every weight (36 TTFs, ~6 MB
-// of assets in the Metro graph for 3 used weights); each subpath requires only its own file.
-import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
-import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
-import { Inter_700Bold } from "@expo-google-fonts/inter/700Bold";
+// Self-hosted, glyph-subsetted TTFs (A-O13 / LC-A05, docs/APP-SIZE.md) — committed assets in
+// assets/fonts/, NOT the @expo-google-fonts/inter package (kept only as a devDependency, the
+// source the subsetting script reads from). Regenerate via `node scripts/subset-fonts.mjs`; the
+// safe Unicode ranges are pinned in scripts/font-safe-ranges.mjs and enforced by
+// scripts/check-font-charset.mjs on every `pnpm lint`.
 import { useFonts } from "expo-font";
 import { StyleSheet, Text, TextInput } from "react-native";
 
@@ -18,11 +18,11 @@ export const fontFamilies = {
   bold: "Inter_700Bold", // titles (800 aliases to this)
 } as const;
 
-/** The font map expo-font registers. Family name === object key. */
+/** The font map expo-font registers. Family name === object key (not the asset filename). */
 export const appFontMap = {
-  Inter_400Regular,
-  Inter_600SemiBold,
-  Inter_700Bold,
+  Inter_400Regular: require("../../assets/fonts/Inter-400Regular-subset.ttf"),
+  Inter_600SemiBold: require("../../assets/fonts/Inter-600SemiBold-subset.ttf"),
+  Inter_700Bold: require("../../assets/fonts/Inter-700Bold-subset.ttf"),
 } as const;
 
 /** Loads the self-hosted fonts. Returns [loaded, error] — gate first render on `loaded`. */
