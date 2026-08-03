@@ -13,6 +13,33 @@ function orderLabel(o: MerchantOrderResponse): string {
   return `#${o.id.slice(0, 8).toUpperCase()}`;
 }
 
+/** RF-16: the busy+error try/catch/finally wrapper repeated across this file's action buttons,
+ *  collapsed into one hook. `run` takes the thunk at call time (not bind time) so one hook
+ *  instance can back several distinct buttons sharing a single busy/error pair, exactly as the
+ *  pre-extraction code did in `PaymentBucketActions`. The `{ ok, value }` result lets a caller
+ *  run its own success-only side effect (closing a sheet, storing a returned value) without
+ *  duplicating the try/catch itself. */
+function useAsyncAction(fallbackMessage = "Something went wrong — try again.") {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run<R>(action: () => Promise<R>): Promise<{ ok: true; value: R } | { ok: false }> {
+    setBusy(true);
+    setError(null);
+    try {
+      const value = await action();
+      return { ok: true, value };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallbackMessage);
+      return { ok: false };
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return { busy, error, setError, run };
+}
+
 export type OrderCardBucket = "waiting" | "payment" | "preparing" | "ready";
 
 /**
@@ -36,33 +63,14 @@ function PaymentBucketActions({
   onReleaseUnpaid: (orderId: string) => Promise<void>;
 }) {
   const [showConfirm, setShowConfirm] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, setError, run: runVoid } = useAsyncAction();
+  const run = (action: () => Promise<void>) => runVoid(action);
 
-  async function run(action: () => Promise<void>) {
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong — try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  // D-06/mismatch: on a rejection this leaves the sheet open (result.ok stays false) so the
+  // server's "expected $X, got $Y" message is visible.
   async function submitConfirm(body: { reference: string; amount: number }) {
-    setBusy(true);
-    setError(null);
-    try {
-      await onConfirmPayment(order.id, body);
-      setShowConfirm(false);
-    } catch (err) {
-      // D-06/mismatch: keep the sheet open so the server's "expected $X, got $Y" message is visible.
-      setError(err instanceof Error ? err.message : "Something went wrong — try again.");
-    } finally {
-      setBusy(false);
-    }
+    const result = await runVoid(() => onConfirmPayment(order.id, body));
+    if (result.ok) setShowConfirm(false);
   }
 
   const expected = Number(order.merchantGoodsTotal ?? 0);
@@ -156,8 +164,7 @@ function RefundAction({
   onRefund: (orderId: string, body: { reference: string; amount: number }) => Promise<void>;
 }) {
   const [show, setShow] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, setError, run } = useAsyncAction("Something went wrong");
   const expected = Number(order.merchantGoodsTotal ?? 0);
 
   return (
@@ -181,14 +188,11 @@ function RefundAction({
             setShow(false);
             setError(null);
           }}
-          onConfirm={(body) => {
-            setBusy(true);
-            setError(null);
-            onRefund(order.id, body)
-              .then(() => setShow(false))
-              .catch((err: unknown) => setError(err instanceof Error ? err.message : "Something went wrong"))
-              .finally(() => setBusy(false));
-          }}
+          onConfirm={(body) =>
+            void run(() => onRefund(order.id, body)).then((result) => {
+              if (result.ok) setShow(false);
+            })
+          }
         />
       )}
     </>
@@ -243,33 +247,16 @@ export function OrderCard({
 
   // LC-D03: mark-ready and pickup-code reveal each own per-order busy+error state instead of
   // firing as a bare `void` promise that swallows a network failure silently.
-  const [markReadyBusy, setMarkReadyBusy] = useState(false);
-  const [markReadyError, setMarkReadyError] = useState<string | null>(null);
+  const markReadyAction = useAsyncAction();
   async function handleMarkReadyClick() {
-    setMarkReadyBusy(true);
-    setMarkReadyError(null);
-    try {
-      await onMarkReady(order.id);
-    } catch (err) {
-      setMarkReadyError(err instanceof Error ? err.message : "Something went wrong — try again.");
-    } finally {
-      setMarkReadyBusy(false);
-    }
+    await markReadyAction.run(() => onMarkReady(order.id));
   }
 
   const [pickupCode, setPickupCode] = useState<string | undefined>(undefined);
-  const [revealBusy, setRevealBusy] = useState(false);
-  const [revealError, setRevealError] = useState<string | null>(null);
+  const revealAction = useAsyncAction();
   async function handleRevealClick() {
-    setRevealBusy(true);
-    setRevealError(null);
-    try {
-      setPickupCode(await onRevealPickupCode(order.id));
-    } catch (err) {
-      setRevealError(err instanceof Error ? err.message : "Something went wrong — try again.");
-    } finally {
-      setRevealBusy(false);
-    }
+    const result = await revealAction.run(() => onRevealPickupCode(order.id));
+    if (result.ok) setPickupCode(result.value);
   }
 
   return (
@@ -307,12 +294,12 @@ export function OrderCard({
           <button
             type="button"
             onClick={() => void handleMarkReadyClick()}
-            disabled={disabled || markReadyBusy}
-            style={{ ...primaryButtonStyle, padding: "10px 16px", fontSize: 14, ...disabledStyle(disabled || markReadyBusy) }}
+            disabled={disabled || markReadyAction.busy}
+            style={{ ...primaryButtonStyle, padding: "10px 16px", fontSize: 14, ...disabledStyle(disabled || markReadyAction.busy) }}
           >
-            {markReadyBusy ? "Marking ready…" : "Mark ready"}
+            {markReadyAction.busy ? "Marking ready…" : "Mark ready"}
           </button>
-          {markReadyError && <div style={{ fontSize: 12, color: "var(--danger-ink)", fontWeight: 700 }}>{markReadyError}</div>}
+          {markReadyAction.error && <div style={{ fontSize: 12, color: "var(--danger-ink)", fontWeight: 700 }}>{markReadyAction.error}</div>}
           {canRefund && <RefundAction order={order} disabled={disabled} onRefund={onRefund} />}
         </>
       )}
@@ -345,12 +332,12 @@ export function OrderCard({
                   <button
                     type="button"
                     onClick={() => void handleRevealClick()}
-                    disabled={disabled || revealBusy}
-                    style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-text)", background: "var(--accent-wash)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", cursor: "pointer", ...disabledStyle(disabled || revealBusy) }}
+                    disabled={disabled || revealAction.busy}
+                    style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-text)", background: "var(--accent-wash)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", cursor: "pointer", ...disabledStyle(disabled || revealAction.busy) }}
                   >
-                    {revealBusy ? "Loading…" : "Show pickup code"}
+                    {revealAction.busy ? "Loading…" : "Show pickup code"}
                   </button>
-                  {revealError && <div style={{ fontSize: 12, color: "var(--danger-ink)", fontWeight: 700 }}>{revealError}</div>}
+                  {revealAction.error && <div style={{ fontSize: 12, color: "var(--danger-ink)", fontWeight: 700 }}>{revealAction.error}</div>}
                 </>
               )}
             </>
