@@ -1,7 +1,7 @@
 import { type AdvanceStatusRequest, UndeliveredReason, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
@@ -165,6 +165,18 @@ export default function RiderJob(): React.ReactElement {
   const order = jobQ.data ?? null;
   const orderId = order?.id ?? null;
   const items = order?.items ?? [];
+  // B-O2: memoized off the primitive lat/lng, ahead of every early return below (the rules of hooks
+  // forbid a hook call after a conditional return) — a fresh `{lat,lng}` object literal every render
+  // (even with identical values) would defeat JobDetailsCard's memo boundary for every OTHER re-render
+  // this ~950-line screen goes through (a sheet opening, a checklist tick, a banner) that has nothing
+  // to do with the rider's actual position.
+  const riderPoint = useMemo(
+    () =>
+      order?.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
+        ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
+        : null,
+    [order?.rider?.currentLat, order?.rider?.currentLng],
+  );
 
   // D5: this screen owns the PARCEL flow only — a food (merchant) job redirects to its own active-job
   // screen, which reuses the Express tracker/Stepper/safety surfaces but drives the food-specific
@@ -810,10 +822,6 @@ export default function RiderJob(): React.ReactElement {
   // Total quantity across the ticked items — the collect CTA counts pieces, not rows ("Confirm 3
   // items collected" for a 1× + 2× selection).
   const collectedCount = collectedItemCount(items, checkedItems);
-  const riderPoint =
-    order.rider != null && order.rider.currentLat != null && order.rider.currentLng != null
-      ? { lat: order.rider.currentLat, lng: order.rider.currentLng }
-      : null;
 
   const jobReconnecting = isActive && wasJobConnected.current && !jobSocketConnected;
 
