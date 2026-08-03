@@ -101,6 +101,54 @@ describe("useRiderBoard reconnect self-heal", () => {
   });
 });
 
+// B-O12: nothing bounded the ["openOrders"] cache while the board socket stayed connected — the 15s
+// REST poll that would otherwise reset it to the server's own capped snapshot (`take: 50` in
+// orders.service.ts) is disabled the whole time `board.connected` is true, so `boardNewOrder`'s
+// unbounded prepend was the one write path a very long, unbroken online shift could grow forever.
+describe("useRiderBoard openOrders cache cap (B-O12)", () => {
+  function validBoardOrder(id: string): Record<string, unknown> {
+    return {
+      id,
+      pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Sadza Republic" },
+      dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avondale" },
+      itemDesc: "A parcel",
+      suggestedFare: "5.00",
+      proposedFare: "5.00",
+      distanceKm: 3.2,
+      createdAt: "2026-08-03T10:00:00Z",
+    };
+  }
+
+  it("never grows the cache past 50 entries no matter how many board:new-order pushes land", () => {
+    const qc = new QueryClient();
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness online={true} />
+        </QueryClientProvider>,
+      );
+    });
+
+    act(() => {
+      for (let i = 0; i < 80; i++) {
+        mockLastSocket.trigger(
+          "board:new-order",
+          validBoardOrder(`11111111-1111-4111-8111-${String(i).padStart(12, "0")}`),
+        );
+      }
+    });
+
+    const cached = qc.getQueryData<Array<{ id: string }>>(["openOrders"]);
+    expect(cached).toBeDefined();
+    expect(cached!.length).toBe(50);
+    // The cap keeps the MOST RECENT orders (each push prepends), not an arbitrary truncation —
+    // the last-pushed order (i=79) must still be present, the first-pushed (i=0) must have fallen off.
+    expect(cached!.some((o) => o.id.endsWith(String(79).padStart(12, "0")))).toBe(true);
+    expect(cached!.some((o) => o.id.endsWith(String(0).padStart(12, "0")))).toBe(false);
+  });
+});
+
 // D5/C5: a live food-dispatch offer lands on the same board socket — no separate subscribe, since
 // emitToRider targets this authenticated socket directly (see tracking.gateway.ts).
 describe("useRiderBoard food:offer", () => {
