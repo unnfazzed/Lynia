@@ -34,6 +34,7 @@ import { isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./mercha
 type MerchantWithOwner = Prisma.MerchantGetPayload<{ include: { ownerProfile: { select: { phone: true } } } }>;
 type DishRow = Prisma.MerchantDishGetPayload<Record<string, never>>;
 type CategoryRow = Prisma.MerchantCategoryGetPayload<{ include: { _count: { select: { dishes: true } } } }>;
+type PlainCategoryRow = Prisma.MerchantCategoryGetPayload<Record<string, never>>;
 
 // E4/D-32: `coverPhotoUrl`/`logoUrl`/dish `photoUrl` persist the raw GCS object KEY (the bucket has
 // no public objects — infra/terraform/storage.tf enforces `public_access_prevention = "enforced"`,
@@ -188,8 +189,7 @@ export class MerchantService {
     body: UpdateMerchantCategoryRequest,
   ): Promise<MerchantCategoryResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
-    const existing = await this.prisma.merchantCategory.findFirst({ where: { id: categoryId, merchantId } });
-    if (!existing) throw new NotFoundException("Category not found");
+    await this.findOwnCategoryOrThrow(merchantId, categoryId);
 
     const data: Prisma.MerchantCategoryUpdateInput = {};
     if (body.name !== undefined) data.name = body.name;
@@ -241,8 +241,7 @@ export class MerchantService {
 
   async createDish(profileId: string, body: MerchantDishRequest): Promise<MerchantDishResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
-    const category = await this.prisma.merchantCategory.findFirst({ where: { id: body.categoryId, merchantId } });
-    if (!category) throw new NotFoundException("Category not found");
+    const category = await this.findOwnCategoryOrThrow(merchantId, body.categoryId);
     const created = await this.prisma.merchantDish.create({
       data: {
         categoryId: category.id,
@@ -260,13 +259,11 @@ export class MerchantService {
 
   async updateDish(profileId: string, dishId: string, body: UpdateMerchantDishRequest): Promise<MerchantDishResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
-    const existing = await this.prisma.merchantDish.findFirst({ where: { id: dishId, merchantId } });
-    if (!existing) throw new NotFoundException("Dish not found");
+    await this.findOwnDishOrThrow(merchantId, dishId);
 
     const data: Prisma.MerchantDishUpdateInput = {};
     if (body.categoryId !== undefined) {
-      const category = await this.prisma.merchantCategory.findFirst({ where: { id: body.categoryId, merchantId } });
-      if (!category) throw new NotFoundException("Category not found");
+      await this.findOwnCategoryOrThrow(merchantId, body.categoryId);
       data.category = { connect: { id: body.categoryId } };
     }
     if (body.name !== undefined) data.name = body.name;
@@ -286,8 +283,7 @@ export class MerchantService {
 
   async deleteDish(profileId: string, dishId: string): Promise<{ ok: true }> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
-    const existing = await this.prisma.merchantDish.findFirst({ where: { id: dishId, merchantId } });
-    if (!existing) throw new NotFoundException("Dish not found");
+    await this.findOwnDishOrThrow(merchantId, dishId);
     await this.prisma.merchantDish.delete({ where: { id: dishId } });
     return { ok: true };
   }
@@ -302,8 +298,7 @@ export class MerchantService {
 
   private async writeDishOutOfStock(profileId: string, dishId: string, until: Date | null): Promise<MerchantDishResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
-    const existing = await this.prisma.merchantDish.findFirst({ where: { id: dishId, merchantId } });
-    if (!existing) throw new NotFoundException("Dish not found");
+    await this.findOwnDishOrThrow(merchantId, dishId);
     const updated = await this.prisma.merchantDish.update({ where: { id: dishId }, data: { outOfStockUntil: until } });
     return await this.toDishResponse(updated);
   }
@@ -454,6 +449,18 @@ export class MerchantService {
 
   private async findOwnMerchantIdOrThrow(profileId: string): Promise<string> {
     return resolveOwnMerchantId(this.prisma, profileId);
+  }
+
+  private async findOwnCategoryOrThrow(merchantId: string, categoryId: string): Promise<PlainCategoryRow> {
+    const category = await this.prisma.merchantCategory.findFirst({ where: { id: categoryId, merchantId } });
+    if (!category) throw new NotFoundException("Category not found");
+    return category;
+  }
+
+  private async findOwnDishOrThrow(merchantId: string, dishId: string): Promise<DishRow> {
+    const dish = await this.prisma.merchantDish.findFirst({ where: { id: dishId, merchantId } });
+    if (!dish) throw new NotFoundException("Dish not found");
+    return dish;
   }
 
   /** Best-effort read-URL mint (mirrors admin-kyc-review.service.ts's photoUrl handling): a signing
