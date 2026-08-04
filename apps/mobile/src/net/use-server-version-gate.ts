@@ -33,6 +33,13 @@ export async function fetchServerMinVersion(
   }
 }
 
+/** Cold-boot request prioritization (B-O7): deferred a beat behind mount so this background CHECK
+ *  doesn't contend for the first available connection slot with the first-paint-critical
+ *  `/app/bootstrap` aggregate (fired the same boot moment for a signed-in user) on a constrained
+ *  2G/3G link — see the matching note in `usePushRegistration`. Harmless on a pre-auth boot with no
+ *  bootstrap to contend with too: this is already a background check the app never blocks on. */
+const BOOT_VERSION_GATE_DELAY_MS = 250;
+
 /** The server minimum, or null while loading / when unavailable (both render as "no gate"). Checked
  *  once per cold start — a mid-session bump takes effect on next launch, which is deliberate: never
  *  yank the navigator out from under an in-flight delivery. */
@@ -40,11 +47,14 @@ export function useServerMinVersion(): string | null {
   const [min, setMin] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void fetchServerMinVersion().then((value) => {
-      if (!cancelled && value) setMin(value);
-    });
+    const timer = setTimeout(() => {
+      void fetchServerMinVersion().then((value) => {
+        if (!cancelled && value) setMin(value);
+      });
+    }, BOOT_VERSION_GATE_DELAY_MS);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, []);
   return min;

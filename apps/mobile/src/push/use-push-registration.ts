@@ -17,6 +17,15 @@ import {
  *  never hammer the server. Reachability-recovery and foreground transitions each count toward it. */
 const MAX_REGISTER_RETRIES = 4;
 
+/** Cold-boot request prioritization (B-O7): the INITIAL register attempt is deferred a beat behind
+ *  mount so it doesn't contend for the first available connection slot with the first-paint-critical
+ *  `/app/bootstrap` aggregate — `PushSync` and `BootstrapSync` mount together in `app/_layout.tsx`,
+ *  so without this the register POST and the boot aggregate fire concurrently on a link where every
+ *  simultaneous request costs the more important one bandwidth (300-600ms RTT corridors). Retries
+ *  (reachability recovery, foreground, permission-just-granted, token rotation) stay immediate —
+ *  they're reactive to a real event, not part of the initial boot burst. */
+const BOOT_REGISTER_DELAY_MS = 250;
+
 /**
  * Keep this device's push token in sync with auth: register it once a profile is signed in, and drop
  * it again on sign-out (or when switching accounts). Keyed by `profileId`, so the effect re-runs only
@@ -111,7 +120,7 @@ export function usePushRegistration(session: Session | null): void {
       });
     };
 
-    attempt();
+    const bootTimer = setTimeout(attempt, BOOT_REGISTER_DELAY_MS);
 
     // The primed permissions explainer (app/permissions.tsx) fires this the moment the user grants
     // notifications, so a just-granted permission binds a token right away rather than waiting for the
@@ -141,6 +150,7 @@ export function usePushRegistration(session: Session | null): void {
 
     return () => {
       cancelled = true;
+      clearTimeout(bootTimer);
       stopRetryTriggers();
       kickUnsub();
       rotationSub.remove();

@@ -68,6 +68,10 @@ jest.mock("../push", () => ({
   },
 }));
 
+// B-O7: the initial register attempt is deferred behind a real setTimeout (see
+// use-push-registration.ts), so this whole file needs fake timers to drive it deterministically.
+jest.useFakeTimers();
+
 function Harness({ role }: { role: "customer" | "rider" }): null {
   usePushRegistration({ profileId: "p1", role, accessToken: "t" } as never);
   return null;
@@ -75,6 +79,10 @@ function Harness({ role }: { role: "customer" | "rider" }): null {
 
 async function flush(): Promise<void> {
   await act(async () => {
+    // B-O7: the initial register attempt is now deferred behind a boot-priority timer (see
+    // use-push-registration.ts) — run it before draining microtasks so every existing call site of
+    // this helper keeps observing the same post-attempt state it did before that change.
+    jest.runOnlyPendingTimers();
     await Promise.resolve();
     await Promise.resolve();
   });
@@ -324,6 +332,26 @@ describe("usePushRegistration resilience", () => {
     // Teardown unregisters the CURRENT (rotated) token — never the stale initial one.
     expect(mockUnregister).toHaveBeenCalledWith("tok-new");
     expect(mockUnregister).not.toHaveBeenCalledWith("tok-old");
+  });
+
+  it("defers the initial register POST a beat behind mount instead of firing immediately (B-O7: cold-boot request prioritization)", async () => {
+    mockRegister.mockResolvedValueOnce({ registered: true, token: "tok-boot" });
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    // Mount alone must NOT fire the register attempt yet — it's deferred so the boot-critical
+    // /app/bootstrap aggregate (PushSync's sibling in app/_layout.tsx) gets a head start on the
+    // connection instead of racing it for bandwidth.
+    expect(mockRegister).not.toHaveBeenCalled();
+
+    // Only once the boot-priority timer elapses does the attempt actually fire.
+    await flush();
+    expect(mockRegister).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      tree.unmount();
+    });
   });
 
   it("ignores a rotation event carrying a non-string token", async () => {

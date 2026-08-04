@@ -1,5 +1,7 @@
+import React from "react";
+import { act, create } from "react-test-renderer";
 import { isVersionBelow } from "../../config";
-import { fetchServerMinVersion } from "../use-server-version-gate";
+import { fetchServerMinVersion, useServerMinVersion } from "../use-server-version-gate";
 
 /** Minimal fetch stub — only the fields fetchServerMinVersion touches. */
 function fetchReturning(status: number, body: unknown): typeof fetch {
@@ -63,5 +65,50 @@ describe("fetchServerMinVersion (fail-open by design)", () => {
       throw new TypeError("Network request failed");
     }) as unknown as typeof fetch;
     await expect(fetchServerMinVersion(throwing)).resolves.toBeNull();
+  });
+});
+
+describe("useServerMinVersion (B-O7: cold-boot request prioritization)", () => {
+  let fetchMock: jest.Mock;
+  const realFetch = global.fetch;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    fetchMock = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ minSupportedVersion: "0.2.0" }),
+    }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    global.fetch = realFetch;
+  });
+
+  function Harness(): null {
+    useServerMinVersion();
+    return null;
+  }
+
+  it("does not fetch /app/version-gate immediately on mount — deferred a beat behind /app/bootstrap", () => {
+    act(() => {
+      create(<Harness />);
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fetches once the boot-defer timer elapses", async () => {
+    act(() => {
+      create(<Harness />);
+    });
+    await act(async () => {
+      jest.runOnlyPendingTimers();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("/app/version-gate");
   });
 });
