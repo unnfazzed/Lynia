@@ -63,8 +63,12 @@ const config: ExpoConfig = {
     "expo-router",
     // Sentry crash reporting (roadmap 1.1 / LR20). The config plugin wires the native SDK + source-map
     // upload hooks into the EAS build; runtime capture stays inert until EXPO_PUBLIC_SENTRY_DSN is set
-    // (src/telemetry/sentry.ts). Source-map upload additionally needs a SENTRY_AUTH_TOKEN EAS secret —
-    // absent it, builds still succeed and crashes still report (with minified JS frames).
+    // (src/telemetry/sentry.ts). The gradle source-map upload task FAILS the release build when no
+    // Sentry org/project/auth exists (sentry-cli: "An organization ID or slug is required" — EAS build
+    // 16e18e74), so eas.json's base profile sets SENTRY_DISABLE_AUTO_UPLOAD=true until Sentry is
+    // provisioned; the task's onlyIf guard then skips it. When provisioning Sentry, set the
+    // SENTRY_AUTH_TOKEN EAS secret (+ org/project) and remove that env var so release source maps
+    // upload again — crashes report with minified JS frames until then.
     "@sentry/react-native",
     [
       "expo-splash-screen",
