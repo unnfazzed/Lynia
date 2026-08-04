@@ -23,12 +23,14 @@ export function NewOrderTakeover({
   disabled,
   onAccept,
   onReject,
+  refetch,
 }: {
   active: MerchantOrderResponse;
   queued: readonly MerchantOrderResponse[];
   disabled: boolean;
   onAccept: (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) => Promise<void>;
   onReject: (orderId: string, reason: MerchantRejectionReasonCode) => Promise<void>;
+  refetch: () => Promise<void>;
 }) {
   const now = useNow();
   const [prepMinutes, setPrepMinutes] = useState<(typeof PREP_CHIPS_MIN)[number]>(15);
@@ -49,6 +51,14 @@ export function NewOrderTakeover({
     });
   }
 
+  // C-O9 (LC-C13): a rejection here (typically a 409 — the order already resolved via a lost-
+  // response retry, or the ambient poll's own late arrival) previously left the stale Accept/
+  // Reject buttons tappable until the next ambient queue poll (≤5s) or a visibilitychange
+  // refetch quietly cleared them — self-healing, but a real, reproducible confusion window on a
+  // slow reconnect. Mirrors the success path (`withRefetch` in QueueBoard), which already awaits
+  // the refetch end-to-end before the caller sees it settle: refetch on error too, so a stale
+  // takeover clears itself (QueueBoard re-derives `active` and unmounts this component) as soon
+  // as the fresh queue snapshot lands, instead of waiting out the ambient poll.
   async function submitAccept() {
     setSubmitting(true);
     setError(null);
@@ -57,6 +67,7 @@ export function NewOrderTakeover({
       setSubmitting(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't accept the order — try again.");
+      await refetch();
       setSubmitting(false);
     }
   }
@@ -69,6 +80,7 @@ export function NewOrderTakeover({
       setSubmitting(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't reject the order — try again.");
+      await refetch();
       setSubmitting(false);
       setShowReject(false);
     }

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { useState } from "react";
 import { QueueBoard } from "./QueueBoard";
-import { acceptOrder, confirmGoodsReturned, markReady, revealPickupCode } from "../../lib/orders-api";
+import { acceptOrder, confirmGoodsReturned, markReady, rejectOrder, revealPickupCode } from "../../lib/orders-api";
 
 vi.mock("../../lib/orders-api", () => ({
   acceptOrder: vi.fn().mockResolvedValue({}),
@@ -138,6 +138,51 @@ describe("QueueBoard NEW ORDER takeover — Accept doesn't re-enable before the 
     await waitFor(() => {
       expect(acceptButton.disabled).toBe(false);
     });
+  });
+});
+
+describe("QueueBoard NEW ORDER takeover refetches on a failed accept/reject too — C-O9 (LC-C13)", () => {
+  // Before this fix, submitAccept/submitReject's catch block set the error string and re-enabled
+  // the buttons but never called refetch() — unlike the success path, which awaits it end-to-end.
+  // A 409 (the order already resolved via a lost-response retry) left the stale Accept/Reject
+  // buttons tappable until the next ambient poll instead of clearing as soon as a fresh snapshot
+  // was one round trip away.
+  it("refetches after a failed accept", async () => {
+    vi.mocked(acceptOrder).mockRejectedValueOnce(new Error("Conflict"));
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    const orders = [order({ id: "first" })];
+    render(<QueueBoard orders={orders} disabled={false} refetch={refetch} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Accept/ }));
+
+    await screen.findByText("Conflict");
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
+  });
+
+  it("clears a stale takeover once the post-error refetch shows the order already resolved", async () => {
+    vi.mocked(acceptOrder).mockRejectedValueOnce(new Error("Conflict"));
+    const orders = [order({ id: "first" })];
+    render(<Harness initial={orders} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Accept/ }));
+
+    // The Harness's refetch drops the order that was awaiting accept — mirrors a 409 where the
+    // order actually resolved server-side already. The takeover must clear itself, not sit stuck
+    // showing a stale error on a since-resolved order.
+    await waitFor(() => expect(screen.queryByText("#FIRST")).toBeNull());
+  });
+
+  it("refetches after a failed reject", async () => {
+    vi.mocked(rejectOrder).mockRejectedValueOnce(new Error("Conflict"));
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    const orders = [order({ id: "first" })];
+    render(<QueueBoard orders={orders} disabled={false} refetch={refetch} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Can't take it" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Too busy right now" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Reject #FIRST/ }));
+
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
   });
 });
 

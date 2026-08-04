@@ -194,7 +194,7 @@ export function QueueBoard({
   };
 
   if (active) {
-    return <NewOrderTakeover key={active.id} active={active} queued={queued} disabled={disabled} onAccept={handleAccept} onReject={handleReject} />;
+    return <NewOrderTakeover key={active.id} active={active} queued={queued} disabled={disabled} onAccept={handleAccept} onReject={handleReject} refetch={refetch} />;
   }
 
   if (securedToShow) {
