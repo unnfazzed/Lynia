@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.9](https://github.com/unnfazzed/Lynia/compare/v0.17.8...v0.17.9) (2026-08-04)
+
+
+### Bug Fixes
+
+* **mobile:** declare expo-asset, babel-preset-expo, @sentry/cli as direct deps (EAS pnpm strict layout) ([19d4efd](https://github.com/unnfazzed/Lynia/commit/19d4efd4757abdf71c4e623ff8ac1e980ef3aa30))
+* **mobile:** disable Sentry source-map auto-upload until Sentry is provisioned ([#562](https://github.com/unnfazzed/Lynia/issues/562)) ([130d20c](https://github.com/unnfazzed/Lynia/commit/130d20c1f2103b20f0de5ad26f08015bf7b5472f))
+
 ## [0.17.8](https://github.com/unnfazzed/Lynia/compare/v0.17.7...v0.17.8) (2026-08-04)
 
 
