@@ -685,15 +685,28 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       downscaled one; both confirmed to FAIL against the pre-fix code (asserting the original
       capture uri instead) before landing. `pnpm typecheck && pnpm lint && pnpm test` all green
       (732 mobile + 1516 API tests, 6/6 packages).
-- [ ] B-O7 **(re-ranked to #6, was #3 then #7)** Cold-boot request prioritization — defer the
-      push-token register POST (`use-push-registration.ts`) and, where feasible,
-      `/app/version-gate` / `/app/feature-flags` a beat behind `/app/bootstrap` (e.g. a short
-      delay/idle-callback, or firing off `BootstrapSync`'s settle instead of mount) so they don't
-      contend for bandwidth with the first-paint-critical aggregate on a constrained 2G/3G link.
-      Impact unconfirmed without an on-device 2G trace — audit-only finding from B-T1, not
-      implemented that run. Still ahead of B-O5/B-O3/B-O6 because it's concrete and S-effort with
-      evidence behind it, unlike O3/O6 below which are blocked on hardware/native-build access this
-      environment doesn't have — but behind B-O11 as of this steer (see above). (S)
+- [x] B-O7 **DONE (2026-08-04)** Cold-boot request prioritization — deferred the push-token
+      register POST (`use-push-registration.ts`, initial `attempt()` only — retries stay immediate),
+      `/app/version-gate` (`use-server-version-gate.ts`), and `/app/feature-flags`
+      (`use-feature-flags.ts`, fixed once in the shared hook, all 6 call sites) each a fixed 250ms
+      (`setTimeout`) behind their effect's mount, so they no longer contend for bandwidth with the
+      first-paint-critical `/app/bootstrap` aggregate on a constrained 2G/3G link. Found in the same
+      pass: `PushSync` mounts before `BootstrapSync` in `app/_layout.tsx`, so the push-token POST was
+      actually being issued BEFORE the bootstrap aggregate's fetch — the inverse of the two calls'
+      relative priority; the fix (delaying the fetch itself, not reordering JSX) corrects this
+      regardless of the two components' mount order. Feature-flags' fix is orthogonal to Lane A's
+      A-O10 (home.tsx's own double-fire) — a scheduling change, not de-duplication, so no scope
+      overlap. Impact is directional (no on-device 2G trace available in this environment, same
+      caveat this item flagged when seeded) — the request-ordering inversion itself is a concrete,
+      traceable bug regardless. Regression tests (scheduling-assertion style, matching `B-O8`'s
+      `setInterval`-spy convention, not render-count): `use-push-registration.test.tsx` gained a
+      dedicated case and switched to fake timers (its shared `flush()` helper now runs pending timers
+      first, keeping all 10 pre-existing cases passing unchanged); `use-server-version-gate.test.tsx`
+      / `use-feature-flags.test.tsx` (renamed `.test.ts` → `.test.tsx` for JSX) each gained a hook-level
+      describe block asserting a mocked `fetch` is untouched on mount and called exactly once after
+      the boot-defer timer elapses. All three new "not called on mount" assertions confirmed to FAIL
+      against the pre-fix code before landing. `pnpm typecheck && pnpm lint && pnpm test` all green
+      (756 mobile tests, 5 new/expanded). See `docs/LC-B-REPORT-2026-08-04.md`.
 - [ ] B-O5 Socket self-heal refetch cadence on reconnect attempts — KNOWN backlog. (S)
 - [ ] B-O3 Overlap/defer boot keystore reads — KNOWN backlog. **B-T1 evidence:** `loadSession()`
       (`src/auth/session.ts`) and `loadOnboardingSeen()`/`loadRolePreference()`

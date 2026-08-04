@@ -39,6 +39,13 @@ export async function fetchFeatureFlags(
   }
 }
 
+/** Cold-boot request prioritization (B-O7): deferred a beat behind mount so this fetch doesn't
+ *  contend for the first available connection slot with the first-paint-critical `/app/bootstrap`
+ *  aggregate — this hook is called from several screens that mount at or near cold-boot (home,
+ *  orders), same rationale as `useServerMinVersion`. Harmless where the default (fail-safe-off)
+ *  already governs the render for a quarter second regardless of network speed. */
+const BOOT_FEATURE_FLAGS_DELAY_MS = 250;
+
 /** The feature flags, defaulting closed until the fetch resolves. Checked once per cold start —
  *  a mid-session flip takes effect on next launch, matching `useServerMinVersion`'s reasoning:
  *  never yank a tile out from under an in-progress session. */
@@ -46,11 +53,14 @@ export function useFeatureFlags(): MerchantFeatureFlagsResponse {
   const [flags, setFlags] = useState<MerchantFeatureFlagsResponse>(DEFAULT_FEATURE_FLAGS);
   useEffect(() => {
     let cancelled = false;
-    void fetchFeatureFlags().then((value) => {
-      if (!cancelled) setFlags(value);
-    });
+    const timer = setTimeout(() => {
+      void fetchFeatureFlags().then((value) => {
+        if (!cancelled) setFlags(value);
+      });
+    }, BOOT_FEATURE_FLAGS_DELAY_MS);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, []);
   return flags;
