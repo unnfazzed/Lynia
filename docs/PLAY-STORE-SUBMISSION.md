@@ -109,6 +109,25 @@
 > `sentry-cli 2.53.0` launches (its platform binary ships as an optional dep, so pnpm's
 > build-script blocking is moot). 5 of ~15 August builds consumed; attempt 6 dispatches once this
 > fix merges.
+>
+> **Status (2026-08-04, attempt-6 outcome — ✅ JS bundle builds; last Gradle failure was the Sentry
+> upload task, now disabled until Sentry is provisioned).** Build `16e18e74` (v0.17.8): the dep fix
+> held — `createBundleReleaseJsAndAssets` succeeded end-to-end (Hermes source map + debug ID
+> generated) and native compilation (CMake/Kotlin/Java) was well underway. The sole failure:
+> `:app:createBundleReleaseJsAndAssets_SentryUpload…` runs `sentry-cli`, which exits 1 with
+> `An organization ID or slug is required` because no Sentry org/project/auth exists yet — Sentry
+> provisioning is deliberately deferred (runtime capture is DSN-gated and inert). The app.config
+> comment claiming builds succeed without `SENTRY_AUTH_TOKEN` was wrong for the Gradle task (comment
+> corrected). Fix: `eas.json` base profile sets **`SENTRY_DISABLE_AUTO_UPLOAD=true`** — the upload
+> task's `onlyIf shouldSentryAutoUploadGeneral()` guard (verified in `@sentry/react-native@6.22.0`
+> `sentry.gradle`) skips it cleanly. **Revert the env var when Sentry is provisioned** (set the
+> `SENTRY_AUTH_TOKEN` EAS secret + org/project) so release source maps upload again — Sentry must be
+> live before the production staged rollout anyway (§8 step 3, LR20). 6 of ~15 August builds
+> consumed; attempt 7 next. ⚠️ Submit-step heads-up: Google Play often requires the very FIRST
+> artifact of a brand-new app to be uploaded manually in the Console before API submissions are
+> accepted — if attempt 7 builds green but auto-submit fails with an app/artifact-not-found class
+> error, download the `.aab` from the EAS build page, upload it once by hand to Internal testing,
+> and auto-submit works from the next build onward.
 
 ---
 
