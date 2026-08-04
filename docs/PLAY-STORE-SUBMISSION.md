@@ -188,6 +188,34 @@
 > handsets — check nothing hides behind system bars (`docs/QA-DEVICE-CHECKLIST.md`). Attempt 9 goes
 > out once this merges; on it, EITHER the refreshed SA lets auto-submit finish end-to-end, or the
 > founder uploads the new vc-2 `.aab` manually — both paths are now unblocked.
+>
+> **Status (2026-08-04, attempt-9 outcome — 🚀 THE APP IS LIVE ON THE INTERNAL TRACK, submitted by
+> the automated pipeline.** §8 step 1 is **DONE**.) Build `c248fbf5` (v0.17.9, **versionCode 2**,
+> profile `preview`, from commit `86773ae`) finished green at **09:18:32 UTC** — the API-35 target
+> cleared Play's artifact-level rejection, and every layer that felled attempts 2–8 stayed fixed.
+> Auto-submit then took three tries against that same build, which is the record of the
+> service-account grant propagating: `d6535feb` errored 09:20:48 and `b8284d83` errored 09:34:45,
+> both `SUBMISSION_SERVICE_ANDROID_SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS` (the fastlane #16164
+> class the block above predicted), then **`574bf5fd` FINISHED at 09:48:01 UTC** → track
+> `internal`, `releaseStatus: COMPLETED`. No manual console upload was needed in the end: the
+> artifact reached Play **through the API**, which is what makes the release path repeatable rather
+> than a one-off. Live artifact: **32,546,001 bytes (31.04 MiB raw, pre-split)**. Build quota: **7
+> of ~15** August builds consumed (a submission retry costs zero build quota — three submissions,
+> one build).
+>
+> **What this proves, precisely:** the whole of Channel B — GitHub dispatch → EAS build → EAS
+> auto-submit → Play internal track — now runs end to end unattended. That is the "we can ship an
+> update" claim, and it is earned: versionCode 2 *replaced* versionCode 1 on the track, so this was
+> an update, not just a first upload. **What it does not prove:** Channel A (OTA) has never run —
+> see the two open regressions in §8a below and `docs/KNOWN_BUGS.md` (`REL-01`, `REL-02`). Do not
+> read "the update pipeline works" as covering the OTA lane; today it means the store lane only.
+>
+> **Still true after go-live, and worth not losing:** the app is on **internal testing**, not
+> production — `play.google.com/store/apps/details?id=zw.co.lynia` returns **404**, as it should for
+> a track that is not publicly listed. The mandatory ~14-day closed test (§8 step 2) has therefore
+> **not started**; it gates production access and is the long pole on the mid-August tripwire.
+> Sentry is still unprovisioned, so **the live build reports no crashes** (§8a) — LR20 is partially
+> met at best, and the first real user-facing bug will be invisible until someone reports it.
 
 ---
 
@@ -602,9 +630,12 @@ representation, not an engineering one.
 
 Once §7.1 and §7.2 are closed:
 
-1. **Internal testing track.** Actions → *Mobile Release (Play)* with profile `preview`
-   (`eas.json` → `submit.preview.android.track: "internal"`). Verifies the whole pipeline —
-   EAS build, Play App Signing, auto-submit — with no public exposure.
+1. ✅ **Internal testing track — DONE 2026-08-04.** Actions → *Mobile Release (Play)* with profile
+   `preview` (`eas.json` → `submit.preview.android.track: "internal"`). Verifies the whole pipeline —
+   EAS build, Play App Signing, auto-submit — with no public exposure. **Closed by build `c248fbf5`
+   (v0.17.9, versionCode 2) + submission `574bf5fd` (FINISHED 09:48:01 UTC, track `internal`)** —
+   see the attempt-9 status block at the top of this doc. The pipeline is repeatable: re-dispatching
+   the workflow is now the normal way to ship a new internal build.
 2. **Closed testing — mandatory, not optional.** The console states it outright: *"you'll still
    need to run a closed test before publishing to everyone in production"* (dashboard, 2026-08-03,
    with the "apply for production access" banner). For personal developer accounts Play requires a
@@ -628,6 +659,28 @@ Once §7.1 and §7.2 are closed:
    before this step so a bad rollout is visible (LR20).
 4. **JS-only hotfixes** go out via Actions → *Mobile OTA Update* (no review). Anything touching the
    native layer shifts the `fingerprint` runtime version and **must** go through a store release.
+   ⚠️ **This lane does not work today — do not reach for it in an incident** until `REL-01` and
+   `REL-02` (§8a) are closed. It has never been run: zero updates exist on the EAS project.
+
+---
+
+## 8a. Post-go-live gaps (found reviewing the live state, 2026-08-04)
+
+Going live surfaced three things that the pre-launch docs assumed were fine. None of them blocks the
+internal track; all three block the *next* steps.
+
+| # | Gap | Consequence | Tracked as |
+|---|---|---|---|
+| 1 | **A version bump rotates the OTA runtime version.** `@expo/fingerprint` hashes the resolved `expoConfig`, and `version` is one of its keys — so release-please bumping `app.config.ts` changes the `fingerprint` runtimeVersion even when nothing native moved. Verified by controlled A/B on one machine: `0.17.9` → `c56c13bb…`, `0.17.10` → `1bd7d519…`, all other inputs held constant. | An OTA published from `main` after any release bump computes a runtime version **no installed binary has**, so it is silently ignored — it reaches nobody, with no error. Since release-please bumps on essentially every merge, this is the normal case, not an edge case. | `REL-01` |
+| 2 | **`mobile-ota.yml` defaults to a branch that does not exist.** Its `branch` input defaults to `production`; the EAS project has exactly one channel and one branch, both named `preview`, and the live binary was built on the `preview` channel. | A default OTA dispatch publishes to a branch no channel maps to — again reaching nobody, silently. | `REL-02` |
+| 3 | **The live build has no crash reporting.** Sentry is unprovisioned and `eas.json` sets `SENTRY_DISABLE_AUTO_UPLOAD=true`, so there is neither runtime capture nor a source map for the shipped bundle. | Crashes on the internal track are invisible; the closed test (step 2) would run blind, and step 3 explicitly requires Sentry live. | LR20 / §7.2 |
+
+The first two are the reason step 4 above is fenced off. Both are cheap to *detect* and awkward to
+*fix* — fixing `REL-01` properly is a runtime-version policy decision (keep `fingerprint` and accept
+that OTA only ships from the exact built commit, or move to a policy that ignores `version`), and
+that decision changes OTA semantics for every future binary, so it is deliberately **not** made here.
+`REL-02` now fails loudly instead of silently: `mobile-ota.yml` preflights the target channel and
+aborts if nothing maps to it.
 
 ---
 

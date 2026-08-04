@@ -15,6 +15,12 @@ Didit v3 KYC with a one-command founder-wiring script, FCM push + `google-servic
 remains is **founder account/key actions and an on-device `/qa` dev build**, not more feature code. Where the
 build stands + what the founder wires next → [`docs/PILOT-READINESS.md`](docs/PILOT-READINESS.md).
 
+**The Android app is live on Google Play's internal testing track** as of **2026-08-04** — v0.17.9
+(versionCode 2), built and submitted end to end by
+[`mobile-release.yml`](.github/workflows/mobile-release.yml) with no manual upload. Internal track
+only (not public); the mandatory ~14-day closed test has not started. Release record + what is still
+open → [`docs/PLAY-STORE-SUBMISSION.md`](docs/PLAY-STORE-SUBMISSION.md).
+
 ## Monorepo
 
 pnpm + Turborepo. Backend is an own NestJS API on PostgreSQL (no BaaS) on **Google Cloud**

@@ -26,6 +26,10 @@ on:
         type: choice
         options: [production, preview]
         default: production
+      allow_runtime_mismatch:
+        description: "Publish even if no recent build on this channel shares the computed runtime version (advanced — the update will reach only binaries that DO match, possibly none)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -73,6 +77,66 @@ jobs:
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
+
+      # PREFLIGHT (added 2026-08-04, the day the app went live). An `eas update` that reaches nobody
+      # SUCCEEDS — the CLI exits 0, the Expo console shows a published update, and not one phone
+      # ever downloads it. That is the single worst property of this lane, and going live exposed
+      # two live instances of it (docs/PLAY-STORE-SUBMISSION.md §8a, KNOWN_BUGS REL-01/REL-02):
+      #   1. the `branch` input still defaulted to `production` while the only channel that existed
+      #      — and the one the live internal-track binary was built on — was `preview`; and
+      #   2. `@expo/fingerprint` hashes the resolved app config, `version` included, so every
+      #      release-please bump rotates the runtimeVersion away from every installed binary.
+      # Neither is detectable after the fact without asking a device. So check both BEFORE publishing
+      # and fail loudly instead of quietly shipping into the void.
+      - name: Preflight — the update must be able to reach a real binary
+        working-directory: apps/mobile
+        env:
+          BRANCH: ${{ inputs.branch }}
+          ALLOW_MISMATCH: ${{ inputs.allow_runtime_mismatch }}
+        run: |
+          set -euo pipefail
+
+          # (1) A channel must exist for this branch. `eas update` happily creates a branch that no
+          # channel points at; binaries only ever resolve updates through a CHANNEL.
+          if ! eas channel:view "$BRANCH" --json --non-interactive > /tmp/eas-channel.json 2> /tmp/eas-channel.err; then
+            echo "::error::No EAS channel named '$BRANCH' exists. Installed binaries resolve updates through a channel, so an update published to this branch would reach zero devices. Ship a binary built on this channel first (mobile-release.yml with the matching eas.json profile), or dispatch against a channel that exists."
+            sed 's/^/  /' /tmp/eas-channel.err >&2 || true
+            exit 1
+          fi
+          echo "Channel '$BRANCH' exists."
+
+          # (2) The runtime version we are about to publish must match a binary someone can install.
+          # `eas update` derives it from THIS runner's tree, exactly as computed here, so this is an
+          # apples-to-apples comparison against the runtimeVersion EAS recorded for each build.
+          COMPUTED="$(npx --no-install expo-updates fingerprint:generate --platform android \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).hash??"")}catch{process.stdout.write("")}})')"
+          if [ -z "$COMPUTED" ]; then
+            echo "::warning::Could not compute the fingerprint runtime version; skipping the runtime-match check."
+            exit 0
+          fi
+          echo "Computed runtime version for this update: $COMPUTED"
+
+          BUILT="$(eas build:list --json --non-interactive --platform android --channel "$BRANCH" --status finished --limit 20 2>/dev/null \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write([...new Set(JSON.parse(s).map(b=>b.runtimeVersion).filter(Boolean))].join("\n"))}catch{}})' || true)"
+          {
+            echo "### OTA preflight"
+            echo ""
+            echo "- Channel: \`$BRANCH\`"
+            echo "- Runtime version to publish: \`$COMPUTED\`"
+            echo "- Runtime versions of finished builds on this channel:"
+            if [ -n "$BUILT" ]; then printf '  - `%s`\n' $BUILT; else echo "  - _(none found)_"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if printf '%s\n' $BUILT | grep -qx "$COMPUTED"; then
+            echo "Runtime version matches a finished build on '$BRANCH' — the update can land."
+            exit 0
+          fi
+          if [ "$ALLOW_MISMATCH" = "true" ]; then
+            echo "::warning::No finished build on '$BRANCH' has runtime version $COMPUTED. Publishing anyway because allow_runtime_mismatch=true — this update may reach zero devices."
+            exit 0
+          fi
+          echo "::error::No finished build on channel '$BRANCH' has runtime version $COMPUTED, so this update would be ignored by every installed binary. The usual cause is a version bump since the installed build was made (\`version\` is hashed into the fingerprint runtimeVersion) or a native/dependency change — both require a new store build via mobile-release.yml. Re-dispatch with allow_runtime_mismatch=true only if you know which binaries you are targeting."
+          exit 1
 
       - name: Publish OTA update
         working-directory: apps/mobile

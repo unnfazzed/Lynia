@@ -70,6 +70,30 @@ unchanged by this pass.
 
 ---
 
+## 🟢 Update — 2026-08-04: the app is on Google Play (internal track)
+
+The distribution gate is closed. **v0.17.9 (versionCode 2) is live on Play's internal testing track**,
+built and submitted end to end by `mobile-release.yml` → EAS → Play with no manual upload (build
+`c248fbf5`, submission `574bf5fd`; the nine-attempt record is in `docs/PLAY-STORE-SUBMISSION.md`).
+The practical change for this document: **"the dev build" is no longer the only way onto a phone** —
+testers can install the real, Play-signed artifact, and shipping a new version is now a workflow
+dispatch rather than a project.
+
+Read the rest of this doc with three corrections:
+
+- **Internal track ≠ launched.** Not public (the store URL 404s), and the **mandatory ~14-day closed
+  test hasn't started** — it gates production access and is the long pole now.
+- **The live build has no crash telemetry.** Sentry is unprovisioned and source-map upload is disabled
+  (`SENTRY_DISABLE_AUTO_UPLOAD=true`), so LR20 is only half met and the closed test would run blind.
+  This is the highest-value remaining founder item.
+- **The OTA hotfix lane does not work** (`REL-01`, `REL-02` in `docs/KNOWN_BUGS.md`). Every fix
+  currently ships as a store build. Plan the closed test around that latency.
+
+The vendor gates below (WhatsApp BSP, Didit, Firebase) are **unchanged** — going live on a test track
+did not close any of them.
+
+---
+
 ## Verdict (read this first)
 
 The product is now **functionally complete and end-to-end demoable in code**: a full delivery runs

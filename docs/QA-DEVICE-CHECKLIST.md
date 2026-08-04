@@ -4,6 +4,31 @@
 > token (Expo Go can't mint one), or native GPS/permission behaviour. This is the runbook to execute on a
 > **dev build** on a **real, low-end Android phone**. Build the test APK via the `Android Test APK`
 > workflow (`.github/workflows/android-test-apk.yml`); QA-mode config in `docs/PILOT-READINESS.md`.
+>
+> **Since 2026-08-04 there is a second, better-fidelity way to get the app onto a phone:** install the
+> **internal-track release build** from Play (v0.17.9 / vc 2 and onward). Prefer it for anything where
+> the *shipped* configuration matters — it is the R8-shrunk, Play-signed artifact real users will get,
+> whereas the QA APK is a debug-ish build installed with `--config.node-linker=hoisted` and a throwaway
+> keystore. Two caveats: the release build has **no `/qa` mode** (LR16 below still needs the dev build),
+> and it has **no Sentry**, so a crash on it leaves no trace beyond Play Console vitals — write down
+> what you did by hand.
+
+## 🔴 First pass on the API-35 build — do this before promoting anything
+
+`targetSdkVersion` moved 34 → 35 on 2026-08-04 (Play's hard floor for new apps). On **Android 15**
+handsets that turns on **enforced edge-to-edge**: the system no longer insets your content for the
+status and navigation bars, so anything that assumed it did now draws underneath them. Older Android
+versions are unaffected, which is exactly why this is easy to miss — it needs an Android 15 device
+specifically. This shipped straight to the internal track without a device pass.
+
+- [ ] **Android 15 device, every top-level screen** — no header, title, or action row hidden behind the
+      status bar; no tab bar, primary CTA, or bottom sheet under the navigation bar / gesture pill.
+- [ ] **The high-stakes ones first** — rider job screen (accept/arrived/deliver buttons), customer order
+      tracking (map overlay + status card), OTP hand-off entry, and any full-screen map: a CTA that is
+      unreachable behind a system bar is a stuck delivery, not a cosmetic bug.
+- [ ] **Keyboard-open layouts** — compose/bid/OTP inputs still visible and submittable with the IME up.
+- [ ] **Both gesture and 3-button navigation** (they inset differently).
+- [ ] **Landscape / large font / display-size scaling** on at least one screen.
 
 ## LR16 — on-device `/qa` (dev build, real device)
 

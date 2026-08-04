@@ -202,6 +202,21 @@ to route 100% back. **Exercise it once** (LR21).
 > `owner: "lyniago"` explicitly (a personal token implies its account; a robot has none). The field
 > is now committed. Outstanding: no required reviewer on `production-mobile` yet — add before first
 > OTA publish (that environment gates `mobile-ota.yml`, the one lane with no external review).
+>
+> **Update (2026-08-04): fully armed and PROVEN — the app is live on the internal track.** Nothing
+> in this section is founder-pending for the store lane any more. After nine dispatch attempts
+> (each failure and fix recorded in `docs/PLAY-STORE-SUBMISSION.md`), build `c248fbf5` (v0.17.9,
+> versionCode 2) finished green and submission `574bf5fd` reached Play's **internal** track at
+> 09:48 UTC — through the Play Developer API, not a manual upload. The last two founder-side
+> blockers both cleared that morning: `androidpublisher.googleapis.com` enabled in project
+> `407250490173`, and the Play Console permission grant for `id-play-publisher@…` re-saved to force
+> the refresh (the fastlane #16164 workaround — two submissions still failed
+> `…SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS` at 09:20 and 09:34 before it propagated, so expect
+> minutes, not instants, after re-saving).
+>
+> Still outstanding here: the **required reviewer on `production-mobile`** (unchanged — and note the
+> store lane has been dispatching without one), and **Sentry provisioning**, which §5 covers and
+> which the live build does not have.
 
 ```bash
 npm i -g eas-cli && eas login                       # or use npx eas-cli
@@ -227,6 +242,27 @@ First release: **Actions → "Mobile Release (Play)"** with profile `preview` (i
 promote through closed testing in Play Console → then tag `v0.2.0` on `main` for the first staged
 production rollout (starts at 10%; advance/halt in Play Console → Releases). JS-only hotfixes:
 **Actions → "Mobile OTA Update"** (goes to installed apps on next launch, no review).
+
+**Shipping an update today (the path that is actually proven, 2026-08-04):**
+
+1. Merge to `main` and let CI go green. release-please will bump `version`; that is fine here.
+2. **Actions → "Mobile Release (Play)"**, profile `preview`, submit `true`. The workflow queues the
+   build with `--no-wait` and exits — **a green workflow run means "queued", not "shipped"**. This
+   trips people up: runs #3–#9 all reported success while their builds failed on EAS.
+3. Watch the build on the EAS project page (or the Expo API). Roughly **9 minutes** for a green
+   Android build at current size.
+4. Auto-submit fires on build success; the submission is a *separate* object with its own status.
+   Confirm it reaches `FINISHED` on track `internal` — a failed submission does **not** fail the
+   GitHub run either. Retrying a submission costs zero build quota.
+5. versionCode is EAS-managed (`autoIncrement` + `appVersionSource: remote`), so nothing to bump by
+   hand; Play rejects re-used codes and this is what prevents that.
+
+Budget note: EAS bills builds, not submissions — **7 of ~15** August builds were consumed reaching
+go-live, so prefer fixing forward on one build and retrying the *submission* where possible.
+
+⚠️ Do **not** reach for "Mobile OTA Update" as the fast lane yet — it has never successfully shipped
+to a device, and `REL-01`/`REL-02` (`docs/KNOWN_BUGS.md`) explain why a publish can silently reach
+nobody. The workflow now refuses to publish when it detects that condition.
 
 ### d) Branch protection — §6 above, plus Code Owners
 

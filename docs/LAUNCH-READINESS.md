@@ -81,7 +81,7 @@ residual risk is concentrated:
 | LR17 | UI | Real-network pass: low-end Android, 3G/EDGE, offline honesty | founder (device) + agent | 🛠️ checklist authored; needs a low-end device + throttled network |
 | LR18 | UI | Journey audits ×3 (customer / rider / admin) — error-state honesty | agent | 🛠️ mobile auction + rider-job honest error+retry **shipped**; admin dead-refund-write flagged |
 | LR19 | UI | Design-system adherence + accessibility (TalkBack, scaling, AA) | agent + device | ⬜ |
-| LR20 | UI | Crash telemetry + store readiness (listing, privacy, data-safety) | agent + founder | 🛠️ Sentry wiring runbook authored; **full submission package built** (`docs/PLAY-STORE-SUBMISSION.md`) — listing copy, data-safety answers, declarations, published privacy/deletion pages, in-app account deletion. Founder-blocked on reviewer access (§7.1), Play/EAS credentials, graphics |
+| LR20 | UI | Crash telemetry + store readiness (listing, privacy, data-safety) | agent + founder | 🛠️ **Store readiness: DONE (2026-08-04)** — the app is live on Play's **internal testing** track, v0.17.9 / versionCode 2, submitted end-to-end by the pipeline (build `c248fbf5` + submission `574bf5fd`; `docs/PLAY-STORE-SUBMISSION.md` attempt-9 block). Listing copy, data-safety answers, declarations, privacy/deletion pages, in-app account deletion, graphics all shipped. **Crash telemetry: still NOT met** — Sentry is unprovisioned and `eas.json` sets `SENTRY_DISABLE_AUTO_UPLOAD=true`, so the live build reports no crashes and has no source map. This gate cannot close on the store half alone, and §8 step 3 (production staged rollout) explicitly requires Sentry live |
 | LR21 | All | Go/no-go: QA off, vendors on, one clean end-to-end real delivery | founder | ⬜ |
 
 ---
