@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.10](https://github.com/unnfazzed/Lynia/compare/v0.17.9...v0.17.10) (2026-08-04)
+
+
+### Bug Fixes
+
+* **mobile:** declare expo-modules-autolinking — RN-core autolinking emitted a nonexistent import under pnpm strict layout ([cab6d4a](https://github.com/unnfazzed/Lynia/commit/cab6d4a07db2f145ceaa8a3eca46d82578f441fd))
+* **mobile:** target API 35 (Play hard requirement for new apps) + auto-increment versionCode ([0a3bfed](https://github.com/unnfazzed/Lynia/commit/0a3bfed380878182fbd760f74a401c6444497382))
+
 ## [0.17.9](https://github.com/unnfazzed/Lynia/compare/v0.17.8...v0.17.9) (2026-08-04)
 
 
