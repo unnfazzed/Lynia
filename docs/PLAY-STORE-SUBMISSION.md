@@ -128,6 +128,26 @@
 > accepted — if attempt 7 builds green but auto-submit fails with an app/artifact-not-found class
 > error, download the `.aab` from the EAS build page, upload it once by hand to Internal testing,
 > and auto-submit works from the next build onward.
+>
+> **Status (2026-08-04, attempt-7 outcome — ✅ Sentry skip confirmed; third and deepest pnpm
+> strict-layout instance found and fixed: RN-core autolinking generated a wrong import).** Build
+> `e54ed8a3` (v0.17.8): Sentry upload task `SKIPPED` as designed; the JS bundle, resource
+> processing and Kotlin compile all passed; `:app:compileReleaseJavaWithJavac` failed —
+> the autolinking-generated `PackageList.java` contains `import expo.core.ExpoModulesPackage;`
+> (a class that doesn't exist; the real one is `expo.modules.ExpoModulesPackage`). Root cause,
+> fully reproduced locally with the exact `settings.gradle` command: `expo-modules-autolinking`'s
+> `react-native-config` evaluates each library's `react-native.config.js` at its **symlink** path
+> via `require-from-string` (no realpath), so `expo`'s config — whose first line requires
+> `expo-modules-autolinking/exports` — hits MODULE_NOT_FOUND under pnpm's strict layout; the
+> loader's bare `catch { return null }` swallows the error and the resolver falls back to
+> deriving the import from the library's Android **namespace** (`expo.core`) + scanned class name.
+> Fix (same pattern as attempt 6's): declare `expo-modules-autolinking@2.0.8` (expo's exact pinned
+> dep) in `apps/mobile` devDependencies — the symlink-path resolution then finds it one hop up.
+> Verified: the config evaluates cleanly, the exact builder command now emits
+> `import expo.modules.ExpoModulesPackage;`, and all six autolinked libraries
+> (`expo`, `@sentry/react-native`, maps, safe-area-context, screens, svg) emit their canonical
+> import paths. 7 of ~15 August builds consumed; attempt 8 next — remaining unexercised: app javac
+> (now with a correct PackageList), R8/resource-shrink, signing, Play auto-submit.
 
 ---
 
