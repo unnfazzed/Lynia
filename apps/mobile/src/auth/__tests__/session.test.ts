@@ -21,6 +21,7 @@ import { PROFILE_DRAFT_KEY } from "../../logic/profile-draft";
 import { RIDER_IDENTITY_KEY } from "../../logic/rider-identity";
 import { JOB_KEY } from "../../net/last-active-store";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../../logic/pickup-checklist-draft";
+import { PICKUP_PHOTO_DRAFT_KEY } from "../../logic/pickup-photo-draft";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../../logic/rider-bid-draft";
 import { RESTAURANT_LIST_SNAPSHOT_KEY } from "../../net/restaurant-list-store";
 import { FOOD_CART_SNAPSHOT_KEY } from "../../net/food-cart-store";
@@ -54,6 +55,14 @@ describe("clearDeviceState (sign-out wipe, BH-17)", () => {
     await clearDeviceState();
     const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
     expect(deletedKeys).toContain(PROFILE_DRAFT_KEY);
+  });
+
+  // C-O7 (LC-C09): the pending/failed pickup-photo resume marker (a local file uri) — added alongside
+  // PICKUP_CHECKLIST_DRAFT_KEY, wired into this wipe from the start rather than repeating the BH-17 gap.
+  it("deletes the pickup-photo draft key", async () => {
+    await clearDeviceState();
+    const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
+    expect(deletedKeys).toContain(PICKUP_PHOTO_DRAFT_KEY);
   });
 });
 
@@ -89,6 +98,7 @@ describe("clearDeviceState (full key-wipe characterization, RF-10 pin)", () => {
         RIDER_BID_DRAFT_KEY,
         RIDER_SENT_OFFERS_KEY,
         PICKUP_CHECKLIST_DRAFT_KEY,
+        PICKUP_PHOTO_DRAFT_KEY,
         RESTAURANT_LIST_SNAPSHOT_KEY,
         FOOD_CART_SNAPSHOT_KEY,
         FOOD_ORDER_SNAPSHOT_KEY,

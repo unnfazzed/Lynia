@@ -11,6 +11,7 @@ import {
   loadPickupChecklistDraft,
   savePickupChecklistDraft,
 } from "../../src/logic/pickup-checklist-draft";
+import { clearPickupPhotoDraft } from "../../src/logic/pickup-photo-draft";
 import { ACTIVE, advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
@@ -614,6 +615,11 @@ export default function RiderJob(): React.ReactElement {
         confirmRetryInFlight.current = false;
       });
     void clearPickupChecklistDraft();
+    // C-O7 (LC-C09): a pending/failed pickup-photo resume marker no longer applies once the rider has
+    // moved past this step — leaving it would offer a stale "finish uploading" resume for a job that's
+    // already progressed. Harmless either way (single key, overwritten by the next capture), but this
+    // keeps the same-order invariant tight.
+    void clearPickupPhotoDraft();
     advanceM.mutate("picked_up");
   };
 
