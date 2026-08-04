@@ -7,7 +7,7 @@ import { ApiError } from "../src/api/client";
 import { getMe } from "../src/api/auth";
 import { acceptDisclaimer, createOrder, getActiveCustomerOrder, type OrderSnapshot } from "../src/api/orders";
 import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/session";
-import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
+import { isAccountOnHold, isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import {
   clearDraft,
   DISCLAIMER_POLICY_VERSION,
@@ -22,14 +22,12 @@ import {
 } from "../src/logic/order-draft";
 import { orderKey } from "../src/query/client";
 import { invalidateCustomerOrderHistory } from "../src/query/use-history-feed";
-import { formatMoney } from "../src/logic/money";
 import { useForegroundRefetch } from "../src/realtime/use-foreground-refetch";
 import { fareBand, fareBandHint, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
 import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ActiveOrderCheckFailedBanner, Button, EmptyState, ErrorText, Field, haptic, Icon, Label, Screen, statusPillLabel, TestBuildBanner } from "../src/ui";
-import { SupportCallRow } from "../src/ui/safety";
+import { ActiveOrderCheckFailedBanner, Button, ErrorText, Field, haptic, Icon, Label, TestBuildBanner } from "../src/ui";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { ComposeMap } from "../src/ui/ComposeMap";
@@ -37,51 +35,12 @@ import { DisclaimerSheet } from "../src/ui/home/DisclaimerSheet";
 import { QtyStepper } from "../src/ui/home/QtyStepper";
 import { AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
 import type { PickedPoint } from "../src/ui/MapPicker";
+import { ActiveOrderBanner, SendAccountOnHoldView } from "../src/ui/send/SendAccountOnHoldView";
 import { parseNum, randomUuidV4, uuidV4FromSeed } from "../src/util";
 
 // LayoutAnimation needs an explicit opt-in on old-architecture Android; a no-op on iOS / Fabric.
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-/**
- * The "delivery in progress" restore banner — the always-available way back into a live order the
- * customer may have been killed away from (UX review #1). Extracted so both the normal compose home
- * AND the account-on-hold wall can render it: a hold only blocks composing NEW orders server-side, so a
- * customer put on hold mid-delivery must still be able to reach the order already in flight.
- */
-function ActiveOrderBanner({ order }: { order: OrderSnapshot }): React.ReactElement {
-  const router = useRouter();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Open your delivery in progress"
-      onPress={() => router.push(`/order/${order.id}`)}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: tokens.space.sm,
-        backgroundColor: tokens.color.bg,
-        borderRadius: tokens.radius.card,
-        borderWidth: 1,
-        borderColor: tokens.color.accent,
-        padding: tokens.space.md,
-        marginBottom: tokens.space.sm,
-        ...tokens.shadow.card,
-      }}
-    >
-      <Icon name="bike" size={20} color={tokens.color.accentText} />
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: tokens.font.size.body, fontWeight: "700", color: tokens.color.ink }}>
-          Delivery in progress · {statusPillLabel(order.status)}
-        </Text>
-        <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, fontVariant: ["tabular-nums"] }} numberOfLines={1}>
-          {order.pickup.landmark || "Pickup"} → {order.dropoff.landmark || "Drop-off"} · {formatMoney(order.agreedFare ?? order.proposedFare)}
-        </Text>
-      </View>
-      <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.accentText }}>Track</Text>
-    </Pressable>
-  );
 }
 
 export default function HomeScreen(): React.ReactElement {
@@ -589,21 +548,14 @@ export default function HomeScreen(): React.ReactElement {
   // held customer never reaches the map/compose UI.
   if (accountOnHold) {
     return (
-      <Screen>
-        {/* A hold blocks composing NEW orders server-side, not viewing/tracking/cancelling/rating an order
-            already in flight (getSnapshot/cancel/rating all still work for a held customer). So a customer
-            put on hold mid-delivery keeps a way into that live order — the only nav entry point on this
-            headerless screen — rather than being locked out of it entirely by the wall below. */}
-        {activeOrder ? (
-          <ActiveOrderBanner order={activeOrder} />
-        ) : activeOrderQ.isError ? (
-          <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
-        ) : null}
-        <EmptyState icon="triangle-alert" title={ACCOUNT_ON_HOLD_COPY.title} message={ACCOUNT_ON_HOLD_COPY.message}>
-          <SupportCallRow />
-          <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} loading={meQ.isFetching} />
-        </EmptyState>
-      </Screen>
+      <SendAccountOnHoldView
+        activeOrder={activeOrder}
+        activeOrderIsError={activeOrderQ.isError}
+        activeOrderIsFetching={activeOrderQ.isFetching}
+        onRetryActiveOrder={() => void activeOrderQ.refetch()}
+        meIsFetching={meQ.isFetching}
+        onRefreshStatus={() => void meQ.refetch()}
+      />
     );
   }
 
