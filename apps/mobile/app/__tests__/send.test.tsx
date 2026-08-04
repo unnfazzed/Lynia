@@ -306,6 +306,71 @@ describe("send.tsx — Landmarks & details collapsible (RF-21 characterization, 
   });
 });
 
+describe("send.tsx — Items list (RF-21 characterization, pre-extraction)", () => {
+  /** The Remove button has no accessibilityRole="button"-only lookup helper in this file (pressByText
+   *  matches on the visible "Remove" label, which is shared by every row) — find it by its per-row
+   *  accessibilityLabel instead. */
+  function pressByAccessibilityLabel(tree: renderer.ReactTestRenderer, accessibilityLabel: string): void {
+    const node = tree.root.findAll((n) => n.props.accessibilityLabel === accessibilityLabel && typeof n.props.onPress === "function")[0];
+    if (!node) throw new Error(`no pressable found for ${accessibilityLabel}`);
+    act(() => node.props.onPress());
+  }
+
+  it("starts with a single item row (no Remove affordance); adding a row reveals Remove on both", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Documents" && typeof n.props.onChangeText === "function").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Remove item")).length).toBe(0);
+
+    pressByText(tree, "Add another item");
+
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Documents" && typeof n.props.onChangeText === "function").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Another item" && typeof n.props.onChangeText === "function").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Remove item 1" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Remove item 2" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+  });
+
+  it("removing a row deletes it, and the last remaining row loses its Remove affordance again", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    pressByText(tree, "Add another item");
+    setFieldByAccessibilityLabel(tree, "Another item", "A second parcel");
+    pressByAccessibilityLabel(tree, "Remove item 2");
+
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Another item" && typeof n.props.onChangeText === "function").length).toBe(0);
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Documents" && typeof n.props.onChangeText === "function").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Remove item")).length).toBe(0);
+  });
+
+  it("hides 'Add another item' past MAX_ITEMS (10) rows and shows the cap notice instead", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(tree.root.findAll((n) => n.props.children === "Up to 10 items per order.").length).toBe(0);
+    for (let i = 1; i < 10; i++) pressByText(tree, "Add another item");
+
+    // Precisely 10 rows: the 10th row's Remove affordance exists, an 11th does not.
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Remove item 10" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Remove item 11").length).toBe(0);
+    expect(tree.root.findAll((n) => n.props.children === "Add another item").length).toBe(0);
+    expect(tree.root.findAll((n) => n.props.children === "Up to 10 items per order.").length).toBeGreaterThan(0);
+  });
+});
+
 describe("send.tsx — draft flush before submit (LC-C06)", () => {
   it("persists the on-disk draft with the submitted price BEFORE the create-order request fires, even mid-debounce", async () => {
     mockGetActiveCustomerOrder.mockResolvedValue(null);
