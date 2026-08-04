@@ -37,6 +37,14 @@ jobs:
       # Screen). Only this workflow sets it, so a real EAS release build never shows the banner.
       LYNIA_TEST_BUILD: "1"
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+      # Sentry (LR20). This lane builds on the runner, not on EAS servers, so it needs the DSN from a
+      # repo secret rather than the EAS environment. Optional: empty secret → initSentry() no-ops and
+      # the APK behaves exactly as before. Its own Sentry environment keeps sideload-QA crashes out of
+      # the preview/production release-health numbers. Source maps are NOT uploaded here (no auth token
+      # on this lane by design) — a QA crash reports with minified frames, which is fine for a bypass
+      # build whose whole purpose is reproducing on a handset you are holding.
+      EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+      EXPO_PUBLIC_SENTRY_ENVIRONMENT: qa-apk
       # The `secrets` context can't be used in a step `if:`, so surface the optional Firebase secret
       # as an env value here and gate the step on `env.` instead. Empty when the secret isn't set.
       GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON }}

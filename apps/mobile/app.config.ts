@@ -33,6 +33,37 @@ const googleServicesFile =
  */
 const easProjectId = process.env.EAS_PROJECT_ID ?? "25b2785d-94e0-4ecc-9940-bd9f9d8eb27c";
 
+/**
+ * Crash-telemetry guard (LR20). `EXPO_PUBLIC_SENTRY_DSN` is inlined into the JS bundle at BUILD time,
+ * and `initSentry()` returns early without it (src/telemetry/sentry.ts) — so a release built with the
+ * var missing ships with crash reporting silently OFF and looks identical to one that works. That is
+ * not hypothetical: the live internal-track build had no telemetry, and its splash-screen hang had to
+ * be diagnosed from a photograph. `SENTRY_AUTH_TOKEN` is the same story one layer down — without it
+ * the build succeeds but uploads no source maps or R8 mapping, so the crashes that DO arrive are
+ * unreadable.
+ *
+ * Deliberately scoped to `EAS_BUILD` (set only on the EAS build worker, where both the profile and the
+ * environment's variables are resolved). eas-cli also evaluates this config locally before uploading,
+ * and local evaluation is NOT guaranteed to see EAS environment variables — failing there would break
+ * the release lane for a config problem that doesn't exist, the same failure class as builds 5/6/7.
+ * Local dev, `expo prebuild`, and the QA APK lane are all unaffected.
+ */
+const releaseBuildProfile =
+  process.env.EAS_BUILD === "true" && ["preview", "production"].includes(process.env.EAS_BUILD_PROFILE ?? "")
+    ? process.env.EAS_BUILD_PROFILE
+    : undefined;
+if (releaseBuildProfile) {
+  const missing = ["EXPO_PUBLIC_SENTRY_DSN", "SENTRY_AUTH_TOKEN"].filter((name) => !process.env[name]?.trim());
+  if (missing.length) {
+    throw new Error(
+      `Sentry is not provisioned for EAS build profile "${releaseBuildProfile}": ${missing.join(", ")} unset. ` +
+        "A release build must ship readable crash telemetry (LR20). Set them with " +
+        `\`eas env:create --scope project --environment ${releaseBuildProfile} --name <NAME> --value <value>\` ` +
+        "— see docs/QA-DEVICE-CHECKLIST.md → LR20. Refusing to build a blind release.",
+    );
+  }
+}
+
 const config: ExpoConfig = {
   name: "LyniaGo",
   slug: "lynia",
@@ -61,15 +92,32 @@ const config: ExpoConfig = {
   icon: "./assets/icon.png",
   plugins: [
     "expo-router",
-    // Sentry crash reporting (roadmap 1.1 / LR20). The config plugin wires the native SDK + source-map
-    // upload hooks into the EAS build; runtime capture stays inert until EXPO_PUBLIC_SENTRY_DSN is set
-    // (src/telemetry/sentry.ts). The gradle source-map upload task FAILS the release build when no
-    // Sentry org/project/auth exists (sentry-cli: "An organization ID or slug is required" — EAS build
-    // 16e18e74), so eas.json's base profile sets SENTRY_DISABLE_AUTO_UPLOAD=true until Sentry is
-    // provisioned; the task's onlyIf guard then skips it. When provisioning Sentry, set the
-    // SENTRY_AUTH_TOKEN EAS secret (+ org/project) and remove that env var so release source maps
-    // upload again — crashes report with minified JS frames until then.
-    "@sentry/react-native",
+    // Sentry crash reporting (roadmap 1.1 / LR20). The config plugin wires the native SDK + the
+    // source-map / debug-symbol upload hooks into the EAS build; runtime capture stays inert until
+    // EXPO_PUBLIC_SENTRY_DSN is set (src/telemetry/sentry.ts).
+    //
+    // organization/project are committed LITERALS, not secrets — they only name the project a build
+    // uploads to. Registering the plugin bare (as this did until Sentry was provisioned) makes it write
+    // an android/sentry.properties whose org and project lines are commented-out placeholders, and the
+    // gradle sentry-cli task then dies with "An organization ID or slug is required" (EAS build
+    // 16e18e74). The auth token is the secret half and is deliberately NOT here: the plugin warns
+    // against inlining it (it would land in the application package, and this repo is public), so it
+    // comes from the SENTRY_AUTH_TOKEN EAS environment variable at build time.
+    //
+    // experimental_android.enableAndroidGradlePlugin applies io.sentry:sentry-android-gradle-plugin,
+    // which is what uploads the R8 `mapping.txt` and the native debug symbols. It is OPT-IN, and off by
+    // default @sentry/react-native handles ONLY the JS bundle's source maps. That is not enough here:
+    // enableProguardInReleaseBuilds (below) obfuscates every Java/Kotlin class in the release AAB, so
+    // without the mapping upload a native crash arrives as `a.b.c(SourceFile:1)` — unreadable in
+    // exactly the Java/Kotlin layer this SDK was added to see (client RUM and PostHog never do).
+    [
+      "@sentry/react-native",
+      {
+        organization: "lyniago",
+        project: "lynia-mobile",
+        experimental_android: { enableAndroidGradlePlugin: true },
+      },
+    ],
     [
       "expo-splash-screen",
       { image: "./assets/splash-icon.png", imageWidth: 120, resizeMode: "contain", backgroundColor: "#FFFFFF" },

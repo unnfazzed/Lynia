@@ -83,9 +83,11 @@ Read the rest of this doc with three corrections:
 
 - **Internal track ≠ launched.** Not public (the store URL 404s), and the **mandatory ~14-day closed
   test hasn't started** — it gates production access and is the long pole now.
-- **The live build has no crash telemetry.** Sentry is unprovisioned and source-map upload is disabled
-  (`SENTRY_DISABLE_AUTO_UPLOAD=true`), so LR20 is only half met and the closed test would run blind.
-  This is the highest-value remaining founder item.
+- **The live build has no crash telemetry.** Still true of the **installed** binary — telemetry only
+  reaches devices in a new build. The repo half is done as of 2026-08-05 (project `lyniago/lynia-mobile`,
+  R8 mapping upload on, `SENTRY_DISABLE_AUTO_UPLOAD` removed, release builds refused without a DSN);
+  what remains is the founder setting the EAS variables and cutting the build. Until that build ships,
+  the closed test would still run blind — so cut it first. Highest-value remaining founder item.
 - **The OTA hotfix lane is repaired but not yet live** (`REL-01`, `REL-02` in `docs/KNOWN_BUGS.md`
   — both fixed). The live binary predates the fingerprint fix, so **the next store build is what
   switches OTA on**. Cut it before the closed test starts: until then every fix ships as a store
