@@ -2,8 +2,8 @@ import type { RestaurantListItem } from "@lynia/shared";
 import { tokens } from "@lynia/shared";
 import { isMerchantOpenNow } from "@lynia/shared";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
@@ -21,6 +21,13 @@ export default function RestaurantListScreen(): React.ReactElement {
   // stayed pinned at first render for practical purposes; a stale-open restaurant kept passing the
   // "Open now" filter after it actually closed.
   const now = useNow();
+
+  // B-O10: the "Open now" filter runs over whatever pages have loaded so far — with pagination
+  // in place, that's no longer necessarily the whole catalog. Auto-drain the rest while the filter
+  // is on so it never silently under-reports (mirrors search.tsx's identical need below).
+  useEffect(() => {
+    if (openOnly && feed.hasMore && !feed.isLoadingMore) feed.loadMore();
+  }, [openOnly, feed.hasMore, feed.isLoadingMore, feed.loadMore]);
 
   if (!restaurantsEnabled) {
     return (
@@ -94,6 +101,8 @@ export default function RestaurantListScreen(): React.ReactElement {
           // the app whose backing collection grows unbounded with merchant onboarding. FlatList windows
           // the concurrently-mounted/decoded RestaurantRow images to what's on-screen regardless of catalog
           // size, bounding the memory cost independent of the still-uncapped query.
+          // B-O10: the query itself is now cursor-paginated too — scrolling near the end requests the
+          // next page instead of the old single unbounded fetch.
           <FlatList
             data={visible}
             keyExtractor={(r) => r.id}
@@ -101,7 +110,19 @@ export default function RestaurantListScreen(): React.ReactElement {
               <RestaurantRow r={item} now={now} onPress={() => router.push(`/food/${item.id}`)} />
             )}
             showsVerticalScrollIndicator={false}
-            ListFooterComponent={<View style={{ height: tokens.space.xxl }} />}
+            onEndReached={() => {
+              if (feed.hasMore && !feed.isLoadingMore) feed.loadMore();
+            }}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              feed.isLoadingMore ? (
+                <View style={{ paddingVertical: tokens.space.md }}>
+                  <ActivityIndicator color={tokens.color.accent} />
+                </View>
+              ) : (
+                <View style={{ height: tokens.space.xxl }} />
+              )
+            }
           />
         ) : (
           <EmptyState icon="utensils" title="No kitchens are open right now" message="Try again later, or see everything including closed kitchens.">

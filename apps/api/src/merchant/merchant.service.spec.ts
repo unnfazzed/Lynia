@@ -526,6 +526,64 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(res.restaurants[0]!.location).toBeNull();
   });
 
+  /** Bare merchant row shape `toListItem` needs — real rows carry more Prisma columns, but the
+   *  service only ever reads these off what `findMany` hands back. */
+  function merchantRow(id: string) {
+    return { id, name: `Kitchen ${id}`, coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: null, hours: null, location: null };
+  }
+
+  it("listRestaurants (B-O10): orders by name/id and requests one extra row to detect hasMore", async () => {
+    let receivedArgs: Record<string, unknown> | undefined;
+    const s = svc({
+      merchant: {
+        findMany: async (args: Record<string, unknown>) => {
+          receivedArgs = args;
+          return [merchantRow("m1")];
+        },
+      },
+    });
+    await s.listRestaurants();
+    expect(receivedArgs).toMatchObject({
+      where: { pilotEnabled: true },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      take: 21, // RESTAURANTS_PAGE_SIZE (20) + 1
+    });
+    expect(receivedArgs?.cursor).toBeUndefined();
+    expect(receivedArgs?.skip).toBeUndefined();
+  });
+
+  it("listRestaurants (B-O10) returns nextCursor + trims to one page when more rows exist than the page size", async () => {
+    const rows = Array.from({ length: 21 }, (_, i) => merchantRow(`m${i}`));
+    const s = svc({ merchant: { findMany: async () => rows } });
+    const res = await s.listRestaurants();
+    expect(res.restaurants).toHaveLength(20);
+    expect(res.restaurants.map((r) => r.id)).toEqual(rows.slice(0, 20).map((r) => r.id));
+    expect(res.nextCursor).toBe("m19"); // the last row IN the trimmed page, not the lookahead row
+  });
+
+  it("listRestaurants (B-O10) omits nextCursor when the catalog fits in one page", async () => {
+    const rows = Array.from({ length: 5 }, (_, i) => merchantRow(`m${i}`));
+    const s = svc({ merchant: { findMany: async () => rows } });
+    const res = await s.listRestaurants();
+    expect(res.restaurants).toHaveLength(5);
+    expect(res.nextCursor).toBeUndefined();
+  });
+
+  it("listRestaurants (B-O10) passes a given cursor through as {id, skip:1} to resume the next page", async () => {
+    let receivedArgs: Record<string, unknown> | undefined;
+    const s = svc({
+      merchant: {
+        findMany: async (args: Record<string, unknown>) => {
+          receivedArgs = args;
+          return [merchantRow("m20")];
+        },
+      },
+    });
+    const res = await s.listRestaurants("m19");
+    expect(receivedArgs).toMatchObject({ cursor: { id: "m19" }, skip: 1 });
+    expect(res.restaurants[0]!.id).toBe("m20");
+  });
+
   it("getRestaurantMenu 404s a merchant that isn't pilotEnabled (even if it exists)", async () => {
     const s = svc({ merchant: { findFirst: async () => null } });
     await expect(s.getRestaurantMenu("m1")).rejects.toThrow(/not found/i);

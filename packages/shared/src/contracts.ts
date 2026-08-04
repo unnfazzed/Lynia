@@ -833,7 +833,12 @@ export const RestaurantListItem = z
   .strict();
 export type RestaurantListItem = z.infer<typeof RestaurantListItem>;
 
-export const RestaurantListResponse = z.object({ restaurants: z.array(RestaurantListItem) }).strict();
+// B-O10: `nextCursor` is additive (omitted = no more pages) — the same opaque-cursor shape as
+// `WalletLedgerPage`, so an already-deployed client reading only `.restaurants` keeps working
+// unchanged against a server that starts paginating.
+export const RestaurantListResponse = z
+  .object({ restaurants: z.array(RestaurantListItem), nextCursor: z.string().optional() })
+  .strict();
 export type RestaurantListResponse = z.infer<typeof RestaurantListResponse>;
 
 /** A single customer-facing menu item. `outOfStock` is derived server-side from `outOfStockUntil`

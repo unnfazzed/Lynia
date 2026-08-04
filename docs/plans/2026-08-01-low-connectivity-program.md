@@ -865,20 +865,86 @@ B-O5's zero-evidence backlog placeholder; see `docs/LC-STEER-2026-08-04.md` §4)
       worth making — **deprioritized below O7/O5 (2026-08-02 steer #2): blocked on hardware access
       this environment doesn't have, not on anything a firing can act on today.** (S)
 - [ ] B-O6 Native font embedding (config plugin) — KNOWN backlog; **needs native build train**. (L)
+      **INVESTIGATED, NOT LANDED (2026-08-04e) — real correctness trap found, deferred rather than
+      shipped blind.** `pip install fontTools` + a direct read of the committed subset assets'
+      `name` table (`apps/mobile/assets/fonts/Inter-*-subset.ttf`) shows the internal family names
+      don't match this app's `fontFamilies` keys at all: `Inter-400Regular-subset.ttf` → family
+      `"Inter"` (subfamily `Regular`), `Inter-600SemiBold-subset.ttf` → family `"Inter SemiBold"`,
+      `Inter-700Bold-subset.ttf` → family `"Inter"` again (subfamily `Bold`) — the app's
+      `fontFamilies` map expects `"Inter_400Regular"`/`"Inter_600SemiBold"`/`"Inter_700Bold"`, and
+      400/700 even collide on the SAME iOS family name today. `useFonts()`'s current JS-side load
+      works ONLY because `expo-font`'s `Font.loadAsync` dynamically aliases whatever key you hand it
+      to the loaded font data, independent of the file's own internal name table — the exact
+      decoupling this item's native-embedding path gives up. Confirmed against
+      `expo-font@13.0.4`'s actual plugin source (`plugin/build/withFontsAndroid.js` /
+      `withFontsIos.js`, fetched via unpkg, this SDK-52 app's installed version): the plugin's
+      `fonts` config is a bare string array (no per-entry `family` override field to route around
+      this), Android resolution keys off the copied asset's FILENAME (RN's standard
+      `assets/fonts/<name>.<ext>` convention — the plugin does a plain `path.basename` copy, nothing
+      fancier), iOS resolution keys off the font's INTERNAL name table (CoreText, via `UIAppFonts` —
+      the plugin only lists filenames in `Info.plist`, it doesn't touch the font's own metadata).
+      Landing the naive one-line "just add the plugin" version would have silently broken Inter
+      typography app-wide on iOS (400/700 colliding on one family name, none of the three resolving
+      under the name this app actually requests) — undetectable by `typecheck`/`lint`/`jest`, and
+      **unverifiable in this environment**: native builds are dormant per §2 (blocked on a founder
+      arming `EAS_RELEASE_ENABLED`), so there is no way here to prebuild/build and confirm a fix on
+      an actual OS font resolver, only to reason about it from source. **The concrete recipe for
+      whoever picks this up with real native-build access:** (1) rename the three committed assets to
+      `Inter_400Regular.ttf`/`Inter_600SemiBold.ttf`/`Inter_700Bold.ttf` (fixes Android's
+      filename-based resolution); (2) patch each file's `name` table (nameID 1/2/4/6/16/17 via
+      `fontTools.ttLib`) so Family/Full/PostScript all read the matching family key, giving each
+      weight its own distinct family instead of 400/700 sharing `"Inter"` (fixes iOS resolution,
+      verifiable programmatically by re-reading the table post-patch — no device needed for THIS
+      step); (3) teach `scripts/subset-fonts.mjs` to reproduce both of those on every regen, not just
+      a one-off hand-patch, or the next `pnpm regen` silently reverts it; (4) only THEN add the
+      `expo-font` config plugin + decide whether to drop the JS `useFonts()`/`appFontMap` `require()`s
+      entirely (the full win — removes the async load AND stops double-shipping the font bytes once
+      natively AND once via the Metro-bundled JS asset) or keep them as a belt-and-braces fallback;
+      (5) an actual on-device (or at minimum full `expo prebuild` + emulator) check before merge is
+      non-negotiable here given the blast radius (every `<Text>` in the app) — this is not a change
+      to auto-merge on green typecheck/lint/jest alone. Stays unchecked; re-attempted B-O10 instead
+      this firing (fully JS+API, no native/hardware dependency, actually landable here). See
+      `docs/LC-B-REPORT-2026-08-04e.md`.
 - [ ] ~~B-O4 Push-registration off the first-paint path~~ — **struck through (2026-08-02 steer #2):
       superseded by B-O7.** B-T1's evidence showed the render-blocking half was already fixed
       (ALR-04); the only remaining scope — bandwidth contention on cold boot — was rescoped into
       B-O7 verbatim by the same report. Keeping both as separate unchecked items would double-count
       one piece of work.
-- [ ] B-O10 **(new, B-T3 finding)** `GET /restaurants` (`apps/api/src/merchant/merchant.service.ts:313`
-      `listRestaurants`) has zero server-side cap — no `take`, no cursor, unlike every other list
-      endpoint (history 50, board 50, notifications 30). `LC-B07` (fixed this run) bounded the
-      client-side memory cost with a `FlatList`, but the query and the in-memory JS array of
-      restaurant data itself stay unbounded — worth a cursor-paginated `useInfiniteQuery` (mirroring
-      `useHistoryFeed`'s shape once it exists) as the corridor's merchant catalog grows past a page.
-      The one list in this lane that's actually uncapped, unlike `B-O1`/`B-O1b`'s already-server-
-      capped lists — the cursor-pagination half of `B-O1`'s original title turned out to belong here
-      instead, once `B-O1`'s own audit found history/board/notifications all already bounded. (M)
+- [x] B-O10 **DONE (2026-08-04e)** `GET /restaurants` (`apps/api/src/merchant/merchant.service.ts`
+      `listRestaurants`) had zero server-side cap — no `take`, no cursor, unlike every other list
+      endpoint (history 50, board 50, notifications 30). `LC-B07` (B-T3) had already bounded the
+      CLIENT-side memory cost with a `FlatList`, but the DB query + the in-memory JS array itself
+      stayed unbounded. Fixed with real cursor pagination, mirroring `WalletService.getLedger`'s
+      shape exactly (`take: PAGE_SIZE + 1` to detect `hasMore`, `cursor: {id}, skip: 1` to resume):
+      `RESTAURANTS_PAGE_SIZE = 20`, `orderBy: [{name:"asc"},{id:"asc"}]` (name isn't unique, so `id`
+      is the tiebreaker that makes paging past a same-named tie deterministic). `RestaurantListResponse`
+      grew an additive `nextCursor?` field (backward-compatible — an old client reading only
+      `.restaurants` keeps working against the new server). Mobile: `useRestaurantListFeed`
+      (`apps/mobile/src/query/use-restaurants.ts`) converted from a flat `useQuery` to
+      `useInfiniteQuery` (mirroring `useWalletLedger`), gaining `hasMore`/`isLoadingMore`/`loadMore`
+      alongside its existing `restaurants`/`showingStale`/warm-paint surface (unchanged for callers).
+      **The subtlety this item's own text didn't flag:** `food/search.tsx` filters CLIENT-SIDE over
+      `feed.restaurants` (there's no server-side search endpoint — see that file's own header
+      comment), and `food/index.tsx`'s "Open now" toggle does the same. Naively paginating the feed
+      while leaving those two consumers unchanged would have silently broken both — a restaurant past
+      page 1 would read as "no matches" / never show under "Open now" even though it exists,
+      regressing real functionality for zero user-visible reason once the catalog crosses one page.
+      Fixed by having BOTH screens auto-drain every remaining page (loop `loadMore()` while
+      `hasMore && !isLoadingMore`) the moment they actually need completeness — search: once a query
+      is typed; index: once "Open now" is toggled on — while the DEFAULT browse view (no filter, no
+      search) stays scroll-driven (`FlatList onEndReached` → `loadMore()`, footer spinner while
+      `isLoadingMore`), which is where the actual bandwidth/memory win lives. Every individual DB
+      query still stays bounded at `RESTAURANTS_PAGE_SIZE + 1` rows even when a screen ends up
+      draining the whole catalog sequentially — the server-side risk `B-O10` was actually about is
+      fixed regardless of which client behavior triggers the pages. Regression tests: API
+      (`merchant.service.spec.ts`) — orderBy/take/cursor args passed to Prisma, `nextCursor` present
+      only when a page is full and trimmed to the page size, a given cursor passed through as
+      `{id, skip:1}`; mobile — new `use-restaurants.test.tsx` (accumulate-across-pages / `hasMore`
+      shape, mirroring `use-wallet.test.tsx`'s pinned `useInfiniteQuery` pattern exactly), plus new
+      cases in `food/__tests__/index.test.tsx` (onEndReached → loadMore, footer spinner, Open-now
+      auto-drain) and `food/__tests__/search.test.tsx` (auto-drain gated on a non-empty query, not
+      firing while idle or once exhausted). `pnpm typecheck && pnpm lint && pnpm test` all green,
+      repo-wide. See `docs/LC-B-REPORT-2026-08-04e.md`.
 - [x] B-O12 **(2026-08-03c — see the B-O1b entry above, fixed in the same pass)** Capped the
       `boardNewOrder` prepend at `OPEN_ORDERS_CACHE_CAP = 50` (mirrors the server's own `take: 50`)
       instead of adding a periodic resync — simpler and sufficient to bound the cache regardless of
