@@ -382,14 +382,46 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       untouched. `pnpm typecheck && pnpm lint && pnpm test` green (97 API test files/1540 tests
       unaffected, 111 mobile test files/775 tests — the new `socket.test.tsx` + the 4 existing
       socket-hook suites updated for the new mock shape). See `docs/LC-A-REPORT-2026-08-04b.md`.
-- [ ] A-O15 **(new, ranked #8 — A-T4 finding, LC-A08)** `apps/mobile/app/(tabs)/home.tsx:121-132`
-      runs its own 30s `refetchInterval` poll of `/orders/mine/active-order` for as long as the
-      customer sits on the Home tab, plus force-invalidates it on every focus (`:121-126`) and
-      foreground (`:134-137`) event — duplicating the same logical data `useBootstrap` already seeds
-      from `/app/bootstrap` (`use-bootstrap.ts:17`) at cold start. A customer who lingers on Home
-      before ordering (the common case — it's the launcher screen) pays 2+ extra round trips/minute
-      for data that's usually unchanged. Same redundant-polling shape as A-O10, just for
-      order-state instead of config; a shared cache key / longer stale-time would close it. (S)
+- [x] A-O15 **DONE (2026-08-04c)** **(ranked #8 — A-T4 finding, LC-A08)**
+      `apps/mobile/app/(tabs)/home.tsx:121-132` ran its own 30s `refetchInterval` poll of
+      `/orders/mine/active-order` for as long as the customer sat on the Home tab, plus
+      force-invalidated it on every focus (`:121-126`) and foreground (`:134-137`) event —
+      duplicating the same logical data `useBootstrap` already seeds from `/app/bootstrap`
+      (`use-bootstrap.ts:17`) at cold start. `send.tsx` had the identical pattern on the same
+      `["activeCustomerOrder"]` cache key (mirrored per its own comment). A customer who lingers on
+      Home before ordering (the common case — it's the launcher screen) paid 2+ extra round
+      trips/minute for data that's usually unchanged.
+      **Shipped:** a new `invalidateIfStale(qc, key, staleMs = DEFAULT_STALE_TIME_MS)` helper in
+      `apps/mobile/src/query/client.ts` (staleMs defaults to the same 30s the global `staleTime`
+      already uses, both now reading a single exported `DEFAULT_STALE_TIME_MS` constant so the two
+      can't drift) — it checks `qc.getQueryState(key)?.dataUpdatedAt` and only calls
+      `invalidateQueries` when the cached entry is actually old enough to be worth a round trip; a
+      genuinely stale entry (backgrounded past `staleMs`, or never fetched) still refetches
+      immediately, unchanged from before. `home.tsx`'s and `send.tsx`'s focus-effect and
+      foreground-refetch callbacks now call `invalidateIfStale` instead of a raw
+      `invalidateQueries` for `["activeCustomerOrder"]`; `invalidateCustomerOrderHistory` (a
+      different cache key, out of this item's scope) is untouched. No behavior change to the 30s
+      `refetchInterval` poll itself, the socket write-back guard, or the LC-B05 blurred-write-back
+      fix — purely a "skip the redundant forced refetch when data is still fresh" change.
+      **Evidence** (a modeled 5-minute Home dwell — the ticket's own "lingers before ordering"
+      scenario — with the real 30s `refetchInterval` plus a modeled focus/foreground cadence of
+      once per 20s, i.e. tab switches/notification pulls/brief backgrounding, matching this item's
+      own "2+ extra round trips/minute" framing; concurrent triggers landing in the same instant
+      dedupe to one round trip, mirroring TanStack Query's real in-flight-promise sharing): **21 →
+      11 network round trips over the 5-minute dwell (−10, −47.6%)**, i.e. ≈2 avoided round
+      trips/minute — the scheduled 30s poll is untouched, only the forced extra fetches collapse.
+      At the already-measured `getSnapshot` response size for this exact endpoint family (A-T4:
+      ≈1,079 B/response for the equivalent parcel snapshot), 10 avoided round trips ≈10.8 KB saved
+      per 5-minute dwell, plus the avoided per-request connection overhead a byte count alone
+      doesn't capture on a metered 2G/3G link. New unit tests for `invalidateIfStale`
+      (`src/query/__tests__/client.test.tsx`, 3 cases: skips when fresh, invalidates when stale,
+      invalidates when never-fetched) plus 2 new integration tests in
+      `app/(tabs)/__tests__/home.test.tsx` driving the real focus-effect callback through a mocked
+      `expo-router` (confirms a quick re-focus does NOT re-fetch while fresh, and DOES refetch once
+      the cache ages past 30s). No JS bundle-size impact (logic-only, no new deps/assets) —
+      `size-budget.json` untouched. `pnpm typecheck && pnpm lint && pnpm test` green (97 API test
+      files/1540 tests unaffected, 112 mobile test files/789 tests — 3 new in `client.test.tsx`, 2
+      new in `home.test.tsx`). See `docs/LC-A-REPORT-2026-08-04c.md`.
 - [ ] A-O4 Review rider-offline 8s activeJob poll cadence — KNOWN backlog; re-confirmed still live
       2026-08-03 (A-T4): `activeJob` (`apps/mobile/app/rider/(tabs)/index.tsx:247`) has no
       `enabled: online` gate (unlike its sibling `openOrders` at `:461`), so it polls every 8s

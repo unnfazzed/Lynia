@@ -1,5 +1,6 @@
+import { QueryClient } from "@tanstack/react-query";
 import { ApiError } from "../../api/client";
-import { queryClient, shouldRetry } from "../client";
+import { DEFAULT_STALE_TIME_MS, invalidateIfStale, queryClient, shouldRetry } from "../client";
 
 describe("ApiError.retryable (the per-error half of the retry taxonomy)", () => {
   it("is true for a dropped link (status 0) and any 5xx", () => {
@@ -45,5 +46,40 @@ describe("shouldRetry", () => {
   it("treats an unexpected non-ApiError as transient", () => {
     expect(shouldRetry(0, new Error("weird"))).toBe(true);
     expect(shouldRetry(2, new Error("weird"))).toBe(false);
+  });
+});
+
+describe("invalidateIfStale (A-O15)", () => {
+  const KEY = ["activeCustomerOrder"];
+
+  it("skips invalidation when the cached entry is younger than staleMs — no redundant round trip", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(KEY, { id: "order-1" }); // dataUpdatedAt = now, e.g. just seeded by useBootstrap
+    const spy = jest.spyOn(qc, "invalidateQueries");
+
+    invalidateIfStale(qc, KEY, DEFAULT_STALE_TIME_MS);
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("invalidates immediately when the cached entry predates the staleness window", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(KEY, { id: "order-1" });
+    const state = qc.getQueryState(KEY);
+    if (state) state.dataUpdatedAt = Date.now() - (DEFAULT_STALE_TIME_MS + 1);
+    const spy = jest.spyOn(qc, "invalidateQueries");
+
+    invalidateIfStale(qc, KEY, DEFAULT_STALE_TIME_MS);
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: KEY });
+  });
+
+  it("invalidates immediately when the key has never been fetched (dataUpdatedAt defaults to 0)", () => {
+    const qc = new QueryClient();
+    const spy = jest.spyOn(qc, "invalidateQueries");
+
+    invalidateIfStale(qc, KEY, DEFAULT_STALE_TIME_MS);
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: KEY });
   });
 });
