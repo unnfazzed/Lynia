@@ -109,6 +109,57 @@ describe("useOrderSocket tracking (out-of-order position vs. REST refetch)", () 
   });
 });
 
+describe("useOrderSocket self-heal cadence (B-O5)", () => {
+  // Regression guard: connect_error immediately followed by connect (the exact shape of a
+  // reconnect flap in a dead zone) used to fire two independent full-cost refetches; the gate
+  // should collapse a burst like this into one.
+  it("only refetches the order snapshot once for a connect_error immediately followed by connect", () => {
+    const qc = new QueryClient();
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-7" />
+        </QueryClientProvider>,
+      );
+    });
+
+    const spy = jest.spyOn(qc, "invalidateQueries");
+    spy.mockClear();
+    act(() => {
+      mockLastSocket.trigger("connect_error");
+      mockLastSocket.trigger("connect");
+    });
+
+    const orderRefetches = spy.mock.calls.filter(
+      ([arg]) => JSON.stringify((arg as { queryKey: unknown }).queryKey) === JSON.stringify(orderKey("order-7")),
+    );
+    expect(orderRefetches).toHaveLength(1);
+  });
+
+  it("still refetches on a genuine order:status push even right after a connect (not reconnect noise)", () => {
+    const qc = new QueryClient();
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-8" />
+        </QueryClientProvider>,
+      );
+    });
+
+    act(() => {
+      mockLastSocket.trigger("connect");
+    });
+
+    const spy = jest.spyOn(qc, "invalidateQueries");
+    spy.mockClear();
+    act(() => {
+      mockLastSocket.trigger("order:status");
+    });
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: orderKey("order-8") });
+  });
+});
+
 describe("useOrderSocket Trip History self-heal (WD-022)", () => {
   // Regression guard: a delivered/cancelled/undelivered transition self-healed via this socket's
   // connect/order:status handlers (rather than through the party's own mutation onSuccess) used to

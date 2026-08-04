@@ -110,6 +110,66 @@ describe("useRiderBoard reconnect self-heal", () => {
   });
 });
 
+// Regression guard: connect_error immediately followed by connect (a reconnect flap in a dead
+// zone) used to fire two independent full-cost heal cascades; the gate should collapse a burst
+// like this into one, and let a later, properly-spaced reconnect heal again.
+describe("useRiderBoard self-heal cadence (B-O5)", () => {
+  it("only heals once for a connect_error immediately followed by connect", () => {
+    const qc = new QueryClient();
+    const invalidateSpy = jest.spyOn(qc, "invalidateQueries");
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness online={true} />
+        </QueryClientProvider>,
+      );
+    });
+
+    invalidateSpy.mockClear();
+    act(() => {
+      mockLastSocket.trigger("connect_error");
+      mockLastSocket.trigger("connect");
+    });
+
+    const openOrdersHeals = invalidateSpy.mock.calls.filter(
+      ([arg]) => JSON.stringify((arg as { queryKey: unknown }).queryKey) === JSON.stringify(["openOrders"]),
+    );
+    expect(openOrdersHeals).toHaveLength(1);
+  });
+
+  it("heals again once the gate window has elapsed", () => {
+    jest.useFakeTimers();
+    try {
+      const qc = new QueryClient();
+      const invalidateSpy = jest.spyOn(qc, "invalidateQueries");
+
+      act(() => {
+        create(
+          <QueryClientProvider client={qc}>
+            <Harness online={true} />
+          </QueryClientProvider>,
+        );
+      });
+
+      invalidateSpy.mockClear();
+      act(() => {
+        mockLastSocket.trigger("connect");
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["openOrders"] });
+
+      invalidateSpy.mockClear();
+      act(() => {
+        jest.advanceTimersByTime(5000);
+        mockLastSocket.trigger("connect_error");
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["openOrders"] });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
 // B-O12: nothing bounded the ["openOrders"] cache while the board socket stayed connected — the 15s
 // REST poll that would otherwise reset it to the server's own capped snapshot (`take: 50` in
 // orders.service.ts) is disabled the whole time `board.connected` is true, so `boardNewOrder`'s

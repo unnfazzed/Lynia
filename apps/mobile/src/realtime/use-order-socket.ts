@@ -14,6 +14,7 @@ import { offersKey, orderKey } from "../query/client";
 import { invalidateCustomerOrderHistory } from "../query/use-history-feed";
 import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
 import { acquireSocket, releaseSocket } from "./socket";
+import { createSelfHealGate } from "./self-heal-gate";
 
 /**
  * Live tracking (ET4). Joins the order room, applies "position" pushes to the React Query cache, and
@@ -76,11 +77,16 @@ export function useOrderSocket(
       invalidateCustomerOrderHistory(qc);
     };
     const refetchOffers = (): void => void qc.invalidateQueries({ queryKey: offersKey(orderId) });
+    // B-O5: connect/connect_error can both fire repeatedly, seconds apart, while the connection
+    // flaps — gate the reconnect-driven refetch so a flapping episode pays it once, not once per
+    // attempt. Real server pushes (order:status, presence:recovered) refetch ungated below — those
+    // are genuine events, not reconnect noise.
+    const gatedRefetchOrder = createSelfHealGate(refetchOrder);
 
     const onConnect = () => {
       socket.emit(WS_EVENTS.subscribeOrder, { orderId });
       setConnected(true);
-      refetchOrder();
+      gatedRefetchOrder();
     };
     socket.on("connect", onConnect);
 
@@ -88,7 +94,7 @@ export function useOrderSocket(
     socket.on("disconnect", onDisconnect);
     const onConnectError = () => {
       setConnected(false);
-      refetchOrder(); // self-heal a missed push without clearing the cache
+      gatedRefetchOrder(); // self-heal a missed push without clearing the cache
     };
     socket.on("connect_error", onConnectError);
 

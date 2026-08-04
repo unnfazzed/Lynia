@@ -111,6 +111,57 @@ describe("useRiderJobSocket reconnect self-heal", () => {
   // than through deliverM/cancelM/undeliverM's own onSuccess) used to invalidate only `["activeJob"]` —
   // Trip History and the earnings aggregate never refreshed, so a rider who'd checked either screen
   // moments earlier saw a stale total/list with no indication anything was stale.
+  // Regression guard: connect_error immediately followed by connect (a reconnect flap in a dead
+  // zone) used to fire two independent full-cost refetches; the gate should collapse a burst
+  // like this into one, and still let a genuine order:status push refetch right after.
+  it("only refetches once for a connect_error immediately followed by connect (B-O5)", () => {
+    const qc = new QueryClient();
+    const invalidateSpy = jest.spyOn(qc, "invalidateQueries");
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-7" />
+        </QueryClientProvider>,
+      );
+    });
+
+    invalidateSpy.mockClear();
+    act(() => {
+      mockLastSocket.trigger("connect_error");
+      mockLastSocket.trigger("connect");
+    });
+
+    const activeJobRefetches = invalidateSpy.mock.calls.filter(
+      ([arg]) => JSON.stringify((arg as { queryKey: unknown }).queryKey) === JSON.stringify(["activeJob"]),
+    );
+    expect(activeJobRefetches).toHaveLength(1);
+  });
+
+  it("still refetches on a genuine order:status push even right after a connect (B-O5, not reconnect noise)", () => {
+    const qc = new QueryClient();
+    const invalidateSpy = jest.spyOn(qc, "invalidateQueries");
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-8" />
+        </QueryClientProvider>,
+      );
+    });
+
+    act(() => {
+      mockLastSocket.trigger("connect");
+    });
+
+    invalidateSpy.mockClear();
+    act(() => {
+      mockLastSocket.trigger("order:status");
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["activeJob"] });
+  });
+
   it("also invalidates Trip History and the earnings summary on connect", () => {
     const qc = new QueryClient();
     const invalidateSpy = jest.spyOn(qc, "invalidateQueries");
