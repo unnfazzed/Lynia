@@ -294,7 +294,9 @@ describe("X2 · flags ON — food golden pass", () => {
     expect(placed.merchantGoodsTotal?.toFixed(2)).toBe(GOODS_TOTAL);
     // R-03 snapshot at placement — a later shop-setting change can't retroactively alter this order.
     expect(placed.merchantCashRule).toBe("collect_and_return");
-    expect(placed.debtStatus).toBeNull();
+    // A-O14: `toResponse()` omits this key entirely (rather than an explicit `null`) until the debt
+    // ledger actually opens — `?? null` treats "omitted" and "explicit null" as the same "not open yet".
+    expect(placed.debtStatus ?? null).toBeNull();
 
     const accepted = await foodOrders.acceptOrder(kitchen.ownerId, orderId, { prepMinutes: 15 });
     expect(accepted.merchantPhase).toBe("preparing");
@@ -386,8 +388,10 @@ describe("X2 · flags ON — food golden pass", () => {
     });
     const orderId = placed.id;
     // R-03: the cash rule is snapshotted only when it can apply — a WALLET order never carries one,
-    // which is precisely why openDebtIfNeeded no-ops for it later.
-    expect(placed.merchantCashRule).toBeNull();
+    // which is precisely why openDebtIfNeeded no-ops for it later. A-O14: omitted from the response
+    // (not an explicit `null`) since it never applies to a WALLET order — `?? null` treats both the
+    // same way.
+    expect(placed.merchantCashRule ?? null).toBeNull();
 
     // R-11: WALLET is the pay-before-cook rail, so accept parks at `awaiting_payment`, not `preparing`.
     const accepted = await foodOrders.acceptOrder(kitchen.ownerId, orderId, { prepMinutes: 15 });
