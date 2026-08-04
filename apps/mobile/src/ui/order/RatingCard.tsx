@@ -18,7 +18,7 @@ export function RatingCard({
   onArm,
   onUndo,
 }: {
-  saving: boolean;
+  saving: boolean | "queued";
   onRate: (score: number) => void;
   /** BH-06: fires the instant a rating is armed (before the undo window), so the caller can persist
    *  a durable "rating pending" marker — a setTimeout + ref alone don't survive an OS-level app kill,
@@ -81,7 +81,7 @@ export function RatingCard({
           <Pressable
             key={n}
             onPress={() => tapStar(n)}
-            disabled={saving}
+            disabled={!!saving}
             accessibilityRole="button"
             accessibilityLabel={`Rate ${n} star${n === 1 ? "" : "s"}`}
             accessibilityState={{ selected: n <= score }}
@@ -98,6 +98,8 @@ export function RatingCard({
           <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>Submitting {score}★…</Text>
           <Button label="Undo" variant="ghost" onPress={undoRate} />
         </View>
+      ) : saving === "queued" ? (
+        <Text style={{ fontSize: 14, color: tokens.color.muted }}>Waiting to reconnect — we&apos;ll save it once you&apos;re back online.</Text>
       ) : saving ? (
         <Text style={{ fontSize: 14, color: tokens.color.muted }}>Saving your rating…</Text>
       ) : (

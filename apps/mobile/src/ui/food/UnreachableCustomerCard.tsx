@@ -30,8 +30,8 @@ export function UnreachableCustomerCard({
   onReportNoShow: () => void;
   /** R-08: a distinct, separate failure — the customer WAS reached but refused/couldn't pay. */
   onReportRefused: () => void;
-  logPending: boolean;
-  reportPending: boolean;
+  logPending: boolean | "queued";
+  reportPending: boolean | "queued";
 }): React.ReactElement {
   return (
     <Card>
@@ -51,7 +51,7 @@ export function UnreachableCustomerCard({
         {callsNeeded > 0 ? ` · ${callsNeeded} more needed` : waitRemainingMs > 0 ? ` · ${formatCountdown(waitRemainingMs)} left to wait` : " · ready to report"}
       </Text>
       <Button label="Report a no-show" onPress={onReportNoShow} loading={reportPending} disabled={!eligible} />
-      <Button label="The customer refused the order" variant="ghost" onPress={onReportRefused} disabled={reportPending} />
+      <Button label="The customer refused the order" variant="ghost" onPress={onReportRefused} disabled={!!reportPending} />
     </Card>
   );
 }

@@ -8,6 +8,7 @@ import { acceptFoodDispatch, declineFoodDispatch, getFoodDispatchOffer } from ".
 import { foodOfferVariant } from "../../src/logic/food-rider-job";
 import { formatMoney } from "../../src/logic/money";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
+import { pendingOrQueued } from "../../src/query/client";
 import { Button, Card, EmptyState, ErrorText, haptic, Heading, Icon, Screen, SkeletonList, Sub } from "../../src/ui";
 import { CountdownRing, formatCountdown } from "../../src/ui/food/CountdownRing";
 import { LiveMap } from "../../src/ui/LiveMap";
@@ -139,8 +140,8 @@ export default function FoodOffer(): React.ReactElement {
           </Text>
         </Card>
 
-        <Button label="Accept" onPress={() => acceptM.mutate(offer.orderId)} loading={acceptM.isPending} disabled={pending} />
-        <Button label="Pass" variant="ghost" onPress={() => declineM.mutate(offer.orderId)} loading={declineM.isPending} disabled={pending} />
+        <Button label="Accept" onPress={() => acceptM.mutate(offer.orderId)} loading={pendingOrQueued(acceptM)} disabled={pending} />
+        <Button label="Pass" variant="ghost" onPress={() => declineM.mutate(offer.orderId)} loading={pendingOrQueued(declineM)} disabled={pending} />
         <ErrorText
           message={
             acceptM.error instanceof ApiError

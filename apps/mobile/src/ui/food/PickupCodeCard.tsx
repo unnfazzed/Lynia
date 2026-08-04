@@ -23,7 +23,7 @@ export function PickupCodeCard({
   code: string;
   onChangeCode: (code: string) => void;
   attempts: number;
-  pending: boolean;
+  pending: boolean | "queued";
   onConfirm: () => void;
   /** R-12: WALLET orders are already paid before dispatch — show the confirmed mark, not a due amount. */
   paid: boolean;

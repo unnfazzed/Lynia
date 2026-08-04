@@ -46,7 +46,7 @@ export function CounterOfferCard({
   ask: number;
   onAccept: () => void;
   onDecline: () => void;
-  loading: boolean;
+  loading: boolean | "queued";
   disabled: boolean;
   /** After a few seconds of `loading`, swap the Accept label so a slow link reads as "still trying". */
   slow?: boolean;

@@ -6,7 +6,7 @@
  * The fix: when the caller doesn't supply a live point, fall back to a best-effort OS last-known fix
  * (permission-check only, never prompts, never delays the alert).
  */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import React from "react";
 import renderer, { act } from "react-test-renderer";
@@ -61,6 +61,7 @@ beforeEach(() => {
 afterEach(() => {
   currentTree?.unmount();
   currentTree = null;
+  onlineManager.setOnline(true);
 });
 
 describe("SosControl location capture", () => {
@@ -107,5 +108,24 @@ describe("SosControl location capture", () => {
     tapSos(tree);
     await flush();
     expect(raiseSosMock).toHaveBeenCalledWith("o5", { lat: undefined, lng: undefined });
+  });
+});
+
+describe("SosControl offline honesty (ALR-09)", () => {
+  // The raise mutation keeps the default `networkMode:"online"`, so opening the sheet while offline
+  // PAUSES it instead of sending — pre-fix, the sheet's text branched only on isError/isPending, so a
+  // paused raise read as "Alerting the LyniaGo team…" forever: a false reassurance in exactly the
+  // moment (no signal, possible emergency) where that lie matters most. The call buttons themselves
+  // are unaffected — they're plain `tel:` links, never gated on the mutation.
+  it("shows an honest 'no signal' cue instead of claiming the alert is in flight while paused offline", async () => {
+    onlineManager.setOnline(false);
+    const tree = renderSos({ orderId: "o6", lat: -17.8, lng: 31.05 });
+    tapSos(tree);
+    await flush();
+    expect(raiseSosMock).not.toHaveBeenCalled();
+    const noSignal = tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.includes("No signal"));
+    expect(noSignal.length).toBeGreaterThan(0);
+    const alerting = tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.includes("Alerting the LyniaGo team"));
+    expect(alerting.length).toBe(0);
   });
 });

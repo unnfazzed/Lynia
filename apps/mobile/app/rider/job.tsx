@@ -14,6 +14,7 @@ import {
 import { clearPickupPhotoDraft } from "../../src/logic/pickup-photo-draft";
 import { ACTIVE, advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
+import { pendingOrQueued } from "../../src/query/client";
 import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
 import {
   acknowledgeHandback,
@@ -927,7 +928,7 @@ export default function RiderJob(): React.ReactElement {
             items={items}
             checkedItems={checkedItems}
             collectedCount={collectedCount}
-            pending={advanceM.isPending}
+            pending={pendingOrQueued(advanceM)}
             onToggle={toggleItem}
             onConfirm={confirmAndCollect}
             // §5c optional proof-of-pickup photo — the checklist owns capture/upload; never blocks collect.
@@ -935,11 +936,11 @@ export default function RiderJob(): React.ReactElement {
             onCantCollect={() => setBailing(true)}
           />
         ) : next ? (
-          <Button label={next.label} onPress={() => advanceM.mutate(next.to)} loading={advanceM.isPending} />
+          <Button label={next.label} onPress={() => advanceM.mutate(next.to)} loading={pendingOrQueued(advanceM)} />
         ) : null}
 
         {order.status === "en_route_dropoff" ? (
-          <DeliveryOtp code={code} onChangeCode={setCode} otpTries={otpTries} pending={deliverM.isPending} onConfirm={() => deliverM.mutate()} senderPhone={order.counterpartyPhone} />
+          <DeliveryOtp code={code} onChangeCode={setCode} otpTries={otpTries} pending={pendingOrQueued(deliverM)} onConfirm={() => deliverM.mutate()} senderPhone={order.counterpartyPhone} />
         ) : null}
 
         {/* R1: post-pickup, the rider needs a way to record a hand-off that can't happen — otherwise a
@@ -947,7 +948,7 @@ export default function RiderJob(): React.ReactElement {
             that commits the terminal `undelivered` state and frees the rider for the next job. */}
         {canUndeliver ? (
           undelivering ? (
-            <UndeliveredSheet orderId={orderId ?? undefined} canAttachProof={order.status === "en_route_dropoff"} pending={undeliverM.isPending} onSelect={(reason) => undeliverM.mutate(reason)} onDismiss={() => setUndelivering(false)} />
+            <UndeliveredSheet orderId={orderId ?? undefined} canAttachProof={order.status === "en_route_dropoff"} pending={pendingOrQueued(undeliverM)} onSelect={(reason) => undeliverM.mutate(reason)} onDismiss={() => setUndelivering(false)} />
           ) : (
             <Button label="Can't complete delivery" variant="ghost" onPress={() => setUndelivering(true)} />
           )
@@ -970,7 +971,7 @@ export default function RiderJob(): React.ReactElement {
             <BailSheet
               reason={bailReason}
               onChangeReason={setBailReason}
-              pending={cancelM.isPending}
+              pending={pendingOrQueued(cancelM)}
               onConfirm={() => cancelM.mutate()}
               onDismiss={() => setBailing(false)}
               currentStrikes={meQ.data?.rider?.cancelStrikes}

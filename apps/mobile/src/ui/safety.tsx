@@ -17,6 +17,7 @@ import {
   canSubmitReport,
   telUri,
 } from "../logic/safety";
+import { pendingOrQueued } from "../query/client";
 import { randomUuidV4, uuidV4FromSeed } from "../util";
 import { Button, ErrorText, Field, haptic, Icon } from "./index";
 
@@ -194,7 +195,7 @@ export function GetHelpControl({ orderId }: { orderId: string }): React.ReactEle
             <Button
               label="Send to our team"
               onPress={() => m.mutate()}
-              loading={m.isPending}
+              loading={pendingOrQueued(m)}
               disabled={!canSubmitIssue(type, desc)}
             />
           </>
@@ -324,7 +325,7 @@ export function ReportControl({
               </View>
             </Pressable>
             <ErrorText message={m.isError ? errText(m.error) : null} />
-            <Button label="Send report" onPress={() => m.mutate()} loading={m.isPending} disabled={!canSubmitReport(reason, note)} />
+            <Button label="Send report" onPress={() => m.mutate()} loading={pendingOrQueued(m)} disabled={!canSubmitReport(reason, note)} />
           </>
         )}
       </Sheet>
@@ -492,9 +493,11 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
                 promise real-world help is coming — the push is a fire-and-forget internal ops alert. */}
             {m.isError
               ? "We couldn't reach our team automatically — please call for help below."
-              : m.isPending
-                ? "Alerting the LyniaGo team…"
-                : "We've alerted the LyniaGo team. If you're in danger, call now."}
+              : m.isPaused
+                ? "No signal right now — we'll alert our team the instant you're back online. Please call for help below."
+                : m.isPending
+                  ? "Alerting the LyniaGo team…"
+                  : "We've alerted the LyniaGo team. If you're in danger, call now."}
           </Text>
         </View>
 
