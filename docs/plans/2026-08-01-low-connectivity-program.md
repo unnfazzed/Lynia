@@ -422,10 +422,33 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       `size-budget.json` untouched. `pnpm typecheck && pnpm lint && pnpm test` green (97 API test
       files/1540 tests unaffected, 112 mobile test files/789 tests — 3 new in `client.test.tsx`, 2
       new in `home.test.tsx`). See `docs/LC-A-REPORT-2026-08-04c.md`.
-- [ ] A-O4 Review rider-offline 8s activeJob poll cadence — KNOWN backlog; re-confirmed still live
-      2026-08-03 (A-T4): `activeJob` (`apps/mobile/app/rider/(tabs)/index.tsx:247`) has no
-      `enabled: online` gate (unlike its sibling `openOrders` at `:461`), so it polls every 8s
-      indefinitely even while the rider is fully offline with the board tab open. (S)
+- [x] A-O4 **DONE (2026-08-04d)** Review rider-offline 8s activeJob poll cadence — KNOWN backlog;
+      re-confirmed still live 2026-08-03 (A-T4): `activeJob` (`apps/mobile/app/rider/(tabs)/
+      index.tsx:247`) has no `enabled: online` gate (unlike its sibling `openOrders` at `:461`), so
+      it polls every 8s indefinitely even while the rider is fully offline with the board tab open.
+      (S)
+      **Shipped:** couldn't just copy `openOrders`'s `enabled: online` pattern — the "Go offline"
+      button (`onlineToggleCard`, `:709`) has no active-job guard, so a rider can go offline
+      mid-delivery and still needs this poll to track that job to completion, and a cold app open
+      while offline still needs its one-shot mount fetch to discover a leftover active job from a
+      prior session (this query has no bootstrap seed, unlike the customer parcel/food journeys).
+      So `enabled` stays default-on (the mount fetch always fires) and only the RECURRING interval
+      now gates: `refetchInterval: (query) => board.connected ? false : (online || query.state.data
+      != null ? 8000 : false)` — once a completed fetch confirms offline-with-no-job, the 8s
+      self-heal poll stops; it resumes the instant the rider goes online, and stays live the whole
+      time an active job is in flight regardless of online state. 2 new regression tests in
+      `app/rider/(tabs)/__tests__/index.test.tsx` (real timers, not fake — fake timers hung
+      indefinitely against this screen's real `Vibration`/haptics timers, an unrelated pre-existing
+      test-infra gap noted for a future pass): offline+no-job fetches once on mount then stays quiet
+      through 9s of real-time; offline+active-job keeps polling every 8s. This is a request-count
+      change, not a payload-shape one — no bundle-size impact, `size-budget.json` untouched.
+      **Evidence:** the ticket's own scenario — rider fully offline, board tab open, no active job —
+      polled every 8s indefinitely before this fix: 450 requests/hour, forever, for a bare `null`
+      response body (4 bytes) each time. After the fix that same scenario is 1 request total (the
+      mount fetch), then 0/hour — a 100% reduction in the exact case this item names. The
+      offline-with-an-active-job case (a rider who goes offline mid-delivery) is unchanged: still
+      450 requests/hour, now regression-tested rather than incidental. `pnpm typecheck && pnpm lint
+      && pnpm test` green. See `docs/LC-A-REPORT-2026-08-04d.md`.
 - [ ] A-O5 Cap/paginate `getSnapshot.events[]` (client+API seam) — KNOWN backlog; re-confirmed
       2026-08-03 (A-T4): `orders.service.ts:907` ships `events: order.events` with no `.slice()`/cap,
       inflating every parcel job-detail poll ~55B/event as a job progresses. (M)
