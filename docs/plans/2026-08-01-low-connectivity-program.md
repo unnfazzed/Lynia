@@ -1029,18 +1029,31 @@ direct continuation of the just-shipped C-O7's draft-persistence pattern on a si
       (parse/round-trip) + `pickup-checklist-photo-resume.test.tsx` (confirmed the kill-mid-upload
       case fails pre-fix). `pnpm --filter mobile typecheck && pnpm --filter mobile lint && pnpm
       --filter mobile test` all green (110 suites, 761 tests). See `docs/LC-C-REPORT-2026-08-04.md`. (S)
-- [ ] C-O8 **(#1 — C-T3 finding, LC-C11)** The become-a-rider KYC form's photo capture
-      (`apps/mobile/app/rider/become.tsx`'s `doUpload`) only commits `photoUri`/`photoKey` to the
-      durable `kyc-draft.ts` draft on a SUCCESSFUL upload — an app kill strictly between firing the
-      presigned-URL PUT and it resolving leaves the draft exactly as it was before the attempt (no
-      corruption, but also no memory that an upload was ever tried), so the rider must relaunch the
-      camera and re-capture from scratch instead of getting the same one-tap "Try again" resume a
-      network-only failure already gets via `failedAsset`. Persisting the captured asset's local uri
-      (and an "upload in flight" marker) to the draft BEFORE firing the PUT — mirroring C-O5's
-      "write the marker before the request" pattern — would let a relaunch offer "finish uploading
-      this photo" instead of a full re-shoot. Never blocks submission and no data is lost (the GCS
-      object was never completed either way), so this is a resume-convenience optimization, not a
-      defect. `apps/mobile/app/rider/become.tsx:86-114`, `apps/mobile/src/logic/kyc-draft.ts`. (S)
+- [x] C-O8 **DONE (2026-08-04b)** **(C-T3 finding, LC-C11)** The become-a-rider KYC form's photo
+      capture (`apps/mobile/app/rider/become.tsx`'s `doUpload`) only committed `photoUri`/`photoKey`
+      to the durable `kyc-draft.ts` draft on a SUCCESSFUL upload — an app kill strictly between
+      firing the presigned-URL PUT and it resolving left the draft exactly as it was before the
+      attempt (no corruption, but also no memory that an upload was ever tried), forcing a full
+      re-shoot on relaunch instead of the same one-tap "Try again" resume a network-only failure
+      already gets via `failedAsset`. **Shipped:** mirrors C-O5/C-O7's "persist the marker BEFORE
+      firing the request" pattern — `kyc-draft.ts`'s `KycDraft` gains a `pendingPhoto` field
+      (captured asset uri/dimensions/contentType, parsed defensively like every other draft field,
+      duplicated as a local content-type literal rather than importing `image-downscale.ts`'s type
+      to avoid recreating the exact dependency cycle `pickup-photo-draft.ts` already documents
+      avoiding); `doUpload` writes it via a `pendingPhotoRef` — synchronously, before the downscale/
+      presign/PUT chain runs — and clears it only once the upload actually lands, independent of the
+      form's other-field persistence effect so an unrelated field edit can't clobber it. A mount-time
+      hydrate restores it into `failedAsset` (the same "we didn't confirm your last photo uploaded"
+      cue `PickupChecklist`/C-O7 uses) whenever a draft is found, so a relaunch mid-upload offers a
+      one-tap resume with the SAME captured asset instead of a fresh camera shot. No new SecureStore
+      key — rides in the existing `KYC_DRAFT_KEY`, already wiped by `device-state.ts`'s shared-device
+      sign-out sweep, so no BH-17-class gap to close here. Regression tests: `src/logic/__tests__/
+      kyc-draft.test.ts` (pendingPhoto parse/round-trip/malformed-input cases) + new `app/rider/
+      __tests__/become-photo-resume.test.tsx` (confirmed the kill-mid-upload case fails pre-fix — no
+      persisted marker meant zero resume affordance on the next mount — plus a clear-on-success
+      case). `pnpm typecheck && pnpm lint && pnpm test` all green across the monorepo (mobile: 111
+      suites / 775 tests; API: 97 files / 1540 tests). `apps/mobile/app/rider/become.tsx`,
+      `apps/mobile/src/logic/kyc-draft.ts`. See `docs/LC-C-REPORT-2026-08-04b.md`. (S)
 - [ ] C-O9 **(re-ranked to #2, was #8 — 2026-08-04 steer)** **(C-T4 finding, LC-C13)**
       `NewOrderTakeover.submitAccept`/`submitReject`'s catch block sets a local error string and
       re-enables the buttons on a 409 (or any rejection) but never calls `refetch()` — unlike the
