@@ -140,7 +140,14 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const qc = useQueryClient();
   const { config } = useWalletConfig();
   const { wallet, isLoading, isFetching, isError, refetch } = useWallet();
-  const { page, isLoading: ledgerLoading, refetch: refetchLedger } = useWalletLedger();
+  const {
+    entries: allEntries,
+    isLoading: ledgerLoading,
+    refetch: refetchLedger,
+    hasMore: hasMoreLedger,
+    isLoadingMore: ledgerLoadingMore,
+    loadMore: loadMoreLedger,
+  } = useWalletLedger();
   const pendingTopupBanner = usePendingTopupReconciliation();
   const [filter, setFilter] = React.useState<LedgerFilter>("all");
 
@@ -167,7 +174,6 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
 
   const floor = config?.floor ?? 2;
   const balance = wallet?.balance ?? 0;
-  const allEntries = page?.entries ?? [];
   const entries = filterLedgerEntries(allEntries, filter);
   const belowFloor = balance < floor;
   const gettingLow = !belowFloor && balance < floor + 1;
@@ -290,6 +296,13 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
                   ))}
                 </Card>
               )}
+              {/* LC-B-SIB-2: the server caps every page at 25 entries; before this, `nextCursor` was
+                  never read, so older deductions vanished with no signal anything was missing. */}
+              {!ledgerLoading && hasMoreLedger ? (
+                <View style={{ marginTop: tokens.space.sm }}>
+                  <Button label="Load older" variant="ghost" onPress={loadMoreLedger} loading={ledgerLoadingMore} />
+                </View>
+              ) : null}
             </View>
 
             {/* Honest-copy card */}

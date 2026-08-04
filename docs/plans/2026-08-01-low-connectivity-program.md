@@ -1327,6 +1327,27 @@ direct continuation of the just-shipped C-O7's draft-persistence pattern on a si
       statuses for the same order stay separate notifications. New tests in `push.spec.ts`
       (`buildFcmMessage` mapping) and `notifications.service.spec.ts` (`notifyOrderStatus` stamps
       the key). See docs/LC-D-REPORT-2026-08-04.md.
+- [x] D-O4 **DONE (2026-08-04d)** **`LC-B-SIB-2`** (sibling-flagged by Lane B's 2026-08-03 tooling
+      misfire): the rider Money tab's `useWalletLedger()` always called `getWalletLedger()` with no
+      cursor — `WalletService.getLedger` caps every response at 25 entries and returns a
+      `nextCursor`, but the cursor was never read anywhere in the mobile app, so a rider with more
+      than 25 lifetime wallet events permanently lost visibility into older deductions with zero
+      on-screen signal anything was missing (contradicting the screen's own "every deduction shows
+      up here" copy). This is the mobile-client instance of the same truncation shape `D07` already
+      fixed on the admin side. All 6 Lane D checklist sections were otherwise fully checked (every
+      D-D0/D-T/D-O item done) when this run started; per the dedup protocol's sibling-sweep read,
+      this explicitly-Lane-D-flagged OPEN ledger row stood in for a fresh audit/optimize increment
+      rather than self-disabling with known off-checklist Lane D work still outstanding.
+      **Shipped:** `useWalletLedger()` (`apps/mobile/src/query/use-wallet.ts`) now uses
+      `useInfiniteQuery`, accumulating every fetched page into `entries` and exposing
+      `hasMore`/`isLoadingMore`/`loadMore()`; the Money tab (`apps/mobile/app/rider/(tabs)/money.tsx`)
+      renders a "Load older" ghost-button beneath the ledger card whenever `hasMore` is true. No API
+      change needed — `getWalletLedger(cursor)` and `WalletLedgerPage.nextCursor` already existed,
+      just were never read. New `src/query/__tests__/use-wallet.test.tsx` (3 tests: first page loads
+      with no cursor and surfaces `hasMore`; `loadMore()` requests the prior page's own cursor and
+      accumulates rather than replaces entries; `hasMore` goes false once the server stops returning
+      a cursor). `pnpm typecheck && pnpm lint && pnpm test` green (full monorepo: 6/6 packages,
+      1540 API tests + 797 mobile tests unaffected elsewhere). See docs/LC-D-REPORT-2026-08-04d.md.
 
 ## §6 The loops
 
