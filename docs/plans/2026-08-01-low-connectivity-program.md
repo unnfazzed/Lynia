@@ -968,16 +968,24 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       the affected real paths (confirmed it throws the hook-mismatch error against the pre-fix
       code). `pnpm --filter mobile typecheck && pnpm --filter mobile lint && pnpm --filter mobile
       test` all green (740 mobile tests). See `docs/LC-C-REPORT-2026-08-03g.md`.
-- [ ] C-O7 **(C-T2 finding, LC-C09)** `PickupChecklist`'s optional proof-of-pickup photo
-      capture/upload state (`photoUri`/`photoBusy`/`failedPhoto`) lives only in local component
-      state — an app kill between capture and the attach POST completing silently drops the
-      in-progress/failed photo with no retry affordance surviving relaunch, unlike the item ticks
-      themselves (which persist via `savePickupChecklistDraft`). Never gates "Confirm collected"
-      and no order data or money is at risk — purely a lost "nice to have" evidence photo. Mirror
-      the durable-marker pattern C-O5 proposes for the delivery terminal: persist the chosen
-      asset uri + upload stage to SecureStore before firing so a relaunch mid-upload can offer
-      "finish adding this photo" instead of silently starting over.
-      `apps/mobile/src/ui/rider/PickupChecklist.tsx:44`. (S)
+- [x] C-O7 **DONE (2026-08-04)** **(C-T2 finding, LC-C09)** `PickupChecklist`'s optional
+      proof-of-pickup photo capture/upload state (`photoUri`/`photoBusy`/`failedPhoto`) lived only
+      in local component state — an app kill between capture and the attach POST completing
+      silently dropped the in-progress/failed photo with no retry affordance surviving relaunch,
+      unlike the item ticks themselves (which persist via `savePickupChecklistDraft`). Never gated
+      "Confirm collected" and no order data or money was at risk — purely a lost "nice to have"
+      evidence photo. Fixed by mirroring C-O5's durable-marker pattern: new
+      `apps/mobile/src/logic/pickup-photo-draft.ts` persists the captured asset uri/dimensions/
+      contentType to SecureStore BEFORE the downscale/PUT/attach chain fires, cleared only once
+      the attach lands; a mount-time effect restores it into `failedPhoto` (with an explicit
+      "we didn't confirm your last photo uploaded" cue) whenever the draft's `orderId` matches the
+      current order, so a relaunch mid-upload offers a one-tap resume with the SAME asset instead
+      of forcing a fresh camera shot. Wired into `device-state.ts`'s shared-device sign-out wipe
+      from the start (avoiding a BH-17-class leak) and cleared in `job.tsx`'s `confirmAndCollect`.
+      `apps/mobile/src/ui/rider/PickupChecklist.tsx:44`. Regression tests: `pickup-photo-draft.test.ts`
+      (parse/round-trip) + `pickup-checklist-photo-resume.test.tsx` (confirmed the kill-mid-upload
+      case fails pre-fix). `pnpm --filter mobile typecheck && pnpm --filter mobile lint && pnpm
+      --filter mobile test` all green (110 suites, 761 tests). See `docs/LC-C-REPORT-2026-08-04.md`. (S)
 - [ ] C-O1 **(re-ranked to #4, was #1)** ALR-09: offline mutation UX (explicit queued/failed/retry
       states — never a silent drop) — KNOWN ledger. (M)
 - [ ] C-O2 **(re-ranked to #5, was #2)** Central client network policy: one module defining

@@ -10,6 +10,7 @@ import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
 import { JOB_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../logic/rider-bid-draft";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../logic/pickup-checklist-draft";
+import { PICKUP_PHOTO_DRAFT_KEY } from "../logic/pickup-photo-draft";
 import { RESTAURANT_LIST_SNAPSHOT_KEY } from "../net/restaurant-list-store";
 import { FOOD_CART_SNAPSHOT_KEY } from "../net/food-cart-store";
 import { FOOD_ORDER_SNAPSHOT_KEY } from "../net/food-order-store";
@@ -533,6 +534,10 @@ export async function clearDeviceState(): Promise<void> {
       // next user on a shared device — every other per-order/per-session draft key here already is wiped;
       // this one was missed when the draft itself was added.
       SecureStore.deleteItemAsync(PICKUP_CHECKLIST_DRAFT_KEY),
+      // C-O7 (LC-C09): the pending/failed pickup-photo resume marker (a local file uri) must not
+      // rehydrate for the next user on a shared device — added alongside PICKUP_CHECKLIST_DRAFT_KEY
+      // above, wired here from the start rather than repeating the BH-17/BH-23 gap.
+      SecureStore.deleteItemAsync(PICKUP_PHOTO_DRAFT_KEY),
       // D1 (browse): the cached restaurant list carries no PII, but the food cart draft is the
       // customer's own in-progress basket + notes — must not rehydrate onto the next user's account
       // on a shared device, same reasoning as HISTORY_SNAPSHOT_KEY above.

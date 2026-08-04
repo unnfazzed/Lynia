@@ -1,10 +1,11 @@
 import { tokens } from "@lynia/shared";
 import * as ImagePicker from "expo-image-picker";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
 import { attachPickupPhoto } from "../../api/orders";
 import { requestPickupPhotoUpload, uploadImage } from "../../api/uploads";
 import { downscaleForUpload, type UploadImageSource } from "../../logic/image-downscale";
+import { clearPickupPhotoDraft, loadPickupPhotoDraft, savePickupPhotoDraft } from "../../logic/pickup-photo-draft";
 import { Button, Card, Icon, Sub } from "../index";
 
 /* Pickup item verification — between "arrived at pickup" and "collected", the rider ticks the
@@ -50,12 +51,35 @@ export function PickupChecklist({
   const [failedPhoto, setFailedPhoto] = useState<UploadImageSource | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
+  // C-O7 (LC-C09): on mount, restore a photo capture that never finished uploading/attaching before
+  // the app was killed — same asset, offered as a one-tap resume instead of forcing a fresh camera
+  // shot. Only restores if the draft belongs to THIS order (a stale draft from a prior job is ignored
+  // and gets overwritten by the next capture here, same as the sibling pickup-checklist-draft.ts).
+  useEffect(() => {
+    if (!orderId) return;
+    let alive = true;
+    void loadPickupPhotoDraft().then((d) => {
+      if (alive && d && d.orderId === orderId) {
+        setFailedPhoto({ uri: d.uri, width: d.width, height: d.height, contentType: d.contentType });
+        setPhotoError("We didn't confirm your last photo uploaded — tap to finish adding it.");
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [orderId]);
+
   // Capture → downscale → signed PUT → attach. Every failure lands in the calm inline state below —
   // never a blocking alert, and never any effect on the collect CTA.
   const uploadPhoto = async (asset: UploadImageSource): Promise<void> => {
     if (!orderId) return;
     setPhotoBusy(true);
     setPhotoError(null);
+    // C-O7 (LC-C09): persist the captured asset BEFORE the network chain fires (mirrors C-O5's
+    // "write the marker before the request" pattern) — an app kill anywhere in downscale/PUT/attach
+    // below then leaves this draft in place for the mount effect above to offer a resume, instead of
+    // silently losing all memory that a capture was ever attempted.
+    void savePickupPhotoDraft({ orderId, uri: asset.uri, width: asset.width, height: asset.height, contentType: asset.contentType });
     try {
       const prepared = await downscaleForUpload(asset);
       const { uploadUrl, key, headers } = await requestPickupPhotoUpload(prepared.contentType);
@@ -65,9 +89,11 @@ export function PickupChecklist({
       // capture — this preview stays mounted for the rest of the pickup flow on a 1-2GB device.
       setPhotoUri(prepared.uri);
       setFailedPhoto(null);
+      void clearPickupPhotoDraft();
     } catch {
       setFailedPhoto(asset);
       setPhotoError("Couldn't add the photo — you can still collect and continue.");
+      // Draft stays (saved above) — a genuinely failed attempt is exactly what "Try again" resumes.
     } finally {
       setPhotoBusy(false);
     }
