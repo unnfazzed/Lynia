@@ -116,7 +116,7 @@ resilience seams ([resilience]).
 > Ordering within a lane = priority. The weekly steer re-ranks; lanes always take the FIRST
 > unchecked item. Effort: S <1 day, M 1–3 days, L multi-day / needs native build or founder.
 
-### Lane A — size & data diet (Opus 5, `0 3 * * 1-6`)
+### Lane A — size & data diet (Opus 5, `0 2 * * 0`)
 
 **Audit territory:**
 - [x] A-T1 Fresh size baseline **(Day-0)**: `expo export` measured Android total **7.13 MiB**
@@ -488,7 +488,7 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       specifically, care that a missed push can't silently understate what's owed (money-adjacent;
       sensitive-lane doctrine questions apply once a server diff is on the table). (M/L)
 
-### Lane B — Go-class runtime perf (Opus 5, `0 4 * * *`)
+### Lane B — Go-class runtime perf (Opus 5, `0 4 * * 0`)
 
 **Audit territory (confirmed Day-0 defects FIRST — fix each this run with a regression test, then the sweeps):**
 - [x] B-D0 **CONFIRMED CRITICAL — FIXED (2026-08-02)** — `apps/merchant/app/components/KitchenConnectionProvider.tsx:112` unbounded render loop (unmemoized context value + tick-bumping alarm effect); `value`/`alarm` now memoized with `useMemo`, and `ring()`/`silence()`/`testRing()`/`arm()` only bump the `alarmTick` re-render trigger on an actual controller-state transition instead of unconditionally (the real trigger — the queue screen's `[unansweredCount, alarm]` alarm-sync effect re-fired itself forever). Render-count regression pin in `KitchenConnectionProvider.test.tsx` (confirmed it hangs against the pre-fix code). Ledger: LC-B04. See `docs/LC-DAY0-AUDIT-2026-08-01.md`, `docs/LC-B-REPORT-2026-08-02.md`.
@@ -1011,7 +1011,7 @@ re-confirming the same blocker instead of landing work; see `docs/LC-STEER-2026-
       instead of adding a periodic resync — simpler and sufficient to bound the cache regardless of
       shift length. Regression test in `use-rider-board.test.tsx`.
 
-### Lane C — offline & 2G resilience (Opus 4.8, `0 6 * * *`)
+### Lane C — offline & 2G resilience (Opus 4.8, `0 6 * * 0`)
 
 **Confirmed Day-0 defects — FIX FIRST (one per firing, before the territories below; regression test each; C01 is sensitive-auth → 4-question treatment). See `docs/LC-DAY0-AUDIT-2026-08-01.md`.**
 - [x] C-D0a **CONFIRMED CRITICAL — FIXED (interactive, 2026-08-01)** — `apps/api/src/common/redis.ts`: opt-in `REDIS_FAIL_FAST` (`enableOfflineQueue:false` + 2s `commandTimeout`) applied to the OTP/rate-limit, MicroCache-L2 and tracking geo/position request-path clients; the Socket.IO pub/sub adapter keeps the default. Regression spec in `redis.spec.ts` (asserts the fail-fast config + that a disconnected client rejects rather than pends). Residual: full per-caller rollout is done for the hot paths; the health probe keeps its existing 2s race. See docs/LC-C-REPORT-2026-08-01.md.
@@ -1331,7 +1331,7 @@ steer): C-O10 still correctly last per its own "needs a >15-minute outage to mat
       pulling the current token from `AuthContext`/session storage on each (re)connection attempt
       instead of the value captured at `acquireSocket(token)` call time. (S)
 
-### Lane D — journey & soundness sweep (Opus 4.8, `0 7 * * *`)
+### Lane D — journey & soundness sweep (Opus 4.8, `0 8 * * 0`)
 
 **Confirmed Day-0 defects — FIX FIRST (one per firing, before the territories below; regression test each; D06 is sensitive-money → 4-question treatment). See `docs/LC-DAY0-AUDIT-2026-08-01.md`.**
 - [x] D-D0a **CONFIRMED CRITICAL — FIXED (LC loop D, 2026-08-02)** — `apps/merchant/app/components/queue/NewOrderTakeover.tsx`: `submitAccept`/`submitReject` now reset `submitting` on the success path (previously only on error), and `QueueBoard` renders both `NewOrderTakeover` and `NoRiderHoldTakeover` with `key={order.id}` so the takeover fully remounts at the order boundary instead of reusing the same instance across orders — closing the leak for `unavailable`/`showReject` too. Regression test in the new `QueueBoard.test.tsx` (jsdom + Testing Library, newly wired for the merchant app — verified it fails on the pre-fix code and passes after). See docs/LC-D-REPORT-2026-08-02.md.

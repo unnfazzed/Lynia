@@ -1,4 +1,9 @@
-# Build loops — Restaurants + Send joint launch (temporary)
+# Build loops — Restaurants + Send joint launch (temporary — COMPLETE, history only)
+
+> **Status: finished 2026-07-31.** All five lanes ticked their checklists and self-terminated;
+> the five triggers no longer exist (`update_trigger` on each recorded ID returns *not found*).
+> They are out of the schedule entirely — `docs/routines/routine-chain.md` no longer carries them.
+> This file is kept as the record of what ran, and the cron column below is historical.
 
 Version-controlled mirror of the five **build-loop** trigger prompts created 2026-07-28 per
 `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6. These are **temporary
