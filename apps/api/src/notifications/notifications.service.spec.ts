@@ -88,6 +88,16 @@ describe("NotificationsService — order-status notices", () => {
     ]);
   });
 
+  it("stamps a per-order-status collapseKey (D-O3) so a retried/duplicated send replaces the same tray entry instead of stacking a second one", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "r1" }]);
+
+    await service.notifyOrderStatus("o1", "assigned");
+
+    expect(push.sendEach).toHaveBeenCalledWith([expect.objectContaining({ collapseKey: "order:o1:assigned" })]);
+  });
+
   it("notifies the CUSTOMER on lifecycle steps like `delivered`", async () => {
     const { prisma, push, service } = makeDeps();
     prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });

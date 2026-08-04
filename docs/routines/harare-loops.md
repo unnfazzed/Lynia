@@ -248,6 +248,17 @@ your own trigger ("LC loop D — journey & soundness sweep") via list_triggers +
 enabled:false, record it, reconcile docs/routines/harare-loops.md.
 ```
 
+**Status (2026-08-04): Lane D checklist COMPLETE.** Every Day-0 defect (D-D0a–f), audit territory
+(D-T1–D-T5), and optimization item (D-O1–O3) in the program doc §5 Lane D section is checked — see
+`docs/LC-D-REPORT-2026-08-04.md`. Per SELF-DISABLE this trigger should now be disabled, but the
+firing session that closed out D-O3 had no `list_triggers`/`update_trigger`/`create_trigger` tool
+in its toolset (only session-local `CronCreate`/`CronList`/`CronDelete`, a different in-memory job
+store that can't reach this account-level Routine) and could not disable it directly. **Needs
+either a session with `update_trigger` available, or the founder disabling "LC loop D — journey &
+soundness sweep" directly in the claude.ai Routines UI.** Until disabled, any further firing is a
+safe no-op per the program doc (nothing left unchecked to audit or optimize) — wasted tokens, not
+a correctness risk.
+
 ---
 
 ## LC steer — weekly Fable replan (`0 3 * * 0`)

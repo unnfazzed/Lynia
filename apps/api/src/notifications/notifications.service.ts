@@ -129,7 +129,14 @@ export class NotificationsService {
       for (const aud of notice.to) {
         const id = aud === "customer" ? order.customerId : order.riderId;
         if (!id || id === excludeProfileId) continue;
-        await this.send([id], { title: notice.title, body: notice.body, data: { orderId, status, to: aud, ...data } });
+        // D-O3: a caller retrying/duplicating the same order+status transition (no idempotency key
+        // upstream) must replace this recipient's still-undelivered tray entry, not stack a second one.
+        await this.send([id], {
+          title: notice.title,
+          body: notice.body,
+          data: { orderId, status, to: aud, ...data },
+          collapseKey: `order:${orderId}:${status}`,
+        });
       }
     } catch (err) {
       this.logger.warn(`notifyOrderStatus(${orderId}, ${status}) failed: ${(err as Error).message}`);
@@ -393,7 +400,7 @@ export class NotificationsService {
    *  callers ignore it). Private; all callers pre-wrap in try/catch. */
   private async send(
     profileIds: string[],
-    msg: { title: string; body: string; data?: Record<string, string>; ttlSeconds?: number },
+    msg: { title: string; body: string; data?: Record<string, string>; ttlSeconds?: number; collapseKey?: string },
   ): Promise<Set<string>> {
     if (profileIds.length === 0) return new Set();
     const tokens = await this.prisma.deviceToken.findMany({
@@ -404,9 +411,16 @@ export class NotificationsService {
 
     // One batched provider call (FCM sendEach, chunked ≤500) instead of a per-token round-trip fan-out.
     // Results align with `tokens` order, so a dead token is pruned — and a delivery credited — by position.
-    // `ttlSeconds` (when set by a time-critical caller) rides through to the adapter's provider TTL.
+    // `ttlSeconds`/`collapseKey` (when set by the caller) ride through to the adapter's provider fields.
     const results = await this.push.sendEach(
-      tokens.map((t) => ({ token: t.token, title: msg.title, body: msg.body, data: msg.data, ttlSeconds: msg.ttlSeconds })),
+      tokens.map((t) => ({
+        token: t.token,
+        title: msg.title,
+        body: msg.body,
+        data: msg.data,
+        ttlSeconds: msg.ttlSeconds,
+        collapseKey: msg.collapseKey,
+      })),
     );
 
     // A profile counts as delivered if the provider accepted at least one of its devices (`ok`). A
