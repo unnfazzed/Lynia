@@ -256,14 +256,15 @@ in its toolset (only session-local `CronCreate`/`CronList`/`CronDelete`, a diffe
 store that can't reach this account-level Routine) and could not disable it directly. **The
 2026-08-04 LC steer session confirmed the same gap** (`ToolSearch` for `list_triggers`/
 `update_trigger`/`create_trigger`/`trigger` returned no matching tool) — this is now the case in
-every LC steer session run so far (08-02, 08-02b, 08-03, 08-03b, 08-04) plus the D-O3 firing
-itself. **Needs either a session with `update_trigger` available, or the founder disabling "LC
-loop D — journey & soundness sweep" directly in the claude.ai Routines UI** — this can no longer
-be resolved automatically from inside this account's current session tool surface. Until disabled,
-any further firing is a safe no-op per the program doc (nothing left unchecked to audit or
-optimize) — wasted tokens, not a correctness risk, though the sprint-cadence revert tonight
-(2026-08-04 23:00 UTC) drops it from 8×/day back to a daily 07:00 UTC no-op, shrinking the waste
-until someone can flip the switch.
+every LC steer session run so far (08-02, 08-02b, 08-03, 08-03b, 08-04, 08-04b) plus the D-O3
+firing itself. **Needs either a session with `update_trigger` available, or the founder disabling
+"LC loop D — journey & soundness sweep" directly in the claude.ai Routines UI** — this can no
+longer be resolved automatically from inside this account's current session tool surface. Until
+disabled, any further firing is a safe no-op per the program doc (nothing left unchecked to audit
+or optimize) — wasted tokens, not a correctness risk. The sprint-cadence revert
+(2026-08-04 23:00 UTC) had not yet fired as of the 08-04b steer (17:30 UTC) — still expected
+tonight, dropping Lane D from 8×/day back to a daily 07:00 UTC no-op until someone can flip the
+switch.
 
 ---
 

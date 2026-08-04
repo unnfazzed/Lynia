@@ -32,7 +32,7 @@ permanent standing routines.
 |---|---|---|---|
 | Hermes JS bundle (OTA cost) | 6,455,000 B budget vs ~5.0 MB measured 2026-07-20 | `apps/mobile/size-budget.json` + `ci.yml mobile-bundle-size` (fails PRs over budget) | A-T1 ratchets to measured+5%; budgets only move DOWN in LC PRs; a legitimate raise needs same-PR justification |
 | Android export total (JS+assets) | 12,690,000 B budget | same | same |
-| Native per-device download | unmeasured (EAS/`mobile-release.yml` dormant) | A-T5 (2026-08-03) confirmed the delivery config (AAB split) + shrink levers (R8/resources) are already optimal and the measurement path already exists in `mobile-release.yml`; the number itself stays blocked on a founder arming `EAS_RELEASE_ENABLED` | no new native dep without stated size cost |
+| Native per-device download | **first real measurement (2026-08-04, steer):** `EAS_RELEASE_ENABLED` is now armed and shipping — release `.aab` build `c248fbf5` (v0.17.9) measured **32,546,001 B (31.04 MiB) raw, pre-split** (`docs/APP-SIZE.md` "First shipped artifact"). Play's actual per-device download is smaller (AAB split by ABI/density/language) but not yet recorded here — pull it from Play Console → App bundle explorer once internal testers install. | A-T5 (2026-08-03) confirmed the delivery config (AAB split) + shrink levers (R8/resources) are already optimal; the measurement path (`mobile-release.yml`'s AAB-size step) is what produced this number | no new native dep without stated size cost; A-O8/B-O6 (native-build-dependent items) are no longer blocked on EAS arming itself, but still need an actual on-device or emulator check this environment can't perform (B-O6's 2026-08-04e investigation confirms why — see Lane B) |
 | Session data (core journeys) | baselined 2026-08-03 (A-T4, field-by-field trace, not live capture): customer parcel journey ≈181 KB/26min (172 KB resp + 9.3 KB req; WS-primary tracking); customer food journey ≈360-405 KB/26min (poll-only, no socket exists for food orders); rider steady-state hour ≈173-422 KB (parcel job leg) or ≈422-653 KB (food job leg), range driven by RUM sampling assumption | report-only, no CI gate yet; A-T4 traced every request+response against the real service/response-builder code, accounting for `apps/api/src/main.ts:92-99`'s gzip/brotli compression (≥1 KB bodies only) and the client's ETag conditional-GET layer (`apps/mobile/src/api/client.ts:91-118`) | provisional ≤150 KB / ≤300 KB/h targets retired as unrealistic pre-fix; new evidence-based near-term targets: customer parcel journey ≤120 KB, customer food journey ≤150 KB, rider steady-state hour ≤200 KB/h — A-O9 (food dual-poll, 2026-08-03f) and A-O6 (RUM sampling, 2026-08-03g) have both now landed; re-baselining against these targets in practice is the weekly steer's job; A-O14/A-O7 add further headroom |
 | Cold start | warm-paint shipped for home/profile/history/wallet | B-T1 baselines the boot path | targets: warm boot paints with ZERO network round-trips before first frame; cold boot interactive in ≤3 sequential round-trips |
 
@@ -618,7 +618,12 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
 `docs/LC-STEER-2026-08-02b.md` §4 for rationale; re-ranked again 2026-08-04 steer — B-O16/B-O17/B-O18
 promoted to #1-3: they're B-T4's freshly-evidenced, concrete-file:line findings on the
 always-mounted merchant kitchen tablet, exactly the Go-class hardware this lane targets, vs.
-B-O5's zero-evidence backlog placeholder; see `docs/LC-STEER-2026-08-04.md` §4):**
+B-O5's zero-evidence backlog placeholder; re-ranked again 2026-08-04b steer — B-O13/B-O14/B-O15
+promoted ahead of B-O3/B-O6: both B-O3 (needs on-device systrace) and B-O6 (2026-08-04e's own
+investigation confirmed it needs an actual on-device/emulator check to verify a native-font-family
+fix) are genuinely blocked on resources this environment doesn't have, while B-O13/14/15 are real,
+S-effort, and fully landable here — putting two dead-end items first was costing a firing's worth of
+re-confirming the same blocker instead of landing work; see `docs/LC-STEER-2026-08-04b.md` §4):**
 - [x] B-O1 History/notifications lists → FlatList **(2026-08-03b)**. Converted both to FlatList
       (this lane's third and fourth FlatList adoptions after B-T3's restaurant catalog), windowing
       the concurrently-mounted rows to what's on-screen — a real scroll-smoothness win on Go-class
@@ -878,7 +883,29 @@ B-O5's zero-evidence backlog placeholder; see `docs/LC-STEER-2026-08-04.md` §4)
       against the pre-fix code (2 self-heals per burst instead of 1) before landing. `pnpm
       typecheck && pnpm lint && pnpm test` all green (1540 API + 803 mobile tests). See
       `docs/LC-B-REPORT-2026-08-04d.md`.
-- [ ] B-O3 Overlap/defer boot keystore reads — KNOWN backlog. **B-T1 evidence:** `loadSession()`
+- [ ] B-O13 **(new, B-T3 finding)** **(re-ranked to #1, was #4 — 2026-08-04b steer, see rationale
+      above)** `expiredOrderIds`/`takenOrderIds` `Set`s in
+      `apps/mobile/src/realtime/use-rider-board.ts:35,38` grow for the rider's whole online session
+      with no eviction (every `bid:expired`/`order:taken` push adds an id, nothing ever removes
+      one) — geo-scoped so realistic growth over a shift is tens-to-low-hundreds of short strings;
+      real but the absolute footprint is unlikely to matter on its own. Same shape as the now-fixed
+      `LC-B08` (`sentOffers`); low priority on its own, worth revisiting if bundled with `B-O12`. (S)
+- [ ] B-O14 **(new, B-T3 finding)** **(re-ranked to #2, was #5 — 2026-08-04b steer)** Merchant
+      kitchen board's `ackSecuredIds`/`ackHoldIds` `Set`s
+      (`apps/merchant/app/components/queue/QueueBoard.tsx:108-109,143,188`) never shrink for the
+      always-mounted kitchen tablet's whole shift — bounded in practice by one restaurant's daily
+      order volume (tens to a few hundred), so low real-world impact; noted for completeness, not
+      worth a dedicated fix on its own. (S)
+- [ ] B-O15 **(new, B-T3 finding)** **(re-ranked to #3, was #6 — 2026-08-04b steer)** Delivery-code
+      device index (`CODE_INDEX_KEY`,
+      `apps/mobile/src/auth/device-state.ts:38,73-74`) appends one order id per completed order for
+      the life of the install with no cap, cleared only on sign-out — disk growth (SecureStore), not
+      JS-heap, driven by ordinary order volume over weeks/months rather than a session/socket loop.
+      Trivial `.slice(-N)` fix matching the same file's own `HANDBACK_ACK_MAX = 20` pattern. Lowest
+      priority of this batch — not a memory-pressure risk, just inconsistent with the rest of the
+      file's discipline. (S)
+- [ ] B-O3 **(re-ranked to #4, was #1 — 2026-08-04b steer)** Overlap/defer boot keystore reads —
+      KNOWN backlog. **B-T1 evidence:** `loadSession()`
       (`src/auth/session.ts`) and `loadOnboardingSeen()`/`loadRolePreference()`
       (`src/auth/device-state.ts`, read from `app/index.tsx`) already fire concurrently at the
       JS-effect level — same commit, no artificial await-chain between them. The remaining risk is
@@ -887,7 +914,8 @@ B-O5's zero-evidence backlog placeholder; see `docs/LC-STEER-2026-08-04.md` §4)
       timestamps across the 3 native calls on an A53-class device) before further JS-side change is
       worth making — **deprioritized below O7/O5 (2026-08-02 steer #2): blocked on hardware access
       this environment doesn't have, not on anything a firing can act on today.** (S)
-- [ ] B-O6 Native font embedding (config plugin) — KNOWN backlog; **needs native build train**. (L)
+- [ ] B-O6 **(re-ranked to #5, was #2 — 2026-08-04b steer, see rationale above B-O13)** Native font
+      embedding (config plugin) — KNOWN backlog; **needs native build train**. (L)
       **INVESTIGATED, NOT LANDED (2026-08-04e) — real correctness trap found, deferred rather than
       shipped blind.** `pip install fontTools` + a direct read of the committed subset assets'
       `name` table (`apps/mobile/assets/fonts/Inter-*-subset.ttf`) shows the internal family names
@@ -972,24 +1000,6 @@ B-O5's zero-evidence backlog placeholder; see `docs/LC-STEER-2026-08-04.md` §4)
       `boardNewOrder` prepend at `OPEN_ORDERS_CACHE_CAP = 50` (mirrors the server's own `take: 50`)
       instead of adding a periodic resync — simpler and sufficient to bound the cache regardless of
       shift length. Regression test in `use-rider-board.test.tsx`.
-- [ ] B-O13 **(new, B-T3 finding)** `expiredOrderIds`/`takenOrderIds` `Set`s in
-      `apps/mobile/src/realtime/use-rider-board.ts:35,38` grow for the rider's whole online session
-      with no eviction (every `bid:expired`/`order:taken` push adds an id, nothing ever removes
-      one) — geo-scoped so realistic growth over a shift is tens-to-low-hundreds of short strings;
-      real but the absolute footprint is unlikely to matter on its own. Same shape as the now-fixed
-      `LC-B08` (`sentOffers`); low priority on its own, worth revisiting if bundled with `B-O12`. (S)
-- [ ] B-O14 **(new, B-T3 finding)** Merchant kitchen board's `ackSecuredIds`/`ackHoldIds` `Set`s
-      (`apps/merchant/app/components/queue/QueueBoard.tsx:108-109,143,188`) never shrink for the
-      always-mounted kitchen tablet's whole shift — bounded in practice by one restaurant's daily
-      order volume (tens to a few hundred), so low real-world impact; noted for completeness, not
-      worth a dedicated fix on its own. (S)
-- [ ] B-O15 **(new, B-T3 finding)** Delivery-code device index (`CODE_INDEX_KEY`,
-      `apps/mobile/src/auth/device-state.ts:38,73-74`) appends one order id per completed order for
-      the life of the install with no cap, cleared only on sign-out — disk growth (SecureStore), not
-      JS-heap, driven by ordinary order volume over weeks/months rather than a session/socket loop.
-      Trivial `.slice(-N)` fix matching the same file's own `HANDBACK_ACK_MAX = 20` pattern. Lowest
-      priority of this batch — not a memory-pressure risk, just inconsistent with the rest of the
-      file's discipline. (S)
 
 ### Lane C — offline & 2G resilience (Opus 4.8, `0 6 * * *`)
 
@@ -1131,8 +1141,10 @@ promoted ahead of C-O1/C-O2/C-O4: they're concrete, S-effort, evidenced-this-wee
 completed C-T1/C-T2 traces, vs. C-O1/C-O2/C-O4's broader M-effort backlog scope with no fresh
 measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17; re-ranked again 2026-08-04
 steer — C-O9 promoted ahead of C-O1/C-O2/C-O4 for the identical reason; C-O8 stays first, the
-direct continuation of the just-shipped C-O7's draft-persistence pattern on a sibling screen; see
-`docs/LC-STEER-2026-08-04.md` §4):**
+direct continuation of the just-shipped C-O7's draft-persistence pattern on a sibling screen; C-O8,
+C-O9, C-O1, C-O2 all landed since — **only C-O4/C-O10 remain, no reorder needed (2026-08-04b
+steer): C-O10 still correctly last per its own "needs a >15-minute outage to matter" caveat**; see
+`docs/LC-STEER-2026-08-04b.md` §4):**
 - [x] C-O5 **DONE (2026-08-03f)** **(C-T1 finding, LC-C07)** Rider delivery-confirm terminal marker
       (`saveRiderJobTerminal`) was written only after a response (success or 409-reconciled)
       arrived — an app kill strictly between sending `confirmDelivery` and processing any
@@ -1559,7 +1571,13 @@ and the chain cap returns to 20.
   KNOWN cost/capacity items; founder applies.
 - CDN/edge layer (Cloud CDN or H3-capable edge) — deliberate DNS-only posture stands
   (`docs/CLOUDFLARE.md`); revisit post-launch.
-- EAS arming — unlocks A-T5 per-device download measurement, A-O8, B-O6 (the native build train).
+- ~~EAS arming — unlocks A-T5 per-device download measurement, A-O8, B-O6 (the native build
+  train).~~ **Cleared 2026-08-04: `EAS_RELEASE_ENABLED` is armed and shipping** (`docs/APP-SIZE.md`
+  — first store build live on the internal track, §2's native-download row now has a real number).
+  A-O8/B-O6 remain unlanded not because the pipeline is dormant but because this environment has no
+  on-device/emulator to verify a native-font or image-cache change against before merge (B-O6's
+  2026-08-04e investigation found a real correctness trap that a build-without-verify would have
+  shipped blind) — a narrower blocker than before, still not one an LC firing can close alone.
 - SMS/OTP provider redundancy + carrier-level deliverability monitoring beyond D-O2's telemetry
   (vendor choice + cost).
 - Server-driven WebView channel for help/KYC-instruction content (DoorDash lesson 9) — product
