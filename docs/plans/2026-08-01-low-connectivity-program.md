@@ -352,16 +352,36 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       timed poll only when the board socket is down (the self-heal safety net) — confirmed by
       reading the current hook wiring, not just the interval literal. No code change needed; item
       closed as already-satisfied rather than re-implemented.
-- [ ] A-O17 **(new, ranked #7 — A-T4 finding, LC-A07)** Three independent Socket.IO connections
-      (`apps/mobile/src/realtime/socket.ts:12-13`'s `createSocket()` opens a fresh `io(...)` per
-      call, no sharing/singleton) run concurrently during an active rider job — the board socket
-      (`use-rider-board.ts:56`, stays mounted since the `(tabs)` screen isn't unmounted when
-      `/rider/job` is pushed on top), the job socket (`use-rider-job-socket.ts:48`), and the
-      location-stream socket (`use-rider-location.ts:64`) — each with its own transport handshake
-      and its own ~25s engine.io ping/pong keepalive (no `pingInterval`/`pingTimeout` override found
-      server-side), tripling background keepalive chatter and tripling reconnect-driven self-heal
-      REST refetches on any blip. A multiplexed single connection (Socket.IO namespaces on one
-      transport) would collapse this to one handshake + one keepalive stream. (M)
+- [x] A-O17 **DONE (2026-08-04b)** **(ranked #7 — A-T4 finding, LC-A07)** Three independent
+      Socket.IO connections (`createSocket()` opened a fresh `io(...)` per call, no sharing/
+      singleton) ran concurrently during an active rider job — the board socket (stays mounted since
+      the `(tabs)` screen isn't unmounted when `/rider/job` is pushed on top), the job socket, and
+      the location-stream socket — each with its own transport handshake and its own ~25s engine.io
+      ping/pong keepalive, tripling background keepalive chatter and reconnect-driven self-heal REST
+      refetches on any blip.
+      **Shipped:** `socket.ts`'s `createSocket()` replaced with a ref-counted `acquireSocket(token)`/
+      `releaseSocket(token, socket)` pair, keyed by token — concurrent acquirers for the same token
+      share one underlying `Socket`/transport, and it only actually disconnects once every acquirer
+      has released it. All four realtime hooks (board/job/location, plus the customer-side
+      `use-order-socket.ts` for consistency) now acquire/release instead of create/disconnect; every
+      `socket.on(event, handler)` across them was converted to a NAMED handler so cleanup can
+      `.off(event, handler)` precisely instead of a blind `disconnect()` (which would kill the shared
+      connection out from under a sibling hook) or a blind `.off(event)` (which would strip another
+      hook's listener for a shared event name like `"connect"`). Net effect during an active rider
+      job: 3 `io()` handshakes + 3 independent keepalive streams collapse to 1 of each — verified via
+      6 new ref-counting unit tests in `apps/mobile/src/realtime/__tests__/socket.test.tsx` (mocking
+      `io()` directly): same-token concurrent acquires return the identical socket and trigger
+      exactly one `io()` call; the connection survives until the last release; a released-then-
+      reacquired token opens a fresh connection; different tokens never share one; a stray/mismatched
+      or over-release is a safe no-op. Accepted, documented tradeoff: `subscribeOrder`'s order-room
+      join can now outlive the job hook's own unmount while a sibling hook keeps the shared
+      connection alive (no `unsubscribe:order` server event exists) — harmless, since a terminal
+      order emits no further room traffic and the stray membership clears on the eventual full
+      disconnect; closing it precisely would need a new server-side WS contract, left for a future
+      pass. No JS bundle-size impact (logic-only, no new deps/assets) — `size-budget.json`
+      untouched. `pnpm typecheck && pnpm lint && pnpm test` green (97 API test files/1540 tests
+      unaffected, 111 mobile test files/775 tests — the new `socket.test.tsx` + the 4 existing
+      socket-hook suites updated for the new mock shape). See `docs/LC-A-REPORT-2026-08-04b.md`.
 - [ ] A-O15 **(new, ranked #8 — A-T4 finding, LC-A08)** `apps/mobile/app/(tabs)/home.tsx:121-132`
       runs its own 30s `refetchInterval` poll of `/orders/mine/active-order` for as long as the
       customer sits on the Home tab, plus force-invalidates it on every focus (`:121-126`) and
@@ -1083,23 +1103,28 @@ direct continuation of the just-shipped C-O7's draft-persistence pattern on a si
       keepalive stream instead of three). A-O17 carries the concrete file:line evidence from
       A-T4's 2026-08-03 trace, so Lane A owns the implementation; keeping both unchecked would
       double-count one piece of work across two lanes. The resilience benefit ships automatically
-      when A-O17 lands — no separate C-side work needed.
+      when A-O17 lands — no separate C-side work needed. **A-O17 landed 2026-08-04b** (see Lane A
+      §5 and `docs/LC-A-REPORT-2026-08-04b.md`) — this item's resilience benefit (fewer handshakes
+      to re-establish after a drop) is now live; nothing further needed here.
 - [ ] C-O4 **(re-ranked to #5, was #6)** MicroCache serve-stale-on-upstream-failure mode (soft/hard
       dual TTL; candidates: nearby-count, bootstrap; NEVER money/assignment/auth) (DoorDash
       lesson 8). (M)
 - [ ] C-O10 **(#6 — C-T5 finding, LC-C14)** `apps/mobile/src/realtime/socket.ts`'s
-      `createSocket` passes a captured `auth: { token }` OBJECT to `io()` — Socket.IO's own
-      internal auto-reconnect (a bare network drop, no React involved) replays that same object on
-      every retry, so a dead zone outlasting the 900s access-token TTL leaves the socket retrying
-      with a now-expired token until an unrelated REST call (any hook's own `connect_error`
-      handler, or a poll fallback) happens to 401 and rotates the session, which only then tears
-      down and rebuilds the socket via the hook's `token` dependency. Self-heals (every hook's
+      `acquireSocket` (renamed from `createSocket` by A-O17, 2026-08-04b — same underlying `io()`
+      call site, now ref-counted/shared rather than one-per-hook, but the auth-object capture below
+      is unchanged by that refactor) passes a captured `auth: { token }` OBJECT to `io()` —
+      Socket.IO's own internal auto-reconnect (a bare network drop, no React involved) replays that
+      same object on every retry, so a dead zone outlasting the 900s access-token TTL leaves the
+      socket retrying with a now-expired token until an unrelated REST call (any hook's own
+      `connect_error` handler, or a poll fallback) happens to 401 and rotates the session, which
+      only then tears down and rebuilds the socket via the hook's `token` dependency (now also
+      releasing/re-acquiring the shared connection — see A-O17). Self-heals (every hook's
       `connect_error` handler already fires a REST call on each retry) and needs a >15min outage
-      to matter, so this is a hardening item, not a same-run defect. Fix: switch `createSocket` to
+      to matter, so this is a hardening item, not a same-run defect. Fix: switch `acquireSocket` to
       the `auth` CALLBACK pattern `apps/merchant/app/lib/queue-socket.ts`'s
       `createMerchantQueueSocket` already uses (`(cb) => cb({ token: <freshest token> })`),
       pulling the current token from `AuthContext`/session storage on each (re)connection attempt
-      instead of the value captured at `createSocket(token)` call time. (S)
+      instead of the value captured at `acquireSocket(token)` call time. (S)
 
 ### Lane D — journey & soundness sweep (Opus 4.8, `0 7 * * *`)
 

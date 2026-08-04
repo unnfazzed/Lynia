@@ -13,7 +13,7 @@ import {
   stopRiderBackgroundUpdates,
 } from "./background-location-task";
 import { type Fix, PendingFix } from "./location-buffer";
-import { createSocket } from "./socket";
+import { acquireSocket, releaseSocket } from "./socket";
 
 /**
  * While the rider has an active job, stream GPS to the order room (ET4) so the customer's tracker
@@ -53,6 +53,20 @@ export function useRiderLocationStream(orderId: string | null): { permissionDeni
     let cancelled = false;
     let connected = false;
     const buffered = new PendingFix();
+    // A-O17: shared with the board/job sockets during an active job (see use-rider-board.ts's
+    // matching comment) — acquired/released, not created/disconnected outright. Named so cleanup
+    // can `.off()` precisely instead of a blind `disconnect()`, which would kill the connection out
+    // from under whichever of the other two hooks is still using it.
+    const onConnect = () => {
+      connected = true;
+      // Push the last-known position immediately so the tracker (and the heartbeat) catch up the
+      // moment we reconnect, instead of waiting for the next GPS fix up to timeInterval away.
+      const pending = buffered.take();
+      if (pending) socket?.emit(WS_EVENTS.riderLocation, pending);
+    };
+    const onDisconnect = () => {
+      connected = false;
+    };
 
     void (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -61,17 +75,9 @@ export function useRiderLocationStream(orderId: string | null): { permissionDeni
         setPermissionDenied(true);
         return;
       }
-      socket = createSocket(token);
-      socket.on("connect", () => {
-        connected = true;
-        // Push the last-known position immediately so the tracker (and the heartbeat) catch up the
-        // moment we reconnect, instead of waiting for the next GPS fix up to timeInterval away.
-        const pending = buffered.take();
-        if (pending) socket?.emit(WS_EVENTS.riderLocation, pending);
-      });
-      socket.on("disconnect", () => {
-        connected = false;
-      });
+      socket = acquireSocket(token);
+      socket.on("connect", onConnect);
+      socket.on("disconnect", onDisconnect);
       const send = (fix: Fix): void => {
         // Connected: emit live. Disconnected: hold only the freshest fix (don't emit, or Socket.IO
         // would queue the whole stale trail) and let the reconnect handler flush it.
@@ -107,7 +113,11 @@ export function useRiderLocationStream(orderId: string | null): { permissionDeni
       // restart for a new job; see background-location-task.ts).
       setBackgroundFixForwarder(null);
       void stopRiderBackgroundUpdates();
-      socket?.disconnect();
+      if (socket) {
+        socket.off("connect", onConnect);
+        socket.off("disconnect", onDisconnect);
+        releaseSocket(token, socket);
+      }
     };
   }, [orderId, token]);
 

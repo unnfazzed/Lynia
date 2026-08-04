@@ -13,7 +13,7 @@ import { useAuth } from "../auth/auth-context";
 import { offersKey, orderKey } from "../query/client";
 import { invalidateCustomerOrderHistory } from "../query/use-history-feed";
 import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
-import { createSocket } from "./socket";
+import { acquireSocket, releaseSocket } from "./socket";
 
 /**
  * Live tracking (ET4). Joins the order room, applies "position" pushes to the React Query cache, and
@@ -50,7 +50,11 @@ export function useOrderSocket(
     if (!orderId || !token) return;
     setActiveRole("customer"); // this is the customer tracking surface — label apifetch RUM accordingly
     lastPositionRef.current = null; // a new order/token means a new socket lifetime — don't carry a stale ref across it
-    const socket: Socket = createSocket(token);
+    // A-O17: routed through the shared acquire/release primitive for consistency with the rider-side
+    // hooks (see use-rider-board.ts) — this screen is normally the only consumer for its token, but
+    // sharing when it isn't (customer + rider role on one device) costs nothing and avoids a second
+    // divergent socket-lifecycle pattern in the module.
+    const socket: Socket = acquireSocket(token);
     // After a refetch settles, re-apply the last known live position if it's still fresher than what
     // just came back over REST — a stale response landing after a fresher push must not roll the
     // rider's pin backward on the map.
@@ -73,51 +77,57 @@ export function useOrderSocket(
     };
     const refetchOffers = (): void => void qc.invalidateQueries({ queryKey: offersKey(orderId) });
 
-    socket.on("connect", () => {
+    const onConnect = () => {
       socket.emit(WS_EVENTS.subscribeOrder, { orderId });
       setConnected(true);
       refetchOrder();
-    });
+    };
+    socket.on("connect", onConnect);
 
-    socket.on("disconnect", () => setConnected(false));
-    socket.on("connect_error", () => {
+    const onDisconnect = () => setConnected(false);
+    socket.on("disconnect", onDisconnect);
+    const onConnectError = () => {
       setConnected(false);
       refetchOrder(); // self-heal a missed push without clearing the cache
-    });
+    };
+    socket.on("connect_error", onConnectError);
 
     socket.on(WS_EVENTS.orderStatus, refetchOrder); // invalidate is authoritative — no optimistic write needed
 
     // F-01: the assigned rider bailed and the job was auto re-broadcast at the same price as a NEW
     // order. The server pushes this to THIS (now cancelled) order's room; move the customer to the
     // fresh auction instead of stranding them on a dead "cancelled" terminal.
-    socket.on(WS_EVENTS.orderRebroadcast, (raw: unknown) => {
+    const onOrderRebroadcast = (raw: unknown) => {
       const parsed = OrderRebroadcastEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId) return;
       rebroadcastRef.current?.(parsed.data.newOrderId);
-    });
+    };
+    socket.on(WS_EVENTS.orderRebroadcast, onOrderRebroadcast);
 
     // C5 / 3·b1: the RIDER's app has gone dark past the escalation threshold. Escalate the customer's
     // "live paused" treatment to a "call your rider" notice. Ignore role:"customer" — that's this
     // app's OWN staleness, meant for the rider's screen, not a self-escalation.
-    socket.on(WS_EVENTS.presenceStale, (raw: unknown) => {
+    const onPresenceStale = (raw: unknown) => {
       const parsed = PresenceStaleEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId || parsed.data.role !== "rider") return;
       riderStaleRef.current?.();
-    });
+    };
+    socket.on(WS_EVENTS.presenceStale, onPresenceStale);
 
     // BH-25: mirror of the above — the rider's dark period ended (either a fresh GPS fix resumed, which
     // the `position` handler below already reconciles, or the server self-healed a heartbeat-lag false
     // positive with no GPS push coming). Refetch so a self-heal (no `position` push) still picks up the
     // freshly-touched `rider.updatedAt` and clears the "rider offline" card — otherwise it stayed stuck
     // until the ride's next status change.
-    socket.on(WS_EVENTS.presenceRecovered, (raw: unknown) => {
+    const onPresenceRecovered = (raw: unknown) => {
       const parsed = PresenceRecoveredEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId || parsed.data.role !== "rider") return;
       refetchOrder();
-    });
+    };
+    socket.on(WS_EVENTS.presenceRecovered, onPresenceRecovered);
 
     // New live-auction signal: the offer set changed. Payload is signal-only; refetch the offer list.
-    socket.on(WS_EVENTS.offersChanged, (e: OffersChangedEvent) => {
+    const onOffersChanged = (e: OffersChangedEvent) => {
       // Only OUR order counts — a mismatched (or empty) event is not a glass-to-glass for this screen,
       // so neither refetch nor sample it (else a stray/leaked event records latency for a render that
       // never happened).
@@ -129,9 +139,10 @@ export function useOrderSocket(
         if (ms == null) noteDropped();
         else enqueue("offer_glass", ms, "customer");
       }
-    });
+    };
+    socket.on(WS_EVENTS.offersChanged, onOffersChanged);
 
-    socket.on(WS_EVENTS.position, (p: { lat: number; lng: number; at: string }) => {
+    const onPosition = (p: { lat: number; lng: number; at: string }) => {
       // RUM: glass-to-glass from the fix's server `at` to now (skew-clamped).
       if (p?.at) {
         const ms = clampGlassSample(Date.now(), p.at);
@@ -145,10 +156,20 @@ export function useOrderSocket(
         const rider = prev.rider ?? { profileId: "", currentLat: null, currentLng: null, updatedAt: null };
         return { ...prev, rider: { ...rider, currentLat: p.lat, currentLng: p.lng, updatedAt: p.at } };
       });
-    });
+    };
+    socket.on(WS_EVENTS.position, onPosition);
 
     return () => {
-      socket.disconnect();
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
+      socket.off(WS_EVENTS.orderStatus, refetchOrder);
+      socket.off(WS_EVENTS.orderRebroadcast, onOrderRebroadcast);
+      socket.off(WS_EVENTS.presenceStale, onPresenceStale);
+      socket.off(WS_EVENTS.presenceRecovered, onPresenceRecovered);
+      socket.off(WS_EVENTS.offersChanged, onOffersChanged);
+      socket.off(WS_EVENTS.position, onPosition);
+      releaseSocket(token, socket);
     };
   }, [orderId, token, qc]);
 

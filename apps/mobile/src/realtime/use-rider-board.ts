@@ -6,7 +6,7 @@ import type { OpenOrder } from "../api/orders";
 import { shouldNoticeTakenOrder } from "../logic/journey";
 import { useAuth } from "../auth/auth-context";
 import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
-import { createSocket } from "./socket";
+import { acquireSocket, releaseSocket } from "./socket";
 
 // B-O12: mirrors the server's own `take: 50` cap on `listOpen`/`GET /orders/open`
 // (orders.service.ts) — the 15s REST poll that would otherwise reset this cache to that capped
@@ -68,7 +68,11 @@ export function useRiderBoard(
       return;
     }
     setActiveRole("rider"); // rider board surface — label apifetch RUM as rider
-    const socket: Socket = createSocket(token);
+    // A-O17: shared with the job/location sockets during an active job — one handshake + keepalive
+    // for all three, not one each. Every listener below is registered with a NAMED handler and
+    // explicitly `.off()`'d in cleanup (not a blind `disconnect()`), since a bare disconnect would
+    // tear the connection down out from under the other hooks still holding a reference to it.
+    const socket: Socket = acquireSocket(token);
     socketRef.current = socket;
 
     // Self-heal on (re)connect the way use-order-socket / use-rider-job-socket do: re-scope the board
@@ -81,19 +85,22 @@ export function useRiderBoard(
       void qc.invalidateQueries({ queryKey: ["openOrders"] });
       void qc.invalidateQueries({ queryKey: ["activeJob"] });
     };
-    socket.on("connect", () => {
+    const onConnect = () => {
       setConnected(true);
       const l = locRef.current;
       socket.emit(WS_EVENTS.boardSubscribe, l ? { lat: l.lat, lng: l.lng } : {});
       healBoard();
-    });
-    socket.on("disconnect", () => setConnected(false));
-    socket.on("connect_error", () => {
+    };
+    const onDisconnect = () => setConnected(false);
+    const onConnectError = () => {
       setConnected(false);
       healBoard();
-    });
+    };
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onConnectError);
 
-    socket.on(WS_EVENTS.boardNewOrder, (raw: unknown) => {
+    const onBoardNewOrder = (raw: unknown) => {
       const parsed = BoardNewOrderEvent.safeParse(raw);
       if (!parsed.success) return;
       const order = parsed.data as OpenOrder;
@@ -109,17 +116,19 @@ export function useRiderBoard(
         if (prev.some((o) => o.id === order.id)) return prev; // dedupe: poll may have it already
         return [order, ...prev].slice(0, OPEN_ORDERS_CACHE_CAP);
       });
-    });
+    };
+    socket.on(WS_EVENTS.boardNewOrder, onBoardNewOrder);
 
     // Auction closed with no pick: drop the order from the board cache (it's no longer biddable) and
     // record its id so a rider who bid on it sees the "nobody picked" state, not a silent removal.
-    socket.on(WS_EVENTS.bidExpired, (raw: unknown) => {
+    const onBidExpired = (raw: unknown) => {
       const parsed = BidExpiredEvent.safeParse(raw);
       if (!parsed.success) return;
       const { orderId } = parsed.data;
       setExpiredOrderIds((prev) => (prev.has(orderId) ? prev : new Set(prev).add(orderId)));
       qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => prev?.filter((o) => o.id !== orderId));
-    });
+    };
+    socket.on(WS_EVENTS.bidExpired, onBidExpired);
 
     // A customer picked a rider: the card is no longer biddable — drop it from the board, and (for a
     // rider who bid on it) surface "not chosen" instead of a countdown that dead-ends at 0:00 (3·b1).
@@ -127,7 +136,7 @@ export function useRiderBoard(
     // chosen": resolve who was picked first by refetching the active job, and only mark the order taken
     // if it did not become OUR active job — otherwise the winner briefly reads "the customer picked
     // another rider" on the very order they just won. Until then the card keeps its neutral countdown.
-    socket.on(WS_EVENTS.orderTaken, (raw: unknown) => {
+    const onOrderTaken = (raw: unknown) => {
       const parsed = OrderTakenEvent.safeParse(raw);
       if (!parsed.success) return;
       const { orderId } = parsed.data;
@@ -144,21 +153,30 @@ export function useRiderBoard(
           setBoardTakenNudge((n) => n + 1);
         }
       });
-    });
+    };
+    socket.on(WS_EVENTS.orderTaken, onOrderTaken);
 
     // D5/C5: a live food-dispatch offer for this rider — no room subscription needed (emitToRider
     // targets this authenticated socket directly, see tracking.gateway.ts). `food:offer-closed` needs
     // no handler here: the offer screen's own poll (dispatch/offer) is what notices it's gone.
-    socket.on(WS_EVENTS.foodOffer, (raw: unknown) => {
+    const onFoodOfferEvent = (raw: unknown) => {
       const parsed = FoodOfferEvent.safeParse(raw);
       if (!parsed.success) return;
       onFoodOfferRef.current?.(parsed.data.orderId);
-    });
+    };
+    socket.on(WS_EVENTS.foodOffer, onFoodOfferEvent);
 
     return () => {
       socketRef.current = null;
       socket.emit(WS_EVENTS.boardLeave);
-      socket.disconnect();
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
+      socket.off(WS_EVENTS.boardNewOrder, onBoardNewOrder);
+      socket.off(WS_EVENTS.bidExpired, onBidExpired);
+      socket.off(WS_EVENTS.orderTaken, onOrderTaken);
+      socket.off(WS_EVENTS.foodOffer, onFoodOfferEvent);
+      releaseSocket(token, socket);
     };
   }, [online, token, qc]);
 

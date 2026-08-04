@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { useAuth } from "../auth/auth-context";
 import { invalidateRiderJobQueries } from "../query/use-history-feed";
-import { createSocket } from "./socket";
+import { acquireSocket, releaseSocket } from "./socket";
 
 /**
  * The rider's inbound socket for their active job (INTERFACE-AUDIT C3 / C5). Joins the order room and
@@ -45,44 +45,61 @@ export function useRiderJobSocket(
       setConnected(false);
       return;
     }
-    const socket: Socket = createSocket(token);
+    // A-O17: shared with the board/location sockets during an active job — see use-rider-board.ts's
+    // matching comment. Every listener is a named handler explicitly `.off()`'d in cleanup, and the
+    // shared connection is released (not disconnected outright), since board/location may still be
+    // holding it.
+    const socket: Socket = acquireSocket(token);
     // Background refetch — self-heals a push missed while the socket was down (same discipline as
     // use-order-socket's refetchOrder on connect/connect_error). WD-022: a delivered/cancelled/
     // undelivered transition self-healed here (rather than through the mutation's own onSuccess) must
     // also refresh Trip History/Earnings, which read the same terminal statuses.
     const refetchJob = (): void => invalidateRiderJobQueries(qc);
 
-    socket.on("connect", () => {
+    const onConnect = () => {
       setConnected(true);
       socket.emit(WS_EVENTS.subscribeOrder, { orderId });
       refetchJob();
-    });
-    socket.on("disconnect", () => setConnected(false));
-    socket.on("connect_error", () => {
+    };
+    const onDisconnect = () => setConnected(false);
+    const onConnectError = () => {
       setConnected(false);
       refetchJob();
-    });
+    };
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onConnectError);
     socket.on(WS_EVENTS.orderStatus, refetchJob);
-    socket.on(WS_EVENTS.jobCancelled, (raw: unknown) => {
+    const onJobCancelled = (raw: unknown) => {
       const parsed = JobCancelledEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId) return;
       cbRef.current(parsed.data);
-    });
+    };
+    socket.on(WS_EVENTS.jobCancelled, onJobCancelled);
     // C5: the rider is the RECEIVER of role:"customer" (the customer went dark). Ignore role:"rider"
     // here — that's the rider's OWN staleness, meant for the customer's app, not a self-escalation.
-    socket.on(WS_EVENTS.presenceStale, (raw: unknown) => {
+    const onPresenceStale = (raw: unknown) => {
       const parsed = PresenceStaleEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId || parsed.data.role !== "customer") return;
       staleRef.current?.();
-    });
-    socket.on(WS_EVENTS.presenceRecovered, (raw: unknown) => {
+    };
+    socket.on(WS_EVENTS.presenceStale, onPresenceStale);
+    const onPresenceRecovered = (raw: unknown) => {
       const parsed = PresenceRecoveredEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId || parsed.data.role !== "customer") return;
       recoveredRef.current?.();
-    });
+    };
+    socket.on(WS_EVENTS.presenceRecovered, onPresenceRecovered);
 
     return () => {
-      socket.disconnect();
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
+      socket.off(WS_EVENTS.orderStatus, refetchJob);
+      socket.off(WS_EVENTS.jobCancelled, onJobCancelled);
+      socket.off(WS_EVENTS.presenceStale, onPresenceStale);
+      socket.off(WS_EVENTS.presenceRecovered, onPresenceRecovered);
+      releaseSocket(token, socket);
     };
   }, [orderId, token, qc]);
 
