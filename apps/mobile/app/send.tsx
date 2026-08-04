@@ -20,7 +20,7 @@ import {
   type RebroadcastParams,
   saveDraft,
 } from "../src/logic/order-draft";
-import { orderKey } from "../src/query/client";
+import { invalidateIfStale, orderKey } from "../src/query/client";
 import { invalidateCustomerOrderHistory } from "../src/query/use-history-feed";
 import { useForegroundRefetch } from "../src/realtime/use-foreground-refetch";
 import { fareBand, fareBandHint, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
@@ -95,11 +95,14 @@ export default function HomeScreen(): React.ReactElement {
   // metered data. Gated, it polls only while the banner it feeds is actually on screen; the
   // focus-effect below revalidates the instant the customer navigates back so the banner is never
   // stale on return.
+  // A-O15: focus/foreground use `invalidateIfStale`, not a raw `invalidateQueries` — mirrors
+  // home.tsx's identical fix. The two screens share this cache key, so a customer bouncing between
+  // them within the staleness window shouldn't pay a round trip either place.
   const [homeFocused, setHomeFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
       setHomeFocused(true);
-      void qc.invalidateQueries({ queryKey: ["activeCustomerOrder"] });
+      invalidateIfStale(qc, ["activeCustomerOrder"]);
       return () => setHomeFocused(false);
     }, [qc]),
   );
@@ -111,7 +114,7 @@ export default function HomeScreen(): React.ReactElement {
   // WD-022: also refresh Trip History on resume — an order that completed/cancelled while backgrounded
   // must not leave a stale Trip History list behind the (now-correct) home banner.
   useForegroundRefetch(() => {
-    void qc.invalidateQueries({ queryKey: ["activeCustomerOrder"] });
+    invalidateIfStale(qc, ["activeCustomerOrder"]);
     invalidateCustomerOrderHistory(qc);
   });
   const activeOrder = activeOrderQ.data ?? null;
