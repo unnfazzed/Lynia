@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.11](https://github.com/unnfazzed/Lynia/compare/v0.17.10...v0.17.11) (2026-08-04)
+
+
+### Performance Improvements
+
+* **mobile:** A-O15 — skip redundant active-order refetch when cache is fresh ([#571](https://github.com/unnfazzed/Lynia/issues/571)) ([cac8897](https://github.com/unnfazzed/Lynia/commit/cac88976b0a502962d63f5bded755bb2d2f9eb47))
+
 ## [0.17.10](https://github.com/unnfazzed/Lynia/compare/v0.17.9...v0.17.10) (2026-08-04)
 
 
