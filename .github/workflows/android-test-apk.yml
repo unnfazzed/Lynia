@@ -40,11 +40,25 @@ jobs:
       # Sentry (LR20). This lane builds on the runner, not on EAS servers, so it needs the DSN from a
       # repo secret rather than the EAS environment. Optional: empty secret → initSentry() no-ops and
       # the APK behaves exactly as before. Its own Sentry environment keeps sideload-QA crashes out of
-      # the preview/production release-health numbers. Source maps are NOT uploaded here (no auth token
-      # on this lane by design) — a QA crash reports with minified frames, which is fine for a bypass
-      # build whose whole purpose is reproducing on a handset you are holding.
+      # the preview/production release-health numbers.
       EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
       EXPO_PUBLIC_SENTRY_ENVIRONMENT: qa-apk
+      # SYMBOL UPLOAD OFF — this is what makes the lane build at all, not a nicety. `sentry.gradle`
+      # guards its upload task with only `onlyIf { shouldSentryAutoUploadGeneral() }`, i.e. this exact
+      # env var; there is no "skip when unconfigured" path. So `gradlew assembleRelease` runs sentry-cli
+      # unconditionally, and this lane has no SENTRY_AUTH_TOKEN. That is why every run since Sentry
+      # landed has died at `createBundleReleaseJsAndAssets_SentryUpload…` with "An organization ID or
+      # slug is required" (run 30172245411, 2026-07-25) — the same failure as EAS build 16e18e74, whose
+      # fix went into eas.json, which this lane never reads. Committing org/project fixes that specific
+      # message but would just move the failure to an auth error, and enabling the Sentry Android Gradle
+      # Plugin adds mapping/native-symbol upload tasks that would fail the same way.
+      #
+      # Deliberately OFF rather than "give this lane a token": the APK is throwaway-signed and built
+      # from whatever commit QA asked for, so its artifacts would land under a release name that a real
+      # store build also uses — muddying the symbolication of releases people actually run. A QA crash
+      # reporting with minified frames is the right trade for a bypass build you are holding in your
+      # hand. One env var covers both paths (`shouldSentryAutoUpload` ANDs this in).
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
       # The `secrets` context can't be used in a step `if:`, so surface the optional Firebase secret
       # as an env value here and gate the step on `env.` instead. Empty when the secret isn't set.
       GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON }}
