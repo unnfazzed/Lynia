@@ -140,6 +140,12 @@ describe("BecomeRiderScreen — KYC photo upload survives an app kill (C-O8/LC-C
     expect(mockDownscaleForUpload).toHaveBeenCalledWith(
       expect.objectContaining({ uri: "file://original-4000px-capture.jpg", width: 4000, height: 3000, contentType: "image/jpeg" }),
     );
+
+    // tree2 is still mid-stalled-upload here; unmount so the 4.5s slow-upload timer's effect cleanup
+    // runs — left mounted, the REAL timer fires during a later suite in the same worker and crashes it.
+    act(() => {
+      tree2.unmount();
+    });
   });
 
   it("clears the persisted pendingPhoto once the upload actually succeeds", async () => {
@@ -163,5 +169,9 @@ describe("BecomeRiderScreen — KYC photo upload survives an app kill (C-O8/LC-C
 
     expect(storedDraft().pendingPhoto).toBeNull();
     expect(storedDraft().photoKey).toBe("obj-key-1");
+
+    act(() => {
+      tree.unmount();
+    });
   });
 });

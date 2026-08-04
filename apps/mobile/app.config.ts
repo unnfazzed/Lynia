@@ -135,6 +135,15 @@ const config: ExpoConfig = {
       "expo-build-properties",
       {
         android: {
+          // Play Console REQUIRES new apps to target Android 15 (API 35) — the first internal-track
+          // upload (build ea538ebe, targetSdk 34 = SDK 52's default) was hard-rejected 2026-08-04
+          // with "must target at least API level 35". compileSdk was already 35 (SDK 52 default);
+          // both pinned explicitly so the requirement is visible here, not buried in a template
+          // default. CAVEAT to watch in device QA: targeting 35 makes Android 15 handsets enforce
+          // edge-to-edge, so verify no content hides behind the status/navigation bars on an
+          // Android 15 device (older Android versions are unaffected).
+          compileSdkVersion: 35,
+          targetSdkVersion: 35,
           kotlinVersion: "1.9.25",
           enableProguardInReleaseBuilds: true,
           enableShrinkResourcesInReleaseBuilds: true,

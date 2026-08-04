@@ -6,6 +6,7 @@
   "build": {
     "base": {
       "pnpm": "10.33.0",
+      "autoIncrement": true,
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }

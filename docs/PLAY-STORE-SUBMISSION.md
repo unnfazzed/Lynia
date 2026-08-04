@@ -148,6 +148,46 @@
 > (`expo`, `@sentry/react-native`, maps, safe-area-context, screens, svg) emit their canonical
 > import paths. 7 of ~15 August builds consumed; attempt 8 next — remaining unexercised: app javac
 > (now with a correct PackageList), R8/resource-shrink, signing, Play auto-submit.
+>
+> **Status (2026-08-04, attempt-8 outcome — 🎉 FIRST GREEN BUILD; submission blocked on one GCP
+> switch, no new build needed).** Build `ea538ebe` (v0.17.9, profile `preview`) **FINISHED**: every
+> layer that felled attempts 2–7 passed — fingerprint parity, JS bundle, Sentry skip, javac with the
+> corrected `PackageList`, plus the never-before-reached R8/resource-shrink and signing. Artifact: a
+> signed `.aab`, **32,545,990 bytes (~31.0 MiB raw, pre-split** — Play's per-device download is
+> smaller**)**, on the EAS build page. The Play auto-submit (submission `751d9566`, internal track)
+> then errored in fastlane with the exact cause in the log:
+> `PERMISSION_DENIED: Google Play Android Developer API has not been used in project 407250490173
+> before or it is disabled` — the `androidpublisher.googleapis.com` API was never enabled in the
+> GCP project that owns the Play publisher service account
+> (`id-play-publisher@lynia-500911.iam.gserviceaccount.com`; 407250490173 is that project's
+> number). **Founder fix (~1 minute):** enable it at
+> <https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=407250490173>,
+> wait a few minutes for propagation, then **retry the submission only** —
+> `eas submit -p android --id ea538ebe-92a6-42ea-be36-d93ed3323924` (or the Retry button on the
+> submission page). The build is done and reusable; a retry burns **zero** build quota (still 6 of
+> ~15 used). If the retry then fails with an app/artifact-not-found class error, that's the §
+> first-manual-upload constraint from the attempt-6 note — upload this `.aab` once by hand to
+> Internal testing and auto-submit works thereafter. Once the internal-track release is live,
+> §8 step 1 is DONE and the 14-day closed-test clock (§8 step 2) can start.
+>
+> **Status (2026-08-04, post-attempt-8 — androidpublisher API enabled; two Play-side rejections
+> diagnosed, one repo fix shipped).** The founder enabled `androidpublisher.googleapis.com`; the
+> API-disabled error is gone. The submission retry (`7b2971c5`, zero build quota) then failed with
+> `Invalid request — The caller does not have permission` (classic fastlane #16164): the Play
+> Console grant for `id-play-publisher@…` needs a forced refresh — Users and permissions → edit the
+> SA's app permissions → re-save (documented workaround; occasionally up to 24 h to propagate).
+> Meanwhile the founder attempted the manual Console upload of build `ea538ebe` and Play
+> hard-rejected the artifact itself: **"Your app currently targets API level 34 and must target at
+> least API level 35"** — Google's target-API floor for new apps (Android 15), while Expo SDK 52
+> defaults to targetSdk 34. This blocks EVERY upload path (console and API alike), so a rebuild is
+> mandatory. Fix shipped: `expo-build-properties` now pins `compileSdkVersion: 35` +
+> `targetSdkVersion: 35` (compile was already 35 via the SDK 52 template; target is the change),
+> and `eas.json` base gained `autoIncrement: true` so the next build gets versionCode 2 — Play may
+> have registered vc 1 during the blocked upload, and preview builds previously never incremented.
+> QA note for the next internal build: targeting 35 turns on enforced edge-to-edge on Android 15
+> handsets — check nothing hides behind system bars (`docs/QA-DEVICE-CHECKLIST.md`). Attempt 9 goes
+> out once this merges; on it, EITHER the refreshed SA lets auto-submit finish end-to-end, or the
+> founder uploads the new vc-2 `.aab` manually — both paths are now unblocked.
 
 ---
 

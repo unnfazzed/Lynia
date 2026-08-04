@@ -97,5 +97,9 @@ describe("BecomeRiderScreen — KYC photo preview uses the downscaled asset", ()
     )[0];
     expect(image?.props.source.uri).toBe("file://downscaled-1280px.jpg");
     expect(image?.props.source.uri).not.toBe("file://original-4000px-capture.jpg");
+
+    act(() => {
+      tree.unmount();
+    });
   });
 });
