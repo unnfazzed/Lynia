@@ -148,6 +148,27 @@
 > (`expo`, `@sentry/react-native`, maps, safe-area-context, screens, svg) emit their canonical
 > import paths. 7 of ~15 August builds consumed; attempt 8 next — remaining unexercised: app javac
 > (now with a correct PackageList), R8/resource-shrink, signing, Play auto-submit.
+>
+> **Status (2026-08-04, attempt-8 outcome — 🎉 FIRST GREEN BUILD; submission blocked on one GCP
+> switch, no new build needed).** Build `ea538ebe` (v0.17.9, profile `preview`) **FINISHED**: every
+> layer that felled attempts 2–7 passed — fingerprint parity, JS bundle, Sentry skip, javac with the
+> corrected `PackageList`, plus the never-before-reached R8/resource-shrink and signing. Artifact: a
+> signed `.aab`, **32,545,990 bytes (~31.0 MiB raw, pre-split** — Play's per-device download is
+> smaller**)**, on the EAS build page. The Play auto-submit (submission `751d9566`, internal track)
+> then errored in fastlane with the exact cause in the log:
+> `PERMISSION_DENIED: Google Play Android Developer API has not been used in project 407250490173
+> before or it is disabled` — the `androidpublisher.googleapis.com` API was never enabled in the
+> GCP project that owns the Play publisher service account
+> (`id-play-publisher@lynia-500911.iam.gserviceaccount.com`; 407250490173 is that project's
+> number). **Founder fix (~1 minute):** enable it at
+> <https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=407250490173>,
+> wait a few minutes for propagation, then **retry the submission only** —
+> `eas submit -p android --id ea538ebe-92a6-42ea-be36-d93ed3323924` (or the Retry button on the
+> submission page). The build is done and reusable; a retry burns **zero** build quota (still 6 of
+> ~15 used). If the retry then fails with an app/artifact-not-found class error, that's the §
+> first-manual-upload constraint from the attempt-6 note — upload this `.aab` once by hand to
+> Internal testing and auto-submit works thereafter. Once the internal-track release is live,
+> §8 step 1 is DONE and the 14-day closed-test clock (§8 step 2) can start.
 
 ---
 
