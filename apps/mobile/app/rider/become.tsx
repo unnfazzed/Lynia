@@ -8,7 +8,7 @@ import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
 import { shouldOfferPermissionSettings } from "../../src/logic/gates";
 import { downscaleForUpload, type UploadImageSource } from "../../src/logic/image-downscale";
-import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft } from "../../src/logic/kyc-draft";
+import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft, type PendingKycPhoto } from "../../src/logic/kyc-draft";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
 import { Button, Card, ErrorText, Field, Heading, isTestBuild, Label, Screen, Sub } from "../../src/ui";
 
@@ -41,6 +41,10 @@ export default function BecomeRiderScreen(): React.ReactElement {
   const [draftRestored, setDraftRestored] = useState(false);
   // Gate persistence until the initial load runs, so we don't clobber a stored draft with empty state.
   const hydrated = useRef(false);
+  // C-O8 (LC-C11): mirrors the draft's `pendingPhoto` field so the generic field-persistence effect
+  // below can include it in every write without re-running just because it changed (a ref, not state
+  // — doUpload sets/clears it directly, synchronously, ahead of/alongside the explicit persist calls).
+  const pendingPhotoRef = useRef<PendingKycPhoto | null>(null);
 
   // Rehydrate the KYC draft once on mount — launching the camera can OOM-kill the app on a low-end
   // phone; without this the whole form (including a re-typed national ID) would be lost on relaunch.
@@ -60,6 +64,19 @@ export default function BecomeRiderScreen(): React.ReactElement {
         setPhotoKey(d.photoKey);
         setPhotoUri(d.photoUri);
         setDraftRestored(true);
+        // C-O8 (LC-C11): a photo capture that never finished uploading before the app was killed —
+        // offer the same one-tap "Try again" resume a network-only failure already gets, with the
+        // SAME captured asset, instead of forcing a fresh camera shot.
+        if (d.pendingPhoto) {
+          pendingPhotoRef.current = d.pendingPhoto;
+          setFailedAsset({
+            uri: d.pendingPhoto.uri,
+            width: d.pendingPhoto.width,
+            height: d.pendingPhoto.height,
+            contentType: d.pendingPhoto.contentType,
+          });
+          setError("We didn't confirm your last photo uploaded — tap \"Try again\" to finish adding it.");
+        }
       }
       hydrated.current = true;
     })();
@@ -69,9 +86,12 @@ export default function BecomeRiderScreen(): React.ReactElement {
   }, []);
 
   // Persist the draft (encrypted, on-device only) as fields change, after initial hydration.
+  // `pendingPhoto` rides along from the ref (not a dependency — doUpload persists it directly and
+  // synchronously at the moments that matter; this just keeps every OTHER field-triggered write from
+  // clobbering it with a stale value).
   useEffect(() => {
     if (!hydrated.current) return;
-    void saveKycDraft({ firstName, lastName, idNumber, bikeReg, photoKey, photoUri });
+    void saveKycDraft({ firstName, lastName, idNumber, bikeReg, photoKey, photoUri, pendingPhoto: pendingPhotoRef.current });
   }, [firstName, lastName, idNumber, bikeReg, photoKey, photoUri]);
 
   const canSubmit =
@@ -90,6 +110,12 @@ export default function BecomeRiderScreen(): React.ReactElement {
     const prevUri = photoUri;
     const prevKey = photoKey;
     setUploading(true);
+    // C-O8 (LC-C11): persist the captured asset BEFORE the upload chain fires (mirrors C-O5/C-O7's
+    // "write the marker before the request" pattern) — an app kill anywhere in the downscale/presign/
+    // PUT chain below then leaves this draft in place, so a relaunch can offer a one-tap resume with
+    // the SAME captured asset instead of forcing a fresh camera re-shoot.
+    pendingPhotoRef.current = { uri: asset.uri, width: asset.width, height: asset.height, contentType: asset.contentType };
+    void saveKycDraft({ firstName, lastName, idNumber, bikeReg, photoKey, photoUri, pendingPhoto: pendingPhotoRef.current });
     try {
       // Downscale before the presign (07-08 deferred item: full camera resolution over expensive,
       // flaky data). Never throws — any manipulation failure hands back the original file. The
@@ -107,11 +133,18 @@ export default function BecomeRiderScreen(): React.ReactElement {
       setPhotoUri(prepared.uri);
       setPhotoKey(key);
       setFailedAsset(null);
+      // The upload landed — clear the pending marker (both the ref and the persisted draft) now,
+      // rather than leaving it for the generic field-effect to notice next render.
+      pendingPhotoRef.current = null;
+      void saveKycDraft({ firstName, lastName, idNumber, bikeReg, photoKey: key, photoUri: prepared.uri, pendingPhoto: null });
     } catch (e) {
       setPhotoUri(prevUri);
       setPhotoKey(prevKey);
       setFailedAsset(asset);
       setError(e instanceof ApiError ? e.message : "Couldn't upload the photo. Check your connection and try again.");
+      // pendingPhoto (and its persisted draft copy, written above) stay in place — a genuinely failed
+      // or interrupted attempt is exactly what "Try again" resumes, whether within this session or
+      // after a full app kill.
     } finally {
       setUploading(false);
     }
