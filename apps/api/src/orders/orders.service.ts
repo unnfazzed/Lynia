@@ -74,6 +74,27 @@ const CREATE_RESPONSE_SELECT = {
 } satisfies Prisma.OrderSelect;
 type CreateResponseOrder = Prisma.OrderGetPayload<{ select: typeof CREATE_RESPONSE_SELECT }>;
 
+/** A-O5: every snapshot consumer (mobile `Stepper`, the parcel/food live-tracker cards, the
+ *  order-detail screen's completed/delivered timestamp lookups) only ever reads the FIRST
+ *  occurrence of each status — `Array.find`/a `status in times` guard walking the ascending-order
+ *  array. A normal forward-only order never repeats a status, but a food job that gets dropped and
+ *  re-dispatched (`FoodDispatchService.dropDispatch`) cycles the same order back through
+ *  `requested`/`assigned` again for each rider who bails pre-pickup — rows the client discards on
+ *  arrival. Deduping server-side to one row per status (keeping the earliest, so the kept
+ *  `createdAt` is byte-for-byte identical to what every consumer already computes client-side)
+ *  caps the payload at the small fixed set of distinct statuses instead of growing with drop
+ *  cycles, with zero behavior change for any consumer. */
+function dedupeEventsByStatus<T extends { status: string }>(events: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+  for (const event of events) {
+    if (seen.has(event.status)) continue;
+    seen.add(event.status);
+    deduped.push(event);
+  }
+  return deduped;
+}
+
 /** Waypoint as the ASSIGNED rider sees it inside the reveal window — contactPhone included, since
  *  they need to call the sender/recipient at the doors (§5d / design E1). Every other viewer and
  *  every listing path goes through {@link publicWaypoint}. */
@@ -904,7 +925,8 @@ export class OrdersService implements OnModuleDestroy {
       // cold start. Null on every non-expired status. See the `hadOffers` computation above.
       hadOffers,
       rider,
-      events: order.events,
+      // A-O5: deduped to one row per status (earliest occurrence) — see {@link dedupeEventsByStatus}.
+      events: dedupeEventsByStatus(order.events),
       counterpartyPhone,
       // Auction countdown: present only while the order is still open for offers.
       expiresAt:

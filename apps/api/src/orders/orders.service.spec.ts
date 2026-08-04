@@ -751,6 +751,33 @@ describe("OrdersService.getSnapshot", () => {
     expect(capturedArgs?.select?.events?.select).toEqual({ status: true, createdAt: true });
   });
 
+  it("A-O5: dedupes repeated status rows to the earliest occurrence — a dropped-and-re-dispatched food job cycles through requested/assigned more than once, but every client consumer (Stepper, live-tracker) only ever reads the first occurrence", async () => {
+    const events = [
+      { status: "requested", createdAt: new Date("2026-06-26T00:00:00Z") },
+      { status: "assigned", createdAt: new Date("2026-06-26T00:01:00Z") },
+      // Rider 1 drops pre-pickup — dropDispatch cycles the SAME order back through requested/assigned.
+      { status: "requested", createdAt: new Date("2026-06-26T00:05:00Z") },
+      { status: "assigned", createdAt: new Date("2026-06-26T00:06:00Z") },
+      { status: "confirmed", createdAt: new Date("2026-06-26T00:07:00Z") },
+    ];
+    const snap = await svc(row({ events })).getSnapshot("ord-1", "cust-1");
+    expect(snap.events).toEqual([
+      { status: "requested", createdAt: new Date("2026-06-26T00:00:00Z") },
+      { status: "assigned", createdAt: new Date("2026-06-26T00:01:00Z") },
+      { status: "confirmed", createdAt: new Date("2026-06-26T00:07:00Z") },
+    ]);
+  });
+
+  it("A-O5: leaves a normal forward-only event timeline untouched (no repeated statuses to drop)", async () => {
+    const events = [
+      { status: "open_for_offers", createdAt: new Date("2026-06-26T00:00:00Z") },
+      { status: "assigned", createdAt: new Date("2026-06-26T00:01:00Z") },
+      { status: "confirmed", createdAt: new Date("2026-06-26T00:02:00Z") },
+    ];
+    const snap = await svc(row({ events })).getSnapshot("ord-1", "cust-1");
+    expect(snap.events).toEqual(events);
+  });
+
   it("coalesces the open-auction ridersNearby count onto one geo query within its TTL (micro-cache)", async () => {
     // Every 15s open-auction poll used to run its own PostGIS radius query for an informational
     // count. Within the cache TTL, repeat polls (and same-block auctions) share one query. Targeting
