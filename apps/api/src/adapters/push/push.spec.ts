@@ -96,4 +96,29 @@ describe("buildFcmMessage — payload contract", () => {
       spy.mockRestore();
     }
   });
+
+  it("sets no collapse key by default (D-O3 is opt-in per kind)", () => {
+    const m = buildFcmMessage({ token: "tok", title: "t", body: "b" });
+    expect(m.android).toBeUndefined();
+    expect(m.apns).toBeUndefined();
+  });
+
+  it("maps collapseKey to android.collapseKey and apns-collapse-id (D-O3)", () => {
+    const m = buildFcmMessage({ token: "tok", title: "t", body: "b", collapseKey: "order:o1:assigned" });
+    expect(m.android).toEqual({ collapseKey: "order:o1:assigned" });
+    expect(m.apns?.headers["apns-collapse-id"]).toBe("order:o1:assigned");
+  });
+
+  it("carries both ttlSeconds and collapseKey together without one clobbering the other's android/apns fields", () => {
+    const now = 1_770_000_000;
+    const spy = vi.spyOn(Date, "now").mockReturnValue(now * 1000);
+    try {
+      const m = buildFcmMessage({ token: "tok", title: "t", body: "b", ttlSeconds: 90, collapseKey: "order:o1:assigned" });
+      expect(m.android).toEqual({ ttl: 90_000, collapseKey: "order:o1:assigned" });
+      expect(m.apns?.headers["apns-expiration"]).toBe(String(now + 90));
+      expect(m.apns?.headers["apns-collapse-id"]).toBe("order:o1:assigned");
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

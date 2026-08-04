@@ -15,6 +15,14 @@ export interface PushMessage {
    * i.e. today's behaviour for every non-time-critical kind. Opt-in per kind at the call site.
    */
   ttlSeconds?: number;
+  /**
+   * Optional collapse/replace key (FCM `android.collapseKey` / APNs `apns-collapse-id`). When set, the
+   * provider replaces any still-undelivered notification sharing the same key instead of stacking a
+   * second tray entry — so a retried/duplicated send for the same logical event (e.g. the same order+
+   * status) can't leave two notifications for one thing on a flaky link. Omitted ⇒ today's behaviour
+   * (every send is its own tray entry). Opt-in per kind at the call site.
+   */
+  collapseKey?: string;
 }
 
 /** Outcome of a single send, so the caller can prune tokens the provider says are permanently dead. */

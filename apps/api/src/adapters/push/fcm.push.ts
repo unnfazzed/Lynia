@@ -20,7 +20,7 @@ export interface FcmMessage {
   data?: Record<string, string>;
   /** Android TTL — firebase-admin's AndroidConfig.ttl is in MILLISECONDS (it converts to the REST
    *  "<n>s" duration under the hood). Set only for time-critical (ttlSeconds) messages. */
-  android?: { ttl: number };
+  android?: { ttl?: number; collapseKey?: string };
   /** APNs expiry — `apns-expiration` is an ABSOLUTE unix epoch (seconds), NOT a duration; 0 would mean
    *  "expire immediately", so we send now + ttlSeconds. Set only for time-critical messages. */
   apns?: { headers: Record<string, string> };
@@ -44,8 +44,14 @@ export function buildFcmMessage(message: PushMessage): FcmMessage {
   // ABSOLUTE epoch in SECONDS, so it's now + ttlSeconds. Both are additive; omitted otherwise ⇒ FCM's
   // 4-week default (today's behaviour for non-time-critical kinds).
   if (message.ttlSeconds !== undefined) {
-    built.android = { ttl: message.ttlSeconds * 1000 };
-    built.apns = { headers: { "apns-expiration": String(Math.floor(Date.now() / 1000) + message.ttlSeconds) } };
+    built.android = { ...built.android, ttl: message.ttlSeconds * 1000 };
+    built.apns = { headers: { ...built.apns?.headers, "apns-expiration": String(Math.floor(Date.now() / 1000) + message.ttlSeconds) } };
+  }
+  // D-O3: collapse/replace key so a retried/duplicated send for the same logical event (e.g. the same
+  // order+status) replaces the still-undelivered tray entry instead of stacking a second one.
+  if (message.collapseKey !== undefined) {
+    built.android = { ...built.android, collapseKey: message.collapseKey };
+    built.apns = { headers: { ...built.apns?.headers, "apns-collapse-id": message.collapseKey } };
   }
   return built;
 }

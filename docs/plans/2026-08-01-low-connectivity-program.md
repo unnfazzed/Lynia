@@ -1164,12 +1164,16 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       `otp-carrier.spec.ts`; extended `bird-webhook.spec.ts` /
       `bird-webhook.controller.spec.ts` / `auth.service.spec.ts` / `metrics.service.spec.ts`. See
       docs/LC-D-REPORT-2026-08-03h.md.
-- [ ] D-O3 **(new, D-T3 finding)** Server-side push sends carry no collapse-key/tag
+- [x] D-O3 **DONE (2026-08-04)** Server-side push sends carry no collapse-key/tag
       (`notifications.service.ts`'s `send()`, FCM `sendEach`), so a retried/duplicated
       `notifyOrderStatus` call (there's no idempotency key on the caller side) stacks a second tray
-      entry instead of replacing the first. Not exploitable today (every current call site sends
-      each status transition at most once), but worth closing before a future retry-on-failure path
-      is added to any `notify*` caller. (S)
+      entry instead of replacing the first. `PushMessage` gained an opt-in `collapseKey`, mapped to
+      FCM `android.collapseKey` / `apns-collapse-id` in `buildFcmMessage`, threaded through
+      `NotificationsService.send()`; `notifyOrderStatus` stamps each recipient's send with
+      `order:${orderId}:${status}` so a retry collapses onto the same tray entry while distinct
+      statuses for the same order stay separate notifications. New tests in `push.spec.ts`
+      (`buildFcmMessage` mapping) and `notifications.service.spec.ts` (`notifyOrderStatus` stamps
+      the key). See docs/LC-D-REPORT-2026-08-04.md.
 
 ## §6 The loops
 
