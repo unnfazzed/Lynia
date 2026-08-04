@@ -1074,20 +1074,27 @@ direct continuation of the just-shipped C-O7's draft-persistence pattern on a si
       case). `pnpm typecheck && pnpm lint && pnpm test` all green across the monorepo (mobile: 111
       suites / 775 tests; API: 97 files / 1540 tests). `apps/mobile/app/rider/become.tsx`,
       `apps/mobile/src/logic/kyc-draft.ts`. See `docs/LC-C-REPORT-2026-08-04b.md`. (S)
-- [ ] C-O9 **(re-ranked to #2, was #8 — 2026-08-04 steer)** **(C-T4 finding, LC-C13)**
-      `NewOrderTakeover.submitAccept`/`submitReject`'s catch block sets a local error string and
-      re-enables the buttons on a 409 (or any rejection) but never calls `refetch()` — unlike the
-      success path (`withRefetch`, LC-D17), which awaits a refetch end-to-end before the caller sees
-      it settle. The stale, already-resolved order's Accept/Reject buttons stay tappable until the
-      next ambient queue poll (≤5s) or a `visibilitychange` refetch removes it from `awaitingAccept`.
-      Self-heals within that window and the server's per-order CAS turns a mistaken retry into a
-      harmless 409 — no double-apply — but it's a real, reproducible confusion window on a slow
-      reconnect. Align the error path with the rider-side reconcile pattern
-      (`apps/mobile/app/rider/job.tsx:283`): call `refetch()` in the catch, not just on success.
-      `apps/merchant/app/components/queue/NewOrderTakeover.tsx` (`submitAccept`/`submitReject`).
-      Promoted ahead of C-O1/C-O2/C-O4 this steer for the same reason C-O5/C-O6/C-O7 were promoted
-      2026-08-03: a concrete, S-effort, evidenced-this-week fix (C-T4) beats broader M-effort backlog
-      scope with no fresh measurement behind it. (S)
+- [x] C-O9 **DONE (2026-08-04c)** **(re-ranked to #2, was #8 — 2026-08-04 steer)** **(C-T4 finding,
+      LC-C13)** `NewOrderTakeover.submitAccept`/`submitReject`'s catch block sets a local error
+      string and re-enables the buttons on a 409 (or any rejection) but never calls `refetch()` —
+      unlike the success path (`withRefetch`, LC-D17), which awaits a refetch end-to-end before the
+      caller sees it settle. The stale, already-resolved order's Accept/Reject buttons stay tappable
+      until the next ambient queue poll (≤5s) or a `visibilitychange` refetch removes it from
+      `awaitingAccept`. Self-heals within that window and the server's per-order CAS turns a mistaken
+      retry into a harmless 409 — no double-apply — but it's a real, reproducible confusion window on
+      a slow reconnect.
+      **Shipped:** aligned the error path with the rider-side reconcile pattern
+      (`apps/mobile/app/rider/job.tsx:283`) — `NewOrderTakeover` now takes a `refetch` prop (threaded
+      straight from `QueueBoard`'s own `refetch`, the same function `withRefetch` already awaits on
+      the success path), and both `submitAccept`/`submitReject`'s catch blocks `await refetch()`
+      before re-enabling the buttons/dismissing the reject sheet. A stale, already-resolved order now
+      clears itself (`QueueBoard` re-derives `active` from the fresh snapshot and unmounts the
+      takeover) as soon as the error-path refetch lands, instead of waiting out the ambient poll.
+      `apps/merchant/app/components/queue/NewOrderTakeover.tsx` (`submitAccept`/`submitReject`),
+      `apps/merchant/app/components/queue/QueueBoard.tsx`. Regression tests in `QueueBoard.test.tsx`
+      (confirmed both fail against the pre-fix code: no `refetch()` call after a rejected
+      accept/reject, and a stale takeover with a since-resolved order staying visible). `pnpm
+      typecheck && pnpm lint && pnpm test` green. See `docs/LC-C-REPORT-2026-08-04c.md`. (S)
 - [ ] C-O1 **(re-ranked to #3, was #4)** ALR-09: offline mutation UX (explicit queued/failed/retry
       states — never a silent drop) — KNOWN ledger. (M)
 - [ ] C-O2 **(re-ranked to #4, was #5)** Central client network policy: one module defining
