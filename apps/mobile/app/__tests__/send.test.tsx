@@ -32,6 +32,7 @@ const DROPOFF: PickedPoint = { lat: -17.82, lng: 31.06 };
 const mockCreateOrder = jest.fn();
 const mockGetActiveCustomerOrder = jest.fn();
 const mockGetMe = jest.fn();
+const mockLoadRecipients = jest.fn(async () => [] as { name: string; phone: string }[]);
 
 let secureStore: Record<string, string> = {};
 const mockSetItemAsync = jest.fn(async (key: string, value: string) => {
@@ -67,7 +68,7 @@ jest.mock("../../src/auth/session", () => ({
   saveDisclaimerAccepted: async () => undefined,
 }));
 jest.mock("../../src/logic/saved-recipients", () => ({
-  loadRecipients: async () => [],
+  loadRecipients: () => mockLoadRecipients(),
   loadMyPickupPhone: async () => "",
   rememberRecipient: async () => undefined,
   saveMyPickupPhone: async () => undefined,
@@ -368,6 +369,61 @@ describe("send.tsx — Items list (RF-21 characterization, pre-extraction)", () 
     expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Remove item 11").length).toBe(0);
     expect(tree.root.findAll((n) => n.props.children === "Add another item").length).toBe(0);
     expect(tree.root.findAll((n) => n.props.children === "Up to 10 items per order.").length).toBeGreaterThan(0);
+  });
+});
+
+describe("send.tsx — Recipient-phone block (RF-21 characterization, pre-extraction)", () => {
+  it("shows a quick-fill chip per saved recipient when the recipient phone is empty, and tapping one fills the field", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+    mockLoadRecipients.mockResolvedValue([{ name: "Tino", phone: "0779876543" }, { name: "", phone: "0771112222" }]);
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Use recipient Tino" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Use recipient 0771112222" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+
+    pressByText(tree, "Tino · 0779876543");
+
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Recipient phone" && n.props.value === "0779876543").length).toBeGreaterThan(0);
+  });
+
+  it("hides the quick-fill chips once the recipient phone field has any text, even with saved recipients loaded", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+    mockLoadRecipients.mockResolvedValue([{ name: "Tino", phone: "0779876543" }]);
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Use recipient Tino").length).toBeGreaterThan(0);
+
+    setFieldByAccessibilityLabel(tree, "Recipient phone", "0");
+
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Use recipient Tino").length).toBe(0);
+  });
+
+  it("flags an unparseable pickup/recipient phone inline, and clears the flag once the number is valid", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    setFieldByAccessibilityLabel(tree, "Pickup contact phone", "abcdef");
+    setFieldByAccessibilityLabel(tree, "Recipient phone", "abcdef");
+    // react-test-renderer's tree walk visits both the composite Text instance and its underlying host
+    // node for the same error caption, so a raw count double-counts (see SendItemsList's equivalent
+    // note) — presence is what matters here, not an exact count.
+    expect(tree.root.findAll((n) => n.props.children === "That doesn't look like a phone number").length).toBeGreaterThan(0);
+
+    setFieldByAccessibilityLabel(tree, "Pickup contact phone", "0771234567");
+    setFieldByAccessibilityLabel(tree, "Recipient phone", "0779876543");
+    expect(tree.root.findAll((n) => n.props.children === "That doesn't look like a phone number").length).toBe(0);
   });
 });
 
