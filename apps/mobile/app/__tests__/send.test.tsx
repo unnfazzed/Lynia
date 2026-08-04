@@ -172,6 +172,74 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extraction)", () => {
+  it("shows the on-hold copy + support call row, and refresh calls the me query's refetch", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: true });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(tree.root.findAll((n) => n.props.children === "Your account is on hold").length).toBeGreaterThan(0);
+    expect(
+      tree.root.findAll(
+        (n) => n.props.children === "We've paused your account while we review recent activity. You can't send parcels right now — contact support if you think this is a mistake.",
+      ).length,
+    ).toBeGreaterThan(0);
+    // SupportCallRow's phone-call affordance
+    expect(tree.root.findAll((n) => n.props.children === "LyniaGo support").length).toBeGreaterThan(0);
+
+    mockGetMe.mockClear();
+    pressByText(tree, "Refresh status");
+    await settle();
+    expect(mockGetMe).toHaveBeenCalled();
+  });
+
+  it("shows the active-order restore banner instead of the on-hold wall's own default, when a live order exists while held", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue({
+      id: "order-1",
+      status: "en_route_pickup",
+      agreedFare: "8.00",
+      proposedFare: "7.50",
+      pickup: { point: PICKUP, landmark: "Pickup Spot" },
+      dropoff: { point: DROPOFF, landmark: "Drop Spot" },
+    });
+    mockGetMe.mockResolvedValue({ onHold: true });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(
+      tree.root.findAll((n) => Array.isArray(n.props.children) && n.props.children[0] === "Delivery in progress · ").length,
+    ).toBeGreaterThan(0);
+    expect(
+      tree.root.findAll(
+        (n) => Array.isArray(n.props.children) && n.props.children.join("") === "Pickup Spot → Drop Spot · $8.00",
+      ).length,
+    ).toBeGreaterThan(0);
+    // Still on the on-hold wall underneath the banner, not the compose form.
+    expect(tree.root.findAll((n) => n.props.children === "Your account is on hold").length).toBeGreaterThan(0);
+  });
+
+  it("shows the active-order check failure banner (with retry) when held and the active-order query errors", async () => {
+    mockGetActiveCustomerOrder.mockRejectedValue(new Error("network down"));
+    mockGetMe.mockResolvedValue({ onHold: true });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(tree.root.findAll((n) => n.props.children === "Couldn't check for an active order").length).toBeGreaterThan(0);
+
+    mockGetActiveCustomerOrder.mockClear();
+    pressByText(tree, "Retry");
+    await settle();
+    expect(mockGetActiveCustomerOrder).toHaveBeenCalled();
+  });
+});
+
 describe("send.tsx — draft flush before submit (LC-C06)", () => {
   it("persists the on-disk draft with the submitted price BEFORE the create-order request fires, even mid-debounce", async () => {
     mockGetActiveCustomerOrder.mockResolvedValue(null);
