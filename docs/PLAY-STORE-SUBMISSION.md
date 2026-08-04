@@ -47,6 +47,25 @@
 > is now set; re-dispatch after it lands. Remaining nit: `production-mobile` has **no required
 > reviewer** yet (the picker wouldn't match the owner account) — add before first OTA use, since
 > that environment also gates `mobile-ota.yml`.
+>
+> **Status (2026-08-04, overnight — first internal build blocked on fingerprint parity; fixes
+> staged, one founder step pending).** Four dispatch attempts, three distinct failure classes, each
+> fixed forward: ① robot-token `owner` field (run #2 → fixed, `app.config.ts`); ② pnpm version
+> parity — the EAS image runs pnpm 9.15.5 vs the repo's 10.33.0, and pnpm 10 changed `.pnpm`
+> path-hash spelling, breaking the `fingerprint` runtime version (builds `5906d2f0`, `549913bf` →
+> fixed: strict frozen installs in the mobile workflows + `"pnpm": "10.33.0"` pinned via
+> `eas.json` base profile, confirmed applied in the build-4 log); ③ two config-level fingerprint
+> sources (build `34fad06c`): the EAS-side `prebuild` output was hashed as a `bareNativeDir`
+> (fixed: `apps/mobile/.gitignore` now excludes `/android` `/ios` — fingerprint skips git-ignored
+> dirs) and the resolved app config differs because **Secret-visibility EAS env vars are unreadable
+> by the CLI on the runner** — the builder sees `GOOGLE_MAPS_API_KEY` and injects
+> `android.config.googleMaps.apiKey`, the runner doesn't. Expo's rule: config-consumed vars must be
+> **Sensitive**, not Secret. `GOOGLE_SERVICES_JSON` is flipped to Sensitive (done, both envs);
+> `GOOGLE_MAPS_API_KEY` is a legacy secret whose value can't be read back, so the founder must
+> **delete + re-create it with Sensitive visibility** (expo.dev → project → Environment variables,
+> both `preview` and `production`; the key ships inside the APK anyway, so Sensitive is
+> appropriate). EAS build quota: 3 of ~15 August builds consumed; per the stop rule, no further
+> dispatch until the founder re-creates the key and says go.
 
 ---
 

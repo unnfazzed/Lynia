@@ -1,0 +1,7 @@
+# CNG (prebuild) outputs — never committed; expo prebuild regenerates them from app.config.ts.
+# Also load-bearing for the expo-updates `fingerprint` runtime version: @expo/fingerprint skips
+# git-ignored dirs, so this keeps the android/ dir that EAS generates DURING the build from being
+# hashed as a `bareNativeDir` source there while not existing on the machine that computed the
+# local fingerprint (attempt-#4 mismatch, EAS build 34fad06c, 2026-08-04).
+/android
+/ios
