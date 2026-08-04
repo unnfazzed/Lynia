@@ -983,25 +983,31 @@ export const MerchantOrderResponse = z
     pickupCodeAttempts: z.number().int(),
     // C4: doorstep handshake (R-04/R-05/N-19) — CASH orders only, null otherwise. R-12: WALLET orders
     // show PAID via merchantPaymentConfirmedAt/merchantPaymentReference above; this is CASH's mirror.
-    cashHandshakeAmount: z.number().nullable(),
-    customerCashConfirmedAt: z.string().nullable(),
-    riderCashConfirmedAt: z.string().nullable(),
-    cashHandshakeDeadlineAt: z.string().nullable(),
-    cashHandshakeFrozenAt: z.string().nullable(),
+    // A-O14: `.optional()` alongside `.nullable()` — food-order.service.ts's toResponse() omits these
+    // keys entirely (rather than sending an explicit `null`) whenever they're not applicable, to cut
+    // guaranteed-null-padding bytes off every food poll (LC-A06). A missing key and an explicit `null`
+    // mean the same thing to every consumer (all read via `??`/truthy/`===`, never `"key" in order`).
+    cashHandshakeAmount: z.number().nullable().optional(),
+    customerCashConfirmedAt: z.string().nullable().optional(),
+    riderCashConfirmedAt: z.string().nullable().optional(),
+    cashHandshakeDeadlineAt: z.string().nullable().optional(),
+    cashHandshakeFrozenAt: z.string().nullable().optional(),
     // N-10: the rider's logged pre-no-show call attempts (D5) — server-timestamped, never a
     // client-side timer, so the 8:00 wait + 2-call minimum reads off the same clock the
     // reportNoShow guard itself enforces.
     noShowCallTimestamps: z.array(z.string()),
-    // C4: the collect-and-return merchant-debt ledger's derived state (R-01/R-06/N-20/N-21).
-    merchantCashRule: MerchantCashRule.nullable(),
-    debtStatus: MerchantDebtStatus.nullable(),
-    debtAmount: z.number().nullable(),
-    debtOpenedAt: z.string().nullable(),
-    debtSettledAt: z.string().nullable(),
-    // C4/D-12: a merchant-issued refund on an already-paid order the merchant can't fulfil.
-    refundReference: z.string().nullable(),
-    refundAmount: z.number().nullable(),
-    refundedAt: z.string().nullable(),
+    // C4: the collect-and-return merchant-debt ledger's derived state (R-01/R-06/N-20/N-21). A-O14:
+    // see the cash-handshake fields' comment above — same omit-when-null treatment.
+    merchantCashRule: MerchantCashRule.nullable().optional(),
+    debtStatus: MerchantDebtStatus.nullable().optional(),
+    debtAmount: z.number().nullable().optional(),
+    debtOpenedAt: z.string().nullable().optional(),
+    debtSettledAt: z.string().nullable().optional(),
+    // C4/D-12: a merchant-issued refund on an already-paid order the merchant can't fulfil. A-O14:
+    // same omit-when-null treatment.
+    refundReference: z.string().nullable().optional(),
+    refundAmount: z.number().nullable().optional(),
+    refundedAt: z.string().nullable().optional(),
   })
   .strict();
 export type MerchantOrderResponse = z.infer<typeof MerchantOrderResponse>;

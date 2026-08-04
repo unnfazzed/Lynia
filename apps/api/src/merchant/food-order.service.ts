@@ -791,7 +791,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const deliveryFee = order.deliveryFee != null ? Number(order.deliveryFee) : null;
     const merchantLocation = order.merchant?.location as Waypoint | null;
     const merchantPaymentPhone = merchantLocation?.contactPhone ?? order.merchant?.ownerProfile?.phone ?? null;
-    return {
+    const response: MerchantOrderResponse = {
       id: order.id,
       merchantId: order.merchantId!,
       status: order.status,
@@ -839,8 +839,35 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       refundAmount: order.refundAmount != null ? Number(order.refundAmount) : null,
       refundedAt: order.refundedAt?.toISOString() ?? null,
     };
+    // A-O14 (LC-A06): the doorstep-handshake/debt-ledger/refund fields above are `null` on the
+    // overwhelming majority of polls (wallet orders never touch the handshake/debt fields at all;
+    // refund fields only ever populate on a merchant-issued refund) — omit rather than send an
+    // explicit `null`, since every consumer already reads these fields via `??`/truthy/`===` and
+    // treats a missing key identically to `null` (see contracts.ts's A-O14 comment).
+    for (const field of RESPONSE_NULL_OMIT_FIELDS) {
+      if (response[field] === null) delete response[field];
+    }
+    return response;
   }
 }
+
+/** A-O14 (LC-A06): fields `toResponse()` omits from the JSON payload, rather than serializing as an
+ *  explicit `null`, whenever they don't apply to the order's current state. */
+const RESPONSE_NULL_OMIT_FIELDS = [
+  "cashHandshakeAmount",
+  "customerCashConfirmedAt",
+  "riderCashConfirmedAt",
+  "cashHandshakeDeadlineAt",
+  "cashHandshakeFrozenAt",
+  "merchantCashRule",
+  "debtStatus",
+  "debtAmount",
+  "debtOpenedAt",
+  "debtSettledAt",
+  "refundReference",
+  "refundAmount",
+  "refundedAt",
+] as const satisfies readonly (keyof MerchantOrderResponse)[];
 
 /** Compact one-line rendering of a food basket — "2x Sadza · 1x Chicken" — mirrors
  *  packages/shared summarizeItems' grammar for the generic `itemDesc` column every order carries. */

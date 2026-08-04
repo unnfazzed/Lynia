@@ -47,7 +47,11 @@ export function foodCashBreakdown(order: { merchantGoodsTotal: number | null; de
 
 /** True once a delivered CASH collect-and-return order still has cash riding back to the kitchen —
  *  drives whether the return-the-cash leg + hand-back-confirm UI shows after delivery. */
-export function returnLegNeeded(order: { paymentMethod: string | null; merchantCashRule: string | null; debtStatus: string | null }): boolean {
+export function returnLegNeeded(order: {
+  paymentMethod: string | null;
+  merchantCashRule?: string | null;
+  debtStatus?: string | null;
+}): boolean {
   return order.paymentMethod === "cash" && order.merchantCashRule === "collect_and_return" && order.debtStatus === "open";
 }
 

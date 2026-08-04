@@ -114,7 +114,7 @@ export function FoodOrderLiveTrackerView({
             <CashHandshakeCard
               state={cash}
               amount={order.cashHandshakeAmount ?? order.total ?? order.merchantGoodsTotal ?? 0}
-              confirmedAt={order.customerCashConfirmedAt}
+              confirmedAt={order.customerCashConfirmedAt ?? null}
               nowMs={now}
               onConfirm={onConfirmCash}
               busy={confirmCashBusy}

@@ -314,16 +314,37 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       widened flush interval, and the still-immediate background flush. No bundle-size impact
       (JS-logic-only, no new deps/assets); full monorepo `pnpm typecheck && pnpm lint && pnpm test`
       green. See `docs/LC-A-REPORT-2026-08-03g.md`.
-- [ ] A-O14 **(new, ranked #6 — A-T4 finding, LC-A06)** `MerchantOrderResponse`
-      (`packages/shared/src/contracts.ts:945-1007`, 39 fields) is serialized unconditionally by
+- [x] A-O14 **DONE (2026-08-04)** **(ranked #6 — A-T4 finding, LC-A06)** `MerchantOrderResponse`
+      (`packages/shared/src/contracts.ts:945-1007`, 39 fields) was serialized unconditionally by
       `food-order.service.ts`'s `toResponse()` (`:781-842`) regardless of order phase — unlike the
       parcel `OrderSnapshot`'s `getSnapshot()`, which deliberately nulls out phase-irrelevant fields
-      (`orders.service.ts:887-905`). Debt-ledger/refund/cash-handshake fields (11 fields) ride every
+      (`orders.service.ts:887-905`). Debt-ledger/refund/cash-handshake fields (11 fields) rode every
       poll even mid-delivery on a wallet-paid order that will never touch them — ≈500B of guaranteed
-      null padding per poll. Compounds directly with A-O9: since A-O9's fix will keep polling (or a
+      null padding per poll. Compounds directly with A-O9: since A-O9's fix keeps polling (or a
       lighter poll) alive as a fallback even after a food WS lands, trimming this response by
-      phase/status (mirroring `getSnapshot`'s pattern) removes real bytes from every future poll too.
-      (S/M)
+      phase/status removes real bytes from every future poll too. (S/M)
+      **Shipped:** rather than nulling phase-irrelevant fields (that still costs the same `"key":null`
+      bytes as a DB-sourced null — no different from before), the 13 candidate fields (cash-handshake
+      ×5, debt-ledger ×5, refund ×3) now marked `.optional()` alongside `.nullable()` in
+      `contracts.ts`, and `toResponse()` deletes each key from the built response whenever its value
+      is `null` — omitting the key from the JSON entirely rather than sending an explicit `null`.
+      Safe because every consumer across `apps/merchant`/`apps/mobile` already reads these fields via
+      `??`/truthy/`===` comparisons, never `"key" in order` — confirmed by grepping every non-test call
+      site before landing (a missing key and an explicit `null` are behaviorally identical to all of
+      them). `handshakeState`/`codeEligible` (`food-doorstep.ts`) and `returnLegNeeded`
+      (`food-rider-job.ts`) widened to accept the now-optional field types; two UI call sites
+      (`food-job.tsx`, `FoodOrderLiveTrackerView.tsx`) added an explicit `?? null` where they pass a
+      field straight into a `string | null`-typed prop. No other consumer needed a change — neither the
+      mobile client nor the API controller runtime-validates the response against the zod schema (it's
+      compile-time typing only), so this is a pure wire-format optimization with zero contract-
+      enforcement risk. Measured (synthetic driver over the real response shape, 3 realistic order
+      states — `Buffer.byteLength(JSON.stringify(...))`, mirroring A-T4's methodology): wallet in-flight
+      order 1,197 B → 889 B (**−25.7%**), cash mid-handshake 1,239 B → 1,020 B (**−17.7%**), cash
+      collect-and-return open-debt 1,233 B → 1,005 B (**−18.5%**) — aggregate **−20.6%**. New
+      regression tests in `food-order.service.spec.ts` (wallet order omits all 13 keys; cash
+      collect-and-return order keeps only the fields actually populated). `pnpm typecheck && pnpm lint
+      && pnpm test` green (97 API test files / 1536 tests, 108 mobile test files / 751 tests, full
+      monorepo). See `docs/LC-A-REPORT-2026-08-04.md`.
 - [x] A-O1 **(confirmed already implemented — 2026-08-03 A-T4 evidence)** Socket-gate the
       offers-list 15s poll (keep a slow safety net). Current code already does this: both
       `openOrders`(15s, `apps/mobile/app/rider/(tabs)/index.tsx:467`) and `activeJob`(8s, `:247`)
