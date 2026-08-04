@@ -5,9 +5,15 @@ and runbooks stay; point-in-time reports are pruned once absorbed (see "Routine 
 below) — `git log --follow docs/<file>` recovers anything retired.
 
 **Status:** the API is **live and CI-deployed on GCP** at
-**[`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com)**. Build status is
-**held once** — see **[`PILOT-READINESS.md`](./PILOT-READINESS.md)** (its **Pending tasks**
-section); the live GCP/vendor arming state is tracked in
+**[`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com)**, and as of **2026-08-04**
+the Android app is **live on Google Play's internal testing track** — v0.17.9 (versionCode 2),
+submitted end-to-end by `mobile-release.yml` → EAS build → EAS auto-submit, with no manual console
+upload ([`PLAY-STORE-SUBMISSION.md`](./PLAY-STORE-SUBMISSION.md), attempt-9 status block). Internal
+track only: the app is **not** public, and the mandatory ~14-day closed test has not started.
+Two open regressions live in the OTA lane (`REL-01`, `REL-02` in
+[`KNOWN_BUGS.md`](./KNOWN_BUGS.md)) — the store release path works, the OTA hotfix path does not
+yet. Build status is **held once** — see **[`PILOT-READINESS.md`](./PILOT-READINESS.md)** (its
+**Pending tasks** section); the live GCP/vendor arming state is tracked in
 [`GCP-PENDING-REVIEW-2026-07-13.md`](./GCP-PENDING-REVIEW-2026-07-13.md), which supersedes the
 older parts of the status board.
 

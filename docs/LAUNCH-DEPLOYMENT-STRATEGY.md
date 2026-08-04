@@ -18,14 +18,29 @@
 The plan below is now **largely implemented**; what remains is founder arming (accounts/settings,
 not code — see `LAUNCH-EXECUTION-RUNBOOK.md` §8) and two deliberate deferrals.
 
+> **Proven in production, 2026-08-04.** Channel B is no longer theoretical: `mobile-release.yml` →
+> EAS build → EAS auto-submit → **Play internal track** ran end to end unattended (build
+> `c248fbf5`, v0.17.9 / versionCode 2; submission `574bf5fd` FINISHED 09:48 UTC). versionCode 2
+> replaced versionCode 1 on the track, so the *update* path — not just first upload — is what was
+> exercised. Staged **production** rollout (10% `inProgress`) remains unexercised: it needs the
+> closed test, production access, and the `EAS_TAG_RELEASES_ENABLED` arming switch.
+>
+> **Channel A is NOT proven, and is currently broken in the normal case.** Zero OTA updates have
+> ever been published on this project. Two defects found reviewing the live state — `REL-01` (a
+> release-please `version` bump rotates the `fingerprint` runtimeVersion, so an OTA from `main`
+> matches no installed binary) and `REL-02` (the OTA workflow defaulted to a channel that does not
+> exist) — are in `docs/KNOWN_BUGS.md`. §1a below describes the design; read it as the intent,
+> **not** as a description of a working lane. Treat "we can ship an update" as meaning the store
+> lane only until `REL-01` is decided.
+
 | Piece | Status |
 |---|---|
 | Cloud Run canary: `--no-traffic` deploy → **graduated** 10→50→100 promotion, each step gated on LB health + revision readiness + the candidate's **5xx metric rate** → **auto-rollback** | ✅ `release.yml` (on by default once armed; `CANARY_STEPS`/`CANARY_*` vars tune it; metric gate uses Cloud Run's built-in `request_count` — no OTEL needed; deployer SA gets `monitoring.viewer` via `iam.tf`) |
 | Manual one-command rollback | ✅ `rollback.yml` (list revisions / route 100% back) |
 | GitHub Environments gate on prod deploys | ✅ jobs reference `staging` / `production` / `production-mobile`; founder adds required reviewers |
-| Play release pipeline: EAS build + staged submit (10% `inProgress`) | ✅ `mobile-release.yml` + `apps/mobile/eas.json` (dormant until `EAS_RELEASE_ENABLED=true`) |
+| Play release pipeline: EAS build + staged submit (10% `inProgress`) | ✅ `mobile-release.yml` + `apps/mobile/eas.json` — **armed and proven to the internal track 2026-08-04**; the *staged production* half (10% `inProgress`) is still unexercised and additionally gated on `EAS_TAG_RELEASES_ENABLED` |
 | `versionCode` discipline | ✅ `autoIncrement` + `appVersionSource: remote` in `eas.json` |
-| OTA hotfix lane | ✅ `mobile-ota.yml` + `expo-updates@~0.27.5` + `runtimeVersion: fingerprint`; EAS project linked (`app.config.ts` fallback `easProjectId`), so the `updates` config is live — the CI publish path is still separately gated behind `EAS_RELEASE_ENABLED` |
+| OTA hotfix lane | ⚠️ **built, armed, and NOT working** — `mobile-ota.yml` + `expo-updates@~0.27.5` + `runtimeVersion: fingerprint` all exist and the EAS project is linked, but **zero updates have ever been published** and two defects block the lane: `REL-01` (a `version` bump rotates the fingerprint runtimeVersion, so a publish from `main` matches no installed binary) and `REL-02` (the workflow defaulted to a channel that does not exist). `REL-02` is fixed; `REL-01` needs a runtime-version policy decision. Detection shipped: the workflow now preflights and refuses to publish an update that can't land |
 | CODEOWNERS + PR template (risk/rollback/migration checklist) | ✅ `.github/` |
 | **§2e correction:** the candidate's tagged `run.app` URL is unreachable from CI (default URLs disabled, LB-only ingress) | smoke = revision-readiness gate + %-shift + health **through the LB** (`/healthz` — the actual route; README's `/health` is loose prose), which is what `release.yml` implements |
 | Staging stack (§2d) | ✅ `infra/terraform/staging.tf` (own SQL/Redis/secrets/SA/bucket, `staging_enabled` default `false` in-repo) — **applied and armed**: `deploy-staging.yml` has run green on every `main` push since 2026-07-08 (`docs/GCP-PENDING-REVIEW-2026-07-13.md` §Appendix), auto on main, `APP_ENV=staging` QA tier, smoke |
@@ -74,6 +89,15 @@ UI) are JS-only and never need a store release.
 - **Runtime versioning:** set `runtimeVersion` to `{ "policy": "fingerprint" }` (or `appVersion`) in
   `app.config.ts`. Fingerprint policy ties an OTA bundle to the exact native layer it was built against,
   so an OTA update can never land on an incompatible binary.
+  > ⚠️ **Reality check (2026-08-04, `REL-01`).** "The exact native layer" is the intent; the
+  > implementation hashes the whole resolved `expoConfig`, and **`version` is one of the hashed
+  > keys**. Since release-please rewrites `version` on essentially every merge to `main`, the
+  > runtimeVersion rotates on changes that are not native at all — so an OTA published from `main`
+  > routinely computes a runtimeVersion that no installed binary has, and is silently ignored.
+  > Measured: `0.17.9` → `c56c13bb…`, `0.17.10` → `1bd7d519…`, every other input held constant.
+  > Until that is resolved, this bullet describes a safety property that is real but far stricter
+  > than intended. `mobile-ota.yml` now preflights for the mismatch and fails instead of publishing
+  > an update nobody receives.
 - **Rollout + rollback:** publish to an EAS Update **branch** per release channel (`production`,
   `preview`). Roll back instantly by re-pointing the channel at the previous update (`eas update
   --branch production --message "rollback"` republishing the prior commit, or `eas update:rollback`).
