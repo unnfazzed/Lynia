@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.17.13](https://github.com/unnfazzed/Lynia/compare/v0.17.12...v0.17.13) (2026-08-04)
+
+
+### Bug Fixes
+
+* **mobile:** ALR-09 — honest queued state for offline-paused mutations (C-O1) ([#576](https://github.com/unnfazzed/Lynia/issues/576)) ([a09c03e](https://github.com/unnfazzed/Lynia/commit/a09c03e6cf23e5809aa305e6d4484893703c15f2))
+* **mobile:** app installs but never starts — bound the font gate, drop resource shrinking ([#589](https://github.com/unnfazzed/Lynia/issues/589)) ([698e80d](https://github.com/unnfazzed/Lynia/commit/698e80da7e274910e8a7ad042c7b4336616a2810))
+* **mobile:** central client reliability policy — timeout/retry/backoff (C-O2) ([#582](https://github.com/unnfazzed/Lynia/issues/582)) ([e463cec](https://github.com/unnfazzed/Lynia/commit/e463cecf70fc82fdc99f9ec4524954660678c957))
+* **mobile:** gate rider activeJob self-heal poll on online/active-job (A-O4) ([#584](https://github.com/unnfazzed/Lynia/issues/584)) ([cd0e5ac](https://github.com/unnfazzed/Lynia/commit/cd0e5ac07530239dc0e91dc093b517b40f0c9286))
+* **mobile:** provision Sentry for Android crash telemetry (LR20) ([#593](https://github.com/unnfazzed/Lynia/issues/593)) ([5d62fb4](https://github.com/unnfazzed/Lynia/commit/5d62fb48ed1030d416b9ef5b2e6855cd32a0c160))
+* **mobile:** stop version bumps rotating the OTA runtime version (REL-01) ([26b25c8](https://github.com/unnfazzed/Lynia/commit/26b25c84c113509373c9e2a0ffa0e5fe7207aea5))
+
+
+### Performance Improvements
+
+* **mobile,api:** B-O10 — cursor-paginate GET /restaurants (LC loop B) ([#583](https://github.com/unnfazzed/Lynia/issues/583)) ([76c6531](https://github.com/unnfazzed/Lynia/commit/76c6531577770609686b5d5fdb6921d10cad7761))
+* **mobile:** B-O13 — bound rider board's resolved-order id Sets (LC loop B) ([3320388](https://github.com/unnfazzed/Lynia/commit/3320388e9339325078dccc8b729ce9dc28ec5156))
+
 ## [0.17.12](https://github.com/unnfazzed/Lynia/compare/v0.17.11...v0.17.12) (2026-08-04)
 
 
