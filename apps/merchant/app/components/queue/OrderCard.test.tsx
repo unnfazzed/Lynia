@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
+import { countMemoRenders } from "../../testing/render-count";
 import { OrderCard, type OrderCardBucket } from "./OrderCard";
 
 afterEach(() => {
@@ -283,5 +284,79 @@ describe("OrderCard — ready bucket", () => {
     fireEvent.click(button);
     expect(await screen.findByText("reveal failed")).toBeTruthy();
     expect(button.disabled).toBe(false);
+  });
+});
+
+// B-O16: `useNow`'s interval used to start unconditionally regardless of `bucket`, ticking a
+// payment/ready-bucket card once/sec for however long it sits in that bucket even though neither
+// branch reads `now`. Confirmed to FAIL against the pre-fix code (an unconditional `useNow()` call)
+// before landing — every case below would see the 1000ms interval fire.
+describe("OrderCard — clock ticker gating (B-O16)", () => {
+  function tickIntervalCalls(spy: { mock: { calls: unknown[][] } }) {
+    return spy.mock.calls.filter((call) => call[1] === 1000);
+  }
+
+  it("does not start the 1s clock for the payment bucket", () => {
+    const spy = vi.spyOn(global, "setInterval");
+    renderCard("payment", order({ merchantPhase: "awaiting_payment" }));
+    expect(tickIntervalCalls(spy)).toHaveLength(0);
+    spy.mockRestore();
+  });
+
+  it("does not start the 1s clock for the ready bucket", () => {
+    const spy = vi.spyOn(global, "setInterval");
+    renderCard("ready", order({ merchantPhase: "ready_for_pickup", riderId: "r1" }));
+    expect(tickIntervalCalls(spy)).toHaveLength(0);
+    spy.mockRestore();
+  });
+
+  it("starts the 1s clock for the waiting bucket (reads `now` for the item-approval countdown)", () => {
+    const spy = vi.spyOn(global, "setInterval");
+    renderCard("waiting", order({ itemApprovalDeadlineAt: new Date(Date.now() + 30_000).toISOString() }));
+    expect(tickIntervalCalls(spy).length).toBeGreaterThan(0);
+    spy.mockRestore();
+  });
+
+  it("starts the 1s clock for the preparing bucket (reads `now` for the prep countdown)", () => {
+    const spy = vi.spyOn(global, "setInterval");
+    renderCard("preparing", order({ merchantPhase: "preparing", prepMinutes: 10, prepStartedAt: new Date().toISOString() }));
+    expect(tickIntervalCalls(spy).length).toBeGreaterThan(0);
+    spy.mockRestore();
+  });
+});
+
+// B-O17: OrderCard had no React.memo boundary — paired with QueueBoard's B-O17 handler
+// memoization and use-queue-poll's mergeOrders structural sharing, an order whose own props are
+// unchanged across a re-render now genuinely skips re-rendering its card. Confirmed to FAIL against
+// the pre-fix code (a plain, unmemoized `export function OrderCard`, which countMemoRenders can't
+// even wrap — proving the boundary itself is new) before landing.
+describe("OrderCard — render isolation (B-O17)", () => {
+  it("bails out on an identical re-render but re-renders on a real prop change", () => {
+    const o = order();
+    const props = {
+      order: o,
+      bucket: "preparing" as OrderCardBucket,
+      disabled: false,
+      onMarkReady: vi.fn().mockResolvedValue(undefined),
+      onRevealPickupCode: vi.fn().mockResolvedValue("1234"),
+      onOpenHold: vi.fn(),
+      onLogCall: vi.fn().mockResolvedValue(undefined),
+      onRequestPayment: vi.fn().mockResolvedValue(undefined),
+      onConfirmPayment: vi.fn().mockResolvedValue(undefined),
+      onReleaseUnpaid: vi.fn().mockResolvedValue(undefined),
+      onRefund: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const { count } = countMemoRenders(OrderCard);
+    const { rerender } = render(<OrderCard {...props} />);
+    expect(count()).toBe(1);
+
+    // Every prop is the exact same reference as before — the memo boundary must bail.
+    rerender(<OrderCard {...props} />);
+    expect(count()).toBe(1);
+
+    // A real content change (fresh `order` object, different phase) — must re-render.
+    rerender(<OrderCard {...props} order={order({ merchantPhase: "ready_for_pickup" })} />);
+    expect(count()).toBe(2);
   });
 });

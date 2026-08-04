@@ -5,6 +5,7 @@ import type { MerchantOrderResponse } from "@lynia/shared";
 import { ApiError } from "./api-client";
 import { API_BASE_URL } from "./config";
 import { InflightLatch } from "./inflight-latch";
+import { mergeOrders } from "./merge-orders";
 import { listQueue } from "./orders-api";
 import { getReachabilityStore } from "./reachability";
 
@@ -65,7 +66,9 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
       const result = await listQueue();
       reachability.reportReachable();
       if (generation === generationRef.current) {
-        setOrders(result);
+        // B-O17: reuse an unchanged order's previous object reference so OrderCard's memo
+        // boundary can actually skip re-rendering it (see mergeOrders' own doc comment).
+        setOrders((prevOrders) => mergeOrders(prevOrders, result));
         setError(null);
       }
     } catch (err) {

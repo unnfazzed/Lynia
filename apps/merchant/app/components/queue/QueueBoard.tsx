@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { PREP_CHIPS_MIN } from "@lynia/shared";
 import { groupQueue, isNoRiderHold, isRiderSecured, shouldUseBoard } from "../../lib/order-groups";
@@ -137,16 +137,19 @@ export function QueueBoard({
 
   // LC-D03: callers (OrderCard) own the busy/error state per order — this just propagates
   // the rejection instead of swallowing it in a bare `void` fire-and-forget.
-  const handleMarkReady = withRefetch(markReady, refetch);
+  // B-O17: memoized (like every other OrderCard-bound handler below) so OrderCard's new memo
+  // boundary sees a stable prop reference across re-renders that don't touch this handler's inputs,
+  // instead of a fresh closure — and therefore a "changed prop" — every render.
+  const handleMarkReady = useMemo(() => withRefetch(markReady, refetch), [refetch]);
 
-  async function handleRevealPickupCode(orderId: string): Promise<string> {
+  const handleRevealPickupCode = useCallback(async (orderId: string): Promise<string> => {
     const res = await revealPickupCode(orderId);
     return res.pickupCode;
-  }
+  }, []);
 
-  function handleOpenHold(order: MerchantOrderResponse) {
+  const handleOpenHold = useCallback((order: MerchantOrderResponse) => {
     setOpenHoldId(order.id);
-  }
+  }, []);
 
   function handleHoldDismiss() {
     if (holdToShow) setAckHoldIds((prev) => new Set(prev).add(holdToShow.id));
@@ -163,17 +166,18 @@ export function QueueBoard({
     setOpenHoldId(null);
   }, refetch);
 
-  // E3 (R-16/R-17): the awaiting-payment lane's real flow.
-  const handleLogCall = withRefetch(logCall, refetch);
-  const handleRequestPayment = withRefetch(requestPayment, refetch);
-  const handleConfirmPayment = withRefetch(confirmPayment, refetch);
+  // E3 (R-16/R-17): the awaiting-payment lane's real flow. B-O17: memoized, see handleMarkReady's
+  // own note above.
+  const handleLogCall = useMemo(() => withRefetch(logCall, refetch), [refetch]);
+  const handleRequestPayment = useMemo(() => withRefetch(requestPayment, refetch), [refetch]);
+  const handleConfirmPayment = useMemo(() => withRefetch(confirmPayment, refetch), [refetch]);
   // No reason picker here (the gallery's M2·7 ships a single release button with no reason UI) —
   // "other" is the honest default rather than guessing a more specific one (flagged, not decided).
-  const handleReleaseUnpaid = withRefetch((orderId: string) => releaseUnpaid(orderId, "other"), refetch);
+  const handleReleaseUnpaid = useMemo(() => withRefetch((orderId: string) => releaseUnpaid(orderId, "other"), refetch), [refetch]);
   // D-12: refund-then-cancel an already-confirmed WALLET order.
-  const handleRefund = withRefetch(
-    (orderId: string, body: { reference: string; amount: number }) => refundOrder(orderId, body.reference, body.amount),
-    refetch,
+  const handleRefund = useMemo(
+    () => withRefetch((orderId: string, body: { reference: string; amount: number }) => refundOrder(orderId, body.reference, body.amount), refetch),
+    [refetch],
   );
 
   // E3/R-01: the collect-and-return debt ledger's merchant-side settlement actions.

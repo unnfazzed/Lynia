@@ -164,4 +164,38 @@ describe("useQueuePoll", () => {
     expect(refetchSettled).toBe(true);
     expect(result.current.orders).toEqual(orders("fresh"));
   });
+
+  // B-O17: OrderCard's new React.memo boundary only pays off if an order whose content is
+  // unchanged between two polls keeps the SAME object reference — otherwise every card still
+  // "changes" on every 5s tick regardless of memoization. Confirmed to FAIL against the pre-fix
+  // code (a bare `setOrders(result)`, always a fresh reference) before landing.
+  it("keeps the same order object reference across a poll when that order's content is unchanged", async () => {
+    const unchangedOrderV1 = { id: "stable", merchantPhase: "preparing" } as unknown as MerchantOrderResponse;
+    const unchangedOrderV2 = { id: "stable", merchantPhase: "preparing" } as unknown as MerchantOrderResponse; // same content, new object
+    const changedOrderV1 = { id: "moving", merchantPhase: "preparing" } as unknown as MerchantOrderResponse;
+    const changedOrderV2 = { id: "moving", merchantPhase: "ready_for_pickup" } as unknown as MerchantOrderResponse;
+
+    listQueueMock
+      .mockResolvedValueOnce([unchangedOrderV1, changedOrderV1])
+      .mockResolvedValueOnce([unchangedOrderV2, changedOrderV2]);
+
+    const { result } = renderHook(() => useQueuePoll(true));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const firstStable = result.current.orders.find((o) => o.id === "stable");
+    expect(firstStable).toBe(unchangedOrderV1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    const secondStable = result.current.orders.find((o) => o.id === "stable");
+    const secondMoving = result.current.orders.find((o) => o.id === "moving");
+    // Unchanged content -> the ORIGINAL reference survives the poll, not the fresh deserialize.
+    expect(secondStable).toBe(unchangedOrderV1);
+    expect(secondStable).not.toBe(unchangedOrderV2);
+    // Changed content -> the new reference is used, not the stale one.
+    expect(secondMoving).toBe(changedOrderV2);
+  });
 });

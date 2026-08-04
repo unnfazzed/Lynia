@@ -731,29 +731,43 @@ B-O5's zero-evidence backlog placeholder; see `docs/LC-STEER-2026-08-04.md` §4)
       the boot-defer timer elapses. All three new "not called on mount" assertions confirmed to FAIL
       against the pre-fix code before landing. `pnpm typecheck && pnpm lint && pnpm test` all green
       (756 mobile tests, 5 new/expanded). See `docs/LC-B-REPORT-2026-08-04.md`.
-- [ ] B-O16 **(re-ranked to #1, was #7 — 2026-08-04 steer)** **(B-T4 finding)** Merchant `OrderCard`'s
-      shared `useNow()` hook (`apps/merchant/app/lib/use-now.ts`, default 1000ms interval) is called
-      unconditionally at `apps/merchant/app/components/queue/OrderCard.tsx:244`, ticking every
-      mounted card once/sec regardless of `bucket` — but `now` is only read by the `waiting` (line
-      272) and `preparing` (line 291) branches. A `payment`-bucket card (`PaymentBucketActions`'s own
-      comment: "No clock (M2·7 never blocks the board)... only ever renders as an ordinary card") or
-      a `ready`-bucket card (fully static/callback-driven JSX, lines 307-346) re-renders once/sec for
-      however long it sits in that bucket — potentially minutes on an awaiting-payment order — for
-      zero visible benefit, on the always-mounted kitchen tablet the whole Go-class mandate targets.
-      Fix: extract the two clock-consuming branches into small self-ticking sub-components (mirroring
-      the `SentOfferCard`/`AuctionClock` extraction pattern already used elsewhere in this codebase)
-      so `payment`/`ready` cards mount with zero interval, or gate `useNow()`'s call behind `bucket ===
-      "waiting" || bucket === "preparing"`. (S)
-- [ ] B-O17 **(re-ranked to #2, was #8 — 2026-08-04 steer)** **(B-T4 finding)** Merchant
-      `QueueBoard`/`OrderCard` has no `React.memo` boundary (confirmed via grep — zero `memo(` usage
-      in either file) — the merchant-app sibling of the mobile rider-board gap `B-O2` already tracks
-      for `JobCard`/`ComposeMap`. `use-queue-poll.ts`'s 5s poll and `QueueBoard.tsx`'s
-      `groupQueue()`/bucket-array derivation (lines ~204-209) build fresh arrays every poll tick
-      regardless of whether the underlying order data changed, and with no memo boundary every
-      `OrderCard` re-renders in lockstep even when its own order object is referentially unchanged
-      (TanStack Query's structural sharing would otherwise let an unchanged order skip re-render if
-      the card were memoized). Bundle with `B-O16` — fixing `OrderCard`'s ticker scope is the natural
-      point to also add the memo boundary in the same pass. (M)
+- [x] B-O16 **DONE (2026-08-04b)** **(B-T4 finding, bundled with B-O17 per that item's own note)**
+      Merchant `OrderCard`'s shared `useNow()` hook ticked every mounted card once/sec regardless of
+      `bucket`, even though only the `waiting`/`preparing` branches read `now`. Fixed by gating: added
+      an `enabled` param to `useNow` (`apps/merchant/app/lib/use-now.ts`, default `true`, matching the
+      mobile app's B-O8 `needsClock`-gating convention rather than a new pattern) so the interval
+      effect is skipped entirely instead of running and being ignored; `OrderCard` now computes
+      `needsClock = bucket === "waiting" || bucket === "preparing"` and calls `useNow(1000, needsClock)`
+      — a `payment`/`ready`-bucket card, which can sit mounted for minutes, now mounts its clock with
+      zero interval. Regression tests spy on `global.setInterval` and assert the 1000ms interval is/isn't
+      created per bucket (`OrderCard.test.tsx`, matching B-O8's own spy convention); confirmed to FAIL
+      against the pre-fix code (an unconditional `useNow()` call) before landing.
+- [x] B-O17 **DONE (2026-08-04b)** **(B-T4 finding, bundled with B-O16 above)** `QueueBoard`/`OrderCard`
+      had no `React.memo` boundary, so every mounted card re-rendered in lockstep on the board's 5s poll
+      tick regardless of whether its own order data changed. Landing a real memo boundary took three
+      parts, not one, since the naive version would have been dead weight: (1) `OrderCard` is now
+      `React.memo`'d (exported as `OrderCard = memo(OrderCardImpl)`); (2) `QueueBoard`'s
+      `OrderCard`-bound handlers (`onMarkReady`/`onRevealPickupCode`/`onOpenHold`/`onLogCall`/
+      `onRequestPayment`/`onConfirmPayment`/`onReleaseUnpaid`/`onRefund`) are now `useMemo`/
+      `useCallback`'d off the already-stable `refetch` reference instead of freshly allocated every
+      render — without this, the memo boundary would bail on nothing, since every render handed
+      `OrderCard` brand-new closures regardless of poll content; (3) — the part the checklist item's own
+      "TanStack Query's structural sharing" reasoning assumed already existed but doesn't for this
+      hand-rolled poll hook — new `apps/merchant/app/lib/merge-orders.ts` (`mergeOrders`) gives
+      `useQueuePoll` the same trick by hand: an order whose content is unchanged between two polls
+      (compared via `JSON.stringify` equality) keeps its PREVIOUS object reference instead of the fresh
+      one `listQueue()` just deserialized, so `OrderCard`'s `order` prop only "changes" when the order
+      actually did. Regression tests, all confirmed to FAIL against the pre-fix code before landing:
+      `merge-orders.test.ts` (unchanged→same reference, changed→new reference, added/removed handled);
+      `use-queue-poll.test.ts` gained a case polling the same hook twice and asserting an untouched
+      order's reference survives the second poll while a changed sibling's doesn't; `OrderCard.test.tsx`
+      gained a render-isolation case (new `apps/merchant/app/testing/render-count.ts`, a straight port of
+      the mobile app's B-O2 `countMemoRenders` `.type`-patching technique — `React.Profiler` doesn't work
+      for this, per that file's own doc comment) proving a re-render with the exact same props bails
+      (count stays 1) while a real `order` change re-renders (count becomes 2). `pnpm typecheck && pnpm
+      lint && pnpm test` all green (repo-wide: 1540 API + 769 mobile + merchant's own suite, all passing;
+      37 new/changed merchant assertions across the four touched files). See
+      `docs/LC-B-REPORT-2026-08-04b.md`.
 - [ ] B-O18 **(re-ranked to #3, was #9 — 2026-08-04 steer)** **(B-T4 finding)** `AuctionClock`'s 20s
       urgency-color crossfade (`apps/mobile/src/ui/order/AuctionClock.tsx:105`,
       `Animated.timing(urgencyAnim, { toValue: to, duration: 200, useNativeDriver: false })`, driving
