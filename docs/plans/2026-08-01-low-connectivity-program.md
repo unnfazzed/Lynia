@@ -883,13 +883,23 @@ re-confirming the same blocker instead of landing work; see `docs/LC-STEER-2026-
       against the pre-fix code (2 self-heals per burst instead of 1) before landing. `pnpm
       typecheck && pnpm lint && pnpm test` all green (1540 API + 803 mobile tests). See
       `docs/LC-B-REPORT-2026-08-04d.md`.
-- [ ] B-O13 **(new, B-T3 finding)** **(re-ranked to #1, was #4 — 2026-08-04b steer, see rationale
-      above)** `expiredOrderIds`/`takenOrderIds` `Set`s in
-      `apps/mobile/src/realtime/use-rider-board.ts:35,38` grow for the rider's whole online session
-      with no eviction (every `bid:expired`/`order:taken` push adds an id, nothing ever removes
+- [x] B-O13 **(2026-08-04f)** **(new, B-T3 finding)** **(re-ranked to #1, was #4 — 2026-08-04b
+      steer, see rationale above)** `expiredOrderIds`/`takenOrderIds` `Set`s in
+      `apps/mobile/src/realtime/use-rider-board.ts:35,38` grew for the rider's whole online session
+      with no eviction (every `bid:expired`/`order:taken` push added an id, nothing ever removed
       one) — geo-scoped so realistic growth over a shift is tens-to-low-hundreds of short strings;
-      real but the absolute footprint is unlikely to matter on its own. Same shape as the now-fixed
-      `LC-B08` (`sentOffers`); low priority on its own, worth revisiting if bundled with `B-O12`. (S)
+      real but the absolute footprint was unlikely to matter on its own. Same shape as the
+      now-fixed `LC-B08` (`sentOffers`), except an order the rider never bid on never enters
+      `sentOffers` at all, so that sweep can't reach these two Sets' ids. Fixed with a `cap`+
+      FIFO-evict helper (`addBoundedId`, `BOARD_RESOLVED_ID_CAP = 200`, Sets preserve insertion
+      order) at both `setExpiredOrderIds`/`setTakenOrderIds` call sites — same shape as `B-O12`'s
+      `OPEN_ORDERS_CACHE_CAP` on the sibling `openOrders` cache. Regression tests in
+      `src/realtime/__tests__/use-rider-board.test.tsx` (250 `bid:expired`/`order:taken` pushes
+      each stay capped at 200 entries, keeping the most-recently-resolved id and evicting the
+      oldest — not an arbitrary truncation). No `KNOWN_BUGS.md` row — pure memory-bound
+      optimization, correctness-intact throughout, matching `B-O10`/`B-O12`'s own precedent.
+      `pnpm typecheck && pnpm lint && pnpm test` all green. See
+      `docs/LC-B-REPORT-2026-08-04f.md`.
 - [ ] B-O14 **(new, B-T3 finding)** **(re-ranked to #2, was #5 — 2026-08-04b steer)** Merchant
       kitchen board's `ackSecuredIds`/`ackHoldIds` `Set`s
       (`apps/merchant/app/components/queue/QueueBoard.tsx:108-109,143,188`) never shrink for the
