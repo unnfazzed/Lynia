@@ -25,13 +25,15 @@ not code — see `LAUNCH-EXECUTION-RUNBOOK.md` §8) and two deliberate deferrals
 > exercised. Staged **production** rollout (10% `inProgress`) remains unexercised: it needs the
 > closed test, production access, and the `EAS_TAG_RELEASES_ENABLED` arming switch.
 >
-> **Channel A is NOT proven, and is currently broken in the normal case.** Zero OTA updates have
-> ever been published on this project. Two defects found reviewing the live state — `REL-01` (a
-> release-please `version` bump rotates the `fingerprint` runtimeVersion, so an OTA from `main`
-> matches no installed binary) and `REL-02` (the OTA workflow defaulted to a channel that does not
-> exist) — are in `docs/KNOWN_BUGS.md`. §1a below describes the design; read it as the intent,
-> **not** as a description of a working lane. Treat "we can ship an update" as meaning the store
-> lane only until `REL-01` is decided.
+> **Channel A is repaired but not yet live.** Zero OTA updates have ever been published on this
+> project. Two defects found reviewing the live state are both now fixed — `REL-01` (a
+> release-please `version` bump rotated the `fingerprint` runtimeVersion, so an OTA from `main`
+> matched no installed binary; fixed by `apps/mobile/fingerprint.config.js` skipping the version
+> fields) and `REL-02` (the OTA workflow defaulted to a channel that does not exist; fixed by a
+> preflight that aborts rather than publishing to nobody). **One step remains before the lane is
+> usable:** the live binary was built before the fingerprint fix, so its runtimeVersion belongs to
+> the old scheme — **the next store build re-baselines it**, and OTA works from that binary onward.
+> Until then, treat "we can ship an update" as the store lane only.
 
 | Piece | Status |
 |---|---|
@@ -40,7 +42,7 @@ not code — see `LAUNCH-EXECUTION-RUNBOOK.md` §8) and two deliberate deferrals
 | GitHub Environments gate on prod deploys | ✅ jobs reference `staging` / `production` / `production-mobile`; founder adds required reviewers |
 | Play release pipeline: EAS build + staged submit (10% `inProgress`) | ✅ `mobile-release.yml` + `apps/mobile/eas.json` — **armed and proven to the internal track 2026-08-04**; the *staged production* half (10% `inProgress`) is still unexercised and additionally gated on `EAS_TAG_RELEASES_ENABLED` |
 | `versionCode` discipline | ✅ `autoIncrement` + `appVersionSource: remote` in `eas.json` |
-| OTA hotfix lane | ⚠️ **built, armed, and NOT working** — `mobile-ota.yml` + `expo-updates@~0.27.5` + `runtimeVersion: fingerprint` all exist and the EAS project is linked, but **zero updates have ever been published** and two defects block the lane: `REL-01` (a `version` bump rotates the fingerprint runtimeVersion, so a publish from `main` matches no installed binary) and `REL-02` (the workflow defaulted to a channel that does not exist). `REL-02` is fixed; `REL-01` needs a runtime-version policy decision. Detection shipped: the workflow now preflights and refuses to publish an update that can't land |
+| OTA hotfix lane | ⚠️ **built, armed, repaired — one store build away from usable.** `mobile-ota.yml` + `expo-updates@~0.27.5` + `runtimeVersion: fingerprint` all exist, but **zero updates have ever been published**, and the two defects that made publishing a silent no-op are now both fixed: `REL-01` (version bumps rotated the fingerprint runtimeVersion → `apps/mobile/fingerprint.config.js` skips the version fields) and `REL-02` (default channel didn't exist → preflight aborts instead of publishing to nobody). Remaining: the live binary predates the fingerprint fix, so **the next store build re-baselines the runtime version** and OTA works from that binary on |
 | CODEOWNERS + PR template (risk/rollback/migration checklist) | ✅ `.github/` |
 | **§2e correction:** the candidate's tagged `run.app` URL is unreachable from CI (default URLs disabled, LB-only ingress) | smoke = revision-readiness gate + %-shift + health **through the LB** (`/healthz` — the actual route; README's `/health` is loose prose), which is what `release.yml` implements |
 | Staging stack (§2d) | ✅ `infra/terraform/staging.tf` (own SQL/Redis/secrets/SA/bucket, `staging_enabled` default `false` in-repo) — **applied and armed**: `deploy-staging.yml` has run green on every `main` push since 2026-07-08 (`docs/GCP-PENDING-REVIEW-2026-07-13.md` §Appendix), auto on main, `APP_ENV=staging` QA tier, smoke |
@@ -89,15 +91,19 @@ UI) are JS-only and never need a store release.
 - **Runtime versioning:** set `runtimeVersion` to `{ "policy": "fingerprint" }` (or `appVersion`) in
   `app.config.ts`. Fingerprint policy ties an OTA bundle to the exact native layer it was built against,
   so an OTA update can never land on an incompatible binary.
-  > ⚠️ **Reality check (2026-08-04, `REL-01`).** "The exact native layer" is the intent; the
-  > implementation hashes the whole resolved `expoConfig`, and **`version` is one of the hashed
-  > keys**. Since release-please rewrites `version` on essentially every merge to `main`, the
-  > runtimeVersion rotates on changes that are not native at all — so an OTA published from `main`
-  > routinely computes a runtimeVersion that no installed binary has, and is silently ignored.
-  > Measured: `0.17.9` → `c56c13bb…`, `0.17.10` → `1bd7d519…`, every other input held constant.
-  > Until that is resolved, this bullet describes a safety property that is real but far stricter
-  > than intended. `mobile-ota.yml` now preflights for the mismatch and fails instead of publishing
-  > an update nobody receives.
+  > ⚠️ **This needed a fix to actually mean what it says (2026-08-04, `REL-01` — now fixed).**
+  > "The exact native layer" is the intent; the implementation hashes the whole resolved
+  > `expoConfig`, and **`version` is one of the hashed keys**. Since release-please rewrites
+  > `version` on essentially every merge to `main`, the runtimeVersion rotated on changes that were
+  > not native at all, so an OTA from `main` routinely computed a runtimeVersion no installed binary
+  > had and was silently ignored (`0.17.9` → `c56c13bb…`, `0.17.10` → `1bd7d519…`, all else equal).
+  > **Fixed** by `apps/mobile/fingerprint.config.js` → `sourceSkips: ["ExpoConfigVersions"]`, which
+  > drops the app version / `versionCode` / `buildNumber` fields and nothing else: both versions now
+  > hash to `5b175b9b…`, while `targetSdkVersion` 35 → 34 still moves it to `de24d3a5…`. The bullet
+  > above is now accurate. Two things to keep in mind: runtimeVersion is stamped at **build** time,
+  > so this only governs binaries built after the fix (the currently-live one is not OTA-able); and
+  > `mobile-ota.yml` preflights the computed runtime version against real builds regardless, so a
+  > future regression here fails loudly rather than silently.
 - **Rollout + rollback:** publish to an EAS Update **branch** per release channel (`production`,
   `preview`). Roll back instantly by re-pointing the channel at the previous update (`eas update
   --branch production --message "rollback"` republishing the prior commit, or `eas update:rollback`).

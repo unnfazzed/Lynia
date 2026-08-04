@@ -21,7 +21,7 @@ submissions, update channels/branches), the GitHub Actions run history, a locall
 | Class | Count |
 |---|---|
 | STALE_DOC (fixed) | 10 files |
-| CODE_BUG (ledgered, not doc-edited) | 2 (`REL-01`, `REL-02` — one fixed forward same run) |
+| CODE_BUG (ledgered, not doc-edited) | 2 (`REL-01`, `REL-02` — both fixed same day; `REL-01` after an explicit founder go-ahead) |
 | ORPHAN | 0 |
 | AMBIGUOUS | 1 (see below) |
 | Regressions found by the CI-gate run | 0 |
@@ -56,8 +56,9 @@ Nothing was overwritten.
 
 **The precise claim the docs now make:** Channel B (dispatch → EAS build → auto-submit → Play) works
 end to end, unattended, and shipped an *update* (vc 2 replacing vc 1) — not merely a first upload.
-Channel A (OTA) does not work; see below. Several docs previously implied "the update pipeline"
-covered both.
+Channel A (OTA) has both its defects fixed but is **one store build away from usable**, because the
+live binary predates the fingerprint fix. Several docs previously implied "the update pipeline"
+covered both channels; they now say which one they mean.
 
 ## STALE_DOC — fixed this run
 
@@ -75,19 +76,28 @@ covered both.
 
 ## CODE_BUG — ledgered, per the rule that only STALE_DOC gets auto-edited
 
-Both are in `docs/KNOWN_BUGS.md` (OPEN table) and are the reason the OTA lane is now fenced off in
-four docs rather than described as working.
+Both are in `docs/KNOWN_BUGS.md` and are the reason the OTA lane is now described accurately —
+"repaired, one store build from usable" — in the five docs that previously called it working.
 
 - **`REL-01` — a version bump rotates the OTA runtime version.** `@expo/fingerprint` hashes the
   resolved `expoConfig`, and `version` is one of the hashed keys; release-please rewrites it on
   essentially every merge. Verified by controlled A/B with all other inputs held constant:
-  `0.17.9` → `c56c13bb…`, `0.17.10` → `1bd7d519…`. An OTA from `main` therefore computes a runtime
+  `0.17.9` → `c56c13bb…`, `0.17.10` → `1bd7d519…`. An OTA from `main` therefore computed a runtime
   version no installed binary has, and expo-updates ignores it **silently** — CLI exits 0, console
-  shows a published update, zero devices receive it. **Not doc-edited and not "fixed":** the repair
-  is a runtime-version *policy* choice with three real options, it changes OTA semantics for every
-  future binary, and it only takes effect on binaries built after the change. That is a decision to
-  make deliberately — ideally before the closed test starts, since during the test every fix
-  otherwise costs a full store round-trip.
+  shows a published update, zero devices receive it. **Initially left OPEN** as a policy decision;
+  **fixed later the same day** on the founder's go, once the third option turned out to be directly
+  supported rather than a trade-off: `apps/mobile/fingerprint.config.js` sets
+  `sourceSkips: ["ExpoConfigVersions"]`, which drops the app version / `versionCode` / `buildNumber`
+  fields and nothing else. Verified: both versions now hash to `5b175b9b…`, and the negative control
+  (`targetSdkVersion` 35 → 34 → `de24d3a5…`) confirms native inputs are still hashed, so the
+  anti-brick property is intact. Written as a **string array** rather than
+  `require('@expo/fingerprint').SourceSkips.*` — that package is only a transitive dep of
+  `expo-updates` and is not resolvable from `apps/mobile` under pnpm's strict layout (confirmed: the
+  require form throws), the same failure class as EAS builds 5/6/7. Guarded by
+  `apps/mobile/__tests__/fingerprint-config.test.ts`, itself verified to fail against both a deleted
+  config and the require form. **Residual, and the reason OTA is still not usable:** runtimeVersion
+  is stamped at build time, so the live vc-2 binary keeps `6c72c486…` and can never receive an OTA —
+  the next store build re-baselines it.
 - **`REL-02` — the OTA workflow published to a channel that does not exist.** Its `branch` input
   defaulted to `production`; the project has exactly one channel and one branch, both `preview`, and
   the live binary was built on `preview`. **Fixed forward this run**, since the fix needs no product

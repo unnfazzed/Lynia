@@ -86,8 +86,10 @@ Read the rest of this doc with three corrections:
 - **The live build has no crash telemetry.** Sentry is unprovisioned and source-map upload is disabled
   (`SENTRY_DISABLE_AUTO_UPLOAD=true`), so LR20 is only half met and the closed test would run blind.
   This is the highest-value remaining founder item.
-- **The OTA hotfix lane does not work** (`REL-01`, `REL-02` in `docs/KNOWN_BUGS.md`). Every fix
-  currently ships as a store build. Plan the closed test around that latency.
+- **The OTA hotfix lane is repaired but not yet live** (`REL-01`, `REL-02` in `docs/KNOWN_BUGS.md`
+  — both fixed). The live binary predates the fingerprint fix, so **the next store build is what
+  switches OTA on**. Cut it before the closed test starts: until then every fix ships as a store
+  build, and re-baselining gets much more expensive once testers are opted in.
 
 The vendor gates below (WhatsApp BSP, Didit, Firebase) are **unchanged** — going live on a test track
 did not close any of them.

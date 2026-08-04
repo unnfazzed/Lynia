@@ -265,9 +265,16 @@ go-live (verified against the EAS API: 2 on 08-03, 6 on 08-04; the per-attempt c
 `PLAY-STORE-SUBMISSION.md` drifted low). Prefer fixing forward on one build and retrying the
 *submission*, which is free.
 
-⚠️ Do **not** reach for "Mobile OTA Update" as the fast lane yet — it has never successfully shipped
-to a device, and `REL-01`/`REL-02` (`docs/KNOWN_BUGS.md`) explain why a publish can silently reach
-nobody. The workflow now refuses to publish when it detects that condition.
+⚠️ **"Mobile OTA Update" is not a usable fast lane yet** — it has never successfully shipped to a
+device. `REL-01` and `REL-02` (`docs/KNOWN_BUGS.md`), which made a publish silently reach nobody,
+are both fixed, but the **live binary was built before the fingerprint fix**, so its runtime version
+belongs to the old scheme and no update published now can match it. The workflow will refuse the
+dispatch rather than pretend otherwise.
+
+**To switch OTA on: cut one more store build** (the procedure just above). That binary's runtime
+version is stable across version bumps, so from it onward a JS-only fix can go out via OTA in
+minutes. Worth doing **before** the closed test starts — re-baselining costs one build now, versus
+a store round-trip per hotfix for 14 days once testers are opted in.
 
 ### d) Branch protection — §6 above, plus Code Owners
 
