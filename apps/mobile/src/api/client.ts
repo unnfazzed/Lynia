@@ -1,5 +1,6 @@
 import { getDeviceId, type Session } from "../auth/session";
 import { API_URL } from "../config";
+import { STANDARD_TIMEOUT_MS } from "../net/network-policy";
 import { reportReachable, reportUnreachable } from "../net/reachability";
 import { CLIENT_METRICS_PATH, enqueueApiFetch } from "../telemetry/rum";
 
@@ -63,11 +64,10 @@ interface RequestOpts {
 // On a constrained mobile link (the target market) a request to the remote API can hang for the
 // OS default (tens of seconds) with only an in-button spinner showing. Bound every request so a
 // slow/stalled network fails into the friendly-error path within a few seconds instead of hanging.
-const REQUEST_TIMEOUT_MS = 15_000;
-
+// STANDARD_TIMEOUT_MS is the central policy (net/network-policy.ts, C-O2) — not a local constant.
 async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), STANDARD_TIMEOUT_MS);
   try {
     const res = await fetch(input, { ...init, signal: controller.signal });
     // We got an HTTP response — even a 4xx/5xx proves the link is alive. Clears the offline state and

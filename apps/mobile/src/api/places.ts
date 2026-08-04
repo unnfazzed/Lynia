@@ -1,5 +1,6 @@
 import { GOOGLE_PLACES_KEY, placesEnabled } from "../config";
 import { mapPlaceDetails, mapPredictions, type PlaceSuggestion, type ResolvedPlace } from "../logic/places";
+import { FAST_TIMEOUT_MS } from "../net/network-policy";
 
 /**
  * Google Places REST client for search-first addressing (customer-journey §1·2/§1·3). These call Google
@@ -35,13 +36,11 @@ const BIAS_LOCATION = "-17.8292,31.0522";
 const BIAS_RADIUS_M = "50000";
 const BIAS_COUNTRY = "country:zw";
 
-// Same few-second ceiling as the API client: a stalled Places call must fail into the pin fallback
-// fast, not hang behind a spinner on a constrained link.
-const PLACES_TIMEOUT_MS = 8_000;
-
 async function getJson(url: string): Promise<unknown | null> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PLACES_TIMEOUT_MS);
+  // FAST_TIMEOUT_MS (net/network-policy.ts, C-O2): a stalled Places call must fail into the pin
+  // fallback fast, not hang behind a spinner on a constrained link.
+  const timer = setTimeout(() => controller.abort(), FAST_TIMEOUT_MS);
   try {
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) return null;

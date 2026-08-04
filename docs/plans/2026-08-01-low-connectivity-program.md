@@ -1255,10 +1255,28 @@ direct continuation of the just-shipped C-O7's draft-persistence pattern on a si
       extended `ui/__tests__/sos-control.test.tsx`. `pnpm --filter mobile typecheck && pnpm --filter
       mobile lint && pnpm --filter mobile test` green (114 suites / 804 tests); full monorepo
       `pnpm typecheck && pnpm test` green. See `docs/LC-C-REPORT-2026-08-04d.md`. (M)
-- [ ] C-O2 **(re-ranked to #4, was #5)** Central client network policy: one module defining
-      timeout/retry/backoff-with-jitter tuned for 600 ms RTT, replacing per-call-site defaults
-      (DoorDash lessons 6+7); every retriable mutation must name its server-side idempotency
-      guarantee. (M)
+- [x] C-O2 **DONE (2026-08-04e)** **(re-ranked to #4, was #5)** Central client network policy: one
+      module defining timeout/retry/backoff-with-jitter tuned for 600 ms RTT, replacing per-call-site
+      defaults (DoorDash lessons 6+7); every retriable mutation must name its server-side idempotency
+      guarantee. **Shipped:** new `apps/mobile/src/net/network-policy.ts` replaces five independently-
+      chosen timeout constants (`client.ts` 15s, `uploads.ts` a duplicated 15s, `places.ts` 8s, the
+      feature-flags/version-gate boot checks 10s each, the reachability probe 5s) with four named
+      tiers scaled off the program's 600ms RTT floor (`PROBE_TIMEOUT_MS`/`FAST_TIMEOUT_MS`/
+      `BACKGROUND_CHECK_TIMEOUT_MS`/`STANDARD_TIMEOUT_MS`), and adds `fullJitterBackoffMs`/
+      `queryRetryDelayMs` (AWS full jitter, base 1200ms/cap 4s) wired as `query/client.ts`'s
+      `queries.retryDelay` — previously unset, so retries ran on TanStack's un-jittered library
+      default (exactly the retry-storm risk DoorDash lesson 7 names). The reachability probe's own
+      tested exact-value backoff (`nextProbeDelayMs`) is deliberately left un-jittered — a
+      single-device polling loop, not a fleet-wide retry — only its per-probe timeout moved to the
+      shared tier. `docs/ARCHITECTURE.md` §Retry ownership gained a table naming the server-side
+      idempotency guarantee (unique index / CAS / row-lock, with file references) behind every
+      mutation that sees a client-initiated retry or reconcile today (order creation, offer-accept,
+      rider bids, delivery-code confirm, pickup/delivery-proof attach, `becomeRider`, the KYC webhook,
+      wallet top-ups, merchant disputes, commission-ledger writes). Ledgered `LC-C15`. Regression
+      tests: new `net/__tests__/network-policy.test.ts` (jitter bounds/tier ordering/RNG injection) +
+      a wiring assertion in `query/__tests__/client.test.tsx`. `pnpm --filter mobile typecheck &&
+      pnpm --filter mobile lint && pnpm --filter mobile test` all green (118 suites / 835 tests). See
+      `docs/LC-C-REPORT-2026-08-04e.md`. (M)
 - [ ] ~~C-O3 Share one Socket.IO connection across realtime hooks (fewer handshakes on lossy
       radio) — KNOWN backlog.~~ — **struck through (2026-08-03 steer): superseded by Lane A's
       `A-O17` (LC-A07).** Both items are the identical fix — one multiplexed Socket.IO connection

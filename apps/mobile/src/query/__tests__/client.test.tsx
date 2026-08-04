@@ -1,5 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { ApiError } from "../../api/client";
+import { queryRetryDelayMs } from "../../net/network-policy";
 import { DEFAULT_STALE_TIME_MS, invalidateIfStale, pendingOrQueued, queryClient, shouldRetry } from "../client";
 
 describe("ApiError.retryable (the per-error half of the retry taxonomy)", () => {
@@ -20,6 +21,12 @@ describe("mutation retry policy (writes are non-retryable by default)", () => {
     // Money-moving / state-changing writes must not be silently re-sent by the client. Pinned so a
     // future per-mutation `retry:` is a deliberate, reviewed change (and must carry an idempotency key).
     expect(queryClient.getDefaultOptions().mutations?.retry).toBe(false);
+  });
+});
+
+describe("query retry delay (C-O2 central network policy)", () => {
+  it("wires the jittered, RTT-tuned backoff instead of TanStack's un-tuned default", () => {
+    expect(queryClient.getDefaultOptions().queries?.retryDelay).toBe(queryRetryDelayMs);
   });
 });
 

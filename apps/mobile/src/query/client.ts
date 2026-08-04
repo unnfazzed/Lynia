@@ -1,6 +1,7 @@
 import { focusManager, QueryClient, type QueryKey } from "@tanstack/react-query";
 import { AppState, type AppStateStatus, Platform } from "react-native";
 import { ApiError } from "../api/client";
+import { queryRetryDelayMs } from "../net/network-policy";
 
 /**
  * Decide whether a failed query is worth retrying. Network failures (ApiError status 0: the constrained
@@ -34,6 +35,9 @@ export const queryClient = new QueryClient({
     },
     queries: {
       retry: shouldRetry,
+      // C-O2: jittered backoff tuned for the 600ms-RTT target (net/network-policy.ts) — replaces
+      // TanStack's un-tuned, un-jittered default retryDelay.
+      retryDelay: queryRetryDelayMs,
       refetchOnWindowFocus: false,
       // Serve cached data instantly on back-navigation (History → Order → back) and revalidate
       // quietly, instead of a skeleton on every remount. Live screens stay fresh via their own

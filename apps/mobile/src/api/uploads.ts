@@ -1,3 +1,4 @@
+import { STANDARD_TIMEOUT_MS } from "../net/network-policy";
 import { apiFetch } from "./client";
 
 export type ImageContentType = "image/jpeg" | "image/png";
@@ -10,10 +11,6 @@ export interface UploadTarget {
    *  older API that only signed the content type. */
   headers?: Record<string, string>;
 }
-
-// Mirrors client.ts REQUEST_TIMEOUT_MS — the signed-URL PUT bypasses apiFetch (raw binary to GCS)
-// but must fail into the friendly-error path just as fast.
-const UPLOAD_TIMEOUT_MS = 15_000;
 
 /** Ask the backend for a short-lived signed PUT URL + the object key to persist (the rider's KYC photo). */
 export function requestKycPhotoUpload(contentType: ImageContentType): Promise<UploadTarget> {
@@ -45,10 +42,11 @@ export async function uploadImage(
   headers: Record<string, string>,
 ): Promise<void> {
   const blob = await (await fetch(fileUri)).blob();
-  // Same 15s bound apiFetch puts on every request: on a constrained link a stalled PUT would
-  // otherwise hang behind the in-button spinner for the OS default (tens of seconds, or forever).
+  // Same STANDARD_TIMEOUT_MS bound apiFetch puts on every request (net/network-policy.ts, C-O2): on
+  // a constrained link a stalled PUT would otherwise hang behind the in-button spinner for the OS
+  // default (tens of seconds, or forever).
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), STANDARD_TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(uploadUrl, { method: "PUT", headers, body: blob, signal: controller.signal });

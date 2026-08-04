@@ -1,6 +1,7 @@
 import { MerchantFeatureFlagsResponse } from "@lynia/shared";
 import { useEffect, useState } from "react";
 import { API_URL } from "../config";
+import { BACKGROUND_CHECK_TIMEOUT_MS } from "./network-policy";
 
 /**
  * Remote config for the merchant-vertical kill switches (`docs/plans/2026-07-28-restaurants-send-
@@ -23,7 +24,7 @@ export const DEFAULT_FEATURE_FLAGS: MerchantFeatureFlagsResponse = {
 
 export async function fetchFeatureFlags(
   fetchImpl: typeof fetch = fetch,
-  timeoutMs = 10_000,
+  timeoutMs = BACKGROUND_CHECK_TIMEOUT_MS,
 ): Promise<MerchantFeatureFlagsResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

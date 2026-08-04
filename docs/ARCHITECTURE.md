@@ -1096,6 +1096,49 @@ layer can't classify — is treated as non-retryable on the write path. The PSP-
 (future EcoCash rail, wallet PR2) joins this table as its own row and must dedupe inbound events by
 provider event id.
 
+**Central client reliability policy (C-O2, mobile).** DoorDash lesson 6 ("client reliability policy
+belongs to the contract, not call sites") and lesson 7 (jitter over synchronized retries — see
+`docs/plans/2026-08-01-low-connectivity-program.md` §3). Before this, every mobile network edge
+picked its own timeout constant independently (`client.ts` 15s, `uploads.ts` a duplicated "mirrors
+client.ts" 15s, `places.ts` 8s, the feature-flags/version-gate boot checks 10s, the reachability
+probe 5s) and TanStack Query's retry backoff was left at the library's un-jittered default.
+`apps/mobile/src/net/network-policy.ts` is now the single source for both:
+
+| Tier | Value | Used by |
+|---|---|---|
+| `RTT_BUDGET_MS` | 600 ms | The Harare 2G/3G floor every tier below is scaled from (program doc §1) |
+| `PROBE_TIMEOUT_MS` | 5 s | `net/reachability.ts`'s `/health` recovery probe |
+| `FAST_TIMEOUT_MS` | 8 s | `api/places.ts` (Places autocomplete/details — UI is actively blocking) |
+| `BACKGROUND_CHECK_TIMEOUT_MS` | 10 s | `net/use-feature-flags.ts`, `net/use-server-version-gate.ts` (best-effort, fail-safe boot checks) |
+| `STANDARD_TIMEOUT_MS` | 15 s | `api/client.ts` (`apiFetch`), `api/uploads.ts` (the raw-binary PUT) |
+
+`fullJitterBackoffMs(attempt, {baseMs, capMs})` implements AWS full jitter
+(`random(0, min(capMs, baseMs·2^attempt))`); `queryRetryDelayMs` wraps it (base 1200 ms ≈ 2×RTT, cap
+4 s) and is wired as `queries.retryDelay` in `query/client.ts`, replacing the previously-implicit
+library default. The reachability probe's own cadence (`nextProbeDelayMs`, 2s/4s/8s/16s/cap 30s) is
+deliberately left un-jittered and untouched by this change: it's a single-device polling loop, not a
+fleet-wide retry that can synchronize into a storm, and its exact schedule is asserted by
+`reachability.test.tsx`.
+
+**Naming the idempotency guarantee behind every retriable mutation.** The write-path default above is
+non-retryable, but several flows still see a client-initiated resend — either TanStack reconciling a
+409 (see the C-T1–C-T5 audits, program doc §5 Lane C) or a user re-tapping after a failure — and each
+one is safe only because of a specific server-side guarantee, named here so a future retry path can be
+checked against the same bar instead of re-deriving it:
+
+| Retried mutation | Server-side idempotency guarantee |
+|---|---|
+| Order creation (`POST /orders`) | Partial unique index on `(customer_id, idempotency_key)` — client-generated nonce, migration `0021_order_idempotency_index` |
+| Accept an offer (`selectM`, order/[id].tsx) | Transactional CAS (`updateMany` on `status`); a lost-response retry reconciles via `selectOfferReconciled` against a fresh `getOrder` |
+| Rider bid / offer (`POST /orders/:id/offers`) | `@@unique([orderId, riderId])` on `Offer` (schema.prisma) — a retried bid lands on the same row |
+| Delivery-code confirm (`confirmDelivery`) | `SELECT … FOR UPDATE` row lock + CAS on order status (`order-lifecycle.service.ts`); a 409 is reconciled client-side against true state, never treated as a bare failure |
+| Pickup/delivery-proof attach | Same `FOR UPDATE` transaction pattern as `confirmDelivery` (`order-lifecycle.service.ts`) |
+| `becomeRider` | 409 `already_rider` (`rider.service.ts`) reconciled client-side into success, not a dead-end error |
+| KYC vendor webhook | Row lock + monotonic `kycResolvedAt` CAS (`rider.service.ts`) — a replayed/out-of-order webhook can only ever advance, never regress, resolution |
+| Wallet top-up (`POST /wallet/topups`) | Partial unique index on `(rider_id, idempotency_key)`, migrations `0028_topup_idempotency_column` / `0029_topup_idempotency_index` |
+| Merchant dispute open | Partial unique index on `(opened_by_profile_id, idempotency_key)`, migrations `0035`/`0036_issue_idempotency_*` |
+| Commission/settlement ledger write | `@@unique([orderId, type])` on the ledger row — a retried settle call can never double-write |
+
 ### Core vs non-core (kill switches)
 
 Uber's driver-app lesson: keep the **core** — the path a user cannot complete their job without —
