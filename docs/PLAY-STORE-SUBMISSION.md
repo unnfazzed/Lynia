@@ -85,6 +85,30 @@
 > `@expo/config-plugins@57`, `react-native-maps@1.18.4` vs 1.18.0) are non-fatal and identical on both
 > sides of the frozen install — park them for the next SDK-upgrade pass, they are not release
 > blockers.
+>
+> **Status (2026-08-04, attempt-5 outcome — ✅ fingerprint parity SOLVED; new failure class: pnpm
+> strict layout, fixed forward).** Build `27fae8b2` sailed through `CONFIGURE_EXPO_UPDATES` (the
+> phase that killed attempts 2–4 — runtime version resolved identically on both sides, closing the
+> fingerprint saga for good) and died in `RUN_GRADLEW` on **two pnpm strict-layout resolution
+> failures**: ① `:app:createBundleReleaseJsAndAssets` — `@expo/metro-config`'s `getAssetPlugins()`
+> throws `The required package \`expo-asset\` cannot be found` (it `resolveFrom`s the **project
+> root**, and `expo-asset` was only a transitive dep of `expo`, so pnpm never links it into
+> `apps/mobile/node_modules`); ② the Sentry gradle task can't start
+> `apps/mobile/node_modules/@sentry/cli/bin/sentry-cli` (same reason — transitive dep of
+> `@sentry/react-native`). This class was invisible until now because every earlier build died
+> before Gradle, and the QA APK workflow deliberately installs `--config.node-linker=hoisted`
+> (android-test-apk.yml) which papers over it. Hoisting the EAS builder was rejected — it would
+> desync the builder's layout from the CI runner's strict frozen install and risk re-opening
+> fingerprint parity. The surgical fix: declare what the build resolves from the app root —
+> `expo-asset ~11.0.5` (dependencies), `babel-preset-expo ~12.0.12` + `@sentry/cli ^2.53.0`
+> (devDependencies; babel-preset-expo is referenced by `babel.config.js` and would have been the
+> *next* failure — all three were verified unresolvable from `apps/mobile` pre-fix, resolvable
+> post-fix). Lockfile delta is link-entries only (identical resolved versions → no native/dep-tree
+> change). Verified locally end-to-end: `expo export --platform android` produces the full Hermes
+> bundle (6.2 MB `.hbc`) through the same Metro pipeline as `createBundleReleaseJsAndAssets`, and
+> `sentry-cli 2.53.0` launches (its platform binary ships as an optional dep, so pnpm's
+> build-script blocking is moot). 5 of ~15 August builds consumed; attempt 6 dispatches once this
+> fix merges.
 
 ---
 
