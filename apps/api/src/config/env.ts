@@ -64,6 +64,10 @@ export const envSchema = z.object({
   // Per-cache TTL overrides (ms). Absent ⇒ the code defaults (orders.service.ts constants). Bounded
   // to keep a typo from pinning informational reads for hours: 0 disables that single cache.
   MICRO_CACHE_TTL_MS_NEARBY_COUNT: z.coerce.number().int().min(0).max(300_000).optional(),
+  // C-O4: serve-stale hard bound for the nearby-count cache — how long past its own TTL a value may
+  // still be served on an upstream (PostGIS) failure before degrading to the honest "unknown" null.
+  // Bounded to 10 minutes: informational-count staleness, never a permanent trade for correctness.
+  MICRO_CACHE_STALE_TTL_MS_NEARBY_COUNT: z.coerce.number().int().min(0).max(600_000).optional(),
   // Ceiling 600s = the code default: a cached signed URL must always reach the client with ≥5 min of
   // its 15-min validity left (photo download headroom on 2G) — a higher override would break that.
   MICRO_CACHE_TTL_MS_PICKUP_PHOTO_URL: z.coerce.number().int().min(0).max(600_000).optional(),

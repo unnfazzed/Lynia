@@ -1142,8 +1142,7 @@ completed C-T1/C-T2 traces, vs. C-O1/C-O2/C-O4's broader M-effort backlog scope 
 measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17; re-ranked again 2026-08-04
 steer — C-O9 promoted ahead of C-O1/C-O2/C-O4 for the identical reason; C-O8 stays first, the
 direct continuation of the just-shipped C-O7's draft-persistence pattern on a sibling screen; C-O8,
-C-O9, C-O1, C-O2 all landed since — **only C-O4/C-O10 remain, no reorder needed (2026-08-04b
-steer): C-O10 still correctly last per its own "needs a >15-minute outage to matter" caveat**; see
+C-O9, C-O1, C-O2, C-O4 all landed since — **only C-O10 remains (2026-08-04f)**; see
 `docs/LC-STEER-2026-08-04b.md` §4):**
 - [x] C-O5 **DONE (2026-08-03f)** **(C-T1 finding, LC-C07)** Rider delivery-confirm terminal marker
       (`saveRiderJobTerminal`) was written only after a response (success or 409-reconciled)
@@ -1301,9 +1300,27 @@ steer): C-O10 still correctly last per its own "needs a >15-minute outage to mat
       when A-O17 lands — no separate C-side work needed. **A-O17 landed 2026-08-04b** (see Lane A
       §5 and `docs/LC-A-REPORT-2026-08-04b.md`) — this item's resilience benefit (fewer handshakes
       to re-establish after a drop) is now live; nothing further needed here.
-- [ ] C-O4 **(re-ranked to #5, was #6)** MicroCache serve-stale-on-upstream-failure mode (soft/hard
-      dual TTL; candidates: nearby-count, bootstrap; NEVER money/assignment/auth) (DoorDash
-      lesson 8). (M)
+- [x] C-O4 **DONE (2026-08-04f)** **(re-ranked to #5, was #6)** MicroCache serve-stale-on-upstream-
+      failure mode (soft/hard dual TTL; candidates: nearby-count, bootstrap; NEVER money/assignment/
+      auth) (DoorDash lesson 8). **Shipped:** `MicroCache.getOrLoad` gained an opt-in
+      `{ staleTtlMs }` option (default omitted ⇒ exact old behavior, every other caller unchanged):
+      a loader failure with a value still within `expiresAt + staleTtlMs` of its own freshness
+      expiry returns that value (new outcome `stale`) instead of throwing; past that hard bound, or
+      on a cold failure with nothing cached, the original "errors are never cached" behavior applies
+      unchanged. Wired for `nearbyCountCache` only — the informational `ridersNearby` supply signal
+      on the customer's 15s open-auction poll — at a 2-minute stale bound
+      (`NEARBY_COUNT_STALE_TTL_MS`, env-overridable via `MICRO_CACHE_STALE_TTL_MS_NEARBY_COUNT`,
+      capped at 10 minutes in the env schema); a geo blip now serves the last known count for up to
+      2 minutes before degrading to the pre-existing honest `null` ("supply unknown"). `bootstrap`
+      (the checklist's other named candidate) was deliberately NOT touched — its payload is auth
+      (`me`) and assignment-adjacent (`activeOrder`), both excluded by this item's own
+      "NEVER money/assignment/auth" caveat; `pickupPhotoUrlCache` (the other MicroCache consumer)
+      was also left untouched — a stale signed URL past its own validity is actively useless.
+      `apps/api/src/common/micro-cache.ts`, `apps/api/src/orders/orders.service.ts`,
+      `apps/api/src/config/env.ts`. Regression tests: 5 new cases in `micro-cache.spec.ts` + a
+      `getSnapshot`-level case in `orders.service.spec.ts` (all confirmed failing pre-fix on the
+      relevant assertion). Ledgered `LC-C16`. `pnpm typecheck && pnpm lint && pnpm test` green
+      (full monorepo). See `docs/LC-C-REPORT-2026-08-04f.md`. (M)
 - [ ] C-O10 **(#6 — C-T5 finding, LC-C14)** `apps/mobile/src/realtime/socket.ts`'s
       `acquireSocket` (renamed from `createSocket` by A-O17, 2026-08-04b — same underlying `io()`
       call site, now ref-counted/shared rather than one-per-hook, but the auth-object capture below

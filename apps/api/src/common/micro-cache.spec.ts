@@ -171,4 +171,57 @@ describe("MicroCache", () => {
     expect(await cache.getOrLoad("k", 1000, async () => 11)).toBe(11); // loader ran despite L2 get failure
     expect(await cache.getOrLoad("k", 1000, async () => 12)).toBe(11); // L1 still serves (set failure swallowed)
   });
+
+  // --- C-O4: serve-stale-on-upstream-failure (DoorDash lesson 8) ---
+
+  it("serve-stale: a loader failure within staleTtlMs of expiry returns the last known-good value", async () => {
+    const outcomes: string[] = [];
+    const cache = new MicroCache<number>(500, { onEvent: (o) => outcomes.push(o) });
+    await cache.getOrLoad("k", 1000, async () => 7, { staleTtlMs: 5000 });
+    vi.advanceTimersByTime(1001); // fresh TTL expired, but within the 5s stale bound
+
+    const loader = vi.fn<() => Promise<number>>().mockRejectedValueOnce(new Error("geo blip"));
+    expect(await cache.getOrLoad("k", 1000, loader, { staleTtlMs: 5000 })).toBe(7);
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(outcomes).toEqual(["miss", "stale"]);
+  });
+
+  it("serve-stale: past the staleTtlMs hard bound, a loader failure still throws (no permanent staleness)", async () => {
+    const cache = new MicroCache<number>(500);
+    await cache.getOrLoad("k", 1000, async () => 7, { staleTtlMs: 5000 });
+    vi.advanceTimersByTime(1000 + 5000 + 1); // past expiresAt + staleTtlMs
+
+    await expect(
+      cache.getOrLoad("k", 1000, async () => { throw new Error("geo blip"); }, { staleTtlMs: 5000 }),
+    ).rejects.toThrow("geo blip");
+  });
+
+  it("serve-stale: a cold failure with nothing cached yet still throws (unchanged behavior)", async () => {
+    const cache = new MicroCache<number>(500);
+    await expect(
+      cache.getOrLoad("k", 1000, async () => { throw new Error("db blip"); }, { staleTtlMs: 5000 }),
+    ).rejects.toThrow("db blip");
+  });
+
+  it("serve-stale: omitting staleTtlMs keeps the old behavior exactly (errors never cached)", async () => {
+    const cache = new MicroCache<number>(500);
+    await cache.getOrLoad("k", 1000, async () => 7);
+    vi.advanceTimersByTime(1001);
+
+    await expect(
+      cache.getOrLoad("k", 1000, async () => { throw new Error("geo blip"); }),
+    ).rejects.toThrow("geo blip");
+  });
+
+  it("serve-stale: recovers to a fresh value on the next successful load after serving stale", async () => {
+    const cache = new MicroCache<number>(500);
+    await cache.getOrLoad("k", 1000, async () => 7, { staleTtlMs: 5000 });
+    vi.advanceTimersByTime(1001);
+    expect(
+      await cache.getOrLoad("k", 1000, async () => { throw new Error("geo blip"); }, { staleTtlMs: 5000 }),
+    ).toBe(7);
+
+    vi.advanceTimersByTime(1001);
+    expect(await cache.getOrLoad("k", 1000, async () => 9, { staleTtlMs: 5000 })).toBe(9);
+  });
 });

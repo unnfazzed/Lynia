@@ -16,6 +16,14 @@
  *  - **TTL jitter**: opt-in ±ratio randomization of the stored TTL, so many entries populated
  *    together don't all expire on the same tick (the stampede pattern their cache posts warn
  *    about). Default 0 — existing exact-TTL behavior (and specs) are unchanged.
+ *  - **Serve-stale-on-failure** (opt-in per call, `staleTtlMs`): DoorDash's proxy-cache lesson —
+ *    degrade to the last known-good value on an upstream failure instead of propagating the error,
+ *    for informational reads where a bounded-stale answer beats an honest "unknown". A loader
+ *    failure with a still-within-`expiresAt+staleTtlMs` entry on hand returns that value (outcome
+ *    `stale`) rather than throwing; past that hard bound (or with no prior entry) the existing
+ *    "errors are never cached" behavior applies unchanged. Default 0 (omitted): byte-for-byte the
+ *    old behavior. NEVER pass this for a read that gates money, assignment, or auth — only for
+ *    reads already documented as tolerant of a few seconds of staleness.
  *
  * Semantics, chosen deliberately:
  *  - **Single-flight**: concurrent callers for the same key share ONE in-flight loader promise, so a
@@ -31,7 +39,7 @@
  */
 
 /** One bounded outcome per lookup — the fixed vocabulary the metrics counter labels with. */
-export type MicroCacheOutcome = "hit" | "l2_hit" | "miss" | "coalesced" | "error";
+export type MicroCacheOutcome = "hit" | "l2_hit" | "miss" | "coalesced" | "error" | "stale";
 
 /** Caller-provided shared second layer (in practice Redis). Values are opaque strings; expiry is
  *  enforced by BOTH the envelope's own `exp` stamp and the store's TTL (PX), so a store that
@@ -73,9 +81,11 @@ export class MicroCache<T> {
   /**
    * Return the cached value for `key` when it's still fresh; otherwise consult L2 (when configured),
    * then run `loader` (coalescing concurrent callers onto one execution) and cache the result for
-   * `ttlMs` (jittered when enabled) in both layers.
+   * `ttlMs` (jittered when enabled) in both layers. `opts.staleTtlMs` opts this key into serve-stale:
+   * a loader failure with a value on hand less than `staleTtlMs` past its own expiry returns that
+   * value instead of throwing — see the class doc.
    */
-  async getOrLoad(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
+  async getOrLoad(key: string, ttlMs: number, loader: () => Promise<T>, opts?: { staleTtlMs?: number }): Promise<T> {
     const hit = this.values.get(key);
     if (hit && hit.expiresAt > Date.now()) {
       this.emit("hit");
@@ -88,7 +98,7 @@ export class MicroCache<T> {
       return pending;
     }
 
-    const load = this.loadThrough(key, ttlMs, loader).finally(() => {
+    const load = this.loadThrough(key, ttlMs, loader, opts?.staleTtlMs ?? 0).finally(() => {
       this.inflight.delete(key);
     });
     this.inflight.set(key, load);
@@ -96,7 +106,7 @@ export class MicroCache<T> {
   }
 
   /** The single guarded flight: L2 → loader → write-back. Runs at most once per key concurrently. */
-  private async loadThrough(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
+  private async loadThrough(key: string, ttlMs: number, loader: () => Promise<T>, staleTtlMs: number): Promise<T> {
     const l2 = this.opts.l2?.() ?? null;
     const l2Key = `${this.opts.l2KeyPrefix ?? ""}${key}`;
 
@@ -123,6 +133,15 @@ export class MicroCache<T> {
     try {
       value = await loader();
     } catch (err) {
+      // Serve-stale: a value that's expired but still within its hard bound survives an upstream
+      // failure instead of propagating it. Re-read `this.values` (not a value captured before the
+      // `await loader()` above) since this flight is the single writer for `key` — nothing else can
+      // have changed it meanwhile.
+      const stale = this.values.get(key);
+      if (staleTtlMs > 0 && stale && stale.expiresAt + staleTtlMs > Date.now()) {
+        this.emit("stale");
+        return stale.value;
+      }
       this.emit("error");
       throw err; // never cached — the next caller retries
     }

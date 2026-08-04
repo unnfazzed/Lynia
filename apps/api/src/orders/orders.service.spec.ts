@@ -770,6 +770,39 @@ describe("OrdersService.getSnapshot", () => {
     expect(nearbyRiders).toHaveBeenCalledTimes(1);
   });
 
+  it("C-O4: serves the last known ridersNearby count across a geo blip within the stale bound, then falls back to null past it", async () => {
+    // DoorDash lesson 8 (serve-stale-on-upstream-failure): a transient PostGIS blip or a dead-zone
+    // poll gap shouldn't collapse an established "N riders nearby" signal straight to "unknown" —
+    // it should keep showing the last real count until the outage outlasts the hard stale bound.
+    vi.useFakeTimers();
+    try {
+      const nearbyRiders = vi
+        .fn<() => Promise<NearbyRider[]>>()
+        .mockResolvedValueOnce([{ profileId: "rider-9", distanceM: 500 }] as NearbyRider[])
+        .mockRejectedValueOnce(new Error("postgis blip"))
+        .mockRejectedValueOnce(new Error("postgis still down"));
+      const tracking = { nearbyRiders, getLivePosition: async () => null } as unknown as TrackingService;
+      const s = new OrdersService(
+        { order: { findUnique: async () => row({ status: "open_for_offers" }) } } as unknown as PrismaService,
+        {} as OfferExpiryService,
+        tracking,
+        noNotifications,
+        noGateway,
+      );
+      expect((await s.getSnapshot("ord-1", "cust-1")).ridersNearby).toBe(1);
+
+      // Past the fresh TTL but well within the stale bound: the blip serves the last known count.
+      vi.advanceTimersByTime(11_000);
+      expect((await s.getSnapshot("ord-1", "cust-1")).ridersNearby).toBe(1);
+
+      // Past the stale bound too: back to the honest "supply unknown" null.
+      vi.advanceTimersByTime(121_000);
+      expect((await s.getSnapshot("ord-1", "cust-1")).ridersNearby).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("prefers the Redis live rider position over the stale PG columns", async () => {
     const tracking = {
       nearbyRiders: async (): Promise<NearbyRider[]> => [],
