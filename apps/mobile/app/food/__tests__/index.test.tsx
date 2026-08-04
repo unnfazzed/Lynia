@@ -8,7 +8,7 @@
  */
 import React from "react";
 import renderer, { act } from "react-test-renderer";
-import { FlatList } from "react-native";
+import { ActivityIndicator, FlatList } from "react-native";
 
 const mockRestaurants = Array.from({ length: 40 }, (_, i) => ({
   id: `r-${i}`,
@@ -27,16 +27,24 @@ jest.mock("expo-router", () => ({
 jest.mock("../../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => ({ restaurantsEnabled: true, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false }),
 }));
+
+// B-O10: `hasMore`/`isLoadingMore`/`loadMore` are new — a mutable stub so individual tests can flip
+// `hasMore`/`isLoadingMore` and observe the screen's reaction (onEndReached, the "Open now" auto-drain
+// effect, the footer spinner) without re-mocking the whole module per test.
+const mockFeedStub = {
+  restaurants: mockRestaurants as typeof mockRestaurants | null,
+  showingStale: false,
+  staleSavedAt: null as string | null,
+  isFetching: false,
+  isError: false,
+  hasLiveData: true,
+  refetch: jest.fn(),
+  hasMore: false,
+  isLoadingMore: false,
+  loadMore: jest.fn(),
+};
 jest.mock("../../../src/query/use-restaurants", () => ({
-  useRestaurantListFeed: () => ({
-    restaurants: mockRestaurants,
-    showingStale: false,
-    staleSavedAt: null,
-    isFetching: false,
-    isError: false,
-    hasLiveData: true,
-    refetch: jest.fn(),
-  }),
+  useRestaurantListFeed: () => mockFeedStub,
 }));
 
 import RestaurantListScreen from "../index";
@@ -67,5 +75,61 @@ describe("RestaurantListScreen (B-T3: unbounded catalog must be virtualized, not
     expect(list.props.data.map((r: { id: string }) => r.id)).toEqual(mockRestaurants.map((r) => r.id));
     const first = mockRestaurants[0]!;
     expect(list.props.keyExtractor(first)).toBe(first.id);
+  });
+});
+
+describe("RestaurantListScreen (B-O10: GET /restaurants is now cursor-paginated)", () => {
+  beforeEach(() => {
+    mockFeedStub.hasMore = false;
+    mockFeedStub.isLoadingMore = false;
+    mockFeedStub.loadMore.mockClear();
+  });
+
+  it("requests the next page when the list scrolls near the end and more pages exist", () => {
+    mockFeedStub.hasMore = true;
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    act(() => {
+      tree.root.findByType(FlatList).props.onEndReached();
+    });
+    expect(mockFeedStub.loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not request another page once the catalog is exhausted", () => {
+    mockFeedStub.hasMore = false;
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    act(() => {
+      tree.root.findByType(FlatList).props.onEndReached();
+    });
+    expect(mockFeedStub.loadMore).not.toHaveBeenCalled();
+  });
+
+  it("shows a footer spinner while the next page is in flight", () => {
+    mockFeedStub.hasMore = true;
+    mockFeedStub.isLoadingMore = true;
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    const footer = tree.root.findByType(FlatList).props.ListFooterComponent;
+    expect(renderer.create(footer).root.findByType(ActivityIndicator)).toBeTruthy();
+  });
+
+  it('auto-drains remaining pages once "Open now" is toggled on, so the filter never under-reports', () => {
+    mockFeedStub.hasMore = true;
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    expect(mockFeedStub.loadMore).not.toHaveBeenCalled(); // not filtering yet — no reason to drain
+    act(() => {
+      tree.root.findByProps({ accessibilityLabel: "Open now filter" }).props.onPress();
+    });
+    expect(mockFeedStub.loadMore).toHaveBeenCalled();
   });
 });

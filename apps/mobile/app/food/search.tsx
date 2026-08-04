@@ -1,7 +1,7 @@
 import type { RestaurantListItem } from "@lynia/shared";
 import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
@@ -23,6 +23,17 @@ export default function RestaurantSearchScreen(): React.ReactElement {
   const now = useNow();
 
   const trimmed = query.trim().toLowerCase();
+
+  // B-O10: this search runs client-side over whatever's in `feed.restaurants` (there's no
+  // server-side search endpoint — see the file-level note above). Now that GET /restaurants is
+  // cursor-paginated, that's no longer the whole catalog by default; auto-drain every remaining
+  // page once the user is actually searching, so a match past page 1 doesn't silently read as "no
+  // matches". Only while `trimmed` is non-empty — browsing away from a search keeps the screen from
+  // greedily fetching the whole catalog for no reason.
+  useEffect(() => {
+    if (trimmed && feed.hasMore && !feed.isLoadingMore) feed.loadMore();
+  }, [trimmed, feed.hasMore, feed.isLoadingMore, feed.loadMore]);
+
   const results = trimmed
     ? (feed.restaurants ?? []).filter(
         (r) => r.name.toLowerCase().includes(trimmed) || r.cuisineTags.some((t) => t.toLowerCase().includes(trimmed)),
@@ -58,6 +69,10 @@ export default function RestaurantSearchScreen(): React.ReactElement {
           </Pressable>
         ) : null}
       </View>
+
+      {trimmed && feed.hasMore ? (
+        <Text style={{ fontSize: 12, color: tokens.color.muted, marginBottom: 8 }}>Still searching more kitchens…</Text>
+      ) : null}
 
       {!trimmed ? (
         <Text style={{ fontSize: 13, color: tokens.color.muted, textAlign: "center", marginTop: 20 }}>

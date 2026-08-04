@@ -1,5 +1,5 @@
 import type { RestaurantListItem, RestaurantMenuResponse } from "@lynia/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { getRestaurantMenu, getRestaurants } from "../api/restaurants";
 import { loadRestaurantListSnapshot, saveRestaurantListSnapshot } from "../net/restaurant-list-store";
@@ -17,26 +17,42 @@ export interface RestaurantListFeed {
   isError: boolean;
   hasLiveData: boolean;
   refetch: () => void;
+  /** B-O10: more pages exist server-side beyond what `restaurants` currently holds. */
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  loadMore: () => void;
 }
 
 /**
  * D1 (browse) restaurant list, warm-painted the same way `useHistoryFeed` warm-paints trips: live
  * data always wins; otherwise the last successful fetch is shown with its saved-at timestamp so an
  * offline customer sees *something* instead of a bare skeleton or a dead-end error.
+ *
+ * B-O10: cursor-paginated (`useInfiniteQuery`, mirroring `useWalletLedger`) instead of one
+ * unbounded fetch — `GET /restaurants` was the one list endpoint with no server-side cap, unlike
+ * history/board/notifications. `restaurants` accumulates every page fetched so far, same shape
+ * callers already consumed; `loadMore`/`hasMore`/`isLoadingMore` are additive.
  */
 export function useRestaurantListFeed(enabled: boolean): RestaurantListFeed {
-  const q = useQuery({ queryKey: RESTAURANTS_KEY, queryFn: getRestaurants, enabled });
+  const q = useInfiniteQuery({
+    queryKey: RESTAURANTS_KEY,
+    queryFn: ({ pageParam }: { pageParam: string | undefined }) => getRestaurants(pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    enabled,
+  });
 
   const [cached, setCached] = useState<{ restaurants: RestaurantListItem[]; savedAt: string } | null>(null);
   useEffect(() => {
     if (!enabled) return;
     void loadRestaurantListSnapshot().then(setCached);
   }, [enabled]);
+  const liveRestaurants = q.data?.pages.flatMap((p) => p.restaurants) ?? null;
   useEffect(() => {
-    if (q.data) void saveRestaurantListSnapshot(q.data.restaurants);
+    if (liveRestaurants) void saveRestaurantListSnapshot(liveRestaurants);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flatMap above builds a fresh array every render; compare on q.data itself
   }, [q.data]);
 
-  const liveRestaurants = q.data?.restaurants ?? null;
   return {
     restaurants: liveRestaurants ?? cached?.restaurants ?? null,
     showingStale: liveRestaurants == null && cached != null,
@@ -45,6 +61,9 @@ export function useRestaurantListFeed(enabled: boolean): RestaurantListFeed {
     isError: q.isError,
     hasLiveData: liveRestaurants != null,
     refetch: () => void q.refetch(),
+    hasMore: q.hasNextPage,
+    isLoadingMore: q.isFetchingNextPage,
+    loadMore: () => void q.fetchNextPage(),
   };
 }
 

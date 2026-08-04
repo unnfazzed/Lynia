@@ -44,6 +44,12 @@ type PlainCategoryRow = Prisma.MerchantCategoryGetPayload<Record<string, never>>
 // indefinitely.
 const PHOTO_READ_URL_TTL_SECONDS = 60 * 60;
 
+// B-O10: `GET /restaurants` had no server-side cap — every other list endpoint (history 50, board
+// 50, notifications 30) does. 20 keeps a single page's DB round-trip + payload small on a metered
+// 2G/3G link while still filling a typical phone screen (mirrors LEDGER_PAGE_SIZE's "one page ≈ one
+// screenful" sizing, `wallet.service.ts`).
+const RESTAURANTS_PAGE_SIZE = 20;
+
 /** N-14: "for the rest of today" — end of the server's local calendar day. A past timestamp reads as
  *  back-in-stock, so no reset job is needed; this is the only place that boundary is computed. */
 function endOfToday(): Date {
@@ -305,9 +311,24 @@ export class MerchantService {
 
   // --- Customer read API (RESTAURANTS_ENABLED + per-merchant pilotEnabled allowlist) ---
 
-  async listRestaurants(): Promise<RestaurantListResponse> {
-    const merchants = await this.prisma.merchant.findMany({ where: { pilotEnabled: true }, orderBy: { name: "asc" } });
-    return { restaurants: merchants.map((m) => this.toListItem(m)) };
+  /** B-O10: cursor-paginated (was a single unbounded `findMany`) — `cursor` is the last-seen
+   *  merchant id from a previous page. `id` is unique so it identifies a row unambiguously even
+   *  though the primary sort (`name`) isn't; the secondary `id` sort just makes ties (two merchants
+   *  with the same name) deterministic across pages, matching `WalletService.getLedger`'s
+   *  take-one-extra-to-detect-`hasMore` shape. */
+  async listRestaurants(cursor?: string): Promise<RestaurantListResponse> {
+    const merchants = await this.prisma.merchant.findMany({
+      where: { pilotEnabled: true },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      take: RESTAURANTS_PAGE_SIZE + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    const hasMore = merchants.length > RESTAURANTS_PAGE_SIZE;
+    const page = hasMore ? merchants.slice(0, RESTAURANTS_PAGE_SIZE) : merchants;
+    return {
+      restaurants: page.map((m) => this.toListItem(m)),
+      nextCursor: hasMore ? page[page.length - 1]!.id : undefined,
+    };
   }
 
   async getRestaurantMenu(merchantId: string): Promise<RestaurantMenuResponse> {
