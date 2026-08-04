@@ -684,16 +684,22 @@ internal track; all three block the *next* steps.
 
 | # | Gap | Consequence | Tracked as |
 |---|---|---|---|
-| 1 | **A version bump rotates the OTA runtime version.** `@expo/fingerprint` hashes the resolved `expoConfig`, and `version` is one of its keys — so release-please bumping `app.config.ts` changes the `fingerprint` runtimeVersion even when nothing native moved. Verified by controlled A/B on one machine: `0.17.9` → `c56c13bb…`, `0.17.10` → `1bd7d519…`, all other inputs held constant. | An OTA published from `main` after any release bump computes a runtime version **no installed binary has**, so it is silently ignored — it reaches nobody, with no error. Since release-please bumps on essentially every merge, this is the normal case, not an edge case. | `REL-01` |
+| 1 | ~~**A version bump rotates the OTA runtime version.**~~ **FIXED 2026-08-04** — `apps/mobile/fingerprint.config.js` now sets `sourceSkips: ["ExpoConfigVersions"]`, so the version fields no longer feed the hash. Both 0.17.9 and 0.17.10 hash to `5b175b9b…`; a native change (`targetSdkVersion` 35 → 34) still moves it, so the anti-brick property is intact. | ⚠️ **The live vc-2 binary is not rescued** — its runtimeVersion `6c72c486…` was stamped at build time. The fix applies from the **next store build** onward; re-baseline before the closed test starts, while the install base is still internal testers. | `REL-01` |
 | 2 | **`mobile-ota.yml` defaults to a branch that does not exist.** Its `branch` input defaults to `production`; the EAS project has exactly one channel and one branch, both named `preview`, and the live binary was built on the `preview` channel. | A default OTA dispatch publishes to a branch no channel maps to — again reaching nobody, silently. | `REL-02` |
 | 3 | **The live build has no crash reporting.** Sentry is unprovisioned and `eas.json` sets `SENTRY_DISABLE_AUTO_UPLOAD=true`, so there is neither runtime capture nor a source map for the shipped bundle. | Crashes on the internal track are invisible; the closed test (step 2) would run blind, and step 3 explicitly requires Sentry live. | LR20 / §7.2 |
 
-The first two are the reason step 4 above is fenced off. Both are cheap to *detect* and awkward to
-*fix* — fixing `REL-01` properly is a runtime-version policy decision (keep `fingerprint` and accept
-that OTA only ships from the exact built commit, or move to a policy that ignores `version`), and
-that decision changes OTA semantics for every future binary, so it is deliberately **not** made here.
-`REL-02` now fails loudly instead of silently: `mobile-ota.yml` preflights the target channel and
-aborts if nothing maps to it.
+**Both `REL-01` and `REL-02` are now fixed** — `REL-01` by skipping the version fields out of the
+fingerprint (`apps/mobile/fingerprint.config.js`), `REL-02` by a preflight in `mobile-ota.yml` that
+resolves the target channel and compares the computed runtime version against finished builds on it,
+aborting instead of publishing to nobody.
+
+**The OTA lane is still not usable yet, for one remaining reason:** the live binary was built before
+the fingerprint fix, so its runtimeVersion (`6c72c486…`) belongs to the old scheme and no update
+published now can match it. **Cut one more store build** — that binary's runtimeVersion will be
+stable across future version bumps, and OTA becomes real from then on. Do it before the closed test
+starts: re-baselining costs one build now and a great deal more once testers are opted in and the
+14-day clock is running. Until that build ships, step 4 above remains fenced off and every fix
+travels through the store lane.
 
 ---
 
