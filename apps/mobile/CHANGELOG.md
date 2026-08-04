@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.12](https://github.com/unnfazzed/Lynia/compare/v0.17.11...v0.17.12) (2026-08-04)
+
+
+### Bug Fixes
+
+* **mobile:** rider Money-tab wallet ledger loses history past 25 entries (LC-B-SIB-2) ([c4ff1d5](https://github.com/unnfazzed/Lynia/commit/c4ff1d539e6c184caa8432c1fb9593585f9de93d))
+
 ## [0.17.11](https://github.com/unnfazzed/Lynia/compare/v0.17.10...v0.17.11) (2026-08-04)
 
 
