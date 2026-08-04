@@ -10,6 +10,7 @@ jest.mock("../../auth/auth-context", () => ({
 
 type FakeSocket = {
   on: (event: string, cb: (...args: unknown[]) => void) => FakeSocket;
+  off: (event: string, cb: (...args: unknown[]) => void) => FakeSocket;
   emit: () => FakeSocket;
   disconnect: () => void;
   trigger: (event: string, ...args: unknown[]) => void;
@@ -22,6 +23,10 @@ function mockCreateFakeSocket(): FakeSocket {
       (handlers[event] ??= []).push(cb);
       return socket;
     },
+    off(event, cb) {
+      handlers[event] = (handlers[event] ?? []).filter((h) => h !== cb);
+      return socket;
+    },
     emit: () => socket,
     disconnect: () => {},
     trigger: (event, ...args) => (handlers[event] ?? []).forEach((cb) => cb(...args)),
@@ -30,11 +35,14 @@ function mockCreateFakeSocket(): FakeSocket {
 }
 
 let mockLastSocket: FakeSocket;
+// A-O17: the hook now acquires/releases a shared connection instead of creating/disconnecting its
+// own — see use-rider-board.test.tsx's matching comment.
 jest.mock("../socket", () => ({
-  createSocket: jest.fn(() => {
+  acquireSocket: jest.fn(() => {
     mockLastSocket = mockCreateFakeSocket();
     return mockLastSocket;
   }),
+  releaseSocket: jest.fn(),
 }));
 
 function Harness({ orderId }: { orderId: string }): null {
