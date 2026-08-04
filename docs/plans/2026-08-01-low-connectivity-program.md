@@ -449,9 +449,33 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       offline-with-an-active-job case (a rider who goes offline mid-delivery) is unchanged: still
       450 requests/hour, now regression-tested rather than incidental. `pnpm typecheck && pnpm lint
       && pnpm test` green. See `docs/LC-A-REPORT-2026-08-04d.md`.
-- [ ] A-O5 Cap/paginate `getSnapshot.events[]` (client+API seam) — KNOWN backlog; re-confirmed
-      2026-08-03 (A-T4): `orders.service.ts:907` ships `events: order.events` with no `.slice()`/cap,
-      inflating every parcel job-detail poll ~55B/event as a job progresses. (M)
+- [x] A-O5 **DONE (2026-08-04e)** Cap/paginate `getSnapshot.events[]` (client+API seam) — KNOWN
+      backlog; re-confirmed 2026-08-03 (A-T4): `orders.service.ts:907` ships `events: order.events`
+      with no `.slice()`/cap, inflating every parcel job-detail poll ~55B/event as a job progresses. (M)
+      **Shipped:** rather than an arbitrary `.slice()` cap (which risks dropping the first
+      occurrence of an early status once the array grows — exactly the timestamp every consumer
+      reads), `getSnapshot` now dedupes `order.events` server-side to one row per status, keeping
+      the EARLIEST occurrence — a new pure `dedupeEventsByStatus()` helper. Confirmed via every
+      consumer of the snapshot's `events` field (`Stepper`'s `if (!(e.status in times))` guard,
+      `order/[id].tsx`'s/`LiveTrackingCard.tsx`'s `.find()` lookups) that ALL of them already keep
+      only the first occurrence of each status client-side, so this is a pure byte-diet reshape with
+      zero behavior change. The real growth driver: a normal parcel/food journey is forward-only
+      (CAS'd, each status reached once) and never needed this, but `FoodDispatchService.dropDispatch`
+      (`food-dispatch.service.ts:453-485`) re-runs the SAME order back through `requested`/`assigned`
+      in place on every pre-pickup rider drop — unlike the parcel rider-bail path's
+      `cloneForRebroadcast` (a new order id), so a food job dropped by a few riders before one sticks
+      accumulates a growing events array today. **Evidence** (synthetic drop-and-redispatch scenario,
+      `Buffer.byteLength(JSON.stringify(...))` on the real `{status, createdAt}` shape, ~30 B/event):
+      a normal 8-status parcel journey is unaffected (0 B saved, confirmed by a dedicated
+      no-repeats regression test); a food job dropped once before pickup goes from 7 to 5 events
+      (~60 B/poll saved); dropped 3× goes from 11 to 5 (~180 B/poll saved) — now provably capped by
+      the small fixed status-space (≤9 statuses) rather than growing with however many riders bail.
+      2 new regression tests in `orders.service.spec.ts` (dedupes a drop-and-redispatch timeline to
+      one row per status keeping the earliest `createdAt`; leaves a normal no-repeats timeline
+      byte-for-byte unchanged). No JS bundle-size impact (API-only, no mobile diff) —
+      `size-budget.json` untouched. `pnpm typecheck && pnpm lint && pnpm test` green (97 API test
+      files/1546 tests, 119 mobile test suites/850 tests unaffected). See
+      `docs/LC-A-REPORT-2026-08-04e.md`.
 - [ ] A-O16 **(new, ranked #12 — A-T4 finding, LC-A09)** Google Places autocomplete/details calls
       (`apps/mobile/src/api/places.ts:62-75`, wired from `AddressSearch.tsx:173`'s 300ms debounce)
       are uncapped and have no prefix-level response memoization — typing a full address fires a
