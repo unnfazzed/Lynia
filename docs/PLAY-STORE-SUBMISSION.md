@@ -66,6 +66,25 @@
 > both `preview` and `production`; the key ships inside the APK anyway, so Sensitive is
 > appropriate). EAS build quota: 3 of ~15 August builds consumed; per the stop rule, no further
 > dispatch until the founder re-creates the key and says go.
+>
+> **Status (2026-08-04, morning — ✅ Maps key re-created as Sensitive; attempt 5 in flight).** The
+> founder re-created **`GOOGLE_MAPS_API_KEY` with Sensitive visibility** (06:32 UTC, all three
+> environments — verified minutes later against the EAS API, which now reports `SENSITIVE` for it and
+> for `GOOGLE_SERVICES_JSON`). That closes the last fingerprint-mismatch source: the decoded build log
+> for `34fad06c` shows the full fingerprint diff contained **exactly two** items — the
+> `bareNativeDir android` dir (fixed by `apps/mobile/.gitignore`, #550) and the
+> `android.config.googleMaps.apiKey` block present only in the builder's resolved config (the
+> Secret-visibility asymmetry). Useful hard fact from that same diff: `@expo/fingerprint` strips
+> `googleServicesFile` from the hashed `expoConfig` (the builder's config carried its materialised
+> secrets path, yet the hashed contents omit the field), so the runner-vs-builder path difference for
+> file variables can never cause a mismatch — flipping the file var's visibility was hygiene, not a
+> fingerprint fix. On the founder's go, **attempt 5 dispatched**: `mobile-release.yml` run #6
+> (profile `preview`, auto-submit → internal track), EAS build `27fae8b2` — in flight at the time of
+> writing (outcome to be recorded here). 4 of ~15 August builds consumed. The expo-doctor warnings in
+> the build-4 log (`@sentry/react-native@6.22` vs expected ~6.10 for SDK 52, `typescript@6`,
+> `@expo/config-plugins@57`, `react-native-maps@1.18.4` vs 1.18.0) are non-fatal and identical on both
+> sides of the frozen install — park them for the next SDK-upgrade pass, they are not release
+> blockers.
 
 ---
 
