@@ -47,7 +47,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
    *  for a food job (jobType="food"): D4 owns the doorstep code (masked-until-handshake, R-09), this
    *  card never offers a reissue for one. Optional so a food caller doesn't need to pass a no-op. */
   onReissueCode?: () => void;
-  reissuing?: boolean;
+  reissuing?: boolean | "queued";
   /** Fix 2: bumped by the parent when a rider-presence-stale WS event fires. Its only job is to change
    *  a prop so this memoized card re-renders and re-runs the render-time staleness check the instant
    *  GPS ticks stop — otherwise nothing re-evaluates `isRiderTrackingStale` once the ticks that drive

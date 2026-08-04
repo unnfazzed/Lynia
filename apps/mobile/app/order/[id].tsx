@@ -16,7 +16,7 @@ import { clearDeliveryCode, clearPendingRating, loadDeliveryCode, loadDeliveryCo
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
-import { offersKey, orderKey } from "../../src/query/client";
+import { offersKey, orderKey, pendingOrQueued } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
 import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
@@ -707,7 +707,7 @@ export default function OrderScreen(): React.ReactElement {
               <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
                 Your hand-off code isn&apos;t showing — tap to re-issue so you can give it to the recipient at hand-off.
               </Text>
-              <Button label="Re-issue delivery code" onPress={() => rotateM.mutate()} loading={rotateM.isPending} />
+              <Button label="Re-issue delivery code" onPress={() => rotateM.mutate()} loading={pendingOrQueued(rotateM)} />
             </Card>
           )
         ) : null}
@@ -786,7 +786,7 @@ export default function OrderScreen(): React.ReactElement {
                       ask={ask}
                       onAccept={() => chooseOffer(o.id)}
                       onDecline={() => setDeclinedCounterIds((prev) => new Set(prev).add(o.id))}
-                      loading={selectingId === o.id && selectM.isPending}
+                      loading={selectingId === o.id ? pendingOrQueued(selectM) : false}
                       disabled={selectM.isPending}
                       slow={selectingId === o.id && selectSlow}
                     />
@@ -821,7 +821,7 @@ export default function OrderScreen(): React.ReactElement {
                       label={selectingId === o.id && selectSlow ? "Still choosing — hang on" : "Choose this rider"}
                       variant={primaryPick ? "primary" : "ghost"}
                       onPress={() => chooseOffer(o.id)}
-                      loading={selectingId === o.id && selectM.isPending}
+                      loading={selectingId === o.id ? pendingOrQueued(selectM) : false}
                       disabled={selectM.isPending}
                     />
                   </Card>
@@ -869,7 +869,7 @@ export default function OrderScreen(): React.ReactElement {
                         label="Notify me when a rider's online"
                         variant="ghost"
                         onPress={() => notifyM.mutate()}
-                        loading={notifyM.isPending}
+                        loading={pendingOrQueued(notifyM)}
                       />
                     )}
                     <Button label="Raise price & send again" variant="ghost" onPress={() => void rebroadcast()} loading={rebroadcasting} />
@@ -907,7 +907,7 @@ export default function OrderScreen(): React.ReactElement {
             riderIdentity={riderIdentity}
             connectionState={connectionState}
             onReissueCode={reissueCode}
-            reissuing={rotateM.isPending}
+            reissuing={pendingOrQueued(rotateM)}
             staleTick={staleTick}
           />
         ) : null}
@@ -924,7 +924,7 @@ export default function OrderScreen(): React.ReactElement {
             card is hidden for a rider viewing their own delivered trip. */}
         {order.status === "delivered" && !isRiderViewer ? (
           <RatingCard
-            saving={rateM.isPending}
+            saving={pendingOrQueued(rateM)}
             onRate={(n) => rateM.mutate(n)}
             onArm={(n) => {
               // Armed live this session — RatingCard's own timer/unmount is the sole committer; keep
@@ -1141,7 +1141,7 @@ export default function OrderScreen(): React.ReactElement {
                   </Text>
                 </>
               )}
-              <Button label="Yes, cancel this order" onPress={() => { setCancelConfirm(false); cancelM.mutate(); }} loading={cancelM.isPending} />
+              <Button label="Yes, cancel this order" onPress={() => { setCancelConfirm(false); cancelM.mutate(); }} loading={pendingOrQueued(cancelM)} />
               <Button label="Keep my order" variant="ghost" onPress={() => setCancelConfirm(false)} />
             </Card>
           ) : (
@@ -1152,7 +1152,7 @@ export default function OrderScreen(): React.ReactElement {
                 if (MATCHED_CANCEL.has(order.status)) setCancelConfirm(true);
                 else cancelM.mutate();
               }}
-              loading={cancelM.isPending}
+              loading={pendingOrQueued(cancelM)}
             />
           )
         ) : null}

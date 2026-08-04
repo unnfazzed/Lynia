@@ -29,7 +29,7 @@ export function UndeliveredSheet({
   // undelivered, so showing the button earlier would present a control that 409s. Proof-of-*drop* is
   // meaningless before the rider reaches the recipient anyway.
   canAttachProof?: boolean;
-  pending: boolean;
+  pending: boolean | "queued";
   onSelect: (reason: UndeliveredReason) => void;
   onDismiss: () => void;
 }): React.ReactElement {
@@ -100,14 +100,14 @@ export function UndeliveredSheet({
                 variant="ghost"
                 onPress={() => void captureProof()}
                 loading={proofBusy}
-                disabled={pending || proofBusy}
+                disabled={!!pending || proofBusy}
               />
               {proofError ? <Sub>{proofError}</Sub> : null}
             </>
           )
         ) : null}
         <Button label="Confirm — end the job" onPress={() => onSelect(pickedOption.reason)} loading={pending} />
-        <Button label="Choose a different reason" variant="ghost" onPress={() => setPicked(null)} disabled={pending} />
+        <Button label="Choose a different reason" variant="ghost" onPress={() => setPicked(null)} disabled={!!pending} />
       </Card>
     );
   }
@@ -121,7 +121,7 @@ export function UndeliveredSheet({
           <Pressable
             key={o.reason}
             onPress={() => setPicked(o.reason)}
-            disabled={pending}
+            disabled={!!pending}
             accessibilityRole="button"
             accessibilityLabel={o.label}
             style={{
@@ -143,7 +143,7 @@ export function UndeliveredSheet({
           </Pressable>
         ))}
       </View>
-      <Button label="Never mind" variant="ghost" onPress={onDismiss} disabled={pending} />
+      <Button label="Never mind" variant="ghost" onPress={onDismiss} disabled={!!pending} />
     </Card>
   );
 }

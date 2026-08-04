@@ -126,14 +126,19 @@ export function Button(props: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
-  loading?: boolean;
+  // ALR-09: "queued" is distinct from `true` — the mutation is PAUSED (offline, `networkMode:"online"`),
+  // not actually in flight, so it gets its own honest label instead of a spinner that would otherwise
+  // spin indefinitely with no indication anything is waiting on a connection. See query/client.ts's
+  // `pendingOrQueued`.
+  loading?: boolean | "queued";
   variant?: "primary" | "ghost";
 }): React.ReactElement {
   const primary = (props.variant ?? "primary") === "primary";
+  const textColor = primary ? tokens.color.onAccent : tokens.color.accentText;
   return (
     <Pressable
       onPress={props.onPress}
-      disabled={props.disabled || props.loading}
+      disabled={props.disabled || !!props.loading}
       style={({ pressed }) => ({
         // Grab shape language: full-pill buttons. Primary fill is `cta` (#00812F) — tuned for
         // white-on-green sunlight legibility — and presses to the darker `ctaPressed`; the brand
@@ -151,10 +156,12 @@ export function Button(props: {
         minHeight: primary ? tokens.touchTargetPrimary : tokens.touchTargetMin, // primary CTA 52px, secondary ≥44px
       })}
     >
-      {props.loading ? (
-        <ActivityIndicator color={primary ? tokens.color.onAccent : tokens.color.accentText} />
+      {props.loading === "queued" ? (
+        <Text style={{ color: textColor, fontWeight: tokens.font.weight.semibold, fontSize: tokens.font.size.body }}>Waiting to reconnect…</Text>
+      ) : props.loading ? (
+        <ActivityIndicator color={textColor} />
       ) : (
-        <Text style={{ color: primary ? tokens.color.onAccent : tokens.color.accentText, fontWeight: tokens.font.weight.semibold, fontSize: tokens.font.size.bodyLg }}>{props.label}</Text>
+        <Text style={{ color: textColor, fontWeight: tokens.font.weight.semibold, fontSize: tokens.font.size.bodyLg }}>{props.label}</Text>
       )}
     </Pressable>
   );

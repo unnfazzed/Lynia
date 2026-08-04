@@ -8,6 +8,7 @@ import { AppState, Linking, Pressable, Text, View } from "react-native";
 import { deleteAccount, getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
 import { PRIVACY_URL } from "../../src/config";
+import { pendingOrQueued } from "../../src/query/client";
 import { Button, Card, ErrorText, Heading, Icon, type IconName, Screen } from "../../src/ui";
 
 /**
@@ -139,7 +140,7 @@ export default function SettingsScreen(): React.ReactElement {
           <Button
             label="Yes, delete my account"
             onPress={() => deleteM.mutate()}
-            loading={deleteM.isPending}
+            loading={pendingOrQueued(deleteM)}
           />
           <Button label="Keep my account" variant="ghost" onPress={() => { setDeleteConfirm(false); deleteM.reset(); }} />
         </Card>

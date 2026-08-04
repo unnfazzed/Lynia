@@ -31,6 +31,7 @@ import {
 } from "../../../src/logic/rider-bid-draft";
 import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, Field, haptic, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../../src/ui";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
+import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
 import { SentOfferCard } from "../../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../../src/ui/safety";
@@ -706,7 +707,7 @@ export default function RiderHome(): React.ReactElement {
         // Ghost while the compose card is open so "Send offer" is the screen's one primary.
         variant={online || selected != null ? "ghost" : "primary"}
         onPress={() => onlineM.mutate(!online)}
-        loading={onlineM.isPending}
+        loading={pendingOrQueued(onlineM)}
       />
       <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 4 }}>
         {online
@@ -815,7 +816,7 @@ export default function RiderHome(): React.ReactElement {
       <Button
         label={offerSlow ? "Still sending — hang on" : offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send my price"}
         onPress={() => canOffer && offerM.mutate({ fare, fareNum: fareNum!, etaNum: etaNum! })}
-        loading={offerM.isPending}
+        loading={pendingOrQueued(offerM)}
         disabled={!canOffer}
       />
       {/* BH-12: disabled while the offer send is in flight — mirrors BailSheet/UndeliveredSheet's
@@ -998,7 +999,7 @@ export default function RiderHome(): React.ReactElement {
               title="Your ID has expired"
               message="You can't go online until you re-verify. Re-submit a valid national ID to keep riding."
             >
-              <Button label="Re-verify my ID" onPress={() => retryM.mutate()} loading={retryM.isPending} />
+              <Button label="Re-verify my ID" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
               <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           ) : kyc === "failed" ? (
@@ -1031,7 +1032,7 @@ export default function RiderHome(): React.ReactElement {
                     : "The check didn't pass — often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing."
                 }
               >
-                <Button label="Try again" onPress={() => retryM.mutate()} loading={retryM.isPending} />
+                <Button label="Try again" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
                 <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
               </EmptyState>
             )
@@ -1054,7 +1055,7 @@ export default function RiderHome(): React.ReactElement {
               title="Finish verifying your ID"
               message="Your ID check is still pending. Continue in the browser, then come back — riders go online once verified."
             >
-              <Button label="Continue verification" onPress={() => retryM.mutate()} loading={retryM.isPending} />
+              <Button label="Continue verification" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
               <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           )
@@ -1078,7 +1079,7 @@ export default function RiderHome(): React.ReactElement {
             {/* A rider done for the day who revoked location had no way to end their shift from this gate —
                 route it through the same offline toggle so state stays consistent with the normal path. */}
             {online ? (
-              <Button label="Go offline" variant="ghost" onPress={() => onlineM.mutate(false)} loading={onlineM.isPending} />
+              <Button label="Go offline" variant="ghost" onPress={() => onlineM.mutate(false)} loading={pendingOrQueued(onlineM)} />
             ) : null}
           </EmptyState>
         ) : (
@@ -1116,7 +1117,7 @@ export default function RiderHome(): React.ReactElement {
                 change the outcome, so it's dropped in favour of the support-call row below, matching the
                 "contact support" copy in ONLINE_GATE_COPY.on_hold. */}
             {gate === "cooldown" || gate === "out_of_area" ? (
-              <Button label="Try again" onPress={() => onlineM.mutate(true)} loading={onlineM.isPending} />
+              <Button label="Try again" onPress={() => onlineM.mutate(true)} loading={pendingOrQueued(onlineM)} />
             ) : null}
             {/* UX-2026-07-16: ONLINE_GATE_COPY.commission_low_balance's own copy promises "top up your
                 prepaid balance and you're straight back on" and its doc comment claims this screen

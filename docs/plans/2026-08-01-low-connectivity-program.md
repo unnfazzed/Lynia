@@ -1150,8 +1150,22 @@ direct continuation of the just-shipped C-O7's draft-persistence pattern on a si
       (confirmed both fail against the pre-fix code: no `refetch()` call after a rejected
       accept/reject, and a stale takeover with a since-resolved order staying visible). `pnpm
       typecheck && pnpm lint && pnpm test` green. See `docs/LC-C-REPORT-2026-08-04c.md`. (S)
-- [ ] C-O1 **(re-ranked to #3, was #4)** ALR-09: offline mutation UX (explicit queued/failed/retry
-      states — never a silent drop) — KNOWN ledger. (M)
+- [x] C-O1 **DONE (2026-08-04d)** **(re-ranked to #3, was #4)** ALR-09: offline mutation UX
+      (explicit queued/failed/retry states — never a silent drop) — KNOWN ledger. **Shipped:**
+      kept mutations on the default `networkMode:"online"` (a global flip to `"always"` would've
+      touched every rollback path at once — the exact reason this stayed scoped, per-mutation) and
+      instead gave `Button` a distinct `loading:"queued"` state (an honest "Waiting to
+      reconnect…" label + disabled press target, no spinner) via a new `pendingOrQueued(...
+      mutations)` helper (`apps/mobile/src/query/client.ts`) that every mutation-driving `Button`/
+      forwarding wrapper in `apps/mobile` now derives its loading state from — confirmed complete
+      by a zero-hit `grep` for the old `loading={.*\.isPending` pattern across the app post-fix.
+      Incidental same-run fix: `SosControl`'s SOS sheet claimed "Alerting the LyniaGo team…" while
+      genuinely paused offline (no signal being exactly when an SOS is likely raised); now shows an
+      explicit "No signal right now" cue instead. Regression tests: `query/__tests__/client.test.tsx`
+      (`pendingOrQueued`), new `ui/__tests__/button.test.tsx` + `ui/order/__tests__/RatingCard.test.tsx`,
+      extended `ui/__tests__/sos-control.test.tsx`. `pnpm --filter mobile typecheck && pnpm --filter
+      mobile lint && pnpm --filter mobile test` green (114 suites / 804 tests); full monorepo
+      `pnpm typecheck && pnpm test` green. See `docs/LC-C-REPORT-2026-08-04d.md`. (M)
 - [ ] C-O2 **(re-ranked to #4, was #5)** Central client network policy: one module defining
       timeout/retry/backoff-with-jitter tuned for 600 ms RTT, replacing per-call-site defaults
       (DoorDash lessons 6+7); every retriable mutation must name its server-side idempotency

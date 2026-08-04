@@ -29,7 +29,7 @@ export function RiderCashHandshakeCard({
   nowMs: number;
   onConfirm: () => void;
   onDispute: () => void;
-  busy: boolean;
+  busy: boolean | "queued";
 }): React.ReactElement | null {
   if (state === "pending") {
     return (
@@ -52,8 +52,8 @@ export function RiderCashHandshakeCard({
         <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 2 }}>
           The customer says they gave you this. Count it, then confirm.
         </Text>
-        <Button label={`Confirm · I received ${formatMoney(amount)}`} onPress={onConfirm} loading={busy} disabled={busy} />
-        <Button label="The amount is wrong — talk to support" variant="ghost" onPress={onDispute} disabled={busy} />
+        <Button label={`Confirm · I received ${formatMoney(amount)}`} onPress={onConfirm} loading={busy} disabled={!!busy} />
+        <Button label="The amount is wrong — talk to support" variant="ghost" onPress={onDispute} disabled={!!busy} />
         {(() => {
           const total = 2 * 60 * 1000;
           const confirmedMs = new Date(confirmedAt).getTime();

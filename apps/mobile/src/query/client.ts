@@ -48,6 +48,20 @@ export const queryClient = new QueryClient({
   },
 });
 
+/**
+ * ALR-09: mutations keep the default `networkMode:"online"` (deliberately — a global flip would touch
+ * every rollback path at once, see docs/KNOWN_BUGS.md). That means a mutation fired while offline
+ * PAUSES instead of sending: `isPending` stays true for the whole outage, indistinguishable from a
+ * request genuinely in flight. A Button driven straight off `isPending` therefore spins forever with
+ * no hint that nothing is actually happening on the wire. This derives the Button-facing tri-state —
+ * "queued" while paused (not lying that it's in flight), `true` while genuinely pending, else `false` —
+ * for one mutation or several sharing a single control (e.g. an accept/dispute pair).
+ */
+export function pendingOrQueued(...mutations: readonly { isPending: boolean; isPaused: boolean }[]): boolean | "queued" {
+  if (mutations.some((m) => m.isPaused)) return "queued";
+  return mutations.some((m) => m.isPending);
+}
+
 export const orderKey = (id: string): readonly ["order", string] => ["order", id];
 export const offersKey = (id: string): readonly ["offers", string] => ["offers", id];
 

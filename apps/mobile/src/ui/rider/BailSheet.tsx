@@ -17,7 +17,7 @@ export function BailSheet({
 }: {
   reason: string;
   onChangeReason: (t: string) => void;
-  pending: boolean;
+  pending: boolean | "queued";
   onConfirm: () => void;
   onDismiss: () => void;
   /** Rider's cancel-strike count BEFORE this cancel lands, so the warning can say which strike this
@@ -42,7 +42,7 @@ export function BailSheet({
           maxLength={280}
         />
         <Button label="Confirm cancellation" onPress={onConfirm} loading={pending} />
-        <Button label="Keep job" variant="ghost" onPress={onDismiss} disabled={pending} />
+        <Button label="Keep job" variant="ghost" onPress={onDismiss} disabled={!!pending} />
       </Card>
       {/* Reliability-score caution — a muted highlight wash, never an alarm. The strike + cooldown are
           real server-side, so the rider must be warned before, not penalised silently after. */}

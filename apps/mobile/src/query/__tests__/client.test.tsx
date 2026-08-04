@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { ApiError } from "../../api/client";
-import { DEFAULT_STALE_TIME_MS, invalidateIfStale, queryClient, shouldRetry } from "../client";
+import { DEFAULT_STALE_TIME_MS, invalidateIfStale, pendingOrQueued, queryClient, shouldRetry } from "../client";
 
 describe("ApiError.retryable (the per-error half of the retry taxonomy)", () => {
   it("is true for a dropped link (status 0) and any 5xx", () => {
@@ -46,6 +46,35 @@ describe("shouldRetry", () => {
   it("treats an unexpected non-ApiError as transient", () => {
     expect(shouldRetry(0, new Error("weird"))).toBe(true);
     expect(shouldRetry(2, new Error("weird"))).toBe(false);
+  });
+});
+
+describe("pendingOrQueued (ALR-09)", () => {
+  it("is false when idle", () => {
+    expect(pendingOrQueued({ isPending: false, isPaused: false })).toBe(false);
+  });
+
+  it("is true while genuinely in flight (pending, not paused)", () => {
+    expect(pendingOrQueued({ isPending: true, isPaused: false })).toBe(true);
+  });
+
+  it("is 'queued' while paused offline — never a bare spinner masquerading as in-flight", () => {
+    // Pre-fix, every call site read `mutation.isPending` alone, which stays true for the whole
+    // outage a paused (`networkMode:"online"`) mutation sits parked in — indistinguishable from a
+    // request genuinely on the wire. This is the distinction the fix threads through to Button.
+    expect(pendingOrQueued({ isPending: true, isPaused: true })).toBe("queued");
+  });
+
+  it("takes 'queued' over 'pending' when multiple mutations share one control and any is paused", () => {
+    expect(pendingOrQueued({ isPending: true, isPaused: false }, { isPending: true, isPaused: true })).toBe("queued");
+  });
+
+  it("is pending, not queued, when one of several sharing a control is in flight and none are paused", () => {
+    expect(pendingOrQueued({ isPending: false, isPaused: false }, { isPending: true, isPaused: false })).toBe(true);
+  });
+
+  it("is false when every mutation sharing a control is idle", () => {
+    expect(pendingOrQueued({ isPending: false, isPaused: false }, { isPending: false, isPaused: false })).toBe(false);
   });
 });
 

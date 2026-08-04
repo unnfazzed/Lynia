@@ -29,7 +29,7 @@ export function PickupChecklist({
   items: { description: string; quantity: number }[];
   checkedItems: ReadonlySet<number>;
   collectedCount: number;
-  pending: boolean;
+  pending: boolean | "queued";
   onToggle: (index: number) => void;
   onConfirm: () => void;
   /** When present, the optional §5c pickup-photo affordance is shown (absent = old call sites/tests

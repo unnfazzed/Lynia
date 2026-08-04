@@ -16,6 +16,7 @@ import {
 } from "../../src/api/food-rider";
 import { advanceStatus, confirmDelivery, getActiveOrder, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { acknowledgeHandback, loadAcknowledgedHandbacks } from "../../src/auth/session";
+import { pendingOrQueued } from "../../src/query/client";
 import { handshakeState, codeEligible } from "../../src/logic/food-doorstep";
 import { FOOD_DROPPABLE, foodCashBreakdown, noShowStatus, returnLegNeeded, RIDER_FOOD_NEXT } from "../../src/logic/food-rider-job";
 import { ACTIVE, reconcileOtpAttempts } from "../../src/logic/rider-job";
@@ -606,14 +607,14 @@ export default function RiderFoodJob(): React.ReactElement {
             code={pickupCode}
             onChangeCode={setPickupCode}
             attempts={pickupAttempts}
-            pending={confirmPickupM.isPending}
+            pending={pendingOrQueued(confirmPickupM)}
             onConfirm={() => confirmPickupM.mutate()}
             paid={foodOrder.merchantPaymentConfirmedAt != null}
             paidReference={foodOrder.merchantPaymentReference}
             amountDue={cashOrder ? total : null}
           />
         ) : next ? (
-          <Button label={next.label} onPress={() => advanceM.mutate(next.to)} loading={advanceM.isPending} />
+          <Button label={next.label} onPress={() => advanceM.mutate(next.to)} loading={pendingOrQueued(advanceM)} />
         ) : null}
 
         {order.status === "en_route_dropoff" ? (
@@ -625,10 +626,10 @@ export default function RiderFoodJob(): React.ReactElement {
               nowMs={nowMs}
               onConfirm={() => confirmCashM.mutate()}
               onDispute={() => disputeCashM.mutate()}
-              busy={confirmCashM.isPending || disputeCashM.isPending}
+              busy={pendingOrQueued(confirmCashM, disputeCashM)}
             />
           ) : codeReady ? (
-            <DeliveryOtp code={deliveryCode} onChangeCode={setDeliveryCode} otpTries={otpTries} pending={deliverM.isPending} onConfirm={() => deliverM.mutate()} senderPhone={order.counterpartyPhone} />
+            <DeliveryOtp code={deliveryCode} onChangeCode={setDeliveryCode} otpTries={otpTries} pending={pendingOrQueued(deliverM)} onConfirm={() => deliverM.mutate()} senderPhone={order.counterpartyPhone} />
           ) : null
         ) : null}
 
@@ -643,8 +644,8 @@ export default function RiderFoodJob(): React.ReactElement {
               onLogCall={() => logCallM.mutate()}
               onReportNoShow={() => noShowM.mutate()}
               onReportRefused={() => refusedM.mutate()}
-              logPending={logCallM.isPending}
-              reportPending={noShowM.isPending || refusedM.isPending}
+              logPending={pendingOrQueued(logCallM)}
+              reportPending={pendingOrQueued(noShowM, refusedM)}
             />
           ) : (
             <Button label="Can't reach the customer?" variant="ghost" onPress={() => setShowUnreachable(true)} />
@@ -655,7 +656,7 @@ export default function RiderFoodJob(): React.ReactElement {
 
         {FOOD_DROPPABLE.has(order.status) ? (
           dropping ? (
-            <BailSheet reason={dropReason} onChangeReason={setDropReason} pending={dropM.isPending} onConfirm={() => dropM.mutate()} onDismiss={() => setDropping(false)} />
+            <BailSheet reason={dropReason} onChangeReason={setDropReason} pending={pendingOrQueued(dropM)} onConfirm={() => dropM.mutate()} onDismiss={() => setDropping(false)} />
           ) : (
             <Button label="Drop this job" variant="ghost" onPress={() => setDropping(true)} />
           )

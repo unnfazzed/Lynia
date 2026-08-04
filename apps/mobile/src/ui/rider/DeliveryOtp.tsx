@@ -17,7 +17,7 @@ export function DeliveryOtp({
   code: string;
   onChangeCode: (code: string) => void;
   otpTries: number;
-  pending: boolean;
+  pending: boolean | "queued";
   onConfirm: () => void;
   // 4·b1: the assigned rider's line to the customer (reveal window). When the code won't match, the
   // rider can call the sender to have them re-issue it — the mockup's "ask the customer to re-send"
