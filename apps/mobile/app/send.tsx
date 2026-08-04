@@ -37,6 +37,7 @@ import type { PickedPoint } from "../src/ui/MapPicker";
 import { ActiveOrderBanner, SendAccountOnHoldView } from "../src/ui/send/SendAccountOnHoldView";
 import { SendItemsList } from "../src/ui/send/SendItemsList";
 import { SendLandmarksDetails } from "../src/ui/send/SendLandmarksDetails";
+import { SendPhoneFields } from "../src/ui/send/SendPhoneFields";
 import { parseNum, randomUuidV4, uuidV4FromSeed } from "../src/util";
 
 // LayoutAnimation needs an explicit opt-in on old-architecture Android; a no-op on iOS / Fabric.
@@ -750,37 +751,15 @@ export default function HomeScreen(): React.ReactElement {
             placeholder="Ask for Rita at reception; keep it upright."
             maxLength={280}
           />
-          {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
-              "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
-          <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} error={pickupPhoneError} />
-          {/* Recent-recipient quick-fill: one tap drops a past drop-off number into the field instead of
-              re-typing. Only shown before the customer starts typing one, so it never fights their input. */}
-          {recipients.length > 0 && dropPhone.trim().length === 0 ? (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: tokens.space.xs, marginBottom: tokens.space.sm }}>
-              {recipients.map((r) => (
-                <Pressable
-                  key={r.phone}
-                  onPress={() => setDropPhone(r.phone)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Use recipient ${r.name || r.phone}`}
-                  style={({ pressed }) => ({
-                    minHeight: tokens.touchTargetMin,
-                    justifyContent: "center",
-                    paddingHorizontal: tokens.space.md,
-                    borderRadius: tokens.radius.pill,
-                    borderWidth: 1,
-                    borderColor: tokens.color.line,
-                    backgroundColor: pressed ? tokens.color.accentWash : tokens.color.surface,
-                  })}
-                >
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>
-                    {r.name ? `${r.name} · ${r.phone}` : r.phone}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-          <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} error={dropPhoneError} />
+          <SendPhoneFields
+            pickupPhone={pickupPhone}
+            onChangePickupPhone={setPickupPhone}
+            pickupPhoneError={pickupPhoneError}
+            recipients={recipients}
+            dropPhone={dropPhone}
+            onChangeDropPhone={setDropPhone}
+            dropPhoneError={dropPhoneError}
+          />
           {quote ? (
             <View style={{ marginBottom: tokens.space.sm }}>
               <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
