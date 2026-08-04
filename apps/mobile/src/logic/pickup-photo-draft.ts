@@ -1,5 +1,9 @@
 import * as SecureStore from "expo-secure-store";
-import type { ImageContentType } from "../api/uploads";
+
+// Duplicated from api/uploads.ts's ImageContentType rather than imported: that module imports
+// api/client.ts, which (via auth/session.ts → auth/device-state.ts, wired in for the sign-out
+// wipe) would import back into this file — a real dependency cycle depcruise correctly rejects.
+type PickupPhotoContentType = "image/jpeg" | "image/png";
 
 /**
  * C-O7 (LC-C09): the optional proof-of-pickup photo's capture/upload state (PickupChecklist.tsx)
@@ -18,7 +22,7 @@ export interface PickupPhotoDraft {
   uri: string;
   width?: number;
   height?: number;
-  contentType: ImageContentType;
+  contentType: PickupPhotoContentType;
 }
 
 export const PICKUP_PHOTO_DRAFT_KEY = "lynia.pickupPhotoDraft";
