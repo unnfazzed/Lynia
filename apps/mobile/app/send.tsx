@@ -20,22 +20,22 @@ import {
   type RebroadcastParams,
   saveDraft,
 } from "../src/logic/order-draft";
-import { orderKey } from "../src/query/client";
+import { invalidateIfStale, orderKey } from "../src/query/client";
 import { invalidateCustomerOrderHistory } from "../src/query/use-history-feed";
 import { useForegroundRefetch } from "../src/realtime/use-foreground-refetch";
 import { fareBand, fareBandHint, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
 import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ActiveOrderCheckFailedBanner, Button, ErrorText, Field, haptic, Icon, Label, TestBuildBanner } from "../src/ui";
+import { ActiveOrderCheckFailedBanner, Button, ErrorText, Field, haptic, Icon, TestBuildBanner } from "../src/ui";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { ComposeMap } from "../src/ui/ComposeMap";
 import { DisclaimerSheet } from "../src/ui/home/DisclaimerSheet";
-import { QtyStepper } from "../src/ui/home/QtyStepper";
 import { AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
 import type { PickedPoint } from "../src/ui/MapPicker";
 import { ActiveOrderBanner, SendAccountOnHoldView } from "../src/ui/send/SendAccountOnHoldView";
+import { SendItemsList } from "../src/ui/send/SendItemsList";
 import { SendLandmarksDetails } from "../src/ui/send/SendLandmarksDetails";
 import { parseNum, randomUuidV4, uuidV4FromSeed } from "../src/util";
 
@@ -95,11 +95,14 @@ export default function HomeScreen(): React.ReactElement {
   // metered data. Gated, it polls only while the banner it feeds is actually on screen; the
   // focus-effect below revalidates the instant the customer navigates back so the banner is never
   // stale on return.
+  // A-O15: focus/foreground use `invalidateIfStale`, not a raw `invalidateQueries` — mirrors
+  // home.tsx's identical fix. The two screens share this cache key, so a customer bouncing between
+  // them within the staleness window shouldn't pay a round trip either place.
   const [homeFocused, setHomeFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
       setHomeFocused(true);
-      void qc.invalidateQueries({ queryKey: ["activeCustomerOrder"] });
+      invalidateIfStale(qc, ["activeCustomerOrder"]);
       return () => setHomeFocused(false);
     }, [qc]),
   );
@@ -111,7 +114,7 @@ export default function HomeScreen(): React.ReactElement {
   // WD-022: also refresh Trip History on resume — an order that completed/cancelled while backgrounded
   // must not leave a stale Trip History list behind the (now-correct) home banner.
   useForegroundRefetch(() => {
-    void qc.invalidateQueries({ queryKey: ["activeCustomerOrder"] });
+    invalidateIfStale(qc, ["activeCustomerOrder"]);
     invalidateCustomerOrderHistory(qc);
   });
   const activeOrder = activeOrderQ.data ?? null;
@@ -737,50 +740,7 @@ export default function HomeScreen(): React.ReactElement {
               the bottom, and the map behind stays visible above the sheet. Hidden when collapsed. */}
           {composeCollapsed ? null : (
           <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {/* Line items — repeatable description + quantity rows (item-model decision, packages/design/HANDOFF.md: multiple
-              {description, quantity}, nothing more for the pilot). Description stacks above the
-              qty stepper so a row still works at 320px. */}
-          <Label>What are you sending?</Label>
-          {items.map((it, i) => (
-            <View key={i}>
-              <Field
-                value={it.description}
-                onChangeText={(t) => updateItem(i, { description: t })}
-                placeholder={i === 0 ? "Documents" : "Another item"}
-                maxLength={140}
-              />
-              <View style={{ flexDirection: "row", alignItems: "center", marginTop: -tokens.space.sm, marginBottom: tokens.space.sm }}>
-                <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginRight: tokens.space.sm }}>Quantity</Text>
-                <QtyStepper value={it.quantity} onChange={(q) => updateItem(i, { quantity: q })} />
-                <View style={{ flex: 1 }} />
-                {items.length > 1 ? (
-                  <Pressable
-                    onPress={() => removeItem(i)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove item ${i + 1}`}
-                    style={({ pressed }) => ({
-                      minHeight: tokens.touchTargetMin,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: tokens.space.xs,
-                      paddingHorizontal: tokens.space.xs,
-                      opacity: pressed ? 0.6 : 1,
-                    })}
-                  >
-                    <Icon name="x" size={16} color={tokens.color.muted} />
-                    {/* Icons are always paired with a text label (low-literacy market). */}
-                    <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted }}>Remove</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            </View>
-          ))}
-          {items.length < MAX_ITEMS ? (
-            <Button label="Add another item" variant="ghost" onPress={addItem} />
-          ) : (
-            // The control never just vanishes — say why it's gone (every dead-end explains itself).
-            <Text style={{ fontSize: 12, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Up to 10 items per order.</Text>
-          )}
+          <SendItemsList items={items} updateItem={updateItem} addItem={addItem} removeItem={removeItem} />
           {/* Sender's note for the rider (contract `note`, ≤280) — the mockup's "ask for Rita at the
               pharmacy counter; keep it upright." Optional; shown to the assigned rider on the job. */}
           <Field

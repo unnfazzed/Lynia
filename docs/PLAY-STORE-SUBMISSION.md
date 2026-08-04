@@ -189,33 +189,46 @@
 > out once this merges; on it, EITHER the refreshed SA lets auto-submit finish end-to-end, or the
 > founder uploads the new vc-2 `.aab` manually — both paths are now unblocked.
 >
-> **Status (2026-08-04, attempt-9 outcome — 🚀 THE APP IS LIVE ON THE INTERNAL TRACK, submitted by
-> the automated pipeline.** §8 step 1 is **DONE**.) Build `c248fbf5` (v0.17.9, **versionCode 2**,
-> profile `preview`, from commit `86773ae`) finished green at **09:18:32 UTC** — the API-35 target
-> cleared Play's artifact-level rejection, and every layer that felled attempts 2–8 stayed fixed.
-> Auto-submit then took three tries against that same build, which is the record of the
-> service-account grant propagating: `d6535feb` errored 09:20:48 and `b8284d83` errored 09:34:45,
-> both `SUBMISSION_SERVICE_ANDROID_SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS` (the fastlane #16164
-> class the block above predicted), then **`574bf5fd` FINISHED at 09:48:01 UTC** → track
-> `internal`, `releaseStatus: COMPLETED`. No manual console upload was needed in the end: the
-> artifact reached Play **through the API**, which is what makes the release path repeatable rather
-> than a one-off. Live artifact: **32,546,001 bytes (31.04 MiB raw, pre-split)**. Build quota: **7
-> of ~15** August builds consumed (a submission retry costs zero build quota — three submissions,
-> one build).
+> **Status (2026-08-04, ~10:00 UTC — 🚀 INTERNAL-TRACK RELEASE LIVE; §8 step 1 COMPLETE; pipeline
+> proven end-to-end).** Attempt 9's build `c248fbf5` (v0.17.9, versionCode 2, targetSdk 35)
+> FINISHED — second consecutive green build, confirming the API-35 change compiled clean. Its
+> auto-submission and two retries still failed on the SA permission error; the founder then **added
+> the service account as a Play Console user with app-level permissions** (the 2026-08-03 grant
+> evidently never materialised at app level — the fresh add, not the re-save, was the actual
+> unlock), and the next retry (submission `574bf5fd`, zero build quota) **FINISHED**: the `.aab`
+> is on the **internal testing** track, submitted entirely from EAS servers. The Play release
+> pipeline is proven END-TO-END — dispatch → frozen-parity build → auto-submit — across 9 dispatch
+> attempts / 7 EAS builds (6 of ~15 August quota), every failure classed and fixed forward in this
+> ledger. Founder next steps: ① Internal testing → Testers tab → email list + share the opt-in
+> link; ② install on a real device and run `docs/QA-DEVICE-CHECKLIST.md` (including the
+> edge-to-edge check on an Android 15 handset); ③ **Promote the release to a Closed testing track
+> and get the required testers opted in — that starts the mandatory 14-day clock** (§8 step 2, the
+> long pole for the mid-August tripwire); ④ housekeeping now unblocked by a green robot-token run:
+> revoke the old personal Expo access token (§9 checklist), and set the `production-mobile`
+> required reviewer before first OTA use.
 >
-> **What this proves, precisely:** the whole of Channel B — GitHub dispatch → EAS build → EAS
-> auto-submit → Play internal track — now runs end to end unattended. That is the "we can ship an
-> update" claim, and it is earned: versionCode 2 *replaced* versionCode 1 on the track, so this was
-> an update, not just a first upload. **What it does not prove:** Channel A (OTA) has never run —
-> see the two open regressions in §8a below and `docs/KNOWN_BUGS.md` (`REL-01`, `REL-02`). Do not
-> read "the update pipeline works" as covering the OTA lane; today it means the store lane only.
+> **Addendum (same event, verified against the EAS API — submission timeline, artifact, and what
+> this does *not* prove).** The exact record, since "the pipeline works" is a claim the next
+> incident will lean on: build `c248fbf5` finished **09:18:32 UTC**; submissions against it went
+> `d6535feb` ERRORED 09:20:48 → `b8284d83` ERRORED 09:34:45 (both
+> `SUBMISSION_SERVICE_ANDROID_SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS`) → **`574bf5fd` FINISHED
+> 09:48:01**, track `internal`, `releaseStatus: COMPLETED`. Live artifact: **32,546,001 bytes
+> (31.04 MiB raw, pre-split)**. Correction to the quota figures used above and in the attempt-5/6/8
+> blocks: the EAS project shows **8 builds created in August** (2 on 08-03, 6 on 08-04) and 10
+> all-time — the running "3/4/5/6 of ~15" counts drifted low. Submission retries remain free.
 >
-> **Still true after go-live, and worth not losing:** the app is on **internal testing**, not
-> production — `play.google.com/store/apps/details?id=zw.co.lynia` returns **404**, as it should for
-> a track that is not publicly listed. The mandatory ~14-day closed test (§8 step 2) has therefore
-> **not started**; it gates production access and is the long pole on the mid-August tripwire.
-> Sentry is still unprovisioned, so **the live build reports no crashes** (§8a) — LR20 is partially
-> met at best, and the first real user-facing bug will be invisible until someone reports it.
+> **What it proves:** Channel B — dispatch → EAS build → EAS auto-submit → Play internal track —
+> runs end to end unattended, and versionCode 2 *replaced* versionCode 1, so an **update** was
+> exercised, not just a first upload. **What it does not prove:** Channel A (OTA) has never run
+> once. Two defects block it — `REL-01` and `REL-02` in `docs/KNOWN_BUGS.md`, summarised in §8a.
+> Do not read "the update pipeline works" as covering the OTA lane; today it means the store lane
+> only, and a hotfix costs a full store round-trip.
+>
+> **Two things worth not losing now that it's live:** the app is on **internal testing**, not
+> production — `play.google.com/store/apps/details?id=zw.co.lynia` returns **404**, exactly as a
+> non-public track should. And Sentry is still unprovisioned with `SENTRY_DISABLE_AUTO_UPLOAD=true`,
+> so **the live build reports no crashes and has no source map** (§8a) — LR20 is half-met, and the
+> closed test in step 2 would otherwise run blind.
 
 ---
 

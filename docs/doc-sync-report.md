@@ -38,12 +38,21 @@ The prior docs stopped at "attempt 9 goes out once this merges". What actually h
 | 08:54 | EAS build `c248fbf5` created — v0.17.9, **versionCode 2**, profile/channel `preview`, runtimeVersion `6c72c486…`. |
 | 09:18:32 | Build **FINISHED** — first green build to also clear Play's artifact requirements. |
 | 09:20:48 | Auto-submit `d6535feb` **ERRORED** — `SUBMISSION_SERVICE_ANDROID_SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS`. |
-| 09:34:45 | Retry `b8284d83` **ERRORED** — same cause (grant still propagating). |
+| 09:34:45 | Retry `b8284d83` **ERRORED** — same cause. |
+| ~09:45 | Founder **adds `id-play-publisher@…` as a Play Console user with app-level permissions**. This, not propagation lag, was the unlock — the 2026-08-03 grant had never materialised at app level (per the parallel session that had the founder's console context, `0991506`). |
 | 09:48:01 | Retry `574bf5fd` **FINISHED** → track `internal`, `releaseStatus: COMPLETED`. **The app is live.** |
 
-Artifact: **32,546,001 bytes (31.04 MiB raw, pre-split)**. Build quota: 7 of ~15 August builds
-(submission retries cost none). The public store URL for `zw.co.lynia` returns **404**, consistent
+Artifact: **32,546,001 bytes (31.04 MiB raw, pre-split)**. Build quota: **8 of ~15** August builds —
+2 on 08-03, 6 on 08-04, counted from the EAS API; the per-attempt figures in
+`PLAY-STORE-SUBMISSION.md` had drifted low (they read 6, and a parallel session's block read 7).
+Submission retries cost none. The public store URL for `zw.co.lynia` returns **404**, consistent
 with internal-track-only distribution.
+
+**Overlap note.** A parallel session recorded the same go-live in `0991506` while this pass was
+running. That block is kept as the primary account — it carries the founder's console context and
+the correct cause — and this pass's contribution was merged in beneath it as an addendum covering
+the submission timeline, the artifact, the quota correction, and the Channel A/B distinction.
+Nothing was overwritten.
 
 **The precise claim the docs now make:** Channel B (dispatch → EAS build → auto-submit → Play) works
 end to end, unattended, and shipped an *update* (vc 2 replacing vc 1) — not merely a first upload.

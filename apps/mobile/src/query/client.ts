@@ -1,4 +1,4 @@
-import { focusManager, QueryClient } from "@tanstack/react-query";
+import { focusManager, QueryClient, type QueryKey } from "@tanstack/react-query";
 import { AppState, type AppStateStatus, Platform } from "react-native";
 import { ApiError } from "../api/client";
 
@@ -18,6 +18,10 @@ export function shouldRetry(failureCount: number, error: unknown): boolean {
   return failureCount < 2;
 }
 
+// A-O15: the one place both the global default staleTime and `invalidateIfStale`'s default read
+// from, so the two can't silently drift apart.
+export const DEFAULT_STALE_TIME_MS = 30_000;
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     mutations: {
@@ -34,7 +38,7 @@ export const queryClient = new QueryClient({
       // Serve cached data instantly on back-navigation (History → Order → back) and revalidate
       // quietly, instead of a skeleton on every remount. Live screens stay fresh via their own
       // refetchInterval + the WS pushes, which fire regardless of staleTime.
-      staleTime: 30_000,
+      staleTime: DEFAULT_STALE_TIME_MS,
       // networkMode "online" (the default) means: while reachability reports offline, queries don't
       // fire into the dead link — they park as "paused" and auto-run the moment we reconnect. Refetch
       // when the app regains connectivity so a screen left open through a tunnel/dead-zone refreshes
@@ -46,6 +50,21 @@ export const queryClient = new QueryClient({
 
 export const orderKey = (id: string): readonly ["order", string] => ["order", id];
 export const offersKey = (id: string): readonly ["offers", string] => ["offers", id];
+
+/**
+ * A-O15: `home.tsx`/`send.tsx` force-invalidate `["activeCustomerOrder"]` on every focus AND every
+ * app-foreground event, so it can pick up a status change that happened elsewhere/backgrounded.
+ * Unconditional `invalidateQueries` bypasses `staleTime` entirely, though — a customer flicking
+ * between tabs, or an app that briefly loses/regains foreground focus, re-fetches even when the
+ * cached entry (often just seeded fresh by `useBootstrap` at cold start) is still well within its
+ * staleness window. Only invalidate when the cached data is actually old enough to be worth a
+ * round trip; a genuinely stale entry (backgrounded past `staleMs`, or never fetched) still
+ * refetches immediately, same as before.
+ */
+export function invalidateIfStale(qc: QueryClient, key: QueryKey, staleMs = DEFAULT_STALE_TIME_MS): void {
+  const updatedAt = qc.getQueryState(key)?.dataUpdatedAt ?? 0;
+  if (Date.now() - updatedAt >= staleMs) void qc.invalidateQueries({ queryKey: key });
+}
 
 /**
  * Without this, React Query's default `isFocused()` never goes false, so every screen's

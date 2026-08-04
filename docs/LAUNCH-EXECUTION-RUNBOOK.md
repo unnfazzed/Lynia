@@ -209,10 +209,13 @@ to route 100% back. **Exercise it once** (LR21).
 > versionCode 2) finished green and submission `574bf5fd` reached Play's **internal** track at
 > 09:48 UTC — through the Play Developer API, not a manual upload. The last two founder-side
 > blockers both cleared that morning: `androidpublisher.googleapis.com` enabled in project
-> `407250490173`, and the Play Console permission grant for `id-play-publisher@…` re-saved to force
-> the refresh (the fastlane #16164 workaround — two submissions still failed
-> `…SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS` at 09:20 and 09:34 before it propagated, so expect
-> minutes, not instants, after re-saving).
+> `407250490173`, and — the actual unlock — **`id-play-publisher@…` added as a Play Console user
+> with app-level permissions**. Worth being precise about, because the obvious diagnosis was wrong:
+> this reads as the fastlane #16164 "re-save the grant to force a refresh" case, and re-saving is
+> what two submissions failed against (`…SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS` at 09:20 and
+> 09:34). The 2026-08-03 grant had evidently never materialised at app level at all, so what worked
+> was **adding the user afresh**, not refreshing an existing grant. If you hit this again, check the
+> Console's Users-and-permissions list for the SA before assuming propagation lag.
 >
 > Still outstanding here: the **required reviewer on `production-mobile`** (unchanged — and note the
 > store lane has been dispatching without one), and **Sentry provisioning**, which §5 covers and
@@ -257,8 +260,10 @@ production rollout (starts at 10%; advance/halt in Play Console → Releases). J
 5. versionCode is EAS-managed (`autoIncrement` + `appVersionSource: remote`), so nothing to bump by
    hand; Play rejects re-used codes and this is what prevents that.
 
-Budget note: EAS bills builds, not submissions — **7 of ~15** August builds were consumed reaching
-go-live, so prefer fixing forward on one build and retrying the *submission* where possible.
+Budget note: EAS bills builds, not submissions — **8 of ~15** August builds were consumed reaching
+go-live (verified against the EAS API: 2 on 08-03, 6 on 08-04; the per-attempt counts recorded in
+`PLAY-STORE-SUBMISSION.md` drifted low). Prefer fixing forward on one build and retrying the
+*submission*, which is free.
 
 ⚠️ Do **not** reach for "Mobile OTA Update" as the fast lane yet — it has never successfully shipped
 to a device, and `REL-01`/`REL-02` (`docs/KNOWN_BUGS.md`) explain why a publish can silently reach
