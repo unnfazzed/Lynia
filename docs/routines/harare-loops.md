@@ -8,25 +8,26 @@ were created with the session `create_trigger` tool (fresh session per firing, t
 environment), so their prompts CAN be updated in place from a session via `update_trigger` — keep
 this file reconciled when doing so.
 
-They occupy the four previously idle grid hours (03/04/06/07 UTC — see
-`docs/routines/routine-chain.md`), raising the chain's hard daily cap from 20 to 24 sessions.
-Hour 03 is shared by weekday/Sunday split, never by simultaneous firings.
+They run **once a week, on Sunday (UTC)**, interleaved on the even hours of the Sunday grid
+(see `docs/routines/routine-chain.md`) so they never share an hour with a standing routine.
 
 | Trigger name | Cron (UTC) | Model | Lane |
 |---|---|---|---|
-| `LC loop A — size & data diet` | `40 */3 * * *` | `claude-opus-5` | Install/download size + OTA & per-session bytes |
-| `LC loop B — Go-class runtime perf` | `15 */3 * * *` | `claude-opus-5` | Cold start, jank, memory on 1–2 GB devices |
-| `LC loop C — offline & 2G resilience` | `30 */3 * * *` | `claude-opus-4-8` | Journeys surviving dead zones and drops |
-| `LC loop D — journey & soundness sweep` | `45 */3 * * *` | `claude-opus-4-8` | Journey blockers (mobile+admin+merchant) + read-only infra soundness |
-| `LC steer — replan` | `30 5,17 * * *` | `claude-fable-5` | Re-rank, budget trend, loop health, completion calls |
-| `LC loop R — refactoring sprint` | `55 */3 * * *` | (default) | **Sprint-only (added 2026-08-02, user directive):** runs the standing refactoring routine's doctrine (behavior-preserving, hotspot/`REFACTOR-LEDGER.md`-driven, characterization-first, ≤400-line single-concern PRs, strict typecheck+build+test gate) at sprint cadence; dedups with the standing routine through the same ledger; disabled by the Tuesday revert (the standing routine keeps the lane long-term) |
+| `LC steer — replan` | `0 0 * * 0` | `claude-fable-5` | Re-rank, budget trend, loop health, completion calls — runs first so the lanes fire against a fresh ranking |
+| `LC loop A — size & data diet` | `0 2 * * 0` | `claude-opus-5` | Install/download size + OTA & per-session bytes |
+| `LC loop B — Go-class runtime perf` | `0 4 * * 0` | `claude-opus-5` | Cold start, jank, memory on 1–2 GB devices |
+| `LC loop C — offline & 2G resilience` | `0 6 * * 0` | `claude-opus-4-8` | Journeys surviving dead zones and drops |
+| `LC loop D — journey & soundness sweep` | `0 8 * * 0` | `claude-opus-4-8` | Journey blockers (mobile+admin+merchant) + read-only infra soundness — **lane complete, trigger disabled** |
+| `LC loop R — refactoring sprint` | `0 10 * * 0` | (default) | Runs the standing refactoring routine's doctrine (behavior-preserving, hotspot/`REFACTOR-LEDGER.md`-driven, characterization-first, ≤400-line single-concern PRs, strict typecheck+build+test gate); dedups with the standing routine through the same ledger |
 
-> **Sprint cadence (2026-08-02 → 2026-08-04):** per the user directive "the week's work by Tuesday,"
-> the four lanes run **every 3 hours (8×/day)**, staggered `:15/:30/:40/:45`, and the steer **2×/day**
-> (was weekly). One increment + one in-flight PR per lane still holds, so extra firings babysit rather
-> than fork. Reverts to the original daily crons (below, in each lane's section header) on Tue
-> 2026-08-04 23:00 UTC for any lane not already self-disabled. Rationale + revert IDs:
-> `docs/routines/routine-chain.md`.
+> **Cadence history.** Created 2026-08-01 on daily crons; bumped 2026-08-02 to every 3 h (8×/day,
+> staggered `:15/:30/:40/:45`) with the steer at 2×/day for the "week's work by Tuesday" sprint, and
+> LC-R added for the duration of that sprint. Moved to the weekly Sunday grid on **2026-08-04** per
+> the user's *"once a week on Sunday"* instruction. The Tuesday-night sprint revert that would have
+> restored the daily crons was deleted rather than allowed to fire, so **LC-R survives the sprint**
+> and is now the weekly refactoring lane alongside the standing routine (they dedupe through
+> `docs/REFACTOR-LEDGER.md`). One increment + one in-flight PR per lane still holds. Rationale +
+> trigger IDs: `docs/routines/routine-chain.md`.
 
 Model status (2026-08-01): programmatic pinning is unavailable on this account
 (`model_update_disabled`, re-confirmed) — the table's Model column is the **intended** assignment,
@@ -55,7 +56,7 @@ The prompt texts below are verbatim what runs.
 
 ---
 
-## LC loop A — size & data diet (`0 3 * * 1-6`)
+## LC loop A — size & data diet (`0 2 * * 0`)
 
 ```
 You are LC loop A — size & data diet, a scheduled loop for unnfazzed/Lynia in the Harare
@@ -110,7 +111,7 @@ reconcile docs/routines/harare-loops.md.
 
 ---
 
-## LC loop B — Go-class runtime perf (`0 4 * * *`)
+## LC loop B — Go-class runtime perf (`0 4 * * 0`)
 
 ```
 You are LC loop B — Go-class runtime perf, a scheduled loop for unnfazzed/Lynia in the Harare
@@ -158,7 +159,7 @@ enabled:false, record it, reconcile docs/routines/harare-loops.md.
 
 ---
 
-## LC loop C — offline & 2G resilience (`0 6 * * *`)
+## LC loop C — offline & 2G resilience (`0 6 * * 0`)
 
 ```
 You are LC loop C — offline & 2G resilience, a scheduled loop for unnfazzed/Lynia in the Harare
@@ -208,7 +209,7 @@ enabled:false, record it, reconcile docs/routines/harare-loops.md.
 
 ---
 
-## LC loop D — journey & soundness sweep (`0 7 * * *`)
+## LC loop D — journey & soundness sweep (`0 8 * * 0`)
 
 ```
 You are LC loop D — journey & soundness sweep, a scheduled loop for unnfazzed/Lynia in the Harare
@@ -268,7 +269,7 @@ switch.
 
 ---
 
-## LC steer — weekly Fable replan (`0 3 * * 0`)
+## LC steer — weekly Fable replan (`0 0 * * 0`)
 
 ```
 You are LC steer, the weekly planning session for the Harare low-connectivity program in

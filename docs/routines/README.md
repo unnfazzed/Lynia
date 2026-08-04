@@ -6,28 +6,29 @@ un-reviewable and let the spec drift ahead of what actually runs (see the 2026-0
 audit). These files are the **version-controlled mirror** of each live trigger's prompt, so the
 prompts can be diffed, reviewed, and reconciled against `docs/ROUTINES.md` like any other code.
 
+All eight run **weekly, on Sunday (UTC)** as of 2026-08-04 — see `routine-chain.md` for the grid.
+
 | File | Trigger name | Cron (UTC) |
 |---|---|---|
-| `bug-hunting.md` | Bug hunting | `0 23 * * *` |
-| `ux-improvements.md` | User experience improvements | `0 1 * * *` |
-| `deep-bug-sweep.md` | Deep bug sweep | `0 3 * * *` |
-| `documentation-update.md` | Documentation update | `0 5 * * *` |
-| `refactoring.md` | Refactoring | `0 7 */2 * *` |
-| `wallet-data-audit.md` | Wallet, earnings & admin data-lifecycle audit | `0 9 */2 * *` |
-| `pr-health-watchdog.md` | PR health & delivery watchdog | `0 2,8,14,20 * * *` |
+| `bug-hunting.md` | Bug hunting | `0 1 * * 0` |
+| `ux-improvements.md` | User experience improvements | `0 3 * * 0` |
+| `deep-bug-sweep.md` | Deep bug sweep | `0 5 * * 0` |
+| `documentation-update.md` | Documentation update | `0 7 * * 0` |
+| `wallet-data-audit.md` | Wallet, earnings & admin data-lifecycle audit | `0 9 * * 0` |
 | *(none yet — see note)* | Performance watch | `0 11 * * 0` |
+| `refactoring.md` | Refactoring | `0 13 * * 0` |
+| `pr-health-watchdog.md` | PR health & delivery watchdog | `0 22 * * 0` |
 
-> **Temporary build loops (2026-07-28):** the five Restaurants + Send build loops are mirrored in
-> `build-loops-restaurants-send.md` (one file for all five — they share their protocol). Unlike
-> the eight standing routines they were created via the session `create_trigger` tool, so their
-> prompts CAN be updated in place with `update_trigger`; they self-disable when their lane
-> completes. See `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6.
+> **Temporary build loops (2026-07-28): finished.** All five Restaurants + Send lanes completed
+> 2026-07-31 and their triggers no longer exist. `build-loops-restaurants-send.md` is kept as
+> history. See `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6.
 
-> **Schedule (all crons) — `routine-chain.md`.** As of 2026-07-30 every routine and build loop is
-> placed on a single paced hourly grid (one heavy session at a time, hard daily cap, one frequency
-> dial). `routine-chain.md` is the source of truth for that schedule — the grid, the credit
-> rationale, the exact trigger IDs + old/new crons, and the apply/revert procedure. The per-routine
-> cron column below is superseded by that grid for any routine already re-timed onto it.
+> **Schedule (all crons) — `routine-chain.md`.** As of 2026-08-04 every routine and LC loop runs
+> once a week on Sunday, on a single hourly grid (one heavy session at a time, one frequency dial).
+> `routine-chain.md` is the source of truth for that schedule — the grid, the exact trigger IDs +
+> old/new crons, which triggers were re-timed programmatically vs. which need the claude.ai Routines
+> UI, and the apply/revert procedure. When it and the cron column above disagree, `routine-chain.md`
+> wins.
 
 > **Performance watch has no mirror file yet.** `docs/ROUTINES.md` added this 8th routine
 > 2026-07-19 (its own `## Performance watch` section), but its live trigger prompt was never
