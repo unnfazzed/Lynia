@@ -94,6 +94,14 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps): React.React
   useEffect(() => {
     captureException(error);
   }, [error]);
+  // Belt-and-braces: RootLayout's hide effect never commits when the throw happens on the mount pass
+  // that would have run it, so this screen would otherwise render UNDER a splash still held up by the
+  // module-scope preventAutoHideAsync() above — a frozen icon instead of a recoverable error. Today
+  // expo-router's own boundary also force-hides (views/Try.tsx), but the invariant "whatever renders
+  // first drops the splash" belongs next to the code that holds it, not in a framework internal.
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
   return (
     <SafeAreaProvider>
       <Screen>
@@ -115,6 +123,9 @@ function RootLayout(): React.ReactElement | null {
   // Self-hosted Inter — the splash stays up until the fonts register so no
   // Text mounts before its family is available. Font assets are bundled (no network), so on the
   // rare load error we fall through to the system-font fallback rather than block the app.
+  // `useAppFonts` is TIME-BOUNDED (src/ui/fonts.ts): it reports an error rather than pending past
+  // FONT_LOAD_TIMEOUT_MS, because this gate holds the splash and a font load that never settles
+  // would otherwise strand the app on it forever — the 0.17.12 "installs but won't open" bug.
   const [fontsLoaded, fontError] = useAppFonts();
   const fontsReady = fontsLoaded || fontError != null;
 

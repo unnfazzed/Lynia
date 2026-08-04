@@ -686,7 +686,16 @@ internal track; all three block the *next* steps.
 |---|---|---|---|
 | 1 | ~~**A version bump rotates the OTA runtime version.**~~ **FIXED 2026-08-04** — `apps/mobile/fingerprint.config.js` now sets `sourceSkips: ["ExpoConfigVersions"]`, so the version fields no longer feed the hash. Both 0.17.9 and 0.17.10 hash to `5b175b9b…`; a native change (`targetSdkVersion` 35 → 34) still moves it, so the anti-brick property is intact. | ⚠️ **The live vc-2 binary is not rescued** — its runtimeVersion `6c72c486…` was stamped at build time. The fix applies from the **next store build** onward; re-baseline before the closed test starts, while the install base is still internal testers. | `REL-01` |
 | 2 | **`mobile-ota.yml` defaults to a branch that does not exist.** Its `branch` input defaults to `production`; the EAS project has exactly one channel and one branch, both named `preview`, and the live binary was built on the `preview` channel. | A default OTA dispatch publishes to a branch no channel maps to — again reaching nobody, silently. | `REL-02` |
-| 3 | **The live build has no crash reporting.** Sentry is unprovisioned and `eas.json` sets `SENTRY_DISABLE_AUTO_UPLOAD=true`, so there is neither runtime capture nor a source map for the shipped bundle. | Crashes on the internal track are invisible; the closed test (step 2) would run blind, and step 3 explicitly requires Sentry live. | LR20 / §7.2 |
+| 3 | **The live build has no crash reporting.** Sentry is unprovisioned and `eas.json` sets `SENTRY_DISABLE_AUTO_UPLOAD=true`, so there is neither runtime capture nor a source map for the shipped bundle. | Crashes on the internal track are invisible; the closed test (step 2) would run blind, and step 3 explicitly requires Sentry live. **This directly cost us on gap 4** — that build failed with zero telemetry and had to be diagnosed from a photograph. | LR20 / §7.2 |
+| 4 | **The shipped build does not start at all.** The first real-device install (v0.17.12, internal track, 2026-08-04) showed the launcher icon on white and stayed there — no crash, no error screen, nothing in logcat. Bounded-gate + resource-shrinking defect; full mechanism in `docs/KNOWN_BUGS.md` → `MOB-BOOT-01`. | **The internal track is blocked** — testers cannot open the app, so the §8 step-2 14-day closed-test clock cannot start. | `MOB-BOOT-01` |
+
+**Gap 4 is fixed in code but needs a new build to reach anyone.** It is a native config change, so
+the `fingerprint` runtimeVersion shifts and OTA cannot rescue the live vc-2 binary (the same
+constraint as `REL-01`). Cut the store build described below — it now carries *three* reasons to
+exist: the boot fix, the OTA re-baseline, and, if Sentry is provisioned first, the crash telemetry
+that would have made gap 4 a five-minute diagnosis. **Verify on that build that the app starts
+*and* renders Inter rather than the system font** — the second half confirms the root cause, not
+just the mitigation.
 
 **Both `REL-01` and `REL-02` are now fixed** — `REL-01` by skipping the version fields out of the
 fingerprint (`apps/mobile/fingerprint.config.js`), `REL-02` by a preflight in `mobile-ota.yml` that

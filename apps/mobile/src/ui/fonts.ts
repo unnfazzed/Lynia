@@ -4,6 +4,7 @@
 // safe Unicode ranges are pinned in scripts/font-safe-ranges.mjs and enforced by
 // scripts/check-font-charset.mjs on every `pnpm lint`.
 import { useFonts } from "expo-font";
+import { useEffect, useState } from "react";
 import { StyleSheet, Text, TextInput } from "react-native";
 
 /**
@@ -25,9 +26,41 @@ export const appFontMap = {
   Inter_700Bold: require("../../assets/fonts/Inter-700Bold-subset.ttf"),
 } as const;
 
-/** Loads the self-hosted fonts. Returns [loaded, error] — gate first render on `loaded`. */
+/**
+ * Hard ceiling on the font load. Fonts are BUNDLED (no network on the happy path) and register in
+ * well under a second even on a low-end handset, so anything past this is a stall, not slowness.
+ */
+export const FONT_LOAD_TIMEOUT_MS = 4000;
+
+/**
+ * Loads the self-hosted fonts. Returns [loaded, error] — `_layout.tsx` gates BOTH the first render
+ * and the native splash on this settling, so it must never be able to hang.
+ *
+ * WHY THE TIMEOUT (the 0.17.12 "installed but won't open" bug): `useFonts` resolves through
+ * `expo-asset`'s `Asset.downloadAsync()`, which has NO timeout of its own. A `.ttf` carries no
+ * width/height, so expo-asset's Android "already local" fast path (`Asset.fromModule`, gated on
+ * `meta.width || meta.height`) does NOT apply to fonts — they go down the download path, and if the
+ * bundled resource can't be resolved it falls back to fetching over the network. On a dead or
+ * captive link that promise never settles, `fontsLoaded` stays false, `fontError` stays null, and
+ * RootLayout returns `null` forever behind a splash nothing will ever hide: the app shows its icon
+ * on white and nothing else, with no crash, no error screen, and nothing in logcat.
+ *
+ * A timeout converts that unbounded hang into the fallback the font contract already documents —
+ * render on the system font. It is genuinely self-healing: if the load lands late, `loaded` flips,
+ * every patched `<Text>` re-renders against the same family names, and Inter simply appears.
+ */
 export function useAppFonts(): [boolean, Error | null] {
-  return useFonts(appFontMap);
+  const [loaded, error] = useFonts(appFontMap);
+  const [timedOut, setTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (loaded || error != null) return;
+    const timer = setTimeout(() => setTimedOut(true), FONT_LOAD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [loaded, error]);
+
+  if (loaded || error != null) return [loaded, error];
+  return [false, timedOut ? new Error(`Font load exceeded ${FONT_LOAD_TIMEOUT_MS}ms — using system font`) : null];
 }
 
 /** Map an RN fontWeight (numeric or string) to the matching self-hosted Inter family. */

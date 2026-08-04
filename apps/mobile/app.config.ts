@@ -118,8 +118,24 @@ const config: ExpoConfig = {
     // convention as the expo-location note above):
     //   • enableProguardInReleaseBuilds turns on R8 code shrinking + obfuscation, dropping unreachable
     //     Java/Kotlin from the release AAB. Release-only — debug/dev client builds are untouched.
-    //   • enableShrinkResourcesInReleaseBuilds strips unused resources (drawables/strings/layouts); it
-    //     only takes effect with R8 on, so it is deliberately paired with the flag above.
+    //   • enableShrinkResourcesInReleaseBuilds (resource shrinking) is deliberately OFF — see below.
+    //
+    // RESOURCE SHRINKING IS OFF ON PURPOSE (regression: 0.17.12 installed from the internal track but
+    // never got past the splash — icon on white, no crash, nothing in logcat). React Native's release
+    // asset pipeline copies every `require()`d NON-IMAGE asset into `res/raw/` — for this app that is
+    // the three subsetted Inter `.ttf`s — and they are reached only by runtime name lookup, never by a
+    // resource ID in Java or XML. That is exactly the shape AAPT2's resource shrinker treats as
+    // unreachable, so it blanks them; `expo-asset` then can't resolve the bundled font, falls back to
+    // fetching it over the network, and `Asset.downloadAsync()` (no timeout) never settles. Because
+    // `_layout.tsx` gates BOTH the first render and the native splash on `useAppFonts()`, the app sits
+    // on the splash forever. The font gate now has its own timeout (src/ui/fonts.ts) so a stall can
+    // never brick the boot again, but the shrinker is still the wrong trade here: it saves a little
+    // over a MiB of resources while putting every bundled non-image asset one heuristic away from
+    // vanishing in release-only builds that nothing in CI can catch.
+    //
+    // Re-enabling it needs a `res/raw/keep.xml` (`tools:keep="@raw/*"`) shipped through a config
+    // plugin — CNG regenerates `android/`, so a hand-edit will not survive — plus the release-build
+    // smoke test in docs/APP-SIZE.md actually run on a handset. Don't flip it back without both.
     // These are NATIVE build settings, so — exactly like the expo-location manifest change above — they
     // shift the expo-updates `fingerprint` runtimeVersion. The next ship therefore has to go out as a
     // store release (mobile-release.yml); it is NOT OTA-able onto existing installs.
@@ -146,7 +162,7 @@ const config: ExpoConfig = {
           targetSdkVersion: 35,
           kotlinVersion: "1.9.25",
           enableProguardInReleaseBuilds: true,
-          enableShrinkResourcesInReleaseBuilds: true,
+          enableShrinkResourcesInReleaseBuilds: false,
           extraProguardRules: [
             // Keep react-native-maps' bridge package (it ships no consumer rules) + hush the matching
             // missing-class warnings so R8 can't strip the classes JS/Fabric reach reflectively.
