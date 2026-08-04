@@ -7,6 +7,7 @@ import { shouldNoticeTakenOrder } from "../logic/journey";
 import { useAuth } from "../auth/auth-context";
 import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
 import { acquireSocket, releaseSocket } from "./socket";
+import { createSelfHealGate } from "./self-heal-gate";
 
 // B-O12: mirrors the server's own `take: 50` cap on `listOpen`/`GET /orders/open`
 // (orders.service.ts) — the 15s REST poll that would otherwise reset this cache to that capped
@@ -85,16 +86,20 @@ export function useRiderBoard(
       void qc.invalidateQueries({ queryKey: ["openOrders"] });
       void qc.invalidateQueries({ queryKey: ["activeJob"] });
     };
+    // B-O5: connect/connect_error can both fire repeatedly, seconds apart, while the connection
+    // flaps — gate the reconnect-driven heal so a flapping episode pays it once, not once per
+    // attempt (see self-heal-gate.ts).
+    const gatedHealBoard = createSelfHealGate(healBoard);
     const onConnect = () => {
       setConnected(true);
       const l = locRef.current;
       socket.emit(WS_EVENTS.boardSubscribe, l ? { lat: l.lat, lng: l.lng } : {});
-      healBoard();
+      gatedHealBoard();
     };
     const onDisconnect = () => setConnected(false);
     const onConnectError = () => {
       setConnected(false);
-      healBoard();
+      gatedHealBoard();
     };
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);

@@ -20,6 +20,10 @@ const mockUseHistoryFeed = jest.fn();
 // Controllable focus/blur, for LC-B05: real expo-router calls the cleanup on blur (not just unmount),
 // which is what flips `homeFocused` back to false while the screen stays mounted beneath /order/[id].
 let blurHome: (() => void) | null = null;
+// A-O15: re-invoke the focus callback on demand, mirroring expo-router calling it again on a
+// subsequent focus without a remount — needed to test that a quick re-focus doesn't force a redundant
+// fetch when the cache is still fresh.
+let refocusHome: (() => void) | null = null;
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -28,6 +32,7 @@ jest.mock("expo-router", () => ({
     React_.useEffect(() => {
       const cleanup = cb();
       blurHome = () => cleanup && cleanup();
+      refocusHome = () => cb();
       return cleanup;
     }, []);
   },
@@ -94,6 +99,7 @@ afterEach(() => {
   if (activeTree) act(() => activeTree!.unmount());
   activeTree = null;
   blurHome = null;
+  refocusHome = null;
   jest.clearAllMocks();
 });
 
@@ -183,5 +189,39 @@ describe("(tabs)/home.tsx — LC-B05: blurred write-back must not clobber live t
     const cached = qc.getQueryData<{ rider: { currentLat: number; updatedAt: string } }>(orderKey("order-1"));
     expect(cached?.rider.currentLat).toBe(-17.9);
     expect(cached?.rider.updatedAt).toBe("2026-01-01T00:05:00.000Z");
+  });
+});
+
+describe("(tabs)/home.tsx — A-O15: a quick re-focus must not force a redundant fetch while fresh", () => {
+  it("does not refetch on refocus when the active-order cache is still within the staleness window", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(activeOrderFixture());
+    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
+
+    activeTree = renderHome();
+    await settle();
+    expect(mockGetActiveCustomerOrder).toHaveBeenCalledTimes(1);
+
+    // Customer flicks to another tab and immediately back — a real re-focus, well under the 30s
+    // staleness window the initial fetch just established.
+    act(() => refocusHome?.());
+    await settle();
+
+    expect(mockGetActiveCustomerOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("still refetches on refocus once the cached entry is old enough to count as stale", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(activeOrderFixture());
+    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
+
+    activeTree = renderHome();
+    await settle();
+    expect(mockGetActiveCustomerOrder).toHaveBeenCalledTimes(1);
+
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(Date.now() + 31_000);
+    act(() => refocusHome?.());
+    await settle();
+    nowSpy.mockRestore();
+
+    expect(mockGetActiveCustomerOrder).toHaveBeenCalledTimes(2);
   });
 });

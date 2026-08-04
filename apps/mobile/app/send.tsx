@@ -20,7 +20,7 @@ import {
   type RebroadcastParams,
   saveDraft,
 } from "../src/logic/order-draft";
-import { orderKey } from "../src/query/client";
+import { invalidateIfStale, orderKey } from "../src/query/client";
 import { invalidateCustomerOrderHistory } from "../src/query/use-history-feed";
 import { useForegroundRefetch } from "../src/realtime/use-foreground-refetch";
 import { fareBand, fareBandHint, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
@@ -37,6 +37,7 @@ import type { PickedPoint } from "../src/ui/MapPicker";
 import { ActiveOrderBanner, SendAccountOnHoldView } from "../src/ui/send/SendAccountOnHoldView";
 import { SendItemsList } from "../src/ui/send/SendItemsList";
 import { SendLandmarksDetails } from "../src/ui/send/SendLandmarksDetails";
+import { SendPhoneFields } from "../src/ui/send/SendPhoneFields";
 import { parseNum, randomUuidV4, uuidV4FromSeed } from "../src/util";
 
 // LayoutAnimation needs an explicit opt-in on old-architecture Android; a no-op on iOS / Fabric.
@@ -95,11 +96,14 @@ export default function HomeScreen(): React.ReactElement {
   // metered data. Gated, it polls only while the banner it feeds is actually on screen; the
   // focus-effect below revalidates the instant the customer navigates back so the banner is never
   // stale on return.
+  // A-O15: focus/foreground use `invalidateIfStale`, not a raw `invalidateQueries` — mirrors
+  // home.tsx's identical fix. The two screens share this cache key, so a customer bouncing between
+  // them within the staleness window shouldn't pay a round trip either place.
   const [homeFocused, setHomeFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
       setHomeFocused(true);
-      void qc.invalidateQueries({ queryKey: ["activeCustomerOrder"] });
+      invalidateIfStale(qc, ["activeCustomerOrder"]);
       return () => setHomeFocused(false);
     }, [qc]),
   );
@@ -111,7 +115,7 @@ export default function HomeScreen(): React.ReactElement {
   // WD-022: also refresh Trip History on resume — an order that completed/cancelled while backgrounded
   // must not leave a stale Trip History list behind the (now-correct) home banner.
   useForegroundRefetch(() => {
-    void qc.invalidateQueries({ queryKey: ["activeCustomerOrder"] });
+    invalidateIfStale(qc, ["activeCustomerOrder"]);
     invalidateCustomerOrderHistory(qc);
   });
   const activeOrder = activeOrderQ.data ?? null;
@@ -747,37 +751,15 @@ export default function HomeScreen(): React.ReactElement {
             placeholder="Ask for Rita at reception; keep it upright."
             maxLength={280}
           />
-          {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
-              "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
-          <Field label="Pickup contact phone" value={pickupPhone} onChangeText={setPickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} error={pickupPhoneError} />
-          {/* Recent-recipient quick-fill: one tap drops a past drop-off number into the field instead of
-              re-typing. Only shown before the customer starts typing one, so it never fights their input. */}
-          {recipients.length > 0 && dropPhone.trim().length === 0 ? (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: tokens.space.xs, marginBottom: tokens.space.sm }}>
-              {recipients.map((r) => (
-                <Pressable
-                  key={r.phone}
-                  onPress={() => setDropPhone(r.phone)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Use recipient ${r.name || r.phone}`}
-                  style={({ pressed }) => ({
-                    minHeight: tokens.touchTargetMin,
-                    justifyContent: "center",
-                    paddingHorizontal: tokens.space.md,
-                    borderRadius: tokens.radius.pill,
-                    borderWidth: 1,
-                    borderColor: tokens.color.line,
-                    backgroundColor: pressed ? tokens.color.accentWash : tokens.color.surface,
-                  })}
-                >
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>
-                    {r.name ? `${r.name} · ${r.phone}` : r.phone}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-          <Field label="Recipient phone" value={dropPhone} onChangeText={setDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} error={dropPhoneError} />
+          <SendPhoneFields
+            pickupPhone={pickupPhone}
+            onChangePickupPhone={setPickupPhone}
+            pickupPhoneError={pickupPhoneError}
+            recipients={recipients}
+            dropPhone={dropPhone}
+            onChangeDropPhone={setDropPhone}
+            dropPhoneError={dropPhoneError}
+          />
           {quote ? (
             <View style={{ marginBottom: tokens.space.sm }}>
               <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>

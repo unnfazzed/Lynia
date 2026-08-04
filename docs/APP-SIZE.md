@@ -32,8 +32,8 @@ delivers) and the **JS bundle** (what an OTA delivers). We measure and budget bo
 
 | Channel | Artifact | Built by | Notes |
 |---|---|---|---|
-| **Production (Play)** | Android **App Bundle** (`.aab`) | EAS Build → Submit (`mobile-release.yml`, dormant until EAS is armed) | Google Play splits the AAB per device (ABI, screen density, language) at install time, so the **per-device download is smaller than the raw .aab**. Play App Signing manages the release key. |
-| **OTA** | JS + asset bundle | `mobile-ota.yml` (dormant until EAS is armed) | Only lands on binaries whose native fingerprint matches (`runtimeVersion: fingerprint`). Native/SDK changes need a store release, not an OTA. |
+| **Production (Play)** | Android **App Bundle** (`.aab`) | EAS Build → Submit (`mobile-release.yml`) — **armed and shipping since 2026-08-04** | Google Play splits the AAB per device (ABI, screen density, language) at install time, so the **per-device download is smaller than the raw .aab**. Play App Signing manages the release key. First shipped artifact: **31.04 MiB raw** (see "First shipped artifact" below). |
+| **OTA** | JS + asset bundle | `mobile-ota.yml` — **repaired, one store build from usable** (`REL-01`/`REL-02` both fixed, `docs/KNOWN_BUGS.md`); zero updates published to date | Only lands on binaries whose native fingerprint matches (`runtimeVersion: fingerprint`). Native/SDK changes need a store release, not an OTA. The live binary predates the fingerprint fix, so OTA size work only pays off from the next store build onward — until then every byte still ships via the store lane. |
 | **QA / dogfood** | universal signed release **APK** | `android-test-apk.yml` (on-demand) | A single universal APK (all ABIs) for sideloading — deliberately *larger* than a Play per-device split. Useful as a size upper bound and for the per-category breakdown. |
 
 Android-only today. iOS is not built or shipped yet (see the iOS checklist below).
@@ -50,7 +50,7 @@ post-merge, run 29739035561 — identical workflow, method, and runner class):
 | — of which native `lib/` (4 ABIs, uncompressed) | ~49 MiB | ~49 MiB | unchanged (expected — R8 doesn't touch `.so`; Play's AAB split ships one ABI per device) |
 | Hermes JS bundle (`.hbc`) | 6,883,309 B (6.56 MiB) | 5,015,672 B (4.78 MiB) | **−1,867,637 B (−27.1%)** |
 | Android `expo export` total (JS + assets) | 13,116,438 B (12.51 MiB) | 11,248,801 B (10.73 MiB) | **−1,867,637 B (−14.2%)** |
-| Release AAB (raw, pre-split) | _not yet measured — `mobile-release.yml` is dormant until EAS is armed; its "Measure AAB size" step reports this on the first armed release_ | | |
+| Release AAB (raw, pre-split) | _not measured (EAS not yet armed on 2026-07-20)_ | _first measured 2026-08-04:_ **32,546,001 B (31.04 MiB)** | _no before/after — see "First shipped artifact"_ |
 
 Assets were byte-identical before/after (41 files, 6,230,271 B), so the whole JS delta is icon
 bytecode — direct evidence the barrel import was bundling the full Lucide set. The `.hbc` saving
@@ -205,6 +205,24 @@ indistinguishable from a number someone bumped to get CI green.
 > deliberate decision, which is exactly what this guardrail exists to prevent. If the size job is not
 > a required status check, a red budget can be auto-merged — see `docs/ROUTINES.md` on the
 > merge-on-green policy.
+
+### First shipped artifact (2026-08-04)
+
+The budget above governs the **JS export**; this is the first measurement of what Play actually
+received, which is a different (and much larger) number — it includes the native layer, and this
+table has never had a real one before.
+
+| Artifact | Size | Notes |
+|---|---:|---|
+| Release `.aab` (build `c248fbf5`, v0.17.9 / vc 2, live on internal track) | **32,546,001 B — 31.04 MiB** | Raw App Bundle, **pre-split**. Measured by downloading the EAS artifact directly. |
+| Release `.aab` (build `ea538ebe`, v0.17.9 / vc 1, rejected — targetSdk 34) | 32,545,990 B — 31.04 MiB | 11 bytes smaller; the API-35 target is essentially free in size terms. |
+
+Play's **per-device download is smaller than both** — an App Bundle is split by ABI, screen density
+and language at install time, and the precise figure is in Play Console → App bundle explorer.
+Record it there once the internal testers install; the raw `.aab` is the only number CI can see
+(`mobile-release.yml` reports it to the run summary, best-effort). This is the pre-shrink baseline
+to judge future native growth against — R8 + resource shrinking were already on for this build
+(`expo-build-properties` → `enableProguardInReleaseBuilds` / `enableShrinkResourcesInReleaseBuilds`).
 
 ## Sources / further reading
 

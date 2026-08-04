@@ -202,6 +202,24 @@ to route 100% back. **Exercise it once** (LR21).
 > `owner: "lyniago"` explicitly (a personal token implies its account; a robot has none). The field
 > is now committed. Outstanding: no required reviewer on `production-mobile` yet — add before first
 > OTA publish (that environment gates `mobile-ota.yml`, the one lane with no external review).
+>
+> **Update (2026-08-04): fully armed and PROVEN — the app is live on the internal track.** Nothing
+> in this section is founder-pending for the store lane any more. After nine dispatch attempts
+> (each failure and fix recorded in `docs/PLAY-STORE-SUBMISSION.md`), build `c248fbf5` (v0.17.9,
+> versionCode 2) finished green and submission `574bf5fd` reached Play's **internal** track at
+> 09:48 UTC — through the Play Developer API, not a manual upload. The last two founder-side
+> blockers both cleared that morning: `androidpublisher.googleapis.com` enabled in project
+> `407250490173`, and — the actual unlock — **`id-play-publisher@…` added as a Play Console user
+> with app-level permissions**. Worth being precise about, because the obvious diagnosis was wrong:
+> this reads as the fastlane #16164 "re-save the grant to force a refresh" case, and re-saving is
+> what two submissions failed against (`…SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS` at 09:20 and
+> 09:34). The 2026-08-03 grant had evidently never materialised at app level at all, so what worked
+> was **adding the user afresh**, not refreshing an existing grant. If you hit this again, check the
+> Console's Users-and-permissions list for the SA before assuming propagation lag.
+>
+> Still outstanding here: the **required reviewer on `production-mobile`** (unchanged — and note the
+> store lane has been dispatching without one), and **Sentry provisioning**, which §5 covers and
+> which the live build does not have.
 
 ```bash
 npm i -g eas-cli && eas login                       # or use npx eas-cli
@@ -227,6 +245,36 @@ First release: **Actions → "Mobile Release (Play)"** with profile `preview` (i
 promote through closed testing in Play Console → then tag `v0.2.0` on `main` for the first staged
 production rollout (starts at 10%; advance/halt in Play Console → Releases). JS-only hotfixes:
 **Actions → "Mobile OTA Update"** (goes to installed apps on next launch, no review).
+
+**Shipping an update today (the path that is actually proven, 2026-08-04):**
+
+1. Merge to `main` and let CI go green. release-please will bump `version`; that is fine here.
+2. **Actions → "Mobile Release (Play)"**, profile `preview`, submit `true`. The workflow queues the
+   build with `--no-wait` and exits — **a green workflow run means "queued", not "shipped"**. This
+   trips people up: runs #3–#9 all reported success while their builds failed on EAS.
+3. Watch the build on the EAS project page (or the Expo API). Roughly **9 minutes** for a green
+   Android build at current size.
+4. Auto-submit fires on build success; the submission is a *separate* object with its own status.
+   Confirm it reaches `FINISHED` on track `internal` — a failed submission does **not** fail the
+   GitHub run either. Retrying a submission costs zero build quota.
+5. versionCode is EAS-managed (`autoIncrement` + `appVersionSource: remote`), so nothing to bump by
+   hand; Play rejects re-used codes and this is what prevents that.
+
+Budget note: EAS bills builds, not submissions — **8 of ~15** August builds were consumed reaching
+go-live (verified against the EAS API: 2 on 08-03, 6 on 08-04; the per-attempt counts recorded in
+`PLAY-STORE-SUBMISSION.md` drifted low). Prefer fixing forward on one build and retrying the
+*submission*, which is free.
+
+⚠️ **"Mobile OTA Update" is not a usable fast lane yet** — it has never successfully shipped to a
+device. `REL-01` and `REL-02` (`docs/KNOWN_BUGS.md`), which made a publish silently reach nobody,
+are both fixed, but the **live binary was built before the fingerprint fix**, so its runtime version
+belongs to the old scheme and no update published now can match it. The workflow will refuse the
+dispatch rather than pretend otherwise.
+
+**To switch OTA on: cut one more store build** (the procedure just above). That binary's runtime
+version is stable across version bumps, so from it onward a JS-only fix can go out via OTA in
+minutes. Worth doing **before** the closed test starts — re-baselining costs one build now, versus
+a store round-trip per hotfix for 14 days once testers are opted in.
 
 ### d) Branch protection — §6 above, plus Code Owners
 

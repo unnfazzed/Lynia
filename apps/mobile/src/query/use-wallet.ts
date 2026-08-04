@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import type { CommissionConfig, Wallet, WalletLedgerPage } from "@lynia/shared";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import type { CommissionConfig, Wallet, WalletEntry } from "@lynia/shared";
 import { getWallet, getWalletConfig, getWalletLedger } from "../api/wallet";
 
 /**
@@ -32,13 +32,36 @@ export function useWallet(): {
   return { wallet: q.data, isLoading: q.isLoading, isFetching: q.isFetching, isError: q.isError, refetch: () => void q.refetch() };
 }
 
-/** The first page of ledger receipts (reverse-chronological). */
+/**
+ * The ledger receipts (reverse-chronological), paged in 25-entry pages by the server
+ * (`WalletService.getLedger`, `LEDGER_PAGE_SIZE`). `entries` accumulates every page fetched so far —
+ * `loadMore()` (LC-B-SIB-2 fix) is the only way past the first page; before this, `nextCursor` was
+ * returned by the API but never read anywhere in the mobile app, so a rider with more than 25
+ * lifetime wallet events silently lost visibility into older deductions with no on-screen signal
+ * anything was missing (the admin-side sibling of this same shape was already fixed as LC-D07).
+ */
 export function useWalletLedger(): {
-  page: WalletLedgerPage | undefined;
+  entries: WalletEntry[];
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  loadMore: () => void;
 } {
-  const q = useQuery({ queryKey: walletLedgerKey, queryFn: () => getWalletLedger() });
-  return { page: q.data, isLoading: q.isLoading, isError: q.isError, refetch: () => void q.refetch() };
+  const q = useInfiniteQuery({
+    queryKey: walletLedgerKey,
+    queryFn: ({ pageParam }: { pageParam: string | undefined }) => getWalletLedger(pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  });
+  return {
+    entries: q.data?.pages.flatMap((p) => p.entries) ?? [],
+    isLoading: q.isLoading,
+    isError: q.isError,
+    refetch: () => void q.refetch(),
+    hasMore: q.hasNextPage,
+    isLoadingMore: q.isFetchingNextPage,
+    loadMore: () => void q.fetchNextPage(),
+  };
 }

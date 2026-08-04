@@ -5,6 +5,7 @@ import type { Socket } from "socket.io-client";
 import { useAuth } from "../auth/auth-context";
 import { invalidateRiderJobQueries } from "../query/use-history-feed";
 import { acquireSocket, releaseSocket } from "./socket";
+import { createSelfHealGate } from "./self-heal-gate";
 
 /**
  * The rider's inbound socket for their active job (INTERFACE-AUDIT C3 / C5). Joins the order room and
@@ -55,16 +56,21 @@ export function useRiderJobSocket(
     // undelivered transition self-healed here (rather than through the mutation's own onSuccess) must
     // also refresh Trip History/Earnings, which read the same terminal statuses.
     const refetchJob = (): void => invalidateRiderJobQueries(qc);
+    // B-O5: connect/connect_error can both fire repeatedly, seconds apart, while the connection
+    // flaps — gate the reconnect-driven refetch so a flapping episode pays it once, not once per
+    // attempt. The order:status listener below stays ungated — a real server push, not reconnect
+    // noise.
+    const gatedRefetchJob = createSelfHealGate(refetchJob);
 
     const onConnect = () => {
       setConnected(true);
       socket.emit(WS_EVENTS.subscribeOrder, { orderId });
-      refetchJob();
+      gatedRefetchJob();
     };
     const onDisconnect = () => setConnected(false);
     const onConnectError = () => {
       setConnected(false);
-      refetchJob();
+      gatedRefetchJob();
     };
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);

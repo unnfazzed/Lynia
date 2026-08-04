@@ -15,7 +15,7 @@ import {
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
-import { orderKey } from "../../src/query/client";
+import { invalidateIfStale, orderKey } from "../../src/query/client";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
@@ -117,11 +117,14 @@ export default function LauncherHomeScreen(): React.ReactElement {
   // screen is the visible route (PERF20-01's rule), refreshed on focus + app foreground so a status
   // change that happened elsewhere/backgrounded isn't stale on return. Same `["activeCustomerOrder"]`
   // key `send.tsx` reads, so the two screens share one cache entry instead of double-fetching.
+  // A-O15: focus/foreground use `invalidateIfStale`, not a raw `invalidateQueries` — a customer
+  // lingering on/returning to Home shouldn't pay a round trip for data `useBootstrap` (or the last
+  // 30s poll) already seeded fresh; a genuinely stale entry still refetches immediately.
   const [homeFocused, setHomeFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
       setHomeFocused(true);
-      void qc.invalidateQueries({ queryKey: ACTIVE_ORDER_KEY });
+      invalidateIfStale(qc, ACTIVE_ORDER_KEY);
       return () => setHomeFocused(false);
     }, [qc]),
   );
@@ -132,7 +135,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
   });
   const historyFeed = useHistoryFeed();
   useForegroundRefetch(() => {
-    void qc.invalidateQueries({ queryKey: ACTIVE_ORDER_KEY });
+    invalidateIfStale(qc, ACTIVE_ORDER_KEY);
     invalidateCustomerOrderHistory(qc);
   });
   const activeOrder = activeOrderQ.data ?? null;

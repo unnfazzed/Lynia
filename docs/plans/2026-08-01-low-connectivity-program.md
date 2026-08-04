@@ -382,14 +382,46 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       untouched. `pnpm typecheck && pnpm lint && pnpm test` green (97 API test files/1540 tests
       unaffected, 111 mobile test files/775 tests — the new `socket.test.tsx` + the 4 existing
       socket-hook suites updated for the new mock shape). See `docs/LC-A-REPORT-2026-08-04b.md`.
-- [ ] A-O15 **(new, ranked #8 — A-T4 finding, LC-A08)** `apps/mobile/app/(tabs)/home.tsx:121-132`
-      runs its own 30s `refetchInterval` poll of `/orders/mine/active-order` for as long as the
-      customer sits on the Home tab, plus force-invalidates it on every focus (`:121-126`) and
-      foreground (`:134-137`) event — duplicating the same logical data `useBootstrap` already seeds
-      from `/app/bootstrap` (`use-bootstrap.ts:17`) at cold start. A customer who lingers on Home
-      before ordering (the common case — it's the launcher screen) pays 2+ extra round trips/minute
-      for data that's usually unchanged. Same redundant-polling shape as A-O10, just for
-      order-state instead of config; a shared cache key / longer stale-time would close it. (S)
+- [x] A-O15 **DONE (2026-08-04c)** **(ranked #8 — A-T4 finding, LC-A08)**
+      `apps/mobile/app/(tabs)/home.tsx:121-132` ran its own 30s `refetchInterval` poll of
+      `/orders/mine/active-order` for as long as the customer sat on the Home tab, plus
+      force-invalidated it on every focus (`:121-126`) and foreground (`:134-137`) event —
+      duplicating the same logical data `useBootstrap` already seeds from `/app/bootstrap`
+      (`use-bootstrap.ts:17`) at cold start. `send.tsx` had the identical pattern on the same
+      `["activeCustomerOrder"]` cache key (mirrored per its own comment). A customer who lingers on
+      Home before ordering (the common case — it's the launcher screen) paid 2+ extra round
+      trips/minute for data that's usually unchanged.
+      **Shipped:** a new `invalidateIfStale(qc, key, staleMs = DEFAULT_STALE_TIME_MS)` helper in
+      `apps/mobile/src/query/client.ts` (staleMs defaults to the same 30s the global `staleTime`
+      already uses, both now reading a single exported `DEFAULT_STALE_TIME_MS` constant so the two
+      can't drift) — it checks `qc.getQueryState(key)?.dataUpdatedAt` and only calls
+      `invalidateQueries` when the cached entry is actually old enough to be worth a round trip; a
+      genuinely stale entry (backgrounded past `staleMs`, or never fetched) still refetches
+      immediately, unchanged from before. `home.tsx`'s and `send.tsx`'s focus-effect and
+      foreground-refetch callbacks now call `invalidateIfStale` instead of a raw
+      `invalidateQueries` for `["activeCustomerOrder"]`; `invalidateCustomerOrderHistory` (a
+      different cache key, out of this item's scope) is untouched. No behavior change to the 30s
+      `refetchInterval` poll itself, the socket write-back guard, or the LC-B05 blurred-write-back
+      fix — purely a "skip the redundant forced refetch when data is still fresh" change.
+      **Evidence** (a modeled 5-minute Home dwell — the ticket's own "lingers before ordering"
+      scenario — with the real 30s `refetchInterval` plus a modeled focus/foreground cadence of
+      once per 20s, i.e. tab switches/notification pulls/brief backgrounding, matching this item's
+      own "2+ extra round trips/minute" framing; concurrent triggers landing in the same instant
+      dedupe to one round trip, mirroring TanStack Query's real in-flight-promise sharing): **21 →
+      11 network round trips over the 5-minute dwell (−10, −47.6%)**, i.e. ≈2 avoided round
+      trips/minute — the scheduled 30s poll is untouched, only the forced extra fetches collapse.
+      At the already-measured `getSnapshot` response size for this exact endpoint family (A-T4:
+      ≈1,079 B/response for the equivalent parcel snapshot), 10 avoided round trips ≈10.8 KB saved
+      per 5-minute dwell, plus the avoided per-request connection overhead a byte count alone
+      doesn't capture on a metered 2G/3G link. New unit tests for `invalidateIfStale`
+      (`src/query/__tests__/client.test.tsx`, 3 cases: skips when fresh, invalidates when stale,
+      invalidates when never-fetched) plus 2 new integration tests in
+      `app/(tabs)/__tests__/home.test.tsx` driving the real focus-effect callback through a mocked
+      `expo-router` (confirms a quick re-focus does NOT re-fetch while fresh, and DOES refetch once
+      the cache ages past 30s). No JS bundle-size impact (logic-only, no new deps/assets) —
+      `size-budget.json` untouched. `pnpm typecheck && pnpm lint && pnpm test` green (97 API test
+      files/1540 tests unaffected, 112 mobile test files/789 tests — 3 new in `client.test.tsx`, 2
+      new in `home.test.tsx`). See `docs/LC-A-REPORT-2026-08-04c.md`.
 - [ ] A-O4 Review rider-offline 8s activeJob poll cadence — KNOWN backlog; re-confirmed still live
       2026-08-03 (A-T4): `activeJob` (`apps/mobile/app/rider/(tabs)/index.tsx:247`) has no
       `enabled: online` gate (unlike its sibling `openOrders` at `:461`), so it polls every 8s
@@ -807,7 +839,22 @@ B-O5's zero-evidence backlog placeholder; see `docs/LC-STEER-2026-08-04.md` §4)
       source confirming native-driver color support exists, not a measured delta. `pnpm typecheck &&
       pnpm lint && pnpm test` all green (1540 API + 786 mobile tests). See
       `docs/LC-B-REPORT-2026-08-04c.md`.
-- [ ] B-O5 **(was #1)** Socket self-heal refetch cadence on reconnect attempts — KNOWN backlog. (S)
+- [x] B-O5 **DONE (2026-08-04d)** **(was #1)** Socket self-heal refetch cadence on reconnect
+      attempts — all three realtime hooks (`use-order-socket.ts`, `use-rider-board.ts`,
+      `use-rider-job-socket.ts`) fired a full REST self-heal refetch on EVERY `connect` and
+      `connect_error` event with nothing bounding the cadence; Socket.IO's own reconnection loop
+      retries repeatedly, seconds apart, while a connection flaps (the exact Harare dead-zone
+      profile this lane targets), so a flapping episode could pay the self-heal cascade many times
+      over instead of once. Fixed with a new shared `createSelfHealGate(heal, minIntervalMs=5000)`
+      (`src/realtime/self-heal-gate.ts`) — fires immediately on the first call, drops any call
+      within the floor of the last one that fired — wrapping each hook's `onConnect`/
+      `onConnectError` self-heal call; each hook's own genuine server-pushed event
+      (`order:status`/`presence:recovered`) still refetches ungated, since that's a real signal,
+      not reconnect noise. New `self-heal-gate.test.ts` (pure, fake timers) plus a cadence
+      regression case added to each of the three hooks' existing test files, all confirmed to FAIL
+      against the pre-fix code (2 self-heals per burst instead of 1) before landing. `pnpm
+      typecheck && pnpm lint && pnpm test` all green (1540 API + 803 mobile tests). See
+      `docs/LC-B-REPORT-2026-08-04d.md`.
 - [ ] B-O3 Overlap/defer boot keystore reads — KNOWN backlog. **B-T1 evidence:** `loadSession()`
       (`src/auth/session.ts`) and `loadOnboardingSeen()`/`loadRolePreference()`
       (`src/auth/device-state.ts`, read from `app/index.tsx`) already fire concurrently at the
@@ -1309,6 +1356,27 @@ direct continuation of the just-shipped C-O7's draft-persistence pattern on a si
       statuses for the same order stay separate notifications. New tests in `push.spec.ts`
       (`buildFcmMessage` mapping) and `notifications.service.spec.ts` (`notifyOrderStatus` stamps
       the key). See docs/LC-D-REPORT-2026-08-04.md.
+- [x] D-O4 **DONE (2026-08-04d)** **`LC-B-SIB-2`** (sibling-flagged by Lane B's 2026-08-03 tooling
+      misfire): the rider Money tab's `useWalletLedger()` always called `getWalletLedger()` with no
+      cursor — `WalletService.getLedger` caps every response at 25 entries and returns a
+      `nextCursor`, but the cursor was never read anywhere in the mobile app, so a rider with more
+      than 25 lifetime wallet events permanently lost visibility into older deductions with zero
+      on-screen signal anything was missing (contradicting the screen's own "every deduction shows
+      up here" copy). This is the mobile-client instance of the same truncation shape `D07` already
+      fixed on the admin side. All 6 Lane D checklist sections were otherwise fully checked (every
+      D-D0/D-T/D-O item done) when this run started; per the dedup protocol's sibling-sweep read,
+      this explicitly-Lane-D-flagged OPEN ledger row stood in for a fresh audit/optimize increment
+      rather than self-disabling with known off-checklist Lane D work still outstanding.
+      **Shipped:** `useWalletLedger()` (`apps/mobile/src/query/use-wallet.ts`) now uses
+      `useInfiniteQuery`, accumulating every fetched page into `entries` and exposing
+      `hasMore`/`isLoadingMore`/`loadMore()`; the Money tab (`apps/mobile/app/rider/(tabs)/money.tsx`)
+      renders a "Load older" ghost-button beneath the ledger card whenever `hasMore` is true. No API
+      change needed — `getWalletLedger(cursor)` and `WalletLedgerPage.nextCursor` already existed,
+      just were never read. New `src/query/__tests__/use-wallet.test.tsx` (3 tests: first page loads
+      with no cursor and surfaces `hasMore`; `loadMore()` requests the prior page's own cursor and
+      accumulates rather than replaces entries; `hasMore` goes false once the server stops returning
+      a cursor). `pnpm typecheck && pnpm lint && pnpm test` green (full monorepo: 6/6 packages,
+      1540 API tests + 797 mobile tests unaffected elsewhere). See docs/LC-D-REPORT-2026-08-04d.md.
 
 ## §6 The loops
 
