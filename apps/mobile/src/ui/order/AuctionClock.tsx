@@ -102,7 +102,7 @@ export function AuctionClock(props: {
       urgencyAnim.setValue(to);
       return;
     }
-    Animated.timing(urgencyAnim, { toValue: to, duration: 200, useNativeDriver: false }).start();
+    Animated.timing(urgencyAnim, { toValue: to, duration: 200, useNativeDriver: true }).start();
   }, [urgent, reduceMotion, urgencyAnim]);
   useEffect(() => () => onUrgentRef.current(false), []);
 

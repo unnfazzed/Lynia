@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { Text } from "react-native";
+import { Animated, Text } from "react-native";
 import renderer, { act } from "react-test-renderer";
 import { AuctionClock, URGENT_MS } from "../AuctionClock";
 
@@ -22,6 +22,7 @@ afterEach(() => {
   for (const tree of mounted.splice(0)) {
     act(() => tree.unmount());
   }
+  jest.restoreAllMocks(); // so an Animated.timing spy from one test never leaks calls into the next
 });
 
 function render(el: React.ReactElement): renderer.ReactTestRenderer {
@@ -109,6 +110,45 @@ describe("AuctionClock (PERF20-02)", () => {
     expect(URGENT_MS).toBe(20_000); // the affordance window is a product decision — pin it
     act(() => tree.unmount());
     expect(onUrgentChange).toHaveBeenLastCalledWith(false); // never outlives the auction that armed it
+  });
+
+  it("drives the urgency colour crossfade on the native thread (B-O18)", () => {
+    const timingSpy = jest.spyOn(Animated, "timing");
+    render(
+      <AuctionClock
+        expiresAt={new Date(Date.now() + 25_000).toISOString()}
+        frozen={false}
+        reduceMotion={false}
+        reconnecting={false}
+        bidCount={2}
+        noRiders={false}
+        onUrgentChange={noop}
+        onZero={noop}
+      />,
+    );
+    tick(6_000); // 19s left — crosses into URGENT_MS, firing the crossfade again
+    expect(timingSpy.mock.calls.length).toBeGreaterThan(0);
+    for (const [, config] of timingSpy.mock.calls) {
+      expect(config).toEqual(expect.objectContaining({ useNativeDriver: true }));
+    }
+  });
+
+  it("skips Animated.timing under reduce-motion (snaps via setValue instead)", () => {
+    const timingSpy = jest.spyOn(Animated, "timing");
+    render(
+      <AuctionClock
+        expiresAt={new Date(Date.now() + 25_000).toISOString()}
+        frozen={false}
+        reduceMotion
+        reconnecting={false}
+        bidCount={2}
+        noRiders={false}
+        onUrgentChange={noop}
+        onZero={noop}
+      />,
+    );
+    tick(6_000); // 19s left — would cross into URGENT_MS under motion, but reduce-motion snaps instead
+    expect(timingSpy).not.toHaveBeenCalled();
   });
 
   it("announces each SR threshold once (60s / 30s / closing), never per-second spam", () => {
