@@ -240,6 +240,72 @@ describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extract
   });
 });
 
+describe("send.tsx — Landmarks & details collapsible (RF-21 characterization, pre-extraction)", () => {
+  it("starts collapsed with a required-fields summary, and the toggle expands/collapses the panel", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    // Empty pickup/drop landmarks fail landmarksOk — the collapsed header surfaces that inline.
+    const header = tree.root.findAll((n) => n.props.accessibilityRole === "button" && typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Landmarks and details"))[0]!;
+    expect(header).toBeTruthy();
+    expect(header.props.accessibilityLabel).toBe("Landmarks and details, landmarks required");
+    expect(header.props.accessibilityState).toEqual({ expanded: false });
+    expect(tree.root.findAll((n) => n.props.value === "Pickup landmark").length).toBe(0);
+
+    act(() => header.props.onPress());
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Pickup landmark").length).toBeGreaterThan(0);
+
+    const headerAfterOpen = tree.root.findAll((n) => n.props.accessibilityRole === "button" && typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Landmarks and details"))[0]!;
+    expect(headerAfterOpen.props.accessibilityState).toEqual({ expanded: true });
+
+    act(() => headerAfterOpen.props.onPress());
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Pickup landmark").length).toBe(0);
+  });
+
+  it("labels a reverse-geocoded landmark 'from map' until the user edits it, then drops the label", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    pressTestId(tree, "test-set-pickup"); // fires onReverseGeocodePickup("Test Pickup Landmark")
+
+    const header = tree.root.findAll((n) => n.props.accessibilityRole === "button" && typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Landmarks and details"))[0]!;
+    act(() => header.props.onPress());
+
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Pickup landmark  • from map" && n.props.value === "Test Pickup Landmark").length).toBeGreaterThan(0);
+
+    setFieldByAccessibilityLabel(tree, "Pickup landmark  • from map", "Hand-typed landmark");
+
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Pickup landmark" && n.props.value === "Hand-typed landmark").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.includes("from map")).length).toBe(0);
+  });
+
+  it("flags a declared value outside $0–150 inline, and clears the flag back in range", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    const header = tree.root.findAll((n) => n.props.accessibilityRole === "button" && typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Landmarks and details"))[0]!;
+    act(() => header.props.onPress());
+
+    setFieldByAccessibilityLabel(tree, "Declared value (USD, max 150)", "200");
+    expect(tree.root.findAll((n) => n.props.children === "Declared value must be between $0 and $150.").length).toBeGreaterThan(0);
+
+    setFieldByAccessibilityLabel(tree, "Declared value (USD, max 150)", "50");
+    expect(tree.root.findAll((n) => n.props.children === "Declared value must be between $0 and $150.").length).toBe(0);
+  });
+});
+
 describe("send.tsx — draft flush before submit (LC-C06)", () => {
   it("persists the on-disk draft with the submitted price BEFORE the create-order request fires, even mid-debounce", async () => {
     mockGetActiveCustomerOrder.mockResolvedValue(null);
