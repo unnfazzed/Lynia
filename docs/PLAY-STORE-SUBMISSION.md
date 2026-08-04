@@ -188,6 +188,24 @@
 > handsets — check nothing hides behind system bars (`docs/QA-DEVICE-CHECKLIST.md`). Attempt 9 goes
 > out once this merges; on it, EITHER the refreshed SA lets auto-submit finish end-to-end, or the
 > founder uploads the new vc-2 `.aab` manually — both paths are now unblocked.
+>
+> **Status (2026-08-04, ~10:00 UTC — 🚀 INTERNAL-TRACK RELEASE LIVE; §8 step 1 COMPLETE; pipeline
+> proven end-to-end).** Attempt 9's build `c248fbf5` (v0.17.9, versionCode 2, targetSdk 35)
+> FINISHED — second consecutive green build, confirming the API-35 change compiled clean. Its
+> auto-submission and two retries still failed on the SA permission error; the founder then **added
+> the service account as a Play Console user with app-level permissions** (the 2026-08-03 grant
+> evidently never materialised at app level — the fresh add, not the re-save, was the actual
+> unlock), and the next retry (submission `574bf5fd`, zero build quota) **FINISHED**: the `.aab`
+> is on the **internal testing** track, submitted entirely from EAS servers. The Play release
+> pipeline is proven END-TO-END — dispatch → frozen-parity build → auto-submit — across 9 dispatch
+> attempts / 7 EAS builds (6 of ~15 August quota), every failure classed and fixed forward in this
+> ledger. Founder next steps: ① Internal testing → Testers tab → email list + share the opt-in
+> link; ② install on a real device and run `docs/QA-DEVICE-CHECKLIST.md` (including the
+> edge-to-edge check on an Android 15 handset); ③ **Promote the release to a Closed testing track
+> and get the required testers opted in — that starts the mandatory 14-day clock** (§8 step 2, the
+> long pole for the mid-August tripwire); ④ housekeeping now unblocked by a green robot-token run:
+> revoke the old personal Expo access token (§9 checklist), and set the `production-mobile`
+> required reviewer before first OTA use.
 
 ---
 
