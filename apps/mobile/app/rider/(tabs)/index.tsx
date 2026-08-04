@@ -246,7 +246,21 @@ export default function RiderHome(): React.ReactElement {
   // D5: a live food-dispatch offer takes the rider straight to the intake screen — gated on the same
   // dispatch-specific flag as the (still dormant) food-job-card board read above, dormant-off.
   const board = useRiderBoard(online, loc, bidIds, merchantDispatchAutoEnabled ? () => router.push("/rider/food-offer") : undefined);
-  const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: board.connected ? false : 8000 });
+  // A-O4: unlike `openOrders` below (which is `enabled: online` outright — an offline rider can't be
+  // offered new work), this poll can't just gate on `online`: the "Go offline" button has no
+  // active-job guard, so a rider can go offline mid-delivery and still needs this to keep tracking
+  // that job to completion, and a cold app open while offline still needs the one-shot initial fetch
+  // to discover a leftover active job from a prior session. So `enabled` stays default-on (the mount
+  // fetch always runs), and only the recurring interval gates on online-or-already-has-a-job — once a
+  // completed fetch confirms offline-with-no-job, the 8s self-heal poll has nothing left to surface.
+  const activeQ = useQuery({
+    queryKey: ["activeJob"],
+    queryFn: getActiveOrder,
+    refetchInterval: (query) => {
+      if (board.connected) return false;
+      return online || query.state.data != null ? 8000 : false;
+    },
+  });
   // R8 follow-up: hide the "active job" card for a cancelled order the rider has already handed back.
   // activeForRider keeps surfacing a collected-then-cancelled order for 24h (so a backgrounded rider
   // can reopen it), but once they've acknowledged the hand-back it must not keep nagging as "active".

@@ -14,7 +14,7 @@ import renderer, { act } from "react-test-renderer";
 import { FlatList } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import type { OpenOrder } from "../../../../src/api/orders";
+import type { OpenOrder, OrderSnapshot } from "../../../../src/api/orders";
 import type { Me } from "../../../../src/api/auth";
 
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 320, height: 640 } };
@@ -239,4 +239,83 @@ describe("rider board (B-O9: ranked/renderItem must stay referentially stable ac
     expect(listAfter.props.data).toBe(dataBefore);
     expect(listAfter.props.renderItem).toBe(renderItemBefore);
   });
+});
+
+function activeJobFixture(): OrderSnapshot {
+  return {
+    id: "job-1",
+    status: "assigned",
+    agreedFare: "5.00",
+    proposedFare: "5.00",
+    pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Pickup" },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Dropoff" },
+    rider: { profileId: "p1", currentLat: -17.83, currentLng: 31.05, updatedAt: "2026-08-04T10:00:00Z" },
+    events: [],
+    counterpartyPhone: null,
+    expiresAt: null,
+  };
+}
+
+// A-O4: `activeJob`'s REST poll used to have no `online`/active-job gate at all — it ran the 8s
+// self-heal poll indefinitely even while the rider was fully offline with no job to track, forever
+// (KNOWN backlog, `docs/plans/2026-08-01-low-connectivity-program.md` §5 Lane A). The fix can't just
+// flip to `enabled: online` (the sibling pattern `openOrders` uses) because the "Go offline" button has
+// no active-job guard, so a rider can go offline mid-delivery and still needs this poll to track that
+// job to completion — and a cold app open while offline still needs its one-shot mount fetch to
+// discover a leftover active job from a prior session. So the mount fetch must always fire, and only
+// the RECURRING interval should stop once a completed fetch confirms offline-with-no-job.
+async function wait(ms: number): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  });
+}
+
+describe("rider board (A-O4: activeJob self-heal poll must stop once offline confirms no active job)", () => {
+  it(
+    "offline, no active job: fetches once on mount, then the 8s poll never fires again",
+    async () => {
+      mockUseRiderBoard.mockReturnValue({
+        connected: false,
+        expiredOrderIds: new Set<string>(),
+        takenOrderIds: new Set<string>(),
+        boardTakenNudge: 0,
+      });
+      mockGetMe.mockResolvedValue(meFixture({ isOnline: false }));
+      mockGetActiveOrder.mockResolvedValue(null);
+      mockGetOpenOrders.mockResolvedValue([]);
+
+      activeTree = renderScreen();
+      await settle();
+      await settle();
+      expect(mockGetActiveOrder).toHaveBeenCalledTimes(1);
+
+      await wait(9000);
+      expect(mockGetActiveOrder).toHaveBeenCalledTimes(1);
+    },
+    15000,
+  );
+
+  it(
+    "offline WITH an active job: the 8s self-heal poll keeps tracking it to completion",
+    async () => {
+      mockUseRiderBoard.mockReturnValue({
+        connected: false,
+        expiredOrderIds: new Set<string>(),
+        takenOrderIds: new Set<string>(),
+        boardTakenNudge: 0,
+      });
+      mockGetMe.mockResolvedValue(meFixture({ isOnline: false }));
+      mockGetActiveOrder.mockResolvedValue(activeJobFixture());
+      mockGetOpenOrders.mockResolvedValue([]);
+
+      activeTree = renderScreen();
+      await settle();
+      await settle();
+      expect(mockGetActiveOrder).toHaveBeenCalledTimes(1);
+
+      await wait(9000);
+      expect(mockGetActiveOrder.mock.calls.length).toBeGreaterThanOrEqual(2);
+    },
+    15000,
+  );
 });
