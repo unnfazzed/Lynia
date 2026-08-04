@@ -22,9 +22,9 @@ export type HandshakeState =
  *  frozen handshake can only be reached from `waiting_rider` (R-05) and must win the branch. */
 export function handshakeState(order: {
   paymentMethod: string | null;
-  customerCashConfirmedAt: string | null;
-  riderCashConfirmedAt: string | null;
-  cashHandshakeFrozenAt: string | null;
+  customerCashConfirmedAt: string | null | undefined;
+  riderCashConfirmedAt: string | null | undefined;
+  cashHandshakeFrozenAt: string | null | undefined;
 }): HandshakeState {
   if (order.paymentMethod !== "cash") return "not_cash";
   if (order.cashHandshakeFrozenAt) return "frozen";
@@ -37,9 +37,9 @@ export function handshakeState(order: {
  *  paid and were never gated; CASH orders unlock only once both handshake confirms have landed. */
 export function codeEligible(order: {
   paymentMethod: string | null;
-  customerCashConfirmedAt: string | null;
-  riderCashConfirmedAt: string | null;
-  cashHandshakeFrozenAt: string | null;
+  customerCashConfirmedAt: string | null | undefined;
+  riderCashConfirmedAt: string | null | undefined;
+  cashHandshakeFrozenAt: string | null | undefined;
 }): boolean {
   const state = handshakeState(order);
   return state === "not_cash" || state === "confirmed";

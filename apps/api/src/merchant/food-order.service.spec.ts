@@ -680,3 +680,80 @@ describe("FoodOrderService reconciler sweeps", () => {
     expect(res).toEqual({ cancelled: 0 });
   });
 });
+
+describe("FoodOrderService.toResponse — A-O14 (LC-A06) null-padding omission", () => {
+  const walletOrder = {
+    id: "o1",
+    merchantId: "m1",
+    status: "delivered",
+    merchantPhase: null,
+    merchantPaymentMethod: "wallet",
+    merchantPaymentConfirmedAt: new Date("2026-08-04T10:00:00Z"),
+    merchantItems: [],
+    pickupCodeAttempts: 0,
+    noShowCallTimestamps: [],
+    // Never touched by a wallet order — mirrors what the real DB rows actually hold.
+    cashHandshakeAmount: null,
+    customerCashConfirmedAt: null,
+    riderCashConfirmedAt: null,
+    cashHandshakeDeadlineAt: null,
+    cashHandshakeFrozenAt: null,
+    merchantCashRule: null,
+    debtStatus: null,
+    debtAmount: null,
+    debtOpenedAt: null,
+    debtSettledAt: null,
+    refundReference: null,
+    refundAmount: null,
+    refundedAt: null,
+  };
+
+  const PADDING_FIELDS = [
+    "cashHandshakeAmount",
+    "customerCashConfirmedAt",
+    "riderCashConfirmedAt",
+    "cashHandshakeDeadlineAt",
+    "cashHandshakeFrozenAt",
+    "merchantCashRule",
+    "debtStatus",
+    "debtAmount",
+    "debtOpenedAt",
+    "debtSettledAt",
+    "refundReference",
+    "refundAmount",
+    "refundedAt",
+  ] as const;
+
+  it("omits every cash-handshake/debt-ledger/refund key on a wallet order with none of that state", async () => {
+    const { svc } = build({ order: { findFirst: async () => walletOrder } });
+    const res = await svc.getMyOrder("o1", "c1");
+    for (const field of PADDING_FIELDS) expect(res).not.toHaveProperty(field);
+    // Untouched fields keep serializing as normal (this isn't a blanket strip).
+    expect(res.status).toBe("delivered");
+    expect(res.paymentMethod).toBe("wallet");
+  });
+
+  it("keeps only the fields actually populated on a CASH collect-and-return order with an open debt", async () => {
+    const { svc } = build({
+      order: {
+        findFirst: async () => ({
+          ...walletOrder,
+          merchantPaymentMethod: "cash",
+          merchantCashRule: "collect_and_return",
+          debtStatus: "open",
+          debtAmount: 13,
+          debtOpenedAt: new Date("2026-08-04T10:05:00Z"),
+        }),
+      },
+    });
+    const res = await svc.getMyOrder("o1", "c1");
+    expect(res.merchantCashRule).toBe("collect_and_return");
+    expect(res.debtStatus).toBe("open");
+    expect(res.debtAmount).toBe(13);
+    expect(res.debtOpenedAt).toBe("2026-08-04T10:05:00.000Z");
+    // Still-null fields (never a cash handshake or refund on this order) stay omitted.
+    for (const field of ["cashHandshakeAmount", "customerCashConfirmedAt", "riderCashConfirmedAt", "debtSettledAt", "refundReference", "refundAmount", "refundedAt"] as const) {
+      expect(res).not.toHaveProperty(field);
+    }
+  });
+});

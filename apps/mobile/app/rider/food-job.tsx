@@ -621,7 +621,7 @@ export default function RiderFoodJob(): React.ReactElement {
             <RiderCashHandshakeCard
               state={hState}
               amount={foodOrder.cashHandshakeAmount ?? total ?? 0}
-              confirmedAt={foodOrder.customerCashConfirmedAt}
+              confirmedAt={foodOrder.customerCashConfirmedAt ?? null}
               nowMs={nowMs}
               onConfirm={() => confirmCashM.mutate()}
               onDispute={() => disputeCashM.mutate()}
