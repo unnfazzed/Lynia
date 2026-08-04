@@ -540,7 +540,10 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       && pnpm lint && pnpm test` all green. See `docs/LC-B-REPORT-2026-08-03b.md`.
 
 **Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-02 steer #2 — see
-`docs/LC-STEER-2026-08-02b.md` §4 for rationale):**
+`docs/LC-STEER-2026-08-02b.md` §4 for rationale; re-ranked again 2026-08-04 steer — B-O16/B-O17/B-O18
+promoted to #1-3: they're B-T4's freshly-evidenced, concrete-file:line findings on the
+always-mounted merchant kitchen tablet, exactly the Go-class hardware this lane targets, vs.
+B-O5's zero-evidence backlog placeholder; see `docs/LC-STEER-2026-08-04.md` §4):**
 - [x] B-O1 History/notifications lists → FlatList **(2026-08-03b)**. Converted both to FlatList
       (this lane's third and fourth FlatList adoptions after B-T3's restaurant catalog), windowing
       the concurrently-mounted rows to what's on-screen — a real scroll-smoothness win on Go-class
@@ -728,7 +731,41 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       the boot-defer timer elapses. All three new "not called on mount" assertions confirmed to FAIL
       against the pre-fix code before landing. `pnpm typecheck && pnpm lint && pnpm test` all green
       (756 mobile tests, 5 new/expanded). See `docs/LC-B-REPORT-2026-08-04.md`.
-- [ ] B-O5 Socket self-heal refetch cadence on reconnect attempts — KNOWN backlog. (S)
+- [ ] B-O16 **(re-ranked to #1, was #7 — 2026-08-04 steer)** **(B-T4 finding)** Merchant `OrderCard`'s
+      shared `useNow()` hook (`apps/merchant/app/lib/use-now.ts`, default 1000ms interval) is called
+      unconditionally at `apps/merchant/app/components/queue/OrderCard.tsx:244`, ticking every
+      mounted card once/sec regardless of `bucket` — but `now` is only read by the `waiting` (line
+      272) and `preparing` (line 291) branches. A `payment`-bucket card (`PaymentBucketActions`'s own
+      comment: "No clock (M2·7 never blocks the board)... only ever renders as an ordinary card") or
+      a `ready`-bucket card (fully static/callback-driven JSX, lines 307-346) re-renders once/sec for
+      however long it sits in that bucket — potentially minutes on an awaiting-payment order — for
+      zero visible benefit, on the always-mounted kitchen tablet the whole Go-class mandate targets.
+      Fix: extract the two clock-consuming branches into small self-ticking sub-components (mirroring
+      the `SentOfferCard`/`AuctionClock` extraction pattern already used elsewhere in this codebase)
+      so `payment`/`ready` cards mount with zero interval, or gate `useNow()`'s call behind `bucket ===
+      "waiting" || bucket === "preparing"`. (S)
+- [ ] B-O17 **(re-ranked to #2, was #8 — 2026-08-04 steer)** **(B-T4 finding)** Merchant
+      `QueueBoard`/`OrderCard` has no `React.memo` boundary (confirmed via grep — zero `memo(` usage
+      in either file) — the merchant-app sibling of the mobile rider-board gap `B-O2` already tracks
+      for `JobCard`/`ComposeMap`. `use-queue-poll.ts`'s 5s poll and `QueueBoard.tsx`'s
+      `groupQueue()`/bucket-array derivation (lines ~204-209) build fresh arrays every poll tick
+      regardless of whether the underlying order data changed, and with no memo boundary every
+      `OrderCard` re-renders in lockstep even when its own order object is referentially unchanged
+      (TanStack Query's structural sharing would otherwise let an unchanged order skip re-render if
+      the card were memoized). Bundle with `B-O16` — fixing `OrderCard`'s ticker scope is the natural
+      point to also add the memo boundary in the same pass. (M)
+- [ ] B-O18 **(re-ranked to #3, was #9 — 2026-08-04 steer)** **(B-T4 finding)** `AuctionClock`'s 20s
+      urgency-color crossfade (`apps/mobile/src/ui/order/AuctionClock.tsx:105`,
+      `Animated.timing(urgencyAnim, { toValue: to, duration: 200, useNativeDriver: false })`, driving
+      an `Animated.Text`'s `color` interpolation) runs on the JS thread with no documented blocker —
+      unlike the neighboring `LiveMap.tsx` `AnimatedRegion.timing(..., useNativeDriver: false)`, which
+      carries an explicit doc-comment explaining `AnimatedRegion` can't use the native driver. This
+      app's RN 0.76.9 has supported native-driven color-style interpolation for several years, so
+      `color` here is very likely switchable to `useNativeDriver: true`. Lowest priority of this
+      batch — a single 200ms transition fired at most twice per ~90s auction (entering/leaving the
+      last 20s window), not a sustained cost — but a trivial one-line fix once confirmed safe
+      on-device. (S)
+- [ ] B-O5 **(was #1)** Socket self-heal refetch cadence on reconnect attempts — KNOWN backlog. (S)
 - [ ] B-O3 Overlap/defer boot keystore reads — KNOWN backlog. **B-T1 evidence:** `loadSession()`
       (`src/auth/session.ts`) and `loadOnboardingSeen()`/`loadRolePreference()`
       (`src/auth/device-state.ts`, read from `app/index.tsx`) already fire concurrently at the
@@ -775,38 +812,6 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       Trivial `.slice(-N)` fix matching the same file's own `HANDBACK_ACK_MAX = 20` pattern. Lowest
       priority of this batch — not a memory-pressure risk, just inconsistent with the rest of the
       file's discipline. (S)
-- [ ] B-O16 **(new, B-T4 finding)** Merchant `OrderCard`'s shared `useNow()` hook
-      (`apps/merchant/app/lib/use-now.ts`, default 1000ms interval) is called unconditionally at
-      `apps/merchant/app/components/queue/OrderCard.tsx:244`, ticking every mounted card once/sec
-      regardless of `bucket` — but `now` is only read by the `waiting` (line 272) and `preparing`
-      (line 291) branches. A `payment`-bucket card (`PaymentBucketActions`'s own comment: "No clock
-      (M2·7 never blocks the board)... only ever renders as an ordinary card") or a `ready`-bucket
-      card (fully static/callback-driven JSX, lines 307-346) re-renders once/sec for however long it
-      sits in that bucket — potentially minutes on an awaiting-payment order — for zero visible
-      benefit, on the always-mounted kitchen tablet the whole Go-class mandate targets. Fix: extract
-      the two clock-consuming branches into small self-ticking sub-components (mirroring the
-      `SentOfferCard`/`AuctionClock` extraction pattern already used elsewhere in this codebase) so
-      `payment`/`ready` cards mount with zero interval, or gate `useNow()`'s call behind `bucket ===
-      "waiting" || bucket === "preparing"`. (S)
-- [ ] B-O17 **(new, B-T4 finding)** Merchant `QueueBoard`/`OrderCard` has no `React.memo` boundary
-      (confirmed via grep — zero `memo(` usage in either file) — the merchant-app sibling of the
-      mobile rider-board gap `B-O2` already tracks for `JobCard`/`ComposeMap`. `use-queue-poll.ts`'s
-      5s poll and `QueueBoard.tsx`'s `groupQueue()`/bucket-array derivation (lines ~204-209) build
-      fresh arrays every poll tick regardless of whether the underlying order data changed, and with
-      no memo boundary every `OrderCard` re-renders in lockstep even when its own order object is
-      referentially unchanged (TanStack Query's structural sharing would otherwise let an unchanged
-      order skip re-render if the card were memoized). Bundle with `B-O16` — fixing `OrderCard`'s
-      ticker scope is the natural point to also add the memo boundary in the same pass. (M)
-- [ ] B-O18 **(new, B-T4 finding)** `AuctionClock`'s 20s urgency-color crossfade
-      (`apps/mobile/src/ui/order/AuctionClock.tsx:105`, `Animated.timing(urgencyAnim, { toValue: to,
-      duration: 200, useNativeDriver: false })`, driving an `Animated.Text`'s `color` interpolation)
-      runs on the JS thread with no documented blocker — unlike the neighboring `LiveMap.tsx`
-      `AnimatedRegion.timing(..., useNativeDriver: false)`, which carries an explicit doc-comment
-      explaining `AnimatedRegion` can't use the native driver. This app's RN 0.76.9 has supported
-      native-driven color-style interpolation for several years, so `color` here is very likely
-      switchable to `useNativeDriver: true`. Lowest priority of this batch — a single 200ms
-      transition fired at most twice per ~90s auction (entering/leaving the last 20s window), not a
-      sustained cost — but a trivial one-line fix once confirmed safe on-device. (S)
 
 ### Lane C — offline & 2G resilience (Opus 4.8, `0 6 * * *`)
 
@@ -946,7 +951,10 @@ lesson 4 — every step retryable or explicitly unwound, no limbo states):
 **Optimization checklist (seeded; audit rounds append; re-ranked 2026-08-03 steer — C-O5/C-O6/C-O7
 promoted ahead of C-O1/C-O2/C-O4: they're concrete, S-effort, evidenced-this-week fixes from
 completed C-T1/C-T2 traces, vs. C-O1/C-O2/C-O4's broader M-effort backlog scope with no fresh
-measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
+measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17; re-ranked again 2026-08-04
+steer — C-O9 promoted ahead of C-O1/C-O2/C-O4 for the identical reason; C-O8 stays first, the
+direct continuation of the just-shipped C-O7's draft-persistence pattern on a sibling screen; see
+`docs/LC-STEER-2026-08-04.md` §4):**
 - [x] C-O5 **DONE (2026-08-03f)** **(C-T1 finding, LC-C07)** Rider delivery-confirm terminal marker
       (`saveRiderJobTerminal`) was written only after a response (success or 409-reconciled)
       arrived — an app kill strictly between sending `confirmDelivery` and processing any
@@ -1007,9 +1015,35 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       (parse/round-trip) + `pickup-checklist-photo-resume.test.tsx` (confirmed the kill-mid-upload
       case fails pre-fix). `pnpm --filter mobile typecheck && pnpm --filter mobile lint && pnpm
       --filter mobile test` all green (110 suites, 761 tests). See `docs/LC-C-REPORT-2026-08-04.md`. (S)
-- [ ] C-O1 **(re-ranked to #4, was #1)** ALR-09: offline mutation UX (explicit queued/failed/retry
+- [ ] C-O8 **(#1 — C-T3 finding, LC-C11)** The become-a-rider KYC form's photo capture
+      (`apps/mobile/app/rider/become.tsx`'s `doUpload`) only commits `photoUri`/`photoKey` to the
+      durable `kyc-draft.ts` draft on a SUCCESSFUL upload — an app kill strictly between firing the
+      presigned-URL PUT and it resolving leaves the draft exactly as it was before the attempt (no
+      corruption, but also no memory that an upload was ever tried), so the rider must relaunch the
+      camera and re-capture from scratch instead of getting the same one-tap "Try again" resume a
+      network-only failure already gets via `failedAsset`. Persisting the captured asset's local uri
+      (and an "upload in flight" marker) to the draft BEFORE firing the PUT — mirroring C-O5's
+      "write the marker before the request" pattern — would let a relaunch offer "finish uploading
+      this photo" instead of a full re-shoot. Never blocks submission and no data is lost (the GCS
+      object was never completed either way), so this is a resume-convenience optimization, not a
+      defect. `apps/mobile/app/rider/become.tsx:86-114`, `apps/mobile/src/logic/kyc-draft.ts`. (S)
+- [ ] C-O9 **(re-ranked to #2, was #8 — 2026-08-04 steer)** **(C-T4 finding, LC-C13)**
+      `NewOrderTakeover.submitAccept`/`submitReject`'s catch block sets a local error string and
+      re-enables the buttons on a 409 (or any rejection) but never calls `refetch()` — unlike the
+      success path (`withRefetch`, LC-D17), which awaits a refetch end-to-end before the caller sees
+      it settle. The stale, already-resolved order's Accept/Reject buttons stay tappable until the
+      next ambient queue poll (≤5s) or a `visibilitychange` refetch removes it from `awaitingAccept`.
+      Self-heals within that window and the server's per-order CAS turns a mistaken retry into a
+      harmless 409 — no double-apply — but it's a real, reproducible confusion window on a slow
+      reconnect. Align the error path with the rider-side reconcile pattern
+      (`apps/mobile/app/rider/job.tsx:283`): call `refetch()` in the catch, not just on success.
+      `apps/merchant/app/components/queue/NewOrderTakeover.tsx` (`submitAccept`/`submitReject`).
+      Promoted ahead of C-O1/C-O2/C-O4 this steer for the same reason C-O5/C-O6/C-O7 were promoted
+      2026-08-03: a concrete, S-effort, evidenced-this-week fix (C-T4) beats broader M-effort backlog
+      scope with no fresh measurement behind it. (S)
+- [ ] C-O1 **(re-ranked to #3, was #4)** ALR-09: offline mutation UX (explicit queued/failed/retry
       states — never a silent drop) — KNOWN ledger. (M)
-- [ ] C-O2 **(re-ranked to #5, was #2)** Central client network policy: one module defining
+- [ ] C-O2 **(re-ranked to #4, was #5)** Central client network policy: one module defining
       timeout/retry/backoff-with-jitter tuned for 600 ms RTT, replacing per-call-site defaults
       (DoorDash lessons 6+7); every retriable mutation must name its server-side idempotency
       guarantee. (M)
@@ -1023,32 +1057,10 @@ measurement behind it; C-O3 struck as a duplicate of Lane A's A-O17):**
       A-T4's 2026-08-03 trace, so Lane A owns the implementation; keeping both unchecked would
       double-count one piece of work across two lanes. The resilience benefit ships automatically
       when A-O17 lands — no separate C-side work needed.
-- [ ] C-O4 **(re-ranked to #6, was #4)** MicroCache serve-stale-on-upstream-failure mode (soft/hard
+- [ ] C-O4 **(re-ranked to #5, was #6)** MicroCache serve-stale-on-upstream-failure mode (soft/hard
       dual TTL; candidates: nearby-count, bootstrap; NEVER money/assignment/auth) (DoorDash
       lesson 8). (M)
-- [ ] C-O8 **(new, ranked #7 — C-T3 finding, LC-C11)** The become-a-rider KYC form's photo capture
-      (`apps/mobile/app/rider/become.tsx`'s `doUpload`) only commits `photoUri`/`photoKey` to the
-      durable `kyc-draft.ts` draft on a SUCCESSFUL upload — an app kill strictly between firing the
-      presigned-URL PUT and it resolving leaves the draft exactly as it was before the attempt (no
-      corruption, but also no memory that an upload was ever tried), so the rider must relaunch the
-      camera and re-capture from scratch instead of getting the same one-tap "Try again" resume a
-      network-only failure already gets via `failedAsset`. Persisting the captured asset's local uri
-      (and an "upload in flight" marker) to the draft BEFORE firing the PUT — mirroring C-O5's
-      "write the marker before the request" pattern — would let a relaunch offer "finish uploading
-      this photo" instead of a full re-shoot. Never blocks submission and no data is lost (the GCS
-      object was never completed either way), so this is a resume-convenience optimization, not a
-      defect. `apps/mobile/app/rider/become.tsx:86-114`, `apps/mobile/src/logic/kyc-draft.ts`. (S)
-- [ ] C-O9 **(new, ranked #8 — C-T4 finding, LC-C13)** `NewOrderTakeover.submitAccept`/`submitReject`'s
-      catch block sets a local error string and re-enables the buttons on a 409 (or any rejection) but
-      never calls `refetch()` — unlike the success path (`withRefetch`, LC-D17), which awaits a refetch
-      end-to-end before the caller sees it settle. The stale, already-resolved order's Accept/Reject
-      buttons stay tappable until the next ambient queue poll (≤5s) or a `visibilitychange` refetch
-      removes it from `awaitingAccept`. Self-heals within that window and the server's per-order CAS
-      turns a mistaken retry into a harmless 409 — no double-apply — but it's a real, reproducible
-      confusion window on a slow reconnect. Align the error path with the rider-side reconcile pattern
-      (`apps/mobile/app/rider/job.tsx:283`): call `refetch()` in the catch, not just on success.
-      `apps/merchant/app/components/queue/NewOrderTakeover.tsx` (`submitAccept`/`submitReject`). (S)
-- [ ] C-O10 **(new, ranked #9 — C-T5 finding, LC-C14)** `apps/mobile/src/realtime/socket.ts`'s
+- [ ] C-O10 **(#6 — C-T5 finding, LC-C14)** `apps/mobile/src/realtime/socket.ts`'s
       `createSocket` passes a captured `auth: { token }` OBJECT to `io()` — Socket.IO's own
       internal auto-reconnect (a bare network drop, no React involved) replays that same object on
       every retry, so a dead zone outlasting the 900s access-token TTL leaves the socket retrying
