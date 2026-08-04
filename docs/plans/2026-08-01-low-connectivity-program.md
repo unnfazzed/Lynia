@@ -788,17 +788,25 @@ B-O5's zero-evidence backlog placeholder; see `docs/LC-STEER-2026-08-04.md` §4)
       lint && pnpm test` all green (repo-wide: 1540 API + 769 mobile + merchant's own suite, all passing;
       37 new/changed merchant assertions across the four touched files). See
       `docs/LC-B-REPORT-2026-08-04b.md`.
-- [ ] B-O18 **(re-ranked to #3, was #9 — 2026-08-04 steer)** **(B-T4 finding)** `AuctionClock`'s 20s
-      urgency-color crossfade (`apps/mobile/src/ui/order/AuctionClock.tsx:105`,
+- [x] B-O18 **DONE (2026-08-04c)** **(re-ranked to #3, was #9 — 2026-08-04 steer)** **(B-T4 finding)**
+      `AuctionClock`'s 20s urgency-color crossfade (`apps/mobile/src/ui/order/AuctionClock.tsx:105`,
       `Animated.timing(urgencyAnim, { toValue: to, duration: 200, useNativeDriver: false })`, driving
-      an `Animated.Text`'s `color` interpolation) runs on the JS thread with no documented blocker —
+      an `Animated.Text`'s `color` interpolation) ran on the JS thread with no documented blocker —
       unlike the neighboring `LiveMap.tsx` `AnimatedRegion.timing(..., useNativeDriver: false)`, which
-      carries an explicit doc-comment explaining `AnimatedRegion` can't use the native driver. This
-      app's RN 0.76.9 has supported native-driven color-style interpolation for several years, so
-      `color` here is very likely switchable to `useNativeDriver: true`. Lowest priority of this
-      batch — a single 200ms transition fired at most twice per ~90s auction (entering/leaving the
-      last 20s window), not a sustained cost — but a trivial one-line fix once confirmed safe
-      on-device. (S)
+      carries an explicit doc-comment explaining `AnimatedRegion` can't use the native driver.
+      **Confirmed before landing:** RN 0.76.9's `Animated` native driver supports color-style
+      interpolation with no allowlist restricting which style props (e.g. `color`) can use it —
+      verified in `AnimatedInterpolation.js`'s dedicated `isColor`/`processColor` output path, not
+      just inferred from RN version folklore. Fixed with the one-line flip to
+      `useNativeDriver: true` (the `reduceMotion` branch, which snaps via `urgencyAnim.setValue`,
+      is untouched). New regression tests in `auction-clock.test.tsx`: one spies on `Animated.timing`
+      and asserts every call across the calm→urgent transition carries `useNativeDriver: true`
+      (confirmed to FAIL against the pre-fix code); a second pins that `reduceMotion` still never
+      calls `Animated.timing` at all. No on-device frame-timing profile was available in this
+      environment (same caveat `B-O7`/`B-O3` flagged for their own claims) — the evidence is the RN
+      source confirming native-driver color support exists, not a measured delta. `pnpm typecheck &&
+      pnpm lint && pnpm test` all green (1540 API + 786 mobile tests). See
+      `docs/LC-B-REPORT-2026-08-04c.md`.
 - [ ] B-O5 **(was #1)** Socket self-heal refetch cadence on reconnect attempts — KNOWN backlog. (S)
 - [ ] B-O3 Overlap/defer boot keystore reads — KNOWN backlog. **B-T1 evidence:** `loadSession()`
       (`src/auth/session.ts`) and `loadOnboardingSeen()`/`loadRolePreference()`
