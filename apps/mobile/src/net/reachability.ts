@@ -1,5 +1,6 @@
 import { onlineManager } from "@tanstack/react-query";
 import { API_URL } from "../config";
+import { PROBE_TIMEOUT_MS } from "./network-policy";
 
 /**
  * App-wide reachability — "can we actually reach the Lynia API right now?" — derived from REAL request
@@ -87,7 +88,7 @@ let probeFetch: (url: string) => Promise<boolean> = defaultProbeFetch;
 
 async function defaultProbeFetch(url: string): Promise<boolean> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5_000);
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
     const res = await fetch(url, { method: "GET", signal: controller.signal });
     return res.ok;

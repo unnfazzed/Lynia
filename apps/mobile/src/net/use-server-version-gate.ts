@@ -1,6 +1,7 @@
 import { VersionGateResponse } from "@lynia/shared";
 import { useEffect, useState } from "react";
 import { API_URL } from "../config";
+import { BACKGROUND_CHECK_TIMEOUT_MS } from "./network-policy";
 
 /**
  * Server-driven force-update minimum (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §1c). The build-time
@@ -17,7 +18,7 @@ import { API_URL } from "../config";
  */
 export async function fetchServerMinVersion(
   fetchImpl: typeof fetch = fetch,
-  timeoutMs = 10_000,
+  timeoutMs = BACKGROUND_CHECK_TIMEOUT_MS,
 ): Promise<string | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
