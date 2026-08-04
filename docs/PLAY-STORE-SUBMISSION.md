@@ -122,7 +122,12 @@
 > task's `onlyIf shouldSentryAutoUploadGeneral()` guard (verified in `@sentry/react-native@6.22.0`
 > `sentry.gradle`) skips it cleanly. **Revert the env var when Sentry is provisioned** (set the
 > `SENTRY_AUTH_TOKEN` EAS secret + org/project) so release source maps upload again — Sentry must be
-> live before the production staged rollout anyway (§8 step 3, LR20). 6 of ~15 August builds
+> live before the production staged rollout anyway (§8 step 3, LR20).
+> **RESOLVED 2026-08-05:** the Sentry project (`lyniago/lynia-mobile`) now exists, org/project are
+> committed as `app.config.ts` plugin props, and `SENTRY_DISABLE_AUTO_UPLOAD` is gone from `eas.json`.
+> The failure mode this note describes can no longer reach gradle: `app.config.ts` fails a release
+> build up front, naming the missing variable, if `EXPO_PUBLIC_SENTRY_DSN`/`SENTRY_AUTH_TOKEN` are
+> unset. Still pending: the founder setting those EAS variables + the device exit test. 6 of ~15 August builds
 > consumed; attempt 7 next. ⚠️ Submit-step heads-up: Google Play often requires the very FIRST
 > artifact of a brand-new app to be uploaded manually in the Console before API submissions are
 > accepted — if attempt 7 builds green but auto-submit fails with an app/artifact-not-found class
@@ -229,6 +234,12 @@
 > non-public track should. And Sentry is still unprovisioned with `SENTRY_DISABLE_AUTO_UPLOAD=true`,
 > so **the live build reports no crashes and has no source map** (§8a) — LR20 is half-met, and the
 > closed test in step 2 would otherwise run blind.
+>
+> **Update 2026-08-05:** the crash-telemetry half is now wired end to end in-repo (Sentry project
+> `lyniago/lynia-mobile`, R8 mapping upload enabled, upload kill-switch removed, DSN passed through
+> the OTA and QA-APK lanes, release builds refused without it). The statement above still holds for
+> **the currently-installed binary** — telemetry only reaches devices in a NEW build, so the next
+> store release is what actually closes this, and the closed test should not start before it.
 
 ---
 
@@ -686,7 +697,7 @@ internal track; all three block the *next* steps.
 |---|---|---|---|
 | 1 | ~~**A version bump rotates the OTA runtime version.**~~ **FIXED 2026-08-04** — `apps/mobile/fingerprint.config.js` now sets `sourceSkips: ["ExpoConfigVersions"]`, so the version fields no longer feed the hash. Both 0.17.9 and 0.17.10 hash to `5b175b9b…`; a native change (`targetSdkVersion` 35 → 34) still moves it, so the anti-brick property is intact. | ⚠️ **The live vc-2 binary is not rescued** — its runtimeVersion `6c72c486…` was stamped at build time. The fix applies from the **next store build** onward; re-baseline before the closed test starts, while the install base is still internal testers. | `REL-01` |
 | 2 | **`mobile-ota.yml` defaults to a branch that does not exist.** Its `branch` input defaults to `production`; the EAS project has exactly one channel and one branch, both named `preview`, and the live binary was built on the `preview` channel. | A default OTA dispatch publishes to a branch no channel maps to — again reaching nobody, silently. | `REL-02` |
-| 3 | **The live build has no crash reporting.** Sentry is unprovisioned and `eas.json` sets `SENTRY_DISABLE_AUTO_UPLOAD=true`, so there is neither runtime capture nor a source map for the shipped bundle. | Crashes on the internal track are invisible; the closed test (step 2) would run blind, and step 3 explicitly requires Sentry live. **This directly cost us on gap 4** — that build failed with zero telemetry and had to be diagnosed from a photograph. | LR20 / §7.2 |
+| 3 | **The live build has no crash reporting.** Wiring is now complete in-repo (2026-08-05): project `lyniago/lynia-mobile`, R8 mapping + native symbol upload enabled, `SENTRY_DISABLE_AUTO_UPLOAD` removed, DSN threaded through the OTA and QA-APK lanes, and a release build that refuses to start without it. **Remaining: the founder's EAS variables + a new build.** | Crashes on the internal track are invisible *until a new binary ships* — telemetry cannot reach an already-installed APK. The closed test (step 2) would still run blind on the current build, and step 3 explicitly requires Sentry live. **This directly cost us on gap 4** — that build failed with zero telemetry and had to be diagnosed from a photograph. | LR20 / §7.2 |
 | 4 | **The shipped build does not start at all.** The first real-device install (v0.17.12, internal track, 2026-08-04) showed the launcher icon on white and stayed there — no crash, no error screen, nothing in logcat. Bounded-gate + resource-shrinking defect; full mechanism in `docs/KNOWN_BUGS.md` → `MOB-BOOT-01`. | **The internal track is blocked** — testers cannot open the app, so the §8 step-2 14-day closed-test clock cannot start. | `MOB-BOOT-01` |
 
 **Gap 4 is fixed in code but needs a new build to reach anyone.** It is a native config change, so

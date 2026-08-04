@@ -124,14 +124,59 @@ BASE_URL=https://<staging-host> STRESS=5 k6 run apps/api/load/offer-loop.js
 BASE_URL=https://<staging-host> k6 run apps/api/load/abuse.js
 ```
 
-## 5. LR20 — Sentry crash telemetry (on the dev build)
+## 5. LR20 — Sentry crash telemetry (mobile)
+
+> **DO NOT run `npx @sentry/wizard`.** This section used to say to, and that is now actively
+> destructive: the integration is already merged and hand-tuned. The wizard would overwrite
+> `metro.config.js` (losing the PostHog subpath resolver and the zod-locales shim), write a
+> `sentry.properties` containing a plaintext auth token into this **public** repo, and patch in a
+> second `Sentry.init` that bypasses the inert-without-DSN seam and the `sendDefaultPii: false`
+> stance. Everything the wizard advertises is either already done or done properly in
+> `app.config.ts`. The only work left is the account/secret setup below.
+
+The Sentry org is `lyniago` and the mobile project is `lynia-mobile` (a dedicated **React Native**
+project — separate from `lynia-api`, so native symbolication and mobile release health work and the
+event streams don't mix). Both are committed as plugin props in `app.config.ts`; neither is a secret.
 
 ```bash
-cd apps/mobile && npx @sentry/wizard@latest -i reactNative   # adds @sentry/react-native + config
-eas secret:create --scope project --name EXPO_PUBLIC_SENTRY_DSN --value '<dsn>'
-# Wire Sentry.init behind the DSN + Sentry.wrap the router root (docs/QA-DEVICE-CHECKLIST.md §LR20),
-# then a release build → force a test crash → confirm it lands in the Sentry dashboard symbolicated.
+# 1. Sentry → Settings → Auth Tokens → Create New Token (org token, pre-scoped for source-map upload).
+
+# 2. EAS build-time variables (eas-cli 13+; `eas secret:*` is the deprecated spelling).
+cd apps/mobile
+eas env:create --scope project --environment preview --environment production \
+  --name EXPO_PUBLIC_SENTRY_DSN --value '<dsn>' --visibility plaintext --type string
+eas env:create --scope project --environment preview --environment production \
+  --name SENTRY_AUTH_TOKEN --value '<sntrys_…>' --visibility secret --type string
+eas env:create --scope project --environment production \
+  --name EXPO_PUBLIC_SENTRY_ENVIRONMENT --value production --visibility plaintext --type string
+eas env:create --scope project --environment preview \
+  --name EXPO_PUBLIC_SENTRY_ENVIRONMENT --value preview --visibility plaintext --type string
+
+# 3. GitHub repo secret EXPO_PUBLIC_SENTRY_DSN = the same DSN. Separate on purpose: mobile-ota.yml
+#    and android-test-apk.yml build on the runner, not on EAS servers, so the EAS variable is out of
+#    scope there. Omit it and every OTA silently ships crash reporting switched OFF.
+
+# 4. Release build → force BOTH crashes → confirm each is readable in the dashboard.
 ```
+
+The DSN is `plaintext` deliberately (a write-only ingest key that ships inside the APK regardless);
+`SENTRY_AUTH_TOKEN` is write-capable and takes no `EXPO_PUBLIC_` prefix — that prefix would inline it
+into the public JS bundle.
+
+**Exit test (device-gated).** Build the `preview` profile, install from the internal track, then
+long-press the gold TEST BUILD banner → "Crash telemetry test". Fire **both** options; they prove
+different halves and passing one tells you nothing about the other:
+
+- **JS error** → source maps uploaded (named frames, real file/line — not Hermes bytecode offsets).
+- **Native crash** → R8 `mapping.txt` uploaded (real `zw.co.lynia.*` frames — not `a.b.c(SourceFile:1)`).
+
+Confirm each event carries `environment: preview` and a release of the form
+`zw.co.lynia@<version>+<versionCode>`. Only then arm the production staged rollout (§8 step 3).
+
+> Ordering: the EAS variables in step 2 must exist **before** a release build runs. `eas.json` no
+> longer disables the upload task, so a build without `SENTRY_AUTH_TOKEN` would have failed in the
+> gradle sentry-cli step (EAS build `16e18e74`). `app.config.ts` now catches that first and fails
+> the build with a message naming the missing variable, instead of a cryptic CLI error.
 
 ## 6. LR4 — branch protection (GitHub setting)
 

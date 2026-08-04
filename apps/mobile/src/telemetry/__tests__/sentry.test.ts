@@ -44,4 +44,19 @@ describe("mobile Sentry helper (roadmap 1.1 — inert without a DSN)", () => {
     mod.initSentry({ dsn: "https://key@o1.ingest.sentry.io/2", tracesSampleRate: 0.2 });
     expect(sentry.init).toHaveBeenCalledWith(expect.objectContaining({ tracesSampleRate: 0.2 }));
   });
+
+  // The QA crash test (src/ui TestBuildBanner) must not hard-crash a build that would report nothing —
+  // a tester would read the crash itself as proof the pipeline works.
+  it("nativeCrash refuses to crash, and reports false, when Sentry is inert", () => {
+    const { mod, sentry } = load();
+    expect(mod.nativeCrash()).toBe(false);
+    expect(sentry.nativeCrash).not.toHaveBeenCalled();
+  });
+
+  it("nativeCrash fires the native crash once Sentry is armed", () => {
+    const { mod, sentry } = load();
+    mod.initSentry({ dsn: "https://key@o1.ingest.sentry.io/2" });
+    expect(mod.nativeCrash()).toBe(true);
+    expect(sentry.nativeCrash).toHaveBeenCalledTimes(1);
+  });
 });

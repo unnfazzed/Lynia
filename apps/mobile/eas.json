@@ -6,14 +6,12 @@
   "build": {
     "base": {
       "pnpm": "10.33.0",
-      "autoIncrement": true,
-      "env": {
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
-      }
+      "autoIncrement": true
     },
     "preview": {
       "extends": "base",
       "channel": "preview",
+      "environment": "preview",
       "android": {
         "buildType": "app-bundle"
       }
@@ -21,6 +19,7 @@
     "production": {
       "extends": "base",
       "channel": "production",
+      "environment": "production",
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"

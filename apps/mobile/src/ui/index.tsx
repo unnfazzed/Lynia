@@ -1,7 +1,8 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
-import { AccessibilityInfo, ActivityIndicator, Animated, type DimensionValue, Pressable, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Alert, Animated, type DimensionValue, Pressable, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { captureException, isSentryEnabled, nativeCrash } from "../telemetry/sentry";
 import { Icon, type IconName } from "./Icon";
 import { isTestBuild } from "./test-build";
 
@@ -26,6 +27,42 @@ export { Celebrate } from "./Celebrate";
 export { ToastProvider, useToast, pushToast, TOAST_DURATION_MS, type ToastTone } from "./Toast";
 
 /**
+ * LR20 exit test, reachable only from the test-build banner's long-press. A release build needs SOME
+ * way to force a crash on a handset — that is the whole verification for crash telemetry, and the app
+ * otherwise (correctly) has no button that breaks it. Long-press is deliberate: invisible to a normal
+ * tester, impossible to hit by accident, and gone entirely from a store build because the banner it
+ * hangs off returns null there.
+ *
+ * Offers BOTH crash shapes because they prove different halves: a JS throw verifies source-map upload
+ * (named frames instead of Hermes bytecode), a native crash verifies the R8 mapping upload (real
+ * zw.co.lynia.* frames instead of `a.b.c(SourceFile:1)`). Passing one and not the other is a real and
+ * easy-to-miss outcome, so the tester should fire both.
+ */
+function promptCrashTest(): void {
+  const armed = isSentryEnabled();
+  Alert.alert(
+    "Crash telemetry test",
+    armed
+      ? "Sentry is ACTIVE in this build. The app will crash on purpose; reopen it and confirm the event in the lynia-mobile dashboard."
+      : "Sentry is NOT active in this build (no DSN was inlined at build time). A crash here would report NOTHING — check EXPO_PUBLIC_SENTRY_DSN before testing.",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "JS error",
+        style: "destructive",
+        // Reported, not thrown: this is the path a caught render error takes (app/_layout.tsx's
+        // ErrorBoundary), so it verifies the reporting seam without killing the process.
+        onPress: () => {
+          captureException(new Error("LR20 crash-telemetry test — JS error (deliberate)"));
+          Alert.alert("Sent", armed ? "JS error reported. Check Sentry." : "Nothing was sent — Sentry is inert.");
+        },
+      },
+      { text: "Native crash", style: "destructive", onPress: () => nativeCrash() },
+    ],
+  );
+}
+
+/**
  * A gold attention bar shown only on the QA test build (isTestBuild). It tells a tester the app is a
  * bypass build talking to the LIVE API — so test data and provenance in bug-report screenshots are
  * never mistaken for production. Renders nothing in a real release, so it can't leak.
@@ -33,12 +70,14 @@ export { ToastProvider, useToast, pushToast, TOAST_DURATION_MS, type ToastTone }
 export function TestBuildBanner(): React.ReactElement | null {
   if (!isTestBuild()) return null;
   return (
-    <View
+    <Pressable
       accessibilityRole="alert"
+      accessibilityHint="Long-press to run the crash-telemetry test"
+      onLongPress={promptCrashTest}
       style={{ backgroundColor: tokens.color.highlight, paddingVertical: 6, paddingHorizontal: tokens.space.screen, alignItems: "center" }}
     >
       <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.ink }}>TEST BUILD — live API</Text>
-    </View>
+    </Pressable>
   );
 }
 

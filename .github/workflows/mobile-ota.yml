@@ -49,6 +49,16 @@ jobs:
       # EXPO_PUBLIC_* vars are inlined into the JS bundle at export time — they must match what
       # the production binary was built with, or the OTA silently changes runtime config.
       EXPO_PUBLIC_GOOGLE_PLACES_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_PLACES_KEY }}
+      # Sentry (LR20) is the sharpest instance of the rule above. The bundle is exported HERE, on the
+      # runner — not on EAS servers — so the EAS environment variable that the binary was built with is
+      # not in scope. Omit these and every OTA ships a bundle whose initSentry() no-ops
+      # (src/telemetry/sentry.ts), silently switching crash reporting OFF on phones that shipped with
+      # it: no build failure, no console warning, nothing to notice until you ask a device. Hence the
+      # repo secret, which must hold the same DSN as the EAS variable.
+      EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+      # Matches the per-profile environment set in eas.json, so OTA'd events keep landing in the same
+      # Sentry environment as the binary's own (the branch input IS the channel: production | preview).
+      EXPO_PUBLIC_SENTRY_ENVIRONMENT: ${{ inputs.branch }}
     steps:
       - uses: actions/checkout@v7
 

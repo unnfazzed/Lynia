@@ -63,17 +63,20 @@ starts from reasoning, not archaeology.
 
 ### 1. Activate mobile Sentry (EAS build secrets) — after Expo setup
 
-- **What:** Add the EAS build env vars that switch on the already-merged mobile crash reporting
-  (PR #365): `EXPO_PUBLIC_SENTRY_DSN` (required) and — for symbolicated JS stacks —
-  `SENTRY_AUTH_TOKEN` (secret) + `SENTRY_ORG` + `SENTRY_PROJECT`. Then cut a release build and force
-  a test crash to confirm events land in Sentry.
+- **What:** Set the EAS build env vars that switch on the already-merged mobile crash reporting:
+  `EXPO_PUBLIC_SENTRY_DSN` (plaintext) + `SENTRY_AUTH_TOKEN` (secret) + `EXPO_PUBLIC_SENTRY_ENVIRONMENT`,
+  and a GitHub repo secret `EXPO_PUBLIC_SENTRY_DSN` for the OTA/QA-APK lanes (they build on the runner,
+  so the EAS variable is out of scope there). Org/project are no longer env vars — `lyniago` /
+  `lynia-mobile` are committed as plugin props in `app.config.ts`. Then cut a `preview` build and fire
+  **both** crash tests from the TEST BUILD banner's long-press. Commands: `docs/LAUNCH-EXECUTION-RUNBOOK.md` §5.
 - **Why:** `@sentry/react-native` is fully wired (`src/telemetry/sentry.ts`, `app/_layout.tsx`,
   the `app.config.ts` plugin, `metro.config.js`) but **inert until `EXPO_PUBLIC_SENTRY_DSN` is set** —
   so mobile crashes (JS **and** native) on riders'/customers' phones are still invisible until this is
   done. The API half is already live in production.
-- **Context:** Create a **dedicated React Native Sentry project** (`lynia-mobile`), separate from the
-  API's Node project, so native symbolication + mobile release-health work and events aren't mixed.
-  Full step-by-step (dashboard + `eas env:create` CLI) is in `docs/QA-DEVICE-CHECKLIST.md` → LR20.
+- **Context:** The dedicated React Native project **exists** (`lyniago/lynia-mobile`, created 2026-08-05),
+  separate from the API's `lynia-api` Node project so native symbolication + mobile release-health work
+  and events aren't mixed. Full step-by-step (dashboard + `eas env:create` CLI) is in
+  `docs/LAUNCH-EXECUTION-RUNBOOK.md` §5, with the device exit test in `docs/QA-DEVICE-CHECKLIST.md` → LR20.
   Native SDK ⇒ needs a **new binary** (EAS build), NOT OTA; verification is device-gated. The bundle
   size cost (+974 KB Hermes, +19%) was measured and accepted; a trim was investigated and ruled out
   (Expo tree-shaking needs the package-exports resolution `metro.config.js` deliberately avoids).

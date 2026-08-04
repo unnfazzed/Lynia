@@ -76,13 +76,28 @@ RUM/PostHog couldn't see):
   raised accordingly (a real metered-data cost; see APP-SIZE.md). Trimming it would mean stripping
   Sentry's optional Replay/tracing via Metro flags — a follow-on if the size is a concern.
 
-**Founder steps to activate (device-gated — not verifiable off-device):**
-1. Add `EXPO_PUBLIC_SENTRY_DSN` (+ optionally `_ENVIRONMENT`, `_TRACES_SAMPLE_RATE`) as an **EAS build
-   secret** (and, for symbolicated JS frames, a `SENTRY_AUTH_TOKEN` EAS secret for source-map upload).
-2. Build a **release** and force a test crash → confirm it appears in the Sentry dashboard with a
-   symbolicated stack. (This is the LR20 exit test.) Keep the DSN unset in dev so local runs stay quiet.
+**Build wiring (done in-repo).** Org `lyniago` / project `lynia-mobile` are committed as plugin props
+in `app.config.ts`, along with `experimental_android.enableAndroidGradlePlugin` — that last one is
+opt-in and is what uploads the R8 `mapping.txt`. Without it, `enableProguardInReleaseBuilds` leaves
+every native Java/Kotlin frame obfuscated (`a.b.c(SourceFile:1)`), which is precisely the layer this
+SDK exists to see. `eas.json` no longer sets `SENTRY_DISABLE_AUTO_UPLOAD`, so uploads run; both
+release profiles pin an explicit EAS `environment`, and `mobile-ota.yml` / `android-test-apk.yml`
+pass the DSN through (those lanes build on the runner, not on EAS servers).
 
-- [ ] Activate per the founder steps; forced test crash visible from a release build.
+**Founder steps to activate (device-gated — not verifiable off-device):**
+1. Set the EAS variables — `EXPO_PUBLIC_SENTRY_DSN` (plaintext), `SENTRY_AUTH_TOKEN` (secret, **no**
+   `EXPO_PUBLIC_` prefix), `EXPO_PUBLIC_SENTRY_ENVIRONMENT` per environment — plus a GitHub repo
+   secret `EXPO_PUBLIC_SENTRY_DSN` with the same DSN for the OTA/QA-APK lanes. Exact commands:
+   `docs/LAUNCH-EXECUTION-RUNBOOK.md` §5. A release build now **fails fast** with a message naming
+   the missing variable rather than shipping blind.
+2. Build the `preview` profile, install it, long-press the gold TEST BUILD banner → "Crash telemetry
+   test", and fire **both** options. Passing one proves nothing about the other:
+   **JS error** → source maps uploaded; **Native crash** → R8 mapping uploaded. Confirm each lands
+   with a readable stack, `environment: preview`, and release `zw.co.lynia@<version>+<versionCode>`.
+
+Keep the DSN unset in dev so local runs stay quiet — the seam is inert without it, by design.
+
+- [ ] Activate per the founder steps; **both** forced crashes visible and readable from a release build.
 - [ ] Consider the same for the admin app (`@sentry/nextjs`) — lower priority.
 
 > **API side wired (roadmap 1.1).** `@sentry/node` is initialized in `apps/api/src/main.ts` via

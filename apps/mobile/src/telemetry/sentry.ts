@@ -61,6 +61,22 @@ export function captureException(error: unknown): void {
   if (enabled) Sentry.captureException(error);
 }
 
+/**
+ * Deliberately crash the NATIVE layer (LR20 exit test). This is the only way to prove the Android half
+ * of the pipeline end to end: a JS throw exercises source maps, but only a native crash exercises the
+ * R8 `mapping.txt` upload that `experimental_android.enableAndroidGradlePlugin` turns on — and an
+ * obfuscated native stack is the failure this whole provisioning exists to prevent.
+ *
+ * Reachable ONLY from the QA test build's banner (src/ui), never from a store release. Returns false
+ * without crashing when Sentry is inert, so a tester on an unprovisioned build gets an honest "nothing
+ * would be reported" instead of a hard crash that silently reports nothing.
+ */
+export function nativeCrash(): boolean {
+  if (!enabled) return false;
+  Sentry.nativeCrash();
+  return true;
+}
+
 /** Wrap the app root so Sentry can attach its error boundary + touch instrumentation. Inert (passthrough)
  *  until `initSentry` runs with a DSN, so wrapping unconditionally is safe. */
 export const wrap = Sentry.wrap;
