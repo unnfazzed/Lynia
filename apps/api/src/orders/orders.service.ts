@@ -59,6 +59,13 @@ const PICKUP_PHOTO_URL_CACHE_TTL_MS = (PICKUP_PHOTO_READ_URL_TTL_SECONDS * 1000 
  *  each running their own. Counts only — broadcast/push TARGETING never reads this cache. */
 const NEARBY_COUNT_TTL_MS = 10_000;
 
+/** C-O4 (DoorDash lesson 8, serve-stale-on-upstream-failure): hard bound on top of NEARBY_COUNT_TTL_MS
+ *  for surviving a PostGIS/geo blip on this READ. A poll during a dead zone or a transient query
+ *  failure reuses the last known-good count instead of collapsing to "supply unknown" — counts only,
+ *  never assignment/money/auth, so a couple of minutes of staleness on an informational number is a
+ *  strictly better answer than losing it. Past this bound the existing honest-null fallback applies. */
+const NEARBY_COUNT_STALE_TTL_MS = 120_000;
+
 // Customer-safe cancel-reason mapping (Fix 6) now lives in ./cancel-reason (roadmap 3.4), unit-tested there.
 
 /** The fields `create`'s response is built from, shared by the fresh-create path and both
@@ -400,8 +407,9 @@ export class OrdersService implements OnModuleDestroy {
    * wait) apart from "there's nobody nearby to ping" (honest empty). With `createdAt` the count is
    * taken at the order's CURRENT widened radius (policy BROADCAST.expansion) — the 15 s snapshot poll
    * passes it so the count grows with the reach; a fresh create counts the base disc. Best-effort — a
-   * malformed point or a geo-query failure returns `null` ("supply unknown"), and the client then falls
-   * back to today's calm "finding riders" state rather than a false "nobody's here".
+   * malformed point returns `null` ("supply unknown") straight away; a geo-query failure instead falls
+   * back to the last known-good count (C-O4 serve-stale, below) for up to NEARBY_COUNT_STALE_TTL_MS,
+   * and only degrades to `null` once that bound is also exceeded.
    */
   private async countNearbyForPickup(pickup: Prisma.JsonValue, createdAt?: Date): Promise<number | null> {
     try {
@@ -413,13 +421,17 @@ export class OrdersService implements OnModuleDestroy {
       // invisible next to the 15s poll cadence, while dense areas stop fanning identical PostGIS
       // radius queries at the DB. The key buckets coordinates to ~110 m (3 decimals) — noise against
       // a ≥3 km radius — and carries the radius so the policy-widened reach of an ageing auction
-      // still gets its own count. A loader failure is NOT cached (getOrLoad propagates it), so a geo
-      // blip stays a one-poll `null`. MICRO_CACHE_DISABLED / TTL 0 route straight to the loader.
+      // still gets its own count. C-O4: a loader failure with a still-within-bound count on hand
+      // serves that (outcome `stale`) instead of propagating — a poll during a dead zone or a
+      // transient PostGIS blip keeps showing the last real supply signal rather than losing it; a
+      // COLD failure (nothing cached yet) still propagates to the catch below unchanged.
+      // MICRO_CACHE_DISABLED / TTL 0 route straight to the loader (bypasses serve-stale too).
       const ttlMs = this.env?.MICRO_CACHE_TTL_MS_NEARBY_COUNT ?? NEARBY_COUNT_TTL_MS;
       const load = async (): Promise<number> => (await this.tracking.nearbyRiders(pt.lat, pt.lng, radiusM)).length;
       if (this.microCacheBypassed(ttlMs)) return await load();
       const key = `${pt.lat.toFixed(3)},${pt.lng.toFixed(3)}:${radiusM}`;
-      return await this.nearbyCountCache.getOrLoad(key, ttlMs, load);
+      const staleTtlMs = this.env?.MICRO_CACHE_STALE_TTL_MS_NEARBY_COUNT ?? NEARBY_COUNT_STALE_TTL_MS;
+      return await this.nearbyCountCache.getOrLoad(key, ttlMs, load, { staleTtlMs });
     } catch {
       return null; // supply unknown — never let a geo blip surface a false "no riders online"
     }
