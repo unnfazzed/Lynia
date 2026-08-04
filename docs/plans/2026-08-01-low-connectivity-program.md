@@ -807,7 +807,22 @@ B-O5's zero-evidence backlog placeholder; see `docs/LC-STEER-2026-08-04.md` §4)
       source confirming native-driver color support exists, not a measured delta. `pnpm typecheck &&
       pnpm lint && pnpm test` all green (1540 API + 786 mobile tests). See
       `docs/LC-B-REPORT-2026-08-04c.md`.
-- [ ] B-O5 **(was #1)** Socket self-heal refetch cadence on reconnect attempts — KNOWN backlog. (S)
+- [x] B-O5 **DONE (2026-08-04d)** **(was #1)** Socket self-heal refetch cadence on reconnect
+      attempts — all three realtime hooks (`use-order-socket.ts`, `use-rider-board.ts`,
+      `use-rider-job-socket.ts`) fired a full REST self-heal refetch on EVERY `connect` and
+      `connect_error` event with nothing bounding the cadence; Socket.IO's own reconnection loop
+      retries repeatedly, seconds apart, while a connection flaps (the exact Harare dead-zone
+      profile this lane targets), so a flapping episode could pay the self-heal cascade many times
+      over instead of once. Fixed with a new shared `createSelfHealGate(heal, minIntervalMs=5000)`
+      (`src/realtime/self-heal-gate.ts`) — fires immediately on the first call, drops any call
+      within the floor of the last one that fired — wrapping each hook's `onConnect`/
+      `onConnectError` self-heal call; each hook's own genuine server-pushed event
+      (`order:status`/`presence:recovered`) still refetches ungated, since that's a real signal,
+      not reconnect noise. New `self-heal-gate.test.ts` (pure, fake timers) plus a cadence
+      regression case added to each of the three hooks' existing test files, all confirmed to FAIL
+      against the pre-fix code (2 self-heals per burst instead of 1) before landing. `pnpm
+      typecheck && pnpm lint && pnpm test` all green (1540 API + 803 mobile tests). See
+      `docs/LC-B-REPORT-2026-08-04d.md`.
 - [ ] B-O3 Overlap/defer boot keystore reads — KNOWN backlog. **B-T1 evidence:** `loadSession()`
       (`src/auth/session.ts`) and `loadOnboardingSeen()`/`loadRolePreference()`
       (`src/auth/device-state.ts`, read from `app/index.tsx`) already fire concurrently at the
