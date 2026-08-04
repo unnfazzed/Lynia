@@ -61,17 +61,38 @@ scripts/check-bundle-size.mjs (JS bundle). See "How to measure locally".
 
 Two levers are applied in this program (in `apps/mobile`, via the sibling change set):
 
-1. **R8/ProGuard code shrinking + resource shrinking**, enabled for the Android **release** build
-   through `expo-build-properties` (`android.enableProguardInReleaseBuilds` +
-   `android.enableShrinkResourcesInReleaseBuilds` in the plugin block of `app.config.ts`). R8
-   tree-shakes and minifies the compiled Kotlin/Java + dependencies and strips unused resources —
-   the standard Android release-size win. It runs at the native build step (EAS `.aab` and the QA
-   `assembleRelease` APK), so it shrinks the **binary**, not the OTA JS bundle. Because Expo CNG
-   regenerates `android/`, this MUST live in config, never a hand-edit of `build.gradle`.
-   **First-R8-release smoke test:** R8/`shrinkResources` failure modes only manifest at runtime in
-   release mode. The QA APK (`android-test-apk.yml`) now builds with R8 on, so before the first
-   store cut with shrinking enabled, sideload it once and exercise the reflective/resource-sensitive
-   surfaces: map render, push notification (icon), image picker, secure store, splash, OTA check.
+1. **R8/ProGuard code shrinking**, enabled for the Android **release** build through
+   `expo-build-properties` (`android.enableProguardInReleaseBuilds` in the plugin block of
+   `app.config.ts`). R8 tree-shakes and minifies the compiled Kotlin/Java + dependencies — the
+   standard Android release-size win, and the source of essentially the whole `classes.dex` delta
+   below. It runs at the native build step (EAS `.aab` and the QA `assembleRelease` APK), so it
+   shrinks the **binary**, not the OTA JS bundle. Because Expo CNG regenerates `android/`, this MUST
+   live in config, never a hand-edit of `build.gradle`.
+
+   ⚠️ **Resource shrinking (`android.enableShrinkResourcesInReleaseBuilds`) is OFF as of 2026-08-04
+   — it shipped a build that could not start.** The smoke test this section used to merely
+   *recommend* was never run, and v0.17.12 reached the Play internal track unable to get past the
+   splash: the app installed, showed its icon on white, and stayed there — no crash, no error
+   screen, nothing in logcat. Mechanism: React Native's release asset pipeline copies every
+   `require()`d **non-image** asset into `res/raw/` (here, the three subsetted Inter `.ttf`s), and
+   they are reached only by runtime name lookup — never by a resource ID in Java or XML, which is
+   precisely what AAPT2's resource shrinker treats as unreachable. With the fonts blanked,
+   `expo-asset` fell through to fetching them over the network, and `Asset.downloadAsync()` has no
+   timeout; since `app/_layout.tsx` gates **both** the first render and `SplashScreen.hideAsync()`
+   on `useAppFonts()`, the app waited on that promise forever. See `docs/KNOWN_BUGS.md` → `MOB-BOOT-01`.
+
+   The boot path is now independently safe — `useAppFonts` is time-bounded (`src/ui/fonts.ts`), so a
+   stalled font load degrades to the system font instead of bricking startup. Re-enabling resource
+   shrinking still needs **both** of: a `res/raw/keep.xml` (`tools:keep="@raw/*"`) shipped through a
+   config plugin (CNG regenerates `android/`, so a hand-edit will not survive), and the smoke test
+   below actually executed on a handset. The remaining prize is ~1 MiB of resources; weigh it
+   against what it already cost once.
+
+   **Release-build smoke test (run this before ANY future shrinking change):** R8/`shrinkResources`
+   failure modes only manifest at runtime in release mode, and no CI check in this repo can catch
+   them. Sideload the QA APK (`android-test-apk.yml`, which builds with R8 on) and exercise the
+   reflective/resource-sensitive surfaces: **app launches past the splash**, fonts render as Inter
+   (not the system face), map render, push notification (icon), image picker, secure store, OTA check.
 2. **Per-icon Lucide imports (kill the barrel import).** `src/ui/Icon.tsx` imported its glyphs as a
    named import from the `lucide-react-native` package root — a *barrel* that re-exports the entire
    icon set. Metro/Hermes tree-shaking through a barrel is unreliable, so the whole set risked
@@ -221,8 +242,13 @@ Play's **per-device download is smaller than both** — an App Bundle is split b
 and language at install time, and the precise figure is in Play Console → App bundle explorer.
 Record it there once the internal testers install; the raw `.aab` is the only number CI can see
 (`mobile-release.yml` reports it to the run summary, best-effort). This is the pre-shrink baseline
-to judge future native growth against — R8 + resource shrinking were already on for this build
+to judge future native growth against — R8 + resource shrinking were both on for these builds
 (`expo-build-properties` → `enableProguardInReleaseBuilds` / `enableShrinkResourcesInReleaseBuilds`).
+
+⚠️ **These figures are not comparable to the next build.** Resource shrinking was turned off on
+2026-08-04 (`MOB-BOOT-01` — it stripped the bundled fonts and the app could not start), so the next
+`.aab` will be roughly 1 MiB larger for reasons that are a deliberate correctness trade, not
+regression. Re-baseline from that build.
 
 ## Sources / further reading
 
