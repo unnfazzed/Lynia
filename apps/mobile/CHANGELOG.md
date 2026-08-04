@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.17.8](https://github.com/unnfazzed/Lynia/compare/v0.17.7...v0.17.8) (2026-08-04)
+
+
+### Bug Fixes
+
+* **mobile:** C-O7 — persist pickup-proof photo capture before upload fires (LC-C09) ([#551](https://github.com/unnfazzed/Lynia/issues/551)) ([48c91c7](https://github.com/unnfazzed/Lynia/commit/48c91c79032f0339bdf83f7149cda7027a87e832))
+* **mobile:** gitignore CNG output dirs (fingerprint parity); docs: attempt-4 findings ([#550](https://github.com/unnfazzed/Lynia/issues/550)) ([1cb2451](https://github.com/unnfazzed/Lynia/commit/1cb245112e167fd8897eb51a3f4aeba7908c1faa))
+* **mobile:** pin EAS builder pnpm to 10.33.0 (fingerprint path parity) ([#547](https://github.com/unnfazzed/Lynia/issues/547)) ([c6ab2c2](https://github.com/unnfazzed/Lynia/commit/c6ab2c27f4b35bdcbb5eb5d1523616d0a6d30075))
+
+
+### Performance Improvements
+
+* **api:** A-O14 — omit null cash-handshake/debt/refund fields from food order responses ([#553](https://github.com/unnfazzed/Lynia/issues/553)) ([71811f0](https://github.com/unnfazzed/Lynia/commit/71811f02562bf5c04f3bdd487f03921cba8fe0b5))
+* **mobile:** B-O7 — defer push-register/version-gate/feature-flags behind bootstrap ([#549](https://github.com/unnfazzed/Lynia/issues/549)) ([8e31bcc](https://github.com/unnfazzed/Lynia/commit/8e31bcc54b858e26cc9b257a04ada57be8b03809))
+
 ## [0.17.7](https://github.com/unnfazzed/Lynia/compare/v0.17.6...v0.17.7) (2026-08-03)
 
 
