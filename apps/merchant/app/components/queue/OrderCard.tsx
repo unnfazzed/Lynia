@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { formatMoney } from "../../lib/money-input";
@@ -216,7 +216,7 @@ function CashRuleNote({ order }: { order: MerchantOrderResponse }) {
   );
 }
 
-export function OrderCard({
+function OrderCardImpl({
   order,
   bucket,
   disabled,
@@ -241,7 +241,10 @@ export function OrderCard({
   onReleaseUnpaid: (orderId: string) => Promise<void>;
   onRefund: (orderId: string, body: { reference: string; amount: number }) => Promise<void>;
 }) {
-  const now = useNow();
+  // B-O16: only the waiting/preparing branches below read `now` — a payment/ready-bucket card
+  // (which can sit mounted for minutes) has no reason to tick once/sec.
+  const needsClock = bucket === "waiting" || bucket === "preparing";
+  const now = useNow(1000, needsClock);
   const items = order.items.map((i) => `${i.quantity}x ${i.name}`).join(" · ");
   const canRefund = order.paymentMethod === "wallet" && !!order.merchantPaymentConfirmedAt;
 
@@ -347,3 +350,10 @@ export function OrderCard({
     </div>
   );
 }
+
+// B-O17: no memo boundary meant every mounted card re-rendered in lockstep on the board's 5s poll
+// tick (`use-queue-poll.ts`) regardless of whether ITS OWN order data changed — QueueBoard now
+// pairs this with structural-sharing in `mergeOrders` (an unchanged order keeps its previous object
+// reference across a poll) and stable action-handler references, so an order whose data didn't
+// change in a given poll now genuinely skips re-rendering its card.
+export const OrderCard = memo(OrderCardImpl);
