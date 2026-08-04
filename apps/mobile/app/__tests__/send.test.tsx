@@ -427,6 +427,78 @@ describe("send.tsx — Recipient-phone block (RF-21 characterization, pre-extrac
   });
 });
 
+describe("send.tsx — Price/quote block (RF-21 characterization, pre-extraction)", () => {
+  it("shows no suggested-fare preview until both pins are set, then shows it with the acceptance-band hint, and 'Use suggested' fills the price", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(tree.root.findAll((n) => Array.isArray(n.props.children) && n.props.children.join("").startsWith("Suggested fare $")).length).toBe(0);
+
+    // PICKUP/DROPOFF (both inside the launch corridor) quote to a fixed $2.29 over 1.31 km — pinned
+    // constants of packages/shared's quoteFare, not re-derived here.
+    pressTestId(tree, "test-set-pickup");
+    pressTestId(tree, "test-set-drop");
+
+    expect(
+      tree.root.findAll((n) => Array.isArray(n.props.children) && n.props.children.join("") === "Suggested fare $2.29 · 1.31 km").length,
+    ).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.children === "Riders usually accept around $1.90–$2.70").length).toBeGreaterThan(0);
+
+    pressByText(tree, "Use suggested $2.29");
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Your price (USD)" && n.props.value === "2.29").length).toBeGreaterThan(0);
+  });
+
+  it("nudges a below-band price and clears the nudge once the price is back in band", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    pressTestId(tree, "test-set-pickup");
+    pressTestId(tree, "test-set-drop");
+
+    // Band is $1.90–$2.70 for this quote (see the test above); $1.00 sits below the low edge.
+    setFieldByAccessibilityLabel(tree, "Your price (USD)", "1.00");
+    expect(
+      tree.root.findAll((n) => n.props.children === "That's below what riders usually take — they may pass. Nudge it up for a faster match.").length,
+    ).toBeGreaterThan(0);
+
+    setFieldByAccessibilityLabel(tree, "Your price (USD)", "2.29");
+    expect(
+      tree.root.findAll((n) => n.props.children === "That's below what riders usually take — they may pass. Nudge it up for a faster match.").length,
+    ).toBe(0);
+  });
+
+  it("nudges a far-above-band price (possible fat-finger) and clears the nudge back in a normal range", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    pressTestId(tree, "test-set-pickup");
+    pressTestId(tree, "test-set-drop");
+
+    // Band high edge is $2.70; the far-above-band guard fires past 3x that ($8.10) — $10 clears it.
+    setFieldByAccessibilityLabel(tree, "Your price (USD)", "10");
+    expect(
+      tree.root.findAll((n) => n.props.children === "That's a lot more than usual for this trip — double-check you didn't add a digit by mistake.").length,
+    ).toBeGreaterThan(0);
+
+    setFieldByAccessibilityLabel(tree, "Your price (USD)", "2.29");
+    expect(
+      tree.root.findAll((n) => n.props.children === "That's a lot more than usual for this trip — double-check you didn't add a digit by mistake.").length,
+    ).toBe(0);
+  });
+});
+
 describe("send.tsx — draft flush before submit (LC-C06)", () => {
   it("persists the on-disk draft with the submitted price BEFORE the create-order request fires, even mid-debounce", async () => {
     mockGetActiveCustomerOrder.mockResolvedValue(null);

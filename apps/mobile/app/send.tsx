@@ -23,7 +23,7 @@ import {
 import { invalidateIfStale, orderKey } from "../src/query/client";
 import { invalidateCustomerOrderHistory } from "../src/query/use-history-feed";
 import { useForegroundRefetch } from "../src/realtime/use-foreground-refetch";
-import { fareBand, fareBandHint, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
+import { fareBand, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
 import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -38,6 +38,7 @@ import { ActiveOrderBanner, SendAccountOnHoldView } from "../src/ui/send/SendAcc
 import { SendItemsList } from "../src/ui/send/SendItemsList";
 import { SendLandmarksDetails } from "../src/ui/send/SendLandmarksDetails";
 import { SendPhoneFields } from "../src/ui/send/SendPhoneFields";
+import { SendPriceQuote } from "../src/ui/send/SendPriceQuote";
 import { parseNum, randomUuidV4, uuidV4FromSeed } from "../src/util";
 
 // LayoutAnimation needs an explicit opt-in on old-architecture Android; a no-op on iOS / Fabric.
@@ -760,35 +761,13 @@ export default function HomeScreen(): React.ReactElement {
             onChangeDropPhone={setDropPhone}
             dropPhoneError={dropPhoneError}
           />
-          {quote ? (
-            <View style={{ marginBottom: tokens.space.sm }}>
-              <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                Suggested fare ${quote.suggestedFare.toFixed(2)} · {quote.distanceKm} km
-              </Text>
-              {priceBand ? (
-                // Soft acceptance band (guidance, never a hard floor) — anchors the customer away from an
-                // unfillable lowball. "usually", not "must".
-                <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 1, fontVariant: ["tabular-nums"] }}>{fareBandHint(priceBand)}</Text>
-              ) : null}
-              <Button label={`Use suggested $${quote.suggestedFare.toFixed(2)}`} variant="ghost" onPress={() => setProposedFare(quote.suggestedFare.toFixed(2))} />
-            </View>
-          ) : null}
-          <Field
-            label="Your price (USD)"
-            value={proposedFare}
-            onChangeText={setProposedFare}
-            placeholder="2.50"
-            keyboardType="decimal-pad"
-            // Below the band is not an error (there's no hard floor) — a gentle hint that a low ask may
-            // draw no riders. Far above the band nudges the "did you add a digit?" case. Both read as
-            // guidance under the field, not a red validation failure.
-            hint={
-              belowBand
-                ? "That's below what riders usually take — they may pass. Nudge it up for a faster match."
-                : farAboveBand
-                  ? "That's a lot more than usual for this trip — double-check you didn't add a digit by mistake."
-                  : undefined
-            }
+          <SendPriceQuote
+            quote={quote}
+            priceBand={priceBand}
+            belowBand={belowBand}
+            farAboveBand={farAboveBand}
+            proposedFare={proposedFare}
+            onChangeProposedFare={setProposedFare}
           />
 
           {/* Landmarks (contract-required, normally auto-filled from the pin) + optional declared value,
