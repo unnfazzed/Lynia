@@ -18,6 +18,25 @@ import { createSelfHealGate } from "./self-heal-gate";
 // periodic resync.
 const OPEN_ORDERS_CACHE_CAP = 50;
 
+// B-O13: same shape as the `sentOffers` leak LC-B08 fixed — nothing ever removed an id from
+// `expiredOrderIds`/`takenOrderIds` for the rider's whole online session. Every UI read of these
+// Sets is scoped to a `sentOffers` card (already swept `SENT_OFFER_RETENTION_MS` after its auction
+// closes, per rider-bid-draft.ts) or the transient `selected` compose card, so an id this old is
+// never rendered again — but an order the rider never bid on never entered `sentOffers` at all, so
+// that sweep can't reach its id here. Cap + FIFO-evict (Sets preserve insertion order) bounds this
+// regardless of bid history, the same way `OPEN_ORDERS_CACHE_CAP` bounds the board list above.
+const BOARD_RESOLVED_ID_CAP = 200;
+
+function addBoundedId(prev: Set<string>, id: string, cap: number): Set<string> {
+  if (prev.has(id)) return prev;
+  const next = new Set(prev);
+  next.add(id);
+  if (next.size > cap) {
+    next.delete(next.values().next().value as string);
+  }
+  return next;
+}
+
 /**
  * While the rider is online, hold a board socket so a newly-broadcast order appears the instant it
  * opens (WS push) instead of waiting on the poll. The pushed order is the redacted `BoardNewOrderEvent`
@@ -130,7 +149,7 @@ export function useRiderBoard(
       const parsed = BidExpiredEvent.safeParse(raw);
       if (!parsed.success) return;
       const { orderId } = parsed.data;
-      setExpiredOrderIds((prev) => (prev.has(orderId) ? prev : new Set(prev).add(orderId)));
+      setExpiredOrderIds((prev) => addBoundedId(prev, orderId, BOARD_RESOLVED_ID_CAP));
       qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => prev?.filter((o) => o.id !== orderId));
     };
     socket.on(WS_EVENTS.bidExpired, onBidExpired);
@@ -151,7 +170,7 @@ export function useRiderBoard(
       void qc.invalidateQueries({ queryKey: ["activeJob"] }).then(() => {
         const active = qc.getQueryData<{ id: string } | null>(["activeJob"]);
         if (active?.id === orderId) return; // we won — never mark our own order "not chosen"
-        setTakenOrderIds((prev) => (prev.has(orderId) ? prev : new Set(prev).add(orderId)));
+        setTakenOrderIds((prev) => addBoundedId(prev, orderId, BOARD_RESOLVED_ID_CAP));
         // 2·b1: if it was on the board and we hadn't bid on it, nudge the muted "taken" notice. A bid
         // we lost is skipped — its sent-offer card is already flipping to "not this time".
         if (shouldNoticeTakenOrder(wasOnBoard, bidIdsRef.current?.has(orderId) ?? false)) {

@@ -57,6 +57,13 @@ function Harness({ online }: { online: boolean }): null {
   return null;
 }
 
+let latestBoard: ReturnType<typeof useRiderBoard> | undefined;
+
+function CaptureHarness({ online }: { online: boolean }): null {
+  latestBoard = useRiderBoard(online, null);
+  return null;
+}
+
 function FoodOfferHarness({ online, onFoodOffer }: { online: boolean; onFoodOffer: (orderId: string) => void }): null {
   useRiderBoard(online, null, undefined, onFoodOffer);
   return null;
@@ -215,6 +222,68 @@ describe("useRiderBoard openOrders cache cap (B-O12)", () => {
     // the last-pushed order (i=79) must still be present, the first-pushed (i=0) must have fallen off.
     expect(cached!.some((o) => o.id.endsWith(String(79).padStart(12, "0")))).toBe(true);
     expect(cached!.some((o) => o.id.endsWith(String(0).padStart(12, "0")))).toBe(false);
+  });
+});
+
+// B-O13: `expiredOrderIds`/`takenOrderIds` had no removal path for the rider's whole online
+// session — every `bid:expired`/`order:taken` push (bid on or not) added an id that stayed forever,
+// unlike `sentOffers` (LC-B08's own sweep). Same cap+FIFO-evict shape as B-O12's `openOrders` cap.
+describe("useRiderBoard resolved-id caps (B-O13)", () => {
+  function orderId(i: number): string {
+    return `11111111-1111-4111-8111-${String(i).padStart(12, "0")}`;
+  }
+
+  it("never grows expiredOrderIds past 200 entries, keeping the most recently resolved", () => {
+    const qc = new QueryClient();
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <CaptureHarness online={true} />
+        </QueryClientProvider>,
+      );
+    });
+
+    act(() => {
+      for (let i = 0; i < 250; i++) {
+        mockLastSocket.trigger("bid:expired", { orderId: orderId(i), at: "2026-08-04T10:00:00Z" });
+      }
+    });
+
+    expect(latestBoard).toBeDefined();
+    expect(latestBoard!.expiredOrderIds.size).toBe(200);
+    // FIFO eviction, not an arbitrary truncation: the last-pushed id (249) survives, the
+    // first-pushed (0) — the one furthest from any live `sentOffers` card — is gone.
+    expect(latestBoard!.expiredOrderIds.has(orderId(249))).toBe(true);
+    expect(latestBoard!.expiredOrderIds.has(orderId(0))).toBe(false);
+  });
+
+  it("never grows takenOrderIds past 200 entries, keeping the most recently resolved", async () => {
+    const qc = new QueryClient();
+
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <CaptureHarness online={true} />
+        </QueryClientProvider>,
+      );
+    });
+
+    // order:taken resolves asynchronously (it awaits an ["activeJob"] invalidate before deciding
+    // the order wasn't OUR win) — flush that microtask chain for every push before asserting.
+    await act(async () => {
+      for (let i = 0; i < 250; i++) {
+        mockLastSocket.trigger("order:taken", { orderId: orderId(i), at: "2026-08-04T10:00:00Z" });
+      }
+      for (let i = 0; i < 250; i++) {
+        await Promise.resolve();
+      }
+    });
+
+    expect(latestBoard).toBeDefined();
+    expect(latestBoard!.takenOrderIds.size).toBe(200);
+    expect(latestBoard!.takenOrderIds.has(orderId(249))).toBe(true);
+    expect(latestBoard!.takenOrderIds.has(orderId(0))).toBe(false);
   });
 });
 
