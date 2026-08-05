@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0](https://github.com/unnfazzed/Lynia/compare/v0.20.5...v0.21.0) (2026-08-05)
+
+
+### Features
+
+* build the outstanding kit screens, with unbuilt rails honestly stubbed ([282f569](https://github.com/unnfazzed/Lynia/commit/282f569ce9fcb7fe99b58bcc8e8f902186c84b53))
+
+
+### Bug Fixes
+
+* **merchant:** validate the decoded image size in the crop sheet ([056686c](https://github.com/unnfazzed/Lynia/commit/056686c2628696f5594147aca965fc48da1c4307))
+
 ## [0.20.5](https://github.com/unnfazzed/Lynia/compare/v0.20.4...v0.20.5) (2026-08-05)
 
 
