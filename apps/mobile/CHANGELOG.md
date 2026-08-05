@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0](https://github.com/unnfazzed/Lynia/compare/v0.17.13...v0.18.0) (2026-08-05)
+
+
+### Features
+
+* **mobile,api:** align pre-auth screens + restaurant photos with the joint-launch design ([f498a93](https://github.com/unnfazzed/Lynia/commit/f498a938de05c36a9eee93748dab7bcefc4d385d))
+
+
+### Bug Fixes
+
+* **mobile:** evidence-gate the "Couldn't check for an active order" banner ([16bfefa](https://github.com/unnfazzed/Lynia/commit/16bfefa3a1da5c0cf5d57b720ca4bee215efefb5))
+
 ## [0.17.13](https://github.com/unnfazzed/Lynia/compare/v0.17.12...v0.17.13) (2026-08-04)
 
 
