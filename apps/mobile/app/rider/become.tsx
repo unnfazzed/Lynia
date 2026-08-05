@@ -250,7 +250,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
         ) : null}
 
         {pending ? (
-          <Card style={{ borderColor: tokens.color.accent }}>
+          <Card accent>
             <Text style={{ color: tokens.color.accentText, fontWeight: "700", fontSize: 16 }}>{pending}</Text>
           </Card>
         ) : (

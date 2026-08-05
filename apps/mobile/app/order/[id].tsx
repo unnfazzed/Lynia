@@ -695,7 +695,7 @@ export default function OrderScreen(): React.ReactElement {
             whole block for them. */}
         {isActive && !isRiderViewer ? (
           deliveryCode ? (
-            <Card style={{ borderColor: tokens.color.accent }}>
+            <Card accent>
               <Text style={{ fontSize: 14, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
               <Text style={{ fontSize: 28, fontWeight: "700", letterSpacing: 6, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>{deliveryCode}</Text>
             </Card>
@@ -703,7 +703,7 @@ export default function OrderScreen(): React.ReactElement {
             // C7: assigned-or-later with no local code (e.g. a dropped select response). Don't show
             // nothing — prompt a re-issue via the existing rotate mutation instead of leaving the
             // customer with no code and no explanation.
-            <Card style={{ borderColor: tokens.color.accent }}>
+            <Card accent>
               <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
                 Your hand-off code isn&apos;t showing — tap to re-issue so you can give it to the recipient at hand-off.
               </Text>

@@ -150,12 +150,19 @@ export const font = {
  */
 export const shadow = {
   card: {
+    // The CSS source (`--shadow-card`) is a two-layer shadow — a tight 1px/4px contact layer plus a
+    // wide 2px/12px ambient layer. React Native can only express one layer per view, so this is the
+    // closest single-layer match: the wide ambient blur/offset the kit's card reads as, nudged a
+    // touch more opaque (0.10 vs the ambient's 0.06) to stand in for the contact layer's near-edge
+    // definition. Needed now that `Screen` is white (a white card on a white page separates on the
+    // shadow alone) — see the kit's `AppScreen`/`Card`. A faithful two-layer port would require
+    // nesting views; not worth the tree bloat on every card.
     shadowColor: "#14181B",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
     /** Android elevation. */
-    elevation: 2,
+    elevation: 3,
   },
   sheet: {
     shadowColor: "#14181B",
@@ -171,6 +178,19 @@ export const shadow = {
     shadowRadius: 16,
     elevation: 8,
   },
+} as const;
+
+/**
+ * Icon sizing — mirrors `packages/design/tokens/icons.css` (`--icon-size`, `--icon-size-lg`,
+ * `--icon-size-tile`, `--icon-stroke`). The default inline size and the Lucide stroke weight; the
+ * `lg` (nav/list-leading) and `tile` (empty-state/service-tile) steps give the scale something to
+ * enforce so shipped icon sizes stop drifting off it.
+ */
+export const icon = {
+  size: 20,
+  sizeLg: 24,
+  sizeTile: 28,
+  stroke: 2,
 } as const;
 
 /** Line heights (unitless multipliers, ≈4px grid at the scale sizes) — mirrors --leading-*. */

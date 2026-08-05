@@ -54,7 +54,7 @@ export function CounterOfferCard({
   const counter = Number(offer.offeredFare);
   const delta = counter - ask;
   return (
-    <Card style={{ borderColor: tokens.color.accent }}>
+    <Card accent>
       <View style={{ marginBottom: tokens.space.sm }}>
         <RiderMini
           profileId={offer.rider.profileId}

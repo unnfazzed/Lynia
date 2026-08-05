@@ -10,6 +10,7 @@ import { tokens } from "@lynia/shared";
 // element types for the deep paths come from ./lucide-icons.d.ts (the icon files sit outside the
 // package's `exports` map, so `moduleResolution: "bundler"` can't type them on its own).
 import ArrowRight from "lucide-react-native/dist/cjs/icons/arrow-right";
+import Ban from "lucide-react-native/dist/cjs/icons/ban";
 import Banknote from "lucide-react-native/dist/cjs/icons/banknote";
 import Bell from "lucide-react-native/dist/cjs/icons/bell";
 import Bike from "lucide-react-native/dist/cjs/icons/bike";
@@ -30,10 +31,13 @@ import IdCard from "lucide-react-native/dist/cjs/icons/id-card";
 import Inbox from "lucide-react-native/dist/cjs/icons/inbox";
 import LifeBuoy from "lucide-react-native/dist/cjs/icons/life-buoy";
 import MapPin from "lucide-react-native/dist/cjs/icons/map-pin";
+import Minus from "lucide-react-native/dist/cjs/icons/minus";
 import Navigation from "lucide-react-native/dist/cjs/icons/navigation";
 import Package from "lucide-react-native/dist/cjs/icons/package";
+import Pencil from "lucide-react-native/dist/cjs/icons/pencil";
 import Phone from "lucide-react-native/dist/cjs/icons/phone";
 import Plus from "lucide-react-native/dist/cjs/icons/plus";
+import Power from "lucide-react-native/dist/cjs/icons/power";
 import Receipt from "lucide-react-native/dist/cjs/icons/receipt";
 import RefreshCw from "lucide-react-native/dist/cjs/icons/refresh-cw";
 import Search from "lucide-react-native/dist/cjs/icons/search";
@@ -42,15 +46,18 @@ import ShieldAlert from "lucide-react-native/dist/cjs/icons/shield-alert";
 import ShoppingBag from "lucide-react-native/dist/cjs/icons/shopping-bag";
 import Star from "lucide-react-native/dist/cjs/icons/star";
 import Store from "lucide-react-native/dist/cjs/icons/store";
+import Timer from "lucide-react-native/dist/cjs/icons/timer";
 import Trash from "lucide-react-native/dist/cjs/icons/trash-2";
 import TriangleAlert from "lucide-react-native/dist/cjs/icons/triangle-alert";
 import Utensils from "lucide-react-native/dist/cjs/icons/utensils";
 import User from "lucide-react-native/dist/cjs/icons/user";
+import Volume2 from "lucide-react-native/dist/cjs/icons/volume-2";
 import Wallet from "lucide-react-native/dist/cjs/icons/wallet";
 import WifiOff from "lucide-react-native/dist/cjs/icons/wifi-off";
 import X from "lucide-react-native/dist/cjs/icons/x";
 import type { LucideIcon } from "lucide-react-native";
 import React from "react";
+import type { StyleProp, ViewStyle } from "react-native";
 
 /**
  * The Lynia house icon set — Lucide rounded 2px line icons (the open equivalent of Grab's in-app
@@ -98,22 +105,36 @@ const ICONS = {
   "circle-check": CircleCheck, // paid/confirmed states
   copy: Copy, // manual-rail copyable rows (D-24)
   "refresh-cw": RefreshCw, // offline retry countdown
+  // Kit glyphs (packages/design/assets/lynia-icons.js) that had no shipped counterpart, so screens
+  // using them had to substitute: `pencil` (filled address rows / edit affordances the kit draws with
+  // it, not map-pin), `ban`/`power`/`volume-2` (merchant alarm + shift chrome), `minus` (qty steppers),
+  // `timer` (offer/prep countdowns).
+  ban: Ban,
+  minus: Minus,
+  pencil: Pencil,
+  power: Power,
+  timer: Timer,
+  "volume-2": Volume2,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
 
 export function Icon({
   name,
-  // 20px default per the design system's --icon-size.
-  size = 20,
+  // Defaults from the icon tokens (--icon-size 20 / --icon-stroke 2).
+  size = tokens.icon.size,
   color = tokens.color.ink,
-  strokeWidth = 2,
+  strokeWidth = tokens.icon.stroke,
+  style,
 }: {
   name: IconName;
   size?: number;
   color?: string;
   strokeWidth?: number;
+  // Passthrough for transforms the kit relies on (e.g. a rotated chevron standing in for a back arrow)
+  // and any positioning a call site needs on the glyph itself.
+  style?: StyleProp<ViewStyle>;
 }): React.ReactElement {
   const Glyph = ICONS[name] ?? CircleAlert;
-  return <Glyph size={size} color={color} strokeWidth={strokeWidth} />;
+  return <Glyph size={size} color={color} strokeWidth={strokeWidth} style={style} />;
 }

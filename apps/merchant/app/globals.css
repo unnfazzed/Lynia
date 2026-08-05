@@ -53,6 +53,9 @@
   --space-xxl: 32px;
   --radius-card: 16px;
   --radius-input: 12px;
+  /* Buttons are full pills (mirrors packages/design/tokens/spacing.css --radius-button/--radius-pill). */
+  --radius-button: 999px;
+  --radius-pill: 999px;
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 

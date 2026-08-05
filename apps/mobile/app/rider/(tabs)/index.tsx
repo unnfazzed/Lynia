@@ -675,7 +675,7 @@ export default function RiderHome(): React.ReactElement {
   // branch render byte-identical markup for the pieces they have in common — a change to one can't
   // silently drift from the other.
   const activeJobBanner = activeJob ? (
-    <Card style={{ borderColor: tokens.color.accent }}>
+    <Card accent>
       {activeJob.status === "assigned" ? (
         // The win state (3·3): a customer just picked this rider — say so, don't mumble.
         <>
@@ -763,7 +763,7 @@ export default function RiderHome(): React.ReactElement {
     ) : null;
 
   const selectedCard = selected ? (
-    <Card style={{ borderColor: tokens.color.accent }}>
+    <Card accent>
       <Text style={{ fontWeight: "700", marginBottom: 2 }}>
         {selected.pickup.landmark} → {selected.dropoff.landmark}
       </Text>
