@@ -165,18 +165,14 @@ jobs:
             fi
 
             echo "::group::phase log"
-            # Never dump undecodable bytes into these (public) logs — report the magic bytes instead,
-            # which is what identifies the real encoding.
-            if LC_ALL=C grep -qU $'\x00' /tmp/dec.bin 2>/dev/null; then
-              echo "(still binary after gzip/zstd/brotli attempts — first 16 bytes:)"
-              head -c 16 /tmp/dec.bin | od -An -tx1
-              echo "::endgroup::"
-              continue
-            fi
-
+            # Keep only printable ASCII + tab/newline/CR. This both strips ANSI colour and makes it
+            # impossible to dump undecodable bytes into these (public) logs — replacing an earlier
+            # "is it binary?" test that was silently always-true (bash cannot hold a NUL in $'\x00',
+            # so the grep pattern was empty and matched every file).
+            tr -cd '\11\12\15\40-\176' < /tmp/dec.bin > /tmp/clean.txt || true
             # JSON-lines logs carry the text in .msg/.message; plain-text logs pass through.
-            jq -r 'if type == "object" then (.msg // .message // (.|tostring)) else tostring end' /tmp/dec.bin > /tmp/phase.txt 2>/dev/null || true
-            if [ ! -s /tmp/phase.txt ]; then cp /tmp/dec.bin /tmp/phase.txt; fi
+            jq -r 'if type == "object" then (.msg // .message // (.|tostring)) else tostring end' /tmp/clean.txt > /tmp/phase.txt 2>/dev/null || true
+            if [ ! -s /tmp/phase.txt ]; then cp /tmp/clean.txt /tmp/phase.txt; fi
             sed -e 's/\x1b\[[0-9;]*[mGKHF]//g' -i /tmp/phase.txt || true
 
             if grep -iqE "error|fail|exception|cannot|unable|not found|undefined|missing" /tmp/phase.txt; then
