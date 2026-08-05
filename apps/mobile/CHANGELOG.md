@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/unnfazzed/Lynia/compare/v0.19.0...v0.20.0) (2026-08-05)
+
+
+### Features
+
+* **mobile:** build addr_map_confirm, adopt the kit's tracking route hand-off ([#606](https://github.com/unnfazzed/Lynia/issues/606)) ([b1856f1](https://github.com/unnfazzed/Lynia/commit/b1856f1f6dadf66fb1f4665a83fd5f2c83b64d1e))
+
 ## [0.19.0](https://github.com/unnfazzed/Lynia/compare/v0.18.1...v0.19.0) (2026-08-05)
 
 
