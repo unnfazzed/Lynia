@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.3](https://github.com/unnfazzed/Lynia/compare/v0.20.2...v0.20.3) (2026-08-05)
+
+
+### Bug Fixes
+
+* **mobile:** close three kit-vs-shipped correctness gaps ([307cca2](https://github.com/unnfazzed/Lynia/commit/307cca20de3f2b6e1bc538de7dbd9517b462387f))
+
 ## [0.20.2](https://github.com/unnfazzed/Lynia/compare/v0.20.1...v0.20.2) (2026-08-05)
 
 
