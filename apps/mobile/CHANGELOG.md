@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/unnfazzed/Lynia/compare/v0.18.1...v0.19.0) (2026-08-05)
+
+
+### Features
+
+* **mobile:** adopt the kit's search-first addressing; audit all journey flows ([25991a9](https://github.com/unnfazzed/Lynia/commit/25991a9d6f96ccd6c64db6b9d7510a98774e3af5))
+
 ## [0.18.1](https://github.com/unnfazzed/Lynia/compare/v0.18.0...v0.18.1) (2026-08-05)
 
 
