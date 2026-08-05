@@ -187,3 +187,14 @@ jobs:
             tail -80 /tmp/phase.txt
             echo "::endgroup::"
           done
+
+      # Printed LAST on purpose: reading this job's log through the API means tailing it, and the
+      # build list at the top is otherwise buried under the phase-log dump. This one-line-per-build
+      # recap is what a short tail should always be able to answer: did the latest build pass?
+      - name: Recap
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "=== RECAP: recent EAS builds (newest first) ==="
+          jq -r '.[] | "\(.createdAt)  \(.status)  profile=\(.buildProfile // "?")  runtime=\(.runtimeVersion // "?")  \(.id)"' /tmp/builds.json 2>/dev/null \
+            || echo "(build list unavailable — the list step did not complete)"
