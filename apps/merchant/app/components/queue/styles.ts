@@ -1,23 +1,26 @@
 import type { CSSProperties } from "react";
 
+// Buttons follow the design system's shape language: full pills (--radius-button), the primary is the
+// cta-fill green with a white 16/600 label, the ghost is the outline pill with green (accent-text)
+// text — matching the kit's Button, not the rounded-rect 14/800 these had drifted to.
 export const primaryButtonStyle: CSSProperties = {
-  fontSize: 15,
-  fontWeight: 800,
+  fontSize: 16,
+  fontWeight: 600,
   color: "#fff",
   background: "var(--cta-fill)",
   border: "none",
-  borderRadius: 14,
+  borderRadius: "var(--radius-button)",
   padding: "16px 22px",
   cursor: "pointer",
 };
 
 export const ghostButtonStyle: CSSProperties = {
-  fontSize: 14,
-  fontWeight: 700,
-  color: "var(--ink)",
+  fontSize: 16,
+  fontWeight: 600,
+  color: "var(--accent-text)",
   background: "#fff",
   border: "1px solid var(--line)",
-  borderRadius: 14,
+  borderRadius: "var(--radius-button)",
   padding: "14px 22px",
   cursor: "pointer",
 };

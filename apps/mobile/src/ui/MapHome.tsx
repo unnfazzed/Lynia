@@ -141,7 +141,8 @@ function AddressRow(props: { slot: AddressSlot; value: string; active: boolean; 
           {filled ? props.value : placeholder}
         </Text>
       </View>
-      <Icon name={filled ? "map-pin" : "search"} size={16} color={props.active ? tokens.color.accentText : tokens.color.muted} />
+      {/* Kit AddressFields: a filled row shows `pencil` (edit), an empty row `search`. */}
+      <Icon name={filled ? "pencil" : "search"} size={16} color={props.active ? tokens.color.accentText : tokens.color.muted} />
     </Pressable>
   );
 }

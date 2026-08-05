@@ -119,7 +119,7 @@ export function PickupChecklist({
   };
 
   return (
-    <Card style={{ borderColor: tokens.color.accent }}>
+    <Card accent>
       <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: 2 }}>Confirm pickup</Text>
       <Sub>Tick each item against the sender&apos;s list before you ride off.</Sub>
       <View style={{ gap: tokens.space.sm }}>

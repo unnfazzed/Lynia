@@ -83,7 +83,10 @@ export function TestBuildBanner(): React.ReactElement | null {
 
 export function Screen({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.surface }}>
+    // Page surface is white (`bg`), per the kit's `--surface-page: var(--bg)` and its `AppScreen`
+    // default. Grey (`surface`) is reserved for sunken/sheet elements that sit ON the page, not the
+    // page itself — so a white card reads against the page on its shadow, the way the kit intends.
+    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
       <TestBuildBanner />
       {/* 16px edge padding — designs must work at 320px wide (space.screen, not xl). */}
       <View style={{ flex: 1, padding: tokens.space.screen }}>{children}</View>
@@ -92,8 +95,13 @@ export function Screen({ children }: { children: React.ReactNode }): React.React
 }
 
 export function Heading({ children }: { children: React.ReactNode }): React.ReactElement {
-  // Bold with slight negative tracking (≈ -0.02em at 24px) — only 400/600/700 ship, no 800.
-  return <Text style={{ fontSize: tokens.font.size.h1, fontWeight: tokens.font.weight.bold, letterSpacing: -0.4, color: tokens.color.ink, marginBottom: tokens.space.sm }}>{children}</Text>;
+  // Bold with the kit's -0.02em tracking (= -0.48 at 24px) and its tight leading (1.15 → 27.6) —
+  // matches `components/typography/Heading.jsx`. Only 400/600/700 ship, no 800.
+  return (
+    <Text style={{ fontSize: tokens.font.size.h1, fontWeight: tokens.font.weight.bold, letterSpacing: -0.48, lineHeight: Math.round(tokens.font.size.h1 * tokens.leading.tight), color: tokens.color.ink, marginBottom: tokens.space.sm }}>
+      {children}
+    </Text>
+  );
 }
 
 export function Sub({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -125,6 +133,10 @@ export function Field(props: {
   hint?: string;
 }): React.ReactElement {
   const hasError = props.error != null && props.error !== "";
+  // Focus draws the accent border the kit's Field specifies (`:focus { border-color: --accent-700 }`);
+  // an error border always wins over it.
+  const [focused, setFocused] = React.useState(false);
+  const borderColor = hasError ? tokens.color.danger : focused ? tokens.color.accentPressed : tokens.color.line;
   return (
     <View style={{ marginBottom: tokens.space.md }}>
       {props.label ? <Label>{props.label}</Label> : null}
@@ -137,12 +149,14 @@ export function Field(props: {
         maxLength={props.maxLength}
         autoComplete={props.autoComplete}
         textContentType={props.textContentType}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         // The visible Label is a sibling Text with no programmatic link, so name the input for
         // screen readers from the label (falls back to the placeholder for label-less rows).
         accessibilityLabel={props.label ?? props.placeholder}
         style={{
           borderWidth: 1,
-          borderColor: hasError ? tokens.color.danger : tokens.color.line,
+          borderColor,
           borderRadius: tokens.radius.input,
           padding: tokens.space.md,
           fontSize: tokens.font.size.bodyLg,
@@ -188,7 +202,10 @@ export function Button(props: {
         borderColor: tokens.color.line,
         opacity: props.disabled ? 0.5 : 1,
         borderRadius: tokens.radius.button,
+        // Kit Button padding is 14×22 — the horizontal 22 was missing, so intrinsic-width buttons sat
+        // too tight (full-width buttons stretch regardless, so this only corrects the inline ones).
         paddingVertical: 14,
+        paddingHorizontal: 22,
         marginTop: tokens.space.sm,
         alignItems: "center",
         justifyContent: "center",
@@ -206,7 +223,7 @@ export function Button(props: {
   );
 }
 
-export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }): React.ReactElement {
+export function Card({ children, style, accent }: { children: React.ReactNode; style?: ViewStyle; accent?: boolean }): React.ReactElement {
   return (
     <View
       style={[
@@ -215,8 +232,11 @@ export function Card({ children, style }: { children: React.ReactNode; style?: V
           // border stays in the box model but transparent so an emphasis card can still pass an
           // accent `borderColor` (active job, delivery code) without a layout shift.
           backgroundColor: tokens.color.bg,
-          borderWidth: 1,
-          borderColor: "transparent",
+          // The kit's emphasis card (`Card accent`) is a 1.5px accent border, not 1px. `accent` bakes
+          // that in so call sites stop hand-rolling `borderColor: accent` at the wrong 1px weight; an
+          // explicit `borderColor`/`borderWidth` in `style` still wins (it merges after this).
+          borderWidth: accent ? 1.5 : 1,
+          borderColor: accent ? tokens.color.accent : "transparent",
           borderRadius: tokens.radius.card,
           padding: tokens.space.lg,
           marginBottom: tokens.space.md,
@@ -521,10 +541,11 @@ export function EmptyState(props: {
           marginBottom: tokens.space.md,
         }}
       >
-        <Icon name={props.icon} size={34} color={danger ? tokens.color.dangerInk : tokens.color.accentText} strokeWidth={1.75} />
+        <Icon name={props.icon} size={36} color={danger ? tokens.color.dangerInk : tokens.color.accentText} strokeWidth={tokens.icon.stroke} />
       </View>
       <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>{props.title}</Text>
-      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, textAlign: "center", lineHeight: 20, marginTop: 6, maxWidth: 260 }}>
+      {/* Kit EmptyState message is caption (12) at the body leading (1.45 → ~17), not body 14. */}
+      <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center", lineHeight: Math.round(tokens.font.size.caption * tokens.leading.body), marginTop: 6, maxWidth: 260 }}>
         {props.message}
       </Text>
       {props.children ? <View style={{ alignSelf: "stretch", marginTop: tokens.space.md }}>{props.children}</View> : null}

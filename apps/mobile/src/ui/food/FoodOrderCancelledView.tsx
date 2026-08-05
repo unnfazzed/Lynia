@@ -46,7 +46,7 @@ export function FoodOrderCancelledView({
     return (
       <Screen>
         <OfflineBanner state={reachable ? "online" : "offline"} />
-        <Card style={{ borderColor: tokens.color.accent }}>
+        <Card accent>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
               <Icon name="circle-check" size={19} color={tokens.color.accentText} />

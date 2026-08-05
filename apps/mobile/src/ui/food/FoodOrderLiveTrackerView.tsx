@@ -78,7 +78,7 @@ export function FoodOrderLiveTrackerView({
     <Screen>
       <OfflineBanner state={reachable ? "online" : "offline"} />
       {justSecured ? (
-        <Card style={{ borderColor: tokens.color.accent, marginBottom: tokens.space.sm }}>
+        <Card accent style={{ marginBottom: tokens.space.sm }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
             <Icon name="circle-check" size={18} color={tokens.color.accentText} />
             <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>
@@ -120,7 +120,7 @@ export function FoodOrderLiveTrackerView({
               busy={confirmCashBusy}
             />
             {cash === "confirmed" ? (
-              <Card style={{ borderColor: tokens.color.accent, marginBottom: tokens.space.sm }}>
+              <Card accent style={{ marginBottom: tokens.space.sm }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
                   <Icon name="circle-check" size={18} color={tokens.color.accentText} />
                   <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Cash confirmed by both of you</Text>
