@@ -67,8 +67,12 @@ export function Stepper({ events = [], currentStatus, view = "customer", steps, 
         return (
           <div key={label} style={{ display: "flex" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 26 }}>
-              <div style={{ width: 22, height: 22, borderRadius: 11, border: `2px solid ${ring}`, background: failed ? "var(--danger)" : done ? "var(--accent)" : "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", flexShrink: 0 }}>
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: "var(--weight-extrabold)", color: done || failed ? "var(--on-accent)" : now ? "var(--accent-text)" : "var(--muted)" }}>
+              {/* Done node is a mint wash (--accent-wash) with a green (--accent-text) glyph, NOT the
+                  bright --accent fill with a white glyph: a white ✓ on --accent (#00B14F) is ≈2.9:1 and
+                  fails WCAG, whereas green-on-mint clears ≈6.5:1. The failed node keeps its white "!" on
+                  --danger (≈5.4:1, passes). Mirrors the shipped Stepper (apps/mobile/src/ui/index.tsx). */}
+              <div style={{ width: 22, height: 22, borderRadius: 11, border: `2px solid ${ring}`, background: failed ? "var(--danger)" : done ? "var(--accent-wash)" : "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", flexShrink: 0 }}>
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: "var(--weight-extrabold)", color: failed ? "var(--on-accent)" : done || now ? "var(--accent-text)" : "var(--muted)" }}>
                   {failed ? "!" : done ? "✓" : String(i + 1)}
                 </span>
               </div>
