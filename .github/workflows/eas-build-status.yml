@@ -147,10 +147,23 @@ jobs:
 
           for url in "${LOG_URLS[@]}"; do
             echo "::group::phase log"
-            # Phase logs are gzipped JSON-lines; fall back to plain text if not compressed.
+            # Format varies (gzipped or plain; JSON-lines or raw text), so normalise: decompress if
+            # compressed, pull .msg/.message when the line IS json, otherwise keep the raw line, then
+            # strip ANSI colour so the greps match.
             curl -sSL "$url" 2>/dev/null | { gunzip -c 2>/dev/null || cat; } \
-              | jq -r '.msg? // .message? // empty' 2>/dev/null \
-              | grep -iE "error|fail|exception|cannot|unable|not found|undefined|missing" \
-              | head -60 || true
+              | jq -r 'if type == "object" then (.msg // .message // (.|tostring)) else tostring end' 2>/dev/null \
+              > /tmp/phase.txt || true
+            if [ ! -s /tmp/phase.txt ]; then
+              curl -sSL "$url" 2>/dev/null | { gunzip -c 2>/dev/null || cat; } > /tmp/phase.txt || true
+            fi
+            sed -e 's/\x1b\[[0-9;]*[mGKHF]//g' -i /tmp/phase.txt || true
+
+            if grep -iqE "error|fail|exception|cannot|unable|not found|undefined|missing" /tmp/phase.txt; then
+              grep -iE "error|fail|exception|cannot|unable|not found|undefined|missing" /tmp/phase.txt | head -60
+            else
+              # A phase can fail with no matching keyword; the failure is then at the end of the log.
+              echo "(no keyword match — last 40 lines)"
+              tail -40 /tmp/phase.txt
+            fi
             echo "::endgroup::"
           done
