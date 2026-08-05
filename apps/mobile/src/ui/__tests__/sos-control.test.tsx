@@ -48,6 +48,12 @@ function tapSos(tree: renderer.ReactTestRenderer): void {
   act(() => trigger.props.onPress());
 }
 
+/** The confirm step (kit `sos_confirm`): opening the sheet alerts nobody until this is tapped. */
+function confirmSos(tree: renderer.ReactTestRenderer): void {
+  const trigger = tree.root.findAll((n) => n.props.accessibilityLabel === "Show emergency numbers")[0]!;
+  act(() => trigger.props.onPress());
+}
+
 /** Observer notifications are scheduled through setTimeout(0) (notifyManager) — flush them, same as
  * live-tracking-isolation.test.tsx. Also drains the microtask chain the location lookup runs on. */
 const flush = (): Promise<void> => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
@@ -64,10 +70,25 @@ afterEach(() => {
   onlineManager.setOnline(true);
 });
 
+describe("SosControl confirm gate (kit sos_confirm)", () => {
+  it("opening the sheet alerts nobody — the raise fires only after the confirm step", async () => {
+    const tree = renderSos({ orderId: "o0", lat: -17.8, lng: 31.05 });
+    tapSos(tree);
+    await flush();
+    // The sheet is open, but ops has NOT been paged — an accidental tap must not page ops.
+    expect(raiseSosMock).not.toHaveBeenCalled();
+    // Confirming is what raises it.
+    confirmSos(tree);
+    await flush();
+    expect(raiseSosMock).toHaveBeenCalledWith("o0", { lat: -17.8, lng: 31.05 });
+  });
+});
+
 describe("SosControl location capture", () => {
   it("uses the caller-supplied live point as-is (rider job screen) without touching device location", async () => {
     const tree = renderSos({ orderId: "o1", lat: -17.8, lng: 31.05 });
     tapSos(tree);
+    confirmSos(tree);
     await flush();
     expect(raiseSosMock).toHaveBeenCalledWith("o1", { lat: -17.8, lng: 31.05 });
     expect(getPermMock).not.toHaveBeenCalled();
@@ -78,6 +99,7 @@ describe("SosControl location capture", () => {
     getLastKnownMock.mockResolvedValue({ coords: { latitude: -17.82, longitude: 31.06 } });
     const tree = renderSos({ orderId: "o2" });
     tapSos(tree);
+    confirmSos(tree);
     await flush();
     expect(getPermMock).toHaveBeenCalled();
     expect(getLastKnownMock).toHaveBeenCalled();
@@ -88,6 +110,7 @@ describe("SosControl location capture", () => {
     getPermMock.mockResolvedValue({ status: "denied" });
     const tree = renderSos({ orderId: "o3" });
     tapSos(tree);
+    confirmSos(tree);
     await flush();
     expect(getLastKnownMock).not.toHaveBeenCalled();
     expect(raiseSosMock).toHaveBeenCalledWith("o3", { lat: undefined, lng: undefined });
@@ -97,6 +120,7 @@ describe("SosControl location capture", () => {
     getPermMock.mockRejectedValue(new Error("native module unavailable"));
     const tree = renderSos({ orderId: "o4" });
     tapSos(tree);
+    confirmSos(tree);
     await flush();
     expect(raiseSosMock).toHaveBeenCalledWith("o4", { lat: undefined, lng: undefined });
   });
@@ -106,6 +130,7 @@ describe("SosControl location capture", () => {
     getLastKnownMock.mockResolvedValue(null);
     const tree = renderSos({ orderId: "o5" });
     tapSos(tree);
+    confirmSos(tree);
     await flush();
     expect(raiseSosMock).toHaveBeenCalledWith("o5", { lat: undefined, lng: undefined });
   });
@@ -121,6 +146,7 @@ describe("SosControl offline honesty (ALR-09)", () => {
     onlineManager.setOnline(false);
     const tree = renderSos({ orderId: "o6", lat: -17.8, lng: 31.05 });
     tapSos(tree);
+    confirmSos(tree);
     await flush();
     expect(raiseSosMock).not.toHaveBeenCalled();
     const noSignal = tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.includes("No signal"));

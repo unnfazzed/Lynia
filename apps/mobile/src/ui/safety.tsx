@@ -411,17 +411,21 @@ function CallButton({ label, uri, prominent }: { label: string; uri: string; pro
 
 export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: number | null; lng?: number | null }): React.ReactElement {
   const [open, setOpen] = useState(false);
+  // Kit `sos_confirm`: opening the sheet shows a confirm step first; the alert to ops fires only once
+  // the user taps through it. A small danger pill that pages ops on a single accidental tap is the one
+  // false-alarm path a safety control must not have — the confirm gate closes it, at the cost of one tap.
+  const [confirmed, setConfirmed] = useState(false);
 
   const m = useMutation({
     mutationFn: (point: { lat?: number; lng?: number } | undefined) =>
       raiseSos(orderId, { lat: point?.lat, lng: point?.lng }),
   });
 
-  // Raise the SOS the moment the sheet opens so ops is alerted immediately — but never gate the call
-  // actions on the network. The emergency number falls back to the shared SOS_POLICY constant so
-  // "Call 999" is live before (and even if) the request comes back.
+  // Raise the SOS the moment the user CONFIRMS (not on open) so ops is alerted without a false-alarm
+  // path — but never gate the call actions on the network. The emergency number falls back to the
+  // shared SOS_POLICY constant so "Call 999" is live before (and even if) the request comes back.
   useEffect(() => {
-    if (open && m.isIdle) {
+    if (confirmed && m.isIdle) {
       // The one cue that must feel unmistakably different — a long, urgent triple as ops is alerted.
       haptic("alert");
       if (lat != null || lng != null) {
@@ -438,13 +442,15 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
           .catch(() => m.mutate(undefined));
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on open; m is stable enough here.
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on confirm; m is stable enough here.
+  }, [confirmed]);
 
-  // Reset the mutation on close so a SECOND SOS later in the same trip re-arms the isIdle guard and
-  // re-alerts ops — the alert is not one-shot — and a first attempt that failed offline can retry.
+  // Reset the mutation AND the confirm gate on close so a SECOND SOS later in the same trip re-arms the
+  // isIdle guard and re-alerts ops — the alert is not one-shot — and a first attempt that failed offline
+  // can retry from the confirm step.
   const close = (): void => {
     setOpen(false);
+    setConfirmed(false);
     m.reset();
   };
 
@@ -484,32 +490,67 @@ export function SosControl({ orderId, lat, lng }: { orderId: string; lat?: numbe
       </View>
 
       <Sheet visible={open} onClose={close} title="Emergency help">
-        <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
-          <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
-            <Icon name="shield-alert" size={18} color={tokens.color.danger} />
-          </View>
-          <Text style={{ flex: 1, fontSize: tokens.font.size.body, color: tokens.color.ink, lineHeight: 20 }}>
-            {/* Three genuine states: don't claim the alert landed while it's still in flight, and don't
-                promise real-world help is coming — the push is a fire-and-forget internal ops alert. */}
-            {m.isError
-              ? "We couldn't reach our team automatically — please call for help below."
-              : m.isPaused
-                ? "No signal right now — we'll alert our team the instant you're back online. Please call for help below."
-                : m.isPending
-                  ? "Alerting the LyniaGo team…"
-                  : "We've alerted the LyniaGo team. If you're in danger, call now."}
-          </Text>
-        </View>
+        {!confirmed ? (
+          // Confirm step (kit `sos_confirm`). Nothing is alerted yet — the raise fires when the user
+          // taps "Show emergency numbers" below, which reveals the contacts view.
+          <>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
+                <Icon name="shield-alert" size={18} color={tokens.color.danger} />
+              </View>
+              <Text style={{ flex: 1, fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>Get emergency help?</Text>
+            </View>
+            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.md }}>
+              You&apos;ll see the emergency numbers straight away, and we&apos;ll alert the LyniaGo safety team with your live location.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Show emergency numbers"
+              onPress={() => setConfirmed(true)}
+              style={({ pressed }) => ({
+                minHeight: tokens.touchTargetPrimary,
+                borderRadius: tokens.radius.button,
+                backgroundColor: pressed ? tokens.color.dangerInk : tokens.color.danger,
+                alignItems: "center",
+                justifyContent: "center",
+                paddingVertical: 14,
+                paddingHorizontal: 22,
+              })}
+            >
+              <Text style={{ color: tokens.color.onAccent, fontWeight: tokens.font.weight.semibold, fontSize: tokens.font.size.bodyLg }}>Show emergency numbers</Text>
+            </Pressable>
+            <Button label="Cancel" variant="ghost" onPress={close} />
+          </>
+        ) : (
+          <>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
+                <Icon name="shield-alert" size={18} color={tokens.color.danger} />
+              </View>
+              <Text style={{ flex: 1, fontSize: tokens.font.size.body, color: tokens.color.ink, lineHeight: 20 }}>
+                {/* Three genuine states: don't claim the alert landed while it's still in flight, and don't
+                    promise real-world help is coming — the push is a fire-and-forget internal ops alert. */}
+                {m.isError
+                  ? "We couldn't reach our team automatically — please call for help below."
+                  : m.isPaused
+                    ? "No signal right now — we'll alert our team the instant you're back online. Please call for help below."
+                    : m.isPending
+                      ? "Alerting the LyniaGo team…"
+                      : "We've alerted the LyniaGo team. If you're in danger, call now."}
+              </Text>
+            </View>
 
-        {emergencyUri ? <CallButton label={`Call ${emergencyNumber}`} uri={emergencyUri} prominent /> : null}
-        {safetyUri && safetyLine !== emergencyNumber ? (
-          <CallButton label={`Call the LyniaGo safety line (${safetyLine})`} uri={safetyUri} prominent={false} />
-        ) : null}
+            {emergencyUri ? <CallButton label={`Call ${emergencyNumber}`} uri={emergencyUri} prominent /> : null}
+            {safetyUri && safetyLine !== emergencyNumber ? (
+              <CallButton label={`Call the LyniaGo safety line (${safetyLine})`} uri={safetyUri} prominent={false} />
+            ) : null}
 
-        <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 16, marginTop: tokens.space.md }}>
-          {SOS_POLICY.emergencyNumber} reaches local emergency services. The safety line is staffed by LyniaGo.
-        </Text>
-        <Button label="I'm safe now" variant="ghost" onPress={close} />
+            <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 16, marginTop: tokens.space.md }}>
+              {SOS_POLICY.emergencyNumber} reaches local emergency services. The safety line is staffed by LyniaGo.
+            </Text>
+            <Button label="I'm safe now" variant="ghost" onPress={close} />
+          </>
+        )}
       </Sheet>
     </>
   );
