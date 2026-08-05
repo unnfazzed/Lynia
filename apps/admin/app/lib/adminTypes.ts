@@ -151,8 +151,10 @@ export interface ReportEntry {
  * pre-fund a commission account and each completed ride debits a percentage of the amount paid. The
  * rate is **0% for the launch period**, so nothing is collected — this is a read-only view of ride
  * volume and the commission that *would* accrue at the current rate. There is no weekly billing,
- * refund-netting, record-payment or overdue state (all removed with the old cash-settlement engine);
- * the prepaid wallet + top-ups are a later build. All monetary values are API-owned strings.
+ * refund-netting, record-payment or overdue state (all removed with the old cash-settlement engine).
+ * The prepaid wallet + top-ups shipped 2026-07-15 (`apps/api/src/wallet/*`,
+ * docs/plans/2026-rider-wallet-design.md) — only the rate itself is still 0%. All monetary values are
+ * API-owned strings.
  */
 export interface CommissionRiderRow {
   /** Deep-link target — the rider these figures belong to. */

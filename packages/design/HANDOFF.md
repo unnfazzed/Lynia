@@ -166,8 +166,10 @@ earnings → account, plus system/edge) is mapped screen-by-screen in
 arrows, act bands, severity-tagged gap flags). Full gap list & severities in
 `RIDER-JOURNEY-AUDIT.md`. Product decisions baked in: **one phone-first account, two roles**; **KYC
 is the gate** to going online (partner **Didit**, selfie liveness, consent recorded); **payment is
-cash, off-platform, no commission at launch**; **earnings is a record of work, not a wallet**;
-**riders can accept _or_ counter** a price; **non-delivery is the customer's own risk** (terminal
+cash, off-platform**, funded by a **prepaid, per-delivery commission wallet** (`ratePct` 0% at
+launch → 10%, see "Rider commission wallet" below — this replaces the earlier "no commission /
+earnings is a record of work" decision); **riders can accept _or_ counter** a price; **non-delivery
+is the customer's own risk** (terminal
 state + reason recorded).
 
 Most tiles reuse states already built in `ui_kits/mobile/` (the interactive rider side). **Two
@@ -307,6 +309,17 @@ Every state keeps a real exit; the two terminal reasons (`banned`, `kyc_locked`)
 support row — the mandatory exit that today's dead-end screens lack. Also retrofitted onto the existing
 on-hold screen (S·2, both apps). Eng: **add `out_of_area` + `banned` to the reason union** and each
 variant falls out for free. `out_of_area` needs Q1 (service-corridor definition, Wave 3).
+
+**Rider commission wallet.** The rider "Earnings" screen was retired and replaced by the merged
+**Money tab** (`RJM money`) — a prepaid, per-delivery commission wallet, not a payout balance.
+Riders pre-fund an account; each completed ride debits `ratePct` of the agreed fare (**0% at
+launch → 10%**), a **$2.00 online floor** blocks going online below it, and flipping online at zero
+balance grants a one-time **$5.00 grace credit**. Top-ups are **$5–$50** via **EcoCash / InnBucks /
+O'mari**, with a 90s payment-prompt window (`topup_amount` → `topup_wait` → `topup_success` /
+`topup_declined`). A low balance warns via `wallet_low`; an empty one gates going online through
+`gate_topup` — a fifth reason alongside the four `OnlineGateReason` states above. Design source:
+`templates/wallet/`, `templates/top-up/`, `templates/gate-state/`, `explorations/Wallet Journey.html`;
+full contract in `WALLET-HANDOFF-README.md`.
 
 **KYC ID-photo loop — rider** (extends the KycForm photo row; fix P3). Capture (frame guide + 3
 readability rules) → preview self-check ("can you read everything?" — filters glare/blur before it
