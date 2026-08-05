@@ -14,9 +14,15 @@ on:
   workflow_dispatch:
     inputs:
       limit:
+        # `string`, not `number`: a number-typed input rejects an API dispatch that passes it as a
+        # JSON number ("Invalid value for input 'limit'"), which is how a tool-driven dispatch sends it.
         description: "How many recent builds to list"
-        type: number
-        default: 5
+        type: string
+        default: "5"
+      build_id:
+        description: "Build to fetch phase logs for (default: the newest failed build)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -75,3 +81,109 @@ jobs:
           echo "::group::Failed-build errors (full)"
           jq -r '.[] | select(.status == "ERRORED") | "\(.id)\n  code: \(.error.errorCode // "unknown")\n  message: \(.error.message // "no message")\n"' /tmp/builds.json
           echo "::endgroup::"
+
+      # Variable NAMES only — enough to prove whether a build-time variable (e.g. the LR20 Sentry
+      # pair the app.config.ts guard requires) actually exists in the environment an EAS build
+      # resolves, without printing any value. Secret-visibility values are never returned by the
+      # CLI anyway; this trims plaintext ones too.
+      - name: List EAS environment variable names (preview + production)
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          for envname in preview production; do
+            echo "::group::eas env:list — ${envname}"
+            # `eas env:list` takes no --non-interactive flag (it is non-interactive already); passing
+            # one exits "Nonexistent flag" without listing anything.
+            eas env:list --environment "$envname" 2>&1 | grep -iE "name|^[A-Z0-9_]+" || true
+            echo "::endgroup::"
+          done
+
+      # The actual reason a build failed lives in its per-phase logs on Expo's CDN, which
+      # `build:list`/`build:view` do not include — only a generic "see logs of the <phase> phase"
+      # message. Fetch them through the Expo GraphQL API with the same token and print ONLY
+      # error-ish lines, capped.
+      #
+      # NOTE (this repo is public, so workflow logs are world-readable): print no artifact URLs and
+      # no whole log dumps. EAS masks secret env values in build logs, and the grep below keeps the
+      # output to failure lines, but keep that constraint in mind before widening this filter.
+      - name: Fetch failed build phase logs
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          REQUESTED_BUILD_ID: ${{ inputs.build_id }}
+        run: |
+          set -euo pipefail
+          BUILD_ID="${REQUESTED_BUILD_ID:-}"
+          if [ -z "$BUILD_ID" ]; then
+            BUILD_ID="$(jq -r '[.[] | select(.status == "ERRORED")][0].id // empty' /tmp/builds.json)"
+          fi
+          if [ -z "$BUILD_ID" ]; then
+            echo "No failed build in the listed window — nothing to fetch."
+            exit 0
+          fi
+          echo "Fetching phase logs for build $BUILD_ID"
+
+          # `logFiles` is a list of CDN URLs of the build's phase logs. If the schema ever renames it,
+          # the API returns a field-does-not-exist error naming the valid fields — printed as-is, which
+          # is the diagnostic either way.
+          curl -sS https://api.expo.dev/graphql \
+            -H "Authorization: Bearer $EXPO_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "{\"query\":\"query(\$id:ID!){builds{byId(buildId:\$id){id status logFiles}}}\",\"variables\":{\"id\":\"$BUILD_ID\"}}" \
+            > /tmp/gql.json || true
+
+          if jq -e '.errors' /tmp/gql.json >/dev/null 2>&1; then
+            echo "::group::GraphQL response (errors)"
+            jq -r '.errors[]?.message' /tmp/gql.json
+            echo "::endgroup::"
+            exit 0
+          fi
+
+          mapfile -t LOG_URLS < <(jq -r '.data.builds.byId.logFiles[]? // empty' /tmp/gql.json)
+          if [ "${#LOG_URLS[@]}" -eq 0 ]; then
+            echo "No logFiles returned for this build (it may have failed before any phase produced logs)."
+            exit 0
+          fi
+
+          echo "logFiles returned: ${#LOG_URLS[@]}"
+          for url in "${LOG_URLS[@]}"; do
+            # Diagnostics first: an empty body is ambiguous (403? redirect? gzip?), and the status
+            # code disambiguates it in one run instead of several. Print the URL's shape only —
+            # never the signed query string — since this repo's workflow logs are public.
+            echo "url-shape: $(printf '%s' "$url" | sed -E 's/\?.*$/?<redacted>/')"
+            # --compressed lets curl advertise and transparently decode gzip/deflate/br: the previous
+            # attempt hand-piped through gunzip, which cannot decode brotli and so emitted raw bytes.
+            code="$(curl -sSL --compressed -o /tmp/raw.bin -w '%{http_code}' -H "Authorization: Bearer $EXPO_TOKEN" "$url" || echo "curl-failed")"
+            echo "http=$code ($(stat -c%s /tmp/raw.bin 2>/dev/null || echo 0) bytes)"
+
+            # Decoder fallbacks, in case the object is stored pre-compressed rather than
+            # transfer-compressed (then --compressed does not apply).
+            if ! cp /tmp/raw.bin /tmp/dec.bin; then :; fi
+            if gunzip -c /tmp/raw.bin > /tmp/try.bin 2>/dev/null && [ -s /tmp/try.bin ]; then cp /tmp/try.bin /tmp/dec.bin
+            elif command -v zstd >/dev/null && zstd -dc /tmp/raw.bin > /tmp/try.bin 2>/dev/null && [ -s /tmp/try.bin ]; then cp /tmp/try.bin /tmp/dec.bin
+            elif command -v brotli >/dev/null && brotli -dc /tmp/raw.bin > /tmp/try.bin 2>/dev/null && [ -s /tmp/try.bin ]; then cp /tmp/try.bin /tmp/dec.bin
+            fi
+
+            echo "::group::phase log"
+            # Keep only printable ASCII + tab/newline/CR. This both strips ANSI colour and makes it
+            # impossible to dump undecodable bytes into these (public) logs — replacing an earlier
+            # "is it binary?" test that was silently always-true (bash cannot hold a NUL in $'\x00',
+            # so the grep pattern was empty and matched every file).
+            tr -cd '\11\12\15\40-\176' < /tmp/dec.bin > /tmp/clean.txt || true
+            # JSON-lines logs carry the text in .msg/.message; plain-text logs pass through.
+            jq -r 'if type == "object" then (.msg // .message // (.|tostring)) else tostring end' /tmp/clean.txt > /tmp/phase.txt 2>/dev/null || true
+            if [ ! -s /tmp/phase.txt ]; then cp /tmp/clean.txt /tmp/phase.txt; fi
+            sed -e 's/\x1b\[[0-9;]*[mGKHF]//g' -i /tmp/phase.txt || true
+
+            echo "--- lines: $(wc -l < /tmp/phase.txt) ---"
+            # Phase banners locate WHERE it died; a bare keyword grep does not (a failing phase often
+            # logs its cause in lines that match nothing).
+            echo "--- phase banners ---"
+            grep -nE "^(Start|End) phase:" /tmp/phase.txt | tail -30 || true
+            echo "--- keyword matches (with context) ---"
+            grep -inE "error:|FAILURE|failed|exception|Caused by|cannot|unable to|not found" /tmp/phase.txt \
+              | grep -viE "HeapDumpOnOutOfMemoryError" | head -40 || true
+            echo "--- last 80 lines ---"
+            tail -80 /tmp/phase.txt
+            echo "::endgroup::"
+          done
