@@ -75,3 +75,17 @@ jobs:
           echo "::group::Failed-build errors (full)"
           jq -r '.[] | select(.status == "ERRORED") | "\(.id)\n  code: \(.error.errorCode // "unknown")\n  message: \(.error.message // "no message")\n"' /tmp/builds.json
           echo "::endgroup::"
+
+      # Variable NAMES only — enough to prove whether a build-time variable (e.g. the LR20 Sentry
+      # pair the app.config.ts guard requires) actually exists in the environment an EAS build
+      # resolves, without printing any value. Secret-visibility values are never returned by the
+      # CLI anyway; this trims plaintext ones too.
+      - name: List EAS environment variable names (preview + production)
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          for envname in preview production; do
+            echo "::group::eas env:list — ${envname}"
+            eas env:list --environment "$envname" --non-interactive 2>&1 | grep -iE "name|^[A-Z0-9_]+" || true
+            echo "::endgroup::"
+          done
