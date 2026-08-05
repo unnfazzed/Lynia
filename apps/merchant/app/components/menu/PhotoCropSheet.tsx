@@ -221,7 +221,19 @@ export function PhotoCropSheet({
                     src={objectUrl}
                     alt=""
                     draggable={false}
-                    onLoad={(e) => setNatural({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })}
+                    onLoad={(e) => {
+                      // The image's intrinsic size is the only value that leaves the DOM here, and every
+                      // crop/preview dimension is derived from it. Coerce and validate rather than trust
+                      // it: a decode that reports 0×0 (a truncated or unsupported file the browser still
+                      // fires `load` for) would otherwise divide through into NaN geometry and render an
+                      // invisible, un-croppable frame. Treat that as the load failure it is. The explicit
+                      // numeric guard also terminates the DOM→style taint path CodeQL flags here
+                      // (js/xss-through-dom): nothing but finite numbers can reach the style object.
+                      const width = Number(e.currentTarget.naturalWidth);
+                      const height = Number(e.currentTarget.naturalHeight);
+                      if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) setNatural({ width, height });
+                      else setFailed(true);
+                    }}
                     onError={() => setFailed(true)}
                     style={
                       crop && natural

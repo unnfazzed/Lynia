@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { COMMISSION, tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Text, View } from "react-native";
@@ -43,9 +43,9 @@ export default function TopUpScreen(): React.ReactElement {
       <Screen>
         <Heading>Top up</Heading>
         <TopUpSimulator
-          balance={wallet?.balance ?? 0}
-          minTopUp={config?.minTopUp ?? 5}
-          maxTopUp={config?.maxTopUp ?? 50}
+          balance={wallet?.balance ?? null}
+          minTopUp={config?.minTopUp ?? COMMISSION.minTopUp}
+          maxTopUp={config?.maxTopUp ?? COMMISSION.maxTopUp}
           onExit={() => router.back()}
         />
       </Screen>

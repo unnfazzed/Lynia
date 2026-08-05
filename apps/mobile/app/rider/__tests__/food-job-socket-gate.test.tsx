@@ -23,6 +23,13 @@ const mockReplace = jest.fn();
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: mockReplace }),
 }));
+// The screen now persists/reads the last-known-job slot (net/last-active-store) for the
+// `offline_resume` check, which touches SecureStore directly — same stub the sibling job tests use.
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: async () => null,
+  setItemAsync: async () => undefined,
+  deleteItemAsync: async () => undefined,
+}));
 jest.mock("../../../src/api/orders", () => ({
   getActiveOrder: (...args: unknown[]) => mockGetActiveOrder(...args),
   advanceStatus: jest.fn(),

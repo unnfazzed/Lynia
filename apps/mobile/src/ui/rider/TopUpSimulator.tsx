@@ -3,7 +3,7 @@ import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
 import { validateTopupAmount } from "../../logic/topup";
-import { Button, Card, Field, Icon, Sub } from "../index";
+import { Button, Card, Field, Icon, isTestBuild, Sub } from "../index";
 import { CountdownRing, formatCountdown } from "../food/CountdownRing";
 
 /**
@@ -43,8 +43,22 @@ const RAILS: { id: Exclude<TopupRail, "manual">; name: string; note: string }[] 
 ];
 const QUICK_AMOUNTS = [5, 10, 20];
 
-/** The unmissable, permanent "none of this is real" marker. Present on every step of the flow. */
-function SimulatedStrip({ detail }: { detail?: string }): React.ReactElement {
+/**
+ * The unmissable, permanent "none of this is real" marker — on every step of the flow, above the hero.
+ *
+ * Deliberately identical in treatment and headline grammar to `src/ui/food/SimulatedPathNotice` (the
+ * customer checkout's marker for the same class of designed-but-unbacked screen) so the two read as one
+ * system: danger wash, danger border, "SIMULATED — <what> (test build)". It is NOT that component
+ * because that one's body copy ends "the only real way to pay is still the manual rail below" — true on
+ * a checkout screen, false here, where the real path is a phone call to support and there is no rail
+ * below. Same warning, accurate second sentence. Worth folding into one component with a `detail` slot
+ * once both lanes have landed — see the report.
+ *
+ * Self-gates on `isTestBuild()` as belt-and-braces: the only caller is already test-build-only
+ * (app/wallet/top-up.tsx), so a future refactor that loses that branch loses the flow, not the warning.
+ */
+function SimulatedStrip({ detail }: { detail?: string }): React.ReactElement | null {
+  if (!isTestBuild()) return null;
   return (
     <View
       accessibilityRole="alert"
@@ -54,18 +68,18 @@ function SimulatedStrip({ detail }: { detail?: string }): React.ReactElement {
         gap: tokens.space.sm,
         padding: tokens.space.md,
         borderRadius: tokens.radius.input,
-        backgroundColor: tokens.color.highlightWash,
+        backgroundColor: tokens.color.dangerWash,
         borderWidth: 1,
-        borderColor: tokens.color.highlightBorder,
+        borderColor: tokens.color.danger,
         marginBottom: tokens.space.md,
       }}
     >
-      <Icon name="triangle-alert" size={16} color={tokens.color.highlightInk} style={{ marginTop: 1 }} />
+      <Icon name="triangle-alert" size={17} color={tokens.color.dangerInk} style={{ marginTop: 1 }} />
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.bold, color: tokens.color.highlightInk, letterSpacing: 0.3 }}>
+        <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.dangerInk }}>
           SIMULATED — no payment request was sent (test build)
         </Text>
-        <Text style={{ fontSize: 12, color: tokens.color.highlightInk, lineHeight: 17, marginTop: 3 }}>
+        <Text style={{ fontSize: 12, color: tokens.color.dangerInk, lineHeight: 17, marginTop: 3 }}>
           {detail ?? "This is a UI walkthrough of the top-up flow. No rail is connected, no money moves, and your balance is untouched."}
         </Text>
       </View>
@@ -79,8 +93,10 @@ export function TopUpSimulator({
   maxTopUp,
   onExit,
 }: {
-  /** The rider's REAL balance, read from the wallet — shown only to prove it doesn't change. */
-  balance: number;
+  /** The rider's REAL balance, read from the wallet — shown only to prove it doesn't change. `null`
+   *  when the wallet hasn't loaded (or failed to): an unknown balance is stated as unknown, never
+   *  defaulted to $0.00, which would be its own small lie on the one screen that must not tell any. */
+  balance: number | null;
   minTopUp: number;
   maxTopUp: number;
   onExit: () => void;
@@ -171,7 +187,7 @@ export function TopUpSimulator({
               would be a false one, so the number stays and the verb is put in the conditional. */}
           <Text style={{ fontSize: 14, color: tokens.color.muted, marginTop: 2 }}>would have been added — simulated</Text>
           <Text style={{ fontSize: 13, color: tokens.color.ink, fontWeight: tokens.font.weight.semibold, marginTop: tokens.space.md, fontVariant: ["tabular-nums"] }}>
-            Your real balance is unchanged: {formatMoney(balance)}
+            {balance != null ? `Your real balance is unchanged: ${formatMoney(balance)}` : "Your real balance is untouched — nothing was credited."}
           </Text>
         </View>
 
@@ -235,7 +251,7 @@ export function TopUpSimulator({
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <SimulatedStrip />
+      <SimulatedStrip detail="This is a UI walkthrough of the top-up flow. No rail is connected, no money moves, and your balance is untouched. A real release build shows the “call support to top up” screen instead — that is still the shipped behaviour." />
       <Sub>Add to your commission balance. This money can only be spent on commission.</Sub>
 
       <Field
