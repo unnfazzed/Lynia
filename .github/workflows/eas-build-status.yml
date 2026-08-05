@@ -151,22 +151,32 @@ jobs:
             # code disambiguates it in one run instead of several. Print the URL's shape only —
             # never the signed query string — since this repo's workflow logs are public.
             echo "url-shape: $(printf '%s' "$url" | sed -E 's/\?.*$/?<redacted>/')"
-            code_anon="$(curl -sSL -o /tmp/anon.bin -w '%{http_code}' "$url" || echo "curl-failed")"
-            code_auth="$(curl -sSL -o /tmp/auth.bin -w '%{http_code}' -H "Authorization: Bearer $EXPO_TOKEN" "$url" || echo "curl-failed")"
-            echo "http anon=$code_anon ($(stat -c%s /tmp/anon.bin 2>/dev/null || echo 0) bytes) auth=$code_auth ($(stat -c%s /tmp/auth.bin 2>/dev/null || echo 0) bytes)"
-            # Keep whichever response actually has a body.
-            if [ -s /tmp/auth.bin ]; then cp /tmp/auth.bin /tmp/raw.bin; else cp /tmp/anon.bin /tmp/raw.bin || true; fi
+            # --compressed lets curl advertise and transparently decode gzip/deflate/br: the previous
+            # attempt hand-piped through gunzip, which cannot decode brotli and so emitted raw bytes.
+            code="$(curl -sSL --compressed -o /tmp/raw.bin -w '%{http_code}' -H "Authorization: Bearer $EXPO_TOKEN" "$url" || echo "curl-failed")"
+            echo "http=$code ($(stat -c%s /tmp/raw.bin 2>/dev/null || echo 0) bytes)"
+
+            # Decoder fallbacks, in case the object is stored pre-compressed rather than
+            # transfer-compressed (then --compressed does not apply).
+            if ! cp /tmp/raw.bin /tmp/dec.bin; then :; fi
+            if gunzip -c /tmp/raw.bin > /tmp/try.bin 2>/dev/null && [ -s /tmp/try.bin ]; then cp /tmp/try.bin /tmp/dec.bin
+            elif command -v zstd >/dev/null && zstd -dc /tmp/raw.bin > /tmp/try.bin 2>/dev/null && [ -s /tmp/try.bin ]; then cp /tmp/try.bin /tmp/dec.bin
+            elif command -v brotli >/dev/null && brotli -dc /tmp/raw.bin > /tmp/try.bin 2>/dev/null && [ -s /tmp/try.bin ]; then cp /tmp/try.bin /tmp/dec.bin
+            fi
 
             echo "::group::phase log"
-            # Format varies (gzipped or plain; JSON-lines or raw text), so normalise: decompress if
-            # compressed, pull .msg/.message when the line IS json, otherwise keep the raw line, then
-            # strip ANSI colour so the greps match.
-            { gunzip -c /tmp/raw.bin 2>/dev/null || cat /tmp/raw.bin; } \
-              | jq -r 'if type == "object" then (.msg // .message // (.|tostring)) else tostring end' 2>/dev/null \
-              > /tmp/phase.txt || true
-            if [ ! -s /tmp/phase.txt ]; then
-              { gunzip -c /tmp/raw.bin 2>/dev/null || cat /tmp/raw.bin; } > /tmp/phase.txt || true
+            # Never dump undecodable bytes into these (public) logs — report the magic bytes instead,
+            # which is what identifies the real encoding.
+            if LC_ALL=C grep -qU $'\x00' /tmp/dec.bin 2>/dev/null; then
+              echo "(still binary after gzip/zstd/brotli attempts — first 16 bytes:)"
+              head -c 16 /tmp/dec.bin | od -An -tx1
+              echo "::endgroup::"
+              continue
             fi
+
+            # JSON-lines logs carry the text in .msg/.message; plain-text logs pass through.
+            jq -r 'if type == "object" then (.msg // .message // (.|tostring)) else tostring end' /tmp/dec.bin > /tmp/phase.txt 2>/dev/null || true
+            if [ ! -s /tmp/phase.txt ]; then cp /tmp/dec.bin /tmp/phase.txt; fi
             sed -e 's/\x1b\[[0-9;]*[mGKHF]//g' -i /tmp/phase.txt || true
 
             if grep -iqE "error|fail|exception|cannot|unable|not found|undefined|missing" /tmp/phase.txt; then
