@@ -274,19 +274,45 @@ Ordered by blast radius, not by screen.
 CTA drift is systemic, not one label: `Broadcast request`→`Send to riders`, `Agree & broadcast`→`Agree &
 send`, `Go to checkout`→`Continue`, `Place order · pay $X cash`→`Place order · $X`, `Send to Lynia`→`Send
 to our team`, `Confirm cancellation`→`Yes, cancel this order`, `Close`→`I'm safe now`,
-`Enter address manually`→`Not now`. Decide per label whether kit or shipped wins, then align both sides —
-the kit is a live artefact and should absorb the wins.
+`Enter address manually`→`Not now`. Per §9 the kit's string wins in every case; restore them.
 
 ---
 
-## 9. Note on the 🆕 column
+## 9. Direction — the kit is the source of truth
 
-Roughly 90 shipped elements have no kit counterpart, and many are genuine improvements the design should
-absorb rather than deltas to remove: the keyless address-search fallback, `RiderMini` faces on bids,
-rating-with-undo, real OS-permission rows, two-step delete-account, the merchant's per-item "don't have
-it" toggle and pickup-code reveal, the rider strike counter, proof-of-pickup photos, and the reconnect
-and draft-restore affordances throughout.
+**Decision (2026-08-05, product):** the Claude Design screens are authoritative. Where the app diverges,
+**the app changes.** §8 is a work list, not a menu, and §5's table is a defect list.
 
-The recommendation is **not** "make the app match the kit everywhere." It is: fix the foundations
-(§8 P0–P1), close the safety and correctness gaps (P2), decide screen by screen whether kit or shipped
-wins — and push the wins back into `packages/design/` so the next audit compares against something true.
+That resolves every ⚠ in this document by default. It does **not** resolve the 🆕 column, which splits in
+two:
+
+**(a) Additions with no design consequence — remove or leave, cheap either way.** Confetti on terminals,
+the "Delivery details" heading, the second top-bar action, "Open now" on restaurant cards, "Load older"
+pagination, section labels the kit doesn't have.
+
+**(b) States the kit never modelled — these are the "issues" to start on, because kit-as-truth cannot be
+applied literally without regressing real fixes.** Each one exists because shipping taught us something
+the design didn't anticipate. The kit needs to absorb them; deleting them to match the kit would be a
+regression:
+
+| Shipped state | Why the kit can't just win |
+|---|---|
+| Keyless address-search fallback — *"Address search is unavailable — tap the map to set this pin."* | The kit assumes Places is always keyed. Removing this restores the silent-`null` P0 the previous audit was written to fix |
+| Rider board copy branched on `merchantDispatchAutoEnabled` | The kit shows "parcels and food, one queue" unconditionally. Removing the branch promises riders food jobs a dormant flag won't deliver |
+| Degraded/offline variants throughout — reconnect banners, draft restore, stale-cache headers, "Map didn't load", SOS pending/offline states | The kit models the happy path only. These are the states a real network produced |
+| Feature-flag degradations — `getServiceTiles(flag)`, flag-off onboarding and role sets | The kit has no concept of a flag-off build |
+| Privacy notice, two-step delete-account, phone-masking lines | Compliance surface the kit predates |
+| Real OS-permission notification row | The kit hardcodes "On" |
+| Rating undo window, rider strike counter, proof-of-pickup photos, merchant per-item "don't have it", pickup-code reveal | Capability the kit never specified, already load-bearing in production |
+
+**Recommended order:**
+
+1. **Foundations first** (§8 P0–P1) — four one-line token/primitive fixes move hundreds of screens with no
+   per-screen work. Do this before touching individual screens, or the screen work gets redone.
+2. **Correctness gaps** (§8 P2) — SOS confirm, rider first-run copy, the orphaned cancel-reason field, the
+   truncated food tracker. These are defects regardless of which artefact is authoritative.
+3. **Update the kit** to model category (b) above, so kit-as-truth is safe to apply literally.
+4. **Then the per-screen ⚠ work** (§5 and the per-surface tables), and the unbuilt screens (§8 P3).
+
+Step 3 matters: until the kit models degraded, keyless, flagged and offline states, "match the kit" and
+"don't ship a lie" point in opposite directions on exactly the screens where that lie is most expensive.
