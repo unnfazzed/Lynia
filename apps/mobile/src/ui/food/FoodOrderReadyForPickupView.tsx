@@ -4,7 +4,7 @@ import { Text, View } from "react-native";
 import { ErrorText, Icon, OfflineBanner, Screen, Stepper } from "../index";
 import { OrderHeader } from "./FoodOrderHelpers";
 
-type ReadyForPickupOrder = Pick<MerchantOrderResponse, "noRiderHoldAt" | "status">;
+type ReadyForPickupOrder = Pick<MerchantOrderResponse, "noRiderHoldAt" | "status" | "merchantPhase">;
 
 /** RF-18: the `merchantPhase === "ready_for_pickup"` branch of app/food/order/[orderId].tsx,
  *  extracted verbatim — dispatch is searching (N-08) or held after the N-07 attempt cap (D-34), no
@@ -38,7 +38,7 @@ export function FoodOrderReadyForPickupView({
             : `Your order from ${restaurantName} is ready. We're offering it to the nearest riders first — this usually takes a minute or two.`}
         </Text>
       </View>
-      <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" />
+      <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
       <ErrorText message={error} />
     </Screen>
   );

@@ -5,7 +5,7 @@ import { OfflineBanner, Screen, Stepper } from "../index";
 import { CountdownRing } from "./CountdownRing";
 import { OrderHeader } from "./FoodOrderHelpers";
 
-type PreparingOrder = Pick<MerchantOrderResponse, "prepMinutes" | "prepStartedAt" | "status">;
+type PreparingOrder = Pick<MerchantOrderResponse, "prepMinutes" | "prepStartedAt" | "status" | "merchantPhase">;
 
 /** RF-18: the `merchantPhase === "preparing"` branch of app/food/order/[orderId].tsx, extracted
  *  verbatim — payment landed (or CASH needs none) and the kitchen has started, no state of its own.
@@ -38,7 +38,9 @@ export function FoodOrderPreparingView({
           We&apos;ll start looking for a rider once it&apos;s ready.
         </Text>
       </View>
-      <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" />
+      {/* merchantPhase drives the two pre-dispatch steps — without it the whole kitchen phase reads as
+          "not started yet" because the order is still `requested` on the dispatch side. */}
+      <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
     </Screen>
   );
 }

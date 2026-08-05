@@ -1,8 +1,8 @@
-import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, tokens } from "@lynia/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { ApiError } from "../../../src/api/client";
 import { cancelUnpaidFoodOrder, confirmFoodCustomerCash, respondToFoodOrderItems, submitFoodPaymentReference } from "../../../src/api/food-orders";
 import { cancelOrder, getOrder, rateOrder, rotateDeliveryCode } from "../../../src/api/orders";
@@ -24,13 +24,13 @@ import { canCancelFreely } from "../../../src/logic/food-checkout";
 import { codeEligible } from "../../../src/logic/food-doorstep";
 import { formatMoney } from "../../../src/logic/money";
 import { reconcileDeliveryCode, reconcilePendingRating } from "../../../src/logic/order-tracking";
-import { clearFoodOrderSnapshot, saveFoodOrderSnapshot } from "../../../src/net/food-order-store";
+import { clearFoodOrderSnapshot, type FoodOrderSnapshot, loadFoodOrderSnapshot, saveFoodOrderSnapshot } from "../../../src/net/food-order-store";
 import { useReachability } from "../../../src/net/use-reachability";
 import { orderKey } from "../../../src/query/client";
 import { useFoodOrder } from "../../../src/query/use-food-order";
 import { useRestaurantMenu } from "../../../src/query/use-restaurants";
 import { useOrderSocket } from "../../../src/realtime/use-order-socket";
-import { Button, Card, EmptyState, OfflineBanner, Screen, SkeletonList, useToast } from "../../../src/ui";
+import { Button, Card, EmptyState, OfflineBanner, Screen, SkeletonList, Stepper, useToast } from "../../../src/ui";
 import { FoodOrderAwaitingAcceptView } from "../../../src/ui/food/FoodOrderAwaitingAcceptView";
 import { FoodOrderAwaitingPaymentView } from "../../../src/ui/food/FoodOrderAwaitingPaymentView";
 import { FoodOrderCancelledView } from "../../../src/ui/food/FoodOrderCancelledView";
@@ -59,6 +59,19 @@ export default function FoodOrderScreen(): React.ReactElement {
   const { menu } = useRestaurantMenu(order?.merchantId, !!order?.merchantId);
   const restaurantName = menu?.restaurant.name ?? "the restaurant";
 
+  // Kit `resume`: the restart snapshot this screen already writes, read back once on mount so a cold
+  // start mid-order warm-paints where the order stood instead of a bare skeleton. Best-effort and
+  // read-only — the live fetch is always the source of truth the moment it lands.
+  const [warmSnapshot, setWarmSnapshot] = useState<FoodOrderSnapshot | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void loadFoodOrderSnapshot().then((snap) => {
+      if (!cancelled) setWarmSnapshot(snap);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [referenceInput, setReferenceInput] = useState("");
@@ -284,6 +297,19 @@ export default function FoodOrderScreen(): React.ReactElement {
     return (
       <Screen>
         <Text style={{ fontSize: 19, fontWeight: "700", marginBottom: 14 }}>Your order</Text>
+        {/* Warm paint (kit `resume`): the snapshot this screen has always WRITTEN is now also read, so a
+            cold start / app-kill mid-order shows where the order actually stood instead of a bare
+            skeleton. Only for THIS order id, and only until the live fetch lands. */}
+        {warmSnapshot && warmSnapshot.orderId === orderId ? (
+          <Card>
+            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>
+              Picking up where you left off — your order is still live, nothing was lost.
+            </Text>
+            <View style={{ marginTop: tokens.space.sm }}>
+              <Stepper events={[]} currentStatus={warmSnapshot.status} view="customer" jobType="food" merchantPhase={warmSnapshot.merchantPhase} />
+            </View>
+          </Card>
+        ) : null}
         <SkeletonList count={3} />
       </Screen>
     );
