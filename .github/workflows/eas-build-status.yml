@@ -175,12 +175,15 @@ jobs:
             if [ ! -s /tmp/phase.txt ]; then cp /tmp/clean.txt /tmp/phase.txt; fi
             sed -e 's/\x1b\[[0-9;]*[mGKHF]//g' -i /tmp/phase.txt || true
 
-            if grep -iqE "error|fail|exception|cannot|unable|not found|undefined|missing" /tmp/phase.txt; then
-              grep -iE "error|fail|exception|cannot|unable|not found|undefined|missing" /tmp/phase.txt | head -60
-            else
-              # A phase can fail with no matching keyword; the failure is then at the end of the log.
-              echo "(no keyword match — last 40 lines)"
-              tail -40 /tmp/phase.txt
-            fi
+            echo "--- lines: $(wc -l < /tmp/phase.txt) ---"
+            # Phase banners locate WHERE it died; a bare keyword grep does not (a failing phase often
+            # logs its cause in lines that match nothing).
+            echo "--- phase banners ---"
+            grep -nE "^(Start|End) phase:" /tmp/phase.txt | tail -30 || true
+            echo "--- keyword matches (with context) ---"
+            grep -inE "error:|FAILURE|failed|exception|Caused by|cannot|unable to|not found" /tmp/phase.txt \
+              | grep -viE "HeapDumpOnOutOfMemoryError" | head -40 || true
+            echo "--- last 80 lines ---"
+            tail -80 /tmp/phase.txt
             echo "::endgroup::"
           done
