@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { saveRolePreference, type StartRole } from "../src/auth/session";
+import { useFeatureFlags } from "../src/net/use-feature-flags";
 import { Button, Heading, Icon, type IconName, Screen, Sub } from "../src/ui";
 
 /**
@@ -11,9 +12,15 @@ import { Button, Heading, Icon, type IconName, Screen, Sub } from "../src/ui";
  * switchable later. Picking "rider" routes into the existing rider/KYC entry; "customer" goes home.
  * The choice is persisted (saveRolePreference), so verify.tsx sends existing users straight home
  * instead of re-prompting every launch.
+ *
+ * The customer option's copy follows `restaurantsEnabled` (journey 0·5, screens.jsx role_select):
+ * flag-on it reads the joint-launch "Use LyniaGo — order food, send parcels"; flag-off it must keep
+ * the parcels-only wording — the §1 escape hatch hides the whole vertical, and an unflagged mention
+ * of food here would leak it (same fail-safe-off contract as the home Food tile).
  */
 export default function RoleScreen(): React.ReactElement {
   const router = useRouter();
+  const { restaurantsEnabled } = useFeatureFlags();
   const [role, setRole] = useState<StartRole>("customer");
 
   const go = (choice: StartRole): void => {
@@ -32,9 +39,13 @@ export default function RoleScreen(): React.ReactElement {
       <Sub>It&apos;s one account — pick how you&apos;ll use LyniaGo now, and switch anytime.</Sub>
 
       <RoleOption
-        icon="package"
-        title="Send a parcel"
-        desc="Post a delivery and let nearby riders bid."
+        icon={restaurantsEnabled ? "shopping-bag" : "package"}
+        title={restaurantsEnabled ? "Use LyniaGo" : "Send a parcel"}
+        desc={
+          restaurantsEnabled
+            ? "Order food, send parcels, more services soon."
+            : "Post a delivery and let nearby riders bid."
+        }
         selected={role === "customer"}
         onPress={() => setRole("customer")}
       />
@@ -46,7 +57,7 @@ export default function RoleScreen(): React.ReactElement {
         onPress={() => setRole("rider")}
       />
 
-      <Button label={role === "rider" ? "Continue as a rider" : "Continue"} onPress={() => go(role)} />
+      <Button label={role === "rider" ? "Continue as a rider" : "Continue as a customer"} onPress={() => go(role)} />
     </Screen>
   );
 }

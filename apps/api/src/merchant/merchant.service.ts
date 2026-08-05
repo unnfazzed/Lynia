@@ -326,7 +326,7 @@ export class MerchantService {
     const hasMore = merchants.length > RESTAURANTS_PAGE_SIZE;
     const page = hasMore ? merchants.slice(0, RESTAURANTS_PAGE_SIZE) : merchants;
     return {
-      restaurants: page.map((m) => this.toListItem(m)),
+      restaurants: await Promise.all(page.map((m) => this.toListItem(m))),
       nextCursor: hasMore ? page[page.length - 1]!.id : undefined,
     };
   }
@@ -341,12 +341,14 @@ export class MerchantService {
       include: { dishes: { where: { isDraft: false }, orderBy: { sortOrder: "asc" } } },
     });
     return {
-      restaurant: this.toListItem(merchant),
-      categories: categories.map((c) => ({
-        id: c.id,
-        name: c.name,
-        dishes: c.dishes.map((d) => this.toCustomerDish(d)),
-      })),
+      restaurant: await this.toListItem(merchant),
+      categories: await Promise.all(
+        categories.map(async (c) => ({
+          id: c.id,
+          name: c.name,
+          dishes: await Promise.all(c.dishes.map((d) => this.toCustomerDish(d))),
+        })),
+      ),
     };
   }
 
@@ -536,15 +538,19 @@ export class MerchantService {
     };
   }
 
-  private toListItem(
+  // Customer-facing photos must be V4 signed read URLs, same as the merchant-facing responses above:
+  // the media bucket enforces public_access_prevention, so the raw GCS object key these fields used
+  // to pass through could never render on a customer's phone (plan §10 blocker, 2026-07-31).
+  private async toListItem(
     merchant: Pick<MerchantWithOwner, "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours" | "location">,
-  ): RestaurantListItem {
+  ): Promise<RestaurantListItem> {
     const location = (merchant.location as Waypoint | null) ?? null;
+    const [coverPhotoUrl, logoUrl] = await Promise.all([this.signPhoto(merchant.coverPhotoUrl), this.signPhoto(merchant.logoUrl)]);
     return {
       id: merchant.id,
       name: merchant.name,
-      coverPhotoUrl: merchant.coverPhotoUrl,
-      logoUrl: merchant.logoUrl,
+      coverPhotoUrl,
+      logoUrl,
       cuisineTags: merchant.cuisineTags,
       priceLevel: merchant.priceLevel,
       hours: (merchant.hours as MerchantHours | null) ?? null,
@@ -553,13 +559,13 @@ export class MerchantService {
     };
   }
 
-  private toCustomerDish(dish: DishRow): RestaurantMenuDish {
+  private async toCustomerDish(dish: DishRow): Promise<RestaurantMenuDish> {
     return {
       id: dish.id,
       name: dish.name,
       description: dish.description,
       priceUsd: Number(dish.priceUsd),
-      photoUrl: dish.photoUrl,
+      photoUrl: await this.signPhoto(dish.photoUrl),
       outOfStock: isOutOfStock(dish),
     };
   }
