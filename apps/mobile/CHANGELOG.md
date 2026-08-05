@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.5](https://github.com/unnfazzed/Lynia/compare/v0.20.4...v0.20.5) (2026-08-05)
+
+
+### Bug Fixes
+
+* **design:** per-surface alignment sweep — merchant, admin, rider, parcel, food ([#619](https://github.com/unnfazzed/Lynia/issues/619)) ([680415b](https://github.com/unnfazzed/Lynia/commit/680415b81fd2e400b6fb53b636f291cbe6eaabcb))
+
 ## [0.20.4](https://github.com/unnfazzed/Lynia/compare/v0.20.3...v0.20.4) (2026-08-05)
 
 
